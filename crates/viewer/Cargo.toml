@@ -1,0 +1,10 @@
+[package]
+name = "viewer"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+generate = { path = "../generate" }
+state = { path = "../state" }
+gravity = { path = "../gravity" }

@@ -1,0 +1,48 @@
+# ── Rust ──────────────────────────────────────────────────────────
+/target
+**/*.rs.bk
+# Cargo.lock IS committed: this workspace ships binaries (viewer, sdk).
+
+# ── Python / maturin (the SDK) ────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+wheels/
+target/wheels/
+*.so
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ── LaTeX (spec build artefacts; .tex and .bib are kept) ──────────
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bbl
+*.blg
+*.run.xml
+*.bcf
+# regenerable PDF (build with latexmk):
+cavendish-spec/*.pdf
+
+# ── Generated data / caches (the engine's outputs) ────────────────
+/data/
+outputs/
+*.zarr/
+*.h5
+*.hdf5
+*.tar          # WebDataset shards
+
+# ── OS / editor ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+*.swp

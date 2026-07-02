@@ -1,0 +1,11 @@
+[package]
+name = "sdk"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+generate = { path = "../generate" }
+scenario = { path = "../scenario" }
+config = { path = "../config" }
+state = { path = "../state" }

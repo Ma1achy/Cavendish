@@ -1,0 +1,14 @@
+[package]
+name = "generate"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+scenario = { path = "../scenario" }
+instrument = { path = "../instrument" }
+gravity = { path = "../gravity" }
+compute = { path = "../compute" }
+state = { path = "../state" }
+noise = { path = "../noise" }
+uldm = { path = "../uldm" }

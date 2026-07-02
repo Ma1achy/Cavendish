@@ -1,0 +1,8 @@
+[package]
+name = "gravity"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+math = { path = "../math" }

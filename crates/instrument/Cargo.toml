@@ -1,0 +1,10 @@
+[package]
+name = "instrument"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+gravity = { path = "../gravity" }
+source = { path = "../source" }
+math = { path = "../math" }

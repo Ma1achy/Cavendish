@@ -1,0 +1,12 @@
+[package]
+name = "scenario"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+source = { path = "../source" }
+instrument = { path = "../instrument" }
+uldm = { path = "../uldm" }
+noise = { path = "../noise" }
+config = { path = "../config" }

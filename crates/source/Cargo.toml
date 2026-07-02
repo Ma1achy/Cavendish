@@ -1,0 +1,10 @@
+[package]
+name = "source"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+shape = { path = "../shape" }
+gravity = { path = "../gravity" }
+math = { path = "../math" }
