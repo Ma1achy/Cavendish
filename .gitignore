@@ -30,8 +30,6 @@ target/wheels/
 *.blg
 *.run.xml
 *.bcf
-# regenerable PDF (build with latexmk):
-cavendish-spec/*.pdf
 
 # ── Generated data / caches (the engine's outputs) ────────────────
 /data/
