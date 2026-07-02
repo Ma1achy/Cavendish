@@ -87,3 +87,10 @@ jobs:
         with:
           name: cavendish-spec
           path: cavendish-spec/cavendish.pdf
+      - name: Upload the latexmk log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cavendish-spec-log
+          path: cavendish-spec/cavendish.log
+          if-no-files-found: ignore
