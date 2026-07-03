@@ -121,6 +121,122 @@ fn element<S: Scalar>(cloud: &Cloud, i: usize) -> Vec3<S> {
     )
 }
 
+/// The second-moment reduction of a cloud (spec `sec:contracts`; `design/gravity.md` §6).
+///
+/// The inertia tensor `I` and the gravitational quadrupole `Q` are linear maps of the one second
+/// moment `C = Σ mᵢ(rᵢ−com)(rᵢ−com)ᵀ` — `I = tr(C)𝟙 − C`, `Q = 3C − tr(C)𝟙` — so they share principal
+/// axes (the eigenvectors of `C`). `moments` are the principal moments of inertia, ascending, matching
+/// the columns of `axes`.
+#[derive(Clone, Copy, Debug)]
+pub struct Inertia {
+    pub mass: f64,
+    pub com: Vec3<f64>,
+    pub c: Mat3<f64>,
+    pub i: Mat3<f64>,
+    pub q: Mat3<f64>,
+    pub axes: Mat3<f64>,
+    pub moments: [f64; 3],
+}
+
+/// Reduce a cloud to its mass, centre of mass, and second-moment descriptors.
+pub fn inertia(cloud: &Cloud) -> Inertia {
+    let mass = cloud.total_mass();
+    let (mut cx, mut cy, mut cz) = (0.0, 0.0, 0.0);
+    for k in 0..cloud.len() {
+        cx += cloud.ms[k] * cloud.xs[k];
+        cy += cloud.ms[k] * cloud.ys[k];
+        cz += cloud.ms[k] * cloud.zs[k];
+    }
+    cx /= mass;
+    cy /= mass;
+    cz /= mass;
+
+    let mut c = [[0.0f64; 3]; 3];
+    for k in 0..cloud.len() {
+        let d = [cloud.xs[k] - cx, cloud.ys[k] - cy, cloud.zs[k] - cz];
+        for (a, &da) in d.iter().enumerate() {
+            for (b, &db) in d.iter().enumerate() {
+                c[a][b] += cloud.ms[k] * da * db;
+            }
+        }
+    }
+    let tr = c[0][0] + c[1][1] + c[2][2];
+
+    let mut i = [[0.0f64; 3]; 3];
+    let mut q = [[0.0f64; 3]; 3];
+    for (a, (irow, qrow)) in i.iter_mut().zip(q.iter_mut()).enumerate() {
+        for (b, (ie, qe)) in irow.iter_mut().zip(qrow.iter_mut()).enumerate() {
+            let kron = if a == b { 1.0 } else { 0.0 };
+            *ie = tr * kron - c[a][b];
+            *qe = 3.0 * c[a][b] - tr * kron;
+        }
+    }
+
+    // Principal frame from eig(C); moments of I are tr(C) − eigvals(C).
+    let (lambda, vecs) = jacobi(c);
+    let mut idx = [0usize, 1, 2];
+    idx.sort_by(|&a, &b| (tr - lambda[a]).total_cmp(&(tr - lambda[b])));
+    let moments = [
+        tr - lambda[idx[0]],
+        tr - lambda[idx[1]],
+        tr - lambda[idx[2]],
+    ];
+    let mut axes = [[0.0f64; 3]; 3];
+    for (col, &j) in idx.iter().enumerate() {
+        for (row, axrow) in axes.iter_mut().enumerate() {
+            axrow[col] = vecs[row][j];
+        }
+    }
+
+    Inertia {
+        mass,
+        com: Vec3::new(cx, cy, cz),
+        c: Mat3 { m: c },
+        i: Mat3 { m: i },
+        q: Mat3 { m: q },
+        axes: Mat3 { m: axes },
+        moments,
+    }
+}
+
+/// Cyclic Jacobi eigensolver for a symmetric 3×3 matrix: returns eigenvalues and eigenvectors (as
+/// the columns of the returned matrix). No external linalg dependency.
+fn jacobi(mut a: [[f64; 3]; 3]) -> ([f64; 3], [[f64; 3]; 3]) {
+    let mut v = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    for _ in 0..50 {
+        let off = a[0][1].abs() + a[0][2].abs() + a[1][2].abs();
+        if off <= 1e-300 {
+            break;
+        }
+        for (p, q) in [(0, 1), (0, 2), (1, 2)] {
+            if a[p][q].abs() <= 1e-300 {
+                continue;
+            }
+            let theta = (a[q][q] - a[p][p]) / (2.0 * a[p][q]);
+            let t = theta.signum() / (theta.abs() + (theta * theta + 1.0).sqrt());
+            let c = 1.0 / (t * t + 1.0).sqrt();
+            let s = t * c;
+            let (app, aqq, apq) = (a[p][p], a[q][q], a[p][q]);
+            a[p][p] = c * c * app - 2.0 * s * c * apq + s * s * aqq;
+            a[q][q] = s * s * app + 2.0 * s * c * apq + c * c * aqq;
+            a[p][q] = 0.0;
+            a[q][p] = 0.0;
+            let r = 3 - p - q;
+            let (arp, arq) = (a[r][p], a[r][q]);
+            a[r][p] = c * arp - s * arq;
+            a[p][r] = a[r][p];
+            a[r][q] = s * arp + c * arq;
+            a[q][r] = a[r][q];
+            for vrow in v.iter_mut() {
+                let (vp, vq) = (vrow[p], vrow[q]);
+                vrow[p] = c * vp - s * vq;
+                vrow[q] = s * vp + c * vq;
+            }
+        }
+    }
+    ([a[0][0], a[1][1], a[2][2]], v)
+}
+
 /// A term summed into the gravitational potential during the forward pass.
 ///
 /// The atmospheric-GGN source is the canonical impl: a contribution folded into the potential in

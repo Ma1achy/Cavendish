@@ -8,7 +8,7 @@
 //! `fn step<S: Scalar>(…)`, not f64-only, so a forward-mode `Dual` flows through at M8 (`compute`
 //! re-expresses the same step in WGSL at M6). The pendulum is separable and uses a plain leapfrog.
 
-use math::{Scalar, Vec3};
+use math::{Quat, Scalar, Vec3};
 
 /// A Scalar-generic quaternion as `[w, x, y, z]` (wxyz) — local to the integrator; `math::Quat`
 /// stays f64. Hamilton product `a ⊗ b`.
@@ -85,6 +85,76 @@ pub fn step<S: Scalar>(q: &mut [S; 4], omega: &mut Vec3<S>, inertia: Vec3<S>, h:
     *omega = Vec3::new(pi[0] * inv[0], pi[1] * inv[1], pi[2] * inv[2]);
 }
 
+/// Angular acceleration from Euler's equations: `ω̇ᵢ = (Iⱼ − Iₖ)/Iᵢ · ωⱼωₖ`.
+pub fn euler_accel(omega: Vec3<f64>, inertia: Vec3<f64>) -> Vec3<f64> {
+    Vec3::new(
+        (inertia.y - inertia.z) / inertia.x * omega.y * omega.z,
+        (inertia.z - inertia.x) / inertia.y * omega.z * omega.x,
+        (inertia.x - inertia.y) / inertia.z * omega.x * omega.y,
+    )
+}
+
+/// Integrate the torque-free Euler top from the identity orientation to time `t` on the `fine_dt`
+/// grid (a pure function of `t`). Returns the body → world orientation, body angular velocity, and
+/// body angular acceleration.
+pub fn free_rotation_state(
+    omega0: Vec3<f64>,
+    inertia: Vec3<f64>,
+    t: f64,
+    fine_dt: f64,
+) -> (Quat, Vec3<f64>, Vec3<f64>) {
+    let mut q = [1.0, 0.0, 0.0, 0.0];
+    let mut omega = omega0;
+    let n = (t / fine_dt).max(0.0) as usize;
+    for _ in 0..n {
+        step::<f64>(&mut q, &mut omega, inertia, fine_dt);
+    }
+    let rem = t - n as f64 * fine_dt;
+    if rem > 1e-15 {
+        step::<f64>(&mut q, &mut omega, inertia, rem);
+    }
+    (
+        Quat::new(q[0], q[1], q[2], q[3]),
+        omega,
+        euler_accel(omega, inertia),
+    )
+}
+
+/// One leapfrog (Störmer–Verlet) step of the physical pendulum `θ̈ = −k·sin θ`.
+fn leap_step(theta: &mut f64, thetadot: &mut f64, k: f64, h: f64) {
+    *thetadot += 0.5 * h * (-k * theta.sin());
+    *theta += h * *thetadot;
+    *thetadot += 0.5 * h * (-k * theta.sin());
+}
+
+/// Integrate the physical pendulum (leapfrog) about `axis` to time `t`, with `k = Mgd/I_pivot`.
+/// Returns the world orientation, angular velocity, and angular acceleration.
+pub fn libration_state(
+    axis: Vec3<f64>,
+    k: f64,
+    theta0: f64,
+    thetadot0: f64,
+    t: f64,
+    fine_dt: f64,
+) -> (Quat, Vec3<f64>, Vec3<f64>) {
+    let mut theta = theta0;
+    let mut thetadot = thetadot0;
+    let n = (t / fine_dt).max(0.0) as usize;
+    for _ in 0..n {
+        leap_step(&mut theta, &mut thetadot, k, fine_dt);
+    }
+    let rem = t - n as f64 * fine_dt;
+    if rem > 1e-15 {
+        leap_step(&mut theta, &mut thetadot, k, rem);
+    }
+    let axis_n = axis.scale(1.0 / axis.norm());
+    (
+        Quat::from_axis_angle(axis_n, theta),
+        axis_n.scale(thetadot),
+        axis_n.scale(-k * theta.sin()),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,20 +199,123 @@ mod tests {
     }
 
     #[test]
-    fn free_top_no_drift_smoke() {
-        // A quick guard that |L| and E stay put over a modest run (the full 1e4-period test is in lib).
+    fn quat_norm_preserved() {
+        // |q| = 1 after 10⁶ substeps (renormalised each step).
         let inertia = Vec3::new(2.0, 3.0, 5.0);
         let mut q = [1.0, 0.0, 0.0, 0.0];
-        let mut omega = Vec3::new(0.4, 0.1, 0.6);
-        let l0 = ang_mom(&omega, &inertia);
-        let e0 = energy(&omega, &inertia);
-        for _ in 0..100_000 {
-            step::<f64>(&mut q, &mut omega, inertia, 0.005);
+        let mut omega = Vec3::new(0.4, 0.7, 0.2);
+        for _ in 0..1_000_000 {
+            step::<f64>(&mut q, &mut omega, inertia, 0.001);
         }
-        let l = ang_mom(&omega, &inertia);
-        let e = energy(&omega, &inertia);
-        assert!((l - l0).abs() / l0 <= 1e-9, "|L| drift {l} vs {l0}");
-        assert!((e - e0).abs() / e0 <= 1e-6, "E drift {e} vs {e0}");
+        let n = (q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]).sqrt();
+        assert!((n - 1.0).abs() <= 1e-12, "|q| = {n}");
+    }
+
+    #[test]
+    fn free_top_invariants() {
+        // E and |L| bounded with NO secular drift over ~10⁴ tumble periods at h = period/100.
+        let inertia = Vec3::new(2.0, 3.0, 5.0);
+        let omega0 = Vec3::new(0.4, 0.1, 0.6);
+        let period = std::f64::consts::TAU / omega0.norm();
+        let h = period / 100.0;
+        let steps = 1_000_000usize;
+        let mut q = [1.0, 0.0, 0.0, 0.0];
+        let mut omega = omega0;
+        let (l0, e0) = (ang_mom(&omega, &inertia), energy(&omega, &inertia));
+        let (mut l_dev, mut e_dev) = (0.0f64, 0.0f64);
+        // Half-run means of E: a secular drift moves the mean; a bounded oscillation does not.
+        let (mut e_first, mut e_last) = (0.0f64, 0.0f64);
+        for s in 0..steps {
+            step::<f64>(&mut q, &mut omega, inertia, h);
+            let e = energy(&omega, &inertia);
+            l_dev = l_dev.max((ang_mom(&omega, &inertia) - l0).abs() / l0);
+            e_dev = e_dev.max((e - e0).abs() / e0);
+            if s < steps / 2 {
+                e_first += e;
+            } else {
+                e_last += e;
+            }
+        }
+        let mean_first = e_first / (steps / 2) as f64;
+        let mean_last = e_last / (steps - steps / 2) as f64;
+        let secular = (mean_last - mean_first).abs() / e0;
+        eprintln!("free_top: |L| dev {l_dev:.2e}  E osc {e_dev:.2e}  E secular {secular:.2e}");
+        // |L| is conserved to machine precision by construction (every substep is a rotation of Π).
+        assert!(l_dev <= 1e-6, "|L| drift {l_dev:.2e}");
+        // E oscillates (bounded) but does not drift: the half-run means agree to ≤1e-6.
+        assert!(secular <= 1e-6, "E secular drift {secular:.2e}");
+    }
+
+    #[test]
+    fn pendulum_energy() {
+        let k = 3.0; // Mgd/I_pivot
+        let expected = std::f64::consts::TAU / k.sqrt();
+
+        // Small-angle period = 2π√(I_p/Mgd) = 2π/√k, to ≤1e-4.
+        {
+            let h = expected / 2000.0;
+            let (mut theta, mut thetadot) = (0.001, 0.0);
+            let (mut t, mut prev) = (0.0, theta);
+            let quarter = loop {
+                leap_step(&mut theta, &mut thetadot, k, h);
+                t += h;
+                if theta <= 0.0 {
+                    let frac = prev / (prev - theta); // linear interpolation of the zero-crossing
+                    break t - h + frac * h;
+                }
+                prev = theta;
+            };
+            let period = 4.0 * quarter;
+            assert!(
+                (period - expected).abs() / expected <= 1e-4,
+                "period {period} vs {expected}"
+            );
+        }
+
+        // Energy bounded (no secular drift) over ~10⁴ periods, at a larger swing.
+        {
+            let h = expected / 200.0;
+            let steps = 2_000_000usize;
+            let (mut theta, mut thetadot) = (0.6, 0.0);
+            let e = |th: f64, thd: f64| 0.5 * thd * thd - k * th.cos();
+            let e0 = e(theta, thetadot);
+            let (mut e_first, mut e_last) = (0.0f64, 0.0f64);
+            for s in 0..steps {
+                leap_step(&mut theta, &mut thetadot, k, h);
+                let en = e(theta, thetadot);
+                if s < steps / 2 {
+                    e_first += en;
+                } else {
+                    e_last += en;
+                }
+            }
+            let secular =
+                (e_last / (steps / 2) as f64 - e_first / (steps / 2) as f64).abs() / e0.abs();
+            assert!(secular <= 1e-6, "pendulum E secular drift {secular:.2e}");
+        }
+    }
+
+    #[test]
+    fn axisymmetric_analytic() {
+        // Symmetric top (I₁ = I₂): ω precesses about ê₃ at Ω = (I₃−I₁)/I₁·ω₃.
+        let inertia = Vec3::new(2.0, 2.0, 5.0);
+        let omega3 = 0.6;
+        let big_omega = (inertia.z - inertia.x) / inertia.x * omega3;
+        let mut q = [1.0, 0.0, 0.0, 0.0];
+        let mut omega = Vec3::new(0.3, 0.0, omega3);
+        let h = 1e-4;
+        let tau = 1.0; // Ω·τ ≈ 0.9 < π, so the phase does not wrap
+        let steps = (tau / h) as usize;
+        for _ in 0..steps {
+            step::<f64>(&mut q, &mut omega, inertia, h);
+        }
+        let t = steps as f64 * h;
+        let measured = omega.y.atan2(omega.x) / t; // phase of (ω₁, ω₂) accumulated over t
+        eprintln!("axisymmetric: measured Ω {measured:.9} vs {big_omega:.9}");
+        assert!(
+            (measured - big_omega).abs() / big_omega.abs() <= 1e-8,
+            "precession {measured} vs {big_omega}"
+        );
     }
 
     fn ang_mom(w: &Vec3<f64>, i: &Vec3<f64>) -> f64 {

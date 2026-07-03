@@ -11,7 +11,7 @@
 mod integrator;
 pub use integrator::step;
 
-use gravity::Cloud;
+use gravity::{Cloud, Inertia};
 use math::{Isometry3, Quat, Vec3};
 use shape::{voxelise, MassSpec, Registry, ShapeError, Solid, VoxelParams};
 
@@ -129,16 +129,32 @@ impl Timing {
     }
 }
 
-/// The `t → R` orientation. `Fixed` (identity) at M2; dynamic rotations are M4.
+/// The `t → R` orientation. `Fixed` is closed-form; `FreeRotation` and `Libration` are the M4 ODE
+/// motions, integrated by `Source` (which holds the cloud's inertia).
 #[derive(Clone, Copy, Debug)]
 pub enum Orient {
     Fixed(Quat),
+    /// Torque-free Euler top from an initial body angular velocity `ω₀`.
+    FreeRotation {
+        omega0: Vec3<f64>,
+    },
+    /// Physical pendulum about a fixed pivot axis at distance `pivot_distance` from the CoM.
+    Libration {
+        axis: Vec3<f64>,
+        pivot_distance: f64,
+        theta0: f64,
+        thetadot0: f64,
+    },
 }
 
 impl Orient {
+    /// Closed-form rotation for `Fixed`; identity for the ODE variants (their orientation is
+    /// integrated by `Source`, and only the `Trajectory` translation — orient-independent — is read
+    /// from the closed-form path here).
     fn rotation(&self, _t: f64) -> Quat {
         match *self {
             Orient::Fixed(q) => q,
+            _ => Quat::identity(),
         }
     }
 }
@@ -185,15 +201,35 @@ impl Trajectory {
     }
 }
 
-/// A body cloud carried by a trajectory.
+/// Local gravity for the physical pendulum (spec `tab:params`).
+const G_ACCEL: f64 = 9.81;
+/// Default rotation-integration substep.
+const ROT_FINE_DT: f64 = 0.01;
+
+/// A body cloud carried by a trajectory. Carries the cloud's inertia so the ODE orientations can be
+/// integrated from the shape alone plus an initial spin.
 pub struct Source {
     cloud: Cloud,
     trajectory: Trajectory,
+    inertia: Inertia,
+    fine_dt: f64,
 }
 
 impl Source {
     pub fn new(cloud: Cloud, trajectory: Trajectory) -> Self {
-        Source { cloud, trajectory }
+        let inertia = gravity::inertia(&cloud);
+        Source {
+            cloud,
+            trajectory,
+            inertia,
+            fine_dt: ROT_FINE_DT,
+        }
+    }
+
+    /// Set the rotation-integration substep (builder style; used by the Dzhanibekov step-stability check).
+    pub fn with_fine_dt(mut self, fine_dt: f64) -> Self {
+        self.fine_dt = fine_dt;
+        self
     }
 
     /// Voxelise a primitive (cached at unit mass) and scale to `mass`, then attach the trajectory.
@@ -207,10 +243,45 @@ impl Source {
         key: u64,
     ) -> Result<Self, ShapeError> {
         let unit = registry.resolve(key, || voxelise(solid, voxel, MassSpec::Total(1.0)))?;
-        Ok(Source {
-            cloud: shape::scale_mass(&unit, mass),
-            trajectory,
-        })
+        Ok(Source::new(shape::scale_mass(&unit, mass), trajectory))
+    }
+
+    /// Principal moments in the body frame (the body is authored in its principal frame at v1).
+    fn principal_moments(&self) -> Vec3<f64> {
+        let m = &self.inertia.i.m;
+        Vec3::new(m[0][0], m[1][1], m[2][2])
+    }
+
+    /// World orientation, body angular velocity, and body angular acceleration at `t`.
+    fn rotation_state(&self, t: f64) -> (Quat, Vec3<f64>, Vec3<f64>) {
+        let pr = self.trajectory.placement.rotation;
+        let zero = Vec3::new(0.0, 0.0, 0.0);
+        match self.trajectory.orient {
+            Orient::Fixed(q) => (pr * q, zero, zero),
+            Orient::FreeRotation { omega0 } => {
+                let (q, w, wd) = integrator::free_rotation_state(
+                    omega0,
+                    self.principal_moments(),
+                    t,
+                    self.fine_dt,
+                );
+                (pr * q, w, wd)
+            }
+            Orient::Libration {
+                axis,
+                pivot_distance,
+                theta0,
+                thetadot0,
+            } => {
+                let axis_n = axis.scale(1.0 / axis.norm());
+                let i_axis = axis_n.dot(self.inertia.i.mul_vec(axis_n)); // moment about the pivot axis
+                let i_pivot = i_axis + self.inertia.mass * pivot_distance * pivot_distance;
+                let k = self.inertia.mass * G_ACCEL * pivot_distance / i_pivot;
+                let (q, w, wd) =
+                    integrator::libration_state(axis_n, k, theta0, thetadot0, t, self.fine_dt);
+                (pr * q, w, wd)
+            }
+        }
     }
 }
 
@@ -219,10 +290,20 @@ impl SourceDynamics for Source {
         &self.cloud
     }
     fn pose_at(&self, t: f64) -> Isometry3 {
-        self.trajectory.pose_at(t)
+        // Translation is orient-independent; the rotation comes from the (possibly integrated) orient.
+        let translation = self.trajectory.pose_at(t).translation;
+        let (rotation, _, _) = self.rotation_state(t);
+        Isometry3::new(rotation, translation)
     }
     fn motion_at(&self, t: f64) -> BodyMotion {
-        self.trajectory.motion_at(t)
+        let m = self.trajectory.motion_at(t); // CoM linear velocity/acceleration
+        let (_, angular_velocity, angular_acceleration) = self.rotation_state(t);
+        BodyMotion {
+            velocity: m.velocity,
+            acceleration: m.acceleration,
+            angular_velocity,
+            angular_acceleration,
+        }
     }
 }
 
