@@ -243,23 +243,23 @@ viewer secondary: two Rust crates and one Python package.
 
 \begin{lstlisting}
 cavendish/
-  crates/
-    sim-core/             # the engine -- all physics, no Python, no UI
-      gravity/            # potential/field/tensor; elements; multipole; oracle primitives
-      reference/          # independent oracle: George's cases by direct quadrature (math only)
-      shape/              # geometry -> mass: primitives + mesh import, voxeliser (Solid seam)
-      compute/            # CPU reference + GPU (wgpu) field-evaluation backend
-      source/             # SourceDynamics (rigid); Trajectory library; bodies via shape
-      instrument/         # detector array: gradiometer geometry, placements; arm construction; PhaseModel
-      uldm/               # closed-form coherent dark-matter phase (common-mode signal)
-      noise/              # NoiseSource stack
-      scenario/           # Scenario assembly + prior/sampler + measurement Schedule
-      state/              # StateBundle (multi-detector signal + ground-truth tracks) + field selection
-      config/             # the one typed config schema
-      generate/           # per-scenario evaluation + batch (GPU dispatch / rayon)
-      analysis/           # Cramer-Rao / Fisher information via the Dual forward model
-    viewer/               # eframe/egui + wgpu (one-way dep on sim-core)
-  sdk/                    # maturin/PyO3 package: run()/stream() + CLI entry
+  crates/                 # the flat workspace; sim-core (the engine) = every crate but sdk/viewer
+    math/                 # L0: vectors, quaternions, Isometry3, the Scalar trait (autodiff seam)
+    config/               # L0: the one typed config schema (Prior, FieldSet)
+    gravity/              # L1: Cloud, potential/field/gradient-tensor; C->I/Q reduction; FieldContribution
+    reference/            # L1: independent oracle -- George's cases by direct quadrature (math only)
+    shape/                # L2: geometry -> mass: primitives + voxeliser (Solid seam); mesh import (M10)
+    source/               # L2: SourceDynamics; Trajectory library; rotation integrator; bodies via shape
+    instrument/           # L2: detector array: gradiometer geometry, placements, arms; PhaseModel
+    uldm/                 # L2: closed-form coherent dark-matter phase (common-mode signal)
+    noise/                # L2: NoiseSource stack + atmospheric-GGN FieldContribution adaptor
+    compute/              # L2: CPU reference + GPU (wgpu) field-evaluation backend
+    scenario/             # L3: Scenario assembly + Prior/sampler + measurement Schedule
+    state/                # L3: StateBundle (multi-detector signal + ground-truth tracks) + FieldSet
+    generate/             # L4: per-scenario evaluation + batch (GPU dispatch / rayon)
+    analysis/             # L5: Cramer-Rao / Fisher information via the Dual forward model
+    sdk/                  # consumer: maturin/PyO3 package -- run()/stream() + CLI entry
+    viewer/               # consumer: eframe/egui + wgpu (one-way dep on the engine)
   docs/
 \end{lstlisting}
 

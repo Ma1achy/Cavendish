@@ -135,6 +135,11 @@ impl Timing {
 pub enum Orient {
     Fixed(Quat),
     /// Torque-free Euler top from an initial body angular velocity `ω₀`.
+    ///
+    /// **Precondition:** the body must be authored in its **principal frame** — the integrator reads
+    /// the principal moments from the diagonal of the body-frame inertia and interprets `ω₀` there.
+    /// This holds for v1's axis-aligned primitives; an arbitrary (M10) mesh with off-diagonal inertia
+    /// would need `ω₀` and the cloud rotated into the principal frame first.
     FreeRotation {
         omega0: Vec3<f64>,
     },

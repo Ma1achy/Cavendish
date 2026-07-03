@@ -40,8 +40,8 @@ pub trait SourceDynamics {
 ```
 
 `body_cloud` is built once (§6) and never changes — rigidity is structural. `pose_at` is
-closed-form for most motions and **ODE-derived (integrated, cached)** for the pendulum's timing and
-free rotation's orientation (§5). `motion_at` supplies the kinematic state the `StateBundle`
+closed-form for most motions and **ODE-derived (integrated, cached)** for the pendulum's and the
+free top's orientation (`Libration`/`FreeRotation`, §5). `motion_at` supplies the kinematic state the `StateBundle`
 records (it is not needed by the field evaluation). The deformable extension (a `world_cloud(t)`
 that varies) is the seam's growth point — noted, not built (`DESIGN.md` §3.1).
 
@@ -75,8 +75,9 @@ struct Trajectory { placement: Isometry3, path: Path, timing: Timing, orient: Or
                     segments: Option<Vec<Segment>> }   // §8 time-sequencing
 enum Path   { Static, LinearPass{a,b}, Oscillation{axes,amp,freq,phase},
               Circular{radius,freq}, Lift{height,profile} }
-enum Timing { Uniform{speed}, Profile{trapezoid}, PendulumOde{length,theta0,thetadot0} }
-enum Orient { Fixed(Quat), Tangent, Spin{axis,rate}, Libration{axis,amp,freq},
+enum Timing { Uniform{speed}, Profile{trapezoid} }
+enum Orient { Fixed(Quat), Tangent, Spin{axis,rate},
+              Libration{axis,pivot_distance,theta0,thetadot0},   // the physical pendulum (ODE, §5)
               FreeRotation{omega0} }
 ```
 
@@ -96,21 +97,23 @@ Evaluated directly at any `t`, no state (so trivially parallel and re-entrant on
 
 Orient closed-forms:
 - **`Fixed`** constant; **`Tangent`** aligns a body axis to `dp/dt`; **`Spin{axis,rate}`**
-  `R(t)=R₀·exp(t·rate·[axis]_×)` (steady); **`Libration{axis,amp,freq}`**
-  `R(t)=R₀·rot(axis, amp·sin2πfreq t)` (rocking).
+  `R(t)=R₀·exp(t·rate·[axis]_×)` (steady). `Libration` is the physical pendulum — an ODE motion, not
+  closed-form (§5).
 
 ---
 
 ## 5. The two ODE motions and the shared symplectic integrator
 
-The rotation work (`rigid-body-rotation.md`) lands here. **Pendulum** (timing) and **FreeRotation**
-(orientation) are the only state-carrying motions; both step one **hand-written symplectic
+The rotation work (`rigid-body-rotation.md`) lands here. **`Libration`** (the pendulum) and
+**`FreeRotation`** (the Euler top) are the only state-carrying motions — both live in **`Orient`**
+(orientation dynamics, not a `Timing` reparameterisation) and step a **hand-written structure-preserving
 integrator**, `fn step<S: Scalar>(state, dt) -> state`.
 
-- **Pendulum (timing).** State `(θ, θ̇)`, law `θ̈ = −(g/L)sinθ`. Semi-implicit Euler
-  (`θ̇ ← θ̇ + θ̈·dt; θ ← θ + θ̇·dt`) keeps energy bounded over arbitrarily long runs — for a
-  periodic source whose value is its spectrum, energy drift is spectral drift (spec
-  `nfr:symplectic`). Position rides the arc; the 3-D driven pendulum is the **chaotic** source.
+- **`Libration` (the physical pendulum).** State `(θ, θ̇)`, law `θ̈ = −(Mgd/I_pivot)·sinθ`, with the
+  parallel-axis `I_pivot = I_axis + Md²` (`d` = pivot→CoM distance, from the cloud's inertia). A
+  **leapfrog** (Störmer–Verlet) keeps energy bounded over arbitrarily long runs — for a periodic
+  source whose value is its spectrum, energy drift is spectral drift (spec `nfr:symplectic`). The 3-D
+  driven pendulum is the **chaotic** source.
 - **FreeRotation (orientation).** State `(ω_body, q)`, **torque-free Euler equations**
   `I₁ω̇₁=(I₂−I₃)ω₂ω₃` (cyclic) with `q̇ = ½ q⊗(0,ω)`. A structure-preserving step conserves energy
   and `|L|`, so the polhode stays **closed** — essential for faithful intermediate-axis
