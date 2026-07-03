@@ -35,6 +35,7 @@ dependencies = [
  "gravity",
  "instrument",
  "noise",
+ "reference",
  "scenario",
  "state",
  "uldm",
