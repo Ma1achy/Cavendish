@@ -282,6 +282,56 @@ mod tests {
     }
 
     #[test]
+    fn moment_identities() {
+        // I = tr(C)𝟙 − C and Q = 3C − tr(C)𝟙 hold to machine precision; the principal axes
+        // diagonalise C (so they are shared by I and Q); an analytic rod pins the moments.
+        let mut rng = Lcg(0x0A11_CE00);
+        let mut elems = Vec::new();
+        for _ in 0..60 {
+            elems.push((
+                rng.range(-2.0, 2.0),
+                rng.range(-3.0, 3.0),
+                rng.range(-1.0, 4.0),
+                rng.range(0.5, 3.0),
+            ));
+        }
+        let r = inertia(&Cloud::from_elements(&elems));
+        let tr = r.c.m[0][0] + r.c.m[1][1] + r.c.m[2][2];
+        let scale = tr.abs().max(1.0);
+        for a in 0..3 {
+            for b in 0..3 {
+                let kron = if a == b { 1.0 } else { 0.0 };
+                assert!(
+                    (r.i.m[a][b] - (tr * kron - r.c.m[a][b])).abs() / scale <= 1e-10,
+                    "I"
+                );
+                assert!(
+                    (r.q.m[a][b] - (3.0 * r.c.m[a][b] - tr * kron)).abs() / scale <= 1e-10,
+                    "Q"
+                );
+            }
+        }
+        // AᵀCA is diagonal — the axes are eigenvectors of C, shared by I and Q.
+        let d = r.axes.transpose() * r.c * r.axes;
+        let off = d.m[0][1].abs() + d.m[0][2].abs() + d.m[1][2].abs();
+        assert!(off / scale <= 1e-10, "axes do not diagonalise C: {off}");
+
+        // Analytic rod along z: point masses m/2 at ±L/2 → moments (0, mL²/4, mL²/4).
+        let (m, l) = (4.0, 3.0);
+        let rod =
+            Cloud::from_elements(&[(0.0, 0.0, l / 2.0, m / 2.0), (0.0, 0.0, -l / 2.0, m / 2.0)]);
+        let rr = inertia(&rod);
+        let mi = m * l * l / 4.0;
+        for (k, &want) in [0.0, mi, mi].iter().enumerate() {
+            assert!(
+                (rr.moments[k] - want).abs() / mi <= 1e-10,
+                "rod moment {k}: {}",
+                rr.moments[k]
+            );
+        }
+    }
+
+    #[test]
     fn gamma_symmetric_tracefree() {
         let mut rng = Lcg(0x51A7_1CE5);
         for _ in 0..200 {

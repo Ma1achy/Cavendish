@@ -178,6 +178,12 @@ impl Trajectory {
         }
     }
 
+    /// Set the orientation motion (builder style).
+    pub fn with_orient(mut self, orient: Orient) -> Self {
+        self.orient = orient;
+        self
+    }
+
     pub fn pose_at(&self, t: f64) -> Isometry3 {
         let (u, _, _) = self.timing.at(t);
         let (p, _, _) = self.path.at(u);

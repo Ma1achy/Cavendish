@@ -4,6 +4,7 @@
 //!
 //! Re-exports the seam names it consumes so the reachability edges hold up to `generate`.
 
+pub use config::FieldSet;
 pub use instrument::{Detector, DetectorArray, PhaseModel, PhaseModelKind};
 pub use noise::{KeyRng, NoiseSource};
 pub use source::{
@@ -34,6 +35,8 @@ pub struct Scenario {
     /// Which `PhaseModel` `generate` uses (default `PropagationIntegral`, the reference). The config
     /// crate stands up at M6, so the selector rides on the scenario for now.
     pub phase_model: PhaseModelKind,
+    /// Which optional bundle field groups to compute (default: none).
+    pub field_set: FieldSet,
 }
 
 impl Scenario {
@@ -49,12 +52,19 @@ impl Scenario {
             schedule,
             seed,
             phase_model: PhaseModelKind::default(),
+            field_set: FieldSet::default(),
         }
     }
 
     /// Select the phase model (builder style).
     pub fn with_phase_model(mut self, kind: PhaseModelKind) -> Self {
         self.phase_model = kind;
+        self
+    }
+
+    /// Select which optional field groups to compute (builder style).
+    pub fn with_field_set(mut self, field_set: FieldSet) -> Self {
+        self.field_set = field_set;
         self
     }
 }
