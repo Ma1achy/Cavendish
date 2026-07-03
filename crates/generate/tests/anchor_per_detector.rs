@@ -36,7 +36,7 @@ fn cav_peak(det: &Detector, times: &[f64]) -> f64 {
         .iter()
         .map(|&t| {
             let src = Source::new(sphere(MASS), Trajectory::new(place, path, timing));
-            model.delta_phi(&[&src], det, t).abs()
+            model.delta_phi(&[&src], &[], det, t).abs()
         })
         .fold(0.0, f64::max)
 }

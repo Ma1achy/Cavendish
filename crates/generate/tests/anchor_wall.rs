@@ -36,7 +36,7 @@ fn cavendish_dc_phase() -> f64 {
     .unwrap();
     let pose = Isometry3::new(Quat::identity(), Vec3::new(CENTRE[0], CENTRE[1], CENTRE[2]));
     let src = Prescribed::fixed(cloud, pose);
-    PropagationIntegral::default().delta_phi(&[&src], &Detector::new(BASE_Z), 2.0)
+    PropagationIntegral::default().delta_phi(&[&src], &[], &Detector::new(BASE_Z), 2.0)
 }
 
 #[test]

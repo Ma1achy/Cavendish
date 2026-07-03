@@ -196,7 +196,7 @@ impl AtmoField {
         let a = cfg.amplitude * (2.0 / cfg.n_modes as f64).sqrt();
         let modes = (0..cfg.n_modes)
             .map(|_| {
-                let kmag = k_typ * (0.5 + rng.next_unit()); // in [0.5, 1.5]·k_typ
+                let kmag = k_typ * (0.4 + 2.0 * rng.next_unit()); // broadband, in [0.4, 2.4]·k_typ
                 let cos_th = 2.0 * rng.next_unit() - 1.0;
                 let sin_th = (1.0 - cos_th * cos_th).max(0.0).sqrt();
                 let phi = TAU * rng.next_unit();

@@ -52,4 +52,16 @@ pub struct StateBundle {
     pub source_axes: Option<Vec<[[f64; 3]; 3]>>,
     /// Gravitational quadrupole `Q` (body frame), shape `(S, 3, 3)`.
     pub source_quadrupole: Option<Vec<[[f64; 3]; 3]>>,
+
+    // Channel decomposition (spec `sec:contracts`) — `signal` = targets + atmospheric + uldm + noise.
+    /// The post-hoc noise realisation, shape `(T, D)` — always recorded (`signal − signal_noise` = clean).
+    pub signal_noise: Vec<Vec<f64>>,
+    /// ULDM common-mode phase, shape `(T,)` — optional; identical across detectors by construction.
+    pub signal_uldm: Option<Vec<f64>>,
+    /// Targets-only gravitational channel, shape `(T, D)` — optional (gated by `FieldSet.decomposition`).
+    pub signal_targets: Option<Vec<Vec<f64>>>,
+    /// Atmospheric-only gravitational channel, shape `(T, D)` — optional (gated by decomposition).
+    pub signal_atmospheric: Option<Vec<Vec<f64>>>,
+    /// The two single-interferometer phases before the double difference, shape `(T, D, 2)` — optional.
+    pub signal_per_ifo: Option<Vec<Vec<[f64; 2]>>>,
 }

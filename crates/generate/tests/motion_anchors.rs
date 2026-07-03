@@ -29,7 +29,7 @@ fn point_sphere(mass: f64) -> gravity::Cloud {
 fn cav_phase(cloud: gravity::Cloud, standoff: f64, path: Path, timing: Timing, t: f64) -> f64 {
     let place = Isometry3::new(Quat::identity(), Vec3::new(standoff, 0.0, 0.0));
     let src = Source::new(cloud, Trajectory::new(place, path, timing));
-    PropagationIntegral::default().delta_phi(&[&src], &Detector::new(BASE_Z), t)
+    PropagationIntegral::default().delta_phi(&[&src], &[], &Detector::new(BASE_Z), t)
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn anchor_oscillation() {
         .map(|&t| {
             let place = Isometry3::new(Quat::identity(), Vec3::new(d, 0.0, placement_offset));
             let src = Source::new(point_sphere(mass), Trajectory::new(place, path, timing));
-            PropagationIntegral::default().delta_phi(&[&src], &Detector::new(BASE_Z), t)
+            PropagationIntegral::default().delta_phi(&[&src], &[], &Detector::new(BASE_Z), t)
         })
         .collect();
     let reference: Vec<f64> = times

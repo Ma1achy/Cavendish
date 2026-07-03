@@ -7,7 +7,7 @@
 //! `PropagationIntegral` is the reference phase model: quadrature of the differenced potential along
 //! the arms (spec `eq:singlephi`), double-differenced across the two IFOs (spec `eq:doublediff`).
 
-use gravity::{gradient_tensor, potential};
+use gravity::{gradient_tensor, potential, FieldContribution};
 use math::{Isometry3, Quat, Vec3};
 use source::SourceDynamics;
 
@@ -190,12 +190,20 @@ fn simpson<F: Fn(f64) -> f64>(a: f64, b: f64, step: f64, f: F) -> f64 {
 /// Maps a scene of sources to one gradiometer's differential phase at a measurement time.
 ///
 /// # Contract (spec `sec:contracts`, `PhaseModel`)
-/// - **Method.** `delta_phi(sources, det, t) -> ΔΦ_ℓ` in radians.
-/// - **Pre.** each source queryable on `[t − 2T, t]`; the arms are built.
-/// - **Post.** Returns the double-difference (spec `eq:doublediff`); linear in source mass
-///   (`delta_phi(α·m) = α·delta_phi(m)` to tolerance); deterministic.
+/// - **Method.** `delta_phi(sources, fields, det, t) -> ΔΦ_ℓ` in radians. The world potential is the
+///   sum over rigid-body `sources` **and** analytic `fields` (atmospheric GGN) — decomposition runs
+///   with subsets of the two lists.
+/// - **Pre.** each contributor queryable on `[t − 2T, t]`; the arms are built.
+/// - **Post.** Returns the double-difference (spec `eq:doublediff`); linear in the potential (so the
+///   channels superpose exactly); deterministic.
 pub trait PhaseModel {
-    fn delta_phi(&self, sources: &[&dyn SourceDynamics], det: &Detector, t: f64) -> f64;
+    fn delta_phi(
+        &self,
+        sources: &[&dyn SourceDynamics],
+        fields: &[&dyn FieldContribution<f64>],
+        det: &Detector,
+        t: f64,
+    ) -> f64;
 }
 
 /// The reference phase model: faithful quadrature of the propagation-phase integral (spec v1).
@@ -208,13 +216,19 @@ impl PropagationIntegral {
     pub fn new(cfg: InstrumentConfig) -> Self {
         PropagationIntegral { cfg }
     }
-}
 
-impl PhaseModel for PropagationIntegral {
-    fn delta_phi(&self, sources: &[&dyn SourceDynamics], det: &Detector, t: f64) -> f64 {
+    /// The two single-interferometer phases `[δφ₁, δφ₂]` before the double difference — the potential
+    /// summed over rigid-body `sources` and analytic `fields` along each interferometer's arms.
+    pub fn per_ifo(
+        &self,
+        sources: &[&dyn SourceDynamics],
+        fields: &[&dyn FieldContribution<f64>],
+        det: &Detector,
+        t: f64,
+    ) -> [f64; 2] {
         let ifos = build_arms(&self.cfg);
         let two_t = 2.0 * self.cfg.t_half;
-        // δφ for one interferometer: (m_A/ħ) ∫[V(z_u) − V(z_l)] dt over the flight (external source only).
+        // δφ for one interferometer: (m_A/ħ) ∫[V(z_u) − V(z_l)] dt over the flight.
         let dphi = |ifo: &Ifo| -> f64 {
             let integrand = |flight: f64| -> f64 {
                 let t_abs = (t - two_t) + flight;
@@ -233,6 +247,10 @@ impl PhaseModel for PropagationIntegral {
                     let body = src.body_cloud();
                     acc += potential(body, inv.apply(pu)) - potential(body, inv.apply(pl));
                 }
+                // Field contributions (atmospheric GGN) are evaluated in the world frame directly.
+                for f in fields {
+                    acc += f.potential(pu, t_abs) - f.potential(pl, t_abs);
+                }
                 acc
             };
             // Split at the π-pulse (τ = T): the arm velocity kinks there, so Simpson keeps its
@@ -242,7 +260,20 @@ impl PhaseModel for PropagationIntegral {
                 + simpson(half, two_t, self.cfg.fine_dt, integrand);
             (self.cfg.m_a / self.cfg.hbar) * acc
         };
-        dphi(&ifos[1]) - dphi(&ifos[0]) // ΔΦ = δφ₂ − δφ₁ (spec sign)
+        [dphi(&ifos[0]), dphi(&ifos[1])]
+    }
+}
+
+impl PhaseModel for PropagationIntegral {
+    fn delta_phi(
+        &self,
+        sources: &[&dyn SourceDynamics],
+        fields: &[&dyn FieldContribution<f64>],
+        det: &Detector,
+        t: f64,
+    ) -> f64 {
+        let [d1, d2] = self.per_ifo(sources, fields, det, t);
+        d2 - d1 // ΔΦ = δφ₂ − δφ₁ (spec sign)
     }
 }
 
@@ -277,13 +308,22 @@ impl QuasiStaticGradient {
 }
 
 impl PhaseModel for QuasiStaticGradient {
-    fn delta_phi(&self, sources: &[&dyn SourceDynamics], det: &Detector, t: f64) -> f64 {
+    fn delta_phi(
+        &self,
+        sources: &[&dyn SourceDynamics],
+        fields: &[&dyn FieldContribution<f64>],
+        det: &Detector,
+        t: f64,
+    ) -> f64 {
         let p_det = det.midpoint(&self.cfg);
-        // World-frame vertical gradient at the tower midpoint, summed over sources.
+        // World-frame vertical gradient at the tower midpoint, summed over sources and fields.
         let mut gamma_zz = 0.0;
         for src in sources {
             let world = src.body_cloud().transformed(&src.pose_at(t));
             gamma_zz += gradient_tensor(&world, p_det).m[2][2];
+        }
+        for f in fields {
+            gamma_zz += f.gradient_tensor(p_det, t).m[2][2];
         }
         // Leading minus matches PI's δφ₂ − δφ₁ sign in the uniform-gradient limit (∫(z_u−z_l)dt = v_rec·T²).
         -self.k_eff() * gamma_zz * self.cfg.ifo_sep * self.cfg.t_half * self.cfg.t_half
@@ -371,10 +411,10 @@ mod tests {
             )
         };
         let src1 = wall(1.0);
-        let dphi1 = model.delta_phi(&[&src1], &det, 2.0);
+        let dphi1 = model.delta_phi(&[&src1], &[], &det, 2.0);
         for alpha in [0.1, 2.0, 10.0] {
             let src = wall(alpha);
-            let dphi = model.delta_phi(&[&src], &det, 2.0);
+            let dphi = model.delta_phi(&[&src], &[], &det, 2.0);
             assert!((dphi - alpha * dphi1).abs() / (alpha * dphi1).abs() <= 1e-12);
         }
     }
@@ -431,8 +471,8 @@ mod tests {
         let det = Detector::new(0.0);
         let cloud = Cloud::from_elements(&[(100.0, 0.0, 2.5, 1.0e6)]);
         let src = Prescribed::fixed(cloud, Isometry3::identity());
-        let pi = PropagationIntegral::default().delta_phi(&[&src], &det, 2.0);
-        let qs = QuasiStaticGradient::default().delta_phi(&[&src], &det, 2.0);
+        let pi = PropagationIntegral::default().delta_phi(&[&src], &[], &det, 2.0);
+        let qs = QuasiStaticGradient::default().delta_phi(&[&src], &[], &det, 2.0);
         let delta = (pi - qs).abs() / pi.abs();
         eprintln!(
             "qs_vs_pi_far: PI={pi:.4e} QS={qs:.4e} delta={:.3}%",

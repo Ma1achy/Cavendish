@@ -67,7 +67,10 @@ fn shape_fields() {
             Schedule::uniform(2.0, 2),
             0,
         )
-        .with_field_set(FieldSet { shape: on })
+        .with_field_set(FieldSet {
+            shape: on,
+            decomposition: false,
+        })
     };
 
     let on = run(&build(true));
@@ -108,7 +111,7 @@ fn spin_phi(solid: &dyn Solid, mass: f64, standoff: f64) -> (f64, f64) {
     let period = std::f64::consts::PI; // two quadrupole periods (Q has 2-fold symmetry)
     let n = 24;
     let phis: Vec<f64> = (0..n)
-        .map(|k| model.delta_phi(&[&src], &det, k as f64 / n as f64 * period))
+        .map(|k| model.delta_phi(&[&src], &[], &det, k as f64 / n as f64 * period))
         .collect();
     let mean = phis.iter().sum::<f64>() / n as f64;
     let p2p = phis.iter().cloned().fold(f64::MIN, f64::max)
@@ -187,7 +190,7 @@ fn pure_quadrupole() {
         gravity::Cloud::from_elements(&[(far, 0.0, BODY_Z, 100.0)]),
         Isometry3::identity(),
     );
-    let mono = PropagationIntegral::default().delta_phi(&[&point], &Detector::new(0.0), 0.0);
+    let mono = PropagationIntegral::default().delta_phi(&[&point], &[], &Detector::new(0.0), 0.0);
     let (far_mean, _) = spin_phi(
         &Cuboid {
             half: [0.2, 0.5, 0.4],
