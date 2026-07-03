@@ -9,17 +9,20 @@
 pub use compute::{ComputeBackend, EvalBatch, SignalBatch};
 pub use gravity::FieldContribution;
 pub use scenario::{
-    BodyMotion, Detector, KeyRng, NoiseSource, Orient, Path, PhaseModel, Prescribed, Scenario,
-    Schedule, Source, SourceDynamics, Timing, Trajectory,
+    BodyMotion, Detector, DetectorArray, KeyRng, NoiseSource, Orient, Path, PhaseModel,
+    PhaseModelKind, Prescribed, Scenario, Schedule, Source, SourceDynamics, Timing, Trajectory,
 };
 pub use state::{Dual, Isometry3, Mat3, Quat, Scalar, StateBundle, Vec3};
 
-use instrument::PropagationIntegral;
+use instrument::{PropagationIntegral, QuasiStaticGradient};
 use state::Meta;
 
-/// Drive a scenario through the propagation-integral spine to a `StateBundle`.
+/// Drive a scenario through the selected phase model to a `StateBundle`.
 pub fn run(scenario: &Scenario) -> StateBundle {
-    let model = PropagationIntegral::default();
+    let model: Box<dyn PhaseModel> = match scenario.phase_model {
+        PhaseModelKind::PropagationIntegral => Box::new(PropagationIntegral::default()),
+        PhaseModelKind::QuasiStatic => Box::new(QuasiStaticGradient::default()),
+    };
     let sources: [&dyn SourceDynamics; 1] = [scenario.source.as_ref()];
 
     let mut time = Vec::new();
@@ -29,11 +32,17 @@ pub fn run(scenario: &Scenario) -> StateBundle {
     let mut acc = Vec::new();
     let mut mask = Vec::new();
     for &t in &scenario.schedule.times {
-        let dphi = model.delta_phi(&sources, &scenario.detector, t);
+        // One phase per detector — the (T, D) signal row.
+        let row: Vec<f64> = scenario
+            .array
+            .detectors
+            .iter()
+            .map(|det| model.delta_phi(&sources, det, t))
+            .collect();
         let pos = scenario.source.pose_at(t).translation;
         let m = scenario.source.motion_at(t);
         time.push(t);
-        signal.push(vec![dphi]);
+        signal.push(row);
         track.push([pos.x, pos.y, pos.z]);
         vel.push([m.velocity.x, m.velocity.y, m.velocity.z]);
         acc.push([m.acceleration.x, m.acceleration.y, m.acceleration.z]);
@@ -46,10 +55,11 @@ pub fn run(scenario: &Scenario) -> StateBundle {
         source_position: vec![track],
         source_velocity: vec![vel],
         source_accel: vec![acc],
+        detector_placement: scenario.array.placements(),
         mask,
         meta: Meta {
             seed: scenario.seed,
-            description: "M2 propagation-integral spine".into(),
+            description: "M3 detector-array spine".into(),
         },
     }
 }
@@ -95,7 +105,7 @@ mod tests {
         let expected: Vec<_> = sched.times.iter().map(|&t| traj.motion_at(t)).collect();
         let scn = Scenario::new(
             Box::new(Source::new(cloud, traj)),
-            Detector::new(0.0),
+            DetectorArray::single(Detector::new(0.0)),
             sched,
             7,
         );
@@ -134,7 +144,7 @@ mod tests {
     fn bundle_shapes() {
         let scenario = Scenario::new(
             Box::new(point_source(1.0, 2.5)),
-            Detector::new(0.0),
+            DetectorArray::single(Detector::new(0.0)),
             Schedule::uniform(2.0, 5),
             42,
         );
@@ -146,6 +156,60 @@ mod tests {
         assert_eq!(bundle.source_position[0].len(), 5);
         assert_eq!(bundle.mask.len(), 5);
         assert!(bundle.time.iter().all(|t| t.is_finite()));
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // placement values and per-detector channels are exact/distinct by construction
+    fn signal_td() {
+        // signal is (T, D); detector_placement is (D, 7); per-detector channels are independent.
+        let array = DetectorArray::new(vec![
+            Detector::placed(Isometry3::new(Quat::identity(), Vec3::new(0.0, 0.0, 0.0))),
+            Detector::placed(Isometry3::new(Quat::identity(), Vec3::new(8.0, 0.0, 0.0))),
+            Detector::placed(Isometry3::new(Quat::identity(), Vec3::new(20.0, 0.0, 0.0))),
+        ]);
+        let scenario = Scenario::new(
+            Box::new(point_source(1.0, 2.5)),
+            array,
+            Schedule::uniform(2.0, 4),
+            1,
+        );
+        let bundle = run(&scenario);
+        assert_eq!(bundle.signal.len(), 4); // T
+        for row in &bundle.signal {
+            assert_eq!(row.len(), 3); // D
+        }
+        assert_eq!(bundle.detector_placement.len(), 3); // (D, 7)
+        assert_eq!(
+            bundle.detector_placement[1],
+            [8.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+        );
+        // Channels are independent: the three detectors read distinct phases (different ranges).
+        let r0 = &bundle.signal[0];
+        assert!(
+            r0[0] != r0[1] && r0[1] != r0[2],
+            "detector channels not independent"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // distinct detectors read distinct phases — an exact inequality
+    fn baseline_differential() {
+        // Two detectors baseline b apart along x; the source approaches from +x (always beyond both).
+        // ΔΦ_a ≠ ΔΦ_b, and |ΔΦ_a − ΔΦ_b| grows as the source nears the array — localisation's signature.
+        let model = PropagationIntegral::default();
+        let det_a = Detector::new(0.0); // at x = 0
+        let det_b = Detector::placed(Isometry3::new(Quat::identity(), Vec3::new(2.0, 0.0, 0.0)));
+        let mut prev = -1.0;
+        for &range in &[40.0, 20.0, 10.0, 5.0] {
+            // Source on the x-axis at `range` (> baseline), height at the gradiometer centre.
+            let src = point_source(range, 2.5);
+            let phi_a = model.delta_phi(&[&src], &det_a, 2.0);
+            let phi_b = model.delta_phi(&[&src], &det_b, 2.0);
+            assert!(phi_a != phi_b, "detectors read the same at range {range}");
+            let diff = (phi_a - phi_b).abs();
+            assert!(diff > prev, "differential did not grow at range {range}");
+            prev = diff;
+        }
     }
 
     #[test]
@@ -165,6 +229,28 @@ mod tests {
         assert!(
             (coarse - fine).abs() / fine.abs() <= 1e-6,
             "quadrature not converged"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // non-zero check on an exact value
+    fn phase_model_selected() {
+        // The selector threads through run: QuasiStatic yields a finite signal, close to PI far-field.
+        let build = |kind| {
+            Scenario::new(
+                Box::new(point_source(50.0, 2.5)), // far source (validity regime)
+                DetectorArray::single(Detector::new(0.0)),
+                Schedule::uniform(2.0, 1),
+                0,
+            )
+            .with_phase_model(kind)
+        };
+        let pi = run(&build(PhaseModelKind::PropagationIntegral)).signal[0][0];
+        let qs = run(&build(PhaseModelKind::QuasiStatic)).signal[0][0];
+        assert!(qs.is_finite() && qs != 0.0);
+        assert!(
+            (pi - qs).abs() / pi.abs() <= 0.02,
+            "selector: PI {pi} vs QS {qs}"
         );
     }
 }

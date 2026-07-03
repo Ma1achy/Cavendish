@@ -28,6 +28,8 @@ pub struct StateBundle {
     pub source_velocity: Vec<Vec<[f64; 3]>>,
     /// Source COM linear acceleration, shape `(S, T, 3)`.
     pub source_accel: Vec<Vec<[f64; 3]>>,
+    /// Per-detector placement: position xyz + orientation quaternion (wxyz), shape `(D, 7)`.
+    pub detector_placement: Vec<[f64; 7]>,
     /// Transient-contaminated cycles, shape `(T,)`.
     pub mask: Vec<bool>,
     /// Resolved config and seed.
