@@ -8,6 +8,9 @@
 //! acceleration are analytic (the chain rule through `Timing`), supplied to the bundle by
 //! [`SourceDynamics::motion_at`].
 
+mod integrator;
+pub use integrator::step;
+
 use gravity::Cloud;
 use math::{Isometry3, Quat, Vec3};
 use shape::{voxelise, MassSpec, Registry, ShapeError, Solid, VoxelParams};
