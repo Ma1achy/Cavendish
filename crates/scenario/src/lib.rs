@@ -2,4 +2,8 @@
 //!
 //! Design: `design/scenario.md`. Milestone: `milestones/M6-compute-gpu-and-batch.md`.
 //!
-//! M0 skeleton — no implementation yet; see the milestone brief before adding code.
+//! M0 re-exports the seam names it consumes so the reachability edges hold up to `generate`.
+
+pub use instrument::{Detector, PhaseModel};
+pub use noise::{KeyRng, NoiseSource};
+pub use source::SourceDynamics;
