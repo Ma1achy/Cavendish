@@ -399,7 +399,9 @@ mod tests {
         let pi = dphi(&ifos[1]) - dphi(&ifos[0]);
         let k_eff = QuasiStaticGradient::default().k_eff();
         let qs = -k_eff * gamma * cfg.ifo_sep * cfg.t_half * cfg.t_half;
-        assert!((pi - qs).abs() / qs.abs() <= 1e-6, "PI {pi} ≠ QS {qs}");
+        let residual = (pi - qs).abs() / qs.abs();
+        eprintln!("qs_uniform_identity: PI={pi:.6e} QS={qs:.6e} residual={residual:.2e}");
+        assert!(residual <= 1e-6, "PI {pi} ≠ QS {qs}");
     }
 
     #[test]
@@ -431,9 +433,11 @@ mod tests {
         let src = Prescribed::fixed(cloud, Isometry3::identity());
         let pi = PropagationIntegral::default().delta_phi(&[&src], &det, 2.0);
         let qs = QuasiStaticGradient::default().delta_phi(&[&src], &det, 2.0);
-        assert!(
-            (pi - qs).abs() / pi.abs() <= 0.01,
-            "far-field: PI {pi} vs QS {qs}"
+        let delta = (pi - qs).abs() / pi.abs();
+        eprintln!(
+            "qs_vs_pi_far: PI={pi:.4e} QS={qs:.4e} delta={:.3}%",
+            delta * 100.0
         );
+        assert!(delta <= 0.01, "far-field: PI {pi} vs QS {qs}");
     }
 }
