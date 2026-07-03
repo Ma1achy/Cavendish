@@ -9,11 +9,11 @@
 pub use compute::{ComputeBackend, EvalBatch, SignalBatch};
 pub use gravity::FieldContribution;
 pub use scenario::{
-    Detector, KeyRng, NoiseSource, PhaseModel, Prescribed, Scenario, Schedule, SourceDynamics,
+    BodyMotion, Detector, KeyRng, NoiseSource, Orient, Path, PhaseModel, Prescribed, Scenario,
+    Schedule, Source, SourceDynamics, Timing, Trajectory,
 };
 pub use state::{Dual, Isometry3, Mat3, Quat, Scalar, StateBundle, Vec3};
 
-use gravity::Cloud;
 use instrument::PropagationIntegral;
 use state::Meta;
 
@@ -25,13 +25,18 @@ pub fn run(scenario: &Scenario) -> StateBundle {
     let mut time = Vec::new();
     let mut signal = Vec::new();
     let mut track = Vec::new();
+    let mut vel = Vec::new();
+    let mut acc = Vec::new();
     let mut mask = Vec::new();
     for &t in &scenario.schedule.times {
         let dphi = model.delta_phi(&sources, &scenario.detector, t);
         let pos = scenario.source.pose_at(t).translation;
+        let m = scenario.source.motion_at(t);
         time.push(t);
         signal.push(vec![dphi]);
         track.push([pos.x, pos.y, pos.z]);
+        vel.push([m.velocity.x, m.velocity.y, m.velocity.z]);
+        acc.push([m.acceleration.x, m.acceleration.y, m.acceleration.z]);
         mask.push(false);
     }
 
@@ -39,43 +44,14 @@ pub fn run(scenario: &Scenario) -> StateBundle {
         time,
         signal,
         source_position: vec![track],
+        source_velocity: vec![vel],
+        source_accel: vec![acc],
         mask,
         meta: Meta {
             seed: scenario.seed,
-            description: "M1 propagation-integral spine".into(),
+            description: "M2 propagation-integral spine".into(),
         },
     }
-}
-
-/// Ad-hoc concrete-wall lattice — **throwaway**, replaced by `shape`'s voxeliser in M2.
-///
-/// A regular lattice of point elements filling the `size` cuboid centred at `centre`, each carrying
-/// `m = density·pitch³` (no renormalisation). Do not invest in it; it exists only to feed the M1
-/// anchor before the real geometry pipeline lands.
-pub fn wall_cloud(size: Vec3<f64>, centre: Vec3<f64>, density: f64, pitch: f64) -> Cloud {
-    let m = density * pitch * pitch * pitch;
-    let counts = [
-        (size.x / pitch).round().max(1.0) as usize,
-        (size.y / pitch).round().max(1.0) as usize,
-        (size.z / pitch).round().max(1.0) as usize,
-    ];
-    let origin = [
-        centre.x - size.x * 0.5,
-        centre.y - size.y * 0.5,
-        centre.z - size.z * 0.5,
-    ];
-    let mut elems = Vec::with_capacity(counts[0] * counts[1] * counts[2]);
-    for ix in 0..counts[0] {
-        let x = origin[0] + (ix as f64 + 0.5) * pitch;
-        for iy in 0..counts[1] {
-            let y = origin[1] + (iy as f64 + 0.5) * pitch;
-            for iz in 0..counts[2] {
-                let z = origin[2] + (iz as f64 + 0.5) * pitch;
-                elems.push((x, y, z, m));
-            }
-        }
-    }
-    Cloud::from_elements(&elems)
 }
 
 #[cfg(test)]
@@ -100,6 +76,40 @@ mod tests {
             Cloud::from_elements(&[(x, 0.0, z, 500.0)]),
             Isometry3::identity(),
         )
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // kinematics are copied verbatim from motion_at — exact by construction
+    fn kinematics_filled() {
+        // source_velocity/accel in the bundle match motion_at exactly.
+        let traj = Trajectory::new(
+            Isometry3::identity(),
+            Path::LinearPass {
+                a: Vec3::new(1.0, 0.0, 2.5),
+                b: Vec3::new(1.0, 0.0, 8.5),
+            },
+            Timing::Uniform { rate: 0.4 },
+        );
+        let cloud = Cloud::from_elements(&[(1.0, 0.0, 2.5, 10.0)]);
+        let sched = Schedule::uniform(2.0, 4);
+        let expected: Vec<_> = sched.times.iter().map(|&t| traj.motion_at(t)).collect();
+        let scn = Scenario::new(
+            Box::new(Source::new(cloud, traj)),
+            Detector::new(0.0),
+            sched,
+            7,
+        );
+        let bundle = run(&scn);
+        for (i, m) in expected.iter().enumerate() {
+            assert_eq!(
+                bundle.source_velocity[0][i],
+                [m.velocity.x, m.velocity.y, m.velocity.z]
+            );
+            assert_eq!(
+                bundle.source_accel[0][i],
+                [m.acceleration.x, m.acceleration.y, m.acceleration.z]
+            );
+        }
     }
 
     #[test]

@@ -160,13 +160,15 @@ impl PhaseModel for PropagationIntegral {
         let dphi = |ifo: &Ifo| -> f64 {
             let integrand = |flight: f64| -> f64 {
                 let t_abs = (t - two_t) + flight;
-                let zu = ifo.upper.z_at(flight);
-                let zl = ifo.lower.z_at(flight);
+                let pu = Vec3::new(0.0, 0.0, ifo.upper.z_at(flight));
+                let pl = Vec3::new(0.0, 0.0, ifo.lower.z_at(flight));
                 let mut acc = 0.0;
                 for src in sources {
-                    let cloud = src.cloud_at(t_abs);
-                    acc += potential(&cloud, Vec3::new(0.0, 0.0, zu))
-                        - potential(&cloud, Vec3::new(0.0, 0.0, zl));
+                    // Body-frame evaluation: V is rigid-invariant, so evaluate the fixed body cloud
+                    // at pose(t)⁻¹·p_arm rather than posing the whole cloud each tick.
+                    let inv = src.pose_at(t_abs).inverse();
+                    let body = src.body_cloud();
+                    acc += potential(body, inv.apply(pu)) - potential(body, inv.apply(pl));
                 }
                 acc
             };

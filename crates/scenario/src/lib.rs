@@ -6,7 +6,9 @@
 
 pub use instrument::{Detector, PhaseModel};
 pub use noise::{KeyRng, NoiseSource};
-pub use source::{Prescribed, SourceDynamics};
+pub use source::{
+    BodyMotion, Orient, Path, Prescribed, Source, SourceDynamics, Timing, Trajectory,
+};
 
 /// The measurement times. Uniform in M1; jitter/gaps arrive with M6's schedules.
 #[derive(Clone, Debug, Default)]

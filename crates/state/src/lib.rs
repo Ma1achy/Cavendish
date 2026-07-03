@@ -24,6 +24,10 @@ pub struct StateBundle {
     pub signal: Vec<Vec<f64>>,
     /// Source COM world position, shape `(S, T, 3)`.
     pub source_position: Vec<Vec<[f64; 3]>>,
+    /// Source COM linear velocity, shape `(S, T, 3)`.
+    pub source_velocity: Vec<Vec<[f64; 3]>>,
+    /// Source COM linear acceleration, shape `(S, T, 3)`.
+    pub source_accel: Vec<Vec<[f64; 3]>>,
     /// Transient-contaminated cycles, shape `(T,)`.
     pub mask: Vec<bool>,
     /// Resolved config and seed.
