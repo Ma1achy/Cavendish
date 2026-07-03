@@ -9,17 +9,20 @@
 pub use compute::{ComputeBackend, EvalBatch, SignalBatch};
 pub use gravity::FieldContribution;
 pub use scenario::{
-    BodyMotion, Detector, DetectorArray, KeyRng, NoiseSource, Orient, Path, PhaseModel, Prescribed,
-    Scenario, Schedule, Source, SourceDynamics, Timing, Trajectory,
+    BodyMotion, Detector, DetectorArray, KeyRng, NoiseSource, Orient, Path, PhaseModel,
+    PhaseModelKind, Prescribed, Scenario, Schedule, Source, SourceDynamics, Timing, Trajectory,
 };
 pub use state::{Dual, Isometry3, Mat3, Quat, Scalar, StateBundle, Vec3};
 
-use instrument::PropagationIntegral;
+use instrument::{PropagationIntegral, QuasiStaticGradient};
 use state::Meta;
 
-/// Drive a scenario through the propagation-integral spine to a `StateBundle`.
+/// Drive a scenario through the selected phase model to a `StateBundle`.
 pub fn run(scenario: &Scenario) -> StateBundle {
-    let model = PropagationIntegral::default();
+    let model: Box<dyn PhaseModel> = match scenario.phase_model {
+        PhaseModelKind::PropagationIntegral => Box::new(PropagationIntegral::default()),
+        PhaseModelKind::QuasiStatic => Box::new(QuasiStaticGradient::default()),
+    };
     let sources: [&dyn SourceDynamics; 1] = [scenario.source.as_ref()];
 
     let mut time = Vec::new();
@@ -226,6 +229,28 @@ mod tests {
         assert!(
             (coarse - fine).abs() / fine.abs() <= 1e-6,
             "quadrature not converged"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // non-zero check on an exact value
+    fn phase_model_selected() {
+        // The selector threads through run: QuasiStatic yields a finite signal, close to PI far-field.
+        let build = |kind| {
+            Scenario::new(
+                Box::new(point_source(50.0, 2.5)), // far source (validity regime)
+                DetectorArray::single(Detector::new(0.0)),
+                Schedule::uniform(2.0, 1),
+                0,
+            )
+            .with_phase_model(kind)
+        };
+        let pi = run(&build(PhaseModelKind::PropagationIntegral)).signal[0][0];
+        let qs = run(&build(PhaseModelKind::QuasiStatic)).signal[0][0];
+        assert!(qs.is_finite() && qs != 0.0);
+        assert!(
+            (pi - qs).abs() / pi.abs() <= 0.02,
+            "selector: PI {pi} vs QS {qs}"
         );
     }
 }

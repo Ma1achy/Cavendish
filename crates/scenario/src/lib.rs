@@ -4,7 +4,7 @@
 //!
 //! Re-exports the seam names it consumes so the reachability edges hold up to `generate`.
 
-pub use instrument::{Detector, DetectorArray, PhaseModel};
+pub use instrument::{Detector, DetectorArray, PhaseModel, PhaseModelKind};
 pub use noise::{KeyRng, NoiseSource};
 pub use source::{
     BodyMotion, Orient, Path, Prescribed, Source, SourceDynamics, Timing, Trajectory,
@@ -25,12 +25,15 @@ impl Schedule {
     }
 }
 
-/// One runnable scene: a source, a detector array, a schedule, and the seed.
+/// One runnable scene: a source, a detector array, a schedule, the seed, and the phase model.
 pub struct Scenario {
     pub source: Box<dyn SourceDynamics>,
     pub array: DetectorArray,
     pub schedule: Schedule,
     pub seed: u64,
+    /// Which `PhaseModel` `generate` uses (default `PropagationIntegral`, the reference). The config
+    /// crate stands up at M6, so the selector rides on the scenario for now.
+    pub phase_model: PhaseModelKind,
 }
 
 impl Scenario {
@@ -45,6 +48,13 @@ impl Scenario {
             array,
             schedule,
             seed,
+            phase_model: PhaseModelKind::default(),
         }
+    }
+
+    /// Select the phase model (builder style).
+    pub fn with_phase_model(mut self, kind: PhaseModelKind) -> Self {
+        self.phase_model = kind;
+        self
     }
 }

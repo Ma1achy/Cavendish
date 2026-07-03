@@ -7,7 +7,7 @@
 //! `PropagationIntegral` is the reference phase model: quadrature of the differenced potential along
 //! the arms (spec `eq:singlephi`), double-differenced across the two IFOs (spec `eq:doublediff`).
 
-use gravity::potential;
+use gravity::{gradient_tensor, potential};
 use math::{Isometry3, Quat, Vec3};
 use source::SourceDynamics;
 
@@ -246,6 +246,50 @@ impl PhaseModel for PropagationIntegral {
     }
 }
 
+/// Which phase model a run uses. `PropagationIntegral` is the reference (default); `QuasiStatic` is
+/// the fast path.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PhaseModelKind {
+    #[default]
+    PropagationIntegral,
+    QuasiStatic,
+}
+
+/// The fast phase model: the quasi-static gradient approximation (spec `Δφ ≈ k_eff·a·T²`).
+///
+/// `ΔΦ_qs = −k_eff·Γ_zz(p_det,t)·Δr·T²`, one `gradient_tensor` evaluation per (measurement × detector)
+/// at the tower midpoint — cheap versus the propagation integral's arm quadratures. Exact under a
+/// uniform gradient (an identity, the leading term of PI), approximate for a far, slow source.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct QuasiStaticGradient {
+    pub cfg: InstrumentConfig,
+}
+
+impl QuasiStaticGradient {
+    pub fn new(cfg: InstrumentConfig) -> Self {
+        QuasiStaticGradient { cfg }
+    }
+
+    /// The effective wavevector `k_eff = m_A·v_rec/ħ` (equivalently `n·2π/λ`).
+    pub fn k_eff(&self) -> f64 {
+        self.cfg.m_a * self.cfg.v_rec / self.cfg.hbar
+    }
+}
+
+impl PhaseModel for QuasiStaticGradient {
+    fn delta_phi(&self, sources: &[&dyn SourceDynamics], det: &Detector, t: f64) -> f64 {
+        let p_det = det.midpoint(&self.cfg);
+        // World-frame vertical gradient at the tower midpoint, summed over sources.
+        let mut gamma_zz = 0.0;
+        for src in sources {
+            let world = src.body_cloud().transformed(&src.pose_at(t));
+            gamma_zz += gradient_tensor(&world, p_det).m[2][2];
+        }
+        // Leading minus matches PI's δφ₂ − δφ₁ sign in the uniform-gradient limit (∫(z_u−z_l)dt = v_rec·T²).
+        -self.k_eff() * gamma_zz * self.cfg.ifo_sep * self.cfg.t_half * self.cfg.t_half
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,5 +377,63 @@ mod tests {
             let dphi = model.delta_phi(&[&src], &det, 2.0);
             assert!((dphi - alpha * dphi1).abs() / (alpha * dphi1).abs() <= 1e-12);
         }
+    }
+
+    #[test]
+    fn qs_uniform_identity() {
+        // Impose an exactly linear field V(z) = −½γz² (constant Γ_zz = γ). Then the propagation
+        // integral of the analytic potential equals QS's −k_eff·γ·Δr·T² — an identity, not an
+        // approximation; the residual is only integrator resolution.
+        let cfg = InstrumentConfig::default();
+        let gamma = 3.0e-6; // an arbitrary constant vertical gradient
+        let v = |z: f64| -0.5 * gamma * z * z;
+        let ifos = build_arms(&cfg);
+        let two_t = 2.0 * cfg.t_half;
+        let dphi = |ifo: &Ifo| -> f64 {
+            let integ = |flight: f64| v(ifo.upper.z_at(flight)) - v(ifo.lower.z_at(flight));
+            let half = cfg.t_half;
+            (cfg.m_a / cfg.hbar)
+                * (simpson(0.0, half, cfg.fine_dt, integ)
+                    + simpson(half, two_t, cfg.fine_dt, integ))
+        };
+        let pi = dphi(&ifos[1]) - dphi(&ifos[0]);
+        let k_eff = QuasiStaticGradient::default().k_eff();
+        let qs = -k_eff * gamma * cfg.ifo_sep * cfg.t_half * cfg.t_half;
+        assert!((pi - qs).abs() / qs.abs() <= 1e-6, "PI {pi} ≠ QS {qs}");
+    }
+
+    #[test]
+    fn qs_scaling() {
+        // k_eff is derived from the constants and equals n·2π/λ; ΔΦ_qs is linear in Γ_zz, Δr, T².
+        let cfg = InstrumentConfig::default();
+        let k_eff = QuasiStaticGradient::default().k_eff();
+        let k_eff_expected = 1000.0 * core::f64::consts::TAU / 698e-9; // n·2π/λ
+        assert!(
+            (k_eff - k_eff_expected).abs() / k_eff_expected <= 1e-12,
+            "k_eff drift"
+        );
+
+        let qs = |g: f64, dr: f64, t: f64| -k_eff * g * dr * t * t;
+        let (g0, dr0, t0) = (2.0e-6, cfg.ifo_sep, cfg.t_half);
+        let base = qs(g0, dr0, t0);
+        for a in [0.1, 3.0, 7.0] {
+            assert!((qs(a * g0, dr0, t0) - a * base).abs() / (a * base).abs() <= 1e-12);
+            assert!((qs(g0, a * dr0, t0) - a * base).abs() / (a * base).abs() <= 1e-12);
+            assert!((qs(g0, dr0, a.sqrt() * t0) - a * base).abs() / (a * base).abs() <= 1e-12);
+        }
+    }
+
+    #[test]
+    fn qs_vs_pi_far() {
+        // A far, static source — the validity regime (standoff ≫ arm extent): QS approximates PI ≤1%.
+        let det = Detector::new(0.0);
+        let cloud = Cloud::from_elements(&[(100.0, 0.0, 2.5, 1.0e6)]);
+        let src = Prescribed::fixed(cloud, Isometry3::identity());
+        let pi = PropagationIntegral::default().delta_phi(&[&src], &det, 2.0);
+        let qs = QuasiStaticGradient::default().delta_phi(&[&src], &det, 2.0);
+        assert!(
+            (pi - qs).abs() / pi.abs() <= 0.01,
+            "far-field: PI {pi} vs QS {qs}"
+        );
     }
 }
