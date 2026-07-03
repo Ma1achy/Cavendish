@@ -175,6 +175,35 @@ pub fn cuboid_dc_gradiometer_phase(wall: &Cuboid, base_z: f64, n_quad: usize) ->
     dphi_1 - dphi_2
 }
 
+/// The gradiometer phase for a moving point mass at horizontal standoff `standoff`, whose height is
+/// `height(t)` at absolute time `t` (spec point-source potential `−Gm/√(D² + (z − h)²)`).
+///
+/// George's convention `ΔΦ = δφ₁ − δφ₂`, at measurement time `t_meas`, using his stepped arms.
+/// The mesh-free point mass underlies the moving and oscillating M2 anchors.
+pub fn point_mass_phase(
+    mass: f64,
+    standoff: f64,
+    base_z: f64,
+    height: impl Fn(f64) -> f64,
+    t_meas: f64,
+) -> f64 {
+    let boost = velocity_boost();
+    let two_t = 2.0 * T_HALF;
+    let dphi = |z0: f64| -> f64 {
+        let lower = integrate_arm(z0, U_INITIAL, boost);
+        let upper = integrate_arm(z0, U_INITIAL + boost, -boost);
+        let mut acc = 0.0;
+        for i in 0..lower.len() {
+            let t = t_meas - two_t + i as f64 * DT;
+            let h = height(t);
+            let v = |z: f64| -G * mass / (standoff * standoff + (z - h) * (z - h)).sqrt();
+            acc += v(upper[i]) - v(lower[i]);
+        }
+        (M_ATOM / HBAR) * acc * DT
+    };
+    dphi(base_z) - dphi(base_z + IFO_SEP)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

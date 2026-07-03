@@ -37,6 +37,7 @@ dependencies = [
  "noise",
  "reference",
  "scenario",
+ "shape",
  "state",
  "uldm",
 ]

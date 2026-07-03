@@ -14,7 +14,6 @@ pub use scenario::{
 };
 pub use state::{Dual, Isometry3, Mat3, Quat, Scalar, StateBundle, Vec3};
 
-use gravity::Cloud;
 use instrument::PropagationIntegral;
 use state::Meta;
 
@@ -53,37 +52,6 @@ pub fn run(scenario: &Scenario) -> StateBundle {
             description: "M2 propagation-integral spine".into(),
         },
     }
-}
-
-/// Ad-hoc concrete-wall lattice — **throwaway**, replaced by `shape`'s voxeliser in M2.
-///
-/// A regular lattice of point elements filling the `size` cuboid centred at `centre`, each carrying
-/// `m = density·pitch³` (no renormalisation). Do not invest in it; it exists only to feed the M1
-/// anchor before the real geometry pipeline lands.
-pub fn wall_cloud(size: Vec3<f64>, centre: Vec3<f64>, density: f64, pitch: f64) -> Cloud {
-    let m = density * pitch * pitch * pitch;
-    let counts = [
-        (size.x / pitch).round().max(1.0) as usize,
-        (size.y / pitch).round().max(1.0) as usize,
-        (size.z / pitch).round().max(1.0) as usize,
-    ];
-    let origin = [
-        centre.x - size.x * 0.5,
-        centre.y - size.y * 0.5,
-        centre.z - size.z * 0.5,
-    ];
-    let mut elems = Vec::with_capacity(counts[0] * counts[1] * counts[2]);
-    for ix in 0..counts[0] {
-        let x = origin[0] + (ix as f64 + 0.5) * pitch;
-        for iy in 0..counts[1] {
-            let y = origin[1] + (iy as f64 + 0.5) * pitch;
-            for iz in 0..counts[2] {
-                let z = origin[2] + (iz as f64 + 0.5) * pitch;
-                elems.push((x, y, z, m));
-            }
-        }
-    }
-    Cloud::from_elements(&elems)
 }
 
 #[cfg(test)]

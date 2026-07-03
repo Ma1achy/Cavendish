@@ -612,4 +612,27 @@ mod tests {
         assert!((sum - 5.0).abs() / 5.0 <= 1e-12);
         assert_eq!(scaled.xs, a.xs); // positions unchanged — no re-voxelise
     }
+
+    #[test]
+    fn shell_theorem() {
+        // A voxelised sphere's external field matches a point mass of equal total mass over
+        // d ∈ [2R, 10R], to ≤1e-3 — an independent check, owing nothing to the reference port.
+        let r = 1.0;
+        let m = 5.0;
+        let sphere = voxelise(
+            &Sphere { r },
+            &VoxelParams::pitch(r / 20.0),
+            MassSpec::Total(m),
+        )
+        .unwrap();
+        let point = Cloud::from_elements(&[(0.0, 0.0, 0.0, m)]);
+        for i in 2..=10 {
+            let d = i as f64 * r;
+            let p = math::Vec3::new(d, 0.0, 0.0);
+            let gs = gravity::field(&sphere, p);
+            let gp = gravity::field(&point, p);
+            let rel = (gs - gp).norm() / gp.norm();
+            assert!(rel <= 1e-3, "shell theorem d={d}: rel {rel}");
+        }
+    }
 }
