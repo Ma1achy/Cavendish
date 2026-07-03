@@ -43,8 +43,8 @@ separatrix:   spin near the intermediate axis (I₁ < I₂ < I₃, ω ≈ ω₂ 
 
 ```
 q̇ = ½ q ⊗ (0, ω_body)                        (wxyz; q maps body → world)
-exact rotation over a substep of constant ω:
-   q ← q ⊗ ( cos(|ω| h/2),  ω̂ sin(|ω| h/2) )       then renormalise |q| = 1
+exact rotation about a single axis ê by angle φ (the building block of the §4 splitting):
+   q ← q ⊗ ( cos(φ/2),  ê sin(φ/2) )              then renormalise |q| = 1
 ```
 
 ### 2.3 Libration (physical pendulum about a fixed horizontal pivot axis)
@@ -71,7 +71,7 @@ multipoles under rotation about the CoM:  monopole M fixed;  dipole ≡ 0 (recen
 Trajectory { path, timing, orient: Libration{axis, θ₀, θ̇₀} | FreeRotation{ω₀} | … , placement }
                                   │  per measurement tick t_ℓ
                                   ▼
-   substep loop (fine_dt): ω ← euler_step(ω, I, h);  q ← q ⊗ exp(½ h ω̂);  renormalise
+   substep loop (fine_dt): step(q, ω, I, h)  — momentum-splitting (§4); renormalise q
                                   │
                                   ▼
    pose_at(t_ℓ) = (translation from path, q)          motion_at → (ω, ω̇) for the bundle
@@ -87,16 +87,27 @@ still a pure function of `(Scenario, t)` because the substep grid is fixed by `f
 
 ```
 fn step<S: Scalar>(q: &mut Quat<S>, ω: &mut Vec3<S>, I: Vec3<S>, h: S):
-    # semi-implicit split: half-kick ω, exact-map q, half-kick ω
-    ω += h/2 · euler_rhs(ω, I)          # ω̇ᵢ = (Iⱼ−Iₖ)/Iᵢ · ωⱼωₖ
-    θ  = |ω|·h
-    q  = q ⊗ Quat(cos(θ/2), ω̂·sin(θ/2))
-    q  = q / |q|
-    ω += h/2 · euler_rhs(ω, I)
+    # McLachlan/Reich free-rigid-body Strang splitting: exact rotations of the body angular
+    # momentum Π = I∘ω about each principal axis, composed 1(½),2(½),3(1),2(½),1(½).
+    Π = I ∘ ω                                          # body angular momentum
+    for (k, τ) in [(0,h/2),(1,h/2),(2,h),(1,h/2),(0,h/2)]:
+        φ = (Π[k] / I[k]) · τ                          # exact sub-rotation angle (ωₖ = Πₖ/Iₖ)
+        rotate Π about êₖ by φ                          # Πₖ fixed, the other two rotate — |Π| exact
+        q = q ⊗ Quat(cos(φ/2), êₖ·sin(φ/2))            # exponential-map reconstruction
+    q = q / |q|                                        # renormalise
+    ω = Π ∘ (1/I)
 
-fn libration_step<S>(θ, θ̇, h):          # leapfrog
+fn libration_step<S>(θ, θ̇, h):          # leapfrog (the pendulum is separable — this sketch is correct)
     θ̇ += h/2 · (−k·sin θ);  θ += h·θ̇;  θ̇ += h/2 · (−k·sin θ)
 ```
+
+> **Why the splitting, not an explicit half-kick.** The free rigid body is **non-separable**: an
+> explicit half-kick/exact-map/half-kick is a midpoint-class scheme that does *not* conserve the
+> quadratic invariants `E`, `|L|`, so it drifts secularly — contradicting `free_top_invariants`.
+> Splitting the kinetic energy into per-axis terms makes each sub-flow an *exact* rotation of `Π`,
+> so `|L|` is conserved to machine precision by construction and `E` stays bounded forever. (The
+> pendulum is separable, so its leapfrog is correct as written.) This is the integrator `compute`
+> re-expresses in WGSL (M6) and `analysis` differentiates through (M8), so the doc describes it exactly.
 
 ---
 

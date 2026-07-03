@@ -9,7 +9,7 @@
 pub use compute::{ComputeBackend, EvalBatch, SignalBatch};
 pub use gravity::FieldContribution;
 pub use scenario::{
-    BodyMotion, Detector, DetectorArray, KeyRng, NoiseSource, Orient, Path, PhaseModel,
+    BodyMotion, Detector, DetectorArray, FieldSet, KeyRng, NoiseSource, Orient, Path, PhaseModel,
     PhaseModelKind, Prescribed, Scenario, Schedule, Source, SourceDynamics, Timing, Trajectory,
 };
 pub use state::{Dual, Isometry3, Mat3, Quat, Scalar, StateBundle, Vec3};
@@ -30,6 +30,9 @@ pub fn run(scenario: &Scenario) -> StateBundle {
     let mut track = Vec::new();
     let mut vel = Vec::new();
     let mut acc = Vec::new();
+    let mut orient = Vec::new();
+    let mut angvel = Vec::new();
+    let mut angacc = Vec::new();
     let mut mask = Vec::new();
     for &t in &scenario.schedule.times {
         // One phase per detector — the (T, D) signal row.
@@ -39,15 +42,33 @@ pub fn run(scenario: &Scenario) -> StateBundle {
             .iter()
             .map(|det| model.delta_phi(&sources, det, t))
             .collect();
-        let pos = scenario.source.pose_at(t).translation;
+        let pose = scenario.source.pose_at(t);
         let m = scenario.source.motion_at(t);
         time.push(t);
         signal.push(row);
-        track.push([pos.x, pos.y, pos.z]);
+        track.push([pose.translation.x, pose.translation.y, pose.translation.z]);
         vel.push([m.velocity.x, m.velocity.y, m.velocity.z]);
         acc.push([m.acceleration.x, m.acceleration.y, m.acceleration.z]);
+        let q = pose.rotation;
+        orient.push([q.w, q.x, q.y, q.z]);
+        angvel.push([
+            m.angular_velocity.x,
+            m.angular_velocity.y,
+            m.angular_velocity.z,
+        ]);
+        angacc.push([
+            m.angular_acceleration.x,
+            m.angular_acceleration.y,
+            m.angular_acceleration.z,
+        ]);
         mask.push(false);
     }
+
+    // Static shape descriptors, computed once from the body cloud iff requested.
+    let shape = scenario
+        .field_set
+        .shape
+        .then(|| gravity::inertia(scenario.source.body_cloud()));
 
     StateBundle {
         time,
@@ -55,12 +76,20 @@ pub fn run(scenario: &Scenario) -> StateBundle {
         source_position: vec![track],
         source_velocity: vec![vel],
         source_accel: vec![acc],
+        source_orientation: vec![orient],
+        source_angular_velocity: vec![angvel],
+        source_angular_accel: vec![angacc],
         detector_placement: scenario.array.placements(),
         mask,
         meta: Meta {
             seed: scenario.seed,
-            description: "M3 detector-array spine".into(),
+            description: "M4 rotation spine".into(),
         },
+        source_mass: shape.map(|r| vec![r.mass]),
+        source_inertia: shape.map(|r| vec![r.i.m]),
+        source_moments: shape.map(|r| vec![r.moments]),
+        source_axes: shape.map(|r| vec![r.axes.m]),
+        source_quadrupole: shape.map(|r| vec![r.q.m]),
     }
 }
 

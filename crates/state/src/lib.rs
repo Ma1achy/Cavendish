@@ -28,10 +28,28 @@ pub struct StateBundle {
     pub source_velocity: Vec<Vec<[f64; 3]>>,
     /// Source COM linear acceleration, shape `(S, T, 3)`.
     pub source_accel: Vec<Vec<[f64; 3]>>,
+    /// Source orientation quaternion wxyz (world ← body), shape `(S, T, 4)`.
+    pub source_orientation: Vec<Vec<[f64; 4]>>,
+    /// Source angular velocity ω (direction = spin axis, magnitude = rate), shape `(S, T, 3)`.
+    pub source_angular_velocity: Vec<Vec<[f64; 3]>>,
+    /// Source angular acceleration, shape `(S, T, 3)`.
+    pub source_angular_accel: Vec<Vec<[f64; 3]>>,
     /// Per-detector placement: position xyz + orientation quaternion (wxyz), shape `(D, 7)`.
     pub detector_placement: Vec<[f64; 7]>,
     /// Transient-contaminated cycles, shape `(T,)`.
     pub mask: Vec<bool>,
     /// Resolved config and seed.
     pub meta: Meta,
+
+    // Shape descriptors — optional, computed from the body cloud iff `FieldSet.shape` is on.
+    /// Total mass `M`, shape `(S,)`.
+    pub source_mass: Option<Vec<f64>>,
+    /// Inertia tensor `I` (body frame), shape `(S, 3, 3)`.
+    pub source_inertia: Option<Vec<[[f64; 3]; 3]>>,
+    /// Principal moments `(I₁, I₂, I₃)`, shape `(S, 3)`.
+    pub source_moments: Option<Vec<[f64; 3]>>,
+    /// Principal axes (body frame; shared by `I` and `Q`), shape `(S, 3, 3)`.
+    pub source_axes: Option<Vec<[[f64; 3]; 3]>>,
+    /// Gravitational quadrupole `Q` (body frame), shape `(S, 3, 3)`.
+    pub source_quadrupole: Option<Vec<[[f64; 3]; 3]>>,
 }
