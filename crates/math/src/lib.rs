@@ -94,14 +94,20 @@ impl Dual {
 impl Add for Dual {
     type Output = Self;
     fn add(self, o: Self) -> Self {
-        Dual { v: self.v + o.v, d: self.d + o.d }
+        Dual {
+            v: self.v + o.v,
+            d: self.d + o.d,
+        }
     }
 }
 
 impl Sub for Dual {
     type Output = Self;
     fn sub(self, o: Self) -> Self {
-        Dual { v: self.v - o.v, d: self.d - o.d }
+        Dual {
+            v: self.v - o.v,
+            d: self.d - o.d,
+        }
     }
 }
 
@@ -109,7 +115,10 @@ impl Sub for Dual {
 impl Mul for Dual {
     type Output = Self;
     fn mul(self, o: Self) -> Self {
-        Dual { v: self.v * o.v, d: self.v * o.d + self.d * o.v }
+        Dual {
+            v: self.v * o.v,
+            d: self.v * o.d + self.d * o.v,
+        }
     }
 }
 
@@ -117,14 +126,20 @@ impl Mul for Dual {
 impl Div for Dual {
     type Output = Self;
     fn div(self, o: Self) -> Self {
-        Dual { v: self.v / o.v, d: (self.d * o.v - self.v * o.d) / (o.v * o.v) }
+        Dual {
+            v: self.v / o.v,
+            d: (self.d * o.v - self.v * o.d) / (o.v * o.v),
+        }
     }
 }
 
 impl Neg for Dual {
     type Output = Self;
     fn neg(self) -> Self {
-        Dual { v: -self.v, d: -self.d }
+        Dual {
+            v: -self.v,
+            d: -self.d,
+        }
     }
 }
 
@@ -137,26 +152,47 @@ impl Scalar for Dual {
     }
     fn sqrt(self) -> Self {
         let s = self.v.sqrt();
-        Dual { v: s, d: self.d / (2.0 * s) }
+        Dual {
+            v: s,
+            d: self.d / (2.0 * s),
+        }
     }
     fn sin(self) -> Self {
-        Dual { v: self.v.sin(), d: self.d * self.v.cos() }
+        Dual {
+            v: self.v.sin(),
+            d: self.d * self.v.cos(),
+        }
     }
     fn cos(self) -> Self {
-        Dual { v: self.v.cos(), d: -self.d * self.v.sin() }
+        Dual {
+            v: self.v.cos(),
+            d: -self.d * self.v.sin(),
+        }
     }
     fn exp(self) -> Self {
         let e = self.v.exp();
-        Dual { v: e, d: self.d * e }
+        Dual {
+            v: e,
+            d: self.d * e,
+        }
     }
     fn ln(self) -> Self {
-        Dual { v: self.v.ln(), d: self.d / self.v }
+        Dual {
+            v: self.v.ln(),
+            d: self.d / self.v,
+        }
     }
     fn powi(self, n: i32) -> Self {
-        Dual { v: self.v.powi(n), d: (n as f64) * self.v.powi(n - 1) * self.d }
+        Dual {
+            v: self.v.powi(n),
+            d: (n as f64) * self.v.powi(n - 1) * self.d,
+        }
     }
     fn abs(self) -> Self {
-        Dual { v: self.v.abs(), d: self.d * self.v.signum() }
+        Dual {
+            v: self.v.abs(),
+            d: self.d * self.v.signum(),
+        }
     }
     fn max(self, o: Self) -> Self {
         if self.v >= o.v {
@@ -180,7 +216,11 @@ impl<S: Scalar> Vec3<S> {
         Vec3 { x, y, z }
     }
     pub fn scale(self, s: S) -> Self {
-        Vec3 { x: self.x * s, y: self.y * s, z: self.z * s }
+        Vec3 {
+            x: self.x * s,
+            y: self.y * s,
+            z: self.z * s,
+        }
     }
     pub fn dot(self, o: Self) -> S {
         self.x * o.x + self.y * o.y + self.z * o.z
@@ -203,21 +243,33 @@ impl<S: Scalar> Vec3<S> {
 impl<S: Scalar> Add for Vec3<S> {
     type Output = Self;
     fn add(self, o: Self) -> Self {
-        Vec3 { x: self.x + o.x, y: self.y + o.y, z: self.z + o.z }
+        Vec3 {
+            x: self.x + o.x,
+            y: self.y + o.y,
+            z: self.z + o.z,
+        }
     }
 }
 
 impl<S: Scalar> Sub for Vec3<S> {
     type Output = Self;
     fn sub(self, o: Self) -> Self {
-        Vec3 { x: self.x - o.x, y: self.y - o.y, z: self.z - o.z }
+        Vec3 {
+            x: self.x - o.x,
+            y: self.y - o.y,
+            z: self.z - o.z,
+        }
     }
 }
 
 impl<S: Scalar> Neg for Vec3<S> {
     type Output = Self;
     fn neg(self) -> Self {
-        Vec3 { x: -self.x, y: -self.y, z: -self.z }
+        Vec3 {
+            x: -self.x,
+            y: -self.y,
+            z: -self.z,
+        }
     }
 }
 
@@ -231,15 +283,8 @@ impl<S: Scalar> Mat3<S> {
     pub fn identity() -> Self {
         let o = S::from_f64(1.0);
         let z = S::from_f64(0.0);
-        Mat3 { m: [[o, z, z], [z, o, z], [z, z, o]] }
-    }
-    pub fn mul(self, o: Self) -> Self {
         Mat3 {
-            m: core::array::from_fn(|i| {
-                core::array::from_fn(|j| {
-                    self.m[i][0] * o.m[0][j] + self.m[i][1] * o.m[1][j] + self.m[i][2] * o.m[2][j]
-                })
-            }),
+            m: [[o, z, z], [z, o, z], [z, z, o]],
         }
     }
     pub fn mul_vec(self, v: Vec3<S>) -> Vec3<S> {
@@ -250,7 +295,22 @@ impl<S: Scalar> Mat3<S> {
         }
     }
     pub fn transpose(self) -> Self {
-        Mat3 { m: core::array::from_fn(|i| core::array::from_fn(|j| self.m[j][i])) }
+        Mat3 {
+            m: core::array::from_fn(|i| core::array::from_fn(|j| self.m[j][i])),
+        }
+    }
+}
+
+impl<S: Scalar> Mul for Mat3<S> {
+    type Output = Self;
+    fn mul(self, o: Self) -> Self {
+        Mat3 {
+            m: core::array::from_fn(|i| {
+                core::array::from_fn(|j| {
+                    self.m[i][0] * o.m[0][j] + self.m[i][1] * o.m[1][j] + self.m[i][2] * o.m[2][j]
+                })
+            }),
+        }
     }
 }
 
@@ -270,22 +330,23 @@ impl Quat {
         Quat { w, x, y, z }
     }
     pub fn identity() -> Self {
-        Quat { w: 1.0, x: 0.0, y: 0.0, z: 0.0 }
+        Quat {
+            w: 1.0,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        }
     }
     /// A rotation of `angle` radians about `axis` (need not be unit).
     pub fn from_axis_angle(axis: Vec3<f64>, angle: f64) -> Self {
         let n = axis.norm();
         let half = angle * 0.5;
         let k = if n > 0.0 { half.sin() / n } else { 0.0 };
-        Quat { w: half.cos(), x: axis.x * k, y: axis.y * k, z: axis.z * k }
-    }
-    /// Hamilton product `self ⊗ o`.
-    pub fn mul(self, o: Self) -> Self {
         Quat {
-            w: self.w * o.w - self.x * o.x - self.y * o.y - self.z * o.z,
-            x: self.w * o.x + self.x * o.w + self.y * o.z - self.z * o.y,
-            y: self.w * o.y - self.x * o.z + self.y * o.w + self.z * o.x,
-            z: self.w * o.z + self.x * o.y - self.y * o.x + self.z * o.w,
+            w: half.cos(),
+            x: axis.x * k,
+            y: axis.y * k,
+            z: axis.z * k,
         }
     }
     pub fn norm(self) -> f64 {
@@ -293,17 +354,50 @@ impl Quat {
     }
     pub fn normalise(self) -> Self {
         let n = self.norm();
-        Quat { w: self.w / n, x: self.x / n, y: self.y / n, z: self.z / n }
+        Quat {
+            w: self.w / n,
+            x: self.x / n,
+            y: self.y / n,
+            z: self.z / n,
+        }
     }
     /// The conjugate — the inverse for a unit quaternion.
     pub fn conjugate(self) -> Self {
-        Quat { w: self.w, x: -self.x, y: -self.y, z: -self.z }
+        Quat {
+            w: self.w,
+            x: -self.x,
+            y: -self.y,
+            z: -self.z,
+        }
     }
     /// Rotate a vector: `self ⊗ (0, v) ⊗ self*` (assumes `self` is unit).
     pub fn rotate(self, v: Vec3<f64>) -> Vec3<f64> {
-        let p = Quat { w: 0.0, x: v.x, y: v.y, z: v.z };
-        let r = self.mul(p).mul(self.conjugate());
-        Vec3 { x: r.x, y: r.y, z: r.z }
+        let p = Quat {
+            w: 0.0,
+            x: v.x,
+            y: v.y,
+            z: v.z,
+        };
+        let r = (self * p) * self.conjugate();
+        Vec3 {
+            x: r.x,
+            y: r.y,
+            z: r.z,
+        }
+    }
+}
+
+/// Hamilton product `self ⊗ o`.
+#[allow(clippy::suspicious_arithmetic_impl)] // quaternion product mixes + and − by definition
+impl Mul for Quat {
+    type Output = Self;
+    fn mul(self, o: Self) -> Self {
+        Quat {
+            w: self.w * o.w - self.x * o.x - self.y * o.y - self.z * o.z,
+            x: self.w * o.x + self.x * o.w + self.y * o.z - self.z * o.y,
+            y: self.w * o.y - self.x * o.z + self.y * o.w + self.z * o.x,
+            z: self.w * o.z + self.x * o.y - self.y * o.x + self.z * o.w,
+        }
     }
 }
 
@@ -316,10 +410,16 @@ pub struct Isometry3 {
 
 impl Isometry3 {
     pub fn new(rotation: Quat, translation: Vec3<f64>) -> Self {
-        Isometry3 { rotation, translation }
+        Isometry3 {
+            rotation,
+            translation,
+        }
     }
     pub fn identity() -> Self {
-        Isometry3 { rotation: Quat::identity(), translation: Vec3::new(0.0, 0.0, 0.0) }
+        Isometry3 {
+            rotation: Quat::identity(),
+            translation: Vec3::new(0.0, 0.0, 0.0),
+        }
     }
     /// Map a point through the transform.
     pub fn apply(self, p: Vec3<f64>) -> Vec3<f64> {
@@ -328,14 +428,17 @@ impl Isometry3 {
     /// Compose `self ∘ o` — apply `o`, then `self`.
     pub fn compose(self, o: Self) -> Self {
         Isometry3 {
-            rotation: self.rotation.mul(o.rotation),
+            rotation: self.rotation * o.rotation,
             translation: self.rotation.rotate(o.translation) + self.translation,
         }
     }
     /// The inverse transform.
     pub fn inverse(self) -> Self {
         let r = self.rotation.conjugate();
-        Isometry3 { rotation: r, translation: -r.rotate(self.translation) }
+        Isometry3 {
+            rotation: r,
+            translation: -r.rotate(self.translation),
+        }
     }
 }
 
@@ -347,7 +450,10 @@ mod tests {
     struct Lcg(u64);
     impl Lcg {
         fn next_unit(&mut self) -> f64 {
-            self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (self.0 >> 11) as f64 / 9007199254740992.0
         }
         /// A sample in `[lo, hi)`.
@@ -450,11 +556,19 @@ mod tests {
         let mut rng = Lcg(0x9E37_79B9);
         for _ in 0..100 {
             // Two unit quaternions; their product stays unit.
-            let axis1 = Vec3::new(rng.range(-1.0, 1.0), rng.range(-1.0, 1.0), rng.range(-1.0, 1.0));
-            let axis2 = Vec3::new(rng.range(-1.0, 1.0), rng.range(-1.0, 1.0), rng.range(-1.0, 1.0));
+            let axis1 = Vec3::new(
+                rng.range(-1.0, 1.0),
+                rng.range(-1.0, 1.0),
+                rng.range(-1.0, 1.0),
+            );
+            let axis2 = Vec3::new(
+                rng.range(-1.0, 1.0),
+                rng.range(-1.0, 1.0),
+                rng.range(-1.0, 1.0),
+            );
             let q1 = Quat::from_axis_angle(axis1, rng.range(-3.0, 3.0));
             let q2 = Quat::from_axis_angle(axis2, rng.range(-3.0, 3.0));
-            close_rel(q1.mul(q2).norm(), 1.0, 1e-14);
+            close_rel((q1 * q2).norm(), 1.0, 1e-14);
 
             // Normalise brings an arbitrary quaternion onto the unit sphere.
             let arb = Quat::new(
@@ -466,9 +580,17 @@ mod tests {
             close_rel(arb.normalise().norm(), 1.0, 1e-14);
 
             // Isometry compose/inverse round-trip: the inverse undoes apply, to 1e-14.
-            let t = Vec3::new(rng.range(-5.0, 5.0), rng.range(-5.0, 5.0), rng.range(-5.0, 5.0));
+            let t = Vec3::new(
+                rng.range(-5.0, 5.0),
+                rng.range(-5.0, 5.0),
+                rng.range(-5.0, 5.0),
+            );
             let iso = Isometry3::new(q1, t);
-            let p = Vec3::new(rng.range(-5.0, 5.0), rng.range(-5.0, 5.0), rng.range(-5.0, 5.0));
+            let p = Vec3::new(
+                rng.range(-5.0, 5.0),
+                rng.range(-5.0, 5.0),
+                rng.range(-5.0, 5.0),
+            );
             let back = iso.inverse().apply(iso.apply(p));
             close_rel(back.x, p.x, 1e-14);
             close_rel(back.y, p.y, 1e-14);
