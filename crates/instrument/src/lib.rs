@@ -8,7 +8,7 @@
 //! the arms (spec `eq:singlephi`), double-differenced across the two IFOs (spec `eq:doublediff`).
 
 use gravity::potential;
-use math::Vec3;
+use math::{Isometry3, Quat, Vec3};
 use source::SourceDynamics;
 
 /// Pinned instrument/physics parameters (spec `tab:params`, AION-10 defaults).
@@ -44,15 +44,71 @@ impl Default for InstrumentConfig {
     }
 }
 
-/// One gradiometer, placed by the height of its lower interferometer.
+/// One gradiometer, placed in the world by a rigid isometry (position + orientation).
+///
+/// v1 uses identity orientation (vertical sensitive axis), but the placement is a full `Isometry3`,
+/// so the `(D,7)` format admits tilted detectors later without a data-model change.
 #[derive(Clone, Copy, Debug)]
 pub struct Detector {
-    pub base_z: f64,
+    pub placement: Isometry3,
 }
 
 impl Detector {
+    /// A vertical detector whose lower interferometer sits at height `base_z` (identity orientation).
     pub fn new(base_z: f64) -> Self {
-        Detector { base_z }
+        Detector {
+            placement: Isometry3::new(Quat::identity(), Vec3::new(0.0, 0.0, base_z)),
+        }
+    }
+
+    /// A detector at an arbitrary placement (position + orientation; admits tilt).
+    pub fn placed(placement: Isometry3) -> Self {
+        Detector { placement }
+    }
+
+    /// The `(D,7)` row: position xyz + orientation quaternion (wxyz).
+    pub fn placement_row(&self) -> [f64; 7] {
+        let t = self.placement.translation;
+        let q = self.placement.rotation;
+        [t.x, t.y, t.z, q.w, q.x, q.y, q.z]
+    }
+
+    /// The world tower midpoint (between the two interferometers), where `QuasiStaticGradient`
+    /// evaluates the gradient.
+    pub fn midpoint(&self, cfg: &InstrumentConfig) -> Vec3<f64> {
+        self.placement.apply(Vec3::new(0.0, 0.0, 0.5 * cfg.ifo_sep))
+    }
+}
+
+/// A `D`-gradiometer array. The apparatus is shared; only the placements differ.
+#[derive(Clone, Debug, Default)]
+pub struct DetectorArray {
+    pub detectors: Vec<Detector>,
+}
+
+impl DetectorArray {
+    pub fn new(detectors: Vec<Detector>) -> Self {
+        DetectorArray { detectors }
+    }
+
+    /// The `N = 1` array — a single gradiometer on the same code path.
+    pub fn single(det: Detector) -> Self {
+        DetectorArray {
+            detectors: vec![det],
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.detectors.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.detectors.is_empty()
+    }
+
+    /// The `(D,7)` placement rows.
+    pub fn placements(&self) -> Vec<[f64; 7]> {
+        self.detectors.iter().map(|d| d.placement_row()).collect()
     }
 }
 
@@ -90,8 +146,10 @@ pub struct Ifo {
     pub upper: Arm,
 }
 
-/// Build a detector's two interferometers (four arms) from the config. Done once per detector.
-pub fn build_arms(det: &Detector, cfg: &InstrumentConfig) -> [Ifo; 2] {
+/// Build the two interferometers (four arms) in the **detector frame** — IFOs at local `z = 0` and
+/// `z = Δr`. The apparatus is shared, so this is identical for every detector: built once, then
+/// placed by each detector's isometry.
+pub fn build_arms(cfg: &InstrumentConfig) -> [Ifo; 2] {
     let make = |z0: f64| Ifo {
         lower: Arm {
             z0,
@@ -108,7 +166,7 @@ pub fn build_arms(det: &Detector, cfg: &InstrumentConfig) -> [Ifo; 2] {
             g: cfg.g,
         },
     };
-    [make(det.base_z), make(det.base_z + cfg.ifo_sep)]
+    [make(0.0), make(cfg.ifo_sep)]
 }
 
 /// Composite Simpson's rule over `[a, b]` at ≈`step` resolution (even interval count).
@@ -154,14 +212,19 @@ impl PropagationIntegral {
 
 impl PhaseModel for PropagationIntegral {
     fn delta_phi(&self, sources: &[&dyn SourceDynamics], det: &Detector, t: f64) -> f64 {
-        let ifos = build_arms(det, &self.cfg);
+        let ifos = build_arms(&self.cfg);
         let two_t = 2.0 * self.cfg.t_half;
         // δφ for one interferometer: (m_A/ħ) ∫[V(z_u) − V(z_l)] dt over the flight (external source only).
         let dphi = |ifo: &Ifo| -> f64 {
             let integrand = |flight: f64| -> f64 {
                 let t_abs = (t - two_t) + flight;
-                let pu = Vec3::new(0.0, 0.0, ifo.upper.z_at(flight));
-                let pl = Vec3::new(0.0, 0.0, ifo.lower.z_at(flight));
+                // Arm points are built in the detector frame and placed by the detector isometry.
+                let pu = det
+                    .placement
+                    .apply(Vec3::new(0.0, 0.0, ifo.upper.z_at(flight)));
+                let pl = det
+                    .placement
+                    .apply(Vec3::new(0.0, 0.0, ifo.lower.z_at(flight)));
                 let mut acc = 0.0;
                 for src in sources {
                     // Body-frame evaluation: V is rigid-invariant, so evaluate the fixed body cloud
@@ -193,9 +256,8 @@ mod tests {
     #[test]
     fn arms_close() {
         let cfg = InstrumentConfig::default();
-        let det = Detector::new(0.0);
         let two_t = 2.0 * cfg.t_half;
-        for ifo in build_arms(&det, &cfg) {
+        for ifo in build_arms(&cfg) {
             // The two arms of each IFO re-close at 2T.
             assert!((ifo.upper.z_at(two_t) - ifo.lower.z_at(two_t)).abs() <= 1e-12);
             // Both stay within the 10 m tower over the whole flight.
@@ -211,10 +273,9 @@ mod tests {
     #[test]
     fn arm_separation() {
         let cfg = InstrumentConfig::default();
-        let det = Detector::new(0.0);
         let expected = cfg.v_rec * cfg.t_half;
         let two_t = 2.0 * cfg.t_half;
-        for ifo in build_arms(&det, &cfg) {
+        for ifo in build_arms(&cfg) {
             // Separation peaks at τ = T, equal to v_rec·T.
             assert!(
                 (ifo.upper.z_at(cfg.t_half) - ifo.lower.z_at(cfg.t_half) - expected).abs() <= 1e-12
@@ -225,6 +286,31 @@ mod tests {
                 max_sep = max_sep.max((ifo.upper.z_at(tau) - ifo.lower.z_at(tau)).abs());
             }
             assert!((max_sep - expected).abs() <= 1e-12);
+        }
+    }
+
+    #[test]
+    fn placement_roundtrip() {
+        // A tilted detector (non-identity orientation): placement → placed arm bases → recovered
+        // position and sensitive axis, to ≤1e-12. Proves the (D,7) format admits tilt.
+        let cfg = InstrumentConfig::default();
+        let pos = Vec3::new(3.0, -2.0, 1.5);
+        let rot = Quat::from_axis_angle(Vec3::new(0.3, 1.0, -0.2), 0.4);
+        let det = Detector::placed(Isometry3::new(rot, pos));
+
+        let lower_base = det.placement.apply(Vec3::new(0.0, 0.0, 0.0));
+        let upper_base = det.placement.apply(Vec3::new(0.0, 0.0, cfg.ifo_sep));
+        assert!((lower_base - pos).norm() <= 1e-12, "position");
+        let axis = (upper_base - lower_base).scale(1.0 / cfg.ifo_sep);
+        let expected = rot.rotate(Vec3::new(0.0, 0.0, 1.0));
+        assert!((axis - expected).norm() <= 1e-12, "sensitive axis");
+
+        let row = det.placement_row();
+        for (got, want) in row
+            .iter()
+            .zip([pos.x, pos.y, pos.z, rot.w, rot.x, rot.y, rot.z])
+        {
+            assert!((got - want).abs() <= 1e-12, "placement row");
         }
     }
 
