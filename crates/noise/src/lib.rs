@@ -8,7 +8,11 @@
 //! 3), never here. Determinism is via a counter-based keyed RNG: seeds compose through the key tree,
 //! never sequential state (spec `nfr:reproducibility`).
 
+use gravity::{FieldContribution, G};
+use math::{Mat3, Scalar, Vec3};
+
 const TAU: f64 = std::f64::consts::TAU;
+const FOUR_PI_G: f64 = 4.0 * std::f64::consts::PI * G;
 
 /// A counter-based keyed RNG — a stream keyed by `(seed, label)` whose draws are indexed by an
 /// internal counter, so a draw is a pure function of `(key, index)` (parallel, order-independent).
@@ -138,6 +142,124 @@ impl NoiseSource for VibrationResidual {
     }
 }
 
+/// Atmospheric-GGN configuration (spec `tab:atmo`). M5 realises the model *structure* — the finite
+/// correlation length that drives partial common-mode; the full Bowman/ERA5 amplitude models are
+/// later refinements.
+#[derive(Clone, Copy, Debug)]
+pub struct AtmoConfig {
+    /// Number of Fourier modes in the realisation.
+    pub n_modes: usize,
+    /// Correlation length `ℓ_c` [m] — sets the typical wavenumber `|k| ≈ 2π/ℓ_c`.
+    pub correlation_length: f64,
+    /// Density-perturbation RMS scale [kg/m³].
+    pub amplitude: f64,
+    /// Dispersion speed for `ω = c_s|k|` [m/s] (infrasound sound speed).
+    pub sound_speed: f64,
+}
+
+impl Default for AtmoConfig {
+    fn default() -> Self {
+        AtmoConfig {
+            n_modes: 32,
+            correlation_length: 50.0,
+            amplitude: 1e-6,
+            sound_speed: 343.0,
+        }
+    }
+}
+
+/// One plane-wave density mode and its precomputed analytic potential coefficient.
+#[derive(Clone, Copy, Debug)]
+struct AtmoMode {
+    k: [f64; 3],
+    omega: f64,
+    psi: f64,
+    amp: f64,   // a_m — the density amplitude
+    coeff: f64, // −4πG a_m / |k|² — the potential amplitude (analytic Poisson solution)
+}
+
+/// A realised atmospheric density field `δρ(x,t) = Σ a_m cos(k_m·x − ω_m t + ψ_m)`, exposed as a
+/// [`gravity::FieldContribution`]: each mode's potential is the **analytic** plane-wave Poisson
+/// solution `V_m = −4πG a_m/|k_m|² cos(·)`, so the field is a sum of closed forms — cheap, exact,
+/// differentiable, and never a numerical Poisson solve. It lives in the **field** (forward pass), not
+/// the post-hoc noise stack: its finite correlation length gives geometry-dependent partial common-mode.
+pub struct AtmoField {
+    modes: Vec<AtmoMode>,
+}
+
+impl AtmoField {
+    /// Draw the modes **once** from the counter RNG (`key = seed ⊕ "atmo"`).
+    pub fn realise(cfg: &AtmoConfig, seed: u64) -> Self {
+        let mut rng = KeyRng::stream(seed, "atmo");
+        let k_typ = TAU / cfg.correlation_length;
+        // Per-mode amplitude so the field variance is ≈ amplitude² (Σ a²/2 = amplitude²).
+        let a = cfg.amplitude * (2.0 / cfg.n_modes as f64).sqrt();
+        let modes = (0..cfg.n_modes)
+            .map(|_| {
+                let kmag = k_typ * (0.5 + rng.next_unit()); // in [0.5, 1.5]·k_typ
+                let cos_th = 2.0 * rng.next_unit() - 1.0;
+                let sin_th = (1.0 - cos_th * cos_th).max(0.0).sqrt();
+                let phi = TAU * rng.next_unit();
+                let k = [
+                    kmag * sin_th * phi.cos(),
+                    kmag * sin_th * phi.sin(),
+                    kmag * cos_th,
+                ];
+                AtmoMode {
+                    k,
+                    omega: cfg.sound_speed * kmag,
+                    psi: TAU * rng.next_unit(),
+                    amp: a,
+                    coeff: -FOUR_PI_G * a / (kmag * kmag),
+                }
+            })
+            .collect();
+        AtmoField { modes }
+    }
+
+    /// The density perturbation `δρ(p,t) = Σ a_m cos(k·p − ωt + ψ)` — for the Poisson cross-check.
+    pub fn density(&self, p: Vec3<f64>, t: f64) -> f64 {
+        self.modes
+            .iter()
+            .map(|m| {
+                let kp = p.x * m.k[0] + p.y * m.k[1] + p.z * m.k[2];
+                m.amp * (kp - m.omega * t + m.psi).cos()
+            })
+            .sum()
+    }
+}
+
+impl<S: Scalar> FieldContribution<S> for AtmoField {
+    fn potential(&self, p: Vec3<S>, t: f64) -> S {
+        let mut acc = S::from_f64(0.0);
+        for m in &self.modes {
+            let kp =
+                p.x * S::from_f64(m.k[0]) + p.y * S::from_f64(m.k[1]) + p.z * S::from_f64(m.k[2]);
+            let arg = kp + S::from_f64(m.psi - m.omega * t); // k·p − ωt + ψ
+            acc = acc + S::from_f64(m.coeff) * arg.cos();
+        }
+        acc
+    }
+
+    fn gradient_tensor(&self, p: Vec3<S>, t: f64) -> Mat3<S> {
+        // Γ_ij = −∂²V/∂x_i∂x_j = Σ_m coeff_m · k_i k_j · cos(arg).
+        let mut m = [[S::from_f64(0.0); 3]; 3];
+        for mode in &self.modes {
+            let kp = p.x * S::from_f64(mode.k[0])
+                + p.y * S::from_f64(mode.k[1])
+                + p.z * S::from_f64(mode.k[2]);
+            let arg = kp + S::from_f64(mode.psi - mode.omega * t);
+            let factor = S::from_f64(mode.coeff) * arg.cos();
+            for (i, row) in m.iter_mut().enumerate() {
+                for (j, e) in row.iter_mut().enumerate() {
+                    *e = *e + factor * S::from_f64(mode.k[i] * mode.k[j]);
+                }
+            }
+        }
+        Mat3 { m }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +320,56 @@ mod tests {
             // The mean estimator's SD ≈ σ_eff/√n; ShotNoise σ_eff=1, vibration a few — bound generously.
             assert!(mean(&noise).abs() <= 3.0 * 5.0 / n.sqrt(), "not zero-mean");
         }
+    }
+
+    #[test]
+    fn mode_potential_analytic() {
+        // One plane-wave mode: V matches −4πG a/|k|²·cos(·), and ∇²V = 4πG δρ (4th-order FD), ≤1e-8 rel.
+        let k = [0.4, 0.6, 0.3];
+        let kmag2 = k[0] * k[0] + k[1] * k[1] + k[2] * k[2];
+        let (a, omega, psi) = (1.0, 4.0, 0.6);
+        let coeff = -FOUR_PI_G * a / kmag2;
+        let field = AtmoField {
+            modes: vec![AtmoMode {
+                k,
+                omega,
+                psi,
+                amp: a,
+                coeff,
+            }],
+        };
+        let p = Vec3::new(1.1, -0.4, 2.3);
+        let t = 0.9;
+
+        // V matches the closed form.
+        let arg = k[0] * p.x + k[1] * p.y + k[2] * p.z - omega * t + psi;
+        let v_closed = coeff * arg.cos();
+        let v = FieldContribution::<f64>::potential(&field, p, t);
+        assert!(
+            (v - v_closed).abs() / v_closed.abs() <= 1e-8,
+            "V_m mismatch"
+        );
+
+        // ∇²V = 4πG δρ by 4th-order central finite difference.
+        let h = 1e-2;
+        let vp = |dx: f64, dy: f64, dz: f64| {
+            FieldContribution::<f64>::potential(&field, Vec3::new(p.x + dx, p.y + dy, p.z + dz), t)
+        };
+        let lap = |axis: usize| {
+            let e = |s: f64| match axis {
+                0 => vp(s, 0.0, 0.0),
+                1 => vp(0.0, s, 0.0),
+                _ => vp(0.0, 0.0, s),
+            };
+            (-e(-2.0 * h) + 16.0 * e(-h) - 30.0 * e(0.0) + 16.0 * e(h) - e(2.0 * h))
+                / (12.0 * h * h)
+        };
+        let laplacian = lap(0) + lap(1) + lap(2);
+        let rhs = FOUR_PI_G * field.density(p, t);
+        assert!(
+            (laplacian - rhs).abs() / rhs.abs() <= 1e-8,
+            "Poisson ∇²V = 4πG δρ"
+        );
     }
 
     #[test]

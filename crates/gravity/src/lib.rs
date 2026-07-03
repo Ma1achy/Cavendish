@@ -245,11 +245,15 @@ fn jacobi(mut a: [[f64; 3]; 3]) -> ([f64; 3], [[f64; 3]; 3]) {
 ///
 /// # Contract (spec `sec:contracts`, `GravitySource`)
 /// - **Post.** `field = −∇potential` and `gradient = −∇∇potential` to numerical tolerance; the
-///   gradient is symmetric and trace-free in vacuum.
-/// - **Invariant.** Linear over a cloud; pure — no observable state mutation.
+///   gradient is symmetric, and trace-free **in vacuum** (a stochastic-`δρ` field carries a trace
+///   `tr Γ = −4πG δρ` by Poisson where it sources density).
+/// - **Invariant.** Pure — no observable state mutation. `S` on the trait keeps it object-safe, so
+///   `instrument` can sum a heterogeneous `&[&dyn FieldContribution<f64>]`.
 pub trait FieldContribution<S: Scalar> {
     /// The scalar potential contribution at world point `p` and time `t`.
     fn potential(&self, p: Vec3<S>, t: f64) -> S;
+    /// The gradient tensor `Γ = ∇g = −∇∇potential` at world point `p` and time `t`.
+    fn gradient_tensor(&self, p: Vec3<S>, t: f64) -> Mat3<S>;
 }
 
 #[cfg(test)]
