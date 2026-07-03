@@ -2,4 +2,6 @@
 //!
 //! Design: `design/state.md`. Milestone: `milestones/M6-compute-gpu-and-batch.md`.
 //!
-//! M0 skeleton — no implementation yet; see the milestone brief before adding code.
+//! M0 re-exports the `math` surface it consumes so the reachability edges hold up to `generate`.
+
+pub use math::{Dual, Isometry3, Mat3, Quat, Scalar, Vec3};

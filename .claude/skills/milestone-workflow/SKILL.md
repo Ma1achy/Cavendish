@@ -32,3 +32,10 @@ path, and each milestone *enriches* it. Never finish one crate in isolation and 
 - If the brief and the spec disagree, stop and reconcile via doc-sync before coding — do not silently
   pick one.
 - Prefer the smallest change that satisfies the exit table; the briefs are deliberately incremental.
+
+## Branch & PR
+
+- **One branch per unit of work** — every milestone and infra task lands on its own branch; never
+  commit to `main` directly.
+- **Opened as a PR into `main`** — CI runs on the PR and must be green before merge. Loop-step 5's
+  local gate is the *pre-push* check; the PR's green CI is the *integration* gate.
