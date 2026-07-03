@@ -54,23 +54,39 @@ jobs:
         run: cargo test --workspace -- --ignored
 
   # ── SDK: build the PyO3 extension and run the Python fidelity tests. ──
+  # Until M7 creates crates/sdk/pyproject.toml, the extension steps are skipped and the job exits
+  # cleanly ("no sdk yet"). hashFiles is not available in a job-level `if`, so the gate is a first
+  # step whose output guards the rest.
   python:
     runs-on: ubuntu-latest
-    # Skipped until M7 creates crates/sdk/pyproject.toml (the PyO3 extension).
-    if: ${{ hashFiles('crates/sdk/pyproject.toml') != '' }}
     needs: rust
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
+      - id: sdk
+        name: Is the PyO3 extension present yet?
+        run: |
+          if [ -f crates/sdk/pyproject.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "no sdk yet — skipping the Python fidelity tests."
+          fi
+      - if: steps.sdk.outputs.present == 'true'
+        uses: dtolnay/rust-toolchain@stable
+      - if: steps.sdk.outputs.present == 'true'
+        uses: Swatinem/rust-cache@v2
+      - if: steps.sdk.outputs.present == 'true'
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install maturin, pytest, torch (CPU)
+      - if: steps.sdk.outputs.present == 'true'
+        name: Install maturin, pytest, torch (CPU)
         run: pip install maturin pytest torch --extra-index-url https://download.pytorch.org/whl/cpu
-      - name: Build the extension into the env
+      - if: steps.sdk.outputs.present == 'true'
+        name: Build the extension into the env
         run: maturin develop --manifest-path crates/sdk/Cargo.toml
-      - name: pytest
+      - if: steps.sdk.outputs.present == 'true'
+        name: pytest
         run: pytest python/tests -q
 
   # ── Spec: compile the LaTeX and keep the PDF as an artefact. ──
