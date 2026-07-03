@@ -28,12 +28,14 @@ L5  interfaces     sdk (PyO3: run/stream/view)        viewer (egui/wgpu)
 L4  execution       generate  (orchestration: run/stream; batch dispatch)
 L3  assembly        scenario (Scenario, Prior, Schedule)   state (StateBundle, analysis)
 L2  domain          shape   source   instrument   uldm   noise      compute (backends)
-L1  kernel          gravity    (Cloud, elements, potential/field/tensor, oracle)
+L1  kernel          gravity  reference   (Cloud, elements, potential/field/tensor, oracle; reference = independent oracle)
 L0  foundation      math (vectors, quaternions, Isometry, Scalar trait)   config (schema, Prior)
 ```
 
 Dependency edges (each points *up*):
 - `gravity → math`
+- `reference → math` (the independent reference oracle — George's cases by direct quadrature; see
+  `milestones/reference-port.md`. `math` only, so agreement with the engine stays non-circular)
 - `compute → gravity, source, instrument, math` (executes the *forward model* — field **and** the
   arm phase integral, since `SignalBatch` is ΔΦ — so it depends on what defines that model;
   `design/compute.md` §1)

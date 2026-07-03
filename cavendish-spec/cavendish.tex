@@ -246,6 +246,7 @@ cavendish/
   crates/
     sim-core/             # the engine -- all physics, no Python, no UI
       gravity/            # potential/field/tensor; elements; multipole; oracle primitives
+      reference/          # independent oracle: George's cases by direct quadrature (math only)
       shape/              # geometry -> mass: primitives + mesh import, voxeliser (Solid seam)
       compute/            # CPU reference + GPU (wgpu) field-evaluation backend
       source/             # SourceDynamics (rigid); Trajectory library; bodies via shape
@@ -256,6 +257,7 @@ cavendish/
       state/              # StateBundle (multi-detector signal + ground-truth tracks) + field selection
       config/             # the one typed config schema
       generate/           # per-scenario evaluation + batch (GPU dispatch / rayon)
+      analysis/           # Cramer-Rao / Fisher information via the Dual forward model
     viewer/               # eframe/egui + wgpu (one-way dep on sim-core)
   sdk/                    # maturin/PyO3 package: run()/stream() + CLI entry
   docs/

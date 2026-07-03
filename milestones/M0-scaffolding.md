@@ -4,7 +4,7 @@
 > `design/compute.md` §8 (the `Dual`/`Scalar` contract). No physics in this milestone.
 >
 > **Prereq:** none. **Delivers to:** every later milestone (the workspace, `math`, the seams, CI).
-> **Crates touched:** all fifteen (skeletons); `math` in full.
+> **Crates touched:** all sixteen (skeletons); `math` in full.
 
 ---
 
@@ -12,7 +12,7 @@
 
 | ID | Requirement |
 |---|---|
-| M0-R1 | A cargo workspace of fifteen crates compiles, with dependency edges exactly as `DESIGN.md` §1 (edges point up the layers only; a lower layer never names a higher one). |
+| M0-R1 | A cargo workspace of sixteen crates compiles, with dependency edges exactly as `DESIGN.md` §1 (edges point up the layers only; a lower layer never names a higher one). |
 | M0-R2 | `math` is complete: a `Scalar` trait abstracting the numeric type, and a forward-mode `Dual` implementing it, with derivatives correct against analytic references. |
 | M0-R3 | The five seam traits are declared with doc-contracts and no implementations: `SourceDynamics`, `PhaseModel`, `NoiseSource`, `ComputeBackend`, `FieldContribution`. |
 | M0-R4 | Infra committed and working: `.devcontainer/`, `.gitignore`, `.github/workflows/ci.yml`. |
@@ -29,7 +29,7 @@ cavendish/
 ├── Cargo.toml            (workspace; resolver = "2")
 ├── crates/
 │   ├── math/  config/                                  L0
-│   ├── gravity/                                        L1
+│   ├── gravity/ reference/                             L1
 │   ├── shape/ compute/ source/ instrument/ uldm/ noise/ L2
 │   ├── scenario/ state/                                L3
 │   ├── generate/ analysis/                             L4
@@ -40,7 +40,7 @@ cavendish/
 └── .devcontainer/ .github/workflows/ .gitignore
 
 edges (each points up):
-  gravity→math            shape→gravity,math        compute→gravity,source,instrument,math
+  gravity→math   reference→math   shape→gravity,math   compute→gravity,source,instrument,math
   source→shape,gravity,math   instrument→gravity,source,math   uldm→math   noise→gravity,math
   scenario→source,instrument,uldm,noise,config      state→math
   generate→scenario,instrument,gravity,compute,state,noise,uldm
@@ -146,7 +146,7 @@ M0-R1's reachability holds.
 
 | Requirement | Check | Tol |
 |---|---|---|
-| workspace | fifteen crates; dependency edges exactly §2.1 | exact |
+| workspace | sixteen crates; dependency edges exactly §2.1 | exact |
 | `Dual` verified | the §5 unit suite | ≤1e-12 |
 | seams declared | five traits with doc-contracts; no impls | structural |
 | infra | devcontainer builds; `.gitignore` effective; CI green | green |

@@ -85,13 +85,13 @@ cavendish/
 **Goal.** The workspace compiles, CI is green on a skeleton, and the development environment is
 reproducible. No physics yet.
 
-**Builds.** The cargo workspace and all fifteen crate skeletons (compiling, empty); the four seam
+**Builds.** The cargo workspace and all sixteen crate skeletons (compiling, empty); the four seam
 traits as *interfaces only* (`SourceDynamics`, `PhaseModel`, `NoiseSource`, `ComputeBackend`) plus
 `FieldContribution`; `math` in full (the `Scalar` trait and the forward-mode `Dual`, since everything
 depends on it); the infra — `.devcontainer/`, `.gitignore`, `.github/workflows/ci.yml`.
 
 **Plan.**
-1. Create the workspace `Cargo.toml` and the fifteen crates with their dependency edges wired per
+1. Create the workspace `Cargo.toml` and the sixteen crates with their dependency edges wired per
    `DESIGN.md` §1 (deps point up only) — each crate a stub that compiles.
 2. Implement `math`: `Scalar` (the numeric abstraction over `f64`/`f32`/`Dual`) and forward-mode
    `Dual` (value + tangent), with the arithmetic ops.
