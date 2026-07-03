@@ -318,6 +318,40 @@ mod tests {
         );
     }
 
+    #[test]
+    fn dzhanibekov() {
+        // An asymmetric top spun near its intermediate axis flips sign periodically (the tennis-racket
+        // / Dzhanibekov effect). It is integrable, not chaotic — the flip period is well-defined and
+        // must be STABLE under fine_dt halving; a wandering period would mean the integrator is wrong.
+        fn flip_period(h: f64) -> f64 {
+            let inertia = Vec3::new(2.0, 3.0, 5.0); // I₁ < I₂ < I₃; ê₂ (index 1) is the intermediate axis
+            let mut q = [1.0, 0.0, 0.0, 0.0];
+            let mut omega = Vec3::new(0.001, 1.0, 0.0); // ω ≈ ω₂ê₂ + 1e-3 perturbation
+            let mut prev = omega.y;
+            let mut t = 0.0;
+            let mut flips = Vec::new();
+            while flips.len() < 7 && t < 5000.0 {
+                step::<f64>(&mut q, &mut omega, inertia, h);
+                t += h;
+                if (prev > 0.0) != (omega.y > 0.0) {
+                    flips.push(t); // ω₂ changed sign — a flip
+                }
+                prev = omega.y;
+            }
+            let iv: Vec<f64> = flips.windows(2).map(|w| w[1] - w[0]).collect();
+            iv.iter().sum::<f64>() / iv.len().max(1) as f64
+        }
+        let coarse = flip_period(0.01);
+        let fine = flip_period(0.005);
+        let rel = (coarse - fine).abs() / fine;
+        eprintln!("dzhanibekov: coarse {coarse:.4} fine {fine:.4}  rel {rel:.2e}");
+        assert!(coarse > 0.0 && fine > 0.0, "no flips detected");
+        assert!(
+            rel <= 0.01,
+            "flip period unstable under refinement: {rel:.3}"
+        );
+    }
+
     fn ang_mom(w: &Vec3<f64>, i: &Vec3<f64>) -> f64 {
         let l = Vec3::new(i.x * w.x, i.y * w.y, i.z * w.z);
         l.norm()
