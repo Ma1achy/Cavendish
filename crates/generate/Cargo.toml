@@ -12,3 +12,8 @@ compute = { path = "../compute" }
 state = { path = "../state" }
 noise = { path = "../noise" }
 uldm = { path = "../uldm" }
+
+# Test-only: the independent oracle, for the concrete-wall anchor. Keeps `reference`
+# out of the shipped forward-model graph while letting the anchor compare both sides.
+[dev-dependencies]
+reference = { path = "../reference" }
