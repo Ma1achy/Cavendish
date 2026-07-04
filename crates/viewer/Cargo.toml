@@ -4,7 +4,22 @@ version.workspace = true
 edition.workspace = true
 publish = false
 
+[[bin]]
+name = "viewer"
+path = "src/main.rs"
+
 [dependencies]
 generate = { path = "../generate" }
 state = { path = "../state" }
 gravity = { path = "../gravity" }
+# One graphics stack: the same wgpu 22 compute uses; eframe's wgpu backend resolves to it.
+wgpu = { workspace = true }
+bytemuck = { workspace = true }
+eframe = { workspace = true }
+egui = { workspace = true }
+egui_plot = { workspace = true }
+
+[dev-dependencies]
+# The headless render test acquires a device via compute's shared context; math for pose references.
+compute = { path = "../compute" }
+math = { path = "../math" }

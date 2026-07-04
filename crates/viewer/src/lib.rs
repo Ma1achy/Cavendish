@@ -1,11 +1,17 @@
-//! `viewer` — the egui/wgpu inspector. Becomes a binary at M9.
+//! `viewer` — the egui + wgpu inspector: eyes on the forward model. It runs the engine (or loads a
+//! serialised bundle) and draws it — posed clouds, the array, the signal, the spectrum, a scrubber.
 //!
 //! Design: `design/viewer.md`. Milestone: `milestones/M9-viewer.md`.
 //!
-//! M0 names `generate`'s public surface (the `edges_reachable` check); the egui/wgpu app lands in M9.
+//! Two spines, both testable headlessly (the eye is not the check): **coherence** — the 3D pose and the
+//! 2D cursor read one scrub index `ℓ` ([`scrub`]) and the drawn geometry equals the bundle ([`pose`]);
+//! and **failing soft** — a run panic becomes a toast, a degenerate scene an empty one, never a crash.
+//! Everything asserted lives in these pure modules or the borrowed-device [`render`]er, below the App.
 
-#[cfg(test)]
-mod names_generate {
-    #[allow(unused_imports)]
-    use generate::{ComputeBackend, FieldContribution, PhaseModel, SourceDynamics, Vec3};
-}
+pub mod app;
+pub mod camera;
+pub mod field_slice;
+pub mod pose;
+pub mod render;
+pub mod scene;
+pub mod scrub;
