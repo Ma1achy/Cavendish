@@ -47,90 +47,9 @@ impl Jacobian {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use compute::{AtmoMode, Axis, Param, SourceBatch};
-    use gravity::Cloud;
-    use math::{Isometry3, Quat, Vec3};
-    use source::{Orient, Path, Timing};
-
-    /// A static source at `placement` with the given elements, a line of `d` detectors at unit spacing,
-    /// and `t` uniformly-spaced measurement times.
-    pub(super) fn scenario(
-        elements: &[(f64, f64, f64, f64)],
-        placement: Vec3<f64>,
-        d: usize,
-        t: usize,
-    ) -> ScenarioBatch {
-        rotating_scenario(elements, placement, None, d, t)
-    }
-
-    /// As [`scenario`], optionally with a free-rotation `ω₀` (to exercise the ω₀ Jacobian).
-    pub(super) fn rotating_scenario(
-        elements: &[(f64, f64, f64, f64)],
-        placement: Vec3<f64>,
-        omega0: Option<Vec3<f64>>,
-        d: usize,
-        t: usize,
-    ) -> ScenarioBatch {
-        let orient = match omega0 {
-            Some(w) => Orient::FreeRotation { omega0: w },
-            None => Orient::Fixed(Quat::identity()),
-        };
-        ScenarioBatch {
-            sources: vec![SourceBatch {
-                cloud: Cloud::from_elements(elements),
-                placement: Isometry3::new(Quat::identity(), placement),
-                path: Path::Static,
-                timing: Timing::Uniform { rate: 0.0 },
-                orient,
-            }],
-            atmo: Vec::<AtmoMode>::new(),
-            detectors: (0..d)
-                .map(|i| Isometry3::new(Quat::identity(), Vec3::new(i as f64, 0.0, 0.0)))
-                .collect(),
-            times: (0..t).map(|i| 1.0 + i as f64).collect(),
-        }
-    }
-
-    /// Perturb the scalar parameter `seed` picks out by `delta` (for a finite-difference reference).
-    /// `Mass` scales every element mass by `1 + delta` (the fractional-mass parameterisation).
-    pub(super) fn perturb(scn: &ScenarioBatch, seed: ParamSeed, delta: f64) -> ScenarioBatch {
-        let mut out = scn.clone();
-        let s = &mut out.sources[seed.source];
-        match seed.param {
-            Param::Position(ax) => {
-                let v = &mut s.placement.translation;
-                match ax {
-                    Axis::X => v.x += delta,
-                    Axis::Y => v.y += delta,
-                    Axis::Z => v.z += delta,
-                }
-            }
-            Param::Omega0(ax) => {
-                if let Orient::FreeRotation { omega0 } = &mut s.orient {
-                    match ax {
-                        Axis::X => omega0.x += delta,
-                        Axis::Y => omega0.y += delta,
-                        Axis::Z => omega0.z += delta,
-                    }
-                }
-            }
-            Param::Velocity(ax) => {
-                if let Path::LinearPass { b, .. } = &mut s.path {
-                    match ax {
-                        Axis::X => b.x += delta,
-                        Axis::Y => b.y += delta,
-                        Axis::Z => b.z += delta,
-                    }
-                }
-            }
-            Param::Mass => {
-                for m in s.cloud.ms.iter_mut() {
-                    *m *= 1.0 + delta;
-                }
-            }
-        }
-        out
-    }
+    use crate::testkit::{perturb, rotating_scenario, scenario};
+    use compute::{Axis, Param};
+    use math::Vec3;
 
     /// Flatten `forward_f64` row-major (detectors, then measurements), the Jacobian's row order.
     fn flat(sig: &[Vec<f64>]) -> Vec<f64> {
