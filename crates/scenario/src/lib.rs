@@ -7,7 +7,7 @@
 pub use config::{ConfigError, Dist, FieldSet, RunConfig};
 pub use instrument::{Detector, DetectorArray, PhaseModel, PhaseModelKind};
 pub use noise::{
-    AtmoConfig, AtmoField, KeyRng, NoiseSource, NoiseStack, ShotNoise, VibrationResidual,
+    hash, AtmoConfig, AtmoField, Key, KeyRng, NoiseSource, NoiseStack, ShotNoise, VibrationResidual,
 };
 pub use source::{
     BodyMotion, Orient, Path, Prescribed, Source, SourceDynamics, Timing, Trajectory,
@@ -17,18 +17,57 @@ pub use uldm::{uldm_phase, UldmConfig};
 use gravity::Cloud;
 use math::{Isometry3, Quat, Vec3};
 
-/// The measurement times. Uniform in M1; jitter/gaps arrive with M6's schedules.
+/// The measurement times and a per-cycle contamination `mask` (`mask[i]` true ⇒ cycle `i` is
+/// transient-contaminated and excluded from clean analysis). `times.len() == mask.len()`.
 #[derive(Clone, Debug, Default)]
 pub struct Schedule {
     pub times: Vec<f64>,
+    pub mask: Vec<bool>,
 }
 
 impl Schedule {
-    /// `n` measurements spaced `cadence` seconds apart, starting at `t = 0`.
+    /// `n` measurements spaced `cadence` seconds apart, starting at `t = 0`. Exact, uncontaminated —
+    /// the bit-exact baseline the realism knobs perturb.
     pub fn uniform(cadence: f64, n: usize) -> Self {
         Schedule {
             times: (0..n).map(|i| i as f64 * cadence).collect(),
+            mask: vec![false; n],
         }
+    }
+
+    /// A uniform cadence with cycles dropped independently at probability `p_drop` (MOT failures) —
+    /// keyed at `schedule/gap[i]` so the surviving set is reproducible from `(seed, i)` alone.
+    pub fn gappy(cadence: f64, n: usize, p_drop: f64, seed: u64) -> Self {
+        let gap = Key::root(seed).child("schedule").child("gap");
+        let times: Vec<f64> = (0..n)
+            .filter(|&i| gap.index(i as u64).unit(0) >= p_drop)
+            .map(|i| i as f64 * cadence)
+            .collect();
+        let mask = vec![false; times.len()];
+        Schedule { times, mask }
+    }
+
+    /// A uniform cadence with each time perturbed by `±jitter` (cycle-time jitter) — keyed at
+    /// `schedule/jitter[i]`. `jitter < cadence/2` keeps the times monotone.
+    pub fn jittered(cadence: f64, n: usize, jitter: f64, seed: u64) -> Self {
+        let jit = Key::root(seed).child("schedule").child("jitter");
+        let times = (0..n)
+            .map(|i| i as f64 * cadence + (2.0 * jit.index(i as u64).unit(0) - 1.0) * jitter)
+            .collect();
+        Schedule {
+            times,
+            mask: vec![false; n],
+        }
+    }
+
+    /// Mark a `fraction` of cycles as transient-contaminated in the `mask` — keyed at
+    /// `schedule/contam[i]`, independent of the gap/jitter draws.
+    pub fn with_contamination(mut self, fraction: f64, seed: u64) -> Self {
+        let contam = Key::root(seed).child("schedule").child("contam");
+        for (i, m) in self.mask.iter_mut().enumerate() {
+            *m = contam.index(i as u64).unit(0) < fraction;
+        }
+        self
     }
 }
 
@@ -175,5 +214,40 @@ impl Prior {
             });
         }
         scn
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn schedule_realism() {
+        // Uniform: exact times, no contamination — the bit-exact baseline.
+        let u = Schedule::uniform(2.0, 5);
+        assert_eq!(u.times, vec![0.0, 2.0, 4.0, 6.0, 8.0]);
+        assert!(u.mask.iter().all(|&m| !m));
+
+        // Gappy: a strict, sorted subset of the grid; ~(1−p) survive; mask aligned to times.
+        let g = Schedule::gappy(2.0, 1000, 0.3, 7);
+        assert!(g.times.len() < 1000 && g.times.len() > 500);
+        assert!(g.times.windows(2).all(|w| w[0] < w[1]));
+        assert_eq!(g.mask.len(), g.times.len());
+        assert_eq!(g.times, Schedule::gappy(2.0, 1000, 0.3, 7).times); // reproducible
+
+        // Jittered: perturbed but monotone (jitter < cadence/2), length preserved.
+        let j = Schedule::jittered(2.0, 100, 0.5, 7);
+        assert_eq!(j.times.len(), 100);
+        assert!(j.times.windows(2).all(|w| w[0] < w[1]));
+        assert!(j
+            .times
+            .iter()
+            .enumerate()
+            .all(|(i, &t)| (t - i as f64 * 2.0).abs() <= 0.5 + 1e-12));
+
+        // Contamination: mask fraction as configured (±3% over 10⁴ cycles).
+        let c = Schedule::uniform(2.0, 10_000).with_contamination(0.2, 7);
+        let frac = c.mask.iter().filter(|&&m| m).count() as f64 / c.mask.len() as f64;
+        assert!((frac - 0.2).abs() < 0.03, "contamination fraction {frac}");
     }
 }

@@ -49,7 +49,7 @@ pub fn run(scenario: &Scenario) -> StateBundle {
     let (mut targets_ch, mut atmo_ch, mut uldm_ch, mut per_ifo_ch) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
 
-    for &t in &scenario.schedule.times {
+    for (idx, &t) in scenario.schedule.times.iter().enumerate() {
         let mut row = Vec::with_capacity(d);
         let (mut trow, mut arow, mut pirow) = (Vec::new(), Vec::new(), Vec::new());
         for det in &scenario.array.detectors {
@@ -96,7 +96,7 @@ pub fn run(scenario: &Scenario) -> StateBundle {
             m.angular_acceleration.y,
             m.angular_acceleration.z,
         ]);
-        mask.push(false);
+        mask.push(scenario.schedule.mask.get(idx).copied().unwrap_or(false));
     }
 
     // Post-hoc noise, realised (T, D) and added: signal = clean + noise (recoverable bit-for-bit).
