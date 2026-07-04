@@ -8,6 +8,7 @@
 //! watertightness, classification — is always compiled and validated against analytic truth.
 
 use crate::{Aabb, MassSpec, ShapeError, Solid, VoxelParams};
+use gravity::Cloud;
 use std::f64::consts::PI;
 use std::path::{Path, PathBuf};
 
@@ -65,6 +66,12 @@ pub struct MeshReport {
     pub flipped: usize,
     /// Every edge shared by exactly two consistently-oriented triangles.
     pub watertight: bool,
+    /// Signed volume by the divergence theorem `V = (1/6) Σ p₀·(p₁×p₂)`. Positive for an
+    /// outward-oriented mesh; the sign catches inverted orientation, the magnitude gross scale errors.
+    pub volume: f64,
+    /// The robust classifier's ambiguity diagnostic `A = mean min(|w|, |w−1|)`, when the robust path
+    /// was taken (open/non-manifold). `None` for a watertight mesh classified by the fast path.
+    pub ambiguity: Option<f64>,
 }
 
 /// Lower-case file extension, or `""`.
@@ -89,10 +96,10 @@ fn parse_path(path: &Path) -> Result<TriSoup, ShapeError> {
     }
 }
 
-/// Import a mesh: apply the mandatory scale, parse to a scaled triangle soup, and classify it.
+/// Import a mesh: apply the mandatory scale, parse to a scaled triangle soup, and classify it. The
+/// returned [`MeshSolid`] voxelises via [`voxelise_mesh`].
 ///
 /// **Scale is checked first**, before any file read, so a missing scale fails loudly and cheaply.
-/// (Voxelisation of the resulting solid arrives in a later M10 commit.)
 pub fn load_solid(import: &MeshImport) -> Result<(MeshSolid, MeshReport), ShapeError> {
     let scale = import.scale.ok_or(ShapeError::ScaleMissing)?;
     let soup = parse_path(&import.path)?.scaled(scale);
@@ -250,6 +257,17 @@ pub fn winding_brute(soup: &TriSoup, p: [f64; 3]) -> f64 {
     s / (4.0 * PI)
 }
 
+/// The signed volume enclosed by a mesh via the divergence theorem: `V = (1/6) Σ_t p₀·(p₁×p₂)`.
+/// Positive for an outward-oriented watertight mesh. An independent cross-check of the voxelised
+/// volume (catches scale errors, inverted orientation, and gross classification bugs in one number).
+pub fn signed_volume(soup: &TriSoup) -> f64 {
+    let mut v = 0.0;
+    for t in &soup.tris {
+        v += dot(soup.verts[t[0]], cross(soup.verts[t[1]], soup.verts[t[2]]));
+    }
+    v / 6.0
+}
+
 /// Edge-manifold classification: `(open_edges, flipped, watertight)`. Watertight ⇔ every edge is
 /// shared by exactly two triangles that traverse it in opposite directions.
 fn edge_stats(soup: &TriSoup) -> (usize, usize, bool) {
@@ -326,6 +344,9 @@ struct Node {
     radius: f64,
     /// Total triangle area in the subtree — the scale of the far-field error bound.
     area: f64,
+    /// Tight AABB over the subtree's triangle vertices — for ray-cast (parity) pruning.
+    bmin: [f64; 3],
+    bmax: [f64; 3],
     p: [f64; 3],
     m: [[f64; 3]; 3],
     tt: [[[f64; 3]; 3]; 3],
@@ -393,6 +414,8 @@ impl Bvh {
         let mut m = [[0.0; 3]; 3];
         let mut tt = [[[0.0; 3]; 3]; 3];
         let mut radius = 0.0f64;
+        let mut bmin = [f64::INFINITY; 3];
+        let mut bmax = [f64::NEG_INFINITY; 3];
         for &t in &self.order[lo..hi] {
             let g = self.area_vec[t];
             let d = sub(self.centroid[t], centre);
@@ -405,7 +428,12 @@ impl Bvh {
                 }
             }
             for &vi in &soup.tris[t] {
-                radius = radius.max(norm(sub(soup.verts[vi], centre)));
+                let v = soup.verts[vi];
+                radius = radius.max(norm(sub(v, centre)));
+                for k in 0..3 {
+                    bmin[k] = bmin[k].min(v[k]);
+                    bmax[k] = bmax[k].max(v[k]);
+                }
             }
         }
 
@@ -439,6 +467,8 @@ impl Bvh {
             centre,
             radius,
             area: wsum,
+            bmin,
+            bmax,
             p,
             m,
             tt,
@@ -484,6 +514,82 @@ impl Bvh {
             }
         }
     }
+
+    /// Count forward ray–triangle crossings from `origin` along `dir`, pruning by node AABB. Parity
+    /// (odd ⇒ inside) classifies a watertight mesh independently of the winding number.
+    fn ray_crossings(&self, soup: &TriSoup, origin: [f64; 3], dir: [f64; 3]) -> usize {
+        if self.nodes.is_empty() {
+            return 0;
+        }
+        let inv = [1.0 / dir[0], 1.0 / dir[1], 1.0 / dir[2]];
+        let mut count = 0;
+        let mut stack = vec![self.nodes.len() - 1];
+        while let Some(i) = stack.pop() {
+            let nd = &self.nodes[i];
+            if !ray_aabb(origin, inv, nd.bmin, nd.bmax) {
+                continue;
+            }
+            match nd.kind {
+                NodeKind::Leaf { start, count: c } => {
+                    for &t in &self.order[start..start + c] {
+                        let tri = soup.tris[t];
+                        if ray_triangle(
+                            origin,
+                            dir,
+                            soup.verts[tri[0]],
+                            soup.verts[tri[1]],
+                            soup.verts[tri[2]],
+                        ) {
+                            count += 1;
+                        }
+                    }
+                }
+                NodeKind::Internal { left, right } => {
+                    stack.push(left);
+                    stack.push(right);
+                }
+            }
+        }
+        count
+    }
+}
+
+/// Slab test: does the forward ray `origin + t·dir` (`t > 0`, `inv = 1/dir`) meet the box?
+fn ray_aabb(origin: [f64; 3], inv: [f64; 3], bmin: [f64; 3], bmax: [f64; 3]) -> bool {
+    let mut tmin = 0.0f64;
+    let mut tmax = f64::INFINITY;
+    for k in 0..3 {
+        let t1 = (bmin[k] - origin[k]) * inv[k];
+        let t2 = (bmax[k] - origin[k]) * inv[k];
+        let (lo, hi) = if t1 <= t2 { (t1, t2) } else { (t2, t1) };
+        tmin = tmin.max(lo);
+        tmax = tmax.min(hi);
+    }
+    tmax >= tmin
+}
+
+/// Möller–Trumbore: does the forward ray `origin + t·dir` (`t > ε`) cross triangle `(a, b, c)`?
+fn ray_triangle(origin: [f64; 3], dir: [f64; 3], a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> bool {
+    const EPS: f64 = 1e-12;
+    let e1 = sub(b, a);
+    let e2 = sub(c, a);
+    let h = cross(dir, e2);
+    let det = dot(e1, h);
+    if det.abs() < EPS {
+        return false; // ray parallel to the triangle
+    }
+    let inv = 1.0 / det;
+    let s = sub(origin, a);
+    let u = inv * dot(s, h);
+    if !(0.0..=1.0).contains(&u) {
+        return false;
+    }
+    let q = cross(s, e1);
+    let v = inv * dot(dir, q);
+    if v < 0.0 || u + v > 1.0 {
+        return false;
+    }
+    inv * dot(e2, q) > EPS // forward hit
 }
 
 /// Far-field approximation of a node's raw solid-angle sum: the Taylor expansion of `g·K(r+δ)` about
@@ -536,6 +642,7 @@ pub struct MeshSolid {
     soup: TriSoup,
     bvh: Bvh,
     aabb: Aabb,
+    watertight: bool,
 }
 
 impl MeshSolid {
@@ -551,10 +658,20 @@ impl MeshSolid {
             open_edges,
             flipped,
             watertight,
+            volume: signed_volume(&soup),
+            ambiguity: None,
         };
         let aabb = soup_aabb(&soup);
         let bvh = Bvh::build(&soup);
-        Ok((MeshSolid { soup, bvh, aabb }, report))
+        Ok((
+            MeshSolid {
+                soup,
+                bvh,
+                aabb,
+                watertight,
+            },
+            report,
+        ))
     }
 
     /// The generalised winding number at `p`, accurate (agrees with brute force to ≤1e-6).
@@ -567,6 +684,286 @@ impl MeshSolid {
     pub fn inside(&self, p: [f64; 3]) -> bool {
         self.bvh.winding(&self.soup, p, TAU_CLASS) > 0.5
     }
+}
+
+// ── The two classifiers over a lattice: the watertight fast path and the robust winding path. ──
+
+/// A cubic lattice over a bounding box — the classification and voxelisation domain. Mirrors the
+/// lattice `crate::voxelise` builds (same pitch rounding, same cell centres), so a mesh classified
+/// here voxelises identically to a primitive.
+struct Lattice {
+    origin: [f64; 3],
+    h: f64,
+    dims: [usize; 3],
+}
+
+impl Lattice {
+    fn new(bbox: Aabb, h: f64) -> Lattice {
+        let dims = [
+            ((bbox.max[0] - bbox.min[0]) / h).ceil().max(1.0) as usize,
+            ((bbox.max[1] - bbox.min[1]) / h).ceil().max(1.0) as usize,
+            ((bbox.max[2] - bbox.min[2]) / h).ceil().max(1.0) as usize,
+        ];
+        Lattice {
+            origin: bbox.min,
+            h,
+            dims,
+        }
+    }
+
+    fn count(&self) -> usize {
+        self.dims[0] * self.dims[1] * self.dims[2]
+    }
+
+    fn index(&self, i: usize, j: usize, k: usize) -> usize {
+        i + self.dims[0] * (j + self.dims[1] * k)
+    }
+
+    fn centre(&self, i: usize, j: usize, k: usize) -> [f64; 3] {
+        [
+            self.origin[0] + (i as f64 + 0.5) * self.h,
+            self.origin[1] + (j as f64 + 0.5) * self.h,
+            self.origin[2] + (k as f64 + 0.5) * self.h,
+        ]
+    }
+}
+
+/// The tri-state a cell falls into under the watertight fast path.
+#[derive(Clone, Copy, PartialEq)]
+enum Cell {
+    Outside,
+    Inside,
+    Boundary,
+}
+
+/// The watertight fast path: conservatively rasterise the surface, flood-fill the exterior from the
+/// bbox margin, and sub-sample boundary cells by BVH parity rays. Returns per-cell occupancy and the
+/// boundary mask (boundary cells are excluded from `flood_vs_wn`, which compares the definite cells).
+fn classify_watertight(
+    soup: &TriSoup,
+    bvh: &Bvh,
+    lattice: &Lattice,
+    supersample: usize,
+) -> (Vec<f64>, Vec<bool>) {
+    let n = lattice.count();
+    let [nx, ny, nz] = lattice.dims;
+
+    // 1. Conservative surface rasterisation: mark every cell overlapping a triangle's AABB.
+    let mut state = vec![Cell::Inside; n];
+    for t in &soup.tris {
+        let mut lo = [usize::MAX; 3];
+        let mut hi = [0usize; 3];
+        let mut tmin = [f64::INFINITY; 3];
+        let mut tmax = [f64::NEG_INFINITY; 3];
+        for &vi in t {
+            for k in 0..3 {
+                tmin[k] = tmin[k].min(soup.verts[vi][k]);
+                tmax[k] = tmax[k].max(soup.verts[vi][k]);
+            }
+        }
+        for k in 0..3 {
+            let a = ((tmin[k] - lattice.origin[k]) / lattice.h).floor();
+            let b = ((tmax[k] - lattice.origin[k]) / lattice.h).floor();
+            lo[k] = a.max(0.0) as usize;
+            hi[k] = (b.max(0.0) as usize).min(lattice.dims[k] - 1);
+        }
+        for k in lo[2]..=hi[2] {
+            for j in lo[1]..=hi[1] {
+                for i in lo[0]..=hi[0] {
+                    state[lattice.index(i, j, k)] = Cell::Boundary;
+                }
+            }
+        }
+    }
+
+    // 2. Flood-fill the exterior from the bbox margin through non-boundary cells (6-connectivity).
+    let mut stack: Vec<(usize, usize, usize)> = Vec::new();
+    let push_seed = |i, j, k, state: &mut [Cell], stack: &mut Vec<_>| {
+        let idx = lattice.index(i, j, k);
+        if state[idx] == Cell::Inside {
+            state[idx] = Cell::Outside;
+            stack.push((i, j, k));
+        }
+    };
+    for j in 0..ny {
+        for i in 0..nx {
+            push_seed(i, j, 0, &mut state, &mut stack);
+            push_seed(i, j, nz - 1, &mut state, &mut stack);
+        }
+    }
+    for k in 0..nz {
+        for i in 0..nx {
+            push_seed(i, 0, k, &mut state, &mut stack);
+            push_seed(i, ny - 1, k, &mut state, &mut stack);
+        }
+    }
+    for k in 0..nz {
+        for j in 0..ny {
+            push_seed(0, j, k, &mut state, &mut stack);
+            push_seed(nx - 1, j, k, &mut state, &mut stack);
+        }
+    }
+    while let Some((i, j, k)) = stack.pop() {
+        let visit = |i: usize, j: usize, k: usize, state: &mut [Cell], stack: &mut Vec<_>| {
+            let idx = lattice.index(i, j, k);
+            if state[idx] == Cell::Inside {
+                state[idx] = Cell::Outside;
+                stack.push((i, j, k));
+            }
+        };
+        if i > 0 {
+            visit(i - 1, j, k, &mut state, &mut stack);
+        }
+        if i + 1 < nx {
+            visit(i + 1, j, k, &mut state, &mut stack);
+        }
+        if j > 0 {
+            visit(i, j - 1, k, &mut state, &mut stack);
+        }
+        if j + 1 < ny {
+            visit(i, j + 1, k, &mut state, &mut stack);
+        }
+        if k > 0 {
+            visit(i, j, k - 1, &mut state, &mut stack);
+        }
+        if k + 1 < nz {
+            visit(i, j, k + 1, &mut state, &mut stack);
+        }
+    }
+
+    // 3. Occupancy: interior 1, exterior 0, boundary = fraction of k³ sub-samples inside by parity ray.
+    let k = supersample.max(1);
+    // A fixed, slightly skew ray direction so it rarely grazes an edge or vertex.
+    let dir = [0.5731, 0.3319, 0.7490];
+    let mut occ = vec![0.0f64; n];
+    let mut boundary = vec![false; n];
+    for kk in 0..nz {
+        for jj in 0..ny {
+            for ii in 0..nx {
+                let idx = lattice.index(ii, jj, kk);
+                match state[idx] {
+                    Cell::Inside => occ[idx] = 1.0,
+                    Cell::Outside => occ[idx] = 0.0,
+                    Cell::Boundary => {
+                        boundary[idx] = true;
+                        let c = lattice.centre(ii, jj, kk);
+                        let mut inside = 0;
+                        for a in 0..k {
+                            let ox = ((a as f64 + 0.5) / k as f64 - 0.5) * lattice.h;
+                            for b in 0..k {
+                                let oy = ((b as f64 + 0.5) / k as f64 - 0.5) * lattice.h;
+                                for d in 0..k {
+                                    let oz = ((d as f64 + 0.5) / k as f64 - 0.5) * lattice.h;
+                                    let p = [c[0] + ox, c[1] + oy, c[2] + oz];
+                                    if bvh.ray_crossings(soup, p, dir) % 2 == 1 {
+                                        inside += 1;
+                                    }
+                                }
+                            }
+                        }
+                        occ[idx] = inside as f64 / (k * k * k) as f64;
+                    }
+                }
+            }
+        }
+    }
+    (occ, boundary)
+}
+
+/// The ambiguity threshold: above this, the robust classifier's mean `min(|w|, |w−1|)` marks the
+/// interior as genuinely undecidable and `load`/voxelisation fails loudly rather than emitting a
+/// silent garbage cloud. A sound (even lightly open) mesh sits well below; a broken one well above.
+const A_MAX: f64 = 0.15;
+
+/// The robust path (open/non-manifold): per-cell occupancy by the winding number, with the ambiguity
+/// diagnostic `A = mean min(|w|, |w−1|)` over cell centres. `A > A_MAX ⇒ AmbiguousInterior` — the
+/// interior is undecidable, so no cloud is emitted (never a silent garbage cloud). With `supersample
+/// = 1` the occupancy is the binary cell-centre classification; otherwise each cell is the fraction
+/// of its `k³` sub-samples inside. Returns the occupancy grid and `A`.
+fn classify_winding(
+    soup: &TriSoup,
+    bvh: &Bvh,
+    lattice: &Lattice,
+    supersample: usize,
+) -> Result<(Vec<f64>, f64), ShapeError> {
+    let n = lattice.count();
+    let k = supersample.max(1);
+    let mut occ = vec![0.0f64; n];
+    let mut amb = 0.0;
+    for kk in 0..lattice.dims[2] {
+        for jj in 0..lattice.dims[1] {
+            for ii in 0..lattice.dims[0] {
+                let c = lattice.centre(ii, jj, kk);
+                let wc = bvh.winding(soup, c, TAU_CLASS);
+                amb += wc.abs().min((wc - 1.0).abs());
+                let idx = lattice.index(ii, jj, kk);
+                occ[idx] = if k == 1 {
+                    f64::from(wc > 0.5)
+                } else {
+                    let mut inside = 0;
+                    for a in 0..k {
+                        let ox = ((a as f64 + 0.5) / k as f64 - 0.5) * lattice.h;
+                        for b in 0..k {
+                            let oy = ((b as f64 + 0.5) / k as f64 - 0.5) * lattice.h;
+                            for d in 0..k {
+                                let oz = ((d as f64 + 0.5) / k as f64 - 0.5) * lattice.h;
+                                let p = [c[0] + ox, c[1] + oy, c[2] + oz];
+                                if bvh.winding(soup, p, TAU_CLASS) > 0.5 {
+                                    inside += 1;
+                                }
+                            }
+                        }
+                    }
+                    inside as f64 / (k * k * k) as f64
+                };
+            }
+        }
+    }
+    let a = amb / n as f64;
+    if a > A_MAX {
+        return Err(ShapeError::AmbiguousInterior(a));
+    }
+    Ok((occ, a))
+}
+
+/// Voxelise a mesh through the **same** pipeline as a primitive: build the lattice, classify it (the
+/// watertight fast path or the robust winding path, which may fail loudly with `AmbiguousInterior`),
+/// then emit the cloud through the shared [`crate::finish_cloud`] tail — so the result is
+/// indistinguishable downstream (exact mass, zero dipole, canonical x-fastest order).
+pub fn voxelise_mesh(
+    mesh: &MeshSolid,
+    params: &VoxelParams,
+    mass: MassSpec,
+) -> Result<Cloud, ShapeError> {
+    let h = crate::pitch_for(&mesh.aabb, params)?;
+    let lattice = Lattice::new(mesh.aabb, h);
+    let k = params.supersample.max(1) as usize;
+    let occ = if mesh.watertight {
+        classify_watertight(&mesh.soup, &mesh.bvh, &lattice, k).0
+    } else {
+        classify_winding(&mesh.soup, &mesh.bvh, &lattice, k)?.0
+    };
+
+    let cell = h * h * h;
+    let (mut xs, mut ys, mut zs, mut vols) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for kk in 0..lattice.dims[2] {
+        for jj in 0..lattice.dims[1] {
+            for ii in 0..lattice.dims[0] {
+                let o = occ[lattice.index(ii, jj, kk)];
+                if o > 0.0 {
+                    let c = lattice.centre(ii, jj, kk);
+                    xs.push(c[0]);
+                    ys.push(c[1]);
+                    zs.push(c[2]);
+                    vols.push(o * cell);
+                    if xs.len() > crate::ELEMENT_CAP {
+                        return Err(ShapeError::TooManyElements);
+                    }
+                }
+            }
+        }
+    }
+    crate::finish_cloud(xs, ys, zs, vols, mass)
 }
 
 impl Solid for MeshSolid {
@@ -748,6 +1145,55 @@ mod tests {
             worst = worst.max(diff);
         }
         assert!(worst <= 1e-6, "fast WN vs brute worst {worst}");
+    }
+
+    #[test]
+    fn flood_vs_wn() {
+        // On a watertight mesh the fast (flood-fill + parity ray) and robust (winding) classifiers
+        // must agree cell-for-cell away from the boundary shell — two independent inside tests.
+        let soup = icosphere(3); // 1280 triangles
+        let bvh = Bvh::build(&soup);
+        let bbox = soup_aabb(&soup);
+        let h = (bbox.max[0] - bbox.min[0]) / 40.0;
+        let lat = Lattice::new(bbox, h);
+        let (occ_wt, boundary) = classify_watertight(&soup, &bvh, &lat, 1);
+        let (occ_wn, _a) = classify_winding(&soup, &bvh, &lat, 1).unwrap();
+
+        let (mut agree, mut total) = (0usize, 0usize);
+        for idx in 0..lat.count() {
+            if boundary[idx] {
+                continue; // definite cells only — the boundary is where the two legitimately differ
+            }
+            total += 1;
+            if (occ_wt[idx] > 0.5) == (occ_wn[idx] > 0.5) {
+                agree += 1;
+            }
+        }
+        let frac = agree as f64 / total as f64;
+        assert!(
+            frac >= 0.999,
+            "flood vs winding agree {frac} over {total} cells"
+        );
+    }
+
+    #[test]
+    fn volume_crosscheck() {
+        // The voxelised volume matches the divergence-theorem volume to ≤1% at h = bbox/50 —
+        // one number catching scale errors, inverted orientation, and gross classification bugs.
+        let soup = icosphere(2); // 320 triangles
+        let bvh = Bvh::build(&soup);
+        let bbox = soup_aabb(&soup);
+        let h = (bbox.max[0] - bbox.min[0]) / 50.0;
+        let lat = Lattice::new(bbox, h);
+        let (occ, _b) = classify_watertight(&soup, &bvh, &lat, 3);
+        let v_voxel: f64 = occ.iter().sum::<f64>() * h.powi(3);
+        let v_mesh = signed_volume(&soup);
+        assert!(v_mesh > 0.0, "outward orientation ⇒ positive volume");
+        let rel = (v_voxel - v_mesh).abs() / v_mesh;
+        assert!(
+            rel <= 0.01,
+            "voxel {v_voxel} vs divergence {v_mesh}: rel {rel}"
+        );
     }
 
     #[test]
