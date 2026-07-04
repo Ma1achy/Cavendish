@@ -52,6 +52,11 @@ Stored `(T,X,Y,Z,3)` grid when the bundle has it; otherwise sample `gravity` on 
 scrubbed `t` on demand (cheap: one slice, not a volume) — the default, so inspecting the field
 never forces the storage-dominant `FieldSet.field`.
 
+**Realisation (M9).** Only the on-demand slice is implemented — the stored-grid mode is **deferred**
+(no `field_grid`/`FieldSet.field` producer exists yet, `state.md` §6). `field_two_modes` therefore
+validates the slice sampler against a **direct `gravity::field` reference** independently assembled at
+the same nodes (reference-independence), rather than against a second stored copy.
+
 ---
 
 ## 3. Pseudocode
@@ -79,7 +84,7 @@ fn frame(app):
 | unit | `none_disables` | `periodogram = None` ⇒ panel disabled, no error path taken | structural |
 | unit | `pose_placement` | cloud vertices = `source_orientation[ℓ]`·body + `source_position[ℓ]` | ≤1e-6 |
 | integration | `renders_headless` | a `Scenario` runs and one frame renders under lavapipe (offscreen target) without panic | structural |
-| integration | `field_two_modes` | slice values from the stored grid vs on-demand `gravity` agree at grid nodes | ≤1e-6 |
+| integration | `field_two_modes` | on-demand slice vs an independent `gravity::field` reference at the same nodes (stored grid deferred, §2.3) | ≤1e-6 |
 | integration | `load_bundle` | a serialised bundle renders read-only (no re-run required) | structural |
 | e2e (review) | `tumble_visible` | a free-rotation source visibly flips (Dzhanibekov) while scrubbing; spin-axis vector tracks ω | review |
 | e2e (review) | `tweak_rerun` | change source mass → re-run → signal amplitude scales; view updates | review |

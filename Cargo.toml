@@ -14,3 +14,8 @@ bytemuck = { version = "1", features = ["derive"] }
 # The bundle's serialisation contract: serde derive + a compact binary sink.
 serde = { version = "1", features = ["derive"] }
 bincode = "1"
+# The viewer's GUI stack. eframe's wgpu backend resolves to the same wgpu 22 as compute (one graphics
+# stack); default features are OFF to keep the glow backend out of the graph. egui_plot tracks egui.
+eframe = { version = "0.29", default-features = false, features = ["wgpu", "default_fonts", "wayland", "x11"] }
+egui = "0.29"
+egui_plot = "0.29"
