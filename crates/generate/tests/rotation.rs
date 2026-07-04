@@ -69,7 +69,7 @@ fn shape_fields() {
         )
         .with_field_set(FieldSet {
             shape: on,
-            decomposition: false,
+            ..FieldSet::default()
         })
     };
 

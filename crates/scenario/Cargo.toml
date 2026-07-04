@@ -10,3 +10,5 @@ instrument = { path = "../instrument" }
 uldm = { path = "../uldm" }
 noise = { path = "../noise" }
 config = { path = "../config" }
+gravity = { path = "../gravity" }
+math = { path = "../math" }

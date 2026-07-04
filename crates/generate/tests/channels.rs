@@ -22,8 +22,8 @@ fn scenario(
 ) -> Scenario {
     let mut s = Scenario::new(Box::new(point()), DetectorArray::new(dets), sched, 7)
         .with_field_set(FieldSet {
-            shape: false,
             decomposition: decompose,
+            ..FieldSet::default()
         })
         .with_uldm(UldmConfig {
             amplitude: 1e-3,
