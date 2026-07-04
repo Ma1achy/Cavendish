@@ -4,8 +4,23 @@ version.workspace = true
 edition.workspace = true
 publish = false
 
+[lib]
+name = "cavendish"
+# `cdylib` for the Python extension module; `rlib` so `cargo test` / the M0 name-check build normally.
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 generate = { path = "../generate" }
 scenario = { path = "../scenario" }
 config = { path = "../config" }
 state = { path = "../state" }
+shape = { path = "../shape" }
+gravity = { path = "../gravity" }
+# PyO3 and the DLPack capsule layer are gated behind `extension-module` so the blocking
+# `cargo test --workspace` gate stays libpython-free; maturin (and `clippy --all-features`) turn it on.
+# Pinned to pyo3 0.28 to match the published dlpark 0.7.0 (which depends on pyo3 ^0.28).
+pyo3 = { version = "0.28", optional = true }
+dlpark = { version = "0.7", features = ["pyo3"], optional = true }
+
+[features]
+extension-module = ["dep:pyo3", "dep:dlpark", "pyo3/extension-module"]

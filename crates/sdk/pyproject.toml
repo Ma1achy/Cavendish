@@ -1,0 +1,15 @@
+# Creating this file ungates the CI `python` job (its guard is `hashFiles crates/sdk/pyproject.toml`).
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "cavendish"
+version = "0.0.0"
+description = "Python/torch boundary for the Cavendish atom-interferometer engine"
+requires-python = ">=3.11"
+
+[tool.maturin]
+# The extension links libpython via the extension-module feature; the built module is `cavendish`.
+features = ["extension-module"]
+module-name = "cavendish"
