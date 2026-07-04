@@ -15,6 +15,8 @@ pub use fisher::{crb_report, fisher, CrbReport};
 pub use jacobian::Jacobian;
 
 #[cfg(test)]
+mod geometry;
+#[cfg(test)]
 mod testkit;
 
 #[cfg(test)]
