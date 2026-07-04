@@ -102,9 +102,9 @@ jobs:
           maturin develop --manifest-path crates/sdk/Cargo.toml
       - if: steps.sdk.outputs.present == 'true'
         name: pytest
-        run: |
-          . .venv/bin/activate
-          pytest python/tests -q
+        # The venv's python explicitly — a bare `pytest` resolves to the system binary, whose
+        # sys.path excludes the venv where `cavendish` was installed.
+        run: .venv/bin/python -m pytest python/tests -q
 
   # ── Packaging gate (distinct axis from the fidelity `python` job): build distributable wheels on
   # both target platforms. A green build here proves the extension compiles and links on each OS —
