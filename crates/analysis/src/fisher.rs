@@ -113,17 +113,10 @@ fn ascending_eigenvalues(m: &DMatrix<f64>) -> Vec<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testkit::{detector_at, scenario, with_detectors};
+    use crate::testkit::{detector_at, scenario, seeds, with_detectors};
     use compute::{forward_f64, Axis, Param};
     use instrument::InstrumentConfig;
     use math::Vec3;
-
-    fn seeds(params: &[Param]) -> Vec<ParamSeed> {
-        params
-            .iter()
-            .map(|&param| ParamSeed { source: 0, param })
-            .collect()
-    }
 
     #[test]
     fn fisher_spd() {

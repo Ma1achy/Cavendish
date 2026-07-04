@@ -61,6 +61,14 @@ pub fn detector_at(x: f64, z: f64) -> Isometry3 {
     Isometry3::new(Quat::identity(), Vec3::new(x, 0.0, z))
 }
 
+/// Seeds for source 0 over the given parameters.
+pub fn seeds(params: &[Param]) -> Vec<ParamSeed> {
+    params
+        .iter()
+        .map(|&param| ParamSeed { source: 0, param })
+        .collect()
+}
+
 /// Perturb the scalar parameter `seed` picks out by `delta` (for a finite-difference reference).
 /// `Mass` scales every element mass by `1 + delta` (the fractional-mass parameterisation).
 pub fn perturb(scn: &ScenarioBatch, seed: ParamSeed, delta: f64) -> ScenarioBatch {
