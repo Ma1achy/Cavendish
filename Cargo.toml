@@ -5,3 +5,9 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.0.0"
 edition = "2021"
+
+[workspace.dependencies]
+# Default features: Vulkan is enabled by default on Linux (CI lavapipe), Metal on macOS; WGSL frontend on.
+wgpu = "22"
+pollster = "0.3"
+bytemuck = { version = "1", features = ["derive"] }

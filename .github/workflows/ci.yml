@@ -40,14 +40,26 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     env:
-      VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
       WGPU_BACKEND: vulkan
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Software Vulkan (lavapipe) + build deps
-        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers vulkan-tools libxkbcommon-dev libwayland-dev libx11-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers vulkan-tools libvulkan1 libxkbcommon-dev libwayland-dev libx11-dev
+          echo "Installed ICDs:"; ls -l /usr/share/vulkan/icd.d/ || true
+          # Point the loader at the lavapipe ICD by its actual installed name (path/name varies by
+          # release); fall back to the loader's default discovery if the glob finds nothing.
+          ICD=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json 2>/dev/null | head -1)
+          if [ -n "$ICD" ]; then
+            echo "using lavapipe ICD: $ICD"
+            echo "VK_ICD_FILENAMES=$ICD" >> "$GITHUB_ENV"
+            echo "VK_DRIVER_FILES=$ICD" >> "$GITHUB_ENV"
+          else
+            echo "no lavapipe ICD glob match; relying on loader auto-discovery"
+          fi
       - name: Sanity — an ICD is present
         run: vulkaninfo --summary || true
       - name: GPU-marked tests (ignored by default)
