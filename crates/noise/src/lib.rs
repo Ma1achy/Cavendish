@@ -31,9 +31,9 @@ impl KeyRng {
         }
     }
 
-    /// The next uniform `u64` (counter-based: `splitmix64(key ⊕ counter·φ)`).
+    /// The next uniform `u64` (counter-based: `hash(key, counter)`).
     pub fn next_u64(&mut self) -> u64 {
-        let v = splitmix64(self.key ^ self.counter.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        let v = hash(self.key, self.counter);
         self.counter = self.counter.wrapping_add(1);
         v
     }
@@ -72,6 +72,56 @@ fn hash_str(s: &str) -> u64 {
     h
 }
 
+/// The stateless counter-based draw: `splitmix64(key ⊕ counter·φ)`. A pure function of `(key, counter)`
+/// — the foundation of the key tree, with no sequential state, so CPU/GPU, evaluation order, and
+/// batching cannot perturb it.
+pub fn hash(key: u64, counter: u64) -> u64 {
+    splitmix64(key ^ counter.wrapping_mul(0x9E37_79B9_7F4A_7C15))
+}
+
+/// A node in the RNG **key tree**. Compose a path off the root seed —
+/// `Key::root(seed).child("scenario").index(i).child("atmo")` — then draw statelessly ([`Key::hash`]/
+/// [`Key::unit`]) or open a counter stream ([`Key::rng`]). A draw is a pure function of the *path*,
+/// never of call order: adding a sibling path (a new `Prior` field, a new noise source) leaves every
+/// existing path's draws bit-identical. This is what makes batching order-independent — a scenario's
+/// draws hang off its index in the tree, not off when it is evaluated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Key(u64);
+
+impl Key {
+    /// The root of the tree (the global seed).
+    pub fn root(seed: u64) -> Self {
+        Key(seed)
+    }
+    /// Descend to a named child (order-independent among siblings, extension-stable).
+    pub fn child(self, label: &str) -> Self {
+        Key(mix(self.0, hash_str(label)))
+    }
+    /// Descend to an indexed child (e.g. batch item `i`, noise source `i`).
+    pub fn index(self, i: u64) -> Self {
+        Key(mix(self.0, splitmix64(i)))
+    }
+    /// The raw key bits (e.g. to seed a `Scenario`).
+    pub fn bits(self) -> u64 {
+        self.0
+    }
+    /// A stateless draw at this node.
+    pub fn hash(self, counter: u64) -> u64 {
+        hash(self.0, counter)
+    }
+    /// A stateless uniform `f64` in `[0, 1)` at this node.
+    pub fn unit(self, counter: u64) -> f64 {
+        (self.hash(counter) >> 11) as f64 / (1u64 << 53) as f64
+    }
+    /// Open a counter-based stream rooted at this node.
+    pub fn rng(self) -> KeyRng {
+        KeyRng {
+            key: self.0,
+            counter: 0,
+        }
+    }
+}
+
 /// One term in the post-hoc noise stack.
 ///
 /// # Contract (spec `sec:contracts`, `NoiseSource`)
@@ -88,11 +138,11 @@ pub trait NoiseSource {
 pub struct NoiseStack(pub Vec<Box<dyn NoiseSource>>);
 
 impl NoiseStack {
-    /// Realise the `(T, D)` noise: each source in declared order, keyed by `(seed, "noise/i")`.
+    /// Realise the `(T, D)` noise: each source in declared order, keyed at `scenario/noise[i]`.
     pub fn realise(&self, t: &[f64], d: usize, seed: u64) -> Vec<Vec<f64>> {
         let mut noise = vec![vec![0.0; d]; t.len()];
         for (i, src) in self.0.iter().enumerate() {
-            let mut rng = KeyRng::stream(seed, &format!("noise/{i}"));
+            let mut rng = Key::root(seed).child("noise").index(i as u64).rng();
             src.add(t, &mut noise, &mut rng);
         }
         noise
@@ -188,9 +238,9 @@ pub struct AtmoField {
 }
 
 impl AtmoField {
-    /// Draw the modes **once** from the counter RNG (`key = seed ⊕ "atmo"`).
+    /// Draw the modes **once** from the counter RNG, keyed at the `scenario/atmo` node of the key tree.
     pub fn realise(cfg: &AtmoConfig, seed: u64) -> Self {
-        let mut rng = KeyRng::stream(seed, "atmo");
+        let mut rng = Key::root(seed).child("atmo").rng();
         let k_typ = TAU / cfg.correlation_length;
         // Per-mode amplitude so the field variance is ≈ amplitude² (Σ a²/2 = amplitude²).
         let a = cfg.amplitude * (2.0 / cfg.n_modes as f64).sqrt();
@@ -272,6 +322,33 @@ impl<S: Scalar> FieldContribution<S> for AtmoField {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rng_stateless() {
+        // Same (key, counter) → same draw; the draw is pure, no sequential state.
+        let k = Key::root(42).child("scenario").index(3).child("atmo");
+        assert_eq!(k.hash(7), hash(k.bits(), 7));
+        assert_eq!(k.hash(7), k.hash(7));
+
+        // Distinct paths are decorrelated (different keys → different draws).
+        let a = Key::root(42).child("noise").index(0);
+        let b = Key::root(42).child("noise").index(1);
+        let c = Key::root(42).child("atmo");
+        assert_ne!(a.hash(0), b.hash(0));
+        assert_ne!(a.hash(0), c.hash(0));
+
+        // Order-independence: the two paths' draws don't depend on which is computed first.
+        let (a1, b1) = (a.hash(0), b.hash(0));
+        let (b2, a2) = (b.hash(0), a.hash(0));
+        assert_eq!((a1, b1), (a2, b2));
+
+        // Extension-stability: adding a sibling field ("prior/gamma") leaves the existing field's draw
+        // ("prior/mass") bit-identical — a new path never perturbs an old one.
+        let mass_before = Key::root(9).child("prior").child("mass").unit(0);
+        let _gamma = Key::root(9).child("prior").child("gamma").unit(0); // the "added" field
+        let mass_after = Key::root(9).child("prior").child("mass").unit(0);
+        assert_eq!(mass_before, mass_after);
+    }
 
     fn mean(noise: &[Vec<f64>]) -> f64 {
         let (mut s, mut n) = (0.0, 0.0);

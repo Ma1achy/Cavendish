@@ -204,6 +204,108 @@ pub fn point_mass_phase(
     dphi(base_z) - dphi(base_z + IFO_SEP)
 }
 
+// ── Spectral oracles (George's method, reconstructed independently; math only) ──────────────────
+
+use std::f64::consts::{FRAC_PI_2, TAU};
+
+/// Speed of light [m/s] — for the ULDM phase reference.
+pub const C_LIGHT: f64 = 299_792_458.0;
+
+/// The Lomb–Scargle periodogram (Scargle 1982), reimplemented independently of Cavendish's `state`
+/// version — the whole point is agreement between two separate implementations. `y` is mean-subtracted;
+/// for each `ω` the offset `τ` (`tan 2ωτ = Σsin2ωt/Σcos2ωt`) diagonalises the fit.
+pub fn lomb_scargle(t: &[f64], y: &[f64], freqs: &[f64]) -> Vec<f64> {
+    let ybar = y.iter().sum::<f64>() / y.len() as f64;
+    freqs
+        .iter()
+        .map(|&f| {
+            let w = TAU * f;
+            let (mut s2, mut c2) = (0.0, 0.0);
+            for &ti in t {
+                s2 += (2.0 * w * ti).sin();
+                c2 += (2.0 * w * ti).cos();
+            }
+            let tau = 0.5 * s2.atan2(c2) / w;
+            let (mut yc, mut ys, mut cc, mut ss) = (0.0, 0.0, 0.0, 0.0);
+            for (&ti, &yi) in t.iter().zip(y) {
+                let a = w * (ti - tau);
+                yc += (yi - ybar) * a.cos();
+                ys += (yi - ybar) * a.sin();
+                cc += a.cos().powi(2);
+                ss += a.sin().powi(2);
+            }
+            0.5 * (yc * yc / cc.max(1e-300) + ys * ys / ss.max(1e-300))
+        })
+        .collect()
+}
+
+/// The naive alternative George warns against: bin the (gapped) samples onto the uniform cadence
+/// grid, zero-fill the missing cycles, and take the DFT power. Correct for a full uniform series,
+/// but a gap turns into spurious power — which is why `gapped_fft_vs_ls` prefers LS.
+pub fn zero_filled_fft_power(
+    t: &[f64],
+    y: &[f64],
+    cadence: f64,
+    n_cycles: usize,
+    freqs: &[f64],
+) -> Vec<f64> {
+    let ybar = y.iter().sum::<f64>() / y.len() as f64;
+    let mut grid = vec![0.0; n_cycles];
+    for (&ti, &yi) in t.iter().zip(y) {
+        let k = (ti / cadence).round() as usize;
+        if k < n_cycles {
+            grid[k] = yi - ybar;
+        }
+    }
+    freqs
+        .iter()
+        .map(|&f| {
+            let w = TAU * f;
+            let (mut re, mut im) = (0.0, 0.0);
+            for (k, &g) in grid.iter().enumerate() {
+                let a = w * k as f64 * cadence;
+                re += g * a.cos();
+                im -= g * a.sin();
+            }
+            0.5 * (re * re + im * im) / grid.len() as f64
+        })
+        .collect()
+}
+
+/// George's ULDM signal as a recovered spectral **line**: a cosine at `f_uldm` (pinned 0.1 Hz) with his
+/// phase reference `(2T + L/c)/2` and `θ = π/2`. The full natural-units amplitude derivation is out of
+/// this port's scope — `amp` is a representative scale; the invariant both pipelines must agree on is the
+/// line **frequency** (M5 chose a simplified ULDM amplitude, so heights are model-dependent).
+pub fn uldm_series(times: &[f64], amp: f64, f_uldm: f64) -> Vec<f64> {
+    let w = TAU * f_uldm;
+    let l = 10.0; // baseline [m]
+    let t0 = (2.0 * T_HALF + l / C_LIGHT) / 2.0;
+    times
+        .iter()
+        .map(|&t| amp * (w * (t + t0) + FRAC_PI_2).cos())
+        .collect()
+}
+
+/// The index of the frequency bin nearest `f` — the bin-exact recovery target.
+pub fn nearest_bin(freqs: &[f64], f: f64) -> usize {
+    freqs
+        .iter()
+        .enumerate()
+        .min_by(|a, b| (a.1 - f).abs().partial_cmp(&(b.1 - f).abs()).unwrap())
+        .map(|(i, _)| i)
+        .unwrap()
+}
+
+/// The bin of the largest periodogram peak.
+pub fn peak_bin(power: &[f64]) -> usize {
+    power
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+        .map(|(i, _)| i)
+        .unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
