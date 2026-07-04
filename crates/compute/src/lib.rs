@@ -8,13 +8,13 @@
 //! boundary, so `cpu_equals_gpu` is the honest f64-oracle-vs-f32-GPU test on the same scenario. Batch
 //! and stream orchestration, `config`, `Prior`, `Schedule` realism, and Lomb–Scargle are M6b.
 
-use gravity::{Cloud, FieldContribution};
+use gravity::{Cloud, FieldContribution, Inertia};
 use instrument::{
-    Detector, InstrumentConfig, PhaseModel, PhaseModelKind, PropagationIntegral,
-    QuasiStaticGradient,
+    per_ifo_generic, Detector, InstrumentConfig, PhaseModel, PhaseModelKind, PosedSource,
+    PropagationIntegral, QuasiStaticGradient,
 };
-use math::{Isometry3, Mat3, Scalar, Vec3};
-use source::{Orient, Path, Source, SourceDynamics, Timing, Trajectory};
+use math::{Dual, Isometry3, Mat3, Quat, Scalar, Vec3};
+use source::{world_pose, Orient, Path, Source, SourceDynamics, Timing, Trajectory, ROT_FINE_DT};
 
 mod gpu;
 pub use gpu::Gpu;
@@ -210,6 +210,224 @@ impl ComputeBackend for CpuBackend {
     }
 }
 
+// ── The differentiable forward path (the `Dual` sweep for the CRB Jacobian, `analysis`/M8) ──────────
+//
+// A generic `forward::<S>` over the reference `PropagationIntegral` core (`per_ifo_generic`): `f64`
+// reproduces `PropagationIntegral::delta_phi` bit-for-bit (`forward_matches_reference`), and `Dual`
+// carries one seeded tangent (`value_channel_identity`). The seam `analysis` drives is `forward_dual`
+// (one column per `ParamSeed`) against the `forward_f64` base.
+
+/// A Cartesian axis of a vector-valued source parameter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Axis {
+    X,
+    Y,
+    Z,
+}
+
+/// A differentiable source parameter — the θ a Jacobian column is taken with respect to.
+///
+/// `Mass` seeds a fractional multiplier (the signal is linear in mass, so `∂signal/∂(fractional mass)`
+/// = signal; `analysis` divides by total mass for the absolute derivative). `Velocity` seeds the
+/// `LinearPass` end-point (the constant-velocity parameterisation: velocity `= (b − a)·rate`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Param {
+    Position(Axis),
+    Velocity(Axis),
+    Mass,
+    Omega0(Axis),
+}
+
+/// Which source's which parameter a `Dual` sweep seeds. The PR1↔`analysis` seam.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ParamSeed {
+    pub source: usize,
+    pub param: Param,
+}
+
+/// Lifts an `f64` forward-model parameter into the scalar type, seeding one chosen parameter's
+/// tangent. `Plain` (`f64`) is the identity; `Seed` (`Dual`) sets tangent 1 on the matching entry.
+trait Lift<S: Scalar>: Copy {
+    fn at(&self, source: usize, param: Param, value: f64) -> S;
+}
+
+#[derive(Clone, Copy)]
+struct Plain;
+impl Lift<f64> for Plain {
+    fn at(&self, _: usize, _: Param, value: f64) -> f64 {
+        value
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Seed(ParamSeed);
+impl Lift<Dual> for Seed {
+    fn at(&self, source: usize, param: Param, value: f64) -> Dual {
+        if self.0.source == source && self.0.param == param {
+            Dual::var(value)
+        } else {
+            Dual::from_f64(value)
+        }
+    }
+}
+
+/// One source lifted into the scalar type, ready for the generic phase core.
+struct SeededSource<S: Scalar> {
+    cloud: Cloud,
+    trajectory: Trajectory<S>,
+    inertia: Inertia,
+    mass_scale: S,
+}
+
+impl<S: Scalar> SeededSource<S> {
+    fn build(i: usize, s: &SourceBatch, lift: &impl Lift<S>) -> Self {
+        let q = |v: f64| S::from_f64(v);
+        let quat = |r: Quat| Quat::new(q(r.w), q(r.x), q(r.y), q(r.z));
+        let placement = {
+            let t = s.placement.translation;
+            Isometry3::new(
+                quat(s.placement.rotation),
+                Vec3::new(
+                    lift.at(i, Param::Position(Axis::X), t.x),
+                    lift.at(i, Param::Position(Axis::Y), t.y),
+                    lift.at(i, Param::Position(Axis::Z), t.z),
+                ),
+            )
+        };
+        let path = match s.path {
+            Path::Static => Path::Static,
+            Path::LinearPass { a, b } => Path::LinearPass {
+                a: Vec3::new(q(a.x), q(a.y), q(a.z)),
+                b: Vec3::new(
+                    lift.at(i, Param::Velocity(Axis::X), b.x),
+                    lift.at(i, Param::Velocity(Axis::Y), b.y),
+                    lift.at(i, Param::Velocity(Axis::Z), b.z),
+                ),
+            },
+            Path::Oscillation {
+                axis,
+                amp,
+                freq,
+                phase,
+            } => Path::Oscillation {
+                axis: Vec3::new(q(axis.x), q(axis.y), q(axis.z)),
+                amp: q(amp),
+                freq: q(freq),
+                phase: q(phase),
+            },
+            Path::Circular { radius, freq } => Path::Circular {
+                radius: q(radius),
+                freq: q(freq),
+            },
+        };
+        let timing = match s.timing {
+            Timing::Uniform { rate } => Timing::Uniform { rate: q(rate) },
+            Timing::Eased { rate, accel } => Timing::Eased {
+                rate: q(rate),
+                accel: q(accel),
+            },
+        };
+        let orient = match s.orient {
+            Orient::Fixed(r) => Orient::Fixed(quat(r)),
+            Orient::FreeRotation { omega0 } => Orient::FreeRotation {
+                omega0: Vec3::new(
+                    lift.at(i, Param::Omega0(Axis::X), omega0.x),
+                    lift.at(i, Param::Omega0(Axis::Y), omega0.y),
+                    lift.at(i, Param::Omega0(Axis::Z), omega0.z),
+                ),
+            },
+            Orient::Libration {
+                axis,
+                pivot_distance,
+                theta0,
+                thetadot0,
+            } => Orient::Libration {
+                axis: Vec3::new(q(axis.x), q(axis.y), q(axis.z)),
+                pivot_distance: q(pivot_distance),
+                theta0: q(theta0),
+                thetadot0: q(thetadot0),
+            },
+        };
+        SeededSource {
+            cloud: s.cloud.clone(),
+            trajectory: Trajectory {
+                placement,
+                path,
+                timing,
+                orient,
+            },
+            inertia: gravity::inertia(&s.cloud),
+            mass_scale: lift.at(i, Param::Mass, 1.0),
+        }
+    }
+}
+
+impl<S: Scalar> PosedSource<S> for SeededSource<S> {
+    fn body(&self) -> &Cloud {
+        &self.cloud
+    }
+    fn mass_scale(&self) -> S {
+        self.mass_scale
+    }
+    fn inverse_pose_at(&self, t_abs: f64) -> Isometry3<S> {
+        world_pose(&self.trajectory, &self.inertia, ROT_FINE_DT, t_abs).inverse()
+    }
+}
+
+/// The generic forward evaluation over the reference `PropagationIntegral` core: `(detector,
+/// measurement)` ΔΦ for one scenario, lifting each source into `S` and seeding via `lift`.
+fn forward<S: Scalar>(
+    scn: &ScenarioBatch,
+    cfg: &InstrumentConfig,
+    lift: impl Lift<S>,
+) -> Vec<Vec<S>> {
+    let sources: Vec<SeededSource<S>> = scn
+        .sources
+        .iter()
+        .enumerate()
+        .map(|(i, s)| SeededSource::build(i, s, &lift))
+        .collect();
+    let posed: Vec<&dyn PosedSource<S>> =
+        sources.iter().map(|s| s as &dyn PosedSource<S>).collect();
+    let atmo = AtmoContribution {
+        modes: scn.atmo.clone(),
+    };
+    let fields: Vec<&dyn FieldContribution<S>> = if scn.atmo.is_empty() {
+        Vec::new()
+    } else {
+        vec![&atmo]
+    };
+    scn.detectors
+        .iter()
+        .map(|&placement| {
+            let det = Detector::placed(placement);
+            scn.times
+                .iter()
+                .map(|&t| {
+                    let [d1, d2] = per_ifo_generic::<S>(cfg, &det, &posed, &fields, t);
+                    d2 - d1 // ΔΦ = δφ₂ − δφ₁ (spec sign)
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// The `f64` forward over the reference phase model — the value base for `analysis`'s finite-difference
+/// check. Bit-exact to `PropagationIntegral::delta_phi` (`forward_matches_reference`).
+pub fn forward_f64(scn: &ScenarioBatch, cfg: &InstrumentConfig) -> Vec<Vec<f64>> {
+    forward(scn, cfg, Plain)
+}
+
+/// One `Dual` forward sweep with `seed`'s tangent hot — the value channel is the signal, the tangent
+/// channel is `∂signal/∂θ` (one Jacobian column, `(detector, measurement)`).
+pub fn forward_dual(
+    scn: &ScenarioBatch,
+    cfg: &InstrumentConfig,
+    seed: ParamSeed,
+) -> Vec<Vec<Dual>> {
+    forward(scn, cfg, Seed(seed))
+}
+
 /// The hot-path backend — the two passes as WGSL compute shaders, f32, differential-first. Holds the
 /// wgpu device (shared with the viewer at M9). The WGSL kernels land in Commits 2–3.
 pub struct WgpuBackend {
@@ -375,6 +593,112 @@ pub const FORWARD_WGSL: &str = include_str!("forward.wgsl");
 mod tests {
     use super::*;
     use gravity::Cloud;
+
+    #[test]
+    #[allow(clippy::float_cmp)] // forward::<f64> must reproduce the reference bit-for-bit
+    fn forward_matches_reference() {
+        // forward_f64 reproduces the canonical PropagationIntegral::delta_phi bit-for-bit (source +
+        // atmosphere), anchoring the analysis path to the validated forward model.
+        let cloud = Cloud::from_elements(&[(3.0, 0.0, 2.5, 500.0), (2.6, 0.1, 2.4, 300.0)]);
+        let placement = Isometry3::new(Quat::identity(), Vec3::new(0.0, 0.0, 0.0));
+        let (path, timing, orient) = (
+            Path::Static,
+            Timing::Uniform { rate: 0.0 },
+            Orient::Fixed(Quat::identity()),
+        );
+        let atmo = vec![AtmoMode {
+            k: [0.3, -0.2, 0.1],
+            omega: 0.5,
+            psi: 0.4,
+            coeff: 1e-9,
+        }];
+        let detectors = vec![
+            Isometry3::new(Quat::identity(), Vec3::new(0.0, 0.0, 0.0)),
+            Isometry3::new(Quat::identity(), Vec3::new(1.0, 0.0, 0.0)),
+        ];
+        let times = vec![0.0, 1.5, 3.0];
+        let scn = ScenarioBatch {
+            sources: vec![SourceBatch {
+                cloud: cloud.clone(),
+                placement,
+                path,
+                timing,
+                orient,
+            }],
+            atmo: atmo.clone(),
+            detectors: detectors.clone(),
+            times: times.clone(),
+        };
+        let cfg = InstrumentConfig::default();
+        let got = forward_f64(&scn, &cfg);
+
+        let source = Source::new(
+            cloud,
+            Trajectory::new(placement, path, timing).with_orient(orient),
+        );
+        let atmo_c = AtmoContribution { modes: atmo };
+        let fields: Vec<&dyn FieldContribution<f64>> = vec![&atmo_c];
+        let model = PropagationIntegral::new(cfg);
+        for (di, &det_iso) in detectors.iter().enumerate() {
+            let det = Detector::placed(det_iso);
+            for (ti, &t) in times.iter().enumerate() {
+                let want = model.delta_phi(&[&source], &fields, &det, t);
+                assert_eq!(got[di][ti], want, "det {di} time {ti}");
+            }
+        }
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // the value channel must match the f64 forward bit-for-bit
+    fn value_channel_identity() {
+        // A free-rotation source with atmosphere: forward_dual (ω₀ₓ seeded) has a value channel equal
+        // to forward_f64 — the whole-model guard that the Scalar lift preserves the forward value while
+        // carrying a tangent — and the ω₀ tangent is non-trivial.
+        let cloud = Cloud::from_elements(&[
+            (0.4, 0.0, 0.0, 200.0),
+            (-0.4, 0.0, 0.0, 200.0),
+            (0.0, 0.3, 0.1, 150.0),
+        ]);
+        let scn = ScenarioBatch {
+            sources: vec![SourceBatch {
+                cloud,
+                placement: Isometry3::new(Quat::identity(), Vec3::new(2.5, 0.2, 2.0)),
+                path: Path::Static,
+                timing: Timing::Uniform { rate: 0.0 },
+                orient: Orient::FreeRotation {
+                    omega0: Vec3::new(0.6, 0.2, 0.4),
+                },
+            }],
+            atmo: vec![AtmoMode {
+                k: [0.2, 0.1, -0.3],
+                omega: 0.7,
+                psi: 0.1,
+                coeff: 2e-9,
+            }],
+            detectors: vec![Isometry3::new(Quat::identity(), Vec3::new(0.0, 0.0, 0.0))],
+            times: vec![0.0, 1.0],
+        };
+        let cfg = InstrumentConfig::default();
+        let base = forward_f64(&scn, &cfg);
+        let dual = forward_dual(
+            &scn,
+            &cfg,
+            ParamSeed {
+                source: 0,
+                param: Param::Omega0(Axis::X),
+            },
+        );
+        for (rb, rd) in base.iter().zip(&dual) {
+            for (&vb, &vd) in rb.iter().zip(rd) {
+                assert_eq!(vb, vd.v, "value channel drift");
+            }
+        }
+        let max_tan = dual.iter().flatten().map(|d| d.d.abs()).fold(0.0, f64::max);
+        assert!(
+            max_tan > 0.0,
+            "ω₀ tangent identically zero — seeding is dead"
+        );
+    }
 
     /// Smoke test: wgpu initialises and a trivial compute shader runs and reads back. `#[ignore]` so
     /// it runs only in the GPU CI job (lavapipe) and locally on Metal, never in the GPU-less gate.

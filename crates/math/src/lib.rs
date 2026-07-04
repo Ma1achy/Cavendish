@@ -316,32 +316,37 @@ impl<S: Scalar> Mul for Mat3<S> {
 
 /// A unit quaternion, **wxyz** storage (matches the state bundle's `source_orientation`).
 ///
-/// Off the kernel path: plain `f64`. Rotations assume the quaternion is normalised.
+/// Generic over [`Scalar`] with `S = f64` the default, so poses carry a `Dual` tangent for `analysis`
+/// while every existing `Quat` site stays `f64`. Rotations assume the quaternion is normalised.
 #[derive(Clone, Copy, Debug)]
-pub struct Quat {
-    pub w: f64,
-    pub x: f64,
-    pub y: f64,
-    pub z: f64,
+pub struct Quat<S: Scalar = f64> {
+    pub w: S,
+    pub x: S,
+    pub y: S,
+    pub z: S,
 }
 
-impl Quat {
-    pub fn new(w: f64, x: f64, y: f64, z: f64) -> Self {
+impl<S: Scalar> Quat<S> {
+    pub fn new(w: S, x: S, y: S, z: S) -> Self {
         Quat { w, x, y, z }
     }
     pub fn identity() -> Self {
         Quat {
-            w: 1.0,
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
+            w: S::from_f64(1.0),
+            x: S::from_f64(0.0),
+            y: S::from_f64(0.0),
+            z: S::from_f64(0.0),
         }
     }
     /// A rotation of `angle` radians about `axis` (need not be unit).
-    pub fn from_axis_angle(axis: Vec3<f64>, angle: f64) -> Self {
+    pub fn from_axis_angle(axis: Vec3<S>, angle: S) -> Self {
         let n = axis.norm();
-        let half = angle * 0.5;
-        let k = if n > 0.0 { half.sin() / n } else { 0.0 };
+        let half = angle * S::from_f64(0.5);
+        let k = if n > S::from_f64(0.0) {
+            half.sin() / n
+        } else {
+            S::from_f64(0.0)
+        };
         Quat {
             w: half.cos(),
             x: axis.x * k,
@@ -349,7 +354,7 @@ impl Quat {
             z: axis.z * k,
         }
     }
-    pub fn norm(self) -> f64 {
+    pub fn norm(self) -> S {
         (self.w * self.w + self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
     }
     pub fn normalise(self) -> Self {
@@ -371,9 +376,9 @@ impl Quat {
         }
     }
     /// Rotate a vector: `self ⊗ (0, v) ⊗ self*` (assumes `self` is unit).
-    pub fn rotate(self, v: Vec3<f64>) -> Vec3<f64> {
+    pub fn rotate(self, v: Vec3<S>) -> Vec3<S> {
         let p = Quat {
-            w: 0.0,
+            w: S::from_f64(0.0),
             x: v.x,
             y: v.y,
             z: v.z,
@@ -389,7 +394,7 @@ impl Quat {
 
 /// Hamilton product `self ⊗ o`.
 #[allow(clippy::suspicious_arithmetic_impl)] // quaternion product mixes + and − by definition
-impl Mul for Quat {
+impl<S: Scalar> Mul for Quat<S> {
     type Output = Self;
     fn mul(self, o: Self) -> Self {
         Quat {
@@ -401,15 +406,15 @@ impl Mul for Quat {
     }
 }
 
-/// A rigid transform: rotation then translation (world ← body). Off the kernel path: plain `f64`.
+/// A rigid transform: rotation then translation (world ← body). Generic over [`Scalar`], `S = f64`.
 #[derive(Clone, Copy, Debug)]
-pub struct Isometry3 {
-    pub rotation: Quat,
-    pub translation: Vec3<f64>,
+pub struct Isometry3<S: Scalar = f64> {
+    pub rotation: Quat<S>,
+    pub translation: Vec3<S>,
 }
 
-impl Isometry3 {
-    pub fn new(rotation: Quat, translation: Vec3<f64>) -> Self {
+impl<S: Scalar> Isometry3<S> {
+    pub fn new(rotation: Quat<S>, translation: Vec3<S>) -> Self {
         Isometry3 {
             rotation,
             translation,
@@ -418,11 +423,11 @@ impl Isometry3 {
     pub fn identity() -> Self {
         Isometry3 {
             rotation: Quat::identity(),
-            translation: Vec3::new(0.0, 0.0, 0.0),
+            translation: Vec3::new(S::from_f64(0.0), S::from_f64(0.0), S::from_f64(0.0)),
         }
     }
     /// Map a point through the transform.
-    pub fn apply(self, p: Vec3<f64>) -> Vec3<f64> {
+    pub fn apply(self, p: Vec3<S>) -> Vec3<S> {
         self.rotation.rotate(p) + self.translation
     }
     /// Compose `self ∘ o` — apply `o`, then `self`.
@@ -601,5 +606,40 @@ mod tests {
             close_rel(id.translation.norm(), 0.0, 1e-14);
             close_rel(id.rotation.norm(), 1.0, 1e-14);
         }
+    }
+
+    #[test]
+    fn quat_iso_dual() {
+        // A `Dual` pose carries a clean tangent. Seed the rotation angle as the variable and check
+        // (a) the value channel equals the plain-f64 pose exactly, (b) the tangent of the posed point
+        // matches central finite differences — the guard that the genericised pose differentiates.
+        let axis = Vec3::new(0.3_f64, -0.7, 0.5);
+        let p = Vec3::new(1.2_f64, -0.4, 2.1);
+        let t = Vec3::new(0.5_f64, 1.0, -0.3);
+        let theta = 0.9_f64;
+        let lift = |v: Vec3<f64>| {
+            Vec3::new(
+                Dual::from_f64(v.x),
+                Dual::from_f64(v.y),
+                Dual::from_f64(v.z),
+            )
+        };
+
+        let posed = Isometry3::new(Quat::from_axis_angle(lift(axis), Dual::var(theta)), lift(t))
+            .apply(lift(p));
+
+        // (a) value channel ≡ the pure-f64 pose.
+        let posed_f = Isometry3::new(Quat::from_axis_angle(axis, theta), t).apply(p);
+        assert_eq!(posed.x.v, posed_f.x);
+        assert_eq!(posed.y.v, posed_f.y);
+        assert_eq!(posed.z.v, posed_f.z);
+
+        // (b) tangent ≡ central differences of the f64 pose w.r.t. θ.
+        let h = 1e-6;
+        let fd = |th: f64| Isometry3::new(Quat::from_axis_angle(axis, th), t).apply(p);
+        let (plus, minus) = (fd(theta + h), fd(theta - h));
+        close_rel(posed.x.d, (plus.x - minus.x) / (2.0 * h), 1e-6);
+        close_rel(posed.y.d, (plus.y - minus.y) / (2.0 * h), 1e-6);
+        close_rel(posed.z.d, (plus.z - minus.z) / (2.0 * h), 1e-6);
     }
 }
