@@ -4,9 +4,10 @@
 //!
 //! A shape-produced [`gravity::Cloud`] is indistinguishable downstream from any other: exact total
 //! mass (renormalised), centre of mass at the body-frame origin (recentred), and deterministic
-//! canonical (x-fastest raster) element order. The mesh path (`MeshSolid`, STL/OBJ/glTF, winding
-//! numbers) is M10 — the `Solid` seam is written so it can plug in later. The `Cloud → C/I/Q`
-//! reduction is `gravity`'s (M4); [`second_moment`] here is a validation helper only.
+//! canonical (x-fastest raster) element order. The mesh path (`mesh` module: `MeshSolid`, STL/OBJ/glTF
+//! parsers, the generalised winding number) plugs into this same `Solid` seam and shares the
+//! [`finish_cloud`] tail, so a mesh is indistinguishable from a primitive downstream (M10). The
+//! `Cloud → C/I/Q` reduction is `gravity`'s (M4); [`second_moment`] here is a validation helper only.
 
 use gravity::Cloud;
 use math::Mat3;

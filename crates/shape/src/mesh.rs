@@ -653,16 +653,29 @@ impl MeshSolid {
             return Err(ShapeError::EmptySolid);
         }
         let (open_edges, flipped, watertight) = edge_stats(&soup);
+        let aabb = soup_aabb(&soup);
+        let bvh = Bvh::build(&soup);
+
+        // An open/non-manifold mesh takes the robust winding path: classify it *loudly* on load. A
+        // coarse ambiguity diagnostic `A = mean min(|w|, |w−1|)` over the bbox marks the interior;
+        // `A > A_MAX` ⇒ genuinely undecidable, so refuse rather than voxelise to silent nonsense.
+        let ambiguity = if watertight {
+            None
+        } else {
+            let a = coarse_ambiguity(&soup, &bvh, &aabb);
+            if a > A_MAX {
+                return Err(ShapeError::AmbiguousInterior(a));
+            }
+            Some(a)
+        };
         let report = MeshReport {
             faces: soup.len(),
             open_edges,
             flipped,
             watertight,
             volume: signed_volume(&soup),
-            ambiguity: None,
+            ambiguity,
         };
-        let aabb = soup_aabb(&soup);
-        let bvh = Bvh::build(&soup);
         Ok((
             MeshSolid {
                 soup,
@@ -924,6 +937,33 @@ fn classify_winding(
         return Err(ShapeError::AmbiguousInterior(a));
     }
     Ok((occ, a))
+}
+
+/// The ambiguity diagnostic `A = mean min(|w|, |w−1|)` over a coarse grid of the bounding box —
+/// pitch-independent, so it can be computed at load. Small when the interior is decidable (even for a
+/// lightly-open mesh); large when a broken mesh leaves the winding number fractional over the volume.
+fn coarse_ambiguity(soup: &TriSoup, bvh: &Bvh, aabb: &Aabb) -> f64 {
+    const N: usize = 16;
+    let ext = [
+        aabb.max[0] - aabb.min[0],
+        aabb.max[1] - aabb.min[1],
+        aabb.max[2] - aabb.min[2],
+    ];
+    let mut amb = 0.0;
+    for i in 0..N {
+        for j in 0..N {
+            for k in 0..N {
+                let p = [
+                    aabb.min[0] + (i as f64 + 0.5) / N as f64 * ext[0],
+                    aabb.min[1] + (j as f64 + 0.5) / N as f64 * ext[1],
+                    aabb.min[2] + (k as f64 + 0.5) / N as f64 * ext[2],
+                ];
+                let w = bvh.winding(soup, p, TAU_CLASS);
+                amb += w.abs().min((w - 1.0).abs());
+            }
+        }
+    }
+    amb / (N * N * N) as f64
 }
 
 /// Voxelise a mesh through the **same** pipeline as a primitive: build the lattice, classify it (the
@@ -1341,6 +1381,47 @@ mod tests {
             off1 / diag < 1e-6,
             "principal frame diagonalises C (off {off1}, diag {diag})"
         );
+    }
+
+    /// A wide-open hemisphere shell (the upper half of a sphere): half the enclosing solid angle is
+    /// missing, so the winding number sits near ½ over much of the interior — genuinely undecidable.
+    fn ambiguous_soup() -> TriSoup {
+        let s = icosphere(3);
+        let tris = s
+            .tris
+            .iter()
+            .copied()
+            .filter(|t| (s.verts[t[0]][2] + s.verts[t[1]][2] + s.verts[t[2]][2]) / 3.0 > 0.0)
+            .collect();
+        TriSoup {
+            verts: s.verts,
+            tris,
+        }
+    }
+
+    #[test]
+    fn dirty_mesh_loud() {
+        // An open (but sound) mesh takes the robust winding path and emits its diagnostic — no error,
+        // no silent fast-path cloud.
+        let mut open = unit_cube();
+        open.tris.pop(); // a small triangular hole
+        let (solid, rep) = MeshSolid::from_soup(open).unwrap();
+        assert!(!rep.watertight, "open mesh flagged");
+        let a = rep
+            .ambiguity
+            .expect("robust path emits the ambiguity diagnostic");
+        assert!(a < A_MAX, "a lightly-open mesh is still decidable (A {a})");
+        assert!(
+            voxelise_mesh(&solid, &VoxelParams::pitch(0.1), MassSpec::Total(1.0)).is_ok(),
+            "the open mesh voxelises via the robust path"
+        );
+
+        // A severely ambiguous mesh fails loudly with AmbiguousInterior — never a silent cloud.
+        match MeshSolid::from_soup(ambiguous_soup()) {
+            Err(ShapeError::AmbiguousInterior(a)) => assert!(a > A_MAX, "diagnostic carried ({a})"),
+            Ok(_) => panic!("garbage mesh must error loudly, got a cloud"),
+            Err(e) => panic!("expected AmbiguousInterior, got {e:?}"),
+        }
     }
 
     #[test]

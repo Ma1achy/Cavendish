@@ -33,6 +33,11 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features
       - name: Test (CPU reference + integration)
         run: cargo test --workspace
+      # The mesh-format parsers (M10) are feature-gated in `shape`; run their round-trip tests in the
+      # blocking gate. Scoped to `shape` so the workspace-wide test stays libpython-free (the sdk
+      # extension-module feature must not be pulled in here).
+      - name: Test (mesh parsers)
+        run: cargo test -p shape --all-features
 
   # ── GPU path: wgpu / CPU≡GPU tests under lavapipe (software Vulkan). ──
   # Non-blocking: real GPU differs from lavapipe, so this is a signal, not a gate.
