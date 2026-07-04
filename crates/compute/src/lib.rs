@@ -292,6 +292,8 @@ fn encode_phase_params(
             quat(&mut p, 35, q);
         }
         Orient::FreeRotation { omega0 } => {
+            // The on-device f32 integrator (forward.wgsl::free_rotation_quat) accumulates ~1e-5 by
+            // ~200 substeps, ~1.7e-5 by 300 — within cpu_equals_gpu's ≤1e-4; keep rotating horizons short.
             set(&mut p, 34, 1.0);
             vec3(&mut p, 39, omega0);
             p[42] = moments[0] as f32;

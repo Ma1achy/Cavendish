@@ -214,6 +214,9 @@ fn free_step(q: ptr<function, vec4<f32>>, omega: ptr<function, vec3<f32>>, inert
     *omega = vec3<f32>(pi[0] * inv[0], pi[1] * inv[1], pi[2] * inv[2]);
 }
 // Integrate from identity/ω₀ to t on the fine_dt grid: n full steps + a remainder step.
+// f32 substep horizon: the residual vs the f64 CPU integrator is pure f32 accumulation, growing with
+// step count — ≤1e-5 to ~200 substeps (2 s at fine_dt=0.01), ~1.7e-5 by 300, still well within
+// cpu_equals_gpu's ≤1e-4 (pass1_ode_on_device). A very long rotating scenario would need a finer bound.
 fn free_rotation_quat(omega0: vec3<f32>, inertia: vec3<f32>, t: f32, fine_dt: f32) -> vec4<f32> {
     var q = vec4<f32>(1.0, 0.0, 0.0, 0.0);
     var omega = omega0;
