@@ -9,8 +9,13 @@
 //! forward crates; `state` never does. Degeneracy is **reported, not hidden**: a near-singular Fisher
 //! surfaces as a conditioning flag rather than a confident-looking, meaningless covariance.
 
+mod fisher;
 mod jacobian;
+pub use fisher::{crb_report, fisher, CrbReport};
 pub use jacobian::Jacobian;
+
+#[cfg(test)]
+mod testkit;
 
 #[cfg(test)]
 mod tests {
