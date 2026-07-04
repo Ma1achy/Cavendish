@@ -133,6 +133,14 @@ fn lomb_scargle(t, y, freqs) -> Vec<f64>:
 
 **The core engine is complete at M6 exit.**
 
+> **Follow-up (M6-R1, `Dual` path).** M6a shipped `CpuBackend` as the f64 oracle but stopped the
+> `Scalar` genericity at the `gravity` kernel — the phase integral, poses, and backend stayed f64, so
+> the `Dual` path R1 names was not actually realisable (`CpuBackend::<Dual>` could not be
+> instantiated). It is completed in the `forward-scalar-generic` PR (the M8 prerequisite): `math`
+> poses, `instrument`'s phase core, `source`'s pose/integrator, and `compute::forward::<S>` are lifted
+> to `Scalar`, gated by `value_channel_identity` (f64 ≡ `Dual` value across the whole model) with the
+> f64 path held bit-exact. See `design/compute.md` §7–8.
+
 ## 7. Traceability
 
 M6-R1/R8 → cpu_equals_gpu, wgsl_kernel_parity · M6-R2 → pass1_ode_on_device · M6-R3 → rng_stateless, seed_replay · M6-R4 → prior_total · M6-R5 → schedule_realism · M6-R6 → ls_* · M6-R7 → stream_bounded, batch_invariant, seed_replay.
