@@ -6,3 +6,5 @@ publish = false
 
 [dependencies]
 math = { path = "../math" }
+serde = { workspace = true }
+bincode = { workspace = true }

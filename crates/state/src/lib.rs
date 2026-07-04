@@ -8,15 +8,23 @@
 
 pub use math::{Dual, Isometry3, Mat3, Quat, Scalar, Vec3};
 
+use serde::{Deserialize, Serialize};
+use std::io;
+use std::path::Path;
+
+/// A source body-frame point cloud: `[x, y, z, m]` per element, shape `(N, 4)`. The static geometry the
+/// viewer poses by `source_position`/`source_orientation` at render time.
+pub type SourceCloud = Vec<[f64; 4]>;
+
 /// Run metadata: the seed and a resolved-config summary.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Meta {
     pub seed: u64,
     pub description: String,
 }
 
 /// The forward model's output. Leading axis `T` is the measurement cadence.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct StateBundle {
     /// Measurement timestamps, shape `(T,)`.
     pub time: Vec<f64>,
@@ -34,6 +42,8 @@ pub struct StateBundle {
     pub source_angular_velocity: Vec<Vec<[f64; 3]>>,
     /// Source angular acceleration, shape `(S, T, 3)`.
     pub source_angular_accel: Vec<Vec<[f64; 3]>>,
+    /// Source body-frame geometry `[x, y, z, m]` per element, shape `(S, N, 4)` — posed at render time.
+    pub source_cloud: Vec<SourceCloud>,
     /// Per-detector placement: position xyz + orientation quaternion (wxyz), shape `(D, 7)`.
     pub detector_placement: Vec<[f64; 7]>,
     /// Transient-contaminated cycles, shape `(T,)`.
@@ -71,12 +81,24 @@ pub struct StateBundle {
 
 /// A Lomb–Scargle periodogram: `power[d][k]` is the spectral power of detector `d`'s signal at
 /// `freqs[k]`. The correct estimator for non-uniform (gappy/jittered) sampling, where the FFT is not.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Periodogram {
     /// The frequency grid `(F,)` [Hz].
     pub freqs: Vec<f64>,
     /// Power per detector, shape `(D, F)`.
     pub power: Vec<Vec<f64>>,
+}
+
+/// Serialise a bundle to a compact binary sink (bincode) — the read-back path the viewer loads.
+pub fn save_bundle(bundle: &StateBundle, path: impl AsRef<Path>) -> io::Result<()> {
+    let bytes = bincode::serialize(bundle).map_err(io::Error::other)?;
+    std::fs::write(path, bytes)
+}
+
+/// Read a bundle serialised by [`save_bundle`]. Round-trips the whole contract byte-for-byte.
+pub fn load_bundle(path: impl AsRef<Path>) -> io::Result<StateBundle> {
+    let bytes = std::fs::read(path)?;
+    bincode::deserialize(&bytes).map_err(io::Error::other)
 }
 
 /// The Lomb–Scargle periodogram of an unevenly-sampled series `y(t)` on a frequency grid (spec §2.1).
@@ -146,6 +168,36 @@ pub fn frequency_grid(times: &[f64]) -> Vec<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundle_roundtrip() {
+        // A bundle with populated geometry, optional periodogram, and the source cloud survives a
+        // save/load byte-for-byte — the loaded path renders from a real file, not an in-memory clone.
+        let bundle = StateBundle {
+            time: vec![1.0, 2.5, 4.0],
+            signal: vec![vec![0.1, -0.2], vec![0.3, 0.4], vec![-0.5, 0.6]],
+            source_position: vec![vec![[1.0, 0.0, 2.0], [1.1, 0.0, 2.0], [1.2, 0.0, 2.0]]],
+            source_orientation: vec![vec![[1.0, 0.0, 0.0, 0.0]; 3]],
+            source_cloud: vec![vec![[0.1, 0.2, 0.3, 500.0], [-0.1, -0.2, -0.3, 500.0]]],
+            detector_placement: vec![[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]],
+            mask: vec![false, true, false],
+            meta: Meta {
+                seed: 7,
+                description: "roundtrip".into(),
+            },
+            source_mass: Some(vec![1000.0]),
+            periodogram: Some(Periodogram {
+                freqs: vec![0.1, 0.2],
+                power: vec![vec![3.0, 1.0]],
+            }),
+            ..Default::default()
+        };
+        let path = std::env::temp_dir().join("cavendish_bundle_roundtrip.bin");
+        save_bundle(&bundle, &path).expect("save");
+        let back = load_bundle(&path).expect("load");
+        std::fs::remove_file(&path).ok();
+        assert_eq!(bundle, back, "bundle did not round-trip through bincode");
+    }
 
     #[test]
     fn ls_analytic() {

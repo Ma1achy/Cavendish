@@ -145,6 +145,12 @@ on-disk cache (WebDataset for record streams; Zarr/​HDF5 for the volumetric fi
 by `generate`/​`sdk`. Disk is an **optional** cache, never the path (spec §1): the default is generate
 → stream → consumer, with `meta` making any cached bundle self-describing.
 
+**Realisation (M9).** The v1 bundle is `serde`-derived over its `f64`/`Vec` fields (the `f32`/`ndarray`
+representation above is the target, not yet cut), with `save_bundle`/`load_bundle` providing a compact
+`bincode` sink — the concrete cache the `viewer`'s loaded path reads. `source_cloud` is populated by
+`generate::run` from the source's body cloud; the storage-dominant `field_grid` stays deferred (the
+viewer samples `gravity` on demand for its field view — `viewer.md` §4).
+
 ---
 
 ## 7. Analysis placement — the decision (resolves `DESIGN.md` §7)
