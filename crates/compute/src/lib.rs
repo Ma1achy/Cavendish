@@ -226,9 +226,13 @@ impl WgpuBackend {
     }
 }
 
+/// The forward-model WGSL kernels — mirrors `gravity`'s Rust functions statement-for-statement.
+pub const FORWARD_WGSL: &str = include_str!("forward.wgsl");
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gravity::Cloud;
 
     /// Smoke test: wgpu initialises and a trivial compute shader runs and reads back. `#[ignore]` so
     /// it runs only in the GPU CI job (lavapipe) and locally on Metal, never in the GPU-less gate.
@@ -242,5 +246,144 @@ mod tests {
         for (i, (&o, &inp)) in out.iter().zip(&input).enumerate() {
             assert_eq!(o, inp * 2.0, "gpu doubled wrong at {i}");
         }
+    }
+
+    fn rel(a: f64, b: f64) -> f64 {
+        (a - b).abs() / a.abs().max(1e-30)
+    }
+
+    /// Each WGSL kernel (V, g, Γ, arm sample) vs its Rust reference on small fixed inputs — a handful
+    /// of elements, so f32 accumulation stays ≤1e-6 rel (the full-cloud accumulation is `cpu_equals_gpu`
+    /// at ≤1e-4). `#[ignore]`: GPU CI job / local Metal.
+    #[test]
+    #[ignore = "requires a GPU device (run in the gpu CI job / locally on Metal)"]
+    fn wgsl_kernel_parity() {
+        let gpu = Gpu::new().expect("acquire device");
+        let cloud = Cloud::from_elements(&[
+            (0.1, 0.2, 0.3, 5.0),
+            (1.0, -0.5, 0.8, 12.0),
+            (-0.7, 0.4, -1.1, 3.0),
+        ]);
+        let cloud_f32: Vec<[f32; 4]> = (0..cloud.len())
+            .map(|i| {
+                [
+                    cloud.xs[i] as f32,
+                    cloud.ys[i] as f32,
+                    cloud.zs[i] as f32,
+                    cloud.ms[i] as f32,
+                ]
+            })
+            .collect();
+        let p = Vec3::new(2.0, 1.5, 3.0);
+        let pf = [p.x as f32, p.y as f32, p.z as f32];
+
+        // V
+        let v_ref = gravity::potential(&cloud, p);
+        let v_gpu = gpu.run_kernel(FORWARD_WGSL, "k_potential", &cloud_f32, &pf, 1)[0] as f64;
+        assert!(rel(v_ref, v_gpu) <= 1e-6, "V: {v_ref:e} vs {v_gpu:e}");
+
+        // g — each component to 1e-6 of the field magnitude (a coincidentally-small component need
+        // not match to 1e-6 of its own tiny value; the vector agrees to 1e-6 of its scale).
+        let g_ref = gravity::field(&cloud, p);
+        let g_gpu = gpu.run_kernel(FORWARD_WGSL, "k_field", &cloud_f32, &pf, 3);
+        let g_scale = g_ref.norm();
+        for (r, &gg) in [g_ref.x, g_ref.y, g_ref.z].iter().zip(&g_gpu) {
+            assert!(
+                (r - gg as f64).abs() <= 1e-6 * g_scale,
+                "g: {r:e} vs {gg:e}"
+            );
+        }
+
+        // Γ (symmetric, row-major) — each component to 1e-6 of the tensor scale (largest |component|).
+        let gamma_ref = gravity::gradient_tensor(&cloud, p);
+        let gamma_gpu = gpu.run_kernel(FORWARD_WGSL, "k_gamma", &cloud_f32, &pf, 9);
+        let gamma_scale = gamma_ref
+            .m
+            .iter()
+            .flatten()
+            .fold(0.0f64, |acc, &x| acc.max(x.abs()));
+        for a in 0..3 {
+            for b in 0..3 {
+                assert!(
+                    (gamma_ref.m[a][b] - gamma_gpu[a * 3 + b] as f64).abs() <= 1e-6 * gamma_scale,
+                    "Γ[{a}][{b}]: {:e} vs {:e}",
+                    gamma_ref.m[a][b],
+                    gamma_gpu[a * 3 + b]
+                );
+            }
+        }
+
+        // arm sample (π-pulse kick reproduced): lower arm of IFO 0. z = vt − ½gt² cancels two large
+        // ballistic terms near the apex, so parity is to 1e-6 of the flight scale (v_first·2T), not of
+        // the coincidentally-small apex height.
+        let cfg = InstrumentConfig::default();
+        let arm = instrument::build_arms(&cfg)[0].lower;
+        let arm_scale = cfg.u0 * 2.0 * cfg.t_half;
+        for &tau in &[0.1, cfg.t_half, cfg.t_half + 0.3, 2.0 * cfg.t_half] {
+            let z_ref = arm.z_at(tau);
+            let ap = [
+                0.0,
+                cfg.u0 as f32,
+                cfg.v_rec as f32,
+                cfg.t_half as f32,
+                cfg.g as f32,
+                tau as f32,
+            ];
+            let z_gpu = gpu.run_kernel(FORWARD_WGSL, "k_arm", &[], &ap, 1)[0] as f64;
+            assert!(
+                (z_ref - z_gpu).abs() <= 1e-6 * arm_scale,
+                "arm z_at({tau}): {z_ref} vs {z_gpu}"
+            );
+        }
+        // phase (static source): the full arm integral — π-pulse Simpson split + differential-first
+        // per-element differencing. A few-element source, so f32 accumulation stays ≤1e-6 rel (the
+        // full-cloud phase is cpu_equals_gpu at ≤1e-4).
+        let place = Isometry3::new(math::Quat::identity(), Vec3::new(3.0, 0.0, 2.5));
+        let traj = Trajectory::new(place, Path::Static, Timing::Uniform { rate: 0.0 })
+            .with_orient(Orient::Fixed(math::Quat::identity()));
+        let source = Source::new(cloud.clone(), traj);
+        let det = Detector::new(0.0);
+        let phi_ref = PropagationIntegral::new(cfg).delta_phi(&[&source], &[], &det, 0.0);
+        let pose = source.pose_at(0.0);
+        let (sq, st) = (pose.rotation, pose.translation);
+        let (dq, dt) = (det.placement.rotation, det.placement.translation);
+        let pp = [
+            cfg.m_a as f32,
+            cfg.hbar as f32,
+            cfg.g as f32,
+            cfg.t_half as f32,
+            cfg.v_rec as f32,
+            cfg.u0 as f32,
+            cfg.ifo_sep as f32,
+            cfg.fine_dt as f32,
+            sq.w as f32,
+            sq.x as f32,
+            sq.y as f32,
+            sq.z as f32,
+            st.x as f32,
+            st.y as f32,
+            st.z as f32,
+            dq.w as f32,
+            dq.x as f32,
+            dq.y as f32,
+            dq.z as f32,
+            dt.x as f32,
+            dt.y as f32,
+            dt.z as f32,
+        ];
+        let phi_gpu = gpu.run_kernel(FORWARD_WGSL, "k_phase_static", &cloud_f32, &pp, 1)[0] as f64;
+        eprintln!(
+            "wgsl_kernel_parity: phase {phi_ref:e} vs {phi_gpu:e} (rel {:.2e})",
+            rel(phi_ref, phi_gpu)
+        );
+        assert!(
+            rel(phi_ref, phi_gpu) <= 1e-6,
+            "phase: {phi_ref:e} vs {phi_gpu:e}"
+        );
+
+        eprintln!(
+            "wgsl_kernel_parity: V/g/Γ/arm/phase ≤1e-6 on {} elements",
+            cloud.len()
+        );
     }
 }

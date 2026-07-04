@@ -64,6 +64,134 @@ impl Gpu {
         out
     }
 
+    /// Run one forward kernel: bind `cloud` (vec4 = xyz+mass), a packed `params` f32 array, and an
+    /// `out` f32 array; dispatch `entry` once; read `out` back. The building block for kernel parity.
+    pub fn run_kernel(
+        &self,
+        wgsl: &str,
+        entry: &str,
+        cloud: &[[f32; 4]],
+        params: &[f32],
+        out_len: usize,
+    ) -> Vec<f32> {
+        // buffer_init rejects empty contents; pad an unused cloud/params with one dummy element.
+        let cloud_data: Vec<[f32; 4]> = if cloud.is_empty() {
+            vec![[0.0; 4]]
+        } else {
+            cloud.to_vec()
+        };
+        let params_data: Vec<f32> = if params.is_empty() {
+            vec![0.0]
+        } else {
+            params.to_vec()
+        };
+        let cloud_buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("cloud"),
+                contents: bytemuck::cast_slice(&cloud_data),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let params_buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("params"),
+                contents: bytemuck::cast_slice(&params_data),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let out_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("out"),
+            size: (out_len * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let storage = |read_only: bool| wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
+        let bgl = self
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("forward"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        ..storage(true)
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        ..storage(true)
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        ..storage(false)
+                    },
+                ],
+            });
+        let layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: &[&bgl],
+                push_constant_ranges: &[],
+            });
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("forward"),
+                source: wgpu::ShaderSource::Wgsl(wgsl.into()),
+            });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(entry),
+                layout: Some(&layout),
+                module: &shader,
+                entry_point: entry,
+                compilation_options: Default::default(),
+                cache: None,
+            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: cloud_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: params_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: out_buf.as_entire_binding(),
+                },
+            ],
+        });
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: None,
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.dispatch_workgroups(1, 1, 1);
+        }
+        self.queue.submit([enc.finish()]);
+        self.read_f32(&out_buf, out_len)
+    }
+
     /// Smoke helper: double a buffer of `f32` on-device (validates the whole dispatch/read-back path).
     pub fn run_double(&self, input: &[f32]) -> Vec<f32> {
         let storage = self
