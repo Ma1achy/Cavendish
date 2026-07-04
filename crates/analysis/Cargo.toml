@@ -10,3 +10,9 @@ source = { path = "../source" }
 instrument = { path = "../instrument" }
 compute = { path = "../compute" }
 state = { path = "../state" }
+# Dense linear algebra for the Fisher inverse and its eigen-conditioning (F is small, P ≲ 10, SPD).
+nalgebra = "0.35"
+
+[dev-dependencies]
+# Tests build scenarios (poses, clouds); the production path takes a ScenarioBatch and never names math.
+math = { path = "../math" }
