@@ -7,6 +7,7 @@ use eframe::egui;
 use egui::load::SizedTexture;
 
 use crate::camera::Camera;
+use crate::panels;
 use crate::render::SceneRenderer;
 use crate::scene::scene_at;
 use crate::scrub;
@@ -89,6 +90,14 @@ impl eframe::App for App {
             if let Some(msg) = &self.toast {
                 ui.colored_label(egui::Color32::LIGHT_RED, msg);
             }
+            ui.separator();
+            ui.heading("Periodogram");
+            match &self.bundle {
+                Some(b) => panels::periodogram_panel(ui, b),
+                None => {
+                    ui.weak("no run yet");
+                }
+            }
         });
 
         egui::TopBottomPanel::bottom("scrubber").show(ctx, |ui| {
@@ -113,6 +122,16 @@ impl eframe::App for App {
                 }
             });
         });
+
+        egui::TopBottomPanel::bottom("signal")
+            .resizable(true)
+            .default_height(180.0)
+            .show(ctx, |ui| match &self.bundle {
+                Some(b) => panels::signal_panel(ui, b, self.ell),
+                None => {
+                    ui.weak("no run — Run or Load a bundle");
+                }
+            });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             let avail = ui.available_size();

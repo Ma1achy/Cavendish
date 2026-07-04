@@ -11,6 +11,7 @@
 pub mod app;
 pub mod camera;
 pub mod field_slice;
+pub mod panels;
 pub mod pose;
 pub mod render;
 pub mod scene;
