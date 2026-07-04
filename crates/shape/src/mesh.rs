@@ -979,6 +979,73 @@ impl Solid for MeshSolid {
     }
 }
 
+/// Re-express a cloud in its **principal frame**: rotate every element by `Rᵀ`, where the columns of
+/// `R` are the principal axes (eigenvectors of the second moment `C`, from [`gravity::inertia`]). In
+/// the returned cloud the inertia tensor is diagonal, so `Orient::FreeRotation` — which reads the
+/// principal moments off the body-frame diagonal (M4) — holds for an imported mesh whose authored
+/// frame is not principal. The rotation `R` (body ← principal) is returned and **recorded** so a
+/// caller can compose it into the initial pose to recover the authored orientation.
+///
+/// This is M10-R7's resolution, path (a): diagonalise-and-author-in-principal-frame. It is the only
+/// place the shape crate rotates a body's axes; it is explicit and recorded, never silent. Total mass
+/// and the (origin) CoM are preserved — a rotation about the origin moves neither.
+pub fn principal_frame(cloud: &Cloud) -> (Cloud, [[f64; 3]; 3]) {
+    let mut r = gravity::inertia(cloud).axes.m;
+    // Keep a proper rotation (det = +1): a reflected eigenbasis would mirror the body. Flip the third
+    // axis if the permuted eigenvectors form a left-handed frame.
+    if det3(&r) < 0.0 {
+        for row in r.iter_mut() {
+            row[2] = -row[2];
+        }
+    }
+    let n = cloud.len();
+    let mut xs = Vec::with_capacity(n);
+    let mut ys = Vec::with_capacity(n);
+    let mut zs = Vec::with_capacity(n);
+    for k in 0..n {
+        let p = [cloud.xs[k], cloud.ys[k], cloud.zs[k]];
+        // q = Rᵀ p — the coordinate of p along each principal axis (column of R).
+        xs.push(r[0][0] * p[0] + r[1][0] * p[1] + r[2][0] * p[2]);
+        ys.push(r[0][1] * p[0] + r[1][1] * p[1] + r[2][1] * p[2]);
+        zs.push(r[0][2] * p[0] + r[1][2] * p[1] + r[2][2] * p[2]);
+    }
+    (
+        Cloud {
+            xs,
+            ys,
+            zs,
+            ms: cloud.ms.clone(),
+        },
+        r,
+    )
+}
+
+fn det3(m: &[[f64; 3]; 3]) -> f64 {
+    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+}
+
+/// A content-addressed cache key for a mesh at a given voxelisation: the triangle data plus the
+/// lattice parameters (`design/shape.md` §7). Feeds `Registry::resolve` so the same (mesh, h)
+/// voxelises once and mass draws only rescale — the cache honoured for meshes as for primitives.
+pub fn mesh_cache_key(soup: &TriSoup, params: &VoxelParams) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for v in &soup.verts {
+        for &c in v {
+            c.to_bits().hash(&mut h);
+        }
+    }
+    for t in &soup.tris {
+        t.hash(&mut h);
+    }
+    params.pitch.map(f64::to_bits).hash(&mut h);
+    params.target_n.hash(&mut h);
+    params.supersample.hash(&mut h);
+    h.finish()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1193,6 +1260,86 @@ mod tests {
         assert!(
             rel <= 0.01,
             "voxel {v_voxel} vs divergence {v_mesh}: rel {rel}"
+        );
+    }
+
+    fn rel_frob(a: &math::Mat3<f64>, b: &math::Mat3<f64>) -> f64 {
+        let (mut num, mut den) = (0.0, 0.0);
+        for i in 0..3 {
+            for j in 0..3 {
+                num += (a.m[i][j] - b.m[i][j]).powi(2);
+                den += b.m[i][j].powi(2);
+            }
+        }
+        (num / den).sqrt()
+    }
+
+    /// An asymmetric box (half-extents `h`) tilted out of its principal frame, so its inertia tensor
+    /// is genuinely non-diagonal in the authored frame — the case M10-R7 must resolve.
+    fn tilted_box(h: [f64; 3]) -> TriSoup {
+        let mut s = unit_cube();
+        let (a, b) = (0.5f64, 0.7f64); // yaw, then pitch — an arbitrary tilt
+        let (ca, sa, cb, sb) = (a.cos(), a.sin(), b.cos(), b.sin());
+        for v in &mut s.verts {
+            let p = [v[0] * 2.0 * h[0], v[1] * 2.0 * h[1], v[2] * 2.0 * h[2]]; // ±0.5 → ±h
+            let z = [ca * p[0] - sa * p[1], sa * p[0] + ca * p[1], p[2]]; // about z
+            *v = [z[0], cb * z[1] - sb * z[2], sb * z[1] + cb * z[2]]; // about x
+        }
+        s
+    }
+
+    #[test]
+    fn mesh_eq_primitive() {
+        // An icosphere mesh voxelises to the primitive sphere's second moment at equal h — proof the
+        // mesh goes through the identical shape pipeline. Tolerance: 2% voxelisation + facet term.
+        let soup = icosphere(4); // vertices on the unit sphere; a near-sphere polyhedron
+        let (mesh, _) = MeshSolid::from_soup(soup).unwrap();
+        let cloud = voxelise_mesh(&mesh, &VoxelParams::pitch(0.05), MassSpec::Total(7.0)).unwrap();
+        let c_mesh = crate::second_moment(&cloud);
+        let c_prim = crate::Sphere { r: 1.0 }.analytic_c(7.0);
+        let rel = rel_frob(&c_mesh, &c_prim);
+        assert!(rel <= 0.03, "mesh sphere C vs primitive: rel {rel}");
+    }
+
+    #[test]
+    fn cache_once() {
+        // The same (mesh, h) voxelises once: a second resolve returns the same Arc; a mass draw only
+        // rescales (M2's cache honoured for meshes as for primitives).
+        use std::sync::Arc;
+        let soup = icosphere(2);
+        let (mesh, _) = MeshSolid::from_soup(soup.clone()).unwrap();
+        let params = VoxelParams::pitch(0.1);
+        let key = mesh_cache_key(&soup, &params);
+        let reg = crate::Registry::new();
+        let build = || voxelise_mesh(&mesh, &params, MassSpec::Total(1.0));
+        let a = reg.resolve(key, build).unwrap();
+        let b = reg.resolve(key, build).unwrap();
+        assert!(Arc::ptr_eq(&a, &b), "cache miss on repeat resolve");
+
+        let scaled = crate::scale_mass(&a, 5.0);
+        assert!((scaled.ms.iter().sum::<f64>() - 5.0).abs() / 5.0 <= 1e-12);
+        assert_eq!(scaled.xs, a.xs); // positions unchanged — no re-voxelise
+    }
+
+    #[test]
+    fn principal_frame_diagonalises() {
+        // A tilted asymmetric mesh has a non-diagonal inertia in its authored frame; principal_frame
+        // rotates the cloud so the second moment is diagonal — M10-R7's precondition made to hold.
+        let soup = tilted_box([0.35, 0.2, 0.12]);
+        let (mesh, _) = MeshSolid::from_soup(soup).unwrap();
+        let cloud = voxelise_mesh(&mesh, &VoxelParams::pitch(0.02), MassSpec::Total(1.0)).unwrap();
+
+        let c0 = crate::second_moment(&cloud);
+        let off0 = c0.m[0][1].abs() + c0.m[0][2].abs() + c0.m[1][2].abs();
+        assert!(off0 > 1e-3, "authored frame is non-principal (off {off0})");
+
+        let (pc, _r) = principal_frame(&cloud);
+        let c1 = crate::second_moment(&pc);
+        let off1 = c1.m[0][1].abs() + c1.m[0][2].abs() + c1.m[1][2].abs();
+        let diag = c1.m[0][0].abs() + c1.m[1][1].abs() + c1.m[2][2].abs();
+        assert!(
+            off1 / diag < 1e-6,
+            "principal frame diagonalises C (off {off1}, diag {diag})"
         );
     }
 
