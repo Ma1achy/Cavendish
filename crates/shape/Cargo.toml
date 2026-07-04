@@ -7,3 +7,15 @@ publish = false
 [dependencies]
 gravity = { path = "../gravity" }
 math = { path = "../math" }
+# Mesh-format parsers (M10) — optional, so the core geometry engine builds without them. The winding
+# number, watertightness, and classification core are always compiled; only the format readers gate.
+stl_io = { workspace = true, optional = true }
+tobj = { workspace = true, optional = true }
+gltf = { workspace = true, optional = true }
+
+[features]
+stl = ["dep:stl_io"]
+obj = ["dep:tobj"]
+gltf = ["dep:gltf"]
+# The umbrella the CI parser-gate runs: `cargo test -p shape --all-features`.
+mesh = ["stl", "obj", "gltf"]

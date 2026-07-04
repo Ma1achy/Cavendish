@@ -13,6 +13,9 @@ use math::Mat3;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+mod mesh;
+pub use mesh::*;
+
 /// An axis-aligned bounding box — the voxelisation domain.
 #[derive(Clone, Copy, Debug)]
 pub struct Aabb {
@@ -239,12 +242,22 @@ impl VoxelParams {
     }
 }
 
-/// Why a solid could not be voxelised.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Why a solid could not be voxelised or a mesh imported.
+///
+/// Not `Copy`/`Eq`: the mesh variants carry payloads (`f64` diagnostic, parser message) so a dirty
+/// mesh fails *loudly* with context rather than as a bare tag.
+#[derive(Clone, Debug, PartialEq)]
 pub enum ShapeError {
     BadParams,
     EmptySolid,
     TooManyElements,
+    /// A mesh was imported without an explicit `scale` — units are ambiguous, so guessing is refused.
+    ScaleMissing,
+    /// The robust classifier's ambiguity diagnostic `A` exceeded threshold: the interior is genuinely
+    /// undecidable, so no cloud is emitted (never a silent garbage cloud).
+    AmbiguousInterior(f64),
+    /// A mesh file could not be read or parsed; the string carries the underlying reason.
+    UnreadableMesh(String),
 }
 
 /// The maximum number of elements a voxelised cloud may carry.

@@ -19,3 +19,9 @@ bincode = "1"
 eframe = { version = "0.29", default-features = false, features = ["wgpu", "default_fonts", "wayland", "x11"] }
 egui = "0.29"
 egui_plot = "0.29"
+# Mesh-format parsers (M10) — a file format is not the physics, so a vetted crate parses each. Optional
+# and feature-gated in `shape` so the core engine builds without them. Verified maintained on crates.io
+# (Jul 2026): stl_io 0.11 (Mar 2026), tobj 4.0 (Jun 2026), gltf 1.4 (stable).
+stl_io = "0.11"
+tobj = "4.0"
+gltf = "1.4"
