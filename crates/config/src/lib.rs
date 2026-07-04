@@ -10,4 +10,7 @@
 pub struct FieldSet {
     /// Fill the static shape descriptors (mass, inertia, moments, axes, quadrupole).
     pub shape: bool,
+    /// Decompose `signal` into its channels (targets, atmospheric, uldm, per-IFO) — the ≈2× cost of a
+    /// second gravitational pass. Off ⇒ one combined pass, channel fields `None`.
+    pub decomposition: bool,
 }

@@ -19,6 +19,7 @@
 | M10-R4 | Robust path (open/non-manifold): **generalised winding numbers**, hierarchically accelerated; ambiguity diagnostic; `AmbiguousInterior` on genuinely dubious meshes — never silent garbage. |
 | M10-R5 | The divergence-theorem volume cross-check for watertight meshes. |
 | M10-R6 | A mesh voxelises through the *same* M2 pipeline (renormalise, recentre, canonical order, cache) — mesh ≡ primitive downstream. |
+| M10-R7 | Principal-frame boundary: a mesh with off-diagonal inertia must be re-expressed in its principal frame before `Orient::FreeRotation`, which assumes principal-frame authoring (M4); the loader records the principal-axis rotation. (Axis-aligned primitives are already principal, so this is a mesh-only concern.) |
 
 ---
 

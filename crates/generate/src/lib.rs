@@ -9,43 +9,78 @@
 pub use compute::{ComputeBackend, EvalBatch, SignalBatch};
 pub use gravity::FieldContribution;
 pub use scenario::{
-    BodyMotion, Detector, DetectorArray, FieldSet, KeyRng, NoiseSource, Orient, Path, PhaseModel,
-    PhaseModelKind, Prescribed, Scenario, Schedule, Source, SourceDynamics, Timing, Trajectory,
+    uldm_phase, AtmoConfig, AtmoField, BodyMotion, Detector, DetectorArray, FieldSet, KeyRng,
+    NoiseSource, NoiseStack, Orient, Path, PhaseModel, PhaseModelKind, Prescribed, Scenario,
+    Schedule, ShotNoise, Source, SourceDynamics, Timing, Trajectory, UldmConfig, VibrationResidual,
 };
 pub use state::{Dual, Isometry3, Mat3, Quat, Scalar, StateBundle, Vec3};
 
 use instrument::{PropagationIntegral, QuasiStaticGradient};
 use state::Meta;
 
-/// Drive a scenario through the selected phase model to a `StateBundle`.
+/// Drive a scenario through the forward model and channels to a `StateBundle`.
+///
+/// `signal = targets + atmospheric + uldm + noise`. The atmospheric field is summed into the potential
+/// in the forward pass (never post-hoc); ULDM is common-mode (once per tick, broadcast); noise is the
+/// ordered post-hoc stack. With `field_set.decomposition` on, the gravitational phase is evaluated per
+/// group (targets-only, atmo-only — the ≈2× cost) so each channel is recorded exactly by superposition.
 pub fn run(scenario: &Scenario) -> StateBundle {
     let model: Box<dyn PhaseModel> = match scenario.phase_model {
         PhaseModelKind::PropagationIntegral => Box::new(PropagationIntegral::default()),
         PhaseModelKind::QuasiStatic => Box::new(QuasiStaticGradient::default()),
     };
+    let pi = PropagationIntegral::default(); // reference single-IFO phases for signal_per_ifo
     let sources: [&dyn SourceDynamics; 1] = [scenario.source.as_ref()];
+    // Atmospheric modes are drawn ONCE per scenario, then evaluated in every forward pass.
+    let atmo = scenario.atmo.map(|c| AtmoField::realise(&c, scenario.seed));
+    let fields: Vec<&dyn FieldContribution<f64>> = atmo
+        .iter()
+        .map(|a| a as &dyn FieldContribution<f64>)
+        .collect();
+    let decompose = scenario.field_set.decomposition;
+    let d = scenario.array.detectors.len();
 
     let mut time = Vec::new();
     let mut signal = Vec::new();
-    let mut track = Vec::new();
-    let mut vel = Vec::new();
-    let mut acc = Vec::new();
-    let mut orient = Vec::new();
-    let mut angvel = Vec::new();
-    let mut angacc = Vec::new();
+    let (mut track, mut vel, mut acc) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut orient, mut angvel, mut angacc) = (Vec::new(), Vec::new(), Vec::new());
     let mut mask = Vec::new();
+    // Channel accumulators — filled only when decomposing.
+    let (mut targets_ch, mut atmo_ch, mut uldm_ch, mut per_ifo_ch) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+
     for &t in &scenario.schedule.times {
-        // One phase per detector — the (T, D) signal row.
-        let row: Vec<f64> = scenario
-            .array
-            .detectors
-            .iter()
-            .map(|det| model.delta_phi(&sources, det, t))
-            .collect();
+        let mut row = Vec::with_capacity(d);
+        let (mut trow, mut arow, mut pirow) = (Vec::new(), Vec::new(), Vec::new());
+        for det in &scenario.array.detectors {
+            let grav = if decompose {
+                let ft = model.delta_phi(&sources, &[], det, t); // targets only
+                let fa = model.delta_phi(&[], &fields, det, t); // atmo only (the 2nd pass)
+                trow.push(ft);
+                arow.push(fa);
+                pirow.push(pi.per_ifo(&sources, &fields, det, t));
+                ft + fa
+            } else {
+                model.delta_phi(&sources, &fields, det, t) // one combined pass
+            };
+            row.push(grav);
+        }
+        // ULDM: once per measurement, broadcast to every detector (common-mode).
+        let u = scenario.uldm.map_or(0.0, |c| uldm_phase(&c, t));
+        for x in row.iter_mut() {
+            *x += u;
+        }
+        signal.push(row);
+        if decompose {
+            targets_ch.push(trow);
+            atmo_ch.push(arow);
+            uldm_ch.push(u);
+            per_ifo_ch.push(pirow);
+        }
+
         let pose = scenario.source.pose_at(t);
         let m = scenario.source.motion_at(t);
         time.push(t);
-        signal.push(row);
         track.push([pose.translation.x, pose.translation.y, pose.translation.z]);
         vel.push([m.velocity.x, m.velocity.y, m.velocity.z]);
         acc.push([m.acceleration.x, m.acceleration.y, m.acceleration.z]);
@@ -64,7 +99,16 @@ pub fn run(scenario: &Scenario) -> StateBundle {
         mask.push(false);
     }
 
-    // Static shape descriptors, computed once from the body cloud iff requested.
+    // Post-hoc noise, realised (T, D) and added: signal = clean + noise (recoverable bit-for-bit).
+    let noise = scenario
+        .noise
+        .realise(&scenario.schedule.times, d, scenario.seed);
+    for (srow, nrow) in signal.iter_mut().zip(&noise) {
+        for (s, n) in srow.iter_mut().zip(nrow) {
+            *s += n;
+        }
+    }
+
     let shape = scenario
         .field_set
         .shape
@@ -83,13 +127,18 @@ pub fn run(scenario: &Scenario) -> StateBundle {
         mask,
         meta: Meta {
             seed: scenario.seed,
-            description: "M4 rotation spine".into(),
+            description: "M5 channels spine".into(),
         },
         source_mass: shape.map(|r| vec![r.mass]),
         source_inertia: shape.map(|r| vec![r.i.m]),
         source_moments: shape.map(|r| vec![r.moments]),
         source_axes: shape.map(|r| vec![r.axes.m]),
         source_quadrupole: shape.map(|r| vec![r.q.m]),
+        signal_noise: noise,
+        signal_uldm: decompose.then_some(uldm_ch),
+        signal_targets: decompose.then_some(targets_ch),
+        signal_atmospheric: decompose.then_some(atmo_ch),
+        signal_per_ifo: decompose.then_some(per_ifo_ch),
     }
 }
 
@@ -159,8 +208,8 @@ mod tests {
         let model = PropagationIntegral::default();
         let above = point_source(1.0, 4.0); // above the centre, between the IFOs
         let below = point_source(1.0, 1.0); // below the centre, between the IFOs
-        let dphi_above = model.delta_phi(&[&above], &det, 2.0);
-        let dphi_below = model.delta_phi(&[&below], &det, 2.0);
+        let dphi_above = model.delta_phi(&[&above], &[], &det, 2.0);
+        let dphi_below = model.delta_phi(&[&below], &[], &det, 2.0);
         assert!(dphi_above.is_finite() && dphi_above != 0.0);
         assert!(dphi_below.is_finite() && dphi_below != 0.0);
         assert!(
@@ -232,8 +281,8 @@ mod tests {
         for &range in &[40.0, 20.0, 10.0, 5.0] {
             // Source on the x-axis at `range` (> baseline), height at the gradiometer centre.
             let src = point_source(range, 2.5);
-            let phi_a = model.delta_phi(&[&src], &det_a, 2.0);
-            let phi_b = model.delta_phi(&[&src], &det_b, 2.0);
+            let phi_a = model.delta_phi(&[&src], &[], &det_a, 2.0);
+            let phi_b = model.delta_phi(&[&src], &[], &det_b, 2.0);
             assert!(phi_a != phi_b, "detectors read the same at range {range}");
             let diff = (phi_a - phi_b).abs();
             assert!(diff > prev, "differential did not grow at range {range}");
@@ -251,7 +300,7 @@ mod tests {
                 fine_dt: dt,
                 ..InstrumentConfig::default()
             };
-            PropagationIntegral::new(cfg).delta_phi(&[&src], &det, 2.0)
+            PropagationIntegral::new(cfg).delta_phi(&[&src], &[], &det, 2.0)
         };
         let coarse = phi(0.01);
         let fine = phi(0.005);

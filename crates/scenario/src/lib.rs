@@ -6,10 +6,13 @@
 
 pub use config::FieldSet;
 pub use instrument::{Detector, DetectorArray, PhaseModel, PhaseModelKind};
-pub use noise::{KeyRng, NoiseSource};
+pub use noise::{
+    AtmoConfig, AtmoField, KeyRng, NoiseSource, NoiseStack, ShotNoise, VibrationResidual,
+};
 pub use source::{
     BodyMotion, Orient, Path, Prescribed, Source, SourceDynamics, Timing, Trajectory,
 };
+pub use uldm::{uldm_phase, UldmConfig};
 
 /// The measurement times. Uniform in M1; jitter/gaps arrive with M6's schedules.
 #[derive(Clone, Debug, Default)]
@@ -37,6 +40,12 @@ pub struct Scenario {
     pub phase_model: PhaseModelKind,
     /// Which optional bundle field groups to compute (default: none).
     pub field_set: FieldSet,
+    /// The ordered post-hoc noise stack (default: empty).
+    pub noise: NoiseStack,
+    /// The ULDM common-mode channel (default: off).
+    pub uldm: Option<UldmConfig>,
+    /// The atmospheric-GGN field source (default: off).
+    pub atmo: Option<AtmoConfig>,
 }
 
 impl Scenario {
@@ -53,7 +62,28 @@ impl Scenario {
             seed,
             phase_model: PhaseModelKind::default(),
             field_set: FieldSet::default(),
+            noise: NoiseStack::default(),
+            uldm: None,
+            atmo: None,
         }
+    }
+
+    /// Attach the post-hoc noise stack (builder style).
+    pub fn with_noise(mut self, noise: NoiseStack) -> Self {
+        self.noise = noise;
+        self
+    }
+
+    /// Attach the ULDM common-mode channel (builder style).
+    pub fn with_uldm(mut self, uldm: UldmConfig) -> Self {
+        self.uldm = Some(uldm);
+        self
+    }
+
+    /// Attach the atmospheric-GGN field source (builder style).
+    pub fn with_atmo(mut self, atmo: AtmoConfig) -> Self {
+        self.atmo = Some(atmo);
+        self
     }
 
     /// Select the phase model (builder style).
