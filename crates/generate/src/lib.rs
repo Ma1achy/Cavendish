@@ -9,14 +9,15 @@
 pub use compute::{ComputeBackend, EvalBatch, SignalBatch};
 pub use gravity::FieldContribution;
 pub use scenario::{
-    uldm_phase, AtmoConfig, AtmoField, BodyMotion, Detector, DetectorArray, FieldSet, KeyRng,
-    NoiseSource, NoiseStack, Orient, Path, PhaseModel, PhaseModelKind, Prescribed, Scenario,
-    Schedule, ShotNoise, Source, SourceDynamics, Timing, Trajectory, UldmConfig, VibrationResidual,
+    hash, uldm_phase, AtmoConfig, AtmoField, BodyMotion, Detector, DetectorArray, Dist, FieldSet,
+    Key, KeyRng, NoiseSource, NoiseStack, Orient, Path, PhaseModel, PhaseModelKind, Prescribed,
+    Prior, RunConfig, Scenario, Schedule, ShotNoise, Source, SourceDynamics, Timing, Trajectory,
+    UldmConfig, VibrationResidual,
 };
-pub use state::{Dual, Isometry3, Mat3, Quat, Scalar, StateBundle, Vec3};
+pub use state::{Dual, Isometry3, Mat3, Periodogram, Quat, Scalar, StateBundle, Vec3};
 
 use instrument::{PropagationIntegral, QuasiStaticGradient};
-use state::Meta;
+use state::{frequency_grid, lomb_scargle, Meta};
 
 /// Drive a scenario through the forward model and channels to a `StateBundle`.
 ///
@@ -114,6 +115,19 @@ pub fn run(scenario: &Scenario) -> StateBundle {
         .shape
         .then(|| gravity::inertia(scenario.source.body_cloud()));
 
+    // Lomb–Scargle per detector on the (possibly non-uniform) measurement times — the correct
+    // estimator when the schedule is gappy/jittered.
+    let periodogram = scenario.field_set.periodogram.then(|| {
+        let freqs = frequency_grid(&scenario.schedule.times);
+        let power = (0..d)
+            .map(|di| {
+                let y: Vec<f64> = signal.iter().map(|row| row[di]).collect();
+                lomb_scargle(&scenario.schedule.times, &y, &freqs)
+            })
+            .collect();
+        Periodogram { freqs, power }
+    });
+
     StateBundle {
         time,
         signal,
@@ -139,7 +153,35 @@ pub fn run(scenario: &Scenario) -> StateBundle {
         signal_targets: decompose.then_some(targets_ch),
         signal_atmospheric: decompose.then_some(atmo_ch),
         signal_per_ifo: decompose.then_some(per_ifo_ch),
+        periodogram,
     }
+}
+
+/// Stream `n` scenarios sampled from `prior` (scenario `i` keyed `scenario[i]` off `root`), yielding
+/// one `StateBundle` at a time. **Memory-bounded**: scenarios are processed in `cfg.batch` chunks and
+/// each bundle is dropped once yielded, so at most one batch is resident — never the whole run.
+/// `stream(prior, n, root, cfg)` and running `prior.sample(scenario_key(root, i))` directly agree
+/// bundle-for-bundle (batch-invariance), because a scenario's key hangs off its index, not its batch.
+pub fn stream(
+    prior: &Prior,
+    n: usize,
+    root: u64,
+    cfg: RunConfig,
+) -> impl Iterator<Item = StateBundle> + '_ {
+    let batch = cfg.batch.max(1);
+    (0..n).step_by(batch).flat_map(move |start| {
+        let end = (start + batch).min(n);
+        (start..end)
+            .map(|i| run(&prior.sample(scenario_key(root, i))))
+            .collect::<Vec<_>>()
+            .into_iter()
+    })
+}
+
+/// The seed for batch item `i`: the `scenario[i]` node of the key tree off `root`. The single source
+/// of truth for how a batch position maps to a scenario seed, so "alone" and "in a batch" agree.
+pub fn scenario_key(root: u64, i: usize) -> u64 {
+    Key::root(root).child("scenario").index(i as u64).bits()
 }
 
 #[cfg(test)]
