@@ -161,6 +161,9 @@ pub struct Prior {
     pub array: DetectorArray,
     pub schedule: Schedule,
     pub field_set: FieldSet,
+    /// An optional atmospheric field, realised per sample from the scenario's seed (its draws key off
+    /// the scenario node of the tree — so a sample is identical alone or inside a batch).
+    pub atmo: Option<AtmoConfig>,
 }
 
 impl Prior {
@@ -212,6 +215,9 @@ impl Prior {
                 frequency: get("uldm_freq", 0.1),
                 phase: 0.0,
             });
+        }
+        if let Some(atmo) = self.atmo {
+            scn = scn.with_atmo(atmo);
         }
         scn
     }

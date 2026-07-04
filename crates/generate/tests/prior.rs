@@ -36,6 +36,7 @@ fn prior() -> Prior {
         array: DetectorArray::new(vec![Detector::new(0.0)]),
         schedule: Schedule::uniform(2.0, 1),
         field_set: Default::default(),
+        atmo: None,
     }
 }
 
