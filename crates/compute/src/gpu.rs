@@ -12,15 +12,20 @@ pub struct Gpu {
 }
 
 impl Gpu {
-    /// Acquire a compute-capable wgpu device (Metal / Vulkan / DX12).
+    /// Acquire a compute-capable wgpu device (Metal / Vulkan / DX12). Falls back to a software adapter
+    /// (lavapipe under CI) when no hardware adapter is present.
     pub fn new() -> Result<Self, ComputeError> {
         let instance = wgpu::Instance::default();
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            force_fallback_adapter: false,
-            compatible_surface: None,
-        }))
-        .ok_or_else(|| ComputeError::DeviceUnavailable("no adapter".into()))?;
+        let request = |fallback: bool| {
+            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                force_fallback_adapter: fallback,
+                compatible_surface: None,
+            }))
+        };
+        let adapter = request(false)
+            .or_else(|| request(true))
+            .ok_or_else(|| ComputeError::DeviceUnavailable("no adapter".into()))?;
         let adapter_name = adapter.get_info().name;
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
