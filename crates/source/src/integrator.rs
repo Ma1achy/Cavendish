@@ -86,7 +86,7 @@ pub fn step<S: Scalar>(q: &mut [S; 4], omega: &mut Vec3<S>, inertia: Vec3<S>, h:
 }
 
 /// Angular acceleration from Euler's equations: `ω̇ᵢ = (Iⱼ − Iₖ)/Iᵢ · ωⱼωₖ`.
-pub fn euler_accel(omega: Vec3<f64>, inertia: Vec3<f64>) -> Vec3<f64> {
+pub fn euler_accel<S: Scalar>(omega: Vec3<S>, inertia: Vec3<S>) -> Vec3<S> {
     Vec3::new(
         (inertia.y - inertia.z) / inertia.x * omega.y * omega.z,
         (inertia.z - inertia.x) / inertia.y * omega.z * omega.x,
@@ -96,22 +96,24 @@ pub fn euler_accel(omega: Vec3<f64>, inertia: Vec3<f64>) -> Vec3<f64> {
 
 /// Integrate the torque-free Euler top from the identity orientation to time `t` on the `fine_dt`
 /// grid (a pure function of `t`). Returns the body → world orientation, body angular velocity, and
-/// body angular acceleration.
-pub fn free_rotation_state(
-    omega0: Vec3<f64>,
-    inertia: Vec3<f64>,
+/// body angular acceleration. Generic over [`Scalar`] — the state carries the tangent (so `analysis`
+/// differentiates w.r.t. `ω₀`); the grid (`n`, `rem`) is `f64` (time is not a θ).
+pub fn free_rotation_state<S: Scalar>(
+    omega0: Vec3<S>,
+    inertia: Vec3<S>,
     t: f64,
     fine_dt: f64,
-) -> (Quat, Vec3<f64>, Vec3<f64>) {
-    let mut q = [1.0, 0.0, 0.0, 0.0];
+) -> (Quat<S>, Vec3<S>, Vec3<S>) {
+    let (zero, one) = (S::from_f64(0.0), S::from_f64(1.0));
+    let mut q = [one, zero, zero, zero];
     let mut omega = omega0;
     let n = (t / fine_dt).max(0.0) as usize;
     for _ in 0..n {
-        step::<f64>(&mut q, &mut omega, inertia, fine_dt);
+        step::<S>(&mut q, &mut omega, inertia, S::from_f64(fine_dt));
     }
     let rem = t - n as f64 * fine_dt;
     if rem > 1e-15 {
-        step::<f64>(&mut q, &mut omega, inertia, rem);
+        step::<S>(&mut q, &mut omega, inertia, S::from_f64(rem));
     }
     (
         Quat::new(q[0], q[1], q[2], q[3]),
@@ -121,33 +123,34 @@ pub fn free_rotation_state(
 }
 
 /// One leapfrog (Störmer–Verlet) step of the physical pendulum `θ̈ = −k·sin θ`.
-fn leap_step(theta: &mut f64, thetadot: &mut f64, k: f64, h: f64) {
-    *thetadot += 0.5 * h * (-k * theta.sin());
-    *theta += h * *thetadot;
-    *thetadot += 0.5 * h * (-k * theta.sin());
+fn leap_step<S: Scalar>(theta: &mut S, thetadot: &mut S, k: S, h: S) {
+    let half = S::from_f64(0.5);
+    *thetadot = *thetadot + half * h * (-k * theta.sin());
+    *theta = *theta + h * *thetadot;
+    *thetadot = *thetadot + half * h * (-k * theta.sin());
 }
 
 /// Integrate the physical pendulum (leapfrog) about `axis` to time `t`, with `k = Mgd/I_pivot`.
 /// Returns the world orientation, angular velocity, and angular acceleration.
-pub fn libration_state(
-    axis: Vec3<f64>,
-    k: f64,
-    theta0: f64,
-    thetadot0: f64,
+pub fn libration_state<S: Scalar>(
+    axis: Vec3<S>,
+    k: S,
+    theta0: S,
+    thetadot0: S,
     t: f64,
     fine_dt: f64,
-) -> (Quat, Vec3<f64>, Vec3<f64>) {
+) -> (Quat<S>, Vec3<S>, Vec3<S>) {
     let mut theta = theta0;
     let mut thetadot = thetadot0;
     let n = (t / fine_dt).max(0.0) as usize;
     for _ in 0..n {
-        leap_step(&mut theta, &mut thetadot, k, fine_dt);
+        leap_step(&mut theta, &mut thetadot, k, S::from_f64(fine_dt));
     }
     let rem = t - n as f64 * fine_dt;
     if rem > 1e-15 {
-        leap_step(&mut theta, &mut thetadot, k, rem);
+        leap_step(&mut theta, &mut thetadot, k, S::from_f64(rem));
     }
-    let axis_n = axis.scale(1.0 / axis.norm());
+    let axis_n = axis.scale(S::from_f64(1.0) / axis.norm());
     (
         Quat::from_axis_angle(axis_n, theta),
         axis_n.scale(thetadot),
@@ -196,6 +199,47 @@ mod tests {
         assert_eq!(wf.x, wd.x.v);
         assert_eq!(wf.y, wd.y.v);
         assert_eq!(wf.z, wd.z.v);
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // the value channel must match the f64 integration bit-for-bit
+    fn free_rotation_dual_value() {
+        // free_rotation_state::<Dual> (ω₀ seeded) has a value channel identical to the f64 run, and a
+        // tangent that matches central finite differences of the orientation w.r.t. ω₀ₓ.
+        let inertia = Vec3::new(2.0, 3.0, 5.0);
+        let (w0, w1, w2) = (0.4, 0.15, 0.6);
+        let (t, dt) = (1.3, 0.01);
+
+        let lift = |v: Vec3<f64>| {
+            Vec3::new(
+                Dual::from_f64(v.x),
+                Dual::from_f64(v.y),
+                Dual::from_f64(v.z),
+            )
+        };
+        let (qd, _, _) = free_rotation_state(
+            Vec3::new(Dual::var(w0), Dual::from_f64(w1), Dual::from_f64(w2)),
+            lift(inertia),
+            t,
+            dt,
+        );
+        let (qf, _, _) = free_rotation_state(Vec3::new(w0, w1, w2), inertia, t, dt);
+        assert_eq!(qd.w.v, qf.w);
+        assert_eq!(qd.x.v, qf.x);
+        assert_eq!(qd.y.v, qf.y);
+        assert_eq!(qd.z.v, qf.z);
+
+        // Tangent w.r.t. ω₀ₓ vs central differences of the f64 orientation.
+        let h = 1e-6;
+        let fd = |wx: f64| free_rotation_state(Vec3::new(wx, w1, w2), inertia, t, dt).0;
+        let (qp, qm) = (fd(w0 + h), fd(w0 - h));
+        let close = |d: f64, num: f64| {
+            assert!((d - num).abs() <= 1e-6 * num.abs().max(1.0), "{d} vs {num}")
+        };
+        close(qd.w.d, (qp.w - qm.w) / (2.0 * h));
+        close(qd.x.d, (qp.x - qm.x) / (2.0 * h));
+        close(qd.y.d, (qp.y - qm.y) / (2.0 * h));
+        close(qd.z.d, (qp.z - qm.z) / (2.0 * h));
     }
 
     #[test]

@@ -12,7 +12,7 @@ mod integrator;
 pub use integrator::step;
 
 use gravity::{Cloud, Inertia};
-use math::{Isometry3, Quat, Vec3};
+use math::{Isometry3, Mat3, Quat, Scalar, Vec3};
 use shape::{voxelise, MassSpec, Registry, ShapeError, Solid, VoxelParams};
 
 const TAU: f64 = std::f64::consts::TAU;
@@ -52,28 +52,29 @@ pub trait SourceDynamics {
     fn motion_at(&self, t: f64) -> BodyMotion;
 }
 
-/// A CoM space-curve as a function of progress `u`.
+/// A CoM space-curve as a function of progress `u`. Generic over [`Scalar`], `S = f64` the default,
+/// so a `Dual` trajectory can carry a tangent (the source-velocity/position Jacobian for `analysis`).
 #[derive(Clone, Copy, Debug)]
-pub enum Path {
+pub enum Path<S: Scalar = f64> {
     /// Sits at the placement origin.
     Static,
     /// Straight transit from `a` to `b` over `u ∈ [0, 1]` (also the flyby, parameterised by u).
-    LinearPass { a: Vec3<f64>, b: Vec3<f64> },
+    LinearPass { a: Vec3<S>, b: Vec3<S> },
     /// `A·sin(2πf·u + φ)·ê` along a single axis.
     Oscillation {
-        axis: Vec3<f64>,
-        amp: f64,
-        freq: f64,
-        phase: f64,
+        axis: Vec3<S>,
+        amp: S,
+        freq: S,
+        phase: S,
     },
     /// Orbital translation of the CoM in the `xy` plane.
-    Circular { radius: f64, freq: f64 },
+    Circular { radius: S, freq: S },
 }
 
-impl Path {
+impl<S: Scalar> Path<S> {
     /// Position and its first/second derivatives with respect to progress `u`.
-    fn at(&self, u: f64) -> (Vec3<f64>, Vec3<f64>, Vec3<f64>) {
-        let zero = Vec3::new(0.0, 0.0, 0.0);
+    fn at(&self, u: S) -> (Vec3<S>, Vec3<S>, Vec3<S>) {
+        let zero = Vec3::new(S::from_f64(0.0), S::from_f64(0.0), S::from_f64(0.0));
         match *self {
             Path::Static => (zero, zero, zero),
             Path::LinearPass { a, b } => (a + (b - a).scale(u), b - a, zero),
@@ -83,7 +84,7 @@ impl Path {
                 freq,
                 phase,
             } => {
-                let w = TAU * freq;
+                let w = S::from_f64(TAU) * freq;
                 let theta = w * u + phase;
                 (
                     axis.scale(amp * theta.sin()),
@@ -92,15 +93,16 @@ impl Path {
                 )
             }
             Path::Circular { radius, freq } => {
-                let w = TAU * freq;
+                let w = S::from_f64(TAU) * freq;
                 let theta = w * u;
+                let z = S::from_f64(0.0);
                 (
-                    Vec3::new(radius * theta.cos(), radius * theta.sin(), 0.0),
-                    Vec3::new(-radius * w * theta.sin(), radius * w * theta.cos(), 0.0),
+                    Vec3::new(radius * theta.cos(), radius * theta.sin(), z),
+                    Vec3::new(-radius * w * theta.sin(), radius * w * theta.cos(), z),
                     Vec3::new(
                         -radius * w * w * theta.cos(),
                         -radius * w * w * theta.sin(),
-                        0.0,
+                        z,
                     ),
                 )
             }
@@ -108,32 +110,34 @@ impl Path {
     }
 }
 
-/// The `t → u` reparameterisation (how the path advances).
+/// The `t → u` reparameterisation (how the path advances). Generic over [`Scalar`], `S = f64`.
 #[derive(Clone, Copy, Debug)]
-pub enum Timing {
+pub enum Timing<S: Scalar = f64> {
     /// Constant rate: `u = rate·t`.
-    Uniform { rate: f64 },
+    Uniform { rate: S },
     /// Constant-acceleration ease (C²): `u = rate·t + ½·accel·t²`.
-    Eased { rate: f64, accel: f64 },
+    Eased { rate: S, accel: S },
 }
 
-impl Timing {
+impl<S: Scalar> Timing<S> {
     /// Progress and its first/second time-derivatives.
-    fn at(&self, t: f64) -> (f64, f64, f64) {
+    fn at(&self, t: S) -> (S, S, S) {
         match *self {
-            Timing::Uniform { rate } => (rate * t, rate, 0.0),
-            Timing::Eased { rate, accel } => {
-                (rate * t + 0.5 * accel * t * t, rate + accel * t, accel)
-            }
+            Timing::Uniform { rate } => (rate * t, rate, S::from_f64(0.0)),
+            Timing::Eased { rate, accel } => (
+                rate * t + S::from_f64(0.5) * accel * t * t,
+                rate + accel * t,
+                accel,
+            ),
         }
     }
 }
 
 /// The `t → R` orientation. `Fixed` is closed-form; `FreeRotation` and `Libration` are the M4 ODE
-/// motions, integrated by `Source` (which holds the cloud's inertia).
+/// motions, integrated by `Source` (which holds the cloud's inertia). Generic over [`Scalar`], `S = f64`.
 #[derive(Clone, Copy, Debug)]
-pub enum Orient {
-    Fixed(Quat),
+pub enum Orient<S: Scalar = f64> {
+    Fixed(Quat<S>),
     /// Torque-free Euler top from an initial body angular velocity `ω₀`.
     ///
     /// **Precondition:** the body must be authored in its **principal frame** — the integrator reads
@@ -141,22 +145,22 @@ pub enum Orient {
     /// This holds for v1's axis-aligned primitives; an arbitrary (M10) mesh with off-diagonal inertia
     /// would need `ω₀` and the cloud rotated into the principal frame first.
     FreeRotation {
-        omega0: Vec3<f64>,
+        omega0: Vec3<S>,
     },
     /// Physical pendulum about a fixed pivot axis at distance `pivot_distance` from the CoM.
     Libration {
-        axis: Vec3<f64>,
-        pivot_distance: f64,
-        theta0: f64,
-        thetadot0: f64,
+        axis: Vec3<S>,
+        pivot_distance: S,
+        theta0: S,
+        thetadot0: S,
     },
 }
 
-impl Orient {
+impl<S: Scalar> Orient<S> {
     /// Closed-form rotation for `Fixed`; identity for the ODE variants (their orientation is
     /// integrated by `Source`, and only the `Trajectory` translation — orient-independent — is read
     /// from the closed-form path here).
-    fn rotation(&self, _t: f64) -> Quat {
+    fn rotation(&self, _t: f64) -> Quat<S> {
         match *self {
             Orient::Fixed(q) => q,
             _ => Quat::identity(),
@@ -165,16 +169,18 @@ impl Orient {
 }
 
 /// A composed trajectory: `pose_at(t) = placement ∘ Isometry{ Orient(t), Path(Timing(t)) }`.
+/// Generic over [`Scalar`], `S = f64` — a `Dual` trajectory is how [`world_pose`] carries the
+/// source-parameter tangent for `analysis`.
 #[derive(Clone, Copy, Debug)]
-pub struct Trajectory {
-    pub placement: Isometry3,
-    pub path: Path,
-    pub timing: Timing,
-    pub orient: Orient,
+pub struct Trajectory<S: Scalar = f64> {
+    pub placement: Isometry3<S>,
+    pub path: Path<S>,
+    pub timing: Timing<S>,
+    pub orient: Orient<S>,
 }
 
-impl Trajectory {
-    pub fn new(placement: Isometry3, path: Path, timing: Timing) -> Self {
+impl<S: Scalar> Trajectory<S> {
+    pub fn new(placement: Isometry3<S>, path: Path<S>, timing: Timing<S>) -> Self {
         Trajectory {
             placement,
             path,
@@ -184,18 +190,23 @@ impl Trajectory {
     }
 
     /// Set the orientation motion (builder style).
-    pub fn with_orient(mut self, orient: Orient) -> Self {
+    pub fn with_orient(mut self, orient: Orient<S>) -> Self {
         self.orient = orient;
         self
     }
 
-    pub fn pose_at(&self, t: f64) -> Isometry3 {
-        let (u, _, _) = self.timing.at(t);
+    /// The closed-form pose (translation and the `Fixed`/identity rotation). The integrated
+    /// orientations (`FreeRotation`/`Libration`) are added by [`world_pose`]; this reads only the
+    /// orient-independent translation for them.
+    pub fn pose_at(&self, t: f64) -> Isometry3<S> {
+        let (u, _, _) = self.timing.at(S::from_f64(t));
         let (p, _, _) = self.path.at(u);
         self.placement
             .compose(Isometry3::new(self.orient.rotation(t), p))
     }
+}
 
+impl Trajectory<f64> {
     pub fn motion_at(&self, t: f64) -> BodyMotion {
         let (u, du, d2u) = self.timing.at(t);
         let (_, dp, d2p) = self.path.at(u);
@@ -209,6 +220,57 @@ impl Trajectory {
             angular_velocity: Vec3::new(0.0, 0.0, 0.0),
             angular_acceleration: Vec3::new(0.0, 0.0, 0.0),
         }
+    }
+}
+
+/// The full world←body pose at `t`, generic over [`Scalar`] — the single differentiable pose recipe.
+/// Composes the closed-form translation ([`Trajectory::pose_at`]) with the (possibly ODE-integrated)
+/// orientation, reading the body constants (principal moments, pivot inertia) from `inertia`. This is
+/// exactly what `Source::pose_at` computes at `S = f64` (guarded by `world_pose_matches_source`), so
+/// `compute` can instantiate it at `S = Dual` for the CRB Jacobian and know it differentiates the
+/// canonical path.
+pub fn world_pose<S: Scalar>(
+    traj: &Trajectory<S>,
+    inertia: &Inertia,
+    fine_dt: f64,
+    t: f64,
+) -> Isometry3<S> {
+    let translation = traj.pose_at(t).translation;
+    let pr = traj.placement.rotation;
+    let rotation = match traj.orient {
+        Orient::Fixed(q) => pr * q,
+        Orient::FreeRotation { omega0 } => {
+            let m = &inertia.i.m;
+            let moments = Vec3::new(
+                S::from_f64(m[0][0]),
+                S::from_f64(m[1][1]),
+                S::from_f64(m[2][2]),
+            );
+            let (q, _, _) = integrator::free_rotation_state(omega0, moments, t, fine_dt);
+            pr * q
+        }
+        Orient::Libration {
+            axis,
+            pivot_distance,
+            theta0,
+            thetadot0,
+        } => {
+            let axis_n = axis.scale(S::from_f64(1.0) / axis.norm());
+            let i_axis = axis_n.dot(lift_mat3::<S>(&inertia.i).mul_vec(axis_n));
+            let mass = S::from_f64(inertia.mass);
+            let i_pivot = i_axis + mass * pivot_distance * pivot_distance;
+            let k = mass * S::from_f64(G_ACCEL) * pivot_distance / i_pivot;
+            let (q, _, _) = integrator::libration_state(axis_n, k, theta0, thetadot0, t, fine_dt);
+            pr * q
+        }
+    };
+    Isometry3::new(rotation, translation)
+}
+
+/// Lift an `f64` 3×3 (a body inertia — constant w.r.t. the differentiated θ) into the scalar type.
+fn lift_mat3<S: Scalar>(a: &Mat3<f64>) -> Mat3<S> {
+    Mat3 {
+        m: core::array::from_fn(|i| core::array::from_fn(|j| S::from_f64(a.m[i][j]))),
     }
 }
 
@@ -432,6 +494,59 @@ mod tests {
                 let m = traj.motion_at(t);
                 assert!(rel(fd_v, m.velocity) <= 1e-8, "velocity mismatch");
                 assert!(rel(fd_a, m.acceleration) <= 1e-8, "acceleration mismatch");
+            }
+        }
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // world_pose must reproduce Source::pose_at bit-for-bit
+    fn world_pose_matches_source() {
+        // world_pose::<f64> is the same recipe Source::pose_at uses — assert bit-for-bit agreement
+        // for static, free-rotation, and libration sources, so the Dual sweep differentiates the
+        // canonical forward path (not a parallel one that merely happens to be close).
+        let cloud = Cloud::from_elements(&[
+            (0.5, 0.0, 0.0, 10.0),
+            (-0.5, 0.0, 0.0, 10.0),
+            (0.0, 0.7, 0.0, 8.0),
+            (0.0, 0.0, 0.3, 6.0),
+        ]);
+        let place = Isometry3::new(
+            Quat::from_axis_angle(Vec3::new(0.1, 0.8, -0.2), 0.4),
+            Vec3::new(1.5, -0.5, 2.0),
+        );
+        let orients = [
+            Orient::Fixed(Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), 0.6)),
+            Orient::FreeRotation {
+                omega0: Vec3::new(0.4, 0.1, 0.7),
+            },
+            Orient::Libration {
+                axis: Vec3::new(0.0, 1.0, 0.0),
+                pivot_distance: 0.9,
+                theta0: 0.3,
+                thetadot0: 0.1,
+            },
+        ];
+        for orient in orients {
+            let traj = Trajectory::new(
+                place,
+                Path::LinearPass {
+                    a: Vec3::new(0.0, 0.0, 0.0),
+                    b: Vec3::new(1.0, -2.0, 0.5),
+                },
+                Timing::Uniform { rate: 0.5 },
+            )
+            .with_orient(orient);
+            let src = Source::new(cloud.clone(), traj);
+            for &t in &[0.0, 0.37, 1.9] {
+                let a = world_pose(&src.trajectory, &src.inertia, src.fine_dt, t);
+                let b = src.pose_at(t);
+                assert_eq!(a.translation.x, b.translation.x, "tx");
+                assert_eq!(a.translation.y, b.translation.y, "ty");
+                assert_eq!(a.translation.z, b.translation.z, "tz");
+                assert_eq!(a.rotation.w, b.rotation.w, "qw");
+                assert_eq!(a.rotation.x, b.rotation.x, "qx");
+                assert_eq!(a.rotation.y, b.rotation.y, "qy");
+                assert_eq!(a.rotation.z, b.rotation.z, "qz");
             }
         }
     }
