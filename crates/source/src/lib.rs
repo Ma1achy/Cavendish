@@ -276,8 +276,9 @@ fn lift_mat3<S: Scalar>(a: &Mat3<f64>) -> Mat3<S> {
 
 /// Local gravity for the physical pendulum (spec `tab:params`).
 const G_ACCEL: f64 = 9.81;
-/// Default rotation-integration substep.
-const ROT_FINE_DT: f64 = 0.01;
+/// Default rotation-integration substep. `pub` so the batch/`Dual` path ([`world_pose`] via
+/// `compute`) integrates on the same grid `Source::new` uses (the batch carries no per-source `fine_dt`).
+pub const ROT_FINE_DT: f64 = 0.01;
 
 /// A body cloud carried by a trajectory. Carries the cloud's inertia so the ODE orientations can be
 /// integrated from the shape alone plus an initial spin.
