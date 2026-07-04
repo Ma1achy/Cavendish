@@ -7,9 +7,11 @@ use eframe::egui;
 use egui::load::SizedTexture;
 
 use crate::camera::Camera;
+use crate::data::run_guarded;
 use crate::panels;
+use crate::params::{build_scenario, ScenarioParams};
 use crate::render::SceneRenderer;
-use crate::scene::scene_at;
+use crate::scene::{push_field_slice, scene_at};
 use crate::scrub;
 use state::StateBundle;
 
@@ -25,9 +27,12 @@ pub struct App {
     scene: SceneRenderer,
     offscreen: Offscreen,
     camera: Camera,
+    params: ScenarioParams,
     bundle: Option<StateBundle>,
     ell: usize,
     playing: bool,
+    field_on: bool,
+    bundle_path: String,
     /// A soft-failure message shown to the user (never a crash).
     toast: Option<String>,
 }
@@ -49,9 +54,12 @@ impl App {
             scene,
             offscreen,
             camera: Camera::default(),
+            params: ScenarioParams::default(),
             bundle: None,
             ell: 0,
             playing: false,
+            field_on: false,
+            bundle_path: String::new(),
             toast: None,
         })
     }
@@ -62,10 +70,15 @@ impl App {
             self.offscreen = make_offscreen(&self.render_state, size);
         }
         self.camera.aspect = self.offscreen.size[0] as f32 / self.offscreen.size[1].max(1) as f32;
-        let scene = match &self.bundle {
+        let mut scene = match &self.bundle {
             Some(b) => scene_at(b, self.ell),
             None => crate::render::SceneData::new(),
         };
+        if self.field_on {
+            if let Some(b) = &self.bundle {
+                push_field_slice(&mut scene, b, self.ell);
+            }
+        }
         self.scene.render(
             &self.render_state.device,
             &self.render_state.queue,
@@ -86,7 +99,35 @@ impl eframe::App for App {
 
         egui::SidePanel::right("scenario").show(ctx, |ui| {
             ui.heading("Scenario");
-            ui.label("Run / Load land in later commits.");
+            ui.add(egui::Slider::new(&mut self.params.mass, 10.0..=5000.0).text("mass"));
+            ui.add(egui::Slider::new(&mut self.params.distance, 1.0..=20.0).text("distance"));
+            ui.add(egui::Slider::new(&mut self.params.omega0[1], 0.0..=2.0).text("ω₀·y"));
+            ui.horizontal(|ui| {
+                if ui.button("Run").clicked() {
+                    match run_guarded(&build_scenario(&self.params)) {
+                        Ok(b) => {
+                            self.bundle = Some(b);
+                            self.ell = 0;
+                            self.toast = None;
+                        }
+                        Err(e) => self.toast = Some(e),
+                    }
+                }
+                ui.checkbox(&mut self.field_on, "field slice");
+            });
+            ui.horizontal(|ui| {
+                ui.text_edit_singleline(&mut self.bundle_path);
+                if ui.button("Load").clicked() {
+                    match state::load_bundle(&self.bundle_path) {
+                        Ok(b) => {
+                            self.bundle = Some(b);
+                            self.ell = 0;
+                            self.toast = None;
+                        }
+                        Err(e) => self.toast = Some(format!("load failed: {e}")),
+                    }
+                }
+            });
             if let Some(msg) = &self.toast {
                 ui.colored_label(egui::Color32::LIGHT_RED, msg);
             }

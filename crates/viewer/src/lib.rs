@@ -10,8 +10,10 @@
 
 pub mod app;
 pub mod camera;
+pub mod data;
 pub mod field_slice;
 pub mod panels;
+pub mod params;
 pub mod pose;
 pub mod render;
 pub mod scene;

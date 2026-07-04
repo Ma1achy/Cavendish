@@ -4,6 +4,7 @@
 
 use state::StateBundle;
 
+use crate::field_slice::{sample_slice, Plane};
 use crate::pose::{pose_of, world_vertices};
 use crate::render::SceneData;
 
@@ -47,4 +48,49 @@ pub fn scene_at(bundle: &StateBundle, l: usize) -> SceneData {
     }
 
     scene
+}
+
+/// Overlay the on-demand field slice for source 0 at `ℓ`: a plane through the COM, each node drawn as a
+/// dim dot with a bright tip along `ĝ` — a crude arrow field, sampled `gravity::field` on demand (never
+/// the stored grid). Off by default in the App.
+pub fn push_field_slice(scene: &mut SceneData, bundle: &StateBundle, l: usize) {
+    let Some(cloud) = bundle.source_cloud.first() else {
+        return;
+    };
+    if bundle.source_position.first().map_or(0, |t| t.len()) <= l {
+        return;
+    }
+    let pose = pose_of(bundle, 0, l);
+    let com = bundle.source_position[0][l];
+    let span = 2.0;
+    let plane = Plane {
+        origin: [com[0] - span, com[1], com[2] - span],
+        u: [2.0 * span, 0.0, 0.0],
+        v: [0.0, 0.0, 2.0 * span],
+        nx: 7,
+        ny: 7,
+    };
+    let field = sample_slice(cloud, &pose, &plane);
+    let mut k = 0;
+    for j in 0..plane.ny {
+        for i in 0..plane.nx {
+            let node = plane.node(i, j);
+            let g = field[k];
+            k += 1;
+            let mag = (g.x * g.x + g.y * g.y + g.z * g.z).sqrt();
+            scene.push_marker([node.x, node.y, node.z], 0.006, [0.25, 0.55, 0.4]);
+            if mag > 0.0 {
+                let a = 0.28;
+                scene.push_marker(
+                    [
+                        node.x + g.x / mag * a,
+                        node.y + g.y / mag * a,
+                        node.z + g.z / mag * a,
+                    ],
+                    0.009,
+                    [0.2, 1.0, 0.45],
+                );
+            }
+        }
+    }
 }
