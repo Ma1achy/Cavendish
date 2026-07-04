@@ -95,11 +95,55 @@ jobs:
         name: Install maturin, pytest, torch (CPU)
         run: pip install maturin pytest torch --extra-index-url https://download.pytorch.org/whl/cpu
       - if: steps.sdk.outputs.present == 'true'
-        name: Build the extension into the env
-        run: maturin develop --manifest-path crates/sdk/Cargo.toml
+        name: Build the extension into a venv (maturin develop needs a venv/conda env)
+        run: |
+          python -m venv --system-site-packages .venv
+          . .venv/bin/activate
+          maturin develop --manifest-path crates/sdk/Cargo.toml
       - if: steps.sdk.outputs.present == 'true'
         name: pytest
-        run: pytest python/tests -q
+        # The venv's python explicitly — a bare `pytest` resolves to the system binary, whose
+        # sys.path excludes the venv where `cavendish` was installed.
+        run: .venv/bin/python -m pytest python/tests -q
+
+  # ── Packaging gate (distinct axis from the fidelity `python` job): build distributable wheels on
+  # both target platforms. A green build here proves the extension compiles and links on each OS —
+  # macOS-arm64 is the MPS/CPU path R7 exists to catch, linux-x64 the CPU path. Separate from
+  # `python` so a review can tell a packaging failure from a fidelity failure.
+  #
+  # CUDA is feature-gated-out and deferred: `generate::run` is CPU-only, so no bundle is
+  # device-resident (nothing to hand off zero-copy), and there is no CUDA runner to build or exercise
+  # it. The DLPack layer is device-general and ready to carry CUDA once the GPU path is wired into
+  # `generate::run` — at which point a CUDA-feature wheel is added here.
+  wheels:
+    needs: rust
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: macos-14
+            target: macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - if: matrix.os == 'ubuntu-latest'
+        name: Build deps (wgpu/compute is in the dependency graph)
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev
+      - name: Install maturin
+        run: pip install maturin
+      - name: Build the wheel (default features — CPU/MPS)
+        run: maturin build --release --manifest-path crates/sdk/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.target }}
+          path: target/wheels/*.whl
 
   # ── Spec: compile the LaTeX and keep the PDF as an artefact. ──
   spec:
