@@ -95,11 +95,16 @@ jobs:
         name: Install maturin, pytest, torch (CPU)
         run: pip install maturin pytest torch --extra-index-url https://download.pytorch.org/whl/cpu
       - if: steps.sdk.outputs.present == 'true'
-        name: Build the extension into the env
-        run: maturin develop --manifest-path crates/sdk/Cargo.toml
+        name: Build the extension into a venv (maturin develop needs a venv/conda env)
+        run: |
+          python -m venv --system-site-packages .venv
+          . .venv/bin/activate
+          maturin develop --manifest-path crates/sdk/Cargo.toml
       - if: steps.sdk.outputs.present == 'true'
         name: pytest
-        run: pytest python/tests -q
+        run: |
+          . .venv/bin/activate
+          pytest python/tests -q
 
   # ── Packaging gate (distinct axis from the fidelity `python` job): build distributable wheels on
   # both target platforms. A green build here proves the extension compiles and links on each OS —
