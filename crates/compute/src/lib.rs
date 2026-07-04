@@ -226,6 +226,146 @@ impl WgpuBackend {
     }
 }
 
+/// Encode one `(source, detector, measurement)` into the `k_phase` f32 param buffer (the WGSL layout).
+fn encode_phase_params(
+    cfg: &InstrumentConfig,
+    src: &SourceBatch,
+    moments: [f64; 3],
+    atmo: &[AtmoMode],
+    det: Isometry3,
+    t: f64,
+) -> Vec<f32> {
+    let mut p = vec![0.0f32; 46];
+    let set = |p: &mut Vec<f32>, i: usize, v: f64| p[i] = v as f32;
+    set(&mut p, 0, cfg.m_a);
+    set(&mut p, 1, cfg.hbar);
+    set(&mut p, 2, cfg.g);
+    set(&mut p, 3, cfg.t_half);
+    set(&mut p, 4, cfg.v_rec);
+    set(&mut p, 5, cfg.u0);
+    set(&mut p, 6, cfg.ifo_sep);
+    set(&mut p, 7, cfg.fine_dt);
+    set(&mut p, 8, t);
+    let quat = |p: &mut Vec<f32>, i: usize, q: math::Quat| {
+        p[i] = q.w as f32;
+        p[i + 1] = q.x as f32;
+        p[i + 2] = q.y as f32;
+        p[i + 3] = q.z as f32;
+    };
+    let vec3 = |p: &mut Vec<f32>, i: usize, v: Vec3<f64>| {
+        p[i] = v.x as f32;
+        p[i + 1] = v.y as f32;
+        p[i + 2] = v.z as f32;
+    };
+    quat(&mut p, 9, det.rotation);
+    vec3(&mut p, 13, det.translation);
+    quat(&mut p, 16, src.placement.rotation);
+    vec3(&mut p, 20, src.placement.translation);
+    match src.path {
+        Path::Static => set(&mut p, 23, 0.0),
+        Path::LinearPass { a, b } => {
+            set(&mut p, 23, 1.0);
+            vec3(&mut p, 24, a);
+            vec3(&mut p, 27, b);
+        }
+        Path::Oscillation {
+            axis,
+            amp,
+            freq,
+            phase,
+        } => {
+            set(&mut p, 23, 2.0);
+            vec3(&mut p, 24, axis);
+            set(&mut p, 30, amp);
+            set(&mut p, 31, freq);
+            set(&mut p, 32, phase);
+        }
+        Path::Circular { .. } => panic!("M6a GPU path: Circular unsupported (M6b/later)"),
+    }
+    match src.timing {
+        Timing::Uniform { rate } => set(&mut p, 33, rate),
+        Timing::Eased { .. } => panic!("M6a GPU path: Eased timing unsupported (M6b/later)"),
+    }
+    match src.orient {
+        Orient::Fixed(q) => {
+            set(&mut p, 34, 0.0);
+            quat(&mut p, 35, q);
+        }
+        Orient::FreeRotation { omega0 } => {
+            set(&mut p, 34, 1.0);
+            vec3(&mut p, 39, omega0);
+            p[42] = moments[0] as f32;
+            p[43] = moments[1] as f32;
+            p[44] = moments[2] as f32;
+        }
+        Orient::Libration { .. } => panic!("M6a GPU path: Libration unsupported (M6b/later)"),
+    }
+    p[45] = atmo.len() as f32;
+    for m in atmo {
+        p.extend_from_slice(&[
+            m.k[0] as f32,
+            m.k[1] as f32,
+            m.k[2] as f32,
+            m.omega as f32,
+            m.psi as f32,
+            m.coeff as f32,
+        ]);
+    }
+    p
+}
+
+impl ComputeBackend for WgpuBackend {
+    fn evaluate(&self, batch: &EvalBatch) -> Result<SignalBatch, ComputeError> {
+        let cfg = batch.instrument;
+        let mut dphi = Vec::with_capacity(batch.scenarios.len());
+        for scn in &batch.scenarios {
+            // M6a's GPU path handles one source per scenario (the anchors); multi-source is M6b.
+            let src = scn
+                .sources
+                .first()
+                .ok_or_else(|| ComputeError::BatchTooLarge("empty scenario".into()))?;
+            let cloud_f32: Vec<[f32; 4]> = (0..src.cloud.len())
+                .map(|i| {
+                    [
+                        src.cloud.xs[i] as f32,
+                        src.cloud.ys[i] as f32,
+                        src.cloud.zs[i] as f32,
+                        src.cloud.ms[i] as f32,
+                    ]
+                })
+                .collect();
+            let moments = {
+                let m = &gravity::inertia(&src.cloud).i.m;
+                [m[0][0], m[1][1], m[2][2]]
+            };
+            let sig = scn
+                .detectors
+                .iter()
+                .map(|&det| {
+                    scn.times
+                        .iter()
+                        .map(|&t| {
+                            let params = encode_phase_params(&cfg, src, moments, &scn.atmo, det, t);
+                            self.gpu
+                                .run_kernel(FORWARD_WGSL, "k_phase", &cloud_f32, &params, 1)[0]
+                                as f64
+                        })
+                        .collect()
+                })
+                .collect();
+            dphi.push(sig);
+        }
+        Ok(SignalBatch { dphi })
+    }
+
+    fn info(&self) -> BackendInfo {
+        BackendInfo {
+            name: self.gpu.adapter_name.clone(),
+            precision: Precision::F32,
+        }
+    }
+}
+
 /// The forward-model WGSL kernels — mirrors `gravity`'s Rust functions statement-for-statement.
 pub const FORWARD_WGSL: &str = include_str!("forward.wgsl");
 

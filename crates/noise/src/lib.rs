@@ -217,6 +217,15 @@ impl AtmoField {
         AtmoField { modes }
     }
 
+    /// The realised modes as `(k, ω, ψ, coeff)` — for extraction into a `compute` batch (the GPU and
+    /// the CPU oracle both read these POD numbers rather than the field object).
+    pub fn mode_params(&self) -> Vec<([f64; 3], f64, f64, f64)> {
+        self.modes
+            .iter()
+            .map(|m| (m.k, m.omega, m.psi, m.coeff))
+            .collect()
+    }
+
     /// The density perturbation `δρ(p,t) = Σ a_m cos(k·p − ωt + ψ)` — for the Poisson cross-check.
     pub fn density(&self, p: Vec3<f64>, t: f64) -> f64 {
         self.modes
