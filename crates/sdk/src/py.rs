@@ -1,6 +1,7 @@
 //! The PyO3 extension module `cavendish` (gated behind `extension-module`).
 
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::marker::Ungil;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3::IntoPyObjectExt;
@@ -9,11 +10,13 @@ use dlpark::ffi::{DataType, Device};
 use dlpark::traits::{InferDataType, RowMajorCompactLayout, TensorLike};
 use dlpark::SafeManagedTensorVersioned;
 
+use std::panic::{catch_unwind, AssertUnwindSafe};
+
 use generate::{
-    Detector as RDetector, DetectorArray as RArray, FieldSet as RFieldSet, Isometry3,
-    Orient as ROrient, Path as RPath, PhaseModelKind as RPhase, Quat, Scenario as RScenario,
-    Schedule as RSchedule, Source as RSource, Timing as RTiming, Trajectory as RTrajectory,
-    UldmConfig as RUldm, Vec3,
+    scenario_key, Detector as RDetector, DetectorArray as RArray, FieldSet as RFieldSet, Isometry3,
+    Orient as ROrient, Path as RPath, PhaseModelKind as RPhase, Prior as RPrior, Quat,
+    Scenario as RScenario, Schedule as RSchedule, Source as RSource, Timing as RTiming,
+    Trajectory as RTrajectory, UldmConfig as RUldm, Vec3,
 };
 use gravity::Cloud;
 use shape::{voxelise, Cuboid, MassSpec, Sphere, VoxelParams};
@@ -75,6 +78,19 @@ fn to_torch<T: InferDataType + 'static>(
     let torch = py.import("torch")?;
     let tensor = torch.getattr("from_dlpack")?.call1((capsule,))?;
     Ok(tensor.unbind())
+}
+
+/// Run heavy Rust work with the **GIL released** (`detach`, so Python threads progress) and any
+/// **panic caught and converted** to a `RuntimeError` — a Rust panic must never unwind across the FFI
+/// boundary as a panic (that is undefined behaviour / an abort). `f` touches no Python objects
+/// (`Ungil`). The panic payload is dropped to `()` inside the closure so the result stays `Ungil`.
+fn guarded<T: Ungil + Send>(py: Python<'_>, f: impl FnOnce() -> T + Ungil + Send) -> PyResult<T> {
+    py.detach(|| catch_unwind(AssertUnwindSafe(f)).map_err(|_| ()))
+        .map_err(|()| {
+            PyRuntimeError::new_err(
+                "cavendish: a Rust panic was caught at the boundary and converted",
+            )
+        })
 }
 
 // ── flatten helpers: a bundle field → (contiguous buffer, shape) ─────────────────────────────────
@@ -416,6 +432,42 @@ impl AtmoConfig {
     }
 }
 
+/// A scalar prior distribution (for `Prior`'s named fields).
+#[pyclass(from_py_object)]
+#[derive(Clone)]
+struct Dist {
+    inner: config::Dist,
+}
+
+#[pymethods]
+impl Dist {
+    #[staticmethod]
+    #[pyo3(name = "const")]
+    fn r#const(value: f64) -> Self {
+        Dist {
+            inner: config::Dist::Const(value),
+        }
+    }
+    #[staticmethod]
+    fn uniform(lo: f64, hi: f64) -> Self {
+        Dist {
+            inner: config::Dist::Uniform { lo, hi },
+        }
+    }
+    #[staticmethod]
+    fn log_uniform(lo: f64, hi: f64) -> Self {
+        Dist {
+            inner: config::Dist::LogUniform { lo, hi },
+        }
+    }
+    #[staticmethod]
+    fn normal(mean: f64, sigma: f64) -> Self {
+        Dist {
+            inner: config::Dist::Normal { mean, sigma },
+        }
+    }
+}
+
 /// The forward-model selector (exposed by value — no forward-model edit; deferred seating into config).
 #[pyclass(eq, eq_int, from_py_object)]
 #[derive(Clone, PartialEq)]
@@ -513,7 +565,8 @@ impl Scenario {
 
 // ── the bundle ───────────────────────────────────────────────────────────────────────────────────
 
-#[pyclass]
+// `weakref` so a stream consumer can observe that only one bundle stays resident at a time.
+#[pyclass(weakref)]
 struct Bundle {
     inner: StateBundle,
 }
@@ -721,13 +774,114 @@ fn rows3(v: &[Vec<[f64; 3]>]) -> Vec<Vec<Vec<f64>>> {
         .collect()
 }
 
+// ── the prior + the stream ───────────────────────────────────────────────────────────────────────
+
+/// Optional batch sugar: a body template + named scalar `Dist`s. Held as Send + Sync components;
+/// `build()` assembles the (Send + Sync) `RPrior`.
+#[pyclass(skip_from_py_object)]
+struct Prior {
+    cloud: Cloud,
+    fields: Vec<(String, config::Dist)>,
+    array: RArray,
+    schedule: RSchedule,
+    field_set: RFieldSet,
+    atmo: Option<generate::AtmoConfig>,
+}
+
+impl Prior {
+    fn build(&self) -> RPrior {
+        RPrior {
+            cloud: self.cloud.clone(),
+            fields: self.fields.clone(),
+            array: self.array.clone(),
+            schedule: self.schedule.clone(),
+            field_set: self.field_set,
+            atmo: self.atmo,
+        }
+    }
+}
+
+#[pymethods]
+impl Prior {
+    #[new]
+    #[pyo3(signature = (body, fields, array, schedule, field_set=None, atmo=None))]
+    fn new(
+        body: &Body,
+        fields: Vec<(String, Dist)>,
+        array: &DetectorArray,
+        schedule: &Schedule,
+        field_set: Option<FieldSet>,
+        atmo: Option<AtmoConfig>,
+    ) -> PyResult<Self> {
+        let prior = Prior {
+            cloud: body.cloud.clone(),
+            fields: fields.into_iter().map(|(n, d)| (n, d.inner)).collect(),
+            array: array.inner.clone(),
+            schedule: schedule.inner.clone(),
+            field_set: field_set.map_or_else(RFieldSet::default, |f| f.inner),
+            atmo: atmo.map(|a| a.inner),
+        };
+        // Validate at construction: an invalid prior raises on build, not mid-stream.
+        prior
+            .build()
+            .validate()
+            .map_err(|e| PyValueError::new_err(format!("invalid prior: {e}")))?;
+        Ok(prior)
+    }
+}
+
+/// A memory-bounded Python iterator over sampled scenarios. Each `__next__` samples scenario `i`
+/// (keyed `scenario[i]` off `seed`, matching `generate::stream`) and runs it **with the GIL
+/// released** — so a training loop overlaps compute — holding just one bundle resident at a time.
+#[pyclass]
+struct Stream {
+    prior: RPrior,
+    n: usize,
+    root: u64,
+    i: usize,
+}
+
+#[pymethods]
+impl Stream {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+    fn __next__(&mut self, py: Python<'_>) -> PyResult<Option<Bundle>> {
+        if self.i >= self.n {
+            return Ok(None); // → StopIteration
+        }
+        let i = self.i;
+        self.i += 1;
+        let (prior, root) = (&self.prior, self.root);
+        let inner = guarded(py, || generate::run(&prior.sample(scenario_key(root, i))))?;
+        Ok(Some(Bundle { inner }))
+    }
+}
+
 // ── verbs ────────────────────────────────────────────────────────────────────────────────────────
 
 #[pyfunction]
-fn run(scenario: &Scenario) -> Bundle {
-    Bundle {
-        inner: generate::run(&scenario.build()),
+fn run(py: Python<'_>, scenario: &Scenario) -> PyResult<Bundle> {
+    let inner = guarded(py, || generate::run(&scenario.build()))?;
+    Ok(Bundle { inner })
+}
+
+#[pyfunction]
+#[pyo3(signature = (prior, n, seed=0))]
+fn stream(prior: &Prior, n: usize, seed: u64) -> Stream {
+    Stream {
+        prior: prior.build(),
+        n,
+        root: seed,
+        i: 0,
     }
+}
+
+/// Test hook: panic inside the guard, proving a Rust panic converts to a Python exception (never an
+/// abort). Because `generate::run` is infallible, this is how the `RuntimeError` path is exercised.
+#[pyfunction]
+fn _panic_probe(py: Python<'_>) -> PyResult<()> {
+    guarded(py, || panic!("intentional panic probe"))
 }
 
 // ── module ───────────────────────────────────────────────────────────────────────────────────────
@@ -745,11 +899,16 @@ fn cavendish(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FieldSet>()?;
     m.add_class::<UldmConfig>()?;
     m.add_class::<AtmoConfig>()?;
+    m.add_class::<Dist>()?;
     m.add_class::<PhaseModelKind>()?;
     m.add_class::<Scenario>()?;
+    m.add_class::<Prior>()?;
+    m.add_class::<Stream>()?;
     m.add_class::<Bundle>()?;
     m.add_function(wrap_pyfunction!(cuboid, m)?)?;
     m.add_function(wrap_pyfunction!(sphere, m)?)?;
     m.add_function(wrap_pyfunction!(run, m)?)?;
+    m.add_function(wrap_pyfunction!(stream, m)?)?;
+    m.add_function(wrap_pyfunction!(_panic_probe, m)?)?;
     Ok(())
 }
