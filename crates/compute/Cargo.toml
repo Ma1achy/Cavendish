@@ -9,3 +9,6 @@ gravity = { path = "../gravity" }
 source = { path = "../source" }
 instrument = { path = "../instrument" }
 math = { path = "../math" }
+wgpu = { workspace = true }
+pollster = { workspace = true }
+bytemuck = { workspace = true }

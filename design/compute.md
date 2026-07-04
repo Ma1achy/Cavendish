@@ -76,9 +76,15 @@ pub struct SignalBatch {
 }
 ```
 
-Element coordinates are `f32` on the GPU path; the CPU path lifts the same `EvalBatch` to `f64`
-(or `Dual`) via the `Scalar` seam. `TemplateMeta` carries gravity's cached reductions so the far
-field needs no recomputation.
+The `Vec<f32>` above is the **device-upload format** — the bytes `WgpuBackend` ships to the GPU — not
+the canonical parameter precision. `EvalBatch`'s **canonical parameters are `f64`** (both backends read
+them): `CpuBackend` runs pure f64 and stays bit-identical to `generate::run` (the validated oracle),
+and `WgpuBackend` downcasts f64→f32 only at the upload boundary. This is what keeps `cpu_equals_gpu`
+honest — real f64 physics vs f32 GPU physics on the *same* scenario; storing f32 in the canonical batch
+would make both sides share quantised inputs and cancel the very input-quantisation error a GPU user
+hits. `TemplateMeta` carries gravity's cached reductions so the far field needs no recomputation.
+(M6a's `EvalBatch` is f64-canonical per the above; the concatenated-buffer / offsets layout and the
+f32 upload buffer are `WgpuBackend`-internal, filled out as batching lands in M6b.)
 
 ---
 
