@@ -7,8 +7,8 @@
 //! `PropagationIntegral` is the reference phase model: quadrature of the differenced potential along
 //! the arms (spec `eq:singlephi`), double-differenced across the two IFOs (spec `eq:doublediff`).
 
-use gravity::{gradient_tensor, potential, FieldContribution};
-use math::{Isometry3, Quat, Vec3};
+use gravity::{gradient_tensor, potential, Cloud, FieldContribution};
+use math::{Isometry3, Quat, Scalar, Vec3};
 use source::SourceDynamics;
 
 /// Pinned instrument/physics parameters (spec `tab:params`, AION-10 defaults).
@@ -169,8 +169,10 @@ pub fn build_arms(cfg: &InstrumentConfig) -> [Ifo; 2] {
     [make(0.0), make(cfg.ifo_sep)]
 }
 
-/// Composite Simpson's rule over `[a, b]` at ≈`step` resolution (even interval count).
-fn simpson<F: Fn(f64) -> f64>(a: f64, b: f64, step: f64, f: F) -> f64 {
+/// Composite Simpson's rule over `[a, b]` at ≈`step` resolution (even interval count). Generic over
+/// [`Scalar`] — the integrand's value carries the tangent; the abscissae stay `f64` (time is not a θ).
+/// The op order (`w·f`, then `s·h/3`) is preserved so the `f64` instantiation is bit-exact.
+fn simpson<S: Scalar, F: Fn(f64) -> S>(a: f64, b: f64, step: f64, f: F) -> S {
     let mut n = ((b - a) / step).round() as usize;
     if n < 2 {
         n = 2;
@@ -182,9 +184,89 @@ fn simpson<F: Fn(f64) -> f64>(a: f64, b: f64, step: f64, f: F) -> f64 {
     let mut s = f(a) + f(b);
     for i in 1..n {
         let w = if i % 2 == 1 { 4.0 } else { 2.0 };
-        s += w * f(a + i as f64 * h);
+        s = s + S::from_f64(w) * f(a + i as f64 * h);
     }
-    s * h / 3.0
+    s * S::from_f64(h) / S::from_f64(3.0)
+}
+
+/// A source as the generic phase core consumes it: a fixed body cloud, its inverse pose at any
+/// absolute time, and a `mass_scale` multiplier. `mass_scale = 1` is a plain run; seeding it as a
+/// `Dual` variable is how `analysis` differentiates w.r.t. mass (the potential is linear in mass, so
+/// the tangent is `∂signal/∂(fractional mass)`). `S` concrete keeps the trait object-safe.
+pub trait PosedSource<S: Scalar> {
+    fn body(&self) -> &Cloud;
+    fn mass_scale(&self) -> S;
+    fn inverse_pose_at(&self, t_abs: f64) -> Isometry3<S>;
+}
+
+/// Lift an `f64` world point (an arm point — geometry, not a θ) into the scalar type.
+fn lift3<S: Scalar>(v: Vec3<f64>) -> Vec3<S> {
+    Vec3::new(S::from_f64(v.x), S::from_f64(v.y), S::from_f64(v.z))
+}
+
+/// The generic core of the propagation phase: the two single-interferometer phases `[δφ₁, δφ₂]`,
+/// generic over [`Scalar`]. The `f64` [`PropagationIntegral::per_ifo`] delegates here (one forward
+/// model), and `compute`'s `Dual` sweep instantiates it at `S = Dual` for the CRB Jacobian.
+pub fn per_ifo_generic<S: Scalar>(
+    cfg: &InstrumentConfig,
+    det: &Detector,
+    sources: &[&dyn PosedSource<S>],
+    fields: &[&dyn FieldContribution<S>],
+    t: f64,
+) -> [S; 2] {
+    let ifos = build_arms(cfg);
+    let two_t = 2.0 * cfg.t_half;
+    let dphi = |ifo: &Ifo| -> S {
+        let integrand = |flight: f64| -> S {
+            let t_abs = (t - two_t) + flight;
+            // Arm points are built in the detector frame and placed by the (f64) detector isometry,
+            // then lifted — the arm geometry does not depend on the source parameters.
+            let pu = lift3::<S>(
+                det.placement
+                    .apply(Vec3::new(0.0, 0.0, ifo.upper.z_at(flight))),
+            );
+            let pl = lift3::<S>(
+                det.placement
+                    .apply(Vec3::new(0.0, 0.0, ifo.lower.z_at(flight))),
+            );
+            let mut acc = S::from_f64(0.0);
+            for src in sources {
+                // Body-frame evaluation: V is rigid-invariant, so evaluate the fixed body cloud at
+                // pose(t)⁻¹·p_arm rather than posing the whole cloud each tick.
+                let inv = src.inverse_pose_at(t_abs);
+                let body = src.body();
+                let contrib = potential(body, inv.apply(pu)) - potential(body, inv.apply(pl));
+                acc = acc + src.mass_scale() * contrib;
+            }
+            // Field contributions (atmospheric GGN) are evaluated in the world frame directly.
+            for f in fields {
+                acc = acc + (f.potential(pu, t_abs) - f.potential(pl, t_abs));
+            }
+            acc
+        };
+        // Split at the π-pulse (τ = T): the arm velocity kinks there, so Simpson keeps its high order
+        // only on each smooth half.
+        let half = cfg.t_half;
+        let acc = simpson(0.0, half, cfg.fine_dt, integrand)
+            + simpson(half, two_t, cfg.fine_dt, integrand);
+        S::from_f64(cfg.m_a / cfg.hbar) * acc
+    };
+    [dphi(&ifos[0]), dphi(&ifos[1])]
+}
+
+/// The `f64` adapter: a `&dyn SourceDynamics` seen as a `PosedSource<f64>` with unit mass scale.
+struct PlainSource<'a>(&'a dyn SourceDynamics);
+
+impl PosedSource<f64> for PlainSource<'_> {
+    fn body(&self) -> &Cloud {
+        self.0.body_cloud()
+    }
+    fn mass_scale(&self) -> f64 {
+        1.0
+    }
+    fn inverse_pose_at(&self, t_abs: f64) -> Isometry3<f64> {
+        self.0.pose_at(t_abs).inverse()
+    }
 }
 
 /// Maps a scene of sources to one gradiometer's differential phase at a measurement time.
@@ -219,6 +301,7 @@ impl PropagationIntegral {
 
     /// The two single-interferometer phases `[δφ₁, δφ₂]` before the double difference — the potential
     /// summed over rigid-body `sources` and analytic `fields` along each interferometer's arms.
+    /// Delegates to the generic [`per_ifo_generic`] at `S = f64` (bit-exact, one forward model).
     pub fn per_ifo(
         &self,
         sources: &[&dyn SourceDynamics],
@@ -226,41 +309,10 @@ impl PropagationIntegral {
         det: &Detector,
         t: f64,
     ) -> [f64; 2] {
-        let ifos = build_arms(&self.cfg);
-        let two_t = 2.0 * self.cfg.t_half;
-        // δφ for one interferometer: (m_A/ħ) ∫[V(z_u) − V(z_l)] dt over the flight.
-        let dphi = |ifo: &Ifo| -> f64 {
-            let integrand = |flight: f64| -> f64 {
-                let t_abs = (t - two_t) + flight;
-                // Arm points are built in the detector frame and placed by the detector isometry.
-                let pu = det
-                    .placement
-                    .apply(Vec3::new(0.0, 0.0, ifo.upper.z_at(flight)));
-                let pl = det
-                    .placement
-                    .apply(Vec3::new(0.0, 0.0, ifo.lower.z_at(flight)));
-                let mut acc = 0.0;
-                for src in sources {
-                    // Body-frame evaluation: V is rigid-invariant, so evaluate the fixed body cloud
-                    // at pose(t)⁻¹·p_arm rather than posing the whole cloud each tick.
-                    let inv = src.pose_at(t_abs).inverse();
-                    let body = src.body_cloud();
-                    acc += potential(body, inv.apply(pu)) - potential(body, inv.apply(pl));
-                }
-                // Field contributions (atmospheric GGN) are evaluated in the world frame directly.
-                for f in fields {
-                    acc += f.potential(pu, t_abs) - f.potential(pl, t_abs);
-                }
-                acc
-            };
-            // Split at the π-pulse (τ = T): the arm velocity kinks there, so Simpson keeps its
-            // high order only on each smooth half.
-            let half = self.cfg.t_half;
-            let acc = simpson(0.0, half, self.cfg.fine_dt, integrand)
-                + simpson(half, two_t, self.cfg.fine_dt, integrand);
-            (self.cfg.m_a / self.cfg.hbar) * acc
-        };
-        [dphi(&ifos[0]), dphi(&ifos[1])]
+        let plain: Vec<PlainSource> = sources.iter().map(|s| PlainSource(*s)).collect();
+        let posed: Vec<&dyn PosedSource<f64>> =
+            plain.iter().map(|p| p as &dyn PosedSource<f64>).collect();
+        per_ifo_generic(&self.cfg, det, &posed, fields, t)
     }
 }
 
