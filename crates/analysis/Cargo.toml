@@ -10,3 +10,5 @@ source = { path = "../source" }
 instrument = { path = "../instrument" }
 compute = { path = "../compute" }
 state = { path = "../state" }
+# Dense linear algebra for the Fisher inverse and its eigen-conditioning (F is small, P ≲ 10, SPD).
+nalgebra = "0.35"
