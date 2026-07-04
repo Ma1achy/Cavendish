@@ -256,3 +256,97 @@ impl SceneRenderer {
         queue.submit(std::iter::once(encoder.finish()));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use compute::Gpu;
+
+    #[test]
+    #[ignore = "requires a GPU device (run in the gpu CI job / locally on Metal)"]
+    fn renders_headless() {
+        // One frame renders to an offscreen texture under lavapipe (the gpu CI job) without panic, and
+        // ACTUALLY rasterises geometry: at least one pixel differs from the cleared corner. Sharing
+        // compute's device proves the borrowed-device renderer runs on the one graphics stack.
+        let gpu = Gpu::new().expect("acquire device");
+        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+        let n = 256u32;
+        let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("headless.target"),
+            size: wgpu::Extent3d {
+                width: n,
+                height: n,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let renderer = SceneRenderer::new(&gpu.device, format);
+        let mut scene = SceneData::new();
+        scene.push_points(
+            &[[0.0, 0.0, 0.0], [0.4, 0.0, 0.0], [0.0, 0.4, 0.0]],
+            0.15,
+            [1.0, 1.0, 1.0],
+        );
+        renderer.render(&gpu.device, &gpu.queue, &view, &Camera::default(), &scene);
+
+        // Read the texture back (256-byte row alignment, like compute's buffer readback).
+        let bpp = 4u32;
+        let unpadded = n * bpp;
+        let padded = unpadded.div_ceil(256) * 256;
+        let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("headless.readback"),
+            size: (padded * n) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_texture_to_buffer(
+            wgpu::ImageCopyTexture {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::ImageCopyBuffer {
+                buffer: &buffer,
+                layout: wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded),
+                    rows_per_image: Some(n),
+                },
+            },
+            wgpu::Extent3d {
+                width: n,
+                height: n,
+                depth_or_array_layers: 1,
+            },
+        );
+        gpu.queue.submit(std::iter::once(encoder.finish()));
+
+        let slice = buffer.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        gpu.device.poll(wgpu::Maintain::Wait);
+        let data = slice.get_mapped_range();
+
+        // The corner pixel is background (geometry sits at the centre). Some valid pixel must differ.
+        let corner = [data[0], data[1], data[2], data[3]];
+        let mut differs = false;
+        for y in 0..n as usize {
+            let row = &data[y * padded as usize..y * padded as usize + unpadded as usize];
+            if row.chunks_exact(4).any(|px| px != corner) {
+                differs = true;
+                break;
+            }
+        }
+        assert!(differs, "frame is uniform — geometry did not rasterise");
+    }
+}

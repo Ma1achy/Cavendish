@@ -38,17 +38,19 @@ impl Default for ScenarioParams {
 /// Realise a fresh `Scenario` from the parameters. Signal amplitude scales with `mass`, so
 /// tweak-and-rerun on `mass` is visible (and testable) in the bundle.
 pub fn build_scenario(p: &ScenarioParams) -> Scenario {
-    let half = 0.2;
+    // An ASYMMETRIC box (distinct half-extents → distinct principal moments Iₓ < I_y < I_z), so a spin
+    // about the intermediate axis (y) is unstable — the Dzhanibekov flip the ω₀·y control shows.
+    let (hx, hy, hz) = (0.35, 0.2, 0.12);
     let each = p.mass / 8.0;
     let cloud = Cloud::from_elements(&[
-        (half, half, half, each),
-        (-half, half, half, each),
-        (half, -half, half, each),
-        (-half, -half, half, each),
-        (half, half, -half, each),
-        (-half, half, -half, each),
-        (half, -half, -half, each),
-        (-half, -half, -half, each),
+        (hx, hy, hz, each),
+        (-hx, hy, hz, each),
+        (hx, -hy, hz, each),
+        (-hx, -hy, hz, each),
+        (hx, hy, -hz, each),
+        (-hx, hy, -hz, each),
+        (hx, -hy, -hz, each),
+        (-hx, -hy, -hz, each),
     ]);
     let orient = if p.omega0 == [0.0, 0.0, 0.0] {
         Orient::Fixed(Quat::identity())
@@ -76,4 +78,69 @@ pub fn build_scenario(p: &ScenarioParams) -> Scenario {
         periodogram: true,
         ..FieldSet::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use state::StateBundle;
+
+    /// The clean (noise-subtracted) peak amplitude of detector 0.
+    fn clean_amplitude(b: &StateBundle) -> f64 {
+        b.signal
+            .iter()
+            .zip(&b.signal_noise)
+            .map(|(s, n)| (s[0] - n[0]).abs())
+            .fold(0.0_f64, f64::max)
+    }
+
+    #[test]
+    fn tweak_rerun() {
+        // Tweak-and-rerun (the headless half): doubling the source mass doubles the signal amplitude —
+        // the potential is linear in mass, so the clean channel scales exactly. "The view updates" is
+        // the review half, judged live (see tumble_visible's recipe; Run after moving the mass slider).
+        let base = ScenarioParams::default();
+        let heavier = ScenarioParams {
+            mass: 2.0 * base.mass,
+            ..base
+        };
+        let a1 = clean_amplitude(&generate::run(&build_scenario(&base)));
+        let a2 = clean_amplitude(&generate::run(&build_scenario(&heavier)));
+        assert!(a1 > 0.0, "no signal to scale");
+        let ratio = a2 / a1;
+        assert!(
+            (ratio - 2.0).abs() < 1e-9,
+            "amplitude ratio {ratio}, expected 2 (signal ∝ mass)"
+        );
+    }
+
+    #[test]
+    #[ignore = "review-grade: run `cargo run -p viewer`, raise ω₀·y, press Run, and scrub to watch the flip"]
+    fn tumble_visible() {
+        // An asymmetric top spun about its intermediate axis (y) undergoes the Dzhanibekov flip (the
+        // source crate's `dzhanibekov` test validates the physics). Here we only assert the tumble is
+        // PRESENT in the data — ω throughout, and the orientation genuinely evolves across ℓ — so the
+        // review has real motion to watch. The visible flip itself is the human's call.
+        // Cheap params — enough steps for the orientation to evolve; the visible flip is the reviewer's
+        // call in the app (which can scrub a far longer window), so this need not integrate for seconds.
+        let p = ScenarioParams {
+            omega0: [0.0, 3.0, 0.02],
+            n_times: 60,
+            rate: 0.05,
+            ..Default::default()
+        };
+        let b = generate::run(&build_scenario(&p));
+        let angvel = &b.source_angular_velocity[0];
+        assert!(
+            angvel
+                .iter()
+                .all(|w| w[0] * w[0] + w[1] * w[1] + w[2] * w[2] > 0.0),
+            "ω vanished — nothing spinning"
+        );
+        let first = b.source_orientation[0][0];
+        let evolved = b.source_orientation[0]
+            .iter()
+            .any(|q| (0..4).map(|k| (q[k] - first[k]).abs()).sum::<f64>() > 0.1);
+        assert!(evolved, "orientation did not evolve — no tumble to see");
+    }
 }

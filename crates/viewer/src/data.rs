@@ -18,8 +18,57 @@ pub fn run_guarded(scenario: &Scenario) -> Result<StateBundle, String> {
 
 #[cfg(test)]
 mod tests {
+    use super::run_guarded;
     use crate::params::{build_scenario, ScenarioParams};
     use crate::scene::scene_at;
+    use generate::{
+        BodyMotion, Detector, DetectorArray, Isometry3, Scenario, Schedule, SourceDynamics,
+    };
+    use gravity::Cloud;
+    use state::StateBundle;
+
+    /// A source that panics the moment the forward model touches it — the induced failure.
+    struct PanicSource;
+    impl SourceDynamics for PanicSource {
+        fn body_cloud(&self) -> &Cloud {
+            panic!("induced failure")
+        }
+        fn pose_at(&self, _t: f64) -> Isometry3 {
+            Isometry3::identity()
+        }
+        fn motion_at(&self, _t: f64) -> BodyMotion {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn fails_soft() {
+        // A run that panics becomes a message (not a crash); a degenerate scene renders empty (not a
+        // panic); a normal run succeeds. The tool stays alive through all three — the viewer's spine.
+        let panicking = Scenario::new(
+            Box::new(PanicSource),
+            DetectorArray::single(Detector::new(0.0)),
+            Schedule::uniform(2.0, 4),
+            1,
+        );
+        let prev = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {})); // silence the induced panic's backtrace
+        let caught = run_guarded(&panicking);
+        std::panic::set_hook(prev);
+        assert!(
+            caught.is_err(),
+            "a panicking run must be caught as a message"
+        );
+
+        // A degenerate (empty) bundle renders an empty scene — no geometry, no panic.
+        assert!(
+            scene_at(&StateBundle::default(), 0).instances.is_empty(),
+            "a degenerate bundle should yield an empty scene, not a panic"
+        );
+
+        // And a normal run still succeeds — fails-soft does not swallow the good path.
+        assert!(run_guarded(&build_scenario(&ScenarioParams::default())).is_ok());
+    }
 
     #[test]
     fn load_bundle_renders() {

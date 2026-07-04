@@ -65,6 +65,11 @@ For the **field view** specifically, `viewer` need not store the heavy `field_gr
 lighter than requesting the whole `(T,X,Y,Z,3)` grid. So the field visualisation has two modes — the
 bundle's stored grid, or an on-demand slice — and defaults to the cheap one.
 
+**Realisation (M9).** The on-demand slice is the implemented mode; the stored-grid mode is **deferred**
+(no `field_grid`/`FieldSet.field` producer exists yet — `state.md` §6). The slice is validated against
+a direct `gravity::field` reference (`field_two_modes`), so it is anchored to the kernel, not to a
+second cached copy.
+
 ---
 
 ## 5. Interactivity
