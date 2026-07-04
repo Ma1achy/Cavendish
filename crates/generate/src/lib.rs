@@ -115,6 +115,12 @@ pub fn run(scenario: &Scenario) -> StateBundle {
         .shape
         .then(|| gravity::inertia(scenario.source.body_cloud()));
 
+    // Body-frame geometry, so the loaded path can pose and render the cloud without the scenario.
+    let body = scenario.source.body_cloud();
+    let source_cloud = vec![(0..body.len())
+        .map(|i| [body.xs[i], body.ys[i], body.zs[i], body.ms[i]])
+        .collect()];
+
     // Lomb–Scargle per detector on the (possibly non-uniform) measurement times — the correct
     // estimator when the schedule is gappy/jittered.
     let periodogram = scenario.field_set.periodogram.then(|| {
@@ -137,6 +143,7 @@ pub fn run(scenario: &Scenario) -> StateBundle {
         source_orientation: vec![orient],
         source_angular_velocity: vec![angvel],
         source_angular_accel: vec![angacc],
+        source_cloud,
         detector_placement: scenario.array.placements(),
         mask,
         meta: Meta {
@@ -276,6 +283,35 @@ mod tests {
         assert_eq!(bundle.source_position[0].len(), 5);
         assert_eq!(bundle.mask.len(), 5);
         assert!(bundle.time.iter().all(|t| t.is_finite()));
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // source_cloud is copied verbatim from the body cloud — exact by construction
+    fn source_cloud_matches_body() {
+        // The bundle carries the source's body-frame geometry verbatim, so the loaded path can pose
+        // and render the cloud without the scenario in hand.
+        let elements = [
+            (0.1, 0.2, 0.3, 500.0),
+            (-0.1, -0.2, -0.3, 250.0),
+            (0.5, 0.0, 1.0, 100.0),
+        ];
+        let traj = Trajectory::new(
+            Isometry3::identity(),
+            Path::Static,
+            Timing::Uniform { rate: 0.0 },
+        );
+        let scn = Scenario::new(
+            Box::new(Source::new(Cloud::from_elements(&elements), traj)),
+            DetectorArray::single(Detector::new(0.0)),
+            Schedule::uniform(2.0, 3),
+            1,
+        );
+        let cloud = run(&scn).source_cloud;
+        assert_eq!(cloud.len(), 1, "one source at v1");
+        assert_eq!(cloud[0].len(), elements.len());
+        for (got, e) in cloud[0].iter().zip(&elements) {
+            assert_eq!(*got, [e.0, e.1, e.2, e.3]);
+        }
     }
 
     #[test]

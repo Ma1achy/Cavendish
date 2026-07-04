@@ -11,3 +11,6 @@ edition = "2021"
 wgpu = "22"
 pollster = "0.3"
 bytemuck = { version = "1", features = ["derive"] }
+# The bundle's serialisation contract: serde derive + a compact binary sink.
+serde = { version = "1", features = ["derive"] }
+bincode = "1"
