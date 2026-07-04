@@ -9,6 +9,9 @@
 //! forward crates; `state` never does. Degeneracy is **reported, not hidden**: a near-singular Fisher
 //! surfaces as a conditioning flag rather than a confident-looking, meaningless covariance.
 
+mod jacobian;
+pub use jacobian::Jacobian;
+
 #[cfg(test)]
 mod tests {
     /// M8-R6 (`dep_hygiene`): `state` — the data-contract crate — must not depend on the forward-model
