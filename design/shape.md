@@ -119,7 +119,7 @@ extension, noted in §12 — an accuracy-preserving merge, not a removal.
 ```rust
 pub struct MeshImport {
     pub path: PathBuf,
-    pub scale: f64,          // metres per model unit — REQUIRED (STL/OBJ carry no units)
+    pub scale: Option<f64>,  // metres per model unit — MANDATORY; None ⇒ ScaleMissing (no guessing)
     pub voxel: VoxelParams,
     pub mass: MassSpec,
 }
@@ -129,6 +129,16 @@ pub fn load_solid(m: &MeshImport) -> Result<(MeshSolid, MeshReport), ShapeError>
 - **Formats.** STL, OBJ, glTF/GLB (feature-gated crates: `stl_io`/`tobj`/`gltf`). Parsing is thin:
   everything becomes an indexed triangle soup. **Units are a trap** — STL and OBJ are unitless — so
   `scale` is mandatory; there is no guessing.
+- **Realisation (M10).** `scale` is `Option<f64>` and checked *before* any file read, so a missing
+  scale fails loudly and cheaply (`ScaleMissing`) — the sketch's non-optional `f64` could not express
+  "mandatory but absent" at runtime. **Only the parsers gate:** the geometry core (winding number,
+  watertightness, the two classifiers, volume, `MeshSolid`) is always compiled, so its integrity tests
+  run in the blocking CI gate rather than skipping green behind a feature. The parsers are exercised by
+  in-memory round-trip tests behind `--all-features` (a scoped `cargo test -p shape --all-features` CI
+  step). The winding-number acceleration is an **error-bounded** BVH multipole (dipole + first/second
+  moments) — a node is approximated only when a bound on its truncation error is below tolerance — with
+  a tight tolerance for the accurate winding (`fast_wn_matches_brute` ≤1e-6) and a loose one for
+  inside/outside classification (occupancy needs only the sign of `w − ½`, so it prunes aggressively).
 - **Watertightness classification.** On load, an edge-manifold check: every edge shared by exactly
   two consistently-oriented triangles ⇒ *watertight*; otherwise *open/non-manifold*, with the open
   edge and flipped-triangle counts in the `MeshReport`.
@@ -148,6 +158,15 @@ pub fn load_solid(m: &MeshImport) -> Result<(MeshSolid, MeshReport), ShapeError>
   `V = Σ (1/6)·p₀·(p₁×p₂)` (divergence theorem) is computed at load and compared with the
   voxelised volume `N_eff·h³` — an independent consistency check that catches scale errors,
   inverted orientation, and gross classification bugs in one number.
+- **Principal frame (M10-R7).** An imported mesh's inertia tensor is generally *not* diagonal in its
+  authored frame, so `Orient::FreeRotation` — which reads the principal moments off the body-frame
+  diagonal (M4) — would tumble it wrongly. `principal_frame(&Cloud)` re-expresses a voxelised mesh
+  cloud in its principal frame (rotating by `Rᵀ`, `R` = the eigenvectors of `C` from
+  `gravity::inertia`) so the inertia is diagonal, and **returns `R`** so a caller can recover the
+  authored orientation. This is the one place `shape` rotates a body's axes; it is explicit and
+  recorded, never silent (path (a): diagonalise-and-author-in-principal-frame). Total mass and the
+  origin CoM are preserved. This is the mesh-only exception to §4's "axes are never silently rotated"
+  — for a mesh the rotation is applied *and recorded*, because the authored frame is arbitrary.
 
 ---
 
@@ -216,12 +235,16 @@ split by regime:
 
 ## 10. Errors & API
 
-`ShapeError`: `UnreadableMesh`, `ScaleMissing`, `EmptySolid` (pitch coarser than the geometry),
-`AmbiguousInterior` (the robust classifier's diagnostic exceeded threshold), `TooManyElements`,
-plus warning-grade counts in `MeshReport` (degenerate triangles, open edges). Public surface:
-`Solid` + the primitive types + `Union`; `voxelise`; `MeshImport`/`load_solid`/`MeshReport`;
-`MassSpec`/`VoxelParams`; the registry (`BodyDict` entry resolution). `source` consumes clouds;
-`gravity` is only a type/oracle dependency.
+`ShapeError`: `UnreadableMesh(String)`, `ScaleMissing`, `EmptySolid` (pitch coarser than the
+geometry), `AmbiguousInterior(f64)` (the robust classifier's diagnostic exceeded threshold, carrying
+`A`), `TooManyElements`, `BadParams`, plus warning-grade counts in `MeshReport` (open edges, flipped
+triangles). The mesh variants carry payloads, so `ShapeError` is **not** `Copy`/`Eq` (it stays
+`Clone`/`Debug`/`PartialEq`) — a dirty mesh fails loudly *with context*. Public surface: `Solid` + the
+primitive types + `Union`; `voxelise`; `MeshImport`/`load_solid`/`MeshReport`; the mesh core
+(`TriSoup`, `MeshSolid`, `voxelise_mesh`, `principal_frame`, `mesh_cache_key`, `signed_volume`,
+`winding_brute`) and the feature-gated `parse_stl`/`parse_obj`/`parse_gltf`; `MassSpec`/`VoxelParams`;
+the registry (`BodyDict` entry resolution). `source` consumes clouds; `gravity` is a type/oracle *and*
+inertia-reduction dependency (`principal_frame` calls `gravity::inertia`).
 
 ---
 
@@ -235,11 +258,13 @@ plus warning-grade counts in `MeshReport` (degenerate triangles, open edges). Pu
 | convergence | halving `h` halves the `C` error (sphere, cuboid); `k` shrinks the constant | tol |
 | shell theorem | a voxelised sphere's external field matches a point mass (`d ≥ 2R`) | tol |
 | field oracle | voxelised primitives converge to `gravity`'s analytic field oracle as `h → 0` | tol |
-| mesh ≡ primitive | a sphere mesh (STL) voxelises to the primitive sphere's moments at equal `h` | tol |
-| volume cross-check | watertight mesh: voxelised volume vs divergence-theorem volume | tol |
-| dirty mesh | an open/non-manifold mesh takes the robust path with a diagnostic; ambiguous ⇒ loud failure | structural |
+| mesh ≡ primitive | an icosphere mesh voxelises to the primitive sphere's moments at equal `h` (`mesh_eq_primitive`) | tol |
+| winding number | the accelerated winding number matches brute force (`fast_wn_matches_brute`); the two classifiers agree (`flood_vs_wn`); `w` matches the analytic solid angle (`solid_angle_closed_cube`) | 1e-6 / 99.9% / 1e-10 |
+| volume cross-check | watertight mesh: voxelised volume vs divergence-theorem volume (`volume_crosscheck`) | ≤1% |
+| dirty mesh | an open mesh takes the robust path with a diagnostic; ambiguous ⇒ `AmbiguousInterior` (`dirty_mesh_loud`, `watertight_check`) | structural |
+| principal frame | a mesh with off-diagonal inertia is re-expressed in its principal frame so FreeRotation holds (`principal_frame_diagonalises`, `imported_body_runs`) | structural |
 | anchor via shape | the concrete-wall anchor (~50 µrad) reproduced with the voxelised cuboid | model |
-| cache & linearity | a dictionary body voxelises once; mass draws re-scale, never re-voxelise | structural |
+| cache & linearity | a dictionary body voxelises once; mass draws re-scale, never re-voxelise (`cache_once`) | structural |
 
 The shell theorem row is the flagship: it exercises lattice, boundary policy, renormalisation and
 the field path in one closed-form comparison.
@@ -248,8 +273,10 @@ the field path in one closed-form comparison.
 
 ## 12. Open sub-questions (resolve in implementation)
 
-- **Fast winding numbers: library vs hand-rolled.** A Rust fast-WN implementation may need writing;
-  the BVH can be shared with the parity-ray path either way.
+- **Fast winding numbers: library vs hand-rolled.** *Resolved (M10): hand-rolled.* The BVH carries
+  per-node multipole moments (dipole + first/second) and is shared with the parity-ray path; a file
+  format is a vetted dependency, but the winding number is the correctness core and is written here,
+  verified against the analytic solid angle and brute force.
 - **Format set.** STL/OBJ/glTF proposed; PLY and STEP (CAD) deferred until a real need appears.
 - **Interior coarsening.** Octree super-voxels away from the surface — an accuracy-preserving `N`
   reduction for very large bodies; interacts with `gravity`'s element law (bigger prisms near-exact).

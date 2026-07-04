@@ -4,14 +4,18 @@
 //!
 //! A shape-produced [`gravity::Cloud`] is indistinguishable downstream from any other: exact total
 //! mass (renormalised), centre of mass at the body-frame origin (recentred), and deterministic
-//! canonical (x-fastest raster) element order. The mesh path (`MeshSolid`, STL/OBJ/glTF, winding
-//! numbers) is M10 — the `Solid` seam is written so it can plug in later. The `Cloud → C/I/Q`
-//! reduction is `gravity`'s (M4); [`second_moment`] here is a validation helper only.
+//! canonical (x-fastest raster) element order. The mesh path (`mesh` module: `MeshSolid`, STL/OBJ/glTF
+//! parsers, the generalised winding number) plugs into this same `Solid` seam and shares the
+//! [`finish_cloud`] tail, so a mesh is indistinguishable from a primitive downstream (M10). The
+//! `Cloud → C/I/Q` reduction is `gravity`'s (M4); [`second_moment`] here is a validation helper only.
 
 use gravity::Cloud;
 use math::Mat3;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+
+mod mesh;
+pub use mesh::*;
 
 /// An axis-aligned bounding box — the voxelisation domain.
 #[derive(Clone, Copy, Debug)]
@@ -239,12 +243,22 @@ impl VoxelParams {
     }
 }
 
-/// Why a solid could not be voxelised.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Why a solid could not be voxelised or a mesh imported.
+///
+/// Not `Copy`/`Eq`: the mesh variants carry payloads (`f64` diagnostic, parser message) so a dirty
+/// mesh fails *loudly* with context rather than as a bare tag.
+#[derive(Clone, Debug, PartialEq)]
 pub enum ShapeError {
     BadParams,
     EmptySolid,
     TooManyElements,
+    /// A mesh was imported without an explicit `scale` — units are ambiguous, so guessing is refused.
+    ScaleMissing,
+    /// The robust classifier's ambiguity diagnostic `A` exceeded threshold: the interior is genuinely
+    /// undecidable, so no cloud is emitted (never a silent garbage cloud).
+    AmbiguousInterior(f64),
+    /// A mesh file could not be read or parsed; the string carries the underlying reason.
+    UnreadableMesh(String),
 }
 
 /// The maximum number of elements a voxelised cloud may carry.
@@ -285,62 +299,38 @@ fn cell_occupancy(solid: &dyn Solid, centre: [f64; 3], h: f64, k: usize) -> f64 
     sum / (k * k * k) as f64
 }
 
-/// Sample a solid onto a cubic lattice and emit a cloud with exact total mass and CoM at the origin.
-pub fn voxelise(
-    solid: &dyn Solid,
-    params: &VoxelParams,
-    mass: MassSpec,
-) -> Result<Cloud, ShapeError> {
-    let bbox = solid.bbox();
+/// Resolve the lattice pitch `h` from the params: an explicit pitch, or one derived from a target
+/// element count over the bounding-box volume. A mesh and a primitive resolve `h` identically.
+pub(crate) fn pitch_for(bbox: &Aabb, params: &VoxelParams) -> Result<f64, ShapeError> {
     let extent = [
         bbox.max[0] - bbox.min[0],
         bbox.max[1] - bbox.min[1],
         bbox.max[2] - bbox.min[2],
     ];
-    let h = match (params.pitch, params.target_n) {
-        (Some(h), _) if h > 0.0 => h,
+    match (params.pitch, params.target_n) {
+        (Some(h), _) if h > 0.0 => Ok(h),
         (None, Some(n)) if n > 0 => {
             let vol = extent[0] * extent[1] * extent[2];
-            (vol / n as f64).cbrt()
+            Ok((vol / n as f64).cbrt())
         }
-        _ => return Err(ShapeError::BadParams),
-    };
-    let k = params.supersample.max(1) as usize;
-    let counts = [
-        (extent[0] / h).ceil().max(1.0) as usize,
-        (extent[1] / h).ceil().max(1.0) as usize,
-        (extent[2] / h).ceil().max(1.0) as usize,
-    ];
-
-    let cell = h * h * h;
-    let mut xs = Vec::new();
-    let mut ys = Vec::new();
-    let mut zs = Vec::new();
-    let mut vols = Vec::new();
-    // x-fastest raster (canonical, deterministic).
-    for iz in 0..counts[2] {
-        let cz = bbox.min[2] + (iz as f64 + 0.5) * h;
-        for iy in 0..counts[1] {
-            let cy = bbox.min[1] + (iy as f64 + 0.5) * h;
-            for ix in 0..counts[0] {
-                let cx = bbox.min[0] + (ix as f64 + 0.5) * h;
-                let occ = cell_occupancy(solid, [cx, cy, cz], h, k);
-                if occ > 0.0 {
-                    xs.push(cx);
-                    ys.push(cy);
-                    zs.push(cz);
-                    vols.push(occ * cell);
-                    if xs.len() > ELEMENT_CAP {
-                        return Err(ShapeError::TooManyElements);
-                    }
-                }
-            }
-        }
+        _ => Err(ShapeError::BadParams),
     }
+}
+
+/// The shared voxeliser tail: given occupied cells (`xs/ys/zs` centres and `vols` occupancy·h³),
+/// renormalise the masses to `mass` exactly and recentre so the discrete CoM is the origin. Both the
+/// primitive path ([`voxelise`]) and the mesh path ([`voxelise_mesh`]) end here, so a mesh cloud is
+/// indistinguishable downstream — exact total mass, zero dipole, and the caller's canonical order.
+pub(crate) fn finish_cloud(
+    mut xs: Vec<f64>,
+    mut ys: Vec<f64>,
+    mut zs: Vec<f64>,
+    vols: Vec<f64>,
+    mass: MassSpec,
+) -> Result<Cloud, ShapeError> {
     if xs.is_empty() {
         return Err(ShapeError::EmptySolid);
     }
-
     let volume: f64 = vols.iter().sum();
     let total = match mass {
         MassSpec::Total(m) => m,
@@ -372,6 +362,49 @@ pub fn voxelise(
     }
 
     Ok(Cloud { xs, ys, zs, ms })
+}
+
+/// Sample a solid onto a cubic lattice and emit a cloud with exact total mass and CoM at the origin.
+pub fn voxelise(
+    solid: &dyn Solid,
+    params: &VoxelParams,
+    mass: MassSpec,
+) -> Result<Cloud, ShapeError> {
+    let bbox = solid.bbox();
+    let h = pitch_for(&bbox, params)?;
+    let k = params.supersample.max(1) as usize;
+    let counts = [
+        ((bbox.max[0] - bbox.min[0]) / h).ceil().max(1.0) as usize,
+        ((bbox.max[1] - bbox.min[1]) / h).ceil().max(1.0) as usize,
+        ((bbox.max[2] - bbox.min[2]) / h).ceil().max(1.0) as usize,
+    ];
+
+    let cell = h * h * h;
+    let mut xs = Vec::new();
+    let mut ys = Vec::new();
+    let mut zs = Vec::new();
+    let mut vols = Vec::new();
+    // x-fastest raster (canonical, deterministic).
+    for iz in 0..counts[2] {
+        let cz = bbox.min[2] + (iz as f64 + 0.5) * h;
+        for iy in 0..counts[1] {
+            let cy = bbox.min[1] + (iy as f64 + 0.5) * h;
+            for ix in 0..counts[0] {
+                let cx = bbox.min[0] + (ix as f64 + 0.5) * h;
+                let occ = cell_occupancy(solid, [cx, cy, cz], h, k);
+                if occ > 0.0 {
+                    xs.push(cx);
+                    ys.push(cy);
+                    zs.push(cz);
+                    vols.push(occ * cell);
+                    if xs.len() > ELEMENT_CAP {
+                        return Err(ShapeError::TooManyElements);
+                    }
+                }
+            }
+        }
+    }
+    finish_cloud(xs, ys, zs, vols, mass)
 }
 
 /// A copy of a cloud rescaled to total mass `total` (linearity: never re-voxelise for a mass draw).

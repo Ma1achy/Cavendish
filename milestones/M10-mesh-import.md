@@ -23,6 +23,23 @@
 
 ---
 
+**Realisation (M10).** Choices taken during implementation, verified against the code:
+- **`scale` is `Option<f64>`**, checked before any file read (`ScaleMissing` on `None`) — the sketch's
+  non-optional `f64` cannot express "mandatory but absent" at runtime.
+- **Only the parsers are feature-gated** (`stl`/`obj`/`gltf`); the geometry core (winding number,
+  watertightness, both classifiers, volume, `MeshSolid`) is always compiled, so its integrity tests run
+  in the blocking CI gate. A scoped `cargo test -p shape --all-features` step runs the gated parser
+  round-trips (keeping the workspace test libpython-free). Most tests build meshes programmatically
+  (an in-crate icosphere/cube), so no binary fixtures are committed.
+- **The winding-number acceleration is error-bounded**, not a fixed radius ratio: the BVH multipole
+  (dipole + first/second moments) is used for a node only when a bound on its truncation error is below
+  tolerance. Two tolerances share one traversal — tight for the accurate winding (`fast_wn_matches_brute`
+  ≤1e-6) and loose for inside/outside classification (occupancy needs only the sign of `w − ½`).
+- **FreeRotation precondition — path (a):** `principal_frame(&Cloud)` diagonalises the inertia and
+  authors the mesh body in its principal frame, **returning the recorded rotation `R`**. A mesh with
+  off-diagonal inertia is rotated (explicitly, recorded), never tumbled with the M4 assumption violated.
+- **`ShapeError` drops `Copy`/`Eq`** to carry payloads (`AmbiguousInterior(f64)`, `UnreadableMesh(String)`).
+
 ## 2. Equations
 
 ### 2.1 Generalised winding number (per query point `p`; triangles `t` with vertices `a,b,c` relative to `p`)
