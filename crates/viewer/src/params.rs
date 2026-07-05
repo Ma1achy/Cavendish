@@ -6,10 +6,10 @@ use generate::{
     Detector, DetectorArray, FieldSet, Isometry3, Orient, Path, Quat, Scenario, Schedule, Source,
     Timing, Trajectory, Vec3,
 };
-use gravity::Cloud;
+use shape::{voxelise, Cuboid, MassSpec, VoxelParams};
 
-/// A small, legible scenario: one cuboid-cloud source at a distance, a line of detectors, a uniform
-/// schedule. Enough to inspect the forward model and to tweak-and-rerun.
+/// A small, legible scenario: one **voxelised** cuboid source at a distance, a line of detectors, a
+/// uniform schedule. Enough to inspect the forward model and to tweak-and-rerun.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ScenarioParams {
     pub mass: f64,
@@ -39,19 +39,16 @@ impl Default for ScenarioParams {
 /// tweak-and-rerun on `mass` is visible (and testable) in the bundle.
 pub fn build_scenario(p: &ScenarioParams) -> Scenario {
     // An ASYMMETRIC box (distinct half-extents → distinct principal moments Iₓ < I_y < I_z), so a spin
-    // about the intermediate axis (y) is unstable — the Dzhanibekov flip the ω₀·y control shows.
+    // about the intermediate axis (y) is unstable — the Dzhanibekov flip the ω₀·y control shows. It is
+    // voxelised (≈130 cubes) so the viewer draws a filled body, and `Total(mass)` keeps the signal
+    // linear in mass (tweak-and-rerun). A fixed cuboid + pitch never fails, so the unwrap cannot fire.
     let (hx, hy, hz) = (0.35, 0.2, 0.12);
-    let each = p.mass / 8.0;
-    let cloud = Cloud::from_elements(&[
-        (hx, hy, hz, each),
-        (-hx, hy, hz, each),
-        (hx, -hy, hz, each),
-        (-hx, -hy, hz, each),
-        (hx, hy, -hz, each),
-        (-hx, hy, -hz, each),
-        (hx, -hy, -hz, each),
-        (-hx, -hy, -hz, each),
-    ]);
+    let cloud = voxelise(
+        &Cuboid { half: [hx, hy, hz] },
+        &VoxelParams::pitch(0.08),
+        MassSpec::Total(p.mass),
+    )
+    .expect("cuboid voxelises");
     let orient = if p.omega0 == [0.0, 0.0, 0.0] {
         Orient::Fixed(Quat::identity())
     } else {

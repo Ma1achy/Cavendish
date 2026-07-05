@@ -12,6 +12,7 @@ pub mod app;
 pub mod camera;
 pub mod data;
 pub mod field_slice;
+pub mod gizmo;
 pub mod panels;
 pub mod params;
 pub mod pose;
