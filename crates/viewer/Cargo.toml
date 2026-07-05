@@ -12,8 +12,8 @@ path = "src/main.rs"
 generate = { path = "../generate" }
 state = { path = "../state" }
 gravity = { path = "../gravity" }
-# The sample scenario voxelises a cuboid so the body reads as a filled voxel grid.
-shape = { path = "../shape" }
+# The scenario editor voxelises primitives and imports meshes; `mesh` enables the STL/OBJ/glTF parsers.
+shape = { path = "../shape", features = ["mesh"] }
 # One graphics stack: the same wgpu 22 compute uses; eframe's wgpu backend resolves to it.
 wgpu = { workspace = true }
 bytemuck = { workspace = true }

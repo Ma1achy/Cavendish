@@ -16,6 +16,14 @@ pub fn run_guarded(scenario: &Scenario) -> Result<StateBundle, String> {
     })
 }
 
+/// Build a scenario from an editable spec and run it, both guarded — the whole path the background Run
+/// thread calls. A build error (a mesh that will not load, an empty voxelisation) or a run panic becomes
+/// a message; the spec is plain `Send` data, so this runs off the UI thread.
+pub fn run_spec(params: &crate::params::ScenarioParams) -> Result<StateBundle, String> {
+    let scenario = crate::params::build_scenario(params)?;
+    run_guarded(&scenario)
+}
+
 #[cfg(test)]
 mod tests {
     use super::run_guarded;
@@ -67,14 +75,14 @@ mod tests {
         );
 
         // And a normal run still succeeds — fails-soft does not swallow the good path.
-        assert!(run_guarded(&build_scenario(&ScenarioParams::default())).is_ok());
+        assert!(run_guarded(&build_scenario(&ScenarioParams::default()).unwrap()).is_ok());
     }
 
     #[test]
     fn load_bundle_renders() {
         // A run serialised to disk loads back and renders read-only — the loaded path assembles the
         // scene from the bundle ALONE (no scenario in hand), byte-identical to the live bundle.
-        let live = super::run(&build_scenario(&ScenarioParams::default()));
+        let live = super::run(&build_scenario(&ScenarioParams::default()).unwrap());
         let path = std::env::temp_dir().join("cavendish_viewer_load.bin");
         state::save_bundle(&live, &path).expect("save");
         let loaded = state::load_bundle(&path).expect("load");

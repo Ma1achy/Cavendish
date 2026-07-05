@@ -65,6 +65,17 @@ Two sources, both thin:
 2. **Loaded bundle.** Open a serialised `StateBundle` from `state`'s cache (`state.md` §6) and render
    it read-only.
 
+**Realisation (scenario panel).** The in-app scenario is a plain-data `ScenarioParams` spec (enums for
+body / path / timing / orient / schedule / noise) that `build_scenario` realises into a fresh
+`Scenario` each run — the `Box<dyn SourceDynamics>` source is not `Clone`, so the spec, not the
+`Scenario`, is what the App holds and edits. The panel is a **preset library** (milestone-spanning
+showcases — anchors, flyby, orbit, Dzhanibekov, ULDM/spectral, channels, mesh) plus a **full editor**
+(every group behind a `CollapsingHeader`, a `ComboBox` per enum), and it can import a **mesh file**
+(`shape`'s `mesh` feature; a bad path fails to a toast, never a crash). Because a scenario can be
+heavy (512-cycle spectral runs), **Run is background-threaded**: the `Send` spec crosses to a worker
+that builds and runs it, returning the `StateBundle` over a channel, so the window stays live with a
+"running…" state rather than freezing.
+
 For the **field view** specifically, `viewer` need not store the heavy `field_grid`: it can sample
 `gravity` on a slice at the scrubbed time on demand (cheap for one plane, `gravity.md`), which is
 lighter than requesting the whole `(T,X,Y,Z,3)` grid. So the field visualisation has two modes — the

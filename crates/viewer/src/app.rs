@@ -1,17 +1,26 @@
 //! The eframe App — thin orchestration over the tested modules. It renders the 3D scene (shaded voxel
 //! cubes + wireframe gizmos) to an offscreen colour+depth texture (the same [`render`](crate::render)
 //! path the headless test drives) and shows it in egui; text labels are projected and painted on top.
-//! Camera orbit/zoom, the scene composition, and the panels/scrubber read the pure modules below —
-//! the App itself holds no asserted behaviour (coherence and fails-soft live under it).
+//! The scenario side panel is a preset picker + a full [`editor`](crate::editor) over the plain-data
+//! spec; Run happens on a background thread so a heavy scenario never freezes the window. Everything
+//! asserted lives in the pure modules below — the App holds no checked behaviour.
 
 use eframe::egui;
+use std::sync::mpsc::Receiver;
 
 use crate::camera::{self, Camera};
-use crate::data::run_guarded;
-use crate::params::{build_scenario, ScenarioParams};
+use crate::data::run_spec;
+use crate::params::ScenarioParams;
 use crate::render::{SceneData, SceneRenderer};
-use crate::{gizmo, panels, scene, scrub};
+use crate::{editor, gizmo, panels, presets, scene, scrub};
 use state::StateBundle;
+
+/// The background Run: a worker thread builds and runs the scenario off the UI thread, sending the
+/// `StateBundle` (or an error message) back over the channel.
+enum RunState {
+    Idle,
+    Running(Receiver<Result<StateBundle, String>>),
+}
 
 /// The offscreen colour+depth target the 3D scene renders into; the colour is shown as an egui image.
 struct Offscreen {
@@ -55,6 +64,7 @@ pub struct App {
     radius: f32,
     target: [f32; 3],
     params: ScenarioParams,
+    run: RunState,
     bundle: Option<StateBundle>,
     ell: usize,
     playing: bool,
@@ -86,6 +96,7 @@ impl App {
             radius: 12.0,
             target: [0.0, 0.0, 0.0],
             params: ScenarioParams::default(),
+            run: RunState::Idle,
             bundle: None,
             ell: 0,
             playing: false,
@@ -93,6 +104,41 @@ impl App {
             bundle_path: String::new(),
             toast: None,
         })
+    }
+
+    /// Spawn the scenario Run on a worker thread — the spec is plain `Send` data, so the build + run
+    /// happen off the UI thread and the window stays live. A no-op while a run is already in flight.
+    fn start_run(&mut self) {
+        if matches!(self.run, RunState::Running(_)) {
+            return;
+        }
+        let params = self.params.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(run_spec(&params));
+        });
+        self.run = RunState::Running(rx);
+    }
+
+    /// Poll the background Run; adopt the bundle or surface the error when it completes.
+    fn poll_run(&mut self, ctx: &egui::Context) {
+        let mut finished = None;
+        if let RunState::Running(rx) = &self.run {
+            match rx.try_recv() {
+                Ok(res) => finished = Some(res),
+                Err(std::sync::mpsc::TryRecvError::Empty) => ctx.request_repaint(),
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    finished = Some(Err("run thread stopped".into()))
+                }
+            }
+        }
+        if let Some(res) = finished {
+            self.run = RunState::Idle;
+            match res {
+                Ok(b) => self.adopt(b),
+                Err(e) => self.toast = Some(e),
+            }
+        }
     }
 
     /// Adopt a new bundle: reset the scrubber and frame the camera on the whole scene.
@@ -136,66 +182,116 @@ impl App {
         }
         scene
     }
+
+    /// The scenario side panel: preset picker, the full editor, Run/Frame/Load, the Show toggles, and the
+    /// periodogram. Returns the user's intents (act on them after the panel closes to avoid borrow knots).
+    fn scenario_panel(&mut self, ui: &mut egui::Ui) -> (bool, bool, bool) {
+        let (mut do_run, mut do_frame, mut do_load) = (false, false, false);
+        ui.heading("Scenario");
+
+        let mut chosen: Option<ScenarioParams> = None;
+        egui::ComboBox::from_id_salt("preset")
+            .selected_text("Load preset…")
+            .show_ui(ui, |ui| {
+                let mut group = "";
+                for preset in presets::presets() {
+                    if preset.group != group {
+                        ui.label(egui::RichText::new(preset.group).small().weak());
+                        group = preset.group;
+                    }
+                    if ui.selectable_label(false, preset.name).clicked() {
+                        chosen = Some(preset.params);
+                    }
+                }
+            });
+        if let Some(params) = chosen {
+            self.params = params;
+            do_run = true; // load-and-run
+        }
+
+        let running = matches!(self.run, RunState::Running(_));
+        ui.horizontal(|ui| {
+            ui.add_enabled_ui(!running, |ui| {
+                if ui.button("Run").clicked() {
+                    do_run = true;
+                }
+            });
+            if running {
+                ui.spinner();
+                ui.label("running…");
+            }
+            if ui.button("Frame").clicked() {
+                do_frame = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.text_edit_singleline(&mut self.bundle_path);
+            if ui.button("Load").clicked() {
+                do_load = true;
+            }
+        });
+        if let Some(msg) = &self.toast {
+            ui.colored_label(egui::Color32::LIGHT_RED, msg);
+        }
+
+        ui.separator();
+        editor::scenario_editor(ui, &mut self.params);
+
+        ui.separator();
+        ui.label("Show");
+        ui.checkbox(&mut self.toggles.voxels, "voxels");
+        ui.checkbox(&mut self.toggles.body_wire, "object wireframe");
+        ui.checkbox(&mut self.toggles.detectors, "detectors");
+        ui.checkbox(&mut self.toggles.spin, "spin axis");
+        ui.checkbox(&mut self.toggles.axes, "world axes");
+        ui.checkbox(&mut self.toggles.field, "field slice");
+        ui.weak("drag to orbit · scroll to zoom");
+
+        ui.separator();
+        ui.heading("Periodogram");
+        match &self.bundle {
+            Some(b) => panels::periodogram_panel(ui, b),
+            None => {
+                ui.weak("no run yet");
+            }
+        }
+        (do_run, do_frame, do_load)
+    }
 }
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_run(ctx);
+
         let times_len = self.bundle.as_ref().map_or(0, |b| b.time.len());
         if self.playing && times_len > 0 {
             self.ell = (self.ell + 1) % times_len;
             ctx.request_repaint();
         }
 
+        let mut intents = (false, false, false);
         egui::SidePanel::right("scenario").show(ctx, |ui| {
-            ui.heading("Scenario");
-            ui.add(egui::Slider::new(&mut self.params.mass, 10.0..=5000.0).text("mass"));
-            ui.add(egui::Slider::new(&mut self.params.distance, 1.0..=20.0).text("distance"));
-            ui.add(egui::Slider::new(&mut self.params.omega0[1], 0.0..=2.0).text("ω₀·y"));
-            ui.horizontal(|ui| {
-                if ui.button("Run").clicked() {
-                    match run_guarded(&build_scenario(&self.params)) {
-                        Ok(b) => self.adopt(b),
-                        Err(e) => self.toast = Some(e),
-                    }
-                }
-                if ui.button("Frame").clicked() {
-                    if let Some(b) = &self.bundle {
-                        let (t, r) = scene::frame_scene(b);
-                        self.target = t;
-                        self.radius = r;
-                    }
-                }
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                intents = self.scenario_panel(ui);
             });
-            ui.horizontal(|ui| {
-                ui.text_edit_singleline(&mut self.bundle_path);
-                if ui.button("Load").clicked() {
-                    match state::load_bundle(&self.bundle_path) {
-                        Ok(b) => self.adopt(b),
-                        Err(e) => self.toast = Some(format!("load failed: {e}")),
-                    }
-                }
-            });
-            if let Some(msg) = &self.toast {
-                ui.colored_label(egui::Color32::LIGHT_RED, msg);
-            }
-            ui.separator();
-            ui.label("Show");
-            ui.checkbox(&mut self.toggles.voxels, "voxels");
-            ui.checkbox(&mut self.toggles.body_wire, "object wireframe");
-            ui.checkbox(&mut self.toggles.detectors, "detectors");
-            ui.checkbox(&mut self.toggles.spin, "spin axis");
-            ui.checkbox(&mut self.toggles.axes, "world axes");
-            ui.checkbox(&mut self.toggles.field, "field slice");
-            ui.weak("drag to orbit · scroll to zoom");
-            ui.separator();
-            ui.heading("Periodogram");
-            match &self.bundle {
-                Some(b) => panels::periodogram_panel(ui, b),
-                None => {
-                    ui.weak("no run yet");
-                }
-            }
         });
+        let (do_run, do_frame, do_load) = intents;
+        if do_run {
+            self.start_run();
+        }
+        if do_frame {
+            if let Some(b) = &self.bundle {
+                let (t, r) = scene::frame_scene(b);
+                self.target = t;
+                self.radius = r;
+            }
+        }
+        if do_load {
+            match state::load_bundle(&self.bundle_path) {
+                Ok(b) => self.adopt(b),
+                Err(e) => self.toast = Some(format!("load failed: {e}")),
+            }
+        }
 
         egui::TopBottomPanel::bottom("scrubber").show(ctx, |ui| {
             ui.horizontal(|ui| {
