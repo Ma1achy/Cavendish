@@ -36,39 +36,50 @@ pub fn masked_spans(times: &[f64], mask: &[bool]) -> Vec<[f64; 2]> {
 /// The per-detector signal traces vs time, the mask as shaded bands, and a vertical cursor at `time[ℓ]`
 /// — the coherent cursor, the same index that poses the 3D scene.
 pub fn signal_panel(ui: &mut egui::Ui, bundle: &StateBundle, ell: usize) {
+    // Auto-fit by default (egui_plot); "⟲ fit" (or a double-click) refits after a manual pan/zoom.
+    let reset = ui
+        .horizontal(|ui| {
+            ui.button("⟲ fit")
+                .on_hover_text("reset the view to fit the data (or double-click the plot)")
+                .clicked()
+        })
+        .inner;
     let cursor = bundle.time.get(ell).copied();
     let spans = masked_spans(&bundle.time, &bundle.mask);
     let d = bundle.signal.first().map_or(0, |r| r.len());
-    Plot::new("signal")
+    let mut plot = Plot::new("signal")
         .height(ui.available_height())
-        .legend(egui_plot::Legend::default())
-        .show(ui, |pui| {
-            // Shaded masked cycles, drawn within the current bounds so they do not blow the y-scale.
-            let (lo, hi) = (pui.plot_bounds().min(), pui.plot_bounds().max());
-            for s in &spans {
-                pui.polygon(
-                    Polygon::new(PlotPoints::from(vec![
-                        [s[0], lo[1]],
-                        [s[1], lo[1]],
-                        [s[1], hi[1]],
-                        [s[0], hi[1]],
-                    ]))
-                    .fill_color(egui::Color32::from_rgba_unmultiplied(200, 80, 80, 40)),
-                );
-            }
-            for di in 0..d {
-                let pts: Vec<[f64; 2]> = bundle
-                    .time
-                    .iter()
-                    .zip(&bundle.signal)
-                    .map(|(&t, row)| [t, row[di]])
-                    .collect();
-                pui.line(Line::new(PlotPoints::from(pts)).name(format!("det {di}")));
-            }
-            if let Some(t) = cursor {
-                pui.vline(VLine::new(t).name("ℓ"));
-            }
-        });
+        .legend(egui_plot::Legend::default());
+    if reset {
+        plot = plot.reset();
+    }
+    plot.show(ui, |pui| {
+        // Shaded masked cycles, drawn within the current bounds so they do not blow the y-scale.
+        let (lo, hi) = (pui.plot_bounds().min(), pui.plot_bounds().max());
+        for s in &spans {
+            pui.polygon(
+                Polygon::new(PlotPoints::from(vec![
+                    [s[0], lo[1]],
+                    [s[1], lo[1]],
+                    [s[1], hi[1]],
+                    [s[0], hi[1]],
+                ]))
+                .fill_color(egui::Color32::from_rgba_unmultiplied(200, 80, 80, 40)),
+            );
+        }
+        for di in 0..d {
+            let pts: Vec<[f64; 2]> = bundle
+                .time
+                .iter()
+                .zip(&bundle.signal)
+                .map(|(&t, row)| [t, row[di]])
+                .collect();
+            pui.line(Line::new(PlotPoints::from(pts)).name(format!("det {di}")));
+        }
+        if let Some(t) = cursor {
+            pui.vline(VLine::new(t).name("ℓ"));
+        }
+    });
 }
 
 /// The periodogram panel: per-detector power vs frequency when present, or a disabled note when the
@@ -79,16 +90,26 @@ pub fn periodogram_panel(ui: &mut egui::Ui, bundle: &StateBundle) {
             ui.weak("periodogram — off (enable FieldSet.periodogram)");
         }
         Some(pg) => {
-            Plot::new("periodogram")
+            let reset = ui
+                .horizontal(|ui| {
+                    ui.button("⟲ fit")
+                        .on_hover_text("reset the view to fit the data (or double-click the plot)")
+                        .clicked()
+                })
+                .inner;
+            let mut plot = Plot::new("periodogram")
                 .height(ui.available_height())
-                .legend(egui_plot::Legend::default())
-                .show(ui, |pui| {
-                    for (di, power) in pg.power.iter().enumerate() {
-                        let pts: Vec<[f64; 2]> =
-                            pg.freqs.iter().zip(power).map(|(&f, &p)| [f, p]).collect();
-                        pui.line(Line::new(PlotPoints::from(pts)).name(format!("det {di}")));
-                    }
-                });
+                .legend(egui_plot::Legend::default());
+            if reset {
+                plot = plot.reset();
+            }
+            plot.show(ui, |pui| {
+                for (di, power) in pg.power.iter().enumerate() {
+                    let pts: Vec<[f64; 2]> =
+                        pg.freqs.iter().zip(power).map(|(&f, &p)| [f, p]).collect();
+                    pui.line(Line::new(PlotPoints::from(pts)).name(format!("det {di}")));
+                }
+            });
         }
     }
 }
