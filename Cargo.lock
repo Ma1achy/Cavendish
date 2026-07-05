@@ -2871,6 +2871,7 @@ dependencies = [
  "generate",
  "gravity",
  "math",
+ "shape",
  "state",
  "wgpu",
 ]

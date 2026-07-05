@@ -62,7 +62,7 @@ mod tests {
 
         // A degenerate (empty) bundle renders an empty scene — no geometry, no panic.
         assert!(
-            scene_at(&StateBundle::default(), 0).instances.is_empty(),
+            scene_at(&StateBundle::default(), 0).cubes.is_empty(),
             "a degenerate bundle should yield an empty scene, not a panic"
         );
 
@@ -83,7 +83,7 @@ mod tests {
         assert_eq!(loaded, live, "loaded bundle differs from the live one");
         let scene = scene_at(&loaded, 0);
         assert!(
-            !scene.instances.is_empty(),
+            !scene.cubes.is_empty(),
             "loaded bundle rendered an empty scene — no geometry survived serialisation"
         );
     }

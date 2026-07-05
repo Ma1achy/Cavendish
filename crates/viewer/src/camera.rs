@@ -36,6 +36,47 @@ impl Camera {
             look_at_rh(self.eye, self.target, self.up),
         )
     }
+
+    /// Point the camera from an orbit about `target`: `azimuth` around the up axis (`+z`), `elevation`
+    /// above the horizontal plane, at `radius`. Drives the App's drag-to-orbit / scroll-to-zoom.
+    pub fn set_orbit(&mut self, target: [f32; 3], azimuth: f32, elevation: f32, radius: f32) {
+        self.target = target;
+        self.eye = orbit_eye(target, azimuth, elevation, radius);
+    }
+}
+
+/// The eye position for an orbit about `target`: `azimuth` around `+z`, `elevation` above the `xy`
+/// plane (clamped just off the poles so the up vector never degenerates), at `radius`.
+pub fn orbit_eye(target: [f32; 3], azimuth: f32, elevation: f32, radius: f32) -> [f32; 3] {
+    let el = elevation.clamp(-1.5533, 1.5533); // ±89° in radians
+    let (ce, se) = (el.cos(), el.sin());
+    let (ca, sa) = (azimuth.cos(), azimuth.sin());
+    [
+        target[0] + radius * ce * ca,
+        target[1] + radius * ce * sa,
+        target[2] + radius * se,
+    ]
+}
+
+/// Project a world point to a pixel in an image `rect` (`[0,0]` at the rect's top-left) via `view_proj`.
+/// Returns `None` when the point is at or behind the camera plane (`w ≤ 0`) — nothing to draw.
+pub fn project(view_proj: &[[f32; 4]; 4], world: [f32; 3], rect: [f32; 4]) -> Option<[f32; 2]> {
+    let m = view_proj;
+    let clip = [
+        m[0][0] * world[0] + m[1][0] * world[1] + m[2][0] * world[2] + m[3][0],
+        m[0][1] * world[0] + m[1][1] * world[1] + m[2][1] * world[2] + m[3][1],
+        m[0][3] * world[0] + m[1][3] * world[1] + m[2][3] * world[2] + m[3][3], // w
+    ];
+    let w = clip[2];
+    if w <= 1e-6 {
+        return None;
+    }
+    let ndc = [clip[0] / w, clip[1] / w]; // ∈ [-1, 1], y up
+    let (x0, y0, width, height) = (rect[0], rect[1], rect[2], rect[3]);
+    Some([
+        x0 + (ndc[0] * 0.5 + 0.5) * width,
+        y0 + (1.0 - (ndc[1] * 0.5 + 0.5)) * height, // flip y: screen y grows downward
+    ])
 }
 
 fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
@@ -93,4 +134,48 @@ fn mul(a: [[f32; 4]; 4], b: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
         }
     }
     m
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn orbit_eye_spherical() {
+        let t = [1.0, 2.0, 3.0];
+        // azimuth 0, elevation 0 ⇒ along +x at `radius`.
+        let e = orbit_eye(t, 0.0, 0.0, 5.0);
+        assert!(
+            (e[0] - 6.0).abs() <= 1e-5 && (e[1] - 2.0).abs() <= 1e-5 && (e[2] - 3.0).abs() <= 1e-5
+        );
+        // azimuth 90° ⇒ along +y.
+        let e = orbit_eye(t, std::f32::consts::FRAC_PI_2, 0.0, 5.0);
+        assert!((e[0] - 1.0).abs() <= 1e-5 && (e[1] - 7.0).abs() <= 1e-5);
+        // straight up (clamped just off the pole) ⇒ mostly +z.
+        let e = orbit_eye(t, 0.0, std::f32::consts::FRAC_PI_2, 5.0);
+        assert!(e[2] > 3.0 + 4.99, "near the +z pole: {e:?}");
+    }
+
+    #[test]
+    fn project_target_to_centre() {
+        // The look-at target projects to the image centre (NDC origin); a point behind the camera is None.
+        let cam = Camera::default();
+        let vp = cam.view_proj();
+        let rect = [0.0, 0.0, 100.0, 80.0];
+        let c = project(&vp, cam.target, rect).expect("target is in front");
+        assert!(
+            (c[0] - 50.0).abs() <= 0.5 && (c[1] - 40.0).abs() <= 0.5,
+            "centre: {c:?}"
+        );
+        // 2·eye − target sits on the far side of the camera from the target ⇒ behind ⇒ None.
+        let behind = [
+            2.0 * cam.eye[0] - cam.target[0],
+            2.0 * cam.eye[1] - cam.target[1],
+            2.0 * cam.eye[2] - cam.target[2],
+        ];
+        assert!(
+            project(&vp, behind, rect).is_none(),
+            "behind the camera culls"
+        );
+    }
 }

@@ -41,9 +41,14 @@ source actually tumble through its intermediate-axis flip (spec §5.4). Eyes on 
 ## 3. Rendering
 
 - **wgpu for the 3D**, the *same* wgpu the compute backend uses (`compute.md`) — one graphics
-  dependency, shared. The cloud is an instanced point/sprite draw; the array a handful of markers;
-  the field a set of arrow instances or a textured slice. Nothing here is performance-critical at
-  inspection scale.
+  dependency, shared. Two pipelines over a shared camera uniform and a depth buffer: **instanced,
+  Lambert-shaded cubes** for the voxel body (each cloud element a cube sized to the lattice pitch), and
+  a **depth-independent line list** for the wireframe overlays — so they draw *over/through* the solid
+  cubes. Gizmos (`gizmo`): the world **X/Y/Z axes** (arrows + ticks), the **detector cages**, the body's
+  **oriented bounding box**, and the **spin-axis arrow**, each an independent toggle. Text labels (axis
+  letters, tick values) are projected through the camera and painted by egui — no glyph atlas in wgpu.
+  An **orbit camera** (drag to rotate, scroll to zoom) with auto-framing on Run/Load. Nothing here is
+  performance-critical at inspection scale; the software (llvmpipe) path in the dev container is enough.
 - **egui for the UI** — an immediate-mode panel layout for the controls (scenario parameters,
   `FieldSet` toggles, the scrubber) and, via `egui_plot`, the signal and periodogram plots. Immediate
   mode suits a tool that re-renders every frame off live state.

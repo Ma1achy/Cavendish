@@ -2,8 +2,27 @@
   "name": "cavendish",
   "build": { "dockerfile": "Dockerfile" },
   "features": {
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    // A virtual X desktop (Xvfb + fluxbox) served over noVNC, so the wgpu viewer — which opens a
+    // native window — can render (software Vulkan/lavapipe) and be viewed in a browser. There is no
+    // GPU passthrough to a Linux container on macOS; this is the CPU-rendered path, fine at
+    // inspection scale.
+    "ghcr.io/devcontainers/features/desktop-lite:1": {}
   },
+  // noVNC is served here; open it in a browser (password: vscode).
+  "forwardPorts": [6080],
+  // DISPLAY: the virtual desktop desktop-lite creates, so the viewer has somewhere to draw.
+  // XDG_RUNTIME_DIR: silences winit/wgpu's "XDG_RUNTIME_DIR not set" warnings (created below).
+  // VNC_RESOLUTION: **depth 24** (the trailing x24) is essential — desktop-lite defaults to 16-bit,
+  // and a software wgpu surface finds no matching RGBA framebuffer at 16-bit, so the viewer fails to
+  // create a surface. 24-bit fixes it.
+  "containerEnv": {
+    "DISPLAY": ":1",
+    "XDG_RUNTIME_DIR": "/tmp/runtime-vscode",
+    "VNC_RESOLUTION": "1440x768x24"
+  },
+  // The runtime dir must exist with 0700 perms owned by the user; recreate it every start.
+  "postStartCommand": "mkdir -p /tmp/runtime-vscode && chmod 700 /tmp/runtime-vscode",
   "customizations": {
     "vscode": {
       "extensions": [
