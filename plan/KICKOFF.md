@@ -1,5 +1,16 @@
 # Kickoff — running the rebuild autonomously
 
+## One-time setup (paste into Claude Code in a fresh clone)
+
+> Set up the Cavendish rebuild. In this repository: (1) create the tags `v1-final` at commit
+> `56df4ab` and `v2-prototype` at commit `71ec48a` and push them; (2) close PR #18 without merging,
+> with a comment that the rebuild on `rebuild` replaces it and the code is kept at tag `v2-prototype`;
+> (3) merge `origin/rebuild` into `main` with a merge commit (no squash, no force-push) and push `main`;
+> (4) check that `main` now holds only CLAUDE.md, README.md, .gitignore, .claude/, plan/, docs/ and
+> reference/, and that both tags exist on the remote. Stop and tell me if any step fails.
+
+Then start the main loop below.
+
 ## Where it runs
 - **On the Mac (main loop).** The GPU, Metal and frame-rate checks need real hardware, and cloud
   sessions only have a software GPU. Run Claude Code in the repo in auto mode:
