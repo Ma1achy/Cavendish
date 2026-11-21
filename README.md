@@ -5,4 +5,4 @@ slate. Start with `plan/REBUILD.md`; how the build runs is `plan/KICKOFF.md`; wh
 `plan/PROGRESS.md`. The browser mock-up of the viewer is in `docs/viewer-mockup/`.
 
 The previous code is kept in history: tag `v1-final` (the validated v1 forward model, used as the
-oracle) and tag `v2-prototype` (the world-physics prototype). Their design documents are in `reference/`.
+oracle) and tag `v2-prototype` (the world-physics prototype; branch `v2-world-physics`, commit `71ec48a`). Their design documents are in `reference/`.
