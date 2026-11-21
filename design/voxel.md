@@ -252,6 +252,41 @@ else:                 accept by multipole (order p) if bound ≤ share(tol), els
   moment error from single precision; on the GPU they are computed on the CPU and uploaded, or
   accumulated in float-float.
 
+### 6.1 Level of detail
+
+Every internal node already carries the mass, centre of mass and low moments of everything beneath
+it, so a level of detail is just a *cut* through the tree: nodes above the cut are evaluated as one
+element each. The walk above chooses its cut from an error bound. A cheaper, optional mode chooses it
+from geometry — coarse far from the towers, fine close to them:
+
+```rust
+pub enum Lod {
+    Exact,                              // every leaf; tol = 0
+    Bounded { tol: f64 },               // the default: open until the phase bound is met (§6)
+    Distance { theta: f64, blend: f64 },// optional: accept a node when size / distance-to-nearest-tower-point < theta
+    Fixed { level: u8 },                // debugging and the viewer
+}
+```
+
+- **A coarse node is not a big voxel of average density.** It is the node's mass at its centre of
+  mass, plus its stored moments. Total mass and centre of mass are therefore exact at every level of
+  detail; only internal structure is dropped.
+- **No popping.** A distance rule flips nodes as a body moves, and each flip is a step in the signal.
+  `Distance` therefore blends: across the band `theta·(1 − blend) … theta` a node's contribution is
+  a smooth mix of itself and its children, so the signal is continuous in time (and in its first
+  derivative). The cost is up to twice the work inside the band.
+- **Static things get a fixed cut.** A wall, a slab or the air's response is cut once per tower and
+  never changes, so it cannot pop at all (§8).
+- **Its error is measured, not assumed.** `Distance` has no a-priori bound. The audit (M16) runs a
+  sample at `Exact` and records what the chosen `theta` cost, per tower, next to the shot noise.
+- **Sensible thresholds need the tighter bound.** With the present, pessimistic bound (§13) almost
+  any useful `theta` looks unsafe, because the bound ignores the cancellation that makes distant mass
+  nearly invisible to a gradiometer. Setting defaults waits for the differenced bound from the
+  measurement phase; until then `Distance` is opt-in and audited.
+- **The same idea everywhere else:** the fluid's adaptive grid (§9) is level of detail for the
+  simulation; the distance sidecar is fine only near contact (§10); the viewer has its own,
+  camera-driven cut and can also display the instrument's (§11).
+
 ## 7. Bodies
 
 | Body | Tree | Evaluation |

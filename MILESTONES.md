@@ -56,7 +56,10 @@ M14 voxel core          │  NEXT, and the centre of v2: one sparse tree for all
                         │  onto it (bodies, grid response, air coupling, contact) before anything else.
 M15 timing + scene spec │  planned, parallel to M14: towers on their own clocks; one addressable scene spec
 (GPU)                   │  then: trees uploaded and walked on-device; multigrid on the pyramid (handoff §4)
-M13 scene viewer       ─┘  then: draws the tree and the replay built from it; full interface on the spec
+M13 scene viewer        │  then: draws the tree and the replay built from it; full interface on the spec
+M16 trust               │  alongside, from now: fluid-to-phase oracles, an error ledger in every bundle,
+                        │  metamorphic tests, dataset manifests, real-device CI
+M17 site + baseline    ─┘  after M15: the stairwell scene and its populations, seismic noise, a non-learned tracker
 Mref reference port        (a THREAD: each of George's 13 cases lands with the milestone it
                             validates — M1/M2 geometry, M5 ULDM/lift, M6 schedules/spectra)
 ```
@@ -499,6 +502,30 @@ exactly; every library scene built from its spec equals the hand-written one. Br
 
 ---
 
+## M16 — Trust
+
+**Goal.** Every number comes with a stated error, an independent check behind the path that produced
+it, and a recipe that regenerates it.
+
+**Builds.** Oracles for the fluid-to-phase path (a moving ball of anomaly against a v1 point source);
+a `numerics` block in `Meta` and a measured `error_estimate` per tower; metamorphic tests over random
+scenes; a CI floor on tests executed; dataset manifests with `cavendish verify`; self-hosted Metal and
+Vulkan runners with benchmark gates; optionally a faster flight quadrature as a new phase model.
+
+**Exit.** Brief: `milestones/M16-trust.md`. **Planned — not built.**
+
+---
+
+## M17 — The site, its noise sources, and a baseline tracker
+
+**Goal.** Scenes that look like the Beecroft stairwell, with the populations the collaboration models
+(people on stairs and in the foyer, the lift, cars, small animals), seismic Newtonian noise, and a
+tracker that needs no training to measure Gradar against.
+
+**Exit.** Brief: `milestones/M17-site-and-baseline.md`. **Planned — not built.**
+
+---
+
 ## What follows
 
 `milestones/V2-HANDOFF.md` carries the state of the v2 branch and the ordered remainder: GPU execution
@@ -510,7 +537,7 @@ Python surface for scenes, further physics, and the Gradar datasets.
 ## The implementation briefs
 
 Each milestone above has a **self-contained implementation brief** in `milestones/`
-(`M0-scaffolding.md` … `M15-array-timing-and-scene-spec.md`): requirements traced to tests, the design and its
+(`M0-scaffolding.md` … `M17-site-and-baseline.md`): requirements traced to tests, the design and its
 diagrams, the governing equations, pseudocode for the core algorithms, unit/integration/e2e tests
 with concrete tolerances, and the exit table. A Claude Code session is pointed at one brief (plus
 the relevant `design/*.md` and the spec) and works it to green. The cross-cutting `reference-port.md` brief

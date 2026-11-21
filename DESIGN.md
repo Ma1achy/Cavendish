@@ -338,7 +338,8 @@ Each drill-down is its own file under `design/<subsystem>.md`.
     → **`design/voxel.md` (designed; planned as M14, not built)**. It is the centre of v2: `physics`
     is rebased onto it, and `shape`, `world`, `compute` and `viewer` gain an edge to it. The v1 spine
     stays as the frozen API and the oracle. Per-tower timing and the scene spec
-    have a brief (`milestones/M15-array-timing-and-scene-spec.md`) and no drill-down yet.
+    have a brief (`milestones/M15-array-timing-and-scene-spec.md`) and no drill-down yet; nor do
+    trust (`milestones/M16-trust.md`) or the site and baseline (`milestones/M17-site-and-baseline.md`).
 
 **Bottom-up drill-down phase complete.** All subsystems designed: `gravity`, `compute`, `shape`
 (`design/shape.md` — geometry → mass, added after the phase closed), `source`, `instrument`,

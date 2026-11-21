@@ -33,6 +33,8 @@
 | M14-R13 | **Adaptive fluids.** The air is simulated on a balanced (2:1) octree with MAC unknowns, a well-balanced buoyancy term and multigrid-preconditioned CG. Refinement is goal-oriented (tower response × density variation, plus flow resolution and solid proximity). Regridding conserves mass anomaly and puts no step in any signal above `tol`. A fully refined tree reproduces the uniform solver. |
 | M14-R14 | **Liquids.** A free-surface liquid on the same solver: narrow-band level set, full-density gravity read, two-way coupling with rigid bodies. |
 | M14-R15 | **Adaptive voxelisation.** A body's surface leaves are refined until their estimated phase error at closest approach to a tower is under `tol`. |
+| M14-R16 | **Level of detail.** `Lod::{Exact, Bounded, Distance, Fixed}` on the one walk. Mass and centre of mass exact at every level; `Distance` blends across its band so the signal has no steps; its error is audited (M16), not assumed. Optional and off by default. |
+| M14-R0 | **Measure first.** Three measurements on the existing code decide the weight of phases B–C before they are built (§2a). |
 | M14-R11 | **It is faster, measured.** On a named fine body, the tree evaluation beats the flat sum in wall-clock at equal error by a stated factor; if it does not, the flat path stays the default and the brief says so. |
 
 ---
@@ -40,6 +42,16 @@
 ## 2. Phases
 
 Each phase is one branch and one PR, leaves the workspace green, and has its own exit line.
+
+### 2a. Phase 0 — measurements (days, on the code that exists)
+
+| Measurement | How | What it decides |
+|---|---|---|
+| **Does body resolution reach the signal?** | the walker and a cuboid at 8, 4, 2, 1 cm pitch, passing 0.5–3 m from a tower; difference each from the finest | if the change is far under shot noise (250 µrad–1 mrad) at every range that occurs, fine bodies are for contact and the viewer, and phases B–C drop in priority behind D–E |
+| **The differenced bound.** | derive the truncation bound on the upper-minus-lower, IFO-minus-IFO phase (one or two more powers of `Δ/r` than §2 of the design); test it is a bound on random nodes | whether a reference-grade walk opens to the leaves or stops early; and what `theta` is safe for `Lod::Distance` |
+| **Quadrature convergence.** | anchors and a fast close pass against node count, Simpson vs Gauss–Legendre per half-flight | whether M16-R7's faster phase model is worth building — a saving that multiplies everything else |
+
+Write the three results into `design/voxel.md` §2 and §13 before starting phase B.
 
 | Phase | Delivers | Requirements | Exit |
 |---|---|---|---|
@@ -122,6 +134,10 @@ while node ← pop:
 | unit | `walk_error_is_within_tol` | phase by walk vs all-leaves sum, for three tolerances, three ranges, tilted tower | ≤ `tol` |
 | unit | `walk_with_zero_tol_is_the_exact_sum` | identical to the flat sum up to summation order | ≤1e-13 rel |
 | unit | `no_steps_in_time` | body translating at 1 mm per sample past a tower: second difference of the phase has no jump above `tol` | ≤ `tol` |
+| unit | `lod_conserves_mass_and_com` | any cut: total mass and centre of mass equal the leaves' | ≤1e-14 rel |
+| unit | `lod_distance_has_no_steps` | body translating past a tower under `Distance`: first and second differences of the phase show no jump beyond the smooth trend | ≤1e-9 rad |
+| unit | `lod_fixed_cut_never_changes` | static source: identical accepted node set at every measurement | exact |
+| unit | `lod_exact_equals_tol_zero` | `Exact` ≡ `Bounded{0}` ≡ the flat sum | ≤1e-13 rel |
 | unit | `bone_trees_equal_parcels` | walker: per-bone trees + blend parcels vs flat parcel sum, several poses | ≤ `tol` |
 | unit | `bone_partition_conserves_mass` | Σ over bone trees and blend parcels = rest mass | **exact** |
 | unit | `hierarchical_response_equals_dense` | `W` on the cut vs dense `W`, random mass frames at the plume's amplitude | ≤ `tol` |
@@ -170,7 +186,7 @@ R1 → `morton_*`, `build_is_deterministic`, `sidecar_*` · R2 → `tree_expands
 `moments_match_direct_sums` · R6 → `point_tree_equals_the_spine_sum`, `tree_body_through_generate`, `tree_vs_point_lattice_differs_as_h4`,
 `bundle_hash` · R7 → `bone_*` · R8 → `hierarchical_response_*`, `response_cut_is_fixed` · R9 →
 `tree_stamp_volume_and_area` · R10 → `distance_sidecar_*`, `box_rests_on_box_exactly`,
-`stack_of_three_sleeps`, `voxel_contact_matches_analytic_pairs` · R11 → `fine_body_speed` · R12 → `no_production_flat_paths`, the M12 suite.
+`stack_of_three_sleeps`, `voxel_contact_matches_analytic_pairs` · R16 → `lod_*` · R0 → the three results recorded in `design/voxel.md` · R11 → `fine_body_speed` · R12 → `no_production_flat_paths`, the M12 suite.
 
 ## 7. Not in this milestone
 

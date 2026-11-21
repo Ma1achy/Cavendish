@@ -176,6 +176,10 @@ the Python suite, the GPU-marked tests on a real device; re-run `bundle_hash` ag
 
 `milestones/M14-voxel-engine.md`, `design/voxel.md` §0. In order:
 
+0. **Phase 0 — three measurements on the existing code** (does body resolution reach the signal; the
+   differenced error bound; quadrature convergence). Days, not weeks, and they set the priority of
+   what follows.
+
 1. **Phases A–C** — the tree, the top-down voxeliser, the lossless merge with the cube series, and the
    tolerance-bounded walk, on the CPU in `f64`.
 2. **Phases D–E — rebase M12 onto it.** Bodies become trees (one per rigid body, one per bone, joint
@@ -249,6 +253,17 @@ per-bone trees and the hierarchical grid response are M14 phases D–E.
 M14 phases G–H, `design/voxel.md` §9: the air on a balanced octree refined where a tower can see it,
 with the uniform solver as its oracle; then free-surface liquids with two-way coupling. Phase G's
 four defences against spurious currents are exit conditions, not aspirations.
+
+### Step 5c — Trust (start now, in parallel with everything)
+
+`milestones/M16-trust.md`: the moving-ball oracle that ties the fluid path to the v1 spine, the error
+ledger, metamorphic tests, the test-count floor in CI, dataset manifests, real-device runners.
+
+### Step 5d — The site and a baseline
+
+`milestones/M17-site-and-baseline.md`: the Beecroft stairwell scene and its populations from the
+collaboration's own noise paper, seismic Newtonian noise, and a non-learned tracker. Needs George's
+sign-off on the geometry the papers do not give.
 
 ### Step 6 — Gradar datasets
 
