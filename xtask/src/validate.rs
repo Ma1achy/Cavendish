@@ -123,7 +123,11 @@ pub fn scan_source(file: &str, text: &str) -> Vec<Declared> {
     found
 }
 
-/// Every case declared under `crates/`.
+/// Where cases are declared: the workspace's crates, and the oracle crate beside them (a
+/// workspace of its own, whose cases are run by a second nextest run).
+pub const CASE_ROOTS: [&str; 2] = ["crates", "oracle"];
+
+/// Every case declared under [`CASE_ROOTS`].
 fn scan(root: &Path) -> Result<Vec<Declared>, String> {
     fn walk(dir: &Path, root: &Path, out: &mut Vec<Declared>) -> Result<(), String> {
         let entries = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -141,7 +145,9 @@ fn scan(root: &Path) -> Result<Vec<Declared>, String> {
         Ok(())
     }
     let mut out = Vec::new();
-    walk(&root.join("crates"), root, &mut out)?;
+    for directory in CASE_ROOTS {
+        walk(&root.join(directory), root, &mut out)?;
+    }
     Ok(out)
 }
 
@@ -654,6 +660,11 @@ pub fn run(root: &Path, report: bool, against: Against<'_>) -> Result<(), String
     tests.env("CAV_VALIDATION_DIR", &records_dir);
     // A failing case is a row in the report, so a failed run is not the end: collate first.
     let ran = step("validation cases", tests);
+    // The oracle crate's cases (v1 at v1-final, George's scripts) record into the same directory.
+    let mut oracle =
+        cargo(root, &[&crate::tiers::ORACLE_NEXTEST[..], &["--no-fail-fast", "-E", FILTER]].concat());
+    oracle.env("CAV_VALIDATION_DIR", &records_dir);
+    let ran = ran.and(step("validation cases of the oracle crate", oracle));
 
     let mut records = Vec::new();
     let entries = std::fs::read_dir(&records_dir).map_err(|e| format!("{}: {e}", records_dir.display()))?;
@@ -778,6 +789,23 @@ mod tests {
         // Control: a declaration with its tolerance taken out is seen to lack one.
         let without = SOURCE.replace("        tolerance: 1e-9,\n", "");
         assert!(!scan_source("f.rs", &without)[0].has_tolerance);
+    }
+
+    #[test]
+    fn the_scan_reads_the_oracle_crate() {
+        // The oracle crate is outside the workspace; its cases must still be rows of the report.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let declared = scan(root).unwrap();
+        let under = |directory: &str| declared.iter().filter(|c| c.at.starts_with(directory)).count();
+        assert!(under("crates/") >= 11, "the workspace has its cases: {}", under("crates/"));
+        assert!(under("oracle/") >= 4, "the v1 tie is declared in the oracle crate: {}", under("oracle/"));
+        assert!(
+            declared
+                .iter()
+                .any(|c| c.name == "oracle.v1_oscillation" && c.at.starts_with("oracle/tests/v1.rs"))
+        );
+        // Control: every declaration is under one of the two roots, and under no other.
+        assert_eq!(under("crates/") + under("oracle/"), declared.len());
     }
 
     #[test]

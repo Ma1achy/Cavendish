@@ -1,0 +1,34 @@
+[package]
+name = "oracle"
+description = "Cavendish's oracle tier: v1's forward model at tag v1-final and George's scripts as fixtures. Test-only."
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+# A workspace of its own, on purpose: the main workspace never resolves, fetches or compiles v1.
+# Only `cargo xtask oracle` and `cargo xtask validate` build this crate (REBUILD §3.1).
+[workspace]
+
+[dependencies]
+cav-validate = { path = "../crates/cav-validate" }
+
+# v1's forward model, pinned to the commit the tag `v1-final` names (a tag can be moved; a commit
+# cannot). `instrument` brings `gravity`, `source`, `shape` and `math` with it.
+[dev-dependencies]
+cav-core = { path = "../crates/cav-core" }
+instrument = { git = "https://github.com/Ma1achy/Cavendish.git", rev = "56df4ab2126dce30fa0f26cb9321885511a105cc" }
+gravity = { git = "https://github.com/Ma1achy/Cavendish.git", rev = "56df4ab2126dce30fa0f26cb9321885511a105cc" }
+source = { git = "https://github.com/Ma1achy/Cavendish.git", rev = "56df4ab2126dce30fa0f26cb9321885511a105cc" }
+math = { git = "https://github.com/Ma1achy/Cavendish.git", rev = "56df4ab2126dce30fa0f26cb9321885511a105cc" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+# The oracle's sums are long: optimise the tests and everything they call.
+[profile.dev]
+opt-level = 3
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

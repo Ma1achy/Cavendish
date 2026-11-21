@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "xtask"]
+exclude = ["oracle"] # its own workspace: v1 at v1-final is compiled only by `cargo xtask oracle`
 
 [workspace.package]
 version = "0.0.0"
