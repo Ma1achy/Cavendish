@@ -59,7 +59,8 @@ M15 timing + scene spec │  planned, parallel to M14: towers on their own clock
 M13 scene viewer        │  then: draws the tree and the replay built from it; full interface on the spec
 M16 trust               │  alongside, from now: fluid-to-phase oracles, an error ledger in every bundle,
                         │  metamorphic tests, dataset manifests, real-device CI
-M17 site + baseline    ─┘  after M15: the stairwell scene and its populations, seismic noise, a non-learned tracker
+M17 site + baseline     │  after M15: the stairwell scene and its populations, seismic noise, a non-learned tracker
+M18 scene library      ─┘  after M15, growing with M14: standard shapes to buildings, traffic, aircraft, water
 Mref reference port        (a THREAD: each of George's 13 cases lands with the milestone it
                             validates — M1/M2 geometry, M5 ULDM/lift, M6 schedules/spectra)
 ```
@@ -526,6 +527,17 @@ tracker that needs no training to measure Gradar against.
 
 ---
 
+## M18 — The scene library
+
+**Goal.** A catalogue of ready scenes as spec files — points, spheres, tubes, pyramids and the
+Platonic solids; people in rooms and buildings; cars, aircraft, birds, drones; boats, rivers and
+waterfalls — each runnable from the GUI, the console and Python, each tested, each honest about what
+is physical and what is a stand-in.
+
+**Exit.** Brief: `milestones/M18-scene-library.md`. **Planned — not built.**
+
+---
+
 ## What follows
 
 `milestones/V2-HANDOFF.md` carries the state of the v2 branch and the ordered remainder: GPU execution
@@ -537,7 +549,7 @@ Python surface for scenes, further physics, and the Gradar datasets.
 ## The implementation briefs
 
 Each milestone above has a **self-contained implementation brief** in `milestones/`
-(`M0-scaffolding.md` … `M17-site-and-baseline.md`): requirements traced to tests, the design and its
+(`M0-scaffolding.md` … `M18-scene-library.md`): requirements traced to tests, the design and its
 diagrams, the governing equations, pseudocode for the core algorithms, unit/integration/e2e tests
 with concrete tolerances, and the exit table. A Claude Code session is pointed at one brief (plus
 the relevant `design/*.md` and the spec) and works it to green. The cross-cutting `reference-port.md` brief

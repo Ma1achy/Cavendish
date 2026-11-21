@@ -265,6 +265,12 @@ ledger, metamorphic tests, the test-count floor in CI, dataset manifests, real-d
 collaboration's own noise paper, seismic Newtonian noise, and a non-learned tracker. Needs George's
 sign-off on the geometry the papers do not give.
 
+### Step 5e — The scene library
+
+`milestones/M18-scene-library.md`: standard shapes first, then rigid outdoor scenes (traffic, aircraft,
+birds, drones), boats with the displaced-volume device, rooms with contact, and the water scenes once
+liquids exist. Scenes waiting on an engine phase are listed with it, not faked.
+
 ### Step 6 — Gradar datasets
 
 Multi-target scenes, unknown mass, non-straight paths, realistic schedules and noise stacks; the
