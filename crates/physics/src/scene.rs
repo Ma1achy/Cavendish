@@ -377,6 +377,7 @@ mod tests {
             let area =
                 fluid.film_rate.iter().sum::<f64>() / h_over_rho_cp * room.grid.cell_volume();
             let want = 4.0 * std::f64::consts::PI * r * r;
+            eprintln!("immersed area r={r} h={h}: {area:.3} m² (true {want:.3})");
             assert!(
                 (area - want).abs() / want <= tol,
                 "r={r}, h={h}: area {area:.3} vs {want:.3} m²"

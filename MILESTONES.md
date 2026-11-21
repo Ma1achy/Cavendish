@@ -50,6 +50,9 @@ M7  sdk (python/torch)     (usable from the intended workflow)
 M8  analysis (CRB)     ─┐  (independent of each other; either order after M6)
 M9  viewer             ─┘
 M10 mesh import            (off the critical path; any time after M2)
+M11 world seam         ─┐  v2: one source seam (a scene is a list of sources of any kind);
+M12 physics layer       │  parcel bodies, rigid dynamics, convecting air — CPU. Implemented.
+M13 scene viewer       ─┘  planned: continuous-time replay, the air as a volume, the response map
 Mref reference port        (a THREAD: each of George's 13 cases lands with the milestone it
                             validates — M1/M2 geometry, M5 ULDM/lift, M6 schedules/spectra)
 ```
@@ -69,12 +72,13 @@ cavendish/
 │   ├── math/  config/                         # L0
 │   ├── gravity/  reference/                   # L1  (reference = George's cases, oracle)
 │   ├── shape/ compute/ source/ instrument/ uldm/ noise/   # L2
+│   ├── world/ physics/                        # L2  (v2: the source seam; the scene simulator)
 │   ├── scenario/ state/                       # L3
 │   ├── generate/ analysis/                    # L4
 │   └── sdk/ viewer/                           # L5
 ├── python/                    # SDK Python package + pytest
 ├── cavendish-spec/            # cavendish.tex (the authoritative spec)
-├── .devcontainer/  .github/workflows/  .gitignore
+├── .github/workflows/  .gitignore            # (the M0 dev container was removed: run natively)
 └── DESIGN.md  MILESTONES.md  design/*.md
 ```
 
@@ -406,10 +410,65 @@ dictionary caches.
 
 ---
 
+## M11 — The world seam
+
+**Goal.** One source seam. A scene is a list of `WorldSource`s; the rigid body is one implementation
+and keeps its amortised evaluation; the forward-model spine is not edited.
+
+**Builds.** The `world` crate (`WorldSource`, `Eval`, `Channel`, `Track`, `Rigid`, `Ambient`);
+`Scenario` over a list of sources; `generate::run` routing by channel and socket; `generate::batch`
+and `write_dataset`.
+
+**Exit.** Twenty-four v1 scenes serialise **byte-for-byte** as on `main`
+(`generate/examples/bundle_hash.rs`); the spine crates have an empty diff; sources superpose (≤1e-12);
+a mixed scene decomposes exactly (≤1e-10). Brief: `milestones/M11-world-seam.md`. **Implemented.**
+
+---
+
+## M12 — The physics layer
+
+**Goal.** Mass that is not one prescribed rigid body — articulated and deforming bodies, bodies that
+fall and collide, vibrating structure, convecting air — entering through the M11 seam, each layer
+checked against its own physics.
+
+**Builds.** The `physics` crate: the cube cell kernel; the world grid, cloud-in-cell deposition and
+`GridField` with its linear-response evaluation; the Boussinesq fluid and the equation-of-state
+density read; `Parcels` (rigid / skinned / displaced), `Walker`, `Plate`; rigid dynamics with impulse
+contact, sleep and recorded tracks; `simulate_air` (one-way coupling).
+
+**Exit.** Grid fast path equals the propagation integral (≤1e-9); heated-cavity Nusselt numbers within
+2% of de Vahl Davis; a static temperature anomaly gravitates (the Boussinesq guard); parcel mass
+conserved bit-for-bit and the rigid case equal to v1 (≤1e-11); a settled body's pose bit-constant;
+dynamics → air → forward model runs end to end. Brief: `milestones/M12-physics.md`.
+**Implemented on the CPU**; GPU execution is not part of it.
+
+---
+
+## M13 — The scene viewer
+
+**Goal.** Make a v2 scene legible: bodies animating in continuous time, the air as a slice and a
+volume, what each gradiometer is listening to, and the signal split by channel under one cursor.
+
+**Builds.** A scene replay (world clouds and air frames on a playback axis, beside the unchanged
+`StateBundle`); one continuous clock; slice, glyph and ray-marched volume passes; the detector response
+map; background runs; a predicted-track overlay. Still `egui` + `wgpu`.
+
+**Exit.** Brief: `milestones/M13-viewer-v2.md`. **Planned — not built.**
+
+---
+
+## What follows
+
+`milestones/V2-HANDOFF.md` carries the state of the v2 branch and the ordered remainder: GPU execution
+of the fluid and of non-rigid sources (with float-float accumulation where f32 is not enough), the
+Python surface for scenes, further physics, and the Gradar datasets.
+
+---
+
 ## The implementation briefs
 
 Each milestone above has a **self-contained implementation brief** in `milestones/`
-(`M0-scaffolding.md` … `M10-mesh-import.md`): requirements traced to tests, the design and its
+(`M0-scaffolding.md` … `M13-viewer-v2.md`): requirements traced to tests, the design and its
 diagrams, the governing equations, pseudocode for the core algorithms, unit/integration/e2e tests
 with concrete tolerances, and the exit table. A Claude Code session is pointed at one brief (plus
 the relevant `design/*.md` and the spec) and works it to green. The cross-cutting `reference-port.md` brief

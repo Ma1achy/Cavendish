@@ -28,6 +28,7 @@ L5  interfaces     sdk (PyO3: run/stream/view)        viewer (egui/wgpu)
 L4  execution       generate  (orchestration: run/stream; batch dispatch)
 L3  assembly        scenario (Scenario, Prior, Schedule)   state (StateBundle, analysis)
 L2  domain          shape   source   instrument   uldm   noise      compute (backends)
+                    world (the source seam)   physics (the scene simulator)
 L1  kernel          gravity  reference   (Cloud, elements, potential/field/tensor, oracle; reference = independent oracle)
 L0  foundation      math (vectors, quaternions, Isometry, Scalar trait)   config (schema, Prior)
 ```
@@ -42,7 +43,11 @@ Dependency edges (each points *up*):
 - `shape → gravity, math` (produces `Cloud`; mesh parsers feature-gated);
 - `source → shape, gravity, math`; `instrument → gravity, source, math`; `uldm → math`;
   `noise → gravity, math`
-- `scenario → source, instrument, uldm, noise, config`; `state → math`
+- `world → gravity, source, instrument, math` (the generalised source seam; `design/world.md`)
+- `physics → world, instrument, source, shape, gravity, math` (the scene simulator;
+  `design/physics.md`) — same-layer edges, as `instrument → source` already is; nothing in the
+  forward-model spine depends on either
+- `scenario → world, source, instrument, uldm, noise, config`; `state → math`
 - `generate → scenario, instrument, gravity, compute, state, noise, uldm`
 - `sdk → generate, scenario, config, state`; `viewer → generate, state, gravity`
 
@@ -66,16 +71,18 @@ the owner to name the type.
   body discretises to. A `CloudView` is a borrowed slice for zero-copy world-frame evaluation.
 - **`Isometry3` / `BodyMotion`** *[math]* — a rigid pose (rotation+translation) and the
   twist/acceleration (linear+angular) reported per tick.
-- **`Source`** *[source]* — a `dyn SourceDynamics` plus identity/label; the unit summed into a
-  scene (gravity is linear, so a scene is a `Vec<Source>`).
+- **`Source`** *[source]* — a `dyn SourceDynamics` plus identity/label; a rigid body.
+- **`WorldSource`** *[world]* — anything massive, behind one trait; the unit summed into a scene
+  (gravity is linear, so a scene is a `Vec<Box<dyn WorldSource>>`). A rigid `Source` is one
+  implementation (`world::Rigid`); parcel bodies and grid fields are others (`physics`).
 - **`Detector` / `Scene`** *[instrument]* — a `Detector` is one gradiometer: geometry (`Δr`,
   baseline, arms) at a ground `Placement`. A `Scene` is the array `Vec<Detector>` (`N=1` = single
   device). *(Disambiguation: "scene of sources" vs the detector `Scene` — name the latter
   `DetectorArray` to avoid the clash; resolved in §7.)*
 - **`Schedule`** *[scenario]* — the realised measurement times `{t_ℓ}` (non-uniform) plus the
   contamination mask.
-- **`Scenario`** *[scenario]* — the fully-specified runnable unit: sources, detector array, ULDM
-  config, noise stack, schedule, requested field set.
+- **`Scenario`** *[scenario]* — the fully-specified runnable unit: its sources (a list of
+  `WorldSource`), detector array, ULDM config, noise stack, schedule, requested field set.
 - **`EvalBatch` / `SignalBatch`** *[compute]* — the compute boundary. `EvalBatch` carries
   *parameters, not poses* (spec §3.4): the body clouds (uploaded once per template), per-scenario
   trajectory parameters, detector placements, RNG keys, schedule times. `SignalBatch` is
@@ -89,7 +96,9 @@ the owner to name the type.
 ## 3. The seams (the contracts between subsystems)
 
 Four load-bearing traits plus one data contract. These are the *only* abstraction points; the
-spec's four seams map onto §3.1–§3.4, the data contract onto §3.5. Signatures illustrative.
+spec's four seams map onto §3.1–§3.4, the data contract onto §3.5. Signatures illustrative. The
+source seam (§3.1) has since been generalised: `WorldSource` (§3.1a) is the seam a scene is built
+from, and `SourceDynamics` is the contract of its rigid implementation.
 
 ### 3.1 `SourceDynamics` — the source seam
 ```rust
@@ -116,6 +125,29 @@ while **`FreeRotation`** (the torque-free Euler top) is the *second* ODE motion 
 `Scalar`, §5; explicitly **not** a physics-engine dependency). `FreeRotation` needs no extra
 parameters on the seam: its principal moments come from `body_cloud`'s `Inertia` reduction
 (`design/gravity.md` §6), so only the initial angular velocity is per-scenario.
+
+### 3.1a `WorldSource` — the source seam, generalised
+```rust
+/// Anything massive in the world. The general case is a world-frame mass distribution that varies
+/// with time; the rigid body is one implementation and keeps its amortised evaluation.
+pub trait WorldSource {
+    /// Which socket of the phase integral this source plugs into: Rigid(&dyn SourceDynamics)
+    /// (body-frame, inverse pose) or Field(&dyn FieldContribution<f64>) (world-frame, at (p, t)).
+    fn eval(&self) -> Eval<'_>;
+    /// The world-frame mass at t — the general representation.
+    fn world_cloud_at(&self, t: f64) -> Cloud;
+    fn channel(&self) -> Channel { Channel::Target }           // Target | Ambient
+    fn track_at(&self, t: f64) -> Option<Track> { None }       // on the bundle's S axis iff Some
+    fn body_cloud(&self) -> Option<&Cloud> { None }
+    /// An exact, cheaper reformulation of the two single-IFO propagation phases, if there is one.
+    fn per_ifo_fast(&self, cfg: &InstrumentConfig, det: &Detector, t: f64) -> Option<[f64; 2]> { None }
+}
+```
+This is the growth point §3.1 names, built (`design/world.md`). The decision it encodes: **one
+representation of a source, with the rigid amortisation kept as an implementation detail** — not a
+second kind of source, and not a second backend. `generate` routes on `eval()`; `gravity` and
+`instrument` are unchanged and every v1 scene is byte-identical. Implementations live in `world`
+(`Rigid`, `Ambient`) and `physics` (`Parcels`, `GridField`, and `RecordedRigid` via `Rigid`).
 
 ### 3.2 `PhaseModel` — the forward-model seam
 ```rust
@@ -232,6 +264,8 @@ The drill-down fills each into a full section (types, internal structure, invari
 | `instrument` | **`PhaseModel`**; `Detector`, `DetectorArray`, arms | sources, det, t → `ΔΦ` | double-difference internal; `N=1` = single device |
 | `uldm` | closed-form `ΔΦ_φ(t)` | t → phase | identical across the array (common-mode) |
 | `noise` | **`NoiseSource`** stack; shot/vibration/atmospheric | t, scene, signal → signal′ | seeded/deterministic; additive after validation |
+| `world` | **`WorldSource`**; `Eval`, `Channel`, `Track`; `Rigid`, `Ambient` | sources → the forward model's sockets | rigid fast path ≡ world cloud; v1 scenes byte-identical; spine unedited (`design/world.md`) |
+| `physics` | cube cell kernel; world grid + `GridField`; Boussinesq fluid; parcel bodies; rigid dynamics + contact; coupled room | scene description → `WorldSource`s | mass conserved by construction; density from the equation of state; settled bodies exactly at rest; each layer checked against its own physics (`design/physics.md`) |
 | `scenario` | `Scenario`, `Schedule`, optional `Prior` | `Scenario` → run; (`Prior` → `Scenario`) | `Scenario`→bundle is the contract; `Prior` is optional batch sugar; schedule default = uniform |
 | `state` | `StateBundle`; analysis (LS, CRB) | filled by `generate` | field selection; shapes per `tab:bundle` |
 | `generate` | run/stream; batch dispatch | `Scenario` → `StateBundle` | reference ≡ batch to tol; chooses backend |
@@ -253,7 +287,8 @@ The drill-down fills each into a full section (types, internal structure, invari
   the fast path; the integral is the reference. **Resolved:** a per-run `InstrumentConfig` flag,
   default `PropagationIntegral` (`design/instrument.md` §7).
 - **Name clash `Scene`.** Detector array vs "scene of sources." **Resolved:** `DetectorArray` for
-  the instrument side, `Vec<Source>` (no wrapper) for sources (`design/instrument.md` §3).
+  the instrument side, a plain list of sources (no wrapper) — since M11 a
+  `Vec<Box<dyn WorldSource>>` (`design/instrument.md` §3, `design/world.md`).
 - **GPU ODE motions.** The one sequential-in-time axis (now *two* motions — the pendulum's timing
   and free rotation's orientation, sharing one integrator) lives in the backend; how `EvalBatch`
   encodes "integrate these trajectory params on-device" cleanly is a `compute` drill-down item.
@@ -294,6 +329,9 @@ Each drill-down is its own file under `design/<subsystem>.md`.
    → **`design/state.md` (done; CRB split into a sibling `analysis` crate, §7)**
 8. **`generate` → `sdk` → `viewer`** — orchestration and the interfaces.
    → **`design/generate.md`, `design/sdk.md`, `design/viewer.md` (all done)**
+
+9. **`world` → `physics`** — the generalised source seam and the scene simulator (v2).
+   → **`design/world.md`, `design/physics.md` (done; implemented M11–M12)**
 
 **Bottom-up drill-down phase complete.** All subsystems designed: `gravity`, `compute`, `shape`
 (`design/shape.md` — geometry → mass, added after the phase closed), `source`, `instrument`,

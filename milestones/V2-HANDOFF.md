@@ -123,11 +123,14 @@ Neither figure is validated against measurement.
 **Nothing new runs on the GPU.** No float-float kernel was written. The fluid solver, parcel bodies
 and grid fields are CPU-only; `compute::EvalBatch` and `forward.wgsl` do not know about `WorldSource`.
 
-**Docs are not synced.** The new crates' module headers cite `design/world.md`, `design/physics.md`,
-`milestones/M11-world-seam.md` and `milestones/M12-physics.md` — **none of these files exist.**
-`DESIGN.md` (layer table, seams), `MILESTONES.md`, the spec (`cavendish.tex`) and the conventions
-skill (still says "sixteen crates", "four seams") are all stale. By the repo's own doc-sync rule the
-branch is not mergeable until this is fixed.
+**Docs.** Written after the code and synced in one change: `design/world.md`, `design/physics.md`,
+the retroactive briefs `milestones/M11-world-seam.md` and `M12-physics.md`, the viewer plan
+`milestones/M13-viewer-v2.md`, `DESIGN.md` (§1 layering, §2, §3.1a, §6), `MILESTONES.md`, the README,
+the conventions skill, `design/{generate,scenario,state,viewer}.md`, and the spec (scope, crate map,
+seams, a `WorldSource` contract, and a new appendix subsection on what was built). The spec compiles
+clean (`latexmk` exit 0, no undefined references, no overfull boxes). Not touched:
+`design/compute.md` and `design/sdk.md`, because nothing in those crates changed — which is itself the
+gap listed next.
 
 **Not exposed or not checked:**
 - Python SDK: multi-source scenes and physics are Rust-only. The Python tests were not run.
@@ -159,16 +162,12 @@ branch is not mergeable until this is fixed.
 Each step is one branch and one PR per the milestone workflow. Write the brief (requirements traced to
 named tests, exact tolerances, exit table) before the code.
 
-### Step 1 — Doc-sync and the missing briefs (blocks merging the branch)
+### Step 1 — Review and merge the branch
 
-Write `design/world.md`, `design/physics.md`, `milestones/M11-world-seam.md`,
-`milestones/M12-physics.md` retroactively from the code and section 2; update `DESIGN.md` (crate
-table, layering edges for `world` and `physics`, the source seam), `MILESTONES.md`, the spec, the
-README crate table and the conventions skill. Decide and record whether `WorldSource` replaces
-`SourceDynamics` as "the source seam" in the docs (recommended: yes, with `SourceDynamics` described as
-the rigid implementation's contract).
-**Exit:** every path cited in a `//!` header exists; spec builds clean; `bundle_hash` still identical
-to `main`; CI green including `clippy --all-features` and the Python job.
+The design docs and briefs now exist (above). What remains before a PR into `main`: read them against
+the code; run what could not be run here — `cargo clippy --workspace --all-targets --all-features`,
+the Python suite, the GPU-marked tests on a real device; re-run `bundle_hash` against `main`.
+**Exit:** CI green on the PR, including the GPU and Python jobs.
 
 ### Step 2 — GPU: the fluid solve
 
@@ -192,6 +191,13 @@ the 2080 (Vulkan), not on a software adapter.
   `ComputeBackend`.
 **Exit:** CPU≡GPU ≤1e-4 in f32 and ≤1e-9 where float-float is used, on the anchors and on
 `tests/world.rs` scenes, **on both real devices**.
+
+### Step 3b — The scene viewer (independent of steps 2–3)
+
+`milestones/M13-viewer-v2.md`: a scene replay beside the bundle, one continuous clock, the air as a
+slice and a ray-marched volume, each detector's response map, the decomposition panel, background runs
+and a predicted-track overlay — on the existing `egui` + `wgpu` stack. Phases A, B and E make it
+useful; C and D make it good.
 
 ### Step 4 — SDK
 

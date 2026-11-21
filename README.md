@@ -171,6 +171,7 @@ batches — reproducible from a single seed.
 | --- | --- |
 | `crates/math`, `crates/config` | **L0** — the `Scalar`/`Dual` autodiff foundation, vectors, quaternions, `Isometry3`; the typed config schema and `Prior`. |
 | `crates/gravity`, `crates/reference` | **L1** — the differential-first kernel (`Cloud`, potential/field/gradient, analytic oracle); the independent reference oracle (George's cases by quadrature). |
+| `crates/world`, `crates/physics` | **L2** — the unified source seam (`WorldSource`: anything massive, the rigid body one implementation); the scene simulator (parcel bodies, rigid dynamics and contact, Boussinesq air, the grid mass field). |
 | `crates/shape` `compute` `source` `instrument` `uldm` `noise` | **L2** — geometry→mass and mesh import; the CPU/GPU backends; source dynamics; the phase model; the ULDM line; the noise stack. |
 | `crates/scenario`, `crates/state` | **L3** — the runnable `Scenario`/`Schedule`/`Prior`; the `StateBundle` output contract. |
 | `crates/generate`, `crates/analysis` | **L4** — run/stream orchestration and batch dispatch; the Fisher/CRB analysis. |
@@ -189,7 +190,7 @@ The dependency edges *are* each crate's `[dependencies]`; a lower crate never na
 The design *is* the contract. Read top-down; lower documents defer to higher ones.
 
 - **`cavendish-spec/cavendish.tex`** — the authoritative specification (physics + requirements: the *what*).
-- **`DESIGN.md`** — the top-level engineering design (the *how*: layering, the four seams, the data contract).
+- **`DESIGN.md`** — the top-level engineering design (the *how*: layering, the seams, the data contract).
 - **`design/*.md`** — the per-subsystem drill-downs (types, the seam, exit requirements).
 - **`MILESTONES.md`** — the vertical-slice build plan (M0–M10 + the reference-port thread).
 - **`milestones/*.md`** — the per-milestone implementation briefs (requirements, equations, pseudocode, tests, exit).

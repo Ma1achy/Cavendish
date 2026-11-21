@@ -177,3 +177,33 @@ own exits, `generate`'s job is that the wiring, superposition, seeding, and batc
   correctness matter.
 - **Mid-stream failure policy.** Whether an `Err` item logs-and-continues, retries with a fresh
   sub-seed, or is configurable; how partial batches are reported.
+
+---
+
+## 13. Since M11 — scenes of many sources, `batch`, `write_dataset`
+
+`run` no longer reads one `scenario.source`; it routes `scenario.sources` (`design/world.md` §6):
+each source goes to the targets or ambient group by `channel()`, and within a group to the phase
+integral's rigid list, its field list, or — for a source that offers `per_ifo_fast` while the
+propagation integral is the phase model — a fast list whose double-differences are added to the
+result. The analytic atmospheric field heads the ambient field list. §2's conductor sequence and §4's
+decomposition are otherwise as written: the targets pass and the ambient pass superpose exactly, and
+`signal_atmospheric` now means *everything ambient* (the analytic atmosphere plus ambient sources such
+as simulated air or a swaying wall). The bundle's `S` axis carries every source that reports a track
+and a body cloud. A v1 scene takes the identical code path with identical arguments and yields a
+byte-identical bundle (`examples/bundle_hash.rs`).
+
+Two additions to §6:
+
+- **`batch(n, root, build)`** runs `n` scenes built by `build(i, scenario_key(root, i))` across the
+  available cores and returns the bundles in index order. Unlike `stream` the scenes need not come
+  from a `Prior` — `build` may assemble anything, including a physics simulation. Each scene is built
+  and run on one thread and depends only on its key, so the result is the same for any thread count
+  and a `Scenario` need not be `Send`.
+- **`write_dataset(dir, bundles)`** stacks same-shaped bundles as `.npy` arrays with a leading batch
+  axis (`signal`, `signal_noise`, `time`, `source_position`, `source_velocity`, `detector_placement`,
+  and the channels and masses where present). It writes the record, not a task: which arrays are
+  inputs and which are targets remains the consumer's choice (§1 of `design/state.md`).
+
+Neither goes through `ComputeBackend` yet; non-rigid sources have no `EvalBatch` encoding
+(`design/world.md` §10).

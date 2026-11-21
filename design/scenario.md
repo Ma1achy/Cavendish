@@ -172,3 +172,15 @@ conditional — the sugar is correct when present, and simply absent when not.
   realism parameter set against how the front-end is meant to be stressed.
 - **Array variation.** When the array is swept, whether from a distribution or actively optimised
   against the CRB (the latter couples generation to the analysis in `state`).
+
+---
+
+## Since M11 — a scene is a list of sources
+
+`Scenario.source: Box<dyn SourceDynamics>` is now `Scenario.sources: Vec<Box<dyn WorldSource>>`
+(`design/world.md`). `Scenario::new(source, array, schedule, seed)` is unchanged for a single rigid
+source — it wraps the source in `world::Rigid` — and `Scenario::scene(sources, …)` /
+`.with_source(…)` assemble general scenes: several targets, articulated or simulated bodies, ambient
+structure, simulated air. Order fixes the bundle's source axis and nothing else. `Prior` is unchanged
+and still samples single-rigid-source scenes; richer scenes are built directly or through
+`generate::batch`.

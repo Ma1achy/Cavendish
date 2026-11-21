@@ -132,3 +132,24 @@ an empty scene. It fails soft, because its whole value is being on when somethin
   steps discretely at the true cadence.
 - **Scenario editing.** How much scenario construction lives in the UI vs loading a config file
   authored elsewhere.
+
+---
+
+## 10. Planned: the scene viewer (M13)
+
+Everything above draws a `StateBundle`, which is the right contract for a rigid scene and cannot show
+a v2 one (`design/world.md`, `design/physics.md`): a bundle poses a *rest* cloud by a track, so an
+articulated figure's limbs would never move; it is sampled at measurement times, not continuously; and
+the air is not in it. `milestones/M13-viewer-v2.md` plans the extension:
+
+- a **scene replay** — per-source world clouds on a continuous playback axis, optional air frames, plus
+  the bundle — recorded live from a `Scenario` or loaded from a file; a viewing artefact owned by
+  `viewer`, leaving the `StateBundle` contract untouched;
+- **one continuous clock** driving the 3-D scene, the timeline (measurement ticks, the flight window
+  `[t − 2T, t]`) and the signal cursor;
+- the **air** as a slice plane, velocity glyphs and a ray-marched volume; the **response map** of a
+  detector (the phase per unit mass in each cell); the **channel decomposition** panel; background
+  runs; a predicted-track overlay.
+
+The toolkit is unchanged — `egui`/`eframe` over the shared `wgpu` — and the M9 spines (coherence,
+failing soft, pure modules tested headlessly) carry over. Not built.

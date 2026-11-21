@@ -225,9 +225,19 @@ native \texttt{egui}/\texttt{wgpu} debug viewer.
 signal, the time-resolved track labels, the Lomb--Scargle periodogram; optional frozen cache.
 \end{itemize}
 
+\subsection{Version 2 additions (built)}
+\label{sec:v2scope}
+The first tranche of \Cref{sec:parked} is built (\Cref{sec:parked-built}): a general source
+seam under which a scene is a list of sources of any kind; articulated and deforming bodies
+as transported mass parcels; rigid-body dynamics with contact; plate vibration modes; and
+buoyant convection of room air with one-way coupling to the bodies in it. These run on the
+CPU. They are validated against analytic results and one published convection benchmark,
+\emph{not} against the reference oracle, which is silent on them.
+
 \subsection{Deferred (seams kept, not built)}
-Non-rigid source dynamics (articulated bodies, deforming bodies, compressible and
-incompressible fluids), structural vibration, airflow/convection (\Cref{sec:parked}); the
+GPU execution of the version-2 sources; compressible and free-surface fluids; two-way
+fluid--body coupling; open boundaries and ventilation; structural elastodynamics beyond
+prescribed plate modes (\Cref{sec:parked}); the
 learned Gradar tracker itself, which \emph{consumes} the stream (\Cref{sec:radar}); and the
 arbitrary-orientation interferometer (v1 arrays are horizontally separated \emph{vertical}
 gradiometers). The Fisher-information / Cram\'er--Rao floor on what the array can identify is
@@ -250,6 +260,8 @@ cavendish/
     reference/            # L1: independent oracle -- George's cases by direct quadrature (math only)
     shape/                # L2: geometry -> mass: primitives + voxeliser (Solid seam); mesh import (M10)
     source/               # L2: SourceDynamics; Trajectory library; rotation integrator; bodies via shape
+    world/                # L2: WorldSource -- the general source seam; Rigid and Ambient adaptors
+    physics/              # L2: scene simulator -- parcel bodies, rigid dynamics, Boussinesq air, grid field
     instrument/           # L2: detector array: gradiometer geometry, placements, arms; PhaseModel
     uldm/                 # L2: closed-form coherent dark-matter phase (common-mode signal)
     noise/                # L2: NoiseSource stack + atmospheric-GGN FieldContribution adaptor
@@ -273,7 +285,10 @@ Implemented by discretisation \emph{elements}, by the \emph{cloud} (element sum 
 multipole far-field), and by analytic \emph{oracle} primitives.
 
 \textbf{\texttt{SourceDynamics}} --- the mass configuration as a continuous function of
-time, \texttt{cloud\_at(t)}. \texttt{Rigid} specialises it as pose~$\otimes$~body-cloud.
+time, \texttt{cloud\_at(t)}. \texttt{Rigid} specialises it as pose~$\otimes$~body-cloud. In
+the implementation the general form is the trait \texttt{WorldSource}
+(\texttt{world\_cloud\_at(t)}), and \texttt{SourceDynamics} names the rigid specialisation's
+contract; a scene is a list of \texttt{WorldSource}s (\Cref{sec:parked-built}).
 
 \textbf{\texttt{PhaseModel}} --- turns source $+$ instrument into the differential phase at
 one measurement time. v1: the propagation integral.
@@ -1589,6 +1604,21 @@ $\texttt{cloud\_at}(t)=\texttt{pose\_at}(t)\otimes\texttt{source\_cloud}$ with
 fixed parameters.
 \end{contractbox}
 
+\begin{contractbox}{\texttt{WorldSource} (the general source)}
+\textbf{Methods.} \texttt{world\_cloud\_at(t)$\to$Cloud}; \texttt{eval()} --- which input of
+the phase integral the source uses (a rigid body, evaluated in its body frame through the
+inverse pose; or a world-frame field evaluated at $(\rv,t)$); \texttt{channel()} --- target
+or ambient; optionally a tracked frame and rest cloud, and an exact cheaper reformulation of
+the two single-interferometer phases.\\
+\textbf{Pre.} Queryable on $[t-2T,\,t]$ for every measurement time $t$. A source queried
+outside the span it is defined on fails; it does not extrapolate.\\
+\textbf{Post.} The phase obtained through \texttt{eval()} equals the phase of
+\texttt{world\_cloud\_at(t)} to the tolerance the implementation documents. Total mass
+conserved in time. A reformulated phase agrees with the propagation integral to rounding.\\
+\textbf{Invariant.} Pure in \texttt{t}. A scene of one rigid source produces the same
+\texttt{StateBundle}, bit for bit, as before the seam was generalised.
+\end{contractbox}
+
 \begin{contractbox}{\texttt{PhaseModel}}
 \textbf{Method.} \texttt{delta\_phi(src, instr, t)$\to$f64} --- $\Delta\Phi_\ell$ in radians.\\
 \textbf{Pre.} \texttt{src} queryable on $[t-2T,\,t]$; \texttt{instr} arms built.\\
@@ -1942,8 +1972,12 @@ released); Lomb--Scargle output.
 \item[M5 --- identifiability.] The Fisher / Cram\'er--Rao analysis (\Cref{sec:radar}): track
 covariance, quadrupole detectability and shape-class model selection (\Cref{sec:identif}), and
 multi-target resolvability via the differentiable forward model.
-\item[M6$+$ (parked).] The learned Gradar tracker; noise-realism depth; non-rigid dynamics
-(\Cref{sec:parked}).
+\item[Version 2 --- world seam $+$ physics layer.] The general source seam
+(\texttt{WorldSource}) and the scene simulator (\Cref{sec:parked-built}). \emph{Exit:}
+version-1 scenes bit-identical; the lattice-field phase equals the propagation integral;
+the convection benchmark reproduced; mass conserved exactly through deformation.
+\item[Parked.] The learned Gradar tracker; noise-realism depth; GPU execution of the
+version-2 sources; the remainder of \Cref{sec:parked}.
 \end{description}
 
 \section{Open Decisions and Risks}
@@ -2100,6 +2134,50 @@ Four small seams, none the phenomenon itself: (1)~\texttt{Composite} sources ---
 the scaffold anyway; (2)~a cloud that is grid-cells \emph{or} particles, so no solver backend
 is blocked by representation; (3)~\texttt{CachedField} reserved as the solver plug-point;
 (4)~a \texttt{Driver} hook for footfall$\to$modes coupling.
+
+\subsection{What was built (version 2)}
+\label{sec:parked-built}
+The sketch above is realised as follows. The gravity core, the forward model and the state
+contract are unchanged, as promised: the engine's forward-model crates are not edited and a
+version-1 scene yields a bit-identical bundle.
+
+\begin{description}[leftmargin=*,style=nextline]
+\item[The seam.] \texttt{WorldSource} is the general \texttt{cloud\_at(t)}; a scene is a
+list of them (the \texttt{Composite}); a rigid body is one implementation and keeps its
+body-frame evaluation. Sources carry a channel (target or ambient) for the decomposition.
+\item[\texttt{CachedField}.] A lattice of cells whose masses are stored as frames and
+interpolated linearly in time. Each cell is a homogeneous cube and uses the closed-form prism
+potential, finite inside the cell. Because neither the cells nor the detector move, the
+propagation integral of such a field is a fixed linear functional of the frames,
+\begin{equation}
+\delta\phi(t)=\sum_{j}\sum_{i} W_{ji}\,m_i^{(k_0+j)},\qquad
+W_{ji}=\frac{m_A}{\hbar}\sum_{n\to j} w_n\,\bigl[K(\mathbf p_u(\tau_n)-\xv_i)-K(\mathbf p_l(\tau_n)-\xv_i)\bigr],
+\label{eq:gridresponse}
+\end{equation}
+with $(\tau_n,w_n)$ the quadrature nodes of the propagation integral and $k_0$ the frame
+containing the start of the flight. $W$ is built once per detector; the result agrees with
+direct quadrature to rounding.
+\item[Prescribed (Category A).] A body is voxelised once at rest into parcels of fixed mass,
+and each parcel is carried by a map: one isometry (rigid), a skeleton's transforms blended
+by per-parcel weights that sum to one (articulated), or a displacement field (plate modes,
+$\omega_{mn}=\pi^2[(m/a)^2+(n/b)^2]\sqrt{D/\rho h}$). Mass is conserved identically because
+parcels are moved, never re-weighed; no Jacobian or renormalisation is involved.
+\item[Solved (Category B).] Rigid-body dynamics with impulse contact, recorded and replayed
+as a rigid source; and incompressible Boussinesq convection on a staggered grid. The
+gravitating density is \emph{not} the solver's (constant) working density but the equation of
+state, $\rho=p_0/R_sT$, taken as the anomaly $\rho(T)-\rho(T_0)$ about the ambient air.
+\item[\texttt{Driver} (one-way coupling).] Bodies are deposited onto the fluid lattice each
+step as moving no-slip obstacles and heat sources; the air does not act back. For air against
+solid bodies the density ratio is $\sim\!10^3$, so this is a physical approximation of the
+same order, not only a convenience.
+\end{description}
+
+\emph{Validation, as \Cref{sec:parked-val} foresaw.} The solved sources are checked against
+their own benchmarks: the differentially heated cavity of de~Vahl~Davis (mean Nusselt number
+within $2\%$ at $\mathrm{Ra}=10^3,10^4$ on a $32^2$ grid), exact ballistic flight, conserved
+angular momentum, and bit-constant rest. At room scale ($\mathrm{Ra}\sim10^9$) the
+convection is under-resolved and carries no turbulence model: it is plausible, and it is
+not validated against measurement.
 
 \section{Nomenclature}
 \label{sec:nomenclature}

@@ -229,3 +229,13 @@ running the forward model. (The CRB's exit lives with `analysis`.)
   the count convention the consumer reads.
 - **Backing array type.** `ndarray` vs a thin own type for the tensors, and the cheapest hand-off to
   torch in `sdk` (zero-copy where the dtype/​layout allow).
+
+---
+
+## Since M11 — `save_npy`
+
+`state::save_npy(path, shape, data)` writes a row-major `f64` array as a NumPy `.npy` file (format
+1.0), with no dependency. It is the export path `generate::write_dataset` uses for stacked batches, a
+second route to `numpy`/`torch` beside the SDK's zero-copy DLPack tensors. The `StateBundle` itself is
+unchanged by M11–M12: no field was added, and its source axis `S` — always part of the contract — now
+carries more than one source when a scene has them.

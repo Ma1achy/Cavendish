@@ -10,7 +10,7 @@ is the quick reference; when they disagree with anything here, they win.
 
 ## Layering — dependencies point up only
 
-Sixteen crates in six layers: L0 `math` `config`; L1 `gravity` `reference`; L2 `shape` `compute`
+Eighteen crates in six layers: L0 `math` `config`; L1 `gravity` `reference`; L2 `shape` `world` `physics` `compute`
 `source` `instrument` `uldm` `noise`; L3 `scenario` `state`; L4 `generate` `analysis`; L5 `sdk`
 `viewer`. A crate's `[dependencies]` *are* its edges, and a lower crate never names a higher one. If
 you reach for an upward dependency, the design is wrong — stop and reconsider, or raise it as a
@@ -25,13 +25,26 @@ core: `SourceDynamics` (mass configuration vs time), `PhaseModel` (`PropagationI
 wgpu). Atmospheric GGN is the exception that proves the rule — it is a `FieldContribution` summed into
 the potential in the forward pass, never a post-hoc `NoiseSource`.
 
+**The source seam is `WorldSource`** (`design/world.md`). A scene is a list of them; `SourceDynamics`
+is the contract of the rigid implementation (`world::Rigid`), which keeps the amortised body-frame
+evaluation. New kinds of source are new `WorldSource` impls (`physics`: parcel bodies, grid fields),
+never an edit to `gravity` or `instrument` — the forward-model spine is the validated oracle, and a
+change to the seam is gated on `generate/examples/bundle_hash.rs` being byte-identical to `main`.
+
+**Two accuracy standards.** `physics` decides *where the mass is* — plausible, conservative, checked
+against analytic results and published benchmarks. The forward model decides *what the gradiometer
+reads* — reference-exact. Do not import the first standard into the second, and treat anything that
+makes the mass field jitter (contact slop, popping voxels) as a defect.
+
 ## Scalar-generic kernels
 
 The kernel is generic over a `Scalar` trait: `f64` is the CPU reference, `f32` is re-expressed in WGSL,
 and forward-mode `Dual` carries derivatives for `analysis`. Anything on the differentiable path —
 including the rotation integrator — must be `fn …<S: Scalar>(…)`. This is why no off-the-shelf physics
 engine is allowed: they are neither differentiable nor `Scalar`-generic. Write the ~200 lines of Euler +
-quaternion yourself.
+quaternion yourself. The `physics` crate is hand-written for the same reason and reuses that
+integrator; it is `f64`, which is acceptable only because nothing in it is on the differentiable path
+(the CRB differentiates parametric rigid sources).
 
 ## The data contract — dump everything
 
