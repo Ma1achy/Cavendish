@@ -160,7 +160,10 @@ mod tests {
             let exact = cube_potential(d, h);
             let quad = cube_potential_quadrature(d, h, 60);
             let rel = (exact - quad).abs() / quad.abs();
-            assert!(rel <= 2e-5, "d={d:?}: closed {exact:e} vs quadrature {quad:e} ({rel:.1e})");
+            assert!(
+                rel <= 2e-5,
+                "d={d:?}: closed {exact:e} vs quadrature {quad:e} ({rel:.1e})"
+            );
         }
     }
 
@@ -177,7 +180,10 @@ mod tests {
             let cube = cube_potential(d, h);
             let point = -G / d.norm();
             let rel = (cube - point).abs() / point.abs();
-            assert!(rel < prev / 8.0, "error should fall ~16× per doubling: {rel:.2e} after {prev:.2e}");
+            assert!(
+                rel < prev / 8.0,
+                "error should fall ~16× per doubling: {rel:.2e} after {prev:.2e}"
+            );
             prev = rel;
         }
         assert!(prev <= 1e-5, "discontinuity at the switch: {prev:.2e}");
@@ -189,7 +195,10 @@ mod tests {
         // closed form for a unit cube, V(0) = −G·M/h · 2.3800772…
         let h = 0.5;
         let centre = cube_potential(Vec3::new(0.0, 0.0, 0.0), h);
-        assert!((centre / (-G / h) - 2.380_077_2).abs() <= 1e-6, "centre {centre:e}");
+        assert!(
+            (centre / (-G / h) - 2.380_077_2).abs() <= 1e-6,
+            "centre {centre:e}"
+        );
         for d in [
             Vec3::new(0.25, 0.0, 0.0),
             Vec3::new(0.25, 0.25, 0.0),
@@ -228,7 +237,10 @@ mod tests {
                 }
             }
             let trace = g.m[0][0] + g.m[1][1] + g.m[2][2];
-            assert!(trace.abs() / scale <= 1e-10, "trace outside the cube: {trace:e}");
+            assert!(
+                trace.abs() / scale <= 1e-10,
+                "trace outside the cube: {trace:e}"
+            );
         }
     }
 
@@ -239,6 +251,9 @@ mod tests {
         let g = cube_gradient_tensor(Vec3::new(0.04, -0.07, 0.1), h);
         let trace = g.m[0][0] + g.m[1][1] + g.m[2][2];
         let want = -4.0 * std::f64::consts::PI * G / (h * h * h);
-        assert!((trace - want).abs() / want.abs() <= 1e-10, "trace {trace:e} vs {want:e}");
+        assert!(
+            (trace - want).abs() / want.abs() <= 1e-10,
+            "trace {trace:e} vs {want:e}"
+        );
     }
 }
