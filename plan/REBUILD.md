@@ -263,6 +263,9 @@ Order is a default. Slices that do not depend on each other (S6 and S8, say) can
 - **Owner checkpoints:** at the end of each slice, a short note: what is new (with screenshots), what
   was decided and why, what to look at. Anything that cannot be undone waits for the owner.
 
+How to start it and keep it running unattended: `plan/KICKOFF.md`. Agent definitions:
+`.claude/agents/{builder,reviewer,researcher}.md`. Progress between runs: `plan/PROGRESS.md`.
+
 ## 11. Open questions
 
 - Whether to keep `oracle` as a git dev-dependency on v1 crates or to freeze v1's anchor outputs as
