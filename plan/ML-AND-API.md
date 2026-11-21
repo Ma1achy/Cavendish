@@ -54,7 +54,7 @@ import cavendish as cav
 from cavendish import Err
 
 src = cav.Source.scenes("scenes/room/people.ron",
-                        vary = {"population.walkers.count": cav.Uniform(1, 4),
+                        vary      = {"population.walkers.count": cav.Uniform(1, 4),
                                 "population.walkers.mass": cav.Normal(75, 12),
                                 "array.preset": cav.Choice(["aion10", "aice100"])},
                         count = 200_000, root_seed = 7)
@@ -88,6 +88,13 @@ cav.write_manifest("run-1.json", cav.manifest(src.ok_value, split.ok_value["trai
 - **Typing:** pyright strict; the extension built with maturin under a `python` Cargo profile that
   unwinds on panic (a Rust panic becomes a Python exception) and is not stripped (macOS rejects it).
 - **Framework adapters** in examples, not in the core: a torch `IterableDataset`, a JAX iterator.
+
+### 3.1 Style
+
+All Python follows `.claude/skills/python-style/SKILL.md`, which is Four's style: pyright strict,
+spaces around keyword `=`, aligned signature and field columns, section banners, Google docstrings with
+typed `Args:`, `Result` values and typed error families instead of exceptions, a ledger for per-item
+failures, double-underscore private methods. The example above is written in it.
 
 ## 4. The ML tasks Cavendish should serve, and how each is judged
 
