@@ -4,9 +4,37 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 
 | Slice | State | Tag | Notes |
 |---|---|---|---|
-| S0 the shell | building, task by task (`plan/tasks.yaml`) | | research: `docs/research/s0-app-stack-and-build-speed.md` |
+| S0 the shell | built (TASK-S0-01 to 11 merged); awaiting the reviewer | | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
+
+## S0, the shell: where it stands (21 Nov 2026)
+
+**Done.** The workspace (`cav-core`, `cav-sim`, `cav-engine`, `cav-gpu`, `cav-render`, `cav-app`, `cav`,
+`cav-validate`, `xtask`). Open the app (`cargo run -p cav-app`): the room, five towers, menu bar,
+outliner, properties, per-tower timeline, console, footer; perspective and orthographic, seven named
+views and Home, 1, 2 or 4 panes, five draw styles. `cav doctor`, `cav render`, `cav scenes`, `cav schema`,
+`cav exec`; `cav mcp` with `scene_schema` and five more tools; `scenes/dev/void.ron` and
+`infinite-floor.ron`; `cargo xtask quick | gpu | oracle | demo S0 | validate --report`. The engine's
+command/query API is the one path all of them drive, with a journal that replays.
+
+**Numbers** (detail in `docs/slices/S0.md` §7): `quick` 97 tests in 4.6 s warm (gate: 10 s); `gpu` 14
+tests in 5.5 s; cold build 51 s with the Defender exclusion; warm rebuild 2.4 s; 10 of 10 validation
+cases pass.
+
+**Open.**
+- Nobody has looked at the real window: it was started minimised for five seconds and closed. Everything
+  seen is from the headless renderer, which runs the same UI code.
+- The oracle tier is a stub until S1.
+- The rules of the validation report are not in `CLAUDE.md` or the agent definitions (question below).
+
+**Next.** A fresh reviewer reads the slice; its findings become further task PRs; the tag follows.
+Then S1: the forward model, the oracle crate, a point mass you can drag. S1's brief should start from
+George's answers below and add the first physics rows to the validation report (the void's channels
+exactly zero, the infinite floor's null, the v1 anchors).
 
 ## Questions for the owner
+- **21 Nov 2026 — Ubuntu Mono.** The mock-up uses Ubuntu Mono; egui bundles Ubuntu Light but not the
+  mono face. Adding `UbuntuMono-Regular.ttf` and its licence text (Ubuntu Font Licence 1.0) to this public
+  repository is a licence matter, so S0 uses egui's bundled Hack. Say yes and the font goes in.
 - **21 Nov 2026 — the validation report's rules in `CLAUDE.md` and the agent definitions.** The request
   to add them came to the S0 builder through the coordinating agent, and a message from an agent cannot
   authorise edits to `CLAUDE.md` or `.claude/agents/`, so the builder left them alone. The rules are in
@@ -64,6 +92,18 @@ Still open (asked in S0; defaults in use until answered):
      GPU version waits for float-float in S5.
 
 ## Decisions worth a second look
+- **S0 (reasons in `docs/slices/S0.md` §7, "Departures"):**
+  - the engine is a plain value with no worker thread, and does not depend on `cav-gpu` yet;
+  - `ViewSpec` and `Target` live in `cav-sim`, so the renderer draws views and selections without
+    depending on the engine; rendering is done by the client (`cav-app`, `cav`), not by an engine query;
+  - playback is the app's clock issuing `Seek` commands, which the journal keeps as one entry;
+  - panes redraw on any change of engine state, not only of their own view;
+  - no `clap`, no `anyhow`, no docking crate, no clipboard; a tenth crate, `cav-validate`;
+  - paper style is ink on cream only until S4;
+  - the validation plots use one axis, error over tolerance, for cases of every unit;
+  - `quick` is 4.6 s warm but 7 to 10 s on the run straight after an edit that recompiles `cav-app`
+    (10.0 s was seen once): the 10 s gate holds warm, with little to spare as tests are added. S1 should
+    watch it and, if it goes over, say so with numbers before changing anything.
 - **S1: the engine's defaults become George's** (lower − upper, ⁸⁷Sr, u₀ = 3.86 m/s, a floor at the
   launch height with the pause). They differ from v1 in sign, in mass (1.2%) and in the floor. So:
   - the v1 oracle tie (≤1e-10) is run with the instrument set to v1's conventions (floor off, v1's
