@@ -12,7 +12,8 @@
 Then start the main loop below.
 
 ## Where it runs
-- **On the Mac (main loop).** The GPU, Metal and frame-rate checks need real hardware, and cloud
+- **On the build PC (main loop): a desktop with an NVIDIA GPU.** The GPU and frame-rate checks need
+  real hardware, and cloud
   sessions only have a software GPU. Run Claude Code in the repo in auto mode:
   `claude --permission-mode auto` (or bypass permissions, if you accept that on your machine).
 - **In cloud sessions (parallel side work).** GPU-free pieces — shapes library, scene catalogue, MCP
@@ -33,5 +34,5 @@ Then start the main loop below.
 > depend on it.
 
 ## Keeping it going
-Use `/loop` with that prompt, or a scheduled task on the Mac, so the loop resumes after a context
+Use `/loop` with that prompt, or a scheduled task on the build PC, so the loop resumes after a context
 reset or a restart. PROGRESS.md is the memory between runs.

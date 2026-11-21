@@ -128,5 +128,5 @@ responses are size-bounded and paged, errors are the same typed codes, and every
 
 ## 7. Measured
 
-A table like Four's, filled from runs on the M3 and the 2080: scenes per second by family, shots per
+A table like Four's, filled from runs on the NVIDIA build PC (and a Mac when available): scenes per second by family, shots per
 second into Python, cache hit speed-up, memory per worker. Targets to beat are set after S5.

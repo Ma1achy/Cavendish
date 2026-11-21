@@ -36,7 +36,8 @@ and it is a tool a person or an agent can explore interactively, at scales up to
    path is tied to one by a test with a stated tolerance. A test that cannot fail is not a test.
 5. **One engine API.** The GUI, the CLI, the MCP server and Python all drive the same command/query
    interface. Every edit is a command; every command is logged, undoable and replayable.
-6. **GPU first, f64 reference.** Production kernels run on wgpu (Metal on the M3, Vulkan on the 2080),
+6. **GPU first, f64 reference.** Production kernels run on wgpu: Vulkan (or DX12 on Windows) on the build PC's NVIDIA GPU first,
+   Metal on a Mac as a second platform when one is available,
    with float-float where f32 is not enough. Every GPU kernel has a CPU f64 twin used as its oracle.
 7. **Scale is a requirement, not an optimisation.** 10⁹–10¹¹ finest cells in a scene, interactively.
    The renderer's level of detail (what the camera needs) and the instrument's (what the phase needs)
@@ -117,7 +118,7 @@ Big worlds and µrad phases pull in opposite directions; the answer is frames, n
 
 The builder's research agents own a note on this (`docs/research/precision-and-placement.md`):
 measure f32 vs float-float vs f64 error on the anchors in each frame choice, and CPU vs GPU time per
-stage on the M3 and the 2080, before the split above is treated as settled.
+stage on the NVIDIA build PC (and a Mac when available), before the split above is treated as settled.
 
 ## 4. The instrument and the physics — what is carried over as knowledge
 
@@ -158,7 +159,7 @@ does this pixel need". Both read the same tree.
   colour / field value and their mass moments, so a far view of a field is still faithful.
 - **Budgets, not hopes:** frame time, GPU memory and streaming bandwidth have stated budgets; the
   profiler shows them; the renderer degrades level of detail before it misses a frame.
-- **Targets (measure, then commit):** 60 fps at 1440p on the M3 for a 10¹⁰-cell scene (1 km² terrain
+- **Targets (measure, then commit):** 60 fps at 1440p on the NVIDIA build PC for a 10¹⁰-cell scene (1 km² terrain
   at 5 cm near the array, a town's buildings, a road with traffic); scene load under 5 s from cache.
 - **Offscreen** rendering through the same renderer for the CLI and MCP (`render` returns a PNG).
 
@@ -199,7 +200,7 @@ What makes it *feel* responsive:
    state and the bake front; the footer shows when the engine is behind.
 
 Exit tests for this (S2 onwards): input-to-photon latency under 50 ms while dragging a body in a
-40,000-leaf scene on the M3; the refined result equals a cold run bit for bit; a cancelled run leaves
+40,000-leaf scene on the build PC; the refined result equals a cold run bit for bit; a cancelled run leaves
 no partial result visible.
 
 ### 5.2 The world model — Teardown's, made exact for gravity
@@ -297,11 +298,12 @@ No CI at the start. Everything runs on the owner's machines; a slice is done whe
 - **Profiles** (Cargo's own guidance): `debug = "line-tables-only"` in dev, `debug = false` for
   dependencies, `opt-level = 3` for the hot numerical crates even in dev, a `debugging` profile for
   full debug info on demand.
-- **Linker:** the platform's fast linker — mold or wild on Linux, the default ld-prime on macOS.
+- **Linker:** the platform's fast linker — `rust-lld` on Windows (MSVC target), mold or wild on Linux,
+  the default on macOS.
 - **Tests in tiers:**
   - `cargo xtask quick` — check, clippy on changed crates, unit tests via cargo-nextest, small sizes,
     CPU only: **under 30 s warm**. A pre-push hook runs it.
-  - `cargo xtask gpu` — parity tests on the local adapter (Metal on the Mac): under 2 min.
+  - `cargo xtask gpu` — parity tests on the local adapter (the NVIDIA GPU): under 2 min.
   - `cargo xtask oracle` — the v1 anchors and fluid benchmarks: on demand and before a slice is
     declared done.
   - `cargo xtask bench` — criterion benchmarks with stored baselines; a regression over 10% is
@@ -383,7 +385,7 @@ many are near-null by design (an airliner at 1 km is well under shot noise), whi
   reviews the screenshots for UX against §6. Findings are fixed before the slice is merged.
 - **Parallel work in cloud sessions** (`claude --cloud "…"` from the CLI, one task per session):
   independent pieces such as the shapes library, MCP tool coverage, the scene catalogue, docs and the
-  paper-style exporter. GPU and Metal work stays on the owner's machine.
+  paper-style exporter. GPU work stays on the build PC.
 - **Cloud sessions run without prompts.** They run in isolated VMs, so give them full permission:
   commit `.claude/settings.json` with the permission default mode set to auto (or bypass permissions)
   and broad allow rules for cargo, git and the toolchain, and pick that mode when starting a session.
