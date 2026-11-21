@@ -34,8 +34,11 @@ cargo xtask <tier>
                      It also holds the cases to docs/validation/report.json as committed at
                      the revision (HEAD unless --against names another, such as the last slice's
                      tag): a case that has gone, or a tolerance that has changed, fails unless
-                     docs/validation/acknowledged.txt names it with a reason.
-                     With --report it writes docs/validation/ (report.md, report.json, plots).
+                     docs/validation/acknowledged.txt names it with a reason. A revision named
+                     with --against that git cannot resolve, or that holds no report, is an error.
+                     With --report it writes docs/validation/ (report.md, report.json, plots), and
+                     only when every case passed and the comparison held: a failing run leaves
+                     the committed report as it was.
   hooks              installs .git/hooks/pre-push, which runs `cargo xtask quick`.
 ";
 
@@ -50,10 +53,14 @@ fn main() -> ExitCode {
         ["gpu"] => tiers::gpu(&root),
         ["oracle"] => tiers::oracle(),
         ["demo", slice] => demo::run(&root, slice),
-        ["validate"] => validate::run(&root, false, "HEAD"),
-        ["validate", "--report"] => validate::run(&root, true, "HEAD"),
-        ["validate", "--against", revision] => validate::run(&root, false, revision),
-        ["validate", "--report", "--against", revision] => validate::run(&root, true, revision),
+        ["validate"] => validate::run(&root, false, validate::Against::Head),
+        ["validate", "--report"] => validate::run(&root, true, validate::Against::Head),
+        ["validate", "--against", revision] => {
+            validate::run(&root, false, validate::Against::Revision(revision))
+        }
+        ["validate", "--report", "--against", revision] | ["validate", "--against", revision, "--report"] => {
+            validate::run(&root, true, validate::Against::Revision(revision))
+        }
         ["hooks"] => hooks(&root),
         [] | ["help" | "--help" | "-h"] => {
             print!("{HELP}");
@@ -102,7 +109,15 @@ fn hooks(root: &Path) -> Result<(), String> {
     let hook = root.join(".git").join("hooks").join("pre-push");
     let script = "#!/bin/sh\n# Installed by `cargo xtask hooks`: the quick tier must pass before a push.\n\
                   PATH=\"$HOME/.cargo/bin:$PATH\" exec cargo xtask quick\n";
-    let existing = std::fs::read_to_string(&hook).ok();
+    // Bytes, not text: a hook that is not UTF-8 (a binary, a script in another encoding) is still
+    // a hook, and one that cannot be read at all is not ours to replace either.
+    let existing = match std::fs::read(&hook) {
+        Ok(bytes) => Some(bytes),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            return Err(format!("{} exists and could not be read ({e}); it was left alone", hook.display()));
+        }
+    };
     if !may_write_hook(existing.as_deref(), script)? {
         eprintln!("xtask: {} is already this hook", hook.display());
         return Ok(());
@@ -117,10 +132,14 @@ fn hooks(root: &Path) -> Result<(), String> {
 ///
 /// # Errors
 /// When a different hook is there. It is someone's, and it is not overwritten.
-fn may_write_hook(existing: Option<&str>, ours: &str) -> Result<bool, String> {
+fn may_write_hook(existing: Option<&[u8]>, ours: &str) -> Result<bool, String> {
+    // Ours, give or take the line endings a checkout tool may have changed. Anything that is not
+    // text cannot be ours.
+    let is_ours =
+        |bytes: &[u8]| std::str::from_utf8(bytes).is_ok_and(|text| text.replace("\r\n", "\n") == ours);
     match existing {
         None => Ok(true),
-        Some(text) if text.replace("\r\n", "\n") == ours => Ok(false),
+        Some(bytes) if is_ours(bytes) => Ok(false),
         Some(_) => Err("a different .git/hooks/pre-push already exists; it was left alone. Move it away \
                         (or add `cargo xtask quick` to it yourself) and run this again"
             .into()),
@@ -135,9 +154,30 @@ mod tests {
     fn an_existing_hook_of_someone_elses_is_not_overwritten() {
         let ours = "#!/bin/sh\nexec cargo xtask quick\n";
         assert_eq!(may_write_hook(None, ours), Ok(true), "no hook: write it");
-        assert_eq!(may_write_hook(Some(ours), ours), Ok(false), "ours already: nothing to do");
-        assert_eq!(may_write_hook(Some("#!/bin/sh\r\nexec cargo xtask quick\r\n"), ours), Ok(false));
-        let refused = may_write_hook(Some("#!/bin/sh\nrun-my-linter\n"), ours).unwrap_err();
+        assert_eq!(may_write_hook(Some(ours.as_bytes()), ours), Ok(false), "ours already: nothing to do");
+        assert_eq!(may_write_hook(Some(b"#!/bin/sh\r\nexec cargo xtask quick\r\n"), ours), Ok(false));
+        let refused = may_write_hook(Some(b"#!/bin/sh\nrun-my-linter\n"), ours).unwrap_err();
         assert!(refused.contains("left alone"), "{refused}");
+    }
+
+    #[test]
+    fn a_hook_that_is_not_text_is_someone_elses_too() {
+        let ours = "#!/bin/sh\nexec cargo xtask quick\n";
+        // A compiled hook, and a script with one byte that is not UTF-8 (Latin-1 `é` in a comment).
+        // Read as a string, each looked like "no hook" and was overwritten.
+        for foreign in
+            [&b"MZ\x90\x00\x03\xff\xfe\x00"[..], &b"#!/bin/sh\n# v\xe9rifier\nexec make check\n"[..]]
+        {
+            assert!(std::str::from_utf8(foreign).is_err(), "the case is not valid UTF-8");
+            let refused = may_write_hook(Some(foreign), ours).unwrap_err();
+            assert!(refused.contains("left alone"), "{refused}");
+        }
+        // Even ours with a stray byte is no longer ours.
+        let mut damaged = ours.as_bytes().to_vec();
+        damaged.push(0xff);
+        assert!(may_write_hook(Some(&damaged), ours).is_err());
+        // Control: the same decision still writes where there is nothing, and rests where it is ours.
+        assert_eq!(may_write_hook(None, ours), Ok(true));
+        assert_eq!(may_write_hook(Some(ours.as_bytes()), ours), Ok(false));
     }
 }

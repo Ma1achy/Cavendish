@@ -97,7 +97,7 @@ impl Cav {
     /// The JSON Schema of the scene spec: every field, its type and its meaning.
     #[tool(name = "scene_schema")]
     fn scene_schema(&self) -> Result<String, String> {
-        self.session().engine.run_line("schema")
+        answered("scene_schema", || self.session().engine.run_line("schema"))
     }
 
     /// Replace the scene with a library scene or a `.ron` file. Returns the engine's state.
@@ -113,8 +113,10 @@ impl Cav {
     /// Read the scene spec, or the part of it at a path, as JSON.
     #[tool(name = "scene_get")]
     fn scene_get(&self, Parameters(args): Parameters<SceneGetArgs>) -> Result<String, String> {
-        let query = Query::Spec(args.path);
-        self.session().engine.query(&query).map(|reply| cav_engine::render(&reply))
+        answered("scene_get", || {
+            let query = Query::Spec(args.path);
+            self.session().engine.query(&query).map(|reply| cav_engine::render(&reply))
+        })
     }
 
     /// Run console commands: everything the application's buttons and keys do, as text.
@@ -137,7 +139,9 @@ impl Cav {
         };
         let filter =
             LogFilter { min_level, subsystem: None, text: args.text, last: Some(args.last.unwrap_or(50)) };
-        self.session().engine.query(&Query::Log(filter)).map(|reply| cav_engine::render(&reply))
+        answered("log", || {
+            self.session().engine.query(&Query::Log(filter)).map(|reply| cav_engine::render(&reply))
+        })
     }
 
     /// Draw the scene as a pane sees it and return the picture as a PNG.
@@ -215,5 +219,34 @@ mod tests {
         assert_eq!(panicked, Err("render_view failed inside the engine: buffer of 1440002352 bytes".into()));
         let literal: Result<u32, String> = answered("command", || panic!("plain"));
         assert_eq!(literal, Err("command failed inside the engine: plain".into()));
+    }
+
+    /// The tools of `source` whose bodies do not run under `answered("<their name>", …)`.
+    fn unguarded(source: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for (_, rest) in source.match_indices("#[tool(name = \"").map(|(at, m)| (at, &source[at + m.len()..]))
+        {
+            let name = rest.split('"').next().unwrap_or_default();
+            // The tool's function runs to the next attribute or the end of the impl block.
+            let body = rest.split("\n    #[tool(").next().unwrap_or(rest);
+            let body = body.split("\n}\n").next().unwrap_or(body);
+            if !body.contains(&format!("answered(\"{name}\"")) {
+                out.push(name.to_owned());
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn every_tool_runs_where_a_panic_is_an_answer() {
+        let source = include_str!("mcp.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        assert_eq!(production.matches("#[tool(name = \"").count(), 6, "the scan sees the six tools");
+        assert_eq!(unguarded(production), Vec::<String>::new());
+        // Control: a tool whose body calls the engine bare is found.
+        let bare = "    #[tool(name = \"log\")]\n    fn log(&self) -> Result<String, String> {\n        \
+                    self.session().engine.run_line(\"log\")\n    }\n    #[tool(name = \"ok\")]\n    fn ok(&self) \
+                    -> Result<String, String> {\n        answered(\"ok\", || Ok(String::new()))\n    }\n}\n";
+        assert_eq!(unguarded(bare), ["log"]);
     }
 }

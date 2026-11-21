@@ -47,7 +47,14 @@ lays the two lists side by side.
   (`a_collection_that_cannot_be_trusted_is_an_error`).
 - A tolerance that is negative, infinite or not a number fails its case: a case that cannot fail is not a
   case (`a_case_without_a_usable_tolerance_fails`).
-- A failing case is still a row: it records what it measured before it fails.
+- A failing case is still a row of the table the command prints: it records what it measured before it
+  fails.
+- **A run that fails writes nothing.** With `--report`, `docs/validation/` is written only after every
+  case has passed and the comparison with the earlier report has held, so the committed `report.json` is
+  never replaced by a report that did not pass (`a_report_that_did_not_pass_is_not_written`).
+- **A baseline named with `--against` must exist.** A revision git cannot resolve (a mistyped tag), or one
+  with no report, is an error before anything runs (`a_named_baseline_that_cannot_be_read_is_an_error`).
+  Only the default, `HEAD`, may have no report: the first one ever.
 - **The committed report is the memory.** `validate` holds every case and tolerance to
   `docs/validation/report.json` as committed at `HEAD` (or at `--against <revision>`, such as the last
   slice's tag). A case that has gone fails the command; so does a tolerance that has changed, looser or

@@ -203,22 +203,39 @@ pub fn words(line: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-/// Splits a script into its lines: at `;` and at line breaks, except inside double quotes.
+/// Splits a script into its statements: at `;` and at line breaks, except inside double quotes.
+/// A statement that starts with `#` is a comment: it runs to the end of its line whatever it
+/// holds (a `;`, a lone `"`), and is left out.
 #[must_use]
 pub fn statements(script: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let (mut start, mut quoted) = (0, false);
+    // Whether the statement being read has begun, and whether it began with `#`.
+    let (mut begun, mut comment) = (false, false);
     for (at, c) in script.char_indices() {
+        if !begun && !c.is_whitespace() {
+            begun = true;
+            comment = c == '#';
+        }
         match c {
+            '\n' if comment || !quoted => {
+                if !comment {
+                    out.push(&script[start..at]);
+                }
+                (start, quoted, begun, comment) = (at + 1, false, false, false);
+            }
+            _ if comment => {}
             '"' => quoted = !quoted,
-            ';' | '\n' if !quoted => {
+            ';' if !quoted => {
                 out.push(&script[start..at]);
-                start = at + 1;
+                (start, begun) = (at + 1, false);
             }
             _ => {}
         }
     }
-    out.push(&script[start..]);
+    if !comment {
+        out.push(&script[start..]);
+    }
     out.into_iter().map(str::trim).filter(|line| !line.is_empty()).collect()
 }
 
@@ -384,7 +401,6 @@ impl Engine {
     pub fn run_script(&mut self, script: &str) -> Result<Vec<String>, String> {
         statements(script)
             .into_iter()
-            .filter(|line| !line.starts_with('#'))
             .map(|line| self.run_line(line).map_err(|why| format!("`{line}`: {why}")))
             .collect()
     }
@@ -595,6 +611,24 @@ mod tests {
         // Control: without the quotes the same path is several words, and is refused.
         let bare = format!("load {}", path.display());
         assert!(Engine::new().run_line(&bare).is_err());
+    }
+
+    #[test]
+    fn a_comment_ends_at_its_line_whatever_it_holds() {
+        // A comment with one `"` in it used to open a quote that swallowed the lines after it.
+        let script = "panes 2\n# the 4\" pane; not a command\nview top\n  # last";
+        assert_eq!(statements(script), ["panes 2", "view top"]);
+        let mut engine = Engine::new();
+        engine.run_script(script).unwrap();
+        assert_eq!((engine.panes(), engine.view(0).named()), (2, Some(NamedView::Top)));
+        // A `#` that does not start a statement is not a comment, and quotes still hold there.
+        assert_eq!(statements("load \"a #1; b.ron\"; panes 2"), ["load \"a #1; b.ron\"", "panes 2"]);
+        assert_eq!(statements("panes 2; # trailing; view top\npanes 4"), ["panes 2", "panes 4"]);
+        // Control: the same line without the `#` is a statement with an unclosed quote, which
+        // does take the rest of the script with it, and is refused.
+        let bare = "panes 2\nthe 4\" pane\nview top";
+        assert_eq!(statements(bare), ["panes 2", "the 4\" pane\nview top"]);
+        assert!(Engine::new().run_script(bare).is_err());
     }
 
     #[test]

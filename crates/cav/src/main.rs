@@ -69,7 +69,8 @@ fn run(raw: &[String]) -> Result<(), String> {
             let mut session = Session::new();
             // Print what ran before reporting a failure, so the output shows how far the script got.
             let mut failure = None;
-            for line in script.split([';', '\n']).map(str::trim).filter(|l| !l.is_empty()) {
+            // The engine's own splitting: quotes keep a `;` together, a `#` line is a comment.
+            for line in cav_engine::console::statements(&script) {
                 match session.engine.run_line(line) {
                     Ok(answer) => println!("{answer}"),
                     Err(why) => {

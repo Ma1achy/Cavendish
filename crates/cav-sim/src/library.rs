@@ -37,14 +37,32 @@ pub fn load(name_or_path: &str) -> Result<SceneSpec, SpecError> {
         return SceneSpec::from_ron(scene.ron).map_err(|e| SpecError(format!("{}: {e}", scene.path)));
     }
     let known: Vec<&str> = LIBRARY.iter().map(|s| s.name).collect();
-    let text = std::fs::read_to_string(name_or_path).map_err(|e| {
+    let unreadable = |e: std::io::Error| {
         SpecError(format!(
             "`{name_or_path}` is not a library scene ({}) and not a readable file: {e}",
             known.join(", ")
         ))
-    })?;
+    };
+    // At most one byte past the cap is ever read, whatever the file's size claims to be: a scene
+    // file is text a person can read, and a path given by an agent may point at anything.
+    let file = std::fs::File::open(name_or_path).map_err(unreadable)?;
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut std::io::Read::take(file, MAX_SCENE_FILE_BYTES + 1), &mut bytes)
+        .map_err(unreadable)?;
+    if bytes.len() as u64 > MAX_SCENE_FILE_BYTES {
+        return Err(SpecError(format!(
+            "{name_or_path}: the file is larger than {MAX_SCENE_FILE_BYTES} bytes (1 MiB), the most a scene \
+             file may be; it was not read"
+        )));
+    }
+    let text = String::from_utf8(bytes)
+        .map_err(|e| unreadable(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))?;
     SceneSpec::from_ron(&text).map_err(|e| SpecError(format!("{name_or_path}: {e}")))
 }
+
+/// The largest scene file [`load`] reads, bytes: 1 MiB. The largest valid spec (a thousand towers)
+/// is about a tenth of that.
+pub const MAX_SCENE_FILE_BYTES: u64 = 1 << 20;
 
 #[cfg(test)]
 mod tests {
@@ -105,5 +123,29 @@ mod tests {
         assert_eq!(load(path.to_str().unwrap()).unwrap(), load(LIBRARY[0].name).unwrap());
         let why = load("no-such-scene").unwrap_err().0;
         assert!(why.contains("no-such-scene") && why.contains("room"), "{why}");
+    }
+
+    #[test]
+    fn a_scene_file_over_the_cap_is_refused_unread() {
+        let dir = repo_root().join("target/tmp/scene size");
+        std::fs::create_dir_all(&dir).unwrap();
+        // A valid scene padded with a comment: at the cap it loads, one byte over it does not.
+        let scene = crate::dev::void().to_ron();
+        let padded = |total: u64| {
+            let filler = "x".repeat(usize::try_from(total).unwrap() - scene.len() - 4);
+            format!("// {filler}\n{scene}")
+        };
+        let at = dir.join("at-the-cap.ron");
+        std::fs::write(&at, padded(MAX_SCENE_FILE_BYTES)).unwrap();
+        assert_eq!(std::fs::metadata(&at).unwrap().len(), MAX_SCENE_FILE_BYTES);
+        assert_eq!(
+            load(at.to_str().unwrap()).unwrap(),
+            crate::dev::void(),
+            "the control: the cap itself loads"
+        );
+        let over = dir.join("over-the-cap.ron");
+        std::fs::write(&over, padded(MAX_SCENE_FILE_BYTES + 1)).unwrap();
+        let why = load(over.to_str().unwrap()).unwrap_err().0;
+        assert!(why.contains("larger than 1048576 bytes") && why.contains("not read"), "{why}");
     }
 }

@@ -85,7 +85,8 @@ fn main() -> ExitCode {
 fn run(options: &Options) -> Result<(), String> {
     let mut shell = Shell::new();
     if let Some(script) = &options.exec {
-        for line in script.split([';', '\n']).map(str::trim).filter(|l| !l.is_empty()) {
+        // The engine's own splitting: quotes keep a `;` together, a `#` line is a comment.
+        for line in cav_engine::console::statements(script) {
             match shell.run(line) {
                 Ok(_) => {}
                 // The refusal is in the log of the engine either way; here it also reaches the terminal.
