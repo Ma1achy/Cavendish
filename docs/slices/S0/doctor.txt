@@ -1,0 +1,9 @@
+cavendish 0.0.0 · windows x86_64
+adapters:
+  * NVIDIA GeForce GTX 1660 SUPER · Vulkan · DiscreteGpu · driver NVIDIA 581.29
+    NVIDIA GeForce GTX 1660 SUPER · Dx12 · DiscreteGpu · driver 32.0.15.8129
+    Microsoft Basic Render Driver · Dx12 · Cpu · driver 10.0.19041.7811
+device: `NVIDIA GeForce GTX 1660 SUPER` on Vulkan, created in 0.46 s
+render self-test: ok · 320 × 240 px, 5 towers found where the camera projects them, background exact, 0.03 s
+precision self-test: none yet. S0 runs no gravity kernel; the GPU kernels and their f64 twins arrive with S5.
+scenes: room, void, infinite-floor

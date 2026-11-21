@@ -1,0 +1,40 @@
+An MCP session with `cav mcp` over stdio, as `cargo xtask demo S0` ran it.
+
+# the handshake
+→ {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"xtask-demo","version":"0"}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"cavendish","version":"0.0.0"},"instructions":"Cavendish: a voxel world around an array of atom-interferometer gravity gradiometers. S0 has the array, a room and the first dev scenes. Load a scene with scene_load, read it with scene_get (its shape is scene_schema), change the view with command (try `help`), look at it with render_view, and read what happened with log."}}
+
+→ {"jsonrpc":"2.0","method":"notifications/initialized"}
+
+# what the server offers
+→ {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+← {"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"command","description":"Run console commands: everything the application's buttons and keys do, as text.\nReturns what each command answered, one per line.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","properties":{"line":{"description":"One or more console commands separated by `;`, for example `panes 4; view top; select tower 3`.\n`help` lists them.","type":"string"}},"required":["line"],"type":"object"}},{"name":"log","description":"The engine's event log: what was done and what was refused, oldest first.","inputSchema":{"$schema":"https://json-schema.org/draft/2020-12/schema","properties":{"last":{"descriptio… [1851 more characters]
+
+# the scene spec's JSON Schema
+→ {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"scene_schema","arguments":{}}}
+← {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\n  \"$defs\": {\n    \"ArraySpec\": {\n      \"additionalProperties\": false,\n      \"description\": \"The array of gradiometer towers.\",\n      \"properties\": {\n        \"instrument\": {\n          \"$ref\": \"#/$defs/InstrumentSpec\",\n          \"description\": \"The instrument every tower shares.\"\n        },\n        \"towers\": {\n          \"description\": \"The towers, in display order; tower 1 is the first.\",\n          \"items\": {\n            \"$ref\": \"#/$defs/TowerSpec\"\n          },\n          \"type\": \"array\"\n        }\n      },\n      \"required\": [\n        \"instrument\",\n        \"towers\"… [6517 more characters]
+
+# load a dev scene
+→ {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"scene_load","arguments":{"scene":"infinite-floor"}}}
+← {"jsonrpc":"2.0","id":4,"result":{"content":[{"type":"text","text":"{\n  \"engine\": \"0.0.0\",\n  \"scene\": \"infinite-floor\",\n  \"towers\": 5,\n  \"room\": false,\n  \"floor\": true,\n  \"time\": 0.0,\n  \"duration\": 12.0,\n  \"selection\": null,\n  \"panes\": 1,\n  \"active_pane\": 0,\n  \"journal\": 1,\n  \"undo\": 1,\n  \"redo\": 0,\n  \"generation\": 1,\n  \"digest\": \"70b303c0a8f3909b\"\n}"}],"isError":false}}
+
+# read part of it
+→ {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"scene_get","arguments":{"path":"floor"}}}
+← {"jsonrpc":"2.0","id":5,"result":{"content":[{"type":"text","text":"{\n  \"density\": 2400.0,\n  \"height\": 0.0,\n  \"kind\": \"HalfSpace\"\n}"}],"isError":false}}
+
+# move the camera and select a tower, with console commands
+→ {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"command","arguments":{"line":"orbit -62 9; zoom 30; select tower 4"}}}
+← {"jsonrpc":"2.0","id":6,"result":{"content":[{"type":"text","text":"orbit -62 9\nzoom 30\nselect tower 4"}],"isError":false}}
+
+# a command the engine refuses comes back as an error that says why
+→ {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"command","arguments":{"line":"select tower 9"}}}
+← {"jsonrpc":"2.0","id":7,"result":{"content":[{"type":"text","text":"`select tower 9`: there is no tower 9; the scene has towers 1 to 5"}],"isError":true}}
+
+# look at it: the picture comes back as a base64 PNG (saved as mcp-render-view.png)
+→ {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"render_view","arguments":{"width":800,"height":500}}}
+← {"jsonrpc":"2.0","id":8,"result":{"content":[{"type":"image","data":"iVBORw0KGgoAAAANSUhEUgAAAyAAAAH0CAYAAADFQEl4AAGeHUlEQVR4nOz9aZBkWXYeiF2P8NwrszKzMrOy9uquRld3NRY2mgtIDDkcwBoiQEqkQJEaGDQciU0aRzOUTBAl45hkY1pg+iGTRpBkokQzGGgiZyDQaKIJoLANMbThACC2AdAGNKaBArsb1VWF2rKWXCor1wgf/zzii/zi5LnL8+WFu8f50l76i+fP77vvLuee75xz7x2ePHlylAKBQCAQCAQCgUCgB2ykQCAQCAQCgUAgEOgJQUACgUAgEAgEAoFAbwgCEggEAoFAIBAIBHpDEJBAIBAIBAKBQCDQG4KABAKBQCAQCAQCgd4QBCQQCAQCgUAgEAj0hiAggUAgEAgEAoFAoDcEAQkEAoFAIBAIBAK9IQhIIBAIBAKBQCAQ6A1BQAKBQCAQCAQCgUBvCAISCAQCgUAgEAgEekMQkEAgEAgEAoFAINAbgoAEAoFAIBAIBAKB3hAEJBAIBAKBQCAQCPSGICCBQCAQCAQCgUCgNwQBCQQCgUAgEAgEAr0hCEggEAgEAoFAIBDoDUFAAoFAIBAIBAKBQG8IAhIIBAKBQCAQCAR6QxCQQCAQCAQCgUAg0BuCgAQ… [140841 more characters]
+
+# what the engine did, and refused
+→ {"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"log","arguments":{"last":6}}}
+← {"jsonrpc":"2.0","id":9,"result":{"content":[{"type":"text","text":"    0.004  info   edit    load infinite-floor · 5 towers, no room, a floor\n    0.005  debug  view    orbit -62 9\n    0.005  debug  view    zoom 30\n    0.005  info   engine  select tower 4\n    0.006  error  engine  refused `select tower 9`: there is no tower 9; the scene has towers 1 to 5\n    0.794  info   mcp     render_view: pane 1, 800 × 500 px, 106070 bytes"}],"isError":false}}
+

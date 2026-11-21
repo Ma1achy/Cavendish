@@ -131,6 +131,11 @@ fn linear(hex: u32, alpha: f32) -> [f32; 4] {
     [channel(16), channel(8), channel(0), alpha]
 }
 
+/// The colour a fraction `t` of the way from `a` to `b`.
+fn mix(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
+    std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t)
+}
+
 /// A world position as an `f32` offset from `origin`. The subtraction is in `f64`; only the small
 /// result is rounded.
 #[must_use]
@@ -357,7 +362,12 @@ pub fn drawables(scene: &SceneSpec, style: DrawStyle, highlight: Option<Target>,
             height: (floor.height - origin.z) as f32,
             phase: [origin.x.rem_euclid(period) as f32, origin.y.rem_euclid(period) as f32],
             surface: linear(palette.ground, 1.0),
-            line: linear(if selected { palette.selection } else { palette.ground_line }, 1.0),
+            // A selected floor is tinted, not lit up: its grid covers most of the picture.
+            line: if selected {
+                mix(linear(palette.ground_line, 1.0), linear(palette.selection, 1.0), 0.45)
+            } else {
+                linear(palette.ground_line, 1.0)
+            },
         });
     }
     b.out

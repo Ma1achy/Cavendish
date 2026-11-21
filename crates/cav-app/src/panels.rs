@@ -785,12 +785,12 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
         .show(ctx, |ui| {
             let keys: &[(&str, &str)] = &[
                 ("Space", "play / pause"),
-                ("← →", "step the playhead by 0.1 s"),
+                ("Left · Right", "step the playhead by 0.1 s"),
                 ("1 – 9", "select a tower"),
                 ("Esc", "close a window, the console, leave F3, clear the selection"),
                 ("Home", "reset the active pane's camera"),
-                ("O", "perspective ↔ orthographic"),
-                ("Ctrl+Z · Ctrl+Shift+Z", "undo · redo — every edit, whatever made it"),
+                ("O", "swap perspective and orthographic"),
+                ("Ctrl+Z · Ctrl+Shift+Z", "undo · redo: every edit, whatever made it"),
                 ("`", "console"),
                 ("F3", "hide the GUI; the scene fills the window"),
                 ("?", "this window"),

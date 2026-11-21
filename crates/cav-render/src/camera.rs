@@ -5,7 +5,7 @@
 //! the world origin is drawn with the same `f32` numbers as one at it.
 
 use cav_core::{Mat4, Vec3};
-use cav_sim::{FOV_Y_DEGREES, Projection, ViewSpec};
+use cav_sim::{FOV_Y_DEGREES, FRAMING_ASPECT, Projection, ViewSpec};
 
 /// A camera for one view at one aspect ratio.
 #[derive(Clone, Debug, PartialEq)]
@@ -24,6 +24,8 @@ pub struct Camera {
     pub view_proj: Mat4,
     /// Distance to the far plane, metres.
     pub far: f64,
+    /// Half the height of the picture at the target's depth, metres.
+    pub half_height: f64,
 }
 
 impl Camera {
@@ -45,18 +47,20 @@ impl Camera {
             ],
         };
         let far = (view.distance * 100.0).max(5000.0);
+        // The field of view is FOV_Y_DEGREES high in a picture at least FRAMING_ASPECT wide. In a
+        // narrower one (two panes side by side, say) it grows taller instead of the sides being
+        // cut off, so what a view frames is in the picture whatever the picture's shape.
+        let slope = (0.5 * FOV_Y_DEGREES).to_radians().tan() * (FRAMING_ASPECT / aspect).max(1.0);
+        let half_height = view.distance * slope;
         let projection = match view.projection {
             Projection::Perspective => {
                 let near = (view.distance * 0.01).max(0.02);
-                Mat4::perspective(FOV_Y_DEGREES.to_radians(), aspect, near, far)
+                Mat4::perspective(2.0 * slope.atan(), aspect, near, far)
             }
             // The same apparent size at the target as the perspective camera, so switching
             // projection does not jump. The slab reaches behind the camera too: nothing in an
             // orthographic drawing should vanish because the camera stands inside it.
-            Projection::Orthographic => {
-                let half_height = view.distance * (0.5 * FOV_Y_DEGREES).to_radians().tan();
-                Mat4::orthographic(half_height, aspect, -far, far)
-            }
+            Projection::Orthographic => Mat4::orthographic(half_height, aspect, -far, far),
         };
         Self {
             origin: Vec3::from_array(view.target),
@@ -66,6 +70,7 @@ impl Camera {
             up,
             view_proj: projection * view_matrix,
             far,
+            half_height,
         }
     }
 
@@ -202,6 +207,48 @@ mod tests {
         let nearer = at_target - p.forward * 4.0;
         let (a, b) = (p.pixel(nearer, size).unwrap(), o.pixel(nearer, size).unwrap());
         assert!(a[0] - b[0] > 5.0, "perspective enlarges what is nearer: {a:?} vs {b:?}");
+    }
+
+    #[test]
+    fn a_framed_scene_is_in_the_picture_whatever_its_shape() {
+        let scene = SceneSpec::room();
+        let (lo, hi) = scene.bounds();
+        let corners: Vec<Vec3> = (0..8u32)
+            .map(|c| {
+                let pick = |axis: usize| if c & (1 << axis) == 0 { lo[axis] } else { hi[axis] };
+                Vec3::new(pick(0), pick(1), pick(2))
+            })
+            .collect();
+        // How far outside the picture the worst corner falls, in pixels (0 when all are inside).
+        let overshoot = |view: &ViewSpec, size: [u32; 2]| {
+            let camera = Camera::new(view, f64::from(size[0]) / f64::from(size[1]));
+            corners
+                .iter()
+                .map(|&corner| {
+                    let [x, y] = camera.pixel(corner, size).expect("in front of the camera");
+                    let (w, h) = (f64::from(size[0]), f64::from(size[1]));
+                    (-x).max(x - w).max(-y).max(y - h).max(0.0)
+                })
+                .fold(0.0, f64::max)
+        };
+        // Wide, square, and as narrow as one of two panes side by side or a phone held upright.
+        for size in [[1600, 600], [800, 600], [600, 600], [450, 700], [300, 900]] {
+            for named in NamedView::ALL {
+                for projection in [Projection::Perspective, Projection::Orthographic] {
+                    let view = ViewSpec::framing(&scene, named, projection, DrawStyle::Shaded);
+                    let out = overshoot(&view, size);
+                    assert!(
+                        out == 0.0,
+                        "{named:?} {projection:?} at {size:?}: a corner is {out:.1} px outside"
+                    );
+                }
+            }
+        }
+        // Control: the check sees a scene that does not fit. From half the framed distance the
+        // plan view cuts the room off.
+        let plan = ViewSpec::framing(&scene, NamedView::Top, Projection::Orthographic, DrawStyle::Shaded);
+        let close = ViewSpec { distance: 0.5 * plan.distance, ..plan };
+        assert!(overshoot(&close, [450, 700]) > 20.0);
     }
 
     #[test]
