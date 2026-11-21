@@ -1,0 +1,31 @@
+// The default scene: the five-tower array in its room.
+// Frame: metres, x east, y north, z up. Times are seconds. `cav schema` describes every field.
+(
+    version: 1,
+    name: "room",
+    description: "The five-tower array in its room. Nothing moves yet.",
+    duration: 12.0,
+    array: (
+        // AION-10: a 10 m tower, interferometers 5 m apart, 2T = 1.46 s, one shot every 2 s.
+        instrument: (
+            tower_height: 10.0,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+        ),
+        // One tower at the centre and four on a cross with 4 m arms.
+        towers: [
+            (label: "tower 1", position: (0.0, 0.0, 0.0)),
+            (label: "tower 2", position: (4.0, 0.0, 0.0)),
+            (label: "tower 3", position: (-4.0, 0.0, 0.0)),
+            (label: "tower 4", position: (0.0, 4.0, 0.0)),
+            (label: "tower 5", position: (0.0, -4.0, 0.0)),
+        ],
+    ),
+    room: Some((
+        origin: (-5.0, -5.0, 0.0),
+        size: (10.0, 10.0, 3.0),
+    )),
+    floor: None,
+)
