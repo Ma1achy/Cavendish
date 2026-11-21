@@ -1,0 +1,839 @@
+//! Drawing the shell: the menu bar, the outliner, the properties, the figure with its header
+//! strip, the timeline, the console and the footer.
+//!
+//! Principia's rules, from the mock-up: the figure is never covered (panels take space beside it,
+//! nothing floats over it but Home); badges live in the header strip; rarely used things are in
+//! windows; F3 hides everything but the figure.
+
+use cav_engine::{Command, Level, Subsystem, Target, ViewCommand};
+use cav_render::{Frame, pane_rects};
+use cav_sim::{DrawStyle, NamedView, Projection};
+use egui::{
+    Align, Align2, Button, Color32, FontId, Layout, Margin, Panel, Rect, RichText, Sense, Stroke, StrokeKind,
+    pos2, vec2,
+};
+
+use crate::menus::{Item, MENUS};
+use crate::panes::PaneSurface;
+use crate::shell::{APP_COMMANDS, ConsoleFilter, Shell};
+use crate::{theme, timeline};
+
+/// The gap between panes, pixels; the active pane's outline is drawn in it.
+const PANE_GAP: u32 = 2;
+
+fn frame(fill: Color32, x: i8, y: i8) -> egui::Frame {
+    egui::Frame::new().fill(fill).inner_margin(Margin::symmetric(x, y))
+}
+
+/// A section heading inside a side panel.
+fn heading(ui: &mut egui::Ui, text: &str) {
+    ui.add_space(6.0);
+    ui.label(RichText::new(text).color(theme::STRONG).size(12.0));
+    let y = ui.cursor().top();
+    ui.painter().hline(ui.max_rect().x_range(), y, Stroke::new(1.0, theme::RULE));
+    ui.add_space(3.0);
+}
+
+/// A small outlined label for the header strip.
+fn badge(ui: &mut egui::Ui, text: impl Into<String>, colour: Color32) {
+    egui::Frame::new()
+        .stroke(Stroke::new(1.0, theme::WIDGET))
+        .corner_radius(9)
+        .inner_margin(Margin::symmetric(7, 0))
+        .show(ui, |ui| ui.label(RichText::new(text).size(11.5).color(colour)));
+}
+
+/// A side panel's contents in a scroll area, so that a short window scrolls them instead of
+/// letting them spill over the panel below.
+fn scrolling(ui: &mut egui::Ui, id: &str, contents: impl FnOnce(&mut egui::Ui)) {
+    egui::ScrollArea::vertical().id_salt(id).auto_shrink([false, false]).show(ui, contents);
+}
+
+pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
+    let ctx = ui.ctx().clone();
+    if !shell.gui_hidden {
+        let menu = Panel::top("menu")
+            .exact_size(28.0)
+            .frame(frame(theme::PANEL, 8, 0))
+            .show(ui, |ui| menu_bar(shell, ui));
+        shell.layout.panels.push(("menu", menu.response.rect));
+        let footer_panel = Panel::bottom("footer")
+            .exact_size(22.0)
+            .frame(frame(theme::FOOTER, 10, 0))
+            .show(ui, |ui| footer(shell, ui));
+        shell.layout.panels.push(("footer", footer_panel.response.rect));
+        if shell.console_open {
+            let panel = Panel::bottom("console")
+                .exact_size(200.0)
+                .frame(frame(theme::FOOTER, 0, 0))
+                .show(ui, |ui| console(shell, ui));
+            shell.layout.panels.push(("console", panel.response.rect));
+        }
+        let lanes_height = timeline::height(shell.engine.spec().array.towers.len());
+        let panel = Panel::bottom("timeline")
+            .exact_size(lanes_height + 34.0)
+            .frame(frame(theme::PANEL, 8, 4))
+            .show(ui, |ui| timeline_panel(shell, ui));
+        shell.layout.panels.push(("timeline", panel.response.rect));
+        let panel = Panel::left("outliner")
+            .exact_size(262.0)
+            .resizable(false)
+            .frame(frame(theme::PANEL, 10, 6))
+            .show(ui, |ui| scrolling(ui, "outliner", |ui| outliner(shell, ui)));
+        shell.layout.panels.push(("outliner", panel.response.rect));
+        let panel = Panel::right("properties")
+            .exact_size(264.0)
+            .resizable(false)
+            .frame(frame(theme::PANEL, 10, 6))
+            .show(ui, |ui| scrolling(ui, "properties", |ui| properties(shell, ui)));
+        shell.layout.panels.push(("properties", panel.response.rect));
+    }
+    egui::CentralPanel::no_frame().show(ui, |ui| {
+        if !shell.gui_hidden {
+            let strip = Panel::top("header")
+                .exact_size(24.0)
+                .frame(frame(theme::FOOTER, 10, 0))
+                .show(ui, |ui| header(shell, ui));
+            shell.layout.panels.push(("header", strip.response.rect));
+        }
+        egui::CentralPanel::no_frame().show(ui, |ui| figure(shell, ui, surface));
+    });
+    windows(shell, &ctx);
+    if shell.quit {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+}
+
+fn menu_bar(shell: &mut Shell, ui: &mut egui::Ui) {
+    fn items(shell: &mut Shell, ui: &mut egui::Ui, list: &'static [Item]) {
+        let (can_undo, can_redo) = shell.engine.history();
+        for item in list {
+            match *item {
+                Item::Separator => {
+                    ui.separator();
+                }
+                Item::Later { label, slice } => {
+                    ui.add_enabled(false, Button::new(label).shortcut_text(slice));
+                }
+                Item::Sub { label, items: nested } => {
+                    ui.menu_button(label, |ui| items(shell, ui, nested));
+                }
+                Item::Run { label, line, shortcut } => {
+                    let enabled = match line {
+                        "undo" => can_undo,
+                        "redo" => can_redo,
+                        _ => true,
+                    };
+                    if ui.add_enabled(enabled, Button::new(label).shortcut_text(shortcut)).clicked() {
+                        let _ = shell.run(line);
+                        ui.close();
+                    }
+                }
+            }
+        }
+    }
+    // The brand, the menus and the status share the menu bar's own row, so that the status on the
+    // right is laid out in what the menus leave and cannot be pushed off the window.
+    egui::MenuBar::new().ui(ui, |ui| {
+        ui.label(RichText::new("cavendish · dev").color(theme::STRONG).strong());
+        ui.add_space(6.0);
+        for (title, list) in MENUS {
+            ui.menu_button(*title, |ui| items(shell, ui, list));
+        }
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let spec = shell.engine.spec();
+            let status = format!("{} · t {:.2} / {:.0} s", spec.name, shell.engine.time(), spec.duration);
+            ui.add(egui::Label::new(RichText::new(status).monospace().color(theme::TEXT)).truncate());
+        });
+    });
+}
+
+fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
+    ui.horizontal_centered(|ui| {
+        // The newest thing worth knowing: the last entry that is not routine.
+        let last = shell
+            .engine
+            .log()
+            .iter()
+            .rev()
+            .find(|e| e.level >= Level::Info && e.subsystem != Subsystem::App)
+            .cloned();
+        let (text, colour) = last.map_or(("ready".to_owned(), theme::TEXT), |entry| {
+            let colour = match entry.level {
+                Level::Error => theme::ERROR,
+                Level::Warn => theme::WARN,
+                _ => theme::TEXT,
+            };
+            (entry.message, colour)
+        });
+        let (warnings, errors) = shell.problem_counts();
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let label = if shell.console_open { "close console" } else { "console" };
+            if ui.add(Button::new(RichText::new(label).size(11.5)).frame(false)).on_hover_text("`").clicked()
+            {
+                let _ = shell.run("console");
+            }
+            ui.label(
+                RichText::new(if shell.playing { "Space pause" } else { "Space play" })
+                    .size(11.5)
+                    .color(theme::WEAK),
+            );
+            if let Some(ms) = shell.frame_ms {
+                ui.label(RichText::new(format!("{ms:.1} ms")).monospace().size(11.0).color(theme::WEAK));
+            }
+            if errors > 0 {
+                ui.label(
+                    RichText::new(format!("{errors} error{}", if errors == 1 { "" } else { "s" }))
+                        .size(11.5)
+                        .color(theme::ERROR),
+                );
+            }
+            if warnings > 0 {
+                ui.label(
+                    RichText::new(format!("{warnings} warning{}", if warnings == 1 { "" } else { "s" }))
+                        .size(11.5)
+                        .color(theme::WARN),
+                );
+            }
+            // Whatever is left is the status line, cut short rather than wrapped.
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.add(egui::Label::new(RichText::new(text).size(11.5).color(colour)).truncate());
+            });
+        });
+    });
+}
+
+fn console(shell: &mut Shell, ui: &mut egui::Ui) {
+    ui.painter().hline(ui.max_rect().x_range(), ui.max_rect().top(), Stroke::new(1.0, theme::RULE));
+    frame(theme::FOOTER, 10, 3).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Console").color(theme::STRONG).strong());
+            let (warnings, errors) = shell.problem_counts();
+            for (filter, label) in [
+                (ConsoleFilter::All, "all".to_owned()),
+                (ConsoleFilter::Warnings, format!("warnings {warnings}")),
+                (ConsoleFilter::Errors, format!("errors {errors}")),
+            ] {
+                if ui.add(Button::new(label).selected(shell.console_filter == filter)).clicked() {
+                    shell.console_filter = filter;
+                }
+            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.button("close").clicked() {
+                    shell.console_open = false;
+                }
+                if ui.button("clear").clicked() {
+                    let _ = shell.run("clear");
+                }
+            });
+        });
+    });
+    // The command line is laid out first, at the bottom, so the log takes what is left.
+    ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
+        frame(theme::BACKGROUND, 10, 3).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(">").monospace().color(theme::LINK));
+                let edit = egui::TextEdit::singleline(&mut shell.console_line)
+                    .font(egui::TextStyle::Monospace)
+                    .desired_width(f32::INFINITY)
+                    .frame(egui::Frame::NONE)
+                    .hint_text("help · view top · panes 4 · style paper · load void · select tower 3 · undo");
+                let response = ui.add(edit);
+                if shell.focus_console {
+                    response.request_focus();
+                    shell.focus_console = false;
+                }
+                if response.has_focus() {
+                    // Up and down walk the history of what was typed.
+                    let (up, down) = ui
+                        .input(|i| (i.key_pressed(egui::Key::ArrowUp), i.key_pressed(egui::Key::ArrowDown)));
+                    if up && !shell.history.is_empty() {
+                        let at = shell.history_at.map_or(shell.history.len() - 1, |i| i.saturating_sub(1));
+                        shell.history_at = Some(at);
+                        shell.console_line.clone_from(&shell.history[at]);
+                    } else if down && let Some(at) = shell.history_at {
+                        if at + 1 < shell.history.len() {
+                            shell.history_at = Some(at + 1);
+                            shell.console_line.clone_from(&shell.history[at + 1]);
+                        } else {
+                            shell.history_at = None;
+                            shell.console_line.clear();
+                        }
+                    }
+                }
+                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    let line = std::mem::take(&mut shell.console_line);
+                    if !line.trim().is_empty() {
+                        shell.history.push(line.clone());
+                        shell.history_at = None;
+                        let _ = shell.run(&line);
+                        shell.console_open = true;
+                    }
+                    shell.focus_console = true;
+                }
+            });
+        });
+        ui.with_layout(Layout::top_down(Align::Min), |ui| {
+            egui::ScrollArea::vertical().auto_shrink([false, false]).stick_to_bottom(true).show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 1.0;
+                ui.spacing_mut().interact_size.y = 0.0;
+                let font = FontId::monospace(11.5);
+                for entry in shell.console_entries(300) {
+                    let colour = match entry.level {
+                        Level::Error => theme::ERROR,
+                        Level::Warn => theme::WARN,
+                        Level::Info => theme::STRONG,
+                        Level::Debug => theme::TEXT,
+                    };
+                    ui.horizontal(|ui| {
+                        ui.add_space(10.0);
+                        let head = format!(
+                            "{:>8.2}  {:<5}  {:<6}",
+                            entry.at,
+                            entry.level.name(),
+                            entry.subsystem.name()
+                        );
+                        ui.label(RichText::new(head).font(font.clone()).color(theme::WEAK));
+                        ui.label(RichText::new(&entry.message).font(font.clone()).color(colour));
+                    });
+                }
+            });
+        });
+    });
+}
+
+fn timeline_panel(shell: &mut Shell, ui: &mut egui::Ui) {
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Timeline").color(theme::STRONG).strong());
+        if ui.add(Button::new(if shell.playing { "pause" } else { "play" }).min_size(vec2(48.0, 0.0))).clicked() {
+            let _ = shell.run("play");
+        }
+        if ui.button("rewind").clicked() {
+            let _ = shell.run("seek 0");
+        }
+        let instrument = &shell.engine.spec().array.instrument;
+        ui.label(RichText::new(format!("t {:.2} s", shell.engine.time())).monospace().color(theme::STRONG));
+        ui.label(
+            RichText::new(format!(
+                "one lane per tower · each bar is a shot, launch to readout (2T = {:.2} s) · one shot every {:.1} s · drag to scrub",
+                2.0 * instrument.half_sequence,
+                instrument.cycle
+            ))
+            .size(11.0)
+            .color(theme::WEAK),
+        );
+    });
+    let spec = shell.engine.spec();
+    let labels: Vec<String> = spec.array.towers.iter().map(|t| t.label.clone()).collect();
+    let response = timeline::lanes(
+        ui,
+        &labels,
+        &spec.array.instrument,
+        spec.duration,
+        shell.engine.time(),
+        shell.selected_tower(),
+    );
+    if let Some(t) = response.seek {
+        shell.playing = false;
+        shell.apply(Command::Seek(t));
+    }
+    if let Some(n) = response.select {
+        shell.apply(Command::Select(Some(Target::Tower(n + 1))));
+    }
+}
+
+/// A row of the outliner that selects something when clicked.
+fn outline_row(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    target: Target,
+    swatch: Color32,
+    label: &str,
+    detail: &str,
+) {
+    let selected = shell.engine.selection() == Some(target);
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::click());
+    let painter = ui.painter();
+    if selected {
+        painter.rect_filled(rect, 2.0, Color32::from_rgb(0x10, 0x30, 0x3d));
+    } else if response.hovered() {
+        painter.rect_filled(rect, 2.0, Color32::from_rgb(0x24, 0x24, 0x24));
+    }
+    let swatch_rect = Rect::from_center_size(pos2(rect.left() + 14.0, rect.center().y), vec2(9.0, 9.0));
+    painter.rect_filled(swatch_rect, 1.0, swatch);
+    let text = if selected { theme::STRONG } else { theme::TEXT };
+    painter.text(
+        pos2(rect.left() + 26.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        FontId::proportional(13.0),
+        text,
+    );
+    painter.text(
+        pos2(rect.right() - 4.0, rect.center().y),
+        Align2::RIGHT_CENTER,
+        detail,
+        FontId::monospace(11.0),
+        theme::WEAK,
+    );
+    if response.clicked() {
+        shell.apply(Command::Select(if selected { None } else { Some(target) }));
+    }
+}
+
+/// A row of small buttons, each running a console line; the one that matches the state is lit.
+fn button_row(shell: &mut Shell, ui: &mut egui::Ui, label: &str, buttons: &[(&str, &str, bool)]) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 3.0;
+        ui.spacing_mut().button_padding.x = 5.0;
+        ui.add_sized(
+            [42.0, 18.0],
+            egui::Label::new(RichText::new(label).color(theme::WEAK).size(12.0)).halign(Align::Min),
+        );
+        for &(text, line, on) in buttons {
+            let response =
+                ui.add(Button::new(RichText::new(text).size(12.0)).selected(on)).on_hover_text(line);
+            shell.layout.buttons.push((line.to_owned(), response.rect));
+            if response.clicked() {
+                let _ = shell.run(line);
+            }
+        }
+    });
+}
+
+fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
+    ui.label(RichText::new("Outliner").color(theme::STRONG).strong());
+    let spec = shell.engine.spec().clone();
+
+    heading(ui, "Sources");
+    ui.label(RichText::new("none yet · the first mass arrives with S1").size(11.5).color(theme::WEAK));
+
+    heading(ui, "Array");
+    for (n, tower) in spec.array.towers.iter().enumerate() {
+        let [x, y, _] = tower.position;
+        outline_row(
+            shell,
+            ui,
+            Target::Tower(n + 1),
+            theme::tower(n),
+            &tower.label,
+            &format!("{x:+.1} {y:+.1}"),
+        );
+    }
+
+    heading(ui, "Surroundings");
+    if let Some(room) = &spec.room {
+        let [x, y, z] = room.size;
+        outline_row(
+            shell,
+            ui,
+            Target::Room,
+            theme::WIDGET_EDGE,
+            "room",
+            &format!("{x:.0} × {y:.0} × {z:.0} m"),
+        );
+    }
+    if let Some(floor) = &spec.floor {
+        outline_row(
+            shell,
+            ui,
+            Target::Floor,
+            theme::WIDGET_EDGE,
+            "floor",
+            &format!("z = {:.1} m · to the horizon", floor.height),
+        );
+    }
+    if spec.room.is_none() && spec.floor.is_none() {
+        ui.label(RichText::new("nothing: no room, no floor, no air").size(11.5).color(theme::WEAK));
+    }
+
+    heading(ui, "Run");
+    ui.label(RichText::new("no stages yet · the forward pass arrives with S1").size(11.5).color(theme::WEAK));
+
+    heading(ui, "View");
+    let pane = shell.engine.active_pane();
+    let view = shell.engine.view(pane).clone();
+    let at = |named: NamedView| view.named() == Some(named);
+    button_row(
+        shell,
+        ui,
+        "look",
+        &[
+            ("iso", "view iso", at(NamedView::Iso)),
+            ("top", "view top", at(NamedView::Top)),
+            ("btm", "view bottom", at(NamedView::Bottom)),
+            ("N", "view north", at(NamedView::North)),
+            ("S", "view south", at(NamedView::South)),
+            ("E", "view east", at(NamedView::East)),
+            ("W", "view west", at(NamedView::West)),
+        ],
+    );
+    button_row(
+        shell,
+        ui,
+        "project",
+        &[
+            ("perspective", "proj persp", view.projection == Projection::Perspective),
+            ("orthographic", "proj ortho", view.projection == Projection::Orthographic),
+        ],
+    );
+    let panes = shell.engine.panes();
+    button_row(
+        shell,
+        ui,
+        "panes",
+        &[("1", "panes 1", panes == 1), ("2", "panes 2", panes == 2), ("4", "panes 4", panes == 4)],
+    );
+    let style = |s: DrawStyle| view.style == s;
+    button_row(
+        shell,
+        ui,
+        "draw",
+        &[
+            ("shaded", "style shaded", style(DrawStyle::Shaded)),
+            ("flat", "style flat", style(DrawStyle::Flat)),
+            ("x-ray", "style xray", style(DrawStyle::XRay)),
+        ],
+    );
+    button_row(
+        shell,
+        ui,
+        "",
+        &[
+            ("wireframe", "style wireframe", style(DrawStyle::Wireframe)),
+            ("paper", "style paper", style(DrawStyle::Paper)),
+        ],
+    );
+    ui.add_space(4.0);
+    ui.label(
+        RichText::new(
+            "drag to orbit · right-drag to pan · scroll to zoom · O swaps the projection · Home resets",
+        )
+        .size(11.0)
+        .color(theme::WEAK),
+    );
+}
+
+/// A two-column table of names and values.
+fn rows(ui: &mut egui::Ui, id: &str, rows: &[(&str, String)]) {
+    egui::Grid::new(id).num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+        for (name, value) in rows {
+            ui.label(RichText::new(*name).color(theme::WEAK).size(12.0));
+            ui.label(RichText::new(value).monospace().color(theme::STRONG));
+            ui.end_row();
+        }
+    });
+}
+
+fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
+    let spec = shell.engine.spec().clone();
+    let (title, path) = match shell.engine.selection() {
+        None => ("Scene".to_owned(), String::new()),
+        Some(Target::Tower(n)) => {
+            (spec.array.towers[n - 1].label.clone(), format!("array.towers[{}]", n - 1))
+        }
+        Some(Target::Room) => ("Room".to_owned(), "room".to_owned()),
+        Some(Target::Floor) => ("Floor".to_owned(), "floor".to_owned()),
+    };
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Properties").color(theme::STRONG).strong());
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.label(RichText::new(path).monospace().size(11.0).color(theme::WEAK));
+        });
+    });
+    heading(ui, &title);
+    let instrument = &spec.array.instrument;
+    match shell.engine.selection() {
+        None => {
+            ui.label(RichText::new(&spec.description).size(12.0).color(theme::TEXT));
+            ui.add_space(4.0);
+            rows(
+                ui,
+                "scene",
+                &[
+                    ("name", spec.name.clone()),
+                    ("duration", format!("{} s", spec.duration)),
+                    ("towers", spec.array.towers.len().to_string()),
+                    (
+                        "room",
+                        spec.room.as_ref().map_or("none".into(), |r| {
+                            format!("{} × {} × {} m", r.size[0], r.size[1], r.size[2])
+                        }),
+                    ),
+                    (
+                        "floor",
+                        spec.floor
+                            .as_ref()
+                            .map_or("none".into(), |f| format!("{:?}, {} kg/m³", f.kind, f.density)),
+                    ),
+                ],
+            );
+        }
+        Some(Target::Tower(n)) => {
+            let tower = &spec.array.towers[n - 1];
+            let [x, y, z] = tower.position;
+            rows(
+                ui,
+                "placement",
+                &[
+                    ("x (east)", format!("{x} m")),
+                    ("y (north)", format!("{y} m")),
+                    ("z (base)", format!("{z} m")),
+                ],
+            );
+            heading(ui, "Reading");
+            ui.label(
+                RichText::new("no signal yet · the forward model arrives with S1")
+                    .size(11.5)
+                    .color(theme::WEAK),
+            );
+        }
+        Some(Target::Room) => {
+            let room = spec.room.as_ref().expect("a selected room exists");
+            rows(
+                ui,
+                "room",
+                &[
+                    ("origin", format!("{}, {}, {} m", room.origin[0], room.origin[1], room.origin[2])),
+                    ("size", format!("{} × {} × {} m", room.size[0], room.size[1], room.size[2])),
+                ],
+            );
+        }
+        Some(Target::Floor) => {
+            let floor = spec.floor.as_ref().expect("a selected floor exists");
+            rows(
+                ui,
+                "floor",
+                &[
+                    ("height", format!("{} m", floor.height)),
+                    ("kind", format!("{:?}", floor.kind)),
+                    ("density", format!("{} kg/m³", floor.density)),
+                ],
+            );
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new("declared and drawn; its gravity arrives with S1")
+                    .size(11.5)
+                    .color(theme::WEAK),
+            );
+        }
+    }
+
+    heading(ui, "Instrument · shared by every tower");
+    rows(
+        ui,
+        "instrument",
+        &[
+            ("tower height", format!("{} m", instrument.tower_height)),
+            ("Δr", format!("{} m", instrument.ifo_separation)),
+            ("T", format!("{} s", instrument.half_sequence)),
+            ("u₀", format!("{} m/s", instrument.launch_velocity)),
+            ("cycle", format!("{} s", instrument.cycle)),
+        ],
+    );
+
+    let pane = shell.engine.active_pane();
+    let view = shell.engine.view(pane).clone();
+    heading(ui, &format!("Camera · pane {}", pane + 1));
+    rows(
+        ui,
+        "camera",
+        &[
+            ("target", format!("{:.2}, {:.2}, {:.2} m", view.target[0], view.target[1], view.target[2])),
+            ("yaw · pitch", format!("{:.1}° · {:.1}°", view.yaw, view.pitch)),
+            ("distance", format!("{:.2} m", view.distance)),
+        ],
+    );
+    ui.add_space(6.0);
+    ui.label(
+        RichText::new("read-only in S0 · editing any field arrives with S2").size(11.0).color(theme::WEAK),
+    );
+}
+
+fn header(shell: &mut Shell, ui: &mut egui::Ui) {
+    ui.horizontal_centered(|ui| {
+        ui.label(RichText::new("Scene view").color(theme::STRONG));
+        let pane = shell.engine.active_pane();
+        let view = shell.engine.view(pane);
+        badge(ui, shell.engine.spec().name.clone(), theme::GOLD);
+        let direction = view.named().map_or("free", NamedView::name);
+        let projection =
+            if view.projection == Projection::Perspective { "perspective" } else { "orthographic" };
+        badge(ui, format!("{direction} · {projection}"), theme::STRONG);
+        badge(ui, view.style.name(), theme::STRONG);
+        if shell.engine.panes() > 1 {
+            badge(ui, format!("pane {} of {}", pane + 1, shell.engine.panes()), theme::LINK);
+        }
+        if let Some(target) = shell.engine.selection() {
+            let text = match target {
+                Target::Tower(n) => shell.engine.spec().array.towers[n - 1].label.clone(),
+                Target::Room => "room".into(),
+                Target::Floor => "floor".into(),
+            };
+            badge(ui, format!("selected: {text}"), theme::STRONG);
+        }
+    });
+}
+
+fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
+    let area = ui.max_rect();
+    ui.painter().rect_filled(area, 0.0, theme::BACKGROUND);
+    shell.layout.figure = area;
+    let scale = ui.ctx().pixels_per_point();
+    let size =
+        [(area.width() * scale).round().max(1.0) as u32, (area.height() * scale).round().max(1.0) as u32];
+    let count = shell.engine.panes();
+    let active = shell.engine.active_pane();
+    let generation = shell.engine.generation();
+    let mut commands: Vec<Command> = Vec::new();
+    let mut drags: Vec<(usize, egui::Vec2, bool, egui::Vec2)> = Vec::new();
+    let mut zooms: Vec<(usize, f32)> = Vec::new();
+
+    for (pane, pixels) in pane_rects(count, size, PANE_GAP).into_iter().enumerate() {
+        let rect = Rect::from_min_size(
+            area.min + vec2(pixels.x as f32, pixels.y as f32) / scale,
+            vec2(pixels.width as f32, pixels.height as f32) / scale,
+        );
+        shell.layout.panes.push(rect);
+        if pixels.width == 0 || pixels.height == 0 {
+            continue;
+        }
+        let frame = Frame {
+            scene: shell.engine.spec(),
+            view: shell.engine.view(pane),
+            highlight: shell.engine.selection(),
+        };
+        match surface.texture(pane, [pixels.width, pixels.height], generation, frame) {
+            Some(texture) => {
+                let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+                ui.painter().image(texture, rect, uv, Color32::WHITE);
+            }
+            None => {
+                ui.painter().text(
+                    rect.center(),
+                    Align2::CENTER_CENTER,
+                    "no GPU surface",
+                    FontId::proportional(12.0),
+                    theme::WEAK,
+                );
+            }
+        }
+        if count > 1 {
+            let (colour, width) =
+                if pane == active { (theme::SELECTION_EDGE, 1.5) } else { (theme::RULE, 1.0) };
+            ui.painter().rect_stroke(rect, 0.0, Stroke::new(width, colour), StrokeKind::Inside);
+            let view = shell.engine.view(pane);
+            let name = view.named().map_or("free", NamedView::name);
+            let text = theme::WEAK;
+            ui.painter().text(
+                rect.left_top() + vec2(6.0, 4.0),
+                Align2::LEFT_TOP,
+                name,
+                FontId::proportional(11.0),
+                text,
+            );
+        }
+        let response = ui.interact(rect, egui::Id::unique(("pane", pane)), Sense::click_and_drag());
+        if (response.clicked() || response.drag_started()) && pane != active {
+            commands.push(Command::View(ViewCommand::Activate(pane)));
+        }
+        if response.dragged() {
+            let panning = response.dragged_by(egui::PointerButton::Secondary)
+                || response.dragged_by(egui::PointerButton::Middle);
+            drags.push((pane, response.drag_delta(), panning, rect.size()));
+        }
+        if response.hovered() {
+            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+            if scroll != 0.0 {
+                zooms.push((pane, scroll));
+            }
+        }
+    }
+
+    // Home: the one control on the figure.
+    if !shell.gui_hidden {
+        let home = Rect::from_min_size(pos2(area.right() - 62.0, area.top() + 8.0), vec2(54.0, 20.0));
+        let response = ui
+            .put(home, Button::new(RichText::new("Home").size(12.0)))
+            .on_hover_text("reset the camera (Home)");
+        shell.layout.buttons.push(("view home".to_owned(), response.rect));
+        if response.clicked() {
+            let _ = shell.run("view home");
+        }
+    }
+
+    for command in commands {
+        shell.apply(command);
+    }
+    for (pane, delta, panning, size) in drags {
+        if delta != egui::Vec2::ZERO {
+            if panning { shell.pan_by(pane, delta, size) } else { shell.orbit_by(pane, delta) }
+        }
+    }
+    for (pane, scroll) in zooms {
+        shell.zoom_by(pane, scroll);
+    }
+}
+
+fn windows(shell: &mut Shell, ctx: &egui::Context) {
+    let mut keys_open = shell.keys_open;
+    egui::Window::new("Keyboard")
+        .open(&mut keys_open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(430.0)
+        .show(ctx, |ui| {
+            let keys: &[(&str, &str)] = &[
+                ("Space", "play / pause"),
+                ("← →", "step the playhead by 0.1 s"),
+                ("1 – 9", "select a tower"),
+                ("Esc", "close a window, the console, leave F3, clear the selection"),
+                ("Home", "reset the active pane's camera"),
+                ("O", "perspective ↔ orthographic"),
+                ("Ctrl+Z · Ctrl+Shift+Z", "undo · redo — every edit, whatever made it"),
+                ("`", "console"),
+                ("F3", "hide the GUI; the scene fills the window"),
+                ("?", "this window"),
+            ];
+            egui::Grid::new("keys").num_columns(2).spacing([16.0, 5.0]).show(ui, |ui| {
+                for (key, what) in keys {
+                    ui.label(RichText::new(*key).monospace().color(theme::STRONG));
+                    ui.label(*what);
+                    ui.end_row();
+                }
+            });
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new("every key is a console command; `help` lists them all")
+                    .size(11.0)
+                    .color(theme::WEAK),
+            );
+        });
+    shell.keys_open = keys_open;
+
+    let mut about_open = shell.about_open;
+    egui::Window::new("About Cavendish")
+        .open(&mut about_open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(380.0)
+        .show(ctx, |ui| {
+            ui.label(
+                RichText::new(format!("Cavendish {}", cav_engine::VERSION)).color(theme::STRONG).strong(),
+            );
+            ui.label("A voxel world around an array of atom-interferometer gravity gradiometers.");
+            ui.add_space(4.0);
+            ui.label(RichText::new("Slice S0: the shell. No physics yet.").color(theme::WEAK));
+            if let Some(adapter) = &shell.adapter {
+                ui.label(RichText::new(adapter).monospace().size(11.0).color(theme::WEAK));
+            }
+            ui.add_space(4.0);
+            ui.label(RichText::new("The window's own commands:").size(11.5));
+            for (name, about) in APP_COMMANDS {
+                ui.label(
+                    RichText::new(format!("{name:<8} {about}")).monospace().size(11.0).color(theme::WEAK),
+                );
+            }
+        });
+    shell.about_open = about_open;
+}

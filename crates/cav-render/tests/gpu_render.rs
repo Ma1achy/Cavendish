@@ -161,11 +161,9 @@ fn gpu_orthographic_and_perspective_differ_as_expected() {
     let scene = dev::void();
     // From east-south-east, level with the middle of the towers: no tower hides another, and tower 2
     // (at x = +4) is nearer than tower 3 (at x = −4).
-    let base = ViewSpec {
-        yaw: -30.0,
-        pitch: 0.0,
-        ..ViewSpec::framing(&scene, NamedView::South, Projection::Orthographic, DrawStyle::Flat)
-    };
+    let mut base = ViewSpec::framing(&scene, NamedView::South, Projection::Orthographic, DrawStyle::Flat);
+    (base.yaw, base.pitch) = (-30.0, 0.0);
+    base.frame(&scene);
     let height_of = |picture: &Picture, n: usize| {
         let (top, bottom) =
             picture.rows_of(tower_srgb(n), 8).unwrap_or_else(|| panic!("tower {} is not drawn", n + 1));
@@ -178,7 +176,8 @@ fn gpu_orthographic_and_perspective_differ_as_expected() {
         assert!((h - heights[0]).abs() <= 2.0, "orthographic heights differ: {heights:?}");
     }
     // Perspective: the nearer tower is taller by the ratio of the distances, as the CPU camera predicts.
-    let view = ViewSpec { projection: Projection::Perspective, ..base };
+    let mut view = ViewSpec { projection: Projection::Perspective, ..base };
+    view.frame(&scene);
     let persp = render(&gpu, &renderer, &scene, &view);
     let camera = camera(&view);
     let predicted = |n: usize| {

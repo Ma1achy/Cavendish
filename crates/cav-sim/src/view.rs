@@ -12,6 +12,11 @@ use crate::SceneSpec;
 /// The full vertical field of view of the perspective camera, degrees.
 pub const FOV_Y_DEGREES: f64 = 35.0;
 
+/// Framing assumes the picture is at least this many times as wide as it is high.
+pub const FRAMING_ASPECT: f64 = 1.25;
+/// Framing stands back this much further than the tightest fit.
+pub const FRAMING_MARGIN: f64 = 1.12;
+
 /// A named, square-on or isometric direction to look from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum NamedView {
@@ -141,13 +146,50 @@ impl ViewSpec {
     /// The view from `named` that frames the whole scene.
     #[must_use]
     pub fn framing(scene: &SceneSpec, named: NamedView, projection: Projection, style: DrawStyle) -> Self {
-        let (lo, hi) = scene.bounds();
-        let target = [0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]), 0.5 * (lo[2] + hi[2])];
-        let radius = 0.5 * (0..3).map(|a| (hi[a] - lo[a]).powi(2)).sum::<f64>().sqrt();
-        // The bounding sphere just fits the vertical field of view, with a margin.
-        let distance = 1.02 * radius.max(0.5) / (0.5 * FOV_Y_DEGREES).to_radians().sin();
         let (yaw, pitch) = named.angles();
-        Self { target, yaw, pitch, distance, projection, style }
+        let mut view = Self { target: [0.0; 3], yaw, pitch, distance: 1.0, projection, style };
+        view.frame(scene);
+        view
+    }
+
+    /// Moves the target to the middle of the scene and stands back just far enough to see all of
+    /// it from the present direction, in the present projection, with a margin. The picture is
+    /// taken to be at least [`FRAMING_ASPECT`] times as wide as it is high.
+    pub fn frame(&mut self, scene: &SceneSpec) {
+        let (lo, hi) = scene.bounds();
+        let half = [0.5 * (hi[0] - lo[0]), 0.5 * (hi[1] - lo[1]), 0.5 * (hi[2] - lo[2])];
+        self.target = [0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]), 0.5 * (lo[2] + hi[2])];
+        let (to_eye, right, up) = self.basis();
+        let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let slope = (0.5 * FOV_Y_DEGREES).to_radians().tan();
+        // Each corner of the bounding box must be inside the picture. A corner `across` metres off
+        // the axis and `nearer` metres towards the camera needs across ≤ (distance − nearer)·slope
+        // in perspective; in an orthographic view its depth does not matter.
+        let mut distance = 0.5 / slope;
+        for corner in 0..8 {
+            let sign = |bit: u32| if corner & bit == 0 { -1.0 } else { 1.0 };
+            let offset = [sign(1) * half[0], sign(2) * half[1], sign(4) * half[2]];
+            let across = dot(offset, up).abs().max(dot(offset, right).abs() / FRAMING_ASPECT);
+            let nearer = if self.projection == Projection::Perspective { dot(offset, to_eye) } else { 0.0 };
+            distance = f64::max(distance, across / slope + nearer);
+        }
+        self.distance = FRAMING_MARGIN * distance;
+    }
+
+    /// The basis of the camera from its angles: the unit vectors from the target towards the
+    /// camera, to the right of the picture and up it. Defined at the poles too, where yaw says
+    /// which way is up.
+    #[must_use]
+    pub fn basis(&self) -> ([f64; 3], [f64; 3], [f64; 3]) {
+        let (yaw, pitch) = (self.yaw.to_radians(), self.pitch.to_radians());
+        let to_eye = [pitch.cos() * yaw.cos(), pitch.cos() * yaw.sin(), pitch.sin()];
+        let right = [-yaw.sin(), yaw.cos(), 0.0];
+        let up = [
+            to_eye[1] * right[2] - to_eye[2] * right[1],
+            to_eye[2] * right[0] - to_eye[0] * right[2],
+            to_eye[0] * right[1] - to_eye[1] * right[0],
+        ];
+        (to_eye, right, up)
     }
 
     /// The scene's home view: isometric, perspective, shaded.
@@ -181,19 +223,97 @@ mod tests {
         assert_eq!(DrawStyle::parse("x-ray"), None);
     }
 
+    /// How much of the half-height and half-width of the picture (at `FRAMING_ASPECT`) the
+    /// bounding box of the scene takes up in `view`: the largest over its corners, 1 being the edge.
+    fn fill(scene: &SceneSpec, view: &ViewSpec) -> f64 {
+        let (lo, hi) = scene.bounds();
+        let (to_eye, right, up) = view.basis();
+        let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let slope = (0.5 * FOV_Y_DEGREES).to_radians().tan();
+        let mut worst = 0f64;
+        for corner in 0..8u32 {
+            let pick = |axis: usize| if corner & (1 << axis) == 0 { lo[axis] } else { hi[axis] };
+            let offset = [pick(0) - view.target[0], pick(1) - view.target[1], pick(2) - view.target[2]];
+            let depth = match view.projection {
+                Projection::Perspective => view.distance - dot(offset, to_eye),
+                Projection::Orthographic => view.distance,
+            };
+            assert!(depth > 0.0, "a corner is behind the camera");
+            let reach = depth * slope;
+            worst = worst
+                .max(dot(offset, up).abs() / reach)
+                .max(dot(offset, right).abs() / (reach * FRAMING_ASPECT));
+        }
+        worst
+    }
+
     #[test]
-    fn framing_centres_on_the_scene_and_stands_back_far_enough() {
-        let scene = SceneSpec::room();
-        let home = ViewSpec::home(&scene);
-        assert_eq!(home.target, [0.0, 0.0, 5.0]);
-        assert_eq!(home.named(), Some(NamedView::Iso));
-        // The bounding sphere (radius √75 m) subtends less than the field of view.
-        let radius = 75f64.sqrt();
-        let half_angle = (radius / home.distance).asin().to_degrees();
-        assert!(half_angle < 0.5 * FOV_Y_DEGREES, "half angle {half_angle}");
-        assert!(half_angle > 0.45 * FOV_Y_DEGREES, "and it is not lost in the distance: {half_angle}");
-        // Control: a camera nudged off a named direction is no longer at a named view.
-        let nudged = ViewSpec { yaw: home.yaw + 1.0, ..home };
-        assert_eq!(nudged.named(), None);
+    fn framing_shows_the_whole_scene_and_fills_the_picture() {
+        let room = SceneSpec::room();
+        let void = SceneSpec { room: None, ..SceneSpec::room() };
+        for scene in [&room, &void] {
+            for named in NamedView::ALL {
+                for projection in [Projection::Perspective, Projection::Orthographic] {
+                    let view = ViewSpec::framing(scene, named, projection, DrawStyle::Shaded);
+                    let (lo, hi) = scene.bounds();
+                    assert_eq!(
+                        view.target,
+                        [0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]), 0.5 * (lo[2] + hi[2])]
+                    );
+                    assert_eq!(view.named(), Some(named));
+                    // Everything is in view with at least the margin to spare. In an orthographic
+                    // view the furthest-out corner sits exactly at 1/margin of the way to the edge;
+                    // in perspective the margin also scales the corner's depth, so it sits a
+                    // little inside that, and never so far in that the scene is lost.
+                    let filled = fill(scene, &view);
+                    let limit = 1.0 / FRAMING_MARGIN;
+                    match projection {
+                        Projection::Orthographic => {
+                            assert!((filled - limit).abs() < 1e-9, "{named:?} orthographic: fills {filled}");
+                        }
+                        Projection::Perspective => {
+                            assert!(
+                                filled <= limit + 1e-9 && filled > 0.8,
+                                "{named:?} perspective: fills {filled}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        // Control arms: the measure sees a camera that stands too close or too far.
+        let home = ViewSpec::home(&room);
+        assert!(
+            fill(&room, &ViewSpec { distance: 0.7 * home.distance, ..home.clone() }) > 1.0,
+            "too close clips the scene"
+        );
+        assert!(fill(&room, &ViewSpec { distance: 3.0 * home.distance, ..home.clone() }) < 0.4);
+        // And one nudged off a named direction is no longer at a named view.
+        assert_eq!(ViewSpec { yaw: home.yaw + 1.0, ..home }.named(), None);
+    }
+
+    #[test]
+    fn the_basis_is_orthonormal_and_north_is_up_in_plan() {
+        let mut view = ViewSpec::home(&SceneSpec::room());
+        let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        for (yaw, pitch) in [(0.0, 0.0), (37.0, 12.5), (-170.0, -89.0), (-90.0, 90.0), (90.0, -90.0)] {
+            (view.yaw, view.pitch) = (yaw, pitch);
+            let (e, r, u) = view.basis();
+            for v in [e, r, u] {
+                assert!((dot(v, v) - 1.0).abs() < 1e-12);
+            }
+            assert!(dot(e, r).abs() < 1e-12 && dot(e, u).abs() < 1e-12 && dot(r, u).abs() < 1e-12);
+        }
+        // From above with north up: east is to the right and north is up the picture.
+        (view.yaw, view.pitch) = NamedView::Top.angles();
+        let (e, r, u) = view.basis();
+        let near = |a: [f64; 3], b: [f64; 3]| (0..3).all(|i| (a[i] - b[i]).abs() < 1e-12);
+        assert!(
+            near(e, [0.0, 0.0, 1.0]) && near(r, [1.0, 0.0, 0.0]) && near(u, [0.0, 1.0, 0.0]),
+            "{e:?} {r:?} {u:?}"
+        );
+        // Control: from below, east is to the left.
+        (view.yaw, view.pitch) = NamedView::Bottom.angles();
+        assert!(near(view.basis().1, [-1.0, 0.0, 0.0]));
     }
 }
