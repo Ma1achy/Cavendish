@@ -320,11 +320,11 @@ its oracle checks, a performance note, screenshots in `docs/slices/`. Main alway
 
 | # | Slice | The new thing you can do | Oracle / exit |
 |---|---|---|---|
-| S0 | **The shell** | Open the app: the room, five towers, the panels, the console, the timeline, the view controls (projections, named views, panes, styles). `cav doctor`, `cav render` of an empty scene; `cav mcp` answering `scene_schema` | builds in under a minute cold on the M3; `quick` under 10 s |
+| S0 | **The shell** | Open the app: the room, five towers, the panels, the console, the timeline, the view controls (projections, named views, panes, styles). `cav doctor`, `cav render` of an empty scene; `cav mcp` answering `scene_schema` | builds in under a minute cold on the build PC; `quick` under 10 s |
 | S1 | **A point mass** | Drag a mass around; see each tower's phase update live; play a straight pass; plot the signal | phase vs v1 rigid source ≤1e-10 on the anchors (`oracle`) |
 | S2 | **Scenes as files, the API everywhere** | Load and save `.ron` scenes; edit any path from a panel, the console, the CLI or an agent over MCP; undo; per-tower timing lanes; headless `run` writes a bundle | a session replays from its log bit-identically; `.npy` round-trips |
 | S3 | **Voxel bodies** | Shapes library (primitives, Platonic solids, meshes); bodies drawn as trees; colour by any field with generated legends; debug overlays | tree expanded = raster voxeliser bit-exact; merged = unmerged ≤1e-12; mass and inertia vs analytic |
-| S4 | **Big scenes** | A 10¹⁰-cell scene (terrain, buildings, a road) at 60 fps with streaming and view LOD; paper style export to SVG | frame-time budget met on the M3, measured |
+| S4 | **Big scenes** | A 10¹⁰-cell scene (terrain, buildings, a road) at 60 fps with streaming and view LOD; paper style export to SVG | frame-time budget met on the build PC, measured |
 | S5 | **Gravity on the GPU, at scale** | Real-time phase for big scenes; the bounded walk and instrument LOD with the error badge; the error ledger in bundles | GPU = CPU f64 ≤1e-9 with float-float; walk error ≤ tol; no steps in time |
 | S6 | **Things that move** | Paths, populations (traffic, birds, drones, aircraft), articulated walkers on per-bone trees, the outdoor library scenes | mass conserved bit-exact through poses; signal-size guide holds within ×10 |
 | S7 | **Things that fall and stack** | Rigid dynamics with voxel contact; drop, bounce, stack; recorded tracks | free fall ≤1e-10 m; slept pose bit-constant; box on box rests |
