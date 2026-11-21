@@ -142,10 +142,10 @@ pub fn parse_obj(bytes: &[u8]) -> Result<TriSoup, ShapeError> {
     let mut tris = Vec::new();
     for m in &models {
         let base = verts.len();
-        for c in m.mesh.positions.chunks_exact(3) {
+        for c in m.mesh.positions.as_chunks::<3>().0 {
             verts.push([c[0] as f64, c[1] as f64, c[2] as f64]);
         }
-        for idx in m.mesh.indices.chunks_exact(3) {
+        for idx in m.mesh.indices.as_chunks::<3>().0 {
             tris.push([
                 base + idx[0] as usize,
                 base + idx[1] as usize,
@@ -183,7 +183,7 @@ pub fn parse_gltf(bytes: &[u8]) -> Result<TriSoup, ShapeError> {
             match reader.read_indices() {
                 Some(idx) => {
                     let idx: Vec<u32> = idx.into_u32().collect();
-                    for t in idx.chunks_exact(3) {
+                    for t in idx.as_chunks::<3>().0 {
                         tris.push([
                             base + t[0] as usize,
                             base + t[1] as usize,
