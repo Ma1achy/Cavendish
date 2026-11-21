@@ -21,7 +21,11 @@ macro_rules! scene {
 }
 
 /// Every built-in scene, in the order the library shows them.
-pub const LIBRARY: &[LibraryScene] = &[scene!("room", "scenes/library/room.ron")];
+pub const LIBRARY: &[LibraryScene] = &[
+    scene!("room", "scenes/library/room.ron"),
+    scene!("void", "scenes/dev/void.ron"),
+    scene!("infinite-floor", "scenes/dev/infinite-floor.ron"),
+];
 
 /// Loads a scene by library name, or else from a `.ron` file at that path.
 ///
