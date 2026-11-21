@@ -242,8 +242,13 @@ benchmark at Ra=10⁵ and 10⁶ (Nu 4.519, 8.800) and a 3-D case; volumetric ski
 diffusion plus skinned glTF import; room acoustic modes as an analytic grid field; box–box contact
 (SAT + clipping, manifold reduction) with the rest-determinism test extended to stacks; two-way
 coupling only if a water or near-buoyant scene needs it. Box–box and arbitrary-shape contact, the
-per-bone trees and the hierarchical grid response are M14 phases D–E. Adaptive refinement of the air
-is the last item and is gated on a measurement (`design/voxel.md` §9).
+per-bone trees and the hierarchical grid response are M14 phases D–E.
+
+### Step 5b — Adaptive fluids (committed; after the uniform GPU solver of step 2)
+
+M14 phases G–H, `design/voxel.md` §9: the air on a balanced octree refined where a tower can see it,
+with the uniform solver as its oracle; then free-surface liquids with two-way coupling. Phase G's
+four defences against spurious currents are exit conditions, not aspirations.
 
 ### Step 6 — Gradar datasets
 

@@ -386,7 +386,8 @@ recorded tracks → air around them → both into the `Scenario`. Nothing is co-
   voxeliser, the gravity read (lossless interior merge, tolerance-bounded far field), per-bone trees
   for articulated bodies, a hierarchical grid response, obstacle stamping and contact. At the pitches
   used so far (5–8 cm) the merge alone gains under 2×; its value is in making fine bodies affordable.
-  The world-level collision tree waits for many bodies; adaptive air is gated on a measurement.
+  The world-level collision tree waits for many bodies. The fluid moves onto the tree and becomes
+  adaptive (`design/voxel.md` §9); the solver in §5 is kept as its oracle.
 - **Room acoustics** — standing-wave density modes as an analytic grid field.
 - **Differentiability.** The crate is `f64`, not `Scalar`-generic. Nothing in it is on the CRB's
   differentiable path (`design/world.md` §7); if a simulated source ever needs a Jacobian, that

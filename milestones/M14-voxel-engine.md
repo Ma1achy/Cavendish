@@ -30,6 +30,9 @@
 | M14-R9 | Obstacle stamping from trees: volume fraction exact for merged leaves; immersed surface area within 5% of the true area at 4 cells radius (today: 8% low). |
 | M14-R10 | Voxel contact: narrow-band distance sidecar, surface-sample contact generation, manifold reduction to ≤4 points with warm start. Box–box, box–sphere and arbitrary voxelised shapes collide; a settled stack is bit-constant. |
 | M14-R12 | **M12 is rebased, not duplicated.** After phase E no production code in `physics` evaluates a flat parcel sum, builds a dense-only response, stamps bodies by point splat, or resolves contact only analytically. The old routines survive in `#[cfg(test)]` as oracles. Every M12 test still passes, retargeted where it named a removed path. |
+| M14-R13 | **Adaptive fluids.** The air is simulated on a balanced (2:1) octree with MAC unknowns, a well-balanced buoyancy term and multigrid-preconditioned CG. Refinement is goal-oriented (tower response × density variation, plus flow resolution and solid proximity). Regridding conserves mass anomaly and puts no step in any signal above `tol`. A fully refined tree reproduces the uniform solver. |
+| M14-R14 | **Liquids.** A free-surface liquid on the same solver: narrow-band level set, full-density gravity read, two-way coupling with rigid bodies. |
+| M14-R15 | **Adaptive voxelisation.** A body's surface leaves are refined until their estimated phase error at closest approach to a tower is under `tol`. |
 | M14-R11 | **It is faster, measured.** On a named fine body, the tree evaluation beats the flat sum in wall-clock at equal error by a stated factor; if it does not, the flat path stays the default and the brief says so. |
 
 ---
@@ -45,6 +48,8 @@ Each phase is one branch and one PR, leaves the workspace green, and has its own
 | **C — bounded evaluation** | general moments to octupole; the tolerance walk; differential-first accumulation; the jitter test | R5, R11 | error ≤ `tol` for `tol` ∈ {1e-6, 1e-8, 1e-10}; no steps; the speed table in §5 filled in from a run |
 | **D — rebase bodies and fields** | `Parcels` stores per-bone trees and a blend shell; `GridField` builds its response on the tree cut (`tol = 0` = today's dense `W`); flat sums move into tests | R7, R8, R12 | walker by trees = walker by flat sum within `tol`; hierarchical response = dense within `tol`; all M12 `body`, `grid` and `generate/tests/world` tests green |
 | **E — rebase air coupling and contact** | tree stamping onto the air grid; the pyramid exposed for the solver; distance sidecar; voxel contact and manifold cache; analytic pairs demoted to oracle / primitive fast path | R9, R10, R12 | area test; `box_box_contact_is_refused` replaced by `box_rests_on_box_exactly`; stack of three sleeps bit-constant; all M12 `scene`, `rigid` and `fluid` tests green |
+| **G — adaptive air** | balanced octree grid, level transfers, well-balanced buoyancy, flux-form Poisson with multigrid-PCG, goal-oriented regridding; adaptive voxelisation of bodies | R13, R15 | the seven checks of `design/voxel.md` §9.5; cells and wall-clock against the uniform run at equal phase error, recorded |
+| **H — liquids** | level set in a narrow band, full-density read, two-way coupling | R14 | a tank at rest stays at rest; a dam break matches the standard front-position curve within 5%; a floating box sits at its Archimedes draught within one cell; sloshing in a driven tank conserves mass to rounding |
 | **F — device** | tree upload, WGSL walk, float-float accumulation; merged into the GPU steps of the handoff | (handoff steps 3–4) | CPU≡GPU ≤1e-9 with float-float on both real devices |
 
 A–C are the engine. D and E are the rebase: they are what make it *the* representation, and they are
@@ -169,11 +174,18 @@ R1 → `morton_*`, `build_is_deterministic`, `sidecar_*` · R2 → `tree_expands
 
 ## 7. Not in this milestone
 
-Adaptive refinement of the air (`design/voxel.md` §9 — gated on a measurement of the uniform GPU
-solver); a world-level broad-phase tree; destruction or topology change of a body at run time; a
+A world-level broad-phase tree; destruction or topology change of a body at run time; a
 tighter bound on the differenced phase (an open question the brief does not depend on); 4³ re-packing.
 
 ## 8. Risks, stated
+
+- **Adaptive incompressible flow is the hardest thing in this plan.** Its characteristic failure —
+  spurious currents at level jumps under stratification — would appear as spurious gravity-gradient
+  noise, i.e. in the signal. The defences are the well-balanced buoyancy term, the fully-refined ≡
+  uniform test, the at-rest test on a graded grid, and the no-step-on-regrid test. Phase G is not
+  done until all four pass; the uniform solver remains available as a setting.
+- **Phase order within fluids:** the uniform GPU solver comes first (it is the oracle and the
+  fully-refined case), then G, then H.
 
 - **The rebase touches working code.** M12 is implemented and tested on the branch; phases D–E rework
   how its bodies, response, stamping and contact store and read matter. The mitigation is that M12's

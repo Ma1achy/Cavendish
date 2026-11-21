@@ -474,7 +474,8 @@ rebased onto it rather than extended beside it; the v1 spine stays as the frozen
 **Builds.** The `voxel` crate (`VoxTree`: linear octree from Morton keys, value sidecars, moments); a
 top-down voxeliser through `Solid::cover`; the lossless merge of homogeneous interior cells and the
 cube series kernel; a tree walk bounded by a stated phase tolerance; `TreeBody`; per-bone trees for
-articulated bodies; a hierarchical grid response; obstacle stamping and contact from voxels.
+articulated bodies; a hierarchical grid response; obstacle stamping and contact from voxels. Then
+fluids on the same tree: adaptive air refined by what a tower can see, and free-surface liquids.
 
 **Exit.** The tree expanded to finest cells equals `shape::voxelise` bit for bit; merged equals
 unmerged (≤1e-12); walk error ≤ the stated tolerance with no steps in time; v1 bundles byte-identical;

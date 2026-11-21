@@ -34,7 +34,7 @@ be the monkey-patch the project decided against. The rule instead:
 | `Parcels` evaluates a flat parcel sum | bodies are trees: one per rigid body, one per bone, joint parcels as finest leaves | the maps (rigid / skinned / displaced), skeletons and mass-conservation logic are kept; the flat sum moves into tests as the oracle |
 | `GridField` with a dense response `W` | the response lives on a fixed cut of the room's tree; `tol = 0` is the dense `W` | same code path; the dense case is a setting, not a second implementation |
 | bodies stamped onto the air by point splats | stamped from tree leaves (exact volume fraction, geometric area) | `Grid3::splat` stays for genuinely point-like deposits |
-| fluid on a bare dense grid, MIC(0)-PCG | the same dense finest level, viewed as the bottom of a pyramid that the multigrid solve uses | discretisation, advection and the equation of state unchanged |
+| fluid on a bare dense grid, MIC(0)-PCG | the fluid lives on a balanced octree, refined where a tower can see it (§9); multigrid on the tree's levels | the uniform solver stays as the oracle: a fully refined tree must reproduce it |
 | analytic contact for a few shape pairs; box–box refused | contact from the distance sidecar for any pair | analytic pairs kept as the oracle and as a fast path for primitive pairs |
 | viewer replay stores per-frame point positions | replay stores trees once plus per-frame poses / bone transforms | — |
 | GPU: nothing | device encoding of every source is the tree | — |
@@ -68,9 +68,9 @@ parts that survive Cavendish's accuracy standard (§2).
 | Linear octree from sorted Morton keys; leaf array + breadth-first internal nodes; rebuild instead of edit | Bonsai (Bédorf et al. 2012), Cornerstone (Keller et al. 2023) | the whole build: key → radix sort → levels by masking → link by binary search. One algorithm for CPU and WGSL | Hilbert keys (better locality across ranks; irrelevant on one device) |
 | Child bitmask + popcount indexing into packed child arrays | ESVO; sparse 64-trees | 8-bit child masks, packed children | 4³ nodes: fewer levels and faster ray-marching, but a node collapses only when all 64 children agree, which costs the lossless merge (§5) its yield. The key format makes a later re-pack to 4³ a storage change only |
 | Topology separate from values; values in flat "sidecar" arrays indexed by active-voxel ordinal | NanoVDB index grids, fVDB | exactly this: one topology, many sidecars (mass, density, temperature, SDF, colour) | VDB's fixed 5-4-3 depth: built for 10⁹-voxel film volumes; our bodies are 10⁴–10⁷ |
-| Bulk-synchronous topology change: mark, prefix-sum, allocate once, rebuild | NanoVDB dynamic grids (Sifakis et al. 2026) | the model — no pointer edits, ever | their operators (dilation, pruning); not needed until adaptive air (§9) |
+| Bulk-synchronous topology change: mark, prefix-sum, allocate once, rebuild | NanoVDB dynamic grids (Sifakis et al. 2026) | the model — no pointer edits, ever | — (dilation and pruning are what regridding and the liquid's narrow band use, §9) |
 | Multipole acceptance with an explicit error bound, not a bare opening angle | Barnes–Hut 1986; Salmon & Warren 1994; Dehnen 2002 | bound-driven opening (§6) | fixed θ ≈ 0.5–0.75: gives 10⁻³ force error, six orders short of what is needed here |
-| Pyramid of uniform levels for multigrid and 2:1 adaptive grids | SPGrid (Setaluri et al. 2014); Losasso et al. 2004 | the pyramid as multigrid levels for the pressure solve (§9) | adaptive refinement of the air: planned last, gated on measurement |
+| Pyramid of uniform levels for multigrid and 2:1 adaptive grids | SPGrid (Setaluri et al. 2014); Losasso et al. 2004 | the pyramid as storage and as multigrid levels; adaptive refinement of every fluid (§9) | — |
 | Any shape collides with any shape by testing one body's surface voxels against the other's occupancy / distance field | voxel game engines; SDF contact generation | voxel contact with manifold reduction (§10), replacing the refused box–box case | per-voxel destruction, fracture |
 | DDA / hierarchical ray-marching of the same structure that is simulated | ESVO, 64-tree marching | the viewer draws the tree it is given (§11) | DAG compression: rendering-only, and bodies here carry per-voxel mass |
 
@@ -137,9 +137,8 @@ pub struct Moments { pub mass: f64, pub com: [f64; 3], pub radius: f64, pub quad
   trees under a top-level table.
 - **Determinism.** Morton order is canonical; summation order is fixed by it. Same inputs → identical
   bytes, any thread count.
-- **Dense is a degenerate tree.** A fully occupied level needs no masks: the air keeps its plain
-  `Grid3` arithmetic and is *viewed* as the finest level of a tree when something hierarchical is
-  wanted (§8, §9).
+- **Dense is a degenerate tree.** A fully refined tree is a uniform grid; the uniform fluid solver
+  is that case and is kept as the oracle for the adaptive one (§9).
 
 ## 4. The hierarchical voxeliser
 
@@ -278,21 +277,101 @@ is no opening decision to flip, hence no jitter by construction. A room at 5 cm 
 the fine region around five towers is a small fraction of that. The restriction of each frame to the
 cut is one pass over the cells and belongs on the GPU with the solve.
 
-## 9. The air
+## 9. Fluids — adaptive, on the same tree
 
-- **Finest level stays dense.** Air fills a closed room; sparsity saves nothing there. The MAC grid
-  and its arithmetic are unchanged.
-- **The pyramid is the multigrid.** The GPU port already has to replace MIC(0)-PCG (sequential) with
-  a parallel solver; geometric multigrid on the coarsened levels of the room's tree is that solver.
-  Solid cells at each level come from the obstacle trees (§10's occupancy), restricted conservatively.
-- **Obstacles** are stamped from body trees, not from point splats: a leaf of level `ℓ` covers its
-  `8^ℓ` cells exactly, so the volume fraction and the surface-area density `|∇φ|` used for film heat
-  come from geometry. This addresses the measured 8–28% area shortfall on small bodies.
-- **Adaptive air (last, gated).** Refinement around plumes and boundary layers on an SPGrid-style
-  pyramid with 2:1 grading. Built only if the uniform GPU solver, measured on the M3, cannot reach
-  the resolution a validated benchmark needs (Ra 10⁵–10⁶, then room scale). Adaptive incompressible
-  solvers are a substantial piece of work with their own failure modes (spurious flow at level
-  jumps); it is not committed to until the measurement asks for it.
+The air, and any other fluid, is simulated **on the tree, adaptively**. This is committed, not gated:
+it is what makes the engine one representation rather than a tree for solids beside a grid for air.
+A uniform grid is the special case where nothing is coarsened, and it stays as the oracle.
+
+### 9.1 The grid
+
+- **A balanced octree** over the room: neighbouring leaves differ by at most one level (2:1 grading).
+  Stored as the pyramid of sparse uniform levels (SPGrid's layout): every stencil is a uniform-grid
+  stencil on some level, plus a ghost layer at level boundaries.
+- **Staggered (MAC) unknowns on leaves**: pressure and temperature at cell centres, normal velocity
+  on faces. At a coarse–fine face the four fine faces carry the velocity; the coarse cell's flux is
+  their sum, so mass flux is conserved across the jump by construction.
+- **Sidecars**: `T`, `u`, `p`, solid fraction, and the equation-of-state mass anomaly that the
+  gravity read uses.
+
+### 9.2 The solver
+
+| Step | Uniform (M12, the oracle) | Adaptive |
+|---|---|---|
+| advection | MacCormack on the grid | the same, with interpolation across levels through the ghost layer; limiter reverts to semi-Lagrangian at a jump |
+| diffusion | explicit | explicit per level; flux-matched at jumps |
+| buoyancy | `gβ(T − T₀)` on vertical faces | the same; **well-balanced**: the hydrostatic part of the pressure gradient is subtracted analytically so a stratified fluid at rest has exactly zero net force on every face, including faces at a level jump |
+| projection | MIC(0)-PCG | conjugate gradients preconditioned by a multigrid V-cycle on the tree's own levels. The matrix is the flux-form Laplacian (Losasso, Gibou & Fedkiw 2004): symmetric positive definite, first-order at T-junctions. If the benchmarks below show that order is not enough, replace the T-junction gradient with the second-order power-diagram form (Aanjaneya et al. 2017) — the storage does not change |
+| time step | fixed | CFL-limited by the finest level; adaptive in time |
+
+### 9.3 Where to refine — by what the instrument can see
+
+Refinement is **goal-oriented**. The quantity of interest is not the flow; it is the phase. A cell
+matters in proportion to how strongly a tower weighs it and how much its density is changing:
+
+```
+indicator(cell) = max over towers |W_d(cell)| · h³ · |∇ρ|·h            (phase the cell's sub-structure can hide)
+                  ∨ thermal / shear resolution: |∇T|·h, |ω|·h          (so the flow itself stays resolved)
+                  ∨ distance to a solid surface < a few cells           (boundary layers, where plumes start)
+```
+
+Refine where the indicator exceeds its threshold, coarsen where it is well under, keep 2:1 balance.
+`W_d` is the response map the engine already builds (§8), so the grid is fine where a tower is
+listening and coarse where it is not — the same error measure as the tree walk (§6), in the same
+unit (radians).
+
+### 9.4 Regridding without jitter
+
+Regridding happens every few steps, bulk-synchronously (mark → balance → prefix-sum → allocate →
+transfer). Two rules, both tested:
+
+1. **Transfers conserve.** Restriction sums mass anomaly and momentum; prolongation is conservative
+   (child values sum to the parent's). Total mass anomaly is identical before and after, to rounding.
+2. **Coarsening is invisible to the instrument.** Replacing eight cells by one changes the field by
+   their internal quadrupole; a cell may be coarsened only if that change, through `W_d`, is under
+   the phase tolerance. A regrid must not put a step in any tower's signal above `tol`.
+
+Rule 2 is the reason this is safe here when adaptive grids are usually suspect for exactly this kind
+of measurement: the criterion that decides the grid is the criterion that bounds its effect.
+
+### 9.5 Validation — against the uniform solver, then against the literature
+
+| Check | Asserts |
+|---|---|
+| a fully refined adaptive grid | identical to the uniform solver, step for step (same discretisation, same answer to solver tolerance) |
+| stratified fluid at rest on a deliberately graded grid | stays at rest (≤1e-9 m/s) — the well-balanced test; the classic adaptive failure is a spurious current at the jump |
+| projection on a graded grid | divergence removed to tolerance, flux conserved across every jump |
+| heated cavity, Ra = 10³–10⁶ | Nusselt numbers within 1% of the uniform solver at the same finest pitch, and of de Vahl Davis |
+| plume above a heated body | plume rise speed and anomaly within 2% of the uniform run; the phase at each tower within `tol` plus the uniform run's own discretisation error |
+| regrid events | mass anomaly conserved to rounding; no step in the signal above `tol` |
+| cost | cells and wall-clock against the uniform run at equal phase error — recorded |
+
+### 9.6 Other fluids
+
+The same solver with a different equation of state and a free surface carries liquids — a water
+tank, a cistern, a fluid sloshing in a moving container:
+
+- a **level-set** sidecar for the interface, refined in a narrow band around it (the textbook use of
+  an adaptive grid);
+- the gravity read uses the **full** density inside the liquid (not an anomaly — a tank of water is
+  a ton of mass that moves);
+- **two-way coupling** with rigid bodies becomes necessary (floating, sloshing against walls); the
+  force and torque slot on `RigidBody` is filled by integrating pressure over the body's stamped
+  surface.
+
+This is the last fluid phase: it needs the adaptive solver and voxel contact first.
+
+### 9.7 Adaptive in every other axis
+
+- **Bodies** — the tree walk is already adaptive on the query side (§6). The voxeliser becomes
+  adaptive on the source side: surface leaves are refined until their estimated phase error at the
+  body's closest approach to a tower is under `tol`, so a body that passes 0.5 m from a tower is
+  voxelised finely and one that stays 8 m away is not.
+- **Time** — the flight-time quadrature (as a new `PhaseModel` beside the spine's reference one and
+  validated against it; proposed, not yet briefed) refines where the integrand moves fastest; the fluid step follows the CFL limit.
+- **The response** — the fixed cut of §8.
+
+One tolerance, in radians, drives all of them.
 
 ## 10. Contact from voxels
 
