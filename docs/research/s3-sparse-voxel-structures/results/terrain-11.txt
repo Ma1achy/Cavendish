@@ -1,0 +1,27 @@
+# terrain depth 11 (N = 2048); build 213.7 s
+depth                    11
+cells_total              8.58993e+09
+occupied                 2.17809e+09
+leaves                   1.12978e+07
+internal                 2.65708e+06
+octree_topology_B        1.11639e+08
+octree_values_B          4.51911e+07
+octree_moments_f32_B     2.12566e+08
+octree_moments_mono_B    4.25132e+07
+t64_nodes                2.02871e+06
+t64_topology_B           2.43445e+07
+t64_values_B             3.36887e+07
+t64_moments_f32_B        1.62297e+08
+brick8_full              159976
+brick8_solid_entries     4.1706e+06
+brick8_B_1B              1.16552e+08
+brick8_B_4B              3.62275e+08
+chunk32_full             10093
+chunk32_solid_entries    61416
+chunk32_B_1B             3.31299e+08
+vdb_leaf_nodes           159976
+vdb_lower_nodes          542
+vdb_upper_nodes          1
+vdb_B_approx             3.61609e+08
+dag_binary     nodes 128400  B 3.39585e+06
+dag_fractional nodes 1.57738e+06  B 2.0974e+07

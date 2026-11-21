@@ -1,0 +1,31 @@
+# sphere depth 10 (N = 1024); build 2.6 s
+depth                    10
+cells_total              1.07374e+09
+occupied                 2.88907e+08
+leaves                   4.21097e+06
+internal                 905065
+octree_topology_B        4.09283e+07
+octree_values_B          1.68439e+07
+octree_moments_f32_B     7.24052e+07
+octree_moments_mono_B    1.4481e+07
+t64_nodes                194457
+t64_topology_B           2.33348e+06
+t64_values_B             2.85938e+07
+t64_moments_f32_B        1.55566e+07
+brick8_full              47552
+brick8_solid_entries     538792
+brick8_B_1B              2.90374e+07
+brick8_B_4B              1.02077e+08
+chunk32_full             2984
+chunk32_solid_entries    7352
+chunk32_B_1B             9.78624e+07
+vdb_leaf_nodes           47552
+vdb_lower_nodes          224
+vdb_upper_nodes          1
+vdb_B_approx             1.09806e+08
+dag_binary     nodes 89680  B 2.34043e+06
+dag_fractional nodes 701324  B 8.81217e+06
+walk theta 0.5    oct_tests 424  oct_evals 192  t64_tests 1856  t64_evals 572
+walk theta 0.1    oct_tests 9832  oct_evals 5752  t64_tests 41280  t64_evals 16340
+walk theta 0.02   oct_tests 253800  oct_evals 153340  t64_tests 1.09446e+06  t64_evals 397680
+walk theta 0.004  oct_tests 3.58254e+06  oct_evals 2.10718e+06  t64_tests 1.24452e+07  t64_evals 4.21097e+06

@@ -1,0 +1,31 @@
+# terrain depth 10 (N = 1024); build 54.1 s
+depth                    10
+cells_total              1.07374e+09
+occupied                 2.7376e+08
+leaves                   2.88612e+06
+internal                 683742
+octree_topology_B        2.85589e+07
+octree_values_B          1.15445e+07
+octree_moments_f32_B     5.46994e+07
+octree_moments_mono_B    1.09399e+07
+t64_nodes                156969
+t64_topology_B           1.88363e+06
+t64_values_B             2.16765e+07
+t64_moments_f32_B        1.25575e+07
+brick8_full              39915
+brick8_solid_entries     513931
+brick8_B_1B              2.48672e+07
+brick8_B_4B              8.61767e+07
+chunk32_full             2398
+chunk32_solid_entries    7160
+chunk32_B_1B             7.86541e+07
+vdb_leaf_nodes           39915
+vdb_lower_nodes          117
+vdb_upper_nodes          1
+vdb_B_approx             8.98093e+07
+dag_binary     nodes 42623  B 1.11539e+06
+dag_fractional nodes 411087  B 5.38347e+06
+walk theta 0.5    oct_tests 336  oct_evals 235  t64_tests 1600  t64_evals 604
+walk theta 0.1    oct_tests 10464  oct_evals 6849  t64_tests 36032  t64_evals 15255
+walk theta 0.02   oct_tests 281992  oct_evals 172565  t64_tests 943168  t64_evals 336223
+walk theta 0.004  oct_tests 4.36685e+06  oct_evals 2.31924e+06  t64_tests 1.0046e+07  t64_evals 2.88612e+06
