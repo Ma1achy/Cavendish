@@ -2,6 +2,7 @@
 
 mod args;
 mod doctor;
+mod mcp;
 mod session;
 
 use std::process::ExitCode;
@@ -21,6 +22,7 @@ cav <command>
   schema                         print the JSON Schema of the scene spec
   exec \"<commands>\"              run console commands (separated by `;`) and print what each answers;
                                  `cav exec help` lists them
+  mcp                            serve the engine to an agent: an MCP server on stdin and stdout
   help                           this text
 
 <scene> is a library name (see `cav scenes`) or the path of a .ron file.
@@ -79,6 +81,10 @@ fn run(raw: &[String]) -> Result<(), String> {
             failure.map_or(Ok(()), Err)
         }
         "render" => render(rest),
+        "mcp" => {
+            Args::parse(rest, &[])?.finish(0)?;
+            mcp::serve()
+        }
         other => Err(format!("`{other}` is not a command\n\n{USAGE}")),
     }
 }

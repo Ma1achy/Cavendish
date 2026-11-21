@@ -1,0 +1,175 @@
+//! `cav mcp`: the engine as an MCP server on stdin and stdout, with the official Rust SDK.
+//!
+//! Each tool maps onto the engine API (REBUILD §7): a tool is a command or a query, nothing more.
+//! One engine and one device live for the whole session. Standard output is the protocol, so
+//! nothing here prints; diagnostics go to the engine's log, which the `log` tool reads.
+
+use std::sync::{Arc, Mutex, MutexGuard};
+
+use base64::Engine as _;
+use cav_engine::{Level, LogFilter, Query, Subsystem};
+use rmcp::handler::server::wrapper::Parameters;
+use rmcp::model::{CallToolResult, ContentBlock};
+use rmcp::{ServerHandler, ServiceExt, tool, tool_handler, tool_router};
+use schemars::JsonSchema;
+use serde::Deserialize;
+
+use crate::session::Session;
+
+/// The largest picture `render_view` will draw, pixels per side.
+const MAX_SIDE: u32 = 4096;
+
+#[derive(Clone)]
+pub struct Cav {
+    session: Arc<Mutex<Session>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct SceneLoadArgs {
+    /// A library scene name (`room`, `void`, `infinite-floor`), or the path of a `.ron` scene file.
+    pub scene: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct SceneGetArgs {
+    /// A path into the scene spec, such as `array.towers[2].position`. Omit it for the whole spec.
+    pub path: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct CommandArgs {
+    /// One or more console commands separated by `;`, for example `panes 4; view top; select tower 3`.
+    /// `help` lists them.
+    pub line: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct LogArgs {
+    /// How many of the most recent entries to return (default 50).
+    pub last: Option<usize>,
+    /// Only entries at this level or above: `debug`, `info`, `warn` or `error`.
+    pub level: Option<String>,
+    /// Only entries whose message contains this text.
+    pub text: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct RenderArgs {
+    /// Width in pixels, 1 to 4096 (default 960).
+    pub width: Option<u32>,
+    /// Height in pixels, 1 to 4096 (default 600).
+    pub height: Option<u32>,
+    /// Which pane's camera to draw, from 1 (default: the active pane).
+    pub pane: Option<usize>,
+}
+
+impl Cav {
+    fn new() -> Self {
+        Self { session: Arc::new(Mutex::new(Session::new())) }
+    }
+
+    /// The session. A tool that panicked while holding it has not left it half-changed (the engine
+    /// applies a command or refuses it), so a poisoned lock is still usable.
+    fn session(&self) -> MutexGuard<'_, Session> {
+        self.session.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+#[tool_router]
+impl Cav {
+    /// The JSON Schema of the scene spec: every field, its type and its meaning.
+    #[tool(name = "scene_schema")]
+    fn scene_schema(&self) -> Result<String, String> {
+        self.session().engine.run_line("schema")
+    }
+
+    /// Replace the scene with a library scene or a `.ron` file. Returns the engine's state.
+    #[tool(name = "scene_load")]
+    fn scene_load(&self, Parameters(args): Parameters<SceneLoadArgs>) -> Result<String, String> {
+        let mut session = self.session();
+        session.engine.run_line(&format!("load {}", args.scene))?;
+        session.engine.run_line("stats")
+    }
+
+    /// Read the scene spec, or the part of it at a path, as JSON.
+    #[tool(name = "scene_get")]
+    fn scene_get(&self, Parameters(args): Parameters<SceneGetArgs>) -> Result<String, String> {
+        let query = Query::Spec(args.path);
+        self.session().engine.query(&query).map(|reply| cav_engine::render(&reply))
+    }
+
+    /// Run console commands: everything the application's buttons and keys do, as text.
+    /// Returns what each command answered, one per line.
+    #[tool(name = "command")]
+    fn command(&self, Parameters(args): Parameters<CommandArgs>) -> Result<String, String> {
+        self.session().engine.run_script(&args.line).map(|answers| answers.join("\n"))
+    }
+
+    /// The engine's event log: what was done and what was refused, oldest first.
+    #[tool(name = "log")]
+    fn log(&self, Parameters(args): Parameters<LogArgs>) -> Result<String, String> {
+        let min_level = match args.level.as_deref() {
+            None => None,
+            Some("debug") => Some(Level::Debug),
+            Some("info") => Some(Level::Info),
+            Some("warn") => Some(Level::Warn),
+            Some("error") => Some(Level::Error),
+            Some(other) => return Err(format!("`{other}` is not a level; use debug, info, warn or error")),
+        };
+        let filter =
+            LogFilter { min_level, subsystem: None, text: args.text, last: Some(args.last.unwrap_or(50)) };
+        self.session().engine.query(&Query::Log(filter)).map(|reply| cav_engine::render(&reply))
+    }
+
+    /// Draw the scene as a pane sees it and return the picture as a PNG.
+    #[tool(name = "render_view")]
+    fn render_view(&self, Parameters(args): Parameters<RenderArgs>) -> Result<CallToolResult, String> {
+        let size = [args.width.unwrap_or(960), args.height.unwrap_or(600)];
+        if size.iter().any(|side| !(1..=MAX_SIDE).contains(side)) {
+            return Err(format!(
+                "{} × {} is not a size this tool draws; each side is 1 to {MAX_SIDE}",
+                size[0], size[1]
+            ));
+        }
+        let mut session = self.session();
+        let pane = match args.pane {
+            None => session.engine.active_pane(),
+            Some(0) => return Err("panes are counted from 1".into()),
+            Some(n) => n - 1,
+        };
+        let png = session.render_png(pane, size).inspect_err(|why| {
+            session.engine.note(Level::Error, Subsystem::Mcp, format!("render_view: {why}"));
+        })?;
+        session.engine.note(
+            Level::Info,
+            Subsystem::Mcp,
+            format!("render_view: pane {}, {} × {} px, {} bytes", pane + 1, size[0], size[1], png.len()),
+        );
+        let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+        Ok(CallToolResult::success(vec![ContentBlock::image(encoded, "image/png")]))
+    }
+}
+
+#[tool_handler(
+    name = "cavendish",
+    version = "0.0.0",
+    instructions = "Cavendish: a voxel world around an array of atom-interferometer gravity gradiometers. \
+                    S0 has the array, a room and the first dev scenes. Load a scene with scene_load, read it \
+                    with scene_get (its shape is scene_schema), change the view with command (try `help`), \
+                    look at it with render_view, and read what happened with log."
+)]
+impl ServerHandler for Cav {}
+
+/// Serves until standard input closes.
+pub fn serve() -> Result<(), String> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| format!("starting the runtime: {e}"))?;
+    runtime.block_on(async {
+        let service =
+            Cav::new().serve(rmcp::transport::stdio()).await.map_err(|e| format!("MCP handshake: {e}"))?;
+        service.waiting().await.map_err(|e| format!("MCP session: {e}"))?;
+        Ok(())
+    })
+}
