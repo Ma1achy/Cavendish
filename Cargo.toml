@@ -12,6 +12,7 @@ publish = false
 # A dependency is listed here when the first crate needs it, not before.
 [workspace.dependencies]
 cav-core = { path = "crates/cav-core" }
+cav-sim = { path = "crates/cav-sim" }
 
 ron = "=0.12.3"
 schemars = "1.2"

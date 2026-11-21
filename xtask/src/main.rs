@@ -19,8 +19,8 @@ const HELP: &str = "\
 cargo xtask <tier>
 
   quick [--budget]   cargo fmt --check, clippy -D warnings, then every test whose name does not
-                     contain `gpu_`, through cargo-nextest. Fails if fewer tests ran than the floor
-                     in xtask/floors.txt. With --budget it also fails when it took over 10 s
+                     contain `gpu_`, through cargo-nextest, then the doc tests. Fails if fewer tests ran
+                     than the floor in xtask/floors.txt. With --budget it also fails when it took over 10 s
                      (meaningful on a warm build only).
   gpu                the tests whose names contain `gpu_`: they need the local adapter. Same floor rule.
   oracle             the oracle tier. Before S1 there is no oracle crate, and it says so.

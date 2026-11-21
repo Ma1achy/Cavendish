@@ -29,6 +29,9 @@ pub fn quick(root: &Path, enforce_budget: bool) -> Result<(), String> {
         cargo(root, &["clippy", "--workspace", "--all-targets", "--quiet", "--", "-D", "warnings"]),
     )?;
     run_tier(root, "quick", QUICK_FILTER)?;
+    // nextest does not run documentation examples; they are few, so cargo runs them (not counted
+    // in the floor).
+    step("doctests", cargo(root, &["test", "--doc", "--workspace", "--quiet"]))?;
     let took = started.elapsed().as_secs_f64();
     let verdict = if took <= QUICK_BUDGET_S { "within" } else { "OVER" };
     eprintln!("xtask: quick took {took:.1} s, {verdict} the {QUICK_BUDGET_S:.0} s warm budget");
