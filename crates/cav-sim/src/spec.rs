@@ -103,6 +103,17 @@ pub enum FloorKind {
     },
 }
 
+/// Something in a scene that can be selected and highlighted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum Target {
+    /// A tower, counted from 1 as on screen.
+    Tower(usize),
+    /// The room.
+    Room,
+    /// The floor.
+    Floor,
+}
+
 /// Why a spec was refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpecError(pub String);

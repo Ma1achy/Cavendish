@@ -4,10 +4,10 @@
 use bytemuck::{Pod, Zeroable};
 use cav_gpu::Gpu;
 use cav_gpu::wgpu::{self, util::DeviceExt};
-use cav_sim::{DrawStyle, SceneSpec, ViewSpec};
+use cav_sim::{DrawStyle, SceneSpec, Target, ViewSpec};
 
 use crate::camera::Camera;
-use crate::scene::{Drawables, Highlight, Line, Vertex, drawables};
+use crate::scene::{Drawables, Line, Vertex, drawables};
 
 /// The colour format of every pane: sRGB, so shaders work in linear light.
 pub const COLOUR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
@@ -20,7 +20,8 @@ const SAMPLES: u32 = 4;
 pub struct Frame<'a> {
     pub scene: &'a SceneSpec,
     pub view: &'a ViewSpec,
-    pub highlight: Highlight,
+    /// What is selected, drawn highlighted.
+    pub highlight: Option<Target>,
 }
 
 #[derive(Clone, Copy, Pod, Zeroable)]

@@ -12,7 +12,9 @@ publish = false
 # A dependency is listed here when the first crate needs it, not before.
 [workspace.dependencies]
 cav-core = { path = "crates/cav-core" }
+cav-engine = { path = "crates/cav-engine" }
 cav-gpu = { path = "crates/cav-gpu" }
+cav-render = { path = "crates/cav-render" }
 cav-sim = { path = "crates/cav-sim" }
 
 bytemuck = { version = "1.25", features = ["derive"] }

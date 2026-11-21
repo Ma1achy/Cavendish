@@ -3,7 +3,7 @@
 
 use cav_core::Vec3;
 use cav_gpu::Gpu;
-use cav_render::{BACKGROUND_SRGB, Camera, Frame, Highlight, PAPER_SRGB, Renderer, tower_srgb};
+use cav_render::{BACKGROUND_SRGB, Camera, Frame, PAPER_SRGB, Renderer, tower_srgb};
 use cav_sim::{DrawStyle, NamedView, Projection, SceneSpec, ViewSpec, dev};
 
 const SIZE: [u32; 2] = [800, 600];
@@ -62,7 +62,7 @@ fn setup() -> (Gpu, Renderer) {
 }
 
 fn render(gpu: &Gpu, renderer: &Renderer, scene: &SceneSpec, view: &ViewSpec) -> Picture {
-    let frame = Frame { scene, view, highlight: Highlight::None };
+    let frame = Frame { scene, view, highlight: None };
     Picture { rgba: renderer.render_rgba(gpu, frame, SIZE).expect("render") }
 }
 

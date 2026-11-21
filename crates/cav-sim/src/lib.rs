@@ -8,6 +8,7 @@ pub mod view;
 
 pub use library::{LIBRARY, LibraryScene, load};
 pub use spec::{
-    ArraySpec, FloorKind, FloorSpec, InstrumentSpec, RoomSpec, SPEC_VERSION, SceneSpec, SpecError, TowerSpec,
+    ArraySpec, FloorKind, FloorSpec, InstrumentSpec, RoomSpec, SPEC_VERSION, SceneSpec, SpecError, Target,
+    TowerSpec,
 };
 pub use view::{DrawStyle, FOV_Y_DEGREES, NamedView, Projection, ViewSpec};

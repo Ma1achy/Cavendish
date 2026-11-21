@@ -17,7 +17,8 @@ pub mod console;
 pub mod engine;
 pub mod log;
 
-pub use command::{Command, MAX_PANES, Query, Reply, Stats, Target, ViewCommand};
+pub use cav_sim::Target;
+pub use command::{Command, MAX_PANES, Query, Reply, Stats, ViewCommand};
 pub use console::{COMMANDS, CommandDoc, Request, describe, help, render};
 pub use engine::Engine;
 pub use log::{Level, Log, LogEntry, LogFilter, Subsystem};
