@@ -46,25 +46,34 @@
   title: 'Review: scene paths with spaces, named views re-frame, console answers, one frame accessor; notes, demo and report regenerated'
 - id: TASK-S1-01
   milestone: S1
-  title: 'Forward model in cav-core: flight, arms, propagation integral'
+  title: 'Forward model in cav-core: flight, arms, propagation integral, channels; constants from cited sources'
 - id: TASK-S1-02
   milestone: S1
-  title: Oracle crate at v1-final and George's anchors
+  title: "Oracle crate at v1-final and George's anchors; script parity; cargo xtask oracle"
 - id: TASK-S1-03
   milestone: S1
-  title: Point mass you can drag; live phase per tower
+  title: 'Point mass you can drag; live phase per tower: Set, Run, Signal, the worker, per-source caching'
 - id: TASK-S1-04
   milestone: S1
-  title: Signal plot and periodograms (classical, Lomb–Scargle)
+  title: Signal plot and periodograms (classical, Lomb–Scargle, NUFFT) with the comb and fold overlay
 - id: TASK-S1-05
   milestone: S1
-  title: 'Oscillator library: linear, circular, pendulum, sphere'
+  title: 'Bodies in the scene spec; oscillator library: linear, circular, pendulum, sphere; the S1 dev scenes'
 - id: TASK-S1-06
   milestone: S1
   title: Harmonic comb and Nyquist folding tests
 - id: TASK-S1-07
   milestone: S1
-  title: Infinite-floor and void null tests pass
+  title: 'Infinite-floor and void null tests pass; the dev scenes'' known answers as validation cases'
+- id: TASK-S1-08
+  milestone: S1
+  title: "The six minor findings of S0's second review; the S1 brief"
+- id: TASK-S1-09
+  milestone: S1
+  title: 'Reference-script fixtures: the harness, the arrays, their provenance'
+- id: TASK-S1-10
+  milestone: S1
+  title: 'cargo xtask demo S1, screenshots, results, progress, the validation report'
 - id: TASK-S2-01
   milestone: S2
   title: SceneSpec, RON files, paths and schema
