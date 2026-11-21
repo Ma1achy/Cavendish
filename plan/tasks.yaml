@@ -4,25 +4,34 @@
 
 - id: TASK-S0-01
   milestone: S0
-  title: Workspace, crates and xtask (quick, gpu, oracle, demo)
+  title: 'Workspace, cav-core, xtask tiers (quick, gpu, oracle) with test floors; the slice brief'
 - id: TASK-S0-02
   milestone: S0
-  title: 'egui app shell: menu bar, outliner, properties, timeline, console, footer'
+  title: 'egui app shell: menu bar, outliner, properties, timeline, console, footer; headless UI screenshots'
 - id: TASK-S0-03
   milestone: S0
   title: '3-D view: room, five towers, named views, perspective and orthographic, panes, draw styles'
 - id: TASK-S0-04
   milestone: S0
-  title: Engine command/query API and event log
+  title: Engine command/query API, journal and replay, event log, undo, console commands
 - id: TASK-S0-05
   milestone: S0
-  title: 'Headless CLI: cav doctor, cav render to PNG'
+  title: 'Headless CLI: cav doctor, cav render to PNG, scenes, schema, exec'
 - id: TASK-S0-06
   milestone: S0
-  title: MCP server answering scene_schema
+  title: MCP server answering scene_schema (and scene_load, scene_get, command, log, render_view)
 - id: TASK-S0-07
   milestone: S0
   title: 'Dev scenes: void and infinite floor (empty)'
+- id: TASK-S0-08
+  milestone: S0
+  title: 'Scene spec in cav-sim: array, instrument, room, floor; RON and JSON forms; schema'
+- id: TASK-S0-09
+  milestone: S0
+  title: 'cargo xtask demo S0: headless screenshots, MCP session, frame timings'
+- id: TASK-S0-10
+  milestone: S0
+  title: 'Slice notes: measured build and test times, results, progress, ideas'
 - id: TASK-S1-01
   milestone: S1
   title: 'Forward model in cav-core: flight, arms, propagation integral'
