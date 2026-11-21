@@ -189,12 +189,13 @@ impl Headless {
         self.gpu.read_rgba8(&texture)
     }
 
-    /// A screenshot: a few frames so the layout settles, the last one encoded as a PNG.
+    /// A screenshot: a dozen frames so everything settles, the last one encoded as a PNG.
     ///
     /// # Errors
     /// When the read-back or the encoding fails.
     pub fn screenshot(&mut self, shell: &mut Shell, size: [u32; 2]) -> Result<Vec<u8>, String> {
-        let rgba = self.render(shell, size, vec![Vec::new(); 3])?;
+        // Enough frames for panels to settle and for a window's fade-in to finish.
+        let rgba = self.render(shell, size, vec![Vec::new(); 12])?;
         cav_render::encode_png(&rgba, [size[0].max(1), size[1].max(1)])
     }
 }

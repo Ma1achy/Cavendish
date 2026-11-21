@@ -340,8 +340,7 @@ impl Shell {
         let view = self.engine.view(pane);
         let camera = cav_render::Camera::new(view, f64::from(pane_size.x / pane_size.y));
         // Metres per point at the target's depth: the scene follows the pointer.
-        let scale =
-            2.0 * view.distance * (0.5 * cav_sim::FOV_Y_DEGREES).to_radians().tan() / f64::from(pane_size.y);
+        let scale = 2.0 * camera.half_height / f64::from(pane_size.y);
         let moved = camera.origin - camera.right * (f64::from(delta.x) * scale)
             + camera.up * (f64::from(delta.y) * scale);
         self.apply(Command::View(ViewCommand::Pan { pane, target: moved.to_array() }));

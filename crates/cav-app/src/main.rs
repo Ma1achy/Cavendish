@@ -13,6 +13,7 @@ cav-app [options]
 
   (no options)                 open the window
   --exec \"<commands>\"          run console commands first (separated by `;`), e.g. \"load void; panes 4\"
+  --keep-going                 with --exec: carry on past a refused command instead of stopping
   --screenshot <file.png>      draw the application to a PNG with no window, then exit
   --size 1440x900              the size of the screenshot, or of the window
   --timings                    with --screenshot: also print frame times
@@ -26,11 +27,18 @@ struct Options {
     size: [u32; 2],
     timings: bool,
     minimised: bool,
+    keep_going: bool,
 }
 
 fn options() -> Result<Option<Options>, String> {
-    let mut options =
-        Options { exec: None, screenshot: None, size: [1440, 900], timings: false, minimised: false };
+    let mut options = Options {
+        exec: None,
+        screenshot: None,
+        size: [1440, 900],
+        timings: false,
+        minimised: false,
+        keep_going: false,
+    };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         let mut value = |name: &str| args.next().ok_or_else(|| format!("`{name}` needs a value"));
@@ -49,6 +57,7 @@ fn options() -> Result<Option<Options>, String> {
             }
             "--timings" => options.timings = true,
             "--minimised" => options.minimised = true,
+            "--keep-going" => options.keep_going = true,
             other => return Err(format!("`{other}` is not an option\n\n{USAGE}")),
         }
     }
@@ -77,7 +86,12 @@ fn run(options: &Options) -> Result<(), String> {
     let mut shell = Shell::new();
     if let Some(script) = &options.exec {
         for line in script.split([';', '\n']).map(str::trim).filter(|l| !l.is_empty()) {
-            shell.run(line).map_err(|why| format!("--exec: `{line}`: {why}"))?;
+            match shell.run(line) {
+                Ok(_) => {}
+                // The refusal is in the log of the engine either way; here it also reaches the terminal.
+                Err(why) if options.keep_going => eprintln!("cav-app: --exec: `{line}` was refused: {why}"),
+                Err(why) => return Err(format!("--exec: `{line}`: {why}")),
+            }
         }
     }
     match &options.screenshot {

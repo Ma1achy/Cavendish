@@ -11,4 +11,4 @@ pub use spec::{
     ArraySpec, FloorKind, FloorSpec, InstrumentSpec, RoomSpec, SPEC_VERSION, SceneSpec, SpecError, Target,
     TowerSpec,
 };
-pub use view::{DrawStyle, FOV_Y_DEGREES, NamedView, Projection, ViewSpec};
+pub use view::{DrawStyle, FOV_Y_DEGREES, FRAMING_ASPECT, FRAMING_MARGIN, NamedView, Projection, ViewSpec};
