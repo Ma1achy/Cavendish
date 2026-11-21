@@ -1,0 +1,7 @@
+# Changes to the validation report that someone has owned up to. `cargo xtask validate` holds every
+# case and tolerance to the committed report.json and fails on a difference that is not listed here.
+#
+#   dropped <case>: <why what it checked has gone>
+#   tolerance <case> <old> -> <new>: <why>
+#
+# The same reason goes in the slice notes. Lines stay here as the record.

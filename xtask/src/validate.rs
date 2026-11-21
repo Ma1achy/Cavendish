@@ -359,7 +359,7 @@ fn shown(value: Option<f64>) -> String {
 }
 
 /// The report as Markdown: a table per subsystem, worst margin first.
-pub fn report_md(rows: &[Row]) -> String {
+pub fn report_md(rows: &[Row], acknowledged: &[String]) -> String {
     let mut out = String::from(
         "# Validation report\n\n\
          Written by `cargo xtask validate --report`; do not edit by hand. Every case is declared with\n\
@@ -406,6 +406,12 @@ pub fn report_md(rows: &[Row]) -> String {
             row.margin().map_or("—".to_owned(), percent),
         ));
     }
+    if !acknowledged.is_empty() {
+        out.push_str("\n## Changes against the earlier report, each with its reason\n\n");
+        for change in acknowledged {
+            out.push_str(&format!("- {change}\n"));
+        }
+    }
     out.push_str(
         "\n## Convergence\n\n\
          <picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"convergence-dark.svg\">\
@@ -418,8 +424,136 @@ pub fn report_md(rows: &[Row]) -> String {
     out
 }
 
-/// Runs the cases and, with `report`, writes the report.
-pub fn run(root: &Path, report: bool) -> Result<(), String> {
+/// A case of an earlier report: its name and its tolerance.
+pub type Earlier = (String, Option<f64>);
+
+/// The cases of an earlier `report.json`, read from the one-case-per-line form this file writes.
+pub fn earlier_cases(json: &str) -> Vec<Earlier> {
+    json.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            let name = line.strip_prefix("{\"name\": \"")?.split('"').next()?;
+            let tolerance =
+                line.split("\"tolerance\": ").nth(1).and_then(|rest| rest.split([',', '}']).next());
+            Some((name.to_owned(), tolerance.and_then(|t| t.trim().parse().ok())))
+        })
+        .collect()
+}
+
+/// A change to the report that someone has owned up to, in `docs/validation/acknowledged.txt`:
+/// `dropped <case>: <why>` or `tolerance <case> <old> -> <new>: <why>`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Acknowledged {
+    Dropped { case: String, why: String },
+    Tolerance { case: String, old: f64, new: f64, why: String },
+}
+
+/// Reads the acknowledgements. Blank lines and `#` comments are skipped.
+///
+/// # Errors
+/// A line that is neither form, or that gives no reason.
+pub fn parse_acknowledged(text: &str) -> Result<Vec<Acknowledged>, String> {
+    let mut out = Vec::new();
+    for (n, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let wrong = || {
+            format!(
+                "acknowledged.txt line {}: `{line}` is neither `dropped <case>: <why>` nor \
+                 `tolerance <case> <old> -> <new>: <why>`",
+                n + 1
+            )
+        };
+        let (what, why) = line.split_once(':').ok_or_else(wrong)?;
+        let why = why.trim().to_owned();
+        if why.is_empty() {
+            return Err(format!("acknowledged.txt line {}: no reason is given", n + 1));
+        }
+        let words: Vec<&str> = what.split_whitespace().collect();
+        out.push(match words.as_slice() {
+            ["dropped", case] => Acknowledged::Dropped { case: (*case).to_owned(), why },
+            ["tolerance", case, old, "->", new] => Acknowledged::Tolerance {
+                case: (*case).to_owned(),
+                old: old.parse().map_err(|_| wrong())?,
+                new: new.parse().map_err(|_| wrong())?,
+                why,
+            },
+            _ => return Err(wrong()),
+        });
+    }
+    Ok(out)
+}
+
+/// Holds this report to an earlier one: no case may have gone, and no tolerance may have changed,
+/// unless `acknowledged` names the case and says why.
+///
+/// Returns the changes that were acknowledged, for the report to print.
+///
+/// # Errors
+/// Each dropped case and each changed tolerance that nobody acknowledged.
+pub fn changes(
+    earlier: &[Earlier],
+    rows: &[Row],
+    acknowledged: &[Acknowledged],
+) -> Result<Vec<String>, String> {
+    let mut problems = Vec::new();
+    let mut owned = Vec::new();
+    for (name, old) in earlier {
+        let Some(row) = rows.iter().find(|row| &row.name == name) else {
+            let reason = acknowledged.iter().find_map(|a| match a {
+                Acknowledged::Dropped { case, why } if case == name => Some(why),
+                _ => None,
+            });
+            match reason {
+                Some(why) => owned.push(format!("`{name}` was dropped: {why}")),
+                None => problems.push(format!(
+                    "case `{name}` is in the earlier report and has gone. Never drop a case to make the report \
+                     green; if what it checked has gone, say so in docs/validation/acknowledged.txt: \
+                     `dropped {name}: <why>`"
+                )),
+            }
+            continue;
+        };
+        let (Some(old), Some(new)) = (*old, row.number("tolerance")) else { continue };
+        if old.to_bits() == new.to_bits() {
+            continue;
+        }
+        let reason = acknowledged.iter().find_map(|a| match a {
+            Acknowledged::Tolerance { case, old: from, new: to, why }
+                if case == name && *from == old && *to == new =>
+            {
+                Some(why)
+            }
+            _ => None,
+        });
+        match reason {
+            Some(why) => owned.push(format!("`{name}`: tolerance {old:?} → {new:?}: {why}")),
+            None => problems.push(format!(
+                "case `{name}`: its tolerance changed from {old:?} to {new:?}. A tolerance changes only with a \
+                 reason: add `tolerance {name} {old:?} -> {new:?}: <why>` to docs/validation/acknowledged.txt \
+                 and a line to the slice notes"
+            )),
+        }
+    }
+    if problems.is_empty() { Ok(owned) } else { Err(problems.join("\n")) }
+}
+
+/// The earlier report to compare with: `docs/validation/report.json` as committed at `against`.
+/// `None` when there is none there (the first report, or no git).
+fn earlier_report(root: &Path, against: &str) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .current_dir(root)
+        .args(["show", &format!("{against}:docs/validation/report.json")])
+        .output()
+        .ok()?;
+    output.status.success().then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Runs the cases, holds them to the report committed at `against`, and, with `report`, writes
+/// the report.
+pub fn run(root: &Path, report: bool, against: &str) -> Result<(), String> {
     let declared = scan(root)?;
     let records_dir = root.join("target").join("validation");
     let _ = std::fs::remove_dir_all(&records_dir);
@@ -450,16 +584,33 @@ pub fn run(root: &Path, report: bool) -> Result<(), String> {
         );
     }
     eprintln!("xtask: validate: {}", summary(&rows));
+    // The committed report is the memory of what was checked and how tightly.
+    let acknowledged_path = root.join("docs").join("validation").join("acknowledged.txt");
+    let acknowledged = parse_acknowledged(&std::fs::read_to_string(&acknowledged_path).unwrap_or_default())?;
+    let held = match earlier_report(root, against) {
+        Some(json) => {
+            let earlier = earlier_cases(&json);
+            eprintln!("xtask: validate: held to the {} cases of the report at {against}", earlier.len());
+            changes(&earlier, &rows, &acknowledged)
+        }
+        None => {
+            eprintln!("xtask: validate: no report at {against} to hold this one to");
+            Ok(Vec::new())
+        }
+    };
+    let owned = held.clone().unwrap_or_default();
     if report {
         let out = root.join("docs").join("validation");
         std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
         std::fs::write(out.join("report.json"), report_json(&rows))
             .map_err(|e| format!("report.json: {e}"))?;
-        std::fs::write(out.join("report.md"), report_md(&rows)).map_err(|e| format!("report.md: {e}"))?;
+        std::fs::write(out.join("report.md"), report_md(&rows, &owned))
+            .map_err(|e| format!("report.md: {e}"))?;
         plots(root)?;
         eprintln!("xtask: validate: wrote {}", out.display());
     }
     verdict(&rows)?;
+    held?;
     // Every case passed its tolerance, yet the test run failed: something else is wrong with it.
     ran
 }
@@ -553,14 +704,14 @@ mod tests {
         assert_eq!(counts(&rows), (2, 1, 0, 1));
         let failure = verdict(&rows).unwrap_err();
         assert!(failure.contains("declared but did not run (missing): beta.second"), "{failure}");
-        assert!(report_md(&rows).contains("**MISSING**: declared, did not run"));
+        assert!(report_md(&rows, &[]).contains("**MISSING**: declared, did not run"));
         assert!(report_json(&rows).contains("\"status\": \"missing\""));
         assert!(summary(&rows).contains("1 of 2 cases pass, 1 missing"));
         // Control: when both ran and passed, the same code is content.
         let both = [record("alpha.first", "1e-10", "1e-9", true), record("beta.second", "0.0", "0.0", true)];
         let rows = collate(&declared, &both).unwrap();
         assert_eq!(verdict(&rows), Ok(()));
-        assert!(!report_md(&rows).contains("MISSING"));
+        assert!(!report_md(&rows, &[]).contains("MISSING"));
     }
 
     #[test]
@@ -571,7 +722,7 @@ mod tests {
         let rows = collate(&declared, &records).unwrap();
         assert_eq!(counts(&rows), (2, 1, 1, 0));
         assert!(verdict(&rows).unwrap_err().contains("1 case(s) failed: alpha.first"));
-        assert!(report_md(&rows).contains("**FAIL**"));
+        assert!(report_md(&rows, &[]).contains("**FAIL**"));
         // No cases at all is not a pass either.
         assert!(verdict(&[]).is_err());
     }
@@ -654,5 +805,62 @@ mod tests {
         let balance = |open: char, close: char| json.matches(open).count() == json.matches(close).count();
         assert!(balance('{', '}') && balance('[', ']'));
         assert!(!json.contains(",\n  ]"));
+    }
+
+    #[test]
+    fn a_dropped_case_or_a_changed_tolerance_fails_unless_it_is_acknowledged() {
+        let declared = scan_source("f.rs", SOURCE);
+        let records =
+            [record("alpha.first", "1e-10", "1e-9", true), record("beta.second", "0.0", "0.0", true)];
+        let rows = collate(&declared, &records).unwrap();
+        // The earlier report, as this module writes it and reads it back.
+        let earlier = earlier_cases(&report_json(&rows));
+        assert_eq!(earlier, [("alpha.first".to_owned(), Some(1e-9)), ("beta.second".to_owned(), Some(0.0))]);
+        // Control: the same report again is no change at all.
+        assert_eq!(changes(&earlier, &rows, &[]), Ok(vec![]));
+
+        // A case deleted from the source: "1 of 1 pass" would be green. It is not.
+        let fewer = collate(&declared[..1], &records[..1]).unwrap();
+        assert_eq!(verdict(&fewer), Ok(()), "the report alone cannot see what is no longer in it");
+        let why = changes(&earlier, &fewer, &[]).unwrap_err();
+        assert!(why.contains("case `beta.second` is in the earlier report and has gone"), "{why}");
+        let owned =
+            parse_acknowledged("# why\ndropped beta.second: the subsystem it checked was removed in S3\n")
+                .unwrap();
+        let notes = changes(&earlier, &fewer, &owned).unwrap();
+        assert_eq!(notes, ["`beta.second` was dropped: the subsystem it checked was removed in S3"]);
+        assert!(report_md(&fewer, &notes).contains("- `beta.second` was dropped: the subsystem"));
+
+        // A tolerance loosened a hundredfold: every case still passes. It is not accepted.
+        let loose = [record("alpha.first", "1e-10", "1e-7", true), records[1].clone()];
+        let loosened = collate(&declared, &loose).unwrap();
+        assert_eq!(verdict(&loosened), Ok(()));
+        let why = changes(&earlier, &loosened, &[]).unwrap_err();
+        assert!(why.contains("`alpha.first`: its tolerance changed from 1e-9 to 1e-7"), "{why}");
+        // Tightening is a change too, and needs its line.
+        let tight = [record("alpha.first", "1e-10", "1e-10", true), records[1].clone()];
+        assert!(changes(&earlier, &collate(&declared, &tight).unwrap(), &[]).is_err());
+        // An acknowledgement must name this case and these numbers.
+        let wrong_numbers = parse_acknowledged("tolerance alpha.first 1e-9 -> 1e-6: because").unwrap();
+        assert!(changes(&earlier, &loosened, &wrong_numbers).is_err());
+        let wrong_case = parse_acknowledged("tolerance beta.second 1e-9 -> 1e-7: because").unwrap();
+        assert!(changes(&earlier, &loosened, &wrong_case).is_err());
+        let right =
+            parse_acknowledged("tolerance alpha.first 1e-9 -> 1e-7: the reference is only known to 1e-7")
+                .unwrap();
+        let notes = changes(&earlier, &loosened, &right).unwrap();
+        assert_eq!(notes, ["`alpha.first`: tolerance 1e-9 → 1e-7: the reference is only known to 1e-7"]);
+        // A new case is not a change to an old one.
+        assert_eq!(changes(&earlier[..1], &rows, &[]), Ok(vec![]));
+    }
+
+    #[test]
+    fn acknowledgements_need_a_form_and_a_reason() {
+        assert_eq!(parse_acknowledged("\n# nothing yet\n"), Ok(vec![]));
+        assert!(parse_acknowledged("dropped a.b:").unwrap_err().contains("no reason"));
+        assert!(parse_acknowledged("dropped a.b").unwrap_err().contains("neither"));
+        assert!(parse_acknowledged("tolerance a.b 1 to 2: why").unwrap_err().contains("neither"));
+        assert!(parse_acknowledged("tolerance a.b one -> 2: why").unwrap_err().contains("neither"));
+        assert!(parse_acknowledged("loosened a.b: why").is_err());
     }
 }
