@@ -223,15 +223,14 @@ mod tests {
                 o
             };
             let scale = G / d.norm().powi(3);
-            for a in 0..3 {
-                for b in 0..3 {
+            for (a, row) in g.m.iter().enumerate() {
+                for (b, &gab) in row.iter().enumerate() {
                     let (pa, na, pb, nb) = (step(a, e), step(a, -e), step(b, e), step(b, -e));
                     let f = |u: [f64; 3], w: [f64; 3]| v(u[0] + w[0], u[1] + w[1], u[2] + w[2]);
                     let second = (f(pa, pb) - f(pa, nb) - f(na, pb) + f(na, nb)) / (4.0 * e * e);
                     assert!(
-                        (g.m[a][b] + second).abs() / scale <= 1e-4,
-                        "Γ[{a}][{b}] = {:e}, −∂²V = {:e}",
-                        g.m[a][b],
+                        (gab + second).abs() / scale <= 1e-4,
+                        "Γ[{a}][{b}] = {gab:e}, −∂²V = {:e}",
                         -second
                     );
                 }
