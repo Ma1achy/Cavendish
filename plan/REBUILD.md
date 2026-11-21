@@ -132,6 +132,8 @@ Read these on the v2 branch before the slices that need them; they are the desig
   parcels and skinning, rigid dynamics with exact rest: `design/physics.md`
 - the oscillatory-noise validation suite, analysis features and the physics research programme:
   `plan/VALIDATION-AND-RESEARCH.md` (from George's paper, upgrade report and reference scripts)
+- the ML side and the Python API (simulate while you train, typed tables with roles, splits that
+  never leak, manifests, the tasks and their baselines): `plan/ML-AND-API.md`
 - the viewer's interaction model (one edit path, stale-not-blocked, per-tower lanes, console):
   `milestones/M13-viewer-v2.md` §9, and the browser mock-up (§6)
 
