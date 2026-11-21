@@ -11,6 +11,32 @@ The builder updates this after every slice. The owner reads it at checkpoints.
   the S0 stack vary from 60 to 102 s for one configuration; real-time scanning is the likely cause.
   It is a security setting outside the repo, so it waits for a yes. Nothing depends on it.
 
+- **21 Nov 2026 — fixtures from the reference scripts.** `github.com/Thranduil02/atom-interferometry`
+  is public but has no licence file, so nothing grants permission to copy or redistribute. May
+  fixtures made by running those scripts be committed here, and should the author be asked to add a
+  licence? Until answered, S1 keeps such fixtures untracked and regenerates them locally.
+- **21 Nov 2026 — two changes to the plan that S1's research asks for** (detail:
+  `docs/research/s1-periodograms-and-script-fixtures.md`). Defaults are in use until you say otherwise:
+  1. `point_oscillator_phase_matches_script ≤1e-9` holds only with a test-only quadrature that copies
+     the scripts' sampling (their arm is one sample ahead of the source). The engine's own forward
+     model differs from the scripts by 2×10⁻⁴ to 4×10⁻³ of peak. Default: keep ≤1e-9 for the
+     script-copying quadrature, and state a separate measured tolerance for the engine's model,
+     which stays tied to v1 at ≤1e-10.
+  2. No GPU periodogram in S1: a single-precision NUFFT was wrong by 4% of the peak at 10⁵ shots.
+     Default: f64 on the CPU (classical, exact Lomb–Scargle, NUFFT Lomb–Scargle); the GPU version
+     waits for float-float in S5.
+
+## For George
+Defaults in use until answered: v1's conventions (δφ₂ − δφ₁, no floor, u₀ = 3.86 m/s, m = 1.46×10⁻²⁵ kg).
+- The reference scripts pair the arm at (j+1)·dt with the source at j·dt, and the `fig2_*` window
+  ends at 2T − dt. Intended?
+- The scripts compute lower-minus-upper (δφ₁ − δφ₂); v1 and `instrument.md` use δφ₂ − δφ₁. Which is
+  the paper's sign convention?
+- ⁸⁷Sr or ⁸⁸Sr? The mass used everywhere, 1.46×10⁻²⁵ kg, is ⁸⁸Sr; ⁸⁷Sr is 1.2% lighter.
+- AION-10 launch: u₀ = 3.86 m/s, or gT − v_kick/2 = 3.909 m/s so the arms close at launch height?
+- Should the arms stop at the launch height (the scripts clamp; v1 has no floor; `instrument.md`
+  §5 says "reflecting")?
+
 ## Owner's rulings (21 Nov 2026)
 - **Tools on the build PC:** anything the build needs may be installed. Done so far: rustup with
   stable `x86_64-pc-windows-msvc` (rustc 1.100.0), `cargo-nextest`.
