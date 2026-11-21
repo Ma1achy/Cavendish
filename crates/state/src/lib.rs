@@ -101,6 +101,33 @@ pub fn load_bundle(path: impl AsRef<Path>) -> io::Result<StateBundle> {
     bincode::deserialize(&bytes).map_err(io::Error::other)
 }
 
+/// Write a row-major `f64` array of the given `shape` as a NumPy `.npy` file (format 1.0) — the
+/// dependency-free path from a batch of bundles to `numpy.load` / `torch.from_numpy`.
+pub fn save_npy(path: impl AsRef<Path>, shape: &[usize], data: &[f64]) -> io::Result<()> {
+    let count: usize = shape.iter().product();
+    if count != data.len() {
+        return Err(io::Error::other(format!(
+            "shape {shape:?} holds {count} values, got {}",
+            data.len()
+        )));
+    }
+    let dims: String = shape.iter().map(|d| format!("{d}, ")).collect();
+    let mut header = format!("{{'descr': '<f8', 'fortran_order': False, 'shape': ({dims}), }}");
+    // Magic (6) + version (2) + header length (2) + header, padded with spaces to a multiple of 64
+    // and terminated by a newline.
+    let unpadded = 10 + header.len() + 1;
+    header.push_str(&" ".repeat(unpadded.div_ceil(64) * 64 - unpadded));
+    header.push('\n');
+    let mut bytes = Vec::with_capacity(10 + header.len() + 8 * data.len());
+    bytes.extend_from_slice(b"\x93NUMPY\x01\x00");
+    bytes.extend_from_slice(&(header.len() as u16).to_le_bytes());
+    bytes.extend_from_slice(header.as_bytes());
+    for x in data {
+        bytes.extend_from_slice(&x.to_le_bytes());
+    }
+    std::fs::write(path, bytes)
+}
+
 /// The Lomb–Scargle periodogram of an unevenly-sampled series `y(t)` on a frequency grid (spec §2.1).
 /// Mean-subtracts `y`; for each `ω = 2πf` uses the time offset `τ` that diagonalises the fit
 /// (`tan 2ωτ = Σsin2ωt / Σcos2ωt`) so `P(ω) = ½[C²/Σc² + S²/Σs²]` is phase-invariant. Pure `f64`.
@@ -167,6 +194,25 @@ pub fn frequency_grid(times: &[f64]) -> Vec<f64> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn npy_header_is_aligned_and_checked() {
+        let dir = std::env::temp_dir().join(format!("cavendish-npy-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a.npy");
+        super::save_npy(&path, &[2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(&bytes[..6], b"\x93NUMPY");
+        let header_len = u16::from_le_bytes([bytes[8], bytes[9]]) as usize;
+        assert_eq!((10 + header_len) % 64, 0);
+        assert_eq!(bytes.len(), 10 + header_len + 6 * 8);
+        assert_eq!(
+            f64::from_le_bytes(bytes[bytes.len() - 8..].try_into().unwrap()),
+            6.0
+        );
+        assert!(super::save_npy(&path, &[2, 2], &[1.0]).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     use super::*;
 
     #[test]

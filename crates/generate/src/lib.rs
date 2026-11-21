@@ -296,6 +296,140 @@ pub fn stream(
     })
 }
 
+/// Run `n` scenes built by `build(i, key)` (item `i` keyed `scenario[i]` off `root`), across every
+/// available core, returning the bundles in index order. Unlike [`stream`] the scenes need not come
+/// from a `Prior` — `build` may assemble anything, including a physics simulation. Each scene is
+/// built and run entirely on one thread and depends only on its own key, so the result is identical
+/// for any thread count.
+pub fn batch<F>(n: usize, root: u64, build: F) -> Vec<StateBundle>
+where
+    F: Fn(usize, u64) -> Scenario + Sync,
+{
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |t| t.get())
+        .min(n.max(1));
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut out: Vec<Option<StateBundle>> = (0..n).map(|_| None).collect();
+    let done: Vec<Vec<(usize, StateBundle)>> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut mine = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if i >= n {
+                            break mine;
+                        }
+                        mine.push((i, run(&build(i, scenario_key(root, i)))));
+                    }
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .map(|w| w.join().expect("a scene panicked"))
+            .collect()
+    });
+    for (i, bundle) in done.into_iter().flatten() {
+        out[i] = Some(bundle);
+    }
+    out.into_iter()
+        .map(|b| b.expect("every index was run"))
+        .collect()
+}
+
+/// Write a batch of same-shaped bundles as stacked `.npy` arrays under `dir` (created if absent),
+/// leading axis the batch `B`: `signal`, `signal_noise` `(B, T, D)`; `source_position`,
+/// `source_velocity` `(B, S, T, 3)`; `time` `(B, T)`; `detector_placement` `(D, 7)`; and, where the
+/// bundles carry them, `signal_targets`, `signal_atmospheric` `(B, T, D)` and `source_mass` `(B, S)`.
+/// The whole record, no input/label split — what is an input and what is a target is the consumer's
+/// choice.
+pub fn write_dataset(
+    dir: impl AsRef<std::path::Path>,
+    bundles: &[StateBundle],
+) -> std::io::Result<()> {
+    let dir = dir.as_ref();
+    let first = bundles
+        .first()
+        .ok_or_else(|| std::io::Error::other("no bundles to write"))?;
+    let (b, t, d) = (
+        bundles.len(),
+        first.time.len(),
+        first.detector_placement.len(),
+    );
+    let s = first.source_position.len();
+    let same = |x: &StateBundle| {
+        x.time.len() == t && x.detector_placement.len() == d && x.source_position.len() == s
+    };
+    if !bundles.iter().all(same) {
+        return Err(std::io::Error::other("bundles differ in shape (T, D or S)"));
+    }
+    std::fs::create_dir_all(dir)?;
+    let td = |get: &dyn Fn(&StateBundle) -> &Vec<Vec<f64>>| -> Vec<f64> {
+        bundles
+            .iter()
+            .flat_map(|x| get(x).iter().flatten().copied())
+            .collect()
+    };
+    let st3 = |get: &dyn Fn(&StateBundle) -> &Vec<Vec<[f64; 3]>>| -> Vec<f64> {
+        bundles
+            .iter()
+            .flat_map(|x| get(x).iter().flatten().flatten().copied())
+            .collect()
+    };
+    let save = |name: &str, shape: &[usize], data: Vec<f64>| {
+        state::save_npy(dir.join(format!("{name}.npy")), shape, &data)
+    };
+    save("signal", &[b, t, d], td(&|x| &x.signal))?;
+    save("signal_noise", &[b, t, d], td(&|x| &x.signal_noise))?;
+    save(
+        "time",
+        &[b, t],
+        bundles
+            .iter()
+            .flat_map(|x| x.time.iter().copied())
+            .collect(),
+    )?;
+    save(
+        "source_position",
+        &[b, s, t, 3],
+        st3(&|x| &x.source_position),
+    )?;
+    save(
+        "source_velocity",
+        &[b, s, t, 3],
+        st3(&|x| &x.source_velocity),
+    )?;
+    save(
+        "detector_placement",
+        &[d, 7],
+        first.detector_placement.iter().flatten().copied().collect(),
+    )?;
+    if bundles
+        .iter()
+        .all(|x| x.signal_targets.is_some() && x.signal_atmospheric.is_some())
+    {
+        save(
+            "signal_targets",
+            &[b, t, d],
+            td(&|x| x.signal_targets.as_ref().unwrap()),
+        )?;
+        save(
+            "signal_atmospheric",
+            &[b, t, d],
+            td(&|x| x.signal_atmospheric.as_ref().unwrap()),
+        )?;
+    }
+    if bundles.iter().all(|x| x.source_mass.is_some()) {
+        let mass = bundles
+            .iter()
+            .flat_map(|x| x.source_mass.clone().unwrap())
+            .collect();
+        save("source_mass", &[b, s], mass)?;
+    }
+    Ok(())
+}
+
 /// The seed for batch item `i`: the `scenario[i]` node of the key tree off `root`. The single source
 /// of truth for how a batch position maps to a scenario seed, so "alone" and "in a batch" agree.
 pub fn scenario_key(root: u64, i: usize) -> u64 {

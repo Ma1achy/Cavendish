@@ -836,6 +836,7 @@ dependencies = [
  "gravity",
  "instrument",
  "noise",
+ "physics",
  "reference",
  "scenario",
  "shape",

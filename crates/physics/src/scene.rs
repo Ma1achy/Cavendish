@@ -60,7 +60,7 @@ pub struct Obstacle<'a> {
 }
 
 /// Mark the cells the obstacles occupy at time `t` as solid, with their velocity and heat condition.
-fn stamp(fluid: &mut Fluid, fixed: &[bool], obstacles: &[Obstacle<'_>], t: f64, dt: f64) {
+fn stamp(fluid: &mut Fluid, fixed: &[bool], obstacles: &[Obstacle<'_>], t: f64, dt: f64, t0: f64) {
     let grid = fluid.grid;
     let n = grid.len();
     let vol = grid.cell_volume();
@@ -71,13 +71,23 @@ fn stamp(fluid: &mut Fluid, fixed: &[bool], obstacles: &[Obstacle<'_>], t: f64, 
             fluid.solid_heat[id] = Heat::Adiabatic;
         }
     }
+    fluid.film_rate.iter_mut().for_each(|x| *x = 0.0);
+    fluid.film_drive.iter_mut().for_each(|x| *x = 0.0);
     let (mut occ, mut mass) = (vec![0.0; n], vec![0.0; n]);
     let mut momentum = [vec![0.0; n], vec![0.0; n], vec![0.0; n]];
     for ob in obstacles {
-        let (now, before) = (
-            ob.source.world_cloud_at(t),
-            ob.source.world_cloud_at(t - dt),
-        );
+        // Velocity by a backward difference, or a forward one at the very start (a source is only
+        // defined on the simulated span, so `t − dt` may not exist there).
+        let now = ob.source.world_cloud_at(t);
+        let (before, after) = if t - dt >= t0 {
+            (ob.source.world_cloud_at(t - dt), None)
+        } else {
+            (
+                ob.source.world_cloud_at(t),
+                Some(ob.source.world_cloud_at(t + dt)),
+            )
+        };
+        let later = after.as_ref().unwrap_or(&now);
         occ.iter_mut().for_each(|x| *x = 0.0);
         mass.iter_mut().for_each(|x| *x = 0.0);
         momentum
@@ -88,9 +98,9 @@ fn stamp(fluid: &mut Fluid, fixed: &[bool], obstacles: &[Obstacle<'_>], t: f64, 
         grid.splat(&now, &volumes, &mut occ);
         grid.splat(&now, &now.ms, &mut mass);
         for (axis, (pos, prev)) in [
-            (&now.xs, &before.xs),
-            (&now.ys, &before.ys),
-            (&now.zs, &before.zs),
+            (&later.xs, &before.xs),
+            (&later.ys, &before.ys),
+            (&later.zs, &before.zs),
         ]
         .into_iter()
         .enumerate()
@@ -108,10 +118,104 @@ fn stamp(fluid: &mut Fluid, fixed: &[bool], obstacles: &[Obstacle<'_>], t: f64, 
                     momentum[1][id] / mass[id],
                     momentum[2][id] / mass[id],
                 ];
-                fluid.solid_heat[id] = ob.heat;
+                // A film surface delivers its heat through the area density below, not through the
+                // staircase faces of the cells it happens to fill.
+                fluid.solid_heat[id] = match ob.heat {
+                    Heat::Film { .. } => Heat::Adiabatic,
+                    other => other,
+                };
+            }
+        }
+        if let Heat::Film {
+            t_surface,
+            h_over_rho_cp,
+        } = ob.heat
+        {
+            for (id, a) in surface_area_density(fluid, &occ).into_iter().enumerate() {
+                fluid.film_rate[id] += h_over_rho_cp * a;
+                fluid.film_drive[id] += h_over_rho_cp * a * t_surface;
             }
         }
     }
+}
+
+/// The surface area per unit volume [m⁻¹] a body presents to the air in each fluid cell, from its
+/// deposited occupancy: `a = |∇φ|` with `φ` the volume fraction. For a sharp body `∫|∇φ| dV` is its
+/// surface area, so the total tracks the body's true area whatever the grid (within ~10% once the
+/// body is a few cells across) — no staircase over-count, and a body smaller than a cell still has
+/// a surface. Area that falls in cells the body
+/// itself fills is handed to their fluid neighbours.
+fn surface_area_density(fluid: &Fluid, occ: &[f64]) -> Vec<f64> {
+    let grid = fluid.grid;
+    let [nx, ny, nz] = grid.n;
+    let inv = 1.0 / grid.cell_volume();
+    let phi = |i: usize, j: usize, k: usize| occ[grid.idx(i, j, k)] * inv;
+    let mut area = vec![0.0; grid.len()];
+    for k in 0..nz {
+        for j in 0..ny {
+            for i in 0..nx {
+                // Central differences, one-sided (zero-gradient) at the room's walls.
+                let d = |lo: f64, hi: f64, span: usize| (hi - lo) / (span as f64 * grid.h);
+                let gx = d(
+                    phi(i.saturating_sub(1), j, k),
+                    phi((i + 1).min(nx - 1), j, k),
+                    (i + 1).min(nx - 1) - i.saturating_sub(1),
+                );
+                let gy = d(
+                    phi(i, j.saturating_sub(1), k),
+                    phi(i, (j + 1).min(ny - 1), k),
+                    (j + 1).min(ny - 1) - j.saturating_sub(1),
+                );
+                let gz = d(
+                    phi(i, j, k.saturating_sub(1)),
+                    phi(i, j, (k + 1).min(nz - 1)),
+                    (k + 1).min(nz - 1) - k.saturating_sub(1),
+                );
+                let g = [gx, gy, gz].map(|x| if x.is_finite() { x } else { 0.0 });
+                area[grid.idx(i, j, k)] = (g[0] * g[0] + g[1] * g[1] + g[2] * g[2]).sqrt();
+            }
+        }
+    }
+    // Hand the area inside solid cells to their fluid face-neighbours.
+    let mut out = area.clone();
+    for k in 0..nz {
+        for j in 0..ny {
+            for i in 0..nx {
+                let id = grid.idx(i, j, k);
+                if !fluid.solid[id] || area[id] == 0.0 {
+                    continue;
+                }
+                out[id] = 0.0;
+                let mut nbrs = Vec::with_capacity(6);
+                for (di, dj, dk) in [
+                    (-1i64, 0i64, 0i64),
+                    (1, 0, 0),
+                    (0, -1, 0),
+                    (0, 1, 0),
+                    (0, 0, -1),
+                    (0, 0, 1),
+                ] {
+                    let (a, b, c) = (i as i64 + di, j as i64 + dj, k as i64 + dk);
+                    if a >= 0
+                        && b >= 0
+                        && c >= 0
+                        && (a as usize) < nx
+                        && (b as usize) < ny
+                        && (c as usize) < nz
+                    {
+                        let nid = grid.idx(a as usize, b as usize, c as usize);
+                        if !fluid.solid[nid] {
+                            nbrs.push(nid);
+                        }
+                    }
+                }
+                for &nid in &nbrs {
+                    out[nid] += area[id] / nbrs.len() as f64;
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Simulate the room's air from `t0` to `t1` around the obstacles, recording the mass anomaly every
@@ -139,7 +243,7 @@ pub fn simulate_air(
     }
     let n_frames = ((t1 - t0) / frame_dt).ceil() as usize;
     let mut frames = Vec::with_capacity(n_frames + 1);
-    stamp(&mut fluid, &is_fixed, obstacles, t0, frame_dt);
+    stamp(&mut fluid, &is_fixed, obstacles, t0, frame_dt, t0);
     frames.push(fluid.mass_anomaly(&room.air));
     for f in 0..n_frames {
         let t_frame = t0 + f as f64 * frame_dt;
@@ -152,10 +256,11 @@ pub fn simulate_air(
                 obstacles,
                 t_frame + s as f64 * dt,
                 dt,
+                t0,
             );
             fluid.step(dt);
         }
-        stamp(&mut fluid, &is_fixed, obstacles, t_frame + frame_dt, dt);
+        stamp(&mut fluid, &is_fixed, obstacles, t_frame + frame_dt, dt, t0);
         frames.push(fluid.mass_anomaly(&room.air));
     }
     let field = GridField::new(&room.grid, t0, frame_dt, frames, Channel::Ambient);
@@ -233,6 +338,50 @@ mod tests {
             "phase {p4:e} → {p12:e} rad"
         );
         eprintln!("plume: w = {w_above:.3} m/s, δm = {late:.3e} kg, ΔΦ(12 s) = {p12:.3e} rad");
+    }
+
+    #[test]
+    fn immersed_surface_area_is_the_true_area() {
+        // The area the air sees is the body's real surface area: within 10% for a sphere four cells
+        // in radius (central differences of the smoothed occupancy read slightly low), and still
+        // roughly right for one only two cells across that fills no cell at all. The film
+        // coefficient it multiplies is itself known to tens of percent.
+        for (r, h, tol) in [(0.4, 0.1, 0.10), (0.2, 0.2, 0.35)] {
+            let room = Room::new([0.0; 3], [2.0, 2.0, 2.0], h, 293.15);
+            let ball = voxelise(
+                &shape::Sphere { r },
+                &VoxelParams::pitch(h / 4.0),
+                MassSpec::Density(500.0),
+            )
+            .unwrap();
+            let body = Parcels::rigid(ball, |_| {
+                Isometry3::new(Quat::identity(), Vec3::new(1.0, 1.0, 1.0))
+            });
+            let mut fluid = Fluid::new(room.grid, room.params);
+            let obstacles = [Obstacle {
+                source: &body,
+                density: 500.0,
+                heat: room.film(310.0, 5.0),
+            }];
+            stamp(
+                &mut fluid,
+                &vec![false; room.grid.len()],
+                &obstacles,
+                0.0,
+                0.1,
+                0.0,
+            );
+            let Heat::Film { h_over_rho_cp, .. } = room.film(310.0, 5.0) else {
+                unreachable!()
+            };
+            let area =
+                fluid.film_rate.iter().sum::<f64>() / h_over_rho_cp * room.grid.cell_volume();
+            let want = 4.0 * std::f64::consts::PI * r * r;
+            assert!(
+                (area - want).abs() / want <= tol,
+                "r={r}, h={h}: area {area:.3} vs {want:.3} m²"
+            );
+        }
     }
 
     #[test]

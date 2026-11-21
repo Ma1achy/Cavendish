@@ -18,4 +18,5 @@ uldm = { path = "../uldm" }
 [dev-dependencies]
 reference = { path = "../reference" }
 shape = { path = "../shape" }
+physics = { path = "../physics" }
 bincode = { workspace = true }

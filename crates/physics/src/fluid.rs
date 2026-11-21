@@ -115,6 +115,11 @@ pub struct Fluid {
     pub solid_vel: Vec<[f64; 3]>,
     /// The thermal condition on each solid cell's surface.
     pub solid_heat: Vec<Heat>,
+    /// Distributed film heating from immersed surfaces: a cell's temperature relaxes as
+    /// `∂T/∂t = film_drive − film_rate·T`, with `film_rate = Σ (h_c/ρc_p)·a` [s⁻¹] and
+    /// `film_drive = Σ (h_c/ρc_p)·a·T_s` [K s⁻¹] over the surfaces of area density `a` in the cell.
+    pub film_rate: Vec<f64>,
+    pub film_drive: Vec<f64>,
     /// Pressure-solve iterations taken by the last step.
     pub last_iterations: usize,
     /// Cumulative wall-clock seconds spent in `[advection, diffusion, projection]` — the profile.
@@ -172,6 +177,8 @@ impl Fluid {
             solid: vec![false; n],
             solid_vel: vec![[0.0; 3]; n],
             solid_heat: vec![Heat::Adiabatic; n],
+            film_rate: vec![0.0; n],
+            film_drive: vec![0.0; n],
             last_iterations: 0,
             timing: [0.0; 3],
             q: vec![0.0; n],
@@ -575,7 +582,8 @@ impl Fluid {
                             }
                         }
                     }
-                    out[id] = tc + c * lap + dt * film;
+                    out[id] =
+                        tc + c * lap + dt * (film + self.film_drive[id] - self.film_rate[id] * tc);
                 }
             }
         }
