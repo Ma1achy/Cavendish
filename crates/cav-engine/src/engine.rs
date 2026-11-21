@@ -5,10 +5,10 @@
 //! What is fixed already is the shape: state changes only through [`Engine::apply`], every applied
 //! command is journalled, and the journal replayed on a fresh engine gives the same state.
 
-use cav_sim::{DrawStyle, NamedView, Projection, SceneSpec, ViewSpec};
+use cav_sim::{DrawStyle, NamedView, Projection, SceneSpec, Target, ViewSpec};
 use serde::Serialize;
 
-use crate::command::{Command, MAX_PANES, Query, Reply, Stats, Target, ViewCommand};
+use crate::command::{Command, MAX_PANES, Query, Reply, Stats, ViewCommand};
 use crate::console;
 use crate::log::{Level, Log, Subsystem};
 

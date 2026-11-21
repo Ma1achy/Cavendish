@@ -8,7 +8,7 @@ use std::f64::consts::TAU;
 
 use bytemuck::{Pod, Zeroable};
 use cav_core::Vec3;
-use cav_sim::{DrawStyle, SceneSpec};
+use cav_sim::{DrawStyle, SceneSpec, Target};
 
 /// One thick line segment, drawn as a screen-facing quad. `repr(C)`: this is the instance layout.
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
@@ -42,17 +42,6 @@ pub enum Part {
     /// Tower `n`, from 0.
     Tower(usize),
     Room,
-}
-
-/// What is highlighted as the selection.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum Highlight {
-    #[default]
-    None,
-    /// Tower `n`, from 0.
-    Tower(usize),
-    Room,
-    Floor,
 }
 
 /// An infinite horizontal floor, drawn as a grid that fades towards the horizon.
@@ -246,9 +235,10 @@ impl Builder {
     }
 }
 
-/// Builds what to draw for `scene` in `style`, relative to `origin` (the view's target).
+/// Builds what to draw for `scene` in `style`, relative to `origin` (the view's target), with
+/// `highlight` drawn as the selection.
 #[must_use]
-pub fn drawables(scene: &SceneSpec, style: DrawStyle, highlight: Highlight, origin: Vec3) -> Drawables {
+pub fn drawables(scene: &SceneSpec, style: DrawStyle, highlight: Option<Target>, origin: Vec3) -> Drawables {
     let paper = style == DrawStyle::Paper;
     let palette = if paper { &PAPER } else { &DARK };
     // Wireframe and paper draw edges; the other styles also fill surfaces.
@@ -261,7 +251,7 @@ pub fn drawables(scene: &SceneSpec, style: DrawStyle, highlight: Highlight, orig
         let lo = Vec3::from_array(room.origin);
         let size = Vec3::from_array(room.size);
         let hi = lo + size;
-        let selected = highlight == Highlight::Room;
+        let selected = highlight == Some(Target::Room);
         // The floor: a dark panel a hair below z so the grid lines on it win the depth test.
         if filled {
             let z = lo.z - 0.004;
@@ -323,7 +313,7 @@ pub fn drawables(scene: &SceneSpec, style: DrawStyle, highlight: Highlight, orig
     for (n, tower) in scene.array.towers.iter().enumerate() {
         let base = Vec3::from_array(tower.position);
         let top = base + Vec3::Z * instrument.tower_height;
-        let selected = highlight == Highlight::Tower(n);
+        let selected = highlight == Some(Target::Tower(n + 1));
         let colour = linear(palette.towers[n % palette.towers.len()], 1.0);
         // The baseline, with a tick every metre.
         b.line(base, top, if selected { 4.0 } else { 2.5 }, colour);
@@ -361,7 +351,7 @@ pub fn drawables(scene: &SceneSpec, style: DrawStyle, highlight: Highlight, orig
     }
 
     if let Some(floor) = &scene.floor {
-        let selected = highlight == Highlight::Floor;
+        let selected = highlight == Some(Target::Floor);
         let period = 100.0;
         b.out.ground = Some(Ground {
             height: (floor.height - origin.z) as f32,
@@ -389,9 +379,9 @@ mod tests {
     #[test]
     fn drawables_follow_the_spec() {
         let origin = Vec3::new(0.0, 0.0, 5.0);
-        let room = drawables(&SceneSpec::room(), DrawStyle::Shaded, Highlight::None, origin);
-        let void = drawables(&dev::void(), DrawStyle::Shaded, Highlight::None, origin);
-        let floor = drawables(&dev::infinite_floor(), DrawStyle::Shaded, Highlight::None, origin);
+        let room = drawables(&SceneSpec::room(), DrawStyle::Shaded, None, origin);
+        let void = drawables(&dev::void(), DrawStyle::Shaded, None, origin);
+        let floor = drawables(&dev::infinite_floor(), DrawStyle::Shaded, None, origin);
         assert_eq!((towers(&room), has_room(&room), room.ground.is_some()), (5, true, false));
         assert_eq!((towers(&void), has_room(&void), void.ground.is_some()), (5, false, false));
         assert_eq!((towers(&floor), has_room(&floor), floor.ground.is_some()), (5, false, true));
@@ -405,7 +395,7 @@ mod tests {
         assert_eq!(void.lines.len(), 5 * (1 + 2 * 11));
         let mut six = dev::void();
         six.array.towers.push(cav_sim::TowerSpec { label: "tower 6".into(), position: [2.0, 2.0, 0.0] });
-        assert_eq!(towers(&drawables(&six, DrawStyle::Shaded, Highlight::None, origin)), 6);
+        assert_eq!(towers(&drawables(&six, DrawStyle::Shaded, None, origin)), 6);
         // The floor's surface is where the spec puts it, relative to the target.
         assert_eq!(floor.ground.unwrap().height, -5.0);
         // Nothing is NaN, and triangles come in threes.
@@ -418,28 +408,28 @@ mod tests {
     fn styles_and_selection_change_what_is_built() {
         let scene = SceneSpec::room();
         let build = |style, highlight| drawables(&scene, style, highlight, Vec3::ZERO);
-        let shaded = build(DrawStyle::Shaded, Highlight::None);
+        let shaded = build(DrawStyle::Shaded, None);
         // Wireframe has the same lines and no surfaces.
-        let wire = build(DrawStyle::Wireframe, Highlight::None);
+        let wire = build(DrawStyle::Wireframe, None);
         assert!(wire.triangles.is_empty() && !shaded.triangles.is_empty());
         assert_eq!(wire.lines, shaded.lines);
         // Paper is light with dark ink; the dark styles are the reverse.
-        let paper = build(DrawStyle::Paper, Highlight::None);
+        let paper = build(DrawStyle::Paper, None);
         assert!(paper.background[1] > 0.8 && shaded.background[1] < 0.01);
         assert!(paper.lines.iter().all(|l| l.colour[1] < paper.background[1]));
         // Selecting a tower adds its ring and nothing else; selecting nothing adds nothing.
-        let selected = build(DrawStyle::Shaded, Highlight::Tower(2));
+        let selected = build(DrawStyle::Shaded, Some(Target::Tower(3)));
         assert_eq!(selected.lines.len(), shaded.lines.len() + 48);
         assert_eq!(selected.triangles, shaded.triangles);
-        assert_eq!(build(DrawStyle::Shaded, Highlight::None), shaded);
+        assert_eq!(build(DrawStyle::Shaded, None), shaded);
         // A highlight for something the scene lacks changes nothing.
-        assert_eq!(build(DrawStyle::Shaded, Highlight::Floor), shaded);
+        assert_eq!(build(DrawStyle::Shaded, Some(Target::Floor)), shaded);
     }
 
     #[test]
     fn normals_face_outwards() {
         let scene = dev::void();
-        let d = drawables(&scene, DrawStyle::Shaded, Highlight::None, Vec3::ZERO);
+        let d = drawables(&scene, DrawStyle::Shaded, None, Vec3::ZERO);
         // Every triangle's winding agrees with its stored normals (counter-clockwise from outside).
         for corners in d.triangles.as_chunks::<3>().0 {
             let p: Vec<Vec3> = corners
@@ -470,8 +460,8 @@ mod tests {
         let room = far.room.as_mut().unwrap();
         room.origin = (Vec3::from_array(room.origin) + shift).to_array();
         let target = Vec3::new(0.3, -0.7, 5.1);
-        let a = drawables(&near, DrawStyle::Shaded, Highlight::Tower(1), target);
-        let b = drawables(&far, DrawStyle::Shaded, Highlight::Tower(1), target + shift);
+        let a = drawables(&near, DrawStyle::Shaded, Some(Target::Tower(2)), target);
+        let b = drawables(&far, DrawStyle::Shaded, Some(Target::Tower(2)), target + shift);
         assert_eq!((a.lines.len(), a.triangles.len()), (b.lines.len(), b.triangles.len()));
         let mut worst = 0f32;
         for (p, q) in a.triangles.iter().zip(&b.triangles) {

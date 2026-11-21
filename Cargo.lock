@@ -95,6 +95,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cav"
+version = "0.0.0"
+dependencies = [
+ "cav-core",
+ "cav-engine",
+ "cav-gpu",
+ "cav-render",
+ "cav-sim",
+ "serde_json",
+]
+
+[[package]]
 name = "cav-core"
 version = "0.0.0"
 

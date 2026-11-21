@@ -4,9 +4,9 @@
 //! second path into the engine, only another way to write the first. [`describe`] is the inverse:
 //! the line that would issue a given command, which is also what the log shows.
 
-use cav_sim::{DrawStyle, LIBRARY, NamedView, Projection};
+use cav_sim::{DrawStyle, LIBRARY, NamedView, Projection, Target};
 
-use crate::command::{Command, Query, Reply, Target, ViewCommand};
+use crate::command::{Command, Query, Reply, ViewCommand};
 use crate::engine::Engine;
 use crate::log::{Level, LogFilter, Subsystem};
 

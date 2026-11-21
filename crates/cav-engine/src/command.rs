@@ -3,7 +3,7 @@
 //! Everything is plain serialisable data, so a command can come from a button, a console line, the
 //! CLI, an MCP tool or a file, and be journalled and replayed.
 
-use cav_sim::{DrawStyle, NamedView, Projection, SceneSpec, ViewSpec};
+use cav_sim::{DrawStyle, NamedView, Projection, SceneSpec, Target, ViewSpec};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -27,17 +27,6 @@ pub enum Command {
     Undo,
     /// Reapply the edit last taken back.
     Redo,
-}
-
-/// Something that can be selected.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub enum Target {
-    /// A tower, counted from 1 as on screen.
-    Tower(usize),
-    /// The room.
-    Room,
-    /// The floor.
-    Floor,
 }
 
 /// A change to the figure's panes and their cameras.

@@ -1,7 +1,7 @@
 //! Renders a library scene to a PNG: `cargo run -p cav-render --example look -- <scene> <view> <style> <out.png>`.
 //! A developer's peephole; `cav render` is the real tool.
 
-use cav_render::{Frame, Highlight, Renderer};
+use cav_render::{Frame, Renderer};
 use cav_sim::{DrawStyle, NamedView, Projection, ViewSpec};
 
 fn main() -> Result<(), String> {
@@ -16,7 +16,7 @@ fn main() -> Result<(), String> {
     let view = ViewSpec::framing(&scene, named, projection, style);
     let gpu = cav_gpu::Gpu::new()?;
     let renderer = Renderer::new(&gpu);
-    let frame = Frame { scene: &scene, view: &view, highlight: Highlight::Tower(1) };
+    let frame = Frame { scene: &scene, view: &view, highlight: Some(cav_sim::Target::Tower(2)) };
     let png = renderer.render_png(&gpu, frame, [1200, 800])?;
     std::fs::write(out, png).map_err(|e| e.to_string())
 }
