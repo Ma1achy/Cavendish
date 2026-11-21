@@ -145,7 +145,7 @@ impl ViewSpec {
         let target = [0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]), 0.5 * (lo[2] + hi[2])];
         let radius = 0.5 * (0..3).map(|a| (hi[a] - lo[a]).powi(2)).sum::<f64>().sqrt();
         // The bounding sphere just fits the vertical field of view, with a margin.
-        let distance = 1.1 * radius.max(0.5) / (0.5 * FOV_Y_DEGREES).to_radians().sin();
+        let distance = 1.02 * radius.max(0.5) / (0.5 * FOV_Y_DEGREES).to_radians().sin();
         let (yaw, pitch) = named.angles();
         Self { target, yaw, pitch, distance, projection, style }
     }
@@ -191,7 +191,7 @@ mod tests {
         let radius = 75f64.sqrt();
         let half_angle = (radius / home.distance).asin().to_degrees();
         assert!(half_angle < 0.5 * FOV_Y_DEGREES, "half angle {half_angle}");
-        assert!(half_angle > 0.4 * FOV_Y_DEGREES, "and it is not lost in the distance: {half_angle}");
+        assert!(half_angle > 0.45 * FOV_Y_DEGREES, "and it is not lost in the distance: {half_angle}");
         // Control: a camera nudged off a named direction is no longer at a named view.
         let nudged = ViewSpec { yaw: home.yaw + 1.0, ..home };
         assert_eq!(nudged.named(), None);
