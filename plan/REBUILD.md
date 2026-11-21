@@ -221,6 +221,28 @@ buildings, slabs) lives directly in the world volume, in chunks.
 - **Coupling**: each tick, moving objects are stamped into the world volume conservatively (mass and
   volume fraction exact) for the air, water and contact; the stamp is never used for the gravity read.
 
+### 5.3 Ideas taken from other voxel engines
+
+Owner's decision (21 Nov 2026): the world model is §5.2's — per-object volumes plus one world
+volume, as Teardown. What else is worth taking, and what it becomes here:
+
+| From | Idea | In Cavendish |
+|---|---|---|
+| **Teardown** | object volumes with a material palette; ray-marched in oriented boxes with coarse levels to skip space; a global coarse volume for shadows; destruction by splitting connected components into new bodies | §5.2, as written |
+| **Gustafsson's new engine** | sub-stepping instead of solver iterations ("temporal Gauss–Seidel"); a parallel solver for big piles; better contact generation and broad phase | the rigid solver of S7: small substeps with one Gauss–Seidel pass each, parallel islands, exact rest kept as the test |
+| **Minecraft** | fixed-size chunks with a block palette per chunk; region files; lighting propagated through the grid; chunk load radius around the player | world-volume chunks with per-chunk material palettes; a region-file scene cache on disk; streaming radius around the camera **and** around each tower (the instrument always has its neighbourhood resident) |
+| **Noita** | every cell simulated (falling sand); rigid bodies made from cells, broken back into cells | granular matter (sand, gravel, rubble) as a cellular or MPM layer on the world volume; debris from destruction can settle into it |
+| **Space Engineers / 7 Days to Die** | structural integrity: load paths through blocks; unsupported structure collapses | a cheap structural pass on the world volume (support graph) before the voxel-FE modal solve of S7 — decides what falls when something is removed |
+| **Atomontage / sparse voxel DAGs / brickmaps** | billions of voxels by deduplicating identical subtrees (DAG) or bricking; streaming LOD | static world chunks stored as a DAG where it compresses (terrain, repeated buildings); bricks of 8³ for GPU traversal; the 64-tree re-pack for ray marching |
+| **NanoVDB / OpenVDB / SPGrid** | topology separate from values; sparse levels for simulation; GPU-friendly flat layouts | the tree and sidecars of §3.1; the fluid's sparse pyramid (S8–S9) |
+| **Enshrouded / dual contouring** | smooth surfaces extracted from voxels for rendering while simulation stays voxel | an optional smooth-surface draw style for terrain and liquids (marching cubes / dual contouring on the GPU), purely visual |
+| **John Lin's and other voxel GI demos** | per-voxel global illumination by tracing the voxel structure | lighting in the viewer by tracing the global coarse volume (soft shadows, ambient occlusion, bounce), with a budget toggle |
+
+What is **not** taken: snapping moving objects to the world lattice for anything the instrument reads
+(§5.2), and game-style approximations (sleeping thresholds that move bodies, position projection that
+violates momentum) anywhere the error budget would see them. Visual-only shortcuts are fine; the
+viewer labels them.
+
 ## 6. The viewer
 
 The browser mock-up (`claude.ai/artifact/WLmoWvg6dPkBL3fZUDR2fw`) is the reference for look and
