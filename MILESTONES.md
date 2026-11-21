@@ -52,13 +52,17 @@ M9  viewer             ─┘
 M10 mesh import            (off the critical path; any time after M2)
 M11 world seam         ─┐  v2: one source seam (a scene is a list of sources of any kind);
 M12 physics layer       │  parcel bodies, rigid dynamics, convecting air — CPU. Implemented.
-M13 scene viewer        │  planned: continuous-time replay, the air as a volume, the response map,
-                        │           and the full interface (panels, menus, console, per-tower lanes)
-M14 voxel core          │  planned: one sparse tree for the voxeliser, the gravity read, air, contact, viewer
-M15 timing + scene spec─┘  planned: towers on their own clocks; one serialisable, addressable scene description
+M14 voxel core          │  NEXT, and the centre of v2: one sparse tree for all matter. M12 is rebased
+                        │  onto it (bodies, grid response, air coupling, contact) before anything else.
+M15 timing + scene spec │  planned, parallel to M14: towers on their own clocks; one addressable scene spec
+(GPU)                   │  then: trees uploaded and walked on-device; multigrid on the pyramid (handoff §4)
+M13 scene viewer       ─┘  then: draws the tree and the replay built from it; full interface on the spec
 Mref reference port        (a THREAD: each of George's 13 cases lands with the milestone it
                             validates — M1/M2 geometry, M5 ULDM/lift, M6 schedules/spectra)
 ```
+
+**v2 build order: M11 → M12 → M14 (A–C, then the rebase D–E) → GPU → M13, with M15 alongside M14.**
+Milestone numbers record when a brief was written, not when it is built.
 
 Critical path is **M0→M6→M7**. **M8** (analysis) and **M9** (viewer) branch off after M6 and may be
 built in parallel or reordered. **M10** (mesh import) extends the body dictionary only — nothing
@@ -463,7 +467,9 @@ map; background runs; a predicted-track overlay. Still `egui` + `wgpu`.
 ## M14 — The voxel core
 
 **Goal.** One sparse hierarchical representation of mass and matter — the voxeliser emits it, the
-gravity read walks it, the fluid coarsens on it, contact samples it, the viewer draws it.
+gravity read walks it, the fluid coarsens on it, contact samples it, the viewer draws it. **The centre
+of v2 and the next milestone built**: M12's bodies, grid response, air coupling and contact are
+rebased onto it rather than extended beside it; the v1 spine stays as the frozen API and the oracle.
 
 **Builds.** The `voxel` crate (`VoxTree`: linear octree from Morton keys, value sidecars, moments); a
 top-down voxeliser through `Solid::cover`; the lossless merge of homogeneous interior cells and the

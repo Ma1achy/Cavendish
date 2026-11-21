@@ -335,7 +335,9 @@ Each drill-down is its own file under `design/<subsystem>.md`.
 
 10. **`voxel`** — the sparse hierarchical representation shared by the voxeliser, the gravity read,
     the air, contact and the viewer (v2).
-    → **`design/voxel.md` (designed; planned as M14, not built)**. Per-tower timing and the scene spec
+    → **`design/voxel.md` (designed; planned as M14, not built)**. It is the centre of v2: `physics`
+    is rebased onto it, and `shape`, `world`, `compute` and `viewer` gain an edge to it. The v1 spine
+    stays as the frozen API and the oracle. Per-tower timing and the scene spec
     have a brief (`milestones/M15-array-timing-and-scene-spec.md`) and no drill-down yet.
 
 **Bottom-up drill-down phase complete.** All subsystems designed: `gravity`, `compute`, `shape`

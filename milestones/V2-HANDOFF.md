@@ -172,19 +172,28 @@ the code; run what could not be run here — `cargo clippy --workspace --all-tar
 the Python suite, the GPU-marked tests on a real device; re-run `bundle_hash` against `main`.
 **Exit:** CI green on the PR, including the GPU and Python jobs.
 
-### Step 1b — The voxel core, phases A–C (before any GPU source work)
+### Step 1b — The voxel core (the centre of v2; everything after this builds on it)
 
-`milestones/M14-voxel-engine.md`. The tree, the top-down voxeliser, the lossless merge with the cube
-series, and the tolerance-bounded walk, on the CPU in `f64`. It comes before step 3 because the device
-encoding of a source should be the tree; porting the flat cloud first means porting twice.
-**Exit:** the brief's phase A–C lines, including the measured speed table.
+`milestones/M14-voxel-engine.md`, `design/voxel.md` §0. In order:
+
+1. **Phases A–C** — the tree, the top-down voxeliser, the lossless merge with the cube series, and the
+   tolerance-bounded walk, on the CPU in `f64`.
+2. **Phases D–E — rebase M12 onto it.** Bodies become trees (one per rigid body, one per bone, joint
+   parcels as leaves); the grid response moves onto the tree cut; bodies are stamped onto the air from
+   leaves; contact comes from the distance sidecar. The flat parcel sum, the dense-only response and
+   the analytic-only contact move into tests as oracles. M12's suite must stay green throughout.
+
+Steps 2, 3 and 3b are written against the result: the device encoding of a source is the tree, the
+fluid's multigrid is the room's pyramid, and the viewer draws trees. Doing any of them first means
+doing it twice.
+**Exit:** the brief's exit table, including `no_production_flat_paths` and the measured speed table.
 
 ### Step 1c — Per-tower timing and the scene spec
 
 `milestones/M15-array-timing-and-scene-spec.md`. Independent of 1b; needed by the viewer's
 configuration panels. A data-contract change: spec first.
 
-### Step 2 — GPU: the fluid solve
+### Step 2 — GPU: the fluid solve (after 1b)
 
 The measured cost is the fluid step, split evenly between advection and the pressure solve. Port to
 WGSL compute: advection and diffusion are embarrassingly parallel; replace MIC(0)-PCG (inherently
@@ -210,7 +219,7 @@ each bone's tree once and walk it on-device"; only blend-region parcels are stre
 **Exit:** CPU≡GPU ≤1e-4 in f32 and ≤1e-9 where float-float is used, on the anchors and on
 `tests/world.rs` scenes, **on both real devices**.
 
-### Step 3b — The scene viewer (independent of steps 2–3)
+### Step 3b — The scene viewer (after 1b; independent of steps 2–3)
 
 (Phases A–F as below; the full interface — spec-bound panels, per-tower lanes, console, dataset
 builder — is §9 of the brief, phases G–J, and needs step 1c.)

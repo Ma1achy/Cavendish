@@ -380,7 +380,9 @@ recorded tracks → air around them → both into the `Scenario`. Nothing is co-
 - **Two-way coupling** — the slot exists (§7); fill it only for a scene that needs it.
 - **Volumetric skinning weights** by Laplace diffusion from authored surface weights, and skinned
   glTF import (§6.2).
-- **The voxel core.** None of it is built; it is planned as M14 (`design/voxel.md`): one tree for the
+- **The voxel core.** None of it is built; it is planned as M14 (`design/voxel.md`) and is the next
+  thing built — this crate's bodies (§6), grid response (§4.3), stamping (§8) and contact (§7) are
+  rebased onto it, with today's routines kept as in-test oracles: one tree for the
   voxeliser, the gravity read (lossless interior merge, tolerance-bounded far field), per-bone trees
   for articulated bodies, a hierarchical grid response, obstacle stamping and contact. At the pitches
   used so far (5–8 cm) the merge alone gains under 2×; its value is in making fine bodies affordable.

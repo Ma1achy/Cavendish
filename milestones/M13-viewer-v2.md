@@ -4,6 +4,10 @@
 > extends, and its new §10). Depends on: M11 (scenes of many sources), M12 (bodies that deform, air
 > that moves). Independent of the GPU compute work; can be built in parallel with it.
 >
+> **Order:** built after the voxel core (M14) — the replay stores each body's tree once plus per-frame
+> poses or bone transforms, and the body pass draws merged leaves, so §3.1's per-frame point positions
+> are the fallback for displaced bodies only. Read §3.1–3.2 with that substitution.
+>
 > **Extended (§9):** the full interface — panels, menus, the configuration editor, the console, and a
 > timeline and flight view for towers that fire on their own clocks. Those parts depend on **M15**
 > (per-tower timing and the `SceneSpec`); phases A–D below do not. The look is the one in the browser

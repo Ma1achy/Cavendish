@@ -9,8 +9,52 @@
 >
 > **Status: planned — nothing here is built.** Brief: `milestones/M14-voxel-engine.md`.
 >
-> **Dependencies (planned):** `voxel → gravity, math`; `shape → voxel`; `physics → voxel`;
-> `viewer → voxel`. The forward-model spine (`gravity`, `instrument`, `compute`, `reference`) is not edited, and the v1 point `Cloud` path stays as the oracle.
+> **Position: this is the centre of v2, not an optimisation added to it** (§0). It is built first,
+> and M12's physics, the GPU work, the viewer and the scene spec are built on it.
+>
+> **Dependencies (planned):** `voxel → gravity, math` (L1, beside `gravity`); `shape → voxel`;
+> `world → voxel`; `physics → voxel`; `compute → voxel` (device encoding); `viewer → voxel`. The
+> forward-model spine's numerics (`gravity`, `instrument`, `reference`) are not edited, and the v1
+> point `Cloud` path stays as the oracle.
+
+---
+
+## 0. Central, not optional
+
+M12 was built without a shared representation, so it has three: a flat point `Cloud` for bodies, a
+dense `Grid3` for air, analytic primitives for contact. Adding a tree as a fourth, opt-in path would
+be the monkey-patch the project decided against. The rule instead:
+
+> **In v2, matter is a `VoxTree` with sidecars. Every v2 consumer reads the tree. There is one
+> evaluation path, and `tol = 0` makes it exact.**
+
+| Today (M12, as built) | With the voxel core | What happens to the old code |
+|---|---|---|
+| `shape::voxelise` → flat `Cloud` | the voxeliser emits a `VoxTree`; `to_cloud()` is a derived view | the raster voxeliser stays as the bit-exact oracle in tests |
+| `Parcels` evaluates a flat parcel sum | bodies are trees: one per rigid body, one per bone, joint parcels as finest leaves | the maps (rigid / skinned / displaced), skeletons and mass-conservation logic are kept; the flat sum moves into tests as the oracle |
+| `GridField` with a dense response `W` | the response lives on a fixed cut of the room's tree; `tol = 0` is the dense `W` | same code path; the dense case is a setting, not a second implementation |
+| bodies stamped onto the air by point splats | stamped from tree leaves (exact volume fraction, geometric area) | `Grid3::splat` stays for genuinely point-like deposits |
+| fluid on a bare dense grid, MIC(0)-PCG | the same dense finest level, viewed as the bottom of a pyramid that the multigrid solve uses | discretisation, advection and the equation of state unchanged |
+| analytic contact for a few shape pairs; box–box refused | contact from the distance sidecar for any pair | analytic pairs kept as the oracle and as a fast path for primitive pairs |
+| viewer replay stores per-frame point positions | replay stores trees once plus per-frame poses / bone transforms | — |
+| GPU: nothing | device encoding of every source is the tree | — |
+
+**What is not replaced: the v1 spine.** `gravity::Cloud` and the rigid socket are the validated
+forward model. They cannot be removed without editing the spine, and they should not be: they are the
+oracle. Their role becomes exactly two things — (1) the frozen v1 API (`Scenario::new`), whose
+bundles stay byte-identical, and (2) the reference every tree evaluation is tested against (a tree
+of unmerged point leaves at `tol = 0` must equal the spine's sum to rounding). No new feature is
+built on that path. This is one production representation plus an oracle, not two backends.
+
+**What centrality does not change:** the numbers in §2 and §5.1. At coarse pitch the merge gains
+little. The case for making the tree central is that contact, stamping, the viewer, the device
+encoding and the scene replay each need *a* hierarchical voxel structure, and building one is cheaper
+and safer than building four.
+
+**Element law.** A leaf is evaluated as a point or as a homogeneous cube; that is a property of the
+body (`Element::Point | Element::Cube`), not of the engine. `Point` is what v1 does and is what the
+bridge test uses; `Cube` is the default for new v2 bodies because it is the more accurate reading of
+a voxel (§5.3).
 
 ---
 
@@ -177,8 +221,10 @@ kernels — an estimate from the scaling, to be measured in phase B, not a resul
   per cell (10⁻⁷ relative at `h` = 5 cm, `r` = 1 m). A tree body is *more* accurate than the cloud it
   came from, so the two do not agree to rounding and must not be asserted to. The tree is checked
   against a uniform lattice of cubes (rounding) and against v1 with an `(h/r)⁴` tolerance.
-- It is therefore **opt-in**: a `TreeBody` is a new `WorldSource`. `Rigid` over a point `Cloud` is
-  untouched and v1 bundles stay byte-identical.
+- So the **element law is explicit** (§0). With `Element::Point` and no merge, a tree equals the
+  spine's sum to rounding — the bridge test. With `Element::Cube` (the v2 default) it differs from
+  the point lattice by the `(h/r)⁴` term, by design. The v1 API does not go through the tree at all,
+  so v1 bundles stay byte-identical.
 - It does not apply to heterogeneous cells: boundary cells with fractional mass, and bodies with
   per-voxel density, stay at the finest level unless eight siblings are bitwise equal.
 

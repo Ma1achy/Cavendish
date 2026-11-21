@@ -1,9 +1,12 @@
 # M14 — The voxel core (plan / implementation brief)
 
 > **Status: planned — nothing here is built.** Design: `design/voxel.md`. Depends on: M11 (the seam),
-> M12 (parcels, grid fields, fluid, contact), M2 (the voxeliser). **Precedes the GPU work**
-> (`V2-HANDOFF.md` steps 3–4): the device encoding of sources should be the tree, not a flat cloud
-> that is then replaced.
+> M2 (the voxeliser).
+>
+> **This is the centre of v2 and the next thing built.** M12's physics is *rebased onto it* (phases
+> D–E) rather than extended beside it; the GPU work, the viewer and the scene replay then target the
+> tree and nothing else. Milestone numbers are identifiers, not the build order — the order is in
+> `MILESTONES.md` and `V2-HANDOFF.md` §4.
 >
 > **Goal.** One sparse hierarchical representation of mass and matter, built once and used
 > everywhere: the voxeliser emits it, the gravity read walks it, the fluid coarsens on it, contact
@@ -21,11 +24,12 @@
 | M14-R3 | Lossless merge: a node whose eight children are homogeneous and bitwise equal is one leaf. A merged body and its unmerged lattice of cubes give the same field to rounding. |
 | M14-R4 | Cube series kernel: monopole + `l = 4, 6, 8` terms for a homogeneous cube, with a truncation bound; agrees with the closed-form prism wherever the bound says it should. |
 | M14-R5 | Bounded tree evaluation: a walk that takes a phase tolerance `tol` [rad] and returns a phase whose error against the all-leaves sum is ≤ `tol`. `tol = 0` is the exact sum. No time-domain steps above `tol`. |
-| M14-R6 | `TreeBody`: a rigid `WorldSource` evaluated through the rigid socket against a static body-frame tree. Opt-in; v1 point-cloud sources untouched and their bundles byte-identical. |
+| M14-R6 | **One representation.** Every v2 body is a tree (`world::WorldSource` gains `tree()`); a rigid one is evaluated through the rigid socket against its static body-frame tree. The element law (`Point` / `Cube`) is a property of the body. A tree of unmerged `Point` leaves at `tol = 0` equals the spine's cloud sum to rounding. The v1 API (`Scenario::new`) is frozen on the spine path and its bundles stay byte-identical. |
 | M14-R7 | Skinned bodies evaluate as one static tree per bone plus finest-level blend parcels; equal to the flat parcel sum within `tol`; mass conserved bit for bit. |
 | M14-R8 | Hierarchical grid response: `GridField`'s `W` on a fixed cut of the room's tree; equal to the dense response within `tol`; the cut never changes during a run. |
 | M14-R9 | Obstacle stamping from trees: volume fraction exact for merged leaves; immersed surface area within 5% of the true area at 4 cells radius (today: 8% low). |
 | M14-R10 | Voxel contact: narrow-band distance sidecar, surface-sample contact generation, manifold reduction to ≤4 points with warm start. Box–box, box–sphere and arbitrary voxelised shapes collide; a settled stack is bit-constant. |
+| M14-R12 | **M12 is rebased, not duplicated.** After phase E no production code in `physics` evaluates a flat parcel sum, builds a dense-only response, stamps bodies by point splat, or resolves contact only analytically. The old routines survive in `#[cfg(test)]` as oracles. Every M12 test still passes, retargeted where it named a removed path. |
 | M14-R11 | **It is faster, measured.** On a named fine body, the tree evaluation beats the flat sum in wall-clock at equal error by a stated factor; if it does not, the flat path stays the default and the brief says so. |
 
 ---
@@ -39,12 +43,15 @@ Each phase is one branch and one PR, leaves the workspace green, and has its own
 | **A — the tree and the voxeliser** | `voxel` crate; `VoxTree`, keys, build, sidecars, moments; `Solid::cover` for every primitive and for meshes; top-down voxeliser | R1, R2 | `tree_expands_to_the_v1_cloud` bit-exact for every primitive and the M10 mesh fixtures; voxelising a 256-cell sphere is ≥10× faster than raster |
 | **B — the lossless merge and the series** | merge pass; cube series with bound; implicit-child splitting; `TreeBody` | R3, R4, R6 | `merged_equals_unmerged` ≤1e-12 rel; series vs prism within its bound; v1 `bundle_hash` byte-identical |
 | **C — bounded evaluation** | general moments to octupole; the tolerance walk; differential-first accumulation; the jitter test | R5, R11 | error ≤ `tol` for `tol` ∈ {1e-6, 1e-8, 1e-10}; no steps; the speed table in §5 filled in from a run |
-| **D — articulated bodies and grid response** | per-bone trees; blend shell; hierarchical `W` | R7, R8 | walker by trees = walker by parcels within `tol`; hierarchical response = dense within `tol` |
-| **E — obstacles and contact** | tree stamping onto the air grid; distance sidecar; voxel contact and manifold cache | R9, R10 | area test; `box_box_contact_is_refused` replaced by `box_rests_on_box_exactly`; stack of three sleeps bit-constant |
+| **D — rebase bodies and fields** | `Parcels` stores per-bone trees and a blend shell; `GridField` builds its response on the tree cut (`tol = 0` = today's dense `W`); flat sums move into tests | R7, R8, R12 | walker by trees = walker by flat sum within `tol`; hierarchical response = dense within `tol`; all M12 `body`, `grid` and `generate/tests/world` tests green |
+| **E — rebase air coupling and contact** | tree stamping onto the air grid; the pyramid exposed for the solver; distance sidecar; voxel contact and manifold cache; analytic pairs demoted to oracle / primitive fast path | R9, R10, R12 | area test; `box_box_contact_is_refused` replaced by `box_rests_on_box_exactly`; stack of three sleeps bit-constant; all M12 `scene`, `rigid` and `fluid` tests green |
 | **F — device** | tree upload, WGSL walk, float-float accumulation; merged into the GPU steps of the handoff | (handoff steps 3–4) | CPU≡GPU ≤1e-9 with float-float on both real devices |
 
-A–C are the engine. D and E are what make it *the* representation rather than an optimisation of one
-path. F is not a separate effort: it is how the handoff's GPU steps are done once A–C exist.
+A–C are the engine. D and E are the rebase: they are what make it *the* representation, and they are
+not optional — stopping after C would leave the tree as a fourth representation beside M12's three.
+F is not a separate effort: it is how the handoff's GPU steps are done once A–E exist. M12's tests
+are the safety net throughout: they assert physics (Nusselt numbers, conservation, exact rest), not
+storage, so they should pass unchanged across the rebase.
 
 ---
 
@@ -103,6 +110,8 @@ while node ← pop:
 | unit | `merged_equals_unmerged` | field of the merged tree vs the same body as finest cubes (prism kernel), near and far | ≤1e-12 rel |
 | unit | `cube_series_matches_prism` | series vs closed form over `s/R` ∈ [0.02, 0.3], on and off axes | within the stated bound |
 | unit | `cube_series_bound_is_a_bound` | actual error ≤ bound everywhere sampled | — |
+| unit | `point_tree_equals_the_spine_sum` | unmerged tree, `Element::Point`, `tol = 0` vs `gravity::Cloud` through the rigid socket, tumbling body | ≤1e-12 rel |
+| unit | `no_production_flat_paths` | a CI check: the flat parcel sum, dense-only response and point-splat stamp are referenced only from tests | structural |
 | unit | `tree_vs_point_lattice_differs_as_h4` | tree body vs v1 point cloud: difference scales as `(h/r)⁴` with coefficient 0.015 on axis | 10% |
 | unit | `moments_match_direct_sums` | node mass, CoM, quadrupole, octupole vs summing its leaves | ≤1e-13 rel |
 | unit | `walk_error_is_within_tol` | phase by walk vs all-leaves sum, for three tolerances, three ranges, tilted tower | ≤ `tol` |
@@ -131,7 +140,8 @@ while node ← pop:
 | the tree is the voxeliser's output (R1, R2) | `tree_expands_to_the_v1_cloud`, `build_is_deterministic` | bit-exact |
 | the merge loses nothing (R3) | `merged_equals_unmerged` | ≤1e-12 rel |
 | approximation is bounded and stated (R4, R5) | `cube_series_bound_is_a_bound`, `walk_error_is_within_tol`, `no_steps_in_time` | ≤ `tol` |
-| v1 unchanged (R6) | `bundle_hash`; spine crates' diff empty | byte-identical |
+| v1 unchanged, and the tree agrees with it (R6) | `bundle_hash`; spine numerics' diff empty; `point_tree_equals_the_spine_sum` | byte-identical / ≤1e-12 |
+| one representation (R12) | `no_production_flat_paths`; the full M12 suite green after phases D and E | — |
 | articulated and air use it (R7, R8, R9) | `bone_trees_equal_parcels`, `hierarchical_response_equals_dense`, `tree_stamp_volume_and_area` | ≤ `tol` / 5% |
 | any shape collides, and rests (R10) | `box_rests_on_box_exactly`, `stack_of_three_sleeps` | bit-constant |
 | **it pays (R11)** | `fine_body_speed` on the M3, CPU | see below |
@@ -152,10 +162,10 @@ the merge ships as a memory optimisation only and the default evaluation stays f
 R1 → `morton_*`, `build_is_deterministic`, `sidecar_*` · R2 → `tree_expands_to_the_v1_cloud`,
 `cover_is_conservative`, `mass_and_dipole_postconditions` · R3 → `merge_counts_*`,
 `merged_equals_unmerged` · R4 → `cube_series_*` · R5 → `walk_*`, `no_steps_in_time`,
-`moments_match_direct_sums` · R6 → `tree_body_through_generate`, `tree_vs_point_lattice_differs_as_h4`,
+`moments_match_direct_sums` · R6 → `point_tree_equals_the_spine_sum`, `tree_body_through_generate`, `tree_vs_point_lattice_differs_as_h4`,
 `bundle_hash` · R7 → `bone_*` · R8 → `hierarchical_response_*`, `response_cut_is_fixed` · R9 →
 `tree_stamp_volume_and_area` · R10 → `distance_sidecar_*`, `box_rests_on_box_exactly`,
-`stack_of_three_sleeps`, `voxel_contact_matches_analytic_pairs` · R11 → `fine_body_speed`.
+`stack_of_three_sleeps`, `voxel_contact_matches_analytic_pairs` · R11 → `fine_body_speed` · R12 → `no_production_flat_paths`, the M12 suite.
 
 ## 7. Not in this milestone
 
@@ -164,6 +174,11 @@ solver); a world-level broad-phase tree; destruction or topology change of a bod
 tighter bound on the differenced phase (an open question the brief does not depend on); 4³ re-packing.
 
 ## 8. Risks, stated
+
+- **The rebase touches working code.** M12 is implemented and tested on the branch; phases D–E rework
+  how its bodies, response, stamping and contact store and read matter. The mitigation is that M12's
+  tests check physics rather than storage and the old routines stay as in-test oracles — but it is
+  real rework, roughly `body.rs`, `grid.rs`, `scene.rs` and the contact half of `rigid.rs`.
 
 - **The merge may not pay at the pitches Gradar scenes use.** At 5–8 cm the leaf ratio is under 2.
   The value is in making fine bodies affordable; if scenes stay coarse, phases B–C are worth less
