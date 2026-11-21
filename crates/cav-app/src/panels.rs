@@ -6,7 +6,7 @@
 //! windows; F3 hides everything but the figure.
 
 use cav_engine::{Command, Level, Subsystem, Target, ViewCommand};
-use cav_render::{Frame, pane_rects};
+use cav_render::pane_rects;
 use cav_sim::{DrawStyle, NamedView, Projection};
 use egui::{
     Align, Align2, Button, Color32, FontId, Layout, Margin, Panel, Rect, RichText, Sense, Stroke, StrokeKind,
@@ -296,7 +296,9 @@ fn console(shell: &mut Shell, ui: &mut egui::Ui) {
                             entry.subsystem.name()
                         );
                         ui.label(RichText::new(head).font(font.clone()).color(theme::WEAK));
-                        ui.label(RichText::new(&entry.message).font(font.clone()).color(colour));
+                        // An answer is one entry however many lines it has; a long one is cut here.
+                        let shown = crate::shell::abridged(&entry.message, 24);
+                        ui.label(RichText::new(shown).font(font.clone()).color(colour));
                     });
                 }
             });
@@ -708,11 +710,7 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         if pixels.width == 0 || pixels.height == 0 {
             continue;
         }
-        let frame = Frame {
-            scene: shell.engine.spec(),
-            view: shell.engine.view(pane),
-            highlight: shell.engine.selection(),
-        };
+        let frame = shell.engine.frame(pane).expect("pane_rects gives no more panes than the engine has");
         match surface.texture(pane, [pixels.width, pixels.height], generation, frame) {
             Some(texture) => {
                 let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));

@@ -295,3 +295,24 @@ fn gpu_mcp_render_view_answers_for_the_largest_scene() {
     assert_eq!(stats["towers"], 1000);
     client.finish();
 }
+
+#[test]
+fn mcp_loads_a_scene_whose_path_has_spaces() {
+    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("agent scenes");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("with space.ron");
+    let mut scene = cav_sim::dev::infinite_floor();
+    scene.name = "with space".into();
+    std::fs::write(&path, scene.to_ron()).unwrap();
+    let (mut client, _) = Client::start();
+    let stats: Value =
+        serde_json::from_str(&client.text("scene_load", json!({ "scene": path.to_str().unwrap() }))).unwrap();
+    assert_eq!((stats["scene"].as_str(), stats["floor"].as_bool()), (Some("with space"), Some(true)));
+    // The log does not pretend there is a console line that loads it again.
+    let log = client.text("log", json!({ "last": 1 }));
+    assert!(log.contains("not a library scene"), "{log}");
+    // Control: a library name still loads, and its log line is the line that loads it.
+    client.text("scene_load", json!({ "scene": "void" }));
+    assert!(client.text("log", json!({ "last": 1 })).contains("load void ·"));
+    client.finish();
+}

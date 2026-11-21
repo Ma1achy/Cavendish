@@ -105,7 +105,7 @@ impl Cav {
     fn scene_load(&self, Parameters(args): Parameters<SceneLoadArgs>) -> Result<String, String> {
         answered("scene_load", || {
             let mut session = self.session();
-            session.engine.run_line(&format!("load {}", args.scene))?;
+            session.load(&args.scene)?;
             session.engine.run_line("stats")
         })
     }

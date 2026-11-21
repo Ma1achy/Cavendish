@@ -102,7 +102,42 @@ fn hooks(root: &Path) -> Result<(), String> {
     let hook = root.join(".git").join("hooks").join("pre-push");
     let script = "#!/bin/sh\n# Installed by `cargo xtask hooks`: the quick tier must pass before a push.\n\
                   PATH=\"$HOME/.cargo/bin:$PATH\" exec cargo xtask quick\n";
+    let existing = std::fs::read_to_string(&hook).ok();
+    if !may_write_hook(existing.as_deref(), script)? {
+        eprintln!("xtask: {} is already this hook", hook.display());
+        return Ok(());
+    }
     std::fs::write(&hook, script).map_err(|e| format!("writing {}: {e}", hook.display()))?;
     eprintln!("xtask: wrote {}", hook.display());
     Ok(())
+}
+
+/// Whether the pre-push hook should be written: yes when there is none, no when it is already
+/// ours.
+///
+/// # Errors
+/// When a different hook is there. It is someone's, and it is not overwritten.
+fn may_write_hook(existing: Option<&str>, ours: &str) -> Result<bool, String> {
+    match existing {
+        None => Ok(true),
+        Some(text) if text.replace("\r\n", "\n") == ours => Ok(false),
+        Some(_) => Err("a different .git/hooks/pre-push already exists; it was left alone. Move it away \
+                        (or add `cargo xtask quick` to it yourself) and run this again"
+            .into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::may_write_hook;
+
+    #[test]
+    fn an_existing_hook_of_someone_elses_is_not_overwritten() {
+        let ours = "#!/bin/sh\nexec cargo xtask quick\n";
+        assert_eq!(may_write_hook(None, ours), Ok(true), "no hook: write it");
+        assert_eq!(may_write_hook(Some(ours), ours), Ok(false), "ours already: nothing to do");
+        assert_eq!(may_write_hook(Some("#!/bin/sh\r\nexec cargo xtask quick\r\n"), ours), Ok(false));
+        let refused = may_write_hook(Some("#!/bin/sh\nrun-my-linter\n"), ours).unwrap_err();
+        assert!(refused.contains("left alone"), "{refused}");
+    }
 }
