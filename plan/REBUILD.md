@@ -159,6 +159,46 @@ does this pixel need". Both read the same tree.
   at 5 cm near the array, a town's buildings, a road with traffic); scene load under 5 s from cache.
 - **Offscreen** rendering through the same renderer for the CLI and MCP (`render` returns a PNG).
 
+### 5.1 Live or baked — how the app talks to the simulation, and how it stays responsive
+
+Neither alone. The engine runs on its own threads and the GPU; the app only ever **reads finished
+results** and **sends commands**; nothing the user does waits on a solver.
+
+- **Live** (computed as you watch, at playback rate): kinematic and rigid bodies, paths, populations,
+  dynamics for up to thousands of bodies, and the gravity read itself. The read is cheap enough on the
+  GPU — per shot about 3,000 evaluation points (147 flight nodes × 2 arms × 2 interferometers × 5
+  towers) against the scene's elements: ~10⁸ kernel evaluations for 40,000 leaves, a few ms; beyond
+  that the instrument LOD (§5, `design/voxel.md`) keeps it in budget.
+- **Baked** (simulated ahead, cached, scrubbed): air and liquids at scale, big batches, anything over
+  budget. The fluid runs as a background simulation that **streams frames**; the timeline shows a
+  "simulated up to" front, the playhead can move freely behind it, and the read of a baked field is
+  the fixed response dot product (instant once the frame exists).
+- **Cached by spec hash** at every stage (shape, dynamics, air, forward, readout): an edit re-runs
+  only the stages it invalidates (M15's `diff`), and a scene opened twice is instant the second time.
+
+What makes it *feel* responsive:
+
+1. **Superposition is incremental.** The phase is a sum over sources, so each source's contribution
+   is cached separately; dragging one body recomputes that body only, and the rest is a stored array.
+2. **Preview, then refine.** While something is being dragged or scrubbed, the engine answers at a
+   coarse LOD and fewer flight nodes within the frame budget; when the input stops it refines to the
+   requested tolerance in the background and swaps the result in. A badge says which you are seeing
+   (`preview · ±3e-4 rad` → `refined · ±1e-10 rad`), so a preview is never mistaken for an answer.
+3. **Frame-budget scheduler.** Work is split into chunks with a time budget per frame (render first,
+   then the read, then refinement, then baking); nothing long runs on the UI thread.
+4. **Speculation ahead of the playhead.** During playback the engine computes the next few seconds
+   before they are needed; scrubbing backwards hits the cache.
+5. **Latest result wins.** Every command carries a generation number; stale work is cancelled, not
+   finished; results are double-buffered so the screen never shows a half-updated state.
+6. **Stale, not blocked** (from M13): an edit marks dependent views stale, keeps the old result on
+   screen with a badge, and the new one replaces it when ready.
+7. **Budgets are visible.** The profiler shows the frame budget, the read's share, the preview/refine
+   state and the bake front; the footer shows when the engine is behind.
+
+Exit tests for this (S2 onwards): input-to-photon latency under 50 ms while dragging a body in a
+40,000-leaf scene on the M3; the refined result equals a cold run bit for bit; a cancelled run leaves
+no partial result visible.
+
 ## 6. The viewer
 
 The browser mock-up (`claude.ai/artifact/WLmoWvg6dPkBL3fZUDR2fw`) is the reference for look and
@@ -265,6 +305,24 @@ spec file in `scenes/dev/`, loads in one keystroke from the library, and most do
 | `precision-far` | a body 10 km from the origin, towers beside it | the local-frame rules of §3.4: same phase as at the origin |
 | `stress-1e10` | procedural terrain and buildings, 10¹⁰ finest cells | the big-scene budgets of §5 |
 | `fuzz` | random scenes from a seed | the metamorphic properties of M16 |
+| `superposition` | A, then B, then A + B | the sum is exact, channel by channel |
+| `mirror-pair` | two equal masses mirrored about a vertical plane through the array | towers on the plane read the sum, mirrored towers swap readings |
+| `spinning-sphere` | a uniform sphere rotating in place | zero time-varying signal (its field never changes) |
+| `shell` | a thin spherical shell around a tower, then a mass inside it | shell theorem: no gradient inside from the shell |
+| `ring-orbit` | a mass circling a tower at fixed height and radius | constant reading; any ripple is quadrature or interpolation error |
+| `flash` | a mass that exists for one millisecond at a chosen time inside a flight | the impulse response of the flight window; sweep the time to draw it |
+| `switch-on` | a mass that appears and stays | the step response; ramp over `[t − 2T, t]` |
+| `teleport` | a body that jumps between frames | no interpolation artefacts across a discontinuity |
+| `time-reversal` | a pass played forwards and backwards | mirrored signal (the sequence is symmetric in time) |
+| `through-the-tower` | a body passing through a tower's atom path | finite everywhere (cube kernel), no NaN, the warning logged |
+| `cadence-lab` | no physics: a known tone sampled with jitter, alternation, gaps, loss | the analysis tests of `VALIDATION-AND-RESEARCH.md` §2.4 |
+| `contact-gallery` | every shape pair resting on every other; a Newton's cradle; a stack | exact rest; momentum through the cradle |
+| `cantilever` · `plate-modes` | a beam and a plate ringing | Euler–Bernoulli and Kirchhoff frequencies and mode shapes (voxel FE) |
+| `fluid-benchmarks` | heated cavity, lid-driven cavity, Rayleigh–Bénard onset, dam break | published numbers, uniform and adaptive |
+| `regrid-stress` | a plume crossing level boundaries on purpose | mass conserved, no step in any signal |
+| `million-bodies` | 10⁶ small rigid bodies falling into a box | dynamics and read throughput; budget behaviour |
+| `flythrough` | a scripted camera over `stress-1e10` | streaming with no stalls; frame-time trace |
+| `gpu-vs-cpu` | any scene, both paths | a difference overlay in the viewer and a number in the footer |
 
 Outdoor and world scenes — aircraft over a field, traffic on a road, birds, drones, boats, rivers,
 the town — are the scene library (`milestones/M18-scene-library.md`) and arrive with S6, S9 and S10;
