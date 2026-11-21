@@ -1,0 +1,459 @@
+# Cavendish — `voxel` drill-down
+
+> Subsystem design for the **voxel core**: one sparse hierarchical representation of where mass and
+> matter are, used by the voxeliser, the gravity read, the fluid, contact and the viewer. It replaces
+> the three unconnected representations M12 left behind (a flat point `Cloud` for bodies, a dense
+> `Grid3` for air, analytic primitives for contact). Companion to `design/physics.md` (what it
+> serves), `design/shape.md` (the voxeliser it rebuilds), `design/world.md` (the seam it sits
+> behind) and `design/compute.md` (the GPU path it is laid out for).
+>
+> **Status: planned — nothing here is built.** Brief: `milestones/M14-voxel-engine.md`.
+>
+> **Position: this is the centre of v2, not an optimisation added to it** (§0). It is built first,
+> and M12's physics, the GPU work, the viewer and the scene spec are built on it.
+>
+> **Dependencies (planned):** `voxel → gravity, math` (L1, beside `gravity`); `shape → voxel`;
+> `world → voxel`; `physics → voxel`; `compute → voxel` (device encoding); `viewer → voxel`. The
+> forward-model spine's numerics (`gravity`, `instrument`, `reference`) are not edited, and the v1
+> point `Cloud` path stays as the oracle.
+
+---
+
+## 0. Central, not optional
+
+M12 was built without a shared representation, so it has three: a flat point `Cloud` for bodies, a
+dense `Grid3` for air, analytic primitives for contact. Adding a tree as a fourth, opt-in path would
+be the monkey-patch the project decided against. The rule instead:
+
+> **In v2, matter is a `VoxTree` with sidecars. Every v2 consumer reads the tree. There is one
+> evaluation path, and `tol = 0` makes it exact.**
+
+| Today (M12, as built) | With the voxel core | What happens to the old code |
+|---|---|---|
+| `shape::voxelise` → flat `Cloud` | the voxeliser emits a `VoxTree`; `to_cloud()` is a derived view | the raster voxeliser stays as the bit-exact oracle in tests |
+| `Parcels` evaluates a flat parcel sum | bodies are trees: one per rigid body, one per bone, joint parcels as finest leaves | the maps (rigid / skinned / displaced), skeletons and mass-conservation logic are kept; the flat sum moves into tests as the oracle |
+| `GridField` with a dense response `W` | the response lives on a fixed cut of the room's tree; `tol = 0` is the dense `W` | same code path; the dense case is a setting, not a second implementation |
+| bodies stamped onto the air by point splats | stamped from tree leaves (exact volume fraction, geometric area) | `Grid3::splat` stays for genuinely point-like deposits |
+| fluid on a bare dense grid, MIC(0)-PCG | the fluid lives on a balanced octree, refined where a tower can see it (§9); multigrid on the tree's levels | the uniform solver stays as the oracle: a fully refined tree must reproduce it |
+| analytic contact for a few shape pairs; box–box refused | contact from the distance sidecar for any pair | analytic pairs kept as the oracle and as a fast path for primitive pairs |
+| viewer replay stores per-frame point positions | replay stores trees once plus per-frame poses / bone transforms | — |
+| GPU: nothing | device encoding of every source is the tree | — |
+
+**What is not replaced: the v1 spine.** `gravity::Cloud` and the rigid socket are the validated
+forward model. They cannot be removed without editing the spine, and they should not be: they are the
+oracle. Their role becomes exactly two things — (1) the frozen v1 API (`Scenario::new`), whose
+bundles stay byte-identical, and (2) the reference every tree evaluation is tested against (a tree
+of unmerged point leaves at `tol = 0` must equal the spine's sum to rounding). No new feature is
+built on that path. This is one production representation plus an oracle, not two backends.
+
+**What centrality does not change:** the numbers in §2 and §5.1. At coarse pitch the merge gains
+little. The case for making the tree central is that contact, stamping, the viewer, the device
+encoding and the scene replay each need *a* hierarchical voxel structure, and building one is cheaper
+and safer than building four.
+
+**Element law.** A leaf is evaluated as a point or as a homogeneous cube; that is a property of the
+body (`Element::Point | Element::Cube`), not of the engine. `Point` is what v1 does and is what the
+bridge test uses; `Cube` is the default for new v2 bodies because it is the more accurate reading of
+a voxel (§5.3).
+
+---
+
+## 1. What is borrowed, and from where
+
+Voxel engines and tree codes are mature. Nothing below is invented here; the work is choosing the
+parts that survive Cavendish's accuracy standard (§2).
+
+| Technique | Source | Taken | Not taken, and why |
+|---|---|---|---|
+| Linear octree from sorted Morton keys; leaf array + breadth-first internal nodes; rebuild instead of edit | Bonsai (Bédorf et al. 2012), Cornerstone (Keller et al. 2023) | the whole build: key → radix sort → levels by masking → link by binary search. One algorithm for CPU and WGSL | Hilbert keys (better locality across ranks; irrelevant on one device) |
+| Child bitmask + popcount indexing into packed child arrays | ESVO; sparse 64-trees | 8-bit child masks, packed children | 4³ nodes: fewer levels and faster ray-marching, but a node collapses only when all 64 children agree, which costs the lossless merge (§5) its yield. The key format makes a later re-pack to 4³ a storage change only |
+| Topology separate from values; values in flat "sidecar" arrays indexed by active-voxel ordinal | NanoVDB index grids, fVDB | exactly this: one topology, many sidecars (mass, density, temperature, SDF, colour) | VDB's fixed 5-4-3 depth: built for 10⁹-voxel film volumes; our bodies are 10⁴–10⁷ |
+| Bulk-synchronous topology change: mark, prefix-sum, allocate once, rebuild | NanoVDB dynamic grids (Sifakis et al. 2026) | the model — no pointer edits, ever | — (dilation and pruning are what regridding and the liquid's narrow band use, §9) |
+| Multipole acceptance with an explicit error bound, not a bare opening angle | Barnes–Hut 1986; Salmon & Warren 1994; Dehnen 2002 | bound-driven opening (§6) | fixed θ ≈ 0.5–0.75: gives 10⁻³ force error, six orders short of what is needed here |
+| Pyramid of uniform levels for multigrid and 2:1 adaptive grids | SPGrid (Setaluri et al. 2014); Losasso et al. 2004 | the pyramid as storage and as multigrid levels; adaptive refinement of every fluid (§9) | — |
+| Any shape collides with any shape by testing one body's surface voxels against the other's occupancy / distance field | voxel game engines; SDF contact generation | voxel contact with manifold reduction (§10), replacing the refused box–box case | per-voxel destruction, fracture |
+| DDA / hierarchical ray-marching of the same structure that is simulated | ESVO, 64-tree marching | the viewer draws the tree it is given (§11) | DAG compression: rendering-only, and bodies here carry per-voxel mass |
+
+## 2. The accuracy gap — why this is not a game engine with the constants changed
+
+The forward model is held to ≤10⁻⁹–10⁻¹¹ rad on the anchors. Shot noise is 10⁻³ rad. A 70 kg body 2 m
+from a tower contributes a raw (undifferenced) potential phase of
+
+```
+(m_A/ħ) · (GM/r) · 2T  =  1.37e9 s/m² · 2.3e-9 m²/s² · 1.46 s  ≈  4.7 rad    per arm.
+```
+
+A multipole expansion of order `p` for a node of radius `a` at distance `r` has potential error
+bounded by `(GM/r)·θ^(p+1)/(1−θ)`, `θ = a/r`. Summed over nodes the masses add to `M`, so the phase
+error bound is `≈ 4 · 4.7 rad · θ^(p+1)` (four arm evaluations). The opening angle that meets a phase
+tolerance:
+
+| tolerance | quadrupole `p=2` | octupole `p=3` | `p=5` | `p=7` |
+|---|---|---|---|---|
+| 10⁻¹⁰ rad (reference-grade) | 0.0002 | 0.0015 | 0.013 | 0.039 |
+| 10⁻⁶ rad (10³× under shot noise) | 0.004 | 0.015 | 0.061 | 0.12 |
+
+Astrophysical tree codes run at θ = 0.5–0.75. At reference grade, θ = 0.0015 means a node 2 m away
+may be 3 mm across — smaller than a voxel. **A conventional Barnes–Hut far field buys nothing for a
+body near the array at the reference standard.** That is the honest reading of the numbers, and it
+shapes the design:
+
+1. The main gain is a **lossless** merge (§5), which has no θ.
+2. Approximation is **bound-driven and explicit** (§6): the caller states a phase tolerance; the walk
+   opens whatever it must. At reference grade it degenerates gracefully toward the leaves; for
+   distant mass (walls, far air, other rooms) and for training data at a stated tolerance it saves a
+   great deal.
+3. The uniform cube has a special, cheap, high-order series (§5.2), so merged interior cells reach
+   reference grade at far larger θ than a general node can.
+
+## 3. `VoxTree` — the one structure
+
+```rust
+pub struct VoxTree {
+    pub origin: [f64; 3],        // world or body frame corner of the root cell
+    pub h: f64,                  // finest pitch; the root is h·2^depth across
+    pub depth: u8,               // ≤ 10 per axis (30-bit keys; 21-bit/axis u64 on the CPU)
+    pub leaves: Vec<Leaf>,       // sorted by Morton key; variable size — THE evaluation list
+    pub nodes: Vec<Node>,        // internal nodes, breadth-first, children contiguous
+    pub level_offsets: Vec<u32>,
+}
+pub struct Leaf { pub key: u32, pub level: u8 }                  // a cube of side h·2^level
+pub struct Node { pub child_mask: u8, pub first_child: u32, pub flags: u8 /* UNIFORM, LEAF_CHILDREN */ }
+
+pub struct Sidecar<T> { pub values: Vec<T> }                     // indexed by leaf ordinal (or node ordinal)
+pub struct Moments { pub mass: f64, pub com: [f64; 3], pub radius: f64, pub quad: [f64; 6], pub oct: [f64; 10] }
+```
+
+- **Topology is immutable.** A change of shape is a rebuild from keys. For a body that is voxelised
+  once at rest this never happens at run time; for the stamp of moving bodies onto the air grid it is
+  a mark-and-compact per step.
+- **Values are sidecars.** Mass and density for the gravity read; temperature and velocity for the
+  air; a narrow-band signed distance for contact; colour for the viewer. Different consumers share one
+  topology and never each other's arrays.
+- **Build.** Keys from integer cell coordinates → sort → per level, mask keys to that level and
+  compact to unique → link children by binary search. Linear in the leaf count, no recursion, no
+  pointers; the same passes are compute shaders on the GPU. WGSL has no 64-bit integers: keys are
+  30-bit (`depth ≤ 10`, 1024³ finest cells) in one `u32` on the device; a larger tree is a grid of
+  trees under a top-level table.
+- **Determinism.** Morton order is canonical; summation order is fixed by it. Same inputs → identical
+  bytes, any thread count.
+- **Dense is a degenerate tree.** A fully refined tree is a uniform grid; the uniform fluid solver
+  is that case and is kept as the oracle for the adaptive one (§9).
+
+## 4. The hierarchical voxeliser
+
+Today `shape::voxelise` classifies every cell of the bounding box: `O(volume)`. With one addition to
+the `Solid` seam it becomes `O(surface)` and emits a tree directly:
+
+```rust
+pub enum Cover { Inside, Outside, Mixed }
+pub trait Solid {
+    fn occupancy(&self, p: [f64; 3]) -> f64;
+    fn bbox(&self) -> Aabb;
+    /// Conservative classification of a box. `Mixed` is always a correct answer.
+    fn cover(&self, b: &Aabb) -> Cover { Cover::Mixed }
+}
+```
+
+Descend from the root: `Outside` → drop; `Inside` → emit one uniform leaf at this level; `Mixed` →
+split, down to the finest level, where the existing `k³` supersample gives the fractional mass.
+Primitives answer `cover` exactly; a mesh answers from its acceleration structure (a box that
+intersects no triangle is wholly in or out — one winding-number query decides which); the default
+(`Mixed`) reproduces today's behaviour cell for cell.
+
+The two exact post-conditions carry over unchanged: masses renormalised so `Σm = M` exactly, and the
+cloud recentred so the dipole is exactly zero (the recentring moves `origin`, not the keys).
+`VoxTree::to_cloud()` expands every leaf to finest cells and must reproduce `shape::voxelise`'s
+`Cloud` **bit for bit, in raster order** — the test that the new voxeliser is the old one.
+
+## 5. The lossless merge
+
+### 5.1 Partition invariance
+
+Eight homogeneous cubes of side `h` and equal density are one homogeneous cube of side `2h`. Evaluated
+with the cube kernel the two are the same field — not approximately. So every `Inside` node is stored
+as a single leaf, and the number of elements a field evaluation touches falls from the body's volume
+to roughly its surface. Counted on the voxeliser's own cell classification:
+
+| body | finest cells | leaves after merge | ratio |
+|---|---|---|---|
+| sphere, 32 cells across | 19 952 | 7 968 | 2.5 |
+| sphere, 64 | 148 640 | 33 504 | 4.4 |
+| sphere, 128 | 1 143 368 | 138 504 | 8.3 |
+| sphere, 256 | 8 965 552 | 558 776 | 16 |
+| 0.45 × 0.25 × 1.75 m slab, h = 2 cm | 28 336 | 9 086 | 3.1 |
+| same, h = 1 cm | 210 496 | 33 543 | 6.3 |
+| same, h = 5 mm | 1 628 991 | 179 179 | 9.1 |
+
+The ratio grows as `1/h`, as it must (volume over surface). **At the pitches used today (5–8 cm, a few
+hundred to a few thousand parcels) it is under 2 and not worth having.** It matters when bodies are
+voxelised finely — which is what a resolved surface near a tower needs.
+
+### 5.2 The catch: the kernel, and the cube series
+
+A merged leaf is a large cube, and a large cube near a tower is not a point. The closed-form prism
+kernel (`physics::kernel`) is exact but costs tens of point-kernel evaluations. Counting elements is
+therefore not the measure; **wall-clock at equal error is**, and the brief makes that the exit test.
+
+What makes the merge pay is that a homogeneous cube has no dipole, no quadrupole and no octupole. Its
+exterior potential, for mass `M`, side `s`, at offset `(x, y, z)`, `R = |·|`, is
+
+```
+V = −GM/R  +  (7GM s⁴/960) · (5(x⁴ + y⁴ + z⁴) − 3R⁴) / R⁹  +  O(GM s⁶/R⁷)
+```
+
+(from `⟨x⁴⟩ = s⁴/80`, `⟨x²y²⟩ = s⁴/144`; checked against 60³ quadrature: the residual after the
+hexadecapole term is 10⁻⁷ relative at `R = 3.2 s`). The correction is `0.015 (s/R)⁴` on axis. With
+the `l = 6` and `l = 8` terms the remainder scales as `(s/R)¹⁰`, which by the size of the leading
+coefficient should put the series near 10⁻¹² relative at `s/R ≈ 0.1` for the cost of a few point
+kernels — an estimate from the scaling, to be measured in phase B, not a result. So a merged leaf is evaluated by
+
+- the **series** when its truncation bound is under the tolerance,
+- **splitting into its eight implicit children** otherwise (exact, by §5.1 — no storage, no kernel
+  change), recursing,
+- the **closed-form prism** only at the finest level when a query point is within a few cells — the
+  case the kernel was written for.
+
+### 5.3 What the merge is not
+
+- It is not the v1 point lattice. v1 treats each finest cell as a point, an error of `0.015 (h/r)⁴`
+  per cell (10⁻⁷ relative at `h` = 5 cm, `r` = 1 m). A tree body is *more* accurate than the cloud it
+  came from, so the two do not agree to rounding and must not be asserted to. The tree is checked
+  against a uniform lattice of cubes (rounding) and against v1 with an `(h/r)⁴` tolerance.
+- So the **element law is explicit** (§0). With `Element::Point` and no merge, a tree equals the
+  spine's sum to rounding — the bridge test. With `Element::Cube` (the v2 default) it differs from
+  the point lattice by the `(h/r)⁴` term, by design. The v1 API does not go through the tree at all,
+  so v1 bundles stay byte-identical.
+- It does not apply to heterogeneous cells: boundary cells with fractional mass, and bodies with
+  per-voxel density, stay at the finest level unless eight siblings are bitwise equal.
+
+## 6. Bounded tree evaluation
+
+One walk serves every consumer. For a query point and a node:
+
+```
+bound = (m_A/ħ)·2T · G·mass · θ^(p+1)/(1−θ) / r          θ = radius/r,  r = distance to the node's CoM
+if node is UNIFORM:   accept by cube series if its bound ≤ share(tol), else descend (implicit children)
+else:                 accept by multipole (order p) if bound ≤ share(tol), else descend; leaves are exact
+```
+
+- **`tol` is a phase, in radians, per source per measurement** — the unit the rest of the project
+  thinks in. `share(tol)` apportions it by mass so the node bounds sum to `tol`. Default
+  `tol = 1e-10`; `tol = 0` means every leaf, exactly.
+- **No jitter.** An opening decision that flips as a body moves changes the result by at most the
+  bound. `design/physics.md` §1 calls anything that makes the mass field flicker a defect; the rule
+  here is that `tol` must sit below the reader's noise floor by a stated margin, and that margin is
+  tested: the phase of a slowly translating body is differenced in time and its second difference
+  must show no steps above `tol`.
+- **Differential-first.** The walk evaluates the upper and lower arm points together against the same
+  node and accumulates the difference, as the rigid kernel does, so the cancelling monopole never
+  enters a sum.
+- **Moments** (mass, CoM, quadrupole, octupole) are computed bottom-up in `f64`. Bonsai measured ~1%
+  moment error from single precision; on the GPU they are computed on the CPU and uploaded, or
+  accumulated in float-float.
+
+### 6.1 Level of detail
+
+Every internal node already carries the mass, centre of mass and low moments of everything beneath
+it, so a level of detail is just a *cut* through the tree: nodes above the cut are evaluated as one
+element each. The walk above chooses its cut from an error bound. A cheaper, optional mode chooses it
+from geometry — coarse far from the towers, fine close to them:
+
+```rust
+pub enum Lod {
+    Exact,                              // every leaf; tol = 0
+    Bounded { tol: f64 },               // the default: open until the phase bound is met (§6)
+    Distance { theta: f64, blend: f64 },// optional: accept a node when size / distance-to-nearest-tower-point < theta
+    Fixed { level: u8 },                // debugging and the viewer
+}
+```
+
+- **A coarse node is not a big voxel of average density.** It is the node's mass at its centre of
+  mass, plus its stored moments. Total mass and centre of mass are therefore exact at every level of
+  detail; only internal structure is dropped.
+- **No popping.** A distance rule flips nodes as a body moves, and each flip is a step in the signal.
+  `Distance` therefore blends: across the band `theta·(1 − blend) … theta` a node's contribution is
+  a smooth mix of itself and its children, so the signal is continuous in time (and in its first
+  derivative). The cost is up to twice the work inside the band.
+- **Static things get a fixed cut.** A wall, a slab or the air's response is cut once per tower and
+  never changes, so it cannot pop at all (§8).
+- **Its error is measured, not assumed.** `Distance` has no a-priori bound. The audit (M16) runs a
+  sample at `Exact` and records what the chosen `theta` cost, per tower, next to the shot noise.
+- **Sensible thresholds need the tighter bound.** With the present, pessimistic bound (§13) almost
+  any useful `theta` looks unsafe, because the bound ignores the cancellation that makes distant mass
+  nearly invisible to a gradiometer. Setting defaults waits for the differenced bound from the
+  measurement phase; until then `Distance` is opt-in and audited.
+- **The same idea everywhere else:** the fluid's adaptive grid (§9) is level of detail for the
+  simulation; the distance sidecar is fine only near contact (§10); the viewer has its own,
+  camera-driven cut and can also display the instrument's (§11).
+
+## 7. Bodies
+
+| Body | Tree | Evaluation |
+|---|---|---|
+| **Rigid** | one tree in the body frame, built once | the existing rigid socket: back-transform the query point, walk the static tree. Nothing is rebuilt per tick |
+| **Skinned** | parcels whose weight is 1 on a single bone move rigidly with it: **one tree per bone**, in the bone's frame, built once. Parcels with blended weights (the joints) stay finest-level points | per bone: back-transform, walk. Blend parcels: summed directly (they are few — a shell around each joint), or a per-tick tree by re-sorting keys if a profile asks for it |
+| **Displaced** (vibration) | no merge is valid — neighbours move differently | finest-level parcels; a far-field multipole per mode is the natural shortcut, not built until needed |
+
+The skinned row is the earlier "rigid is an internal fast path" idea made concrete: an articulated
+body is mostly rigid pieces, and each piece gets the amortised evaluation; only the joints pay the
+general price. Mass conservation is unaffected — the parcels are the same parcels, grouped.
+
+## 8. Grid fields — a hierarchical response
+
+`GridField` evaluates the propagation integral as `Σ W·m` over every cell (`design/physics.md` §4.3).
+`W` is smooth far from the tower. Build it on a tree over the static grid: descend from the root and
+stop where the restriction error bound (same bound as §6, with the cell's maximum plausible mass
+anomaly in place of `mass`) is under `tol`; a coarse node's weight multiplies the *sum* of its cells'
+masses (and, one order up, their first moment).
+
+Because neither the cells nor the tower move, **the cut is fixed for the life of the response**: there
+is no opening decision to flip, hence no jitter by construction. A room at 5 cm pitch is 4.8 M cells;
+the fine region around five towers is a small fraction of that. The restriction of each frame to the
+cut is one pass over the cells and belongs on the GPU with the solve.
+
+## 9. Fluids — adaptive, on the same tree
+
+The air, and any other fluid, is simulated **on the tree, adaptively**. This is committed, not gated:
+it is what makes the engine one representation rather than a tree for solids beside a grid for air.
+A uniform grid is the special case where nothing is coarsened, and it stays as the oracle.
+
+### 9.1 The grid
+
+- **A balanced octree** over the room: neighbouring leaves differ by at most one level (2:1 grading).
+  Stored as the pyramid of sparse uniform levels (SPGrid's layout): every stencil is a uniform-grid
+  stencil on some level, plus a ghost layer at level boundaries.
+- **Staggered (MAC) unknowns on leaves**: pressure and temperature at cell centres, normal velocity
+  on faces. At a coarse–fine face the four fine faces carry the velocity; the coarse cell's flux is
+  their sum, so mass flux is conserved across the jump by construction.
+- **Sidecars**: `T`, `u`, `p`, solid fraction, and the equation-of-state mass anomaly that the
+  gravity read uses.
+
+### 9.2 The solver
+
+| Step | Uniform (M12, the oracle) | Adaptive |
+|---|---|---|
+| advection | MacCormack on the grid | the same, with interpolation across levels through the ghost layer; limiter reverts to semi-Lagrangian at a jump |
+| diffusion | explicit | explicit per level; flux-matched at jumps |
+| buoyancy | `gβ(T − T₀)` on vertical faces | the same; **well-balanced**: the hydrostatic part of the pressure gradient is subtracted analytically so a stratified fluid at rest has exactly zero net force on every face, including faces at a level jump |
+| projection | MIC(0)-PCG | conjugate gradients preconditioned by a multigrid V-cycle on the tree's own levels. The matrix is the flux-form Laplacian (Losasso, Gibou & Fedkiw 2004): symmetric positive definite, first-order at T-junctions. If the benchmarks below show that order is not enough, replace the T-junction gradient with the second-order power-diagram form (Aanjaneya et al. 2017) — the storage does not change |
+| time step | fixed | CFL-limited by the finest level; adaptive in time |
+
+### 9.3 Where to refine — by what the instrument can see
+
+Refinement is **goal-oriented**. The quantity of interest is not the flow; it is the phase. A cell
+matters in proportion to how strongly a tower weighs it and how much its density is changing:
+
+```
+indicator(cell) = max over towers |W_d(cell)| · h³ · |∇ρ|·h            (phase the cell's sub-structure can hide)
+                  ∨ thermal / shear resolution: |∇T|·h, |ω|·h          (so the flow itself stays resolved)
+                  ∨ distance to a solid surface < a few cells           (boundary layers, where plumes start)
+```
+
+Refine where the indicator exceeds its threshold, coarsen where it is well under, keep 2:1 balance.
+`W_d` is the response map the engine already builds (§8), so the grid is fine where a tower is
+listening and coarse where it is not — the same error measure as the tree walk (§6), in the same
+unit (radians).
+
+### 9.4 Regridding without jitter
+
+Regridding happens every few steps, bulk-synchronously (mark → balance → prefix-sum → allocate →
+transfer). Two rules, both tested:
+
+1. **Transfers conserve.** Restriction sums mass anomaly and momentum; prolongation is conservative
+   (child values sum to the parent's). Total mass anomaly is identical before and after, to rounding.
+2. **Coarsening is invisible to the instrument.** Replacing eight cells by one changes the field by
+   their internal quadrupole; a cell may be coarsened only if that change, through `W_d`, is under
+   the phase tolerance. A regrid must not put a step in any tower's signal above `tol`.
+
+Rule 2 is the reason this is safe here when adaptive grids are usually suspect for exactly this kind
+of measurement: the criterion that decides the grid is the criterion that bounds its effect.
+
+### 9.5 Validation — against the uniform solver, then against the literature
+
+| Check | Asserts |
+|---|---|
+| a fully refined adaptive grid | identical to the uniform solver, step for step (same discretisation, same answer to solver tolerance) |
+| stratified fluid at rest on a deliberately graded grid | stays at rest (≤1e-9 m/s) — the well-balanced test; the classic adaptive failure is a spurious current at the jump |
+| projection on a graded grid | divergence removed to tolerance, flux conserved across every jump |
+| heated cavity, Ra = 10³–10⁶ | Nusselt numbers within 1% of the uniform solver at the same finest pitch, and of de Vahl Davis |
+| plume above a heated body | plume rise speed and anomaly within 2% of the uniform run; the phase at each tower within `tol` plus the uniform run's own discretisation error |
+| regrid events | mass anomaly conserved to rounding; no step in the signal above `tol` |
+| cost | cells and wall-clock against the uniform run at equal phase error — recorded |
+
+### 9.6 Other fluids
+
+The same solver with a different equation of state and a free surface carries liquids — a water
+tank, a cistern, a fluid sloshing in a moving container:
+
+- a **level-set** sidecar for the interface, refined in a narrow band around it (the textbook use of
+  an adaptive grid);
+- the gravity read uses the **full** density inside the liquid (not an anomaly — a tank of water is
+  a ton of mass that moves);
+- **two-way coupling** with rigid bodies becomes necessary (floating, sloshing against walls); the
+  force and torque slot on `RigidBody` is filled by integrating pressure over the body's stamped
+  surface.
+
+This is the last fluid phase: it needs the adaptive solver and voxel contact first.
+
+### 9.7 Adaptive in every other axis
+
+- **Bodies** — the tree walk is already adaptive on the query side (§6). The voxeliser becomes
+  adaptive on the source side: surface leaves are refined until their estimated phase error at the
+  body's closest approach to a tower is under `tol`, so a body that passes 0.5 m from a tower is
+  voxelised finely and one that stays 8 m away is not.
+- **Time** — the flight-time quadrature (as a new `PhaseModel` beside the spine's reference one and
+  validated against it; proposed, not yet briefed) refines where the integrand moves fastest; the fluid step follows the CFL limit.
+- **The response** — the fixed cut of §8.
+
+One tolerance, in radians, drives all of them.
+
+## 10. Contact from voxels
+
+M12 refuses box–box contact. Rather than add SAT for boxes and then again for every new shape, use
+the representation every body already has:
+
+- **Narrow-band signed distance** sidecar per body (distance to the surface for leaves within a few
+  cells of it; sign from occupancy), computed at voxelisation.
+- **Contact generation:** transform body A's surface leaves into B's frame; sample B's distance; a
+  negative sample is a penetration with depth `−d` and normal `∇d`. Swap roles; merge.
+- **Manifold reduction** to at most four points per pair (deepest, then maximal area), cached across
+  steps for warm starting — standard practice, and what keeps a resting stack still.
+- **Solver, sleep and the recorded track are unchanged** (sequential impulses, exact rest).
+- **Broad phase:** bounding-box sweep. A world-level tree over bodies is added only when a scene has
+  enough bodies for the sweep to show in a profile.
+
+The standard that governs it is M12's: a settled body's pose is bit-constant. The test extends to a
+box on a box and a stack of three.
+
+## 11. The viewer
+
+The scene viewer (M13) draws what the engine holds: merged leaves as instanced cubes of their true
+size (far fewer instances than finest cells), an optional overlay of the tree's cell outlines by
+level, the opening cut a tower used (which nodes it accepted, coloured by level — the "what did the
+evaluation actually touch" view), and the air's pyramid levels on the slice.
+
+## 12. GPU
+
+- Trees are flat arrays of fixed-size records: uploaded once per rigid body or bone.
+- The walk is an iterative descent with a small fixed stack per query; queries are batched over
+  (measurement × tower × arm × flight node).
+- Accumulation is differential-first, in float-float where `f32` is not enough; every such kernel has
+  a parity test against the `f64` CPU walk, on real devices (Metal reorders error-free transforms
+  under fast-math; that is the failure to look for).
+- Builds that happen at run time (the obstacle stamp; a per-tick joint tree if ever needed) are key
+  generation, radix sort and compaction — measured at well under a millisecond for 10⁶ keys on
+  current GPUs (Cornerstone: 0.5 ms sort, 0.3 ms build on an A100).
+
+## 13. Open questions
+
+- **Order of the general multipole.** Octupole is where Cartesian tensors stay cheap; the table in §2
+  says higher orders buy real θ at tight tolerances. Decide from a measured cost-versus-θ curve.
+- **Bound tightness.** The bound in §6 ignores the cancellation between arms and between
+  interferometers, so it is pessimistic — possibly by orders of magnitude for distant nodes, where
+  the reading sees only the gradient. A bound on the *differenced* quantity (one more power of
+  `Δr/r`) would open far fewer nodes. Derive it and test it before relying on it.
+- **Per-voxel density.** Imported bodies with tissue-like density variation merge poorly. Whether to
+  quantise density into a few materials (merge within each) is a modelling choice for the scene
+  author, not the engine.
+- **4³ re-pack** for the viewer if ray-marching the tree shows in a frame profile.
