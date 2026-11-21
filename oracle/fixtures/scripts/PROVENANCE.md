@@ -1,0 +1,112 @@
+# Fixtures from George's reference scripts
+
+Arrays made by running the reference scripts behind the oscillatory-noise paper. Only the arrays, the
+harness that makes them (`scripts/reference_fixtures.py`) and this file are in the repository; none of
+the scripts' text is.
+
+| | |
+|---|---|
+| Repository | `https://github.com/Thranduil02/atom-interferometry` (public; 38 scripts, no README) |
+| Commit | `d7d360ad92837bec929b85091b2bdd9af81d285c`, Mon 26 Oct 2026 17:17:57 +0000 |
+| Author | George Parish |
+| Run on | 21 Nov 2026, the build PC (Windows 10), Python 3.14.3, numpy 2.5.5, matplotlib 3.11.2 (Agg) |
+| Seed | `np.random.seed(0)` before each script, and once more before the noise draws of the `fig2_*` cases |
+
+## Permission and licence
+
+The repository has **no licence file**. George has given permission to use his scripts and to commit
+fixtures made by running them: `plan/PROGRESS.md`, "Owner's rulings (21 Nov 2026)", "Fixtures from the
+reference scripts". The same file records his answer that the scripts' one-step offset between the arm
+and the source is not intended ("For George", answer 2), which is why every phase series here is kept
+twice.
+
+## How they were made
+
+The clone was made in a fresh temporary directory outside this repository and treated as untrusted:
+every script was read before it was run (they import numpy and matplotlib only, read no files, and
+their one side effect is `savefig` to a Desktop path, which the harness turns off); Python ran with
+`-I` from a throwaway virtual environment holding numpy and matplotlib; the harness ran from this
+repository, never from inside the clone.
+
+```
+git clone https://github.com/Thranduil02/atom-interferometry <tmp>/clone     # at d7d360a
+python -m venv <tmp2>/venv  &&  <tmp2>/venv/Scripts/python -m pip install numpy matplotlib
+<tmp2>/venv/Scripts/python -I scripts/reference_fixtures.py <tmp>/clone oracle/fixtures/scripts
+```
+
+It takes about six seconds. The scripts' lengths are module constants, so the harness executes each
+script's source with those constants replaced (every match), `__name__ = "ref"` so that `__main__`
+blocks do not run, `plt.show` and `Figure.savefig` as no-ops, and the scripts' printing discarded.
+
+| Case | Script | Override | Shots | Instrument |
+|---|---|---|---|---|
+| `1d_oscillator/` | `1D_oscillator` | `T_total = 2000` (published: 10⁴) | 1000 | AION-10: T = 0.73 s, u₀ = 3.86 m/s, IFOs at 0 and 5 m, cycle 2 s |
+| `100m_oscillators/` | `100m_oscillators` | `T_total = 2e4` (published: 2.5×10⁶) | 4000 | AICE: T = 2.5 s, u₀ = gT − v_kick/2, IFOs at 0 and 70 m, cycle 5 s |
+| `fig2_10m/` | `fig2_10m` | `T_total = 2e4` (published: 3×10⁷) | 10 000 | AION-10, f_N = 0.25 Hz |
+| `fig2_uldm_folding/` | `fig2_uldm_folding` | `T_total = 2e4` (published: 3×10⁷) | 4000 | AICE, f_N = 0.1 Hz |
+| `fig2_folding_map/` | `fig2_folding_map.py` | `T_total = 1e3` (only its `fold_frequency` is used) | — | f_N = 0.1 Hz |
+
+2×10⁴ s is a whole number of periods of every tone in the `fig2_*` scripts (0.05, 0.3275, 0.35625 and
+0.2125 Hz; 0.02, 0.131, 0.1425 and 0.085 Hz), so every peak sits on a bin. Each directory's `meta.json`
+holds the script's constants, the oscillator dictionaries, the overrides and the shape of every array.
+All arrays are float64 `.npy` in C order.
+
+## What the arrays are
+
+**Published and same-time.** The scripts build each arm table by stepping and appending the position
+*after* the step, so `z[j]` is the arm at (j + 1)·dt, and they pair it with the source at j·dt.
+
+- `…_published`: the script exactly as published.
+- `…_same_time`: the same pipeline with **only** that offset corrected: each arm table is replaced by
+  the arm at j·dt (the launch height prepended, the last entry dropped). The trapezoid rule, the
+  window, the clamp at the launch height and the constants are as published. For `100m_oscillators`
+  and the `fig2_*` scripts the four arm arrays are replaced in the executed script's namespace and
+  the script's own `compute_phases` is called again. `1D_oscillator` is module-level code with no
+  such function, so the harness recomputes its sliding-window series from the script's own
+  `potential_difference`, constants and cycle arm tables; with the *unshifted* tables that
+  recomputation gives back the script's own `subsample_phase_diff` with a largest difference of
+  **0** (bit for bit; the harness refuses to continue above 10⁻¹⁵ of the peak).
+
+The arm tables saved (`lower1`, `upper1`, `lower2`, `upper2`) are the published ones.
+
+| Directory | Arrays |
+|---|---|
+| `1d_oscillator/` | `t` (`subsample_times`), `phase_published` (`subsample_phase_diff`), `phase_same_time`, `f` (`f_k_filtered`), `S_published` (`S_phasediff_filtered`: the script's own DFT, no mean subtraction, DC kept, bins up to and including Nyquist), the four `*_cycle` arm tables (200 entries: one 2 s cycle) |
+| `100m_oscillators/` | `t` (`t_meas`), `phase_published` (`phases_multi`: oscillator A alone, no ULDM, no noise), `phase_same_time`, the four arm tables (500 entries) |
+| `fig2_10m/`, `fig2_uldm_folding/` | `t` (`t_meas`); `raw_<p>_published` and `raw_<p>_same_time` for panels b, c (vertical oscillators) and d (a circle in the D–h plane): `compute_phases`, GGN only; `uldm` (`uldm_phase_vec(t_meas, f_phi, m_phi)`); `noise_<p>` for a, b, c, d: one seeded stream, drawn in that order, σ = ASD/√T_cyc; `f`; `S_clean_<p>` (the script's `periodogram` of the published raw series, b, c, d); `S_noisy_<p>` (the script's `periodogram` of what it plots: a = uldm + noise, b = raw + noise, c and d = raw + uldm + noise); the four arm tables (146 and 500 entries) |
+| `fig2_folding_map/` | `f_true` (2001 frequencies from 0 to 5 f_N) and `f_obs` (the script's `fold_frequency` at each) |
+
+## Sanity numbers (this run)
+
+| Series | Peak \|ΔΦ\| | max \|published − same-time\| / peak |
+|---|---|---|
+| `1d_oscillator` | 3.8605 mrad | 3.29×10⁻³ |
+| `100m_oscillators` | 0.68227 mrad | 2.60×10⁻⁴ |
+| `fig2_10m` b (0.05 Hz) | 4.2428 mrad | 2.82×10⁻³ |
+| `fig2_10m` c (0.3275 Hz) | 3.5896 mrad | 1.61×10⁻² |
+| `fig2_10m` d (0.35625 Hz, circle) | 4.5270 mrad | 1.89×10⁻² |
+| `fig2_uldm_folding` b (0.02 Hz) | 9.7057 mrad | 8.89×10⁻⁵ |
+| `fig2_uldm_folding` c (0.131 Hz) | 9.3774 mrad | 1.94×10⁻⁴ |
+| `fig2_uldm_folding` d (0.1425 Hz, circle) | 9.4953 mrad | 2.30×10⁻⁴ |
+
+The comb of `fig2_10m` panel b (`S_clean_b`, T_obs = 2×10⁴ s), √S at the bin of each harmonic:
+
+| 0.05 Hz | 0.10 Hz | 0.15 Hz | 0.20 Hz |
+|---|---|---|---|
+| 2.567×10⁵ µrad/√Hz | 1.561×10⁴ | 9.190×10² | 7.081×10¹ |
+
+(A line's height grows as √T_obs: these are √(2×10⁴/10⁵) of the heights the research note measured at
+10⁵ s.)
+
+## What the scripts do, as checked on these arrays
+
+- **Interferometer 1 is the lower one**: `lower1` and `upper1` launch from z = 0, `lower2` and
+  `upper2` from z = δr (5 m or 70 m). The series is δφ₁ − δφ₂: **lower minus upper**.
+- Every arm table equals the closed-form parabola at (j + 1)·dt, clamped at its launch height, to
+  6×10⁻¹⁵ m (AION-10) and 6×10⁻¹³ m (AICE). On AION-10 the lower arms are on the floor from index 144
+  and the upper arms from index 145; on AICE no entry is on the floor (the last is 2×10⁻¹³ m above it).
+- Table lengths: 146 (`fig2_10m`: the trapezoid runs over j = 0…145 and stops at 2T − dt), 500 (the
+  AICE scripts, likewise), 200 (`1D_oscillator`: a whole cycle, of which its window uses j = 0…146,
+  147 nodes, the full 2T).
+- The first measurement time `t[0]` is 2T in every case (1.46 s and 5.0 s), and the shots are one
+  cycle apart; the source's phase is zero at the first launch.
