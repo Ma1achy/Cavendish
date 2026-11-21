@@ -4,7 +4,7 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 
 | Slice | State | Tag | Notes |
 |---|---|---|---|
-| S0 the shell | built and reviewed: TASK-S0-01 to 11 merged, then the review's ten findings fixed in TASK-S0-12 to 14; ready for the reviewer's second look and the tag | | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
+| S0 the shell | done: TASK-S0-01 to 14 merged; reviewed twice, nothing important remains | `s0-shell` | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
 
 ## S0, the shell: where it stands (21 Nov 2026)
 
@@ -29,8 +29,23 @@ client) and nine minor ones. All ten are fixed with tests; `docs/slices/S0.md` Â
 - The oracle tier is a stub until S1.
 - The rules of the validation report are not in `CLAUDE.md` or the agent definitions (question below).
 
-**Next.** A fresh reviewer reads the slice; its findings become further task PRs; the tag follows.
-Then S1: the forward model, the oracle crate, a point mass you can drag. S1's brief should start from
+**The second review** (21 Nov 2026, of the fixes) found nothing important; S0 is tagged `s0-shell` at
+`00ca950`. Its six minor findings are carried into S1 as its first task:
+1. `validate --against <revision>` passes when the revision does not resolve (a mistyped tag switches
+   the guard off silently): an explicit `--against` that cannot be read must be an error.
+2. A failing `validate --report` still rewrites `report.json`, so committing that file with a dropped
+   case or loosened tolerance makes the default HEAD comparison pass from then on. Write the report
+   only after the comparison holds, and run the slice-end check `--against <last slice's tag>`
+   (from S1: `--against s0-shell`).
+3. `cargo xtask hooks` overwrites a foreign hook that is not valid UTF-8.
+4. `scene_schema`, `scene_get` and `log` are not under `catch_unwind` in `cav mcp`.
+5. The schema's ranges are not exact: inclusive `minimum: 0` where `validate` refuses 0;
+   `Slab.thickness` capped with no range; cross-field rules (`cycle > 2T`, separation < height) unstated.
+6. `cav exec` and `cav-app --exec` split on `;` and newlines without regard for quotes; a comment line
+   holding one `"` swallows the lines after it.
+Also noted: `scene_load` reads a file of any size; DX12 was not re-run after the fixes.
+
+**Next.** S1: the forward model, the oracle crate, a point mass you can drag. S1's brief should start from
 George's answers below and add the first physics rows to the validation report (the void's channels
 exactly zero, the infinite floor's null, the v1 anchors).
 
