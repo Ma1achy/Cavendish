@@ -1,6 +1,6 @@
 ---
 name: cavendish-conventions
-description: Core architecture and conventions for the Cavendish repo — the layered crate graph, the four seam traits, Scalar-generic kernels, the dump-everything data contract, differential-first arithmetic, and British English. Consult before writing or reviewing any crate code, adding a dependency, or touching the StateBundle.
+description: (v1/v2 codebase only; on the rebuild branch plan/REBUILD.md governs and this is background reading.) Core architecture and conventions for the Cavendish repo — the layered crate graph, the four seam traits, Scalar-generic kernels, the dump-everything data contract, differential-first arithmetic, and British English. Consult before writing or reviewing any crate code, adding a dependency, or touching the StateBundle.
 ---
 
 # Cavendish conventions

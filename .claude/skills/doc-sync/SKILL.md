@@ -1,6 +1,6 @@
 ---
 name: doc-sync
-description: Keeping Cavendish's living documents consistent when a design decision changes — the spec, DESIGN.md, the design/*.md drill-downs, and the milestones/*.md briefs must agree. Use whenever a change touches the data model (StateBundle/FieldSet), a seam, the crate layering, a physics convention, or a constant.
+description: (v1/v2 codebase only; on the rebuild branch plan/REBUILD.md governs and this is background reading.) Keeping Cavendish's living documents consistent when a design decision changes — the spec, DESIGN.md, the design/*.md drill-downs, and the milestones/*.md briefs must agree. Use whenever a change touches the data model (StateBundle/FieldSet), a seam, the crate layering, a physics convention, or a constant.
 ---
 
 # Doc-sync

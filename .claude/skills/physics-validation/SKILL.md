@@ -1,6 +1,6 @@
 ---
 name: physics-validation
-description: The validation discipline for Cavendish's forward model — the invariants and their exact tolerances, the independent reference-port strategy (George's cases in Rust), George's pinned constants, and differential-first. Use when writing or debugging any physics, its tests, or the reference crate.
+description: (v1/v2 codebase only; on the rebuild branch plan/REBUILD.md governs and this is background reading.) The validation discipline for Cavendish's forward model — the invariants and their exact tolerances, the independent reference-port strategy (George's cases in Rust), George's pinned constants, and differential-first. Use when writing or debugging any physics, its tests, or the reference crate.
 ---
 
 # Physics validation

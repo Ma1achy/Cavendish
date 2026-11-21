@@ -1,6 +1,6 @@
 ---
 name: milestone-workflow
-description: How to execute a Cavendish milestone — the loop that turns a milestones/M*.md brief into working, tested, CI-green code while keeping the vertical slice alive. Use at the start of any coding session that implements or extends a milestone (M0–M10 or the reference-port thread).
+description: (v1/v2 codebase only; on the rebuild branch plan/REBUILD.md governs and this is background reading.) How to execute a Cavendish milestone — the loop that turns a milestones/M*.md brief into working, tested, CI-green code while keeping the vertical slice alive. Use at the start of any coding session that implements or extends a milestone (M0–M10 or the reference-port thread).
 ---
 
 # Milestone workflow
