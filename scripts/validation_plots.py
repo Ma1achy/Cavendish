@@ -10,7 +10,8 @@
 `cargo xtask validate --report` writes the report and then runs this script for the plots; the progress
 workflow runs it with `--banner` beside the grid. One axis serves every case whatever its unit: the
 **margin**, the measured error as a fraction of the tolerance, on a log scale. A case passes to the left
-of 1. Cases that must be exact (tolerance zero) sit in their own column, since zero has no logarithm.
+of 1. Cases that measured zero sit in their own column, since zero has no logarithm. Only a case whose
+tolerance is zero is called exact; a zero under a tolerance is a zero, and is labelled so.
 
 The style is the README grid's (scripts/progress_banner.py): the same inks on a transparent ground, in a
 light and a dark theme. Measured values are ink dots, the tolerance is the one ochre line, and anything
@@ -48,7 +49,7 @@ WIDTH       = 1600   # the README's width, so the banner lines up with the grid
 LABEL_W     = 560    # the column of case names
 NOTE_W      = 300    # the column of values, right of the plot
 ROW_H       = 30
-EXACT_W     = 90     # the column for exact cases, left of the log axis
+EXACT_W     = 90     # the column for cases that measured zero, left of the log axis
 MIN_DECADE  = -6     # the log axis never starts above 10^-3 nor below this
 
 
@@ -66,7 +67,7 @@ class Case:
         unit      (str):          The unit of ``measured`` and ``tolerance``.
         measured  (float | None): The measured error; ``None`` if missing or not finite.
         tolerance (float | None): The largest error that passes.
-        margin    (float | None): ``measured / tolerance``; 0 for an exact pass, ``None`` if unknown or over.
+        margin    (float | None): ``measured / tolerance``; 0 when zero was measured, ``None`` if unknown or over.
         order     (tuple[float, float, float | None] | None): Expected order, allowed distance, measured order.
         points    (list[tuple[float, float]]): ``(step, error)`` pairs of a convergence case.
     """
@@ -250,6 +251,19 @@ def _percent(margin: float) -> str:
     return f"{100 * margin:.0f}%" if margin >= 0.1 else f"{100 * margin:.2g}%"
 
 
+def _share(case: Case) -> str:
+    """How a passing or failing case stands to its tolerance, in words.
+
+    "exact" is kept for cases that had to be: a tolerance of zero, met. A zero measured under a
+    tolerance that is not zero is "zero", which says less and is all that is known.
+    """
+    if case.margin is None:
+        return "over"
+    if case.margin == 0:
+        return "exact" if case.tolerance == 0 else "zero measured"
+    return _percent(case.margin)
+
+
 def _shown(value: float | None) -> str:
     """A number as a label: short, exact for zero."""
     if value is None:
@@ -261,7 +275,7 @@ def _shown(value: float | None) -> str:
 
 @dataclass(frozen = True)
 class MarginAxis:
-    """The shared axis: an "exact" column, then margins from ``10**low`` to 10 on a log scale.
+    """The shared axis: a "zero" column, then margins from ``10**low`` to 10 on a log scale.
 
     Attributes:
         start (float): Where the axis begins.
@@ -276,7 +290,7 @@ class MarginAxis:
     along: bool = True
 
     def at(self, margin: float | None) -> float:
-        """The position of a margin. Zero goes to the exact column; an unknown or huge one to the far end."""
+        """The position of a margin. Zero goes to the zero column; an unknown or huge one to the far end."""
         span = self.end - self.start
         gap  = EXACT_W if self.along else 34.0
         sign = 1.0 if span > 0 else -1.0
@@ -328,7 +342,7 @@ def error_vs_tolerance(cases: list[Case], theme: str) -> str:
     for x, label in axis.ticks():
         body.append(f'<line class="grid" x1="{x:.1f}" y1="{top - 8}" x2="{x:.1f}" y2="{bottom}"/>')
         body.append(_text(x, bottom + 24, label, size = 15, cls = "t w", anchor = "middle"))
-    body.append(_text(axis.at(0), bottom + 24, "exact", size = 15, cls = "t w", anchor = "middle"))
+    body.append(_text(axis.at(0), bottom + 24, "zero", size = 15, cls = "t w", anchor = "middle"))
     body.append(f'<line class="axis" x1="{axis.start}" y1="{bottom}" x2="{axis.end}" y2="{bottom}"/>')
     body.append(f'<line class="tol" x1="{axis.at(1):.1f}" y1="{top - 8}" x2="{axis.at(1):.1f}" y2="{bottom}"/>')
 
@@ -348,7 +362,7 @@ def error_vs_tolerance(cases: list[Case], theme: str) -> str:
                 body.append(f'<line class="thin" x1="{x:.1f}" y1="{middle}" x2="{axis.at(1):.1f}" y2="{middle}"/>')
                 mark = "dot" if case.status == "pass" else "ring"
                 body.append(f'<circle class="{mark}" cx="{x:.1f}" cy="{middle}" r="6"/>')
-                share = "over" if case.margin is None else ("exact" if case.margin == 0 else _percent(case.margin))
+                share = "over" if case.margin is None else _share(case)
                 note  = f"{_shown(case.measured)} of {_shown(case.tolerance)} {case.unit} · {share}"
                 if case.status != "pass":
                     note = "FAIL · " + note
@@ -451,7 +465,7 @@ def history_plot(snapshots: list[Snapshot], theme: str) -> str:
     for y, label in axis.ticks():
         body.append(f'<line class="grid" x1="{left - 10}" y1="{y:.1f}" x2="{right + 10}" y2="{y:.1f}"/>')
         body.append(_text(left - 18, y + 5, label, size = 15, cls = "t w", anchor = "end"))
-    body.append(_text(left - 18, axis.at(0) + 5, "exact (0)", size = 15, cls = "t w", anchor = "end"))
+    body.append(_text(left - 18, axis.at(0) + 5, "zero", size = 15, cls = "t w", anchor = "end"))
     body.append(f'<line class="tol" x1="{left - 10}" y1="{axis.at(1):.1f}" x2="{right + 10}" y2="{axis.at(1):.1f}"/>')
     body.extend(_history_lines(snapshots, axis, left + 30, right - 30))
     step = (right - left - 60) / max(len(snapshots) - 1, 1)
@@ -465,7 +479,10 @@ def history_plot(snapshots: list[Snapshot], theme: str) -> str:
     notes  = [f"{sum(c.status == 'pass' for c in latest)} of {len(latest)} pass in the latest report"]
     if worst is not None and worst.margin is not None:
         notes += ["least room to spare:", worst.name, f"{100 * worst.margin:.0f}% of its tolerance"]
-    notes += [f"{sum(c.margin == 0 for c in latest)} cases are exact"]
+    notes += [
+        f"{sum(c.tolerance == 0 for c in latest)} cases must be exact (tolerance 0)",
+        f"{sum(c.margin == 0 and c.tolerance != 0 for c in latest)} more measured zero",
+    ]
     for n, note in enumerate(notes):
         body.append(_text(right + 40, top + 24 + 26 * n, note, size = 16, cls = "t m" if n != 2 else "t", weight = 500 if n == 2 else 400))
     return _svg(WIDTH, bottom + 50, theme, "Each validation case's error as a fraction of its tolerance over time", body)
@@ -491,7 +508,7 @@ def banner(snapshots: list[Snapshot], theme: str) -> str:
         _text(left - 16, 22, "accuracy over time", size = 14, cls = "t w"),
         f'<line class="tol" x1="{left - 16}" y1="{axis.at(1):.1f}" x2="{right + 16}" y2="{axis.at(1):.1f}"/>',
         _text(right + 22, axis.at(1) + 5, "tolerance", size = 14, cls = "t w"),
-        _text(right + 22, axis.at(0) + 5, "exact", size = 14, cls = "t w"),
+        _text(right + 22, axis.at(0) + 5, "zero", size = 14, cls = "t w"),
         f'<line class="grid" x1="{left - 16}" y1="{axis.at(0):.1f}" x2="{right + 16}" y2="{axis.at(0):.1f}"/>',
     ]
     body.extend(_history_lines(snapshots, axis, left, right))

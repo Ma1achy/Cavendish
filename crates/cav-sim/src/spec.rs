@@ -557,7 +557,7 @@ mod tests {
         subsystem: "array",
         slice: "S0",
         reference: Recording,
-        against: "tower positions and room of docs/viewer-mockup/replay.json (the v2 recording); largest difference",
+        against: "tower x, y and base z, the room and 2T of docs/viewer-mockup/replay.json (the v2 recording); largest difference",
         unit: Metres,
         tolerance: 0.0,
         measure: {
@@ -579,6 +579,11 @@ mod tests {
             for axis in 0..3 {
                 worst = worst.max((number(&grid["origin"][axis]) - room.origin[axis]).abs());
                 worst = worst.max((number(&grid["n"][axis]) * number(&grid["h"]) - room.size[axis]).abs());
+            }
+            // The towers stand on the recording's floor: their base is at the grid's lowest z. (The
+            // recording has no tower height; `instrument_defaults_are_the_aion_10_preset` pins that.)
+            for tower in &scene.array.towers {
+                worst = worst.max((number(&grid["origin"][2]) - tower.position[2]).abs());
             }
             // And the flight is the recording's: 2T.
             worst = worst.max((number(&recording["two_t"]) - 2.0 * scene.array.instrument.half_sequence).abs());

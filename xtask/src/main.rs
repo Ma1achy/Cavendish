@@ -27,10 +27,14 @@ cargo xtask <tier>
   gpu                the tests whose names contain `gpu_`: they need the local adapter. Same floor rule.
   oracle             the oracle tier. Before S1 there is no oracle crate, and it says so.
   demo <slice>       runs the slice's demo headlessly and saves screenshots to docs/slices/<slice>/.
-  validate [--report]
+  validate [--report] [--against <revision>]
                      runs every validation case (tests named `validation_…`, declared with
                      `cav_validate::case!`) and tabulates measured error against tolerance. A case
                      that is declared but did not run is reported as missing and fails the command.
+                     It also holds the cases to docs/validation/report.json as committed at
+                     the revision (HEAD unless --against names another, such as the last slice's
+                     tag): a case that has gone, or a tolerance that has changed, fails unless
+                     docs/validation/acknowledged.txt names it with a reason.
                      With --report it writes docs/validation/ (report.md, report.json, plots).
   hooks              installs .git/hooks/pre-push, which runs `cargo xtask quick`.
 ";
@@ -46,8 +50,10 @@ fn main() -> ExitCode {
         ["gpu"] => tiers::gpu(&root),
         ["oracle"] => tiers::oracle(),
         ["demo", slice] => demo::run(&root, slice),
-        ["validate"] => validate::run(&root, false),
-        ["validate", "--report"] => validate::run(&root, true),
+        ["validate"] => validate::run(&root, false, "HEAD"),
+        ["validate", "--report"] => validate::run(&root, true, "HEAD"),
+        ["validate", "--against", revision] => validate::run(&root, false, revision),
+        ["validate", "--report", "--against", revision] => validate::run(&root, true, revision),
         ["hooks"] => hooks(&root),
         [] | ["help" | "--help" | "-h"] => {
             print!("{HELP}");

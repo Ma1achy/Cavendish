@@ -410,7 +410,7 @@ mod tests {
         subsystem: "validate",
         slice: "S0",
         reference: ClosedForm,
-        against: "the slope of log(3h²) against log h is 2",
+        against: "the report's own order fit, not the engine: the slope of log(3h²) against log h is 2",
         unit: Relative,
         tolerance: 1e-12,
         measure: Measured::Error((fitted_order(&[(0.1, 0.03), (0.01, 0.0003), (0.001, 0.000003)]).unwrap() / 2.0 - 1.0).abs()),

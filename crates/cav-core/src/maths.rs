@@ -264,7 +264,7 @@ mod tests {
         subsystem: "maths",
         slice: "S0",
         reference: ClosedForm,
-        against: "a point ten times further away projects ten times nearer the axis",
+        against: "the CPU matrix Mat4::perspective only, not the renderer: a point ten times further away projects ten times nearer the axis",
         unit: Relative,
         tolerance: 1e-12,
         measure: {

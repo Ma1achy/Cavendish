@@ -54,6 +54,13 @@ mod tests {
     #[test]
     fn instrument_defaults_are_the_aion_10_preset() {
         // VALIDATION-AND-RESEARCH §1: 10 m baseline, Δr = 5 m, 2T = 1.46 s, 2 s cycle, Nyquist 0.25 Hz.
+        // The numbers themselves, so that a change to any of them is a failed test and not a
+        // quiet change of instrument (reference/design/instrument.md §3: Δr 5 m in a 10 m tower).
+        assert_eq!(TOWER_HEIGHT, 10.0);
+        assert_eq!(IFO_SEPARATION, 5.0);
+        assert_eq!(HALF_SEQUENCE, 0.73);
+        assert_eq!(LAUNCH_VELOCITY, 3.86);
+        assert_eq!(CYCLE, 2.0);
         assert_eq!(2.0 * HALF_SEQUENCE, 1.46);
         assert_eq!(0.5 / CYCLE, 0.25);
         assert_eq!(TOWER_HEIGHT, 2.0 * IFO_SEPARATION);

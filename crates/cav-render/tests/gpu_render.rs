@@ -95,11 +95,9 @@ fn gpu_towers_appear_where_the_camera_projects_them() {
         for n in 0..5 {
             // 7.3 m up: above the room, between ticks, so only the tower's own colour is there.
             let pixel = camera.pixel(on_tower(&scene, n, 7.3), SIZE).expect("in front of the camera");
-            assert!(
-                picture.has_near(pixel, 2, tower_srgb(n), 8),
-                "{name}: tower {} is not at {pixel:?}",
-                n + 1
-            );
+            // Within 2 px, as a distance: not a 5 × 5 box, whose corners are 2.8 px away.
+            let off = picture.distance_to(pixel, 8, tower_srgb(n), 8);
+            assert!(off <= 2.0, "{name}: tower {} is {off:.2} px from {pixel:?}", n + 1);
             // Control arms: another tower's colour is not there, and 25 px to the side is empty,
             // so a renderer that put the towers elsewhere (or mirrored them) fails.
             assert!(
@@ -239,8 +237,7 @@ fn gpu_every_style_is_distinct_and_paper_is_cream() {
         }
     }
     assert!(darkest < 0x60, "paper has ink: darkest green channel {darkest}");
-    // Shading: a lit picture is not the flat one dimmed uniformly; some surface is brighter than
-    // another of the same material. The floor panel is one colour in flat and stays so (it faces up).
+    // Shaded differs from flat here; what shading must do is `gpu_shading_follows_the_light`.
     assert!(of(DrawStyle::Shaded).rgba != of(DrawStyle::Flat).rgba);
 }
 
@@ -309,7 +306,7 @@ cav_validate::case! {
     subsystem: "render",
     slice: "S0",
     reference: ClosedForm,
-    against: "the f64 camera's projection of a point on each tower; distance to the nearest pixel of that tower's colour, worst over five towers and four views",
+    against: "the f64 camera's projection of a point on each tower; distance to the centre of the nearest pixel of that tower's colour, worst over five towers and four views. The measure resolves no finer than half a pixel's diagonal, 0.71 px",
     unit: Pixels,
     tolerance: 2.0,
     measure: {
@@ -436,4 +433,140 @@ fn gpu_the_largest_valid_scene_renders() {
     let mut beyond = scene;
     beyond.array.instrument.tower_height = 3.0e6;
     assert!(beyond.validate().is_err());
+}
+
+/// An sRGB byte as linear light, 0 to 1.
+fn linear(byte: u8) -> f64 {
+    let c = f64::from(byte) / 255.0;
+    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+}
+
+/// The void with only the towers at the given ground positions, in that order.
+fn towers_at(positions: &[[f64; 2]]) -> SceneSpec {
+    let mut scene = dev::void();
+    scene.array.towers = positions
+        .iter()
+        .enumerate()
+        .map(|(n, p)| cav_sim::TowerSpec { label: format!("tower {}", n + 1), position: [p[0], p[1], 0.0] })
+        .collect();
+    scene
+}
+
+#[test]
+fn gpu_xray_adds_what_is_behind_and_flat_hides_it() {
+    let (gpu, renderer) = setup();
+    // Seen from the south, one tower stands straight behind the other.
+    let (near, far) = ([0.0, -4.0], [0.0, 4.0]);
+    let both = towers_at(&[near, far]);
+    let pixel_in = |scene: &SceneSpec, style: DrawStyle| {
+        // The same camera for every scene: framed on the pair.
+        let view = ViewSpec::framing(&both, NamedView::South, Projection::Orthographic, style);
+        let at = camera(&view).pixel(on_tower(&both, 0, 7.3), SIZE).unwrap();
+        render(&gpu, &renderer, scene, &view).at(at[0].round() as u32, at[1].round() as u32)
+    };
+    // Each order of drawing: the near tower first, and the far one first. With a depth test,
+    // which of the two is hidden depends on the order; without one, neither is.
+    for (first, second) in [(near, far), (far, near)] {
+        let pair = towers_at(&[first, second]);
+        let alone_first = towers_at(&[first]);
+        let together = pixel_in(&pair, DrawStyle::XRay);
+        let a = pixel_in(&alone_first, DrawStyle::XRay);
+        // The second tower alone is drawn in the first tower's colour (colours go by index), so
+        // take its light from the pair's second colour by drawing it second behind nothing:
+        // a pair whose first tower is far off to the side.
+        let aside = towers_at(&[[30.0, 0.0], second]);
+        let b = pixel_in(&aside, DrawStyle::XRay);
+        let background = linear(BACKGROUND_SRGB[0]);
+        for channel in 0..3 {
+            // Additive, depth off: the light of both towers, less the background counted twice.
+            let expected = linear(a[channel]) + linear(b[channel]) - background;
+            if expected < 0.95 {
+                let found = linear(together[channel]);
+                assert!(
+                    (found - expected).abs() < 0.02,
+                    "x-ray, channel {channel}: {found:.3} is not the sum {expected:.3} of the two towers"
+                );
+                assert!(
+                    found > linear(a[channel]) + 0.005 && found > linear(b[channel]) + 0.005,
+                    "and it is more than either"
+                );
+            }
+        }
+        // Control: with depth (flat), the same pixel is the nearer tower alone, whichever was drawn first.
+        let nearer_index = if first == near { 0 } else { 1 };
+        let flat = pixel_in(&pair, DrawStyle::Flat);
+        assert!(
+            close(flat, tower_srgb(nearer_index), 8),
+            "flat: {flat:?} should be the nearer tower's colour"
+        );
+    }
+}
+
+#[test]
+fn gpu_shading_follows_the_light() {
+    let (gpu, renderer) = setup();
+    let scene = dev::void();
+    // Close on the upper launch-point sphere of tower 1, from the south: it fills a fifth of the picture.
+    let sphere = on_tower(&scene, 0, scene.array.instrument.ifo_separation);
+    let view = |style| ViewSpec {
+        target: sphere.to_array(),
+        yaw: -90.0,
+        pitch: 0.0,
+        distance: 1.0,
+        projection: Projection::Perspective,
+        style,
+    };
+    let camera = camera(&view(DrawStyle::Shaded));
+    // Two points on the sphere's face, 0.05 m from its centre: up and to the west (towards the key
+    // light, which comes from the south-west and above), and down and to the east (away from it).
+    let lit = camera.pixel(sphere + Vec3::new(-0.035, 0.0, 0.035), SIZE).unwrap();
+    let unlit = camera.pixel(sphere + Vec3::new(0.035, 0.0, -0.035), SIZE).unwrap();
+    assert!((lit[0] - unlit[0]).abs() > 40.0, "the two samples are well apart on screen");
+    let sample = |picture: &Picture, at: [f64; 2]| picture.at(at[0].round() as u32, at[1].round() as u32);
+    let shaded = render(&gpu, &renderer, &scene, &view(DrawStyle::Shaded));
+    let flat = render(&gpu, &renderer, &scene, &view(DrawStyle::Flat));
+    let (bright, dark) = (sample(&shaded, lit), sample(&shaded, unlit));
+    // The side facing the light is clearly brighter; a constant "lighting" would make them equal.
+    assert!(
+        i32::from(bright[1]) - i32::from(dark[1]) > 30,
+        "shaded: towards the light {bright:?}, away from it {dark:?}"
+    );
+    // Both are the tower's hue: red over green over blue, as its colour is.
+    for pixel in [bright, dark] {
+        assert!(pixel[0] > pixel[1] && pixel[1] > pixel[2], "{pixel:?} is not the tower's colour, shaded");
+    }
+    // Control: flat is unlit. The same two points are the same colour, the tower's own.
+    let (a, b) = (sample(&flat, lit), sample(&flat, unlit));
+    assert!(close(a, b, 1) && close(a, tower_srgb(0), 2), "flat: {a:?} and {b:?}");
+}
+
+cav_validate::case! {
+    test: validation_gpu_picture_is_the_same_10_km_from_the_origin,
+    name: "render.gpu_local_frame_at_10_km",
+    subsystem: "render",
+    slice: "S0",
+    reference: Exact,
+    against: "end to end on the GPU: the infinite-floor scene moved by (10000, -7000, 300) m, camera and all, against the same scene at the origin; bytes of the picture that differ",
+    unit: Count,
+    tolerance: 0.0,
+    measure: {
+        let (gpu, renderer) = setup();
+        let shift = [10_000.0, -7_000.0, 300.0];
+        let at_origin = dev::infinite_floor();
+        let mut far = at_origin.clone();
+        for tower in &mut far.array.towers {
+            for axis in 0..3 {
+                tower.position[axis] += shift[axis];
+            }
+        }
+        far.floor.as_mut().unwrap().height += shift[2];
+        let view = ViewSpec { pitch: 12.0, ..ViewSpec::home(&at_origin) };
+        let mut moved = view.clone();
+        for axis in 0..3 {
+            moved.target[axis] += shift[axis];
+        }
+        let a = render(&gpu, &renderer, &at_origin, &view);
+        let b = render(&gpu, &renderer, &far, &moved);
+        cav_validate::Measured::Error(a.rgba.iter().zip(&b.rgba).filter(|(x, y)| x != y).count() as f64)
+    },
 }

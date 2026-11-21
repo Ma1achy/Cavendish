@@ -48,6 +48,11 @@ lays the two lists side by side.
 - A tolerance that is negative, infinite or not a number fails its case: a case that cannot fail is not a
   case (`a_case_without_a_usable_tolerance_fails`).
 - A failing case is still a row: it records what it measured before it fails.
+- **The committed report is the memory.** `validate` holds every case and tolerance to
+  `docs/validation/report.json` as committed at `HEAD` (or at `--against <revision>`, such as the last
+  slice's tag). A case that has gone fails the command; so does a tolerance that has changed, looser or
+  tighter. The only way past is a line in `acknowledged.txt` naming the case and the reason, which the
+  report then prints (`a_dropped_case_or_a_changed_tolerance_fails_unless_it_is_acknowledged`).
 - `report.json` holds no time and no commit, so regenerating it without a change in the results changes
   nothing; the history plot reads its earlier versions from git.
 
@@ -55,17 +60,18 @@ lays the two lists side by side.
 
 1. **Never drop a case to make the report green.** A case leaves only when what it checks leaves, and the
    slice notes say so.
-2. **A tolerance changes only with a line in the slice notes saying why.**
+2. **A tolerance changes only with a line in the slice notes saying why**, and the same line in
+   `acknowledged.txt`, without which `validate` fails.
 3. **Every slice ends by regenerating the report** (`cargo xtask validate --report`) and committing
    `docs/validation/`.
-4. **The reviewer checks the report**: no dropped cases against the previous `report.json`, no tolerance
-   changed without its line in the notes, nothing missing.
+4. **The reviewer checks the report**: `cargo xtask validate --against <the last slice's tag>` must pass,
+   and every line of `acknowledged.txt` must have its reason in the slice notes.
 
 ## The plots
 
 One axis serves every case whatever its unit: the **margin**, the measured error as a fraction of its
-tolerance, on a log scale. A case passes to the left of (or below) 1. Cases that must be exact have
-their own column, since zero has no logarithm.
+tolerance, on a log scale. A case passes to the left of (or below) 1. Cases that measured zero have
+their own column, since zero has no logarithm; only a case whose tolerance is zero is called exact.
 
 - `error-vs-tolerance-*.svg`: every case's margin, grouped by subsystem.
 - `convergence-*.svg`: error against step for each convergence case, with the expected rate drawn in.
