@@ -38,7 +38,7 @@ Still open (asked in S0; defaults in use until answered):
   cells, latency budgets) are marked "to be measured on a faster GPU later" and do not fail a slice.
   Correctness, oracle and GPU-parity tests must pass here.
 - `origin/build-machine` was already in `main` (merge `176bc81`); nothing further to merge.
-- **Defender exclusion:** `C:\src\Cavendish	arget` is excluded from real-time scanning (added by the
+- **Defender exclusion:** `C:\src\Cavendish\target` is excluded from real-time scanning (added by the
   owner). S0 re-measures cold and warm build times with it; both sets are in `docs/slices/S0.md`.
 - **Fixtures from the reference scripts:** George has given permission to use his scripts
   (`github.com/Thranduil02/atom-interferometry`); fixtures made by running them may be committed,
