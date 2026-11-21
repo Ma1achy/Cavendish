@@ -48,7 +48,7 @@ pub struct SceneSpec {
     /// One or two sentences on what the scene is and what it checks.
     pub description: String,
     /// Length of the timeline, seconds.
-    #[schemars(range(min = 0.0, max = 1.0e6))]
+    #[schemars(range(max = 1.0e6), extend("exclusiveMinimum" = 0.0))]
     pub duration: f64,
     /// The towers and the instrument they share.
     pub array: ArraySpec,
@@ -73,19 +73,20 @@ pub struct ArraySpec {
 #[serde(deny_unknown_fields)]
 pub struct InstrumentSpec {
     /// Height of the tower, metres.
-    #[schemars(range(min = 0.0, max = 1.0e3))]
+    #[schemars(range(max = 1.0e3), extend("exclusiveMinimum" = 0.0))]
     pub tower_height: f64,
-    /// Vertical separation of the two interferometers (Δr), metres.
-    #[schemars(range(min = 0.0, max = 1.0e3))]
+    /// Vertical separation of the two interferometers (Δr), metres. Less than `tower_height`.
+    #[schemars(range(max = 1.0e3), extend("exclusiveMinimum" = 0.0))]
     pub ifo_separation: f64,
     /// Half the interrogation sequence, T, seconds; a shot lasts 2T from launch to readout.
+    /// 2T is less than `cycle`.
     #[schemars(range(min = 1.0e-3, max = 1.0e4))]
     pub half_sequence: f64,
     /// Launch velocity u₀, metres per second.
-    #[schemars(range(min = 0.0, max = 1.0e4))]
+    #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0))]
     pub launch_velocity: f64,
-    /// Time between shots of one tower, seconds.
-    #[schemars(range(min = 0.0, max = 1.0e4))]
+    /// Time between shots of one tower, seconds. More than a shot: `cycle` > 2 × `half_sequence`.
+    #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0))]
     pub cycle: f64,
 }
 
@@ -119,7 +120,7 @@ pub struct FloorSpec {
     /// What lies below the surface.
     pub kind: FloorKind,
     /// Density of the floor's matter, kilograms per cubic metre.
-    #[schemars(range(min = 0.0, max = 1.0e5))]
+    #[schemars(range(max = 1.0e5), extend("exclusiveMinimum" = 0.0))]
     pub density: f64,
 }
 
@@ -131,6 +132,7 @@ pub enum FloorKind {
     /// A slab of the given thickness, metres, with nothing below it.
     Slab {
         /// Thickness of the slab, metres.
+        #[schemars(range(max = 1.0e6), extend("exclusiveMinimum" = 0.0))]
         thickness: f64,
     },
 }
@@ -644,5 +646,82 @@ mod tests {
         assert_eq!(schema["properties"]["duration"]["maximum"], 1.0e6);
         assert_eq!(schema["$defs"]["InstrumentSpec"]["properties"]["tower_height"]["maximum"], 1.0e3);
         assert!(schema.to_string().contains("each above 0 and at most 1e4"));
+    }
+
+    /// The schema of the field at `path`: `["InstrumentSpec", "cycle"]`, or `["duration"]` at the root.
+    fn field_schema(schema: &serde_json::Value, path: &[&str]) -> serde_json::Value {
+        match path {
+            [field] => schema["properties"][field].clone(),
+            [owner, field] => schema["$defs"][owner]["properties"][field].clone(),
+            _ => panic!("{path:?}"),
+        }
+    }
+
+    #[test]
+    fn the_schema_states_the_ranges_validate_enforces() {
+        type Set = fn(&mut SceneSpec, f64);
+        let schema = SceneSpec::schema();
+        let mut base = SceneSpec::room();
+        base.floor =
+            Some(FloorSpec { height: 0.0, kind: FloorKind::Slab { thickness: 1.0 }, density: 2400.0 });
+        assert_eq!(base.validate(), Ok(()));
+        // Every number `validate` refuses at zero: the schema must exclude zero too, and agree on
+        // the largest value.
+        let positive: [(&[&str], Set, f64); 7] = [
+            (&["duration"], |s, v| s.duration = v, limits::DURATION),
+            (&["InstrumentSpec", "tower_height"], |s, v| s.array.instrument.tower_height = v, 1.0e3),
+            (&["InstrumentSpec", "ifo_separation"], |s, v| s.array.instrument.ifo_separation = v, 1.0e3),
+            (&["InstrumentSpec", "launch_velocity"], |s, v| s.array.instrument.launch_velocity = v, 1.0e4),
+            (&["InstrumentSpec", "cycle"], |s, v| s.array.instrument.cycle = v, limits::CYCLE),
+            (&["FloorSpec", "density"], |s, v| s.floor.as_mut().unwrap().density = v, limits::DENSITY),
+            (
+                &["thickness"],
+                |s, v| s.floor.as_mut().unwrap().kind = FloorKind::Slab { thickness: v },
+                limits::POSITION,
+            ),
+        ];
+        for (path, set, most) in positive {
+            let field = if path == ["thickness"] {
+                // The slab is a variant of `FloorKind`, wherever schemars puts its object.
+                let kinds = schema["$defs"]["FloorKind"]["oneOf"].as_array().expect("variants").clone();
+                let slab = kinds.iter().find(|k| !k["properties"]["Slab"].is_null()).expect("Slab");
+                slab["properties"]["Slab"]["properties"]["thickness"].clone()
+            } else {
+                field_schema(&schema, path)
+            };
+            assert_eq!(field["exclusiveMinimum"], 0.0, "{path:?}: {field}");
+            assert!(field.get("minimum").is_none(), "{path:?} must not admit 0: {field}");
+            assert_eq!(field["maximum"], most, "{path:?}");
+            let mut zero = base.clone();
+            set(&mut zero, 0.0);
+            assert!(zero.validate().is_err(), "{path:?}: validate refuses 0, as the schema says");
+        }
+        // Control: a bound that is inclusive is stated as inclusive, and validate accepts it.
+        let half = field_schema(&schema, &["InstrumentSpec", "half_sequence"]);
+        assert_eq!(half["minimum"], limits::HALF_SEQUENCE_MIN);
+        assert!(half.get("exclusiveMinimum").is_none());
+        let mut edge = base.clone();
+        edge.array.instrument.half_sequence = limits::HALF_SEQUENCE_MIN;
+        assert_eq!(edge.validate(), Ok(()));
+        let height = field_schema(&schema, &["FloorSpec", "height"]);
+        assert_eq!(
+            (&height["minimum"], &height["maximum"]),
+            (&serde_json::json!(-1.0e6), &serde_json::json!(1.0e6))
+        );
+        // The rules between fields are in the words, since a schema range cannot hold them.
+        let text = |path: &[&str]| field_schema(&schema, path)["description"].as_str().unwrap().to_owned();
+        assert!(text(&["InstrumentSpec", "ifo_separation"]).contains("Less than `tower_height`"));
+        assert!(text(&["InstrumentSpec", "cycle"]).contains("`cycle` > 2 × `half_sequence`"));
+        assert!(text(&["InstrumentSpec", "half_sequence"]).contains("2T is less than `cycle`"));
+        // And they are the rules: at equality each is refused, just inside each is accepted.
+        let mut spec = base.clone();
+        spec.array.instrument.ifo_separation = spec.array.instrument.tower_height;
+        assert!(spec.validate().is_err());
+        spec.array.instrument.ifo_separation = spec.array.instrument.tower_height - 0.01;
+        assert_eq!(spec.validate(), Ok(()));
+        spec.array.instrument.cycle = 2.0 * spec.array.instrument.half_sequence;
+        assert!(spec.validate().is_err());
+        spec.array.instrument.cycle = 2.0 * spec.array.instrument.half_sequence + 0.01;
+        assert_eq!(spec.validate(), Ok(()));
     }
 }
