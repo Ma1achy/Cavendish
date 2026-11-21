@@ -1,0 +1,1674 @@
+<title>Cavendish Scene Viewer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500&family=Ubuntu+Mono&display=swap">
+<style>
+/* Layout: the Principia dev-GUI language, applied to Cavendish — egui's dark look. A 28px menu bar with
+   real menus, an outliner left, the scene in the middle, the selection's properties right, a time strip
+   under everything (one lane per tower above the signal plot), and a footer that opens into the console.
+   One deliberate dark theme, as egui has. */
+:root {
+  --bg: #0a0a0a; --panel: #1b1b1b; --foot: #141414; --rule: #2a2a2a;
+  --widget: #3c3c3c; --widget-edge: #4a4a4a; --track: #303030;
+  --sel: #005c80; --sel-edge: #1a7ca3; --link: #5ab4ff; --warn: #e0c070; --err: #e0705a; --ok: #7fae6a;
+  --text: #a8a8a8; --strong: #dcdcdc; --weak: #6f6f6f;
+  --t1: #d6a83c; --t2: #c4677a; --t3: #4b93a0; --t4: #b04a2c; --t5: #6d7e35;
+  --heat-lo: #b04a2c; --heat-hi: #f2d38a; --cool: #4b93a0; --mid: #3f4652; --body: #cfcfcf;
+  --sans: Ubuntu, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Ubuntu Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font: 300 12.5px/1.35 var(--sans); overflow: hidden; }
+b { font-weight: 500; color: var(--strong); }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.weak { color: var(--weak); }
+.strong { color: var(--strong); }
+.note { color: var(--weak); font-size: 11px; line-height: 1.4; }
+.app { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+
+.menubar { height: 28px; flex: none; display: flex; align-items: center; gap: 4px; background: var(--panel);
+  border-bottom: 1px solid var(--rule); white-space: nowrap; position: relative; z-index: 60;
+  padding-left: max(10px, env(safe-area-inset-left, 0px)); padding-right: max(10px, env(safe-area-inset-right, 0px)); }
+.menubar > b { margin-right: 8px; }
+.menu { background: none; border: 0; color: var(--text); font: inherit; padding: 3px 7px; border-radius: 2px; cursor: pointer; }
+.menu:hover, .menu[aria-expanded="true"] { background: var(--widget); color: var(--strong); }
+.vr { width: 1px; height: 16px; background: var(--widget); flex: none; margin: 0 6px; }
+.grow { flex: 1; min-width: 0; }
+
+.btn { background: var(--widget); color: var(--strong); border: 1px solid var(--widget-edge); border-radius: 2px;
+  padding: 2px 8px; font: 300 12.5px var(--sans); cursor: pointer; white-space: nowrap; }
+.btn:hover { background: #464646; }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.on, .btn[aria-pressed="true"] { background: var(--sel); border-color: var(--sel-edge); color: #fff; }
+.btn.warn { border-color: var(--warn); color: var(--warn); }
+.btn:focus-visible, .menu:focus-visible, input:focus-visible, select:focus-visible, .cb:focus-visible, canvas:focus-visible, .node:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+select.combo { background: var(--widget); color: var(--strong); border: 1px solid var(--widget-edge); border-radius: 2px;
+  padding: 1px 4px; font: 300 12.5px var(--sans); min-width: 0; }
+.val { background: var(--bg); border: 1px solid var(--widget); border-radius: 2px; padding: 0 5px; min-width: 52px;
+  text-align: right; color: var(--strong); font-family: var(--mono); }
+input.val { width: 62px; font-size: 12.5px; height: 20px; }
+.hd { display: flex; align-items: center; gap: 6px; color: var(--strong); font-weight: 400; margin: 10px 0 5px; }
+.hd::before { content: "⏷"; font-size: 10px; color: #8c8c8c; }
+.pt { color: var(--strong); font-weight: 400; font-size: 14px; margin: 4px 0 6px; }
+.row { display: flex; align-items: center; gap: 8px; min-height: 22px; min-width: 0; }
+.lab { width: 84px; flex: none; }
+.sep { height: 1px; background: var(--rule); margin: 6px 0; }
+.cb { display: flex; align-items: center; gap: 6px; flex: 1; background: none; border: 0; padding: 0; color: var(--text);
+  font: inherit; cursor: pointer; text-align: left; }
+.cb i { width: 12px; height: 12px; background: var(--widget); border: 1px solid var(--widget-edge); border-radius: 2px;
+  display: inline-flex; align-items: center; justify-content: center; color: var(--strong); font-style: normal; font-size: 10px; flex: none; }
+.cb[aria-checked="true"] { color: var(--strong); }
+.cb[aria-checked="true"] i::after { content: "✓"; }
+.key { font-family: var(--mono); color: var(--weak); }
+
+input[type=range].sl { -webkit-appearance: none; appearance: none; flex: 1; min-width: 0; height: 12px; margin: 0; background: transparent; cursor: pointer; }
+input[type=range].sl::-webkit-slider-runnable-track { height: 4px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--sel) var(--fill, 0%), var(--track) var(--fill, 0%)); }
+input[type=range].sl::-moz-range-track { height: 4px; border-radius: 2px; background: var(--track); }
+input[type=range].sl::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--sel); }
+input[type=range].sl::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--strong); margin-top: -4px; border: 0; }
+input[type=range].sl::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--strong); border: 0; }
+
+.main { flex: 1; display: flex; min-height: 0; }
+.side { flex: none; background: var(--panel); padding: 6px 12px; overflow-y: auto; overflow-x: hidden; min-width: 0; }
+.left { width: 270px; border-right: 1px solid var(--rule); }
+.right { width: 340px; border-left: 1px solid var(--rule); display: flex; flex-direction: column; gap: 3px; }
+.view { flex: 1; position: relative; background: var(--bg); overflow: hidden; min-width: 0; min-height: 0; }
+#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#gl:active { cursor: grabbing; }
+.cap { position: absolute; padding: 1px 6px; background: rgba(10,10,10,.8); color: var(--strong); font-family: var(--mono); pointer-events: none; white-space: nowrap; }
+.tag { position: absolute; transform: translate(-50%, -100%); padding: 0 5px; background: rgba(10,10,10,.8); border: 1px solid transparent;
+  font: 12px var(--mono); color: var(--strong); cursor: pointer; white-space: nowrap; }
+.tag.on { border-color: var(--link); }
+.tag s { display: inline-block; width: 8px; height: 8px; margin-right: 5px; text-decoration: none; }
+.tag em { font-style: normal; color: var(--weak); }
+.sw { display: inline-block; width: 12px; height: 12px; border: 1px solid #555; flex: none; }
+
+/* Outliner: the scene as a tree; one click selects, and the properties panel follows. */
+.node { display: flex; align-items: center; gap: 7px; width: 100%; min-height: 21px; padding: 0 4px 0 16px; background: none; border: 0;
+  color: var(--text); font: inherit; text-align: left; cursor: pointer; white-space: nowrap; }
+.node:hover { background: #242424; }
+.node.on { background: #10303d; color: var(--strong); }
+.node .mono { margin-left: auto; color: var(--weak); font-size: 12px; }
+.stage { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 12px; margin-right: 9px; white-space: nowrap; }
+.stage::before { content: "✓"; color: var(--ok); }
+.stage.stale { color: var(--warn); }
+.stage.stale::before { content: "●"; color: var(--warn); }
+
+.win { position: absolute; background: var(--panel); border: 1px solid var(--widget); border-radius: 4px; box-shadow: 0 6px 18px rgba(0,0,0,.55);
+  z-index: 70; padding: 5px 0; min-width: 230px; top: 27px; }
+.win .grp { padding: 6px 12px 2px; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--weak); }
+.win .row { padding: 0 12px; }
+.mi { display: flex; align-items: center; gap: 18px; width: 100%; min-height: 23px; padding: 0 12px; background: none; border: 0; color: var(--strong);
+  font: inherit; text-align: left; cursor: pointer; white-space: nowrap; }
+.mi:hover:not(:disabled) { background: var(--sel); color: #fff; }
+.mi:disabled { color: var(--weak); cursor: default; }
+.mi .key { margin-left: auto; }
+
+.strip { height: 252px; flex: none; background: var(--panel); border-top: 1px solid var(--rule); display: flex; min-height: 0; }
+.strip > div { padding: 6px 12px; min-width: 0; }
+.s-left { width: 270px; flex: none; border-right: 1px solid var(--rule); display: flex; flex-direction: column; }
+.s-mid { flex: 1; border-right: 1px solid var(--rule); display: flex; flex-direction: column; }
+.s-right { width: 340px; flex: none; overflow: hidden; }
+canvas.plot { display: block; width: 100%; }
+.plotwrap { position: relative; flex: 1; min-height: 0; }
+.plotwrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+#c-time { cursor: ew-resize; }
+#c-lanes { display: block; width: 100%; height: 78px; flex: none; touch-action: none; cursor: ew-resize; }
+.tip { position: absolute; top: 4px; pointer-events: none; background: var(--panel); border: 1px solid var(--widget); border-radius: 4px;
+  padding: 3px 8px; font: 12px/1.5 var(--mono); color: var(--strong); white-space: nowrap; z-index: 5; box-shadow: 0 6px 18px rgba(0,0,0,.55); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 1px 12px; font-family: var(--mono); }
+.kv span:nth-child(even) { text-align: right; color: var(--strong); }
+.trow { display: grid; grid-template-columns: 18px 1fr 58px 66px 46px; white-space: nowrap; align-items: center; min-height: 20px; font-family: var(--mono); cursor: pointer;
+  background: none; border: 0; color: var(--text); width: 100%; padding: 0 2px; text-align: right; }
+.trow:hover { background: #242424; }
+.trow.on { background: #10303d; color: var(--strong); }
+.trow span:nth-child(2) { text-align: left; font-family: var(--sans); }
+.thead { cursor: default; color: var(--weak); min-height: 16px; font-size: 11.5px; }
+.thead:hover { background: none; }
+
+/* Console: the footer, opened. The same stream every edit and run writes to, with a command line. */
+.console { height: 190px; flex: none; background: var(--foot); border-top: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; }
+.c-bar { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-bottom: 1px solid var(--rule); flex: none; }
+.c-log { flex: 1; overflow-y: auto; padding: 3px 10px; font: 12px/1.5 var(--mono); min-height: 0; }
+.c-line { display: grid; grid-template-columns: 86px 42px 64px 1fr; gap: 0 8px; white-space: pre-wrap; }
+.c-line .lv-warn { color: var(--warn); } .c-line .lv-error { color: var(--err); } .c-line .lv-info { color: var(--weak); } .c-line .lv-cmd { color: var(--link); }
+.c-line span:nth-child(3) { color: var(--link); }
+.c-line span:nth-child(4) { color: var(--strong); }
+.c-in { display: flex; align-items: center; gap: 6px; padding: 3px 10px; border-top: 1px solid var(--rule); flex: none; font-family: var(--mono); }
+.c-in input { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--widget); border-radius: 2px; color: var(--strong); font: 12.5px var(--mono); padding: 2px 6px; }
+
+.foot { height: 22px; flex: none; display: flex; align-items: center; gap: 14px; background: var(--foot); border-top: 1px solid var(--rule);
+  font-family: var(--mono); white-space: nowrap; overflow: hidden;
+  padding-left: max(10px, env(safe-area-inset-left, 0px)); padding-right: max(10px, env(safe-area-inset-right, 0px)); }
+.foot button { background: none; border: 0; color: var(--link); font: inherit; cursor: pointer; padding: 0 4px; flex: none; }
+.foot span { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.foot .wide { flex-shrink: 4; }
+.lv { display: grid; grid-template-columns: 22px 58px 1fr 62px; gap: 0 8px; align-items: center; font: 12px/1.45 var(--mono); }
+.lv i { display: block; height: 8px; min-width: 1px; }
+.lv span:last-child { text-align: right; color: var(--strong); }
+/* Principia's rules, carried over: the figure is never covered — captions and badges live in a header strip
+   above it, warnings in the footer; the one control over the figure is Home, top right. Rarely changed
+   settings live in windows, not on the page. Tab walks the big scopes with a focus ring and a breadcrumb. */
+.viewcol { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.vhead { height: 24px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--foot);
+  border-bottom: 1px solid var(--rule); font: 12px var(--mono); white-space: nowrap; overflow: hidden; }
+.vhead > span { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.badge { flex: none; padding: 0 6px; border: 1px solid var(--widget); border-radius: 9px; color: var(--strong); font-size: 11.5px; line-height: 16px; }
+.badge.gold { border-color: #a8873a; color: #e7c46a; }
+.badge.warn { border-color: var(--warn); color: var(--warn); }
+.badge.lod { border-color: #8a6a2a; color: #e2b665; }
+.home { position: absolute; top: 8px; right: 8px; z-index: 3; }
+.pl { position: absolute; background: var(--rule); pointer-events: none; z-index: 2; }
+.view.paper { background: #f1ede4; }
+.view.paper .tag, .view.paper .cap { background: rgba(241,237,228,.9); color: #222; border-color: #999; }
+.fw { position: fixed; z-index: 80; background: var(--panel); border: 1px solid var(--widget); border-radius: 4px; box-shadow: 0 10px 30px rgba(0,0,0,.6);
+  display: flex; flex-direction: column; max-width: calc(100vw - 16px); max-height: calc(100vh - 60px); }
+.fw-t { display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 12px; border-bottom: 1px solid var(--rule); cursor: move; user-select: none; color: var(--strong); font-weight: 400; touch-action: none; }
+.fw-t button { margin-left: auto; background: none; border: 0; color: var(--text); font-size: 15px; cursor: pointer; padding: 0 4px; }
+.fw-b { padding: 6px 12px 10px; overflow: auto; min-height: 0; }
+.fw-b .lab { width: 104px; }
+textarea.spec { width: 100%; height: 190px; background: var(--bg); color: var(--strong); border: 1px solid var(--widget); border-radius: 2px; font: 12px/1.45 var(--mono); padding: 6px; resize: vertical; }
+.keys { display: grid; grid-template-columns: 120px 1fr; gap: 2px 14px; font-size: 12.5px; }
+.keys b { font-family: var(--mono); font-weight: 400; }
+.scoped { outline: 2px solid #e0a040 !important; outline-offset: -2px; }
+.scope-n { position: absolute; z-index: 4; background: #e0a040; color: #111; font: 11px/14px var(--mono); padding: 0 4px; border-radius: 2px; pointer-events: none; }
+.app.f3 .menubar, .app.f3 .left, .app.f3 .right, .app.f3 .strip, .app.f3 .console, .app.f3 .foot, .app.f3 .vhead { display: none !important; }
+[hidden] { display: none !important; }
+#loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--mono); color: var(--text); }
+
+@media (max-width: 1100px) { .right, .s-right { width: 290px; } .left, .s-left { width: 230px; } }
+@media (max-width: 900px) { .s-right { display: none; } }
+@media (max-width: 820px) {
+  body { overflow: auto; }
+  .app { height: auto; }
+  .menubar { overflow: hidden; }
+  .menubar .wide, .foot .wide { display: none; }
+  .main, .strip { flex-direction: column; height: auto; }
+  .viewcol { flex: none; order: -1; } .view { flex: none; height: 360px; }
+  .vhead .badge { display: none; }
+  .left, .right, .s-left, .s-right { width: auto; border: 0; border-top: 1px solid var(--rule); display: block; }
+  .s-mid { border: 0; }
+  .plotwrap { flex: none; height: 130px; }
+  #c-flight { height: 190px !important; }
+  .side { overflow: visible; }
+  .s-mid > .row, .c-bar { flex-wrap: wrap; }
+  .c-line { grid-template-columns: 42px 56px 1fr; } .c-line span:first-child { display: none; }
+}
+</style>
+
+<div class="app" id="app">
+  <div class="menubar" id="menubar" data-scope="Top bar">
+    <b>cavendish · dev</b>
+    <span class="wide" id="menus"></span>
+    <span class="vr wide"></span>
+    <button class="btn on" id="overlays-btn" type="button" aria-expanded="false">Overlays ▾ <span id="overlays-n">6</span></button>
+    <button class="btn" id="run-btn" type="button" disabled>Run</button>
+    <button class="btn wide" id="b-runwin" type="button">Run settings…</button>
+    <button class="btn wide" id="b-prof" type="button">Profiler…</button>
+    <button class="btn wide" id="b-exp" type="button">Export…</button>
+    <span class="grow"></span>
+    <span class="mono wide" style="color: var(--link)" id="scope">⌨ Scene view</span>
+    <span class="vr wide"></span>
+    <span class="mono" id="status">t 0.00</span>
+    <div class="win" id="overlays" hidden style="left: 150px; width: 290px">
+      <div class="grp">Octree</div>
+      <div id="ov-tree"></div>
+      <div class="grp">Air</div>
+      <div id="ov-air"></div>
+      <div class="grp">Scene</div>
+      <div id="ov-scene"></div>
+      <div class="grp">Instrument</div>
+      <div id="ov-inst"></div>
+      <div class="sep"></div>
+      <div class="row" style="gap: 6px"><button class="btn" id="ov-off" type="button">all off</button><button class="btn" id="ov-on" type="button">all on</button><button class="btn" id="ov-save" type="button">save as default</button></div>
+    </div>
+    <div class="win" id="menu" hidden></div>
+  </div>
+
+  <div class="main">
+    <div class="side left" data-scope="Outliner">
+      <div class="pt">Outliner</div>
+      <div class="hd">Sources</div>
+      <div id="o-sources"></div>
+      <div class="hd">Array · cadence <span class="mono" id="o-cad" style="margin-left: 4px"></span></div>
+      <div id="o-towers"></div>
+      <div class="hd">Run</div>
+      <div id="o-stages" style="line-height: 1.7"></div>
+      <div class="row"><button class="cb" id="auto" role="checkbox" aria-checked="true" type="button"><i></i>re-run the forward pass on edit</button></div>
+
+      <div class="hd">Voxels</div>
+      <div class="row" style="gap: 4px"><span class="lab" style="width: 50px">bodies</span>
+        <button class="btn" data-rep="tree" type="button">octree</button><button class="btn" data-rep="parcels" type="button">recorded parcels</button></div>
+      <div class="row"><span class="lab" style="width: 50px">pitch</span><span class="mono strong" id="vx-pitch-v">1 cm</span><span class="mono weak" id="vx-ms"></span><span class="grow"></span><button class="btn" id="b-runwin2" type="button">Run settings…</button></div>
+      <div class="row"><span class="lab" style="width: 50px">colour</span>
+        <select class="combo" id="vx-field" aria-label="Colour the cubes by" style="flex: 1"><option value="contrib">phase from each cube</option><option value="resp">tower response</option><option value="dist">distance to tower</option><option value="lod">LOD cut</option><option value="level" selected>tree level</option><option value="mass">cube mass</option><option value="height">height</option><option value="body">body</option></select></div>
+      <div class="row"><span class="lab" style="width: 50px">map</span>
+        <select class="combo" id="vx-map" aria-label="Colour map" style="flex: 1"><option value="auto" selected>auto</option><option value="viridis">viridis</option><option value="magma">magma</option><option value="ice">ice</option><option value="grey">grey</option></select></div>
+      <div class="row"><span class="lab" style="width: 50px">levels ≥</span><input class="sl" id="vx-min" type="range" min="0" max="8" value="0" aria-label="Hide leaves below this tree level"><span class="val" id="vx-min-v">0</span></div>
+      <div class="row"><button class="cb" id="vx-sec" role="checkbox" aria-checked="false" type="button"><i></i>cut the bodies open</button><span class="key">X</span></div>
+      <div class="note" id="vx-note"></div>
+
+      <div class="hd">Slice</div>
+      <div class="row" style="gap: 4px"><span class="lab" style="width: 50px">shows</span>
+        <button class="btn" data-slice="off" type="button">off</button><button class="btn" data-slice="air" type="button">air</button><button class="btn" data-slice="resp" type="button">response</button></div>
+      <div class="row"><span class="lab" style="width: 50px">plane y</span><input class="sl" id="slice-y" type="range" min="0" max="39" value="16" aria-label="Slice plane position"><span class="val" id="slice-val">−0.88</span></div>
+      <div class="note" id="slice-note" style="min-height: 31px"></div>
+
+      <div class="hd">View</div>
+      <div class="row" style="gap: 4px"><span class="lab" style="width: 50px">look</span>
+        <button class="btn" data-cam="iso" type="button" title="orbit">iso</button><button class="btn" data-cam="top" type="button" title="from above, north up">top</button><button class="btn" data-cam="bottom" type="button" title="from below">btm</button><button class="btn" data-cam="n" type="button" title="from the north, looking south">N</button><button class="btn" data-cam="s" type="button" title="from the south">S</button><button class="btn" data-cam="e" type="button" title="from the east">E</button><button class="btn" data-cam="w" type="button" title="from the west">W</button></div>
+      <div class="row" style="gap: 4px"><span class="lab" style="width: 50px">project</span>
+        <button class="btn" data-proj="persp" type="button">perspective</button><button class="btn" data-proj="ortho" type="button">orthographic</button><span class="key">O</span></div>
+      <div class="row" style="gap: 4px"><span class="lab" style="width: 50px">panes</span>
+        <button class="btn" data-panes="1" type="button">1</button><button class="btn" data-panes="2" type="button">2</button><button class="btn" data-panes="4" type="button">4</button><span class="note" style="margin-left: 4px">extra panes: plan, front, side · ortho</span></div>
+      <div class="row" style="gap: 4px"><span class="lab" style="width: 50px">draw</span>
+        <button class="btn" data-style="shaded" type="button">shaded</button><button class="btn" data-style="flat" type="button">flat</button><button class="btn" data-style="xray" type="button">x-ray</button><button class="btn" data-style="paper" type="button">paper</button></div>
+      <div class="row"><button class="cb" id="follow" role="checkbox" aria-checked="false" type="button"><i></i>follow the walker</button></div>
+    </div>
+
+    <div class="viewcol" data-scope="Scene view">
+    <div class="vhead">
+      <span class="strong" id="cap-top">Scene view</span>
+      <span class="badge" id="b-rep">octree · 1 cm</span>
+      <span class="badge lod" id="b-lod" hidden></span>
+      <span class="badge gold" id="b-follow" hidden>● following the walker</span>
+      <span class="badge warn" id="b-stale" hidden>forward stale</span>
+      <span class="weak" id="cap-slice" hidden></span>
+      <span class="grow"></span>
+      <span class="strong" id="vh-hover"></span>
+    </div>
+    <div class="view" id="view">
+      <canvas id="gl" tabindex="0" aria-label="3-D scene. Drag to orbit, scroll to zoom, hover to read a cell, click a body to select it."></canvas>
+      <div id="tags"></div>
+      <div id="pane-lines"></div>
+      <div class="cap" id="cap-range" hidden></div>
+      <button class="btn home" id="home" type="button" title="Home: reset the camera (Home key)">⌂ Home</button>
+      <div id="loading">loading the recorded scene…</div>
+    </div>
+    </div>
+
+    <div class="side right" data-scope="Properties">
+      <div class="row" style="justify-content: space-between"><span class="pt" style="margin: 0">Properties</span><span class="mono weak" id="p-path"></span></div>
+      <div id="props"></div>
+      <div class="hd" id="r-title">Tower 1 · signal by cause</div>
+      <div class="weak mono" id="r-line">–</div>
+      <div style="position: relative"><canvas class="plot" id="c-chan" style="height: 200px" tabindex="0" aria-label="Signal channels at the selected tower against time"></canvas><div class="tip" id="tip-chan" hidden></div></div>
+      <div class="note">thin line: what a shot ending at each instant would read · dots: this tower's actual shots</div>
+      <div class="hd">All towers at the cursor</div>
+      <div id="r-table"></div>
+      <div class="note" style="margin-top: 4px">each tower's latest reading and how old it is — with staggered firing "now" is not the same sample</div>
+    </div>
+  </div>
+
+  <div class="strip">
+    <div class="s-left" data-scope="Flight">
+      <div class="row" style="justify-content: space-between; flex: none"><span class="pt" style="margin: 0">Flight</span><span class="mono" style="color: var(--link)" id="f-phase"></span></div>
+      <canvas id="c-flight" style="width: 100%; flex: 1; min-height: 0" aria-label="Atom heights against absolute time, one row per tower"></canvas>
+      <div class="note" style="flex: none">one row per tower, ±1.7 s around the cursor · stagger shows as a shift</div>
+    </div>
+    <div class="s-mid" data-scope="Time">
+      <div class="row" style="gap: 6px; flex: none">
+        <span class="pt" style="margin: 0 6px 0 0">Time</span>
+        <button class="btn" id="t-start" type="button" aria-label="Back to start">⏮</button>
+        <button class="btn" id="t-play" type="button" aria-label="Play or pause" style="min-width: 30px">⏸</button>
+        <button class="btn" id="t-step" type="button" aria-label="Step to the selected tower's next shot" title="next shot of the selected tower">⏭</button>
+        <span class="val" id="t-val">t 0.00</span>
+        <select class="combo" id="t-speed" aria-label="Playback speed"><option value="0.25">× ¼</option><option value="0.5">× ½</option><option value="1" selected>× 1</option><option value="2">× 2</option></select>
+        <span class="grow"></span>
+        <span class="weak wide">plot</span>
+        <span class="row" style="gap: 4px" id="t-chan"></span>
+      </div>
+      <canvas id="c-lanes" tabindex="0" aria-label="Firing lanes, one per tower. Drag a bar to change that tower's offset; drag elsewhere to scrub."></canvas>
+      <div class="plotwrap"><canvas id="c-time" tabindex="0" aria-label="Signal at every tower against time. Drag to scrub."></canvas><div class="tip" id="tip-time" hidden></div></div>
+      <div class="note" style="flex: none">each bar is one shot, launch to readout (1.46 s) · drag a bar to shift that tower's firing · drag the plot to scrub</div>
+    </div>
+    <div class="s-right" data-scope="Legend">
+      <div class="row" style="justify-content: space-between"><span class="pt" style="margin: 0">Legend</span><span class="weak">read from the scene</span></div>
+      <div class="weak mono" style="margin: 2px 0 4px">colour · tower · latest reading</div>
+      <div id="l-towers" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px 10px"></div>
+      <div class="weak mono" style="margin: 6px 0 3px">dot size · air lighter than ambient by</div>
+      <div style="height: 12px; background: linear-gradient(90deg, var(--heat-lo), var(--heat-hi)); border: 1px solid #555"></div>
+      <div class="row mono weak" style="justify-content: space-between; min-height: 16px"><span id="l-min">–</span><span id="l-mid">–</span><span id="l-max">–</span></div>
+      <div id="l-slice" hidden>
+        <div class="weak mono" style="margin: 6px 0 3px" id="l-slice-name"></div>
+        <div style="height: 12px; border: 1px solid #555" id="l-slice-bar"></div>
+        <div class="row mono weak" style="justify-content: space-between; min-height: 16px"><span id="l-slice-lo"></span><span id="l-slice-hi"></span></div>
+      </div>
+      <div id="l-tree">
+        <div class="weak mono" style="margin: 6px 0 3px">cube colour · tree level (cell size)</div>
+        <div style="height: 12px; border: 1px solid #555; background: linear-gradient(90deg, #e4f4f2, #4b93a0, #27525e)"></div>
+        <div class="row mono weak" style="justify-content: space-between; min-height: 16px"><span id="l-lv-lo"></span><span id="l-lv-hi"></span></div>
+      </div>
+      <div id="l-lod" hidden>
+        <div class="weak mono" style="margin: 6px 0 3px">cube colour · cell size the instrument may use</div>
+        <div style="height: 12px; border: 1px solid #555; background: linear-gradient(90deg, #f6e2b0, #d6a83c, #5e3f0c)"></div>
+        <div class="row mono weak" style="justify-content: space-between; min-height: 16px"><span id="l-lod-lo"></span><span id="l-lod-hi"></span></div>
+      </div>
+      <div id="l-field">
+        <div class="weak mono" style="margin: 6px 0 3px" id="lf-title"></div>
+        <div id="lf-bar" style="height: 12px; border: 1px solid #555"></div>
+        <div class="row mono weak" style="justify-content: space-between; min-height: 16px"><span id="lf-lo"></span><span id="lf-mid"></span><span id="lf-hi"></span></div>
+      </div>
+      <div class="weak mono" style="margin: 6px 0 3px">lanes</div>
+      <div class="note">filled bar: the shots the readings on screen came from · outline: the spec, where it differs (forward stale)</div>
+    </div>
+  </div>
+
+  <div class="console" id="console" hidden>
+    <div class="c-bar">
+      <b>Console</b>
+      <button class="btn on" data-lv="all" type="button">all</button>
+      <button class="btn" data-lv="warn" type="button">⚠ warnings <span id="n-warn">0</span></button>
+      <button class="btn" data-lv="error" type="button">✕ errors <span id="n-err">0</span></button>
+      <button class="btn" data-lv="edit" type="button">edits</button>
+      <span class="grow"></span>
+      <button class="btn" id="c-clear" type="button">clear</button>
+      <button class="btn" id="c-close" type="button">console ▾</button>
+    </div>
+    <div class="c-log" id="c-log" tabindex="0" aria-label="Log"></div>
+    <div class="c-in"><span style="color: var(--link)">›</span><input id="c-cmd" type="text" spellcheck="false" autocomplete="off" aria-label="Command" placeholder="help · set array.tower[3].timing.offset 0.6 · timing sync · seek 8.4"></div>
+  </div>
+
+  <div class="foot">
+    <span id="f-counts" style="flex: none"><span style="color: var(--warn)">⚠ 0</span> · <span>✕ 0</span></span>
+    <button id="c-open" type="button">console ▴</button>
+    <span class="strong" id="foot-msg">ready</span>
+    <span class="grow"></span>
+    <span class="weak wide" id="f-mem"></span>
+    <span class="weak wide">mock-up · one engine recording · air unvalidated</span>
+    <button id="f-keys" type="button">? keys</button>
+  </div>
+
+  <div class="fw" id="w-run" hidden style="left: 300px; top: 70px; width: 400px">
+    <div class="fw-t">Run settings<span class="weak" style="font-weight: 300">rarely changed — so a window, not the page</span><button type="button" data-close aria-label="Close">×</button></div>
+    <div class="fw-b">
+      <div class="hd">Shape</div>
+      <div class="row"><span class="lab">finest pitch</span><select class="combo" id="vx-pitch" aria-label="Finest voxel pitch"><option value="0.04">4 cm</option><option value="0.02">2 cm</option><option value="0.01" selected>1 cm</option><option value="0.005">5 mm</option><option value="0.0025">2.5 mm</option></select><span class="mono weak">voxel.pitch</span></div>
+      <div class="note">rebuilds every body's tree, top-down, in this page; logged with leaves, nodes visited and time</div>
+      <div class="hd">Gravity read · level of detail</div>
+      <div class="row" style="gap: 4px"><span class="lab">mode</span><button class="btn" data-lod="exact" type="button">exact</button><button class="btn" data-lod="distance" type="button">distance θ</button><button class="btn" type="button" disabled title="needs node moments and the differenced bound — engine phase 0">bounded tol</button></div>
+      <div class="row"><span class="lab">θ</span><input class="sl" id="lod-th" type="range" min="0.01" max="0.3" step="0.01" value="0.08" aria-label="Distance level-of-detail threshold"><span class="val" id="lod-th-v">0.08</span></div>
+      <div class="note" id="lod-note">a node is used whole when its size over its distance to the nearest tower is under θ. Its mass and centre of mass stay exact; only its inside is dropped. Turn on Overlays › Octree › LOD cut to see it.</div>
+      <div class="hd">Air</div>
+      <div class="row" style="gap: 4px"><span class="lab">grid</span><button class="btn on" type="button">recorded · uniform 25 cm</button><button class="btn" type="button" disabled title="M14 phase G">adaptive</button></div>
+      <div class="hd">Flight quadrature</div>
+      <div class="row"><span class="lab">rule</span><span class="mono strong">Simpson · 147 nodes</span><span class="mono weak">reference</span></div>
+      <div class="sep"></div>
+      <div class="row" style="gap: 6px"><button class="btn" id="w-run-go" type="button">Run stale stages</button><span class="weak" id="w-run-st"></span></div>
+    </div>
+  </div>
+
+  <div class="fw" id="w-prof" hidden style="left: 320px; top: 90px; width: 440px">
+    <div class="fw-t">Profiler<span class="weak" style="font-weight: 300">this page, measured live</span><button type="button" data-close aria-label="Close">×</button></div>
+    <div class="fw-b">
+      <div class="mono strong" id="pf-line">–</div>
+      <canvas class="plot" id="pf-trace" style="height: 70px; margin: 4px 0"></canvas>
+      <div class="hd">Where the frame goes</div>
+      <canvas class="plot" id="pf-bar" style="height: 16px"></canvas>
+      <div id="pf-rows" class="kv" style="margin-top: 5px"></div>
+      <div class="hd">Counters</div>
+      <div id="pf-ctr" class="kv"></div>
+      <div class="note" style="margin-top: 6px">CPU time per stage in the browser, not the egui app; GPU work is asynchronous and shows only as frame time. The real profiler adds GPU timestamps per pass, memory and a leak detector.</div>
+    </div>
+  </div>
+
+  <div class="fw" id="w-exp" hidden style="left: 360px; top: 110px; width: 460px">
+    <div class="fw-t">Export &amp; share<button type="button" data-close aria-label="Close">×</button></div>
+    <div class="fw-b">
+      <div class="hd">Scene spec</div>
+      <div class="note" style="margin-bottom: 4px">what the panels have edited, as the file the engine would read (M15's SceneSpec, abridged)</div>
+      <textarea class="spec" id="exp-spec" readonly spellcheck="false" aria-label="Scene spec"></textarea>
+      <div class="row" style="gap: 6px; margin-top: 4px"><button class="btn" id="exp-copy" type="button">Copy</button><span class="weak" id="exp-st"></span></div>
+    </div>
+  </div>
+
+  <div class="fw" id="w-keys" hidden style="left: 380px; top: 80px; width: 520px">
+    <div class="fw-t">Keyboard<button type="button" data-close aria-label="Close">×</button></div>
+    <div class="fw-b">
+      <div class="keys">
+        <b>Tab · ⇧Tab</b><span>next / previous big scope — an orange ring and the breadcrumb show where you are</span>
+        <b>Esc</b><span>leave the scope, close a window or menu, leave F3</span>
+        <b>Space</b><span>play / pause</span>
+        <b>← → · ⇧← →</b><span>step a frame · step to the selected tower's previous / next shot</span>
+        <b>1 – 5</b><span>select a tower</span>
+        <b>Home</b><span>reset the camera</span>
+        <b>S · X · O</b><span>cycle the slice · cut the bodies open · perspective ↔ orthographic</span>
+        <b>Alt 1 – 9</b><span>overlays, in Overlays ▾ order (letters too: A P R L F T)</span>
+        <b>⌘Z · ⇧⌘Z</b><span>undo · redo — every edit, whatever made it</span>
+        <b>`</b><span>console</span>
+        <b>F3</b><span>hide the GUI; the scene fills the window</span>
+        <b>?</b><span>this window</span>
+      </div>
+      <div class="note" style="margin-top: 8px">scopes, in Tab order: 1 top bar · 2 outliner · 3 scene view · 4 properties · 5 flight · 6 time · 7 legend</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(async function () {
+  const $ = (id) => document.getElementById(id);
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  let D, walker, air, resp;
+  try {
+    // The arrays travel as base64 text (artifact hosting serves text and images, not raw binary).
+    const bin = (name) => fetch(name).then((x) => x.text()).then((b) => Uint8Array.from(atob(b.trim()), (c) => c.charCodeAt(0)).buffer);
+    const [j, w, a, r] = await Promise.all([fetch('replay.json').then((x) => x.json()), bin('walker.b64.txt'), bin('air.b64.txt'), bin('response.b64.txt')]);
+    D = j; walker = new Int16Array(w); air = new Uint8Array(a); resp = new Float32Array(r);
+  } catch (e) {
+    $('loading').textContent = 'the recording could not be loaded — reload to try again'; return;
+  }
+  $('loading').hidden = true;
+
+  const NT = D.towers.length, F = D.frames, DT = D.dt, T_END = (F - 1) * DT, TWO_T = D.two_t;
+  const [NX, NY, NZ] = D.grid.n, H = D.grid.h, O = D.grid.origin, CELLS = NX * NY * NZ, NP = D.walker.n;
+  const TOWER = [1, 2, 3, 4, 5].map((i) => css('--t' + i));
+  const C = { strong: css('--strong'), text: css('--text'), weak: css('--weak'), rule: css('--rule'), link: css('--link'), warn: css('--warn'),
+    heatLo: css('--heat-lo'), heatHi: css('--heat-hi'), cool: css('--cool'), mid: css('--mid'), mono: css('--mono') };
+  const state = { t: 0, playing: true, speed: 1, sel: 0, obj: 'tower', slice: 'off', sy: 16, chan: 'signal', follow: false, auto: true, lod: 'distance', theta: 0.08, style: 'shaded', cmap: 'auto', rep: 'tree', vcol: 'level', pitch: 0.01, minLevel: 0, section: false,
+    layers: { air: true, path: true, room: true, range: true, atoms: true, tags: true } };
+  const fmt = (v, d) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(d);
+  const frameAt = (t) => Math.max(0, Math.min(Math.round(t / DT), F - 1));
+
+  // ───────────────────────── the spec, and the result on screen ─────────────────────────
+  // `spec` is what the panels edit. `res` is the timing the readings on screen were made with. They differ
+  // exactly while the forward stage is stale. The recording holds, for every instant, the reading a shot
+  // ending then would give, so a tower's shots are samples of it at that tower's own readout times.
+  const spec = { cadence: 2.0, offset: D.towers.map((_, d) => +(d * 0.4).toFixed(2)) };
+  let res = { cadence: spec.cadence, offset: spec.offset.slice() };
+  const shotsOf = (tm, d) => {
+    const out = [], k0 = Math.ceil((-TWO_T - tm.offset[d]) / tm.cadence - 1e-9);
+    for (let k = k0; ; k++) { const L = tm.offset[d] + k * tm.cadence, R = L + TWO_T; if (R > T_END + 1e-9) break; if (R >= -1e-9) out.push({ L, R }); }
+    return out;
+  };
+  let SH = [];
+  const rebuild = () => { SH = D.towers.map((_, d) => shotsOf(res, d)); };
+  rebuild();
+  const at = (arr, d, t) => { const s = Math.max(0, Math.min(t / DT, F - 1)), f = Math.min(Math.floor(s), F - 2), u = s - f; return (1 - u) * arr[f][d] + u * arr[f + 1][d]; };
+  const latest = (d, t) => { let r = null; for (const s of SH[d]) if (s.R <= t + 1e-9) r = s; return r; };
+  const inFlight = (d, t) => SH[d].find((s) => s.L <= t && t < s.R) || (() => { const L = res.offset[d] + Math.floor((t - res.offset[d]) / res.cadence) * res.cadence; return t - L < TWO_T ? { L, R: L + TWO_T } : null; })();
+  const stale = () => spec.cadence !== res.cadence || spec.offset.some((v, d) => Math.abs(v - res.offset[d]) > 1e-9);
+
+  // ───────────────────────── 3-D scene ─────────────────────────
+  const canvas = $('gl'), view = $('view');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(new THREE.Color(css('--bg')));
+  const scene = new THREE.Scene();
+  const persp = new THREE.PerspectiveCamera(38, 1, 0.1, 400); persp.up.set(0, 0, 1);
+  const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 400); ortho.up.set(0, 0, 1);
+  let camera = persp;
+  // Fixed orthographic panes for the multi-view layouts: plan (north up), front (from the south), side (from the east).
+  const fixedCam = (pos) => { const c = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 400); c.up.set(0, 0, 1); c.position.set(...pos); c.lookAt(0, 0, 1.5); return c; };
+  const PANECAMS = { plan: fixedCam([0, -0.001, 60]), front: fixedCam([0, -60, 1.5]), side: fixedCam([60, 0, 1.5]) };
+  const PANENAMES = { plan: 'plan', front: 'front · from the south', side: 'side · from the east' };
+  function fitOrtho(c, halfH, aspect) { c.top = halfH; c.bottom = -halfH; c.left = -halfH * aspect; c.right = halfH * aspect; c.updateProjectionMatrix(); }
+  const orbit = { az: -1.02, el: 0.36, r: 17.5, target: new THREE.Vector3(0, 0, 2.2) };
+  const goal = { az: orbit.az, el: orbit.el, r: orbit.r };
+  function placeCamera() {
+    orbit.az += (goal.az - orbit.az) * 0.18; orbit.el += (goal.el - orbit.el) * 0.18; orbit.r += (goal.r - orbit.r) * 0.18;
+    const c = Math.cos(orbit.el);
+    persp.position.set(orbit.target.x + orbit.r * c * Math.cos(orbit.az), orbit.target.y + orbit.r * c * Math.sin(orbit.az), orbit.target.z + orbit.r * Math.sin(orbit.el));
+    persp.lookAt(orbit.target); ortho.position.copy(persp.position); ortho.quaternion.copy(persp.quaternion);
+  }
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(-5, -7, 12); scene.add(sun);
+
+  const size = [NX * H, NY * H, NZ * H];
+  const roomGroup = new THREE.Group(); scene.add(roomGroup);
+  const grid = new THREE.GridHelper(size[0], 10, 0x3c3c3c, 0x242424); grid.rotation.x = Math.PI / 2; roomGroup.add(grid);
+  const walls = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(size[0], size[1], size[2])), new THREE.LineBasicMaterial({ color: 0x4a4a4a }));
+  walls.position.set(O[0] + size[0] / 2, O[1] + size[1] / 2, O[2] + size[2] / 2); roomGroup.add(walls);
+
+  const rad = new THREE.InstancedMesh(new THREE.BoxGeometry(H, H, H), new THREE.MeshLambertMaterial({ color: css('--heat-lo') }), D.radiator.length);
+  const m4 = new THREE.Matrix4();
+  D.radiator.forEach((c, i) => { m4.makeTranslation(c[0], c[1], c[2]); rad.setMatrixAt(i, m4); }); scene.add(rad);
+
+  // Towers: the 10 m baseline as a line with a tick every metre, and the four atom clouds.
+  const atoms = [], towerLines = [];
+  D.towers.forEach((p, i) => {
+    const pts = [new THREE.Vector3(p[0], p[1], 0), new THREE.Vector3(p[0], p[1], 10)];
+    for (let z = 0; z <= 10; z++) { const w = z % 5 === 0 ? 0.16 : 0.07; pts.push(new THREE.Vector3(p[0] - w, p[1], z), new THREE.Vector3(p[0] + w, p[1], z)); }
+    const line = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: TOWER[i], transparent: true }));
+    scene.add(line); towerLines.push(line);
+    const row = [];
+    for (let k = 0; k < 4; k++) {
+      const s = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 8), new THREE.MeshBasicMaterial({ color: TOWER[i] }));
+      s.position.set(p[0], p[1], 0); scene.add(s); row.push(s);
+    }
+    atoms.push(row);
+  });
+  // Arm heights over one flight (the engine's closed form): launch u0, recoil v_rec, π-pulse at T.
+  const G0 = 9.81, U0 = 3.86, VREC = 1000 * 1.055e-34 * (2 * Math.PI / 698e-9) / 1.46e-25, TH = TWO_T / 2;
+  const fall = (z, v, tau) => z + v * tau - 0.5 * G0 * tau * tau;
+  const armZ = (z0, v, kick, tau) => (tau <= TH ? fall(z0, v, tau) : fall(fall(z0, v, TH), v - G0 * TH + kick, tau - TH));
+  const arms = (tau) => [armZ(0, U0, VREC, tau), armZ(0, U0 + VREC, -VREC, tau), armZ(5, U0, VREC, tau), armZ(5, U0 + VREC, -VREC, tau)];
+
+  // The walker: one cube per mass parcel, and its shadow on the floor.
+  const P = D.walker.pitch;
+  const body = new THREE.InstancedMesh(new THREE.BoxGeometry(P * 0.94, P * 0.94, P * 0.94), new THREE.MeshLambertMaterial({ color: css('--body') }), NP);
+  const shadow = new THREE.InstancedMesh(new THREE.PlaneGeometry(P * 1.5, P * 1.5), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.16, depthWrite: false }), NP);
+  [body, shadow].forEach((m) => { m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(m); });
+  const trackPts = D.track.map((p) => new THREE.Vector3(p[0], p[1], 0.015));
+  const past = new THREE.Line(new THREE.BufferGeometry().setFromPoints(trackPts), new THREE.LineBasicMaterial({ color: css('--strong') }));
+  const ahead = new THREE.Line(new THREE.BufferGeometry().setFromPoints(trackPts), new THREE.LineDashedMaterial({ color: 0x6f6f6f, dashSize: 0.12, gapSize: 0.12 }));
+  ahead.computeLineDistances(); scene.add(past, ahead);
+  const rangeGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+  const rangeLine = new THREE.Line(rangeGeo, new THREE.LineBasicMaterial({ color: css('--link') })); scene.add(rangeLine);
+
+  // ───────────────────────── voxel trees ─────────────────────────
+  // Built here, in the page, the way the plan's voxeliser does it: descend from one root cell, ask the shape
+  // whether a cell is wholly inside, wholly outside or mixed, emit one big leaf for "inside", drop "outside",
+  // split "mixed" down to the finest pitch. Interior cells never get visited one by one, so the work and the
+  // leaf count follow the surface, not the volume. The engine does not have this yet; the signals on screen
+  // still come from the recorded 8 cm parcels.
+  const EPS = 1e-7;
+  const boxShape = (c, hf) => { const mn = c.map((v, i) => v - hf[i]), mx = c.map((v, i) => v + hf[i]); return { mn, mx,
+    cover(lo, hi) { let inn = true; for (let i = 0; i < 3; i++) { if (hi[i] <= mn[i] + EPS || lo[i] >= mx[i] - EPS) return -1; if (lo[i] < mn[i] - EPS || hi[i] > mx[i] + EPS) inn = false; } return inn ? 1 : 0; },
+    inside(p) { return p[0] > mn[0] && p[0] < mx[0] && p[1] > mn[1] && p[1] < mx[1] && p[2] > mn[2] && p[2] < mx[2]; } }; };
+  const sphereShape = (c, r) => ({ mn: c.map((v) => v - r), mx: c.map((v) => v + r),
+    cover(lo, hi) { let near = 0, far = 0; for (let i = 0; i < 3; i++) { const a = lo[i] - c[i], b = hi[i] - c[i], n = a > 0 ? a : b < 0 ? -b : 0, f = Math.max(Math.abs(a), Math.abs(b)); near += n * n; far += f * f; } return far <= r * r ? 1 : near >= r * r ? -1 : 0; },
+    inside(p) { return (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 + (p[2] - c[2]) ** 2 < r * r; } });
+  // a capsule along z, from (0,0,z0) to (0,0,z1), z0 < z1
+  const capsuleShape = (z0, z1, r) => { const ins = (x, y, z) => { const dz = z < z0 ? z0 - z : z > z1 ? z - z1 : 0; return x * x + y * y + dz * dz < r * r; }; return { mn: [-r, -r, z0 - r], mx: [r, r, z1 + r],
+    cover(lo, hi) {
+      const gap = (a, b, u, v) => (a > v ? a - v : b < u ? u - b : 0), dx = gap(lo[0], hi[0], 0, 0), dy = gap(lo[1], hi[1], 0, 0), dz = gap(lo[2], hi[2], z0, z1);
+      if (dx * dx + dy * dy + dz * dz >= r * r) return -1;
+      for (let k = 0; k < 8; k++) if (!ins(k & 1 ? hi[0] : lo[0], k & 2 ? hi[1] : lo[1], k & 4 ? hi[2] : lo[2])) return 0;
+      return 1;                                   // convex: all corners inside means the whole cell is
+    },
+    inside(p) { return ins(p[0], p[1], p[2]); } }; };
+  function buildTree(shape, h) {
+    const t0 = performance.now(), ext = Math.max(shape.mx[0] - shape.mn[0], shape.mx[1] - shape.mn[1], shape.mx[2] - shape.mn[2]);
+    let depth = 0; while ((1 << depth) * h < ext - EPS) depth++;
+    const out = [[], [], [], []], perLevel = new Array(depth + 1).fill(0); let visited = 0, cells = 0;
+    const lo = [0, 0, 0], hi = [0, 0, 0], o = shape.mn;
+    (function visit(ix, iy, iz, level) {
+      visited++; const n = 1 << level;
+      lo[0] = o[0] + ix * h; lo[1] = o[1] + iy * h; lo[2] = o[2] + iz * h; hi[0] = lo[0] + n * h; hi[1] = lo[1] + n * h; hi[2] = lo[2] + n * h;
+      let c = shape.cover(lo, hi);
+      if (c === 0 && level === 0) c = shape.inside([lo[0] + h / 2, lo[1] + h / 2, lo[2] + h / 2]) ? 1 : -1;
+      if (c < 0) return;
+      if (c > 0) { out[0].push(lo[0] + n * h / 2); out[1].push(lo[1] + n * h / 2); out[2].push(lo[2] + n * h / 2); out[3].push(level); perLevel[level]++; cells += n * n * n; return; }
+      const m = n >> 1;
+      for (let k = 0; k < 8; k++) visit(ix + (k & 1 ? m : 0), iy + (k & 2 ? m : 0), iz + (k & 4 ? m : 0), level - 1);
+    })(0, 0, 0, depth);
+    // biggest cells first, so hiding the fine levels is just drawing fewer instances
+    const N = out[3].length, order = Array.from({ length: N }, (_, i) => i).sort((a, b) => out[3][b] - out[3][a]);
+    const xyz = new Float32Array(N * 3), lev = new Uint8Array(N);
+    order.forEach((j, i) => { xyz[3 * i] = out[0][j]; xyz[3 * i + 1] = out[1][j]; xyz[3 * i + 2] = out[2][j]; lev[i] = out[3][j]; });
+    return { o: shape.mn.slice(), h, depth, N, xyz, lev, perLevel, cells, visited, ms: performance.now() - t0 };
+  }
+  renderer.localClippingEnabled = true;
+  const cutPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const treeMat = new THREE.MeshLambertMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+  const slabMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const flatMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+  const xrayMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const PAPER = [0.945, 0.929, 0.894];
+  function setStyle(k) {
+    state.style = k; const paper = k === 'paper';
+    for (const key in TREES) TREES[key].forEach((p) => p.meshes.forEach((m) => { m.material = k === 'shaded' ? (key === 'slab' ? slabMat : treeMat) : k === 'xray' ? xrayMat : flatMat; }));
+    renderer.setClearColor(new THREE.Color(paper ? '#f1ede4' : css('--bg'))); view.classList.toggle('paper', paper);
+    boundsMat.color.set(paper ? 0x262626 : 0xffffff); boundsMat.opacity = paper ? 0.55 : 0.38;
+    grid.material.color.set(paper ? 0xc9c3b6 : 0x3c3c3c); walls.material.color.set(paper ? 0x8a8478 : 0x4a4a4a);
+    airMat.uniforms.lo.value.set(paper ? '#9b8f7c' : css('--heat-lo')); airMat.uniforms.hi.value.set(paper ? '#2b2620' : css('--heat-hi'));
+    if (paper) { if (!state.layers.bounds) toggleLayer('bounds', true); setProj('ortho'); setCam('top'); }
+    log('info', 'view', 'draw style ' + k + (paper ? ' · orthographic, from above, leaf bounds in ink' : ''));
+    colourLeaves(); syncButtons();
+  }
+  const unitBox = new THREE.BoxGeometry(1, 1, 1);
+  const LV = [rgb0('#e4f4f2'), rgb0('#4b93a0'), rgb0('#27525e')];
+  function rgb0(c) { const k = new THREE.Color(c); return [k.r, k.g, k.b]; }
+  const levelColour = (l, top) => { const u = top ? l / top : 0, a = u < 0.5 ? LV[0] : LV[1], b = u < 0.5 ? LV[1] : LV[2], w = u < 0.5 ? u * 2 : u * 2 - 1; return [a[0] + (b[0] - a[0]) * w, a[1] + (b[1] - a[1]) * w, a[2] + (b[2] - a[2]) * w]; };
+  function treeMesh(tree, mat, bodyColour) {
+    const m = new THREE.InstancedMesh(unitBox, mat, tree.N), a = m.instanceMatrix.array;
+    for (let i = 0; i < tree.N; i++) { const sz = tree.h * (1 << tree.lev[i]) * 0.94, k = 16 * i; a[k] = a[k + 5] = a[k + 10] = sz; a[k + 12] = tree.xyz[3 * i]; a[k + 13] = tree.xyz[3 * i + 1]; a[k + 14] = tree.xyz[3 * i + 2]; a[k + 15] = 1; }
+    m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(tree.N * 3), 3);
+    m.frustumCulled = false; m.userData = { tree, bodyColour: rgb0(bodyColour) };
+    // leaf bounds: the coarsest leaves' edges (biggest first), capped so a fine body stays drawable
+    const nb = Math.min(tree.N, 6000), pos = new Float32Array(nb * 72); let q = 0;
+    const E = [[0,1],[2,3],[4,5],[6,7],[0,2],[1,3],[4,6],[5,7],[0,4],[1,5],[2,6],[3,7]];
+    for (let i = 0; i < nb; i++) {
+      const hs = tree.h * (1 << tree.lev[i]) / 2, x = tree.xyz[3 * i], y = tree.xyz[3 * i + 1], z = tree.xyz[3 * i + 2];
+      const c = (k) => [x + (k & 1 ? hs : -hs), y + (k & 2 ? hs : -hs), z + (k & 4 ? hs : -hs)];
+      E.forEach(([a, b]) => { const A = c(a), B = c(b); pos[q++] = A[0]; pos[q++] = A[1]; pos[q++] = A[2]; pos[q++] = B[0]; pos[q++] = B[1]; pos[q++] = B[2]; });
+    }
+    const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const ln = new THREE.LineSegments(lg, boundsMat); ln.frustumCulled = false; ln.visible = !!state.layers.bounds; m.add(ln); m.userData.bounds = ln;
+    return m;
+  }
+  const boundsMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.38, clippingPlanes: [] });
+  // The scene's bodies as shapes. The figure is six rigid pieces, each with its own tree in its own frame;
+  // a limb swings by moving one matrix, however many cubes it holds. Pivots sit at the centre of a capsule's
+  // end cap, so pieces touch and never overlap — no mass is counted twice at a joint.
+  const LEG = { r: 0.07, len: 0.73 }, ARM = { r: 0.042, len: 0.52 }, TORSO = { hf: [0.09, 0.16, 0.31] }, HEAD = 0.115;
+  const hipZ = LEG.len + LEG.r, torsoZ = hipZ + LEG.r + TORSO.hf[2], headZ = torsoZ + TORSO.hf[2] + HEAD, shoulderZ = torsoZ + TORSO.hf[2] - ARM.r - 0.02;
+  const rb = (() => { let mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9]; D.radiator.forEach((c) => c.forEach((v, i) => { mn[i] = Math.min(mn[i], v - H / 2); mx[i] = Math.max(mx[i], v + H / 2); })); return { c: mn.map((v, i) => (v + mx[i]) / 2), hf: mn.map((v, i) => (mx[i] - v) / 2) }; })();
+  const SLAB_T = 0.32;
+  const DEFS = {
+    walker: [['torso', () => boxShape([0, 0, 0], TORSO.hf), 1], ['head', () => sphereShape([0, 0, 0], HEAD), 1], ['leg', () => capsuleShape(-LEG.len, 0, LEG.r), 2], ['arm', () => capsuleShape(-ARM.len, 0, ARM.r), 2]],
+    radiator: [['block', () => boxShape(rb.c, rb.hf), 1]],
+    slab: [['slab', () => boxShape([O[0] + size[0] / 2, O[1] + size[1] / 2, -SLAB_T / 2], [size[0] / 2, size[1] / 2, SLAB_T / 2]), 1]],
+  };
+  const BODY_COL = { walker: css('--body'), radiator: css('--heat-lo'), slab: '#5a5a5a' };
+  const fig = new THREE.Group(), treeRoot = new THREE.Group(); scene.add(treeRoot); treeRoot.add(fig);
+  let TREES = {}, limbs = {}, vox = { cells: 0, leaves: 0, ms: 0, top: 0 };
+  function buildVoxels(h) {
+    const built = {}; let leaves = 0, cells = 0, ms = 0;
+    for (const key in DEFS) built[key] = DEFS[key].map(([name, mk, count]) => { const t = buildTree(mk(), h); leaves += t.N * count; cells += t.cells * count; ms += t.ms; return { name, count, tree: t }; });
+    if (leaves > 1.6e6) { log('error', 'voxel', 'refused: pitch ' + h * 1000 + ' mm needs ' + leaves.toLocaleString('en-GB') + ' leaves, over the 1.6 M the page will draw'); return false; }
+    [...treeRoot.children].forEach((c) => { if (c !== fig) treeRoot.remove(c); }); while (fig.children.length) fig.remove(fig.children[0]);
+    Object.values(TREES).forEach((parts) => parts.forEach((p) => p.meshes.forEach((m) => m.dispose())));
+    TREES = built; limbs = {};
+    for (const key in TREES) TREES[key].forEach((p) => { p.meshes = Array.from({ length: p.count }, () => treeMesh(p.tree, key === 'slab' ? slabMat : treeMat, BODY_COL[key])); });
+    const W = TREES.walker, piv = (mesh, x, y, z) => { const g = new THREE.Group(); g.position.set(x, y, z); g.add(mesh); fig.add(g); return g; };
+    piv(W[0].meshes[0], 0, 0, torsoZ); piv(W[1].meshes[0], 0, 0, headZ);
+    limbs.legL = piv(W[2].meshes[0], 0, 0.085, hipZ); limbs.legR = piv(W[2].meshes[1], 0, -0.085, hipZ);
+    limbs.armL = piv(W[3].meshes[0], 0, TORSO.hf[1] + ARM.r, shoulderZ); limbs.armR = piv(W[3].meshes[1], 0, -TORSO.hf[1] - ARM.r, shoulderZ);
+    treeRoot.add(TREES.radiator[0].meshes[0], TREES.slab[0].meshes[0]);
+    const used = (t) => { let l = t.perLevel.length - 1; while (l > 0 && !t.perLevel[l]) l--; return l; };
+    vox = { cells, leaves, ms, top: Math.max(...TREES.walker.map((p) => used(p.tree)), used(TREES.radiator[0].tree)) };
+    state.pitch = h; state.minLevel = Math.min(state.minLevel, vox.top); paintTrees();
+    for (const key in TREES) TREES[key].forEach((p) => log('info', 'voxel', key + '.' + p.name + (p.count > 1 ? ' ×' + p.count : '') + ' · ' + p.tree.cells.toLocaleString('en-GB') + ' cells → ' + p.tree.N.toLocaleString('en-GB') + ' leaves · ' + p.tree.visited.toLocaleString('en-GB') + ' nodes visited · ' + p.tree.ms.toFixed(1) + ' ms'));
+    log('info', 'voxel', 'pitch ' + h * 1000 + ' mm · ' + big(cells) + ' finest cells held as ' + big(leaves) + ' leaves (' + (cells / leaves).toFixed(0) + '× fewer) · built in the page in ' + ms.toFixed(0) + ' ms');
+    return true;
+  }
+  const big = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + ' G' : n >= 1e6 ? (n / 1e6).toFixed(2) + ' M' : n >= 1e4 ? (n / 1e3).toFixed(1) + ' k' : String(n);
+  // Colour by level or by body, and draw only the leaves at or above the chosen level.
+  // LOD cut: the cell size the gravity read may treat as one element, for the distance rule. Computed for
+  // the scene as it stands: each leaf's distance to the nearest point of any tower (a 10 m vertical line).
+  const LODC = [rgb0('#f6e2b0'), rgb0('#d6a83c'), rgb0('#5e3f0c')];
+  const lodColour = (l, top) => { const u = top ? Math.min(l, top) / top : 0, a = u < 0.5 ? LODC[0] : LODC[1], b = u < 0.5 ? LODC[1] : LODC[2], w = u < 0.5 ? u * 2 : u * 2 - 1; return [a[0] + (b[0] - a[0]) * w, a[1] + (b[1] - a[1]) * w, a[2] + (b[2] - a[2]) * w]; };
+  let lodStat = { leaves: 0, elems: 0, top: 0, ms: 0 };
+  function computeLod() {
+    if ((!state.layers.lodcut && state.vcol !== 'lod') || state.rep !== 'tree') { lodStat.elems = 0; return; }
+    const t0 = performance.now(), th = state.lod === 'exact' ? 0 : state.theta; let leaves = 0, elems = 0, top = 0;
+    treeRoot.updateMatrixWorld(true);
+    for (const key in TREES) TREES[key].forEach((p) => p.meshes.forEach((m) => {
+      const t = p.tree, e = m.matrixWorld.elements, seen = new Set(), n = m.count, lodL = m.userData.lodL = new Uint8Array(n);
+      for (let i = 0; i < n; i++) {
+        const lx = t.xyz[3 * i], ly = t.xyz[3 * i + 1], lz = t.xyz[3 * i + 2];
+        const x = e[0] * lx + e[4] * ly + e[8] * lz + e[12], y = e[1] * lx + e[5] * ly + e[9] * lz + e[13], z = e[2] * lx + e[6] * ly + e[10] * lz + e[14];
+        let d = 1e9; for (let k = 0; k < NT; k++) { const tw = D.towers[k], dz = z < 0 ? -z : z > 10 ? z - 10 : 0; d = Math.min(d, Math.hypot(x - tw[0], y - tw[1], dz)); }
+        let L = th > 0 ? Math.floor(Math.log2(Math.max(th * d / t.h, 1))) : 0; L = Math.max(L, t.lev[i]); L = Math.min(L, 14); top = Math.max(top, L);
+        const s = t.h * (1 << L), ix = Math.floor((lx - t.o[0]) / s), iy = Math.floor((ly - t.o[1]) / s), iz = Math.floor((lz - t.o[2]) / s);
+        seen.add(ix + 4096 * (iy + 4096 * (iz + 4096 * L)));
+        lodL[i] = L;
+      }
+      leaves += n; elems += seen.size;
+    }));
+    lodStat = { leaves, elems, top, ms: performance.now() - t0 };
+    $('l-lod-lo').textContent = (state.pitch * 100).toFixed(state.pitch < 0.01 ? 2 : 0) + ' cm'; $('l-lod-hi').textContent = (state.pitch * (1 << top) * 100).toFixed(0) + ' cm';
+    syncHead();
+  }
+  // Colour by any field. Every field is a number per leaf; the map and the range are chosen from the field's
+  // kind (categorical, sequential, diverging), and the legend is written from the same numbers.
+  const FIELDS = {
+    contrib: { name: 'phase from each cube · tower ', unit: 'µrad', kind: 'div', log: true, world: true, tower: true },
+    resp: { name: 'response · tower ', unit: 'mrad per kg', kind: 'div', world: true, tower: true },
+    dist: { name: 'distance to the nearest tower', unit: 'm', kind: 'seq', log: true, world: true },
+    lod: { name: 'LOD cut · cell size the read may use', unit: 'cm', kind: 'seq', world: true, level: true },
+    level: { name: 'tree level · cell size', unit: 'cm', kind: 'seq', level: true },
+    mass: { name: 'cube mass', unit: 'kg', kind: 'seq', log: true },
+    height: { name: 'height', unit: 'm', kind: 'seq', world: true },
+    body: { name: 'body', kind: 'cat' },
+  };
+  const DENS = { walker: 985, radiator: 700, slab: 2400 };     // kg/m³; the radiator's is a placeholder for a hollow panel
+  const MAPS = { viridis: ['#440154', '#3b528b', '#21918c', '#5ec962', '#fde725'], magma: ['#000004', '#51127c', '#b73779', '#fc8961', '#fcfdbf'],
+    ice: ['#e4f4f2', '#4b93a0', '#27525e'], grey: ['#3a3a3a', '#f0f0f0'], div: ['#2c7fb8', '#9cc3d6', '#4a4f57', '#e8c27a', '#c46a12'], divPaper: ['#2c7fb8', '#9cc3d6', '#ece7dc', '#e8c27a', '#c46a12'] };
+  const hex3 = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+  const mapAt = (stops, u) => { u = Math.max(0, Math.min(1, u)); const f = u * (stops.length - 1), i = Math.min(Math.floor(f), stops.length - 2), w = f - i, a = hex3(stops[i]), b = hex3(stops[i + 1]); return [a[0] + (b[0] - a[0]) * w, a[1] + (b[1] - a[1]) * w, a[2] + (b[2] - a[2]) * w]; };
+  const BODYKEYS = ['walker', 'radiator', 'slab'];
+  let fieldStat = { lo: 0, hi: 1, a: 1 };
+  function sampleResp(x, y, z) {
+    const i = Math.floor((x - O[0]) / H), j = Math.floor((y - O[1]) / H), k = Math.floor((z - O[2]) / H);
+    if (i < 0 || j < 0 || k < 0 || i >= NX || j >= NY || k >= NZ) return NaN;
+    return resp[state.sel * CELLS + i + NX * (j + NY * k)];      // rad per kg, this tower
+  }
+  function colourLeaves() {
+    if (state.rep !== 'tree' || !TREES.walker) return;
+    const key0 = state.layers.lodcut ? 'lod' : state.vcol, F = FIELDS[key0];
+    if (key0 === 'lod') computeLod(); else lodStat.elems = state.layers.lodcut ? lodStat.elems : 0;
+    if (F.world) treeRoot.updateMatrixWorld(true);
+    const sample = [];
+    for (const key in TREES) TREES[key].forEach((p) => p.meshes.forEach((m) => {
+      const t = p.tree, n = m.count, e = m.matrixWorld.elements, v = m.userData.val = new Float32Array(n), dens = DENS[key];
+      for (let i = 0; i < n; i++) {
+        const lx = t.xyz[3 * i], ly = t.xyz[3 * i + 1], lz = t.xyz[3 * i + 2], s = t.h * (1 << t.lev[i]);
+        let x = lx, y = ly, z = lz;
+        if (F.world) { x = e[0] * lx + e[4] * ly + e[8] * lz + e[12]; y = e[1] * lx + e[5] * ly + e[9] * lz + e[13]; z = e[2] * lx + e[6] * ly + e[10] * lz + e[14]; }
+        let val;
+        if (key0 === 'body') val = BODYKEYS.indexOf(key);
+        else if (key0 === 'level') val = s * 100;
+        else if (key0 === 'lod') val = t.h * (1 << m.userData.lodL[i]) * 100;
+        else if (key0 === 'mass') val = dens * s * s * s;
+        else if (key0 === 'height') val = z;
+        else if (key0 === 'dist') { val = 1e9; for (let k = 0; k < NT; k++) { const tw = D.towers[k], dz = z < 0 ? -z : z > 10 ? z - 10 : 0; val = Math.min(val, Math.hypot(x - tw[0], y - tw[1], dz)); } }
+        else { const w = sampleResp(x, y, z); val = key0 === 'resp' ? w * 1e3 : w * dens * s * s * s * 1e6; }
+        v[i] = val; if (i % 7 === 0 && isFinite(val)) sample.push(val);
+      }
+    }));
+    sample.sort((a, b) => a - b);
+    const q = (u) => sample.length ? sample[Math.min(sample.length - 1, Math.floor(u * sample.length))] : 0;
+    const paper = state.style === 'paper';
+    let lo = F.level ? sample[0] : q(0.02), hi = F.level ? sample[sample.length - 1] : q(0.98);
+    const amax = Math.max(Math.abs(q(0.02)), Math.abs(q(0.98)), 1e-30);
+    fieldStat = { lo, hi, a: amax };
+    const stops = F.kind === 'div' ? (paper ? MAPS.divPaper : MAPS.div) : (state.cmap === 'auto' && paper ? ['#efe9dc', '#cfc4ae', '#8f826b', '#3d362b'] : MAPS[state.cmap === 'auto' ? (F.level ? 'ice' : 'viridis') : state.cmap]);
+    const L = (x) => Math.log10(Math.max(x, 1e-30));
+    const toU = (val) => {
+      if (!isFinite(val)) return NaN;
+      if (F.kind === 'div') { const r = val / amax; return 0.5 + 0.5 * Math.sign(r) * (F.log ? Math.log10(1 + 99 * Math.min(Math.abs(r), 1)) / 2 : Math.min(Math.abs(r), 1)); }
+      if (F.level) return hi > lo ? Math.log2(val / lo) / Math.log2(hi / lo) : 0;
+      return F.log ? (L(val) - L(lo)) / Math.max(L(hi) - L(lo), 1e-9) : (val - lo) / Math.max(hi - lo, 1e-12);
+    };
+    for (const key in TREES) TREES[key].forEach((p) => p.meshes.forEach((m) => {
+      const a = m.instanceColor.array, v = m.userData.val;
+      for (let i = 0; i < v.length; i++) {
+        let c = key0 === 'body' ? m.userData.bodyColour : (() => { const u = toU(v[i]); return isNaN(u) ? [0.35, 0.35, 0.35] : mapAt(stops, u); })();
+        if (paper) c = [c[0] * 0.55 + PAPER[0] * 0.45, c[1] * 0.55 + PAPER[1] * 0.45, c[2] * 0.55 + PAPER[2] * 0.45];
+        a[3 * i] = c[0]; a[3 * i + 1] = c[1]; a[3 * i + 2] = c[2];
+      }
+      m.instanceColor.needsUpdate = true;
+    }));
+    // the legend: title, bar and ticks from the numbers just drawn
+    const num = (x) => { const ax = Math.abs(x); return ax === 0 ? '0' : ax >= 100 ? fmt(x, 0) : ax >= 1 ? fmt(x, 1) : ax >= 0.01 ? fmt(x, 3) : (x < 0 ? '−' : '') + ax.toExponential(1); };
+    $('lf-title').textContent = 'cube colour · ' + F.name + (F.tower ? (state.sel + 1) : '') + (F.unit ? ' · ' + F.unit : '') + (F.log ? ' · log' : '');
+    if (key0 === 'body') {
+      $('lf-bar').style.cssText = 'display:flex;gap:10px;height:auto;border:0;font:11px var(--mono)';
+      $('lf-bar').innerHTML = BODYKEYS.map((k) => '<span><i class="sw" style="background:' + BODY_COL[k] + ';display:inline-block;width:10px;height:10px;margin-right:4px"></i>' + k + '</span>').join('');
+      $('lf-lo').textContent = $('lf-mid').textContent = $('lf-hi').textContent = '';
+    } else {
+      const g = Array.from({ length: 9 }, (_, i) => { const c = mapAt(stops, i / 8); return 'rgb(' + c.map((x) => Math.round(x * 255)).join(',') + ')'; });
+      $('lf-bar').style.cssText = 'height:12px;border:1px solid #555;background:linear-gradient(90deg,' + g.join(',') + ')'; $('lf-bar').innerHTML = '';
+      if (F.kind === 'div') { $('lf-lo').textContent = '− ' + num(amax); $('lf-mid').textContent = '0'; $('lf-hi').textContent = '+ ' + num(amax); }
+      else { $('lf-lo').textContent = num(lo); $('lf-mid').textContent = F.log || F.level ? num(Math.sqrt(lo * hi)) : num((lo + hi) / 2); $('lf-hi').textContent = num(hi); }
+    }
+    $('l-field').hidden = false; syncHead();
+  }
+  function paintTrees() {
+    for (const key in TREES) TREES[key].forEach((p) => p.meshes.forEach((m) => {
+      const t = p.tree;
+      let n = 0; while (n < t.N && t.lev[n] >= state.minLevel) n++; m.count = n;
+    }));
+    treeMat.clippingPlanes = state.section ? [cutPlane] : []; treeMat.needsUpdate = true;
+    boundsMat.clippingPlanes = treeMat.clippingPlanes; boundsMat.needsUpdate = true;
+    for (const key in TREES) TREES[key].forEach((p) => p.meshes.forEach((m) => { if (m.userData.bounds) m.userData.bounds.visible = !!state.layers.bounds; }));
+    $('vx-pitch-v').textContent = state.pitch >= 0.01 ? (state.pitch * 100) + ' cm' : (state.pitch * 1000) + ' mm';
+    colourLeaves();
+    const el = $('vx-min'); el.max = vox.top; el.value = state.minLevel; el.style.setProperty('--fill', (vox.top ? state.minLevel / vox.top * 100 : 0) + '%');
+    $('vx-min-v').textContent = state.minLevel ? (state.pitch * (1 << state.minLevel) * 100).toFixed(state.pitch < 0.01 ? 1 : 0) + ' cm' : 'all';
+    $('vx-ms').textContent = vox.ms.toFixed(0) + ' ms';
+    $('vx-note').textContent = state.rep === 'tree' ? big(vox.cells) + ' finest cells drawn as ' + big(vox.leaves) + ' cubes. Built in this page, not by the engine; the signals are still the recorded 8 cm parcels.'
+      : 'the 247 parcels the engine recorded, 8 cm pitch — what the signals were computed from';
+    $('l-lv-lo').textContent = 'level 0 · ' + (state.pitch * 100).toFixed(state.pitch < 0.01 ? 2 : 0) + ' cm'; $('l-lv-hi').textContent = 'level ' + vox.top + ' · ' + (state.pitch * (1 << vox.top) * 100).toFixed(0) + ' cm';
+    $('l-tree').hidden = $('l-lod').hidden = true; $('l-field').hidden = state.rep !== 'tree';
+  }
+
+  // Air: a halftone. One hard dot per cell, its area growing with how much lighter than ambient the air is.
+  const pos = new Float32Array(CELLS * 3), val = new Float32Array(CELLS);
+  for (let k = 0, n = 0; k < NZ; k++) for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++, n++) {
+    pos[3 * n] = O[0] + (i + 0.5) * H; pos[3 * n + 1] = O[1] + (j + 0.5) * H; pos[3 * n + 2] = O[2] + (k + 0.5) * H;
+  }
+  const airGeo = new THREE.BufferGeometry();
+  airGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  airGeo.setAttribute('v', new THREE.BufferAttribute(val, 1).setUsage(THREE.DynamicDrawUsage));
+  const airMat = new THREE.ShaderMaterial({
+    uniforms: { px: { value: 600 }, ortho: { value: 0 }, lo: { value: new THREE.Color(css('--heat-lo')) }, hi: { value: new THREE.Color(css('--heat-hi')) } },
+    vertexShader: 'attribute float v; varying float a; uniform float px; uniform float ortho; void main(){ a=v; vec4 m=modelViewMatrix*vec4(position,1.0); gl_Position=projectionMatrix*m;' +
+      ' float s = ortho > 0.0 ? ortho : px/-m.z; gl_PointSize = v<=0.0 ? 0.0 : s*0.155*sqrt(v); }',
+    fragmentShader: 'varying float a; uniform vec3 lo; uniform vec3 hi; void main(){ vec2 d=gl_PointCoord-0.5; if(dot(d,d)>0.25||a<=0.0) discard;' +
+      ' gl_FragColor=vec4(mix(lo,hi,a),1.0); }',
+  });
+  const airPts = new THREE.Points(airGeo, airMat); airPts.frustumCulled = false; scene.add(airPts);
+  // The whole room is a little warm after a minute of heating; the dots show only air at least FLOOR of
+  // the peak lighter than ambient, so the plume and the layer under the ceiling stand out.
+  const FLOOR = 0.3;
+  function airValue(n) {                       // linear in time between recorded air frames
+    const s = Math.min(state.t / (DT * D.air.every), D.air.frames - 1), f0 = Math.min(Math.floor(s), D.air.frames - 2), u = s - f0;
+    return ((1 - u) * air[f0 * CELLS + n] + u * air[(f0 + 1) * CELLS + n]) / 255;
+  }
+
+  // The slice: a vertical x–z plane at a chosen y.
+  const tex = new THREE.DataTexture(new Uint8Array(NX * NZ * 4), NX, NZ, THREE.RGBAFormat);
+  tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+  const slice = new THREE.Mesh(new THREE.PlaneGeometry(size[0], size[2]), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, transparent: true, depthWrite: false }));
+  slice.rotation.x = Math.PI / 2; scene.add(slice);
+  const sliceEdge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(size[0], size[2])), new THREE.LineBasicMaterial({ color: css('--link') }));
+  sliceEdge.rotation.x = Math.PI / 2; scene.add(sliceEdge);
+  // The air on a tree. The recording is a uniform 25 cm grid; this merges 2×2×2 blocks wherever the air
+  // is smooth and no tower is close, which is the grid an adaptive solver would keep at this instant.
+  // Fine cells survive in the plume, under the ceiling and around every tower.
+  const airGridGeo = new THREE.BufferGeometry(), airGrid = new THREE.LineSegments(airGridGeo, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.42 }));
+  airGrid.frustumCulled = false; scene.add(airGrid);
+  let airTree = { key: '', leaves: 0 };
+  function buildAirTree(j) {
+    const key = j + ':' + Math.floor(state.t / 0.25); if (key === airTree.key) return; 
+    const TOL = 0.04, NEAR = 0.6, pts = []; let leaves = 0;
+    const near = (ix, iy, n) => { const x0 = O[0] + ix * H, x1 = x0 + n * H, y0 = O[1] + iy * H, y1 = y0 + n * H;
+      return D.towers.some((p) => Math.hypot(p[0] < x0 ? x0 - p[0] : p[0] > x1 ? p[0] - x1 : 0, p[1] < y0 ? y0 - p[1] : p[1] > y1 ? p[1] - y1 : 0) < NEAR); };
+    const emit = (c) => { leaves++; if (c.iy <= j && j < c.iy + c.n) { const x0 = O[0] + c.ix * H, x1 = x0 + c.n * H, z0 = O[2] + c.iz * H, z1 = z0 + c.n * H; pts.push(x0, z0, x1, z0, x1, z0, x1, z1, x1, z1, x0, z1, x0, z1, x0, z0); } };
+    (function rec(ix, iy, iz, n) {
+      if (ix >= NX || iy >= NY || iz >= NZ) return null;
+      if (n === 1) { const v = airValue(ix + NX * (iy + NY * iz)); return { ix, iy, iz, n, mn: v, mx: v }; }
+      const m = n >> 1, kids = []; for (let k = 0; k < 8; k++) kids.push(rec(ix + (k & 1 ? m : 0), iy + (k & 2 ? m : 0), iz + (k & 4 ? m : 0), m));
+      if (kids.every((c) => c && c.mn !== undefined)) { const mn = Math.min(...kids.map((c) => c.mn)), mx = Math.max(...kids.map((c) => c.mx)); if (mx - mn <= TOL && !near(ix, iy, n)) return { ix, iy, iz, n, mn, mx }; }
+      kids.forEach((c) => { if (c && c.mn !== undefined) emit(c); }); return kids.some(Boolean) ? {} : null;
+    })(0, 0, 0, 64);
+    const y = O[1] + (j + 0.5) * H - 0.004, a = new Float32Array(pts.length / 2 * 3);
+    for (let i = 0; i < pts.length / 2; i++) { a[3 * i] = pts[2 * i]; a[3 * i + 1] = y; a[3 * i + 2] = pts[2 * i + 1]; }
+    airGridGeo.setAttribute('position', new THREE.BufferAttribute(a, 3)); airTree = { key, leaves };
+  }
+  const rgb = (c) => { const k = new THREE.Color(c); return [k.r * 255, k.g * 255, k.b * 255]; };
+  const mix = (a, b, u) => [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u];
+  const K = { bg: rgb('#141414'), lo: rgb(C.heatLo), hi: rgb(C.heatHi), cool: rgb(C.cool), mid: rgb(C.mid), warm: rgb(css('--t1')) };
+  const respMax = D.towers.map((_, d) => { let m = 0; for (let n = 0; n < CELLS; n++) m = Math.max(m, Math.abs(resp[d * CELLS + n])); return m; });
+  function drawSlice() {
+    const mode = state.slice, j = state.sy, y = O[1] + (j + 0.5) * H;
+    slice.visible = sliceEdge.visible = mode !== 'off';
+    airGrid.visible = mode === 'air' && state.layers.agrid; if (airGrid.visible) buildAirTree(j);
+    slice.position.set(O[0] + size[0] / 2, y, O[2] + size[2] / 2); sliceEdge.position.copy(slice.position);
+    $('slice-val').textContent = fmt(y, 2);
+    const fillEl = $('slice-y'); fillEl.value = j; fillEl.style.setProperty('--fill', (j / 39 * 100) + '%');
+    document.querySelectorAll('[data-slice]').forEach((b) => b.classList.toggle('on', b.dataset.slice === mode));
+    $('cap-slice').hidden = $('l-slice').hidden = mode === 'off';
+    $('slice-note').textContent = mode === 'air' ? (state.layers.agrid ? 'air density, with the adaptive grid it would live on: ' + CELLS.toLocaleString('en-GB') + ' recorded cells merge to ' + airTree.leaves.toLocaleString('en-GB') + ' where the air is smooth and no tower is near' : 'how much lighter than ambient the air is, on this plane')
+      : mode === 'resp' ? 'the phase tower ' + (state.sel + 1) + ' would read from one kilogram placed in each cell — where it is listening' : 'a vertical cut through the room';
+    if (mode === 'off') return;
+    const d = tex.image.data;
+    for (let k = 0; k < NZ; k++) for (let i = 0; i < NX; i++) {
+      const n = i + NX * (j + NY * k), o = 4 * (i + NX * k); let c;
+      if (mode === 'air') { const v = airValue(n); c = v < 0.5 ? mix(K.bg, K.lo, v * 2) : mix(K.lo, K.hi, v * 2 - 1); }
+      else { const r = resp[state.sel * CELLS + n], u = Math.log10(1 + 999 * Math.abs(r) / respMax[state.sel]) / 3; c = mix(K.mid, r < 0 ? K.cool : K.warm, u); }
+      d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 235;
+    }
+    tex.needsUpdate = true;
+    if (mode === 'air') {
+      $('cap-slice').textContent = 'air density on the plane y = ' + fmt(y, 2) + ' m';
+      $('l-slice-name').textContent = 'slice · air lighter than ambient';
+      $('l-slice-bar').style.background = 'linear-gradient(90deg,#141414,' + C.heatLo + ',' + C.heatHi + ')';
+      $('l-slice-lo').textContent = '0'; $('l-slice-hi').textContent = (D.air.scale * 1e3).toFixed(0) + ' g/m³';
+    } else {
+      $('cap-slice').textContent = 'response of tower ' + (state.sel + 1) + ' on the plane y = ' + fmt(y, 2) + ' m · log scale';
+      $('l-slice-name').textContent = 'slice · phase per kilogram, tower ' + (state.sel + 1);
+      $('l-slice-bar').style.background = 'linear-gradient(90deg,' + C.cool + ',' + C.mid + ',' + css('--t1') + ')';
+      $('l-slice-lo').textContent = '− ' + (respMax[state.sel] * 1e3).toFixed(1) + ' mrad/kg'; $('l-slice-hi').textContent = '+';
+    }
+  }
+
+  // Tower tags, projected into the view: the tower's latest reading and its age.
+  const tags = D.towers.map((p, i) => {
+    const el = document.createElement('button'); el.type = 'button'; el.className = 'tag';
+    el.addEventListener('click', () => select(i)); $('tags').appendChild(el); return el;
+  });
+  const v3 = new THREE.Vector3();
+  function project(x, y, z) {
+    v3.set(x, y, z).project(camera);
+    return [mainPane.x + (v3.x * 0.5 + 0.5) * mainPane.w, mainPane.y + (-v3.y * 0.5 + 0.5) * mainPane.h, v3.z < 1 && Math.abs(v3.x) < 1.05 && Math.abs(v3.y) < 1.05];
+  }
+  const reading = (d, t) => { const s = latest(d, t); return s ? { v: at(D.signal, d, s.R), a: at(D.ambient, d, s.R), age: t - s.R, R: s.R } : null; };
+  function placeTags() {
+    tags.forEach((el, i) => {
+      const [x, y, ok] = project(D.towers[i][0], D.towers[i][1], 3.35), r = reading(i, state.t);
+      el.hidden = !state.layers.tags || !ok; el.style.left = x + 'px'; el.style.top = y + 'px';
+      el.classList.toggle('on', i === state.sel);
+      el.innerHTML = '<s style="background:' + TOWER[i] + '"></s>' + (i + 1) + '  ' + (r ? fmt(r.v, 3) + ' <em>' + r.age.toFixed(1) + ' s</em>' : '<em>no shot yet</em>');
+    });
+    const cap = $('cap-range'), p = D.track[frameAt(state.t)], tw = D.towers[state.sel];
+    cap.hidden = !state.layers.range;
+    if (!cap.hidden) {
+      const [x, y] = project((p[0] + tw[0]) / 2, (p[1] + tw[1]) / 2, 1.0);
+      cap.style.left = x + 8 + 'px'; cap.style.top = y - 9 + 'px'; cap.textContent = Math.hypot(p[0] - tw[0], p[1] - tw[1]).toFixed(2) + ' m';
+    }
+  }
+
+  const tmp = new THREE.Matrix4();
+  function updateScene() {
+    const s = Math.min(state.t / DT, F - 1), f0 = Math.min(Math.floor(s), F - 2), u = s - f0;
+    let cx = 0, cy = 0;
+    for (let i = 0; i < NP; i++) {
+      const a = (f0 * NP + i) * 3, b = ((f0 + 1) * NP + i) * 3;
+      const x = ((1 - u) * walker[a] + u * walker[b]) / 1000, y = ((1 - u) * walker[a + 1] + u * walker[b + 1]) / 1000, z = ((1 - u) * walker[a + 2] + u * walker[b + 2]) / 1000;
+      tmp.makeTranslation(x, y, z); body.setMatrixAt(i, tmp); tmp.makeTranslation(x, y, 0.008); shadow.setMatrixAt(i, tmp); cx += x; cy += y;
+    }
+    cx /= NP; cy /= NP;
+    body.instanceMatrix.needsUpdate = shadow.instanceMatrix.needsUpdate = true;
+    const tree = state.rep === 'tree';
+    body.visible = shadow.visible = rad.visible = !tree; treeRoot.visible = tree;
+    if (tree && limbs.legL) {
+      // the figure follows the recorded path; its stride is drawn here, not recorded
+      const a = D.track[Math.max(f0 - 1, 0)], b = D.track[Math.min(f0 + 2, F - 1)], sw = Math.sin(2 * Math.PI * 0.9 * state.t);
+      fig.position.set(cx, cy, 0); fig.rotation.z = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      limbs.legL.rotation.y = 0.45 * sw; limbs.legR.rotation.y = -0.45 * sw; limbs.armL.rotation.y = -0.35 * sw; limbs.armR.rotation.y = 0.35 * sw;
+      cutPlane.constant = -(state.obj === 'radiator' ? rb.c[1] : cy);
+    }
+    past.geometry.setDrawRange(0, f0 + 2); ahead.geometry.setDrawRange(f0 + 1, F - f0 - 1);
+    past.visible = ahead.visible = state.layers.path;
+    roomGroup.visible = state.layers.room;
+    airPts.visible = state.layers.air;
+    if (state.layers.air) { for (let n = 0; n < CELLS; n++) val[n] = Math.max(0, (airValue(n) - FLOOR) / (1 - FLOOR)); airGeo.attributes.v.needsUpdate = true; }
+    const tw = D.towers[state.sel];
+    rangeGeo.attributes.position.setXYZ(0, cx, cy, 1.0); rangeGeo.attributes.position.setXYZ(1, tw[0], tw[1], 1.0); rangeGeo.attributes.position.needsUpdate = true;
+    rangeLine.visible = state.layers.range;
+    // Each tower's clouds are where that tower's own shot has them, or absent between shots.
+    atoms.forEach((row, i) => {
+      const fl = inFlight(i, state.t), z = fl ? arms(state.t - fl.L) : null;
+      row.forEach((m, k) => { m.visible = state.layers.atoms && !!fl; if (fl) m.position.z = z[k]; m.scale.setScalar(i === state.sel ? 1.45 : 0.9); });
+    });
+    towerLines.forEach((l, i) => { l.material.opacity = i === state.sel ? 1 : 0.55; });
+    if (state.follow) orbit.target.set(cx, cy, 1.4); else orbit.target.lerp(new THREE.Vector3(0, 0, 2.2), 0.2);
+    if (state.slice === 'air') drawSlice();
+  }
+  function resize() {
+    const w = view.clientWidth, h = view.clientHeight;
+    renderer.setSize(w, h, false); layoutPanes();
+  }
+
+  // Orbit: drag to rotate, wheel or pinch to zoom.
+  const ptrs = new Map(); let pinch = 0;
+  canvas.addEventListener('pointerdown', (e) => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); });
+  canvas.addEventListener('pointermove', (e) => {
+    const p = ptrs.get(e.pointerId); if (!p) return;
+    if (ptrs.size === 1) { goal.az -= (e.clientX - p[0]) * 0.007; goal.el = Math.max(-1.5699, Math.min(1.5699, goal.el + (e.clientY - p[1]) * 0.007)); }
+    ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]); if (pinch) goal.r = Math.max(1.6, Math.min(45, goal.r * pinch / d)); pinch = d; }
+  });
+  const drop = (e) => { ptrs.delete(e.pointerId); pinch = 0; };
+  canvas.addEventListener('pointerup', drop); canvas.addEventListener('pointercancel', drop);
+  canvas.addEventListener('wheel', (e) => { e.preventDefault(); goal.r = Math.max(1.6, Math.min(45, goal.r * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+  // Named views. +y is north, +x east. Square-on views are where orthographic earns its keep.
+  const CAMS = { iso: [-1.02, 0.36, 17.5], top: [-Math.PI / 2, 1.5699, 21], bottom: [-Math.PI / 2, -1.5699, 21], n: [Math.PI / 2, 0.0001, 19], s: [-Math.PI / 2, 0.0001, 19], e: [0, 0.0001, 19], w: [Math.PI, 0.0001, 19] };
+  const CAMNAME = { iso: 'iso', top: 'top', bottom: 'from below', n: 'from the north', s: 'from the south', e: 'from the east', w: 'from the west' };
+  let camKey = 'iso';
+  const setCam = (k) => { camKey = k; let az = CAMS[k][0]; while (az - orbit.az > Math.PI) az -= 2 * Math.PI; while (orbit.az - az > Math.PI) az += 2 * Math.PI; [goal.az, goal.el, goal.r] = [az, CAMS[k][1], CAMS[k][2]]; if (typeof syncButtons === 'function') syncButtons(); };
+  document.querySelectorAll('[data-cam]').forEach((b) => b.addEventListener('click', () => setCam(b.dataset.cam)));
+  canvas.addEventListener('pointerdown', () => { camKey = ''; });
+  // Panes: one canvas, scissored. The main pane takes the orbit camera; the others are fixed orthographic views.
+  let panes = 1, mainPane = { x: 0, y: 0, w: 1, h: 1 }, paneRects = [];
+  function layoutPanes() {
+    const W = view.clientWidth, Hh = view.clientHeight, w2 = Math.floor(W / 2), h2 = Math.floor(Hh / 2);
+    paneRects = panes === 1 ? [{ x: 0, y: 0, w: W, h: Hh, cam: 'main' }]
+      : panes === 2 ? [{ x: 0, y: 0, w: w2, h: Hh, cam: 'main' }, { x: w2 + 1, y: 0, w: W - w2 - 1, h: Hh, cam: 'plan' }]
+      : [{ x: 0, y: 0, w: w2, h: h2, cam: 'main' }, { x: w2 + 1, y: 0, w: W - w2 - 1, h: h2, cam: 'plan' }, { x: 0, y: h2 + 1, w: w2, h: Hh - h2 - 1, cam: 'front' }, { x: w2 + 1, y: h2 + 1, w: W - w2 - 1, h: Hh - h2 - 1, cam: 'side' }];
+    mainPane = paneRects[0];
+    $('pane-lines').innerHTML = panes === 1 ? '' : '<div class="pl" style="left:' + w2 + 'px;top:0;width:1px;height:100%"></div>' + (panes === 4 ? '<div class="pl" style="top:' + h2 + 'px;left:0;height:1px;width:100%"></div>' : '');
+  }
+  function renderPanes() {
+    const dpr = renderer.getPixelRatio(), Hh = view.clientHeight;
+    renderer.setScissorTest(panes > 1);
+    paneRects.forEach((r) => {
+      const aspect = r.w / Math.max(r.h, 1);
+      let cam;
+      if (r.cam === 'main') {
+        cam = camera;
+        if (cam === persp) { persp.aspect = aspect; persp.updateProjectionMatrix(); } else fitOrtho(ortho, orbit.r * Math.tan(19 * Math.PI / 180), aspect);
+      } else { cam = PANECAMS[r.cam]; fitOrtho(cam, Math.max(5.6, 5.6 / aspect * 1.05), aspect); }
+      airMat.uniforms.px.value = r.h * dpr / (2 * Math.tan(19 * Math.PI / 180));
+      airMat.uniforms.ortho.value = cam.isOrthographicCamera ? r.h * dpr / (cam.top - cam.bottom) : 0;
+      renderer.setViewport(r.x, Hh - r.y - r.h, r.w, r.h); renderer.setScissor(r.x, Hh - r.y - r.h, r.w, r.h);
+      renderer.render(scene, cam);
+    });
+  }
+  document.querySelectorAll('[data-proj]').forEach((b) => b.addEventListener('click', () => setProj(b.dataset.proj)));
+  document.querySelectorAll('[data-panes]').forEach((b) => b.addEventListener('click', () => setPanes(+b.dataset.panes)));
+  document.querySelectorAll('[data-style]').forEach((b) => b.addEventListener('click', () => setStyle(b.dataset.style)));
+  function setProj(k) { camera = k === 'ortho' ? ortho : persp; syncButtons(); }
+  function setPanes(n) { panes = n; layoutPanes(); syncButtons(); }
+
+  // ───────────────────────── plots ─────────────────────────
+  const times = Array.from({ length: F }, (_, i) => i * DT);
+  const col = (a, d, k) => a.map((r) => r[d] * (k || 1));
+  const CH = { signal: ['signal', D.signal, 1, 'rad', 3], targets: ['walker', D.targets, 1, 'rad', 3], ambient: ['air', D.ambient, 1e3, 'mrad', 2], noise: ['noise', D.noise, 1e3, 'mrad', 2] };
+  const PADL = 46, PADR = 14;
+  function setup(cv) {
+    const r = Math.min(window.devicePixelRatio || 1, 2), w = cv.clientWidth, h = cv.clientHeight;
+    if (cv.width !== Math.round(w * r) || cv.height !== Math.round(h * r)) { cv.width = Math.round(w * r); cv.height = Math.round(h * r); }
+    const g = cv.getContext('2d'); g.setTransform(r, 0, 0, r, 0, 0); g.clearRect(0, 0, w, h); return { g, w, h };
+  }
+  function ticks(lo, hi, n) {
+    const raw = (hi - lo || 1) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), step = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw), out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-12; v += step) out.push(Math.abs(v) < step * 1e-9 ? 0 : v);
+    return { out, dec: Math.max(0, -Math.floor(Math.log10(step))) };
+  }
+  // The band is the flight of the selected tower's current shot (or its last one): what that reading integrates.
+  const bandOf = (d, t) => inFlight(d, t) || latest(d, t);
+  // One panel: thin continuous lines (the recording), and for lines with `shots`, dots at that tower's readouts.
+  function panel(g, box, lines, label) {
+    let lo = Infinity, hi = -Infinity;
+    lines.forEach((l) => l.y.forEach((v) => { lo = Math.min(lo, v); hi = Math.max(hi, v); }));
+    const pad = (hi - lo || 1) * 0.1; lo -= pad; hi += pad;
+    const X = (t) => box.x + (t / T_END) * box.w, Y = (v) => box.y + box.h - ((v - lo) / (hi - lo)) * box.h;
+    const tk = ticks(lo, hi, Math.max(2, Math.round(box.h / 30)));
+    g.font = '11px ' + C.mono; g.textBaseline = 'middle'; g.lineWidth = 1;
+    tk.out.forEach((v) => {
+      g.strokeStyle = v === 0 ? '#3c3c3c' : C.rule; g.beginPath(); g.moveTo(box.x, Math.round(Y(v)) + 0.5); g.lineTo(box.x + box.w, Math.round(Y(v)) + 0.5); g.stroke();
+      g.fillStyle = C.weak; g.textAlign = 'right'; g.fillText(fmt(v, tk.dec), box.x - 6, Y(v));
+    });
+    const b = bandOf(state.sel, state.t);
+    if (b) { const x0 = X(Math.max(0, b.L)), x1 = X(Math.min(T_END, b.R)); g.fillStyle = 'rgba(90,180,255,.10)'; g.fillRect(x0, box.y, x1 - x0, box.h); }
+    const yAt = (l, t) => { const s = Math.max(0, Math.min(t / DT, F - 1)), f = Math.min(Math.floor(s), F - 2), u = s - f; return (1 - u) * l.y[f] + u * l.y[f + 1]; };
+    lines.forEach((l) => {
+      g.strokeStyle = l.colour; g.lineWidth = 1; g.globalAlpha = l.bold ? 0.55 : 0.28; g.lineJoin = 'round'; g.beginPath();
+      l.y.forEach((v, i) => (i ? g.lineTo(X(times[i]), Y(v)) : g.moveTo(X(times[i]), Y(v)))); g.stroke(); g.globalAlpha = 1;
+    });
+    lines.forEach((l) => {
+      if (!l.shots) return;
+      g.fillStyle = l.colour; g.globalAlpha = l.bold ? 1 : 0.6;
+      if (l.bold) { g.strokeStyle = l.colour; g.lineWidth = 1.5; g.beginPath(); l.shots.forEach((s, i) => (i ? g.lineTo(X(s.R), Y(yAt(l, s.R))) : g.moveTo(X(s.R), Y(yAt(l, s.R))))); g.stroke(); }
+      l.shots.forEach((s) => { g.beginPath(); g.arc(X(s.R), Y(yAt(l, s.R)), l.bold ? 3 : 2, 0, 7); g.fill(); });
+      g.globalAlpha = 1;
+      const last = l.bold && [...l.shots].reverse().find((s) => s.R <= state.t + 1e-9);
+      if (last) { g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.beginPath(); g.arc(X(last.R), Y(yAt(l, last.R)), 4.5, 0, 7); g.stroke(); }
+    });
+    const xc = Math.round(X(state.t)) + 0.5;
+    g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1; g.beginPath(); g.moveTo(xc, box.y); g.lineTo(xc, box.y + box.h); g.stroke();
+    if (label) { g.fillStyle = C.text; g.textAlign = 'left'; g.textBaseline = 'middle'; g.font = '300 11.5px ' + css('--sans'); g.fillText(label, box.x, box.y - 8); }
+  }
+  function axis(g, box) {
+    g.fillStyle = C.weak; g.font = '11px ' + C.mono; g.textBaseline = 'top';
+    for (let t = 0; t <= T_END + 1e-9; t += 2) { g.textAlign = t >= 12 ? 'right' : 'center'; g.fillText(t >= 12 ? '12 s' : String(t), box.x + (t / T_END) * box.w + (t >= 12 ? 6 : 0), box.y + box.h + 4); }
+  }
+  const boxes = {};
+  const LANE = 14;
+  // Lanes: one per tower. A filled bar is a shot the readings on screen came from; an outline is the spec
+  // where it differs. A bright end marks the readout.
+  function drawLanes() {
+    const c = setup($('c-lanes')), g = c.g, box = { x: PADL, w: c.w - PADL - PADR, y: 4 };
+    boxes.lanes = box;
+    const X = (t) => box.x + (t / T_END) * box.w, isStale = stale();
+    g.font = '11px ' + C.mono; g.textBaseline = 'middle';
+    D.towers.forEach((_, d) => {
+      const y = box.y + d * LANE, on = d === state.sel;
+      if (on) { g.fillStyle = '#10303d'; g.fillRect(0, y, c.w, LANE); }
+      g.fillStyle = on ? C.strong : C.weak; g.textAlign = 'right'; g.fillText('T' + (d + 1), box.x - 8, y + LANE / 2 + 0.5);
+      g.save(); g.beginPath(); g.rect(box.x, y, box.w, LANE); g.clip();
+      SH[d].forEach((s) => {
+        g.globalAlpha = on ? 0.95 : 0.5; g.fillStyle = TOWER[d]; g.fillRect(X(s.L), y + 3, X(s.R) - X(s.L), LANE - 6);
+        g.globalAlpha = 1; g.fillStyle = on ? '#fff' : C.strong; g.fillRect(X(s.R) - 1.5, y + 1.5, 1.5, LANE - 3);
+      });
+      if (isStale) { g.strokeStyle = C.warn; g.lineWidth = 1; g.setLineDash([3, 2]); shotsOf(spec, d).forEach((s) => g.strokeRect(Math.round(X(s.L)) + 0.5, y + 2.5, Math.round(X(s.R) - X(s.L)), LANE - 5)); g.setLineDash([]); }
+      g.restore();
+    });
+    const xc = Math.round(X(state.t)) + 0.5;
+    g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1; g.beginPath(); g.moveTo(xc, box.y); g.lineTo(xc, box.y + NT * LANE); g.stroke();
+  }
+  function drawPlots() {
+    drawLanes();
+    let c = setup($('c-time'));
+    const ch = CH[state.chan];
+    boxes.time = { x: PADL, y: 18, w: c.w - PADL - PADR, h: c.h - 38 };
+    panel(c.g, boxes.time, D.towers.map((_, d) => ({ y: col(ch[1], d, ch[2]), colour: TOWER[d], bold: d === state.sel, shots: SH[d] })), ch[0] + ' at every tower · ' + ch[3]);
+    axis(c.g, boxes.time);
+    c = setup($('c-chan'));
+    const d = state.sel, h3 = (c.h - 20 - 3 * 18) / 3;
+    [['walker · rad', col(D.targets, d), TOWER[d]], ['heated air · mrad', col(D.ambient, d, 1e3), C.heatLo], ['shot noise · mrad', col(D.noise, d, 1e3), C.text]].forEach((r, i) => {
+      const box = { x: PADL, w: c.w - PADL - PADR, y: 16 + i * (h3 + 18), h: h3 };
+      panel(c.g, box, [{ y: r[1], colour: r[2], bold: true, shots: SH[d] }], r[0]); if (i === 2) axis(c.g, box);
+    });
+    boxes.chan = { x: PADL, w: c.w - PADL - PADR };
+    drawFlight();
+  }
+  // Flight: arm heights against ABSOLUTE time, one row per tower, in a window around the cursor.
+  function drawFlight() {
+    const c = setup($('c-flight')), g = c.g, W = 1.7, x0 = 22, rowH = (c.h - 14) / NT;
+    const X = (t) => x0 + ((t - state.t + W) / (2 * W)) * (c.w - x0 - 4);
+    g.font = '10px ' + C.mono; g.textBaseline = 'middle';
+    D.towers.forEach((_, d) => {
+      const top = d * rowH, base = top + rowH - 3, on = d === state.sel, Y = (z) => base - (z / 10) * (rowH - 7);
+      if (on) { g.fillStyle = '#10303d'; g.fillRect(0, top, c.w, rowH); }
+      g.strokeStyle = C.rule; g.lineWidth = 1; g.beginPath(); g.moveTo(x0, Math.round(base) + 0.5); g.lineTo(c.w - 4, Math.round(base) + 0.5); g.stroke();
+      g.fillStyle = on ? C.strong : C.weak; g.textAlign = 'right'; g.fillText(d + 1, x0 - 8, top + rowH / 2);
+      g.save(); g.beginPath(); g.rect(x0, top, c.w - x0 - 4, rowH); g.clip();
+      const k0 = Math.floor((state.t - W - TWO_T - res.offset[d]) / res.cadence), k1 = Math.ceil((state.t + W - res.offset[d]) / res.cadence);
+      for (let k = k0; k <= k1; k++) {
+        const L = res.offset[d] + k * res.cadence;
+        g.strokeStyle = TOWER[d]; g.lineWidth = on ? 1.4 : 1;
+        for (let a = 0; a < 4; a++) {
+          g.globalAlpha = (on ? 1 : 0.55) * (a % 2 ? 1 : 0.6); g.beginPath();
+          for (let i = 0; i <= 40; i++) { const tau = (i / 40) * TWO_T, z = arms(tau)[a]; i ? g.lineTo(X(L + tau), Y(z)) : g.moveTo(X(L + tau), Y(z)); }
+          g.stroke();
+        }
+        g.globalAlpha = 1;
+        const tau = state.t - L;
+        if (tau >= 0 && tau < TWO_T) arms(tau).forEach((z) => { g.fillStyle = TOWER[d]; g.strokeStyle = '#1b1b1b'; g.lineWidth = 1.5; g.beginPath(); g.arc(X(state.t), Y(z), on ? 3 : 2.2, 0, 7); g.fill(); g.stroke(); });
+      }
+      g.restore();
+    });
+    const xc = Math.round(X(state.t)) + 0.5;
+    g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1; g.beginPath(); g.moveTo(xc, 0); g.lineTo(xc, NT * rowH); g.stroke();
+    g.fillStyle = C.weak; g.textAlign = 'center'; g.textBaseline = 'top';
+    [-1, 0, 1].forEach((dt) => g.fillText(dt === 0 ? 't' : (dt > 0 ? '+' : '−') + '1 s', X(state.t + dt), NT * rowH + 2));
+    const fl = inFlight(state.sel, state.t);
+    $('f-phase').textContent = 'T' + (state.sel + 1) + (fl ? ' · τ ' + (state.t - fl.L).toFixed(2) + ' · ' + (state.t - fl.L < TH ? 'before π' : 'after π') : ' · between shots');
+  }
+  // Hover gives the values at that instant; press or drag sets the clock.
+  function hook(id, tipId, key, rowsAt) {
+    const cv = $(id), tip = $(tipId); let down = false;
+    const tAt = (e) => { const r = cv.getBoundingClientRect(), b = boxes[key]; return Math.max(0, Math.min(T_END, ((e.clientX - r.left - b.x) / b.w) * T_END)); };
+    cv.addEventListener('pointerdown', (e) => { down = true; cv.setPointerCapture(e.pointerId); pause(); setTime(tAt(e)); });
+    cv.addEventListener('pointerup', () => { down = false; });
+    cv.addEventListener('pointermove', (e) => {
+      const t = tAt(e), f = frameAt(t), r = cv.getBoundingClientRect(); if (down) setTime(t);
+      tip.innerHTML = '<span class="weak">a shot read out at t ' + (f * DT).toFixed(1) + ' s</span><br>' + rowsAt(f).join('<br>'); tip.hidden = false;
+      const x = e.clientX - r.left, w = tip.offsetWidth; tip.style.left = Math.max(0, Math.min(r.width - w, x + (x > r.width / 2 ? -w - 12 : 12))) + 'px';
+    });
+    cv.addEventListener('pointerleave', () => { tip.hidden = true; });
+  }
+  const dot = (c) => '<span class="sw" style="background:' + c + ';width:8px;height:8px;margin-right:6px"></span>';
+  hook('c-time', 'tip-time', 'time', (f) => { const ch = CH[state.chan]; return D.towers.map((_, d) => dot(TOWER[d]) + (d + 1) + '  ' + fmt(ch[1][f][d] * ch[2], ch[4]) + ' ' + ch[3]); });
+  hook('c-chan', 'tip-chan', 'chan', (f) => { const d = state.sel; return ['walker ' + fmt(D.targets[f][d], 3) + ' rad', 'air    ' + fmt(D.ambient[f][d] * 1e3, 2) + ' mrad', 'noise  ' + fmt(D.noise[f][d] * 1e3, 2) + ' mrad']; });
+
+  // Lanes: drag a bar to change that tower's offset (one edit on release); drag anywhere else to scrub.
+  (function () {
+    const cv = $('c-lanes'); let drag = null;
+    const where = (e) => { const r = cv.getBoundingClientRect(), b = boxes.lanes; return { t: ((e.clientX - r.left - b.x) / b.w) * T_END, d: Math.floor((e.clientY - r.top - b.y) / LANE), x: e.clientX }; };
+    cv.addEventListener('pointerdown', (e) => {
+      const p = where(e); cv.setPointerCapture(e.pointerId);
+      const hit = p.d >= 0 && p.d < NT && shotsOf(spec, p.d).some((s) => p.t >= s.L && p.t <= s.R);
+      if (hit) { select(p.d); drag = { d: p.d, x: p.x, old: spec.offset[p.d], moved: false }; cv.style.cursor = 'grabbing'; }
+      else { drag = { scrub: true }; pause(); setTime(Math.max(0, Math.min(T_END, p.t))); }
+    });
+    cv.addEventListener('pointermove', (e) => {
+      const p = where(e);
+      if (!drag) { const over = p.d >= 0 && p.d < NT && shotsOf(spec, p.d).some((s) => p.t >= s.L && p.t <= s.R); cv.style.cursor = over ? 'grab' : 'ew-resize'; return; }
+      if (drag.scrub) { setTime(Math.max(0, Math.min(T_END, p.t))); return; }
+      const dtm = ((p.x - drag.x) / boxes.lanes.w) * T_END; drag.moved = drag.moved || Math.abs(p.x - drag.x) > 2;
+      spec.offset[drag.d] = wrap(Math.round((drag.old + dtm) * 100) / 100); syncSpec(); refresh();
+    });
+    const end = () => {
+      if (drag && !drag.scrub) { const v = spec.offset[drag.d]; spec.offset[drag.d] = drag.old; if (drag.moved && v !== drag.old) edit('array.tower[' + (drag.d + 1) + '].timing.offset', v, 'timeline'); else { syncSpec(); refresh(); } }
+      drag = null; cv.style.cursor = '';
+    };
+    cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  })();
+  const wrap = (v) => { const c = spec.cadence; return +(((v % c) + c) % c).toFixed(2); };
+
+  // ───────────────────────── console ─────────────────────────
+  const logs = []; let logFilter = 'all';
+  const stamp = () => { const n = new Date(), p = (v, k) => String(v).padStart(k, '0'); return p(n.getHours(), 2) + ':' + p(n.getMinutes(), 2) + ':' + p(n.getSeconds(), 2) + '.' + p(n.getMilliseconds(), 3); };
+  function log(level, sub, msg) {
+    logs.push({ t: stamp(), level, sub, msg }); if (logs.length > 400) logs.shift();
+    if (level === 'error') openConsole(true);
+    renderLog();
+    if (level !== 'cmd') $('foot-msg').textContent = (level === 'warn' ? '⚠ ' : level === 'error' ? '✕ ' : '') + sub + ' · ' + msg;
+  }
+  function renderLog() {
+    const nw = logs.filter((l) => l.level === 'warn').length, ne = logs.filter((l) => l.level === 'error').length;
+    $('n-warn').textContent = nw; $('n-err').textContent = ne;
+    $('f-counts').innerHTML = '<span style="color:' + (nw ? 'var(--warn)' : 'var(--weak)') + '">⚠ ' + nw + '</span> · <span style="color:' + (ne ? 'var(--err)' : 'var(--weak)') + '">✕ ' + ne + '</span>';
+    if ($('console').hidden) return;
+    const el = $('c-log'), esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    el.innerHTML = logs.filter((l) => logFilter === 'all' || l.level === logFilter || (logFilter === 'edit' && l.sub === 'edit'))
+      .map((l) => '<div class="c-line"><span class="weak">' + l.t + '</span><span class="lv-' + l.level + '">' + l.level + '</span><span>' + l.sub + '</span><span>' + esc(l.msg) + '</span></div>').join('');
+    el.scrollTop = el.scrollHeight;
+  }
+  function openConsole(v, focus) {
+    const c = $('console'), want = v === undefined ? c.hidden : v;
+    if (c.hidden === !want) { if (focus) $('c-cmd').focus(); return; }
+    c.hidden = !want; $('c-open').textContent = want ? 'console ▾' : 'console ▴';
+    resize(); renderLog(); drawPlots(); if (want && focus) $('c-cmd').focus();
+  }
+  $('c-open').addEventListener('click', () => openConsole(undefined, true));
+  $('c-close').addEventListener('click', () => openConsole(false));
+  $('c-clear').addEventListener('click', () => { logs.length = 0; renderLog(); });
+  document.querySelectorAll('[data-lv]').forEach((b) => b.addEventListener('click', () => { logFilter = b.dataset.lv; document.querySelectorAll('[data-lv]').forEach((x) => x.classList.toggle('on', x === b)); renderLog(); }));
+
+  // ───────────────────────── the edit path ─────────────────────────
+  // Every way of changing the scene — a slider, a dragged lane, a menu item, a console command, an undo —
+  // goes through edit(). It validates against the schema, records history, logs, and marks what is stale.
+  const SCHEMA = { 'array.cadence': { get: () => spec.cadence, set: (v) => { spec.cadence = v; spec.offset = spec.offset.map((o) => Math.min(o, +(v - 0.01).toFixed(2))); }, min: 1.5, max: 4, unit: 's', stage: 'forward', doc: 'time between a tower\'s launches' } };
+  D.towers.forEach((p, d) => {
+    SCHEMA['array.tower[' + (d + 1) + '].timing.offset'] = { get: () => spec.offset[d], set: (v) => { spec.offset[d] = v; }, min: 0, max: () => spec.cadence - 0.01, unit: 's', stage: 'forward', doc: 'when this tower launches within the cycle' };
+    SCHEMA['array.tower[' + (d + 1) + '].placement'] = { get: () => '(' + p[0] + ', ' + p[1] + ') m', doc: 'tower position' };
+  });
+  SCHEMA['instrument.t_half'] = { get: () => TH + ' s', doc: 'half the interrogation time' };
+  SCHEMA['instrument.u0'] = { get: () => U0 + ' m/s', doc: 'launch velocity' };
+  SCHEMA['source.walker.mass'] = { get: () => D.walker.mass + ' kg', doc: 'walker mass' };
+  SCHEMA['view.slice.plane'] = { get: () => state.sy, set: (v) => { state.sy = Math.round(v); if (state.slice === 'off') state.slice = 'air'; }, min: 0, max: 39, unit: 'cell', stage: 'view', doc: 'slice plane index along y' };
+  const history = [], future = [];
+  function edit(path, value, src, noHistory) {
+    const f = SCHEMA[path];
+    if (!f) { log('error', 'edit', 'no such path: ' + path + ' — try `ls`'); return false; }
+    if (!f.set) { log('error', 'edit', path + ' is read-only in the mock-up'); return false; }
+    const v = Number(value), max = typeof f.max === 'function' ? f.max() : f.max;
+    if (!isFinite(v) || v < f.min || v > max) { log('error', 'edit', path + ' expects a number in [' + f.min + ', ' + max + '] ' + f.unit + ', got ' + value); return false; }
+    const old = f.get(); if (old === v) return true;
+    f.set(v);
+    if (!noHistory) { history.push({ path, old, v }); future.length = 0; }
+    log('info', 'edit', 'Set ' + path + ' ' + old + ' → ' + f.get() + ' ' + f.unit + (f.stage === 'forward' ? ' · forward stale' : '') + (src ? ' · via ' + src : ''));
+    if (f.stage === 'view') { drawSlice(); refresh(); return true; }
+    syncSpec(); if (state.auto) run(); else refresh();
+    return true;
+  }
+  function undo() { const h = history.pop(); if (!h) { log('info', 'edit', 'nothing to undo'); return; } future.push(h); edit(h.path, h.old, 'undo', true); }
+  function redo() { const h = future.pop(); if (!h) { log('info', 'edit', 'nothing to redo'); return; } history.push(h); edit(h.path, h.v, 'redo', true); }
+  function run() {
+    if (!stale()) { log('info', 'worker', 'nothing is stale'); return; }
+    const t0 = performance.now();
+    res = { cadence: spec.cadence, offset: spec.offset.slice() }; rebuild();
+    const n = SH.reduce((a, s) => a + s.length, 0);
+    log('info', 'forward', n + ' shots across ' + NT + ' towers resampled from the recording in ' + (performance.now() - t0).toFixed(1) + ' ms (the real viewer re-runs the forward pass over the cached air here)');
+    syncSpec(); refresh();
+  }
+  function timing(kind) {
+    const before = spec.offset.slice();
+    D.towers.forEach((_, d) => { spec.offset[d] = kind === 'sync' ? 0 : +((d * spec.cadence) / NT).toFixed(2); });
+    history.push({ multi: true, before, after: spec.offset.slice() }); future.length = 0;
+    log('info', 'edit', (kind === 'sync' ? 'Synchronise all towers' : 'Stagger evenly over ' + spec.cadence + ' s') + ' · offsets ' + spec.offset.join(', ') + ' s · forward stale');
+    syncSpec(); if (state.auto) run(); else refresh();
+  }
+  // history entries from bulk actions restore whole offset lists
+  const _undo = undo, _redo = redo;
+  undo = function () { const h = history[history.length - 1]; if (h && h.multi) { history.pop(); future.push(h); spec.offset = h.before.slice(); log('info', 'edit', 'undo · offsets ' + spec.offset.join(', ') + ' s'); syncSpec(); if (state.auto) run(); else refresh(); } else _undo(); };
+  redo = function () { const h = future[future.length - 1]; if (h && h.multi) { future.pop(); history.push(h); spec.offset = h.after.slice(); log('info', 'edit', 'redo · offsets ' + spec.offset.join(', ') + ' s'); syncSpec(); if (state.auto) run(); else refresh(); } else _redo(); };
+
+  // Commands: what the console runs, and what every menu item is.
+  const HELP = ['get <path> · set <path> <value> · ls [prefix]', 'run · undo · redo · auto on|off', 'timing sync | stagger', 'seek <t> · play · pause', 'select tower <n> | walker | radiator | air',
+    'cam orbit|plan|side · slice off|air|response · follow · home · f3', 'lod exact | lod distance <θ> · win prof|run|exp|keys', 'view iso|top|bottom|n|s|e|w · proj persp|ortho · panes 1|2|4 · draw shaded|flat|xray|paper', 'colour contrib|resp|dist|lod|level|mass|height|body', 'voxel pitch 40|20|10|5|2.5 (mm) · voxel tree|parcels · voxel minlevel <n> · voxel cut', 'console · clear · help'];
+  function exec(line, quiet) {
+    const a = line.trim().split(/\s+/), c = (a[0] || '').toLowerCase();
+    if (!c) return;
+    if (!quiet) log('cmd', '›', line.trim());
+    if (c === 'help') HELP.forEach((h) => log('info', 'help', h));
+    else if (c === 'ls') Object.keys(SCHEMA).filter((p) => p.startsWith(a[1] || '')).forEach((p) => log('info', 'spec', p + ' = ' + SCHEMA[p].get() + (SCHEMA[p].set ? '' : '  (read-only)') + '  — ' + SCHEMA[p].doc));
+    else if (c === 'get') { const f = SCHEMA[a[1]]; f ? log('info', 'spec', a[1] + ' = ' + f.get() + (f.unit ? ' ' + f.unit : '')) : log('error', 'spec', 'no such path: ' + a[1] + ' — try `ls`'); }
+    else if (c === 'set') edit(a[1], a[2], 'console');
+    else if (c === 'run') run();
+    else if (c === 'undo') undo();
+    else if (c === 'redo') redo();
+    else if (c === 'auto') { state.auto = a[1] === 'toggle' ? !state.auto : a[1] !== 'off'; syncButtons(); log('info', 'app', 're-run on edit ' + (state.auto ? 'on' : 'off')); if (state.auto && stale()) run(); }
+    else if (c === 'timing' && (a[1] === 'sync' || a[1] === 'stagger')) timing(a[1]);
+    else if (c === 'seek' && isFinite(+a[1])) { pause(); setTime(+a[1]); }
+    else if (c === 'play') { state.playing = true; syncButtons(); }
+    else if (c === 'pause') pause();
+    else if (c === 'select' && a[1] === 'tower' && +a[2] >= 1 && +a[2] <= NT) select(+a[2] - 1);
+    else if (c === 'select' && ['walker', 'radiator', 'air', 'slab'].includes(a[1])) selectObj(a[1]);
+    else if (c === 'voxel' && a[1] === 'pitch' && [40, 20, 10, 5, 2.5].includes(+a[2])) setPitch(+a[2] / 1000, 'console');
+    else if (c === 'voxel' && (a[1] === 'tree' || a[1] === 'parcels')) setRep(a[1]);
+    else if (c === 'voxel' && a[1] === 'minlevel' && +a[2] >= 0 && +a[2] <= vox.top) { state.minLevel = Math.round(+a[2]); paintTrees(); }
+    else if (c === 'voxel' && a[1] === 'cut') setSection();
+    else if (c === 'cam' && { orbit: 1, plan: 1, side: 1 }[a[1]]) setCam({ orbit: 'iso', plan: 'top', side: 'side' }[a[1]]);
+    else if (c === 'slice' && { off: 1, air: 1, response: 1 }[a[1]]) { state.slice = a[1] === 'response' ? 'resp' : a[1]; drawSlice(); }
+    else if (c === 'follow') { state.follow = !state.follow; syncButtons(); }
+    else if (c === 'console') openConsole(undefined, true);
+    else if (c === 'win' && { prof: 1, run: 1, exp: 1, keys: 1 }[a[1]]) toggleWin('w-' + a[1], true);
+    else if (c === 'home') goHome();
+    else if (c === 'view' && CAMS[a[1]]) setCam(a[1]);
+    else if (c === 'proj' && (a[1] === 'persp' || a[1] === 'ortho')) setProj(a[1]);
+    else if (c === 'panes' && [1, 2, 4].includes(+a[1])) setPanes(+a[1]);
+    else if (c === 'draw' && ['shaded', 'flat', 'xray', 'paper'].includes(a[1])) setStyle(a[1]);
+    else if (c === 'colour' && FIELDS[a[1]]) { state.vcol = a[1]; if (state.layers.lodcut && a[1] !== 'lod') toggleLayer('lodcut', false); colourLeaves(); syncButtons(); }
+    else if (c === 'f3') toggleF3();
+    else if (c === 'lod' && (a[1] === 'exact' || a[1] === 'distance')) { state.lod = a[1]; if (a[2] && isFinite(+a[2])) state.theta = Math.max(0.01, Math.min(0.3, +a[2])); $('lod-th').value = state.theta; $('lod-th-v').textContent = state.theta.toFixed(2); state.vcol = 'lod'; colourLeaves(); syncButtons(); }
+    else if (c === 'clear') { logs.length = 0; renderLog(); }
+    else log('error', 'app', 'unknown command: ' + line.trim() + ' — try `help`');
+  }
+  const cmdHist = []; let cmdAt = 0;
+  $('c-cmd').addEventListener('keydown', (e) => {
+    const el = e.target;
+    if (e.key === 'Enter' && el.value.trim()) { cmdHist.push(el.value); cmdAt = cmdHist.length; exec(el.value); el.value = ''; }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); if (cmdAt > 0) el.value = cmdHist[--cmdAt]; }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); el.value = cmdAt < cmdHist.length - 1 ? cmdHist[++cmdAt] : ((cmdAt = cmdHist.length), ''); }
+    else if (e.key === 'Tab') {                     // complete a spec path
+      e.preventDefault(); const parts = el.value.split(/\s+/), last = parts[parts.length - 1], m = Object.keys(SCHEMA).filter((p) => p.startsWith(last));
+      if (m.length === 1) { parts[parts.length - 1] = m[0]; el.value = parts.join(' ') + ' '; }
+      else if (m.length > 1) { let k = last.length; while (m.every((p) => p[k] === m[0][k]) && k < m[0].length) k++; parts[parts.length - 1] = m[0].slice(0, k); el.value = parts.join(' '); }
+    } else if (e.key === 'Escape') { el.blur(); }
+    e.stopPropagation();
+  });
+
+  // ───────────────────────── menus ─────────────────────────
+  // [label, command, key]. A null command is a planned item the mock-up does not implement: shown, disabled.
+  const MENUS = {
+    File: [['New scene from library ▸'], ['Open scene… (.ron)'], ['Open replay / bundle…'], ['-'], ['Save scene'], ['Save replay…'], ['Export ▸']],
+    Edit: [['Undo', 'undo', '⌘Z'], ['Redo', 'redo', '⇧⌘Z'], ['-'], ['Edit history', 'console'], ['Preferences…']],
+    View: [['Home', 'home', 'Home'], ['Hide the GUI', 'f3', 'F3'], ['-'], ['Camera · orbit', 'cam orbit'], ['Camera · plan', 'cam plan'], ['Camera · side', 'cam side'], ['Follow the walker', 'follow'], ['-'], ['Slice · off', 'slice off'], ['Slice · air', 'slice air'], ['Slice · response', 'slice response', 'S cycles'], ['-'], ['Bodies · octree', 'voxel tree'], ['Bodies · recorded parcels', 'voxel parcels'], ['Cut the bodies open', 'voxel cut', 'X'], ['-'], ['Layout ▸'], ['UI scale ▸']],
+    Scene: [['Run stale stages', 'run'], ['Re-run the forward pass on edit', 'auto toggle'], ['-'], ['Add source ▸'], ['Air…'], ['Noise stack…'], ['ULDM…'], ['Seed ▸']],
+    Array: [['Synchronise all towers', 'timing sync'], ['Stagger evenly over the cycle', 'timing stagger'], ['-'], ['Add tower'], ['Layout ▸'], ['Instrument defaults…']],
+    Dataset: [['Builder…'], ['Parameter distributions…'], ['Run batch'], ['Load predicted track…']],
+    Windows: [['Console', 'console', '`'], ['Profiler…', 'win prof'], ['Run settings…', 'win run'], ['Export & share…', 'win exp'], ['Keyboard', 'win keys', '?']],
+    Help: [['Console commands', 'help'], ['Scene spec paths', 'ls']],
+  };
+  const menuEl = $('menu'); let menuOpen = null;
+  Object.keys(MENUS).forEach((name) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'menu'; b.textContent = name; b.setAttribute('aria-expanded', 'false');
+    const open = () => {
+      menuEl.innerHTML = MENUS[name].map(([label, cmd, key]) => label === '-' ? '<div class="sep"></div>'
+        : '<button class="mi" type="button"' + (cmd ? ' data-cmd="' + cmd + '"' : ' disabled title="planned — not in the mock-up"') + '>' + label + (key ? '<span class="key">' + key + '</span>' : '') + '</button>').join('');
+      menuEl.style.left = (b.offsetLeft + b.offsetParent.offsetLeft - 4) + 'px'; menuEl.hidden = false; $('overlays').hidden = true;
+      document.querySelectorAll('.menu').forEach((x) => x.setAttribute('aria-expanded', x === b)); menuOpen = name;
+    };
+    b.addEventListener('click', (e) => { e.stopPropagation(); if (menuOpen === name) closeMenus(); else open(); });
+    b.addEventListener('pointerenter', () => { if (menuOpen && menuOpen !== name) open(); });
+    $('menus').appendChild(b);
+  });
+  function closeMenus() { menuEl.hidden = true; menuOpen = null; document.querySelectorAll('.menu').forEach((x) => x.setAttribute('aria-expanded', 'false')); }
+  menuEl.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); e.stopPropagation(); if (b) { closeMenus(); const c = b.dataset.cmd; if (c === 'help' || c === 'ls') openConsole(true); exec(c); } });
+
+  // ───────────────────────── panels ─────────────────────────
+  const rTable = $('r-table');
+  rTable.innerHTML = '<div class="trow thead"><span></span><span>tower</span><span>ΔΦ rad</span><span>air mrad</span><span>age s</span></div>' +
+    D.towers.map((_, d) => '<button class="trow" type="button" data-d="' + d + '"><span><i class="sw" style="background:' + TOWER[d] + ';display:block"></i></span><span>' + (d + 1) + ' · (' + D.towers[d][0] + ', ' + D.towers[d][1] + ')</span><span></span><span></span><span></span></button>').join('');
+  rTable.addEventListener('click', (e) => { const b = e.target.closest('[data-d]'); if (b) select(+b.dataset.d); });
+  $('l-towers').innerHTML = D.towers.map((_, d) => '<div class="row" style="min-height: 17px; gap: 6px"><span class="sw" style="background:' + TOWER[d] + '"></span><span style="flex: 1; font-size: 11px; white-space: nowrap">tower ' + (d + 1) + '</span><span class="mono strong" style="font-size: 11px" id="l-v' + d + '"></span></div>').join('');
+  $('l-min').textContent = (D.air.scale * 1e3 * FLOOR).toFixed(0); $('l-mid').textContent = (D.air.scale * 1e3 * (1 + FLOOR) / 2).toFixed(0); $('l-max').textContent = (D.air.scale * 1e3).toFixed(0) + ' g/m³';
+  Object.keys(CH).forEach((k) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.dataset.chan = k; b.textContent = CH[k][0];
+    b.addEventListener('click', () => { state.chan = k; syncButtons(); drawPlots(); }); $('t-chan').appendChild(b); });
+
+  // Outliner
+  const node = (host, key, html) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'node'; b.dataset.node = key; b.innerHTML = html; $(host).appendChild(b); return b; };
+  node('o-sources', 'walker', '<span class="sw" style="background: var(--body)"></span>walker<span class="mono">target · 70 kg</span>').addEventListener('click', () => selectObj('walker'));
+  node('o-sources', 'radiator', '<span class="sw" style="background: var(--heat-lo)"></span>radiator<span class="mono">ambient · 70 °C</span>').addEventListener('click', () => selectObj('radiator'));
+  node('o-sources', 'air', '<span class="sw" style="background: var(--heat-hi)"></span>room air<span class="mono">ambient · 19 200 cells</span>').addEventListener('click', () => selectObj('air'));
+  node('o-sources', 'slab', '<span class="sw" style="background: #5a5a5a"></span>floor slab<span class="mono">static · not recorded</span>').addEventListener('click', () => selectObj('slab'));
+  D.towers.forEach((_, d) => node('o-towers', 't' + d, '<span class="sw" style="background:' + TOWER[d] + '"></span>tower ' + (d + 1) + '<span class="mono" id="o-off' + d + '"></span>').addEventListener('click', () => select(d)));
+
+  // Properties: generated for the selection. Editable fields are spec paths; the rest are read-outs.
+  const PROPS = {
+    walker: ['source.walker', [['kind', 'articulated · 6 bones'], ['mass', '70.0 kg'], ['height', '1.75 m'], ['parcels', NP + ' · ' + (P * 100).toFixed(0) + ' cm'], ['channel', 'target'], ['position', '<span id="b-pos"></span>'], ['speed', '<span id="b-speed"></span>']],
+      'voxelised once at rest; each parcel is carried by the skeleton and never re-weighed, so the mass is exact in every pose'],
+    radiator: ['source.radiator', [['kind', 'heated block'], ['surface', '70 °C'], ['film coefficient', '10 W/m²K'], ['cells', D.radiator.length + ' · 25 cm'], ['channel', 'ambient']],
+      'heats the room air through its surface; the plume it sheds is what the air channel reads'],
+    air: ['air', [['room', '10 × 10 × 3 m'], ['grid', NX + ' × ' + NY + ' × ' + NZ + ' · 25 cm'], ['model', 'Boussinesq · closed box'], ['recorded', D.air.frames + ' frames · ' + (DT * D.air.every).toFixed(1) + ' s apart'], ['adaptive grid', 'turn on Slice · air to see it'], ['peak anomaly', (D.air.scale * 1e3).toFixed(0) + ' g/m³ lighter']],
+      'under-resolved at room scale and not validated against measurement: plausible, not predictive'],
+  };
+  function treeProps(key) {
+    const parts = TREES[key], h = state.pitch, per = new Array(Math.max(...parts.map((p) => p.tree.depth)) + 1).fill(0);
+    let cells = 0, leaves = 0, visited = 0, ms = 0;
+    parts.forEach((p) => { cells += p.tree.cells * p.count; leaves += p.tree.N * p.count; visited += p.tree.visited * p.count; ms += p.tree.ms; p.tree.perLevel.forEach((n, l) => { per[l] += n * p.count; }); });
+    while (per.length > 1 && !per[per.length - 1]) per.pop();
+    const top = Math.max(vox.top, 1), mx = Math.max(...per), cm = (l) => { const v = h * (1 << l) * 100; return (v < 1 ? v.toFixed(2) : v.toFixed(0)) + ' cm'; };
+    const rows = [['trees', parts.map((p) => (p.count > 1 ? p.count + ' ' + p.name + 's' : p.name)).join(', ')], ['pitch', (h * 1000) + ' mm'], ['finest cells', cells.toLocaleString('en-GB')], ['leaves', leaves.toLocaleString('en-GB')],
+      ['cells per leaf', (cells / leaves).toFixed(1)], ['nodes visited', visited.toLocaleString('en-GB')], ['built in', ms.toFixed(1) + ' ms · in the page']];
+    return '<div class="kv">' + rows.map(([k, v]) => '<span>' + k + '</span><span>' + v + '</span>').join('') + '</div>' +
+      '<div class="weak mono" style="margin: 6px 0 2px">leaves by level · cell size</div>' +
+      per.map((n, l) => '<div class="lv"><span class="weak">' + l + '</span><span>' + cm(l) + '</span><span><i style="width:' + (n / mx * 100).toFixed(1) + '%; background: rgb(' + levelColour(Math.min(l, top), top).map((v) => Math.round(v * 255)).join(',') + ')"></i></span><span>' + n.toLocaleString('en-GB') + '</span></div>').reverse().join('') +
+      '<div class="note" style="margin-top: 5px">' + { walker: 'six rigid pieces, one tree each, built once; a limb swings by moving one matrix. The interior is a few big cubes; nearly all the leaves are the skin.',
+        radiator: 'a homogeneous block: almost all of it collapses into large cells, with small ones only where its faces miss the grid',
+        slab: 'the floor slab, 10 × 10 × 0.32 m of concrete. Static, so it adds only a constant to each reading; it is not in the recording. Here to show the scale a tree makes cheap.' }[key] + '</div>';
+  }
+  function buildProps() {
+    const host = $('props');
+    if (state.obj !== 'tower' && state.obj !== 'air' && state.rep === 'tree') { $('p-path').textContent = state.obj === 'slab' ? 'structure.slab' : 'source.' + state.obj; host.innerHTML = treeProps(state.obj); return; }
+    if (state.obj === 'slab') { $('p-path').textContent = 'structure.slab'; host.innerHTML = '<div class="note">the floor slab is only drawn in the octree view</div>'; return; }
+    if (state.obj !== 'tower') {
+      const [path, rows, note] = PROPS[state.obj]; $('p-path').textContent = path;
+      host.innerHTML = '<div class="kv">' + rows.map(([k, v]) => '<span>' + k + '</span><span>' + v + '</span>').join('') + '</div><div class="note" style="margin-top: 5px">' + note + '</div>';
+      return;
+    }
+    const d = state.sel, p = D.towers[d], path = 'array.tower[' + (d + 1) + ']';
+    $('p-path').textContent = path;
+    host.innerHTML = '<div class="row"><span class="lab">placement</span><span class="mono strong">(' + p[0] + ', ' + p[1] + ') m · upright</span></div>' +
+      '<div class="row"><span class="lab">offset</span><input class="sl" id="p-off" type="range" min="0" max="' + (spec.cadence - 0.01).toFixed(2) + '" step="0.01" aria-label="Firing offset"><input class="val" id="p-off-n" type="text" inputmode="decimal" aria-label="Firing offset in seconds"></div>' +
+      '<div class="row"><span class="lab">cadence</span><input class="sl" id="p-cad" type="range" min="1.5" max="4" step="0.1" aria-label="Array cadence"><input class="val" id="p-cad-n" type="text" inputmode="decimal" aria-label="Array cadence in seconds"></div>' +
+      '<div class="row"><span class="lab">instrument</span><span class="mono">T 0.73 s · u₀ 3.86 m/s <span class="weak">inherited</span></span></div>' +
+      '<div class="row"><span class="lab">now</span><span class="mono strong" id="p-now"></span></div>' +
+      '<div class="row" style="gap: 4px"><span class="lab">all towers</span><button class="btn" id="p-sync" type="button">synchronise</button><button class="btn" id="p-stag" type="button">stagger evenly</button></div>';
+    const bind = (sl, num, path, live) => {
+      let old = null;
+      $(sl).addEventListener('input', (e) => { if (old === null) old = SCHEMA[path].get(); live(+e.target.value); syncSpec(); refresh(); });
+      $(sl).addEventListener('change', (e) => { const v = +e.target.value; if (old !== null) { live(old); old = null; } edit(path, v, 'properties'); });
+      $(num).addEventListener('change', (e) => { if (!edit(path, e.target.value.replace('−', '-'), 'properties')) syncSpec(); });
+      $(num).addEventListener('keydown', (e) => e.stopPropagation());
+    };
+    bind('p-off', 'p-off-n', path + '.timing.offset', (v) => { spec.offset[d] = v; });
+    bind('p-cad', 'p-cad-n', 'array.cadence', (v) => { spec.cadence = v; });
+    $('p-sync').addEventListener('click', () => exec('timing sync'));
+    $('p-stag').addEventListener('click', () => exec('timing stagger'));
+    syncSpec();
+  }
+  // Push the spec's values into every control that shows them.
+  function syncSpec() {
+    const d = state.sel, st = stale();
+    D.towers.forEach((_, i) => { $('o-off' + i).textContent = '+' + spec.offset[i].toFixed(2) + ' s'; });
+    $('o-cad').textContent = spec.cadence.toFixed(1) + ' s';
+    $('o-stages').innerHTML = ['shape', 'dynamics', 'air', 'forward', 'readout'].map((s) => '<span class="stage' + (st && (s === 'forward' || s === 'readout') ? ' stale' : '') + '">' + s + '</span>').join('');
+    $('run-btn').disabled = !st; $('run-btn').classList.toggle('warn', st); $('run-btn').textContent = st ? 'Run · forward stale' : 'Run';
+    const set = (id, v, max) => { const el = $(id); if (!el) return; if (max) el.max = max; el.value = v; if (el.type === 'range') el.style.setProperty('--fill', ((v - el.min) / (el.max - el.min) * 100) + '%'); };
+    if (state.obj === 'tower') {
+      set('p-off', spec.offset[d], (spec.cadence - 0.01).toFixed(2)); if (document.activeElement !== $('p-off-n')) set('p-off-n', spec.offset[d].toFixed(2));
+      set('p-cad', spec.cadence); if (document.activeElement !== $('p-cad-n')) set('p-cad-n', spec.cadence.toFixed(1));
+    }
+  }
+
+  const LAYERS = [['bounds', 'leaf bounds', '', 'ov-tree'], ['lodcut', 'LOD cut · nearest tower', '', 'ov-tree'],
+    ['air', 'warm air', 'A', 'ov-air'], ['agrid', 'adaptive grid on the slice', '', 'ov-air'],
+    ['path', 'path walked', 'P', 'ov-scene'], ['room', 'room and floor grid', 'R', 'ov-scene'],
+    ['range', 'range to the tower', 'L', 'ov-scene'], ['atoms', 'atom clouds in flight', 'F', 'ov-inst'], ['tags', 'tower readings', 'T', 'ov-inst']];
+  try { const sv = JSON.parse(localStorage.getItem('cav-overlays') || 'null'); if (sv) Object.assign(state.layers, sv); } catch (e) { /* storage unavailable: defaults */ }
+  if (state.layers.agrid === undefined) state.layers.agrid = true;
+  LAYERS.forEach(([k, name, key, host], i) => {
+    const row = document.createElement('div'); row.className = 'row';
+    row.innerHTML = '<button class="cb" role="checkbox" type="button" data-layer="' + k + '"><i></i>' + name + '</button><span class="key">Alt+' + (i + 1) + (key ? ' · ' + key : '') + '</span>';
+    row.firstChild.addEventListener('click', () => toggleLayer(k)); $(host).appendChild(row);
+  });
+  function toggleLayer(k, v) { state.layers[k] = v === undefined ? !state.layers[k] : v; syncButtons(); if (k === 'bounds' || k === 'lodcut') paintTrees(); if (k === 'agrid') drawSlice(); refresh(); }
+  $('ov-save').addEventListener('click', () => { try { localStorage.setItem('cav-overlays', JSON.stringify(state.layers)); log('info', 'app', 'overlays saved as default'); } catch (e) { log('warn', 'app', 'could not save: storage unavailable here'); } });
+  function syncHead() {
+    const pv = state.pitch >= 0.01 ? (state.pitch * 100) + ' cm' : (state.pitch * 1000) + ' mm';
+    $('b-rep').textContent = state.rep === 'tree' ? 'octree · ' + pv + ' · ' + big(vox.leaves) + ' leaves' : 'recorded parcels · 8 cm';
+    const lodOn = state.layers.lodcut && state.rep === 'tree' && lodStat.elems;
+    $('b-lod').hidden = !lodOn;
+    if (lodOn) $('b-lod').textContent = 'LOD ' + (state.lod === 'exact' ? 'exact' : 'θ ' + state.theta.toFixed(2)) + ' · ' + big(lodStat.leaves) + ' leaves → ' + big(lodStat.elems) + ' elements';
+    $('b-follow').hidden = !state.follow;
+    $('b-stale').hidden = !stale();
+    $('cap-top').textContent = 'Scene view · ' + (camera === ortho ? 'ortho' : 'persp') + (camKey ? ' · ' + CAMNAME[camKey] : '') + (panes > 1 ? ' · ' + panes + ' panes: ' + paneRects.slice(1).map((r) => PANENAMES[r.cam]).join(', ') : '');
+  }
+  function syncButtons() {
+    document.querySelectorAll('[data-layer]').forEach((b) => b.setAttribute('aria-checked', state.layers[b.dataset.layer]));
+    $('overlays-n').textContent = Object.values(state.layers).filter(Boolean).length;
+    document.querySelectorAll('[data-chan]').forEach((b) => b.classList.toggle('on', b.dataset.chan === state.chan));
+    document.querySelectorAll('[data-node]').forEach((b) => b.classList.toggle('on', state.obj === 'tower' ? b.dataset.node === 't' + state.sel : b.dataset.node === state.obj));
+    $('follow').setAttribute('aria-checked', state.follow); $('auto').setAttribute('aria-checked', state.auto);
+    document.querySelectorAll('[data-rep]').forEach((b) => b.classList.toggle('on', b.dataset.rep === state.rep));
+    document.querySelectorAll('[data-vcol]').forEach((b) => b.classList.toggle('on', b.dataset.vcol === state.vcol));
+    $('vx-sec').setAttribute('aria-checked', state.section); $('vx-pitch').value = String(state.pitch);
+    $('t-play').textContent = state.playing ? '⏸' : '▶';
+    $('scope').textContent = '⌨ ' + (scopeAt >= 0 ? SCOPES[scopeAt].dataset.scope : 'Scene view') + ' › ' + (state.obj === 'tower' ? 'tower ' + (state.sel + 1) : state.obj);
+    document.querySelectorAll('[data-lod]').forEach((b) => b.classList.toggle('on', b.dataset.lod === state.lod));
+    document.querySelectorAll('[data-cam]').forEach((b) => b.classList.toggle('on', b.dataset.cam === camKey));
+    document.querySelectorAll('[data-proj]').forEach((b) => b.classList.toggle('on', (b.dataset.proj === 'ortho') === (camera === ortho)));
+    document.querySelectorAll('[data-panes]').forEach((b) => b.classList.toggle('on', +b.dataset.panes === panes));
+    document.querySelectorAll('[data-style]').forEach((b) => b.classList.toggle('on', b.dataset.style === state.style));
+    $('vx-field').value = state.layers.lodcut ? 'lod' : state.vcol;
+    syncHead();
+  }
+  $('overlays-btn').addEventListener('click', (e) => { e.stopPropagation(); closeMenus(); const w = $('overlays'); w.hidden = !w.hidden; $('overlays-btn').setAttribute('aria-expanded', !w.hidden); });
+  $('overlays').addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => { $('overlays').hidden = true; closeMenus(); });
+  $('ov-off').addEventListener('click', () => LAYERS.forEach(([k]) => toggleLayer(k, false)));
+  $('ov-on').addEventListener('click', () => LAYERS.forEach(([k]) => toggleLayer(k, true)));
+  $('run-btn').addEventListener('click', () => exec('run'));
+  $('auto').addEventListener('click', () => exec('auto toggle', true));
+
+  function updatePanels() {
+    const f = frameAt(state.t), d = state.sel, p = D.track[f], q = D.track[Math.min(f + 1, F - 1)], o = D.track[Math.max(f - 1, 0)], tw = D.towers[d];
+    if (state.obj === 'walker' && $('b-pos')) {
+      const speed = Math.hypot(q[0] - o[0], q[1] - o[1]) / ((Math.min(f + 1, F - 1) - Math.max(f - 1, 0)) * DT);
+      $('b-pos').textContent = '(' + fmt(p[0], 2) + ', ' + fmt(p[1], 2) + ') m'; $('b-speed').textContent = speed.toFixed(2) + ' m/s';
+    }
+    const r = reading(d, state.t), fl = inFlight(d, state.t);
+    if (state.obj === 'tower' && $('p-now')) $('p-now').textContent = fl ? 'in flight · τ ' + (state.t - fl.L).toFixed(2) + ' s · reads at ' + fl.R.toFixed(2) : 'between shots';
+    $('r-title').textContent = 'Tower ' + (d + 1) + ' · signal by cause';
+    $('r-line').textContent = (r ? fmt(r.v, 3) + ' rad · ' + r.age.toFixed(2) + ' s ago' : 'no shot read out yet') + ' · walker ' + Math.hypot(p[0] - tw[0], p[1] - tw[1]).toFixed(2) + ' m';
+    [...rTable.querySelectorAll('[data-d]')].forEach((row, i) => {
+      const x = reading(i, state.t);
+      row.classList.toggle('on', i === d); row.children[2].textContent = x ? fmt(x.v, 3) : '–'; row.children[3].textContent = x ? fmt(x.a * 1e3, 2) : '–'; row.children[4].textContent = x ? x.age.toFixed(2) : '–';
+    });
+    D.towers.forEach((_, i) => { const x = reading(i, state.t); $('l-v' + i).textContent = x ? fmt(x.v, 3) : '–'; });
+    $('t-val').textContent = 't ' + state.t.toFixed(2);
+  }
+  function select(d) { state.sel = d; state.obj = 'tower'; buildProps(); syncButtons(); drawSlice(); if (FIELDS[state.vcol].tower) colourLeaves(); refresh(); }
+  function selectObj(k) { state.obj = k; buildProps(); syncButtons(); refresh(); }
+  function refresh() { timed('scene', updateScene); timed('plots', drawPlots); timed('panels', updatePanels); }
+  function setTime(t) { state.t = Math.max(0, Math.min(T_END, t)); refresh(); }
+  function pause() { state.playing = false; syncButtons(); }
+  const stepShot = (dir) => {            // to the selected tower's next / previous readout
+    const s = SH[state.sel], n = dir > 0 ? s.find((x) => x.R > state.t + 1e-6) : [...s].reverse().find((x) => x.R < state.t - 1e-6);
+    pause(); if (n) setTime(n.R);
+  };
+
+  const setRep = (r) => { state.rep = r; paintTrees(); buildProps(); syncButtons(); drawSlice(); refresh(); };
+  const setPitch = (h, src) => { const ok = buildVoxels(h); if (ok) log('info', 'edit', 'Set voxel.pitch → ' + h * 1000 + ' mm · shape rebuilt' + (src ? ' · via ' + src : '')); buildProps(); syncButtons(); refresh(); return ok; };
+  const setSection = (v) => { state.section = v === undefined ? !state.section : v; paintTrees(); syncButtons(); };
+  document.querySelectorAll('[data-rep]').forEach((b) => b.addEventListener('click', () => setRep(b.dataset.rep)));
+  $('vx-field').addEventListener('change', (e) => { state.vcol = e.target.value; if (state.layers.lodcut && state.vcol !== 'lod') toggleLayer('lodcut', false); colourLeaves(); syncButtons(); });
+  $('vx-map').addEventListener('change', (e) => { state.cmap = e.target.value; colourLeaves(); });
+  $('vx-pitch').addEventListener('change', (e) => setPitch(+e.target.value, 'outliner'));
+  $('vx-min').addEventListener('input', (e) => { state.minLevel = +e.target.value; paintTrees(); });
+  $('vx-sec').addEventListener('click', () => setSection());
+  document.querySelectorAll('[data-slice]').forEach((b) => b.addEventListener('click', () => { state.slice = b.dataset.slice; drawSlice(); }));
+  $('slice-y').addEventListener('input', (e) => { state.sy = +e.target.value; if (state.slice === 'off') state.slice = 'air'; drawSlice(); });
+  $('follow').addEventListener('click', () => { state.follow = !state.follow; syncButtons(); });
+  $('t-play').addEventListener('click', () => { state.playing = !state.playing; syncButtons(); });
+  $('t-start').addEventListener('click', () => setTime(0));
+  $('t-step').addEventListener('click', () => stepShot(1));
+  $('t-speed').addEventListener('change', (e) => { state.speed = +e.target.value; });
+  window.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); exec(e.shiftKey ? 'redo' : 'undo', true); return; }
+    if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.metaKey || e.ctrlKey) return;
+    if (e.altKey && /^Digit[1-9]$/.test(e.code)) { e.preventDefault(); const L = LAYERS[+e.code.slice(5) - 1]; if (L) toggleLayer(L[0]); return; }
+    if (e.key === 'Tab') { e.preventDefault(); moveScope(e.shiftKey ? -1 : 1); return; }
+    if (e.key === 'F3') { e.preventDefault(); toggleF3(); return; }
+    if (e.key === 'Home') { e.preventDefault(); goHome(); return; }
+    if (e.key === '?') { e.preventDefault(); toggleWin('w-keys'); return; }
+    if (e.key === 'Escape') { if ($('app').classList.contains('f3')) { toggleF3(false); return; } const open = [...document.querySelectorAll('.fw:not([hidden])')].pop(); if (open) { open.hidden = true; return; } if (scopeAt >= 0) { setScope(-1); return; } }
+    const k = e.key.toLowerCase(), layer = LAYERS.find((l) => l[2] && l[2].toLowerCase() === k);
+    if (e.key === ' ') { e.preventDefault(); state.playing = !state.playing; syncButtons(); }
+    else if (e.key === '`') { e.preventDefault(); openConsole(undefined, true); }
+    else if (e.key === 'Escape') { closeMenus(); $('overlays').hidden = true; }
+    else if (e.key === 'ArrowRight') { if (e.shiftKey) stepShot(1); else { pause(); setTime((frameAt(state.t) + 1) * DT); } }
+    else if (e.key === 'ArrowLeft') { if (e.shiftKey) stepShot(-1); else { pause(); setTime((frameAt(state.t) - 1) * DT); } }
+    else if (k >= '1' && k <= '5') select(+k - 1);
+    else if (k === 's') { state.slice = { off: 'air', air: 'resp', resp: 'off' }[state.slice]; drawSlice(); }
+    else if (k === 'x') setSection();
+    else if (k === 'o') setProj(camera === ortho ? 'persp' : 'ortho');
+    else if (layer) toggleLayer(layer[0]);
+  });
+  window.addEventListener('resize', () => { resize(); drawPlots(); });
+
+  // Windows: dragged by the title bar, closed with ×, remember where they were.
+  const WPOS = (() => { try { return JSON.parse(localStorage.getItem('cav-windows') || '{}'); } catch (e) { return {}; } })();
+  document.querySelectorAll('.fw').forEach((w) => {
+    if (WPOS[w.id]) { w.style.left = WPOS[w.id][0] + 'px'; w.style.top = WPOS[w.id][1] + 'px'; }
+    const t = w.querySelector('.fw-t'); let d = null;
+    t.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) return; d = [e.clientX - w.offsetLeft, e.clientY - w.offsetTop]; t.setPointerCapture(e.pointerId); bringFront(w); });
+    t.addEventListener('pointermove', (e) => { if (!d) return; w.style.left = Math.max(-w.offsetWidth + 80, Math.min(innerWidth - 80, e.clientX - d[0])) + 'px'; w.style.top = Math.max(0, Math.min(innerHeight - 30, e.clientY - d[1])) + 'px'; });
+    t.addEventListener('pointerup', () => { if (!d) return; d = null; WPOS[w.id] = [w.offsetLeft, w.offsetTop]; try { localStorage.setItem('cav-windows', JSON.stringify(WPOS)); } catch (e) { /* not kept */ } });
+    w.querySelector('[data-close]').addEventListener('click', () => { w.hidden = true; });
+    w.addEventListener('pointerdown', () => bringFront(w));
+  });
+  let zTop = 80; const bringFront = (w) => { w.style.zIndex = ++zTop; };
+  function toggleWin(id, v) {
+    const w = $(id); w.hidden = v === undefined ? !w.hidden : !v; if (!w.hidden) { bringFront(w);
+      const r = w.getBoundingClientRect(); if (r.right > innerWidth || r.bottom > innerHeight) { w.style.left = Math.max(8, innerWidth - r.width - 8) + 'px'; w.style.top = Math.max(30, Math.min(r.top, innerHeight - r.height - 30)) + 'px'; }
+      if (id === 'w-exp') fillSpec(); if (id === 'w-prof') { refresh(); drawProf(); } }
+  }
+  $('b-runwin').addEventListener('click', () => toggleWin('w-run')); $('b-runwin2').addEventListener('click', () => toggleWin('w-run', true));
+  $('b-prof').addEventListener('click', () => toggleWin('w-prof')); $('b-exp').addEventListener('click', () => toggleWin('w-exp'));
+  $('f-keys').addEventListener('click', () => toggleWin('w-keys'));
+  $('w-run-go').addEventListener('click', () => exec('run'));
+  document.querySelectorAll('[data-lod]').forEach((b) => b.addEventListener('click', () => { state.lod = b.dataset.lod; log('info', 'edit', 'Set gravity.lod → ' + (state.lod === 'exact' ? 'Exact' : 'Distance { θ: ' + state.theta + ' }') + ' · forward stale (view only in the mock-up)'); state.vcol = 'lod'; colourLeaves(); syncButtons(); }));
+  $('lod-th').addEventListener('input', (e) => { state.theta = +e.target.value; $('lod-th-v').textContent = state.theta.toFixed(2); e.target.style.setProperty('--fill', ((state.theta - 0.01) / 0.29 * 100) + '%'); if (state.lod !== 'distance') { state.lod = 'distance'; syncButtons(); } state.vcol = 'lod'; colourLeaves(); });
+  $('lod-th').style.setProperty('--fill', ((state.theta - 0.01) / 0.29 * 100) + '%');
+
+  // Scopes: Tab walks the big ones in a fixed order; an orange ring and the breadcrumb show where you are.
+  const SCOPES = ['Top bar', 'Outliner', 'Scene view', 'Properties', 'Flight', 'Time', 'Legend'].map((n) => document.querySelector('[data-scope="' + n + '"]'));
+  let scopeAt = -1; const scopeTag = document.createElement('div'); scopeTag.className = 'scope-n'; scopeTag.hidden = true; document.body.appendChild(scopeTag);
+  function setScope(i) {
+    SCOPES.forEach((el) => el.classList.remove('scoped')); scopeAt = i; scopeTag.hidden = i < 0;
+    if (i >= 0) { const el = SCOPES[i], r = el.getBoundingClientRect(); el.classList.add('scoped'); scopeTag.textContent = (i + 1) + ' · ' + el.dataset.scope; scopeTag.style.left = (r.left + 4) + 'px'; scopeTag.style.top = (r.top + 3) + 'px'; }
+    syncButtons();
+  }
+  const moveScope = (dir) => setScope(((scopeAt < 0 ? (dir > 0 ? -1 : 0) : scopeAt) + dir + SCOPES.length) % SCOPES.length);
+  document.addEventListener('pointerdown', () => { if (scopeAt >= 0) setScope(-1); });
+
+  // F3: the GUI is a layer over the scene; hide it and the scene fills the window.
+  function toggleF3(v) { const a = $('app'), on = v === undefined ? !a.classList.contains('f3') : v; a.classList.toggle('f3', on); resize(); drawPlots(); if (on) log('info', 'app', 'GUI hidden · F3 or Esc brings it back'); }
+  function goHome() { state.follow = false; setCam('iso'); syncButtons(); log('info', 'view', 'Home · camera reset'); }
+  $('home').addEventListener('click', goHome);
+
+  // Hover: what is under the pointer, read into the header strip (never over the figure). Click selects the body.
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(); let hoverAt = 0, downAt = null;
+  const NAMES = { walker: 'walker', radiator: 'radiator', slab: 'floor slab' };
+  function pick(e) {
+    if (state.rep !== 'tree') return null;
+    const r = canvas.getBoundingClientRect(), mx = e.clientX - r.left - mainPane.x, my = e.clientY - r.top - mainPane.y; if (mx < 0 || my < 0 || mx > mainPane.w || my > mainPane.h) return null; ndc.set((mx / mainPane.w) * 2 - 1, -(my / mainPane.h) * 2 + 1); ray.setFromCamera(ndc, camera);
+    const list = []; for (const key in TREES) TREES[key].forEach((p) => p.meshes.forEach((m) => { if (m.count) list.push(m); }));
+    const hit = ray.intersectObjects(list, false)[0]; if (!hit) return null;
+    for (const key in TREES) for (const p of TREES[key]) if (p.meshes.includes(hit.object)) return { key, piece: p.name, t: p.tree, i: hit.instanceId, pt: hit.point, v: hit.object.userData.val ? hit.object.userData.val[hit.instanceId] : undefined };
+    return null;
+  }
+  canvas.addEventListener('pointermove', (e) => {
+    if (ptrs.size || performance.now() - hoverAt < 70) return; hoverAt = performance.now();
+    if (vox.leaves > 160000) { $('vh-hover').textContent = 'hover read-out off above 160 k leaves'; return; }
+    const h = pick(e);
+    if (!h) { $('vh-hover').textContent = ''; return; }
+    const l = h.t.lev[h.i], s = h.t.h * (1 << l), dist = Math.min(...D.towers.map((tw) => Math.hypot(h.pt.x - tw[0], h.pt.y - tw[1], h.pt.z < 0 ? -h.pt.z : h.pt.z > 10 ? h.pt.z - 10 : 0)));
+    const lodL = Math.max(l, Math.floor(Math.log2(Math.max(state.theta * dist / h.t.h, 1))));
+    $('vh-hover').textContent = NAMES[h.key] + (h.key === 'walker' ? '.' + h.piece : '') + ' · level ' + l + ' · ' + (s * 100).toFixed(s < 0.01 ? 2 : 1) + ' cm cell · ' + dist.toFixed(2) + ' m to the nearest tower · LOD level ' + lodL + (h.v !== undefined && isFinite(h.v) && state.vcol !== 'body' ? ' · ' + FIELDS[state.layers.lodcut ? 'lod' : state.vcol].name.replace(/ · tower $/, '') + ' ' + (Math.abs(h.v) < 0.01 && h.v !== 0 ? h.v.toExponential(2) : h.v.toFixed(3)) : '');
+  });
+  canvas.addEventListener('pointerleave', () => { $('vh-hover').textContent = ''; });
+  canvas.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
+  canvas.addEventListener('pointerup', (e) => {
+    if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return; downAt = null;
+    const h = vox.leaves <= 400000 ? pick(e) : null; if (h) { selectObj(h.key); log('info', 'view', 'selected ' + NAMES[h.key] + ' from the scene'); }
+  });
+
+  // Profiler: real CPU time per stage of this page's frame.
+  const PF = { n: 0, hist: [], acc: { scene: 0, plots: 0, panels: 0, render: 0, tags: 0 }, last: { scene: 0, plots: 0, panels: 0, render: 0, tags: 0 } };
+  const PFC = { scene: css('--t1'), plots: css('--t3'), panels: css('--t2'), render: css('--t5'), tags: '#8c8c8c' };
+  const timed = (k, f) => { const t0 = performance.now(); f(); PF.acc[k] += performance.now() - t0; };
+  function drawProf() {
+    if ($('w-prof').hidden) return;
+    const hs = PF.hist, sorted = hs.slice().sort((a, b) => a - b), pc = (q) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] : 0;
+    $('pf-line').textContent = 'frame ' + (hs[hs.length - 1] || 0).toFixed(1) + ' ms · p50 ' + pc(0.5).toFixed(1) + ' · p95 ' + pc(0.95).toFixed(1) + ' · worst ' + (sorted[sorted.length - 1] || 0).toFixed(1);
+    let c = setup($('pf-trace')), g = c.g, mx = Math.max(20, ...hs);
+    g.strokeStyle = C.rule; g.beginPath(); const y16 = c.h - (16.7 / mx) * (c.h - 4); g.setLineDash([3, 3]); g.moveTo(0, y16); g.lineTo(c.w, y16); g.stroke(); g.setLineDash([]);
+    g.fillStyle = C.weak; g.font = '10px ' + C.mono; g.fillText('16.7 ms', 2, y16 - 3);
+    g.strokeStyle = C.link; g.lineWidth = 1.2; g.beginPath(); hs.forEach((v, i) => { const x = (i / 239) * c.w, y = c.h - (v / mx) * (c.h - 4); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
+    const L = PF.last, tot = Object.values(L).reduce((a, b) => a + b, 0) || 1;
+    c = setup($('pf-bar')); g = c.g; let x = 0;
+    Object.keys(L).forEach((k) => { const w = (L[k] / tot) * c.w; g.fillStyle = PFC[k]; g.fillRect(x, 0, Math.max(0, w - 1), c.h); x += w; });
+    const NM = { scene: 'scene update (bodies, air, atoms)', plots: 'plots and lanes', panels: 'panels', render: 'WebGL submit', tags: 'tags and labels' };
+    $('pf-rows').innerHTML = Object.keys(L).map((k) => '<span><i class="sw" style="background:' + PFC[k] + ';width:9px;height:9px;display:inline-block;margin-right:6px"></i>' + NM[k] + '</span><span>' + L[k].toFixed(2) + ' ms</span>').join('');
+    const ri = renderer.info;
+    $('pf-ctr').innerHTML = [['draw calls', ri.render.calls], ['triangles', big(ri.render.triangles)], ['instances (leaves)', big(state.rep === 'tree' ? vox.leaves : NP)], ['geometries · textures', ri.memory.geometries + ' · ' + ri.memory.textures],
+      ['LOD elements', lodStat.elems ? big(lodStat.elems) + ' · ' + lodStat.ms.toFixed(0) + ' ms to cut' : 'off'], ['JS heap', performance.memory ? (performance.memory.usedJSHeapSize / 1048576).toFixed(0) + ' MB' : 'not reported']]
+      .map(([k, v]) => '<span>' + k + '</span><span>' + v + '</span>').join('');
+  }
+
+  // Export: the spec as the engine would read it.
+  function fillSpec() {
+    const towers = D.towers.map((p, d) => '        Tower(placement: (' + p[0].toFixed(1) + ', ' + p[1].toFixed(1) + ', 0.0), timing: (offset: ' + spec.offset[d].toFixed(2) + ', jitter: 0.0)),').join('\n');
+    $('exp-spec').value = '// cavendish scene spec — generated by the viewer\nSceneSpec(\n    seed: 0,\n    sources: [\n        Walker(mass: 70.0, path: Recorded("walker"), body: Tree(pitch: ' + state.pitch + ')),\n        Radiator(surface: 343.15, film: 10.0, body: Tree(pitch: ' + state.pitch + ')),\n    ],\n    structure: [ Slab(thickness: 0.32, density: 2400.0) ],\n    array: (\n        cadence: ' + spec.cadence.toFixed(1) + ',\n        towers: [\n' + towers + '\n        ],\n    ),\n    instrument: (t_half: 0.73, u0: 3.86, baseline: 10.0),\n    gravity: (lod: ' + (state.lod === 'exact' ? 'Exact' : 'Distance(theta: ' + state.theta.toFixed(2) + ', blend: 0.25)') + '),\n    air: Some((room: (10.0, 10.0, 3.0), grid: Uniform(h: 0.25))),\n)';
+  }
+  $('exp-copy').addEventListener('click', () => {
+    const t = $('exp-spec'); navigator.clipboard.writeText(t.value).then(() => { $('exp-st').textContent = 'copied'; }, () => { t.focus(); t.select(); $('exp-st').textContent = 'selected — press ⌘C'; });
+  });
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { state.playing = false; state.t = 6.4; }
+
+  log('info', 'app', 'ready · browser mock-up of the egui viewer · three.js r128');
+  log('info', 'spec', 'scene "walker + radiator" · 3 sources · ' + NT + ' towers · cadence ' + spec.cadence + ' s · offsets ' + spec.offset.join(', ') + ' s');
+  log('info', 'replay', F + ' frames at ' + (1 / DT).toFixed(0) + ' Hz · ' + NP + ' parcels · ' + CELLS + ' air cells × ' + D.air.frames + ' frames');
+  log('warn', 'air', 'room-scale convection is under-resolved on a 25 cm grid and unvalidated — treat the air channel as plausible, not predictive');
+  $('foot-msg').textContent = 'ready · towers staggered by 0.4 s · drag a lane, or open the console';
+
+  buildVoxels(state.pitch);
+  $('foot-msg').textContent = 'ready · hover the bodies · Overlays ▾ › Octree · Run settings… for pitch and LOD · Tab walks the panels · ? keys';
+  resize(); buildProps(); syncButtons(); syncSpec(); drawSlice(); refresh();
+  let last = performance.now(), fps = 60, acc = 0;
+  (function frame(now) {
+    const dt = Math.max(0, Math.min(0.1, (now - last) / 1000)); last = now; fps += (1 / Math.max(dt, 1e-3) - fps) * 0.05; acc += dt;
+    if (state.playing) { state.t += dt * state.speed; if (state.t > T_END) state.t = 0; refresh(); }
+    placeCamera(); timed('render', renderPanes); timed('tags', placeTags);
+    PF.hist.push(dt * 1000); if (PF.hist.length > 240) PF.hist.shift(); PF.n++;
+    if (PF.n % 15 === 0) { const sum = Object.values(PF.acc).reduce((a, b) => a + b, 0); if (sum > 0) for (const k in PF.acc) PF.last[k] = PF.acc[k] / 15; for (const k in PF.acc) PF.acc[k] = 0; drawProf(); if (state.playing && (state.layers.lodcut || FIELDS[state.vcol].world) && vox.leaves < 200000) colourLeaves(); }
+    if (acc > 0.25) { acc = 0; $('status').textContent = 't ' + state.t.toFixed(2) + ' · ' + Math.round(fps) + ' fps · ' + (state.rep === 'tree' ? big(vox.cells) + ' cells as ' + big(vox.leaves) + ' leaves' : NP + ' parcels') + ' · undo ' + history.length + ' · F3';
+      const ri = renderer.info; $('f-mem').textContent = 'draws ' + ri.render.calls + ' · ' + big(ri.render.triangles) + ' tris' + (performance.memory ? ' · heap ' + (performance.memory.usedJSHeapSize / 1048576).toFixed(0) + ' MB' : ''); }
+    requestAnimationFrame(frame);
+  })(last);
+})();
+</script>
