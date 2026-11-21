@@ -246,12 +246,16 @@ dependencies = [
 [[package]]
 name = "cav-core"
 version = "0.0.0"
+dependencies = [
+ "cav-validate",
+]
 
 [[package]]
 name = "cav-engine"
 version = "0.0.0"
 dependencies = [
  "cav-sim",
+ "cav-validate",
  "schemars",
  "serde",
  "serde_json",
@@ -273,6 +277,7 @@ dependencies = [
  "cav-core",
  "cav-gpu",
  "cav-sim",
+ "cav-validate",
  "png",
  "wgpu",
 ]
@@ -282,11 +287,16 @@ name = "cav-sim"
 version = "0.0.0"
 dependencies = [
  "cav-core",
+ "cav-validate",
  "ron",
  "schemars",
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "cav-validate"
+version = "0.0.0"
 
 [[package]]
 name = "cc"

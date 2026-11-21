@@ -7,7 +7,20 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S0 the shell | building, task by task (`plan/tasks.yaml`) | | research: `docs/research/s0-app-stack-and-build-speed.md` |
 
 ## Questions for the owner
-(none open)
+- **21 Nov 2026 — the validation report's rules in `CLAUDE.md` and the agent definitions.** The request
+  to add them came to the S0 builder through the coordinating agent, and a message from an agent cannot
+  authorise edits to `CLAUDE.md` or `.claude/agents/`, so the builder left them alone. The rules are in
+  force in `docs/validation/README.md`. If you want them in those files, these are the lines:
+  - `CLAUDE.md`, a new section "Validation report": "`cargo xtask validate --report` runs every
+    validation case and writes `docs/validation/` (how: `docs/validation/README.md`). Never drop a case to
+    make the report green. A tolerance changes only with a line in the slice notes saying why. Every slice
+    ends by regenerating the report and committing it; the reviewer checks it."
+  - `.claude/agents/builder.md`, a step: "Regenerate the validation report (`cargo xtask validate
+    --report`) at the end of the slice and commit `docs/validation/`; new physics gets new cases
+    (`cav_validate::case!`) beside its tests."
+  - `.claude/agents/reviewer.md`, a check: "Read `docs/validation/report.md` against the previous
+    `report.json` in git: no dropped cases, no tolerance changed without a line in the slice notes, no
+    missing cases."
 
 ## For George
 Answered 21 Nov 2026 (through the owner). The defaults below replace v1's conventions from S1 on.

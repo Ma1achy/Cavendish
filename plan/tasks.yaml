@@ -32,6 +32,9 @@
 - id: TASK-S0-10
   milestone: S0
   title: 'Slice notes: measured build and test times, results, progress, ideas'
+- id: TASK-S0-11
+  milestone: S0
+  title: 'Validation report: cargo xtask validate --report, cases declared beside their tests, plots, README banner'
 - id: TASK-S1-01
   milestone: S1
   title: 'Forward model in cav-core: flight, arms, propagation integral'

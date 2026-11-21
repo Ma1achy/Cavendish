@@ -441,4 +441,99 @@ mod tests {
         assert_eq!(lo, [-4.0, -4.0, 0.0]);
         assert_eq!(hi, [4.0, 4.0, 10.0]);
     }
+
+    /// How many numbers of `spec` come back with different bits from `trip`.
+    fn changed_numbers(spec: &SceneSpec, back: &SceneSpec) -> f64 {
+        fn numbers(value: &serde_json::Value, out: &mut Vec<u64>) {
+            match value {
+                serde_json::Value::Number(n) => out.push(n.as_f64().map_or(u64::MAX, f64::to_bits)),
+                serde_json::Value::Array(items) => items.iter().for_each(|v| numbers(v, out)),
+                serde_json::Value::Object(map) => map.values().for_each(|v| numbers(v, out)),
+                _ => {}
+            }
+        }
+        let (mut before, mut after) = (Vec::new(), Vec::new());
+        numbers(&serde_json::to_value(spec).unwrap(), &mut before);
+        numbers(&serde_json::to_value(back).unwrap(), &mut after);
+        assert!(before.len() >= 25, "the awkward spec has {} numbers", before.len());
+        if before.len() != after.len() {
+            return f64::INFINITY;
+        }
+        before.iter().zip(&after).filter(|(a, b)| a != b).count() as f64
+    }
+
+    cav_validate::case! {
+        test: validation_spec_ron_round_trip,
+        name: "spec.ron_round_trip",
+        subsystem: "spec",
+        slice: "S0",
+        reference: Exact,
+        against: "a spec of awkward numbers written to RON and read back; numbers whose bits differ",
+        unit: Count,
+        tolerance: 0.0,
+        measure: {
+            let spec = awkward();
+            cav_validate::Measured::Error(changed_numbers(&spec, &SceneSpec::from_ron(&spec.to_ron()).unwrap()))
+        },
+    }
+
+    cav_validate::case! {
+        test: validation_spec_json_round_trip,
+        name: "spec.json_round_trip",
+        subsystem: "spec",
+        slice: "S0",
+        reference: Exact,
+        against: "a spec of awkward numbers written to JSON and read back; numbers whose bits differ",
+        unit: Count,
+        tolerance: 0.0,
+        measure: {
+            let spec = awkward();
+            cav_validate::Measured::Error(changed_numbers(&spec, &SceneSpec::from_json(&spec.to_json()).unwrap()))
+        },
+    }
+
+    #[test]
+    fn the_round_trip_measure_sees_one_changed_number() {
+        // The control arm of the two cases above: nudge one number by one unit in the last place.
+        let spec = awkward();
+        let mut nudged = spec.clone();
+        nudged.duration = f64::from_bits(spec.duration.to_bits() + 1);
+        assert_eq!(changed_numbers(&spec, &nudged), 1.0);
+        assert_eq!(changed_numbers(&spec, &spec), 0.0);
+    }
+
+    cav_validate::case! {
+        test: validation_array_geometry_matches_the_v2_recording,
+        name: "array.geometry_vs_v2_recording",
+        subsystem: "array",
+        slice: "S0",
+        reference: Recording,
+        against: "tower positions and room of docs/viewer-mockup/replay.json (the v2 recording); largest difference",
+        unit: Metres,
+        tolerance: 0.0,
+        measure: {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/viewer-mockup/replay.json");
+            let recording: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let number = |v: &serde_json::Value| v.as_f64().expect("a number");
+            let scene = SceneSpec::room();
+            let mut worst = 0f64;
+            let towers = recording["towers"].as_array().expect("towers");
+            assert_eq!(towers.len(), scene.array.towers.len(), "the recording has five towers");
+            for (recorded, tower) in towers.iter().zip(&scene.array.towers) {
+                for axis in 0..2 {
+                    worst = worst.max((number(&recorded[axis]) - tower.position[axis]).abs());
+                }
+            }
+            // The recording's air grid is the room: origin, and cells × pitch along each axis.
+            let room = scene.room.as_ref().expect("the default scene has a room");
+            let grid = &recording["grid"];
+            for axis in 0..3 {
+                worst = worst.max((number(&grid["origin"][axis]) - room.origin[axis]).abs());
+                worst = worst.max((number(&grid["n"][axis]) * number(&grid["h"]) - room.size[axis]).abs());
+            }
+            // And the flight is the recording's: 2T.
+            worst = worst.max((number(&recording["two_t"]) - 2.0 * scene.array.instrument.half_sequence).abs());
+            cav_validate::Measured::Error(worst)
+        },
+    }
 }
