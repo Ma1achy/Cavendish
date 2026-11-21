@@ -1,0 +1,12 @@
+//! Cavendish simulation: in S0, the scene spec, the view spec and the built-in scene library.
+//! Bodies, paths, dynamics, fluids and bundles arrive with their slices.
+
+pub mod library;
+pub mod spec;
+pub mod view;
+
+pub use library::{LIBRARY, LibraryScene, load};
+pub use spec::{
+    ArraySpec, FloorKind, FloorSpec, InstrumentSpec, RoomSpec, SPEC_VERSION, SceneSpec, SpecError, TowerSpec,
+};
+pub use view::{DrawStyle, FOV_Y_DEGREES, NamedView, Projection, ViewSpec};
