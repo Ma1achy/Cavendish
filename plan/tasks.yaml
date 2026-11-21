@@ -1,0 +1,226 @@
+# One entry per task, by slice of plan/REBUILD.md §9. The README's progress grid reads this file: a task is done when
+# the PR from branch task/<id> merges into main, or when its status is `done`. The builder adds, splits and renames
+# tasks as slice briefs are written; ids never change once used.
+
+- id: TASK-S0-01
+  milestone: S0
+  title: Workspace, crates and xtask (quick, gpu, oracle, demo)
+- id: TASK-S0-02
+  milestone: S0
+  title: 'egui app shell: menu bar, outliner, properties, timeline, console, footer'
+- id: TASK-S0-03
+  milestone: S0
+  title: '3-D view: room, five towers, named views, perspective and orthographic, panes, draw styles'
+- id: TASK-S0-04
+  milestone: S0
+  title: Engine command/query API and event log
+- id: TASK-S0-05
+  milestone: S0
+  title: 'Headless CLI: cav doctor, cav render to PNG'
+- id: TASK-S0-06
+  milestone: S0
+  title: MCP server answering scene_schema
+- id: TASK-S0-07
+  milestone: S0
+  title: 'Dev scenes: void and infinite floor (empty)'
+- id: TASK-S1-01
+  milestone: S1
+  title: 'Forward model in cav-core: flight, arms, propagation integral'
+- id: TASK-S1-02
+  milestone: S1
+  title: Oracle crate at v1-final and George's anchors
+- id: TASK-S1-03
+  milestone: S1
+  title: Point mass you can drag; live phase per tower
+- id: TASK-S1-04
+  milestone: S1
+  title: Signal plot and periodograms (classical, Lomb–Scargle)
+- id: TASK-S1-05
+  milestone: S1
+  title: 'Oscillator library: linear, circular, pendulum, sphere'
+- id: TASK-S1-06
+  milestone: S1
+  title: Harmonic comb and Nyquist folding tests
+- id: TASK-S1-07
+  milestone: S1
+  title: Infinite-floor and void null tests pass
+- id: TASK-S2-01
+  milestone: S2
+  title: SceneSpec, RON files, paths and schema
+- id: TASK-S2-02
+  milestone: S2
+  title: 'One edit path: panels, console, CLI, MCP; undo and replay'
+- id: TASK-S2-03
+  milestone: S2
+  title: Per-tower timing and firing lanes
+- id: TASK-S2-04
+  milestone: S2
+  title: 'Instrument presets: AION-10 and AICE 100 m'
+- id: TASK-S2-05
+  milestone: S2
+  title: Cadence designer (jitter, alternation, gaps, loss)
+- id: TASK-S2-06
+  milestone: S2
+  title: Headless run writes a bundle (.npy) with numerics block
+- id: TASK-S3-01
+  milestone: S3
+  title: 'VoxTree: Morton keys, build, sidecars, moments'
+- id: TASK-S3-02
+  milestone: S3
+  title: 'Shapes and cover(): primitives, convex polyhedra, Platonic solids, meshes'
+- id: TASK-S3-03
+  milestone: S3
+  title: Top-down voxeliser, bit-exact against the raster oracle
+- id: TASK-S3-04
+  milestone: S3
+  title: Lossless merge and the cube series
+- id: TASK-S3-05
+  milestone: S3
+  title: Per-object volumes drawn as trees; colour by field with generated legends
+- id: TASK-S3-06
+  milestone: S3
+  title: Cylinder, cuboid and scaffold tests vs the reference scripts
+- id: TASK-S3-07
+  milestone: S3
+  title: 'Debug overlays: leaf bounds, LOD cut'
+- id: TASK-S4-01
+  milestone: S4
+  title: World volume in chunks with palettes and region-file cache
+- id: TASK-S4-02
+  milestone: S4
+  title: Greedy-meshed near field with GPU-driven culling
+- id: TASK-S4-03
+  milestone: S4
+  title: Ray-marched far field and clipmap LOD
+- id: TASK-S4-04
+  milestone: S4
+  title: Streaming around camera and towers
+- id: TASK-S4-05
+  milestone: S4
+  title: stress-1e10 and flythrough scenes, measured
+- id: TASK-S4-06
+  milestone: S4
+  title: Paper style exported to SVG
+- id: TASK-S5-01
+  milestone: S5
+  title: GPU tree walk with float-float accumulation and parity tests
+- id: TASK-S5-02
+  milestone: S5
+  title: Local frames and differential evaluation (precision-far scene)
+- id: TASK-S5-03
+  milestone: S5
+  title: Bounded walk and instrument LOD with error badge
+- id: TASK-S5-04
+  milestone: S5
+  title: Error ledger in bundles
+- id: TASK-S5-05
+  milestone: S5
+  title: 'Live read: preview then refine, frame-budget scheduler'
+- id: TASK-S6-01
+  milestone: S6
+  title: Paths and populations
+- id: TASK-S6-02
+  milestone: S6
+  title: Articulated walkers on per-bone trees
+- id: TASK-S6-03
+  milestone: S6
+  title: 'Outdoor library: traffic, aircraft, birds, drones'
+- id: TASK-S6-04
+  milestone: S6
+  title: 'Motion-geometry tests: harmonic ratio vs tilt and symmetries'
+- id: TASK-S6-05
+  milestone: S6
+  title: Source fingerprinting from combs
+- id: TASK-S7-01
+  milestone: S7
+  title: Rigid solver with sub-stepping and exact rest
+- id: TASK-S7-02
+  milestone: S7
+  title: Voxel contact from distance sidecars
+- id: TASK-S7-03
+  milestone: S7
+  title: 'Destruction: split into new bodies, mass conserved'
+- id: TASK-S7-04
+  milestone: S7
+  title: Structural support pass
+- id: TASK-S7-05
+  milestone: S7
+  title: 'Voxel FE modal analysis: cantilever and plate modes'
+- id: TASK-S7-06
+  milestone: S7
+  title: contact-gallery and million-bodies scenes
+- id: TASK-S8-01
+  milestone: S8
+  title: Uniform GPU fluid on the world volume
+- id: TASK-S8-02
+  milestone: S8
+  title: Conservative stamping of moving bodies
+- id: TASK-S8-03
+  milestone: S8
+  title: Response and contribution maps
+- id: TASK-S8-04
+  milestone: S8
+  title: Heated cavity within 1% (de Vahl Davis)
+- id: TASK-S8-05
+  milestone: S8
+  title: Moving-ball oracle through the grid path
+- id: TASK-S8-06
+  milestone: S8
+  title: Slices, volumes and streamlines in the viewer
+- id: TASK-S9-01
+  milestone: S9
+  title: Balanced octree grid with level transfers
+- id: TASK-S9-02
+  milestone: S9
+  title: Well-balanced buoyancy and multigrid-PCG projection
+- id: TASK-S9-03
+  milestone: S9
+  title: Goal-oriented refinement by tower response
+- id: TASK-S9-04
+  milestone: S9
+  title: Fully refined equals uniform; at-rest on a graded grid
+- id: TASK-S9-05
+  milestone: S9
+  title: No step in the signal on regrid
+- id: TASK-S10-01
+  milestone: S10
+  title: Free-surface liquid with level set
+- id: TASK-S10-02
+  milestone: S10
+  title: Full-density gravity read and displaced volume
+- id: TASK-S10-03
+  milestone: S10
+  title: Two-way coupling with rigid bodies
+- id: TASK-S10-04
+  milestone: S10
+  title: Tanks, boats, river level changes, waterfall stand-in
+- id: TASK-S11-01
+  milestone: S11
+  title: Python package cavendish in Four's style
+- id: TASK-S11-02
+  milestone: S11
+  title: Typed tables with roles; leak-proof batching
+- id: TASK-S11-03
+  milestone: S11
+  title: Splits, manifests, ledger, run cache, verify
+- id: TASK-S11-04
+  milestone: S11
+  title: Dataset builder in GUI and CLI
+- id: TASK-S11-05
+  milestone: S11
+  title: Baseline trackers and the CRB table
+- id: TASK-S11-06
+  milestone: S11
+  title: Benchmark sets with null scenes
+- id: TASK-S11-07
+  milestone: S11
+  title: 'Sampling studies: jitter, alias ratio, lost shots, lift excision'
+- id: TASK-S12-01
+  milestone: S12
+  title: Beecroft stairwell scene and populations
+- id: TASK-S12-02
+  milestone: S12
+  title: Seismic Newtonian noise (placeholder spectrum)
+- id: TASK-S12-03
+  milestone: S12
+  title: Published ordering and masked fraction reproduced

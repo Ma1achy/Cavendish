@@ -1,0 +1,86 @@
+# The README's build-progress grid (copied from Principia). After every push to `main`, scripts/progress_banner.py
+# draws a square per task of plan/tasks.yaml, grouped by slice: ink when merged, ochre with an open PR from
+# `task/<TASK-id>`, a pencil outline when not started. Light and dark themes, rendered to PNG and force-pushed as the one
+# commit of the orphan branch `progress`, which the README shows. It never commits to `main`, runs on no pull request and
+# gates nothing: it is a picture, not a check.
+name: progress
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: progress
+  cancel-in-progress: true
+
+jobs:
+  progress:
+    runs-on: ubuntu-24.04
+    steps:
+      # main's full history: a task is done when main has its PR's merge commit (`git log --merges`).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: main
+          fetch-depth: 0
+      # The generator needs Python and PyYAML, as plan/check_plan.py does.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML
+        run: python3 -m pip install pyyaml
+      # Open PRs, whose `task/<TASK-id>` heads draw their tasks amber; the generator skips PRs from forks
+      # (`isCrossRepository`), since anyone can open one from a branch of that name.
+      - name: List open PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr list --state open --limit 500 --json headRefName,isCrossRepository > "$RUNNER_TEMP/open-prs.json"
+      # The script from the commit this run is for (main's head on a push; the dispatched branch's otherwise), run on
+      # main's tasks.yaml, REBUILD.md and merge history; on a push to main the two are the same commit.
+      - name: Draw the grid, light and dark
+        run: |
+          set -euo pipefail
+          git show "$GITHUB_SHA:scripts/progress_banner.py" > "$RUNNER_TEMP/progress_banner.py"
+          git log --merges --format=%s > "$RUNNER_TEMP/merges.txt"
+          for theme in light dark; do
+            python3 "$RUNNER_TEMP/progress_banner.py" -o "$RUNNER_TEMP/progress-$theme.svg" --theme "$theme" \
+              --tasks plan/tasks.yaml --milestones plan/REBUILD.md --merges "$RUNNER_TEMP/merges.txt" \
+              --commit "$(git rev-parse --short HEAD)" --open-prs "$RUNNER_TEMP/open-prs.json"
+          done
+      # librsvg, from the runner's own Ubuntu archive, renders the SVGs to PNG; the SVGs' font list falls back from
+      # `Helvetica Neue` through `Arial`, `Liberation Sans` and `DejaVu Sans` to `sans-serif`, so the runner's fonts take
+      # over. The log lists which of the list's families the runner has (librsvg takes the first it finds).
+      - name: Install rsvg-convert
+        timeout-minutes: 8
+        run: |
+          bounded() { limit=$1; shift; for attempt in 1 2 3; do sudo timeout -k 10 "$limit" "$@" && return; echo "attempt $attempt of 3 failed or ran past $limit s, $*"; done; return 1; }
+          bounded 90 apt-get update
+          bounded 420 apt-get install -y --no-install-recommends librsvg2-bin -oDPkg::Lock::Timeout=60
+          fc-list : family | grep -E "Helvetica|Arial|Liberation Sans|Arimo|Nimbus Sans|DejaVu Sans" | sort -u || true
+      - name: Render the PNGs
+        run: |
+          set -euo pipefail
+          for theme in light dark; do
+            rsvg-convert --zoom 2 --format png -o "$RUNNER_TEMP/progress-$theme.png" "$RUNNER_TEMP/progress-$theme.svg"
+          done
+      # `progress` holds one commit, the latest grid in both themes as SVG and PNG, replaced on every run.
+      - name: Publish to the progress branch
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse --short HEAD)
+          git switch --orphan progress
+          for theme in light dark; do
+            cp "$RUNNER_TEMP/progress-$theme.svg" "progress-$theme.svg"
+            cp "$RUNNER_TEMP/progress-$theme.png" "progress-$theme.png"
+          done
+          cp progress-light.svg progress.svg
+          cp progress-light.png progress.png
+          git add progress-light.svg progress-light.png progress-dark.svg progress-dark.png progress.svg progress.png
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet --message "progress: main @ $sha"
+          git push --force origin HEAD:refs/heads/progress
