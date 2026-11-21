@@ -9,42 +9,125 @@
 pub use compute::{ComputeBackend, EvalBatch, SignalBatch};
 pub use gravity::FieldContribution;
 pub use scenario::{
-    hash, uldm_phase, AtmoConfig, AtmoField, BodyMotion, Detector, DetectorArray, Dist, FieldSet,
-    Key, KeyRng, NoiseSource, NoiseStack, Orient, Path, PhaseModel, PhaseModelKind, Prescribed,
-    Prior, RunConfig, Scenario, Schedule, ShotNoise, Source, SourceDynamics, Timing, Trajectory,
-    UldmConfig, VibrationResidual,
+    hash, uldm_phase, Ambient, AtmoConfig, AtmoField, BodyMotion, Channel, Detector, DetectorArray,
+    Dist, Eval, FieldSet, Key, KeyRng, NoiseSource, NoiseStack, Orient, Path, PhaseModel,
+    PhaseModelKind, Prescribed, Prior, Rigid, RunConfig, Scenario, Schedule, ShotNoise, Source,
+    SourceDynamics, Timing, Track, Trajectory, UldmConfig, VibrationResidual, WorldSource,
 };
 pub use state::{Dual, Isometry3, Mat3, Periodogram, Quat, Scalar, StateBundle, Vec3};
 
 use instrument::{PropagationIntegral, QuasiStaticGradient};
 use state::{frequency_grid, lomb_scargle, Meta};
 
+/// The scene's sources routed to the forward model's sockets, per decomposition channel.
+#[derive(Default)]
+struct Routed<'a> {
+    rigid: Vec<&'a dyn SourceDynamics>,
+    fields: Vec<&'a dyn FieldContribution<f64>>,
+    /// Sources evaluated through their exact linear-response reformulation instead of quadrature.
+    fast: Vec<&'a dyn WorldSource>,
+}
+
+impl Routed<'_> {
+    /// The two single-interferometer phases contributed by the fast-path sources.
+    fn fast_per_ifo(&self, pi: &PropagationIntegral, det: &Detector, t: f64) -> Option<[f64; 2]> {
+        if self.fast.is_empty() {
+            return None; // nothing to add — keeps a v1 scene's arithmetic bit-identical
+        }
+        let mut acc = [0.0; 2];
+        for s in &self.fast {
+            let [d1, d2] = s
+                .per_ifo_fast(&pi.cfg, det, t)
+                .expect("a source that offers a fast path offers it at every measurement");
+            acc[0] += d1;
+            acc[1] += d2;
+        }
+        Some(acc)
+    }
+}
+
 /// Drive a scenario through the forward model and channels to a `StateBundle`.
 ///
-/// `signal = targets + atmospheric + uldm + noise`. The atmospheric field is summed into the potential
-/// in the forward pass (never post-hoc); ULDM is common-mode (once per tick, broadcast); noise is the
-/// ordered post-hoc stack. With `field_set.decomposition` on, the gravitational phase is evaluated per
-/// group (targets-only, atmo-only — the ≈2× cost) so each channel is recorded exactly by superposition.
+/// `signal = targets + atmospheric + uldm + noise`. Every source enters through the one
+/// `WorldSource` seam and is routed to the phase integral's rigid or field socket; ambient sources
+/// (air, structure) and the analytic atmospheric field are summed in the forward pass (never
+/// post-hoc); ULDM is common-mode (once per tick, broadcast); noise is the ordered post-hoc stack.
+/// With `field_set.decomposition` on, the gravitational phase is evaluated per channel
+/// (targets-only, ambient-only — the ≈2× cost) so each is recorded exactly by superposition.
 pub fn run(scenario: &Scenario) -> StateBundle {
     let model: Box<dyn PhaseModel> = match scenario.phase_model {
         PhaseModelKind::PropagationIntegral => Box::new(PropagationIntegral::default()),
         PhaseModelKind::QuasiStatic => Box::new(QuasiStaticGradient::default()),
     };
     let pi = PropagationIntegral::default(); // reference single-IFO phases for signal_per_ifo
-    let sources: [&dyn SourceDynamics; 1] = [scenario.source.as_ref()];
-    // Atmospheric modes are drawn ONCE per scenario, then evaluated in every forward pass.
+                                             // Atmospheric modes are drawn ONCE per scenario, then evaluated in every forward pass.
     let atmo = scenario.atmo.map(|c| AtmoField::realise(&c, scenario.seed));
-    let fields: Vec<&dyn FieldContribution<f64>> = atmo
-        .iter()
-        .map(|a| a as &dyn FieldContribution<f64>)
-        .collect();
     let decompose = scenario.field_set.decomposition;
     let d = scenario.array.detectors.len();
 
+    // Route each source to its socket. A linear-response fast path reformulates the propagation
+    // integral, so it is only taken when that is the phase model in use.
+    let fast_ok = scenario.phase_model == PhaseModelKind::PropagationIntegral;
+    let probe = scenario
+        .array
+        .detectors
+        .first()
+        .zip(scenario.schedule.times.first());
+    let (mut targets, mut ambient) = (Routed::default(), Routed::default());
+    for src in &scenario.sources {
+        let src: &dyn WorldSource = src.as_ref();
+        let group = match src.channel() {
+            Channel::Target => &mut targets,
+            Channel::Ambient => &mut ambient,
+        };
+        match src.eval() {
+            Eval::Rigid(r) => group.rigid.push(r),
+            Eval::Field(f) => {
+                let fast = fast_ok
+                    && probe.is_some_and(|(det, &t)| src.per_ifo_fast(&pi.cfg, det, t).is_some());
+                if fast {
+                    group.fast.push(src);
+                } else {
+                    group.fields.push(f);
+                }
+            }
+        }
+    }
+    if let Some(a) = &atmo {
+        ambient.fields.insert(0, a);
+    }
+    // The combined pass: every rigid source, then every field — one forward evaluation.
+    let all_rigid: Vec<&dyn SourceDynamics> = targets
+        .rigid
+        .iter()
+        .chain(&ambient.rigid)
+        .copied()
+        .collect();
+    let all_fields: Vec<&dyn FieldContribution<f64>> = targets
+        .fields
+        .iter()
+        .chain(&ambient.fields)
+        .copied()
+        .collect();
+    let double = |x: Option<[f64; 2]>| x.map_or(0.0, |[d1, d2]| d2 - d1);
+
+    let tracked: Vec<&dyn WorldSource> = scenario
+        .sources
+        .iter()
+        .map(|s| s.as_ref())
+        .filter(|s| s.body_cloud().is_some())
+        .collect();
+    let n_src = tracked.len();
+
     let mut time = Vec::new();
     let mut signal = Vec::new();
-    let (mut track, mut vel, mut acc) = (Vec::new(), Vec::new(), Vec::new());
-    let (mut orient, mut angvel, mut angacc) = (Vec::new(), Vec::new(), Vec::new());
+    let mut track = vec![Vec::new(); n_src];
+    let (mut vel, mut acc) = (vec![Vec::new(); n_src], vec![Vec::new(); n_src]);
+    let (mut orient, mut angvel, mut angacc) = (
+        vec![Vec::new(); n_src],
+        vec![Vec::new(); n_src],
+        vec![Vec::new(); n_src],
+    );
     let mut mask = Vec::new();
     // Channel accumulators — filled only when decomposing.
     let (mut targets_ch, mut atmo_ch, mut uldm_ch, mut per_ifo_ch) =
@@ -54,15 +137,32 @@ pub fn run(scenario: &Scenario) -> StateBundle {
         let mut row = Vec::with_capacity(d);
         let (mut trow, mut arow, mut pirow) = (Vec::new(), Vec::new(), Vec::new());
         for det in &scenario.array.detectors {
+            let fast_t = targets.fast_per_ifo(&pi, det, t);
+            let fast_a = ambient.fast_per_ifo(&pi, det, t);
             let grav = if decompose {
-                let ft = model.delta_phi(&sources, &[], det, t); // targets only
-                let fa = model.delta_phi(&[], &fields, det, t); // atmo only (the 2nd pass)
+                let mut ft = model.delta_phi(&targets.rigid, &targets.fields, det, t);
+                let mut fa = model.delta_phi(&ambient.rigid, &ambient.fields, det, t); // the 2nd pass
+                let mut both = pi.per_ifo(&all_rigid, &all_fields, det, t);
+                if fast_t.is_some() {
+                    ft += double(fast_t);
+                }
+                if fast_a.is_some() {
+                    fa += double(fast_a);
+                }
+                for fast in [fast_t, fast_a].into_iter().flatten() {
+                    both[0] += fast[0];
+                    both[1] += fast[1];
+                }
                 trow.push(ft);
                 arow.push(fa);
-                pirow.push(pi.per_ifo(&sources, &fields, det, t));
+                pirow.push(both);
                 ft + fa
             } else {
-                model.delta_phi(&sources, &fields, det, t) // one combined pass
+                let mut g = model.delta_phi(&all_rigid, &all_fields, det, t); // one combined pass
+                if fast_t.is_some() || fast_a.is_some() {
+                    g += double(fast_t) + double(fast_a);
+                }
+                g
             };
             row.push(grav);
         }
@@ -79,24 +179,28 @@ pub fn run(scenario: &Scenario) -> StateBundle {
             per_ifo_ch.push(pirow);
         }
 
-        let pose = scenario.source.pose_at(t);
-        let m = scenario.source.motion_at(t);
         time.push(t);
-        track.push([pose.translation.x, pose.translation.y, pose.translation.z]);
-        vel.push([m.velocity.x, m.velocity.y, m.velocity.z]);
-        acc.push([m.acceleration.x, m.acceleration.y, m.acceleration.z]);
-        let q = pose.rotation;
-        orient.push([q.w, q.x, q.y, q.z]);
-        angvel.push([
-            m.angular_velocity.x,
-            m.angular_velocity.y,
-            m.angular_velocity.z,
-        ]);
-        angacc.push([
-            m.angular_acceleration.x,
-            m.angular_acceleration.y,
-            m.angular_acceleration.z,
-        ]);
+        for (s, src) in tracked.iter().enumerate() {
+            let tr = src
+                .track_at(t)
+                .expect("a source with a body cloud reports a track");
+            let (pose, m) = (tr.pose, tr.motion);
+            track[s].push([pose.translation.x, pose.translation.y, pose.translation.z]);
+            vel[s].push([m.velocity.x, m.velocity.y, m.velocity.z]);
+            acc[s].push([m.acceleration.x, m.acceleration.y, m.acceleration.z]);
+            let q = pose.rotation;
+            orient[s].push([q.w, q.x, q.y, q.z]);
+            angvel[s].push([
+                m.angular_velocity.x,
+                m.angular_velocity.y,
+                m.angular_velocity.z,
+            ]);
+            angacc[s].push([
+                m.angular_acceleration.x,
+                m.angular_acceleration.y,
+                m.angular_acceleration.z,
+            ]);
+        }
         mask.push(scenario.schedule.mask.get(idx).copied().unwrap_or(false));
     }
 
@@ -110,16 +214,21 @@ pub fn run(scenario: &Scenario) -> StateBundle {
         }
     }
 
-    let shape = scenario
+    // Body-frame geometry per tracked source, so the loaded path can pose and render each cloud
+    // without the scenario; and (optionally) its second-moment descriptors.
+    let bodies: Vec<&gravity::Cloud> = tracked.iter().filter_map(|s| s.body_cloud()).collect();
+    let shape: Option<Vec<gravity::Inertia>> = scenario
         .field_set
         .shape
-        .then(|| gravity::inertia(scenario.source.body_cloud()));
-
-    // Body-frame geometry, so the loaded path can pose and render the cloud without the scenario.
-    let body = scenario.source.body_cloud();
-    let source_cloud = vec![(0..body.len())
-        .map(|i| [body.xs[i], body.ys[i], body.zs[i], body.ms[i]])
-        .collect()];
+        .then(|| bodies.iter().map(|b| gravity::inertia(b)).collect());
+    let source_cloud = bodies
+        .iter()
+        .map(|body| {
+            (0..body.len())
+                .map(|i| [body.xs[i], body.ys[i], body.zs[i], body.ms[i]])
+                .collect()
+        })
+        .collect();
 
     // Lomb–Scargle per detector on the (possibly non-uniform) measurement times — the correct
     // estimator when the schedule is gappy/jittered.
@@ -137,12 +246,12 @@ pub fn run(scenario: &Scenario) -> StateBundle {
     StateBundle {
         time,
         signal,
-        source_position: vec![track],
-        source_velocity: vec![vel],
-        source_accel: vec![acc],
-        source_orientation: vec![orient],
-        source_angular_velocity: vec![angvel],
-        source_angular_accel: vec![angacc],
+        source_position: track,
+        source_velocity: vel,
+        source_accel: acc,
+        source_orientation: orient,
+        source_angular_velocity: angvel,
+        source_angular_accel: angacc,
         source_cloud,
         detector_placement: scenario.array.placements(),
         mask,
@@ -150,11 +259,13 @@ pub fn run(scenario: &Scenario) -> StateBundle {
             seed: scenario.seed,
             description: "M5 channels spine".into(),
         },
-        source_mass: shape.map(|r| vec![r.mass]),
-        source_inertia: shape.map(|r| vec![r.i.m]),
-        source_moments: shape.map(|r| vec![r.moments]),
-        source_axes: shape.map(|r| vec![r.axes.m]),
-        source_quadrupole: shape.map(|r| vec![r.q.m]),
+        source_mass: shape.as_ref().map(|v| v.iter().map(|r| r.mass).collect()),
+        source_inertia: shape.as_ref().map(|v| v.iter().map(|r| r.i.m).collect()),
+        source_moments: shape
+            .as_ref()
+            .map(|v| v.iter().map(|r| r.moments).collect()),
+        source_axes: shape.as_ref().map(|v| v.iter().map(|r| r.axes.m).collect()),
+        source_quadrupole: shape.as_ref().map(|v| v.iter().map(|r| r.q.m).collect()),
         signal_noise: noise,
         signal_uldm: decompose.then_some(uldm_ch),
         signal_targets: decompose.then_some(targets_ch),

@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 source = { path = "../source" }
+world = { path = "../world" }
 instrument = { path = "../instrument" }
 uldm = { path = "../uldm" }
 noise = { path = "../noise" }

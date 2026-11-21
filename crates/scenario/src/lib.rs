@@ -13,6 +13,7 @@ pub use source::{
     BodyMotion, Orient, Path, Prescribed, Source, SourceDynamics, Timing, Trajectory,
 };
 pub use uldm::{uldm_phase, UldmConfig};
+pub use world::{Ambient, Channel, Eval, Rigid, Track, WorldSource};
 
 use gravity::Cloud;
 use math::{Isometry3, Quat, Vec3};
@@ -71,9 +72,11 @@ impl Schedule {
     }
 }
 
-/// One runnable scene: a source, a detector array, a schedule, the seed, and the phase model.
+/// One runnable scene: its sources, a detector array, a schedule, the seed, and the phase model.
 pub struct Scenario {
-    pub source: Box<dyn SourceDynamics>,
+    /// Everything massive in the world, behind the one source seam. Gravity is linear, so a scene is
+    /// a flat list; order fixes the bundle's source axis and nothing else.
+    pub sources: Vec<Box<dyn WorldSource>>,
     pub array: DetectorArray,
     pub schedule: Schedule,
     pub seed: u64,
@@ -93,14 +96,25 @@ pub struct Scenario {
 }
 
 impl Scenario {
+    /// A scene of one rigid source — the v1 constructor, unchanged.
     pub fn new(
         source: Box<dyn SourceDynamics>,
         array: DetectorArray,
         schedule: Schedule,
         seed: u64,
     ) -> Self {
+        Scenario::scene(vec![Box::new(Rigid(source))], array, schedule, seed)
+    }
+
+    /// A scene of any number of sources of any kind.
+    pub fn scene(
+        sources: Vec<Box<dyn WorldSource>>,
+        array: DetectorArray,
+        schedule: Schedule,
+        seed: u64,
+    ) -> Self {
         Scenario {
-            source,
+            sources,
             array,
             schedule,
             seed,
@@ -110,6 +124,12 @@ impl Scenario {
             uldm: None,
             atmo: None,
         }
+    }
+
+    /// Add a source to the scene (builder style).
+    pub fn with_source(mut self, source: Box<dyn WorldSource>) -> Self {
+        self.sources.push(source);
+        self
     }
 
     /// Attach the post-hoc noise stack (builder style).
