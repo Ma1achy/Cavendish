@@ -4,18 +4,22 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 
 | Slice | State | Tag | Notes |
 |---|---|---|---|
-| S0 the shell | research under way; build blocked on the Rust toolchain (see below) | | |
+| S0 the shell | research under way, then build | | |
 
 ## Questions for the owner
-- **21 Nov 2026 — install Rust on the build PC?** Neither `cargo` nor `rustup` is present (no
-  `~/.cargo`, no `~/.rustup`); the MSVC build tools are (VS Build Tools 2026, VS Community 2022).
-  Installing rustup, the pinned stable toolchain and `cargo-nextest` writes outside the repo, so it
-  waits for a yes. Until then only research notes and briefs can move; no slice can be built.
+(none open)
 
-## The build machine, as found
-- Windows 10 Pro, NVIDIA GeForce GTX 1660 SUPER (6 GB), Python 3.14, `gh` logged in.
-- The §5 target (60 fps at 1440p, 10¹⁰ cells) was written without knowing the card; S4 measures
-  first and says what this card holds.
+## Owner's rulings (21 Nov 2026)
+- **Tools on the build PC:** anything the build needs may be installed. Done so far: rustup with
+  stable `x86_64-pc-windows-msvc` (rustc 1.100.0), `cargo-nextest`.
+- **GitHub:** `gh` for all GitHub work (git pushes use its login via `gh auth setup-git`); plain git
+  for local commits; never force-push.
+- **This PC is for building and testing correctness only** (Windows 10 Pro, GTX 1660 SUPER, 6 GB).
+  The design and the targets are not shrunk to fit it. Every slice works here at whatever scale the
+  card manages; the measured numbers go in the slice notes; the performance targets (60 fps, 10¹⁰
+  cells, latency budgets) are marked "to be measured on a faster GPU later" and do not fail a slice.
+  Correctness, oracle and GPU-parity tests must pass here.
+- `origin/build-machine` was already in `main` (merge `176bc81`); nothing further to merge.
 
 ## Decisions worth a second look
 (none yet)
