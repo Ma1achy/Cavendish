@@ -147,7 +147,10 @@ gap listed next.
   the design settled on — is not built, and there is no skinned-mesh import to feed it.
 - Parcels use point elements (fine at range: a cube has no multipole below the hexadecapole). The
   cube kernel is used for grid fields only.
-- No octree of any kind.
+- No octree of any kind — now planned as its own milestone (`milestones/M14-voxel-engine.md`,
+  `design/voxel.md`), not a deferred note.
+- One measurement schedule for the whole array; no per-tower timing or instrument settings, and no
+  scene file format (`milestones/M15-array-timing-and-scene-spec.md`).
 - Vibration is the Kirchhoff plate and v1's rigid `Path::Oscillation`. Room acoustic modes are not built.
 - None of the new physics has an independent oracle of George's kind; it is checked against analytic
   results and one published benchmark.
@@ -169,6 +172,18 @@ the code; run what could not be run here — `cargo clippy --workspace --all-tar
 the Python suite, the GPU-marked tests on a real device; re-run `bundle_hash` against `main`.
 **Exit:** CI green on the PR, including the GPU and Python jobs.
 
+### Step 1b — The voxel core, phases A–C (before any GPU source work)
+
+`milestones/M14-voxel-engine.md`. The tree, the top-down voxeliser, the lossless merge with the cube
+series, and the tolerance-bounded walk, on the CPU in `f64`. It comes before step 3 because the device
+encoding of a source should be the tree; porting the flat cloud first means porting twice.
+**Exit:** the brief's phase A–C lines, including the measured speed table.
+
+### Step 1c — Per-tower timing and the scene spec
+
+`milestones/M15-array-timing-and-scene-spec.md`. Independent of 1b; needed by the viewer's
+configuration panels. A data-contract change: spec first.
+
 ### Step 2 — GPU: the fluid solve
 
 The measured cost is the fluid step, split evenly between advection and the pressure solve. Port to
@@ -180,6 +195,9 @@ divergence ≤1e-4 of pre-projection; plume test passes on GPU; speed-up measure
 the 2080 (Vulkan), not on a software adapter.
 
 ### Step 3 — GPU: sources and float-float
+
+(M14 phase F: with the voxel core in place, the first bullet becomes "upload each rigid body's and
+each bone's tree once and walk it on-device"; only blend-region parcels are streamed per tick.)
 
 - Per-tick parcel clouds in `forward.wgsl`: stream posed positions (or bone transforms plus weights and
   skin on-device) instead of one static cloud. Differential-first per element, as the rigid kernel is.
@@ -193,6 +211,9 @@ the 2080 (Vulkan), not on a software adapter.
 `tests/world.rs` scenes, **on both real devices**.
 
 ### Step 3b — The scene viewer (independent of steps 2–3)
+
+(Phases A–F as below; the full interface — spec-bound panels, per-tower lanes, console, dataset
+builder — is §9 of the brief, phases G–J, and needs step 1c.)
 
 `milestones/M13-viewer-v2.md`: a scene replay beside the bundle, one continuous clock, the air as a
 slice and a ray-marched volume, each detector's response map, the decomposition panel, background runs
@@ -211,8 +232,9 @@ In rough order of value for Gradar: open boundaries and ventilation; convergence
 benchmark at Ra=10⁵ and 10⁶ (Nu 4.519, 8.800) and a 3-D case; volumetric skinning weights by Laplace
 diffusion plus skinned glTF import; room acoustic modes as an analytic grid field; box–box contact
 (SAT + clipping, manifold reduction) with the rest-determinism test extended to stacks; two-way
-coupling only if a water or near-buoyant scene needs it. Octrees only if profiling shows the parcel
-sum dominating.
+coupling only if a water or near-buoyant scene needs it. Box–box and arbitrary-shape contact, the
+per-bone trees and the hierarchical grid response are M14 phases D–E. Adaptive refinement of the air
+is the last item and is gated on a measurement (`design/voxel.md` §9).
 
 ### Step 6 — Gradar datasets
 

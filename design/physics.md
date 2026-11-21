@@ -375,14 +375,16 @@ recorded tracks → air around them → both into the `Scenario`. Nothing is co-
   decides whether a learned denoiser is needed or a spectral filter suffices. One data point exists: a
   70 °C radiator about a metre from a tower gave a peak ambient phase of 2.2e-2 rad against a 1e-3 rad
   shot floor; a warm 0.4 m block gave ~1e-4 rad. Neither is validated.
-- **Contact:** box–box (SAT with clipping and manifold reduction), joints and constraints, stacks under
-  the rest-determinism test.
+- **Contact:** box–box and arbitrary shapes from voxels (M14 phase E, in place of per-shape SAT),
+  joints and constraints, stacks under the rest-determinism test.
 - **Two-way coupling** — the slot exists (§7); fill it only for a scene that needs it.
 - **Volumetric skinning weights** by Laplace diffusion from authored surface weights, and skinned
   glTF import (§6.2).
-- **Octrees.** None is built. The mass octree (interior collapse for the parcel sum) is worth building
-  only if profiling shows the parcel sum dominating; the collision broad-phase only with many bodies;
-  fluid AMR only after the GPU port.
+- **The voxel core.** None of it is built; it is planned as M14 (`design/voxel.md`): one tree for the
+  voxeliser, the gravity read (lossless interior merge, tolerance-bounded far field), per-bone trees
+  for articulated bodies, a hierarchical grid response, obstacle stamping and contact. At the pitches
+  used so far (5–8 cm) the merge alone gains under 2×; its value is in making fine bodies affordable.
+  The world-level collision tree waits for many bodies; adaptive air is gated on a measurement.
 - **Room acoustics** — standing-wave density modes as an analytic grid field.
 - **Differentiability.** The crate is `f64`, not `Scalar`-generic. Nothing in it is on the CRB's
   differentiable path (`design/world.md` §7); if a simulated source ever needs a Jacobian, that

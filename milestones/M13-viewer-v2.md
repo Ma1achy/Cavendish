@@ -4,6 +4,12 @@
 > extends, and its new §10). Depends on: M11 (scenes of many sources), M12 (bodies that deform, air
 > that moves). Independent of the GPU compute work; can be built in parallel with it.
 >
+> **Extended (§9):** the full interface — panels, menus, the configuration editor, the console, and a
+> timeline and flight view for towers that fire on their own clocks. Those parts depend on **M15**
+> (per-tower timing and the `SceneSpec`); phases A–D below do not. The look is the one in the browser
+> mock-up (egui dark, Ubuntu Light / Ubuntu Mono, 28 px menu bar, side panels with collapsing headers,
+> a bottom strip, a footer that opens into the console).
+>
 > **Goal.** See a v2 scene the way the instrument and a person would both want to: bodies walking,
 > falling and folding in continuous time; the air's plume as a volume; what each gradiometer is
 > listening to; and the signal, split by channel, moving under the same cursor.
@@ -204,3 +210,185 @@ R9 → `headless_frame_per_layer` (capture path) · R10 → `fails_soft_on_panic
 - **Streamlines** instead of glyphs for the velocity field; isosurfaces instead of ray-marching.
 - **The spec.** The viewer section (`viewer` under System Components) should gain a sentence on the
   replay when phase A lands; it is not a data-contract change.
+
+---
+
+## 9. The interface, in full
+
+§3.3 is a player. This section is the tool: every panel and menu, how a scene is configured from the
+GUI, the console, and what changes when towers are not synchronised.
+
+### 9.1 Additional requirements
+
+| ID | Requirement |
+|---|---|
+| M13-R11 | **Everything editable is the `SceneSpec`** (M15). Property panels are generated from its schema (label, unit, range, doc string as hover text); no panel holds scene state of its own. |
+| M13-R12 | **One edit path.** A slider, a text field, a console command, a loaded file and an undo all issue the same `Edit::Set { path, value }`. Edits are logged, undoable, and tagged with the stage they invalidate. |
+| M13-R13 | **Stale, not blocked.** After an edit the affected stages show a *stale* badge and the old result stays on screen; **Run** re-runs from the earliest stale stage only (M15's `diff`). View edits never trigger a run. |
+| M13-R14 | **Per-tower timeline.** One lane per tower; each shot is a bar from launch (`t − 2T_d`) to readout (`t`); offsets, jitter and masked shots are visible; the cursor crosses all lanes. Dragging a lane sideways edits that tower's offset. |
+| M13-R15 | **Per-tower flight view.** Space–time diagrams on a shared *absolute* time axis, one row per tower (selected tower enlarged), each with its own `T`, launch velocity and baseline, and a marker where its clouds are at the cursor. |
+| M13-R16 | **Signals without a shared sample index.** Traces are plotted against each tower's own readout times; the "all towers at the cursor" table shows each tower's latest reading and its age; cross-tower quantities are labelled as interpolated when they are. |
+| M13-R17 | **Console.** The footer opens into a log stream (time, level, subsystem, message; level filters, text filter, copy, clear) with a command line bound to the same edit path. Errors open it. |
+| M13-R18 | **Menus and keyboard** as §9.3 and §9.7; every menu action is also a console command and appears in the command palette. |
+| M13-R19 | **Dataset builder.** A scene spec plus parameter distributions → a batch run on the worker with progress, throughput and an estimate of size on disk. |
+| M13-R20 | **Profiler.** Per-stage wall-clock for the last run (shape, dynamics, air, forward by source, noise), frame time, device and adapter. |
+
+### 9.2 Layout
+
+```
+┌ cavendish · dev   File  Edit  View  Scene  Array  Dataset  Windows  Help      Overlays ▾   ⌘K   t 9.10 · 60 fps ┐
+├─ Outliner ───────┬──────────────────────── 3-D view ───────────────────────────┬─ Properties ───────────────────┤
+│ ▾ Sources        │                                                             │ (of the selection)              │
+│   walker    ●    │   bodies · air (slice / dots / volume) · towers and clouds  │ Tower 3                         │
+│   radiator  ●    │   response map · trails · tree cells · measure tool         │  placement  x  y  z  tilt       │
+│ ▾ Array          │                                                             │  timing     offset 0.292 s      │
+│   tower 1 … 5    │                                                             │             jitter 0 ms         │
+│ ▾ Air            │                                                             │  instrument T  u₀  Δr  (inherit)│
+│ ▾ Noise · ULDM   ├─ Timeline ──────────────────────────────────────────────────┤  reading · channels at cursor   │
+│ ▾ Run            │ T1 ▕██████▏   ▕██████▏   ▕██████▏                            │                                 │
+│  shape ✓ air ⟳   │ T2    ▕██████▏   ▕██████▏   ▕██████▏         one lane/tower  ├─ Signals ──────────────────────┤
+│  forward stale   │ T3       ▕██████▏   ▕██████▏   ▕██░░░▏ masked                │ per tower · by cause · spectrum │
+├──────────────────┴────────────────────────────────────────────────────────────┴─────────────────────────────────┤
+│ Flight (per tower, absolute time)          │ Decomposition / Response / Legend (tabs)                            │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ready · forward stale (tower 3 offset) · ⚠ 1                                             console ▴   Space play │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Panels dock, tab, float and hide (`egui_dock`); layouts are saved by name; "Reset layout" is one
+click. Three presets ship: **Explore** (above), **Configure** (outliner and properties wide, timeline
+tall), **Dataset** (builder and run queue; small preview).
+
+### 9.3 Menus
+
+| Menu | Items |
+|---|---|
+| **File** | New scene from library ▸ · Open scene… (`.ron`) · Open replay / bundle… · Recent ▸ · Save scene · Save scene as… · Save replay… · Export ▸ (bundle `.npy` set, screenshot, frame sequence, signal CSV) · Quit |
+| **Edit** | Undo · Redo · Edit history… · Copy value · Copy path · Paste value · Revert selection to default · Preferences… |
+| **View** | Camera ▸ (orbit, plan, side, follow selection, frame selection, save view…) · Layers ▸ (the Overlays list) · Slice ▸ (off, air, response, gradient) · Colour maps… · UI scale ▸ · Layout ▸ (presets, save, reset) · Full-screen view |
+| **Scene** | Add source ▸ (point, primitive, mesh…, walker, plate, dropped object, radiator) · Duplicate · Remove · Air… · Noise stack… · ULDM… · Seed ▸ (set, reroll) · Run (stale stages) · Run all · Cancel · Record replay |
+| **Array** | Add tower · Remove tower · Layout ▸ (line, cross, ring, grid, from file…) · Timing ▸ (synchronise all, stagger evenly over 2T, stagger by…, add jitter…, reset) · Instrument defaults… · Copy settings from tower ▸ |
+| **Dataset** | Builder… · Parameter distributions… · Run batch · Queue · Open output folder · Load predicted track… |
+| **Windows** | one toggle per panel · Console · Profiler · Edit history · Keyboard · Legend |
+| **Help** | Keyboard reference · Scene spec reference (generated from the schema) · About (version, adapter, wgpu) |
+
+### 9.4 Panels
+
+| Panel | Shows | Edits |
+|---|---|---|
+| **Outliner** | the spec as a tree: sources (colour swatch, channel, visibility eye, solo), array, air, noise, ULDM; the run's stages with state (fresh / stale / running / failed) | select, reorder, rename, hide, solo; context menu = the Scene and Array menus for that row |
+| **Properties** | the selection's schema fields, grouped; inherited values greyed with the source of the value; derived read-outs (mass, parcels or leaves, Ra, flight apex) below | every field; drag-to-scrub numbers; reset-to-default per field; a field edited since the last run is marked |
+| **3-D view** | §3.2's passes; tower tags with live reading; gizmos for the selection | move / rotate a source's start pose or a tower's placement with a gizmo (issues the same `Edit`); measure tool (distance, and range to each tower) |
+| **Timeline** | lanes per tower (R14); source events (contact, sleep, wake) as ticks; air span; the cursor | scrub; drag a lane to change an offset; click a shot to select `(tower, ℓ)`; box-select shots to mask |
+| **Signals** | per-tower traces on own readout times; split by cause on separate scales; periodogram tab; predicted-track error tab | channel visibility; which towers are overlaid; y-scale lock |
+| **Flight** | R15 | none (read-out); hover gives `τ`, arm separation, height |
+| **Response** | the selected tower's response on the slice or as a volume, for the shot under the cursor | plane, log scale, range |
+| **Decomposition** | at the cursor: targets / ambient / ULDM / noise per tower as a table and bars; residual of the identity | none |
+| **Legend** | generated from what is on screen: colours ↔ sources and towers, dot size and colour bars with units | none |
+| **Console** | R17 | commands |
+| **Profiler** | R20 | none |
+| **Dataset builder** | R19 | distributions per spec path (fixed / uniform / normal / choice), count, root seed, output folder, fields |
+| **Edit history** | every `Edit` since load, with stage tags | click to revert to that point |
+
+### 9.5 Configuration — how an edit flows
+
+```
+slider / field / gizmo / console / file ──► Edit::Set{path, value} ──► SceneSpec ──► diff ──► stale stages
+                                                   │                                              │
+                                             history (undo)                              Run ──► worker: Shape → Dynamics → Air → Forward → Readout
+                                                   │                                              │
+                                              console log                             replay + bundle swapped in when complete
+```
+
+- The viewer keeps the **last complete result** and the **current spec** separately. The 3-D view and
+  plots draw the result; the panels edit the spec. They differ exactly when something is stale, and
+  the footer says what and why (`forward stale (tower 3 offset)`).
+- Cached stage outputs are keyed by the hash of the spec fields that stage reads, so changing a tower
+  offset re-runs the forward pass over a recorded air field in seconds, not the fluid simulation.
+- **Auto-run** is a toggle, on only for stages under a time budget measured from the last run (the
+  forward pass, typically); never for the fluid.
+- Timing edits get a dedicated dialog as well (**Array ▸ Timing**): a table of towers × (offset,
+  jitter, `T`, `u₀`), a preview of the lanes, and the three bulk actions.
+
+### 9.6 Towers on their own clocks — what changes on screen
+
+- **Timeline:** the single row of measurement ticks becomes lanes. The shaded "flight band" under the
+  cursor becomes one band per tower, at different places.
+- **3-D view:** each tower's atom clouds are drawn where *that* tower's current shot has them — or
+  absent, between shots. A tower mid-flight has its arms drawn; one that has just read out pulses.
+- **Flight view:** rows share the absolute time axis so the stagger is visible as a horizontal shift,
+  and a shorter `T` as a narrower, lower diagram.
+- **Tower tags and the table:** each shows its latest reading and how old it is (`−0.884 rad · 0.31 s
+  ago`); "at the cursor" no longer means "the same sample".
+- **Response panel:** the response is per `(tower, shot)` because the air it weighs is the air during
+  *that* tower's flight; with a uniform per-tower cadence it is one map per tower, shifted in time.
+- **Decomposition:** per tower at its own latest shot; any cross-tower combination is computed on
+  interpolated values and labelled so.
+
+### 9.7 Console
+
+- **Stream.** Rows of `time · level · subsystem · message`; subsystems are `app`, `spec`, `edit`,
+  `shape`, `dynamics`, `air`, `forward`, `noise`, `render`, `worker`. Filters by level and text; copy;
+  clear. The engine logs through the `log` facade into a ring buffer (one small dependency); the same
+  buffer feeds the profiler's event list.
+- **What gets logged without being asked:** every edit (`edit  Set array.tower[2].timing.offset 0 →
+  0.292 s · forward stale`); stage start/finish with wall-clock; solver health (pressure iterations,
+  residual, CFL, mass lost at the grid edge); anything the engine refuses (a query outside a field's
+  span, an unsupported contact pair) as an error with the offending values.
+- **Command line.** `get <path>` · `set <path> <value>` · `reset <path>` · `ls [path]` · `run [stage]`
+  · `cancel` · `select <path>` · `cam <preset>` · `seek <t>` · `export <kind> <file>` · `help [cmd]`.
+  Tab-completion from the schema; history with ↑; a failed command prints the schema's expected type
+  and range. Every menu item is one of these, so a session can be replayed from its log.
+- **Command palette** (`⌘K` / `Ctrl-K`): fuzzy search over the same commands and over spec paths.
+
+### 9.8 Keyboard
+
+Space play/pause · ←/→ step one playback frame · ⇧←/→ step to the previous/next shot of the selected
+tower · 1–9 select tower · Tab cycle sources · F frame selection · S cycle slice · O orbit · P plan ·
+`⌘Z`/`⇧⌘Z` undo/redo · `⌘R` run · `⌘.` cancel · `` ` `` console · `⌘K` palette · `⌘S` save scene.
+Keys act on the panel under the pointer first, then globally; text fields swallow everything.
+
+### 9.9 Additional modules, phases and tests
+
+Modules: `edit` (the edit type, history, undo), `stages` (cache keys, stale tracking), `panels::*`
+(one file per panel), `schema_ui` (schema → widgets), `console` (ring buffer, parser, completion),
+`timeline` (lanes, hit-testing), `flight` (per-tower diagrams), `palette`.
+
+| Phase | Delivers | Requirements |
+|---|---|---|
+| **G — spec-bound panels** | outliner, properties from the schema, edit path, history and undo, stale badges, staged re-run | R11, R12, R13 |
+| **H — towers on their own clocks** | lane timeline, per-tower flight view, signals on own times, the timing dialog | R14, R15, R16 |
+| **I — console and commands** | log stream, command line, palette, menus wired to commands, keyboard map | R17, R18 |
+| **J — dataset and profiler** | dataset builder, run queue, profiler | R19, R20 |
+
+G needs M15; H needs M15's timing; I and J need neither beyond the spec's paths.
+
+| Level | Test | Asserts |
+|---|---|---|
+| unit | `every_schema_field_has_a_widget` | each schema type maps to a widget; no field is silently dropped |
+| unit | `edit_undo_redo_roundtrip` | N random edits, undo all → the original spec, bit for bit |
+| unit | `all_entry_points_issue_the_same_edit` | a widget change, a console `set` and a file load of the same value produce identical `Edit`s |
+| unit | `stale_stage_matches_spec_diff` | the badge shown = M15's `diff` for a table of edits |
+| unit | `cached_air_survives_a_timing_edit` | after a tower-offset edit, the air stage is not re-run and the forward result equals a full run |
+| unit | `lanes_place_shots_at_detector_time` | bar start/end = `detector_time − 2T_d`, `detector_time`; hit-testing returns `(tower, ℓ)` |
+| unit | `lane_drag_edits_offset` | a drag of `δ` pixels issues `Set …timing.offset` by `δ / pixels_per_second` |
+| unit | `flight_rows_share_absolute_time` | a tower with offset `δ` is drawn shifted by `δ`; one with half the `T` spans half the width |
+| unit | `age_of_reading_is_cursor_minus_readout` | the table's age column |
+| unit | `console_parses_and_completes` | each command parses; completion lists schema children; bad input returns the expected type |
+| unit | `menu_items_are_commands` | every menu entry has a command string that the parser accepts |
+| unit | `log_ring_buffer_bounds` | capacity respected; filters compose |
+| integration | `session_replays_from_its_log` | the commands logged in a session, replayed on a fresh app, give the same spec |
+| integration | `dataset_builder_matches_batch` | the builder's output equals `generate::batch` called directly with the same root seed |
+| e2e | `headless_layout_presets_render` | each layout preset renders every visible panel non-empty at 1440×900 and 1024×700 |
+
+Exit, in addition to §6: a scene can be built, configured, run, re-run after a timing edit and
+exported **without leaving the GUI or touching Rust**; the same scene saved to `.ron` and run from the
+command line gives a bit-identical bundle.
+
+### 9.10 Open questions
+
+- **Gizmo edits of trajectories** (dragging a path's waypoints in 3-D) — wanted, but each `Path` kind
+  needs its own handles; start with start-pose and tower placement only.
+- **Text editing of the spec in-app** (a RON pane with live validation) versus properties only.
+- **Remote runs** (viewer on the Mac, engine on the 2080 box): the worker boundary is already a
+  message channel; a socket is the same shape. Not planned until local runs are the bottleneck.

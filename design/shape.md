@@ -109,8 +109,9 @@ pub fn voxelise(s: &dyn Solid, v: &VoxelParams, m: MassSpec) -> Result<Cloud, Sh
    order-sensitive; a canonical order keeps runs reproducible across platforms.
 
 There is deliberately no interior "hollowing": gravity needs the interior mass (unlike rendering).
-Interior *coarsening* (octree super-voxels far from the surface) is a possible performance
-extension, noted in §12 — an accuracy-preserving merge, not a removal.
+Interior *coarsening* (octree super-voxels far from the surface) is planned as M14
+(`design/voxel.md` §4–5) — an accuracy-preserving merge, not a removal; the raster voxeliser here
+stays as its bit-exact oracle.
 
 ---
 
@@ -278,8 +279,8 @@ the field path in one closed-form comparison.
   format is a vetted dependency, but the winding number is the correctness core and is written here,
   verified against the analytic solid angle and brute force.
 - **Format set.** STL/OBJ/glTF proposed; PLY and STEP (CAD) deferred until a real need appears.
-- **Interior coarsening.** Octree super-voxels away from the surface — an accuracy-preserving `N`
-  reduction for very large bodies; interacts with `gravity`'s element law (bigger prisms near-exact).
+- **Interior coarsening.** Planned as M14 (`design/voxel.md`): `Solid::cover` and a top-down build,
+  with merged interior cells evaluated by a cube series or split back into children.
 - **Heterogeneous density.** The `ρ(x)` callback is cheap; the import-side assignment (materials,
   per-region density) is the real question.
 - **CSG beyond union.** Difference/intersection as `Solid` combinators if scenes need cavities.

@@ -333,6 +333,11 @@ Each drill-down is its own file under `design/<subsystem>.md`.
 9. **`world` → `physics`** — the generalised source seam and the scene simulator (v2).
    → **`design/world.md`, `design/physics.md` (done; implemented M11–M12)**
 
+10. **`voxel`** — the sparse hierarchical representation shared by the voxeliser, the gravity read,
+    the air, contact and the viewer (v2).
+    → **`design/voxel.md` (designed; planned as M14, not built)**. Per-tower timing and the scene spec
+    have a brief (`milestones/M15-array-timing-and-scene-spec.md`) and no drill-down yet.
+
 **Bottom-up drill-down phase complete.** All subsystems designed: `gravity`, `compute`, `shape`
 (`design/shape.md` — geometry → mass, added after the phase closed), `source`, `instrument`,
 `uldm`, `noise`, `scenario`, `state` (+ the `analysis` split), `generate`, `sdk`, `viewer`. Remaining passes (separate): the **milestone-sequencing** pass, and the **M0 implementation

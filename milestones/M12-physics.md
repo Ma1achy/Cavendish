@@ -151,4 +151,5 @@ tests · R9 → `generate/tests/world.rs`.
 
 GPU execution of anything here; fluid validation beyond Ra = 10⁴, in 3-D or at room scale; open
 boundaries; box–box contact, joints, two-way coupling; Laplace-diffused skinning weights and skinned
-mesh import; octrees; room acoustics. See `design/physics.md` §10 and `milestones/V2-HANDOFF.md`.
+mesh import; octrees (M14, `milestones/M14-voxel-engine.md`); room acoustics. See `design/physics.md`
+§10 and `milestones/V2-HANDOFF.md`.

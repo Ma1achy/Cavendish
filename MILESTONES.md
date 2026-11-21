@@ -52,7 +52,10 @@ M9  viewer             ─┘
 M10 mesh import            (off the critical path; any time after M2)
 M11 world seam         ─┐  v2: one source seam (a scene is a list of sources of any kind);
 M12 physics layer       │  parcel bodies, rigid dynamics, convecting air — CPU. Implemented.
-M13 scene viewer       ─┘  planned: continuous-time replay, the air as a volume, the response map
+M13 scene viewer        │  planned: continuous-time replay, the air as a volume, the response map,
+                        │           and the full interface (panels, menus, console, per-tower lanes)
+M14 voxel core          │  planned: one sparse tree for the voxeliser, the gravity read, air, contact, viewer
+M15 timing + scene spec─┘  planned: towers on their own clocks; one serialisable, addressable scene description
 Mref reference port        (a THREAD: each of George's 13 cases lands with the milestone it
                             validates — M1/M2 geometry, M5 ULDM/lift, M6 schedules/spectra)
 ```
@@ -457,6 +460,38 @@ map; background runs; a predicted-track overlay. Still `egui` + `wgpu`.
 
 ---
 
+## M14 — The voxel core
+
+**Goal.** One sparse hierarchical representation of mass and matter — the voxeliser emits it, the
+gravity read walks it, the fluid coarsens on it, contact samples it, the viewer draws it.
+
+**Builds.** The `voxel` crate (`VoxTree`: linear octree from Morton keys, value sidecars, moments); a
+top-down voxeliser through `Solid::cover`; the lossless merge of homogeneous interior cells and the
+cube series kernel; a tree walk bounded by a stated phase tolerance; `TreeBody`; per-bone trees for
+articulated bodies; a hierarchical grid response; obstacle stamping and contact from voxels.
+
+**Exit.** The tree expanded to finest cells equals `shape::voxelise` bit for bit; merged equals
+unmerged (≤1e-12); walk error ≤ the stated tolerance with no steps in time; v1 bundles byte-identical;
+a box rests on a box bit-constant; and a measured speed-up at equal error, or the flat path stays the
+default. Brief: `milestones/M14-voxel-engine.md`. Design: `design/voxel.md`. **Planned — not built.**
+
+---
+
+## M15 — Per-tower timing and the scene spec
+
+**Goal.** Towers that fire on their own clocks, and one description of a scene that a file, the GUI,
+the console and Python all read and write.
+
+**Builds.** Per-tower `Timing` and instrument overrides on `Scenario`; `StateBundle.detector_time`
+`(T, D)` (a data-contract change — spec first); the `spec` crate: `SceneSpec`, RON files, paths,
+schema, and a stage-level `diff` for minimal re-runs.
+
+**Exit.** Synchronous scenes bit-identical field for field; a staggered array runs and decomposes
+exactly; every library scene built from its spec equals the hand-written one. Brief:
+`milestones/M15-array-timing-and-scene-spec.md`. **Planned — not built.**
+
+---
+
 ## What follows
 
 `milestones/V2-HANDOFF.md` carries the state of the v2 branch and the ordered remainder: GPU execution
@@ -468,7 +503,7 @@ Python surface for scenes, further physics, and the Gradar datasets.
 ## The implementation briefs
 
 Each milestone above has a **self-contained implementation brief** in `milestones/`
-(`M0-scaffolding.md` … `M13-viewer-v2.md`): requirements traced to tests, the design and its
+(`M0-scaffolding.md` … `M15-array-timing-and-scene-spec.md`): requirements traced to tests, the design and its
 diagrams, the governing equations, pseudocode for the core algorithms, unit/integration/e2e tests
 with concrete tolerances, and the exit table. A Claude Code session is pointed at one brief (plus
 the relevant `design/*.md` and the spec) and works it to green. The cross-cutting `reference-port.md` brief
