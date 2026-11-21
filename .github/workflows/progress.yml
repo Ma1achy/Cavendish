@@ -1,7 +1,8 @@
 # The README's build-progress grid (copied from Principia). After every push to `main`, scripts/progress_banner.py
 # draws a square per task of plan/tasks.yaml, grouped by slice: ink when merged, ochre with an open PR from
 # `task/<TASK-id>`, a pencil outline when not started. Light and dark themes, rendered to PNG and force-pushed as the one
-# commit of the orphan branch `progress`, which the README shows. It never commits to `main`, runs on no pull request and
+# commit of the orphan branch `progress`, which the README shows. The same run draws the validation banner (the
+# report's summary and accuracy over time) from docs/validation/report.json and publishes it beside the grid. It never commits to `main`, runs on no pull request and
 # gates nothing: it is a picture, not a check.
 name: progress
 
@@ -51,6 +52,20 @@ jobs:
               --tasks plan/tasks.yaml --milestones plan/REBUILD.md --merges "$RUNNER_TEMP/merges.txt" \
               --commit "$(git rev-parse --short HEAD)" --open-prs "$RUNNER_TEMP/open-prs.json"
           done
+      # The validation banner under the grid: the report's one-line summary and every case's error over its
+      # tolerance across time, drawn by scripts/validation_plots.py from docs/validation/report.json and that file's
+      # history on main. Before the first report exists there is nothing to draw, and the step says so.
+      - name: Draw the validation banner, light and dark
+        run: |
+          set -euo pipefail
+          if [ -f docs/validation/report.json ] && [ -f scripts/validation_plots.py ]; then
+            for theme in light dark; do
+              python3 scripts/validation_plots.py --report docs/validation/report.json \
+                --banner "$RUNNER_TEMP/validation-$theme.svg" --theme "$theme"
+            done
+          else
+            echo "no docs/validation/report.json on main yet: no validation banner"
+          fi
       # librsvg, from the runner's own Ubuntu archive, renders the SVGs to PNG; the SVGs' font list falls back from
       # `Helvetica Neue` through `Arial`, `Liberation Sans` and `DejaVu Sans` to `sans-serif`, so the runner's fonts take
       # over. The log lists which of the list's families the runner has (librsvg takes the first it finds).
@@ -66,6 +81,9 @@ jobs:
           set -euo pipefail
           for theme in light dark; do
             rsvg-convert --zoom 2 --format png -o "$RUNNER_TEMP/progress-$theme.png" "$RUNNER_TEMP/progress-$theme.svg"
+            if [ -f "$RUNNER_TEMP/validation-$theme.svg" ]; then
+              rsvg-convert --zoom 2 --format png -o "$RUNNER_TEMP/validation-$theme.png" "$RUNNER_TEMP/validation-$theme.svg"
+            fi
           done
       # `progress` holds one commit, the latest grid in both themes as SVG and PNG, replaced on every run.
       - name: Publish to the progress branch
@@ -80,6 +98,13 @@ jobs:
           cp progress-light.svg progress.svg
           cp progress-light.png progress.png
           git add progress-light.svg progress-light.png progress-dark.svg progress-dark.png progress.svg progress.png
+          for theme in light dark; do
+            if [ -f "$RUNNER_TEMP/validation-$theme.png" ]; then
+              cp "$RUNNER_TEMP/validation-$theme.svg" "validation-$theme.svg"
+              cp "$RUNNER_TEMP/validation-$theme.png" "validation-$theme.png"
+              git add "validation-$theme.svg" "validation-$theme.png"
+            fi
+          done
           git -c user.name="github-actions[bot]" \
             -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit --quiet --message "progress: main @ $sha"

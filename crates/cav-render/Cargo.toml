@@ -14,5 +14,8 @@ cav-sim.workspace = true
 png.workspace = true
 wgpu.workspace = true
 
+[dev-dependencies]
+cav-validate.workspace = true
+
 [lints]
 workspace = true

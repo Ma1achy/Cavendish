@@ -283,3 +283,106 @@ fn gpu_infinite_floor_reaches_the_horizon() {
     let distinct: std::collections::HashSet<[u8; 3]> = (0..SIZE[0]).map(|x| with_floor.at(x, row)).collect();
     assert!(distinct.len() > 3, "the floor shows a grid: {} colours on a row", distinct.len());
 }
+
+impl Picture {
+    /// The distance in pixels from `at` to the nearest pixel within `tolerance` of `colour`,
+    /// looking no further than `reach` pixels; infinite if there is none.
+    fn distance_to(&self, at: [f64; 2], reach: i64, colour: [u8; 3], tolerance: u8) -> f64 {
+        let (cx, cy) = (at[0].round() as i64, at[1].round() as i64);
+        let mut nearest = f64::INFINITY;
+        for y in (cy - reach).max(0)..=(cy + reach).min(i64::from(SIZE[1]) - 1) {
+            for x in (cx - reach).max(0)..=(cx + reach).min(i64::from(SIZE[0]) - 1) {
+                if close(self.at(x as u32, y as u32), colour, tolerance) {
+                    // Pixel centres are at half-integers.
+                    let (dx, dy) = (x as f64 + 0.5 - at[0], y as f64 + 0.5 - at[1]);
+                    nearest = nearest.min(dx.hypot(dy));
+                }
+            }
+        }
+        nearest
+    }
+}
+
+cav_validate::case! {
+    test: validation_gpu_towers_at_projected_pixels,
+    name: "render.gpu_projection",
+    subsystem: "render",
+    slice: "S0",
+    reference: ClosedForm,
+    against: "the f64 camera's projection of a point on each tower; distance to the nearest pixel of that tower's colour, worst over five towers and four views",
+    unit: Pixels,
+    tolerance: 2.0,
+    measure: {
+        let (gpu, renderer) = setup();
+        let scene = SceneSpec::room();
+        let framed = |named, projection| ViewSpec::framing(&scene, named, projection, DrawStyle::Flat);
+        let views = [
+            framed(NamedView::Iso, Projection::Perspective),
+            framed(NamedView::Iso, Projection::Orthographic),
+            framed(NamedView::Top, Projection::Orthographic),
+            ViewSpec { yaw: -60.0, pitch: 10.0, ..framed(NamedView::Iso, Projection::Perspective) },
+        ];
+        let mut worst = 0f64;
+        for view in &views {
+            let picture = render(&gpu, &renderer, &scene, view);
+            let camera = camera(view);
+            for n in 0..5 {
+                let pixel = camera.pixel(on_tower(&scene, n, 7.3), SIZE).expect("in front of the camera");
+                worst = worst.max(picture.distance_to(pixel, 12, tower_srgb(n), 8));
+            }
+        }
+        cav_validate::Measured::Error(worst)
+    },
+}
+
+cav_validate::case! {
+    test: validation_gpu_render_is_deterministic,
+    name: "render.gpu_determinism",
+    subsystem: "render",
+    slice: "S0",
+    reference: Exact,
+    against: "the same frame drawn twice, and by a second renderer on the same device; bytes that differ",
+    unit: Count,
+    tolerance: 0.0,
+    measure: {
+        let (gpu, renderer) = setup();
+        let scene = dev::infinite_floor();
+        let view = ViewSpec::home(&scene);
+        let first = render(&gpu, &renderer, &scene, &view);
+        let second = render(&gpu, &renderer, &scene, &view);
+        let third = render(&gpu, &Renderer::new(&gpu), &scene, &view);
+        let differing = |other: &Picture| first.rgba.iter().zip(&other.rgba).filter(|(a, b)| a != b).count();
+        cav_validate::Measured::Error((differing(&second) + differing(&third)) as f64)
+    },
+}
+
+cav_validate::case! {
+    test: validation_gpu_perspective_ratio,
+    name: "render.gpu_perspective_ratio",
+    subsystem: "render",
+    slice: "S0",
+    reference: ClosedForm,
+    against: "the ratio of the on-screen heights of a near and a far tower, as the f64 camera predicts it",
+    unit: Relative,
+    tolerance: 0.03,
+    measure: {
+        let (gpu, renderer) = setup();
+        let scene = dev::void();
+        let mut view = ViewSpec::framing(&scene, NamedView::South, Projection::Perspective, DrawStyle::Flat);
+        (view.yaw, view.pitch) = (-30.0, 0.0);
+        view.frame(&scene);
+        let picture = render(&gpu, &renderer, &scene, &view);
+        let camera = camera(&view);
+        let measured = |n: usize| {
+            let (top, bottom) = picture.rows_of(tower_srgb(n), 8).expect("the tower is drawn");
+            f64::from(bottom - top)
+        };
+        let predicted = |n: usize| {
+            let foot = camera.pixel(on_tower(&scene, n, 0.0), SIZE).unwrap();
+            let head = camera.pixel(on_tower(&scene, n, 10.0), SIZE).unwrap();
+            foot[1] - head[1]
+        };
+        let (near, far) = (1, 2);
+        cav_validate::Measured::Error(((measured(near) / measured(far)) / (predicted(near) / predicted(far)) - 1.0).abs())
+    },
+}

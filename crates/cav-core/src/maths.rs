@@ -257,4 +257,21 @@ mod tests {
         // Control: the product does not commute.
         assert!((view * proj).transform(p) != one_step);
     }
+
+    cav_validate::case! {
+        test: validation_perspective_scales_inversely_with_distance,
+        name: "maths.perspective_divide",
+        subsystem: "maths",
+        slice: "S0",
+        reference: ClosedForm,
+        against: "a point ten times further away projects ten times nearer the axis",
+        unit: Relative,
+        tolerance: 1e-12,
+        measure: {
+            let projection = Mat4::perspective(0.8, 1.0, 0.1, 100.0);
+            let near = projection.project(Vec3::new(1.0, 1.0, -2.0)).unwrap().x;
+            let far = projection.project(Vec3::new(1.0, 1.0, -20.0)).unwrap().x;
+            cav_validate::Measured::Error((near / far / 10.0 - 1.0).abs())
+        },
+    }
 }

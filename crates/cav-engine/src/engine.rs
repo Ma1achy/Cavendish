@@ -712,4 +712,23 @@ mod tests {
         assert!(get("name[0]").unwrap_err().contains("not a list"));
         assert!(get("array.towers[x]").unwrap_err().contains("not an index"));
     }
+
+    cav_validate::case! {
+        test: validation_replay_reproduces_the_session,
+        name: "engine.replay",
+        subsystem: "engine",
+        slice: "S0",
+        reference: Exact,
+        against: "a session replayed from its journal, and from its journal saved as JSON; replays whose state digest differs",
+        unit: Count,
+        tolerance: 0.0,
+        measure: {
+            let original = run(&session());
+            let saved = serde_json::to_string(original.journal()).unwrap();
+            let loaded: Vec<Command> = serde_json::from_str(&saved).unwrap();
+            let replays = [Engine::replay(original.journal()).unwrap(), Engine::replay(&loaded).unwrap()];
+            let differing = replays.iter().filter(|replay| replay.digest() != original.digest()).count();
+            cav_validate::Measured::Error(differing as f64)
+        },
+    }
 }

@@ -16,6 +16,7 @@ cav-engine = { path = "crates/cav-engine" }
 cav-gpu = { path = "crates/cav-gpu" }
 cav-render = { path = "crates/cav-render" }
 cav-sim = { path = "crates/cav-sim" }
+cav-validate = { path = "crates/cav-validate" }
 
 base64 = "0.23"
 eframe = { version = "=0.37.0", default-features = false, features = ["wgpu_no_default_features", "default_fonts"] }

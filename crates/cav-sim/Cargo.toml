@@ -13,5 +13,8 @@ schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+[dev-dependencies]
+cav-validate.workspace = true
+
 [lints]
 workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "cav-validate"
+description = "Cavendish: validation cases. A test declares what it checks against and records what it measured."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+# No dependencies: every crate's tests use this.
+
+[lints]
+workspace = true

@@ -458,10 +458,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn vertices_are_camera_relative_far_from_the_origin() {
-        // The same scene at the world origin and 10 km away, each seen from its own target.
-        let shift = Vec3::new(10_000.0, -7_000.0, 300.0);
+    /// The largest difference, in metres, between the vertices of the default scene built at the
+    /// world origin and built `shift` away, each relative to its own target.
+    fn worst_vertex_shift(shift: Vec3) -> f32 {
         let near = SceneSpec::room();
         let mut far = near.clone();
         for tower in &mut far.array.towers {
@@ -484,7 +483,29 @@ mod tests {
                 worst = worst.max((p.a[axis] - q.a[axis]).abs()).max((p.b[axis] - q.b[axis]).abs());
             }
         }
+        worst
+    }
+
+    cav_validate::case! {
+        test: validation_vertices_are_local_10_km_from_the_origin,
+        name: "render.local_frame_at_10_km",
+        subsystem: "render",
+        slice: "S0",
+        reference: ClosedForm,
+        against: "the same scene at the world origin: vertices relative to the view's target must not move",
+        unit: Metres,
+        tolerance: 1e-5,
+        measure: cav_validate::Measured::Error(f64::from(worst_vertex_shift(Vec3::new(10_000.0, -7_000.0, 300.0)))),
+    }
+
+    #[test]
+    fn vertices_are_camera_relative_far_from_the_origin() {
+        let shift = Vec3::new(10_000.0, -7_000.0, 300.0);
+        let target = Vec3::new(0.3, -0.7, 5.1);
+        let worst = worst_vertex_shift(shift);
         assert!(worst <= 1e-5, "10 km from the origin the vertices moved by {worst} m");
+        // No shift at all is no difference at all: the measure is not noise.
+        assert_eq!(worst_vertex_shift(Vec3::ZERO), 0.0);
 
         // Control arm: the shortcut this guards against. Rounding world positions to f32 before
         // subtracting loses over a tenth of a millimetre at 10 km, which the tolerance would catch.
