@@ -16,6 +16,16 @@ name = "cav-core"
 version = "0.0.0"
 
 [[package]]
+name = "cav-engine"
+version = "0.0.0"
+dependencies = [
+ "cav-sim",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cav-sim"
 version = "0.0.0"
 dependencies = [
