@@ -46,3 +46,10 @@ the calls worth a second look at the next checkpoint.
 ## Physics questions for George
 Site geometry, array layout, firing rules and anything about the real instrument go in
 `plan/PROGRESS.md` under "For George"; use the stated defaults until answered.
+
+## Progress grid
+`plan/tasks.yaml` is the README's progress grid (drawn by `scripts/progress_banner.py`, published by
+`.github/workflows/progress.yml` to the `progress` branch after each push to `main`). Each task gets a
+branch `task/<TASK-id>` and a PR, merged with `gh pr merge --merge`: the merge commit marks it done; an
+open PR shows it in review. Keep the file true: split or add tasks when a slice brief is written, never
+reuse an id, set `status: done` only for work merged another way.
