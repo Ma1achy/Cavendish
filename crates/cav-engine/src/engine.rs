@@ -5,7 +5,7 @@
 //! What is fixed already is the shape: state changes only through [`Engine::apply`], every applied
 //! command is journalled, and the journal replayed on a fresh engine gives the same state.
 
-use cav_sim::{DrawStyle, NamedView, Projection, SceneSpec, Target, ViewSpec};
+use cav_sim::{DrawStyle, NamedView, Projection, SceneSpec, SceneView, Target, ViewSpec};
 use serde::Serialize;
 
 use crate::command::{Command, MAX_PANES, Query, Reply, Stats, ViewCommand};
@@ -238,9 +238,23 @@ impl Engine {
             }
             ViewCommand::Activate(pane) => self.active = pane,
             ViewCommand::Look { pane, view } => {
+                // A named view is a view of the scene: it looks from there and frames what it sees.
+                // (Keeping the last distance left a plan view half the height of the picture.)
                 (self.views[pane].yaw, self.views[pane].pitch) = view.angles();
+                self.views[pane].frame(&self.spec);
             }
-            ViewCommand::Project { pane, projection } => self.views[pane].projection = projection,
+            ViewCommand::Project { pane, projection } => {
+                // A view that frames the scene goes on framing it in the other projection, which
+                // needs another distance; a camera the user has moved is left where it is.
+                let view = &mut self.views[pane];
+                let mut framed = view.clone();
+                framed.frame(&self.spec);
+                let was_framed = framed == *view;
+                view.projection = projection;
+                if was_framed {
+                    view.frame(&self.spec);
+                }
+            }
             ViewCommand::Style { pane, style } => self.views[pane].style = style,
             ViewCommand::Orbit { pane, yaw, pitch } => {
                 // Yaw is kept in (−180, 180]; pitch cannot pass the poles.
@@ -373,6 +387,20 @@ impl Engine {
     #[must_use]
     pub fn view(&self, pane: usize) -> &ViewSpec {
         &self.views[pane]
+    }
+
+    /// What pane `pane` shows, for a renderer to draw: the scene, the pane's view, the selection
+    /// and the playhead, together. Every client that draws (the app's panes, `cav render`, MCP
+    /// `render_view`) asks here, so their pictures are of the same thing.
+    ///
+    /// # Errors
+    /// When there is no such pane.
+    pub fn frame(&self, pane: usize) -> Result<SceneView<'_>, String> {
+        let view = self
+            .views
+            .get(pane)
+            .ok_or_else(|| format!("there is no pane {}; panes are 1 to {MAX_PANES}", pane + 1))?;
+        Ok(SceneView { scene: &self.spec, view, highlight: self.selection, time: self.time })
     }
 
     /// The journal: every applied command, oldest first, runs of overwrites kept as their last.
@@ -730,5 +758,47 @@ mod tests {
             let differing = replays.iter().filter(|replay| replay.digest() != original.digest()).count();
             cav_validate::Measured::Error(differing as f64)
         },
+    }
+
+    #[test]
+    fn the_frame_is_the_scene_the_view_the_selection_and_the_time() {
+        let mut engine = Engine::new();
+        engine.run_script("load infinite-floor; panes 2; view west @2; select tower 4; seek 3.25").unwrap();
+        let frame = engine.frame(1).unwrap();
+        assert_eq!(frame.scene, engine.spec());
+        assert_eq!(frame.view, engine.view(1));
+        assert_eq!(frame.view.named(), Some(NamedView::West));
+        assert_eq!((frame.highlight, frame.time), (Some(Target::Tower(4)), 3.25));
+        // The other pane has the same scene, selection and time, and its own camera.
+        let other = engine.frame(0).unwrap();
+        assert_eq!((other.scene, other.highlight, other.time), (frame.scene, frame.highlight, frame.time));
+        assert_ne!(other.view, frame.view);
+        // Control: it follows the engine. Change each part and the frame changes with it.
+        engine.run_script("select none; seek 1; load void").unwrap();
+        let after = engine.frame(1).unwrap();
+        assert_eq!((after.scene.name.as_str(), after.highlight, after.time), ("void", None, 0.0));
+        assert!(engine.frame(MAX_PANES).unwrap_err().contains("no pane 5"));
+    }
+
+    #[test]
+    fn a_named_view_frames_the_scene() {
+        let mut engine = Engine::new();
+        // Zoomed in and panned away, then asked for the plan.
+        engine.run_script("zoom 3; pan 40 40 0; view top; proj ortho").unwrap();
+        // Framed as a plan, and still framed after the change of projection, whichever came first.
+        let framed =
+            ViewSpec::framing(engine.spec(), NamedView::Top, Projection::Orthographic, DrawStyle::Shaded);
+        assert_eq!(engine.view(0), &framed, "the plan is framed, not left at the last zoom");
+        let mut other_order = Engine::new();
+        other_order.run_script("proj ortho; view top").unwrap();
+        assert_eq!(other_order.view(0), &framed);
+        // Control: commands that are not named views leave the camera where it is.
+        engine.run_script("zoom 3; style flat; proj persp").unwrap();
+        assert_eq!(engine.view(0).distance, 3.0);
+        // And it frames for the pane's own projection.
+        engine.run_script("proj ortho; view south").unwrap();
+        let south =
+            ViewSpec::framing(engine.spec(), NamedView::South, Projection::Orthographic, DrawStyle::Flat);
+        assert_eq!(engine.view(0), &south);
     }
 }

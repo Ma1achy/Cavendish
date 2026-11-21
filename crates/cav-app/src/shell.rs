@@ -19,6 +19,18 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("quit", "close the application"),
 ];
 
+/// The first `lines` lines of `text`, and how many were left out. The console shows a long
+/// answer this way; `cav exec` prints all of it.
+#[must_use]
+pub fn abridged(text: &str, lines: usize) -> String {
+    let total = text.lines().count();
+    if total <= lines {
+        return text.to_owned();
+    }
+    let head: Vec<&str> = text.lines().take(lines).collect();
+    format!("{}\n… {} more lines (`cav exec` prints them all)", head.join("\n"), total - lines)
+}
+
 /// How long one step with the arrow keys is, seconds.
 const STEP: f64 = 0.1;
 
@@ -151,8 +163,10 @@ impl Shell {
         match &outcome {
             // An answer to a question is shown where it was asked: in the console.
             Ok(answer) if !is_command => {
-                for row in answer.lines().take(400) {
-                    self.engine.note(Level::Info, Subsystem::App, row);
+                // One entry for the whole answer, so a long one cannot push the session's history
+                // out of the log. `log` is not echoed at all: the console is already showing it.
+                if line.split_whitespace().next() != Some("log") {
+                    self.engine.note(Level::Info, Subsystem::App, answer.as_str());
                 }
                 self.console_open = true;
             }

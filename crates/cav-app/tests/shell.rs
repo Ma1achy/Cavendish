@@ -426,3 +426,33 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
     shell.run("quit").unwrap();
     assert!(shell.quit);
 }
+
+#[test]
+fn an_answer_is_one_log_entry_and_log_is_not_echoed() {
+    let mut shell = Shell::new();
+    let before = shell.engine.log().len();
+    // `schema` answers with hundreds of lines. It is one entry, not hundreds.
+    let schema = shell.run("schema").unwrap();
+    assert!(schema.lines().count() > 100, "the schema is long: {} lines", schema.lines().count());
+    assert_eq!(shell.engine.log().len(), before + 1);
+    assert_eq!(shell.engine.log().iter().next_back().unwrap().message, schema, "and it is the whole answer");
+    // The console shows the start of it and says how much it left out.
+    let shown = cav_app::shell::abridged(&schema, 24);
+    assert_eq!(shown.lines().count(), 25);
+    assert!(shown.ends_with("more lines (`cav exec` prints them all)"), "{shown}");
+    assert_eq!(cav_app::shell::abridged("one\ntwo", 24), "one\ntwo", "a short answer is shown whole");
+    // Control: what came before is still there. Twenty long answers do not empty a 2000-entry log.
+    for _ in 0..20 {
+        shell.run("schema").unwrap();
+    }
+    assert!(
+        shell.engine.log().iter().next().unwrap().message.starts_with("cavendish"),
+        "the first entry survives"
+    );
+    // `log` shows the log; it does not add its own output to it.
+    let entries = shell.engine.log().len();
+    let listed = shell.run("log 5").unwrap();
+    assert_eq!(listed.lines().filter(|l| l.contains("  info ")).count(), 5);
+    assert_eq!(shell.engine.log().len(), entries, "`log` left the log as it was");
+    assert!(shell.console_open);
+}

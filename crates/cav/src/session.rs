@@ -5,7 +5,7 @@
 
 use cav_engine::Engine;
 use cav_gpu::Gpu;
-use cav_render::{Frame, Renderer};
+use cav_render::Renderer;
 
 /// One engine and, once something has been drawn, its device and pipelines.
 pub struct Session {
@@ -32,21 +32,32 @@ impl Session {
         Ok(self.gpu.as_ref().expect("just created"))
     }
 
+    /// Loads a library scene or a scene file, as the command the engine journals. The name or
+    /// path is taken whole, spaces and all: it never passes through the console's words.
+    ///
+    /// # Errors
+    /// When the scene cannot be found or read, or the engine refuses it.
+    pub fn load(&mut self, scene: &str) -> Result<(), String> {
+        match cav_sim::load(scene) {
+            Ok(spec) => self.engine.apply(cav_engine::Command::Load(spec)),
+            Err(why) => {
+                // A scene that cannot be read is a refusal like any other: it goes in the log.
+                self.engine.note(cav_engine::Level::Error, cav_engine::Subsystem::Engine, why.0.clone());
+                Err(why.0)
+            }
+        }
+    }
+
     /// Draws a pane's view of the engine's scene, with the selection highlighted, as a PNG.
     ///
     /// # Errors
     /// When there is no GPU, no such pane, or the read-back fails.
     pub fn render_png(&mut self, pane: usize, size: [u32; 2]) -> Result<Vec<u8>, String> {
-        if pane >= cav_engine::MAX_PANES {
-            return Err(format!("there is no pane {}; panes are 1 to {}", pane + 1, cav_engine::MAX_PANES));
-        }
+        // The engine says what the pane shows; refusing a pane that does not exist comes first,
+        // before a device is made for nothing.
+        self.engine.frame(pane)?;
         self.gpu()?;
         let (gpu, renderer) = self.gpu.as_ref().expect("just created");
-        let frame = Frame {
-            scene: self.engine.spec(),
-            view: self.engine.view(pane),
-            highlight: self.engine.selection(),
-        };
-        renderer.render_png(gpu, frame, size)
+        renderer.render_png(gpu, self.engine.frame(pane)?, size)
     }
 }

@@ -106,7 +106,7 @@ fn render(rest: &[String]) -> Result<(), String> {
     let [scene] = args.finish(1)?.try_into().map_err(|_| "render takes one scene")?;
     let started = std::time::Instant::now();
     let mut session = Session::new();
-    session.engine.run_line(&format!("load {scene}"))?;
+    session.load(&scene)?;
     session.engine.run_script(&script.join("; "))?;
     let pane = session.engine.active_pane();
     let png = session.render_png(pane, size)?;

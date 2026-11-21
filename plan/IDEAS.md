@@ -6,7 +6,6 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 ## From S0
 - **Tab walks scopes, with a focus ring and a breadcrumb** (the mock-up's keyboard model): the whole app usable without a pointer. S2, with the property editors.
 - **Redraw only the pane whose view changed.** Panes are keyed on the engine's generation, so any command redraws all of them; a key per pane (its view, the scene, the selection) would make a four-pane orbit cost one pane. S3, when scenes get heavy.
-- **`validate` compares with the previous report itself**: list dropped cases and changed tolerances against `git show HEAD:docs/validation/report.json`, so the reviewer's check is a command. S1.
 - **Copy and paste in the console** (eframe's `clipboard` feature, which brings `arboard`), and copy of a value or a path from the properties. S2.
 - **Tab completion and a command palette (Ctrl+K)** from `COMMANDS` and the schema's paths. S2.
 - **Ubuntu Mono** in place of Hack, once the owner agrees to a font file and its licence in the repo.

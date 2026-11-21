@@ -4,7 +4,7 @@
 use bytemuck::{Pod, Zeroable};
 use cav_gpu::Gpu;
 use cav_gpu::wgpu::{self, util::DeviceExt};
-use cav_sim::{DrawStyle, SceneSpec, Target, ViewSpec};
+use cav_sim::DrawStyle;
 
 use crate::camera::Camera;
 use crate::scene::{Drawables, Line, Vertex, drawables};
@@ -17,14 +17,8 @@ const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 /// Samples per pixel: lines and edges are antialiased by multisampling.
 const SAMPLES: u32 = 4;
 
-/// What to draw: a scene, how to look at it, and what is selected.
-#[derive(Clone, Copy, Debug)]
-pub struct Frame<'a> {
-    pub scene: &'a SceneSpec,
-    pub view: &'a ViewSpec,
-    /// What is selected, drawn highlighted.
-    pub highlight: Option<Target>,
-}
+/// What to draw. The type is `cav-sim`'s, so that the engine can make one without knowing the renderer.
+pub use cav_sim::SceneView as Frame;
 
 #[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]

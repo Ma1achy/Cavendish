@@ -136,6 +136,10 @@ fn mix(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
     std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t)
 }
 
+/// The radius the launch points are drawn at, metres: far larger than an atom cloud, so that they
+/// can be seen from across the room.
+pub const CLOUD_RADIUS: f64 = 0.16;
+
 /// The most grid lines across a room, and the most ticks up a tower.
 pub const MAX_MARKS: u32 = 200;
 
@@ -375,7 +379,7 @@ pub fn drawables(scene: &SceneSpec, style: DrawStyle, highlight: Option<Target>,
             b.column(base, instrument.tower_height, 0.035, colour);
             // The atom clouds at rest: one at each interferometer's launch point.
             for height in [0.0, instrument.ifo_separation] {
-                b.sphere(base + Vec3::Z * height, 0.085, colour);
+                b.sphere(base + Vec3::Z * height, CLOUD_RADIUS, colour);
             }
         }
         if selected {
@@ -401,7 +405,7 @@ pub fn drawables(scene: &SceneSpec, style: DrawStyle, highlight: Option<Target>,
             surface: linear(palette.ground, 1.0),
             // A selected floor is tinted, not lit up: its grid covers most of the picture.
             line: if selected {
-                mix(linear(palette.ground_line, 1.0), linear(palette.selection, 1.0), 0.45)
+                mix(linear(palette.ground_line, 1.0), linear(palette.selection, 1.0), 0.18)
             } else {
                 linear(palette.ground_line, 1.0)
             },

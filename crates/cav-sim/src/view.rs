@@ -142,6 +142,19 @@ pub struct ViewSpec {
     pub style: DrawStyle,
 }
 
+/// What to draw: a scene at a time, how to look at it, and what is selected. The engine makes it
+/// ([`cav-engine`'s `Engine::frame`]) and the renderer draws it, so every client's picture is of
+/// the same thing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SceneView<'a> {
+    pub scene: &'a SceneSpec,
+    pub view: &'a ViewSpec,
+    /// What is selected, drawn highlighted.
+    pub highlight: Option<crate::Target>,
+    /// The playhead, seconds. Nothing in S0 moves, so the picture does not yet depend on it.
+    pub time: f64,
+}
+
 impl ViewSpec {
     /// The view from `named` that frames the whole scene.
     #[must_use]

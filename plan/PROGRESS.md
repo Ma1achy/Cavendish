@@ -4,7 +4,7 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 
 | Slice | State | Tag | Notes |
 |---|---|---|---|
-| S0 the shell | built (TASK-S0-01 to 11 merged); awaiting the reviewer | | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
+| S0 the shell | built and reviewed: TASK-S0-01 to 11 merged, then the review's ten findings fixed in TASK-S0-12 to 14; ready for the reviewer's second look and the tag | | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
 
 ## S0, the shell: where it stands (21 Nov 2026)
 
@@ -16,9 +16,12 @@ views and Home, 1, 2 or 4 panes, five draw styles. `cav doctor`, `cav render`, `
 `infinite-floor.ron`; `cargo xtask quick | gpu | oracle | demo S0 | validate --report`. The engine's
 command/query API is the one path all of them drive, with a journal that replays.
 
-**Numbers** (detail in `docs/slices/S0.md` §7): `quick` 97 tests in 4.6 s warm (gate: 10 s); `gpu` 14
-tests in 5.5 s; cold build 51 s with the Defender exclusion; warm rebuild 2.4 s; 10 of 10 validation
+**Numbers** (detail in `docs/slices/S0.md` §7): `quick` 114 tests in 4.7 s warm (gate: 10 s); `gpu` 22
+tests in 6.4 s; cold build 51 s with the Defender exclusion; warm rebuild 2.4 s; 11 of 11 validation
 cases pass.
+
+**The review** (21 Nov 2026) found one important fault (a valid spec could hang the renderer and an MCP
+client) and nine minor ones. All ten are fixed with tests; `docs/slices/S0.md` §7, "After the review".
 
 **Open.**
 - Nobody has looked at the real window: it was started minimised for five seconds and closed. Everything
@@ -53,6 +56,14 @@ exactly zero, the infinite floor's null, the v1 anchors).
 ## For George
 Answered 21 Nov 2026 (through the owner). The defaults below replace v1's conventions from S1 on.
 1. **Sign:** lower minus upper (δφ₁ − δφ₂). Both conventions are in use and it should not matter.
+   *Which interferometer is 1:* the lower one. The reference scripts launch IFO 1 from z = 0 and IFO 2
+   from z = δr (`docs/research/s1-periodograms-and-script-fixtures.md`, the note on the scripts'
+   geometry) and compute lower minus upper; v1 computes δφ₂ − δφ₁, upper minus lower
+   (`reference/design/instrument.md` §4, which numbers the interferometers but does not say which is
+   lower: S1 should confirm it in v1's code at `v1-final` when it sets the oracle's conventions).
+   `plan/REBUILD.md` §3.4 still says "the read is upper-minus-lower": that sentence is about v1's
+   convention and about differencing without cancellation, which holds for either sign. The plan's text
+   is left as it is; George's sign is the engine's from S1.
 2. **Timing:** the atom and the source are taken at the same time; the reference scripts' one-step
    offset (arm at (j+1)·dt against source at j·dt) is not intended.
 3. **Atom:** ⁸⁷Sr, mass ≈ 1.443×10⁻²⁵ kg (S1 takes the value from a cited source), not the
@@ -101,7 +112,12 @@ Still open (asked in S0; defaults in use until answered):
   - no `clap`, no `anyhow`, no docking crate, no clipboard; a tenth crate, `cav-validate`;
   - paper style is ink on cream only until S4;
   - the validation plots use one axis, error over tolerance, for cases of every unit;
-  - `quick` is 4.6 s warm but 7 to 10 s on the run straight after an edit that recompiles `cav-app`
+  - a named view re-frames the scene (it used to keep the last distance), and a framed view stays
+    framed when the projection changes; a camera the user has moved is left alone;
+  - the spec's ranges (`cav_sim::spec::limits`): ±1e6 m, rooms to 1e4 m, towers to 1 km and 1000 of
+    them, T from 1 ms, cycle to 1e4 s, timeline to 1e6 s. Wide, but they are limits: say if a real
+    scene needs more;
+  - `quick` is 4.7 s warm but 7 to 10 s on the run straight after an edit that recompiles `cav-app`
     (10.0 s was seen once): the 10 s gate holds warm, with little to spare as tests are added. S1 should
     watch it and, if it goes over, say so with numbers before changing anything.
 - **S1: the engine's defaults become George's** (lower − upper, ⁸⁷Sr, u₀ = 3.86 m/s, a floor at the

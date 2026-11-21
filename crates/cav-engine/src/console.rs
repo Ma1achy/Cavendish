@@ -4,7 +4,7 @@
 //! second path into the engine, only another way to write the first. [`describe`] is the inverse:
 //! the line that would issue a given command, which is also what the log shows.
 
-use cav_sim::{DrawStyle, LIBRARY, NamedView, Projection, Target};
+use cav_sim::{DrawStyle, LIBRARY, NamedView, Projection, SceneSpec, Target};
 
 use crate::command::{Command, Query, Reply, ViewCommand};
 use crate::engine::Engine;
@@ -48,7 +48,7 @@ pub const COMMANDS: &[CommandDoc] = &[
     CommandDoc {
         name: "load",
         usage: "load <scene|file.ron>",
-        about: "replace the scene with a library scene or a file (an edit: undo takes it back)",
+        about: "replace the scene with a library scene or a file; quote a path with spaces (an edit: undo takes it back)",
         example: "load void",
     },
     CommandDoc { name: "undo", usage: "undo", about: "take back the last edit", example: "undo" },
@@ -132,7 +132,18 @@ pub const COMMANDS: &[CommandDoc] = &[
 pub fn describe(command: &Command, active_pane: usize) -> String {
     let at = |pane: usize| if pane == active_pane { String::new() } else { format!(" @{}", pane + 1) };
     match command {
-        Command::Load(spec) => format!("load {}", spec.name),
+        Command::Load(spec) => {
+            // Only a library scene has a line that loads it again. A scene from a file is known
+            // here by its contents alone, so the log says what it is rather than a line that
+            // would load something else.
+            let library =
+                LIBRARY.iter().find(|s| s.name == spec.name).and_then(|s| SceneSpec::from_ron(s.ron).ok());
+            if library.as_ref() == Some(spec) {
+                format!("load {}", spec.name)
+            } else {
+                format!("load <the scene `{}`, not a library scene: load it from its file>", spec.name)
+            }
+        }
         Command::Seek(t) => format!("seek {t}"),
         Command::Select(None) => "select none".into(),
         Command::Select(Some(Target::Tower(n))) => format!("select tower {n}"),
@@ -157,6 +168,60 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
     }
 }
 
+/// Splits a console line into words. Double quotes keep what is between them together, so a path
+/// with a space is one word: `load "C:/my scenes/pass.ron"`.
+///
+/// # Errors
+/// A quote that is opened and not closed.
+pub fn words(line: &str) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    let mut word = String::new();
+    let (mut quoted, mut started) = (false, false);
+    for c in line.chars() {
+        match c {
+            '"' => {
+                quoted = !quoted;
+                started = true;
+            }
+            c if c.is_whitespace() && !quoted => {
+                if std::mem::take(&mut started) {
+                    out.push(std::mem::take(&mut word));
+                }
+            }
+            c => {
+                word.push(c);
+                started = true;
+            }
+        }
+    }
+    if quoted {
+        return Err(format!("`{line}`: a `\"` is opened and never closed"));
+    }
+    if started {
+        out.push(word);
+    }
+    Ok(out)
+}
+
+/// Splits a script into its lines: at `;` and at line breaks, except inside double quotes.
+#[must_use]
+pub fn statements(script: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let (mut start, mut quoted) = (0, false);
+    for (at, c) in script.char_indices() {
+        match c {
+            '"' => quoted = !quoted,
+            ';' | '\n' if !quoted => {
+                out.push(&script[start..at]);
+                start = at + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push(&script[start..]);
+    out.into_iter().map(str::trim).filter(|line| !line.is_empty()).collect()
+}
+
 /// The usage line of a command, for error messages.
 fn usage(name: &str) -> String {
     COMMANDS.iter().find(|c| c.name == name).map_or_else(String::new, |c| format!("usage: {}", c.usage))
@@ -174,7 +239,8 @@ impl Engine {
     /// # Errors
     /// What was expected instead.
     pub fn parse(&self, line: &str) -> Result<Request, String> {
-        let mut words: Vec<&str> = line.split_whitespace().collect();
+        let owned = words(line)?;
+        let mut words: Vec<&str> = owned.iter().map(String::as_str).collect();
         let Some(&name) = words.first() else {
             return Err("an empty line; try `help`".into());
         };
@@ -316,10 +382,9 @@ impl Engine {
     /// # Errors
     /// The failing line and why; the lines before it have been applied.
     pub fn run_script(&mut self, script: &str) -> Result<Vec<String>, String> {
-        script
-            .split([';', '\n'])
-            .map(str::trim)
-            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        statements(script)
+            .into_iter()
+            .filter(|line| !line.starts_with('#'))
             .map(|line| self.run_line(line).map_err(|why| format!("`{line}`: {why}")))
             .collect()
     }
@@ -502,5 +567,48 @@ mod tests {
         // The journal is JSON that replays to the same state.
         let journal: Vec<Command> = serde_json::from_str(&engine.run_line("journal").unwrap()).unwrap();
         assert_eq!(Engine::replay(&journal).unwrap().digest(), engine.digest());
+    }
+
+    #[test]
+    fn quotes_keep_a_path_with_spaces_in_one_word() {
+        assert_eq!(words("load void").unwrap(), ["load", "void"]);
+        assert_eq!(words(r#"load "C:/my scenes/a pass.ron""#).unwrap(), ["load", "C:/my scenes/a pass.ron"]);
+        assert_eq!(words(r#"  view   top  @2 "#).unwrap(), ["view", "top", "@2"]);
+        assert_eq!(words(r#"get """#).unwrap(), ["get", ""], "an empty quoted word is a word");
+        assert!(words(r#"load "unclosed"#).unwrap_err().contains("never closed"));
+        // A script is not cut inside quotes.
+        assert_eq!(statements(r#"load "a; b.ron"; panes 2"#), [r#"load "a; b.ron""#, "panes 2"]);
+        assert_eq!(statements("panes 2;;\n view top \n"), ["panes 2", "view top"]);
+
+        // End to end: a scene file in a folder whose name has a space.
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp/console test/my scenes");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("far void.ron");
+        let mut scene = dev::void();
+        scene.name = "far-void".into();
+        std::fs::write(&path, scene.to_ron()).unwrap();
+        let mut engine = Engine::new();
+        let line = format!("load \"{}\"", path.display());
+        engine.run_line(&line).unwrap();
+        assert_eq!(engine.spec(), &scene);
+        // Control: without the quotes the same path is several words, and is refused.
+        let bare = format!("load {}", path.display());
+        assert!(Engine::new().run_line(&bare).is_err());
+    }
+
+    #[test]
+    fn the_log_does_not_offer_a_line_that_would_load_another_scene() {
+        // A library scene: the described line loads it again.
+        assert_eq!(describe(&Command::Load(dev::void()), 0), "load void");
+        // A scene that only shares a library name, or has none: no such line exists, and none is given.
+        let mut edited = dev::void();
+        edited.duration = 30.0;
+        let described = describe(&Command::Load(edited.clone()), 0);
+        assert!(described.contains("not a library scene"), "{described}");
+        assert_ne!(Engine::new().parse(&described), Ok(Request::Do(Command::Load(edited))));
+        let mut named = dev::void();
+        named.name = "mine".into();
+        assert!(describe(&Command::Load(named), 0).contains("`mine`, not a library scene"));
     }
 }

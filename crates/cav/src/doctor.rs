@@ -30,7 +30,7 @@ pub fn run() -> Result<(), String> {
     let started = Instant::now();
     let renderer = Renderer::new(&gpu);
     let (scene, view) = self_test_frame();
-    let frame = Frame { scene: &scene, view: &view, highlight: None };
+    let frame = Frame { scene: &scene, view: &view, highlight: None, time: 0.0 };
     let rgba = renderer.render_rgba(&gpu, frame, SIZE)?;
     match check_picture(&rgba, &scene, &view) {
         Ok(()) => println!(

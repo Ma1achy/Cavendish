@@ -62,7 +62,7 @@ fn setup() -> (Gpu, Renderer) {
 }
 
 fn render(gpu: &Gpu, renderer: &Renderer, scene: &SceneSpec, view: &ViewSpec) -> Picture {
-    let frame = Frame { scene, view, highlight: None };
+    let frame = Frame { scene, view, highlight: None, time: 0.0 };
     Picture { rgba: renderer.render_rgba(gpu, frame, SIZE).expect("render") }
 }
 
@@ -415,7 +415,8 @@ fn gpu_the_largest_valid_scene_renders() {
         [(NamedView::Iso, Projection::Perspective), (NamedView::Top, Projection::Orthographic)]
     {
         let view = ViewSpec::framing(&scene, named, projection, DrawStyle::Shaded);
-        let frame = Frame { scene: &scene, view: &view, highlight: Some(cav_sim::Target::Tower(500)) };
+        let frame =
+            Frame { scene: &scene, view: &view, highlight: Some(cav_sim::Target::Tower(500)), time: 0.0 };
         let rgba = renderer.render_rgba(&gpu, frame, SIZE).expect("the largest valid scene must draw");
         let picture = Picture { rgba };
         // Something was drawn, and it is a picture rather than one flat colour. (The scene has an
@@ -517,10 +518,10 @@ fn gpu_shading_follows_the_light() {
         style,
     };
     let camera = camera(&view(DrawStyle::Shaded));
-    // Two points on the sphere's face, 0.05 m from its centre: up and to the west (towards the key
+    // Two points on the sphere's face, half its radius out along each axis: up and to the west (towards the key
     // light, which comes from the south-west and above), and down and to the east (away from it).
-    let lit = camera.pixel(sphere + Vec3::new(-0.035, 0.0, 0.035), SIZE).unwrap();
-    let unlit = camera.pixel(sphere + Vec3::new(0.035, 0.0, -0.035), SIZE).unwrap();
+    let lit = camera.pixel(sphere + Vec3::new(-0.08, 0.0, 0.08), SIZE).unwrap();
+    let unlit = camera.pixel(sphere + Vec3::new(0.08, 0.0, -0.08), SIZE).unwrap();
     assert!((lit[0] - unlit[0]).abs() > 40.0, "the two samples are well apart on screen");
     let sample = |picture: &Picture, at: [f64; 2]| picture.at(at[0].round() as u32, at[1].round() as u32);
     let shaded = render(&gpu, &renderer, &scene, &view(DrawStyle::Shaded));

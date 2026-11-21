@@ -196,3 +196,56 @@ fn gpu_render_writes_a_png_of_the_asked_size() {
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(stdout(&out).contains("scene `void`") && stdout(&out).contains("1280 × 720 px"));
 }
+
+/// A copy of the void scene in a folder whose name has spaces; returns its path.
+fn scene_in_a_folder_with_spaces(name: &str) -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("my scenes");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(format!("{name}.ron"));
+    let mut scene = cav_sim::dev::void();
+    scene.name = name.to_owned();
+    std::fs::write(&path, scene.to_ron()).unwrap();
+    path
+}
+
+#[test]
+fn gpu_render_loads_a_scene_whose_path_has_spaces() {
+    let scene = scene_in_a_folder_with_spaces("far void");
+    assert!(scene.to_str().unwrap().contains(' '), "the control: the path does have a space");
+    let out = scratch("far void.png");
+    let done = cav(&["render", scene.to_str().unwrap(), "--size", "320x200", "--out", out.to_str().unwrap()]);
+    assert!(done.status.success(), "{}", stderr(&done));
+    assert!(stdout(&done).contains("scene `far void`"), "{}", stdout(&done));
+    assert_eq!(cav_render::decode_png(&std::fs::read(&out).unwrap()).unwrap().1, [320, 200]);
+}
+
+#[test]
+fn gpu_named_views_fill_the_picture() {
+    // `cav render --view top` used to keep the isometric distance: the room took half the height.
+    let out = scratch("plan-flat.png");
+    let done = cav(&[
+        "render",
+        "room",
+        "--view",
+        "top",
+        "--proj",
+        "ortho",
+        "--style",
+        "flat",
+        "--size",
+        "600x600",
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    assert!(done.status.success(), "{}", stderr(&done));
+    let (rgba, _) = cav_render::decode_png(&std::fs::read(&out).unwrap()).unwrap();
+    // The rows that hold anything but background: the room's plan, 10 m of a framed 10 m.
+    let drawn: Vec<usize> = (0..600)
+        .filter(|y| (0..600).any(|x| rgba[(y * 600 + x) * 4..][..3] != cav_render::BACKGROUND_SRGB))
+        .collect();
+    let height = drawn.last().unwrap() - drawn.first().unwrap() + 1;
+    // Framing leaves a margin of 1/1.12 and assumes a picture 1.25 times as wide as high: in a
+    // square picture the plan takes 1/(1.12 × 1.25) = 71% of the height. It was 46%.
+    let share = height as f64 / 600.0;
+    assert!((share - 1.0 / (1.12 * 1.25)).abs() < 0.02, "the plan takes {share:.2} of the picture's height");
+}
