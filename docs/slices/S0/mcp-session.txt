@@ -36,5 +36,5 @@ An MCP session with `cav mcp` over stdio, as `cargo xtask demo S0` ran it.
 
 # what the engine did, and refused
 → {"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"log","arguments":{"last":6}}}
-← {"jsonrpc":"2.0","id":9,"result":{"content":[{"type":"text","text":"    0.004  info   edit    load infinite-floor · 5 towers, no room, a floor\n    0.005  debug  view    orbit -62 9\n    0.005  debug  view    zoom 30\n    0.005  info   engine  select tower 4\n    0.006  error  engine  refused `select tower 9`: there is no tower 9; the scene has towers 1 to 5\n    0.794  info   mcp     render_view: pane 1, 800 × 500 px, 106070 bytes"}],"isError":false}}
+← {"jsonrpc":"2.0","id":9,"result":{"content":[{"type":"text","text":"    0.004  info   edit    load infinite-floor · 5 towers, no room, a floor\n    0.005  debug  view    orbit -62 9\n    0.005  debug  view    zoom 30\n    0.005  info   engine  select tower 4\n    0.006  error  engine  refused `select tower 9`: there is no tower 9; the scene has towers 1 to 5\n    0.790  info   mcp     render_view: pane 1, 800 × 500 px, 106070 bytes"}],"isError":false}}
 
