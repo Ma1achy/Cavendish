@@ -1,0 +1,27 @@
+# sphere depth 11 (N = 2048); build 13.1 s
+depth                    11
+cells_total              8.58993e+09
+occupied                 2.30704e+09
+leaves                   1.68395e+07
+internal                 3.61297e+06
+octree_topology_B        1.63619e+08
+octree_values_B          6.73578e+07
+octree_moments_f32_B     2.89038e+08
+octree_moments_mono_B    5.78075e+07
+t64_nodes                2.836e+06
+t64_topology_B           3.4032e+07
+t64_values_B             5.37515e+07
+t64_moments_f32_B        2.2688e+08
+brick8_full              188744
+brick8_solid_entries     4.40378e+06
+brick8_B_1B              1.33377e+08
+brick8_B_4B              4.23288e+08
+chunk32_full             12368
+chunk32_solid_entries    64288
+chunk32_B_1B             4.05888e+08
+vdb_leaf_nodes           188744
+vdb_lower_nodes          776
+vdb_upper_nodes          1
+vdb_B_approx             4.3121e+08
+dag_binary     nodes 255385  B 6.64082e+06
+dag_fractional nodes 2.74976e+06  B 3.49195e+07
