@@ -1495,7 +1495,7 @@ mod tests {
         let count = pos.len() / 3;
         let mut min = [f32::INFINITY; 3];
         let mut max = [f32::NEG_INFINITY; 3];
-        for c in pos.chunks_exact(3) {
+        for c in pos.as_chunks::<3>().0 {
             for i in 0..3 {
                 min[i] = min[i].min(c[i]);
                 max[i] = max[i].max(c[i]);

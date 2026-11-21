@@ -606,7 +606,7 @@ mod tests {
         let mut differs = false;
         for y in 0..n as usize {
             let row = &data[y * padded as usize..y * padded as usize + unpadded as usize];
-            if row.chunks_exact(4).any(|px| px != corner) {
+            if row.as_chunks::<4>().0.iter().any(|px| *px != corner) {
                 differs = true;
                 break;
             }
