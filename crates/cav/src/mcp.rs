@@ -75,6 +75,23 @@ impl Cav {
     }
 }
 
+/// Runs a tool's body so that the request is answered whatever happens inside it: a panic (in
+/// the renderer, in wgpu) becomes a tool error with its message, where it would otherwise unwind
+/// through the server and leave the client waiting for ever.
+fn answered<T>(tool: &str, body: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(outcome) => outcome,
+        Err(panic) => {
+            let why = panic
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| panic.downcast_ref::<&str>().copied())
+                .unwrap_or("no message");
+            Err(format!("{tool} failed inside the engine: {why}"))
+        }
+    }
+}
+
 #[tool_router]
 impl Cav {
     /// The JSON Schema of the scene spec: every field, its type and its meaning.
@@ -86,9 +103,11 @@ impl Cav {
     /// Replace the scene with a library scene or a `.ron` file. Returns the engine's state.
     #[tool(name = "scene_load")]
     fn scene_load(&self, Parameters(args): Parameters<SceneLoadArgs>) -> Result<String, String> {
-        let mut session = self.session();
-        session.engine.run_line(&format!("load {}", args.scene))?;
-        session.engine.run_line("stats")
+        answered("scene_load", || {
+            let mut session = self.session();
+            session.engine.run_line(&format!("load {}", args.scene))?;
+            session.engine.run_line("stats")
+        })
     }
 
     /// Read the scene spec, or the part of it at a path, as JSON.
@@ -102,7 +121,7 @@ impl Cav {
     /// Returns what each command answered, one per line.
     #[tool(name = "command")]
     fn command(&self, Parameters(args): Parameters<CommandArgs>) -> Result<String, String> {
-        self.session().engine.run_script(&args.line).map(|answers| answers.join("\n"))
+        answered("command", || self.session().engine.run_script(&args.line).map(|answers| answers.join("\n")))
     }
 
     /// The engine's event log: what was done and what was refused, oldest first.
@@ -124,6 +143,12 @@ impl Cav {
     /// Draw the scene as a pane sees it and return the picture as a PNG.
     #[tool(name = "render_view")]
     fn render_view(&self, Parameters(args): Parameters<RenderArgs>) -> Result<CallToolResult, String> {
+        answered("render_view", || self.render(&args))
+    }
+}
+
+impl Cav {
+    fn render(&self, args: &RenderArgs) -> Result<CallToolResult, String> {
         let size = [args.width.unwrap_or(960), args.height.unwrap_or(600)];
         if size.iter().any(|side| !(1..=MAX_SIDE).contains(side)) {
             return Err(format!(
@@ -172,4 +197,23 @@ pub fn serve() -> Result<(), String> {
         service.waiting().await.map_err(|e| format!("MCP session: {e}"))?;
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_panic_inside_a_tool_is_an_answer() {
+        let fine: Result<u32, String> = answered("tool", || Ok(7));
+        assert_eq!(fine, Ok(7));
+        let refused: Result<u32, String> = answered("tool", || Err("no".into()));
+        assert_eq!(refused, Err("no".into()), "an ordinary refusal passes through unchanged");
+        // The property: a panic does not escape. (The default hook still prints it to stderr.)
+        let panicked: Result<u32, String> =
+            answered("render_view", || panic!("buffer of {} bytes", 1_440_002_352u64));
+        assert_eq!(panicked, Err("render_view failed inside the engine: buffer of 1440002352 bytes".into()));
+        let literal: Result<u32, String> = answered("command", || panic!("plain"));
+        assert_eq!(literal, Err("command failed inside the engine: plain".into()));
+    }
 }

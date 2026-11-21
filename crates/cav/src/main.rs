@@ -111,6 +111,9 @@ fn render(rest: &[String]) -> Result<(), String> {
     let pane = session.engine.active_pane();
     let png = session.render_png(pane, size)?;
     std::fs::write(&out, &png).map_err(|e| format!("writing {out}: {e}"))?;
+    for note in cav_render::decimation(session.engine.spec()) {
+        println!("note: {note} (the scene is too large to mark every metre)");
+    }
     println!(
         "{out}: {} × {} px, {} bytes, scene `{}`, {:.2} s",
         size[0],

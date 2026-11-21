@@ -229,3 +229,69 @@ fn gpu_mcp_render_view_returns_a_png() {
     assert!(log.contains("400 × 300 px") && log.contains("no pane 9"), "{log}");
     client.finish();
 }
+
+/// Writes a scene file under the test's temporary directory and returns its path with forward
+/// slashes (and no spaces: the console's `load` takes one word).
+fn scene_file(name: &str, spec: &cav_sim::SceneSpec) -> String {
+    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(name);
+    std::fs::write(&path, spec.to_ron()).unwrap();
+    path.to_string_lossy().replace('\\', "/")
+}
+
+#[test]
+fn mcp_refuses_scenes_outside_the_ranges_and_keeps_answering() {
+    let (mut client, _) = Client::start();
+    // The three specs of the S0 review that hung the renderer or exhausted memory.
+    let mut far = cav_sim::SceneSpec::room();
+    far.room.as_mut().unwrap().origin[0] = 1e17;
+    let mut wide = cav_sim::SceneSpec::room();
+    wide.room.as_mut().unwrap().size[0] = 1e10;
+    let mut tall = cav_sim::SceneSpec::room();
+    tall.array.instrument.tower_height = 3e6;
+    for (name, spec, field) in [
+        ("far.ron", far, "room.origin"),
+        ("wide.ron", wide, "room.size[0]"),
+        ("tall.ron", tall, "array.instrument.tower_height"),
+    ] {
+        let (is_error, content) = client.call("scene_load", json!({ "scene": scene_file(name, &spec) }));
+        let why = content[0]["text"].as_str().unwrap();
+        assert!(is_error && why.contains(field), "{name}: {why}");
+    }
+    // The scene is still the default one, and the server still answers.
+    assert_eq!(client.text("scene_get", json!({ "path": "name" })), "\"room\"");
+    // Control: a file inside the ranges loads.
+    let mut tallest = cav_sim::SceneSpec::room();
+    tallest.name = "tallest".into();
+    tallest.array.instrument.tower_height = 1000.0;
+    let stats: Value = serde_json::from_str(
+        &client.text("scene_load", json!({ "scene": scene_file("tallest.ron", &tallest) })),
+    )
+    .unwrap();
+    assert_eq!(stats["scene"], "tallest");
+    client.finish();
+}
+
+#[test]
+fn gpu_mcp_render_view_answers_for_the_largest_scene() {
+    use cav_sim::spec::limits;
+    let (mut client, _) = Client::start();
+    let mut scene = cav_sim::SceneSpec::room();
+    scene.name = "largest".into();
+    scene.array.instrument.tower_height = limits::TOWER_HEIGHT;
+    scene.array.instrument.ifo_separation = 500.0;
+    scene.array.towers = (0..limits::TOWERS)
+        .map(|n| cav_sim::TowerSpec { label: format!("t{n}"), position: [5.0 * n as f64, 100.0, 0.0] })
+        .collect();
+    scene.room.as_mut().unwrap().size = [limits::ROOM_SIZE; 3];
+    client.text("scene_load", json!({ "scene": scene_file("largest.ron", &scene) }));
+    // Before the ranges and the caps, this request was never answered. Now it is a picture.
+    let (is_error, content) = client.call("render_view", json!({ "width": 320, "height": 200 }));
+    assert!(!is_error, "{content:?}");
+    assert_eq!(content[0]["type"], "image");
+    // And the next request is answered too.
+    let stats: Value = serde_json::from_str(&client.text("command", json!({ "line": "stats" }))).unwrap();
+    assert_eq!(stats["towers"], 1000);
+    client.finish();
+}

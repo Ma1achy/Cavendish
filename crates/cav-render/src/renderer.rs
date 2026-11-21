@@ -226,11 +226,17 @@ impl Renderer {
 
     /// Draws `frame` into `target`. Returns when the commands are submitted, not when the GPU has
     /// finished; reading the texture back waits for it.
-    pub fn draw(&self, gpu: &Gpu, target: &PaneTarget, frame: Frame<'_>) {
+    ///
+    /// # Errors
+    /// When the scene needs a buffer larger than the device allows, or the GPU refuses the work.
+    /// Nothing is drawn then; the target keeps its last picture.
+    pub fn draw(&self, gpu: &Gpu, target: &PaneTarget, frame: Frame<'_>) -> Result<(), String> {
         let [width, height] = target.size;
         let camera = Camera::new(frame.view, f64::from(width) / f64::from(height));
         let things = drawables(frame.scene, frame.view.style, frame.highlight, camera.origin);
-        self.draw_things(gpu, target, &camera, &things, frame.view.style);
+        check_sizes(&things, gpu.device.limits().max_buffer_size)?;
+        // A validation error inside wgpu would otherwise be a panic; here it is an answer.
+        gpu.checked(|| self.draw_things(gpu, target, &camera, &things, frame.view.style))
     }
 
     fn draw_things(
@@ -332,7 +338,7 @@ impl Renderer {
     /// When the read-back fails.
     pub fn render_rgba(&self, gpu: &Gpu, frame: Frame<'_>, size: [u32; 2]) -> Result<Vec<u8>, String> {
         let target = PaneTarget::new(gpu, size);
-        self.draw(gpu, &target, frame);
+        self.draw(gpu, &target, frame)?;
         gpu.read_rgba8(target.texture())
     }
 
@@ -344,6 +350,22 @@ impl Renderer {
         let size = [size[0].max(1), size[1].max(1)];
         encode_png(&self.render_rgba(gpu, frame, size)?, size)
     }
+}
+
+/// Refuses geometry that would not fit in one buffer of `max_buffer_size` bytes.
+fn check_sizes(things: &Drawables, max_buffer_size: u64) -> Result<(), String> {
+    let buffers = [
+        ("lines", things.lines.len() as u64 * size_of::<Line>() as u64),
+        ("triangles", things.triangles.len() as u64 * size_of::<Vertex>() as u64),
+    ];
+    for (what, bytes) in buffers {
+        if bytes > max_buffer_size {
+            return Err(format!(
+                "the scene's {what} need {bytes} bytes in one buffer; this device allows {max_buffer_size}"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// How far the ground grid reaches before it has faded into the background, metres.
@@ -389,6 +411,16 @@ pub fn decode_png(bytes: &[u8]) -> Result<(Vec<u8>, [u32; 2]), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn geometry_too_big_for_a_buffer_is_refused_before_it_is_made() {
+        let line = Line { a: [0.0; 3], width: 1.0, b: [1.0; 3], _pad: 0.0, colour: [1.0; 4] };
+        let things = Drawables { lines: vec![line; 100], ..Drawables::default() };
+        // 100 lines of 48 bytes fit in 4800 bytes and not in 4799.
+        assert_eq!(check_sizes(&things, 4800), Ok(()));
+        let why = check_sizes(&things, 4799).unwrap_err();
+        assert!(why.contains("lines need 4800 bytes") && why.contains("allows 4799"), "{why}");
+    }
 
     #[test]
     fn png_round_trips_pixels() {

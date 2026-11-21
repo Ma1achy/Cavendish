@@ -35,6 +35,15 @@
 - id: TASK-S0-11
   milestone: S0
   title: 'Validation report: cargo xtask validate --report, cases declared beside their tests, plots, README banner'
+- id: TASK-S0-12
+  milestone: S0
+  title: 'Review: bound the scene spec, cap every count the renderer and timeline make, answer every MCP request'
+- id: TASK-S0-13
+  milestone: S0
+  title: 'Review: validate holds cases and tolerances to the committed report; x-ray, shading and projection tests that can fail'
+- id: TASK-S0-14
+  milestone: S0
+  title: 'Review: scene paths with spaces, named views re-frame, console answers, one frame accessor; notes, demo and report regenerated'
 - id: TASK-S1-01
   milestone: S1
   title: 'Forward model in cav-core: flight, arms, propagation integral'

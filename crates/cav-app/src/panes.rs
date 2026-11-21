@@ -21,6 +21,11 @@ pub trait PaneSurface {
         generation: u64,
         frame: Frame<'_>,
     ) -> Option<egui::TextureId>;
+
+    /// Why pane `pane` could not be drawn, if the last attempt failed; the shell shows it in the pane.
+    fn problem(&self, _pane: usize) -> Option<String> {
+        None
+    }
 }
 
 /// No GPU: the shell draws an empty pane. For tests of layout and input.
@@ -48,6 +53,8 @@ pub struct GpuPanes {
     /// How many times a pane has been drawn: tells a test or the profiler that an unchanged scene
     /// costs nothing.
     pub draws: u64,
+    /// Why each pane's last draw failed, if it did.
+    problems: [Option<String>; cav_engine::MAX_PANES],
 }
 
 impl GpuPanes {
@@ -55,7 +62,14 @@ impl GpuPanes {
     #[must_use]
     pub fn new(gpu: Gpu, egui: Arc<RwLock<egui_wgpu::Renderer>>) -> Self {
         let renderer = Renderer::new(&gpu);
-        Self { gpu, renderer, egui, slots: [const { None }; cav_engine::MAX_PANES], draws: 0 }
+        Self {
+            gpu,
+            renderer,
+            egui,
+            slots: [const { None }; cav_engine::MAX_PANES],
+            draws: 0,
+            problems: [const { None }; cav_engine::MAX_PANES],
+        }
     }
 }
 
@@ -91,11 +105,16 @@ impl PaneSurface for GpuPanes {
         }
         let slot = slot.as_mut().expect("just filled");
         if slot.generation != generation {
-            self.renderer.draw(&self.gpu, &slot.target, frame);
+            // Whether it worked or not, this generation has been tried: no retry every frame.
             slot.generation = generation;
             self.draws += 1;
+            self.problems[pane] = self.renderer.draw(&self.gpu, &slot.target, frame).err();
         }
-        Some(slot.id)
+        if self.problems[pane].is_some() { None } else { Some(slot.id) }
+    }
+
+    fn problem(&self, pane: usize) -> Option<String> {
+        self.problems.get(pane).cloned().flatten()
     }
 }
 

@@ -69,7 +69,9 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
                 .show(ui, |ui| console(shell, ui));
             shell.layout.panels.push(("console", panel.response.rect));
         }
-        let lanes_height = timeline::height(shell.engine.spec().array.towers.len());
+        // Up to eight lanes are shown; an array with more scrolls inside the panel.
+        let lanes_shown = shell.engine.spec().array.towers.len().min(timeline::MAX_LANES_SHOWN);
+        let lanes_height = timeline::height(lanes_shown);
         let panel = Panel::bottom("timeline")
             .exact_size(lanes_height + 34.0)
             .frame(frame(theme::PANEL, 8, 4))
@@ -303,6 +305,9 @@ fn console(shell: &mut Shell, ui: &mut egui::Ui) {
 }
 
 fn timeline_panel(shell: &mut Shell, ui: &mut egui::Ui) {
+    let spec = shell.engine.spec().clone();
+    let instrument = &spec.array.instrument;
+    let all_shots = timeline::shots(instrument, spec.duration);
     ui.horizontal(|ui| {
         ui.label(RichText::new("Timeline").color(theme::STRONG).strong());
         if ui.add(Button::new(if shell.playing { "pause" } else { "play" }).min_size(vec2(48.0, 0.0))).clicked() {
@@ -311,28 +316,29 @@ fn timeline_panel(shell: &mut Shell, ui: &mut egui::Ui) {
         if ui.button("rewind").clicked() {
             let _ = shell.run("seek 0");
         }
-        let instrument = &shell.engine.spec().array.instrument;
         ui.label(RichText::new(format!("t {:.2} s", shell.engine.time())).monospace().color(theme::STRONG));
-        ui.label(
-            RichText::new(format!(
+        let caption = if all_shots.decimated() {
+            // Said in words, so that a lane drawn as one band is not mistaken for one long shot.
+            format!(
+                "one lane per tower · {} shots each, too many to draw one by one (one every {} s) · drag to scrub",
+                all_shots.total, instrument.cycle
+            )
+        } else {
+            format!(
                 "one lane per tower · each bar is a shot, launch to readout (2T = {:.2} s) · one shot every {:.1} s · drag to scrub",
                 2.0 * instrument.half_sequence,
                 instrument.cycle
-            ))
-            .size(11.0)
-            .color(theme::WEAK),
-        );
+            )
+        };
+        ui.label(RichText::new(caption).size(11.0).color(theme::WEAK));
     });
-    let spec = shell.engine.spec();
     let labels: Vec<String> = spec.array.towers.iter().map(|t| t.label.clone()).collect();
-    let response = timeline::lanes(
-        ui,
-        &labels,
-        &spec.array.instrument,
-        spec.duration,
-        shell.engine.time(),
-        shell.selected_tower(),
-    );
+    let (time, selected) = (shell.engine.time(), shell.selected_tower());
+    let response = egui::ScrollArea::vertical()
+        .id_salt("lanes")
+        .auto_shrink([false, false])
+        .show(ui, |ui| timeline::lanes(ui, &labels, &all_shots, spec.duration, time, selected))
+        .inner;
     if let Some(t) = response.seek {
         shell.playing = false;
         shell.apply(Command::Seek(t));
@@ -664,6 +670,10 @@ fn header(shell: &mut Shell, ui: &mut egui::Ui) {
         if shell.engine.panes() > 1 {
             badge(ui, format!("pane {} of {}", pane + 1, shell.engine.panes()), theme::LINK);
         }
+        // What the renderer thinned to keep a huge scene drawable is said here, not passed over.
+        for note in cav_render::decimation(shell.engine.spec()) {
+            badge(ui, note, theme::WARN);
+        }
         if let Some(target) = shell.engine.selection() {
             let text = match target {
                 Target::Tower(n) => shell.engine.spec().array.towers[n - 1].label.clone(),
@@ -712,7 +722,7 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                 ui.painter().text(
                     rect.center(),
                     Align2::CENTER_CENTER,
-                    "no GPU surface",
+                    surface.problem(pane).unwrap_or_else(|| "no GPU surface".to_owned()),
                     FontId::proportional(12.0),
                     theme::WEAK,
                 );
