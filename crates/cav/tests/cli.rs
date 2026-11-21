@@ -80,6 +80,30 @@ fn cli_exec_stops_at_a_refused_command_and_fails() {
 }
 
 #[test]
+fn cli_exec_splits_as_the_console_does() {
+    // A scene file whose path holds a space and a `;`: one quoted word, not two commands.
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("exec; my scenes");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("far void.ron");
+    let mut scene = cav_sim::dev::void();
+    scene.name = "far-void".into();
+    std::fs::write(&path, scene.to_ron()).unwrap();
+    // The comment line holds a lone quote and a `;`: neither reaches the lines after it.
+    let script = format!("# a 4\" pane; not a command\nload \"{}\"; panes 2; stats", path.display());
+    let out = cav(&["exec", &script]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let text = stdout(&out);
+    let stats: serde_json::Value = serde_json::from_str(text.split_once("panes 2\n").unwrap().1).unwrap();
+    assert_eq!(stats["scene"], "far-void");
+    assert_eq!(stats["panes"], 2);
+    // Control: without the quotes the `;` cuts the path in two, and the load is refused.
+    let bare = format!("load {}; panes 2", path.display());
+    let out = cav(&["exec", &bare]);
+    assert!(!out.status.success());
+    assert_eq!(stdout(&out), "", "nothing ran");
+}
+
+#[test]
 fn cli_refuses_an_unknown_scene() {
     // No GPU is needed to find out that the scene does not exist: it fails before a device is made.
     let path = scratch("never-written.png");
