@@ -25,3 +25,9 @@ egui_plot = "0.29"
 stl_io = "0.11"
 tobj = "4.0"
 gltf = "1.4"
+
+# The physics layer's tests run real simulations (a convection benchmark to steady state); build it
+# and the kernel it sums over optimised even in the dev profile so the blocking gate stays fast.
+# Optimisation level does not change IEEE results (no fast-math), so the bit-exact tests are unaffected.
+[profile.dev.package.physics]
+opt-level = 3

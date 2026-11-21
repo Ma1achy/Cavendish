@@ -108,12 +108,13 @@ means two methods (quadrature and voxels) arriving at the same value, not a reme
 
 - **Rust** (stable toolchain; `rustfmt` + `clippy`).
 - A **wgpu-capable GPU** for the GPU backend and the viewer — Metal on macOS, Vulkan on Linux, or
-  **software Vulkan/OpenGL** (lavapipe/llvmpipe) where no GPU is available (CI and the dev container).
+  **software Vulkan/OpenGL** (lavapipe/llvmpipe) where no GPU is available (CI).
 - **Python 3.11 + maturin + torch** for the SDK.
 
-The quickest entry point is the dev container (`.devcontainer/`), which provisions the whole toolchain —
-Rust, the software-Vulkan/GL stack, and maturin. On a real display the viewer uses the native GPU; in a
-headless container it falls back to software rendering (no GPU passthrough exists to a Linux VM on macOS).
+Cavendish runs **natively on the host** — install the Rust toolchain (`rustup`) and build. There is no
+container: a Linux container on macOS has no GPU passthrough, so it could only ever exercise the
+software path. Natively, wgpu picks Metal on macOS and Vulkan on Linux, and the GPU backend and the
+viewer use the real device.
 
 # **Usage**
 
@@ -177,7 +178,7 @@ batches — reproducible from a single seed.
 | `python/` | the SDK Python package and its pytest suite. |
 | `cavendish-spec/` | `cavendish.tex`, the authoritative specification. |
 | `design/`, `milestones/` | the per-subsystem design drill-downs and per-milestone implementation briefs. |
-| `.devcontainer/`, `.github/` | the reproducible dev environment and CI. |
+| `.github/` | CI. |
 
 The dependency edges *are* each crate's `[dependencies]`; a lower crate never names a higher one.
 

@@ -48,7 +48,7 @@ source actually tumble through its intermediate-axis flip (spec §5.4). Eyes on 
   **oriented bounding box**, and the **spin-axis arrow**, each an independent toggle. Text labels (axis
   letters, tick values) are projected through the camera and painted by egui — no glyph atlas in wgpu.
   An **orbit camera** (drag to rotate, scroll to zoom) with auto-framing on Run/Load. Nothing here is
-  performance-critical at inspection scale; the software (llvmpipe) path in the dev container is enough.
+  performance-critical at inspection scale; a software (llvmpipe) adapter is enough where there is no GPU.
 - **egui for the UI** — an immediate-mode panel layout for the controls (scenario parameters,
   `FieldSet` toggles, the scrubber) and, via `egui_plot`, the signal and periodogram plots. Immediate
   mode suits a tool that re-renders every frame off live state.

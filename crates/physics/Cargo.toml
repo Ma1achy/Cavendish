@@ -1,0 +1,13 @@
+[package]
+name = "physics"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+math = { path = "../math" }
+gravity = { path = "../gravity" }
+shape = { path = "../shape" }
+source = { path = "../source" }
+instrument = { path = "../instrument" }
+world = { path = "../world" }
