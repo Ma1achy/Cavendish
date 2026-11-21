@@ -82,6 +82,41 @@ the numerics block (precision, quadrature, tree tolerance, LOD mode, pitches, fl
 SHA) and an optional per-tower `error_estimate`. A dataset directory carries a manifest that
 regenerates it; `cav verify` proves it. Detail: `milestones/M15-…` and `M16-trust.md` on the v2 branch.
 
+### 3.4 Precision, coordinates, and what runs where
+
+Big worlds and µrad phases pull in opposite directions; the answer is frames, not wider floats.
+
+- **World in f64 on the CPU; every GPU number is local.** Positions handed to the GPU are offsets in
+  a frame near where they are used: each tower's frame for the gravity read (origin at its lower launch
+  point), each chunk's origin for voxel storage, the camera for rendering (camera-relative rendering, as
+  large-world game engines do). Offsets are formed in f64 on the CPU, then rounded. At 1 km, f32 world
+  coordinates resolve ~60 µm; tower-relative within 20 m, ~1 µm.
+- **Never difference two large numbers on the GPU.** The read is upper-minus-lower and IFO-minus-IFO;
+  compute it differentially: 1/|a| − 1/|b| = (b − a)·(b + a) / (|a||b|(|a| + |b|)), with a, b the
+  offsets from the two arm points, so the cancelling monopole never appears. Same for the cube series
+  and multipoles.
+- **Accumulate in float-float** (two-sum, two-product) where a sum of many small terms must hold
+  10⁻⁹ relative; pairwise reduction order fixed for determinism. Every such kernel has an f64 twin.
+- **Scale units to order one** inside kernels (metres from the tower, kg, rad, seconds from the
+  measurement), and keep `G·m_A/ħ` out of the inner loop.
+- **The split, to be measured before it is fixed:**
+
+| Work | Where | Why |
+|---|---|---|
+| scene graph, commands, spec, scheduling | CPU | branchy, small |
+| rigid dynamics, contact for tens of bodies | CPU (f64) | sequential, needs exact rest; GPU only for thousands of bodies |
+| voxelising one body, building its tree | CPU, parallel (rayon) | once per body; GPU for many or for streaming terrain |
+| tree walk / LOD read over (measurement × tower × arm × flight node) | GPU, float-float accumulation | embarrassingly parallel, the main cost |
+| response dot products, grid fields | GPU | one pass over cells per frame |
+| fluid solve, adaptive regrid, voxel FE modal solves | GPU | bandwidth-bound stencils and multigrid |
+| periodograms over 10⁵–10⁷ shots | GPU (NUFFT) with a CPU f64 check | the cadence studies need millions of points |
+| rendering, culling, streaming | GPU | — |
+| every oracle and parity reference | CPU f64 | the truth |
+
+The builder's research agents own a note on this (`docs/research/precision-and-placement.md`):
+measure f32 vs float-float vs f64 error on the anchors in each frame choice, and CPU vs GPU time per
+stage on the M3 and the 2080, before the split above is treated as settled.
+
 ## 4. The instrument and the physics — what is carried over as knowledge
 
 Read these on the v2 branch before the slices that need them; they are the design, re-derive the code:
