@@ -1,0 +1,21 @@
+{
+  "script": "fig2_folding_map.py",
+  "upstream": "https://github.com/Thranduil02/atom-interferometry",
+  "commit": "d7d360ad92837bec929b85091b2bdd9af81d285c",
+  "overrides": {
+    "T_total": "1e3"
+  },
+  "seed": 0,
+  "numpy": "2.5.5",
+  "matplotlib": "3.11.2",
+  "python": "3.14.3",
+  "f_N": 0.1,
+  "arrays": {
+    "f_true": [
+      2001
+    ],
+    "f_obs": [
+      2001
+    ]
+  }
+}

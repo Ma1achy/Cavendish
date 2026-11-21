@@ -1,0 +1,159 @@
+{
+  "script": "fig2_10m",
+  "upstream": "https://github.com/Thranduil02/atom-interferometry",
+  "commit": "d7d360ad92837bec929b85091b2bdd9af81d285c",
+  "overrides": {
+    "T_total": "2e4"
+  },
+  "seed": 0,
+  "numpy": "2.5.5",
+  "matplotlib": "3.11.2",
+  "python": "3.14.3",
+  "instrument": {
+    "m_atom": 1.46e-25,
+    "hbar": 1.055e-34,
+    "G": 6.67e-11,
+    "g": 9.81,
+    "n": 1000.0,
+    "T": 0.73,
+    "dt": 0.01,
+    "u0": 3.86,
+    "v_kick": 6.504651743802706,
+    "T_cyc": 2.0,
+    "delta_r": 5.0,
+    "f_N": 0.25,
+    "ifo_heights": [
+      0.0,
+      5.0
+    ]
+  },
+  "oscillators": {
+    "b": {
+      "name": "b",
+      "f": 0.05,
+      "amp": 0.5,
+      "M": 1.0,
+      "D": 3.0,
+      "h0": 1.0,
+      "circular": false
+    },
+    "c": {
+      "name": "c",
+      "f": 0.3275,
+      "amp": 0.5,
+      "M": 1.0,
+      "D": 3.0,
+      "h0": 1.0,
+      "circular": false
+    },
+    "d": {
+      "name": "d",
+      "f": 0.35625,
+      "amp": 0.5,
+      "M": 1.0,
+      "D": 3.0,
+      "h0": 1.0,
+      "circular": true
+    }
+  },
+  "uldm": {
+    "f_phi": 0.2125,
+    "m_phi": 8.788293855283507e-16,
+    "shot_noise_asd": 0.0001
+  },
+  "panels": {
+    "b": {
+      "peak_abs_phase": 0.004242794577680153,
+      "max_offset_over_peak": 0.0028160080347935873
+    },
+    "c": {
+      "peak_abs_phase": 0.0035895912580965446,
+      "max_offset_over_peak": 0.01612500552538933
+    },
+    "d": {
+      "peak_abs_phase": 0.004527019203705708,
+      "max_offset_over_peak": 0.018908671049657162
+    }
+  },
+  "comb_b_urad_per_rthz": {
+    "1f0": 256720.4899322834,
+    "2f0": 15613.723819586372,
+    "3f0": 918.9870299581606,
+    "4f0": 70.8098888145754
+  },
+  "periodogram": "the script's own: (T_cyc/N)\u00b7|rfft(y \u2212 mean)|\u00b2, DC dropped",
+  "arrays": {
+    "t": [
+      10000
+    ],
+    "raw_b_published": [
+      10000
+    ],
+    "raw_b_same_time": [
+      10000
+    ],
+    "raw_c_published": [
+      10000
+    ],
+    "raw_c_same_time": [
+      10000
+    ],
+    "raw_d_published": [
+      10000
+    ],
+    "raw_d_same_time": [
+      10000
+    ],
+    "uldm": [
+      10000
+    ],
+    "noise_a": [
+      10000
+    ],
+    "noise_b": [
+      10000
+    ],
+    "noise_c": [
+      10000
+    ],
+    "noise_d": [
+      10000
+    ],
+    "f": [
+      5000
+    ],
+    "S_clean_b": [
+      5000
+    ],
+    "S_clean_c": [
+      5000
+    ],
+    "S_clean_d": [
+      5000
+    ],
+    "S_noisy_a": [
+      5000
+    ],
+    "S_noisy_b": [
+      5000
+    ],
+    "S_noisy_c": [
+      5000
+    ],
+    "S_noisy_d": [
+      5000
+    ],
+    "lower1": [
+      146
+    ],
+    "upper1": [
+      146
+    ],
+    "lower2": [
+      146
+    ],
+    "upper2": [
+      146
+    ]
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "script": "1D_oscillator",
+  "upstream": "https://github.com/Thranduil02/atom-interferometry",
+  "commit": "d7d360ad92837bec929b85091b2bdd9af81d285c",
+  "overrides": {
+    "T_total": "2000"
+  },
+  "seed": 0,
+  "numpy": "2.5.5",
+  "matplotlib": "3.11.2",
+  "python": "3.14.3",
+  "instrument": {
+    "m_atom": 1.46e-25,
+    "hbar": 1.055e-34,
+    "G": 6.67e-11,
+    "g": 9.81,
+    "n": 1000.0,
+    "T": 0.73,
+    "dt": 0.01,
+    "u0": 3.86,
+    "v_kick": 6.504651743802706,
+    "cycle": 2.0,
+    "ifo_heights": [
+      0.0,
+      5.0
+    ]
+  },
+  "oscillator": {
+    "M": 1.0,
+    "D": 5.0,
+    "h0": 1.0,
+    "amp": 1.0,
+    "f": 0.1
+  },
+  "window_samples": 146,
+  "recomputation_control_relative": 0.0,
+  "periodogram": "the script's own DFT: no mean subtraction, DC kept, bins up to and including Nyquist",
+  "peak_abs_phase": 0.0038604558424882095,
+  "max_offset_over_peak": 0.0032918461617320164,
+  "arrays": {
+    "t": [
+      1000
+    ],
+    "phase_published": [
+      1000
+    ],
+    "phase_same_time": [
+      1000
+    ],
+    "f": [
+      501
+    ],
+    "S_published": [
+      501
+    ],
+    "lower1": [
+      200
+    ],
+    "upper1": [
+      200
+    ],
+    "lower2": [
+      200
+    ],
+    "upper2": [
+      200
+    ]
+  }
+}
