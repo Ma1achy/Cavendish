@@ -4,6 +4,7 @@
 //! constants with their sources, and (from S1) the forward model: flight, arms, the propagation
 //! integral and the channels. The voxel tree and the kernels arrive with their slices.
 
+pub mod anchors;
 pub mod constants;
 pub mod defaults;
 pub mod forward;

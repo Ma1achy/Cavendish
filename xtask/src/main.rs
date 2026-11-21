@@ -3,7 +3,7 @@
 //! ```text
 //! cargo xtask quick [--budget]   fmt, clippy, CPU tests; under 10 s warm
 //! cargo xtask gpu                tests that need the local adapter; under 2 min
-//! cargo xtask oracle             the v1 anchors (the oracle crate arrives in S1)
+//! cargo xtask oracle             the engine against v1 at v1-final and George's scripts
 //! cargo xtask demo <slice>       the slice's demo, headless, with screenshots
 //! cargo xtask validate [--report] every validation case, tabulated; missing cases fail
 //! cargo xtask hooks              install the pre-push hook that runs `quick`
@@ -25,12 +25,16 @@ cargo xtask <tier>
                      than the floor in xtask/floors.txt. With --budget it also fails when it took over 10 s
                      (meaningful on a warm build only).
   gpu                the tests whose names contain `gpu_`: they need the local adapter. Same floor rule.
-  oracle             the oracle tier. Before S1 there is no oracle crate, and it says so.
+  oracle             the oracle tier: the `oracle` crate, which compiles v1's forward model at tag
+                     v1-final and holds the engine to it and to arrays made by running George's
+                     reference scripts. A workspace of its own, built only by this command and by
+                     validate; formatted, linted and held to a floor like the other tiers.
   demo <slice>       runs the slice's demo headlessly and saves screenshots to docs/slices/<slice>/.
   validate [--report] [--against <revision>]
                      runs every validation case (tests named `validation_…`, declared with
-                     `cav_validate::case!`) and tabulates measured error against tolerance. A case
-                     that is declared but did not run is reported as missing and fails the command.
+                     `cav_validate::case!`, in the workspace and in the oracle crate) and tabulates
+                     measured error against tolerance. A case that is declared but did not run is
+                     reported as missing and fails the command.
                      It also holds the cases to docs/validation/report.json as committed at
                      the revision (HEAD unless --against names another, such as the last slice's
                      tag): a case that has gone, or a tolerance that has changed, fails unless
@@ -51,7 +55,7 @@ fn main() -> ExitCode {
         ["quick"] => tiers::quick(&root, false),
         ["quick", "--budget"] => tiers::quick(&root, true),
         ["gpu"] => tiers::gpu(&root),
-        ["oracle"] => tiers::oracle(),
+        ["oracle"] => tiers::oracle(&root),
         ["demo", slice] => demo::run(&root, slice),
         ["validate"] => validate::run(&root, false, validate::Against::Head),
         ["validate", "--report"] => validate::run(&root, true, validate::Against::Head),

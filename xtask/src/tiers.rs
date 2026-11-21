@@ -22,6 +22,9 @@ const GPU_FILTER: &str = "test(gpu_)";
 pub fn quick(root: &Path, enforce_budget: bool) -> Result<(), String> {
     let started = Instant::now();
     step("fmt", cargo(root, &["fmt", "--all", "--check"]))?;
+    // The oracle crate is outside the workspace. Checking its formatting compiles nothing, so it
+    // is checked here on every commit; its lints and tests wait for `cargo xtask oracle`.
+    step("fmt (oracle)", cargo(root, &["fmt", "--manifest-path", ORACLE_MANIFEST, "--check"]))?;
     // Clippy includes `cargo check`. Cargo's fingerprints make it a no-op for unchanged crates, which
     // is the plan's "clippy on changed crates" without a second mechanism to get wrong.
     step(
@@ -45,21 +48,46 @@ pub fn gpu(root: &Path) -> Result<(), String> {
     run_tier(root, "gpu", GPU_FILTER)
 }
 
-/// The oracle tier. Honest about what it is: nothing to run until S1 brings the oracle crate.
-pub fn oracle() -> Result<(), String> {
-    eprintln!(
-        "xtask: oracle: 0 checks. There is no physics to check in S0: the `oracle` crate (v1's forward \
-         model at tag v1-final, and George's anchors) arrives with S1 (TASK-S1-02), and this tier will \
-         then run it with a floor like the others. Nothing was verified by this command."
-    );
-    Ok(())
+/// The oracle crate: a workspace of its own, so that the main one never fetches or compiles v1.
+pub const ORACLE_MANIFEST: &str = "oracle/Cargo.toml";
+/// Its artefacts go under the main `target/`, which is the directory excluded from virus scanning.
+pub const ORACLE_TARGET: &str = "target/oracle";
+
+/// The arguments that run the oracle crate's tests through nextest, with the main workspace's
+/// nextest configuration (the watchdog that kills a test at two minutes).
+pub const ORACLE_NEXTEST: [&str; 9] = [
+    "nextest",
+    "run",
+    "--manifest-path",
+    ORACLE_MANIFEST,
+    "--target-dir",
+    ORACLE_TARGET,
+    "--config-file",
+    ".config/nextest.toml",
+    "--no-tests=pass",
+];
+
+/// The oracle tier: v1's forward model at tag `v1-final`, compiled from source, and George's
+/// reference scripts as fixtures, each holding the engine to a stated tolerance. The crate is
+/// outside the workspace, so it is formatted and linted here as well as tested.
+pub fn oracle(root: &Path) -> Result<(), String> {
+    step("oracle fmt", cargo(root, &["fmt", "--manifest-path", ORACLE_MANIFEST, "--check"]))?;
+    let clippy = ["clippy", "--manifest-path", ORACLE_MANIFEST, "--target-dir", ORACLE_TARGET];
+    let lints = ["--all-targets", "--quiet", "--", "-D", "warnings"];
+    step("oracle clippy", cargo(root, &[&clippy[..], &lints[..]].concat()))?;
+    run_tests(root, "oracle", &ORACLE_NEXTEST)
 }
 
 /// Runs the tests matching `filter` through cargo-nextest and holds the count to the tier's floor.
 fn run_tier(root: &Path, tier: &str, filter: &str) -> Result<(), String> {
+    run_tests(root, tier, &["nextest", "run", "--workspace", "--no-tests=pass", "-E", filter])
+}
+
+/// Runs cargo-nextest with `arguments` and holds the number of tests it ran to the tier's floor.
+fn run_tests(root: &Path, tier: &str, arguments: &[&str]) -> Result<(), String> {
     let floor = floor_for(&read_floors(root)?, tier)?;
     let started = Instant::now();
-    let mut command = cargo(root, &["nextest", "run", "--workspace", "--no-tests=pass", "-E", filter]);
+    let mut command = cargo(root, arguments);
     // nextest reports on stderr; pass it through line by line and keep it for the count.
     let mut child = command
         .stderr(Stdio::piped())
@@ -186,5 +214,25 @@ mod tests {
         let floors = include_str!("../floors.txt");
         assert!(floor_for(floors, "quick").unwrap() > 0, "quick must run something");
         assert!(floor_for(floors, "gpu").is_ok());
+        // From S1 the oracle tier is a tier like the others: it has a floor, and not an empty one.
+        assert!(floor_for(floors, "oracle").unwrap() > 0, "the oracle tier must check something");
+    }
+
+    #[test]
+    fn the_oracle_tier_builds_its_own_crate_outside_the_workspace() {
+        // The crate is where the tier says it is, and it is a workspace of its own …
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let manifest = std::fs::read_to_string(root.join(ORACLE_MANIFEST)).unwrap();
+        assert!(manifest.lines().any(|line| line.trim() == "[workspace]"), "its own workspace");
+        assert!(
+            manifest.contains("56df4ab2126dce30fa0f26cb9321885511a105cc"),
+            "v1 pinned to v1-final's commit"
+        );
+        // … which the main workspace leaves out, so `quick` never fetches or compiles v1.
+        let main = std::fs::read_to_string(root.join("Cargo.toml")).unwrap();
+        assert!(main.contains("exclude = [\"oracle\"]"));
+        // Control: the tier's arguments name that manifest and no other.
+        assert!(ORACLE_NEXTEST.contains(&ORACLE_MANIFEST) && !ORACLE_NEXTEST.contains(&"--workspace"));
+        assert!(ORACLE_TARGET.starts_with("target/"), "artefacts stay under the excluded directory");
     }
 }
