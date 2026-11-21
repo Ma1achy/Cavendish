@@ -540,20 +540,111 @@ pub fn changes(
     if problems.is_empty() { Ok(owned) } else { Err(problems.join("\n")) }
 }
 
-/// The earlier report to compare with: `docs/validation/report.json` as committed at `against`.
-/// `None` when there is none there (the first report, or no git).
-fn earlier_report(root: &Path, against: &str) -> Option<String> {
-    let output = std::process::Command::new("git")
-        .current_dir(root)
-        .args(["show", &format!("{against}:docs/validation/report.json")])
-        .output()
-        .ok()?;
-    output.status.success().then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+/// Where the earlier report comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Against<'a> {
+    /// `HEAD`, because nothing else was asked for. No report there is no baseline (the first
+    /// report, or no git), and the run says so.
+    Head,
+    /// `--against <revision>`: the caller named the baseline, so it must be there.
+    Revision(&'a str),
+}
+
+impl Against<'_> {
+    const fn revision(&self) -> &str {
+        match self {
+            Self::Head => "HEAD",
+            Self::Revision(revision) => revision,
+        }
+    }
+}
+
+/// What git said about the baseline: whether the revision names a commit, and the report
+/// committed there, if any.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Found {
+    pub resolves: bool,
+    pub report: Option<String>,
+}
+
+/// The cases to hold this report to, or `None` when there is no baseline.
+///
+/// # Errors
+/// A baseline that was asked for by name and cannot be read: the revision does not resolve (a
+/// mistyped tag must not switch the guard off), it holds no report, or its report lists no cases.
+pub fn baseline(against: Against<'_>, found: &Found) -> Result<Option<Vec<Earlier>>, String> {
+    let Against::Revision(revision) = against else {
+        return Ok(found.report.as_deref().map(earlier_cases));
+    };
+    if !found.resolves {
+        return Err(format!(
+            "--against {revision}: git knows no such revision, so there is nothing to hold the report to. \
+             Check the tag or commit (`git tag --list`); nothing was run"
+        ));
+    }
+    let Some(report) = &found.report else {
+        return Err(format!(
+            "--against {revision}: there is no docs/validation/report.json at that revision; nothing was run"
+        ));
+    };
+    let earlier = earlier_cases(report);
+    if earlier.is_empty() {
+        return Err(format!(
+            "--against {revision}: the report at that revision lists no cases that can be read; nothing was run"
+        ));
+    }
+    Ok(Some(earlier))
+}
+
+/// Asks git for the baseline: `docs/validation/report.json` as committed at the revision.
+fn find(root: &Path, revision: &str) -> Found {
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git").current_dir(root).args(args).output().ok()?;
+        output.status.success().then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+    };
+    Found {
+        resolves: git(&["rev-parse", "--verify", "--quiet", &format!("{revision}^{{commit}}")]).is_some(),
+        report: git(&["show", &format!("{revision}:docs/validation/report.json")]),
+    }
+}
+
+/// Writes a report, given the acknowledged changes to print in it.
+pub type Write<'a> = &'a mut dyn FnMut(&[String]) -> Result<(), String>;
+
+/// The end of a run: the report is written only when there is nothing wrong with it. A failed or
+/// missing case, a dropped case, a changed tolerance or a broken test run each stop it first, so
+/// the committed `report.json`, which the next run is held to, is never replaced by a report that
+/// did not pass.
+///
+/// # Errors
+/// The first of: the verdict on the rows, the comparison with the earlier report, the test run,
+/// the writing itself.
+pub fn conclude(
+    rows: &[Row],
+    held: Result<Vec<String>, String>,
+    ran: Result<(), String>,
+    write: Option<Write<'_>>,
+) -> Result<(), String> {
+    let asked = write.is_some();
+    let not_written = |why: String| {
+        if asked { format!("{why}\nthe report was not written: docs/validation/ is as it was") } else { why }
+    };
+    verdict(rows).map_err(not_written)?;
+    let owned = held.map_err(not_written)?;
+    // Every case passed its tolerance, yet the test run failed: something else is wrong with it.
+    ran.map_err(not_written)?;
+    match write {
+        Some(write) => write(&owned),
+        None => Ok(()),
+    }
 }
 
 /// Runs the cases, holds them to the report committed at `against`, and, with `report`, writes
-/// the report.
-pub fn run(root: &Path, report: bool, against: &str) -> Result<(), String> {
+/// the report if all of that held.
+pub fn run(root: &Path, report: bool, against: Against<'_>) -> Result<(), String> {
+    // First, so that a mistyped revision costs nothing and cannot be missed.
+    let revision = against.revision();
+    let earlier = baseline(against, &find(root, revision))?;
     let declared = scan(root)?;
     let records_dir = root.join("target").join("validation");
     let _ = std::fs::remove_dir_all(&records_dir);
@@ -587,32 +678,28 @@ pub fn run(root: &Path, report: bool, against: &str) -> Result<(), String> {
     // The committed report is the memory of what was checked and how tightly.
     let acknowledged_path = root.join("docs").join("validation").join("acknowledged.txt");
     let acknowledged = parse_acknowledged(&std::fs::read_to_string(&acknowledged_path).unwrap_or_default())?;
-    let held = match earlier_report(root, against) {
-        Some(json) => {
-            let earlier = earlier_cases(&json);
-            eprintln!("xtask: validate: held to the {} cases of the report at {against}", earlier.len());
-            changes(&earlier, &rows, &acknowledged)
+    let held = match &earlier {
+        Some(earlier) => {
+            eprintln!("xtask: validate: held to the {} cases of the report at {revision}", earlier.len());
+            changes(earlier, &rows, &acknowledged)
         }
         None => {
-            eprintln!("xtask: validate: no report at {against} to hold this one to");
+            eprintln!("xtask: validate: no report at {revision} to hold this one to");
             Ok(Vec::new())
         }
     };
-    let owned = held.clone().unwrap_or_default();
-    if report {
+    let mut write = |owned: &[String]| {
         let out = root.join("docs").join("validation");
         std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
         std::fs::write(out.join("report.json"), report_json(&rows))
             .map_err(|e| format!("report.json: {e}"))?;
-        std::fs::write(out.join("report.md"), report_md(&rows, &owned))
+        std::fs::write(out.join("report.md"), report_md(&rows, owned))
             .map_err(|e| format!("report.md: {e}"))?;
         plots(root)?;
         eprintln!("xtask: validate: wrote {}", out.display());
-    }
-    verdict(&rows)?;
-    held?;
-    // Every case passed its tolerance, yet the test run failed: something else is wrong with it.
-    ran
+        Ok(())
+    };
+    conclude(&rows, held, ran, if report { Some(&mut write) } else { None })
 }
 
 /// Draws the plots with the script the progress workflow also uses.
@@ -852,6 +939,99 @@ mod tests {
         assert_eq!(notes, ["`alpha.first`: tolerance 1e-9 → 1e-7: the reference is only known to 1e-7"]);
         // A new case is not a change to an old one.
         assert_eq!(changes(&earlier[..1], &rows, &[]), Ok(vec![]));
+    }
+
+    #[test]
+    fn a_named_baseline_that_cannot_be_read_is_an_error() {
+        let declared = scan_source("f.rs", SOURCE);
+        let records =
+            [record("alpha.first", "1e-10", "1e-9", true), record("beta.second", "0.0", "0.0", true)];
+        let json = report_json(&collate(&declared, &records).unwrap());
+        let there = Found { resolves: true, report: Some(json.clone()) };
+        let no_report = Found { resolves: true, report: None };
+        let no_revision = Found { resolves: false, report: None };
+        // Control: a named revision with a report is the baseline, the same one HEAD would give.
+        let named = baseline(Against::Revision("s0-shell"), &there).unwrap().expect("a baseline");
+        assert_eq!(named.len(), 2);
+        assert_eq!(baseline(Against::Head, &there), Ok(Some(named)));
+        // A mistyped tag: it used to mean "no report to hold this one to", and the run passed.
+        let why = baseline(Against::Revision("s0-shel"), &no_revision).unwrap_err();
+        assert!(why.contains("--against s0-shel") && why.contains("no such revision"), "{why}");
+        // A real revision from before there was a report, or with one that cannot be read.
+        let why = baseline(Against::Revision("v1-final"), &no_report).unwrap_err();
+        assert!(
+            why.contains("--against v1-final") && why.contains("no docs/validation/report.json"),
+            "{why}"
+        );
+        let empty = Found { resolves: true, report: Some("{}\n".into()) };
+        assert!(baseline(Against::Revision("abc123"), &empty).unwrap_err().contains("lists no cases"));
+        // The default is not a named baseline: the first report ever has nothing to be held to.
+        assert_eq!(baseline(Against::Head, &no_report), Ok(None));
+        assert_eq!(baseline(Against::Head, &no_revision), Ok(None));
+    }
+
+    #[test]
+    fn the_real_repository_resolves_head_and_not_a_made_up_tag() {
+        // `find` against git itself: this crate lives in a repository.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        if !find(root, "HEAD").resolves {
+            eprintln!("not a git checkout: nothing to ask");
+            return;
+        }
+        let made_up = find(root, "no-such-tag-as-this");
+        assert_eq!(made_up, Found { resolves: false, report: None });
+        assert!(baseline(Against::Revision("no-such-tag-as-this"), &made_up).is_err());
+    }
+
+    #[test]
+    fn a_report_that_did_not_pass_is_not_written() {
+        let declared = scan_source("f.rs", SOURCE);
+        let good = [record("alpha.first", "1e-10", "1e-9", true), record("beta.second", "0.0", "0.0", true)];
+        let passing = collate(&declared, &good).unwrap();
+        let failing = collate(
+            &declared,
+            &[record("alpha.first", "2e-9", "1e-9", false), record("beta.second", "0.0", "0.0", true)],
+        )
+        .unwrap();
+        let missing = collate(&declared, &good[..1]).unwrap();
+        // Runs `conclude` and says whether the report was written, and with which notes.
+        let attempt = |rows: &[Row], held: Result<Vec<String>, String>, ran: Result<(), String>| {
+            let mut written: Option<Vec<String>> = None;
+            let mut write = |owned: &[String]| {
+                written = Some(owned.to_vec());
+                Ok(())
+            };
+            let outcome = conclude(rows, held, ran, Some(&mut write));
+            (outcome, written)
+        };
+        // Control: a report with nothing wrong is written, with its acknowledged changes.
+        let notes = vec!["`gamma.old` was dropped: gone with S3".to_owned()];
+        assert_eq!(attempt(&passing, Ok(notes.clone()), Ok(())), (Ok(()), Some(notes)));
+        // Each thing that fails the command stops the writing first.
+        let dropped = || Err("case `gamma.old` is in the earlier report and has gone".to_owned());
+        let cases = [
+            (&failing, Ok(vec![]), Ok(()), "1 case(s) failed: alpha.first"),
+            (&missing, Ok(vec![]), Ok(()), "did not run (missing): beta.second"),
+            (&passing, dropped(), Ok(()), "has gone"),
+            (&passing, Ok(vec![]), Err("validation cases failed (exit code: 100)".to_owned()), "exit code"),
+        ];
+        for (rows, held, ran, expected) in cases {
+            let (outcome, written) = attempt(rows, held, ran);
+            let why = outcome.unwrap_err();
+            assert!(why.contains(expected), "{why}");
+            assert!(why.contains("the report was not written"), "{why}");
+            assert_eq!(written, None, "{expected}: the report must not be written");
+        }
+        // Without `--report` the verdict is the same and nothing is said about writing.
+        assert_eq!(conclude(&passing, Ok(vec![]), Ok(()), None), Ok(()));
+        let why = conclude(&failing, Ok(vec![]), Ok(()), None).unwrap_err();
+        assert!(why.contains("alpha.first") && !why.contains("not written"), "{why}");
+        // A failure of the writing itself is the command's failure.
+        let mut broken = |_: &[String]| Err("report.json: disk full".to_owned());
+        assert_eq!(
+            conclude(&passing, Ok(vec![]), Ok(()), Some(&mut broken)),
+            Err("report.json: disk full".into())
+        );
     }
 
     #[test]
