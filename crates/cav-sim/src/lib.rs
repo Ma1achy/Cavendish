@@ -1,6 +1,7 @@
 //! Cavendish simulation: in S0, the scene spec, the view spec and the built-in scene library.
 //! Bodies, paths, dynamics, fluids and bundles arrive with their slices.
 
+pub mod dev;
 pub mod library;
 pub mod spec;
 pub mod view;
