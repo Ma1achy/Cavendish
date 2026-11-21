@@ -30,12 +30,10 @@ impl Camera {
     /// The camera of `view` for a picture `aspect` times as wide as it is high.
     #[must_use]
     pub fn new(view: &ViewSpec, aspect: f64) -> Self {
-        let (yaw, pitch) = (view.yaw.to_radians(), view.pitch.to_radians());
-        // The basis is built from the angles, not from a look-at with a fixed "up", so that the
-        // views from straight above and below are well defined: yaw then says which way is up.
-        let to_eye = Vec3::new(pitch.cos() * yaw.cos(), pitch.cos() * yaw.sin(), pitch.sin());
-        let right = Vec3::new(-yaw.sin(), yaw.cos(), 0.0);
-        let up = to_eye.cross(right);
+        // The basis comes from the angles, not from a look-at with a fixed "up", so that the views
+        // from straight above and below are well defined: yaw then says which way is up.
+        let (to_eye, right, up) = view.basis();
+        let (to_eye, right, up) = (Vec3::from_array(to_eye), Vec3::from_array(right), Vec3::from_array(up));
         let forward = -to_eye;
         let eye = to_eye * view.distance;
         let view_matrix = Mat4 {

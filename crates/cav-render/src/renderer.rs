@@ -11,6 +11,8 @@ use crate::scene::{Drawables, Line, Vertex, drawables};
 
 /// The colour format of every pane: sRGB, so shaders work in linear light.
 pub const COLOUR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+/// The same bytes without the sRGB decoding on read; see [`PaneTarget::encoded_view`].
+const ENCODED_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 /// Samples per pixel: lines and edges are antialiased by multisampling.
 const SAMPLES: u32 = 4;
@@ -43,6 +45,7 @@ pub struct PaneTarget {
     size: [u32; 2],
     colour: wgpu::Texture,
     colour_view: wgpu::TextureView,
+    encoded_view: wgpu::TextureView,
     multisampled: wgpu::TextureView,
     depth: wgpu::TextureView,
 }
@@ -52,7 +55,7 @@ impl PaneTarget {
     #[must_use]
     pub fn new(gpu: &Gpu, size: [u32; 2]) -> Self {
         let size = [size[0].max(1), size[1].max(1)];
-        let texture = |label, format, samples, usage| {
+        let texture = |label, format, samples, usage, view_formats: &[wgpu::TextureFormat]| {
             gpu.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
                 size: wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 },
@@ -61,19 +64,27 @@ impl PaneTarget {
                 dimension: wgpu::TextureDimension::D2,
                 format,
                 usage,
-                view_formats: &[],
+                view_formats,
             })
         };
         use wgpu::TextureUsages as U;
-        let colour =
-            texture("pane", COLOUR_FORMAT, 1, U::RENDER_ATTACHMENT | U::TEXTURE_BINDING | U::COPY_SRC);
+        let colour = texture(
+            "pane",
+            COLOUR_FORMAT,
+            1,
+            U::RENDER_ATTACHMENT | U::TEXTURE_BINDING | U::COPY_SRC,
+            &[ENCODED_FORMAT],
+        );
+        let encoded = wgpu::TextureViewDescriptor { format: Some(ENCODED_FORMAT), ..Default::default() };
         let view = wgpu::TextureViewDescriptor::default();
         Self {
             size,
             colour_view: colour.create_view(&view),
-            multisampled: texture("pane, multisampled", COLOUR_FORMAT, SAMPLES, U::RENDER_ATTACHMENT)
+            encoded_view: colour.create_view(&encoded),
+            multisampled: texture("pane, multisampled", COLOUR_FORMAT, SAMPLES, U::RENDER_ATTACHMENT, &[])
                 .create_view(&view),
-            depth: texture("pane, depth", DEPTH_FORMAT, SAMPLES, U::RENDER_ATTACHMENT).create_view(&view),
+            depth: texture("pane, depth", DEPTH_FORMAT, SAMPLES, U::RENDER_ATTACHMENT, &[])
+                .create_view(&view),
             colour,
         }
     }
@@ -88,6 +99,14 @@ impl PaneTarget {
     #[must_use]
     pub const fn view(&self) -> &wgpu::TextureView {
         &self.colour_view
+    }
+
+    /// The finished picture with its bytes read as they are stored (sRGB-encoded), not decoded to
+    /// linear light. This is the view a UI wants: egui treats texture values as already encoded,
+    /// so giving it the decoding view would darken the picture.
+    #[must_use]
+    pub const fn encoded_view(&self) -> &wgpu::TextureView {
+        &self.encoded_view
     }
 
     /// The finished picture's texture, for reading back.

@@ -200,9 +200,7 @@ impl Engine {
                 self.selection = None;
                 // Every pane keeps its direction, projection and style and re-frames the new scene.
                 for view in &mut self.views {
-                    let framed = ViewSpec::home(&self.spec);
-                    view.target = framed.target;
-                    view.distance = framed.distance;
+                    view.frame(&self.spec);
                 }
             }
             Command::Seek(t) => self.time = t.clamp(0.0, self.spec.duration),
@@ -685,8 +683,11 @@ mod tests {
         // The void is smaller than the room, so the framing distance shrinks; direction and style stay.
         assert_eq!(view.named(), Some(NamedView::North));
         assert_eq!(view.style, DrawStyle::Paper);
-        assert_eq!(view.distance, ViewSpec::home(&dev::void()).distance);
-        assert!(view.distance < ViewSpec::home(&SceneSpec::room()).distance);
+        let framed = |scene: &SceneSpec| {
+            ViewSpec::framing(scene, NamedView::North, Projection::Perspective, DrawStyle::Paper)
+        };
+        assert_eq!(view, &framed(&dev::void()));
+        assert!(view.distance < framed(&SceneSpec::room()).distance);
         engine.apply(Command::View(ViewCommand::Home { pane: 0 })).unwrap();
         assert_eq!(engine.view(0).named(), Some(NamedView::Iso));
         assert_eq!(engine.view(0).style, DrawStyle::Paper, "Home resets the camera, not the style");
