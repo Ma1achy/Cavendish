@@ -1,0 +1,286 @@
+//! GPU tier: the renderer draws what the camera maths says, on the local adapter.
+//! Every test here has `gpu_` in its name, which is how `cargo xtask gpu` finds it.
+
+use cav_core::Vec3;
+use cav_gpu::Gpu;
+use cav_render::{BACKGROUND_SRGB, Camera, Frame, Highlight, PAPER_SRGB, Renderer, tower_srgb};
+use cav_sim::{DrawStyle, NamedView, Projection, SceneSpec, ViewSpec, dev};
+
+const SIZE: [u32; 2] = [800, 600];
+
+struct Picture {
+    rgba: Vec<u8>,
+}
+
+impl Picture {
+    fn at(&self, x: u32, y: u32) -> [u8; 3] {
+        let i = ((y * SIZE[0] + x) * 4) as usize;
+        [self.rgba[i], self.rgba[i + 1], self.rgba[i + 2]]
+    }
+
+    /// Whether any pixel within `reach` of `(x, y)` is within `tolerance` of `colour` per channel.
+    fn has_near(&self, at: [f64; 2], reach: i64, colour: [u8; 3], tolerance: u8) -> bool {
+        let (cx, cy) = (at[0].round() as i64, at[1].round() as i64);
+        (-reach..=reach).any(|dy| {
+            (-reach..=reach).any(|dx| {
+                let (x, y) = (cx + dx, cy + dy);
+                x >= 0
+                    && y >= 0
+                    && x < i64::from(SIZE[0])
+                    && y < i64::from(SIZE[1])
+                    && close(self.at(x as u32, y as u32), colour, tolerance)
+            })
+        })
+    }
+
+    /// The first and last rows that hold a pixel of `colour`.
+    fn rows_of(&self, colour: [u8; 3], tolerance: u8) -> Option<(u32, u32)> {
+        let rows: Vec<u32> =
+            (0..SIZE[1]).filter(|&y| (0..SIZE[0]).any(|x| close(self.at(x, y), colour, tolerance))).collect();
+        Some((*rows.first()?, *rows.last()?))
+    }
+
+    /// The fraction of pixels in rows `from..to` that are not the background.
+    fn drawn_fraction(&self, rows: std::ops::Range<u32>, background: [u8; 3]) -> f64 {
+        let total = f64::from(rows.len() as u32 * SIZE[0]);
+        let drawn = rows
+            .flat_map(|y| (0..SIZE[0]).map(move |x| (x, y)))
+            .filter(|&(x, y)| !close(self.at(x, y), background, 1))
+            .count();
+        drawn as f64 / total
+    }
+}
+
+fn close(a: [u8; 3], b: [u8; 3], tolerance: u8) -> bool {
+    (0..3).all(|i| a[i].abs_diff(b[i]) <= tolerance)
+}
+
+fn setup() -> (Gpu, Renderer) {
+    let gpu = Gpu::new().expect("the GPU tier needs an adapter");
+    let renderer = Renderer::new(&gpu);
+    (gpu, renderer)
+}
+
+fn render(gpu: &Gpu, renderer: &Renderer, scene: &SceneSpec, view: &ViewSpec) -> Picture {
+    let frame = Frame { scene, view, highlight: Highlight::None };
+    Picture { rgba: renderer.render_rgba(gpu, frame, SIZE).expect("render") }
+}
+
+fn camera(view: &ViewSpec) -> Camera {
+    Camera::new(view, f64::from(SIZE[0]) / f64::from(SIZE[1]))
+}
+
+/// A point on tower `n`'s baseline, `height` metres up.
+fn on_tower(scene: &SceneSpec, n: usize, height: f64) -> Vec3 {
+    Vec3::from_array(scene.array.towers[n].position) + Vec3::Z * height
+}
+
+#[test]
+fn gpu_towers_appear_where_the_camera_projects_them() {
+    let (gpu, renderer) = setup();
+    let scene = SceneSpec::room();
+    let framed = |named, projection| ViewSpec::framing(&scene, named, projection, DrawStyle::Flat);
+    let views = [
+        ("iso", framed(NamedView::Iso, Projection::Perspective)),
+        ("iso, orthographic", framed(NamedView::Iso, Projection::Orthographic)),
+        ("top", framed(NamedView::Top, Projection::Orthographic)),
+        (
+            "low from the south-east",
+            ViewSpec { yaw: -60.0, pitch: 10.0, ..framed(NamedView::Iso, Projection::Perspective) },
+        ),
+    ];
+    for (name, view) in views {
+        let picture = render(&gpu, &renderer, &scene, &view);
+        let camera = camera(&view);
+        for n in 0..5 {
+            // 7.3 m up: above the room, between ticks, so only the tower's own colour is there.
+            let pixel = camera.pixel(on_tower(&scene, n, 7.3), SIZE).expect("in front of the camera");
+            assert!(
+                picture.has_near(pixel, 2, tower_srgb(n), 8),
+                "{name}: tower {} is not at {pixel:?}",
+                n + 1
+            );
+            // Control arms: another tower's colour is not there, and 25 px to the side is empty,
+            // so a renderer that put the towers elsewhere (or mirrored them) fails.
+            assert!(
+                !picture.has_near(pixel, 2, tower_srgb((n + 1) % 5), 8),
+                "{name}: wrong tower at {pixel:?}"
+            );
+            let beside = [pixel[0] + 25.0, pixel[1] + 12.0];
+            assert!(!picture.has_near(beside, 2, tower_srgb(n), 8), "{name}: tower {} smeared", n + 1);
+        }
+    }
+}
+
+#[test]
+fn gpu_void_has_towers_and_no_room() {
+    let (gpu, renderer) = setup();
+    let room = SceneSpec::room();
+    let void = dev::void();
+    // The same camera for both, so the pictures differ only by the room.
+    let view = ViewSpec::framing(&room, NamedView::Iso, Projection::Perspective, DrawStyle::Flat);
+    let with_room = render(&gpu, &renderer, &room, &view);
+    let without = render(&gpu, &renderer, &void, &view);
+    let camera = camera(&view);
+    // The middle of a ceiling edge of the room: an edge line with nothing else near it.
+    let edge = camera.pixel(Vec3::new(5.0, 2.5, 3.0), SIZE).unwrap();
+    let edge_colour = [0x5a, 0x5a, 0x5a];
+    assert!(with_room.has_near(edge, 2, edge_colour, 10), "the room's edge is drawn at {edge:?}");
+    assert!(!without.has_near(edge, 4, edge_colour, 60), "the void has no room edge");
+    assert!(without.has_near(edge, 0, BACKGROUND_SRGB, 1), "the void is background there");
+    // The towers are in both.
+    for n in 0..5 {
+        let pixel = camera.pixel(on_tower(&room, n, 7.3), SIZE).unwrap();
+        assert!(
+            with_room.has_near(pixel, 2, tower_srgb(n), 8) && without.has_near(pixel, 2, tower_srgb(n), 8)
+        );
+    }
+    // The void's renderer copes with an empty world: nothing but towers and background above them.
+    assert_eq!(without.drawn_fraction(0..40, BACKGROUND_SRGB), 0.0);
+}
+
+#[test]
+fn gpu_render_is_deterministic() {
+    let (gpu, renderer) = setup();
+    let scene = dev::infinite_floor();
+    let view = ViewSpec::home(&scene);
+    let first = render(&gpu, &renderer, &scene, &view);
+    let second = render(&gpu, &renderer, &scene, &view);
+    assert!(first.rgba == second.rgba, "two renders of the same frame differ");
+    // A second renderer on the same device gives the same picture: nothing depends on its history.
+    let again = render(&gpu, &Renderer::new(&gpu), &scene, &view);
+    assert!(first.rgba == again.rgba);
+    // Control: the comparison sees a camera moved by a hundredth of a degree.
+    let nudged = ViewSpec { yaw: view.yaw + 0.01, ..view };
+    assert!(first.rgba != render(&gpu, &renderer, &scene, &nudged).rgba);
+}
+
+#[test]
+fn gpu_orthographic_and_perspective_differ_as_expected() {
+    let (gpu, renderer) = setup();
+    let scene = dev::void();
+    // From east-south-east, level with the middle of the towers: no tower hides another, and tower 2
+    // (at x = +4) is nearer than tower 3 (at x = −4).
+    let base = ViewSpec {
+        yaw: -30.0,
+        pitch: 0.0,
+        ..ViewSpec::framing(&scene, NamedView::South, Projection::Orthographic, DrawStyle::Flat)
+    };
+    let height_of = |picture: &Picture, n: usize| {
+        let (top, bottom) =
+            picture.rows_of(tower_srgb(n), 8).unwrap_or_else(|| panic!("tower {} is not drawn", n + 1));
+        f64::from(bottom - top)
+    };
+    // Orthographic: every tower is the same height on screen, whatever its distance.
+    let ortho = render(&gpu, &renderer, &scene, &base);
+    let heights: Vec<f64> = (0..5).map(|n| height_of(&ortho, n)).collect();
+    for h in &heights {
+        assert!((h - heights[0]).abs() <= 2.0, "orthographic heights differ: {heights:?}");
+    }
+    // Perspective: the nearer tower is taller by the ratio of the distances, as the CPU camera predicts.
+    let view = ViewSpec { projection: Projection::Perspective, ..base };
+    let persp = render(&gpu, &renderer, &scene, &view);
+    let camera = camera(&view);
+    let predicted = |n: usize| {
+        let (foot, head) = (
+            camera.pixel(on_tower(&scene, n, 0.0), SIZE).unwrap(),
+            camera.pixel(on_tower(&scene, n, 10.0), SIZE).unwrap(),
+        );
+        foot[1] - head[1]
+    };
+    let (near, far) = (1, 2); // tower 2 at x = +4, tower 3 at x = −4
+    let measured_ratio = height_of(&persp, near) / height_of(&persp, far);
+    let predicted_ratio = predicted(near) / predicted(far);
+    assert!(predicted_ratio > 1.15, "the test's geometry separates the towers: {predicted_ratio}");
+    assert!(
+        (measured_ratio / predicted_ratio - 1.0).abs() < 0.03,
+        "perspective ratio {measured_ratio:.4}, predicted {predicted_ratio:.4}"
+    );
+    // Control: the orthographic picture does not show that ratio.
+    assert!((height_of(&ortho, near) / height_of(&ortho, far) - 1.0).abs() < 0.02);
+}
+
+#[test]
+fn gpu_every_style_is_distinct_and_paper_is_cream() {
+    let (gpu, renderer) = setup();
+    let scene = SceneSpec::room();
+    let pictures: Vec<(DrawStyle, Picture)> = DrawStyle::ALL
+        .into_iter()
+        .map(|style| {
+            let view = ViewSpec::framing(&scene, NamedView::Iso, Projection::Perspective, style);
+            (style, render(&gpu, &renderer, &scene, &view))
+        })
+        .collect();
+    for (i, (a, picture_a)) in pictures.iter().enumerate() {
+        for (b, picture_b) in &pictures[i + 1..] {
+            assert!(picture_a.rgba != picture_b.rgba, "{a:?} and {b:?} draw the same picture");
+        }
+    }
+    let of = |style: DrawStyle| &pictures.iter().find(|(s, _)| *s == style).unwrap().1;
+    // The corner of the picture is background: cream paper, near-black otherwise.
+    assert!(close(of(DrawStyle::Paper).at(2, 2), PAPER_SRGB, 1), "{:?}", of(DrawStyle::Paper).at(2, 2));
+    for style in [DrawStyle::Shaded, DrawStyle::Flat, DrawStyle::XRay, DrawStyle::Wireframe] {
+        assert!(close(of(style).at(2, 2), BACKGROUND_SRGB, 1), "{style:?}: {:?}", of(style).at(2, 2));
+    }
+    // Wireframe has no filled surfaces, so it draws fewer pixels than flat.
+    let all = 0..SIZE[1];
+    let (wire, flat) = (
+        of(DrawStyle::Wireframe).drawn_fraction(all.clone(), BACKGROUND_SRGB),
+        of(DrawStyle::Flat).drawn_fraction(all.clone(), BACKGROUND_SRGB),
+    );
+    assert!(wire > 0.005 && wire < 0.6 * flat, "wireframe {wire:.4}, flat {flat:.4}");
+    // Paper is ink on cream: nothing on it is lighter than the paper, and something is dark.
+    let paper = of(DrawStyle::Paper);
+    let mut darkest = 255u8;
+    for y in 0..SIZE[1] {
+        for x in 0..SIZE[0] {
+            let [r, g, b] = paper.at(x, y);
+            assert!(r <= PAPER_SRGB[0] + 1 && g <= PAPER_SRGB[1] + 1 && b <= PAPER_SRGB[2] + 1);
+            darkest = darkest.min(g);
+        }
+    }
+    assert!(darkest < 0x60, "paper has ink: darkest green channel {darkest}");
+    // Shading: a lit picture is not the flat one dimmed uniformly; some surface is brighter than
+    // another of the same material. The floor panel is one colour in flat and stays so (it faces up).
+    assert!(of(DrawStyle::Shaded).rgba != of(DrawStyle::Flat).rgba);
+}
+
+#[test]
+fn gpu_infinite_floor_reaches_the_horizon() {
+    let (gpu, renderer) = setup();
+    let floor = dev::infinite_floor();
+    let void = dev::void();
+    // Low over the ground, looking north-west: the horizon crosses the picture.
+    let view = ViewSpec {
+        pitch: 8.0,
+        ..ViewSpec::framing(&floor, NamedView::Iso, Projection::Perspective, DrawStyle::Flat)
+    };
+    let camera = camera(&view);
+    // The horizon is where a ground point very far ahead projects to.
+    let ahead = Vec3::new(camera.forward.x, camera.forward.y, 0.0).normalised();
+    let far_point = camera.origin + ahead * 1.0e6 - Vec3::Z * camera.origin.z;
+    let horizon = camera.pixel(far_point, SIZE).unwrap()[1].round() as u32;
+    assert!(horizon > 60 && horizon < SIZE[1] - 200, "the horizon is in the picture: row {horizon}");
+
+    let with_floor = render(&gpu, &renderer, &floor, &view);
+    let without = render(&gpu, &renderer, &void, &view);
+    // Below the horizon the floor fills the picture from edge to edge...
+    let low = (horizon + 80)..SIZE[1];
+    assert!(with_floor.drawn_fraction(low.clone(), BACKGROUND_SRGB) > 0.98);
+    // ...including the picture's bottom corners, which a finite quad around the array would miss.
+    for x in [0, SIZE[0] - 1] {
+        assert!(
+            !close(with_floor.at(x, SIZE[1] - 1), BACKGROUND_SRGB, 1),
+            "the floor does not reach x = {x}"
+        );
+    }
+    // Above the horizon there is no floor: the sky is background apart from the towers.
+    let sky = 0..horizon.saturating_sub(40);
+    assert!(with_floor.drawn_fraction(sky.clone(), BACKGROUND_SRGB) < 0.02);
+    // Control: the void, from the same camera, has nothing below the horizon but the towers.
+    assert!(without.drawn_fraction(low, BACKGROUND_SRGB) < 0.02);
+    // The grid has lines: the floor is not one flat colour.
+    let row = SIZE[1] - 30;
+    let distinct: std::collections::HashSet<[u8; 3]> = (0..SIZE[0]).map(|x| with_floor.at(x, row)).collect();
+    assert!(distinct.len() > 3, "the floor shows a grid: {} colours on a row", distinct.len());
+}

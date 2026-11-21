@@ -1,0 +1,14 @@
+[package]
+name = "cav-gpu"
+description = "Cavendish: the wgpu device, shared by the renderer and (later) the kernels."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+pollster.workspace = true
+wgpu.workspace = true
+
+[lints]
+workspace = true

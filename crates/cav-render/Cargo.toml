@@ -1,0 +1,18 @@
+[package]
+name = "cav-render"
+description = "Cavendish: the renderer. Draws a view of a scene into a texture, with or without a window."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytemuck.workspace = true
+cav-core.workspace = true
+cav-gpu.workspace = true
+cav-sim.workspace = true
+png.workspace = true
+wgpu.workspace = true
+
+[lints]
+workspace = true

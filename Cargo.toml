@@ -12,12 +12,17 @@ publish = false
 # A dependency is listed here when the first crate needs it, not before.
 [workspace.dependencies]
 cav-core = { path = "crates/cav-core" }
+cav-gpu = { path = "crates/cav-gpu" }
 cav-sim = { path = "crates/cav-sim" }
 
+bytemuck = { version = "1.25", features = ["derive"] }
+png = "0.18"
+pollster = "1.0"
 ron = "=0.12.3"
 schemars = "1.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
+wgpu = { version = "=30.0.2", default-features = false, features = ["std", "parking_lot", "vulkan", "dx12", "wgsl"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
