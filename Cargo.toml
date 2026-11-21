@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95" # egui 0.37's minimum; the build PC pins 1.100.0 in rust-toolchain.toml
+publish = false
+
+# Exact pins for the fast-moving crates (docs/research/s0-app-stack-and-build-speed.md §5); upgrade on purpose.
+# A dependency is listed here when the first crate needs it, not before.
+[workspace.dependencies]
+cav-core = { path = "crates/cav-core" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.dev]
+debug = "line-tables-only" # Cargo's guidance; measured 6 s -> 4.5 s rebuild on the S0 skeleton
+
+[profile.dev.package."*"]
+debug = false # dependencies carry no debug info
+
+[profile.dev.package.cav-core]
+opt-level = 3 # the hot numerical crate is optimised even in dev (REBUILD §8)
+
+[profile.debugging]
+inherits = "dev"
+debug = true # full debug info on demand: cargo build --profile debugging

@@ -1,0 +1,7 @@
+[alias]
+xtask = "run --quiet --package xtask --"
+
+# rust-lld: measured gain 0.3 s per link on the S0 skeleton, lost in the noise, so it is off.
+# Re-measure when the binaries have grown (plan/PROGRESS.md, "Decisions worth a second look").
+# [target.x86_64-pc-windows-msvc]
+# linker = "rust-lld.exe"
