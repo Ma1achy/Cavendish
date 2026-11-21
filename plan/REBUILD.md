@@ -248,6 +248,28 @@ its oracle checks, a performance note, screenshots in `docs/slices/`. Main alway
 
 Order is a default. Slices that do not depend on each other (S6 and S8, say) can run in parallel.
 
+### 9.1 Dev and debug scenes (from S0, grown with every slice)
+
+Scenes whose answer is known, for building, testing and looking at one thing at a time. Each is a
+spec file in `scenes/dev/`, loads in one keystroke from the library, and most double as tests.
+
+| Scene | What it is | What it checks |
+|---|---|---|
+| `void` | the array and nothing else: no room, no air, no ground | every channel exactly zero; the renderer with an empty world |
+| `infinite-floor` | an analytic half-space or slab below the array, drawn as a grid to the horizon | a uniform infinite slab gives uniform g and no gradient: its contribution to the differenced phase is zero. A **finite** floor growing in size must converge to that, with edge terms falling as the size grows |
+| `point` · `unit-cube` · `sphere` | one mass at a known place | the v1 anchors; cube kernel vs point far away |
+| `probe-grid` | a lattice of 1 kg probes, one at a time | the response map of each tower, cell by cell, against the closed form |
+| `platonic-row` | the five Platonic solids at equal range | their missing low multipoles (`M18`) |
+| `oscillator-zoo` | linear, circular, pendulum, sphere oscillators at the paper's parameters | the comb, folding and tilt-ratio tests of `VALIDATION-AND-RESEARCH.md` §2 |
+| `lod-ladder` | the same body at 1, 3, 10, 30, 100 m | instrument LOD error vs distance; renderer LOD transitions without popping |
+| `precision-far` | a body 10 km from the origin, towers beside it | the local-frame rules of §3.4: same phase as at the origin |
+| `stress-1e10` | procedural terrain and buildings, 10¹⁰ finest cells | the big-scene budgets of §5 |
+| `fuzz` | random scenes from a seed | the metamorphic properties of M16 |
+
+Outdoor and world scenes — aircraft over a field, traffic on a road, birds, drones, boats, rivers,
+the town — are the scene library (`milestones/M18-scene-library.md`) and arrive with S6, S9 and S10;
+many are near-null by design (an airliner at 1 km is well under shot noise), which is a test too.
+
 ## 10. How the work runs — builders and reviewers
 
 - **Builder agent** per slice: writes the slice brief (requirements traced to tests, tolerances,
