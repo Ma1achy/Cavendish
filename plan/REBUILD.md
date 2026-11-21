@@ -26,7 +26,8 @@ and it is a tool a person or an agent can explore interactively, at scales up to
 1. **A working app from the first day, better every slice.** Every slice ends with something new you
    can see and do in the GUI, the CLI and the MCP server. No slice is "infrastructure only".
 2. **One representation of matter.** A sparse voxel tree (linear octree from Morton keys, values in
-   sidecar arrays) for bodies, structure, terrain, air and water. No second path beside it.
+   sidecar arrays) for bodies, structure, terrain, air and water. No second path beside it. Arranged as
+   Teardown arranges it: a volume per object in its own frame, plus one world volume (§5.2).
 3. **One error budget, in radians.** Every approximation — tree walk, level of detail, quadrature,
    precision, adaptive grids — is bounded or audited against a phase tolerance, and the bundle records
    what it was.
@@ -198,6 +199,27 @@ What makes it *feel* responsive:
 Exit tests for this (S2 onwards): input-to-photon latency under 50 ms while dragging a body in a
 40,000-leaf scene on the M3; the refined result equals a cold run bit for bit; a cancelled run leaves
 no partial result visible.
+
+### 5.2 The world model — Teardown's, made exact for gravity
+
+Like Teardown: **every object owns its own voxel volume in its own frame**, moving and rotating
+freely; the world adds **one global, coarser volume** over the whole scene for what needs a shared
+grid. Teardown uses the global volume for shadows and lighting; Cavendish uses it for air and water,
+contact broad-phase, lighting, and as the stamp target of moving bodies. Static matter (terrain,
+buildings, slabs) lives directly in the world volume, in chunks.
+
+- **Per-object volumes** are sparse trees (§3.1), one per rigid body and one per bone, with a material
+  palette per voxel (density, colour, elastic properties). The gravity read uses them directly, so a
+  moving body is never snapped to a world lattice. Snapping a 70 kg body 2 m from a tower to 1 cm cells
+  would put ~20 mrad steps in a ~3 rad signal, 20–80× the shot noise.
+- **Destruction and change** as Teardown: removing voxels edits the object's tree; when it falls apart,
+  connected components are split into new objects (each a new body with exact mass and inertia from
+  its voxels); repainting changes materials. Mass is conserved through every split, to the bit.
+- **Rendering** as Teardown at heart: each object's volume is ray-marched inside its oriented box
+  using the tree's coarse levels to skip empty space; the world volume uses the chunked renderer of
+  §5; one global coarse occupancy volume drives shadows and ambient occlusion.
+- **Coupling**: each tick, moving objects are stamped into the world volume conservatively (mass and
+  volume fraction exact) for the air, water and contact; the stamp is never used for the gravity read.
 
 ## 6. The viewer
 
