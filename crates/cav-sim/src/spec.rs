@@ -10,6 +10,30 @@ use cav_core::defaults;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// The ranges a spec must stay within. They are wide (a thousand kilometres, a kilometre of tower)
+/// and they are finite, so that nothing downstream has to cope with a number chosen to break it:
+/// a renderer's loop over a room's metres, a timeline's loop over shots.
+pub mod limits {
+    /// Every coordinate lies within this distance of the origin, metres.
+    pub const POSITION: f64 = 1.0e6;
+    /// The longest side of a room, metres.
+    pub const ROOM_SIZE: f64 = 1.0e4;
+    /// The tallest tower, metres.
+    pub const TOWER_HEIGHT: f64 = 1.0e3;
+    /// The most towers in an array.
+    pub const TOWERS: usize = 1000;
+    /// The longest cycle (and half-sequence), seconds.
+    pub const CYCLE: f64 = 1.0e4;
+    /// The shortest half-sequence, seconds.
+    pub const HALF_SEQUENCE_MIN: f64 = 1.0e-3;
+    /// The longest timeline, seconds.
+    pub const DURATION: f64 = 1.0e6;
+    /// The fastest launch, metres per second.
+    pub const LAUNCH_VELOCITY: f64 = 1.0e4;
+    /// The densest floor, kilograms per cubic metre.
+    pub const DENSITY: f64 = 1.0e5;
+}
+
 /// The version of the spec format this build reads and writes.
 pub const SPEC_VERSION: u32 = 1;
 
@@ -24,6 +48,7 @@ pub struct SceneSpec {
     /// One or two sentences on what the scene is and what it checks.
     pub description: String,
     /// Length of the timeline, seconds.
+    #[schemars(range(min = 0.0, max = 1.0e6))]
     pub duration: f64,
     /// The towers and the instrument they share.
     pub array: ArraySpec,
@@ -39,7 +64,7 @@ pub struct SceneSpec {
 pub struct ArraySpec {
     /// The instrument every tower shares.
     pub instrument: InstrumentSpec,
-    /// The towers, in display order; tower 1 is the first.
+    /// The towers, in display order; tower 1 is the first. From 1 to 1000 of them.
     pub towers: Vec<TowerSpec>,
 }
 
@@ -48,14 +73,19 @@ pub struct ArraySpec {
 #[serde(deny_unknown_fields)]
 pub struct InstrumentSpec {
     /// Height of the tower, metres.
+    #[schemars(range(min = 0.0, max = 1.0e3))]
     pub tower_height: f64,
     /// Vertical separation of the two interferometers (Δr), metres.
+    #[schemars(range(min = 0.0, max = 1.0e3))]
     pub ifo_separation: f64,
     /// Half the interrogation sequence, T, seconds; a shot lasts 2T from launch to readout.
+    #[schemars(range(min = 1.0e-3, max = 1.0e4))]
     pub half_sequence: f64,
     /// Launch velocity u₀, metres per second.
+    #[schemars(range(min = 0.0, max = 1.0e4))]
     pub launch_velocity: f64,
     /// Time between shots of one tower, seconds.
+    #[schemars(range(min = 0.0, max = 1.0e4))]
     pub cycle: f64,
 }
 
@@ -65,7 +95,7 @@ pub struct InstrumentSpec {
 pub struct TowerSpec {
     /// Name shown in the outliner and on the timeline lane.
     pub label: String,
-    /// The base of the tower (the lower launch point): x east, y north, z up, metres.
+    /// The base of the tower (the lower launch point): x east, y north, z up, metres; each within ±1e6.
     pub position: [f64; 3],
 }
 
@@ -73,9 +103,9 @@ pub struct TowerSpec {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RoomSpec {
-    /// The corner with the smallest x, y and z, metres.
+    /// The corner with the smallest x, y and z, metres; each within ±1e6.
     pub origin: [f64; 3],
-    /// Extent along x, y and z, metres.
+    /// Extent along x, y and z, metres; each above 0 and at most 1e4.
     pub size: [f64; 3],
 }
 
@@ -84,10 +114,12 @@ pub struct RoomSpec {
 #[serde(deny_unknown_fields)]
 pub struct FloorSpec {
     /// Height of the floor's top surface, metres.
+    #[schemars(range(min = -1.0e6, max = 1.0e6))]
     pub height: f64,
     /// What lies below the surface.
     pub kind: FloorKind,
     /// Density of the floor's matter, kilograms per cubic metre.
+    #[schemars(range(min = 0.0, max = 1.0e5))]
     pub density: f64,
 }
 
@@ -221,13 +253,13 @@ impl SceneSpec {
         if self.name.trim().is_empty() {
             return fail("name: must not be empty".into());
         }
-        positive("duration", self.duration)?;
+        positive("duration", self.duration, limits::DURATION)?;
         let i = &self.array.instrument;
-        positive("array.instrument.tower_height", i.tower_height)?;
-        positive("array.instrument.ifo_separation", i.ifo_separation)?;
-        positive("array.instrument.half_sequence", i.half_sequence)?;
-        positive("array.instrument.launch_velocity", i.launch_velocity)?;
-        positive("array.instrument.cycle", i.cycle)?;
+        positive("array.instrument.tower_height", i.tower_height, limits::TOWER_HEIGHT)?;
+        positive("array.instrument.ifo_separation", i.ifo_separation, limits::TOWER_HEIGHT)?;
+        positive("array.instrument.half_sequence", i.half_sequence, limits::CYCLE)?;
+        positive("array.instrument.launch_velocity", i.launch_velocity, limits::LAUNCH_VELOCITY)?;
+        positive("array.instrument.cycle", i.cycle, limits::CYCLE)?;
         if i.ifo_separation >= i.tower_height {
             return fail(format!(
                 "array.instrument.ifo_separation: {} m does not fit in a tower of {} m",
@@ -241,8 +273,22 @@ impl SceneSpec {
                 2.0 * i.half_sequence
             ));
         }
+        if i.half_sequence < limits::HALF_SEQUENCE_MIN {
+            return fail(format!(
+                "array.instrument.half_sequence: {} s is shorter than {} s",
+                i.half_sequence,
+                limits::HALF_SEQUENCE_MIN
+            ));
+        }
         if self.array.towers.is_empty() {
             return fail("array.towers: an array needs at least one tower".into());
+        }
+        if self.array.towers.len() > limits::TOWERS {
+            return fail(format!(
+                "array.towers: {} towers is more than {}",
+                self.array.towers.len(),
+                limits::TOWERS
+            ));
         }
         for (n, tower) in self.array.towers.iter().enumerate() {
             finite(&format!("array.towers[{n}].position"), &tower.position)?;
@@ -256,14 +302,14 @@ impl SceneSpec {
         if let Some(room) = &self.room {
             finite("room.origin", &room.origin)?;
             for (axis, &s) in room.size.iter().enumerate() {
-                positive(&format!("room.size[{axis}]"), s)?;
+                positive(&format!("room.size[{axis}]"), s, limits::ROOM_SIZE)?;
             }
         }
         if let Some(floor) = &self.floor {
             finite("floor.height", &[floor.height])?;
-            positive("floor.density", floor.density)?;
+            positive("floor.density", floor.density, limits::DENSITY)?;
             if let FloorKind::Slab { thickness } = floor.kind {
-                positive("floor.kind.Slab.thickness", thickness)?;
+                positive("floor.kind.Slab.thickness", thickness, limits::POSITION)?;
             }
         }
         Ok(())
@@ -297,18 +343,18 @@ impl SceneSpec {
     }
 }
 
-fn positive(path: &str, value: f64) -> Result<(), SpecError> {
-    if value.is_finite() && value > 0.0 {
+fn positive(path: &str, value: f64, most: f64) -> Result<(), SpecError> {
+    if value.is_finite() && value > 0.0 && value <= most {
         Ok(())
     } else {
-        Err(SpecError(format!("{path}: {value} must be a positive, finite number")))
+        Err(SpecError(format!("{path}: {value} must be a positive number, at most {most}")))
     }
 }
 
 fn finite(path: &str, values: &[f64]) -> Result<(), SpecError> {
-    match values.iter().find(|v| !v.is_finite()) {
+    match values.iter().find(|v| !(v.is_finite() && v.abs() <= limits::POSITION)) {
         None => Ok(()),
-        Some(v) => Err(SpecError(format!("{path}: {v} must be finite"))),
+        Some(v) => Err(SpecError(format!("{path}: {v} must be within ±{} m", limits::POSITION))),
     }
 }
 
@@ -324,7 +370,10 @@ mod tests {
         spec.array.instrument.launch_velocity = 3.86 * (1.0 + f64::EPSILON);
         spec.floor =
             Some(FloorSpec { height: -1e-17, kind: FloorKind::Slab { thickness: 0.7 }, density: 2.4e3 });
-        spec.room = Some(RoomSpec { origin: [-5.0, -5.0, 0.0], size: [1e10, 10.0, 2.999_999_999_999_999_6] });
+        spec.room = Some(RoomSpec {
+            origin: [-5.0, -5.0, 0.0],
+            size: [9_999.999_999_999_9, 10.0, 2.999_999_999_999_999_6],
+        });
         spec
     }
 
@@ -535,5 +584,60 @@ mod tests {
             worst = worst.max((number(&recording["two_t"]) - 2.0 * scene.array.instrument.half_sequence).abs());
             cav_validate::Measured::Error(worst)
         },
+    }
+
+    #[test]
+    fn specs_outside_the_stated_ranges_are_refused() {
+        type Break = fn(&mut SceneSpec);
+        // The first three are the specs that hung the renderer or exhausted memory before the
+        // ranges existed (S0 review, finding 1).
+        let cases: [(&str, Break); 12] = [
+            ("room.origin", |s| s.room.as_mut().unwrap().origin[0] = 1e17),
+            ("room.size[0]", |s| s.room.as_mut().unwrap().size[0] = 1e10),
+            ("array.instrument.tower_height", |s| {
+                s.array.instrument.tower_height = 3e6;
+                s.array.instrument.ifo_separation = 5.0;
+            }),
+            ("duration", |s| s.duration = 1e9),
+            ("array.instrument.cycle", |s| s.array.instrument.cycle = 1e5),
+            ("array.instrument.half_sequence", |s| s.array.instrument.half_sequence = 1e-6),
+            ("array.instrument.launch_velocity", |s| s.array.instrument.launch_velocity = 1e9),
+            ("array.towers[3].position", |s| s.array.towers[3].position[2] = -2e6),
+            ("array.towers", |s| {
+                let tower = s.array.towers[0].clone();
+                s.array.towers =
+                    (0..1001).map(|n| TowerSpec { label: format!("t{n}"), ..tower.clone() }).collect();
+            }),
+            ("floor.height", |s| s.floor.as_mut().unwrap().height = 1e7),
+            ("floor.density", |s| s.floor.as_mut().unwrap().density = 1e6),
+            ("floor.kind.Slab.thickness", |s| {
+                s.floor.as_mut().unwrap().kind = FloorKind::Slab { thickness: 1e7 }
+            }),
+        ];
+        let mut base = SceneSpec::room();
+        base.floor = Some(FloorSpec { height: 0.0, kind: FloorKind::HalfSpace, density: 2400.0 });
+        for (field, break_it) in cases {
+            let mut spec = base.clone();
+            break_it(&mut spec);
+            let why = spec.validate().expect_err(field).0;
+            assert!(why.starts_with(field), "`{why}` should name `{field}`");
+            assert!(SceneSpec::from_ron(&spec.to_ron()).is_err(), "{field}: a file with it is refused too");
+        }
+        // Control: a spec at the edge of every range is accepted, so the ranges are the stated ones.
+        let mut edge = base;
+        edge.duration = limits::DURATION;
+        edge.array.instrument.tower_height = limits::TOWER_HEIGHT;
+        edge.array.instrument.ifo_separation = 500.0;
+        edge.array.instrument.half_sequence = limits::HALF_SEQUENCE_MIN;
+        edge.array.instrument.cycle = limits::CYCLE;
+        edge.array.towers[0].position = [limits::POSITION, -limits::POSITION, 0.0];
+        let room = edge.room.as_mut().unwrap();
+        (room.origin, room.size) = ([-limits::POSITION; 3], [limits::ROOM_SIZE; 3]);
+        assert_eq!(edge.validate(), Ok(()));
+        // The schema states the ranges.
+        let schema = SceneSpec::schema();
+        assert_eq!(schema["properties"]["duration"]["maximum"], 1.0e6);
+        assert_eq!(schema["$defs"]["InstrumentSpec"]["properties"]["tower_height"]["maximum"], 1.0e3);
+        assert!(schema.to_string().contains("each above 0 and at most 1e4"));
     }
 }

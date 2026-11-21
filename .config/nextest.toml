@@ -1,0 +1,4 @@
+# A watchdog for every test: one that runs for two minutes is killed and fails. A hang (a loop that
+# never ends, a server that never answers) must not sit on the owner's PC until someone notices.
+[profile.default]
+slow-timeout = { period = "30s", terminate-after = 4 }

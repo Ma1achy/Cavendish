@@ -136,6 +136,55 @@ fn mix(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
     std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t)
 }
 
+/// The most grid lines across a room, and the most ticks up a tower.
+pub const MAX_MARKS: u32 = 200;
+
+/// The spacing of marks along `extent` metres: one metre, or the smallest power of ten of metres
+/// that needs no more than [`MAX_MARKS`] of them.
+#[must_use]
+pub fn mark_step(extent: f64) -> f64 {
+    let mut step = 1.0;
+    while extent / step > f64::from(MAX_MARKS) && step < 1.0e12 {
+        step *= 10.0;
+    }
+    step
+}
+
+/// The marks at whole multiples of `step` from `lo` to `hi`: `(index, position)`, the index being
+/// the multiple, so index 0 is the mark at the origin. Never more than `MAX_MARKS + 1` of them,
+/// whatever the numbers, and none at all if they are not finite.
+fn marks(lo: f64, hi: f64, step: f64) -> impl Iterator<Item = (i64, f64)> {
+    let first = (lo / step).ceil();
+    let last = (hi / step).floor();
+    let count = if first.is_finite() && last.is_finite() && last >= first {
+        ((last - first) as u32).min(MAX_MARKS) + 1
+    } else {
+        0
+    };
+    (0..count).map(move |k| {
+        let index = first + f64::from(k);
+        (index as i64, index * step)
+    })
+}
+
+/// What is drawn coarser than a metre for `scene`, in words; empty when nothing is. The renderer
+/// thins grid lines and ticks rather than drawing thousands; this says so, for a badge or a log.
+#[must_use]
+pub fn decimation(scene: &SceneSpec) -> Vec<String> {
+    let mut notes = Vec::new();
+    if let Some(room) = &scene.room {
+        let step = mark_step(room.size[0].max(room.size[1]));
+        if step > 1.0 {
+            notes.push(format!("room grid every {step} m"));
+        }
+    }
+    let step = mark_step(scene.array.instrument.tower_height);
+    if step > 1.0 {
+        notes.push(format!("tower ticks every {step} m"));
+    }
+    notes
+}
+
 /// A world position as an `f32` offset from `origin`. The subtraction is in `f64`; only the small
 /// result is rounded.
 #[must_use]
@@ -271,28 +320,16 @@ pub fn drawables(scene: &SceneSpec, style: DrawStyle, highlight: Option<Target>,
                 colour,
             );
         }
-        // A 1 m grid on the floor, with the lines through the world axes a little stronger.
+        // A grid on the floor (1 m unless the room is huge), the lines through the world axes stronger.
         let grid = linear(palette.grid, 1.0);
         let axis = linear(palette.grid_axis, 1.0);
-        let mut x = lo.x.ceil();
-        while x <= hi.x {
-            b.line(
-                Vec3::new(x, lo.y, lo.z),
-                Vec3::new(x, hi.y, lo.z),
-                1.0,
-                if x == 0.0 { axis } else { grid },
-            );
-            x += 1.0;
+        // Counted by whole index, never by adding to a float: a loop that adds 1.0 to 1e17 never ends.
+        let step = mark_step(size.x.max(size.y));
+        for (k, x) in marks(lo.x, hi.x, step) {
+            b.line(Vec3::new(x, lo.y, lo.z), Vec3::new(x, hi.y, lo.z), 1.0, if k == 0 { axis } else { grid });
         }
-        let mut y = lo.y.ceil();
-        while y <= hi.y {
-            b.line(
-                Vec3::new(lo.x, y, lo.z),
-                Vec3::new(hi.x, y, lo.z),
-                1.0,
-                if y == 0.0 { axis } else { grid },
-            );
-            y += 1.0;
+        for (k, y) in marks(lo.y, hi.y, step) {
+            b.line(Vec3::new(lo.x, y, lo.z), Vec3::new(hi.x, y, lo.z), 1.0, if k == 0 { axis } else { grid });
         }
         // The twelve edges of the box.
         let edge = linear(if selected { palette.selection } else { palette.room_edge }, 1.0);
@@ -320,11 +357,11 @@ pub fn drawables(scene: &SceneSpec, style: DrawStyle, highlight: Option<Target>,
         let top = base + Vec3::Z * instrument.tower_height;
         let selected = highlight == Some(Target::Tower(n + 1));
         let colour = linear(palette.towers[n % palette.towers.len()], 1.0);
-        // The baseline, with a tick every metre.
+        // The baseline, with a tick every metre (coarser on a very tall tower).
         b.line(base, top, if selected { 4.0 } else { 2.5 }, colour);
-        let ticks = instrument.tower_height.floor() as u32;
-        for k in 0..=ticks {
-            let at = base + Vec3::Z * f64::from(k);
+        let step = mark_step(instrument.tower_height);
+        for (k, height) in marks(0.0, instrument.tower_height, step) {
+            let at = base + Vec3::Z * height;
             let half = if k % 5 == 0 { 0.16 } else { 0.09 };
             b.line(at - Vec3::X * half, at + Vec3::X * half, 1.5, colour);
             b.line(at - Vec3::Y * half, at + Vec3::Y * half, 1.5, colour);
@@ -519,5 +556,65 @@ mod tests {
         ];
         let error = (0..3).map(|i| (careful[i] - naive[i]).abs()).fold(0f32, f32::max);
         assert!(error > 1e-4, "the naive path should be visibly worse at 10 km, but differs by {error} m");
+    }
+
+    #[test]
+    fn marks_are_counted_and_capped_whatever_the_numbers() {
+        let count = |lo: f64, hi: f64, step: f64| marks(lo, hi, step).count();
+        // The default room: eleven lines a metre apart, the one through the origin with index 0.
+        let room: Vec<(i64, f64)> = marks(-5.0, 5.0, 1.0).collect();
+        assert_eq!(room.len(), 11);
+        assert_eq!((room[0], room[5], room[10]), ((-5, -5.0), (0, 0.0), (5, 5.0)));
+        assert_eq!(mark_step(10.0), 1.0, "a room of ordinary size is not thinned");
+        assert_eq!(mark_step(200.0), 1.0);
+        // Big extents are thinned to at most MAX_MARKS intervals.
+        for extent in [201.0, 3.0e3, 1.0e4, 3.0e6, 1.0e10, 1.0e300] {
+            let step = mark_step(extent);
+            assert!(
+                step > 1.0 && count(0.0, extent, step) <= MAX_MARKS as usize + 1,
+                "{extent}: step {step}"
+            );
+        }
+        assert_eq!(mark_step(3.0e6), 1.0e5);
+        // The numbers that hung the old loops (S0 review, finding 1): 1e17 + 1.0 == 1e17, and a
+        // tower of 3e6 m. Even with the wrong step, the count is capped; with odd numbers, empty.
+        assert!(count(1.0e17, 1.0e17 + 10.0, 1.0) <= 17, "and the loop ends");
+        assert_eq!(count(0.0, 1.0e10, 1.0), MAX_MARKS as usize + 1);
+        assert_eq!(count(0.0, 3.0e6, 1.0), MAX_MARKS as usize + 1);
+        assert_eq!(count(f64::NAN, 5.0, 1.0), 0);
+        assert_eq!(count(0.0, f64::INFINITY, 1.0), 0);
+        assert_eq!(count(5.0, -5.0, 1.0), 0);
+    }
+
+    #[test]
+    fn the_largest_valid_scene_is_drawn_with_a_bounded_number_of_things() {
+        use cav_sim::spec::limits;
+        // Every range at its limit: the most towers, the tallest, in the biggest room, far away.
+        let mut scene = SceneSpec::room();
+        scene.array.instrument.tower_height = limits::TOWER_HEIGHT;
+        scene.array.instrument.ifo_separation = 500.0;
+        scene.array.towers = (0..limits::TOWERS)
+            .map(|n| cav_sim::TowerSpec { label: format!("t{n}"), position: [n as f64, 0.0, 0.0] })
+            .collect();
+        let room = scene.room.as_mut().unwrap();
+        (room.origin, room.size) = ([limits::POSITION - limits::ROOM_SIZE; 3], [limits::ROOM_SIZE; 3]);
+        assert_eq!(scene.validate(), Ok(()));
+        let started = std::time::Instant::now();
+        let d = drawables(&scene, DrawStyle::Shaded, Some(Target::Tower(7)), Vec3::ZERO);
+        // Per tower: a baseline and at most MAX_MARKS + 1 ticks of two strokes; the room: two sets
+        // of grid lines and twelve edges; one selection ring.
+        let per_tower = 1 + 2 * (MAX_MARKS as usize + 1);
+        assert!(
+            d.lines.len() <= limits::TOWERS * per_tower + 2 * (MAX_MARKS as usize + 1) + 12 + 48,
+            "{} lines",
+            d.lines.len()
+        );
+        // 48 bytes a line, 40 a vertex: well inside a 256 MB buffer, the smallest limit wgpu promises.
+        let bytes = d.lines.len() * size_of::<Line>() + d.triangles.len() * size_of::<Vertex>();
+        assert!(bytes < 128 << 20, "{bytes} bytes of geometry");
+        assert!(started.elapsed().as_secs() < 5, "building it took {:?}", started.elapsed());
+        // It says what it thinned; the default scene thins nothing.
+        assert_eq!(decimation(&scene), ["room grid every 100 m", "tower ticks every 10 m"]);
+        assert!(decimation(&SceneSpec::room()).is_empty(), "the control: an ordinary scene is drawn in full");
     }
 }

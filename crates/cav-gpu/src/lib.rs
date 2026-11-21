@@ -72,6 +72,20 @@ impl Gpu {
         Ok(Self { instance, adapter, device, queue })
     }
 
+    /// Runs `work` and turns a validation error raised by wgpu while it ran into an `Err`, where
+    /// it would otherwise reach wgpu's default handler and panic.
+    ///
+    /// # Errors
+    /// What the GPU refused.
+    pub fn checked<T>(&self, work: impl FnOnce() -> T) -> Result<T, String> {
+        let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let done = work();
+        match pollster::block_on(scope.pop()) {
+            None => Ok(done),
+            Some(error) => Err(format!("the GPU refused the work: {error}")),
+        }
+    }
+
     /// The adapter the device was created on.
     #[must_use]
     pub fn adapter_report(&self) -> AdapterReport {

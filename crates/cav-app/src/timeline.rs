@@ -2,6 +2,9 @@
 //!
 //! In S0 every tower fires together on the instrument's cycle; per-tower offsets, jitter and
 //! masked shots arrive with S2 (M13-R14), which is why the shots come from one function.
+//!
+//! Everything here is counted by whole index with a cap. A scene may ask for a million seconds of
+//! two-millisecond shots; the lanes then say how many there are instead of drawing them.
 
 use cav_sim::InstrumentSpec;
 use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
@@ -15,22 +18,70 @@ pub struct Shot {
     pub readout: f64,
 }
 
-/// The shots of one tower over a timeline of `duration` seconds: one per cycle from time zero, each
-/// lasting 2T. A shot is listed if it is launched before the end; its readout may fall after it.
-#[must_use]
-pub fn shots(instrument: &InstrumentSpec, duration: f64) -> Vec<Shot> {
-    let flight = 2.0 * instrument.half_sequence;
-    let mut out = Vec::new();
-    let mut k = 0u32;
-    loop {
-        // k·cycle, not a running sum, so the hundredth shot is as exact as the first.
-        let launch = f64::from(k) * instrument.cycle;
-        if launch >= duration {
-            return out;
-        }
-        out.push(Shot { launch, readout: launch + flight });
-        k += 1;
+/// The most shots a lane draws one by one.
+pub const MAX_SHOTS_DRAWN: u64 = 400;
+/// The most marks on the time ruler.
+pub const MAX_RULER_MARKS: u32 = 13;
+
+/// The shots of one tower over a timeline.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Shots {
+    /// How many shots are launched before the end.
+    pub total: u64,
+    /// Each of them, if there are no more than [`MAX_SHOTS_DRAWN`]; otherwise empty, and the lane
+    /// is drawn as one band.
+    pub shown: Vec<Shot>,
+}
+
+impl Shots {
+    /// Whether there are too many shots to draw one by one.
+    #[must_use]
+    pub fn decimated(&self) -> bool {
+        self.total > self.shown.len() as u64
     }
+}
+
+/// The shots of one tower over a timeline of `duration` seconds: one per cycle from time zero, each
+/// lasting 2T. A shot counts if it is launched before the end; its readout may fall after it.
+#[must_use]
+pub fn shots(instrument: &InstrumentSpec, duration: f64) -> Shots {
+    let flight = 2.0 * instrument.half_sequence;
+    // The number of k ≥ 0 with k·cycle < duration. Not a loop: the count can be in the billions.
+    let count = (duration / instrument.cycle).ceil();
+    let total = if count.is_finite() && count > 0.0 { count.min(1.0e15) as u64 } else { 0 };
+    let shown = if total <= MAX_SHOTS_DRAWN {
+        (0..total)
+            .map(|k| {
+                // k·cycle, not a running sum, so the hundredth shot is as exact as the first.
+                let launch = k as f64 * instrument.cycle;
+                Shot { launch, readout: launch + flight }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    Shots { total, shown }
+}
+
+/// The spacing of the ruler's marks for a timeline of `duration` seconds: the smallest of 1, 2 or 5
+/// times a power of ten that needs no more than [`MAX_RULER_MARKS`] marks.
+#[must_use]
+pub fn ruler_step(duration: f64) -> f64 {
+    if !(duration.is_finite() && duration > 0.0) {
+        return 1.0;
+    }
+    let most = f64::from(MAX_RULER_MARKS - 1);
+    let mut decade = 10f64.powf((duration / most).log10().floor());
+    // At most a few steps: the first candidate is within a factor of ten of the answer.
+    for _ in 0..4 {
+        for factor in [1.0, 2.0, 5.0] {
+            if duration / (factor * decade) <= most {
+                return factor * decade;
+            }
+        }
+        decade *= 10.0;
+    }
+    duration
 }
 
 /// Height of one tower's lane, points.
@@ -39,6 +90,8 @@ const LANE: f32 = 15.0;
 const RULER: f32 = 16.0;
 /// Width of the lane labels, points.
 const LABELS: f32 = 76.0;
+/// The most lanes shown without scrolling.
+pub const MAX_LANES_SHOWN: usize = 8;
 
 /// What the timeline was asked to do this frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -59,7 +112,7 @@ pub fn height(towers: usize) -> f32 {
 pub fn lanes(
     ui: &mut egui::Ui,
     labels: &[String],
-    instrument: &InstrumentSpec,
+    all_shots: &Shots,
     duration: f64,
     time: f64,
     selected: Option<usize>,
@@ -72,27 +125,22 @@ pub fn lanes(
     let x_of = |t: f64| plot.left() + (t / duration) as f32 * plot.width();
     let mono = FontId::monospace(10.5);
 
-    // The ruler: a tick every second, a label every two.
-    for second in 0..=duration.floor() as u32 {
-        let x = x_of(f64::from(second));
-        let major = second % 2 == 0;
+    // The ruler: marks at whole multiples of a round step, counted and capped.
+    let step = ruler_step(duration);
+    for k in 0..=MAX_RULER_MARKS {
+        let at = f64::from(k) * step;
+        if at > duration {
+            break;
+        }
+        let x = x_of(at);
         painter.line_segment(
-            [pos2(x, plot.top() + if major { 9.0 } else { 12.0 }), pos2(x, plot.top() + RULER)],
+            [pos2(x, plot.top() + 9.0), pos2(x, plot.top() + RULER)],
             Stroke::new(1.0, theme::WIDGET_EDGE),
         );
-        if major {
-            painter.text(
-                pos2(x + 2.0, plot.top()),
-                Align2::LEFT_TOP,
-                format!("{second}"),
-                mono.clone(),
-                theme::WEAK,
-            );
-        }
+        painter.text(pos2(x + 2.0, plot.top()), Align2::LEFT_TOP, format!("{at}"), mono.clone(), theme::WEAK);
     }
     painter.text(pos2(rect.left() + 4.0, plot.top()), Align2::LEFT_TOP, "seconds", mono.clone(), theme::WEAK);
 
-    let all_shots = shots(instrument, duration);
     for (n, label) in labels.iter().enumerate() {
         let top = plot.top() + RULER + LANE * n as f32;
         let lane = Rect::from_min_max(pos2(plot.left(), top + 2.0), pos2(plot.right(), top + LANE - 2.0));
@@ -121,7 +169,11 @@ pub fn lanes(
             text,
         );
         painter.rect_filled(lane, 1.0, Color32::from_rgb(0x15, 0x15, 0x15));
-        for shot in &all_shots {
+        if all_shots.decimated() {
+            // Too many shots to tell apart: one band, and the panel's caption says how many.
+            painter.rect_filled(lane, 1.0, colour.gamma_multiply(0.3));
+        }
+        for shot in &all_shots.shown {
             let bar = Rect::from_min_max(
                 pos2(x_of(shot.launch), lane.top()),
                 pos2(x_of(shot.readout).min(plot.right()), lane.bottom()),
@@ -159,21 +211,62 @@ mod tests {
         let instrument = InstrumentSpec::default();
         let all = shots(&instrument, 12.0);
         // A 2 s cycle over 12 s: launches at 0, 2, …, 10.
-        assert_eq!(all.len(), 6);
-        for (k, shot) in all.iter().enumerate() {
+        assert_eq!((all.total, all.shown.len(), all.decimated()), (6, 6, false));
+        for (k, shot) in all.shown.iter().enumerate() {
             assert_eq!(shot.launch, 2.0 * k as f64);
             assert_eq!(shot.readout, shot.launch + 1.46, "a shot lasts 2T = 1.46 s");
         }
-        // No drift: the thousandth launch is exactly 999 cycles after the first.
+        // No drift: the 334th launch is exactly 333 cycles after the first.
         let slow = InstrumentSpec { cycle: 0.1 + 0.2, half_sequence: 0.1, ..instrument.clone() };
-        let many = shots(&slow, 400.0);
-        assert_eq!(many[999].launch, 999.0 * (0.1 + 0.2));
+        let many = shots(&slow, 100.0);
+        assert_eq!(many.shown[333].launch, 333.0 * (0.1 + 0.2));
         // A shot launched just before the end is listed; one that would launch at the end is not.
-        assert_eq!(shots(&instrument, 10.5).len(), 6);
-        assert_eq!(shots(&instrument, 10.0).len(), 5);
+        assert_eq!(shots(&instrument, 10.5).total, 6);
+        assert_eq!(shots(&instrument, 10.0).total, 5);
         // Control: another cycle gives other shots, so the lanes do follow the instrument.
         let faster = InstrumentSpec { cycle: 1.5, ..instrument };
-        assert_eq!(shots(&faster, 12.0).len(), 8);
-        assert_eq!(shots(&faster, 12.0)[1].launch, 1.5);
+        assert_eq!(shots(&faster, 12.0).total, 8);
+        assert_eq!(shots(&faster, 12.0).shown[1].launch, 1.5);
+    }
+
+    #[test]
+    fn too_many_shots_are_counted_not_listed() {
+        // The longest timeline of the shortest shots a spec allows: half a billion of them.
+        let instrument = InstrumentSpec { cycle: 2.1e-3, half_sequence: 1.0e-3, ..InstrumentSpec::default() };
+        let started = std::time::Instant::now();
+        let all = shots(&instrument, 1.0e6);
+        assert_eq!(all.total, 476_190_477);
+        assert!(all.shown.is_empty() && all.decimated(), "they are counted, not listed");
+        assert!(started.elapsed().as_millis() < 100, "and counting is arithmetic, not a loop");
+        // The cap is exact: MAX_SHOTS_DRAWN shots are drawn, one more is not.
+        let unit = InstrumentSpec { cycle: 1.0, half_sequence: 0.25, ..InstrumentSpec::default() };
+        let at_cap = shots(&unit, MAX_SHOTS_DRAWN as f64);
+        assert_eq!((at_cap.shown.len() as u64, at_cap.decimated()), (MAX_SHOTS_DRAWN, false));
+        let over = shots(&unit, MAX_SHOTS_DRAWN as f64 + 1.0);
+        assert_eq!((over.total, over.shown.len(), over.decimated()), (MAX_SHOTS_DRAWN + 1, 0, true));
+        // Numbers that are not numbers give no shots rather than a hang or a panic.
+        assert_eq!(shots(&unit, f64::NAN).total, 0);
+        assert_eq!(shots(&InstrumentSpec { cycle: 0.0, ..unit }, 10.0).total, 0);
+    }
+
+    #[test]
+    fn the_ruler_has_a_round_step_and_few_marks() {
+        for (duration, step) in
+            [(12.0, 1.0), (13.0, 2.0), (60.0, 5.0), (600.0, 50.0), (1.0e6, 1.0e5), (0.5, 0.05)]
+        {
+            assert!(
+                (ruler_step(duration) / step - 1.0).abs() < 1e-12,
+                "a timeline of {duration} s: {}",
+                ruler_step(duration)
+            );
+        }
+        for duration in [1.0e-3, 0.7, 12.0, 97.0, 86_400.0, 1.0e6, 1.0e300] {
+            let marks = (duration / ruler_step(duration)).floor() + 1.0;
+            assert!((2.0..=f64::from(MAX_RULER_MARKS)).contains(&marks), "{duration} s has {marks} marks");
+        }
+        // Control: a step of one second on a day-long timeline would be 86 401 marks.
+        assert!(86_400.0 / 1.0 > f64::from(MAX_RULER_MARKS));
+        assert_eq!(ruler_step(f64::NAN), 1.0);
+        assert_eq!(ruler_step(0.0), 1.0);
     }
 }

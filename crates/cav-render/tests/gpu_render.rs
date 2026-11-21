@@ -386,3 +386,54 @@ cav_validate::case! {
         cav_validate::Measured::Error(((measured(near) / measured(far)) / (predicted(near) / predicted(far)) - 1.0).abs())
     },
 }
+
+/// A scene with every range of the spec at its limit: a thousand towers a kilometre tall in a
+/// ten-kilometre room, a thousand kilometres from the origin.
+fn largest_scene() -> SceneSpec {
+    use cav_sim::spec::limits;
+    let mut scene = SceneSpec::room();
+    scene.array.instrument.tower_height = limits::TOWER_HEIGHT;
+    scene.array.instrument.ifo_separation = 500.0;
+    let corner = limits::POSITION - limits::ROOM_SIZE;
+    scene.array.towers = (0..limits::TOWERS)
+        .map(|n| cav_sim::TowerSpec {
+            label: format!("t{n}"),
+            position: [corner + 5.0 * n as f64, corner + 100.0, corner],
+        })
+        .collect();
+    let room = scene.room.as_mut().unwrap();
+    (room.origin, room.size) = ([corner; 3], [limits::ROOM_SIZE; 3]);
+    scene.floor =
+        Some(cav_sim::FloorSpec { height: corner, kind: cav_sim::FloorKind::HalfSpace, density: 2400.0 });
+    scene.validate().expect("the largest scene is a valid one");
+    scene
+}
+
+#[test]
+fn gpu_the_largest_valid_scene_renders() {
+    let (gpu, renderer) = setup();
+    let scene = largest_scene();
+    let started = std::time::Instant::now();
+    for (named, projection) in
+        [(NamedView::Iso, Projection::Perspective), (NamedView::Top, Projection::Orthographic)]
+    {
+        let view = ViewSpec::framing(&scene, named, projection, DrawStyle::Shaded);
+        let frame = Frame { scene: &scene, view: &view, highlight: Some(cav_sim::Target::Tower(500)) };
+        let rgba = renderer.render_rgba(&gpu, frame, SIZE).expect("the largest valid scene must draw");
+        let picture = Picture { rgba };
+        // Something was drawn, and it is a picture rather than one flat colour. (The scene has an
+        // infinite floor, so from above there may be no background left at all.)
+        assert!(picture.drawn_fraction(0..SIZE[1], BACKGROUND_SRGB) > 0.01, "{named:?}: nothing is drawn");
+        let colours: std::collections::HashSet<[u8; 3]> = (0..SIZE[1])
+            .flat_map(|y| (0..SIZE[0]).map(move |x| (x, y)))
+            .map(|(x, y)| picture.at(x, y))
+            .collect();
+        assert!(colours.len() > 8, "{named:?}: only {} colours", colours.len());
+    }
+    // Bounded work: seconds, not minutes. (nextest's watchdog kills a test that hangs.)
+    assert!(started.elapsed().as_secs() < 20, "it took {:?}", started.elapsed());
+    // Control: the same code path refuses a scene outside the ranges before anything is built.
+    let mut beyond = scene;
+    beyond.array.instrument.tower_height = 3.0e6;
+    assert!(beyond.validate().is_err());
+}
