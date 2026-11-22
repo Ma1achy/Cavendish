@@ -342,7 +342,12 @@ pub fn nufft1(x: &[f64], c: &[Complex], modes: usize, width: usize) -> Vec<Compl
 
 /// [`lomb_scargle`] at the frequencies `k·df`, `k = 0 … count − 1`, from two non-uniform FFTs in
 /// about `N·width + M·log M` steps: the same estimator, held to 1e-9 of its largest value and
-/// measured at a few 1e-15 for 2000 and for 100 000 shots (`docs/slices/S1.md` §7.3). `t` in seconds, `df` in hertz.
+/// measured at a few 1e-15 for 2000 and for 100 000 shots (`docs/slices/S1.md` §7.3).
+///
+/// Units: `t` in seconds, in rising order; `y` in any unit (radians for a phase); `df` in hertz.
+/// The result is in `y`'s unit squared per hertz, in the scripts' convention: the mean spacing
+/// of the samples times Scargle's power, one-sided and not doubled, so that a tone of amplitude
+/// `a` on a bin of a run of length `T_obs` has `√S = a·√T_obs/2`.
 ///
 /// The four sums of Scargle's form come from `A(ω) = Σ(y − ȳ)e^{iωt}` and `B(ω) = Σe^{2iωt}`:
 /// `2ωτ = arg B`, `Σcos²ω(t − τ) = (N + |B|)/2`, `Σsin²ω(t − τ) = (N − |B|)/2`, and the two
@@ -672,6 +677,52 @@ mod tests {
         let errors: Vec<(usize, f64)> = [4, 6, 8, 10, 12].into_iter().map(|w| (w, nufft_error(w))).collect();
         let worst = errors.iter().map(|(w, e)| e / 10f64.powi(2 - *w as i32)).fold(0.0f64, f64::max);
         (errors, worst)
+    }
+
+    #[test]
+    fn the_fast_periodogram_survives_a_vanishing_denominator() {
+        // On a uniform grid, at zero frequency and at the Nyquist frequency, every sample has the
+        // same phase: Σsin²ω(t − τ) is nothing, and so is the numerator over it. Scargle's form
+        // is 0/0 there; the fast one must give a number, not NaN, and never a negative power.
+        let n = 256;
+        let dt = 2.0;
+        let t: Vec<f64> = (0..n).map(|k| f64::from(k) * dt).collect();
+        let df = 1.0 / (f64::from(n) * dt);
+        // A tone at Nyquist (alternating signs), a tone inside on a bin of its own (off a bin it
+        // would leak into the Nyquist bin and the height below would not be the Nyquist tone's
+        // alone), and an offset.
+        let inside = 26.0 * df;
+        let y: Vec<f64> = (0..n)
+            .map(|k| 0.7 * f64::from(1 - 2 * (k % 2)) + (TAU * inside * f64::from(k) * dt).cos() + 3.0)
+            .collect();
+        let count = n as usize / 2 + 1;
+        let fast = lomb_scargle_fast(&t, &y, df, count);
+        assert!(fast.iter().all(|s| s.is_finite() && *s >= 0.0), "a bin is not a power: {fast:?}");
+        // The denominators themselves, from the same transform the estimator uses: at the two
+        // ends they are below the guard's line, and at an ordinary bin far above it.
+        let x: Vec<f64> = t.iter().map(|time| TAU * df * time).collect();
+        let ones = vec![Complex::new(1.0, 0.0); t.len()];
+        let b = nufft1(&x, &ones, 2 * count - 1, NUFFT_WIDTH);
+        let sines = |k: usize| 0.5 * (f64::from(n) - b[2 * k].norm_squared().sqrt());
+        let line = 1e-10 * f64::from(n);
+        assert!(sines(0).abs() < line && sines(count - 1).abs() < line, "{} {}", sines(0), sines(count - 1));
+        assert!(sines(count / 2) > 0.4 * f64::from(n));
+        // Where the exact estimator is defined, the two agree; at the ends the fast one is what
+        // the cosine term alone gives, which for the Nyquist tone is its whole power.
+        let frequencies: Vec<f64> = (1..count - 1).map(|k| k as f64 * df).collect();
+        let exact = lomb_scargle(&t, &y, &frequencies);
+        let peak = exact.iter().fold(0.0f64, |m, s| m.max(*s));
+        let worst = exact.iter().zip(&fast[1..]).fold(0.0f64, |m, (a, b)| m.max((a - b).abs()));
+        assert!(worst <= 1e-9 * peak, "{worst:e} of {peak:e}");
+        let nyquist = fast[count - 1];
+        let expected = dt * 0.5 * (0.7 * f64::from(n)).powi(2) / f64::from(n);
+        assert!((nyquist / expected - 1.0).abs() < 1e-9, "{nyquist} against {expected}");
+        // Control: without the guard the same sums divide by those vanishing denominators. What
+        // comes out is not a power: it is whatever rounding left on top over whatever it left
+        // underneath, and it need not even be positive.
+        let unguarded = |top: f64, k: usize| top * top / sines(k);
+        let wild = [unguarded(1e-9, 0), unguarded(1e-9, count - 1)];
+        assert!(wild.iter().any(|v| !v.is_finite() || v.abs() > 1e-9 || *v < 0.0), "{wild:?}");
     }
 
     #[test]

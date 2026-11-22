@@ -435,8 +435,10 @@ fn gpu_the_largest_valid_scene_renders() {
             .collect();
         assert!(colours.len() > 8, "{named:?}: only {} colours", colours.len());
     }
-    // Bounded work: seconds, not minutes. (nextest's watchdog kills a test that hangs.)
-    assert!(started.elapsed().as_secs() < 20, "it took {:?}", started.elapsed());
+    // Bounded work: the counts are capped (`marks_are_counted_and_capped`), which is what bounds
+    // it; the time is printed, not asserted, since a busy machine is not a failing renderer.
+    // (nextest's watchdog kills a test that hangs.)
+    eprintln!("the largest valid scene drew from seven directions in {:?}", started.elapsed());
     // Control: the same code path refuses a scene outside the ranges before anything is built.
     let mut beyond = scene;
     beyond.array.instrument.tower_height = 3.0e6;

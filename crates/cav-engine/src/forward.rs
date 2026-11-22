@@ -99,6 +99,12 @@ impl<T> Slot<T> {
         *held = (None, true);
         self.filled.notify_all();
     }
+
+    /// Whether nothing is waiting to be taken.
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.held.lock().unwrap_or_else(PoisonError::into_inner).0.is_none()
+    }
 }
 
 /// Everything the series worker is asked for at once: the scene, and the sources whose
@@ -174,6 +180,8 @@ pub struct Forward {
     pub computed: u64,
     /// How many it has finished and handed back.
     pub finished: u64,
+    /// How many readings the reading worker has finished and handed back.
+    pub readings_finished: u64,
     started: Instant,
     /// How long the last signal took from the edit to being whole.
     pub took: Option<Duration>,
@@ -242,7 +250,7 @@ fn size_of(contribution: &Contribution) -> usize {
     let values =
         contribution.lower.capacity() + contribution.upper.capacity() + contribution.gradiometer.capacity();
     values * std::mem::size_of::<f64>()
-        + contribution.warnings.iter().map(String::capacity).sum::<usize>()
+        + contribution.warnings.iter().map(|warning| warning.text.capacity()).sum::<usize>()
         + std::mem::size_of::<Contribution>()
 }
 
@@ -311,6 +319,7 @@ impl Forward {
             why: None,
             computed: 0,
             finished: 0,
+            readings_finished: 0,
             started: Instant::now(),
             took: None,
             read_jobs,
@@ -483,6 +492,7 @@ impl Forward {
     /// is the one asked for last only when its epoch is the current one; an earlier one is still
     /// shown, as stale, so that a drag sees numbers move.
     fn take_reading(&mut self, (epoch, reading): (u64, ReadingAt)) -> bool {
+        self.readings_finished += 1;
         if epoch <= self.read_held {
             return false;
         }
@@ -585,5 +595,74 @@ impl Drop for Forward {
         self.batches.close();
         self.read_jobs.close();
         self.gate.set(false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Waits until the reading worker has taken what was in its slot (it then stands at the gate).
+    fn taken(forward: &Forward) {
+        for _ in 0..5000 {
+            if forward.read_jobs.is_empty() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        panic!("the reading worker never took its job");
+    }
+
+    #[test]
+    fn a_drag_does_not_starve_the_reading() {
+        // A drag asks for a reading at every step. Each request used to cancel the one under
+        // way, so a reading that took longer than a frame was never finished while the pointer
+        // moved. Now: a reading that has been begun is finished and shown (as stale, since a
+        // later one is wanted), and requests that were never begun are replaced by the latest.
+        let scene = cav_sim::dev::point();
+        let mut forward = Forward::new();
+        forward.hold(true);
+        forward.request_reading(&scene, 1.0);
+        taken(&forward);
+        // The worker holds the first request at the gate. Three more arrive: only the last waits.
+        for time in [2.0, 3.0, 4.0] {
+            forward.request_reading(&scene, time);
+        }
+        assert!(!forward.read_jobs.is_empty());
+        forward.hold(false);
+        // The first is finished, not abandoned, and the last is the one that stands: two
+        // readings were made, for 1 s and for 4 s. The two in between were never begun: what
+        // waits is one item, whatever is asked. (When each request cancelled the one under way,
+        // one reading was made, and during a drag none.)
+        forward.settle_reading(Duration::from_secs(60));
+        assert_eq!(forward.readings_finished, 2);
+        let (state, reading) = forward.reading();
+        assert_eq!((state, reading.unwrap().time), (SignalState::Refined, 4.0));
+        // A reading for an earlier request than the one wanted is shown, as stale: asked of the
+        // logic directly, since which of two arrivals a poll sees first is a matter of timing.
+        let made = (*forward.reading.clone().unwrap()).clone();
+        let mut manual = Forward::new();
+        (manual.read_epoch, manual.reading_state) = (3, SignalState::Stale);
+        assert!(manual.take_reading((2, made.clone())));
+        assert_eq!(
+            manual.reading().0,
+            SignalState::Stale,
+            "newer than what was shown, older than what is wanted"
+        );
+        assert!(!manual.take_reading((1, made.clone())), "older than what is shown: dropped");
+        assert!(manual.take_reading((3, made)));
+        assert_eq!(manual.reading().0, SignalState::Refined);
+        // Control: a load is another scene. Its predecessor's reading under way is abandoned and
+        // never shown under the new scene's name.
+        forward.hold(true);
+        forward.request_reading(&scene, 5.0);
+        taken(&forward);
+        forward.forget();
+        forward.request_reading(&cav_sim::dev::pass(), 6.0);
+        forward.hold(false);
+        forward.settle_reading(Duration::from_secs(60));
+        let (state, reading) = forward.reading();
+        assert_eq!((state, reading.unwrap().time), (SignalState::Refined, 6.0));
+        assert_eq!(reading.unwrap().towers.len(), 5);
     }
 }

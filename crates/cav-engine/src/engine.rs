@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use crate::command::{
     COMB_HARMONICS, Comb, Command, Harmonic, MAX_PANES, PeriodogramReply, Query, ReadingReply, Reply,
-    SignalReply, Stats, TowerReading, ViewCommand,
+    SignalReply, Standing, Stats, TowerReading, ViewCommand,
 };
 use crate::console;
 use crate::forward::{Forward, SignalState};
@@ -22,15 +22,21 @@ use crate::log::{Level, Log, Subsystem};
 /// (the answer then says `stale` or `computing`). Nothing the application does every frame waits.
 pub const TYPED_LINE_PATIENCE: std::time::Duration = std::time::Duration::from_millis(100);
 
-/// A quadrature estimate as people read it.
+/// A quadrature estimate as people read it. `settled` says whether every read reached the
+/// tolerance: only then is the estimate a bound ("within"); otherwise it is how far the worst
+/// read was from settling, and is said as that.
 #[must_use]
-pub fn estimate_text(estimate: f64) -> String {
-    if estimate == 0.0 {
+pub fn estimate_text(estimate: f64, settled: bool) -> String {
+    if !settled {
+        if estimate.is_finite() {
+            format!("did not settle, estimate {estimate:.0e} rad")
+        } else {
+            "did not settle".to_owned()
+        }
+    } else if estimate == 0.0 {
         "exact".to_owned()
-    } else if estimate.is_finite() {
-        format!("within {estimate:.0e} rad")
     } else {
-        "not settled".to_owned()
+        format!("within {estimate:.0e} rad")
     }
 }
 
@@ -58,6 +64,9 @@ pub struct Engine {
     journal_bytes: usize,
     journal_whole: bool,
     journal_budget: usize,
+    /// Whether the last command offered was refused: a step that says it continues the edit
+    /// before it then has nothing to continue.
+    refused: bool,
     log: Log,
     /// `log.total()` just after the last command's entry: tells whether that entry is still the newest.
     log_mark: u64,
@@ -118,6 +127,7 @@ impl Engine {
             journal_bytes: 0,
             journal_whole: true,
             journal_budget: JOURNAL_BYTES,
+            refused: false,
             log,
             log_mark: 0,
             generation: 0,
@@ -159,7 +169,19 @@ impl Engine {
         let described = console::describe(&command, self.active);
         if let Err(why) = self.check(&command) {
             self.note(Level::Error, Subsystem::Engine, format!("refused `{described}`: {why}"));
+            self.refused = true;
             return Err(why);
+        }
+        // A step of a drag continues the step before it. If that step was refused there is
+        // nothing to continue, and this one is an edit of its own: it must not be folded into
+        // whatever earlier set of the same path happens to be the journal's last entry.
+        // It is journalled as one, too, so that a replay (which never sees the refusal) does
+        // the same.
+        let mut command = command;
+        if std::mem::take(&mut self.refused)
+            && let Command::Set { continues, .. } = &mut command
+        {
+            *continues = false;
         }
         let (level, subsystem) = match &command {
             Command::Load(_) | Command::Set { .. } | Command::Undo | Command::Redo => {
@@ -187,6 +209,15 @@ impl Engine {
         if overwrites {
             let last = self.journal.last_mut().expect("there is a previous command");
             self.journal_bytes = self.journal_bytes - weigh(last) + weight;
+            // A run of sets is journalled as its last step, standing where its first stood: it
+            // continues what the first continued, which for a drag is nothing. (Kept as the last
+            // step's own flag, a drag replayed after an edit of the same path merged into it.)
+            let mut command = command;
+            if let (Command::Set { continues: first, .. }, Command::Set { continues, .. }) =
+                (&*last, &mut command)
+            {
+                *continues = *first;
+            }
             *last = command;
             if self.log.total() == self.log_mark {
                 self.log.amend_last(message);
@@ -434,9 +465,9 @@ impl Engine {
                     return Err(why.to_owned());
                 }
                 let state = match (self.forward.state(), self.forward.signal()) {
-                    (SignalState::Refined, Some(_)) => "refined",
-                    (_, Some(_)) => "stale",
-                    _ => "computing",
+                    (SignalState::Refined, Some(_)) => Standing::Refined,
+                    (_, Some(_)) => Standing::Stale,
+                    _ => Standing::Computing,
                 };
                 if let Some([from, to]) = span
                     && !(from.is_finite() && to.is_finite() && to >= from)
@@ -457,12 +488,13 @@ impl Engine {
                 Ok(Reply::Signal(SignalReply {
                     tower: *tower,
                     channel: *channel,
-                    state: if signal.is_some() { state } else { "computing" }.to_owned(),
+                    state: if signal.is_some() { state } else { Standing::Computing },
                     times: signal.map_or_else(Vec::new, |s| s.times[stretch(s)].to_vec()),
                     values: signal.map_or_else(Vec::new, |s| {
                         s.channel(tower - 1, channel.channel())[stretch(s)].to_vec()
                     }),
                     estimate: signal.map_or(0.0, |s| s.estimate),
+                    settled: signal.is_none_or(|s| s.settled),
                     warnings: signal.map_or_else(Vec::new, |s| s.warnings.clone()),
                 }))
             }
@@ -518,27 +550,28 @@ impl Engine {
                 // The reading held is for the time it was asked for; one for another time is an
                 // earlier answer, to be shown as such.
                 let state = match (state, held) {
-                    (_, None) => "computing",
-                    (SignalState::Refined, Some(reading)) if reading.time == time => "refined",
-                    _ => "stale",
+                    (_, None) => Standing::Computing,
+                    (SignalState::Refined, Some(reading)) if reading.time == time => Standing::Refined,
+                    _ => Standing::Stale,
                 };
                 let towers = held.map_or_else(Vec::new, |reading| {
                     let labels = self.spec.array.towers.iter().map(|t| t.label.clone());
                     labels
                         .zip(&reading.towers)
-                        .map(|(label, &[lower, upper, gradiometer])| TowerReading {
+                        .map(|(label, phases)| TowerReading {
                             label,
-                            lower,
-                            upper,
-                            gradiometer,
+                            lower: phases.lower,
+                            upper: phases.upper,
+                            gradiometer: phases.gradiometer,
                         })
                         .collect()
                 });
                 Ok(Reply::Reading(ReadingReply {
                     time: held.map_or(time, |reading| reading.time),
-                    state: state.to_owned(),
+                    state,
                     towers,
                     estimate: held.map_or(0.0, |reading| reading.estimate),
+                    settled: held.is_none_or(|reading| reading.settled),
                     warnings: held.map_or_else(Vec::new, |reading| reading.warnings.clone()),
                 }))
             }
@@ -560,6 +593,45 @@ impl Engine {
         let arrived = self.forward.settle(patience);
         self.took(arrived);
         self.forward.state() != SignalState::Stale && self.forward.reading().0 != SignalState::Stale
+    }
+
+    /// Waits, at most `patience`, for the reading alone to be the one asked for: a reading that
+    /// is ready in milliseconds is not held up by a series that takes a minute. True when it is.
+    pub fn settle_reading(&mut self, patience: std::time::Duration) -> bool {
+        let arrived = self.forward.settle_reading(patience);
+        self.took(arrived);
+        self.forward.reading().0 != SignalState::Stale
+    }
+
+    /// Answers a query, first waiting (at most the engine's patience) for the numbers it asks
+    /// for: the signal for a signal or a periodogram, the reading alone for a reading. A reading
+    /// at a time other than the playhead is asked of the worker here, and the playhead's again
+    /// afterwards. [`Self::query`] never waits and never asks: it answers with what there is.
+    ///
+    /// # Errors
+    /// As [`Self::query`].
+    pub fn ask(&mut self, query: &Query) -> Result<Reply, String> {
+        match query {
+            Query::Signal { .. } | Query::Periodogram { .. } => {
+                self.settle(self.patience);
+                self.query(query)
+            }
+            Query::Reading(None) => {
+                self.settle_reading(self.patience);
+                self.query(query)
+            }
+            Query::Reading(Some(time)) => {
+                if !time.is_finite() {
+                    return self.query(query);
+                }
+                self.ask_reading(*time);
+                self.settle_reading(self.patience);
+                let answer = self.query(query);
+                self.ask_reading(self.time);
+                answer
+            }
+            _ => self.query(query),
+        }
     }
 
     /// Records what has arrived: a signal is announced, and either is a change of what is shown.
@@ -586,10 +658,6 @@ impl Engine {
         self.patience = patience;
     }
 
-    pub(crate) const fn patience(&self) -> std::time::Duration {
-        self.patience
-    }
-
     /// Holds the forward workers before their next job, or lets them go on: for tests that must
     /// say what happened on the caller's thread without a clock.
     #[doc(hidden)]
@@ -609,11 +677,11 @@ impl Engine {
                 "signal: {} tower(s) × {} shot(s), quadrature {}, whole {took:.0} ms after the edit",
                 signal.towers,
                 signal.times.len(),
-                estimate_text(signal.estimate)
+                estimate_text(signal.estimate, signal.settled)
             ),
         );
         for warning in &signal.warnings {
-            self.log.push(Level::Warn, Subsystem::Engine, warning.clone());
+            self.log.push(Level::Warn, Subsystem::Engine, warning.text.clone());
         }
     }
 
@@ -938,11 +1006,21 @@ mod tests {
 
     #[test]
     fn session_replays_from_its_journal() {
-        let original = run(&session());
-        let replayed = Engine::replay(original.journal()).unwrap();
+        let mut original = run(&session());
+        let mut replayed = Engine::replay(original.journal()).unwrap();
+        // Where the signal stands is a matter of when one looks, not of the state: both are let
+        // finish before the two are laid side by side.
+        let patience = std::time::Duration::from_secs(60);
+        assert!(original.settle(patience) && replayed.settle(patience));
         assert_eq!(replayed.digest(), original.digest());
         assert_eq!(replayed.spec(), original.spec());
-        assert_eq!(replayed.query(&Query::Stats).unwrap(), original.query(&Query::Stats).unwrap());
+        // The generation counts arrivals from the workers as well as commands (a reading that
+        // comes in is a change of what is shown), so it is a clock of sorts and not state.
+        let stats = |engine: &Engine| {
+            let Ok(Reply::Stats(stats)) = engine.query(&Query::Stats) else { panic!("stats") };
+            Stats { generation: 0, ..stats }
+        };
+        assert_eq!(stats(&replayed), stats(&original));
         // The journal survives a trip through JSON, as a saved session would.
         let saved = serde_json::to_string(original.journal()).unwrap();
         let loaded: Vec<Command> = serde_json::from_str(&saved).unwrap();
