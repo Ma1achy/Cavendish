@@ -1,0 +1,8 @@
+rust_2d shape ok: True dtype: float64 bits equal: True byte-identical to np.save: True
+rust_1d shape ok: True dtype: float64 bits equal: True byte-identical to np.save: True
+rust_0d shape ok: True dtype: float64 bits equal: True byte-identical to np.save: True
+rust_empty shape ok: True dtype: float64 bits equal: True byte-identical to np.save: True
+version (1, 0) header 118 bytes; data starts at 128 (multiple of 64: True ) {'descr': '<f8', 'fortran_order': False, 'shape': (3, 4), }
+version (1, 0) header 118 bytes; data starts at 128 (multiple of 64: True ) {'descr': '<f8', 'fortran_order': True, 'shape': (3, 4), }
+version (1, 0) header 118 bytes; data starts at 128 (multiple of 64: True ) {'descr': '>f8', 'fortran_order': False, 'shape': (3,), }
+version (1, 0) header 118 bytes; data starts at 128 (multiple of 64: True ) {'descr': '<f4', 'fortran_order': False, 'shape': (3,), }

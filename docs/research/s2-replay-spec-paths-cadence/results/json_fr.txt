@@ -1,0 +1,19 @@
+serde_json float_roundtrip = true
+  random bit patterns (all exponents)        struct: 0/2000000 differ; via Value: 0/2000000 differ
+  uniform [0,1)                              struct: 0/2000000 differ; via Value: 0/2000000 differ
+  typed decimals (6 digits, e-30..e+30)      struct: 0/2000000 differ; via Value: 0/2000000 differ
+  scene scales (1e-27..1e6, ±)               struct: 0/2000000 differ; via Value: 0/2000000 differ
+  subnormals                                 struct: 0/2000000 differ; via Value: 0/2000000 differ
+  17-digit text from elsewhere vs std parse: 0/2000000 differ 
+  specials:
+    NaN        -> {"x":null}                   -> Err("invalid type: null, expected f64 at line 1 column 9")
+    inf        -> {"x":null}                   -> Err("invalid type: null, expected f64 at line 1 column 9")
+    -inf       -> {"x":null}                   -> Err("invalid type: null, expected f64 at line 1 column 9")
+    -0.0       -> {"x":-0.0}                   -> Ok("bits 8000000000000000")
+    5e-324     -> {"x":5e-324}                 -> Ok("bits 0000000000000001")
+    MAX        -> {"x":1.7976931348623157e+308} -> Ok("bits 7fefffffffffffff")
+    2^53+? 1e16 -> {"x":1e+16}                  -> Ok("bits 4341c37937e08000")
+    1.0        -> {"x":1.0}                    -> Ok("bits 3ff0000000000000")
+    Number::from_f64(NaN) = None; to_value(NaN) = Null
+    Value from 1 (int) set into f64 field: Ok(One { x: 1.0 })
+    u64 2^53+1 into f64: Ok(9007199254740992.0)

@@ -1,0 +1,3 @@
+  sin+cos over 20000000 args: std (glibc) 244 ms (12.2 ns/pair); libm crate 268 ms (13.4 ns/pair); sums -1.012726218554888e5 -1.0127262185548886e5
+  sin+cos over 20000000 args: std (glibc) 299 ms (15.0 ns/pair); libm crate 264 ms (13.2 ns/pair); sums -1.012726218554888e5 -1.0127262185548886e5
+  sin+cos over 20000000 args: std (glibc) 291 ms (14.5 ns/pair); libm crate 260 ms (13.0 ns/pair); sums -1.012726218554888e5 -1.0127262185548886e5

@@ -1,0 +1,2 @@
+exact Lomb-Scargle, N=10000, M=1000 frequencies, 1 thread: 324 ms (checksum 1.250e4)
+exact Lomb-Scargle, N=100000, M=1000 frequencies, 1 thread: 2573 ms (checksum 1.250e5)

@@ -1,0 +1,20 @@
+# Throwaway: compile cost of derive-based reflection options, docs/research/s2-replay-spec-paths-cadence.md §3.
+[package]
+name = "refl"
+version = "0.0.0"
+edition = "2024"
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+schemars = { version = "1.2", optional = true }
+bevy_reflect = { version = "=0.20.1", optional = true }
+facet = { version = "=0.46.5", optional = true }
+[features]
+s = []
+sc = ["dep:schemars"]
+bv = ["dep:bevy_reflect"]
+fc = ["dep:facet"]
+[workspace]
+[profile.dev]
+debug = "line-tables-only"
+[profile.dev.package."*"]
+debug = false

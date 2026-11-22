@@ -1,0 +1,7 @@
+duration 1e400  -> Err("duration: inf must be a positive number, at most 1000000")
+duration inf    -> Err("duration: inf must be a positive number, at most 1000000")
+duration NaN    -> Err("duration: NaN must be a positive number, at most 1000000")
+duration -0.0   -> Err("duration: -0 must be a positive number, at most 1000000")
+duration 10     -> Ok(10.0)
+ron text stable under a round trip: true
+json text stable under a round trip: true

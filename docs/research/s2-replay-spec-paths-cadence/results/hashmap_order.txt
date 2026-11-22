@@ -1,0 +1,4 @@
+iteration order [6, 3, 1, 5, 7, 0, 2, 4]; sum of values in that order 4006666666666667
+iteration order [1, 4, 7, 5, 0, 6, 3, 2]; sum of values in that order 4006666666666668
+iteration order [1, 7, 2, 3, 6, 5, 4, 0]; sum of values in that order 4006666666666667
+iteration order [0, 2, 3, 4, 5, 6, 1, 7]; sum of values in that order 4006666666666667

@@ -1,0 +1,30 @@
+== 1 uniform sampling: Dirichlet kernel
+  max |numeric - Dirichlet| = 1.1324274851176597e-14
+  |W(1/T0)| = 1.0 (the alias is as tall as the peak)
+== 2 cycle times drawn independently, so shot times are a random walk
+  pos d=0.1, N=500, 4000 seeds: measured / closed form = [0.999 0.998 0.993 0.995] +- [0.001 0.008 0.005 0.015]
+  pos d=0.3, N=500, 4000 seeds: measured / closed form = [0.991 1.014 0.978 0.993] +- [0.008 0.012 0.013 0.015]
+  sym d=0.1, N=500, 4000 seeds: measured / closed form = [0.995 1.003 0.992 1.025] +- [0.005 0.011 0.011 0.016]
+  sym d=0.3, N=500, 4000 seeds: measured / closed form = [1.008 1.031 0.993 1.019] +- [0.014 0.014 0.015 0.016]
+  alias-to-peak amplitude sqrt(E|W|^2) at nu = 1/Tbar, positive jitter, T0 = 5 s:
+    d=0.1: N=5e3 0.6599  N=2e4 0.3782  N=1e5 0.1747   1-|phi| = 6.45e-04
+    d=0.2: N=5e3 0.3815  N=2e4 0.1968  N=1e5 0.0887   1-|phi| = 2.53e-03
+    d=0.3: N=5e3 0.2627  N=2e4 0.1332  N=1e5 0.0598   1-|phi| = 5.57e-03
+== 2b the other reading of jitter: t_n = n T0 + e_n, e_n independent (a Debye-Waller factor)
+  measured / predicted: [1.    1.    0.995 1.015] ; the coherent alias amplitude |psi(1/T0)| = 0.9765 does not fall with N
+== 3 alternating cycle times T_A, T_B: sideband heights |cos(pi k T_A / T_s)|
+  (5.5,6.0) Ts=11.5: predicted [1.     0.0682 0.9907 0.2035 0.9629 0.3349 0.9172]; N=2e3 [1.     0.0682 0.9907 0.2035 0.9629 0.3349 0.9172]; N=2e4 [1.     0.0682 0.9907 0.2035 0.9629 0.3349 0.9172]
+  (5.0,5.5) Ts=10.5: predicted [1.     0.0747 0.9888 0.2225 0.9556 0.3653 0.901 ]; N=2e3 [1.     0.0747 0.9888 0.2225 0.9556 0.3653 0.901 ]; N=2e4 [1.     0.0747 0.9888 0.2225 0.9556 0.3653 0.901 ]
+  (5.0,8.0) Ts=13.0: predicted [1.     0.3546 0.7485 0.8855 0.1205 0.9709 0.5681]; N=2e3 [1.     0.3546 0.7485 0.8855 0.1205 0.9709 0.5681]; N=2e4 [1.     0.3546 0.7485 0.8855 0.1205 0.9709 0.5681]
+== 4 planned gaps: L shots on, P-L off, period P shots
+  relative to k=0: predicted [1.     0.757  0.234  0.1561 0.1897 0.    ] measured [1.     0.757  0.234  0.1561 0.1897 0.    ]
+== 5 shots lost independently with probability p: power off the lines, normalised by the kept count
+  p=0.01: measured 2.670e-06; p/((1-p)N) = 2.525e-06
+  p=0.05: measured 1.309e-05; p/((1-p)N) = 1.316e-05
+== 6 Lomb-Scargle of a pure tone against the window
+  uniform              k=1 at 0.15000 Hz: LS sqrt-peak ratio 1.0000; window max|W| in the same band 1.0000
+  uniform              k=2 at 0.35000 Hz: LS sqrt-peak ratio 1.0000; window max|W| in the same band 1.0000
+  positive jitter 0.2  k=1 at 0.14602 Hz: LS sqrt-peak ratio 0.5772; window max|W| in the same band 0.5768
+  positive jitter 0.2  k=2 at 0.34205 Hz: LS sqrt-peak ratio 0.3831; window max|W| in the same band 0.3823
+  alternating 5.5/6    k=1 at 0.03696 Hz: LS sqrt-peak ratio 0.0682; window max|W| in the same band 0.0682
+  alternating 5.5/6    k=2 at 0.12391 Hz: LS sqrt-peak ratio 0.9907; window max|W| in the same band 0.9907
