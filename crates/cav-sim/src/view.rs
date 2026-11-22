@@ -151,7 +151,7 @@ pub struct SceneView<'a> {
     pub view: &'a ViewSpec,
     /// What is selected, drawn highlighted.
     pub highlight: Option<crate::Target>,
-    /// The playhead, seconds. Nothing in S0 moves, so the picture does not yet depend on it.
+    /// The playhead, seconds: bodies are drawn where they are at this time.
     pub time: f64,
 }
 

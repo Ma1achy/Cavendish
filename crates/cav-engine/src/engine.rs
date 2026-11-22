@@ -181,7 +181,7 @@ impl Engine {
     fn check(&self, command: &Command) -> Result<(), String> {
         match command {
             Command::Load(spec) => spec.validate().map_err(|e| e.0),
-            Command::Set { path, value } => self.edited(path, value).map(|_| ()),
+            Command::Set { path, value, .. } => self.edited(path, value).map(|_| ()),
             Command::Run { .. } => Ok(()),
             Command::Seek(t) if !t.is_finite() => Err(format!("a time must be finite, not {t}")),
             Command::Seek(_) => Ok(()),
@@ -250,7 +250,7 @@ impl Engine {
     /// the command before it: a drag in progress.
     fn perform(&mut self, command: &Command, continues: bool) {
         match command {
-            Command::Set { path, value } => {
+            Command::Set { path, value, .. } => {
                 let edited = self.edited(path, value).expect("checked");
                 let before = std::mem::replace(&mut self.spec, edited);
                 if !continues {

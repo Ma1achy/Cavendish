@@ -17,7 +17,7 @@ fn loaded(scene: SceneSpec) -> Engine {
 }
 
 fn set(engine: &mut Engine, path: &str, value: serde_json::Value) -> Result<(), String> {
-    engine.apply(Command::Set { path: path.into(), value })
+    engine.apply(Command::set(path, value))
 }
 
 fn bits(values: &[f64]) -> Vec<u64> {
@@ -89,17 +89,33 @@ fn a_drag_is_one_journal_entry_and_replays() {
     let mut engine = loaded(dev::point());
     let before = engine.spec().clone();
     let journal_before = engine.journal().len();
+    // A drag: its first step is an edit, and each later step says that it continues it.
     for step in 0..40 {
         let x = 2.0 + 0.05 * f64::from(step);
-        set(&mut engine, "bodies[0].motion.Static.position", json!([x, 0.0, 2.5])).unwrap();
+        let path = "bodies[0].motion.Static.position".to_owned();
+        engine.apply(Command::Set { path, value: json!([x, 0.0, 2.5]), continues: step > 0 }).unwrap();
     }
-    assert_eq!(engine.journal().len(), journal_before + 1, "forty sets of one path are one entry");
+    assert_eq!(engine.journal().len(), journal_before + 1, "forty steps of one drag are one entry");
     assert_eq!(engine.generation(), 41, "and forty changes");
     assert_eq!(Engine::replay(engine.journal()).unwrap().digest(), engine.digest());
     // One undo takes the whole drag back.
     engine.apply(Command::Undo).unwrap();
     assert_eq!(engine.spec(), &before);
-    // Control: sets of different paths are different edits.
+    // Control: sets that are issued separately are separate edits, even of one path. (They once
+    // merged: `set bodies[0].mass 20; set bodies[0].mass 30; undo` gave 100, not 20.)
+    set(&mut engine, "bodies[0].mass", json!(20.0)).unwrap();
+    set(&mut engine, "bodies[0].mass", json!(30.0)).unwrap();
+    engine.apply(Command::Undo).unwrap();
+    assert_eq!(engine.spec().bodies[0].mass, 20.0);
+    engine.apply(Command::Undo).unwrap();
+    assert_eq!(engine.spec().bodies[0].mass, 100.0);
+    // And two masses added one after the other are two edits: undo takes back the second only.
+    engine.run_script("mass 10 at 3 0 1; mass 5 at -3 0 1; undo").unwrap();
+    assert_eq!(engine.spec().bodies.len(), 2);
+    engine.run_line("undo").unwrap();
+    assert_eq!(engine.spec(), &before);
+    let journal_before = engine.journal().len() - 2;
+    // Sets of different paths are different edits too.
     set(&mut engine, "bodies[0].mass", json!(5.0)).unwrap();
     set(&mut engine, "bodies[0].radius", json!(0.1)).unwrap();
     assert_eq!(engine.journal().len(), journal_before + 4, "the drag, the undo, and two sets");
@@ -345,7 +361,8 @@ fn a_body_through_the_tower_is_warned_of_in_the_log() {
 #[test]
 fn the_new_commands_and_queries_round_trip_through_json() {
     let commands = [
-        Command::Set { path: "bodies[0].motion.Static.position".into(), value: json!([0.1, -2.0, 3.0]) },
+        Command::set("bodies[0].motion.Static.position", json!([0.1, -2.0, 3.0])),
+        Command::Set { path: "bodies[0].mass".into(), value: json!(2.5), continues: true },
         Command::Run { from: Stage::Forward },
         Command::Select(Some(Target::Body(2))),
         Command::load(dev::oscillator_zoo()),
@@ -367,5 +384,39 @@ fn the_new_commands_and_queries_round_trip_through_json() {
         assert_eq!(serde_json::from_str::<Reply>(&serde_json::to_string(&reply).unwrap()).unwrap(), reply);
     }
     // Control: the wire form names the command.
-    assert_eq!(serde_json::to_string(&commands[1]).unwrap(), r#"{"Run":{"from":"Forward"}}"#);
+    assert_eq!(serde_json::to_string(&commands[2]).unwrap(), r#"{"Run":{"from":"Forward"}}"#);
+    // A journal written before `continues` existed still reads: an absent flag is an edit of its own.
+    let old: Command = serde_json::from_str(r#"{"Set":{"path":"duration","value":20.0}}"#).unwrap();
+    assert_eq!(old, Command::set("duration", json!(20.0)));
+}
+
+#[test]
+fn a_value_with_strings_in_it_can_be_set_from_the_console() {
+    // An agent adds an oscillator with two lines: a mass, then its motion as JSON. The console's
+    // quotes used to take the JSON's, so anything but a number or a list could only be loaded.
+    let mut engine = loaded(dev::void());
+    engine.run_line("mass 1 at 3 0 1").unwrap();
+    let motion =
+        r#"{"Linear": {"centre": [3, 0, 1], "amplitude": [0, 0, 0.5], "frequency": 0.05, "phase": 0}}"#;
+    engine.run_line(&format!("set bodies[0].motion {motion}")).unwrap();
+    assert_eq!(engine.spec().bodies[0].motion, dev::comb().bodies[0].motion);
+    engine.run_line(r#"set bodies[0].label "the oscillator; number one""#).unwrap();
+    assert_eq!(engine.spec().bodies[0].label, "the oscillator; number one");
+    // In a script too: a `;` inside the JSON's quotes does not end the line.
+    engine.run_script(r#"set name "two; words"; seek 2"#).unwrap();
+    assert_eq!((engine.spec().name.as_str(), engine.time()), ("two; words", 2.0));
+    // A bare word is still a string, and a number a number.
+    engine.run_line("set name comb").unwrap();
+    engine.run_line("set duration 30").unwrap();
+    assert_eq!((engine.spec().name.as_str(), engine.spec().duration), ("comb", 30.0));
+    // The log's line for a set issues it again.
+    let line = engine.log().iter().rev().find(|e| e.message.starts_with("set bodies[0].label")).unwrap();
+    let mut again = loaded(dev::void());
+    again.run_line("mass 1 at 3 0 1").unwrap();
+    again.run_line(&line.message).unwrap();
+    assert_eq!(again.spec().bodies[0].label, "the oscillator; number one");
+    // Control: JSON that is not a motion is refused, and says what was wrong.
+    let why = engine.run_line(r#"set bodies[0].motion {"Sideways": {}}"#).unwrap_err();
+    assert!(why.contains("cannot be set"), "{why}");
+    assert!(engine.run_line("set duration").unwrap_err().contains("usage: set"));
 }

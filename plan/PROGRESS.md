@@ -145,6 +145,12 @@ Asked in S1 (defaults in use until answered):
   (integrating to 2T) cuts the error on `100m_oscillators` about fourfold. `1D_oscillator` already
   covers the whole flight.
 
+- **With ⁸⁷Sr the upper arm of the upper interferometer tops out at 10.006 m in the 10 m tower**
+  (the kick is 6.578 m/s with ⁸⁷Sr's mass and the exact ħ, 6.505 with the scripts' constants; the arm
+  is 5.006 m above its launch point at T). Is the launch point of the upper interferometer really at
+  5 m, or the tower taller than 10 m? Default: as it is; nothing in the engine depends on the tower's
+  height but the picture.
+
 Still open (asked in S0; defaults in use until answered):
 - The ground layout of a multi-tower array and the room around it. S0 draws v2's layout: five towers,
   one at the centre and four on a cross with 4 m arms, standing on the floor (z = 0) of a

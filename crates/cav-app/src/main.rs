@@ -189,7 +189,7 @@ fn timings(shell: &mut Shell, headless: &mut Headless, size: [u32; 2]) -> Result
             let started = Instant::now();
             let moved = [anchor[0] + 0.01 * f64::from(step), anchor[1], anchor[2]];
             shell.run(&format!("set bodies[0].motion.{field} [{}, {}, {}]", moved[0], moved[1], moved[2]))?;
-            shell.readings();
+            shell.reading();
             headless.render(shell, size, vec![Vec::new()])?;
             drag.push(started.elapsed().as_secs_f64() * 1e3);
         }

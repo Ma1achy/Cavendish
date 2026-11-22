@@ -32,9 +32,8 @@ pub fn quick(root: &Path, enforce_budget: bool) -> Result<(), String> {
         cargo(root, &["clippy", "--workspace", "--all-targets", "--quiet", "--", "-D", "warnings"]),
     )?;
     run_tier(root, "quick", QUICK_FILTER)?;
-    // nextest does not run documentation examples; they are few, so cargo runs them (not counted
-    // in the floor).
-    step("doctests", cargo(root, &["test", "--doc", "--workspace", "--quiet"]))?;
+    // Documentation examples are not built here: the one there was cost two to three seconds of
+    // the ten, and is a unit test now. `cargo xtask oracle` runs any that are written later.
     let took = started.elapsed().as_secs_f64();
     let verdict = if took <= QUICK_BUDGET_S { "within" } else { "OVER" };
     eprintln!("xtask: quick took {took:.1} s, {verdict} the {QUICK_BUDGET_S:.0} s warm budget");
@@ -75,6 +74,8 @@ pub fn oracle(root: &Path) -> Result<(), String> {
     let clippy = ["clippy", "--manifest-path", ORACLE_MANIFEST, "--target-dir", ORACLE_TARGET];
     let lints = ["--all-targets", "--quiet", "--", "-D", "warnings"];
     step("oracle clippy", cargo(root, &[&clippy[..], &lints[..]].concat()))?;
+    // nextest does not run documentation examples, and `quick` has no time for them.
+    step("doctests", cargo(root, &["test", "--doc", "--workspace", "--quiet"]))?;
     run_tests(root, "oracle", &ORACLE_NEXTEST)
 }
 
