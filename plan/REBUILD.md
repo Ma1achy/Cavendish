@@ -504,6 +504,20 @@ away is tides and waves, not attraction.
   baseline as the Earth turns (S14's frames). Known events can be replayed: where a catalogued
   merger would have been in this band in the days before it reached the ground detectors' band.
   The strain is drawn beside the phase it produces, with the instrument's sensitivity curve.
+- **Theoretical and speculative sources** (owner, 22 Nov 2026), each an optional source with its
+  parameters, the paper it comes from, and a label saying it is hypothetical:
+  - *as gravitational waves*: mergers of intermediate-mass and primordial black holes, bursts from
+    cosmic strings, a stochastic background from a phase transition in the early universe;
+  - *as fields the atoms feel*: ultralight dark matter of several kinds (scalar, vector), a
+    transient from a dark-matter clump or a domain wall passing through the Earth, slow drifts of
+    the fundamental constants;
+  - *as changes to gravity itself*: a fifth force of Yukawa form added to Newton's law for every
+    mass in the scene, so that a moving mass in the room becomes a test of it; a violation of the
+    equivalence principle between two isotopes;
+  - *as masses passing by*: a small primordial black hole or other dark compact object crossing near
+    the Earth, read by the far-field layer of S14 as any other moving mass.
+  Each answers one question: what would it look like here, and could it be told from the world's
+  own noise.
 - **Networks**: two or more sites on one planet sharing the far field, with independent local worlds.
 - **Site selection**: a noise budget for any place on Earth from the data of S14.
 - **A twin**: the simulation run on the same inputs as a real instrument, and the difference drawn.

@@ -180,6 +180,9 @@ hold, before any row is used. Tolerances are written in the slice brief before m
 | `chirp_matches_post_newtonian` | frequency against time for an inspiral of given chirp mass | the leading-order chirp formula; time to merger exact |
 | `antenna_pattern_rotates` | response against sky position and polarisation over a sidereal day; the sky average | closed form for a single baseline |
 | `sensitivity_curve_reproduced` | strain sensitivity from the phase noise floor, for AION-10 and AICE | the instrument proposals' published curves |
+| `yukawa_reduces_to_newton` | a Yukawa term with zero strength, or with a range far longer than the scene, changes nothing; with a finite range, a point mass matches the closed form | closed form |
+| `compact_object_flyby` | a dark compact object on a straight path past the Earth | the engine's own moving point mass |
+| `speculative_sources_match_their_papers` | each hypothetical source reproduces the signal size its source paper states for a quoted instrument | the paper named in the source's description |
 | `two_sites_reject_local_noise` | correlation of two sites with independent local noise | the predicted 1/√N and common-mode factors |
 
 ## 3. Features these sources suggest
