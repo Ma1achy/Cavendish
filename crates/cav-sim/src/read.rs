@@ -315,7 +315,57 @@ pub fn contribution(
     spec: &SceneSpec,
     source: SourceId,
     shots: &Shots,
-    cancelled: &dyn Fn() -> bool,
+    cancelled: &(dyn Fn() -> bool + Sync),
+) -> Option<Contribution> {
+    contribution_on(threads(), spec, source, shots, cancelled)
+}
+
+/// How many shots of one tower a thread takes at a time. A constant: the cut does not depend on
+/// how many threads there are, and nothing is summed across pieces, so neither does any value.
+const PIECE: usize = 64;
+
+/// One piece of a contribution: where a tower's consecutive shots from `start` are written.
+struct Piece<'a> {
+    at: usize,
+    start: usize,
+    lower: &'a mut [f64],
+    upper: &'a mut [f64],
+    gradiometer: &'a mut [f64],
+}
+
+/// What reading one piece found, besides the values: the largest estimate, the first shot in
+/// which the body crossed the atoms' path, and the first that did not settle, with its estimate.
+struct Found {
+    estimate: f64,
+    inside: Option<usize>,
+    unsettled: Option<(usize, f64)>,
+}
+
+/// How many threads a contribution is read on: `CAV_THREADS` if it is set to a number from 1 to
+/// 64, else one fewer than the machine's cores (the window keeps one), at least 1 and at most 8.
+/// The number changes how long a read takes and nothing else (`engine.thread_count`).
+#[must_use]
+pub fn threads() -> usize {
+    let asked = std::env::var("CAV_THREADS").ok().and_then(|text| text.trim().parse::<usize>().ok());
+    match asked {
+        Some(count) if (1..=64).contains(&count) => count,
+        _ => {
+            std::thread::available_parallelism().map_or(1, |cores| cores.get().saturating_sub(1)).clamp(1, 8)
+        }
+    }
+}
+
+/// [`contribution`] on a stated number of threads.
+///
+/// # Panics
+/// As [`contribution`].
+#[must_use]
+pub fn contribution_on(
+    threads: usize,
+    spec: &SceneSpec,
+    source: SourceId,
+    shots: &Shots,
+    cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Option<Contribution> {
     let readouts = &shots.times;
     let instrument = spec.array.instrument.instrument();
@@ -381,20 +431,45 @@ pub fn contribution(
         SourceId::Body(n) => {
             let body = mass(spec, n);
             let label = &spec.bodies[n].label;
-            for (at, tower) in towers.iter().enumerate() {
-                let (mut inside, mut unsettled) = (None, None);
-                for k in 0..readouts.len() {
+            let per_tower = readouts.len();
+            // Every value has its place before any is computed: the three channels are cut into
+            // pieces of one tower's consecutive shots, and each piece is filled by whichever
+            // thread takes it. A shot's value depends on the scene and its own readout time and
+            // on nothing another thread does, so the bits are the same at any thread count.
+            for channel in [&mut out.lower, &mut out.upper, &mut out.gradiometer] {
+                channel.resize(count, 0.0);
+            }
+            let mut pieces = Vec::new();
+            if per_tower > 0 {
+                let by_tower = out
+                    .lower
+                    .chunks_mut(per_tower)
+                    .zip(out.upper.chunks_mut(per_tower))
+                    .zip(out.gradiometer.chunks_mut(per_tower));
+                for (at, ((lower, upper), gradiometer)) in by_tower.enumerate() {
+                    let cut = lower
+                        .chunks_mut(PIECE)
+                        .zip(upper.chunks_mut(PIECE))
+                        .zip(gradiometer.chunks_mut(PIECE));
+                    for (piece, ((lower, upper), gradiometer)) in cut.enumerate() {
+                        pieces.push(Piece { at, start: piece * PIECE, lower, upper, gradiometer });
+                    }
+                }
+            }
+            // One piece: the shots of one tower from `start`, read in order.
+            let read_piece = |piece: Piece<'_>| -> Option<Found> {
+                let tower = &towers[piece.at];
+                let mut found = Found { estimate: 0.0, inside: None, unsettled: None };
+                for step in 0..piece.lower.len() {
+                    let k = piece.start + step;
                     if cancelled() {
                         return None;
                     }
-                    if !shots.taken(at, k) {
-                        out.lower.push(0.0);
-                        out.upper.push(0.0);
-                        out.gradiometer.push(0.0);
+                    if !shots.taken(piece.at, k) {
                         continue;
                     }
                     // The tower's own readout: the array's, and the tower's offset.
-                    let readout = shots.readout(at, k);
+                    let readout = shots.readout(piece.at, k);
                     // The body is watched as it is read: the crossing check costs no node of its own.
                     let watched = Watched::new(&body);
                     let audited = reader.read_to(base(tower.position), &watched, readout, PHASE_TOLERANCE);
@@ -403,18 +478,74 @@ pub fn contribution(
                     // Whatever stopped the audit short of its tolerance (the halvings, the work
                     // budget, a reading that is not a number) is said, never passed off as refined.
                     if !audited.settled {
-                        unsettled.get_or_insert((k, estimate));
-                        out.settled = false;
+                        found.unsettled.get_or_insert((k, estimate));
                     }
-                    if inside.is_none() && watched.crossed() {
-                        inside = Some(k);
+                    if found.inside.is_none() && watched.crossed() {
+                        found.inside = Some(k);
                     }
-                    let estimate = if estimate.is_nan() { f64::INFINITY } else { estimate };
-                    out.estimate = out.estimate.max(estimate);
-                    out.estimates[at] = out.estimates[at].max(estimate);
-                    out.lower.push(lower);
-                    out.upper.push(upper);
-                    out.gradiometer.push(signed(lower, upper));
+                    found.estimate =
+                        found.estimate.max(if estimate.is_nan() { f64::INFINITY } else { estimate });
+                    piece.lower[step] = lower;
+                    piece.upper[step] = upper;
+                    piece.gradiometer[step] = signed(lower, upper);
+                }
+                Some(found)
+            };
+            // The pieces are handed out from one queue; what each found comes back with its
+            // number, and is put together in that order whoever finished first.
+            let workers = threads.min(pieces.len()).max(1);
+            let meta: Vec<usize> = pieces.iter().map(|piece| piece.at).collect();
+            let queue = std::sync::Mutex::new(pieces.into_iter().enumerate());
+            let results = std::sync::Mutex::new(Vec::with_capacity(meta.len()));
+            let stopped = std::sync::atomic::AtomicBool::new(false);
+            let work = || {
+                loop {
+                    let next = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner).next();
+                    let Some((index, piece)) = next else { break };
+                    if stopped.load(std::sync::atomic::Ordering::Relaxed) {
+                        break;
+                    }
+                    match read_piece(piece) {
+                        Some(found) => {
+                            results
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .push((index, found));
+                        }
+                        None => {
+                            stopped.store(true, std::sync::atomic::Ordering::Relaxed);
+                            break;
+                        }
+                    }
+                }
+            };
+            if workers == 1 {
+                work();
+            } else {
+                std::thread::scope(|scope| {
+                    for _ in 1..workers {
+                        scope.spawn(work);
+                    }
+                    work();
+                });
+            }
+            if stopped.load(std::sync::atomic::Ordering::Relaxed) {
+                return None;
+            }
+            let mut results = results.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner);
+            results.sort_by_key(|(index, _)| *index);
+            // Tower by tower, piece by piece in shot order: the first shot that crossed, the
+            // first that did not settle, the largest estimate.
+            for (at, tower) in towers.iter().enumerate() {
+                let (mut inside, mut unsettled) = (None, None);
+                for (_, found) in results.iter().filter(|(index, _)| meta[*index] == at) {
+                    out.estimate = out.estimate.max(found.estimate);
+                    out.estimates[at] = out.estimates[at].max(found.estimate);
+                    inside = inside.or(found.inside);
+                    unsettled = unsettled.or(found.unsettled);
+                }
+                if unsettled.is_some() {
+                    out.settled = false;
                 }
                 if let Some(k) = inside {
                     out.warnings.push(Warning::about(
@@ -664,7 +795,7 @@ pub struct ReadingAt {
 /// playhead, with the audit's estimate and its warnings. `cancelled` is asked as it goes; when it
 /// says yes the work stops and nothing is returned.
 #[must_use]
-pub fn reading(spec: &SceneSpec, time: f64, cancelled: &dyn Fn() -> bool) -> Option<ReadingAt> {
+pub fn reading(spec: &SceneSpec, time: f64, cancelled: &(dyn Fn() -> bool + Sync)) -> Option<ReadingAt> {
     let shot = Shots::together(spec, vec![time]);
     let mut total = Signal::silent(&shot);
     for source in sources(spec) {
@@ -1331,6 +1462,83 @@ mod tests {
         assert_eq!(crate::paths::entry(&dev::cadence_lab(), "array.schedule.loss").unwrap().value, 0.02);
     }
 
+    cav_validate::case! {
+        test: validation_threads_do_not_change_a_bit,
+        name: "engine.thread_count",
+        subsystem: "engine",
+        slice: "S2",
+        reference: Exact,
+        against: "the signals of three scenes (staggered towers on a jittered, thinned cadence; a sphere through the towers, with its warnings; two bodies) read on 1, 2, 3 and 6 threads; values, estimates, warnings and flags that differ in any way from the one-thread read",
+        unit: Count,
+        tolerance: 0.0,
+        measure: {
+            let mut uneven = dev::staggered();
+            uneven.duration = 700.0;
+            uneven.array.schedule.loss = 0.1;
+            uneven.array.schedule.jitter = Some(crate::JitterSpec {
+                model: crate::JitterModel::Walk,
+                kind: crate::JitterKind::Positive,
+                delta: 0.3,
+            });
+            let scenes = [uneven, dev::through_the_tower(), dev::superposition()];
+            let on = |threads: usize, scene: &SceneSpec| {
+                let shots = shots(scene).unwrap();
+                let mut total = Signal::silent(&shots);
+                for source in sources(scene) {
+                    total.add(&contribution_on(threads, scene, source, &shots, &|| false).unwrap());
+                }
+                total
+            };
+            let mut differing = 0;
+            for scene in &scenes {
+                let one = on(1, scene);
+                // More pieces than threads, and more threads than towers: the queue is shared.
+                assert!(one.times.len() > 2 * PIECE || scene.name != "staggered", "{} shots", one.times.len());
+                for threads in [2, 3, 6] {
+                    let many = on(threads, scene);
+                    differing += bits_differing(&one.lower, &many.lower)
+                        + bits_differing(&one.upper, &many.upper)
+                        + bits_differing(&one.gradiometer, &many.gradiometer)
+                        + bits_differing(&one.estimates, &many.estimates)
+                        + usize::from(one.warnings != many.warnings)
+                        + usize::from(one.settled != many.settled || one.valid != many.valid);
+                }
+                // The read that the engine makes (however many threads this machine gives it) is
+                // the same again.
+                assert_eq!(signal(scene).unwrap(), one, "{}", scene.name);
+            }
+            // The warnings are there to be compared, in tower order.
+            let warned = on(6, &scenes[1]);
+            assert!(warned.warnings.len() >= 3 && warned.warnings.windows(2).all(|w| w[0].tower <= w[1].tower));
+            // Control: one bit of one value is one difference, so the count can fail.
+            let mut nudged = on(1, &scenes[2]);
+            nudged.upper[7] = f64::from_bits(nudged.upper[7].to_bits() ^ 1);
+            assert_eq!(bits_differing(&nudged.upper, &on(2, &scenes[2]).upper), 1);
+            // And a read that is cancelled part-way gives nothing, on any number of threads.
+            let shots = shots(&scenes[0]).unwrap();
+            let asked = std::sync::atomic::AtomicUsize::new(0);
+            let cancel = || asked.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= 200;
+            assert_eq!(contribution_on(6, &scenes[0], SourceId::Body(0), &shots, &cancel), None);
+            Measured::Error(differing as f64)
+        },
+    }
+
+    #[test]
+    fn the_thread_count_is_stated_and_bounded() {
+        // What the environment asks for is taken when it is a count; anything else is the default.
+        let default = threads();
+        assert!((1..=64).contains(&default));
+        let cores = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+        if std::env::var_os("CAV_THREADS").is_none() {
+            assert_eq!(default, cores.saturating_sub(1).clamp(1, 8));
+        }
+        // More threads than pieces is as many as there are pieces: nothing is spawned for nothing.
+        let scene = dev::point();
+        let shots = shots(&scene).unwrap();
+        let few = contribution_on(64, &scene, SourceId::Body(0), &shots, &|| false).unwrap();
+        assert_eq!(Some(few), contribution_on(1, &scene, SourceId::Body(0), &shots, &|| false));
+    }
+
     #[test]
     fn error_estimates_are_per_tower() {
         // A sphere that passes through tower 1's atoms and well clear of tower 5: the read at
@@ -1454,11 +1662,8 @@ mod tests {
         // And it can be cancelled like any other read.
         assert_eq!(reading(&scene, 3.0, &|| true), None);
         // Cancelled work returns nothing at all: no half-filled contribution.
-        let asked = std::cell::Cell::new(0);
-        let cancel_after_ten = || {
-            asked.set(asked.get() + 1);
-            asked.get() > 10
-        };
+        let asked = std::sync::atomic::AtomicUsize::new(0);
+        let cancel_after_ten = || asked.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= 10;
         assert_eq!(contribution(&scene, SourceId::Body(0), &shots(&scene).unwrap(), &cancel_after_ten), None);
         assert!(contribution(&scene, SourceId::Body(0), &shots(&scene).unwrap(), &|| false).is_some());
         assert_eq!(sources(&dev::infinite_floor()), [SourceId::Floor]);
