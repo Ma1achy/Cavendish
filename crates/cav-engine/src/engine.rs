@@ -5,12 +5,12 @@
 //! What is fixed already is the shape: state changes only through [`Engine::apply`], every applied
 //! command is journalled, and the journal replayed on a fresh engine gives the same state.
 
-use cav_sim::{DrawStyle, NamedView, Projection, SceneSpec, SceneView, Target, ViewSpec};
+use cav_sim::{DrawStyle, NamedView, PaneContent, Projection, SceneSpec, SceneView, Target, ViewSpec};
 use serde::Serialize;
 
 use crate::command::{
-    COMB_HARMONICS, Comb, Command, Harmonic, MAX_PANES, PaneContent, PeriodogramReply, Query, ReadingReply,
-    Reply, SignalReply, Stats, TowerReading, ViewCommand,
+    COMB_HARMONICS, Comb, Command, Harmonic, MAX_PANES, PeriodogramReply, Query, ReadingReply, Reply,
+    SignalReply, Stats, TowerReading, ViewCommand,
 };
 use crate::console;
 use crate::forward::{Forward, SignalState};
@@ -49,6 +49,8 @@ pub struct Engine {
     views: [ViewSpec; MAX_PANES],
     /// What each pane shows.
     contents: [PaneContent; MAX_PANES],
+    /// The stretch of its plot's horizontal axis each pane shows.
+    spans: [Option<[f64; 2]>; MAX_PANES],
     undo: Vec<SceneSpec>,
     redo: Vec<SceneSpec>,
     journal: Vec<Command>,
@@ -73,6 +75,7 @@ struct State<'a> {
     active: usize,
     views: &'a [ViewSpec; MAX_PANES],
     contents: [PaneContent; MAX_PANES],
+    spans: [Option<[f64; 2]>; MAX_PANES],
     undo: &'a [SceneSpec],
     redo: &'a [SceneSpec],
 }
@@ -106,6 +109,7 @@ impl Engine {
             active: 0,
             views,
             contents: [PaneContent::Scene; MAX_PANES],
+            spans: [None; MAX_PANES],
             undo: Vec::new(),
             redo: Vec::new(),
             journal: Vec::new(),
@@ -229,6 +233,11 @@ impl Engine {
             ViewCommand::Zoom { distance, .. } if !(distance.is_finite() && distance > 0.0) => {
                 Err(format!("a distance must be positive and finite, not {distance}"))
             }
+            ViewCommand::Span { span: Some([from, to]), .. }
+                if !(from.is_finite() && to.is_finite() && to > from) =>
+            {
+                Err(format!("a span runs from one value up to a larger one, not from {from} to {to}"))
+            }
             ViewCommand::Pan { target, .. } if target.iter().any(|c| !c.is_finite()) => {
                 Err(format!("a target must be finite, not {target:?}"))
             }
@@ -328,7 +337,14 @@ impl Engine {
                 }
             }
             ViewCommand::Style { pane, style } => self.views[pane].style = style,
-            ViewCommand::Show { pane, content } => self.contents[pane] = content,
+            ViewCommand::Show { pane, content } => {
+                // Another plot has another axis: the span does not carry over.
+                if self.contents[pane] != content {
+                    self.spans[pane] = None;
+                }
+                self.contents[pane] = content;
+            }
+            ViewCommand::Span { pane, span } => self.spans[pane] = span,
             ViewCommand::Orbit { pane, yaw, pitch } => {
                 // Yaw is kept in (−180, 180]; pitch cannot pass the poles.
                 let wrapped = 180.0 - (180.0 - yaw).rem_euclid(360.0);
@@ -585,6 +601,7 @@ impl Engine {
             active: self.active,
             views: &self.views,
             contents: self.contents,
+            spans: self.spans,
             undo: &self.undo,
             redo: &self.redo,
         };
@@ -678,7 +695,14 @@ impl Engine {
             .views
             .get(pane)
             .ok_or_else(|| format!("there is no pane {}; panes are 1 to {MAX_PANES}", pane + 1))?;
-        Ok(SceneView { scene: &self.spec, view, highlight: self.selection, time: self.time })
+        Ok(SceneView {
+            scene: &self.spec,
+            view,
+            highlight: self.selection,
+            time: self.time,
+            content: self.contents[pane],
+            span: self.spans[pane],
+        })
     }
 
     /// The journal: every applied command, oldest first, runs of overwrites kept as their last.

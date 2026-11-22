@@ -16,7 +16,14 @@ fn main() -> Result<(), String> {
     let view = ViewSpec::framing(&scene, named, projection, style);
     let gpu = cav_gpu::Gpu::new()?;
     let renderer = Renderer::new(&gpu);
-    let frame = Frame { scene: &scene, view: &view, highlight: Some(cav_sim::Target::Tower(2)), time: 0.0 };
+    let frame = Frame {
+        scene: &scene,
+        view: &view,
+        highlight: Some(cav_sim::Target::Tower(2)),
+        time: 0.0,
+        content: cav_sim::PaneContent::Scene,
+        span: None,
+    };
     let png = renderer.render_png(&gpu, frame, [1200, 800])?;
     std::fs::write(out, png).map_err(|e| e.to_string())
 }

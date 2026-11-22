@@ -4,7 +4,7 @@
 (
     version: 1,
     name: "comb",
-    description: "One oscillator at 0.05 Hz (panel b of the scripts\' fig2_10m): its periodogram is a comb at 0.05,          0.10, 0.15 and 0.20 Hz, each harmonic lower than the last, all below the Nyquist frequency of          0.25 Hz.",
+    description: "One oscillator at 0.05 Hz (panel b of the scripts\' fig2_10m): its periodogram is a comb at 0.05, 0.10, 0.15 and 0.20 Hz, each harmonic lower than the last, all below the Nyquist frequency of 0.25 Hz.",
     duration: 2000.0,
     array: (
         instrument: (

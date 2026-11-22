@@ -15,6 +15,7 @@ publish = false
 cav-core = { path = "crates/cav-core" }
 cav-engine = { path = "crates/cav-engine" }
 cav-gpu = { path = "crates/cav-gpu" }
+cav-app = { path = "crates/cav-app" }
 cav-render = { path = "crates/cav-render" }
 cav-sim = { path = "crates/cav-sim" }
 cav-validate = { path = "crates/cav-validate" }

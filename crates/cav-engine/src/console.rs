@@ -6,9 +6,10 @@
 
 use cav_sim::{DrawStyle, LIBRARY, NamedView, Projection, SceneSpec, Target};
 
-use crate::command::{ChannelName, Command, PaneContent, Query, Reply, Stage, ViewCommand};
+use crate::command::{ChannelName, Command, Query, Reply, Stage, ViewCommand};
 use crate::engine::Engine;
 use crate::log::{Level, LogFilter, Subsystem};
+use cav_sim::PaneContent;
 
 /// What a console line asks for.
 #[derive(Clone, Debug, PartialEq)]
@@ -115,6 +116,12 @@ pub const COMMANDS: &[CommandDoc] = &[
         example: "show signal",
     },
     CommandDoc {
+        name: "span",
+        usage: "span <from> <to>|all [@N]",
+        about: "the stretch of a plot's horizontal axis a pane shows: seconds for the signal, hertz for the periodogram",
+        example: "span 0 200",
+    },
+    CommandDoc {
         name: "periodogram",
         usage: "periodogram [tower] [gradiometer|lower|upper]",
         about: "the periodogram of a tower's signal: its largest peaks, and where each body's harmonics fold to",
@@ -207,6 +214,8 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
             }
             ViewCommand::Style { pane, style } => format!("style {}{}", style.name(), at(pane)),
             ViewCommand::Show { pane, content } => format!("show {}{}", content.name(), at(pane)),
+            ViewCommand::Span { pane, span: None } => format!("span all{}", at(pane)),
+            ViewCommand::Span { pane, span: Some([from, to]) } => format!("span {from} {to}{}", at(pane)),
             ViewCommand::Orbit { pane, yaw, pitch } => format!("orbit {yaw} {pitch}{}", at(pane)),
             ViewCommand::Zoom { pane, distance } => format!("zoom {distance}{}", at(pane)),
             ViewCommand::Pan { pane, target: [x, y, z] } => format!("pan {x} {y} {z}{}", at(pane)),
@@ -402,6 +411,11 @@ impl Engine {
                 Some(style) => view(ViewCommand::Style { pane, style }),
                 None => Err(format!("`{word}` is not a draw style; {}", usage(name))),
             },
+            ("span", ["all"]) => view(ViewCommand::Span { pane, span: None }),
+            ("span", [from, to]) => {
+                let span = [number(from, "the start", name)?, number(to, "the end", name)?];
+                view(ViewCommand::Span { pane, span: Some(span) })
+            }
             ("show", [word]) => match PaneContent::parse(word) {
                 Some(content) => view(ViewCommand::Show { pane, content }),
                 None => Err(format!("`{word}` is not something a pane shows; {}", usage(name))),

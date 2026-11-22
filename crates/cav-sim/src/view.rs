@@ -142,6 +142,37 @@ pub struct ViewSpec {
     pub style: DrawStyle,
 }
 
+/// What a pane shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+pub enum PaneContent {
+    /// The scene in three dimensions.
+    #[default]
+    Scene,
+    /// Every tower's signal against time, with the playhead.
+    Signal,
+    /// The periodogram of a tower's signal, with each oscillating body's comb of harmonics drawn
+    /// where they fold to.
+    Periodogram,
+}
+
+impl PaneContent {
+    /// The word the console uses.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Scene => "scene",
+            Self::Signal => "signal",
+            Self::Periodogram => "periodogram",
+        }
+    }
+
+    /// The content a word names.
+    #[must_use]
+    pub fn parse(word: &str) -> Option<Self> {
+        [Self::Scene, Self::Signal, Self::Periodogram].into_iter().find(|c| c.name() == word)
+    }
+}
+
 /// What to draw: a scene at a time, how to look at it, and what is selected. The engine makes it
 /// ([`cav-engine`'s `Engine::frame`]) and the renderer draws it, so every client's picture is of
 /// the same thing.
@@ -153,6 +184,11 @@ pub struct SceneView<'a> {
     pub highlight: Option<crate::Target>,
     /// The playhead, seconds: bodies are drawn where they are at this time.
     pub time: f64,
+    /// What the pane shows. A renderer of scenes draws [`PaneContent::Scene`] and must refuse the
+    /// others rather than draw the scene in their place.
+    pub content: PaneContent,
+    /// The stretch of a plot's horizontal axis the pane shows; `None` for all of it.
+    pub span: Option<[f64; 2]>,
 }
 
 impl ViewSpec {

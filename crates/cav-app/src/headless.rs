@@ -123,27 +123,69 @@ impl Headless {
         frames: Vec<Vec<egui::Event>>,
     ) -> Result<Vec<u8>, String> {
         let size = [size[0].max(1), size[1].max(1)];
-        let (device, queue) = (&self.gpu.device, &self.gpu.queue);
         let mut output = None;
         for events in frames {
             self.clock += FRAME_DT;
             let mut frame =
                 self.ctx.run_ui(input(size, self.clock, events), |ui| shell.ui(ui, &mut self.panes));
             // Every frame's texture changes must reach the renderer, not only the last frame's.
-            let mut egui = self.egui.write();
-            for (id, deltas) in &frame.textures_delta.set {
-                for delta in deltas {
-                    egui.update_texture(device, queue, *id, delta);
-                }
-            }
-            for id in &frame.textures_delta.free {
-                egui.free_texture(id);
-            }
-            frame.textures_delta.clear();
-            drop(egui);
+            self.take_textures(&mut frame);
             output = Some(frame);
         }
         let output = output.ok_or("no frames to render")?;
+        self.paint(output, size)
+    }
+
+    /// One plot pane of `engine`, filling a picture of `size` pixels, as a PNG: what
+    /// [`crate::plots::paint`] draws in the application, with no application round it.
+    ///
+    /// # Errors
+    /// When the pane shows the scene (which `cav-render` draws, not this), or the read-back or
+    /// the encoding fails.
+    pub fn plot_png(
+        &mut self,
+        engine: &cav_engine::Engine,
+        pane: usize,
+        size: [u32; 2],
+    ) -> Result<Vec<u8>, String> {
+        let size = [size[0].max(1), size[1].max(1)];
+        let mut drew = false;
+        let mut output = None;
+        // Two frames: the first lays the text out, the second is the one kept.
+        for _ in 0..2 {
+            self.clock += FRAME_DT;
+            let mut frame = self.ctx.run_ui(input(size, self.clock, Vec::new()), |ui| {
+                let rect = ui.ctx().content_rect();
+                drew = crate::plots::paint(engine, &ui.painter_at(rect), pane, rect).is_some();
+            });
+            self.take_textures(&mut frame);
+            output = Some(frame);
+        }
+        if !drew {
+            return Err(format!("pane {} shows the scene, not a plot", pane + 1));
+        }
+        let rgba = self.paint(output.expect("two frames"), size)?;
+        cav_render::encode_png(&rgba, size)
+    }
+
+    /// Hands a frame's font and image changes to the renderer.
+    fn take_textures(&self, frame: &mut egui::FullOutput) {
+        let (device, queue) = (&self.gpu.device, &self.gpu.queue);
+        let mut egui = self.egui.write();
+        for (id, deltas) in &frame.textures_delta.set {
+            for delta in deltas {
+                egui.update_texture(device, queue, *id, delta);
+            }
+        }
+        for id in &frame.textures_delta.free {
+            egui.free_texture(id);
+        }
+        frame.textures_delta.clear();
+    }
+
+    /// Paints a frame's shapes into a texture of `size` pixels and reads it back as RGBA8.
+    fn paint(&self, output: egui::FullOutput, size: [u32; 2]) -> Result<Vec<u8>, String> {
+        let (device, queue) = (&self.gpu.device, &self.gpu.queue);
         let jobs = self.ctx.tessellate(output.shapes, output.pixels_per_point);
         let screen =
             egui_wgpu::ScreenDescriptor { size_in_pixels: size, pixels_per_point: output.pixels_per_point };
