@@ -74,6 +74,12 @@
 - id: TASK-S1-10
   milestone: S1
   title: 'cargo xtask demo S1, screenshots, results, progress, the validation report'
+- id: TASK-S1-11
+  milestone: S1
+  title: 'Bodies drawn in the view; dragging a body in a pane; live readings beside the towers'
+- id: TASK-S1-12
+  milestone: S1
+  title: 'Ubuntu Mono as the monospace face, with its licence; screenshots regenerated'
 - id: TASK-S2-01
   milestone: S2
   title: SceneSpec, RON files, paths and schema

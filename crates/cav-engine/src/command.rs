@@ -18,6 +18,12 @@ pub enum Command {
     /// Replace the scene. An edit: it can be undone. (Boxed: a scene is far larger than any
     /// other command.)
     Load(Box<SceneSpec>),
+    /// Set the value at a path of the scene spec, such as `bodies[0].mass` or
+    /// `bodies[0].motion.Static.position`. The scene that results must be a valid one. An edit: it
+    /// can be undone, and a run of sets of the same path (a drag) is undone as one.
+    Set { path: String, value: serde_json::Value },
+    /// Compute again from a stage, dropping what was kept for it and the stages after it.
+    Run { from: Stage },
     /// Move the playhead to this time, seconds; clamped to the scene's duration.
     Seek(f64),
     /// Select something, or nothing.
@@ -85,6 +91,7 @@ impl Command {
         use ViewCommand::{Orbit, Pan, Zoom};
         match (self, previous) {
             (Self::Seek(_), Self::Seek(_)) => true,
+            (Self::Set { path: a, .. }, Self::Set { path: b, .. }) => a == b,
             (Self::View(Orbit { pane: a, .. }), Self::View(Orbit { pane: b, .. }))
             | (Self::View(Zoom { pane: a, .. }), Self::View(Zoom { pane: b, .. }))
             | (Self::View(Pan { pane: a, .. }), Self::View(Pan { pane: b, .. })) => a == b,
@@ -108,6 +115,94 @@ pub enum Query {
     View(usize),
     /// The commands applied so far, as journalled.
     Journal,
+    /// One channel of one tower's signal over the timeline: a value for every shot. The answer
+    /// says whether it is the current scene's (`refined`) or the last whole one (`stale`).
+    Signal {
+        /// The tower, counted from 1 as on screen.
+        tower: usize,
+        channel: ChannelName,
+    },
+    /// What every tower would read from a shot read out at this time, seconds (the playhead if
+    /// none is given). Computed when asked, in full.
+    Reading(Option<f64>),
+}
+
+/// A stage of the simulation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum Stage {
+    /// The forward model: every tower's signal.
+    Forward,
+}
+
+/// A channel of a tower's signal. Interferometer 1 is the lower one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+pub enum ChannelName {
+    /// The gradiometer's differential phase, ΔΦ.
+    #[default]
+    Gradiometer,
+    /// The lower interferometer alone, δφ₁.
+    Lower,
+    /// The upper interferometer alone, δφ₂.
+    Upper,
+}
+
+impl ChannelName {
+    /// The word the console uses.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Gradiometer => "gradiometer",
+            Self::Lower => "lower",
+            Self::Upper => "upper",
+        }
+    }
+
+    /// The channel a word names.
+    #[must_use]
+    pub fn parse(word: &str) -> Option<Self> {
+        [Self::Gradiometer, Self::Lower, Self::Upper].into_iter().find(|c| c.name() == word)
+    }
+
+    /// The forward model's own name for it.
+    #[must_use]
+    pub const fn channel(self) -> cav_core::forward::Channel {
+        match self {
+            Self::Gradiometer => cav_core::forward::Channel::Gradiometer,
+            Self::Lower => cav_core::forward::Channel::Lower,
+            Self::Upper => cav_core::forward::Channel::Upper,
+        }
+    }
+}
+
+/// One channel of one tower's signal.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SignalReply {
+    /// The tower, from 1.
+    pub tower: usize,
+    pub channel: ChannelName,
+    /// `refined`: the current scene's signal. `stale`: the scene has changed and this is the last
+    /// whole signal; ask again. `computing`: there is none to show yet.
+    pub state: String,
+    /// When each shot is read out, seconds.
+    pub times: Vec<f64>,
+    /// The channel's value at each shot, radians.
+    pub values: Vec<f64>,
+    /// The largest quadrature estimate of any shot of any source, radians.
+    pub estimate: f64,
+    /// What a person should know about these readings.
+    pub warnings: Vec<String>,
+}
+
+/// What one tower reads from one shot, radians.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TowerReading {
+    pub label: String,
+    /// δφ₁, the lower interferometer.
+    pub lower: f64,
+    /// δφ₂, the upper interferometer.
+    pub upper: f64,
+    /// ΔΦ, with the instrument's sign.
+    pub gradiometer: f64,
 }
 
 /// The answer to a query.
@@ -125,6 +220,10 @@ pub enum Reply {
     View(ViewSpec),
     /// The journal, oldest first.
     Journal(Vec<Command>),
+    /// See [`SignalReply`].
+    Signal(SignalReply),
+    /// Each tower's reading of one shot, in the towers' order.
+    Reading(Vec<TowerReading>),
 }
 
 /// The engine's state at a glance.
@@ -162,4 +261,6 @@ pub struct Stats {
     pub generation: u64,
     /// A digest of the whole state; equal digests mean equal states.
     pub digest: String,
+    /// Where the signal stands: `refined`, `stale` or `none`.
+    pub signal: String,
 }

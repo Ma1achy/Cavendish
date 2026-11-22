@@ -254,6 +254,7 @@ dependencies = [
 name = "cav-engine"
 version = "0.0.0"
 dependencies = [
+ "cav-core",
  "cav-sim",
  "cav-validate",
  "schemars",

@@ -336,6 +336,12 @@ impl Shell {
         self.layout = Layout { screen: ui.max_rect(), ..Layout::default() };
         self.keys(&ctx);
         self.advance(&ctx);
+        // Take whatever the forward worker has finished; while it is still at work, keep drawing so
+        // that its result is shown when it comes. Nothing here waits.
+        self.engine.poll();
+        if self.engine.signal().0 == cav_engine::SignalState::Stale {
+            ctx.request_repaint_after(std::time::Duration::from_millis(30));
+        }
         crate::panels::draw(self, ui, surface);
     }
 

@@ -6,7 +6,7 @@
 
 use cav_sim::{DrawStyle, LIBRARY, NamedView, Projection, SceneSpec, Target};
 
-use crate::command::{Command, Query, Reply, ViewCommand};
+use crate::command::{ChannelName, Command, Query, Reply, Stage, ViewCommand};
 use crate::engine::Engine;
 use crate::log::{Level, LogFilter, Subsystem};
 
@@ -50,6 +50,36 @@ pub const COMMANDS: &[CommandDoc] = &[
         usage: "load <scene|file.ron>",
         about: "replace the scene with a library scene or a file; quote a path with spaces (an edit: undo takes it back)",
         example: "load void",
+    },
+    CommandDoc {
+        name: "set",
+        usage: "set <path> <value>",
+        about: "set a value of the scene by its path, as JSON: a number, true, [x, y, z] (an edit; a drag is a run of these)",
+        example: "set duration 20",
+    },
+    CommandDoc {
+        name: "mass",
+        usage: "mass <kg> at <x> <y> <z>",
+        about: "add a point mass at rest (an edit)",
+        example: "mass 10 at 3 0 1",
+    },
+    CommandDoc {
+        name: "run",
+        usage: "run",
+        about: "compute the signal again from nothing, dropping what was kept",
+        example: "run",
+    },
+    CommandDoc {
+        name: "signal",
+        usage: "signal [tower] [gradiometer|lower|upper]",
+        about: "a tower's signal over the timeline, one line a shot: readout time, seconds, and phase, radians",
+        example: "signal 2 lower",
+    },
+    CommandDoc {
+        name: "reading",
+        usage: "reading [seconds]",
+        about: "what every tower would read from a shot read out at a time (the playhead if none is given)",
+        example: "reading 3.5",
     },
     CommandDoc { name: "undo", usage: "undo", about: "take back the last edit", example: "undo" },
     CommandDoc { name: "redo", usage: "redo", about: "reapply the edit last taken back", example: "redo" },
@@ -144,6 +174,8 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
                 format!("load <the scene `{}`, not a library scene: load it from its file>", spec.name)
             }
         }
+        Command::Set { path, value } => format!("set {path} {value}"),
+        Command::Run { from: Stage::Forward } => "run".into(),
         Command::Seek(t) => format!("seek {t}"),
         Command::Select(None) => "select none".into(),
         Command::Select(Some(Target::Tower(n))) => format!("select tower {n}"),
@@ -279,6 +311,44 @@ impl Engine {
             ("load", [scene]) => {
                 cav_sim::load(scene).map(|spec| Request::Do(Command::load(spec))).map_err(|e| e.0)
             }
+            ("set", [path, value @ ..]) if !value.is_empty() => {
+                // The value is JSON; a word that is not JSON is taken as a string, so that
+                // `set name pass` needs no quotes within quotes.
+                let text = value.join(" ");
+                let value = serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text));
+                Ok(Request::Do(Command::Set { path: (*path).to_owned(), value }))
+            }
+            ("mass", [kg, "at", x, y, z]) => {
+                let position =
+                    [number(x, "metres", name)?, number(y, "metres", name)?, number(z, "metres", name)?];
+                // The first label of the form `mass N` that no body has yet.
+                let taken = |label: &str| self.spec().bodies.iter().any(|b| b.label == label);
+                let label = (1..).map(|n| format!("mass {n}")).find(|l| !taken(l)).expect("a free label");
+                let body = cav_sim::BodySpec::point(&label, number(kg, "kilograms", name)?, position);
+                let mut bodies = self.spec().bodies.clone();
+                bodies.push(body);
+                let value = serde_json::to_value(bodies).expect("bodies are JSON");
+                Ok(Request::Do(Command::Set { path: "bodies".into(), value }))
+            }
+            ("run", []) => Ok(Request::Do(Command::Run { from: Stage::Forward })),
+            ("signal", args) if args.len() <= 2 => {
+                let (mut tower, mut channel) = (self.selected_tower().unwrap_or(1), ChannelName::default());
+                for &arg in args {
+                    match (arg.parse::<usize>(), ChannelName::parse(arg)) {
+                        (Ok(n), _) => tower = n,
+                        (_, Some(named)) => channel = named,
+                        _ => {
+                            return Err(format!(
+                                "`{arg}` is neither a tower number nor a channel; {}",
+                                usage(name)
+                            ));
+                        }
+                    }
+                }
+                Ok(Request::Ask(Query::Signal { tower, channel }))
+            }
+            ("reading", []) => Ok(Request::Ask(Query::Reading(None))),
+            ("reading", [t]) => Ok(Request::Ask(Query::Reading(Some(number(t, "seconds", name)?)))),
             ("undo", []) => Ok(Request::Do(Command::Undo)),
             ("redo", []) => Ok(Request::Do(Command::Redo)),
             ("select", ["none"]) => Ok(Request::Do(Command::Select(None))),
@@ -380,10 +450,16 @@ impl Engine {
                 let described = describe(&command, self.active_pane());
                 self.apply(command).map(|()| described)
             }
-            Request::Ask(query) => self.query(&query).map(|reply| render(&reply)).inspect_err(|why| {
-                self.note(Level::Error, Subsystem::Engine, why.clone());
-            }),
+            Request::Ask(query) => {
+                // A client that prints numbers waits for them (`cav exec`, MCP); the application's
+                // patience is zero and it is told `stale` instead.
+                if matches!(query, Query::Signal { .. }) {
+                    self.settle(self.patience());
+                }
+                self.answer(&query)
+            }
             Request::Help(None) => Ok(help()),
+
             Request::Help(Some(topic)) => COMMANDS
                 .iter()
                 .find(|c| c.name == topic)
@@ -400,6 +476,21 @@ impl Engine {
                     LIBRARY.iter().map(|s| format!("{:<width$}{}", s.name, s.path)).collect();
                 Ok(lines.join("\n"))
             }
+        }
+    }
+
+    /// Answers a query as the console prints it; a refusal goes in the log.
+    fn answer(&mut self, query: &Query) -> Result<String, String> {
+        self.query(query).map(|reply| render(&reply)).inspect_err(|why| {
+            self.note(Level::Error, Subsystem::Engine, why.clone());
+        })
+    }
+
+    /// The selected tower, from 1, if a tower is selected.
+    fn selected_tower(&self) -> Option<usize> {
+        match self.selection() {
+            Some(Target::Tower(n)) => Some(n),
+            _ => None,
         }
     }
 
@@ -431,6 +522,30 @@ pub fn render(reply: &Reply) -> String {
         Reply::Stats(stats) => json(stats),
         Reply::View(view) => json(view),
         Reply::Journal(journal) => serde_json::to_string(journal).expect("commands are JSON"),
+        Reply::Signal(signal) => {
+            let mut lines = vec![format!(
+                "# tower {} · {} · {} · {} shots · quadrature within {:.0e} rad · t [s], phase [rad]",
+                signal.tower,
+                signal.channel.name(),
+                signal.state,
+                signal.times.len(),
+                signal.estimate.max(f64::MIN_POSITIVE)
+            )];
+            lines.extend(signal.warnings.iter().map(|warning| format!("# warning: {warning}")));
+            lines.extend(signal.times.iter().zip(&signal.values).map(|(t, v)| format!("{t}  {v:e}")));
+            lines.join("\n")
+        }
+        Reply::Reading(towers) => {
+            let width = towers.iter().map(|t| t.label.len()).max().unwrap_or(0);
+            let mut lines =
+                vec![format!("# {:<width$}  ΔΦ [rad]  δφ₁ lower [rad]  δφ₂ upper [rad]", "tower")];
+            lines.extend(
+                towers.iter().map(|t| {
+                    format!("{:<width$}  {:e}  {:e}  {:e}", t.label, t.gradiometer, t.lower, t.upper)
+                }),
+            );
+            lines.join("\n")
+        }
         Reply::Log(entries) => entries
             .iter()
             .map(|e| {
