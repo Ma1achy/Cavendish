@@ -166,11 +166,14 @@ fn timings(shell: &mut Shell, headless: &mut Headless, size: [u32; 2]) -> Result
     let started = Instant::now();
     const READINGS: u32 = 200;
     for step in 0..READINGS {
-        shell.engine.query(&cav_engine::Query::Reading(Some(f64::from(step) * 0.01)))?;
+        // The read itself, as the engine's worker runs it; asking the engine would time only the
+        // handing over of a reading the worker has already made.
+        let read = cav_sim::read::reading(&spec, f64::from(step) * 0.01, &|| false);
+        std::hint::black_box(read);
     }
     println!(
-        "reading, {towers} towers × {bodies} bodies, computed when asked: {:.1} µs each over {READINGS}",
-        started.elapsed().as_secs_f64() * 1e6 / f64::from(READINGS)
+        "reading, {towers} towers × {bodies} bodies, the audited read itself (the engine runs it off the caller's thread): {:.3} ms each over {READINGS}",
+        started.elapsed().as_secs_f64() * 1e3 / f64::from(READINGS)
     );
     let started = Instant::now();
     shell.run("run")?;
