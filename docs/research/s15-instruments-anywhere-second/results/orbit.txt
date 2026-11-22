@@ -1,0 +1,5 @@
+point-mass LORF diag (E): [-1365.8 -1365.8  2731.6]  expected w^2 diag(-1,-1,2)= [-1365.8 -1365.8  2731.6]
+J2 minus point mass, min/max over orbit (E): xx -6.1..8.1  yy -2.1..8.0  zz -16.1..8.2
+max |trace| over orbit (E): 0.05122276058104852   max |xz| J2 (E): 8.091111987224123
+J2 zz swing phase (L=0.5,T=5): 4.891e+00 rad
+1 E phase (L=0.5,T=5): 0.201 rad

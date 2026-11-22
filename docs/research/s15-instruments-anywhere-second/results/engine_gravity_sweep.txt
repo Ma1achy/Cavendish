@@ -1,0 +1,21 @@
+kick 6.5779 m/s ; symmetric launch AION 3.8723
+AION 1 kg at d=5 z=5: -8.062834e-3 rad
+AION 1 kg at d=10 z=5: -1.390052e-3 rad
+AION 1 kg at d=10 z=0: -5.967266e-4 rad
+AICE launch 21.2360; 1kg d=10 z=35: -1.078485e-2
+g sweep, u0 fixed 3.86:
+  g=9.7800  -8.068882e-3  rel +7.501e-4
+  g=9.7803  -8.068818e-3  rel +7.421e-4
+  g=9.8066  -8.063527e-3  rel +8.589e-5
+  g=9.8100  -8.062834e-3  rel +0.000e0
+  g=9.8322  -8.058122e-3  rel -5.844e-4
+  g=9.7000  -8.084036e-3  rel +2.630e-3
+  g=9.9000  -8.042447e-3  rel -2.529e-3
+g sweep, launch closed (gT - kick/2):
+  g=9.7800 u0=3.8504 -8.065318e-3  rel +3.080e-4
+  g=9.8100 u0=3.8723 -8.067509e-3  rel +5.797e-4
+  g=9.8322 u0=3.8886 -8.069087e-3  rel +7.755e-4
+Moon g=1.62: AION T=0.73 u0 fixed 3.86: -4.450327e-3; symmetric u0 = -2.106 (negative = impossible)
+  closed launch needs T > 2.030 s ; at T=2.436: u0=0.658 phase -2.114715e-2
+Mars g=3.71: AION T=0.73 u0 fixed 3.86: -5.765633e-3; symmetric u0 = -0.581 (negative = impossible)
+  closed launch needs T > 0.887 s ; at T=1.064: u0=0.658 phase -7.854066e-3

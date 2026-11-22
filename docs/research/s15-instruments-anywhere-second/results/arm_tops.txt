@@ -1,0 +1,2 @@
+AION-10: u0=3.860 m/s, highest arm point 10.006 m, tower 10.0 m
+AICE: u0=21.236 m/s, highest arm point 108.879 m, tower 100.0 m
