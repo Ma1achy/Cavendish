@@ -1,0 +1,7 @@
+==================== bimetal ====================
+Timoshenko 1925 bimetal curvature vs plane-section beam theory (pass: agree to 1e-12 relative)
+  kappa Timoshenko 3.835616e-01 1/m, beam theory 3.835616e-01 1/m, rel diff 1.4e-16
+  kappa Timoshenko 1.798949e-01 1/m, beam theory 1.798949e-01 1/m, rel diff 6.2e-16
+  kappa Timoshenko 9.767442e-02 1/m, beam theory 9.767442e-02 1/m, rel diff 2.8e-16
+  steel/aluminium 1+1 mm, dT = 50 K: radius 2.607 m; tip deflection of a 0.1 m cantilever 1.918 mm
+

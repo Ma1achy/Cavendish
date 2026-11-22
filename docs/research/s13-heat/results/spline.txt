@@ -1,0 +1,6 @@
+==================== spline ====================
+  cubic spline, 1.0 K nodes over 0.0-95.0 C: max |rho error| 0.0010 g/m3; max drho/dT error (finite difference) 0.00001 kg/m3/K
+  cubic spline, 2.0 K nodes over 0.0-95.0 C: max |rho error| 0.0156 g/m3; max drho/dT error (finite difference) 0.00002 kg/m3/K
+  cubic spline, 0.5 K nodes over 0.0-12.0 C: max |rho error| 0.0001 g/m3; max drho/dT error (finite difference) 0.00000 kg/m3/K
+  IAPWS-95 density maximum, refined: 3.9781 C, 999.97487 kg/m3
+
