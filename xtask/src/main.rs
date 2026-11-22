@@ -12,6 +12,8 @@
 mod demo;
 mod tiers;
 mod validate;
+#[cfg(test)]
+mod workspace;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
