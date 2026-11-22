@@ -53,3 +53,9 @@ Site geometry, array layout, firing rules and anything about the real instrument
 branch `task/<TASK-id>` and a PR, merged with `gh pr merge --merge`: the merge commit marks it done; an
 open PR shows it in review. Keep the file true: split or add tasks when a slice brief is written, never
 reuse an id, set `status: done` only for work merged another way.
+
+## Validation report
+`cargo xtask validate --report` runs every validation case and writes `docs/validation/` (how:
+`docs/validation/README.md`). Never drop a case to make the report green. A tolerance changes only
+with a line in the slice notes saying why. Every slice ends by regenerating the report, checked
+against the previous slice's tag (`--against <tag>`), and committing it; the reviewer checks it.

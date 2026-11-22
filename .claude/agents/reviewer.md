@@ -7,7 +7,9 @@ diff against the previous slice tag.
 
 Check: every requirement has a test that can fail (look for control arms); tolerances match the
 brief and the oracles; physics against plan/VALIDATION-AND-RESEARCH.md and the v1 oracle; precision
-rules of REBUILD.md §3.4; the demo runs; screenshots against the viewer rules in §6.
+rules of REBUILD.md §3.4; the demo runs; screenshots against the viewer rules in §6. Read
+`docs/validation/report.md` against the previous slice's `report.json` in git: no dropped cases, no
+tolerance changed without a line in the slice notes, no missing cases.
 
 Report findings ranked by severity with file:line and a concrete failure scenario. Do not fix
 them yourself; the builder does. Re-review after fixes until nothing important remains.
