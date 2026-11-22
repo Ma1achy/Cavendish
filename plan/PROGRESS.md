@@ -5,9 +5,10 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | Slice | State | Tag | Notes |
 |---|---|---|---|
 | S0 the shell | done: TASK-S0-01 to 14 merged; reviewed twice, nothing important remains | `s0-shell` | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
-| S1 a point mass | built and reviewed once; the review's findings fixed (TASK-S1-15 to 19), TASK-S1-14 (NUFFT Lomb–Scargle) and TASK-S1-12 (Ubuntu Mono) done; **awaiting a second look, not tagged** |  | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
+| S1 a point mass | done: TASK-S1-01 to 19 merged; reviewed twice, nothing important remains | `s1-point-mass` | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
+| S2 scenes as files | building; research: `docs/research/s2-replay-spec-paths-cadence.md` | | |
 
-## S1, a point mass: where it stands (22 Nov 2026) — built, awaiting review
+## S1, a point mass: where it stands (22 Nov 2026) — done, tagged `s1-point-mass`
 
 **Done.** The forward model in `cav-core` with George's defaults; the oracle crate (v1 at `v1-final`
 compiled from source, George's scripts as fixtures) and `cargo xtask oracle`; bodies, the oscillator
@@ -78,6 +79,42 @@ looked at the real window.
 **Next.** A second look at S1 by the reviewer; then the tag, `docs/ARCHITECTURE.md` and
 `docs/extending/`, and S2.
 
+## Carried into S2 from S1's second review (22 Nov 2026)
+The second review found nothing important; S1 is tagged `s1-point-mass` at `05f76ca`. Its minor
+findings are S2's first task, the first one first because it is the class of fault that was
+important twice (a valid scene that can take the machine down):
+1. **A signal's memory scales with towers × shots and is not capped** (`crates/cav-sim/src/read.rs:99-103`
+   reserves `towers × shots` three times per source; the schema allows 1000 towers and 2,000,000 shots,
+   48 GB). Found by reading, not run. Bound it by construction and test it with the counting allocator.
+2. **`reading` waits for an unrelated series** (`crates/cav-engine/src/forward.rs:342-367`,
+   `console.rs:508-520`): 60 s for a reading that was ready in milliseconds behind a long signal.
+3. **An unsettled reading is headed "refined · quadrature within 1e-1 rad"** (`engine.rs:26-34`): say
+   "did not settle", not "within".
+4. **Script parity, said truthfully.** The two-sided "gap" case is the "limit" case rescaled, not an
+   independent check (`oracle/tests/scripts.rs:212-250`); say so in `S1.md` §3.1 and §7. "Seven cases
+   passed 3e-4 only by cancellation" is wrong: it was two (`fig2_10m` c and d); correct
+   `acknowledged.txt:12-13` and its `fig2_10m_b` line, `scripts.rs:15-18`, `S1.md` line 194 and §7,
+   and call 1 below.
+5. **The AION-10 limit tolerance (5e-7) is the reference's residual, not the engine's**: the script
+   rule at dt/128 reaches 1e-9 to 4e-9, so hold those four series to 1e-8 there (about 16 s, oracle
+   tier). An engine regression of 3e-7 of peak passes today.
+6. **Viewer**: the timeline's last tick label is clipped ("200" for 2000 s); a run of spaces in the
+   About box (`panels.rs:1020`); the full-span signal is a solid block with one tower over the rest;
+   no key on a signal plot from `render_view`; the playhead's colour differs between plots; the
+   crowded oscillator-zoo periodogram; "Home" over a plot's title line.
+7. **The NUFFT zero-denominator guard is untested** (`spectrum.rs:392`); the outliner's warning mark
+   matches by substring (`panels.rs:432`: "tower 1" is marked for "tower 12").
+8. **`cav` depends on `cav-app`** so the CLI links eframe and winit: move `plots.rs`, the windowless
+   painter and the font set-up into a small `cav-plot` crate both depend on.
+9. **Smaller**: `crosses()` visits up to 480,000 nodes outside the read's budget; latest-wins can
+   starve the live reading during a drag; `Query::Reading(Some(t))` off the playhead never refines
+   without `ask_reading`; a drag whose first step is refused can merge into an earlier `set`; string
+   states compared as `== "stale"` beside the `SignalState` enum; `ReadingAt.towers` is a positional
+   array; undocumented units and frames (`Source::difference`, `lomb_scargle_fast`, `Flight.nodes`);
+   a wall-time assert in `cav-render/tests/gpu_render.rs:439`; `cav` has no command that prints the
+   font's licence.
+Still unchecked after two slices: the real window (every picture is headless), DX12.
+
 ## S0, the shell: where it stands (21 Nov 2026)
 
 **Done.** The workspace (`cav-core`, `cav-sim`, `cav-engine`, `cav-gpu`, `cav-render`, `cav-app`, `cav`,
@@ -135,6 +172,8 @@ Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
   tag>`; for S1 that is `s0-shell`.
 
 ## For George
+- **AICE's geometry, for the far-field estimates** (`docs/research/s14-wider-world.md`): the note assumes
+  the 100 m instrument has interferometers 70 m apart and the same laser kick number as AION-10. Right?
 Answered 21 Nov 2026 (through the owner). The defaults below replace v1's conventions from S1 on.
 1. **Sign:** lower minus upper (δφ₁ − δφ₂). Both conventions are in use and it should not matter.
    *Which interferometer is 1:* the lower one. The reference scripts launch IFO 1 from z = 0 and IFO 2
