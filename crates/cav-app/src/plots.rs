@@ -331,8 +331,10 @@ fn signal(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> 
     };
     let channel = ChannelName::Gradiometer.channel();
     let towers = signal.towers.min(spec.array.towers.len());
+    // Each tower against its own readout times.
+    let own: Vec<Vec<f64>> = (0..towers).map(|t| signal.readouts(t)).collect();
     let shown: Vec<(&[f64], &[f64])> =
-        (0..towers).map(|t| within(&signal.times, signal.channel(t, channel), from, to)).collect();
+        (0..towers).map(|t| within(&own[t], signal.channel(t, channel), from, to)).collect();
     let y = Axis::linear(shown.iter().flat_map(|(_, values)| values.iter().copied()));
     drawn.y = y;
     // The unit of the vertical axis is chosen once, from the larger end, so the marks agree.

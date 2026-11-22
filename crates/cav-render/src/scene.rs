@@ -569,7 +569,7 @@ mod tests {
         // Each tower: its baseline and 11 ticks of two strokes; a tower more is a part more.
         assert_eq!(void.lines.len(), 5 * (1 + 2 * 11));
         let mut six = dev::void();
-        six.array.towers.push(cav_sim::TowerSpec { label: "tower 6".into(), position: [2.0, 2.0, 0.0] });
+        six.array.towers.push(cav_sim::TowerSpec::at("tower 6", [2.0, 2.0, 0.0]));
         assert_eq!(towers(&drawables(&six, DrawStyle::Shaded, None, origin)), 6);
         // The floor's surface is where the spec puts it, relative to the target.
         assert_eq!(floor.ground.unwrap().height, -5.0);
@@ -722,7 +722,7 @@ mod tests {
         scene.array.instrument.tower_height = limits::TOWER_HEIGHT;
         scene.array.instrument.ifo_separation = 500.0;
         scene.array.towers = (0..limits::TOWERS)
-            .map(|n| cav_sim::TowerSpec { label: format!("t{n}"), position: [n as f64, 0.0, 0.0] })
+            .map(|n| cav_sim::TowerSpec::at(&format!("t{n}"), [n as f64, 0.0, 0.0]))
             .collect();
         let room = scene.room.as_mut().unwrap();
         (room.origin, room.size) = ([limits::POSITION - limits::ROOM_SIZE; 3], [limits::ROOM_SIZE; 3]);

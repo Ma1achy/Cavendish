@@ -22,22 +22,37 @@
             (
                 label: "tower 1",
                 position: (0.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
             ),
             (
                 label: "tower 2",
                 position: (4.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
             ),
             (
                 label: "tower 3",
                 position: (-4.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
             ),
             (
                 label: "tower 4",
                 position: (0.0, 4.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
             ),
             (
                 label: "tower 5",
                 position: (0.0, -4.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
             ),
         ],
     ),
