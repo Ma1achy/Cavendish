@@ -271,6 +271,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cav-memtest"
+version = "0.0.0"
+dependencies = [
+ "cav-core",
+ "cav-sim",
+]
+
+[[package]]
 name = "cav-render"
 version = "0.0.0"
 dependencies = [

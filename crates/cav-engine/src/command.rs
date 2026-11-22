@@ -126,7 +126,9 @@ pub enum Query {
         channel: ChannelName,
     },
     /// What every tower would read from a shot read out at this time, seconds (the playhead if
-    /// none is given). Computed when asked, in full.
+    /// none is given). The engine's reading worker computes it; this answers with the last whole
+    /// reading and says whether it is the one asked for (`refined`), an earlier one (`stale`) or
+    /// none yet (`computing`). Nothing is computed on the caller's thread.
     Reading(Option<f64>),
     /// The classical periodogram of one channel of one tower's signal, with the combs of the
     /// scene's oscillating bodies. Computed when asked, from the signal as it stands.
@@ -278,6 +280,24 @@ pub struct SignalReply {
     pub warnings: Vec<String>,
 }
 
+/// What every tower reads from one shot.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ReadingReply {
+    /// When the shot these numbers are for is read out, seconds.
+    pub time: f64,
+    /// `refined`: the reading asked for. `stale`: the last whole reading, for an earlier time or
+    /// scene; ask again. `computing`: there is none to show yet.
+    pub state: String,
+    /// Each tower's reading, in the towers' order; empty while `computing`.
+    pub towers: Vec<TowerReading>,
+    /// The largest quadrature estimate of any source at any tower, radians: how far these numbers
+    /// can be trusted.
+    pub estimate: f64,
+    /// What a person should know about these numbers: a reading that did not settle, a body in
+    /// the atoms' path, an unbounded floor.
+    pub warnings: Vec<String>,
+}
+
 /// What one tower reads from one shot, radians.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TowerReading {
@@ -307,8 +327,8 @@ pub enum Reply {
     Journal(Vec<Command>),
     /// See [`SignalReply`].
     Signal(SignalReply),
-    /// Each tower's reading of one shot, in the towers' order.
-    Reading(Vec<TowerReading>),
+    /// See [`ReadingReply`].
+    Reading(ReadingReply),
     /// See [`PeriodogramReply`].
     Periodogram(PeriodogramReply),
 }

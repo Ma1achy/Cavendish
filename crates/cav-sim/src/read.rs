@@ -111,27 +111,39 @@ pub fn contribution(
     match source {
         SourceId::Floor => {
             let floor = spec.floor.as_ref()?;
-            let (lower, upper) = match floor.kind {
-                FloorKind::Slab { thickness } => {
-                    // The slab's field is uniform above it: one reading serves every tower and shot.
-                    let slab = Slab { density: floor.density, thickness };
-                    let reading = reader.read(Vec3::ZERO, &slab, 0.0);
-                    (reading.lower, reading.upper)
-                }
-                FloorKind::HalfSpace => {
-                    out.warnings.push(
-                        "the floor is a half-space: its uniform field is unbounded, so each interferometer's \
-                         own phase is infinite; it is the same for both and the gradiometer reads none of it"
-                            .into(),
-                    );
-                    (f64::INFINITY, f64::INFINITY)
-                }
-            };
-            out.lower.resize(count, lower);
-            out.upper.resize(count, upper);
-            // The two interferometers read the same bits from a slab (and the limit of that for a
-            // half-space): the difference is nothing, exactly.
-            out.gradiometer.resize(count, 0.0);
+            // The slab's field is uniform above it, so one reading serves every shot; it is read
+            // for each tower all the same, so that the null below is what the forward model gives
+            // for that tower and not a zero written here.
+            for tower in towers {
+                let (lower, upper, difference) = match floor.kind {
+                    FloorKind::Slab { thickness } => {
+                        let slab = Slab { density: floor.density, thickness };
+                        let reading = reader.read(base(tower.position), &slab, 0.0);
+                        (reading.lower, reading.upper, signed(reading.lower, reading.upper))
+                    }
+                    FloorKind::HalfSpace => {
+                        // Each interferometer's own phase grows without bound with the depth of
+                        // matter; their difference does not depend on the depth at all, and is
+                        // read from a slab one metre thick.
+                        let unit = reader.read(
+                            base(tower.position),
+                            &Slab { density: floor.density, thickness: 1.0 },
+                            0.0,
+                        );
+                        (f64::INFINITY, f64::INFINITY, signed(unit.lower, unit.upper))
+                    }
+                };
+                out.lower.extend(std::iter::repeat_n(lower, readouts.len()));
+                out.upper.extend(std::iter::repeat_n(upper, readouts.len()));
+                out.gradiometer.extend(std::iter::repeat_n(difference, readouts.len()));
+            }
+            if floor.kind == FloorKind::HalfSpace {
+                out.warnings.push(
+                    "the floor is a half-space: its uniform field is unbounded, so each interferometer's \
+                     own phase is infinite; it is the same for both and the gradiometer reads none of it"
+                        .into(),
+                );
+            }
         }
         SourceId::Body(n) => {
             let body = mass(spec, n);
@@ -145,7 +157,9 @@ pub fn contribution(
                     let audited = reader.read_to(base(tower.position), &body, readout, PHASE_TOLERANCE);
                     let (lower, upper) = (audited.reading.lower, audited.reading.upper);
                     let estimate = audited.estimate.unwrap_or(0.0);
-                    if !(lower.is_finite() && upper.is_finite()) || estimate > 1e3 * PHASE_TOLERANCE {
+                    // Whatever stopped the audit short of its tolerance (the halvings, the work
+                    // budget, a reading that is not a number) is said, never passed off as refined.
+                    if !audited.settled {
                         unsettled.get_or_insert((k, estimate));
                     }
                     if inside.is_none() && crosses(&reader, &body, base(tower.position), readout) {
@@ -179,25 +193,28 @@ pub fn contribution(
 }
 
 /// Whether the body's surface (or, for a point, a millimetre about it) reaches an arm during the
-/// flight read out at `readout`: checked at the flight's own nodes.
+/// flight read out at `readout`: checked at the nodes of the flight with its panels halved twice
+/// (a quarter of the engine's own spacing), one at a time.
 fn crosses(reader: &Reader, body: &Mass<impl Fn(f64) -> Vec3 + Sync>, tower: Vec3, readout: f64) -> bool {
     let instrument = reader.instrument();
     let reach = body.radius.max(1e-3);
     let launch = readout - instrument.flight_time();
-    reader.flight().nodes.iter().any(|node| {
+    let mut hit = false;
+    reader.visit(2, &[], &mut |node| {
         let time = launch + node.tau;
-        if !(time >= body.exists.0 && time < body.exists.1) {
-            return false;
+        if hit || !(time >= body.exists.0 && time < body.exists.1) {
+            return;
         }
         let offset = (body.position)(time) - tower;
         if offset.x.hypot(offset.y) > reach {
-            return false;
+            return;
         }
-        [0.0, instrument.ifo_separation].iter().any(|height| {
-            // Between the two arms of this interferometer, give or take the body's reach.
-            offset.z >= height + node.lower - reach && offset.z <= height + node.upper + reach
-        })
-    })
+        // Between the two arms of an interferometer, give or take the body's reach.
+        hit = [0.0, instrument.ifo_separation]
+            .iter()
+            .any(|height| offset.z >= height + node.lower - reach && offset.z <= height + node.upper + reach);
+    });
+    hit
 }
 
 /// What every tower reads over the timeline.
@@ -290,12 +307,31 @@ pub fn signal_at(spec: &SceneSpec, times: Vec<f64>) -> Result<Signal, String> {
     Ok(total)
 }
 
-/// What each tower would read from a shot read out at `time`: δφ₁, δφ₂ and ΔΦ, radians. The live
-/// reading under the playhead.
+/// What every tower would read from one shot.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReadingAt {
+    /// When the shot is read out, seconds.
+    pub time: f64,
+    /// δφ₁, δφ₂ and ΔΦ of each tower, radians, in the towers' order.
+    pub towers: Vec<[f64; 3]>,
+    /// The largest quadrature estimate of any source at any tower, radians.
+    pub estimate: f64,
+    /// What a person should know about these numbers: a reading that did not settle, a body in
+    /// the atoms' path, an unbounded floor.
+    pub warnings: Vec<String>,
+}
+
+/// What each tower would read from a shot read out at `time`: the live reading under the
+/// playhead, with the audit's estimate and its warnings. `cancelled` is asked as it goes; when it
+/// says yes the work stops and nothing is returned.
 #[must_use]
-pub fn reading(spec: &SceneSpec, time: f64) -> Vec<[f64; 3]> {
-    let total = signal_at(spec, vec![time]).expect("one shot");
-    (0..total.towers).map(|t| [total.lower[t], total.upper[t], total.gradiometer[t]]).collect()
+pub fn reading(spec: &SceneSpec, time: f64, cancelled: &dyn Fn() -> bool) -> Option<ReadingAt> {
+    let mut total = Signal::silent(spec.array.towers.len(), vec![time]);
+    for source in sources(spec) {
+        total.add(&contribution(spec, source, &total.times, cancelled)?);
+    }
+    let towers = (0..total.towers).map(|t| [total.lower[t], total.upper[t], total.gradiometer[t]]).collect();
+    Some(ReadingAt { time, towers, estimate: total.estimate, warnings: total.warnings })
 }
 
 /// A scene with only the listed bodies kept, for reading sources apart.
@@ -371,7 +407,7 @@ mod tests {
         subsystem: "nulls",
         slice: "S1",
         reference: ClosedForm,
-        against: "an infinite uniform slab (and the half-space) gives uniform g: gradiometer values, over five towers at different heights and six shots, that are not exactly zero",
+        against: "an infinite uniform slab (and the half-space) gives uniform g: the forward model's reading of the slab at each of five towers at different heights, lower minus upper; values over five towers and six shots that are not exactly zero",
         unit: Count,
         tolerance: 0.0,
         measure: {
@@ -392,6 +428,12 @@ mod tests {
             // The half-space's own phase is unbounded, and says so; its difference is still nothing.
             let half = signal(&dev::infinite_floor()).unwrap();
             assert!(half.lower.iter().all(|v| *v == f64::INFINITY) && half.warnings[0].contains("half-space"));
+            // Control: the null is computed, and a floor that is not uniform in depth for the two
+            // interferometers would show. Here: the same reading with one interferometer's part doubled.
+            let reader = Reader::new(slab.array.instrument.instrument());
+            let reading = reader.read(Vec3::ZERO, &Slab { density: 2400.0, thickness: 1.0 }, 0.0);
+            assert_eq!((reading.lower - reading.upper).to_bits(), 0f64.to_bits());
+            assert!((2.0 * reading.lower - reading.upper).abs() > 1e3);
             // Control: a body beside the slab is read through it; the null is the slab's, not a stuck zero.
             let mut with_body = slab.clone();
             with_body.bodies.push(BodySpec::point("mass", 10.0, [3.0, 0.0, 1.0]));
@@ -653,13 +695,24 @@ mod tests {
         let scene = dev::pass();
         let read = signal(&scene).unwrap();
         // The live reading at a shot's readout is that shot's value, to the bit.
-        let live = reading(&scene, read.times[3]);
+        let live = reading(&scene, read.times[3], &|| false).unwrap().towers;
         for (tower, values) in live.iter().enumerate() {
             assert_eq!(values[2].to_bits(), read.channel(tower, Channel::Gradiometer)[3].to_bits());
             assert_eq!(values[0].to_bits(), read.channel(tower, Channel::Lower)[3].to_bits());
         }
         // Control: at another time it is another value.
-        assert_ne!(reading(&scene, read.times[3] + 0.3)[0][2], live[0][2]);
+        assert_ne!(reading(&scene, read.times[3] + 0.3, &|| false).unwrap().towers[0][2], live[0][2]);
+        // The reading carries what the audit found. A point mass on a tower's axis does not
+        // settle, and the number beside that tower says so.
+        let mut point = dev::point();
+        point.bodies[0].motion = crate::Motion::Static { position: [0.0, 0.0, 1.0] };
+        let unsettled = reading(&point, 3.0, &|| false).unwrap();
+        assert!(unsettled.estimate > 1e3 * PHASE_TOLERANCE, "{:e}", unsettled.estimate);
+        assert!(unsettled.warnings.iter().any(|w| w.contains("did not settle") && w.contains("tower 1")));
+        let settled = reading(&dev::point(), 3.0, &|| false).unwrap();
+        assert!(settled.warnings.is_empty() && settled.estimate <= PHASE_TOLERANCE);
+        // And it can be cancelled like any other read.
+        assert_eq!(reading(&scene, 3.0, &|| true), None);
         // Cancelled work returns nothing at all: no half-filled contribution.
         let asked = std::cell::Cell::new(0);
         let cancel_after_ten = || {

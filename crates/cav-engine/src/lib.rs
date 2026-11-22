@@ -21,10 +21,10 @@ pub mod log;
 pub use cav_sim::Target;
 pub use command::{
     COMB_HARMONICS, ChannelName, Comb, Command, Harmonic, MAX_PANES, PaneContent, PeriodogramReply, Query,
-    Reply, SignalReply, Stage, Stats, TowerReading, ViewCommand,
+    ReadingReply, Reply, SignalReply, Stage, Stats, TowerReading, ViewCommand,
 };
 pub use console::{COMMANDS, CommandDoc, Request, describe, help, render};
-pub use engine::Engine;
+pub use engine::{Engine, TYPED_LINE_PATIENCE, estimate_text};
 pub use forward::SignalState;
 pub use log::{Level, Log, LogEntry, LogFilter, Subsystem};
 
