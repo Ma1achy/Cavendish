@@ -1,0 +1,9 @@
+    1 bodies:     765 bytes of JSON; to_value + from_value 4 µs; clone 0.1 µs; validate 0.6 µs; Engine::apply(Set) 43 µs
+  100 bodies:   12764 bytes of JSON; to_value + from_value 109 µs; clone 5.5 µs; validate 27.2 µs; Engine::apply(Set) 618 µs
+ 1000 bodies:  124126 bytes of JSON; to_value + from_value 1727 µs; clone 52.1 µs; validate 1084.5 µs; Engine::apply(Set) 8125 µs
+Seek(NaN): Err("a time must be finite, not NaN")
+journal after: []
+console `seek nan`: Err("a time must be finite, not NaN")
+Set duration null: Err("`duration` cannot be set to null: invalid type: null, expected f64")
+JSON text 1e999: Err("number out of range at line 1 column 5")
+Set duration inf (written as null by JSON): Err("`duration` cannot be set to null: invalid type: null, expected f64")

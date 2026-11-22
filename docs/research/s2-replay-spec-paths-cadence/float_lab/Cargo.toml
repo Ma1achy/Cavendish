@@ -1,0 +1,20 @@
+# Throwaway measurements for docs/research/s2-replay-spec-paths-cadence.md §2. Not part of the workspace.
+# Run: cargo run --release -- json|ron|rayon|fma|libm|libm_speed      (add --features fr for serde_json's float_roundtrip)
+#      cargo run --release -- npy <dir>   then   python3 -I npy_check.py <dir>
+[package]
+name = "float_lab"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1.0" }
+ron = "=0.12.3"
+rayon = "1"
+libm = "0.2"
+
+[features]
+fr = ["serde_json/float_roundtrip"]
+
+[workspace]

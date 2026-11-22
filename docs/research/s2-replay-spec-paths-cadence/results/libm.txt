@@ -1,0 +1,2 @@
+  std (system libm) vs `libm` crate 0.2 (musl port), 2000000 args each: sin 62199, cos 62451, tan 72911, exp 195947, ln 93933, powf 195054, atan2 261114 results differ
+  std sin_cos vs sin/cos separately: 0, 0 differ;  powi(3) vs powf(3.0): 525641 differ

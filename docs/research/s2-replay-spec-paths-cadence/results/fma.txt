@@ -1,0 +1,9 @@
+default flags:
+  a*b+c vs mul_add differ in 199590/1000000; hash of a*b+c: da1d5d51ee6f59b7; hash of mul_add: d3965947ba63dac7; chain: c002ee33850bf480
+  cfg target_feature fma = false
+-C target-cpu=native:
+  a*b+c vs mul_add differ in 199590/1000000; hash of a*b+c: da1d5d51ee6f59b7; hash of mul_add: d3965947ba63dac7; chain: c002ee33850bf480
+  cfg target_feature fma = true
+-C target-feature=+fma:
+  a*b+c vs mul_add differ in 199590/1000000; hash of a*b+c: da1d5d51ee6f59b7; hash of mul_add: d3965947ba63dac7; chain: c002ee33850bf480
+  cfg target_feature fma = true

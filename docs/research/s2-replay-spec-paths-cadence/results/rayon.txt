@@ -1,0 +1,6 @@
+  sequential sum 40d137977270fd27
+  1 threads: par_iter().sum(): 1 distinct results in 20 runs; fixed 4096-chunks then ordered sum: {"40d137977270fd5f"}; fixed chunks + fixed pairwise tree: 40d137977270fd61
+  2 threads: par_iter().sum(): 2 distinct results in 20 runs; fixed 4096-chunks then ordered sum: {"40d137977270fd5f"}; fixed chunks + fixed pairwise tree: 40d137977270fd61
+  3 threads: par_iter().sum(): 17 distinct results in 20 runs; fixed 4096-chunks then ordered sum: {"40d137977270fd5f"}; fixed chunks + fixed pairwise tree: 40d137977270fd61
+  4 threads: par_iter().sum(): 20 distinct results in 20 runs; fixed 4096-chunks then ordered sum: {"40d137977270fd5f"}; fixed chunks + fixed pairwise tree: 40d137977270fd61
+  8 threads: par_iter().sum(): 18 distinct results in 20 runs; fixed 4096-chunks then ordered sum: {"40d137977270fd5f"}; fixed chunks + fixed pairwise tree: 40d137977270fd61

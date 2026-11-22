@@ -1,0 +1,4 @@
+'serde only': cold total 7.7 s; lib alone: 0.88 0.94 0.86 s; crates in tree: 10
+'sc': cold total 9.4 s; lib alone: 1.19 1.24 1.14 s; crates in tree: 22
+'bv': cold total 19.0 s; lib alone: 2.27 2.21 2.19 s; crates in tree: 47
+'fc': cold total 11.7 s; lib alone: 2.05 2.06 1.83 s; crates in tree: 24

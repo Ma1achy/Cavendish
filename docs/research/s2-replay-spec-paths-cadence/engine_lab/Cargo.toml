@@ -1,0 +1,15 @@
+# Throwaway measurements for docs/research/s2-replay-spec-paths-cadence.md §2.2 and §4. Not part of the workspace.
+# Run: cargo run --release --bin set_cost | ron_edges | ls_cost
+[package]
+name = "engine_lab"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+cav-core = { path = "../../../../crates/cav-core" }
+cav-engine = { path = "../../../../crates/cav-engine" }
+cav-sim = { path = "../../../../crates/cav-sim" }
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
+
+[workspace]

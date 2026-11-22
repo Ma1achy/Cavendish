@@ -1,0 +1,41 @@
+  random bit patterns (all exponents)        0/2000000 differ 
+  uniform [0,1)                              0/2000000 differ 
+  typed decimals (6 digits, e-30..e+30)      0/2000000 differ 
+  scene scales (1e-27..1e6, ±)               0/2000000 differ 
+  subnormals                                 0/2000000 differ 
+  formatting:
+                         1e0 -> 1.0                        pretty 1.0                        back bits equal: true
+                        1e-1 -> 0.1                        pretty 0.1                        back bits equal: true
+                       1e300 -> 1e300                      pretty 1e300                      back bits equal: true
+                        1e-7 -> 1e-7                       pretty 1e-7                       back bits equal: true
+                      5e-324 -> 5e-324                     pretty 5e-324                     back bits equal: true
+      1.7976931348623157e308 -> 1.7976931348623157e308     pretty 1.7976931348623157e308     back bits equal: true
+                        -0e0 -> -0.0                       pretty -0.0                       back bits equal: true
+                    1.46e-25 -> 1.46e-25                   pretty 1.46e-25                   back bits equal: true
+       1.2345678901234568e17 -> 1.2345678901234568e17      pretty 1.2345678901234568e17      back bits equal: true
+                        1e16 -> 1e16                       pretty 1e16                       back bits equal: true
+                        1e15 -> 1000000000000000.0         pretty 1000000000000000.0         back bits equal: true
+                        3e-1 -> 0.3                        pretty 0.3                        back bits equal: true
+       3.0000000000000004e-1 -> 0.30000000000000004        pretty 0.30000000000000004        back bits equal: true
+  specials:
+    NaN                                  -> NaN      -> 7ff8000000000000 (was 7ff8000000000000)
+    -NaN                                 -> -NaN     -> fff8000000000000 (was fff8000000000000)
+    NaN payload 0x7ff8_0000_0000_0001    -> NaN      -> 7ff8000000000000 (was 7ff8000000000001)
+    signalling NaN 0x7ff0_..01           -> NaN      -> 7ff8000000000000 (was 7ff0000000000001)
+    inf                                  -> inf      -> 7ff0000000000000 (was 7ff0000000000000)
+    -inf                                 -> -inf     -> fff0000000000000 (was fff0000000000000)
+    -0.0                                 -> -0.0     -> 8000000000000000 (was 8000000000000000)
+    parse 5         -> Ok("5e0")
+    parse 5.        -> Ok("5e0")
+    parse .5        -> Ok("5e-1")
+    parse 1e3       -> Ok("1e3")
+    parse 1E3       -> Ok("1e3")
+    parse 1_000.0   -> Ok("1e3")
+    parse +1.5      -> Ok("1.5e0")
+    parse 0x10      -> Err("1:2: Non-whitespace trailing characters")
+    parse 1e400     -> Ok("inf")
+    parse -1e400    -> Ok("-inf")
+    parse 1e-400    -> Ok("0e0")
+    parse inf       -> Ok("inf")
+    parse NaN       -> Ok("NaN")
+    parse 0.1f32    -> Err("1:4-1:7: Expected a 64-bit floating point number but found 0.1f32 instead")
