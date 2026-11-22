@@ -147,6 +147,16 @@ Still open (asked in S0; defaults in use until answered):
   10 × 10 × 3 m room, each 10 m tall so they rise through the ceiling. Is there a real or intended
   layout, and where is the tower base relative to the floor people walk on?
 
+## Owner's ruling (22 Nov 2026): heat everywhere
+The owner asked for full thermal physics, in air and in water, and for a way to validate it. Added to
+the plan: slice **S13, heat everywhere** (`REBUILD.md` §9 and §9.2) — sources, conduction in solids,
+conjugate transfer to air and water, radiation between surfaces, water's real equation of state,
+thermal expansion, and the read of all three (air, water, displaced solids). Its validation suite is
+`VALIDATION-AND-RESEARCH.md` §2.5: conservation and null cases, closed forms, published heat-transfer
+benchmarks and cases through the instrument. Tasks TASK-S13-01 to 09. It runs after S10 and before
+S11. Out of scope until asked for: phase change, combustion, humidity, participating air. The
+research note `docs/research/s13-heat.md` (methods, reference numbers and their sources) comes first.
+
 ## Owner's rulings (21 Nov 2026)
 - **Tools on the build PC:** anything the build needs may be installed. Done so far: rustup with
   stable `x86_64-pc-windows-msvc` (rustc 1.100.0), `cargo-nextest`.
