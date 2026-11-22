@@ -45,7 +45,7 @@ pub struct PaneTarget {
 }
 
 impl PaneTarget {
-    /// Textures for a pane of `size` pixels (each at least 1).
+    /// Textures for a pane of `size` pixels, `[width, height]` (each at least 1).
     #[must_use]
     pub fn new(gpu: &Gpu, size: [u32; 2]) -> Self {
         let size = [size[0].max(1), size[1].max(1)];
@@ -83,7 +83,7 @@ impl PaneTarget {
         }
     }
 
-    /// The pane's size in pixels.
+    /// The pane's size in pixels, `[width, height]`.
     #[must_use]
     pub const fn size(&self) -> [u32; 2] {
         self.size
@@ -326,7 +326,8 @@ impl Renderer {
         gpu.queue.submit([encoder.finish()]);
     }
 
-    /// Draws `frame` at `size` pixels and reads the picture back: RGBA8, sRGB, rows top to bottom.
+    /// Draws `frame` at `size` pixels (`[width, height]`) and reads the picture back:
+    /// `width × height × 4` bytes, RGBA8, sRGB-encoded, rows top to bottom.
     ///
     /// # Errors
     /// When the read-back fails.
@@ -336,7 +337,7 @@ impl Renderer {
         gpu.read_rgba8(target.texture())
     }
 
-    /// Draws `frame` at `size` pixels and encodes it as a PNG.
+    /// Draws `frame` at `size` pixels (`[width, height]`) and encodes it as a PNG.
     ///
     /// # Errors
     /// When the read-back or the encoding fails.
@@ -367,7 +368,8 @@ fn frame_range(camera: &Camera) -> f64 {
     (camera.eye.length() * 25.0).max(300.0)
 }
 
-/// Encodes RGBA8 pixels (rows top to bottom) as a PNG.
+/// Encodes RGBA8 pixels (rows top to bottom) of a picture `size` = `[width, height]` pixels as
+/// a PNG.
 ///
 /// # Errors
 /// When `rgba` is not `size[0] × size[1] × 4` bytes, or the encoder fails.
@@ -385,7 +387,8 @@ pub fn encode_png(rgba: &[u8], size: [u32; 2]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// Decodes a PNG to RGBA8 pixels and its size. For tests and for checking what was written.
+/// Decodes a PNG to `(pixels, size)`: RGBA8 bytes, rows top to bottom, and `[width, height]` in
+/// pixels. For tests and for checking what was written.
 ///
 /// # Errors
 /// When the bytes are not a PNG of 8-bit RGBA.

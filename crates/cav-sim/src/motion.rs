@@ -15,7 +15,9 @@ use std::f64::consts::TAU;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Where a body is as a function of time.
+/// Where a body is as a function of time. Every position is `[x, y, z]` (east, north, up) in
+/// metres in the world's frame; a displacement (`amplitude`, `u`, `v`) is in the same axes,
+/// relative to its centre. Times are seconds on the scene's clock.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub enum Motion {
     /// At rest.
@@ -142,7 +144,8 @@ impl Motion {
     /// The names of the kinds of motion, as the spec writes them.
     pub const KINDS: [&'static str; 6] = ["Static", "Pass", "Linear", "Circular", "Pendulum", "Sphere"];
 
-    /// A motion of the named kind that passes through or about `at` (metres) and is valid as it
+    /// A motion of the named kind that passes through or about `at` (`[x, y, z]`, metres, the
+    /// world's frame) and is valid as it
     /// stands: what a body is given when its kind of motion is changed, to be edited from there.
     /// `None` for a name that is not a kind.
     #[must_use]
@@ -173,8 +176,9 @@ impl Motion {
         })
     }
 
-    /// Where the body is at `t` seconds, metres. `gravity` is the site's, metres per second
-    /// squared; only the pendulum uses it.
+    /// Where the body is at `t` seconds on the scene's clock: `[x, y, z]` (east, north, up),
+    /// metres, in the world's frame. `gravity` is the site's, metres per second squared; only the
+    /// pendulum uses it.
     #[must_use]
     pub fn position(&self, t: f64, gravity: f64) -> [f64; 3] {
         match *self {
@@ -224,8 +228,8 @@ impl Motion {
         }
     }
 
-    /// The point a drag moves, and the path of that field within the motion (after
-    /// `bodies[n].motion.`): the position of a static body, the start of a pass, the centre of an
+    /// `(point, field)`: the point a drag moves (`[x, y, z]`, metres, the world's frame), and the
+    /// path of that field within the motion (after `bodies[n].motion.`): the position of a static body, the start of a pass, the centre of an
     /// oscillator, the pivot of a pendulum. Moving it moves the whole path without changing its shape,
     /// except for a pass, whose far end stays where it is.
     #[must_use]

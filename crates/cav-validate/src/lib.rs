@@ -20,6 +20,17 @@
 //!     measure: cav_validate::Measured::Error((1.0f64 / 3.0 * 3.0 - 1.0).abs()),
 //! }
 //! ```
+//!
+//! ## What this crate is for
+//! Test support: declaring a validation case ([`case!`]), checking what it measured against its
+//! tolerance, and writing the record `cargo xtask validate` collects.
+//!
+//! ## What it may depend on
+//! Nothing: no workspace crate and no outside crate, because every crate's tests use it.
+//! It must not hold any physics or any reference value: a case's numbers live beside the code the
+//! case checks. It is a dev-dependency only; nothing that ships links it.
+
+#![warn(missing_docs)]
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -47,10 +58,13 @@ pub enum Reference {
 /// The unit of a case's error and tolerance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Unit {
+    /// A phase, radians.
     Radians,
     /// A fraction of the reference value.
     Relative,
+    /// A length or a position, metres.
     Metres,
+    /// A distance in a picture, pixels.
     Pixels,
     /// A number of things that differ: bytes, fields, commands.
     Count,
@@ -94,13 +108,16 @@ pub struct Case {
     pub subsystem: &'static str,
     /// The slice that added it.
     pub slice: &'static str,
+    /// The kind of thing it is checked against.
     pub reference: Reference,
     /// What exactly it is compared with, in a few words.
     pub against: &'static str,
+    /// The unit of the error it measures and of `tolerance`.
     pub unit: Unit,
-    /// The largest error that passes. Zero means the results must be identical.
+    /// The largest error that passes, in `unit`. Zero means the results must be identical.
     pub tolerance: f64,
-    /// For a convergence case: the expected order, and how far the measured order may be from it.
+    /// For a convergence case, `(expected, slack)`: the expected order of convergence, and how
+    /// far the measured order may be from it either way. Both dimensionless.
     pub order: Option<(f64, f64)>,
 }
 
@@ -109,24 +126,32 @@ pub struct Case {
 pub enum Measured {
     /// One error, in the case's unit.
     Error(f64),
-    /// Errors at a sequence of step sizes, `(step, error)`. The case's error is the one at the
-    /// smallest step; its order is the fitted slope of log error against log step.
+    /// Errors at a sequence of step sizes, `(step, error)`: the step in whatever the case
+    /// refines (seconds, metres, a count), the error in the case's unit. The case's error is the
+    /// one at the smallest step; its order is the fitted slope of log error against log step.
     Convergence(Vec<(f64, f64)>),
 }
 
 /// A case with what it measured and the verdict.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Outcome {
+    /// The error measured, in the case's unit: for a convergence case, the one at the smallest
+    /// step.
     pub error: f64,
+    /// The measured order of convergence (dimensionless); `None` when the case is not a
+    /// convergence case or too few points could be fitted.
     pub order: Option<f64>,
+    /// The `(step, error)` points of a convergence case, as measured; empty otherwise.
     pub points: Vec<(f64, f64)>,
+    /// Whether the error is within the tolerance (and the order, if one is expected, within its
+    /// slack).
     pub pass: bool,
     /// Why it failed, when it did.
     pub why: Option<String>,
 }
 
-/// The slope of the least-squares line through `(ln step, ln error)`: the measured order of
-/// convergence. `None` with fewer than two usable points (positive and finite).
+/// The slope of the least-squares line through `(ln step, ln error)` of the `(step, error)`
+/// points: the measured order of convergence, dimensionless. `None` with fewer than two usable points (positive and finite).
 #[must_use]
 pub fn fitted_order(points: &[(f64, f64)]) -> Option<f64> {
     let logs: Vec<(f64, f64)> = points

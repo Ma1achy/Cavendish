@@ -17,14 +17,19 @@ pub struct Anchor {
     pub name: &'static str,
     /// Kilograms.
     pub mass: f64,
-    /// Where the mass is at a time, metres.
+    /// Where the mass is at a time: seconds on the scene's clock in, metres in the world's frame
+    /// (x east, y north, z up) out. The anchors are read by a tower at the origin (and, for the
+    /// five-tower fixture, by the default array), so for the first the world's frame is also the
+    /// tower's.
     pub path: fn(f64) -> Vec3,
-    /// The first readout, the step between readouts, and how many there are; seconds.
+    /// `(first, step, count)`: the first readout time and the step between readouts, both in
+    /// seconds on the scene's clock, and how many readouts there are. A readout time is when
+    /// the shot is read out (2T after its launch), not when it is launched.
     pub readouts: (f64, f64, usize),
 }
 
 impl Anchor {
-    /// The readout times, seconds.
+    /// The readout times, seconds on the scene's clock, in rising order.
     pub fn times(&self) -> impl Iterator<Item = f64> + use<> {
         let (first, step, count) = self.readouts;
         (0..count).map(move |n| first + n as f64 * step)
@@ -43,7 +48,8 @@ fn oscillation(t: f64) -> Vec3 {
     Vec3::new(5.0, 0.0, 1.0 + (TAU * 0.1 * t).cos())
 }
 
-/// 100 kg at rest 2 m from the tower, half-way up the lower interferometer's reach.
+/// 100 kg at rest at (2, 0, 2.5) m: 2 m east of the tower, half-way up the lower
+/// interferometer's reach. Read out at 2, 3 and 4 s.
 pub const STATIC: Anchor = Anchor { name: "static", mass: 100.0, path: still, readouts: (2.0, 1.0, 3) };
 
 /// 10 kg at D = 10 m passing vertically at 2.5 m/s, from 10 m below the base. The reference
@@ -56,7 +62,7 @@ pub const PASS: Anchor = Anchor { name: "pass", mass: 10.0, path: pass, readouts
 pub const OSCILLATION: Anchor =
     Anchor { name: "oscillation", mass: 1.0, path: oscillation, readouts: (0.0, 0.25, 41) };
 
-/// The three anchors read by a single tower at the origin.
+/// The three anchors read by a single tower at the origin: `[STATIC, PASS, OSCILLATION]`.
 pub const ALL: [Anchor; 3] = [STATIC, PASS, OSCILLATION];
 
 #[cfg(test)]

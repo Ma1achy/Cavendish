@@ -2,7 +2,7 @@
 //!
 //! Three things, all pure `f64` mathematics with no state:
 //!
-//! - **keyed random numbers** ([`keyed`], [`unit`]): a 64-bit mix of `(seed, stream, tower, shot)`.
+//! - **keyed random numbers** ([`keyed`], [`unit()`]): a 64-bit mix of `(seed, stream, tower, shot)`.
 //!   A number depends on its key alone, so the order of evaluation and the number of threads cannot
 //!   change it (`docs/research/s2-replay-spec-paths-cadence.md` §2.4);
 //! - **the spectral window** of a list of shot times, `W(ν) = (1/N)·Σₙ e^{−2πiν·tₙ}`: a unit tone at
