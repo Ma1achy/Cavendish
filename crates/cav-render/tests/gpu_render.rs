@@ -571,3 +571,31 @@ cav_validate::case! {
         cav_validate::Measured::Error(a.rgba.iter().zip(&b.rgba).filter(|(x, y)| x != y).count() as f64)
     },
 }
+
+#[test]
+fn gpu_a_body_appears_at_its_projected_pixel() {
+    let (gpu, renderer) = setup();
+    // The pass, flat (unshaded, so the body's colour is its own), looked at square-on from the south.
+    let scene = dev::pass();
+    let view = ViewSpec::framing(&scene, NamedView::South, Projection::Orthographic, DrawStyle::Flat);
+    let cam = camera(&view);
+    let centre = |time: f64| cam.pixel(Vec3::new(10.0, 0.0, -10.0 + 2.5 * time), SIZE).expect("in front");
+    let at = |time: f64| {
+        let frame = Frame { scene: &scene, view: &view, highlight: None, time };
+        Picture { rgba: renderer.render_rgba(&gpu, frame, SIZE).expect("render") }
+    };
+    for time in [1.0, 5.0, 9.0] {
+        let picture = at(time);
+        let here = centre(time);
+        assert!(
+            picture.has_near(here, 2, cav_render::BODY_SRGB, 6),
+            "t = {time}: no body within 2 px of {here:?}; the pixel there is {:?}",
+            picture.at(here[0] as u32, here[1] as u32)
+        );
+    }
+    // Control: the body is where it is at that time and not where it was. At 9 s nothing of its
+    // colour is left where it stood at 1 s (the trail there is a thin line of another colour).
+    let late = at(9.0);
+    assert!(!late.has_near(centre(1.0), 2, cav_render::BODY_SRGB, 6));
+    assert!((centre(9.0)[1] - centre(1.0)[1]).abs() > 50.0, "the two places are well apart in the picture");
+}
