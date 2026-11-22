@@ -97,15 +97,48 @@ fn range(entry: &Entry) -> std::ops::RangeInclusive<f64> {
     low..=entry.maximum.unwrap_or(f64::INFINITY)
 }
 
-/// One number: dragged or typed. Returns the new value when it changed, and whether the change
-/// is a step of a drag.
-fn number(ui: &mut egui::Ui, value: f64, entry: &Entry, whole: bool) -> (Option<f64>, egui::Response) {
+/// A number as an editor shows it: as short as says it, to six figures, with an exponent when
+/// it is very small or very large (the atom's mass is 1.44316e-25 kg, not 0.000).
+#[must_use]
+pub fn shown(value: f64) -> String {
+    let size = value.abs();
+    if value == 0.0 {
+        "0".to_owned()
+    } else if (1e-3..1e7).contains(&size) {
+        let digits = (5 - size.log10().floor() as i32).clamp(0, 9) as usize;
+        let text = format!("{value:.digits$}");
+        if text.contains('.') { text.trim_end_matches('0').trim_end_matches('.').to_owned() } else { text }
+    } else {
+        format!("{value:.5e}")
+    }
+}
+
+/// The width of the column of names, and of one number, points: together they fit the panel.
+const NAME_WIDTH: f32 = 84.0;
+const NUMBER_WIDTH: f32 = 96.0;
+const COMPONENT_WIDTH: f32 = 47.0;
+
+/// One number: dragged or typed, `width` points wide. Returns the new value when it changed.
+fn number(
+    ui: &mut egui::Ui,
+    value: f64,
+    entry: &Entry,
+    whole: bool,
+    width: f32,
+) -> (Option<f64>, egui::Response) {
     let mut edited = value;
-    let unit =
-        entry.unit.as_deref().filter(|unit| *unit != "1").map_or_else(String::new, |unit| format!(" {unit}"));
-    let mut drag = egui::DragValue::new(&mut edited).speed(speed(value)).range(range(entry)).suffix(unit);
-    drag = if whole { drag.max_decimals(0) } else { drag.max_decimals(9) };
-    let response = ui.add(drag);
+    let unit = entry.unit.as_deref().filter(|unit| *unit != "1" && width >= NUMBER_WIDTH);
+    let unit = unit.map_or_else(String::new, |unit| format!(" {unit}"));
+    let mut drag = egui::DragValue::new(&mut edited)
+        .speed(speed(value))
+        .range(range(entry))
+        .suffix(unit)
+        .custom_formatter(|value, _| shown(value))
+        .custom_parser(|text| text.trim().parse::<f64>().ok());
+    if whole {
+        drag = drag.max_decimals(0);
+    }
+    let response = ui.add_sized([width, 18.0], drag);
     ((edited != value).then_some(edited), response)
 }
 
@@ -128,12 +161,23 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, prefix: &str) {
             let depth = below.matches('.').count();
             let name = below.rsplit('.').next().unwrap_or(below);
             let hover = format!("{}\n\n{}", entry.doc, entry.path);
-            ui.horizontal(|ui| {
-                ui.add_space(8.0 * depth as f32);
-                ui.label(RichText::new(name).color(theme::WEAK).size(12.0)).on_hover_text(&hover);
-            });
+            // A vector says its unit once, beside its name; its components have no room for it.
+            let unit = match (&entry.kind, entry.unit.as_deref()) {
+                (Kind::Vector(_), Some(unit)) if unit != "1" => format!(", {unit}"),
+                _ => String::new(),
+            };
+            let indent = " ".repeat(2 * depth);
+            let label = egui::Label::new(
+                RichText::new(format!("{indent}{name}{unit}")).color(theme::WEAK).size(12.0),
+            )
+            .truncate()
+            .halign(Align::Min);
+            ui.add_sized([NAME_WIDTH, 18.0], label).on_hover_text(&hover);
             let start = ui.cursor().min;
-            ui.horizontal(|ui| edit(shell, ui, &spec, entry, &mut commands));
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 3.0;
+                edit(shell, ui, &spec, entry, &mut commands);
+            });
             let took =
                 egui::Rect::from_min_max(start, egui::pos2(ui.min_rect().right(), ui.min_rect().bottom()));
             shell.layout.editors.push((entry.path.clone(), took));
@@ -176,7 +220,8 @@ fn edit(
     match widget_for(entry) {
         Widget::Number | Widget::Integer => {
             let whole = entry.kind == Kind::Integer;
-            let (changed, response) = number(ui, entry.value.as_f64().unwrap_or_default(), entry, whole);
+            let (changed, response) =
+                number(ui, entry.value.as_f64().unwrap_or_default(), entry, whole, NUMBER_WIDTH);
             if let Some(value) = changed {
                 let value = if whole { json!(value as i64) } else { json!(value) };
                 dragged(&response, path, value, shell);
@@ -192,7 +237,7 @@ fn edit(
             for axis in 0..n {
                 let value = entry.value[axis].as_f64().unwrap_or_default();
                 let component = format!("{path}[{axis}]");
-                let (changed, response) = number(ui, value, entry, false);
+                let (changed, response) = number(ui, value, entry, false, COMPONENT_WIDTH);
                 if let Some(value) = changed {
                     dragged(&response, &component, json!(value), shell);
                 }
@@ -207,7 +252,7 @@ fn edit(
                 Some((typing, buffer)) if typing == path => buffer.clone(),
                 _ => current.clone(),
             };
-            let response = ui.add(egui::TextEdit::singleline(&mut text).desired_width(150.0));
+            let response = ui.add(egui::TextEdit::singleline(&mut text).desired_width(140.0));
             if response.has_focus() {
                 shell.typing = Some((path.to_owned(), text.clone()));
             }
@@ -230,15 +275,18 @@ fn edit(
                 return;
             };
             let now = entry.variant.clone().unwrap_or_default();
-            egui::ComboBox::from_id_salt(("choice", path)).selected_text(now.as_str()).show_ui(ui, |ui| {
-                for name in names {
-                    if ui.selectable_label(*name == now, name).clicked() && *name != now {
-                        let value =
-                            starter(spec, path, Some(name)).unwrap_or_else(|| Value::String(name.clone()));
-                        commands.push(command_for(path, value, false));
+            egui::ComboBox::from_id_salt(("choice", path)).width(132.0).selected_text(now.as_str()).show_ui(
+                ui,
+                |ui| {
+                    for name in names {
+                        if ui.selectable_label(*name == now, name).clicked() && *name != now {
+                            let value = starter(spec, path, Some(name))
+                                .unwrap_or_else(|| Value::String(name.clone()));
+                            commands.push(command_for(path, value, false));
+                        }
                     }
-                }
-            });
+                },
+            );
         }
         Widget::Absent => {
             ui.label(RichText::new("none").size(12.0).color(theme::WEAK));

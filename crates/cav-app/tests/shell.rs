@@ -714,6 +714,21 @@ fn every_schema_field_has_a_widget() {
         assert!(fits, "{}: a {:?} got {widget:?}", entry.path, entry.kind);
         seen.insert(format!("{widget:?}").split('(').next().unwrap().to_owned());
     }
+    // Numbers are shown as short as says them, and never as nothing.
+    use cav_app::editors::shown;
+    for (value, text) in [
+        (1.4431558652473234e-25, "1.44316e-25"),
+        (3.86, "3.86"),
+        (0.73, "0.73"),
+        (1000.0, "1000"),
+        (0.0, "0"),
+        (-2.5, "-2.5"),
+        (0.30000000000000004, "0.3"),
+        (123456.789, "123457"),
+        (5e-324, "4.94066e-324"),
+    ] {
+        assert_eq!(shown(value), text);
+    }
     // Control: the scene does exercise every widget there is.
     let all = ["Absent", "Choice", "Flag", "Integer", "Number", "Text", "Variant", "Vector"];
     assert_eq!(seen.iter().map(String::as_str).collect::<Vec<_>>(), all);
