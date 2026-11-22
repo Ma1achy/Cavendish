@@ -213,6 +213,30 @@ pub struct TowerSpec {
     /// The base of the tower (the lower launch point): x east, y north, z up, metres; each within ±1e6.
     #[schemars(extend("x-unit" = "m"))]
     pub position: [f64; 3],
+    /// The tower's own clock: when it fires relative to the array's schedule.
+    #[serde(default)]
+    pub timing: TimingSpec,
+}
+
+/// One tower's clock. Every tower takes the same shots as the array's schedule says; a tower's
+/// timing shifts all of its shots together.
+#[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TimingSpec {
+    /// How much later than the array's schedule this tower launches (and reads out) each shot,
+    /// seconds; negative for earlier. Within ± the longest cycle, 1e4 s. The default is 0: every
+    /// tower fires together.
+    #[serde(default)]
+    #[schemars(range(min = -1.0e4, max = 1.0e4), extend("x-unit" = "s"))]
+    pub offset: f64,
+}
+
+impl TowerSpec {
+    /// A tower at `position` (its base, metres) that fires with the array's schedule.
+    #[must_use]
+    pub fn at(label: &str, position: [f64; 3]) -> Self {
+        Self { label: label.to_owned(), position, timing: TimingSpec::default() }
+    }
 }
 
 /// An axis-aligned room.
@@ -346,7 +370,7 @@ impl Default for ArraySpec {
         let towers = defaults::TOWER_POSITIONS
             .iter()
             .enumerate()
-            .map(|(i, p)| TowerSpec { label: format!("tower {}", i + 1), position: [p[0], p[1], 0.0] })
+            .map(|(i, p)| TowerSpec::at(&format!("tower {}", i + 1), [p[0], p[1], 0.0]))
             .collect();
         Self { instrument: InstrumentSpec::default(), towers }
     }
@@ -499,6 +523,11 @@ impl SceneSpec {
             if !seen.insert(tower.label.as_str()) {
                 return fail(format!("array.towers[{n}].label: `{}` is used twice", tower.label));
             }
+            within(
+                &format!("array.towers[{n}].timing.offset"),
+                tower.timing.offset,
+                (-limits::CYCLE, limits::CYCLE),
+            )?;
         }
         if let Some(room) = &self.room {
             finite("room.origin", &room.origin)?;
@@ -948,7 +977,7 @@ mod tests {
         type Break = fn(&mut SceneSpec);
         // The first three are the specs that hung the renderer or exhausted memory before the
         // ranges existed (S0 review, finding 1).
-        let cases: [(&str, Break); 16] = [
+        let cases: [(&str, Break); 18] = [
             ("name", |s| s.name = "n".repeat(limits::LABEL + 1)),
             ("description", |s| s.description = "d".repeat(limits::DESCRIPTION + 1)),
             ("array.towers[2].label", |s| s.array.towers[2].label = "t".repeat(limits::LABEL + 1)),
@@ -968,6 +997,10 @@ mod tests {
                 let tower = s.array.towers[0].clone();
                 s.array.towers =
                     (0..1001).map(|n| TowerSpec { label: format!("t{n}"), ..tower.clone() }).collect();
+            }),
+            ("array.towers[1].timing.offset", |s| s.array.towers[1].timing.offset = 2.0e4),
+            ("array.towers[4].timing.offset", |s| {
+                s.array.towers[4].timing.offset = f64::NAN;
             }),
             ("floor.height", |s| s.floor.as_mut().unwrap().height = 1e7),
             ("floor.density", |s| s.floor.as_mut().unwrap().density = 1e6),

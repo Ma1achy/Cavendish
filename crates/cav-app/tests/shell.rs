@@ -844,3 +844,153 @@ fn all_entry_points_issue_the_same_edit() {
     assert_eq!(rig.last_command(), Some(&Command::Remove { path: "bodies[0]".into() }));
     assert!(rig.shell.engine.spec().bodies.is_empty());
 }
+
+/// The staggered scene with a timeline short enough for its shots to be drawn one by one.
+fn staggered_rig() -> Rig {
+    let mut rig = Rig::new([1440, 900]);
+    rig.shell.run("load staggered").unwrap();
+    rig.shell.run("set duration 20").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    rig
+}
+
+#[test]
+fn lanes_place_shots_at_detector_time() {
+    let rig = staggered_rig();
+    let lanes = rig.shell.layout().lanes.clone();
+    assert_eq!(lanes.len(), 5);
+    // A bar runs from the tower's launch to its readout: 2T = 1.46 s wide, which gives the
+    // timeline's scale, and each tower's first bar starts its own offset after tower 1's.
+    let points_per_second = lanes[0].1.width() / 1.46;
+    assert!(points_per_second > 20.0, "{points_per_second} points a second");
+    for (n, (tower, bar)) in lanes.iter().enumerate() {
+        assert_eq!(*tower, n);
+        assert!((bar.width() - 1.46 * points_per_second).abs() <= 1.0, "tower {}: {bar:?}", n + 1);
+        let expected = lanes[0].1.left() + 0.292 * n as f32 * points_per_second;
+        assert!((bar.left() - expected).abs() <= 1.0, "tower {}: {} against {expected}", n + 1, bar.left());
+    }
+    // Control: towers that fire together have their bars in one place.
+    let mut together = Rig::new([1440, 900]);
+    together.shell.run("load comb").unwrap();
+    together.shell.run("set duration 20").unwrap();
+    together.frames(vec![vec![], vec![]]);
+    let lanes = &together.shell.layout().lanes;
+    assert!(lanes.iter().all(|(_, bar)| bar.left() == lanes[0].1.left()));
+}
+
+#[test]
+fn lane_drag_edits_offset() {
+    let mut rig = staggered_rig();
+    let lanes = rig.shell.layout().lanes.clone();
+    let points_per_second = f64::from(lanes[0].1.width()) / 1.46;
+    let before = rig.shell.engine.spec().clone();
+    let journal = rig.shell.engine.journal().len();
+    // Shift held, tower 4's lane dragged 60 points to the right.
+    let shift = Modifiers { shift: true, ..Modifiers::NONE };
+    // A key with no meaning here, sent each frame so that the frame knows Shift is down.
+    let held =
+        Event::Key { key: Key::F20, physical_key: None, pressed: true, repeat: true, modifiers: shift };
+    let from = lanes[3].1.center();
+    let press = |pos: Pos2, pressed: bool| Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: shift,
+    };
+    rig.frames(vec![
+        vec![held.clone(), Event::PointerMoved(from)],
+        vec![press(from, true)],
+        vec![held.clone(), Event::PointerMoved(from + vec2(20.0, 0.0))],
+        vec![held.clone(), Event::PointerMoved(from + vec2(40.0, 0.0))],
+        vec![held.clone(), Event::PointerMoved(from + vec2(60.0, 0.0))],
+        vec![press(from + vec2(60.0, 0.0), false)],
+        vec![],
+    ]);
+    // The offset grew by the drag over the timeline's scale. (egui starts a drag only once the
+    // pointer has moved a few points, so the lane trails the pointer by up to that much.)
+    let offset = rig.shell.engine.spec().array.towers[3].timing.offset;
+    let moved = (offset - before.array.towers[3].timing.offset) * points_per_second;
+    assert!((moved - 60.0).abs() <= 8.0, "the lane moved {moved} points for a drag of 60");
+    // One edit: one journal entry, the right path, one undo; the playhead did not move.
+    assert_eq!(rig.shell.engine.journal().len(), journal + 1);
+    let Some(Command::Set { path, continues, .. }) = rig.last_command() else { panic!("a set") };
+    assert_eq!((path.as_str(), *continues), ("array.towers[3].timing.offset", false));
+    assert_eq!(rig.shell.engine.time(), 0.0);
+    // The bar is drawn where the tower now fires.
+    rig.frames(vec![vec![]]);
+    let bar = rig.shell.layout().lanes[3].1;
+    assert!((f64::from(bar.left() - lanes[3].1.left()) - moved).abs() <= 1.0);
+    rig.shell.run("undo").unwrap();
+    assert_eq!(rig.shell.engine.spec(), &before);
+    // Control: the same drag without Shift scrubs, and edits nothing.
+    rig.frames(vec![vec![]]);
+    rig.drag(from, from + vec2(60.0, 0.0), PointerButton::Primary);
+    assert_eq!(rig.shell.engine.spec(), &before);
+    assert!(rig.shell.engine.time() > 0.0);
+}
+
+#[test]
+fn flight_rows_share_absolute_time() {
+    let mut rig = staggered_rig();
+    rig.shell.run("show flight").unwrap();
+    rig.shell.run("seek 6").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let drawn = rig.shell.layout().plots[0].clone();
+    assert_eq!(drawn.content, cav_engine::PaneContent::Flight);
+    // The pane follows the playhead: two cycles either side, on one time axis for every row.
+    assert_eq!((drawn.x.lo, drawn.x.hi), (2.0, 10.0));
+    let points_per_second = drawn.area.width() / 8.0;
+    let first =
+        |tower: usize| drawn.flights.iter().find(|(row, _, _)| *row == tower).copied().expect("a shot");
+    for tower in 0..5 {
+        let (_, launch, readout) = first(tower);
+        // A shot is 2T wide, and tower n's is drawn n·0.292 s to the right of tower 1's.
+        assert!((readout - launch - 1.46 * points_per_second).abs() <= 1.0);
+        let expected = first(0).1 + 0.292 * tower as f32 * points_per_second;
+        assert!((launch - expected).abs() <= 1.0, "tower {}: {launch} against {expected}", tower + 1);
+    }
+    // The playhead crosses every row at its own time.
+    let playhead = drawn.playhead.expect("the playhead is in the span");
+    assert!((playhead - (drawn.area.left() + 4.0 * points_per_second)).abs() <= 1.0);
+    // Control: fired together, every row's shots stand in one place.
+    rig.shell.run("load comb").unwrap();
+    rig.shell.run("seek 6").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let drawn = rig.shell.layout().plots[0].clone();
+    let x_of = |tower: usize| drawn.flights.iter().find(|(row, _, _)| *row == tower).unwrap().1;
+    assert!((0..5).all(|tower| x_of(tower) == x_of(0)));
+}
+
+#[test]
+fn the_flight_diagram_and_the_lanes_are_bounded() {
+    use cav_app::plots::{MAX_FLIGHT_ROWS, MAX_FLIGHT_SHOTS};
+    // Twelve towers and a span of a thousand shots: eight rows of sixty-four shots are drawn,
+    // and the pane says what it left out.
+    let mut rig = Rig::new([1440, 900]);
+    let mut scene = cav_sim::dev::comb();
+    scene.array.towers = (0..12)
+        .map(|n| cav_sim::TowerSpec::at(&format!("tower {}", n + 1), [f64::from(n) * 3.0, 8.0, 0.0]))
+        .collect();
+    rig.shell.apply(Command::load(scene));
+    rig.shell.run("show flight").unwrap();
+    rig.shell.run("span 0 2000").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let drawn = rig.shell.layout().plots[0].clone();
+    let rows: std::collections::BTreeSet<usize> = drawn.flights.iter().map(|(row, _, _)| *row).collect();
+    assert_eq!(rows.len(), MAX_FLIGHT_ROWS);
+    assert_eq!(drawn.flights.len(), MAX_FLIGHT_ROWS * MAX_FLIGHT_SHOTS);
+    let note = drawn.note.expect("it says what it left out");
+    assert!(note.starts_with("4 tower(s) and "), "{note}");
+    // The lanes: twelve towers, eight lanes' height, and only the lanes in view are drawn.
+    assert!(rig.shell.layout().lanes.is_empty(), "a thousand shots a lane are a band, not bars");
+    rig.shell.run("set duration 20").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let lanes = rig.shell.layout().lanes.len();
+    assert!((8..=9).contains(&lanes), "{lanes} lanes drawn for twelve towers");
+    // Control: a scene inside the bounds is drawn whole and says nothing.
+    let mut whole = staggered_rig();
+    whole.shell.run("show flight").unwrap();
+    whole.frames(vec![vec![], vec![]]);
+    let drawn = whole.shell.layout().plots[0].clone();
+    assert!(drawn.note.is_none() && whole.shell.layout().lanes.len() == 5);
+}

@@ -64,6 +64,9 @@ pub struct Layout {
     pub plots: Vec<crate::plots::Drawn>,
     /// Each property editor that was shown: the path it edits and where its widget is.
     pub editors: Vec<(String, Rect)>,
+    /// The first shot of each timeline lane that was drawn: the tower (from 0) and its bar,
+    /// from the tower's launch to its readout.
+    pub lanes: Vec<(usize, Rect)>,
 }
 
 impl Default for Layout {
@@ -76,6 +79,7 @@ impl Default for Layout {
             buttons: Vec::new(),
             plots: Vec::new(),
             editors: Vec::new(),
+            lanes: Vec::new(),
         }
     }
 }

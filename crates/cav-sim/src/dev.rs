@@ -325,6 +325,26 @@ pub fn precision_far() -> SceneSpec {
     precision_far_at(FAR)
 }
 
+/// `staggered`: the comb's oscillator read by five towers on their own clocks, each a fifth of a
+/// flight (2T/5 = 0.292 s) after the one before. The towers sample the same motion at different
+/// instants: each has its own readout times, and each one's periodogram has the comb.
+#[must_use]
+pub fn staggered() -> SceneSpec {
+    let mut scene = comb();
+    scene.name = "staggered".into();
+    scene.description = "The comb's oscillator read by five towers on their own clocks: tower n fires (n − 1)·2T/5 \
+                         after tower 1. Each tower has its own readout times; drag a lane with Shift to move one."
+        .into();
+    let step = 2.0 * scene.array.instrument.half_sequence / 5.0;
+    for (n, tower) in scene.array.towers.iter_mut().enumerate() {
+        tower.timing.offset = n as f64 * step;
+    }
+    scene
+}
+
+/// Every dev scene S2 adds, by builder.
+pub const S2_SCENES: [fn() -> SceneSpec; 1] = [staggered];
+
 /// Every dev scene S1 adds, by builder.
 pub const S1_SCENES: [fn() -> SceneSpec; 13] = [
     point,
@@ -368,12 +388,16 @@ mod tests {
     fn the_s1_scene_files_are_their_builders() {
         // With CAV_WRITE_SCENES set, a scene with no file yet gets one. A file that exists is never
         // rewritten here: a builder that has drifted from its file fails below, and is looked at.
+        // CAV_REWRITE_SCENES is for the day the file format itself gains a field (S2: each tower's
+        // timing): every file is written again from its builder, and the diff is read before it
+        // is committed.
         let write = std::env::var_os("CAV_WRITE_SCENES").is_some();
-        for build in S1_SCENES {
+        let rewrite = std::env::var_os("CAV_REWRITE_SCENES").is_some();
+        for build in S1_SCENES.into_iter().chain(S2_SCENES) {
             let scene = build();
             assert_eq!(scene.validate(), Ok(()), "{}", scene.name);
             let path = scene_path(&scene.name);
-            if write && !path.exists() {
+            if rewrite || (write && !path.exists()) {
                 std::fs::write(&path, file_text(&scene)).unwrap();
             }
             let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));

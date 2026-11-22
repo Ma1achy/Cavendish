@@ -118,6 +118,9 @@ pub struct Drawn {
     pub labels: Vec<(String, Rect)>,
     /// What the plot says when it has nothing to draw.
     pub note: Option<String>,
+    /// For a flight diagram: each shot drawn, as the tower (from 0) and the x of its launch and
+    /// of its readout.
+    pub flights: Vec<(usize, f32, f32)>,
 }
 
 /// The most points a series is drawn with; a longer one is thinned to its extremes in each
@@ -292,6 +295,7 @@ pub fn paint(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) 
         PaneContent::Scene => None,
         PaneContent::Signal => Some(signal(engine, painter, pane, rect)),
         PaneContent::Periodogram => Some(periodogram(engine, painter, pane, rect)),
+        PaneContent::Flight => Some(flight(engine, painter, pane, rect)),
     }
 }
 
@@ -321,6 +325,7 @@ fn signal(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> 
         stems: Vec::new(),
         labels: Vec::new(),
         note: None,
+        flights: Vec::new(),
     };
     let Some(signal) = engine.signal().1 else {
         let why = "computing the signal";
@@ -331,8 +336,10 @@ fn signal(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> 
     };
     let channel = ChannelName::Gradiometer.channel();
     let towers = signal.towers.min(spec.array.towers.len());
+    // Each tower against its own readout times.
+    let own: Vec<Vec<f64>> = (0..towers).map(|t| signal.readouts(t)).collect();
     let shown: Vec<(&[f64], &[f64])> =
-        (0..towers).map(|t| within(&signal.times, signal.channel(t, channel), from, to)).collect();
+        (0..towers).map(|t| within(&own[t], signal.channel(t, channel), from, to)).collect();
     let y = Axis::linear(shown.iter().flat_map(|(_, values)| values.iter().copied()));
     drawn.y = y;
     // The unit of the vertical axis is chosen once, from the larger end, so the marks agree.
@@ -377,6 +384,118 @@ fn signal(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> 
     drawn
 }
 
+/// The most towers a flight diagram gives a row to, and the most shots it draws in a row.
+pub const MAX_FLIGHT_ROWS: usize = 8;
+/// See [`MAX_FLIGHT_ROWS`].
+pub const MAX_FLIGHT_SHOTS: usize = 64;
+
+/// How high each of a tower's four arm paths is above the tower's base, metres, `tau` seconds
+/// after launch: the lower interferometer's lower and upper arm, then the upper
+/// interferometer's. The forward model's own arms; nothing is drawn that it does not fly.
+#[must_use]
+pub fn arm_heights(instrument: &cav_core::forward::Instrument, tau: f64) -> [f64; 4] {
+    let [lower, upper] = instrument.arms();
+    let (low, high) = (lower.rise(tau), upper.rise(tau));
+    [low, high, instrument.ifo_separation + low, instrument.ifo_separation + high]
+}
+
+/// The atoms' flights on absolute time: a row for each tower, each shot a pair of arcs for each
+/// interferometer from its launch to its readout, at the tower's own times.
+fn flight(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> Drawn {
+    let spec = engine.spec();
+    let frame = engine.frame(pane).expect("the pane exists");
+    let instrument = spec.array.instrument.instrument();
+    let (cycle, flight_time) = (spec.array.instrument.cycle, instrument.flight_time());
+    let title = format!("Flight · the atoms' arms, height against absolute time · {}", spec.name);
+    let mut sheet = Sheet::new(painter, rect, &title, 0);
+    // With no span of its own the pane follows the playhead: two cycles either side.
+    let time = engine.time();
+    let [from, to] = frame.span.unwrap_or([(time - 2.0 * cycle).max(-flight_time), time + 2.0 * cycle]);
+    let x = Axis { lo: from, hi: to, log: false };
+    let top = spec.array.instrument.tower_height.max(arm_heights(&instrument, instrument.half_sequence)[3]);
+    let y = Axis { lo: 0.0, hi: top, log: false };
+    let mut drawn = Drawn {
+        pane,
+        content: PaneContent::Flight,
+        area: sheet.area,
+        x,
+        y,
+        points: 0,
+        playhead: None,
+        stems: Vec::new(),
+        labels: Vec::new(),
+        note: None,
+        flights: Vec::new(),
+    };
+    let towers = spec.array.towers.len().min(MAX_FLIGHT_ROWS);
+    let area = sheet.area;
+    for value in x.ticks(6) {
+        let at = area.left() + area.width() * x.fraction(value) as f32;
+        painter.vline(at, area.y_range(), Stroke::new(1.0, theme::RULE));
+        sheet.small(pos2(at, area.bottom() + 4.0), Align2::CENTER_TOP, plain(value));
+    }
+    let row_height = area.height() / towers.max(1) as f32;
+    let clip = painter.with_clip_rect(area);
+    let mut left_out = 0usize;
+    for (n, tower) in spec.array.towers.iter().take(towers).enumerate() {
+        let row = Rect::from_min_size(
+            pos2(area.left(), area.top() + row_height * n as f32),
+            vec2(area.width(), row_height),
+        );
+        let inner = row.shrink2(vec2(0.0, 3.0));
+        painter.hline(row.x_range(), row.bottom(), Stroke::new(1.0, theme::RULE));
+        sheet.small(pos2(area.left() - 5.0, row.center().y), Align2::RIGHT_CENTER, tower.label.clone());
+        // The shots of this tower whose flight touches the span: launched at k·cycle + offset.
+        let offset = tower.timing.offset;
+        let first = ((from - offset - flight_time) / cycle).floor().max(0.0);
+        let last = ((to - offset) / cycle).ceil().min((spec.duration / cycle).ceil() - 1.0);
+        let count = if last >= first { (last - first) as usize + 1 } else { 0 };
+        left_out += count.saturating_sub(MAX_FLIGHT_SHOTS);
+        let colour = theme::tower(n);
+        for k in 0..count.min(MAX_FLIGHT_SHOTS) {
+            let launch = (first + k as f64) * cycle + offset;
+            let at = |seconds: f64| inner.left() + inner.width() * x.fraction(seconds) as f32;
+            drawn.flights.push((n, at(launch), at(launch + flight_time)));
+            // Each of the four arm paths as a line through 33 points of the flight.
+            const STEPS: usize = 32;
+            for arm in 0..4 {
+                let points: Vec<Pos2> = (0..=STEPS)
+                    .map(|step| {
+                        let tau = flight_time * step as f64 / STEPS as f64;
+                        let height = arm_heights(&instrument, tau)[arm];
+                        pos2(at(launch + tau), inner.bottom() - inner.height() * y.fraction(height) as f32)
+                    })
+                    .collect();
+                drawn.points += points.len();
+                let shade = if arm < 2 { colour } else { colour.gamma_multiply(0.7) };
+                clip.add(egui::Shape::line(points, Stroke::new(1.2, shade)));
+            }
+            // Where the clouds are at the playhead, if this shot is in flight.
+            if (launch..=launch + flight_time).contains(&time) {
+                for height in arm_heights(&instrument, time - launch) {
+                    let point = pos2(at(time), inner.bottom() - inner.height() * y.fraction(height) as f32);
+                    clip.circle_filled(point, 2.5, theme::STRONG);
+                }
+            }
+        }
+    }
+    if (from..=to).contains(&time) {
+        let at = area.left() + area.width() * x.fraction(time) as f32;
+        painter.vline(at, area.y_range(), Stroke::new(1.0, theme::LINK));
+        drawn.playhead = Some(at);
+    }
+    let more = spec.array.towers.len() - towers;
+    let mut said =
+        format!("absolute time, s · each row a tower, 0 to {} m · 2T = {} s", plain(top), plain(flight_time));
+    if more > 0 || left_out > 0 {
+        said.push_str(&format!(" · not drawn: {more} tower(s), {left_out} shot(s); zoom in"));
+        drawn.note = Some(format!("{more} tower(s) and {left_out} shot(s) are not drawn"));
+    }
+    sheet.caption(&[said, "absolute time, s".to_owned()]);
+    drawn.labels = sheet.labels;
+    drawn
+}
+
 fn periodogram(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> Drawn {
     let tower = match engine.selection() {
         Some(cav_engine::Target::Tower(n)) => n,
@@ -408,6 +527,7 @@ fn periodogram(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect
         stems: Vec::new(),
         labels: Vec::new(),
         note: None,
+        flights: Vec::new(),
     };
     let spectrum = match reply {
         Ok(Reply::Periodogram(spectrum)) if spectrum.power.len() >= 2 => spectrum,
@@ -507,6 +627,41 @@ fn periodogram(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flight_arms_are_the_forward_models() {
+        use cav_core::forward::Instrument;
+        for instrument in [Instrument::aion10(), Instrument::aice()] {
+            let [lower, upper] = instrument.arms();
+            for step in 0..=20 {
+                let tau = instrument.flight_time() * f64::from(step) / 20.0;
+                let [a, b, c, d] = arm_heights(&instrument, tau);
+                assert_eq!([a, b], [lower.rise(tau), upper.rise(tau)]);
+                assert_eq!([c, d], [instrument.ifo_separation + a, instrument.ifo_separation + b]);
+            }
+            // The arms leave together, are furthest apart at the π pulse (by the kick times T)
+            // and never go below the launch point.
+            let [a, b, _, _] = arm_heights(&instrument, 0.0);
+            assert_eq!([a, b], [0.0, 0.0]);
+            let [a, b, _, _] = arm_heights(&instrument, instrument.half_sequence);
+            assert!(
+                (b - a - instrument.kick_velocity() * instrument.half_sequence).abs() < 1e-9,
+                "{}",
+                b - a
+            );
+            assert!(
+                (0..=200)
+                    .all(|step| arm_heights(&instrument, instrument.flight_time() * f64::from(step) / 200.0)
+                        [0]
+                        >= 0.0)
+            );
+        }
+        // Control: the two instruments fly differently, so the diagram is the instrument's.
+        let half = 0.5;
+        assert!(
+            arm_heights(&Instrument::aice(), half)[1] > 3.0 * arm_heights(&Instrument::aion10(), half)[1]
+        );
+    }
 
     #[test]
     fn plots_map_data_to_pixels() {

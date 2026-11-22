@@ -27,9 +27,8 @@ const LONG: Duration = Duration::from_secs(120);
 /// as large as asked and costs one read a tower, so that its memory can be measured in a moment.
 fn slab_scene(towers: usize, shots: usize, density: f64) -> SceneSpec {
     let mut scene = dev::void();
-    scene.array.towers = (0..towers)
-        .map(|n| cav_sim::TowerSpec { label: format!("t{n}"), position: [n as f64, 0.0, 0.0] })
-        .collect();
+    scene.array.towers =
+        (0..towers).map(|n| cav_sim::TowerSpec::at(&format!("t{n}"), [n as f64, 0.0, 0.0])).collect();
     scene.array.instrument.half_sequence = 0.2;
     scene.array.instrument.cycle = 0.5;
     scene.duration = 0.5 * shots as f64;
@@ -143,9 +142,8 @@ fn the_forward_store_stays_within_its_budget() {
 fn heavy_scene(tag: usize) -> SceneSpec {
     let mut scene = dev::void();
     let pad = "x".repeat(cav_sim::spec::limits::LABEL - 12);
-    scene.array.towers = (0..1000)
-        .map(|n| cav_sim::TowerSpec { label: format!("t{n:05}{pad}"), position: [0.0; 3] })
-        .collect();
+    scene.array.towers =
+        (0..1000).map(|n| cav_sim::TowerSpec::at(&format!("t{n:05}{pad}"), [0.0; 3])).collect();
     scene.bodies =
         (0..1000).map(|n| BodySpec::point(&format!("b{n:05}{pad}"), 1.0, [3.0, n as f64, 1.0])).collect();
     scene.name = format!("heavy-{tag}");

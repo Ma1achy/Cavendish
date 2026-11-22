@@ -394,10 +394,7 @@ fn largest_scene() -> SceneSpec {
     scene.array.instrument.ifo_separation = 500.0;
     let corner = limits::POSITION - limits::ROOM_SIZE;
     scene.array.towers = (0..limits::TOWERS)
-        .map(|n| cav_sim::TowerSpec {
-            label: format!("t{n}"),
-            position: [corner + 5.0 * n as f64, corner + 100.0, corner],
-        })
+        .map(|n| cav_sim::TowerSpec::at(&format!("t{n}"), [corner + 5.0 * n as f64, corner + 100.0, corner]))
         .collect();
     let room = scene.room.as_mut().unwrap();
     (room.origin, room.size) = ([corner; 3], [limits::ROOM_SIZE; 3]);
@@ -457,7 +454,7 @@ fn towers_at(positions: &[[f64; 2]]) -> SceneSpec {
     scene.array.towers = positions
         .iter()
         .enumerate()
-        .map(|(n, p)| cav_sim::TowerSpec { label: format!("tower {}", n + 1), position: [p[0], p[1], 0.0] })
+        .map(|(n, p)| cav_sim::TowerSpec::at(&format!("tower {}", n + 1), [p[0], p[1], 0.0]))
         .collect();
     scene
 }

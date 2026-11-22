@@ -352,7 +352,7 @@ pub struct SignalReply {
     /// `refined`: the current scene's signal. `stale`: the scene has changed and this is the last
     /// whole signal; ask again. `computing`: there is none to show yet.
     pub state: Standing,
-    /// When each shot is read out, seconds.
+    /// When this tower read each shot out, seconds: the array's clock and the tower's own offset.
     pub times: Vec<f64>,
     /// The channel's value at each shot, radians. Over a half-space a single interferometer's
     /// phase is infinite: in JSON that is the string `"inf"` (`cav_sim::json_f64`).

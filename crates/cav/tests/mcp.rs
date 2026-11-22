@@ -331,7 +331,7 @@ fn gpu_mcp_render_view_answers_for_the_largest_scene() {
     scene.array.instrument.tower_height = limits::TOWER_HEIGHT;
     scene.array.instrument.ifo_separation = 500.0;
     scene.array.towers = (0..limits::TOWERS)
-        .map(|n| cav_sim::TowerSpec { label: format!("t{n}"), position: [5.0 * n as f64, 100.0, 0.0] })
+        .map(|n| cav_sim::TowerSpec::at(&format!("t{n}"), [5.0 * n as f64, 100.0, 0.0]))
         .collect();
     scene.room.as_mut().unwrap().size = [limits::ROOM_SIZE; 3];
     client.text("scene_load", json!({ "scene": scene_file("largest.ron", &scene) }));

@@ -1,0 +1,76 @@
+// Dev scene `staggered` (REBUILD §9.1), written from its builder in crates/cav-sim/src/dev.rs; a test
+// holds the two together. Frame: metres, x east, y north, z up; seconds; angles in degrees.
+// `cav schema` describes every field.
+(
+    version: 1,
+    name: "staggered",
+    description: "The comb\'s oscillator read by five towers on their own clocks: tower n fires (n − 1)·2T/5 after tower 1. Each tower has its own readout times; drag a lane with Shift to move one.",
+    duration: 2000.0,
+    array: (
+        instrument: (
+            tower_height: 10.0,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+            atom_mass: 1.4431558652473234e-25,
+            gravity: 9.81,
+            launch_floor: true,
+            sign: LowerMinusUpper,
+        ),
+        towers: [
+            (
+                label: "tower 1",
+                position: (0.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+            ),
+            (
+                label: "tower 2",
+                position: (4.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.292,
+                ),
+            ),
+            (
+                label: "tower 3",
+                position: (-4.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.584,
+                ),
+            ),
+            (
+                label: "tower 4",
+                position: (0.0, 4.0, 0.0),
+                timing: (
+                    offset: 0.8759999999999999,
+                ),
+            ),
+            (
+                label: "tower 5",
+                position: (0.0, -4.0, 0.0),
+                timing: (
+                    offset: 1.168,
+                ),
+            ),
+        ],
+    ),
+    room: None,
+    floor: None,
+    bodies: [
+        (
+            label: "oscillator",
+            mass: 1.0,
+            radius: 0.0,
+            motion: Linear(
+                centre: (3.0, 0.0, 1.0),
+                amplitude: (0.0, 0.0, 0.5),
+                frequency: 0.05,
+                phase: 0.0,
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+    ],
+)

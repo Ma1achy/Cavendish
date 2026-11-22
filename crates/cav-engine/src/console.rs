@@ -129,8 +129,8 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "show",
-        usage: "show <scene|signal|periodogram> [@N]",
-        about: "what a pane shows: the scene, every tower's signal, or the periodogram with the combs",
+        usage: "show <scene|signal|periodogram|flight> [@N]",
+        about: "what a pane shows: the scene, every tower's signal, the periodogram with the combs, or the atoms' flights on absolute time",
         example: "show signal",
     },
     CommandDoc {
@@ -882,7 +882,7 @@ mod tests {
         let cycle = engine.run_line("schema array.instrument.cycle").unwrap();
         assert!(cycle.contains("\"x-unit\": \"s\"") && !cycle.contains("tower_height"), "{cycle}");
         let listed = engine.run_line("ls array.towers[1]").unwrap();
-        assert_eq!(listed.lines().count(), 2, "{listed}");
+        assert_eq!(listed.lines().count(), 3, "{listed}");
         assert!(listed.contains("label  =  \"tower 2\"  (text)"), "{listed}");
         assert!(listed.contains("position  =  [4.0,0.0,0.0] m  (vector of 3)"), "{listed}");
         assert!(engine.run_line("ls").unwrap().lines().count() == 8);

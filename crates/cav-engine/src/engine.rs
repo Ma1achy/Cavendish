@@ -620,18 +620,21 @@ impl Engine {
                 }
                 // A stale signal may be an earlier scene's, with another number of towers.
                 let signal = self.forward.signal().filter(|signal| *tower <= signal.towers);
-                // The shots inside the span: readout times rise, so they are one stretch.
+                // The shots inside the span, by this tower's own readout times: they rise, so
+                // the shots are one stretch.
+                let offset = signal.map_or(0.0, |s| s.offsets[tower - 1]);
                 let stretch = |signal: &cav_sim::read::Signal| match span {
                     None => 0..signal.times.len(),
                     Some([from, to]) => {
-                        signal.times.partition_point(|t| t < from)..signal.times.partition_point(|t| t <= to)
+                        signal.times.partition_point(|t| t + offset < *from)
+                            ..signal.times.partition_point(|t| t + offset <= *to)
                     }
                 };
                 Ok(Reply::Signal(SignalReply {
                     tower: *tower,
                     channel: *channel,
                     state: if signal.is_some() { state } else { Standing::Computing },
-                    times: signal.map_or_else(Vec::new, |s| s.times[stretch(s)].to_vec()),
+                    times: signal.map_or_else(Vec::new, |s| s.readouts(tower - 1)[stretch(s)].to_vec()),
                     values: signal.map_or_else(Vec::new, |s| {
                         s.channel(tower - 1, channel.channel())[stretch(s)].to_vec()
                     }),

@@ -1,7 +1,7 @@
 //! The timeline: one lane per tower, each shot a bar from launch to readout, and the playhead.
 //!
-//! In S0 every tower fires together on the instrument's cycle; per-tower offsets, jitter and
-//! masked shots arrive with S2 (M13-R14), which is why the shots come from one function.
+//! Each tower's bars stand at its own times: the array's clock and the tower's offset. A lane
+//! dragged sideways with Shift held sets that offset (M13-R14); a plain drag scrubs.
 //!
 //! Everything here is counted by whole index with a cap. A scene may ask for a million seconds of
 //! two-millisecond shots; the lanes then say how many there are instead of drawing them.
@@ -94,12 +94,19 @@ const LABELS: f32 = 76.0;
 pub const MAX_LANES_SHOWN: usize = 8;
 
 /// What the timeline was asked to do this frame.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct TimelineResponse {
     /// The time the pointer scrubbed to, if it did.
     pub seek: Option<f64>,
     /// The tower (from 0) whose lane label was clicked, if one was.
     pub select: Option<usize>,
+    /// A lane dragged sideways with Shift held: the tower (from 0) and how many seconds later
+    /// its shots should now be than they were at the last frame.
+    pub offset: Option<(usize, f64)>,
+    /// Whether a drag of a lane ended this frame.
+    pub offset_ended: bool,
+    /// Where the first shot of each lane that was drawn stands: the tower (from 0) and its bar.
+    pub bars: Vec<(usize, Rect)>,
 }
 
 /// The height the lanes need for `towers` towers, points.
@@ -113,6 +120,7 @@ pub fn lanes(
     ui: &mut egui::Ui,
     labels: &[String],
     all_shots: &Shots,
+    offsets: &[f64],
     duration: f64,
     time: f64,
     selected: Option<usize>,
@@ -141,8 +149,15 @@ pub fn lanes(
     }
     painter.text(pos2(rect.left() + 4.0, plot.top()), Align2::LEFT_TOP, "seconds", mono.clone(), theme::WEAK);
 
+    // Only the lanes in view are drawn: an array of a thousand towers costs what eight do.
+    let seen = ui.clip_rect();
+    let shift = ui.input(|i| i.modifiers.shift);
     for (n, label) in labels.iter().enumerate() {
         let top = plot.top() + RULER + LANE * n as f32;
+        if top + LANE < seen.top() || top > seen.bottom() {
+            continue;
+        }
+        let offset = offsets.get(n).copied().unwrap_or(0.0);
         let lane = Rect::from_min_max(pos2(plot.left(), top + 2.0), pos2(plot.right(), top + LANE - 2.0));
         let colour = theme::tower(n);
         let is_selected = selected == Some(n);
@@ -173,20 +188,46 @@ pub fn lanes(
             // Too many shots to tell apart: one band, and the panel's caption says how many.
             painter.rect_filled(lane, 1.0, colour.gamma_multiply(0.3));
         }
-        for shot in &all_shots.shown {
+        for (k, shot) in all_shots.shown.iter().enumerate() {
+            // The tower's own times: the array's clock and the tower's offset.
+            let (launch, readout) = (shot.launch + offset, shot.readout + offset);
             let bar = Rect::from_min_max(
-                pos2(x_of(shot.launch), lane.top()),
-                pos2(x_of(shot.readout).min(plot.right()), lane.bottom()),
+                pos2(x_of(launch).max(plot.left()), lane.top()),
+                pos2(x_of(readout).min(plot.right()), lane.bottom()),
             );
+            if k == 0 {
+                response.bars.push((
+                    n,
+                    Rect::from_min_max(pos2(x_of(launch), lane.top()), pos2(x_of(readout), lane.bottom())),
+                ));
+            }
+            if bar.width() <= 0.0 {
+                continue;
+            }
             // A shot in flight at the playhead is drawn at full strength; the rest are dimmed.
-            let flying = time >= shot.launch && time <= shot.readout;
+            let flying = time >= launch && time <= readout;
             painter.rect_filled(bar, 1.0, if flying { colour } else { colour.gamma_multiply(0.45) });
         }
     }
 
     // Scrub: drag or click anywhere on the lanes or the ruler.
     let scrub = ui.interact(plot, egui::Id::unique("timeline scrub"), Sense::click_and_drag());
-    if (scrub.dragged() || scrub.clicked())
+    // Shift and a sideways drag on a lane moves that tower's clock: so many points, so many
+    // seconds, at the timeline's own scale. The lane is the one the drag began on.
+    if shift
+        && scrub.dragged()
+        && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+    {
+        let row = ((origin.y - plot.top() - RULER) / LANE).floor();
+        if row >= 0.0 && (row as usize) < labels.len() {
+            response.offset = Some((row as usize, f64::from(scrub.drag_delta().x / plot.width()) * duration));
+        }
+    }
+    if scrub.drag_stopped() {
+        response.offset_ended = true;
+    }
+    if !shift
+        && (scrub.dragged() || scrub.clicked())
         && let Some(pointer) = scrub.interact_pointer_pos()
     {
         let t = f64::from((pointer.x - plot.left()) / plot.width()) * duration;

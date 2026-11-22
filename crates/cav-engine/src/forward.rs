@@ -28,7 +28,7 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use cav_sim::SceneSpec;
-use cav_sim::read::{self, Contribution, ReadingAt, Signal, SourceId};
+use cav_sim::read::{self, Contribution, ReadingAt, Shots, Signal, SourceId};
 
 /// The most bytes of contributions the forward stage keeps: the current scene's, and earlier
 /// scenes' while there is room (a drag makes a new one at every step, and going back to an
@@ -112,7 +112,7 @@ impl<T> Slot<T> {
 struct Batch {
     epoch: u64,
     spec: Arc<SceneSpec>,
-    readouts: Arc<Vec<f64>>,
+    shots: Arc<Shots>,
     work: Vec<(SourceId, u64)>,
 }
 
@@ -170,8 +170,7 @@ pub struct Forward {
     kept_count: u64,
     /// The keys the current scene's signal is made of, in summing order.
     wanted: Vec<u64>,
-    readouts: Arc<Vec<f64>>,
-    towers: usize,
+    shots: Arc<Shots>,
     signal: Option<Arc<Signal>>,
     state: SignalState,
     /// Why there is no signal, when there cannot be one.
@@ -272,8 +271,7 @@ impl Forward {
                     if stale() {
                         continue 'batches;
                     }
-                    if let Some(contribution) =
-                        read::contribution(&batch.spec, source, &batch.readouts, &stale)
+                    if let Some(contribution) = read::contribution(&batch.spec, source, &batch.shots, &stale)
                         && outbox.send(Done { key, contribution }).is_err()
                     {
                         break 'batches;
@@ -312,8 +310,7 @@ impl Forward {
             kept_bytes: 0,
             kept_count: 0,
             wanted: Vec::new(),
-            readouts: Arc::new(Vec::new()),
-            towers: 0,
+            shots: Arc::new(Shots { times: Vec::new(), offsets: Vec::new(), valid: Vec::new() }),
             signal: None,
             state: SignalState::None,
             why: None,
@@ -360,9 +357,9 @@ impl Forward {
             self.kept_bytes = 0;
         }
         let sources = read::sources(spec);
-        let planned = read::readouts(spec).and_then(|readouts| {
+        let planned = read::shots(spec).and_then(|readouts| {
             // The scene's own contributions must fit in the store, or it would never be whole.
-            let values = spec.array.towers.len() * readouts.len();
+            let values = spec.array.towers.len() * readouts.times.len();
             let need = values.saturating_mul(sources.len()).saturating_mul(BYTES_PER_VALUE);
             if need > FORWARD_STORE_BYTES {
                 return Err(format!(
@@ -370,7 +367,7 @@ impl Forward {
                      the engine keeps; shorten the timeline or use fewer sources",
                     sources.len(),
                     spec.array.towers.len(),
-                    readouts.len(),
+                    readouts.times.len(),
                     need >> 20,
                     FORWARD_STORE_BYTES >> 20
                 ));
@@ -382,14 +379,14 @@ impl Forward {
             Err(why) => {
                 (self.signal, self.state, self.why) = (None, SignalState::None, Some(why));
                 self.wanted.clear();
-                self.readouts = Arc::new(Vec::new());
+                self.shots = Arc::new(Shots { times: Vec::new(), offsets: Vec::new(), valid: Vec::new() });
                 self.trim();
                 return;
             }
         };
         let common = common(spec);
         self.wanted = sources.iter().map(|&source| key(common, spec, source)).collect();
-        (self.readouts, self.towers, self.why) = (readouts, spec.array.towers.len(), None);
+        (self.shots, self.why) = (readouts, None);
         let work: Vec<(SourceId, u64)> = sources
             .iter()
             .zip(&self.wanted)
@@ -401,7 +398,7 @@ impl Forward {
             self.batches.put(Batch {
                 epoch,
                 spec: Arc::new(spec.clone()),
-                readouts: Arc::clone(&self.readouts),
+                shots: Arc::clone(&self.shots),
                 work,
             });
         }
@@ -434,7 +431,7 @@ impl Forward {
         if self.state != SignalState::Stale || !self.wanted.iter().all(|key| self.kept.contains_key(key)) {
             return false;
         }
-        let mut signal = Signal::silent(self.towers, self.readouts.as_ref().clone());
+        let mut signal = Signal::silent(&self.shots);
         for key in &self.wanted {
             signal.add(&self.kept[key].contribution);
         }
