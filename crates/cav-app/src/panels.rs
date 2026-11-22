@@ -421,6 +421,8 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     if spec.bodies.is_empty() {
         ui.label(RichText::new("none · `load point` has one").size(11.5).color(theme::WEAK));
     }
+    // Adding is a command too: a point mass at rest beside the array, to be edited from there.
+    button_row(shell, ui, "", &[("+ mass", "mass 1 at 2 2 1", false)]);
 
     heading(ui, "Array");
     // With something to read, each tower's row shows what it reads under the playhead.
@@ -588,49 +590,21 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.label(RichText::new("Properties").color(theme::STRONG).strong());
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.label(RichText::new(path).monospace().size(11.0).color(theme::WEAK));
+            ui.label(RichText::new(&path).monospace().size(11.0).color(theme::WEAK));
         });
     });
     heading(ui, &title);
-    let instrument = &spec.array.instrument;
+    // Every field under the selection has an editor, made from the schema: its unit, its range,
+    // its doc string on hover. Each change is a `set`, as the console would issue it.
     match shell.engine.selection() {
         None => {
-            ui.label(RichText::new(&spec.description).size(12.0).color(theme::TEXT));
-            ui.add_space(4.0);
-            rows(
-                ui,
-                "scene",
-                &[
-                    ("name", spec.name.clone()),
-                    ("duration", format!("{} s", spec.duration)),
-                    ("towers", spec.array.towers.len().to_string()),
-                    (
-                        "room",
-                        spec.room.as_ref().map_or("none".into(), |r| {
-                            format!("{} × {} × {} m", r.size[0], r.size[1], r.size[2])
-                        }),
-                    ),
-                    (
-                        "floor",
-                        spec.floor
-                            .as_ref()
-                            .map_or("none".into(), |f| format!("{:?}, {} kg/m³", f.kind, f.density)),
-                    ),
-                ],
-            );
+            for path in ["name", "description", "duration"] {
+                crate::editors::show(shell, ui, path);
+            }
         }
         Some(Target::Tower(n)) => {
-            let tower = &spec.array.towers[n - 1];
-            let [x, y, z] = tower.position;
-            rows(
-                ui,
-                "placement",
-                &[
-                    ("x (east)", format!("{x} m")),
-                    ("y (north)", format!("{y} m")),
-                    ("z (base)", format!("{z} m")),
-                ],
-            );
+            crate::editors::show(shell, ui, &path);
+            crate::editors::structure(shell, ui, &path);
             let reply = shell.reading().clone();
             heading(ui, &format!("Reading · a shot read out at {:.2} s", reply.time));
             if let Some(reading) = reply.towers.get(n - 1) {
@@ -653,75 +627,22 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
                 ui.label(RichText::new(&warning.text).size(11.0).color(theme::WARN));
             }
         }
-        Some(Target::Room) => {
-            let room = spec.room.as_ref().expect("a selected room exists");
-            rows(
-                ui,
-                "room",
-                &[
-                    ("origin", format!("{}, {}, {} m", room.origin[0], room.origin[1], room.origin[2])),
-                    ("size", format!("{} × {} × {} m", room.size[0], room.size[1], room.size[2])),
-                ],
-            );
-        }
-        Some(Target::Floor) => {
-            let floor = spec.floor.as_ref().expect("a selected floor exists");
-            rows(
-                ui,
-                "floor",
-                &[
-                    ("height", format!("{} m", floor.height)),
-                    ("kind", format!("{:?}", floor.kind)),
-                    ("density", format!("{} kg/m³", floor.density)),
-                ],
-            );
-            ui.add_space(4.0);
-            ui.label(
-                RichText::new("declared and drawn; its gravity arrives with S1")
-                    .size(11.5)
-                    .color(theme::WEAK),
-            );
+        Some(Target::Room | Target::Floor) => {
+            crate::editors::show(shell, ui, &path);
+            crate::editors::structure(shell, ui, &path);
         }
         Some(Target::Body(n)) => {
+            crate::editors::show(shell, ui, &path);
+            crate::editors::structure(shell, ui, &path);
             let body = &spec.bodies[n - 1];
-            let [x, y, z] = body.motion.position(shell.engine.time(), instrument.gravity);
-            let exists = match (body.appears, body.vanishes) {
-                (None, None) => "always".to_owned(),
-                (from, until) => format!(
-                    "{} to {}",
-                    from.map_or("the start".to_owned(), |t| format!("{t} s")),
-                    until.map_or("the end".to_owned(), |t| format!("{t} s"))
-                ),
-            };
-            rows(
-                ui,
-                "body",
-                &[
-                    ("mass", format!("{} kg", body.mass)),
-                    (
-                        "radius",
-                        if body.radius > 0.0 { format!("{} m", body.radius) } else { "a point".into() },
-                    ),
-                    ("motion", body.motion.kind().to_owned()),
-                    ("now at", format!("{x:.3}, {y:.3}, {z:.3} m")),
-                    ("exists", exists),
-                ],
-            );
+            let [x, y, z] = body.motion.position(shell.engine.time(), spec.array.instrument.gravity);
+            ui.add_space(3.0);
+            rows(ui, "body", &[("now at", format!("{x:.3}, {y:.3}, {z:.3} m"))]);
         }
     }
 
     heading(ui, "Instrument · shared by every tower");
-    rows(
-        ui,
-        "instrument",
-        &[
-            ("tower height", format!("{} m", instrument.tower_height)),
-            ("Δr", format!("{} m", instrument.ifo_separation)),
-            ("T", format!("{} s", instrument.half_sequence)),
-            ("u₀", format!("{} m/s", instrument.launch_velocity)),
-            ("cycle", format!("{} s", instrument.cycle)),
-        ],
-    );
+    crate::editors::show(shell, ui, "array.instrument");
 
     let pane = shell.engine.active_pane();
     let view = shell.engine.view(pane).clone();
@@ -737,9 +658,11 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
     );
     ui.add_space(6.0);
     ui.label(
-        RichText::new("edit by path in the console: set <path> <value> · editors here arrive with S2")
-            .size(11.0)
-            .color(theme::WEAK),
+        RichText::new(
+            "drag a number or type one · every change is a `set <path> <value>` that undo takes back",
+        )
+        .size(11.0)
+        .color(theme::WEAK),
     );
 }
 

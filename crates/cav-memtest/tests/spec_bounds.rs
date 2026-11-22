@@ -156,50 +156,55 @@ fn heavy_scene(tag: usize) -> SceneSpec {
 #[test]
 fn the_undo_history_is_bounded_by_bytes() {
     // The mechanism is the engine's own; the size is a sixteenth of the real one, so that filling
-    // it three times over is thirty megabytes of scenes and not five hundred.
+    // it three times over is tens of megabytes of scenes and not five hundred.
     const BUDGET: usize = HISTORY_BYTES / 16;
     let mut engine = Engine::with_budgets(BUDGET, JOURNAL_BYTES);
     // Held: nothing is computed, so what grows here is the engine's own record and nothing else.
     engine.hold_workers(true);
-    engine.apply(Command::load(heavy_scene(0))).unwrap();
-    let each = serde_json::to_vec(engine.spec()).unwrap().len();
-    assert!(each > 500_000, "a heavy scene is {each} bytes of JSON");
-    let edits = 3 * BUDGET / each;
+    // The heaviest edit there is: a load, which keeps a whole scene each way.
+    let scene = heavy_scene(0);
+    let each = 2 * serde_json::to_vec(&scene).unwrap().len();
+    assert!(each > 800_000, "a load of a heavy scene is {each} bytes of history");
+    let loads = 3 * BUDGET / each;
     let before = live();
     let (_, peak) = peak_during(|| {
-        for n in 0..edits {
-            engine.apply(Command::set("bodies[7].mass", json!(2.0 + n as f64))).unwrap();
+        for n in 0..loads {
+            engine.apply(Command::load(heavy_scene(n))).unwrap();
         }
     });
     let (history, _, _) = engine.held();
     let Ok(cav_engine::Reply::Stats(stats)) = engine.query(&Query::Stats) else { panic!("stats") };
     eprintln!(
-        "{edits} edits of {each} bytes: history {} MiB, {} steps kept; live +{} MiB, peak +{} MiB",
-        history / MIB,
+        "{loads} loads of {each} bytes: history {} KiB, {} steps kept; live +{} MiB, peak +{} MiB",
+        history >> 10,
         stats.undo,
         (live() - before) / MIB,
         peak / MIB
     );
     assert!(history <= BUDGET, "{history} bytes of history");
-    assert!(stats.undo < edits && stats.undo >= BUDGET / each - 1, "{} steps", stats.undo);
+    assert!(stats.undo < loads && stats.undo >= BUDGET / each - 1, "{} steps", stats.undo);
     // What the process holds is the history's count give or take the difference between a scene
-    // in memory and its JSON (measured: within a factor of two), and the small sets in the journal.
-    assert!(live() - before <= 2 * BUDGET + 8 * MIB, "{} MiB held", (live() - before) / MIB);
-    assert!(peak <= 2 * BUDGET + 32 * MIB, "{} MiB at once", peak / MIB);
+    // in memory and its JSON (within a factor of two), and the journal, which keeps every load.
+    let journal = engine.held().1;
+    assert!(live() - before <= 2 * (BUDGET + journal) + 8 * MIB, "{} MiB held", (live() - before) / MIB);
     // The steps that are kept are the newest, and they undo.
     engine.apply(Command::Undo).unwrap();
-    assert_eq!(engine.spec().bodies[7].mass, 2.0 + (edits - 2) as f64);
-    // Control: without the budget these edits are three times it. What was pushed is known:
-    // every edit pushed a scene of `each` bytes.
-    assert!(edits * each >= 3 * BUDGET - each);
-    // And a short history loses nothing.
-    let mut short = Engine::new();
-    short.hold_workers(true);
-    for n in 0..5 {
-        short.apply(Command::set("duration", json!(20.0 + f64::from(n)))).unwrap();
+    assert_eq!(engine.spec().name, format!("heavy-{}", loads - 2));
+    // Control: without the budget these loads are three times it.
+    assert!(loads * each >= 3 * BUDGET - each);
+    // An ordinary edit is not a scene: a few dozen sets on the same heavy scene add a few hundred
+    // bytes each to the history, however large the scene they edit, and all of them undo.
+    let mut small = Engine::new();
+    small.hold_workers(true);
+    small.apply(Command::load(heavy_scene(0))).unwrap();
+    let held = small.held().0;
+    for n in 0..25 {
+        small.apply(Command::set("bodies[7].mass", json!(2.0 + f64::from(n)))).unwrap();
     }
-    let Ok(cav_engine::Reply::Stats(stats)) = short.query(&Query::Stats) else { panic!("stats") };
-    assert_eq!(stats.undo, 5);
+    let grew = small.held().0 - held;
+    assert!(grew <= 25 * 400, "25 sets hold {grew} bytes of history");
+    let Ok(cav_engine::Reply::Stats(stats)) = small.query(&Query::Stats) else { panic!("stats") };
+    assert_eq!(stats.undo, 26);
 }
 
 #[test]

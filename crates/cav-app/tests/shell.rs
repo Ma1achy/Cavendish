@@ -682,3 +682,165 @@ fn panes_show_plots_and_the_scene() {
     rig.frames(vec![vec![]]);
     assert!(rig.shell.layout().plots[0].note.as_deref().unwrap().contains("constant"));
 }
+
+#[test]
+fn every_schema_field_has_a_widget() {
+    use cav_app::editors::{Widget, widget_for};
+    use cav_sim::paths::{self, Kind};
+    // Every field that holds a value, in a scene with every kind of motion, a slab and a room.
+    let mut spec = cav_sim::dev::oscillator_zoo();
+    spec.bodies.extend(cav_sim::dev::pass().bodies);
+    spec.room = cav_sim::SceneSpec::room().room;
+    spec.floor = Some(cav_sim::FloorSpec {
+        height: -1.0,
+        kind: cav_sim::FloorKind::Slab { thickness: 0.5 },
+        density: 2400.0,
+    });
+    let leaves = paths::leaves(&spec, "", 10_000).unwrap();
+    assert!(leaves.len() > 80, "{} fields", leaves.len());
+    let mut seen = std::collections::BTreeSet::new();
+    for entry in &leaves {
+        let widget = widget_for(entry);
+        // The widget is the one for the field's kind: nothing falls through to a default.
+        let fits = match (&entry.kind, &entry.value, widget) {
+            (_, serde_json::Value::Null, Widget::Absent) => true,
+            (Kind::Number, _, Widget::Number) | (Kind::Integer, _, Widget::Integer) => true,
+            (Kind::Vector(n), _, Widget::Vector(m)) => *n == m,
+            (Kind::Text, _, Widget::Text) | (Kind::Flag, _, Widget::Flag) => true,
+            (Kind::Choice(_), value, Widget::Choice) => value.is_string(),
+            (Kind::Choice(_), value, Widget::Variant) => value.is_object(),
+            _ => false,
+        };
+        assert!(fits, "{}: a {:?} got {widget:?}", entry.path, entry.kind);
+        seen.insert(format!("{widget:?}").split('(').next().unwrap().to_owned());
+    }
+    // Numbers are shown as short as says them, and never as nothing.
+    use cav_app::editors::shown;
+    for (value, text) in [
+        (1.4431558652473234e-25, "1.44316e-25"),
+        (3.86, "3.86"),
+        (0.73, "0.73"),
+        (1000.0, "1000"),
+        (0.0, "0"),
+        (-2.5, "-2.5"),
+        (0.30000000000000004, "0.3"),
+        (123456.789, "123457"),
+        (5e-324, "4.94066e-324"),
+    ] {
+        assert_eq!(shown(value), text);
+    }
+    // Control: the scene does exercise every widget there is.
+    let all = ["Absent", "Choice", "Flag", "Integer", "Number", "Text", "Variant", "Vector"];
+    assert_eq!(seen.iter().map(String::as_str).collect::<Vec<_>>(), all);
+
+    // On screen: select a body and every field under it has an editor, in `ls` order; so has
+    // every field of the instrument. Nothing the schema has is left out of the panel.
+    let mut rig = Rig::new([1440, 900]);
+    rig.shell.run("load oscillator-zoo").unwrap();
+    rig.shell.run("select body 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let shown: Vec<String> = rig.shell.layout().editors.iter().map(|(path, _)| path.clone()).collect();
+    let spec = rig.shell.engine.spec().clone();
+    for prefix in ["bodies[0]", "array.instrument"] {
+        for entry in paths::leaves(&spec, prefix, 1000).unwrap() {
+            assert!(shown.contains(&entry.path), "no editor for {}: {shown:?}", entry.path);
+        }
+    }
+    assert!(!shown.iter().any(|path| path.starts_with("bodies[1]")), "only the selection's");
+    // Control: another selection, other editors.
+    rig.shell.run("select tower 2").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let layout = rig.shell.layout();
+    assert!(layout.editor("array.towers[1].position").is_some() && layout.editor("bodies[0].mass").is_none());
+    assert!(layout.editor("array.towers[1].label").is_some());
+}
+
+#[test]
+fn a_dragged_editor_is_one_edit() {
+    let mut rig = Rig::new([1440, 900]);
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("select body 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let before = rig.shell.engine.spec().clone();
+    let journal = rig.shell.engine.journal().len();
+    let editor = rig.shell.layout().editor("bodies[0].mass").expect("the mass has an editor");
+    // Drag the number to the right, in several steps: it grows, and the whole drag is one entry
+    // in the journal and one step of undo.
+    let from = editor.left_center() + vec2(12.0, 0.0);
+    rig.frames(vec![
+        vec![Event::PointerMoved(from)],
+        vec![Rig::press(from, PointerButton::Primary, true)],
+        vec![Event::PointerMoved(from + vec2(20.0, 0.0))],
+        vec![Event::PointerMoved(from + vec2(45.0, 0.0))],
+        vec![Event::PointerMoved(from + vec2(70.0, 0.0))],
+        vec![Rig::press(from + vec2(70.0, 0.0), PointerButton::Primary, false)],
+        vec![],
+    ]);
+    let mass = rig.shell.engine.spec().bodies[0].mass;
+    assert!(mass > before.bodies[0].mass, "the mass grew: {mass}");
+    assert_eq!(rig.shell.engine.journal().len(), journal + 1, "one entry for the whole drag");
+    let Some(Command::Set { path, continues, .. }) = rig.last_command() else { panic!("a set") };
+    assert_eq!((path.as_str(), *continues), ("bodies[0].mass", false), "an edit of its own, as replayed");
+    rig.shell.run("undo").unwrap();
+    assert_eq!(rig.shell.engine.spec(), &before, "one undo takes the whole drag back");
+    // The range is the schema's: dragged far to the left the mass stops at the bottom of its
+    // range and the engine refuses nothing silently (zero itself is not a mass).
+    let editor = rig.shell.layout().editor("bodies[0].mass").unwrap();
+    let from = editor.left_center() + vec2(12.0, 0.0);
+    rig.drag(from, from - vec2(900.0, 0.0), PointerButton::Primary);
+    assert!(rig.shell.engine.spec().bodies[0].mass > 0.0);
+    // Control: a second drag after the first is a second edit.
+    let journal = rig.shell.engine.journal().len();
+    let editor = rig.shell.layout().editor("bodies[0].radius").unwrap();
+    let from = editor.left_center() + vec2(12.0, 0.0);
+    rig.drag(from, from + vec2(60.0, 0.0), PointerButton::Primary);
+    assert_eq!(rig.shell.engine.journal().len(), journal + 1);
+    assert!(rig.shell.engine.spec().bodies[0].radius > 0.0);
+}
+
+#[test]
+fn all_entry_points_issue_the_same_edit() {
+    use cav_app::editors::command_for;
+    use serde_json::json;
+    // The editor, by its own function: the command is the one the console's line parses to.
+    let engine = cav_engine::Engine::new();
+    for (path, value, line) in [
+        ("array.instrument.launch_floor", json!(false), "set array.instrument.launch_floor false"),
+        ("duration", json!(30.5), "set duration 30.5"),
+        ("name", json!("mine"), "set name mine"),
+        ("array.towers[1].position[0]", json!(4.25), "set array.towers[1].position[0] 4.25"),
+        ("room", json!(null), "set room null"),
+    ] {
+        let typed = engine.parse(line).unwrap();
+        assert_eq!(typed, cav_engine::Request::Do(command_for(path, value, false)), "{line}");
+    }
+    // The editor, on screen: a click on the launch floor's tick box puts in the journal the
+    // command that the line puts there (and MCP's scene_set and `cav set` put there: their
+    // tests compare their journals with the same `Command::set`).
+    let mut rig = Rig::new([1440, 900]);
+    rig.shell.run("select tower 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let tick = rig.shell.layout().editor("array.instrument.launch_floor").expect("the flag has an editor");
+    rig.click(tick.left_center() + vec2(8.0, 0.0));
+    let by_click = rig.last_command().cloned();
+    assert_eq!(by_click, Some(Command::set("array.instrument.launch_floor", json!(false))));
+    assert!(!rig.shell.engine.spec().array.instrument.launch_floor);
+    let mut typed = cav_engine::Engine::new();
+    typed.run_line("select tower 1").unwrap();
+    typed.run_line("set array.instrument.launch_floor false").unwrap();
+    assert_eq!(typed.journal().last().cloned(), by_click);
+    assert_eq!(typed.spec(), rig.shell.engine.spec());
+    // Control: clicking again issues the other value, so the click is the flag's and not a
+    // constant.
+    rig.frames(vec![vec![], vec![]]);
+    let tick = rig.shell.layout().editor("array.instrument.launch_floor").unwrap();
+    rig.click(tick.left_center() + vec2(8.0, 0.0));
+    assert_eq!(rig.last_command(), Some(&Command::set("array.instrument.launch_floor", json!(true))));
+    // The buttons that change a list are commands as well.
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("select body 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    rig.click_button("remove bodies[0]");
+    assert_eq!(rig.last_command(), Some(&Command::Remove { path: "bodies[0]".into() }));
+    assert!(rig.shell.engine.spec().bodies.is_empty());
+}

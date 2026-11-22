@@ -17,15 +17,16 @@ pub mod console;
 pub mod engine;
 pub mod forward;
 pub mod history;
+pub mod journal;
 pub mod log;
 
 pub use cav_sim::{PaneContent, Target};
 pub use command::{
-    COMB_HARMONICS, ChannelName, Comb, Command, Harmonic, MAX_PANES, PeriodogramReply, Query, ReadingReply,
-    Reply, SignalReply, Stage, Standing, Stats, TowerReading, ViewCommand,
+    COMB_HARMONICS, ChannelName, Comb, Command, ExportKind, Harmonic, MAX_PANES, PeriodogramReply, Query,
+    ReadingReply, Reply, SignalReply, Stage, Standing, Stats, TowerReading, ViewCommand,
 };
 pub use console::{COMMANDS, CommandDoc, Request, describe, help, render};
-pub use engine::{Engine, TYPED_LINE_PATIENCE, estimate_text};
+pub use engine::{Engine, Exports, TYPED_LINE_PATIENCE, estimate_text};
 pub use forward::{FORWARD_STORE_BYTES, SignalState};
 pub use history::{HISTORY_BYTES, JOURNAL_BYTES};
 pub use log::{Level, Log, LogEntry, LogFilter, Subsystem};

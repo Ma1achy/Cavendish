@@ -139,6 +139,40 @@ fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
 }
 
 impl Motion {
+    /// The names of the kinds of motion, as the spec writes them.
+    pub const KINDS: [&'static str; 6] = ["Static", "Pass", "Linear", "Circular", "Pendulum", "Sphere"];
+
+    /// A motion of the named kind that passes through or about `at` (metres) and is valid as it
+    /// stands: what a body is given when its kind of motion is changed, to be edited from there.
+    /// `None` for a name that is not a kind.
+    #[must_use]
+    pub fn starter(kind: &str, at: [f64; 3]) -> Option<Self> {
+        let [x, y, z] = at;
+        Some(match kind {
+            "Static" => Self::Static { position: at },
+            "Pass" => Self::Pass { from: at, to: [x + 4.0, y, z], start: 0.0, speed: 1.0 },
+            "Linear" => Self::Linear { centre: at, amplitude: [0.0, 0.0, 0.5], frequency: 0.05, phase: 0.0 },
+            "Circular" => Self::Circular {
+                centre: at,
+                u: [0.5, 0.0, 0.0],
+                v: [0.0, 0.0, 0.5],
+                frequency: 0.05,
+                phase: 0.0,
+            },
+            "Pendulum" => {
+                Self::Pendulum { pivot: [x, y, z + 2.0], length: 2.0, major: 0.5, minor: 0.0, azimuth: 0.0 }
+            }
+            "Sphere" => Self::Sphere {
+                centre: [x, y, z + 1.0],
+                radius: 1.0,
+                tilt: 20.0,
+                tilt_frequency: 0.05,
+                spin_frequency: 0.01,
+            },
+            _ => return None,
+        })
+    }
+
     /// Where the body is at `t` seconds, metres. `gravity` is the site's, metres per second
     /// squared; only the pendulum uses it.
     #[must_use]
@@ -441,6 +475,21 @@ mod tests {
             Motion::Linear { centre: [0.0; 3], amplitude: [1.0, 0.0, 0.0], frequency: 1.0, phase: 0.0 };
         assert!(linear.breaks().is_empty());
         assert_eq!(linear.frequency(G), Some(1.0));
+    }
+
+    #[test]
+    fn every_kind_has_a_starter_that_is_valid() {
+        for kind in Motion::KINDS {
+            let motion = Motion::starter(kind, [3.0, -1.0, 2.0]).unwrap();
+            assert_eq!(motion.validate("motion"), Ok(()), "{kind}");
+            // It is written as its name: the starter of `Pass` is a `Pass`.
+            let written = serde_json::to_value(&motion).unwrap();
+            assert_eq!(written.as_object().unwrap().keys().next().unwrap(), kind);
+        }
+        // Control: a name that is not a kind has none, and the list is the enum's own variants.
+        assert_eq!(Motion::starter("Wobble", [0.0; 3]), None);
+        let schema = serde_json::to_value(schemars::schema_for!(Motion)).unwrap();
+        assert_eq!(schema["oneOf"].as_array().unwrap().len(), Motion::KINDS.len());
     }
 
     #[test]

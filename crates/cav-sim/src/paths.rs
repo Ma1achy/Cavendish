@@ -441,13 +441,13 @@ fn site_at<'a>(root: &'a Value, segs: &[Seg]) -> Result<&'a Value, String> {
 /// When there is no such field in any scene (this does not look at a scene's values, so
 /// `room.size` has a schema whether or not the scene has a room).
 pub fn schema_at(path: &str) -> Result<Value, String> {
-    let root = SceneSpec::schema();
+    let root = SceneSpec::schema_ref();
     let segs = parse(path)?;
     if segs.is_empty() {
-        return Ok(root);
+        return Ok(root.clone());
     }
-    let site = site_at(&root, &segs)?;
-    let looked = look(&root, site);
+    let site = site_at(root, &segs)?;
+    let looked = look(root, site);
     let mut out = looked.body.clone();
     if let (Value::Object(out), Value::Object(site)) = (&mut out, site) {
         for (key, value) in site {
@@ -553,15 +553,36 @@ fn children(segs: &[Seg], kind: &Kind, value: &Value) -> Vec<Vec<Seg>> {
     }
 }
 
+/// The field at `path` of the scene whose value is `whole`, described.
+fn entry_in(root: &Value, whole: &Value, path: &str) -> Result<Entry, String> {
+    let segs = parse(path)?;
+    let value = get(whole, path)?;
+    entry_of(root, &segs, stage_at(root, &segs), value)
+}
+
+/// What is directly inside the field at `path` of the scene whose value is `whole`.
+fn ls_in(root: &Value, whole: &Value, path: &str) -> Result<Vec<Entry>, String> {
+    let segs = parse(path)?;
+    let value = get(whole, path)?;
+    let own = entry_of(root, &segs, stage_at(root, &segs), value)?;
+    let below = children(&segs, &own.kind, value);
+    if below.is_empty() {
+        return Ok(vec![own]);
+    }
+    let mut out = Vec::with_capacity(below.len());
+    for child in below {
+        let value = get(whole, &text(&child))?;
+        out.push(entry_of(root, &child, stage_at(root, &child), value)?);
+    }
+    Ok(out)
+}
+
 /// The field at `path` of `spec`, described.
 ///
 /// # Errors
 /// When there is no such field, or it lies inside a part the scene does not have.
 pub fn entry(spec: &SceneSpec, path: &str) -> Result<Entry, String> {
-    let (root, whole) = (SceneSpec::schema(), spec.to_value());
-    let segs = parse(path)?;
-    let value = get(&whole, path)?;
-    entry_of(&root, &segs, stage_at(&root, &segs), value)
+    entry_in(SceneSpec::schema_ref(), &spec.to_value(), path)
 }
 
 /// What is directly inside the field at `path` of `spec`: a struct's fields in the order they are
@@ -571,36 +592,25 @@ pub fn entry(spec: &SceneSpec, path: &str) -> Result<Entry, String> {
 /// # Errors
 /// As [`entry`].
 pub fn ls(spec: &SceneSpec, path: &str) -> Result<Vec<Entry>, String> {
-    let (root, whole) = (SceneSpec::schema(), spec.to_value());
-    let segs = parse(path)?;
-    let value = get(&whole, path)?;
-    let own = entry_of(&root, &segs, stage_at(&root, &segs), value)?;
-    let below = children(&segs, &own.kind, value);
-    if below.is_empty() {
-        return Ok(vec![own]);
-    }
-    let mut out = Vec::with_capacity(below.len());
-    for child in below {
-        let value = get(&whole, &text(&child))?;
-        out.push(entry_of(&root, &child, stage_at(&root, &child), value)?);
-    }
-    Ok(out)
+    ls_in(SceneSpec::schema_ref(), &spec.to_value(), path)
 }
 
 /// Every field of `spec` under `path` that holds one value (a number, a vector, text, a flag, a
 /// plain choice), depth first, in `ls` order: what the property editors show for a selection.
-/// At most `limit` of them: a list of a thousand bodies is not a panel.
+/// At most `limit` of them: a list of a thousand bodies is not a panel. The scene is turned
+/// into a value once, however many fields there are.
 ///
 /// # Errors
 /// As [`entry`].
 pub fn leaves(spec: &SceneSpec, path: &str, limit: usize) -> Result<Vec<Entry>, String> {
+    let (root, whole) = (SceneSpec::schema_ref(), spec.to_value());
     let mut out = Vec::new();
     let mut stack = vec![path.to_owned()];
     while let Some(at) = stack.pop() {
         if out.len() >= limit {
             break;
         }
-        let own = entry(spec, &at)?;
+        let own = entry_in(root, &whole, &at)?;
         let plain_choice = matches!(own.kind, Kind::Choice(_)) && !own.value.is_object();
         if own.kind.is_leaf() || plain_choice || own.value.is_null() {
             out.push(own);
@@ -610,7 +620,7 @@ pub fn leaves(spec: &SceneSpec, path: &str, limit: usize) -> Result<Vec<Entry>, 
         if matches!(own.kind, Kind::Choice(_)) {
             out.push(own);
         }
-        let inside = ls(spec, &at)?;
+        let inside = ls_in(root, &whole, &at)?;
         stack.extend(inside.into_iter().rev().map(|child| child.path));
     }
     Ok(out)
@@ -643,9 +653,8 @@ pub fn diff(a: &SceneSpec, b: &SceneSpec) -> Stage {
             _ => *worst = (*worst).max(stage_at(root, segs)),
         }
     }
-    let root = SceneSpec::schema();
     let mut worst = Stage::Nothing;
-    walk(&root, &mut Vec::new(), &a.to_value(), &b.to_value(), &mut worst);
+    walk(SceneSpec::schema_ref(), &mut Vec::new(), &a.to_value(), &b.to_value(), &mut worst);
     worst
 }
 
@@ -698,14 +707,14 @@ pub fn template(path: &str) -> Option<Value> {
             }
         }
     }
-    let root = SceneSpec::schema();
+    let root = SceneSpec::schema_ref();
     let segs = parse(path).ok()?;
-    let site = site_at(&root, &segs).ok()?;
+    let site = site_at(root, &segs).ok()?;
     // For a list, the template is of one item.
-    let looked = look(&root, site);
+    let looked = look(root, site);
     match (kind_of(looked.body), looked.body.get("items")) {
-        (Kind::List, Some(items)) => Some(make(&root, items)),
-        _ => Some(make(&root, &Value::Object(strip_optional(site)))),
+        (Kind::List, Some(items)) => Some(make(root, items)),
+        _ => Some(make(root, &Value::Object(strip_optional(site)))),
     }
 }
 
