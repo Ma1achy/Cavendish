@@ -3,7 +3,8 @@
 //! which end in the engine's API; nothing here edits the scene or the views any other way.
 
 use cav_engine::{
-    Command, Engine, Level, LogFilter, Query, Reply, Request, Subsystem, Target, TowerReading, ViewCommand,
+    Command, Engine, Level, LogFilter, Query, ReadingReply, Reply, Request, Subsystem, Target, TowerReading,
+    ViewCommand,
 };
 use egui::{Key, Rect};
 
@@ -113,7 +114,7 @@ pub struct Shell {
     /// The body being dragged, from 0, and the pane it is dragged in.
     pub(crate) dragging: Option<(usize, usize)>,
     /// Every tower's reading under the playhead, and the engine's generation it was read at.
-    readings: Option<(u64, Vec<TowerReading>)>,
+    readings: Option<(u64, ReadingReply)>,
 }
 
 /// How near a body's picture the pointer must be to take hold of it, points.
@@ -242,19 +243,31 @@ impl Shell {
         }
     }
 
-    /// What every tower reads from a shot read out at the playhead, read again whenever the
-    /// engine's state has changed (a drag, a scrub). Computed here and now: for point masses it is
-    /// microseconds.
-    pub fn readings(&mut self) -> &[TowerReading] {
+    /// What every tower reads from a shot read out at the playhead, as the engine's reading worker
+    /// last had it: the numbers, whether they are the playhead's now (`refined`) or an earlier
+    /// answer (`stale`), the audit's estimate and its warnings. Asked again whenever the engine's
+    /// state has changed; nothing is computed here.
+    pub fn reading(&mut self) -> &ReadingReply {
         let generation = self.engine.generation();
         if self.readings.as_ref().is_none_or(|(at, _)| *at != generation) {
-            let towers = match self.engine.query(&Query::Reading(None)) {
-                Ok(Reply::Reading(towers)) => towers,
-                _ => Vec::new(),
+            let reply = match self.engine.query(&Query::Reading(None)) {
+                Ok(Reply::Reading(reply)) => reply,
+                _ => ReadingReply {
+                    time: self.engine.time(),
+                    state: "computing".into(),
+                    towers: Vec::new(),
+                    estimate: 0.0,
+                    warnings: Vec::new(),
+                },
             };
-            self.readings = Some((generation, towers));
+            self.readings = Some((generation, reply));
         }
         &self.readings.as_ref().expect("just read").1
+    }
+
+    /// Each tower's reading, from [`Self::reading`].
+    pub fn readings(&mut self) -> &[TowerReading] {
+        &self.reading().towers
     }
 
     /// Where body `n` (from 0) is drawn in a pane of `size` points, from the pane's top-left corner;
@@ -440,7 +453,7 @@ impl Shell {
         // Take whatever the forward worker has finished; while it is still at work, keep drawing so
         // that its result is shown when it comes. Nothing here waits.
         self.engine.poll();
-        if self.engine.signal().0 == cav_engine::SignalState::Stale {
+        if self.engine.signal().0 == cav_engine::SignalState::Stale || self.reading().state == "stale" {
             ctx.request_repaint_after(std::time::Duration::from_millis(30));
         }
         crate::panels::draw(self, ui, surface);

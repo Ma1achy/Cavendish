@@ -28,6 +28,10 @@ pub mod limits {
     pub const CYCLE: f64 = 1.0e4;
     /// The shortest half-sequence, seconds.
     pub const HALF_SEQUENCE_MIN: f64 = 1.0e-3;
+    /// The longest half-sequence, seconds. AION-10's is 0.73 s and AICE's 2.5 s; proposed space
+    /// instruments interrogate for hundreds of seconds. A thousand holds all of them, and keeps the
+    /// work of one read (which grows with the time the atoms are in the air) inside its budget.
+    pub const HALF_SEQUENCE_MAX: f64 = 1.0e3;
     /// The longest timeline, seconds.
     pub const DURATION: f64 = 1.0e6;
     /// The fastest launch, metres per second.
@@ -101,8 +105,8 @@ pub struct InstrumentSpec {
     #[schemars(range(max = 1.0e3), extend("exclusiveMinimum" = 0.0))]
     pub ifo_separation: f64,
     /// Half the interrogation sequence, T, seconds; a shot lasts 2T from launch to readout.
-    /// 2T is less than `cycle`.
-    #[schemars(range(min = 1.0e-3, max = 1.0e4))]
+    /// 2T is less than `cycle`. At most 1000 s.
+    #[schemars(range(min = 1.0e-3, max = 1.0e3))]
     pub half_sequence: f64,
     /// Launch velocity u₀, metres per second.
     #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0))]
@@ -390,7 +394,7 @@ impl SceneSpec {
         let i = &self.array.instrument;
         positive("array.instrument.tower_height", i.tower_height, limits::TOWER_HEIGHT)?;
         positive("array.instrument.ifo_separation", i.ifo_separation, limits::TOWER_HEIGHT)?;
-        positive("array.instrument.half_sequence", i.half_sequence, limits::CYCLE)?;
+        positive("array.instrument.half_sequence", i.half_sequence, limits::HALF_SEQUENCE_MAX)?;
         positive("array.instrument.launch_velocity", i.launch_velocity, limits::LAUNCH_VELOCITY)?;
         positive("array.instrument.cycle", i.cycle, limits::CYCLE)?;
         if i.ifo_separation >= i.tower_height {

@@ -188,50 +188,84 @@ impl Instrument {
         self.big_g * self.atom_mass / self.hbar
     }
 
-    /// The nodes of the flight integral. `breaks` are flight times (seconds after launch) at which
-    /// the source is not smooth; the Gauss rule cuts its pieces there, the reference rules do not.
+    /// The pieces of the flight the Gauss rule integrates over: `[a, b]` pairs between every kink
+    /// (the π pulse, each landing, each of `breaks`), leaving out the pieces in which both arms
+    /// are on the floor. There the arms are at one point, the difference of potential between
+    /// them is nothing whatever the source, and nothing is left to integrate; for a long sequence
+    /// with a modest launch that is most of the flight.
+    fn pieces(&self, breaks: &[f64]) -> Vec<(f64, f64)> {
+        let [lower, upper] = self.arms();
+        let two_t = self.flight_time();
+        let mut cuts = vec![0.0, self.half_sequence, two_t];
+        cuts.extend(lower.landings().into_iter().chain(upper.landings()).chain(breaks.iter().copied()));
+        cuts.retain(|c| (0.0..=two_t).contains(c));
+        cuts.sort_by(f64::total_cmp);
+        // Cuts closer than a nanosecond are one cut: a sliver of a panel adds nothing.
+        cuts.dedup_by(|b, a| *b - *a < 1e-9);
+        cuts.windows(2)
+            .map(|piece| (piece[0], piece[1]))
+            .filter(|&(a, b)| {
+                let middle = 0.5 * (a + b);
+                !(self.floor && lower.grounded(middle) && upper.grounded(middle))
+            })
+            .collect()
+    }
+
+    /// How many panels a piece of `length` seconds is cut into.
+    fn panels(length: f64, panel: f64) -> u64 {
+        (length / panel).ceil().max(1.0) as u64
+    }
+
+    /// How many nodes [`Self::visit`] would visit: the work of one read, known before it is done.
+    #[must_use]
+    pub fn node_count(&self, breaks: &[f64]) -> u64 {
+        match self.quadrature {
+            Quadrature::Gauss { order, panel } => {
+                self.pieces(breaks).iter().map(|(a, b)| Self::panels(b - a, panel) * order as u64).sum()
+            }
+            Quadrature::Simpson { step } => {
+                let n = ((self.half_sequence / step).round() as u64).max(2);
+                2 * (n + n % 2 + 1)
+            }
+            Quadrature::ScriptTrapezoid { nodes, .. } => nodes as u64,
+        }
+    }
+
+    /// Visits the nodes of the flight integral in order of time, one at a time: nothing is stored,
+    /// so a read's memory does not grow with the length of the flight. `breaks` are flight times
+    /// (seconds after launch) at which the source is not smooth; the Gauss rule cuts its pieces
+    /// there, the reference rules do not. `rule` is the Gauss rule for the instrument's order
+    /// ([`gauss_legendre`]); the reference rules ignore it.
     ///
     /// # Panics
     /// When the quadrature asks for nothing: no nodes, or a step or panel that is not positive.
-    #[must_use]
-    pub fn flight(&self, breaks: &[f64]) -> Flight {
+    pub fn visit(&self, breaks: &[f64], rule: &[(f64, f64)], visitor: &mut dyn FnMut(Node)) {
         let [lower, upper] = self.arms();
-        let two_t = self.flight_time();
         let node = |tau: f64, arm_time: f64, weight: f64| Node {
             tau,
             weight,
             lower: lower.rise(arm_time),
             upper: upper.rise(arm_time),
         };
-        let mut nodes = Vec::new();
         match self.quadrature {
             Quadrature::Gauss { order, panel } => {
                 assert!(order >= 1 && panel > 0.0, "a Gauss rule needs nodes and a positive panel");
-                let mut cuts = vec![0.0, self.half_sequence, two_t];
-                cuts.extend(
-                    lower.landings().into_iter().chain(upper.landings()).chain(breaks.iter().copied()),
-                );
-                cuts.retain(|c| (0.0..=two_t).contains(c));
-                cuts.sort_by(f64::total_cmp);
-                // Cuts closer than a nanosecond are one cut: a sliver of a panel adds nothing.
-                cuts.dedup_by(|b, a| *b - *a < 1e-9);
-                let rule = gauss_legendre(order);
-                for piece in cuts.windows(2) {
-                    let (a, b) = (piece[0], piece[1]);
-                    let panels = ((b - a) / panel).ceil().max(1.0) as usize;
+                assert_eq!(rule.len(), order, "the rule handed in is not the instrument's");
+                for (a, b) in self.pieces(breaks) {
+                    let panels = Self::panels(b - a, panel);
                     let width = (b - a) / panels as f64;
                     for p in 0..panels {
                         let left = a + p as f64 * width;
-                        for &(x, w) in &rule {
+                        for &(x, w) in rule {
                             let tau = left + 0.5 * width * (x + 1.0);
-                            nodes.push(node(tau, tau, 0.5 * width * w));
+                            visitor(node(tau, tau, 0.5 * width * w));
                         }
                     }
                 }
             }
             Quadrature::Simpson { step } => {
                 assert!(step > 0.0, "Simpson's rule needs a positive step");
-                for (a, b) in [(0.0, self.half_sequence), (self.half_sequence, two_t)] {
+                for (a, b) in [(0.0, self.half_sequence), (self.half_sequence, self.flight_time())] {
                     // v1's count: the nearest whole number of steps, at least two, made even.
                     let mut n = ((b - a) / step).round() as usize;
                     n = n.max(2);
@@ -246,7 +280,7 @@ impl Instrument {
                             2.0
                         };
                         let tau = a + i as f64 * h;
-                        nodes.push(node(tau, tau, weight * h / 3.0));
+                        visitor(node(tau, tau, weight * h / 3.0));
                     }
                 }
             }
@@ -254,11 +288,23 @@ impl Instrument {
                 assert!(step > 0.0 && count >= 2, "the scripts' rule needs a step and two nodes");
                 for j in 0..count {
                     let weight = if j == 0 || j + 1 == count { 0.5 * step } else { step };
-                    nodes.push(node(j as f64 * step, (j + lag) as f64 * step, weight));
+                    visitor(node(j as f64 * step, (j + lag) as f64 * step, weight));
                 }
             }
         }
-        Flight { nodes, duration: two_t }
+    }
+
+    /// The nodes of the flight integral, gathered into a table. For looking at a rule (tests, the
+    /// oracle tier); a read does not use it, because the table grows with the flight.
+    #[must_use]
+    pub fn flight(&self, breaks: &[f64]) -> Flight {
+        let rule = match self.quadrature {
+            Quadrature::Gauss { order, .. } => gauss_legendre(order),
+            _ => Vec::new(),
+        };
+        let mut nodes = Vec::new();
+        self.visit(breaks, &rule, &mut |node| nodes.push(node));
+        Flight { nodes, duration: self.flight_time() }
     }
 }
 
@@ -332,6 +378,16 @@ impl Arm {
         }
     }
 
+    /// Whether the arm is on the floor at `tau`: landed, and not yet kicked off it again.
+    #[must_use]
+    pub fn grounded(&self, tau: f64) -> bool {
+        if tau <= self.half {
+            self.landed_first.is_some_and(|back| tau >= back)
+        } else {
+            self.landed_second.is_some_and(|back| tau - self.half >= back)
+        }
+    }
+
     /// The flight times at which the arm lands, where its path has a kink.
     #[must_use]
     pub fn landings(&self) -> Vec<f64> {
@@ -396,7 +452,8 @@ pub fn gauss_legendre(n: usize) -> Vec<(f64, f64)> {
 /// Something with mass, as the flight integral sees it.
 pub trait Source: Sync {
     /// `(V(upper arm) − V(lower arm)) / G` for each interferometer at absolute time `time`,
-    /// kilograms per metre. `tower` is the tower's base (the lower launch point), `heights` the
+    /// kilograms per metre. It is nothing when `lower` equals `upper` (the two arms at one point):
+    /// the integrator relies on that and does not ask while both arms are on the floor. `tower` is the tower's base (the lower launch point), `heights` the
     /// two launch points' heights above it, and `lower` and `upper` the arms' rise above their
     /// launch point.
     fn difference(&self, tower: Vec3, heights: [f64; 2], lower: f64, upper: f64, time: f64) -> [f64; 2];
@@ -468,6 +525,12 @@ pub struct Audited {
     pub estimate: Option<f64>,
     /// How many times the panels were halved.
     pub halvings: u32,
+    /// Whether the last two rules agreed to the tolerance. When they did not (the halvings or the
+    /// work budget ran out first, or the reading is not a number) the reading is the best there
+    /// is and `estimate` says how good: it must not be shown as settled.
+    pub settled: bool,
+    /// How many nodes were evaluated, over every rule tried: the work this read cost.
+    pub nodes: u64,
 }
 
 /// The tolerance of the audited read: this many radians …
@@ -477,33 +540,34 @@ pub const PHASE_TOLERANCE: f64 = 1e-10;
 pub const PHASE_TOLERANCE_RELATIVE: f64 = 1e-12;
 /// The most times the audited read halves its panels: 0.1 s down to 0.4 ms.
 pub const MAX_HALVINGS: u32 = 8;
+/// The most nodes one audited read evaluates, over every rule it tries: its budget of work. A
+/// read that would go past it stops and reports that it did not settle. An AION-10 read uses
+/// about three hundred; four million is some tens of milliseconds.
+pub const MAX_NODES: u64 = 4_000_000;
 
-/// An instrument with its flight nodes built: reads shots.
+/// An instrument ready to read shots. It holds the instrument and its Gauss rule and nothing
+/// that grows with the flight: nodes are made and used one at a time.
 #[derive(Clone, Debug)]
 pub struct Reader {
     instrument: Instrument,
-    /// The flight with its panels halved 0, 1, 2 … times; each built when first needed.
-    levels: [std::sync::OnceLock<Flight>; MAX_HALVINGS as usize + 1],
+    /// The Gauss rule of the instrument's order; empty for the reference rules.
+    rule: Vec<(f64, f64)>,
 }
 
 impl Reader {
-    /// A reader for `instrument`; the nodes of the flight are built once and kept.
+    /// A reader for `instrument`.
     #[must_use]
     pub fn new(instrument: Instrument) -> Self {
-        let reader = Self { instrument, levels: Default::default() };
-        reader.level(0, &[]);
-        reader
+        let rule = match instrument.quadrature {
+            Quadrature::Gauss { order, .. } => gauss_legendre(order),
+            _ => Vec::new(),
+        };
+        Self { instrument, rule }
     }
 
     #[must_use]
     pub const fn instrument(&self) -> &Instrument {
         &self.instrument
-    }
-
-    /// The nodes used when the source is smooth over the flight.
-    #[must_use]
-    pub fn flight(&self) -> &Flight {
-        self.levels[0].get().expect("built by `new`")
     }
 
     /// The instrument with its Gauss panels halved `level` times.
@@ -515,17 +579,6 @@ impl Reader {
             other => other,
         };
         Instrument { quadrature, ..self.instrument }
-    }
-
-    /// The flight at a level of refinement: kept when the source is smooth, built for the
-    /// occasion when it has breaks.
-    fn level(&self, level: u32, breaks: &[f64]) -> std::borrow::Cow<'_, Flight> {
-        if breaks.is_empty() {
-            let kept = self.levels[level as usize].get_or_init(|| self.halved(level).flight(&[]));
-            std::borrow::Cow::Borrowed(kept)
-        } else {
-            std::borrow::Cow::Owned(self.halved(level).flight(breaks))
-        }
     }
 
     /// The breaks of the source inside the flight read out at `readout`, as flight times. The
@@ -542,15 +595,22 @@ impl Reader {
         breaks
     }
 
-    fn sum(&self, flight: &Flight, tower: Vec3, source: &dyn Source, readout: f64) -> Reading {
-        let launch = readout - flight.duration;
+    /// Visits the nodes of the flight with the panels halved `level` times, cut at `breaks`: the
+    /// nodes a read at that level uses.
+    pub fn visit(&self, level: u32, breaks: &[f64], visitor: &mut dyn FnMut(Node)) {
+        self.halved(level).visit(breaks, &self.rule, visitor);
+    }
+
+    /// The flight integral at one level of refinement, node by node.
+    fn sum(&self, level: u32, breaks: &[f64], tower: Vec3, source: &dyn Source, readout: f64) -> Reading {
+        let launch = readout - self.instrument.flight_time();
         let heights = [0.0, self.instrument.ifo_separation];
         let mut sum = [0.0; 2];
-        for node in &flight.nodes {
+        self.visit(level, breaks, &mut |node| {
             let d = source.difference(tower, heights, node.lower, node.upper, launch + node.tau);
             sum[0] += node.weight * d[0];
             sum[1] += node.weight * d[1];
-        }
+        });
         let scale = self.instrument.phase_scale();
         Reading { lower: scale * sum[0], upper: scale * sum[1] }
     }
@@ -561,35 +621,48 @@ impl Reader {
     #[must_use]
     pub fn read(&self, tower: Vec3, source: &dyn Source, readout: f64) -> Reading {
         let breaks = self.breaks(source, readout);
-        self.sum(&self.level(0, &breaks), tower, source, readout)
+        self.sum(0, &breaks, tower, source, readout)
     }
 
     /// The same shot, read until it stops changing: the Gauss panels are halved until two
     /// successive readings agree to `tolerance` radians (or to [`PHASE_TOLERANCE_RELATIVE`] of
-    /// the phase, if that is larger), at most [`MAX_HALVINGS`] times. The finer of the two is
-    /// returned with their difference, which estimates the error of the coarser.
+    /// the phase, if that is larger). The finer of the two is returned with their difference,
+    /// which estimates the error of the coarser.
+    ///
+    /// The work is bounded: at most [`MAX_HALVINGS`] halvings and at most [`MAX_NODES`] nodes in
+    /// all, counted before each rule is run. A read that stops for either reason says so
+    /// (`settled` is false) and still returns its best reading and its estimate.
     #[must_use]
     pub fn read_to(&self, tower: Vec3, source: &dyn Source, readout: f64, tolerance: f64) -> Audited {
         let breaks = self.breaks(source, readout);
-        let mut reading = self.sum(&self.level(0, &breaks), tower, source, readout);
+        let mut nodes = self.instrument.node_count(&breaks);
+        let mut reading = self.sum(0, &breaks, tower, source, readout);
         if !matches!(self.instrument.quadrature, Quadrature::Gauss { .. }) {
-            return Audited { reading, estimate: None, halvings: 0 };
+            return Audited { reading, estimate: None, halvings: 0, settled: true, nodes };
         }
-        let mut estimate = f64::INFINITY;
-        let mut halvings = 0;
+        let (mut estimate, mut halvings, mut settled) = (f64::INFINITY, 0, false);
         while halvings < MAX_HALVINGS {
+            let next = self.halved(halvings + 1).node_count(&breaks);
+            if nodes + next > MAX_NODES {
+                break;
+            }
             halvings += 1;
-            let finer = self.sum(&self.level(halvings, &breaks), tower, source, readout);
+            nodes += next;
+            let finer = self.sum(halvings, &breaks, tower, source, readout);
             let (dl, du) = (finer.lower - reading.lower, finer.upper - reading.upper);
             estimate = dl.abs().max(du.abs()).max((dl - du).abs());
             let size = finer.lower.abs().max(finer.upper.abs());
             reading = finer;
-            // A reading that is not a number stops here too: halving again would not change it.
-            if estimate <= tolerance.max(PHASE_TOLERANCE_RELATIVE * size) || estimate.is_nan() {
+            if estimate <= tolerance.max(PHASE_TOLERANCE_RELATIVE * size) {
+                settled = true;
+                break;
+            }
+            // A reading that is not a number will not become one: halving again changes nothing.
+            if estimate.is_nan() {
                 break;
             }
         }
-        Audited { reading, estimate: Some(estimate), halvings }
+        Audited { reading, estimate: Some(estimate), halvings, settled, nodes }
     }
 
     /// The gradiometer's phase from `source` alone, with the sign and the rule of the instrument.
@@ -823,7 +896,16 @@ mod tests {
         let instrument = Instrument::aion10();
         // The engine's rule: pieces cut at T and at both landings, weights adding up to 2T.
         let flight = instrument.flight(&[]);
-        assert!((flight.nodes.iter().map(|n| n.weight).sum::<f64>() - 1.46).abs() < 1e-13);
+        // The weights add up to the time at least one arm is in the air: the flight, less the last
+        // few milliseconds in which both are down and nothing is integrated.
+        let landed = instrument.arms().iter().flat_map(Arm::landings).fold(0.0f64, f64::max);
+        assert!(landed > 1.44 && landed < 1.46, "{landed}");
+        assert!((flight.nodes.iter().map(|n| n.weight).sum::<f64>() - landed).abs() < 1e-13);
+        assert!(flight.nodes.iter().all(|n| n.tau < landed));
+        assert_eq!(instrument.node_count(&[]), flight.nodes.len() as u64, "the count is the work");
+        // With the floor off there is no such piece and the weights are the whole flight.
+        let bare = Instrument { floor: false, ..instrument }.flight(&[]);
+        assert!((bare.nodes.iter().map(|n| n.weight).sum::<f64>() - 1.46).abs() < 1e-13);
         let landings: Vec<f64> = instrument.arms().iter().flat_map(Arm::landings).collect();
         for cut in landings.iter().chain(&[0.73]) {
             // No panel straddles a kink: the nearest nodes on either side are within one panel.

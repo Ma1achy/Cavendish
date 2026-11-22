@@ -424,15 +424,23 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
 
     heading(ui, "Array");
     // With something to read, each tower's row shows what it reads under the playhead.
-    let reads: Vec<f64> = shell.readings().iter().map(|r| r.gradiometer).collect();
+    let reply = shell.reading().clone();
     let silent = spec.bodies.is_empty();
     for (n, tower) in spec.array.towers.iter().enumerate() {
         let [x, y, _] = tower.position;
-        let detail = match reads.get(n) {
-            Some(phase) if !silent => crate::shell::phase_text(*phase),
+        // A number the audit warns of carries a mark; the warning is in the tower's properties.
+        let warned = reply.warnings.iter().any(|w| w.contains(tower.label.as_str()));
+        let detail = match reply.towers.get(n) {
+            Some(reading) if !silent => {
+                format!("{}{}", crate::shell::phase_text(reading.gradiometer), if warned { " ⚠" } else { "" })
+            }
             _ => format!("{x:+.1} {y:+.1}"),
         };
         outline_row(shell, ui, Target::Tower(n + 1), theme::tower(n), &tower.label, &detail);
+    }
+    if !silent && !reply.warnings.is_empty() {
+        let text = format!("{} reading(s) warned of: select the tower, or `reading`", reply.warnings.len());
+        ui.label(RichText::new(text).size(11.0).color(theme::WARN));
     }
 
     heading(ui, "Surroundings");
@@ -623,9 +631,9 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
                     ("z (base)", format!("{z} m")),
                 ],
             );
-            heading(ui, &format!("Reading · a shot read out at {:.2} s", shell.engine.time()));
-            let reading = shell.readings().get(n - 1).cloned();
-            if let Some(reading) = reading {
+            let reply = shell.reading().clone();
+            heading(ui, &format!("Reading · a shot read out at {:.2} s", reply.time));
+            if let Some(reading) = reply.towers.get(n - 1) {
                 rows(
                     ui,
                     "reading",
@@ -633,8 +641,17 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
                         ("ΔΦ", crate::shell::phase_text(reading.gradiometer)),
                         ("δφ₁ lower", crate::shell::phase_text(reading.lower)),
                         ("δφ₂ upper", crate::shell::phase_text(reading.upper)),
+                        ("quadrature", cav_engine::estimate_text(reply.estimate)),
+                        ("state", reply.state.clone()),
                     ],
                 );
+            } else {
+                ui.label(RichText::new("computing").size(11.5).color(theme::WEAK));
+            }
+            // What the audit warns of about this tower's number is said beside it.
+            let label = &spec.array.towers[n - 1].label;
+            for warning in reply.warnings.iter().filter(|w| w.contains(label.as_str())) {
+                ui.label(RichText::new(warning).size(11.0).color(theme::WARN));
             }
         }
         Some(Target::Room) => {

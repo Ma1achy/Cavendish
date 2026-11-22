@@ -509,21 +509,38 @@ fn a_click_selects_a_body_and_the_panels_show_what_the_towers_read() {
     let at = pane.min + rig.shell.body_point(0, 0, pane.size()).unwrap().to_vec2();
     rig.click(at);
     assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)));
-    // Every tower has a reading under the playhead, and it is the engine's.
-    let readings = rig.shell.readings().to_vec();
-    assert_eq!(readings.len(), 5);
+    // Every tower has a reading under the playhead: the engine's, from its reading worker.
+    let long = std::time::Duration::from_secs(60);
+    assert!(rig.shell.engine.settle(long));
+    let reply = rig.shell.reading().clone();
     let cav_engine::Reply::Reading(asked) =
         rig.shell.engine.query(&cav_engine::Query::Reading(None)).unwrap()
     else {
         panic!("readings")
     };
-    assert_eq!(readings, asked);
+    assert_eq!(reply, asked);
+    assert_eq!((reply.state.as_str(), reply.towers.len()), ("refined", 5));
+    let readings = reply.towers;
     assert!(readings[1].gradiometer.abs() > readings[2].gradiometer.abs(), "tower 2 is the nearer");
-    // Move the mass and the readings are read again; nothing is left over from before.
+    // Move the mass. Until the worker answers, the panels show the last reading, marked stale, and
+    // never a number computed here; then the new one.
+    rig.shell.engine.hold_workers(true);
     rig.shell.run("set bodies[0].motion.Static.position [-2, 0, 2.5]").unwrap();
-    let moved = rig.shell.readings().to_vec();
-    assert_ne!(moved, readings);
-    assert!(moved[2].gradiometer.abs() > moved[1].gradiometer.abs(), "now tower 3 is");
+    rig.frames(vec![vec![]]);
+    let meanwhile = rig.shell.reading().clone();
+    assert_eq!((meanwhile.state.as_str(), &meanwhile.towers), ("stale", &readings));
+    rig.shell.engine.hold_workers(false);
+    assert!(rig.shell.engine.settle(long));
+    let moved = rig.shell.reading().clone();
+    assert_eq!(moved.state, "refined");
+    assert_ne!(moved.towers, readings);
+    assert!(moved.towers[2].gradiometer.abs() > moved.towers[1].gradiometer.abs(), "now tower 3 is");
+    // A reading the audit warns of says so beside the tower.
+    rig.shell.run("set bodies[0].motion.Static.position [0, 0, 1]").unwrap();
+    assert!(rig.shell.engine.settle(long));
+    let warned = rig.shell.reading().clone();
+    assert!(warned.warnings.iter().any(|w| w.contains("did not settle") && w.contains("tower 1")));
+    assert!(warned.estimate > 1e-7);
     // The text a reading is shown as.
     use cav_app::shell::phase_text;
     assert_eq!(phase_text(-0.010_240_1), "-10.240 mrad");
@@ -534,6 +551,8 @@ fn a_click_selects_a_body_and_the_panels_show_what_the_towers_read() {
     assert_eq!(phase_text(f64::INFINITY), "unbounded");
     // Control: in a scene with nothing to read every reading is exactly zero.
     rig.shell.run("load void").unwrap();
+    assert!(rig.shell.engine.settle(long));
+    assert_eq!(rig.shell.readings().len(), 5);
     assert!(rig.shell.readings().iter().all(|r| r.gradiometer == 0.0 && r.lower == 0.0));
 }
 

@@ -9,12 +9,29 @@ use cav_sim::{DrawStyle, NamedView, Projection, SceneSpec, SceneView, Target, Vi
 use serde::Serialize;
 
 use crate::command::{
-    COMB_HARMONICS, Comb, Command, Harmonic, MAX_PANES, PaneContent, PeriodogramReply, Query, Reply,
-    SignalReply, Stats, TowerReading, ViewCommand,
+    COMB_HARMONICS, Comb, Command, Harmonic, MAX_PANES, PaneContent, PeriodogramReply, Query, ReadingReply,
+    Reply, SignalReply, Stats, TowerReading, ViewCommand,
 };
 use crate::console;
 use crate::forward::{Forward, SignalState};
 use crate::log::{Level, Log, Subsystem};
+
+/// How long a line typed at a console waits for the numbers it asks for, unless a client sets
+/// otherwise: a tenth of a second, which a person does not see and a long computation outlasts
+/// (the answer then says `stale` or `computing`). Nothing the application does every frame waits.
+pub const TYPED_LINE_PATIENCE: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// A quadrature estimate as people read it.
+#[must_use]
+pub fn estimate_text(estimate: f64) -> String {
+    if estimate == 0.0 {
+        "exact".to_owned()
+    } else if estimate.is_finite() {
+        format!("within {estimate:.0e} rad")
+    } else {
+        "not settled".to_owned()
+    }
+}
 
 /// How many log entries the engine keeps.
 const LOG_CAPACITY: usize = 2000;
@@ -80,6 +97,7 @@ impl Engine {
         );
         let mut forward = Forward::new();
         forward.schedule(&spec, false);
+        forward.request_reading(&spec, 0.0);
         Self {
             spec,
             time: 0.0,
@@ -95,7 +113,7 @@ impl Engine {
             log_mark: 0,
             generation: 0,
             forward,
-            patience: std::time::Duration::ZERO,
+            patience: TYPED_LINE_PATIENCE,
         }
     }
 
@@ -140,6 +158,10 @@ impl Engine {
         let overwrites = self.journal.last().is_some_and(|previous| command.overwrites(previous));
         self.perform(&command, overwrites);
         self.generation += 1;
+        // Whatever changed the scene or moved the playhead changes what the towers read under it.
+        if !matches!(command, Command::Select(_) | Command::View(_)) {
+            self.forward.request_reading(&self.spec, self.time);
+        }
         if overwrites {
             *self.journal.last_mut().expect("there is a previous command") = command;
             if self.log.total() == self.log_mark {
@@ -419,52 +441,87 @@ impl Engine {
                 if !time.is_finite() {
                     return Err(format!("a time must be finite, not {time}"));
                 }
-                let readings = cav_sim::read::reading(&self.spec, time);
-                let towers = self.spec.array.towers.iter().zip(readings);
-                Ok(Reply::Reading(
-                    towers
-                        .map(|(tower, [lower, upper, gradiometer])| TowerReading {
-                            label: tower.label.clone(),
+                let (state, held) = self.forward.reading();
+                // The reading held is for the time it was asked for; one for another time is an
+                // earlier answer, to be shown as such.
+                let state = match (state, held) {
+                    (_, None) => "computing",
+                    (SignalState::Refined, Some(reading)) if reading.time == time => "refined",
+                    _ => "stale",
+                };
+                let towers = held.map_or_else(Vec::new, |reading| {
+                    let labels = self.spec.array.towers.iter().map(|t| t.label.clone());
+                    labels
+                        .zip(&reading.towers)
+                        .map(|(label, &[lower, upper, gradiometer])| TowerReading {
+                            label,
                             lower,
                             upper,
                             gradiometer,
                         })
-                        .collect(),
-                ))
+                        .collect()
+                });
+                Ok(Reply::Reading(ReadingReply {
+                    time: held.map_or(time, |reading| reading.time),
+                    state: state.to_owned(),
+                    towers,
+                    estimate: held.map_or(0.0, |reading| reading.estimate),
+                    warnings: held.map_or_else(Vec::new, |reading| reading.warnings.clone()),
+                }))
             }
         }
     }
 
-    /// Takes what the forward worker has finished. True when a new whole signal has just arrived;
-    /// the log then says so, with anything the signal warns of. The application calls this every
-    /// frame; nothing in it waits.
+    /// Takes what the forward workers have finished. True when a new whole signal or a new reading
+    /// has just arrived; a signal's arrival is said in the log, with anything it warns of. The
+    /// application calls this every frame; nothing in it waits and nothing in it computes.
     pub fn poll(&mut self) -> bool {
-        if !self.forward.poll() {
-            return false;
-        }
-        self.announce();
-        true
+        let arrived = self.forward.poll();
+        self.took(arrived)
     }
 
-    /// Waits, at most `patience`, for the signal to be the current scene's. For clients that print
-    /// numbers (`cav exec`, MCP); the application polls instead. True when it is.
+    /// Waits, at most `patience`, for the signal and the reading to be the current scene's. For
+    /// clients that print numbers (`cav exec`, MCP); the application polls instead. True when
+    /// both are.
     pub fn settle(&mut self, patience: std::time::Duration) -> bool {
-        let before = self.forward.state();
-        let whole = self.forward.settle(patience);
-        if whole && before != SignalState::Refined {
+        let arrived = self.forward.settle(patience);
+        self.took(arrived);
+        self.forward.state() != SignalState::Stale && self.forward.reading().0 != SignalState::Stale
+    }
+
+    /// Records what has arrived: a signal is announced, and either is a change of what is shown.
+    fn took(&mut self, (signal, reading): (bool, bool)) -> bool {
+        if signal {
             self.announce();
         }
-        whole
+        if reading {
+            self.generation += 1;
+        }
+        signal || reading
     }
 
-    /// How long `run_line` waits for the signal before a line that asks for one. Zero (the
-    /// default) in the application, where nothing may wait.
+    /// Asks the reading worker for the reading of a shot read out at `time`, which need not be the
+    /// playhead. The answer arrives by [`Self::poll`] or [`Self::settle`]; the next command that
+    /// moves the playhead or edits the scene asks for the playhead's again.
+    pub fn ask_reading(&mut self, time: f64) {
+        self.forward.request_reading(&self.spec, time);
+    }
+
+    /// How long `run_line` waits for the numbers a line asks for ([`TYPED_LINE_PATIENCE`] unless
+    /// set). `cav exec` and MCP set a minute.
     pub const fn set_patience(&mut self, patience: std::time::Duration) {
         self.patience = patience;
     }
 
     pub(crate) const fn patience(&self) -> std::time::Duration {
         self.patience
+    }
+
+    /// Holds the forward workers before their next job, or lets them go on: for tests that must
+    /// say what happened on the caller's thread without a clock.
+    #[doc(hidden)]
+    pub fn hold_workers(&self, held: bool) {
+        self.forward.hold(held);
     }
 
     /// Says in the log that a signal has arrived.
@@ -476,10 +533,10 @@ impl Engine {
             Level::Info,
             Subsystem::Engine,
             format!(
-                "signal: {} tower(s) × {} shot(s), quadrature within {:.0e} rad, whole {took:.0} ms after the edit",
+                "signal: {} tower(s) × {} shot(s), quadrature {}, whole {took:.0} ms after the edit",
                 signal.towers,
                 signal.times.len(),
-                signal.estimate.max(f64::MIN_POSITIVE)
+                estimate_text(signal.estimate)
             ),
         );
         for warning in &signal.warnings {
@@ -491,6 +548,13 @@ impl Engine {
     #[must_use]
     pub fn signal(&self) -> (SignalState, Option<&std::sync::Arc<cav_sim::read::Signal>>) {
         (self.forward.state(), self.forward.signal())
+    }
+
+    /// How many contributions the forward worker has finished since the engine started: work
+    /// that was dropped because the scene moved on is asked for and never finished.
+    #[must_use]
+    pub const fn contributions_finished(&self) -> u64 {
+        self.forward.finished
     }
 
     /// How many contributions the forward worker has been asked for since the engine started.
@@ -551,12 +615,7 @@ impl Engine {
             redo: self.redo.len(),
             generation: self.generation,
             digest: self.digest(),
-            signal: match self.forward.state() {
-                SignalState::Refined => "refined",
-                SignalState::Stale => "stale",
-                SignalState::None => "none",
-            }
-            .to_owned(),
+            signal: self.forward.state().name().to_owned(),
         }
     }
 

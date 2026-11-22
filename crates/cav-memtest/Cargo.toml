@@ -1,0 +1,16 @@
+[package]
+name = "cav-memtest"
+description = "Cavendish: test support. A counting allocator, for tests that hold a computation's memory to a bound."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+# The one crate that does not take the workspace's lints: a global allocator cannot be written
+# without `unsafe`, and the workspace forbids it everywhere else. Nothing but tests links this.
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[dev-dependencies]
+cav-core.workspace = true
+cav-sim.workspace = true

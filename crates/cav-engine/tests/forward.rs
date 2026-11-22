@@ -1,7 +1,7 @@
 //! Editing by path, and the forward stage: the signal is computed off the caller's thread, kept
 //! source by source, and never waited for by a command or a query.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use cav_engine::{ChannelName, Command, Engine, Level, LogFilter, Query, Reply, SignalState, Stage, Target};
 use cav_sim::read;
@@ -145,65 +145,72 @@ fn the_signal_is_computed_on_the_worker_and_arrives() {
     assert_eq!(engine.signal().0, SignalState::None);
 }
 
-/// The oscillator zoo over a timeline long enough to keep the worker busy for seconds.
-fn slow_scene() -> SceneSpec {
-    let mut scene = dev::oscillator_zoo();
-    scene.duration = 400_000.0;
-    scene
-}
-
 #[test]
 fn a_query_never_waits_for_the_worker() {
-    // A scene with a whole signal: six shots of the pass.
+    // A scene with a whole signal and a whole reading: six shots of the pass.
     let mut engine = loaded(dev::pass());
     assert!(engine.settle(LONG));
-    let started = Instant::now();
-    // Stretch its timeline to 200,000 shots and swap in four oscillators: seconds of work.
-    set(&mut engine, "bodies", serde_json::to_value(slow_scene().bodies).unwrap()).unwrap();
-    set(&mut engine, "duration", json!(400_000.0)).unwrap();
     let query = Query::Signal { tower: 1, channel: ChannelName::Gradiometer };
-    let Reply::Signal(first) = engine.query(&query).unwrap() else { panic!("a signal") };
-    engine.query(&Query::Reading(Some(10.0))).unwrap();
+    let finished = engine.contributions_finished();
+    // The workers are held: from here on nothing can be computed anywhere but on this thread, and
+    // a call that waited for a result would never return.
+    engine.hold_workers(true);
+    set(&mut engine, "bodies[0].mass", json!(20.0)).unwrap();
+    engine.apply(Command::Seek(3.0)).unwrap();
+    let Reply::Signal(signal) = engine.query(&query).unwrap() else { panic!("a signal") };
+    let Reply::Reading(reading) = engine.query(&Query::Reading(None)).unwrap() else { panic!("a reading") };
     engine.query(&Query::Stats).unwrap();
     engine.poll();
-    let took = started.elapsed();
-    // 200,000 shots of four bodies at five towers is seconds of work; none of it was done here.
-    assert!(took < Duration::from_millis(1500), "two edits, three queries and a poll took {took:?}");
-    assert_eq!(engine.signal().0, SignalState::Stale, "the worker is still at it");
-    // What is shown meanwhile is the last whole signal, marked stale: six shots.
-    assert_eq!((first.state.as_str(), first.times.len()), ("stale", 6));
-    // A load is another scene altogether: its predecessor's signal is not shown under its name.
-    engine.apply(Command::load(slow_scene())).unwrap();
+    // Every call came back, and with what there was: the last whole signal and reading, marked
+    // stale, and nothing new.
+    assert_eq!((signal.state.as_str(), signal.times.len()), ("stale", 6));
+    assert_eq!((reading.state.as_str(), reading.towers.len(), reading.time), ("stale", 5, 0.0));
+    assert_eq!(engine.signal().0, SignalState::Stale);
+    assert_eq!(engine.contributions_finished(), finished, "nothing was computed on this thread");
+    // A load is another scene altogether: its predecessor's results are not shown under its name.
+    engine.apply(Command::load(dev::superposition())).unwrap();
     let Reply::Signal(fresh) = engine.query(&query).unwrap() else { panic!("a signal") };
+    let Reply::Reading(none) = engine.query(&Query::Reading(None)).unwrap() else { panic!("a reading") };
     assert_eq!((fresh.state.as_str(), fresh.times.len()), ("computing", 0));
-    // Commands do not wait either, and a run of them leaves the worker with the last scene only.
-    let started = Instant::now();
-    for step in 0..20 {
-        set(&mut engine, "bodies[0].mass", json!(1.0 + f64::from(step))).unwrap();
-    }
-    assert!(started.elapsed() < Duration::from_millis(1500), "{:?}", started.elapsed());
-    // Control: the same scene made short does arrive, so "stale" above was not a stuck worker.
-    set(&mut engine, "duration", json!(20.0)).unwrap();
+    assert_eq!((none.state.as_str(), none.towers.len()), ("computing", 0));
+    // Control: let the workers go and the same queries have the scene's own numbers.
+    engine.hold_workers(false);
     assert!(engine.settle(LONG));
+    let Reply::Signal(whole) = engine.query(&query).unwrap() else { panic!("a signal") };
+    let Reply::Reading(read) = engine.query(&Query::Reading(None)).unwrap() else { panic!("a reading") };
+    assert_eq!((whole.state.as_str(), whole.times.len()), ("refined", 20));
+    assert_eq!((read.state.as_str(), read.towers.len(), read.time), ("refined", 5, 0.0));
 }
 
 #[test]
 fn the_latest_edit_wins_and_stale_work_is_dropped() {
-    let mut engine = loaded(slow_scene());
-    // The scene changes while its signal is being computed: the long job is no longer wanted.
-    engine.apply(Command::load(dev::pass())).unwrap();
-    let started = Instant::now();
+    let mut engine = loaded(dev::void());
     assert!(engine.settle(LONG));
-    let took = started.elapsed();
-    // The worker dropped the long job between shots rather than finishing it first.
-    assert!(took < Duration::from_secs(5), "the short scene's signal took {took:?} to arrive");
+    // Forty edits arrive while the workers are held, as a drag does between two of their jobs.
+    engine.hold_workers(true);
+    engine.apply(Command::load(dev::point())).unwrap();
+    for step in 0..40 {
+        let x = 2.0 + 0.05 * f64::from(step);
+        set(&mut engine, "bodies[0].motion.Static.position", json!([x, 0.0, 2.5])).unwrap();
+    }
+    assert_eq!(engine.contributions_computed(), 41, "each edit asked for the body again");
+    engine.hold_workers(false);
+    assert!(engine.settle(LONG));
+    // Only the last was computed: the forty before it were dropped unstarted.
+    assert_eq!(engine.contributions_finished(), 1);
     let (state, signal) = engine.signal();
     assert_eq!(state, SignalState::Refined);
-    assert_eq!(signal.unwrap().as_ref(), &read::signal(&dev::pass()).unwrap(), "and it is the last scene's");
-    // Nothing of the dropped run is visible: no signal of 200,000 shots was ever shown.
-    assert_eq!(signal.unwrap().times.len(), 6);
+    assert_eq!(signal.unwrap().as_ref(), &read::signal(engine.spec()).unwrap(), "and it is the last scene's");
+    // No signal of a superseded scene was ever announced.
     let arrivals = engine.log().select(&LogFilter { text: Some("signal:".into()), ..LogFilter::default() });
-    assert!(arrivals.iter().all(|entry| !entry.message.contains("200000 shot")), "{arrivals:?}");
+    assert_eq!(arrivals.len(), 1, "the last scene and no other: {arrivals:?}");
+    // The reading too is the last one asked for.
+    let Reply::Reading(reading) = engine.query(&Query::Reading(None)).unwrap() else { panic!("a reading") };
+    let cold = read::reading(engine.spec(), 0.0, &|| false).unwrap();
+    assert_eq!(reading.state, "refined");
+    assert_eq!(reading.towers[1].gradiometer.to_bits(), cold.towers[1][2].to_bits());
+    // (That a job already under way is abandoned between shots is `contribution`'s own test, in
+    // cav-sim: `the_reading_is_the_series_at_a_readout_and_contributions_can_be_cancelled`.)
 }
 
 cav_validate::case! {
@@ -263,33 +270,42 @@ fn dragging_one_body_recomputes_that_body_only() {
 fn the_reading_follows_a_drag_and_the_console_speaks_of_it() {
     let mut engine = loaded(dev::point());
     engine.set_patience(LONG);
-    let reading = |engine: &Engine| {
-        let Reply::Reading(towers) = engine.query(&Query::Reading(Some(3.0))).unwrap() else {
-            panic!("readings")
-        };
-        towers
+    let reading = |engine: &mut Engine| {
+        assert!(engine.settle(LONG));
+        let Reply::Reading(reply) = engine.query(&Query::Reading(None)).unwrap() else { panic!("readings") };
+        assert_eq!(reply.state, "refined");
+        reply
     };
-    let before = reading(&engine);
+    let before = reading(&mut engine).towers;
     assert_eq!(before.len(), 5);
     assert_eq!(before[0].label, "tower 1");
     assert_eq!(before[0].gradiometer, before[0].lower - before[0].upper, "lower minus upper");
     // A static mass reads the same at every readout: the live reading is the series' value.
-    assert!(engine.settle(LONG));
     let series = engine.signal().1.unwrap().channel(0, cav_core::forward::Channel::Gradiometer).to_vec();
     assert_eq!(bits(&series), bits(&[before[0].gradiometer; 6]));
-    // Drag the mass a metre nearer tower 2: tower 2 reads more, at once, with no waiting.
+    // Drag the mass a metre nearer tower 2: tower 2 reads more.
     set(&mut engine, "bodies[0].motion.Static.position", json!([3.0, 0.0, 2.5])).unwrap();
-    let after = reading(&engine);
-    assert!(
-        after[1].gradiometer.abs() > 2.0 * before[1].gradiometer.abs(),
-        "{:?} then {:?}",
-        before[1],
-        after[1]
-    );
-    assert_ne!(after[0].gradiometer, before[0].gradiometer);
+    let after = reading(&mut engine);
+    assert!(after.towers[1].gradiometer.abs() > 2.0 * before[1].gradiometer.abs());
+    assert_ne!(after.towers[0].gradiometer, before[0].gradiometer);
+    assert!(after.warnings.is_empty() && after.estimate <= 1e-10);
+    // The reading carries what the audit found. On a tower's axis a point mass does not settle,
+    // and the number beside the tower says so, as the signal does.
+    set(&mut engine, "bodies[0].motion.Static.position", json!([0.0, 0.0, 1.0])).unwrap();
+    let unsettled = reading(&mut engine);
+    assert!(unsettled.estimate > 1e-7, "{:e}", unsettled.estimate);
+    assert!(unsettled.warnings.iter().any(|w| w.contains("did not settle") && w.contains("tower 1")));
+    let said = engine.run_line("reading 3").unwrap();
+    assert!(said.contains("# warning:") && said.contains("did not settle"), "{said}");
+    assert!(said.contains("a shot read out at 3 s · refined"), "{said}");
+    set(&mut engine, "bodies[0].motion.Static.position", json!([3.0, 0.0, 2.5])).unwrap();
     // The console: the same things as text.
     let table = engine.run_line("reading 3").unwrap();
-    assert!(table.lines().count() == 6 && table.contains("tower 5"), "{table}");
+    assert!(table.lines().count() == 7 && table.contains("tower 5") && !table.contains("warning"), "{table}");
+    // After a reading away from the playhead, the reading held is the playhead's again.
+    assert!(engine.settle(LONG));
+    let Reply::Reading(back) = engine.query(&Query::Reading(None)).unwrap() else { panic!("readings") };
+    assert_eq!((back.state.as_str(), back.time), ("refined", 0.0));
     let signal = engine.run_line("signal 2").unwrap();
     assert!(signal.starts_with("# tower 2 · gradiometer · refined · 6 shots"), "{signal}");
     assert_eq!(signal.lines().count(), 7);
@@ -311,8 +327,13 @@ fn a_body_through_the_tower_is_warned_of_in_the_log() {
     let mut engine = loaded(dev::through_the_tower());
     assert!(engine.settle(LONG));
     let warnings = engine.log().select(&LogFilter { min_level: Some(Level::Warn), ..LogFilter::default() });
-    assert_eq!(warnings.len(), 3, "{warnings:?}");
-    assert!(warnings.iter().all(|w| w.message.contains("`ball` passes through the atoms' path")));
+    // For each of the three towers it crosses: that it is in the atoms' path, and that the shot's
+    // read did not settle to the tolerance (the sphere's potential has a corner at its surface;
+    // the reading is finite, and its estimate says how good it is).
+    let count = |text: &str| warnings.iter().filter(|w| w.message.contains(text)).count();
+    assert_eq!(warnings.len(), 6, "{warnings:?}");
+    assert_eq!(count("`ball` passes through the atoms' path"), 3);
+    assert_eq!(count("did not settle"), 3);
     // Control: the pass that keeps clear of every tower warns of nothing.
     let mut clear = loaded(dev::pass());
     assert!(clear.settle(LONG));
