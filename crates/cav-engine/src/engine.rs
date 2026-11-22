@@ -160,6 +160,10 @@ impl Engine {
             }
             Target::Room if self.spec.room.is_none() => Err("the scene has no room".into()),
             Target::Floor if self.spec.floor.is_none() => Err("the scene has no floor".into()),
+            Target::Body(_) if self.spec.bodies.is_empty() => Err("the scene has no bodies".into()),
+            Target::Body(n) if n == 0 || n > self.spec.bodies.len() => {
+                Err(format!("there is no body {n}; the scene has bodies 1 to {}", self.spec.bodies.len()))
+            }
             _ => Ok(()),
         }
     }
@@ -194,7 +198,7 @@ impl Engine {
     fn perform(&mut self, command: &Command) {
         match command {
             Command::Load(spec) => {
-                self.undo.push(std::mem::replace(&mut self.spec, spec.clone()));
+                self.undo.push(std::mem::replace(&mut self.spec, (**spec).clone()));
                 self.redo.clear();
                 self.time = 0.0;
                 self.selection = None;
@@ -335,6 +339,7 @@ impl Engine {
             engine: crate::VERSION.into(),
             scene: self.spec.name.clone(),
             towers: self.spec.array.towers.len(),
+            bodies: self.spec.bodies.len(),
             room: self.spec.room.is_some(),
             floor: self.spec.floor.is_some(),
             time: self.time,
@@ -445,7 +450,12 @@ fn summary(spec: &SceneSpec) -> String {
     let towers = spec.array.towers.len();
     let room = if spec.room.is_some() { "a room" } else { "no room" };
     let floor = if spec.floor.is_some() { "a floor" } else { "no floor" };
-    format!("{towers} tower{}, {room}, {floor}", if towers == 1 { "" } else { "s" })
+    let bodies = match spec.bodies.len() {
+        0 => "no bodies".to_owned(),
+        1 => "1 body".to_owned(),
+        n => format!("{n} bodies"),
+    };
+    format!("{towers} tower{}, {room}, {floor}, {bodies}", if towers == 1 { "" } else { "s" })
 }
 
 /// The value at a path such as `array.towers[2].position[0]` inside a JSON value.
@@ -494,10 +504,10 @@ mod tests {
             Command::View(ViewCommand::Panes(4)),
             Command::View(ViewCommand::Activate(2)),
             Command::View(ViewCommand::Look { pane: 2, view: NamedView::West }),
-            Command::Load(dev::infinite_floor()),
+            Command::load(dev::infinite_floor()),
             Command::View(ViewCommand::Project { pane: 0, projection: Projection::Orthographic }),
             Command::View(ViewCommand::Style { pane: 3, style: DrawStyle::Paper }),
-            Command::Load(dev::void()),
+            Command::load(dev::void()),
             Command::Undo,
             Command::Seek(7.0),
             Command::Undo,
@@ -528,7 +538,7 @@ mod tests {
         assert_eq!(lines.len(), commands.len());
         assert_eq!(lines[0], "panes 4");
         assert_eq!(lines[8], "seek 7");
-        assert!(lines[3].starts_with("load infinite-floor · 5 towers, no room, a floor"), "{}", lines[3]);
+        assert_eq!(lines[3], "load infinite-floor · 5 towers, no room, a floor, no bodies");
         // Control: a query is not a command; it leaves no trace.
         let before = (engine.journal().len(), engine.log().total(), engine.generation(), engine.digest());
         engine.query(&Query::Stats).unwrap();
@@ -609,8 +619,8 @@ mod tests {
     fn undo_and_redo_restore_the_spec() {
         let mut engine = Engine::new();
         let room = engine.spec().clone();
-        engine.apply(Command::Load(dev::void())).unwrap();
-        engine.apply(Command::Load(dev::infinite_floor())).unwrap();
+        engine.apply(Command::load(dev::void())).unwrap();
+        engine.apply(Command::load(dev::infinite_floor())).unwrap();
         engine.apply(Command::Select(Some(Target::Floor))).unwrap();
         assert_eq!(engine.history(), (true, false));
 
@@ -626,7 +636,7 @@ mod tests {
 
         // A new edit after an undo discards the redo branch.
         engine.apply(Command::Undo).unwrap();
-        engine.apply(Command::Load(room.clone())).unwrap();
+        engine.apply(Command::load(room.clone())).unwrap();
         assert_eq!(engine.history(), (true, false));
         assert_eq!(engine.apply(Command::Redo), Err("nothing to redo".into()));
 
@@ -638,7 +648,7 @@ mod tests {
     #[test]
     fn view_commands_do_not_touch_the_undo_history() {
         let mut engine = Engine::new();
-        engine.apply(Command::Load(dev::void())).unwrap();
+        engine.apply(Command::load(dev::void())).unwrap();
         engine.apply(Command::View(ViewCommand::Look { pane: 0, view: NamedView::Top })).unwrap();
         engine.apply(Command::Seek(3.0)).unwrap();
         engine.apply(Command::Select(Some(Target::Tower(2)))).unwrap();
@@ -658,13 +668,14 @@ mod tests {
             (Command::Select(Some(Target::Tower(6))), "there is no tower 6"),
             (Command::Select(Some(Target::Tower(0))), "there is no tower 0"),
             (Command::Select(Some(Target::Floor)), "the scene has no floor"),
+            (Command::Select(Some(Target::Body(1))), "the scene has no bodies"),
             (Command::Seek(f64::NAN), "must be finite"),
             (Command::View(ViewCommand::Panes(3)), "1, 2 or 4"),
             (Command::View(ViewCommand::Activate(1)), "not shown"),
             (Command::View(ViewCommand::Home { pane: 4 }), "no pane 5"),
             (Command::View(ViewCommand::Zoom { pane: 0, distance: -1.0 }), "positive"),
             (Command::View(ViewCommand::Orbit { pane: 0, yaw: f64::INFINITY, pitch: 0.0 }), "finite"),
-            (Command::Load(SceneSpec { duration: -1.0, ..SceneSpec::room() }), "duration"),
+            (Command::load(SceneSpec { duration: -1.0, ..SceneSpec::room() }), "duration"),
             (Command::Redo, "nothing to redo"),
         ];
         let mut engine = run(&[Command::Seek(2.0), Command::Select(Some(Target::Room))]);
@@ -679,7 +690,7 @@ mod tests {
         }
         let errors =
             engine.log().select(&LogFilter { min_level: Some(Level::Error), ..LogFilter::default() });
-        assert_eq!(errors.len(), 11);
+        assert_eq!(errors.len(), 12);
         // Control: the same kinds of command with acceptable values are applied.
         assert!(engine.apply(Command::Select(Some(Target::Tower(5)))).is_ok());
         assert!(engine.apply(Command::View(ViewCommand::Zoom { pane: 0, distance: 1.0 })).is_ok());
@@ -706,7 +717,7 @@ mod tests {
         engine.apply(Command::View(ViewCommand::Style { pane: 0, style: DrawStyle::Paper })).unwrap();
         engine.apply(Command::View(ViewCommand::Look { pane: 0, view: NamedView::North })).unwrap();
         engine.apply(Command::View(ViewCommand::Zoom { pane: 0, distance: 3.0 })).unwrap();
-        engine.apply(Command::Load(dev::void())).unwrap();
+        engine.apply(Command::load(dev::void())).unwrap();
         let view = engine.view(0);
         // The void is smaller than the room, so the framing distance shrinks; direction and style stay.
         assert_eq!(view.named(), Some(NamedView::North));

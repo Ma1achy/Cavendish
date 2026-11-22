@@ -1,0 +1,103 @@
+// Dev scene `oscillator-zoo` (REBUILD §9.1), written from its builder in crates/cav-sim/src/dev.rs; a test
+// holds the two together. Frame: metres, x east, y north, z up; seconds; angles in degrees.
+// `cav schema` describes every field.
+(
+    version: 1,
+    name: "oscillator-zoo",
+    description: "The oscillator library at the reference scripts\' parameters: a linear oscillator at 0.05 Hz, a circular one at 0.35625 Hz (above Nyquist, so its comb folds), a spherical pendulum of 14.5 m and forced motion on a sphere, each 1 kg and 3 m from the centre tower. For the comb and the folds.",
+    duration: 2000.0,
+    array: (
+        instrument: (
+            tower_height: 10.0,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+            atom_mass: 1.4431558652473234e-25,
+            gravity: 9.81,
+            launch_floor: true,
+            sign: LowerMinusUpper,
+        ),
+        towers: [
+            (
+                label: "tower 1",
+                position: (0.0, 0.0, 0.0),
+            ),
+            (
+                label: "tower 2",
+                position: (4.0, 0.0, 0.0),
+            ),
+            (
+                label: "tower 3",
+                position: (-4.0, 0.0, 0.0),
+            ),
+            (
+                label: "tower 4",
+                position: (0.0, 4.0, 0.0),
+            ),
+            (
+                label: "tower 5",
+                position: (0.0, -4.0, 0.0),
+            ),
+        ],
+    ),
+    room: None,
+    floor: None,
+    bodies: [
+        (
+            label: "linear",
+            mass: 1.0,
+            radius: 0.0,
+            motion: Linear(
+                centre: (3.0, 0.0, 1.0),
+                amplitude: (0.0, 0.0, 0.5),
+                frequency: 0.05,
+                phase: 0.0,
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "circular",
+            mass: 1.0,
+            radius: 0.0,
+            motion: Circular(
+                centre: (0.0, 3.0, 1.0),
+                u: (0.0, 0.5, 0.0),
+                v: (0.0, 0.0, 0.5),
+                frequency: 0.35625,
+                phase: 0.0,
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "pendulum",
+            mass: 1.0,
+            radius: 0.0,
+            motion: Pendulum(
+                pivot: (-3.0, 0.0, 15.5),
+                length: 14.5,
+                major: 0.5,
+                minor: 0.25,
+                azimuth: 0.0,
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "sphere",
+            mass: 1.0,
+            radius: 0.0,
+            motion: Sphere(
+                centre: (0.0, -3.0, 3.0),
+                radius: 2.0,
+                tilt: 20.0,
+                tilt_frequency: 0.02,
+                spin_frequency: 0.01,
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+    ],
+)

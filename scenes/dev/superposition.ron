@@ -1,0 +1,71 @@
+// Dev scene `superposition` (REBUILD §9.1), written from its builder in crates/cav-sim/src/dev.rs; a test
+// holds the two together. Frame: metres, x east, y north, z up; seconds; angles in degrees.
+// `cav schema` describes every field.
+(
+    version: 1,
+    name: "superposition",
+    description: "A, then B, then A + B: an oscillating mass and a mass at rest. Each tower\'s reading with both present is the sum of its readings with each alone, exactly, channel by channel.",
+    duration: 40.0,
+    array: (
+        instrument: (
+            tower_height: 10.0,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+            atom_mass: 1.4431558652473234e-25,
+            gravity: 9.81,
+            launch_floor: true,
+            sign: LowerMinusUpper,
+        ),
+        towers: [
+            (
+                label: "tower 1",
+                position: (0.0, 0.0, 0.0),
+            ),
+            (
+                label: "tower 2",
+                position: (4.0, 0.0, 0.0),
+            ),
+            (
+                label: "tower 3",
+                position: (-4.0, 0.0, 0.0),
+            ),
+            (
+                label: "tower 4",
+                position: (0.0, 4.0, 0.0),
+            ),
+            (
+                label: "tower 5",
+                position: (0.0, -4.0, 0.0),
+            ),
+        ],
+    ),
+    room: None,
+    floor: None,
+    bodies: [
+        (
+            label: "a",
+            mass: 1.0,
+            radius: 0.0,
+            motion: Linear(
+                centre: (5.0, 0.0, 1.0),
+                amplitude: (0.0, 0.0, 1.0),
+                frequency: 0.1,
+                phase: 0.0,
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "b",
+            mass: 25.0,
+            radius: 0.0,
+            motion: Static(
+                position: (-2.0, 3.0, 4.0),
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+    ],
+)

@@ -1,0 +1,61 @@
+// Dev scene `through-the-tower` (REBUILD §9.1), written from its builder in crates/cav-sim/src/dev.rs; a test
+// holds the two together. Frame: metres, x east, y north, z up; seconds; angles in degrees.
+// `cav schema` describes every field.
+(
+    version: 1,
+    name: "through-the-tower",
+    description: "A 70 kg sphere of radius 0.3 m crossing the array along y = 0 at 2 m up, straight through the atoms\' paths of towers 3, 1 and 2. A sphere\'s potential is finite inside it, so every reading is finite; the engine warns that a body is inside a flight.",
+    duration: 14.0,
+    array: (
+        instrument: (
+            tower_height: 10.0,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+            atom_mass: 1.4431558652473234e-25,
+            gravity: 9.81,
+            launch_floor: true,
+            sign: LowerMinusUpper,
+        ),
+        towers: [
+            (
+                label: "tower 1",
+                position: (0.0, 0.0, 0.0),
+            ),
+            (
+                label: "tower 2",
+                position: (4.0, 0.0, 0.0),
+            ),
+            (
+                label: "tower 3",
+                position: (-4.0, 0.0, 0.0),
+            ),
+            (
+                label: "tower 4",
+                position: (0.0, 4.0, 0.0),
+            ),
+            (
+                label: "tower 5",
+                position: (0.0, -4.0, 0.0),
+            ),
+        ],
+    ),
+    room: None,
+    floor: None,
+    bodies: [
+        (
+            label: "ball",
+            mass: 70.0,
+            radius: 0.3,
+            motion: Pass(
+                from: (-6.0, 0.0, 2.0),
+                to: (6.0, 0.0, 2.0),
+                start: 0.0,
+                speed: 1.0,
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+    ],
+)

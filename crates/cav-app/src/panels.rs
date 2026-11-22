@@ -414,7 +414,13 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     let spec = shell.engine.spec().clone();
 
     heading(ui, "Sources");
-    ui.label(RichText::new("none yet · the first mass arrives with S1").size(11.5).color(theme::WEAK));
+    for (n, body) in spec.bodies.iter().enumerate() {
+        let detail = format!("{} kg · {}", body.mass, body.motion.kind());
+        outline_row(shell, ui, Target::Body(n + 1), theme::GOLD, &body.label, &detail);
+    }
+    if spec.bodies.is_empty() {
+        ui.label(RichText::new("none · `load point` has one").size(11.5).color(theme::WEAK));
+    }
 
     heading(ui, "Array");
     for (n, tower) in spec.array.towers.iter().enumerate() {
@@ -542,6 +548,7 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
         }
         Some(Target::Room) => ("Room".to_owned(), "room".to_owned()),
         Some(Target::Floor) => ("Floor".to_owned(), "floor".to_owned()),
+        Some(Target::Body(n)) => (spec.bodies[n - 1].label.clone(), format!("bodies[{}]", n - 1)),
     };
     ui.horizontal(|ui| {
         ui.label(RichText::new("Properties").color(theme::STRONG).strong());
@@ -625,6 +632,32 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
                     .color(theme::WEAK),
             );
         }
+        Some(Target::Body(n)) => {
+            let body = &spec.bodies[n - 1];
+            let [x, y, z] = body.motion.position(shell.engine.time(), instrument.gravity);
+            let exists = match (body.appears, body.vanishes) {
+                (None, None) => "always".to_owned(),
+                (from, until) => format!(
+                    "{} to {}",
+                    from.map_or("the start".to_owned(), |t| format!("{t} s")),
+                    until.map_or("the end".to_owned(), |t| format!("{t} s"))
+                ),
+            };
+            rows(
+                ui,
+                "body",
+                &[
+                    ("mass", format!("{} kg", body.mass)),
+                    (
+                        "radius",
+                        if body.radius > 0.0 { format!("{} m", body.radius) } else { "a point".into() },
+                    ),
+                    ("motion", body.motion.kind().to_owned()),
+                    ("now at", format!("{x:.3}, {y:.3}, {z:.3} m")),
+                    ("exists", exists),
+                ],
+            );
+        }
     }
 
     heading(ui, "Instrument · shared by every tower");
@@ -681,6 +714,7 @@ fn header(shell: &mut Shell, ui: &mut egui::Ui) {
                 Target::Tower(n) => shell.engine.spec().array.towers[n - 1].label.clone(),
                 Target::Room => "room".into(),
                 Target::Floor => "floor".into(),
+                Target::Body(n) => shell.engine.spec().bodies[n - 1].label.clone(),
             };
             badge(ui, format!("selected: {text}"), theme::STRONG);
         }

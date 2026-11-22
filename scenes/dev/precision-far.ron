@@ -1,0 +1,61 @@
+// Dev scene `precision-far` (REBUILD §9.1), written from its builder in crates/cav-sim/src/dev.rs; a test
+// holds the two together. Frame: metres, x east, y north, z up; seconds; angles in degrees.
+// `cav schema` describes every field.
+(
+    version: 1,
+    name: "precision-far",
+    description: "The oscillation anchor and the array 10 km from the origin. Positions are turned into offsets from each tower before anything is computed, so every tower reads what it reads at the origin.",
+    duration: 40.0,
+    array: (
+        instrument: (
+            tower_height: 10.0,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+            atom_mass: 1.4431558652473234e-25,
+            gravity: 9.81,
+            launch_floor: true,
+            sign: LowerMinusUpper,
+        ),
+        towers: [
+            (
+                label: "tower 1",
+                position: (10000.3, -7000.7, 300.1),
+            ),
+            (
+                label: "tower 2",
+                position: (10004.3, -7000.7, 300.1),
+            ),
+            (
+                label: "tower 3",
+                position: (9996.3, -7000.7, 300.1),
+            ),
+            (
+                label: "tower 4",
+                position: (10000.3, -6996.7, 300.1),
+            ),
+            (
+                label: "tower 5",
+                position: (10000.3, -7004.7, 300.1),
+            ),
+        ],
+    ),
+    room: None,
+    floor: None,
+    bodies: [
+        (
+            label: "oscillator",
+            mass: 1.0,
+            radius: 0.0,
+            motion: Linear(
+                centre: (10005.599999999999, -7000.3, 301.1),
+                amplitude: (0.0, 0.0, 1.0),
+                frequency: 0.1,
+                phase: 0.0,
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+    ],
+)
