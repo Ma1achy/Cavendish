@@ -152,6 +152,32 @@ validation report; convergence cases state their expected order.
 | `response_map_superposes` | the first-order response map × a temperature field = the full read, for small ΔT; the error grows as ΔT² | exact to first order |
 | `expanding_wall_phase` | a wall warmed on one face: phase from the displaced-body read = phase from re-voxelising the expanded wall | the engine's own two paths |
 
+### 2.6 Beyond the scene (S14–S16; added by the owner, 22 Nov 2026)
+
+References are named here from memory; the research notes (`docs/research/s14-wider-world.md`,
+`s15-instruments-anywhere.md`) find the primary sources and the numbers, and strike what does not
+hold, before any row is used. Tolerances are written in the slice brief before measuring.
+
+| Test | Asserts | Against |
+|---|---|---|
+| `globe_equals_origin` | the same local scene at the origin and at a real latitude and longitude on the rotating Earth reads the same phase | exact, to the §3.4 tolerance |
+| `tidal_gradient_closed_form` | the Moon's and the Sun's gradient tensor at the site from their positions | closed form |
+| `tides_match_prediction` | a month of body tide at a site | standard tidal prediction software and an open superconducting-gravimeter record |
+| `pressure_admittance` | gravity change per unit of surface pressure for a uniform atmosphere layer | closed form (Bouguer plate) and the published gravimeter admittance |
+| `cloud_is_a_point_far_away` | a parametric cloud against a point mass of its mass at range | the engine's own point kernel |
+| `far_source_hands_over` | a mass crossing from the far-field layer into the voxel scene | no step in any channel |
+| `seismic_newtonian_noise_spectrum` | Rayleigh-wave Newtonian noise for a given ground spectrum | the published half-space formula used for atom and laser interferometers |
+| `prompt_gravity_signal` | the pre-arrival gravity signal of a great earthquake | the published Tohoku analysis |
+| `distant_nulls` | a tsunami far from the coast, the space station, Jupiter: under a stated bound | closed-form bounds |
+| `coriolis_and_sagnac_phase` | the rotation terms of the atoms' phase | the published atom-interferometer phase terms |
+| `per_tower_instruments` | an array of unequal towers equals each tower simulated alone | exact |
+| `vertical_case_unchanged` | the general-axis model on a vertical baseline | the S1 model, to the bit |
+| `horizontal_baseline_tensor` | a horizontal gradiometer beside a point mass reads the horizontal gradient component | closed form |
+| `local_gravity_from_field_model` | g and its vertical gradient at a site | normal gravity formula; the field model's own test values |
+| `orbit_gradient_tensor` | the gradient tensor along a circular orbit for a point-mass Earth, then with J2, then the full model | closed forms; published GOCE gradients |
+| `injection_recovered` | a gravitational-wave or dark-matter signal injected into a quiet world is recovered at the published sensitivity | the instrument proposals' sensitivity curves |
+| `two_sites_reject_local_noise` | correlation of two sites with independent local noise | the predicted 1/√N and common-mode factors |
+
 ## 3. Features these sources suggest
 
 1. **An analysis layer in the engine, not only in Python:** Lomb–Scargle (exact and NUFFT-accelerated),
@@ -222,3 +248,4 @@ noise models; the Beecroft site measurements.
 - **S13** (heat everywhere, `REBUILD.md` §9.2) takes the rest of §2.5: conduction, radiation, conjugate
   transfer, expansion and the instrument cases. Its research note comes first: methods, the exact
   reference numbers and their sources, and which published water benchmark to use.
+- **S14–S16** (beyond the scene, `REBUILD.md` §9.3) take §2.6, each after its research note.

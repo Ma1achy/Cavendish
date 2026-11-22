@@ -29,3 +29,13 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **An off-axis finite floor** (elliptic integrals or the prism kernel), so that the edge-term convergence is a scene and not a single tower on a disc's axis. S3.
 - **`SignalReply` values as `Option<f64>`**, so that a half-space's infinite single-interferometer channels survive JSON. S2.
 - **The source's own time resolution in the script-parity cases**: `fig2_10m` b, c, d sit at 82% to 92% of their tolerance; a convergence case like the 100 m one would say whose error that is.
+
+## From the owner's brainstorm (22 Nov 2026), not yet in a slice
+- **What is underground**: tunnels, caves, sewers, water mains with flow, tube trains; and the inverse problem, finding a void from the array. After S3 (voxel bodies) and S11 (baselines).
+- **A building that lives**: lifts, tanks filling, air handling, occupancy by hour, a car park, a crowd leaving a stadium. S6 and S12.
+- **Wind on things**: trees and buildings swaying, turbines, a thunderstorm. After S7's modal structure and S14's weather.
+- **The slow Earth**: seasons, sea level, a landslide, magma under a volcano. After S14.
+- **Live feeds**: open flight, ship, train-timetable and road-traffic data driving the scene around a site. After S6 and S14's replay.
+- **A simulated year** as the long test set for Gradar and the cadence studies. S11 and S14.
+- **Nulls for show**: the space station, Jupiter, a passing asteroid read zero, convincingly; useful for outreach. S14's `distant_nulls`.
+- **Phase change, humidity, combustion** in the thermal model. After S13.
