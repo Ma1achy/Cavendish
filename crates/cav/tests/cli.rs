@@ -31,7 +31,10 @@ fn cli_lists_the_dev_scenes() {
     assert!(out.status.success(), "{}", stderr(&out));
     let text = stdout(&out);
     let names: Vec<&str> = text.lines().filter_map(|l| l.split_whitespace().next()).collect();
-    assert_eq!(names, ["room", "void", "infinite-floor"]);
+    assert_eq!(names[..5], ["room", "void", "infinite-floor", "point", "pass"]);
+    // Every line is a name, a gap and a path: the longest name (17 letters) once ran into its path.
+    assert_eq!(names.len(), 14);
+    assert!(names.contains(&"through-the-tower") && text.contains("through-the-tower  scenes/dev/"));
     assert!(text.contains("scenes/dev/void.ron") && text.contains("scenes/dev/infinite-floor.ron"));
 }
 
@@ -110,7 +113,7 @@ fn cli_refuses_an_unknown_scene() {
     let out = cav(&["render", "no-such-scene", "--out", path.to_str().unwrap()]);
     assert!(!out.status.success());
     let why = stderr(&out);
-    assert!(why.contains("no-such-scene") && why.contains("room, void, infinite-floor"), "{why}");
+    assert!(why.contains("no-such-scene") && why.contains("room, void, infinite-floor, point"), "{why}");
     assert!(!path.exists(), "nothing is written on failure");
 }
 

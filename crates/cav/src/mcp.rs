@@ -26,7 +26,7 @@ pub struct Cav {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct SceneLoadArgs {
-    /// A library scene name (`room`, `void`, `infinite-floor`), or the path of a `.ron` scene file.
+    /// A library scene name (`room`, `void`, `point`, `pass`, `oscillator-zoo` and the others `cav scenes` lists), or the path of a `.ron` scene file.
     pub scene: String,
 }
 

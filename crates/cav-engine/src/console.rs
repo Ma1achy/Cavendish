@@ -55,7 +55,7 @@ pub const COMMANDS: &[CommandDoc] = &[
     CommandDoc { name: "redo", usage: "redo", about: "reapply the edit last taken back", example: "redo" },
     CommandDoc {
         name: "select",
-        usage: "select <tower N|room|floor|none>",
+        usage: "select <tower N|body N|room|floor|none>",
         about: "select something, or nothing",
         example: "select tower 3",
     },
@@ -138,7 +138,7 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
             // would load something else.
             let library =
                 LIBRARY.iter().find(|s| s.name == spec.name).and_then(|s| SceneSpec::from_ron(s.ron).ok());
-            if library.as_ref() == Some(spec) {
+            if library.as_ref() == Some(&**spec) {
                 format!("load {}", spec.name)
             } else {
                 format!("load <the scene `{}`, not a library scene: load it from its file>", spec.name)
@@ -149,6 +149,7 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
         Command::Select(Some(Target::Tower(n))) => format!("select tower {n}"),
         Command::Select(Some(Target::Room)) => "select room".into(),
         Command::Select(Some(Target::Floor)) => "select floor".into(),
+        Command::Select(Some(Target::Body(n))) => format!("select body {n}"),
         Command::Undo => "undo".into(),
         Command::Redo => "redo".into(),
         Command::View(view) => match *view {
@@ -276,13 +277,17 @@ impl Engine {
             ("help", [topic]) => Ok(Request::Help(Some((*topic).to_owned()))),
             ("scenes", []) => Ok(Request::Scenes),
             ("load", [scene]) => {
-                cav_sim::load(scene).map(|spec| Request::Do(Command::Load(spec))).map_err(|e| e.0)
+                cav_sim::load(scene).map(|spec| Request::Do(Command::load(spec))).map_err(|e| e.0)
             }
             ("undo", []) => Ok(Request::Do(Command::Undo)),
             ("redo", []) => Ok(Request::Do(Command::Redo)),
             ("select", ["none"]) => Ok(Request::Do(Command::Select(None))),
             ("select", ["room"]) => Ok(Request::Do(Command::Select(Some(Target::Room)))),
             ("select", ["floor"]) => Ok(Request::Do(Command::Select(Some(Target::Floor)))),
+            ("select", ["body", n]) => {
+                let n = n.parse().map_err(|_| format!("`{n}` is not a body number; {}", usage(name)))?;
+                Ok(Request::Do(Command::Select(Some(Target::Body(n)))))
+            }
             ("select", ["tower", n]) => {
                 let n = n.parse().map_err(|_| format!("`{n}` is not a tower number; {}", usage(name)))?;
                 Ok(Request::Do(Command::Select(Some(Target::Tower(n)))))
@@ -389,7 +394,11 @@ impl Engine {
                     why
                 }),
             Request::Scenes => {
-                Ok(LIBRARY.iter().map(|s| format!("{:<16}{}", s.name, s.path)).collect::<Vec<_>>().join("\n"))
+                // Two columns, the first as wide as the longest name and two spaces more.
+                let width = LIBRARY.iter().map(|s| s.name.len()).max().unwrap_or(0) + 2;
+                let lines: Vec<String> =
+                    LIBRARY.iter().map(|s| format!("{:<width$}{}", s.name, s.path)).collect();
+                Ok(lines.join("\n"))
             }
         }
     }
@@ -454,13 +463,14 @@ mod tests {
     fn console_lines_parse_to_the_same_commands() {
         // Each row: the line a person types, and the command a button issues.
         let rows: Vec<(&str, Command)> = vec![
-            ("load void", Command::Load(dev::void())),
-            ("load infinite-floor", Command::Load(dev::infinite_floor())),
+            ("load void", Command::load(dev::void())),
+            ("load infinite-floor", Command::load(dev::infinite_floor())),
             ("undo", Command::Undo),
             ("redo", Command::Redo),
             ("select tower 3", Command::Select(Some(Target::Tower(3)))),
             ("select room", Command::Select(Some(Target::Room))),
             ("select floor", Command::Select(Some(Target::Floor))),
+            ("select body 2", Command::Select(Some(Target::Body(2)))),
             ("select none", Command::Select(None)),
             ("seek 4.2", Command::Seek(4.2)),
             ("view top", Command::View(ViewCommand::Look { pane: 0, view: NamedView::Top })),
@@ -536,12 +546,13 @@ mod tests {
             ("view", "usage: view"),
             ("seek soon", "`soon` is not a number (seconds)"),
             ("select tower three", "not a tower number"),
+            ("select body one", "not a body number"),
             ("panes many", "usage: panes <1|2|4>"),
             ("style x-ray", "usage: style <shaded|flat|xray|wireframe|paper>"),
             ("proj fisheye", "usage: proj <persp|ortho|toggle>"),
             ("view top @0", "counted from 1"),
             ("view top @two", "addressed as @1"),
-            ("load nowhere", "not a library scene (room, void, infinite-floor)"),
+            ("load nowhere", "not a library scene (room, void, infinite-floor, point, pass,"),
             ("get array.nothing", "has no field `nothing`"),
             ("help frobnicate", "not a command"),
         ];
@@ -634,15 +645,15 @@ mod tests {
     #[test]
     fn the_log_does_not_offer_a_line_that_would_load_another_scene() {
         // A library scene: the described line loads it again.
-        assert_eq!(describe(&Command::Load(dev::void()), 0), "load void");
+        assert_eq!(describe(&Command::load(dev::void()), 0), "load void");
         // A scene that only shares a library name, or has none: no such line exists, and none is given.
         let mut edited = dev::void();
         edited.duration = 30.0;
-        let described = describe(&Command::Load(edited.clone()), 0);
+        let described = describe(&Command::load(edited.clone()), 0);
         assert!(described.contains("not a library scene"), "{described}");
-        assert_ne!(Engine::new().parse(&described), Ok(Request::Do(Command::Load(edited))));
+        assert_ne!(Engine::new().parse(&described), Ok(Request::Do(Command::load(edited))));
         let mut named = dev::void();
         named.name = "mine".into();
-        assert!(describe(&Command::Load(named), 0).contains("`mine`, not a library scene"));
+        assert!(describe(&Command::load(named), 0).contains("`mine`, not a library scene"));
     }
 }

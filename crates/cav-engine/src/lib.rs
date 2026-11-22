@@ -34,7 +34,7 @@ mod tests {
     #[test]
     fn commands_and_queries_round_trip_through_json() {
         let commands = vec![
-            Command::Load(SceneSpec::room()),
+            Command::load(SceneSpec::room()),
             Command::Seek(0.1 + 0.2),
             Command::Select(Some(Target::Tower(4))),
             Command::Select(None),

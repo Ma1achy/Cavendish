@@ -25,6 +25,17 @@ pub const LIBRARY: &[LibraryScene] = &[
     scene!("room", "scenes/library/room.ron"),
     scene!("void", "scenes/dev/void.ron"),
     scene!("infinite-floor", "scenes/dev/infinite-floor.ron"),
+    scene!("point", "scenes/dev/point.ron"),
+    scene!("pass", "scenes/dev/pass.ron"),
+    scene!("oscillator-zoo", "scenes/dev/oscillator-zoo.ron"),
+    scene!("superposition", "scenes/dev/superposition.ron"),
+    scene!("mirror-pair", "scenes/dev/mirror-pair.ron"),
+    scene!("switch-on", "scenes/dev/switch-on.ron"),
+    scene!("flash", "scenes/dev/flash.ron"),
+    scene!("time-reversal", "scenes/dev/time-reversal.ron"),
+    scene!("ring-orbit", "scenes/dev/ring-orbit.ron"),
+    scene!("through-the-tower", "scenes/dev/through-the-tower.ron"),
+    scene!("precision-far", "scenes/dev/precision-far.ron"),
 ];
 
 /// Loads a scene by library name, or else from a `.ron` file at that path.

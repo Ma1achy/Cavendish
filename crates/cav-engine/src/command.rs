@@ -15,8 +15,9 @@ pub const MAX_PANES: usize = 4;
 /// Something that changes the engine's state. Every applied command is journalled and logged.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub enum Command {
-    /// Replace the scene. An edit: it can be undone.
-    Load(SceneSpec),
+    /// Replace the scene. An edit: it can be undone. (Boxed: a scene is far larger than any
+    /// other command.)
+    Load(Box<SceneSpec>),
     /// Move the playhead to this time, seconds; clamped to the scene's duration.
     Seek(f64),
     /// Select something, or nothing.
@@ -71,6 +72,12 @@ impl ViewCommand {
 }
 
 impl Command {
+    /// The command that replaces the scene with `spec`.
+    #[must_use]
+    pub fn load(spec: SceneSpec) -> Self {
+        Self::Load(Box::new(spec))
+    }
+
     /// Whether this command, arriving straight after `previous`, simply overwrites what `previous`
     /// set. Such runs (a scrub, a drag) are kept as one journal entry: the last.
     #[must_use]
@@ -129,6 +136,8 @@ pub struct Stats {
     pub scene: String,
     /// Number of towers.
     pub towers: usize,
+    /// Number of bodies.
+    pub bodies: usize,
     /// Whether the scene has a room.
     pub room: bool,
     /// Whether the scene has a floor.

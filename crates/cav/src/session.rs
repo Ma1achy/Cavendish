@@ -39,7 +39,7 @@ impl Session {
     /// When the scene cannot be found or read, or the engine refuses it.
     pub fn load(&mut self, scene: &str) -> Result<(), String> {
         match cav_sim::load(scene) {
-            Ok(spec) => self.engine.apply(cav_engine::Command::Load(spec)),
+            Ok(spec) => self.engine.apply(cav_engine::Command::load(spec)),
             Err(why) => {
                 // A scene that cannot be read is a refusal like any other: it goes in the log.
                 self.engine.note(cav_engine::Level::Error, cav_engine::Subsystem::Engine, why.0.clone());

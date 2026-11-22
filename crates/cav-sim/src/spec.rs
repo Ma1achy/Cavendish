@@ -10,6 +10,8 @@ use cav_core::defaults;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::motion::Motion;
+
 /// The ranges a spec must stay within. They are wide (a thousand kilometres, a kilometre of tower)
 /// and they are finite, so that nothing downstream has to cope with a number chosen to break it:
 /// a renderer's loop over a room's metres, a timeline's loop over shots.
@@ -32,6 +34,22 @@ pub mod limits {
     pub const LAUNCH_VELOCITY: f64 = 1.0e4;
     /// The densest floor, kilograms per cubic metre.
     pub const DENSITY: f64 = 1.0e5;
+    /// The most bodies in a scene.
+    pub const BODIES: usize = 1000;
+    /// The heaviest body, kilograms.
+    pub const MASS: f64 = 1.0e12;
+    /// The largest sphere, metres.
+    pub const RADIUS: f64 = 1.0e3;
+    /// The fastest pass, metres per second.
+    pub const SPEED: f64 = 1.0e4;
+    /// The highest frequency of an oscillator, hertz.
+    pub const FREQUENCY: f64 = 1.0e3;
+    /// The largest angle written in a spec, degrees either way.
+    pub const ANGLE: f64 = 3.6e5;
+    /// The atom's mass, kilograms: from a hydrogen atom to well past any atom there is.
+    pub const ATOM_MASS: (f64, f64) = (1.0e-27, 1.0e-24);
+    /// Local gravity, metres per second squared.
+    pub const GRAVITY: (f64, f64) = (0.1, 100.0);
 }
 
 /// The version of the spec format this build reads and writes.
@@ -54,8 +72,12 @@ pub struct SceneSpec {
     pub array: ArraySpec,
     /// The room around the array, or none for an open scene.
     pub room: Option<RoomSpec>,
-    /// A floor under the array that extends to the horizon, or none.
+    /// A floor under the array that extends to the horizon, or none. Its top lies at or below
+    /// every tower's base: in S1 the floor is an analytic slab, and the atoms fly above it.
     pub floor: Option<FloorSpec>,
+    /// The bodies: point masses and uniform spheres, each on its path. At most 1000.
+    #[serde(default)]
+    pub bodies: Vec<BodySpec>,
 }
 
 /// The array of gradiometer towers.
@@ -88,6 +110,67 @@ pub struct InstrumentSpec {
     /// Time between shots of one tower, seconds. More than a shot: `cycle` > 2 × `half_sequence`.
     #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0))]
     pub cycle: f64,
+    /// The atom's mass, kilograms. The default is ⁸⁷Sr, 1.443 155 87e-25 kg.
+    #[serde(default = "default_atom_mass")]
+    #[schemars(range(min = 1.0e-27, max = 1.0e-24))]
+    pub atom_mass: f64,
+    /// Local gravity, metres per second squared. The default is 9.81.
+    #[serde(default = "default_gravity")]
+    #[schemars(range(min = 0.1, max = 100.0))]
+    pub gravity: f64,
+    /// Whether an arm that falls back to its launch height stops there and waits (for the kick at
+    /// T, or for the next sequence). The default is true.
+    #[serde(default = "default_launch_floor")]
+    pub launch_floor: bool,
+    /// Which way round the two interferometers are differenced. The default is lower minus upper.
+    #[serde(default)]
+    pub sign: SignSpec,
+}
+
+fn default_atom_mass() -> f64 {
+    cav_core::constants::SR87_MASS
+}
+
+fn default_gravity() -> f64 {
+    cav_core::constants::LOCAL_GRAVITY
+}
+
+const fn default_launch_floor() -> bool {
+    true
+}
+
+/// Which way round a tower's two interferometers are differenced. Interferometer 1 is the lower one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+pub enum SignSpec {
+    /// ΔΦ = δφ₁ − δφ₂: the lower interferometer minus the upper.
+    #[default]
+    LowerMinusUpper,
+    /// ΔΦ = δφ₂ − δφ₁: the upper minus the lower, as v1 had it.
+    UpperMinusLower,
+}
+
+/// A body: a point mass, or a uniform sphere, on a path.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BodySpec {
+    /// Name shown in the outliner; no two bodies share one.
+    pub label: String,
+    /// Kilograms.
+    #[schemars(range(max = 1.0e12), extend("exclusiveMinimum" = 0.0))]
+    pub mass: f64,
+    /// The radius of the sphere, metres; zero (the default) for a point. A sphere is a point
+    /// outside itself and may cross an atom's path, where a point may not.
+    #[serde(default)]
+    #[schemars(range(min = 0.0, max = 1.0e3))]
+    pub radius: f64,
+    /// How it moves.
+    pub motion: Motion,
+    /// When it comes into being, seconds; from the start if absent.
+    #[serde(default)]
+    pub appears: Option<f64>,
+    /// When it ceases to be, seconds; never if absent. Later than `appears`.
+    #[serde(default)]
+    pub vanishes: Option<f64>,
 }
 
 /// One tower's placement.
@@ -146,6 +229,8 @@ pub enum Target {
     Room,
     /// The floor.
     Floor,
+    /// A body, counted from 1 as on screen.
+    Body(usize),
 }
 
 /// Why a spec was refused.
@@ -169,7 +254,52 @@ impl Default for InstrumentSpec {
             half_sequence: defaults::HALF_SEQUENCE,
             launch_velocity: defaults::LAUNCH_VELOCITY,
             cycle: defaults::CYCLE,
+            atom_mass: default_atom_mass(),
+            gravity: default_gravity(),
+            launch_floor: default_launch_floor(),
+            sign: SignSpec::default(),
         }
+    }
+}
+
+impl InstrumentSpec {
+    /// The instrument as the forward model takes it: this spec's geometry, atom, gravity, floor
+    /// and sign, with the engine's constants and quadrature.
+    #[must_use]
+    pub fn instrument(&self) -> cav_core::forward::Instrument {
+        cav_core::forward::Instrument {
+            ifo_separation: self.ifo_separation,
+            half_sequence: self.half_sequence,
+            launch_velocity: self.launch_velocity,
+            gravity: self.gravity,
+            atom_mass: self.atom_mass,
+            floor: self.launch_floor,
+            sign: match self.sign {
+                SignSpec::LowerMinusUpper => cav_core::forward::Sign::LowerMinusUpper,
+                SignSpec::UpperMinusLower => cav_core::forward::Sign::UpperMinusLower,
+            },
+            ..cav_core::forward::Instrument::aion10()
+        }
+    }
+}
+
+impl BodySpec {
+    /// A point mass at rest.
+    #[must_use]
+    pub fn point(label: &str, mass: f64, position: [f64; 3]) -> Self {
+        Self::moving(label, mass, Motion::Static { position })
+    }
+
+    /// A point mass on a path, there for the whole timeline.
+    #[must_use]
+    pub fn moving(label: &str, mass: f64, motion: Motion) -> Self {
+        Self { label: label.to_owned(), mass, radius: 0.0, motion, appears: None, vanishes: None }
+    }
+
+    /// When the body exists: from the first time up to the second, seconds.
+    #[must_use]
+    pub fn exists(&self) -> (f64, f64) {
+        (self.appears.unwrap_or(f64::NEG_INFINITY), self.vanishes.unwrap_or(f64::INFINITY))
     }
 }
 
@@ -197,6 +327,7 @@ impl SceneSpec {
             array: ArraySpec::default(),
             room: Some(RoomSpec { origin: defaults::ROOM_ORIGIN, size: defaults::ROOM_SIZE }),
             floor: None,
+            bodies: Vec::new(),
         }
     }
 
@@ -313,6 +444,41 @@ impl SceneSpec {
             if let FloorKind::Slab { thickness } = floor.kind {
                 positive("floor.kind.Slab.thickness", thickness, limits::POSITION)?;
             }
+            // The floor is an analytic slab whose field is uniform above it and only there.
+            if let Some(tower) = self.array.towers.iter().find(|t| t.position[2] < floor.height) {
+                return fail(format!(
+                    "floor.height: {} m is above the base of `{}` ({} m); the floor lies at or below every \
+                     tower's base",
+                    floor.height, tower.label, tower.position[2]
+                ));
+            }
+        }
+        within("array.instrument.atom_mass", i.atom_mass, limits::ATOM_MASS)?;
+        within("array.instrument.gravity", i.gravity, limits::GRAVITY)?;
+        if self.bodies.len() > limits::BODIES {
+            return fail(format!("bodies: {} bodies is more than {}", self.bodies.len(), limits::BODIES));
+        }
+        for (n, body) in self.bodies.iter().enumerate() {
+            let at = format!("bodies[{n}]");
+            if body.label.trim().is_empty() {
+                return fail(format!("{at}.label: must not be empty"));
+            }
+            if self.bodies[..n].iter().any(|b| b.label == body.label) {
+                return fail(format!("{at}.label: `{}` is used twice", body.label));
+            }
+            positive(&format!("{at}.mass"), body.mass, limits::MASS)?;
+            within(&format!("{at}.radius"), body.radius, (0.0, limits::RADIUS))?;
+            body.motion.validate(&format!("{at}.motion")).map_err(SpecError)?;
+            for (name, time) in [("appears", body.appears), ("vanishes", body.vanishes)] {
+                if let Some(time) = time {
+                    within(&format!("{at}.{name}"), time, (-limits::DURATION, limits::DURATION))?;
+                }
+            }
+            if let (Some(appears), Some(vanishes)) = (body.appears, body.vanishes)
+                && vanishes <= appears
+            {
+                return fail(format!("{at}.vanishes: {vanishes} s is not later than `appears`, {appears} s"));
+            }
         }
         Ok(())
     }
@@ -341,6 +507,13 @@ impl SceneSpec {
                 room.origin[2] + room.size[2],
             ]);
         }
+        // Each body where it is at nine times along the timeline: enough to hold a pass or an orbit.
+        for body in &self.bodies {
+            for step in 0..=8 {
+                let time = self.duration * f64::from(step) / 8.0;
+                include(body.motion.position(time, self.array.instrument.gravity));
+            }
+        }
         (lo, hi)
     }
 }
@@ -350,6 +523,14 @@ fn positive(path: &str, value: f64, most: f64) -> Result<(), SpecError> {
         Ok(())
     } else {
         Err(SpecError(format!("{path}: {value} must be a positive number, at most {most}")))
+    }
+}
+
+fn within(path: &str, value: f64, (least, most): (f64, f64)) -> Result<(), SpecError> {
+    if value.is_finite() && value >= least && value <= most {
+        Ok(())
+    } else {
+        Err(SpecError(format!("{path}: {value} must be at least {least} and at most {most}")))
     }
 }
 
@@ -398,6 +579,95 @@ mod tests {
             SceneSpec::from_ron(&nudged.to_ron()).unwrap().duration.to_bits(),
             nudged.duration.to_bits()
         );
+    }
+
+    #[test]
+    fn bodies_round_trip_and_are_validated() {
+        use crate::dev;
+        // Every kind of motion, a sphere and a body that comes and goes, through both forms.
+        let mut spec = dev::oscillator_zoo();
+        spec.bodies.extend(dev::pass().bodies);
+        spec.bodies.extend(dev::flash().bodies);
+        spec.bodies[5].label = "flash".into();
+        spec.bodies[5].radius = 1.0 / 3.0;
+        spec.array.instrument.sign = SignSpec::UpperMinusLower;
+        spec.array.instrument.launch_floor = false;
+        assert_eq!(spec.validate(), Ok(()));
+        assert_eq!(SceneSpec::from_ron(&spec.to_ron()).unwrap(), spec);
+        assert_eq!(SceneSpec::from_json(&spec.to_json()).unwrap(), spec);
+        // A file from S0, with no bodies and no word about the atom, loads with George's defaults.
+        let old = SceneSpec::room()
+            .to_ron()
+            .lines()
+            .filter(|l| {
+                !["atom_mass", "gravity", "launch_floor", "sign", "bodies"].iter().any(|f| l.contains(f))
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!old.contains("bodies") && !old.contains("atom_mass"));
+        let loaded = SceneSpec::from_ron(&old).unwrap();
+        assert_eq!(loaded, SceneSpec::room());
+        assert_eq!(loaded.array.instrument.atom_mass, cav_core::constants::SR87_MASS);
+        assert!(loaded.array.instrument.launch_floor && loaded.bodies.is_empty());
+        // Refusals name the field.
+        type Break = fn(&mut SceneSpec);
+        let cases: [(&str, Break); 9] = [
+            ("bodies[1].label", |s| s.bodies[1].label = "linear".into()),
+            ("bodies[0].label", |s| s.bodies[0].label = " ".into()),
+            ("bodies[0].mass", |s| s.bodies[0].mass = 0.0),
+            ("bodies[2].radius", |s| s.bodies[2].radius = -0.1),
+            ("bodies[5].vanishes", |s| s.bodies[5].vanishes = Some(4.5)),
+            ("bodies[5].appears", |s| s.bodies[5].appears = Some(f64::NAN)),
+            ("bodies[0].motion.Linear.frequency", |s| {
+                if let Motion::Linear { frequency, .. } = &mut s.bodies[0].motion {
+                    *frequency = 1e9;
+                }
+            }),
+            ("array.instrument.atom_mass", |s| s.array.instrument.atom_mass = 1.0),
+            ("floor.height", |s| {
+                s.floor = Some(FloorSpec { height: 0.5, kind: FloorKind::HalfSpace, density: 2400.0 });
+            }),
+        ];
+        for (field, break_it) in cases {
+            let mut broken = spec.clone();
+            break_it(&mut broken);
+            let why = broken.validate().expect_err(field).0;
+            assert!(why.starts_with(field), "`{why}` should name `{field}`");
+        }
+        // The schema describes a body and the atom.
+        let schema = SceneSpec::schema().to_string();
+        for name in ["bodies", "BodySpec", "Motion", "Pendulum", "atom_mass", "launch_floor", "SignSpec"] {
+            assert!(schema.contains(&format!("\"{name}\"")), "the schema does not mention `{name}`");
+        }
+        // The bounds hold a body's path: the pass ends 15 m up, well above the towers.
+        assert_eq!(dev::pass().bounds().1[2], 15.0);
+    }
+
+    #[test]
+    fn the_spec_gives_the_forward_model_its_instrument() {
+        use cav_core::forward::{Instrument, Sign};
+        // The default spec is the engine's default instrument: George's answers.
+        assert_eq!(InstrumentSpec::default().instrument(), Instrument::aion10());
+        let spec = InstrumentSpec {
+            ifo_separation: 70.0,
+            half_sequence: 2.5,
+            launch_velocity: 21.0,
+            atom_mass: 1.46e-25,
+            gravity: 9.8,
+            launch_floor: false,
+            sign: SignSpec::UpperMinusLower,
+            ..InstrumentSpec::default()
+        };
+        let instrument = spec.instrument();
+        assert_eq!(
+            (instrument.ifo_separation, instrument.half_sequence, instrument.launch_velocity),
+            (70.0, 2.5, 21.0)
+        );
+        assert_eq!((instrument.atom_mass, instrument.gravity, instrument.floor), (1.46e-25, 9.8, false));
+        assert_eq!(instrument.sign, Sign::UpperMinusLower);
+        // Control: what the spec does not set is the engine's, not changed on the way.
+        assert_eq!(instrument.hbar, Instrument::aion10().hbar);
+        assert_eq!(instrument.quadrature, Instrument::aion10().quadrature);
     }
 
     #[test]
