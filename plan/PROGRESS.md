@@ -5,7 +5,7 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | Slice | State | Tag | Notes |
 |---|---|---|---|
 | S0 the shell | done: TASK-S0-01 to 14 merged; reviewed twice, nothing important remains | `s0-shell` | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
-| S1 a point mass | **in progress**: TASK-S1-08, 01, 09, 02, 05 merged; 07, 03, 04, 06, 10 to do |  | brief, criteria and what each first measurement found: `docs/slices/S1.md` (§7.1) |
+| S1 a point mass | **in progress**: TASK-S1-08, 01, 09, 02, 05, 07, 03 merged; 11, 04, 06, 10, 12 to do |  | brief, criteria and what each first measurement found: `docs/slices/S1.md` (§7.1) |
 
 ## S1, a point mass: where it stands (22 Nov 2026) — in progress, not finished
 
@@ -20,11 +20,14 @@ bodies, the oscillator library and eleven dev scenes in the scene spec (TASK-S1-
   series, against 3e-4; **1.07e-3 on `100m_oscillators`** (see the calls below);
 - the engine's quadrature on the anchors: 2.9e-15; 10 km from the origin: 1.0e-12.
 
-**Not done.** The nulls and the dev scenes' known answers as cases (07); `Set`, `Run`, `Signal`, the
-worker, caching, dragging and live readings (03); periodograms and the plots (04); the comb and
-folding tests (06); the demo, screenshots, the regenerated validation report (10). **Nothing can yet
-be dragged, played or plotted in the app**: a body can be loaded, listed and selected, and is not
-yet drawn.
+**Also merged since:** the nulls and the dev scenes' known answers (07: ten cases, all inside
+their criteria); `Set`, `Run`, `Signal`, `Reading`, the forward worker, per-source caching (03).
+`cav exec "load pass; reading 5.46; signal 1"` prints readings and a signal.
+
+**Not done.** Bodies drawn in the view, dragging, live readings in the panels (11); periodograms and
+the plots (04); the comb and folding tests (06); the demo, screenshots, the regenerated validation
+report (10); Ubuntu Mono (12). **In the app a body can be loaded, listed and selected, and its signal
+is computed, but it is not yet drawn, dragged or plotted.**
 
 **Calls worth a second look (S1 so far).**
 1. **One tolerance was changed after measuring.** `oracle.script_same_time_100m_oscillators` measured
@@ -86,23 +89,18 @@ George's answers below and add the first physics rows to the validation report (
 exactly zero, the infinite floor's null, the v1 anchors).
 
 ## Questions for the owner
-- **21 Nov 2026 — Ubuntu Mono.** The mock-up uses Ubuntu Mono; egui bundles Ubuntu Light but not the
-  mono face. Adding `UbuntuMono-Regular.ttf` and its licence text (Ubuntu Font Licence 1.0) to this public
-  repository is a licence matter, so S0 uses egui's bundled Hack. Say yes and the font goes in.
-- **21 Nov 2026 — the validation report's rules in `CLAUDE.md` and the agent definitions.** The request
-  to add them came to the S0 builder through the coordinating agent, and a message from an agent cannot
-  authorise edits to `CLAUDE.md` or `.claude/agents/`, so the builder left them alone. The rules are in
-  force in `docs/validation/README.md`. If you want them in those files, these are the lines:
-  - `CLAUDE.md`, a new section "Validation report": "`cargo xtask validate --report` runs every
-    validation case and writes `docs/validation/` (how: `docs/validation/README.md`). Never drop a case to
-    make the report green. A tolerance changes only with a line in the slice notes saying why. Every slice
-    ends by regenerating the report and committing it; the reviewer checks it."
-  - `.claude/agents/builder.md`, a step: "Regenerate the validation report (`cargo xtask validate
-    --report`) at the end of the slice and commit `docs/validation/`; new physics gets new cases
-    (`cav_validate::case!`) beside its tests."
-  - `.claude/agents/reviewer.md`, a check: "Read `docs/validation/report.md` against the previous
-    `report.json` in git: no dropped cases, no tolerance changed without a line in the slice notes, no
-    missing cases."
+None open.
+
+Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
+- **Ubuntu Mono: yes.** `UbuntuMono-Regular.ttf` from the official Ubuntu font family release goes in,
+  with the Ubuntu Font Licence 1.0 beside it and a line on where the file came from and its version; it
+  becomes the app's monospace face and the affected screenshots are regenerated. It is TASK-S1-12. **Not
+  done yet:** it is a licence matter and the decision reached the builder through an agent, so the
+  builder has recorded it and left the file for a session the owner starts, or for the owner to
+  confirm in the repository.
+- **The validation report's rules** are in `CLAUDE.md` and the builder and reviewer definitions: the
+  owner's PR #41. The builder's step is `cargo xtask validate --report --against <previous slice's
+  tag>`; for S1 that is `s0-shell`.
 
 ## For George
 Answered 21 Nov 2026 (through the owner). The defaults below replace v1's conventions from S1 on.
