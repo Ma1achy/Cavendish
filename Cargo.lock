@@ -276,7 +276,9 @@ name = "cav-memtest"
 version = "0.0.0"
 dependencies = [
  "cav-core",
+ "cav-engine",
  "cav-sim",
+ "serde_json",
 ]
 
 [[package]]

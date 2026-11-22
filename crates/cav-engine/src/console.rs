@@ -72,8 +72,8 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "signal",
-        usage: "signal [tower] [gradiometer|lower|upper]",
-        about: "a tower's signal over the timeline, one line a shot: readout time, seconds, and phase, radians",
+        usage: "signal [tower] [gradiometer|lower|upper] [<from> <to>]",
+        about: "a tower's signal, one line a shot: readout time, seconds, and phase, radians; all of the timeline, or the shots read out from one time to another",
         example: "signal 2 lower",
     },
     CommandDoc {
@@ -358,9 +358,21 @@ impl Engine {
                 Ok(Request::Do(Command::set("bodies", value)))
             }
             ("run", []) => Ok(Request::Do(Command::Run { from: Stage::Forward })),
-            ("signal", args) if args.len() <= 2 => {
+            ("signal", args) if args.len() <= 4 => {
                 let (mut tower, mut channel) = (self.selected_tower().unwrap_or(1), ChannelName::default());
-                for &arg in args {
+                // The words before a span are a tower and a channel, in either order; a span is
+                // the last two words when there are more words than those can be, or when the
+                // last word is not a whole number.
+                let spanned = args.len() >= 2
+                    && args[args.len() - 2..].iter().all(|word| word.parse::<f64>().is_ok())
+                    && (args.len() > 2 || args[1].parse::<usize>().is_err());
+                let (names, span) = if spanned {
+                    let (names, ends) = args.split_at(args.len() - 2);
+                    (names, Some([number(ends[0], "seconds", name)?, number(ends[1], "seconds", name)?]))
+                } else {
+                    (args, None)
+                };
+                for &arg in names {
                     match (arg.parse::<usize>(), ChannelName::parse(arg)) {
                         (Ok(n), _) => tower = n,
                         (_, Some(named)) => channel = named,
@@ -372,7 +384,7 @@ impl Engine {
                         }
                     }
                 }
-                Ok(Request::Ask(Query::Signal { tower, channel }))
+                Ok(Request::Ask(Query::Signal { tower, channel, span }))
             }
             ("reading", []) => Ok(Request::Ask(Query::Reading(None))),
             ("reading", [t]) => Ok(Request::Ask(Query::Reading(Some(number(t, "seconds", name)?)))),
@@ -577,6 +589,10 @@ pub fn help() -> String {
     COMMANDS.iter().map(|c| format!("{:<width$}  {}", c.usage, c.about)).collect::<Vec<_>>().join("\n")
 }
 
+/// The most shots a signal's answer prints, one a line. A signal may hold two million; the text
+/// of all of them would be a hundred megabytes in the log and over the wire.
+pub const MAX_LINES: usize = 10_000;
+
 /// A reply as the console prints it.
 #[must_use]
 pub fn render(reply: &Reply) -> String {
@@ -596,7 +612,16 @@ pub fn render(reply: &Reply) -> String {
                 crate::estimate_text(signal.estimate)
             )];
             lines.extend(signal.warnings.iter().map(|warning| format!("# warning: {warning}")));
-            lines.extend(signal.times.iter().zip(&signal.values).map(|(t, v)| format!("{t}  {v:e}")));
+            let shots = signal.times.iter().zip(&signal.values);
+            lines.extend(shots.take(MAX_LINES).map(|(t, v)| format!("{t}  {v:e}")));
+            if signal.times.len() > MAX_LINES {
+                lines.push(format!(
+                    "# … {} more shots are not printed: ask for a stretch, `signal {} {} <from> <to>`",
+                    signal.times.len() - MAX_LINES,
+                    signal.tower,
+                    signal.channel.name()
+                ));
+            }
             lines.join("\n")
         }
         Reply::Periodogram(spectrum) => {

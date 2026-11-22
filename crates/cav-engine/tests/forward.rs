@@ -132,7 +132,7 @@ fn the_signal_is_computed_on_the_worker_and_arrives() {
     let cold = read::signal(&dev::pass()).unwrap();
     assert_eq!(signal.unwrap().as_ref(), &cold, "what arrives is what a run here and now computes");
     // The query gives one tower's channel, and says it is the current scene's.
-    let query = Query::Signal { tower: 2, channel: ChannelName::Lower };
+    let query = Query::Signal { tower: 2, channel: ChannelName::Lower, span: None };
     let Reply::Signal(reply) = engine.query(&query).unwrap() else { panic!("a signal") };
     assert_eq!((reply.state.as_str(), reply.tower), ("refined", 2));
     assert_eq!(bits(&reply.values), bits(cold.channel(1, cav_core::forward::Channel::Lower)));
@@ -150,7 +150,7 @@ fn the_signal_is_computed_on_the_worker_and_arrives() {
     // Control: a tower that is not there is refused, and a scene with too many shots says why.
     assert!(
         engine
-            .query(&Query::Signal { tower: 6, channel: ChannelName::Gradiometer })
+            .query(&Query::Signal { tower: 6, channel: ChannelName::Gradiometer, span: None })
             .unwrap_err()
             .contains("no tower 6")
     );
@@ -166,7 +166,7 @@ fn a_query_never_waits_for_the_worker() {
     // A scene with a whole signal and a whole reading: six shots of the pass.
     let mut engine = loaded(dev::pass());
     assert!(engine.settle(LONG));
-    let query = Query::Signal { tower: 1, channel: ChannelName::Gradiometer };
+    let query = Query::Signal { tower: 1, channel: ChannelName::Gradiometer, span: None };
     let finished = engine.contributions_finished();
     // The workers are held: from here on nothing can be computed anywhere but on this thread, and
     // a call that waited for a result would never return.
@@ -374,7 +374,7 @@ fn the_new_commands_and_queries_round_trip_through_json() {
     let mut engine = loaded(dev::pass());
     assert!(engine.settle(LONG));
     for query in [
-        Query::Signal { tower: 3, channel: ChannelName::Upper },
+        Query::Signal { tower: 3, channel: ChannelName::Upper, span: None },
         Query::Reading(None),
         Query::Reading(Some(2.5)),
     ] {
@@ -453,4 +453,41 @@ fn a_value_with_strings_in_it_can_be_set_from_the_console() {
     let why = engine.run_line(r#"set bodies[0].motion {"Sideways": {}}"#).unwrap_err();
     assert!(why.contains("cannot be set"), "{why}");
     assert!(engine.run_line("set duration").unwrap_err().contains("usage: set"));
+}
+
+#[test]
+fn a_long_answer_is_cut_and_says_so() {
+    // Twelve thousand shots over a slab: one read a tower, so the signal is there at once.
+    let mut scene = dev::infinite_floor();
+    scene.array.towers.truncate(1);
+    scene.array.instrument.half_sequence = 0.2;
+    scene.array.instrument.cycle = 0.5;
+    scene.duration = 6000.0;
+    let mut engine = loaded(scene);
+    engine.set_patience(LONG);
+    let all = engine.run_line("signal 1").unwrap();
+    let lines: Vec<&str> = all.lines().collect();
+    assert!(lines[0].contains("12000 shots"), "{}", lines[0]);
+    let printed = lines.iter().filter(|line| !line.starts_with('#')).count();
+    assert_eq!(printed, cav_engine::console::MAX_LINES);
+    assert!(lines.last().unwrap().contains("2000 more shots are not printed"), "{}", lines.last().unwrap());
+    // A stretch of the timeline is asked for by its ends, and is those shots: launched every
+    // 0.5 s and read out 0.4 s later, so 100.4 to 102.4 s is five of them.
+    let stretch = engine.run_line("signal 1 gradiometer 100.4 102.4").unwrap();
+    let shots: Vec<&str> = stretch.lines().filter(|line| !line.starts_with('#')).collect();
+    assert_eq!(shots.len(), 5, "{stretch}");
+    assert!(shots[0].starts_with("100.4 ") && shots[4].starts_with("102.4 "), "{stretch}");
+    let query = Query::Signal { tower: 1, channel: ChannelName::Lower, span: Some([0.0, 1.0]) };
+    let Reply::Signal(reply) = engine.query(&query).unwrap() else { panic!("a signal") };
+    assert_eq!(reply.times, [0.4, 0.9]);
+    // Control: a short answer is whole and says nothing of a cut; a span that runs backwards is refused.
+    let short = engine.run_line("signal 1 0 50").unwrap();
+    assert!(
+        !short.contains("not printed") && short.lines().count() == 1 + 1 + 100,
+        "{}",
+        short.lines().count()
+    );
+    assert!(engine.run_line("signal 1 5 2").unwrap_err().contains("from one time up to a later one"));
+    // Two numbers are a tower and then nothing else: `signal 1 2` is not a span.
+    assert!(engine.run_line("signal 1 2").is_err() || engine.spec().array.towers.len() >= 2);
 }

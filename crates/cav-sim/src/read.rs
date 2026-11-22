@@ -16,7 +16,7 @@ use crate::{FloorKind, SceneSpec};
 /// The most shots a signal is computed for. A scene with more is refused, with the count.
 pub const MAX_SHOTS: usize = 2_000_000;
 
-/// The most values (towers Ã— shots) one channel of a signal holds. A source's contribution is
+/// The most values (towers × shots) one channel of a signal holds. A source's contribution is
 /// three such arrays of `f64`, 96 MiB at this cap, and so is the signal; a scene that asks for
 /// more is refused with the numbers before anything is reserved. The schema allows a thousand
 /// towers and two million shots: together they would be 48 GB a source.
@@ -30,7 +30,7 @@ pub fn fits(towers: usize, shots: usize) -> Result<(), String> {
     match towers.checked_mul(shots) {
         Some(values) if values <= MAX_SIGNAL_VALUES => Ok(()),
         _ => Err(format!(
-            "{towers} tower(s) Ã— {shots} shot(s) is more than the {MAX_SIGNAL_VALUES} values a signal holds;              shorten the timeline, lengthen the cycle or use fewer towers"
+            "{towers} tower(s) × {shots} shot(s) is more than the {MAX_SIGNAL_VALUES} values a signal holds;              shorten the timeline, lengthen the cycle or use fewer towers"
         )),
     }
 }
@@ -69,18 +69,18 @@ pub fn readouts(spec: &SceneSpec) -> Result<Vec<f64>, String> {
     }
     fits(spec.array.towers.len(), count as usize)?;
     let flight = 2.0 * instrument.half_sequence;
-    // kÂ·cycle, not a running sum, so the thousandth shot is as exact as the first.
+    // k·cycle, not a running sum, so the thousandth shot is as exact as the first.
     Ok((0..count as usize).map(|k| k as f64 * instrument.cycle + flight).collect())
 }
 
 /// What one source adds to every tower's every shot.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Contribution {
-    /// Î´Ï†â‚ of each shot of each tower, radians: tower by tower, `towers Ã— shots` values.
+    /// δφ₁ of each shot of each tower, radians: tower by tower, `towers × shots` values.
     pub lower: Vec<f64>,
-    /// Î´Ï†â‚‚ likewise.
+    /// δφ₂ likewise.
     pub upper: Vec<f64>,
-    /// Î”Î¦ likewise, with the instrument's sign.
+    /// ΔΦ likewise, with the instrument's sign.
     pub gradiometer: Vec<f64>,
     /// The largest quadrature estimate of any shot, radians.
     pub estimate: f64,
@@ -109,7 +109,7 @@ fn mass(spec: &SceneSpec, n: usize) -> Mass<impl Fn(f64) -> Vec3 + Sync + '_> {
 /// shots; when it says yes the work stops and nothing is returned.
 ///
 /// # Panics
-/// When towers Ã— shots is more than [`MAX_SIGNAL_VALUES`]: [`readouts`] and [`signal_at`] refuse
+/// When towers × shots is more than [`MAX_SIGNAL_VALUES`]: [`readouts`] and [`signal_at`] refuse
 /// such a scene first, so reaching here with one is a fault in the caller, and nothing has been
 /// reserved when it is found.
 #[must_use]
@@ -277,7 +277,7 @@ pub struct Signal {
     pub times: Vec<f64>,
     /// How many towers there are.
     pub towers: usize,
-    /// Î´Ï†â‚, Î´Ï†â‚‚ and Î”Î¦ of each shot of each tower, radians: tower by tower.
+    /// δφ₁, δφ₂ and ΔΦ of each shot of each tower, radians: tower by tower.
     pub lower: Vec<f64>,
     pub upper: Vec<f64>,
     pub gradiometer: Vec<f64>,
@@ -350,7 +350,7 @@ pub fn signal(spec: &SceneSpec) -> Result<Signal, String> {
 /// The signal for shots read out at the given times, which need not be the scene's own.
 ///
 /// # Errors
-/// When towers Ã— shots is more than [`MAX_SIGNAL_VALUES`].
+/// When towers × shots is more than [`MAX_SIGNAL_VALUES`].
 pub fn signal_at(spec: &SceneSpec, times: Vec<f64>) -> Result<Signal, String> {
     fits(spec.array.towers.len(), times.len())?;
     let mut total = Signal::silent(spec.array.towers.len(), times);
@@ -366,7 +366,7 @@ pub fn signal_at(spec: &SceneSpec, times: Vec<f64>) -> Result<Signal, String> {
 pub struct ReadingAt {
     /// When the shot is read out, seconds.
     pub time: f64,
-    /// Î´Ï†â‚, Î´Ï†â‚‚ and Î”Î¦ of each tower, radians, in the towers' order.
+    /// δφ₁, δφ₂ and ΔΦ of each tower, radians, in the towers' order.
     pub towers: Vec<[f64; 3]>,
     /// The largest quadrature estimate of any source at any tower, radians.
     pub estimate: f64,
@@ -419,7 +419,7 @@ mod tests {
     fn shots_are_the_timeline_s_shots() {
         let spec = SceneSpec::room();
         let times = readouts(&spec).unwrap();
-        assert_eq!(times, [1.46, 3.46, 5.46, 7.46, 9.46, 11.46], "launched at 0, 2 â€¦ 10 s, read 2T later");
+        assert_eq!(times, [1.46, 3.46, 5.46, 7.46, 9.46, 11.46], "launched at 0, 2 … 10 s, read 2T later");
         // A timeline that ends inside a cycle still launches that shot.
         let longer = SceneSpec { duration: 12.5, ..SceneSpec::room() };
         assert_eq!(readouts(&longer).unwrap().len(), 7);
@@ -476,7 +476,7 @@ mod tests {
             }
             assert_eq!(slab.validate(), Ok(()));
             let read = signal(&slab).unwrap();
-            // Each interferometer does feel the slab: k_effÂ·2Ï€GÏhÂ·TÂ², about 4.8e3 rad, the same for both.
+            // Each interferometer does feel the slab: k_eff·2πGρh·T², about 4.8e3 rad, the same for both.
             assert!((read.channel(3, Channel::Lower)[2] / 4.8e3 - 1.0).abs() < 0.02, "{}", read.lower[0]);
             assert_eq!(read.lower, read.upper);
             // The half-space's own phase is unbounded, and says so; its difference is still nothing.
@@ -541,7 +541,7 @@ mod tests {
             let differing = |a: &[f64], b: &[f64]| a.iter().zip(b).filter(|(x, y)| x.to_bits() != y.to_bits()).count();
             let mut wrong = 0;
             for channel in CHANNELS {
-                // Towers 2 (x = +4) and 3 (x = âˆ’4) are each other's mirror image.
+                // Towers 2 (x = +4) and 3 (x = −4) are each other's mirror image.
                 wrong += differing(east.channel(1, channel), west.channel(2, channel));
                 wrong += differing(east.channel(2, channel), west.channel(1, channel));
                 for on_plane in [0, 3, 4] {
@@ -742,6 +742,48 @@ mod tests {
         let quiet = signal(&clear).unwrap();
         assert!(quiet.warnings.is_empty(), "{:?}", quiet.warnings);
         assert!(quiet.estimate <= PHASE_TOLERANCE);
+    }
+
+    #[test]
+    fn the_crossing_check_is_inside_the_reads_budget() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        // A long flight with the floor off and a ball on the atoms' own path: the most work a
+        // read is asked for, and a crossing to find.
+        let instrument = cav_core::forward::Instrument {
+            half_sequence: 30.0,
+            floor: false,
+            ..cav_core::forward::Instrument::aion10()
+        };
+        let reader = Reader::new(instrument);
+        let asked = AtomicU64::new(0);
+        let ball = Mass {
+            mass: 1.0,
+            radius: 0.2,
+            position: |_| {
+                asked.fetch_add(1, Ordering::Relaxed);
+                Vec3::new(0.0, 0.0, 1.0)
+            },
+            exists: (f64::NEG_INFINITY, f64::INFINITY),
+            breaks: Vec::new(),
+        };
+        let watched = Watched::new(&ball);
+        let audited = reader.read_to(Vec3::ZERO, &watched, 90.0, PHASE_TOLERANCE);
+        assert!(watched.crossed(), "a ball on the path is seen");
+        // The body was asked where it is at the read's own nodes and nowhere else: once by the
+        // watch until it has seen a crossing, once by the kernel. No second pass over the flight.
+        let asked = asked.load(Ordering::Relaxed);
+        assert!(audited.nodes <= cav_core::forward::MAX_NODES);
+        assert!(
+            asked <= 2 * audited.nodes && asked >= audited.nodes / 2,
+            "{asked} for {} nodes",
+            audited.nodes
+        );
+        // Control: a ball that keeps clear is not seen, and the watch changes no reading.
+        let clear = Mass { mass: 1.0, radius: 0.2, ..Mass::point(1.0, |_| Vec3::new(3.0, 0.0, 1.0)) };
+        let watched = Watched::new(&clear);
+        let audited = reader.read_to(Vec3::ZERO, &watched, 90.0, PHASE_TOLERANCE);
+        assert!(!watched.crossed());
+        assert_eq!(audited, reader.read_to(Vec3::ZERO, &clear, 90.0, PHASE_TOLERANCE));
     }
 
     #[test]

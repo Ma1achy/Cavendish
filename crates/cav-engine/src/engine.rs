@@ -14,6 +14,7 @@ use crate::command::{
 };
 use crate::console;
 use crate::forward::{Forward, SignalState};
+use crate::history::{History, JOURNAL_BYTES, weigh};
 use crate::log::{Level, Log, Subsystem};
 
 /// How long a line typed at a console waits for the numbers it asks for, unless a client sets
@@ -51,9 +52,12 @@ pub struct Engine {
     contents: [PaneContent; MAX_PANES],
     /// The stretch of its plot's horizontal axis each pane shows.
     spans: [Option<[f64; 2]>; MAX_PANES],
-    undo: Vec<SceneSpec>,
-    redo: Vec<SceneSpec>,
+    history: History,
     journal: Vec<Command>,
+    /// The bytes the journal is counted as holding, and whether it still records every command.
+    journal_bytes: usize,
+    journal_whole: bool,
+    journal_budget: usize,
     log: Log,
     /// `log.total()` just after the last command's entry: tells whether that entry is still the newest.
     log_mark: u64,
@@ -76,8 +80,7 @@ struct State<'a> {
     views: &'a [ViewSpec; MAX_PANES],
     contents: [PaneContent; MAX_PANES],
     spans: [Option<[f64; 2]>; MAX_PANES],
-    undo: &'a [SceneSpec],
-    redo: &'a [SceneSpec],
+    history: &'a History,
 }
 
 impl Default for Engine {
@@ -110,15 +113,29 @@ impl Engine {
             views,
             contents: [PaneContent::Scene; MAX_PANES],
             spans: [None; MAX_PANES],
-            undo: Vec::new(),
-            redo: Vec::new(),
+            history: History::default(),
             journal: Vec::new(),
+            journal_bytes: 0,
+            journal_whole: true,
+            journal_budget: JOURNAL_BYTES,
             log,
             log_mark: 0,
             generation: 0,
             forward,
             patience: TYPED_LINE_PATIENCE,
         }
+    }
+
+    /// A fresh engine whose undo history and journal hold at most the given bytes, in place of
+    /// [`crate::HISTORY_BYTES`] and [`crate::JOURNAL_BYTES`]: for tests that fill them, which at
+    /// the real sizes would take a hundred megabytes of scenes to do.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_budgets(history: usize, journal: usize) -> Self {
+        let mut engine = Self::new();
+        engine.history = History::with_budget(history);
+        engine.journal_budget = journal;
+        engine
     }
 
     /// A fresh engine with `journal` applied in order.
@@ -166,15 +183,35 @@ impl Engine {
         if !matches!(command, Command::Select(_) | Command::View(_)) {
             self.forward.request_reading(&self.spec, self.time);
         }
+        let weight = weigh(&command);
         if overwrites {
-            *self.journal.last_mut().expect("there is a previous command") = command;
+            let last = self.journal.last_mut().expect("there is a previous command");
+            self.journal_bytes = self.journal_bytes - weigh(last) + weight;
+            *last = command;
             if self.log.total() == self.log_mark {
                 self.log.amend_last(message);
             } else {
                 self.log.push(level, subsystem, message);
             }
+        } else if self.journal_whole && self.journal_bytes + weight > self.journal_budget {
+            // The journal grows with the session, so it has a size. Past it the command is still
+            // applied; what stops is the record, and it says so rather than replay as if whole.
+            self.journal_whole = false;
+            self.log.push(level, subsystem, message);
+            self.log.push(
+                Level::Error,
+                Subsystem::Engine,
+                format!(
+                    "the journal has reached its {} KiB and records no further commands: this session can \
+                     no longer be replayed from it",
+                    self.journal_budget >> 10
+                ),
+            );
         } else {
-            self.journal.push(command);
+            if self.journal_whole {
+                self.journal_bytes += weight;
+                self.journal.push(command);
+            }
             self.log.push(level, subsystem, message);
         }
         self.log_mark = self.log.total();
@@ -191,8 +228,8 @@ impl Engine {
             Command::Seek(_) => Ok(()),
             Command::Select(None) => Ok(()),
             Command::Select(Some(target)) => self.check_target(*target),
-            Command::Undo if self.undo.is_empty() => Err("nothing to undo".into()),
-            Command::Redo if self.redo.is_empty() => Err("nothing to redo".into()),
+            Command::Undo if self.history.depth().0 == 0 => Err("nothing to undo".into()),
+            Command::Redo if self.history.depth().1 == 0 => Err("nothing to redo".into()),
             Command::Undo | Command::Redo => Ok(()),
             Command::View(view) => self.check_view(view),
         }
@@ -262,17 +299,18 @@ impl Engine {
             Command::Set { path, value, .. } => {
                 let edited = self.edited(path, value).expect("checked");
                 let before = std::mem::replace(&mut self.spec, edited);
-                if !continues {
-                    self.undo.push(before);
+                if continues {
+                    self.history.continued();
+                } else {
+                    self.history.edited(before);
                 }
-                self.redo.clear();
                 self.settle_after_history();
                 self.forward.schedule(&self.spec, false);
             }
             Command::Run { .. } => self.forward.schedule(&self.spec, true),
             Command::Load(spec) => {
-                self.undo.push(std::mem::replace(&mut self.spec, (**spec).clone()));
-                self.redo.clear();
+                let before = std::mem::replace(&mut self.spec, (**spec).clone());
+                self.history.edited(before);
                 self.time = 0.0;
                 self.selection = None;
                 // Every pane keeps its direction, projection and style and re-frames the new scene.
@@ -285,14 +323,14 @@ impl Engine {
             Command::Seek(t) => self.time = t.clamp(0.0, self.spec.duration),
             Command::Select(target) => self.selection = *target,
             Command::Undo => {
-                let previous = self.undo.pop().expect("checked");
-                self.redo.push(std::mem::replace(&mut self.spec, previous));
+                let previous = self.history.undo(self.spec.clone()).expect("checked");
+                self.spec = previous;
                 self.settle_after_history();
                 self.forward.schedule(&self.spec, false);
             }
             Command::Redo => {
-                let next = self.redo.pop().expect("checked");
-                self.undo.push(std::mem::replace(&mut self.spec, next));
+                let next = self.history.redo(self.spec.clone()).expect("checked");
+                self.spec = next;
                 self.settle_after_history();
                 self.forward.schedule(&self.spec, false);
             }
@@ -382,8 +420,12 @@ impl Engine {
                 .get(*pane)
                 .map(|v| Reply::View(v.clone()))
                 .ok_or_else(|| format!("there is no pane {}; panes are 1 to {MAX_PANES}", pane + 1)),
+            Query::Journal if !self.journal_whole => Err(format!(
+                "the journal stopped recording at {} KiB: it is not the whole session and is not offered as one",
+                self.journal_budget >> 10
+            )),
             Query::Journal => Ok(Reply::Journal(self.journal.clone())),
-            Query::Signal { tower, channel } => {
+            Query::Signal { tower, channel, span } => {
                 let towers = self.spec.array.towers.len();
                 if *tower == 0 || *tower > towers {
                     return Err(format!("there is no tower {tower}; the scene has towers 1 to {towers}"));
@@ -396,22 +438,37 @@ impl Engine {
                     (_, Some(_)) => "stale",
                     _ => "computing",
                 };
+                if let Some([from, to]) = span
+                    && !(from.is_finite() && to.is_finite() && to >= from)
+                {
+                    return Err(format!(
+                        "a span runs from one time up to a later one, not from {from} to {to}"
+                    ));
+                }
                 // A stale signal may be an earlier scene's, with another number of towers.
                 let signal = self.forward.signal().filter(|signal| *tower <= signal.towers);
+                // The shots inside the span: readout times rise, so they are one stretch.
+                let stretch = |signal: &cav_sim::read::Signal| match span {
+                    None => 0..signal.times.len(),
+                    Some([from, to]) => {
+                        signal.times.partition_point(|t| t < from)..signal.times.partition_point(|t| t <= to)
+                    }
+                };
                 Ok(Reply::Signal(SignalReply {
                     tower: *tower,
                     channel: *channel,
                     state: if signal.is_some() { state } else { "computing" }.to_owned(),
-                    times: signal.map_or_else(Vec::new, |s| s.times.clone()),
-                    values: signal
-                        .map_or_else(Vec::new, |s| s.channel(tower - 1, channel.channel()).to_vec()),
+                    times: signal.map_or_else(Vec::new, |s| s.times[stretch(s)].to_vec()),
+                    values: signal.map_or_else(Vec::new, |s| {
+                        s.channel(tower - 1, channel.channel())[stretch(s)].to_vec()
+                    }),
                     estimate: signal.map_or(0.0, |s| s.estimate),
                     warnings: signal.map_or_else(Vec::new, |s| s.warnings.clone()),
                 }))
             }
             Query::Periodogram { tower, channel } => {
                 let Reply::Signal(signal) =
-                    self.query(&Query::Signal { tower: *tower, channel: *channel })?
+                    self.query(&Query::Signal { tower: *tower, channel: *channel, span: None })?
                 else {
                     unreachable!("a signal query answers with a signal")
                 };
@@ -602,8 +659,7 @@ impl Engine {
             views: &self.views,
             contents: self.contents,
             spans: self.spans,
-            undo: &self.undo,
-            redo: &self.redo,
+            history: &self.history,
         };
         // serde_json writes the shortest decimal that reads back to the same f64, so distinct
         // values give distinct text. FNV-1a over that text is the digest.
@@ -628,8 +684,9 @@ impl Engine {
             panes: self.panes,
             active_pane: self.active,
             journal: self.journal.len(),
-            undo: self.undo.len(),
-            redo: self.redo.len(),
+            journal_whole: self.journal_whole,
+            undo: self.history.depth().0,
+            redo: self.history.depth().1,
             generation: self.generation,
             digest: self.digest(),
             signal: self.forward.state().name().to_owned(),
@@ -726,7 +783,21 @@ impl Engine {
     /// Whether there is an edit to undo, and one to redo.
     #[must_use]
     pub fn history(&self) -> (bool, bool) {
-        (!self.undo.is_empty(), !self.redo.is_empty())
+        let (undo, redo) = self.history.depth();
+        (undo > 0, redo > 0)
+    }
+
+    /// The bytes the undo history and the journal are counted as holding, and whether the journal
+    /// still records every command: each is held to its budget ([`crate::history`]).
+    #[must_use]
+    pub const fn held(&self) -> (usize, usize, bool) {
+        (self.history.bytes(), self.journal_bytes, self.journal_whole)
+    }
+
+    /// The bytes of contributions the forward stage keeps.
+    #[must_use]
+    pub const fn forward_bytes(&self) -> usize {
+        self.forward.kept_bytes()
     }
 }
 

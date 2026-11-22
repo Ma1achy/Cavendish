@@ -13,4 +13,6 @@ all = { level = "warn", priority = -1 }
 
 [dev-dependencies]
 cav-core.workspace = true
+cav-engine.workspace = true
+serde_json.workspace = true
 cav-sim.workspace = true
