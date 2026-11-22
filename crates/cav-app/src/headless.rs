@@ -156,7 +156,7 @@ impl Headless {
             self.clock += FRAME_DT;
             let mut frame = self.ctx.run_ui(input(size, self.clock, Vec::new()), |ui| {
                 let rect = ui.ctx().content_rect();
-                drew = crate::plots::paint(engine, &ui.painter_at(rect), pane, rect).is_some();
+                drew = !crate::plots::paint(engine, &ui.painter_at(rect), pane, rect).is_empty();
             });
             self.take_textures(&mut frame);
             output = Some(frame);

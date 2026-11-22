@@ -221,6 +221,7 @@ pub fn weigh(command: &Command) -> usize {
         }
         Command::Remove { path } => own + path.len(),
         Command::Export { to, .. } => own + to.len(),
+        Command::Compare(Some(_)) => own + std::mem::size_of::<cav_sim::InstrumentSpec>(),
         _ => own,
     }
 }

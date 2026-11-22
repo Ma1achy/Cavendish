@@ -56,6 +56,10 @@ pub enum Command {
         /// The file (or, for kinds that are several files, the directory) to write.
         to: String,
     },
+    /// Read the same scene on another instrument as well, beside the scene's own (`Some`), or
+    /// stop doing so (`None`). Not an edit: the scene is unchanged. While it is on, signals and
+    /// periodograms can be asked for `compared`, and the plots draw both.
+    Compare(Option<Box<cav_sim::InstrumentSpec>>),
     /// Compute again from a stage, dropping what was kept for it and the stages after it.
     Run { from: Stage },
     /// Move the playhead to this time, seconds; clamped to the scene's duration.
@@ -201,6 +205,10 @@ pub enum Query {
         /// number up to and including the second. All of them if absent.
         #[serde(default)]
         span: Option<[f64; 2]>,
+        /// The scene as read on the instrument being compared (`Command::Compare`), in place
+        /// of its own.
+        #[serde(default)]
+        compared: bool,
     },
     /// What every tower would read from a shot read out at this time, seconds (the playhead if
     /// none is given). The engine's reading worker computes it; this answers with the last whole
@@ -212,7 +220,11 @@ pub enum Query {
     Periodogram {
         /// The tower, counted from 1 as on screen.
         tower: usize,
+        /// Which of the tower's three channels.
         channel: ChannelName,
+        /// The scene as read on the instrument being compared, in place of its own.
+        #[serde(default)]
+        compared: bool,
     },
 }
 
@@ -477,4 +489,7 @@ pub struct Stats {
     pub digest: String,
     /// Where the signal stands: `refined`, `stale` or `none`.
     pub signal: String,
+    /// The instrument the scene is also being read on, by its preset's name if it is one
+    /// (`AICE 100 m`), else `another instrument`; `None` when nothing is being compared.
+    pub compare: Option<String>,
 }

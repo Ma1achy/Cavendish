@@ -83,6 +83,24 @@ pub const COMMANDS: &[CommandDoc] = &[
         example: "mass 10 at 3 0 1",
     },
     CommandDoc {
+        name: "preset",
+        usage: "preset <aion10|aice|file.ron>",
+        about: "set the instrument to a preset, or to one of your own from a file of an instrument (an edit)",
+        example: "preset aice",
+    },
+    CommandDoc {
+        name: "launch",
+        usage: "launch symmetric",
+        about: "set the launch velocity to the one that closes the arms at 2T, g·T − v_kick/2 (an edit)",
+        example: "launch symmetric",
+    },
+    CommandDoc {
+        name: "compare",
+        usage: "compare <aion10|aice|file.ron|off>",
+        about: "read the same scene on another instrument as well: the plots draw both, and `signal … compared` answers for it",
+        example: "compare aice",
+    },
+    CommandDoc {
         name: "run",
         usage: "run",
         about: "compute the signal again from nothing, dropping what was kept",
@@ -90,7 +108,7 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "signal",
-        usage: "signal [tower] [gradiometer|lower|upper] [<from> <to>]",
+        usage: "signal [tower] [gradiometer|lower|upper] [<from> <to>] [compared]",
         about: "a tower's signal, one line a shot: readout time, seconds, and phase, radians; all of the timeline, or the shots read out from one time to another",
         example: "signal 2 lower",
     },
@@ -141,7 +159,7 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "periodogram",
-        usage: "periodogram [tower] [gradiometer|lower|upper]",
+        usage: "periodogram [tower] [gradiometer|lower|upper] [compared]",
         about: "the periodogram of a tower's signal: its largest peaks, and where each body's harmonics fold to",
         example: "periodogram 1",
     },
@@ -224,6 +242,13 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
         Command::Export { what: ExportKind::Scene, to } => format!("save {}", quoted(to)),
         Command::Export { what: ExportKind::Journal, to } => format!("journal save {}", quoted(to)),
         Command::Run { from: Stage::Forward } => "run".into(),
+        Command::Compare(None) => "compare off".into(),
+        Command::Compare(Some(instrument)) => {
+            match cav_sim::presets::built_in().into_iter().find(|(_, _, preset)| preset == &**instrument) {
+                Some((name, _, _)) => format!("compare {name}"),
+                None => "compare <an instrument of your own: compare it from its file>".into(),
+            }
+        }
         Command::Seek(t) => format!("seek {t}"),
         Command::Select(None) => "select none".into(),
         Command::Select(Some(Target::Tower(n))) => format!("select tower {n}"),
@@ -383,6 +408,11 @@ impl Engine {
             pane = n.checked_sub(1).ok_or("panes are counted from 1")?;
             words.pop();
         }
+        // `compared` at the end of a signal or a periodogram asks for the comparison's.
+        let compared = matches!(name, "signal" | "periodogram") && words.last() == Some(&"compared");
+        if compared {
+            words.pop();
+        }
         let args = &words[1..];
         let wrong = || format!("`{line}`: {}", usage(name));
         let view = |change: ViewCommand| Ok(Request::Do(Command::View(change)));
@@ -411,6 +441,20 @@ impl Engine {
                 Ok(Request::Do(Command::Export { what: ExportKind::Journal, to: (*file).to_owned() }))
             }
             ("run", []) => Ok(Request::Do(Command::Run { from: Stage::Forward })),
+            ("preset", [which]) => {
+                let instrument = cav_sim::presets::load(which).map_err(|e| e.0)?;
+                let value = serde_json::to_value(instrument).expect("an instrument is JSON");
+                Ok(Request::Do(Command::set("array.instrument", value)))
+            }
+            ("launch", ["symmetric"]) => {
+                let launch = cav_sim::presets::symmetric_launch(&self.spec().array.instrument);
+                Ok(Request::Do(Command::set("array.instrument.launch_velocity", serde_json::json!(launch))))
+            }
+            ("compare", ["off"]) => Ok(Request::Do(Command::Compare(None))),
+            ("compare", [which]) => {
+                let instrument = cav_sim::presets::load(which).map_err(|e| e.0)?;
+                Ok(Request::Do(Command::Compare(Some(Box::new(instrument)))))
+            }
             ("signal", args) if args.len() <= 4 => {
                 let (mut tower, mut channel) = (self.selected_tower().unwrap_or(1), ChannelName::default());
                 // The words before a span are a tower and a channel, in either order; a span is
@@ -437,7 +481,7 @@ impl Engine {
                         }
                     }
                 }
-                Ok(Request::Ask(Query::Signal { tower, channel, span }))
+                Ok(Request::Ask(Query::Signal { tower, channel, span, compared }))
             }
             ("reading", []) => Ok(Request::Ask(Query::Reading(None))),
             ("reading", [t]) => Ok(Request::Ask(Query::Reading(Some(number(t, "seconds", name)?)))),
@@ -499,7 +543,7 @@ impl Engine {
                         }
                     }
                 }
-                Ok(Request::Ask(Query::Periodogram { tower, channel }))
+                Ok(Request::Ask(Query::Periodogram { tower, channel, compared }))
             }
             ("panes", [n]) => match n.parse() {
                 Ok(n) => view(ViewCommand::Panes(n)),

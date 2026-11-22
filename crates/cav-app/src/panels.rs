@@ -660,6 +660,26 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
     }
 
     heading(ui, "Instrument · shared by every tower");
+    let instrument = shell.engine.spec().array.instrument.clone();
+    let is = |name: &str| cav_sim::presets::load(name).is_ok_and(|preset| preset == instrument);
+    button_row(
+        shell,
+        ui,
+        "preset",
+        &[("AION-10", "preset aion10", is("aion10")), ("AICE 100 m", "preset aice", is("aice"))],
+    );
+    let other = shell.engine.comparison().cloned();
+    let with = |name: &str| cav_sim::presets::load(name).is_ok_and(|preset| Some(preset) == other);
+    button_row(
+        shell,
+        ui,
+        "compare",
+        &[
+            ("AION-10", "compare aion10", with("aion10")),
+            ("AICE", "compare aice", with("aice")),
+            ("off", "compare off", other.is_none()),
+        ],
+    );
     crate::editors::show(shell, ui, "array.instrument");
 
     let pane = shell.engine.active_pane();
@@ -702,6 +722,14 @@ fn header(shell: &mut Shell, ui: &mut egui::Ui) {
         }
         if shell.engine.panes() > 1 {
             badge(ui, format!("pane {} of {}", pane + 1, shell.engine.panes()), theme::LINK);
+        }
+        // The instrument, when it is a preset; and the one the scene is also being read on.
+        if let Some(name) = cav_sim::presets::name_of(&shell.engine.spec().array.instrument) {
+            badge(ui, name, theme::STRONG);
+        }
+        if let Some(other) = shell.engine.comparison() {
+            let name = cav_sim::presets::name_of(other).unwrap_or("another instrument");
+            badge(ui, format!("compared with {name}"), theme::LINK);
         }
         // Where the signal stands: a stale one is never mistaken for the current scene's.
         match shell.engine.signal() {

@@ -132,7 +132,7 @@ fn the_signal_is_computed_on_the_worker_and_arrives() {
     let cold = read::signal(&dev::pass()).unwrap();
     assert_eq!(signal.unwrap().as_ref(), &cold, "what arrives is what a run here and now computes");
     // The query gives one tower's channel, and says it is the current scene's.
-    let query = Query::Signal { tower: 2, channel: ChannelName::Lower, span: None };
+    let query = Query::Signal { tower: 2, channel: ChannelName::Lower, span: None, compared: false };
     let Reply::Signal(reply) = engine.query(&query).unwrap() else { panic!("a signal") };
     assert_eq!((reply.state.as_str(), reply.tower), ("refined", 2));
     assert_eq!(bits(&reply.values), bits(cold.channel(1, cav_core::forward::Channel::Lower)));
@@ -150,7 +150,12 @@ fn the_signal_is_computed_on_the_worker_and_arrives() {
     // Control: a tower that is not there is refused, and a scene with too many shots says why.
     assert!(
         engine
-            .query(&Query::Signal { tower: 6, channel: ChannelName::Gradiometer, span: None })
+            .query(&Query::Signal {
+                tower: 6,
+                channel: ChannelName::Gradiometer,
+                span: None,
+                compared: false
+            })
             .unwrap_err()
             .contains("no tower 6")
     );
@@ -166,7 +171,7 @@ fn a_query_never_waits_for_the_worker() {
     // A scene with a whole signal and a whole reading: six shots of the pass.
     let mut engine = loaded(dev::pass());
     assert!(engine.settle(LONG));
-    let query = Query::Signal { tower: 1, channel: ChannelName::Gradiometer, span: None };
+    let query = Query::Signal { tower: 1, channel: ChannelName::Gradiometer, span: None, compared: false };
     let finished = engine.contributions_finished();
     // The workers are held: from here on nothing can be computed anywhere but on this thread, and
     // a call that waited for a result would never return.
@@ -374,7 +379,7 @@ fn the_new_commands_and_queries_round_trip_through_json() {
     let mut engine = loaded(dev::pass());
     assert!(engine.settle(LONG));
     for query in [
-        Query::Signal { tower: 3, channel: ChannelName::Upper, span: None },
+        Query::Signal { tower: 3, channel: ChannelName::Upper, span: None, compared: false },
         Query::Reading(None),
         Query::Reading(Some(2.5)),
     ] {
@@ -477,7 +482,8 @@ fn a_long_answer_is_cut_and_says_so() {
     let shots: Vec<&str> = stretch.lines().filter(|line| !line.starts_with('#')).collect();
     assert_eq!(shots.len(), 5, "{stretch}");
     assert!(shots[0].starts_with("100.4 ") && shots[4].starts_with("102.4 "), "{stretch}");
-    let query = Query::Signal { tower: 1, channel: ChannelName::Lower, span: Some([0.0, 1.0]) };
+    let query =
+        Query::Signal { tower: 1, channel: ChannelName::Lower, span: Some([0.0, 1.0]), compared: false };
     let Reply::Signal(reply) = engine.query(&query).unwrap() else { panic!("a signal") };
     assert_eq!(reply.times, [0.4, 0.9]);
     // Control: a short answer is whole and says nothing of a cut; a span that runs backwards is refused.
@@ -541,8 +547,9 @@ fn an_unsettled_reading_says_so() {
     assert!(heading.contains("did not settle, estimate") && !heading.contains("within"), "{heading}");
     let signal = engine.run_line("signal 1").unwrap();
     assert!(signal.lines().next().unwrap().contains("did not settle"), "{signal}");
-    let Reply::Signal(series) =
-        engine.ask(&Query::Signal { tower: 1, channel: ChannelName::Lower, span: None }).unwrap()
+    let Reply::Signal(series) = engine
+        .ask(&Query::Signal { tower: 1, channel: ChannelName::Lower, span: None, compared: false })
+        .unwrap()
     else {
         panic!("a signal")
     };
@@ -592,7 +599,10 @@ fn non_finite_numbers_survive_a_reply() {
     // must survive JSON, which is how it reaches an agent (S1: it did not).
     let mut engine = loaded(dev::infinite_floor());
     assert!(engine.settle(LONG));
-    for query in [Query::Signal { tower: 2, channel: ChannelName::Lower, span: None }, Query::Reading(None)] {
+    for query in [
+        Query::Signal { tower: 2, channel: ChannelName::Lower, span: None, compared: false },
+        Query::Reading(None),
+    ] {
         let reply = engine.query(&query).unwrap();
         let text = serde_json::to_string(&reply).unwrap();
         assert!(text.contains("\"inf\"") && !text.contains("null,null"), "{text}");
@@ -600,15 +610,17 @@ fn non_finite_numbers_survive_a_reply() {
         let value = serde_json::to_value(&reply).unwrap();
         assert_eq!(serde_json::from_value::<Reply>(value).unwrap(), reply);
     }
-    let Reply::Signal(lower) =
-        engine.query(&Query::Signal { tower: 2, channel: ChannelName::Lower, span: None }).unwrap()
+    let Reply::Signal(lower) = engine
+        .query(&Query::Signal { tower: 2, channel: ChannelName::Lower, span: None, compared: false })
+        .unwrap()
     else {
         panic!("a signal")
     };
     assert!(lower.values.iter().all(|v| *v == f64::INFINITY) && lower.values.len() == 6);
     // The gradiometer over the same floor is finite, and exactly nothing.
-    let Reply::Signal(null) =
-        engine.query(&Query::Signal { tower: 2, channel: ChannelName::Gradiometer, span: None }).unwrap()
+    let Reply::Signal(null) = engine
+        .query(&Query::Signal { tower: 2, channel: ChannelName::Gradiometer, span: None, compared: false })
+        .unwrap()
     else {
         panic!("a signal")
     };
@@ -805,4 +817,94 @@ fn a_replay_never_writes_where_the_journal_says() {
     assert_eq!(own.journal().len(), entries);
     own.run_line(&format!("save \"{}\"", scene.display())).unwrap();
     assert_eq!(cav_sim::load(scene.to_str().unwrap()).unwrap(), dev::void());
+}
+
+cav_validate::case! {
+    test: validation_compare_equals_the_other_preset,
+    name: "presets.compare_equals_other_preset",
+    subsystem: "presets",
+    slice: "S2",
+    reference: Exact,
+    against: "the comb read on AION-10 and, by `compare aice`, on AICE 100 m as well: the comparison's signal against the same scene loaded with the AICE instrument; values of any channel that differ in any bit",
+    unit: Count,
+    tolerance: 0.0,
+    measure: {
+        let mut scene = dev::comb();
+        scene.duration = 200.0;
+        let mut engine = loaded(scene.clone());
+        engine.run_line("compare aice").unwrap();
+        assert!(engine.settle(LONG));
+        let compared = engine.compared_signal().1.expect("the comparison's signal").clone();
+        // The same scene, loaded with the instrument set to AICE, read cold.
+        let mut other = scene.clone();
+        other.array.instrument = cav_sim::presets::aice();
+        let cold = read::signal(&other).unwrap();
+        let differing = |a: &[f64], b: &[f64]| {
+            if a.len() == b.len() { a.iter().zip(b).filter(|(x, y)| x.to_bits() != y.to_bits()).count() } else { usize::MAX }
+        };
+        let count = differing(&compared.lower, &cold.lower)
+            + differing(&compared.upper, &cold.upper)
+            + differing(&compared.gradiometer, &cold.gradiometer);
+        assert_eq!(compared.times, cold.times, "AICE's own shots: one every 5 s, read out 5 s after launch");
+        assert_eq!(compared.times.len(), 40);
+        // Control: the comparison is another instrument's reading, not the scene's own again:
+        // the scene's own signal is still AION-10's, with its own shots.
+        let own = engine.signal().1.unwrap().clone();
+        assert_eq!(own.as_ref(), &read::signal(&scene).unwrap());
+        assert_eq!(own.times.len(), 100);
+        // (Its first shot is another shot altogether: launched together, read out at 5 s, not 1.46 s.)
+        assert_ne!(compared.gradiometer[0].to_bits(), own.gradiometer[0].to_bits());
+        assert_ne!(compared.times[0], own.times[0]);
+        cav_validate::Measured::Error(count as f64)
+    },
+}
+
+#[test]
+fn a_preset_is_one_undoable_edit() {
+    let mut engine = loaded(dev::comb());
+    engine.set_patience(LONG);
+    let before = engine.spec().clone();
+    let journal = engine.journal().len();
+    // A preset is a set of the instrument: one command, one undo, replayed like any other.
+    engine.run_line("preset aice").unwrap();
+    assert_eq!(engine.spec().array.instrument, cav_sim::presets::aice());
+    assert_eq!(engine.journal().len(), journal + 1);
+    let Some(Command::Set { path, .. }) = engine.journal().last() else { panic!("a set") };
+    assert_eq!(path, "array.instrument");
+    // Everything else in the scene is as it was.
+    let mut expected = before.clone();
+    expected.array.instrument = cav_sim::presets::aice();
+    assert_eq!(engine.spec(), &expected);
+    engine.run_line("undo").unwrap();
+    assert_eq!(engine.spec(), &before);
+    engine.run_line("redo").unwrap();
+    assert_eq!(Engine::replay(engine.journal()).unwrap().digest(), engine.digest());
+    // The launch rule as a command: on AION-10's instrument it replaces George's 3.86 m/s.
+    engine.run_line("preset aion10").unwrap();
+    engine.run_line("launch symmetric").unwrap();
+    let launch = engine.spec().array.instrument.launch_velocity;
+    assert!((launch - (9.81 * 0.73 - 6.5779 / 2.0)).abs() < 1e-3, "{launch}");
+    // Comparing is not an edit: the scene and its history are untouched; the answers are both
+    // there, each for its own instrument, and `compare off` drops the comparison.
+    engine.run_line("preset aion10").unwrap();
+    let scene = engine.spec().clone();
+    let (undo, _) = engine.history();
+    engine.run_line("compare aice").unwrap();
+    assert_eq!((engine.spec(), engine.history().0), (&scene, undo));
+    let own = engine.run_line("periodogram 1").unwrap();
+    let other = engine.run_line("periodogram 1 compared").unwrap();
+    assert!(
+        own.contains("Nyquist frequency, 0.25 Hz") && other.contains("Nyquist frequency, 0.1 Hz"),
+        "{own}\n{other}"
+    );
+    assert!(engine.run_line("stats").unwrap().contains("\"compare\": \"AICE 100 m\""));
+    assert_eq!(Engine::replay(engine.journal()).unwrap().digest(), engine.digest());
+    engine.run_line("compare off").unwrap();
+    assert!(engine.comparison().is_none());
+    // Control: refusals. A preset that is not one; a comparison asked for with none set; a scene
+    // that cannot be read on the other instrument (a floor above where its towers stand is
+    // fine, a body count is fine: here, a cycle shorter than AICE's flight is not the scene's).
+    assert!(engine.run_line("preset moon").unwrap_err().contains("not a preset (aion10, aice)"));
+    assert!(engine.run_line("signal 1 compared").unwrap_err().contains("nothing is being compared"));
+    assert!(engine.run_line("compare moon").is_err());
 }
