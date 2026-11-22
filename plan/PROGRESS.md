@@ -5,7 +5,7 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | Slice | State | Tag | Notes |
 |---|---|---|---|
 | S0 the shell | done: TASK-S0-01 to 14 merged; reviewed twice, nothing important remains | `s0-shell` | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
-| S1 a point mass | built, **not yet reviewed**: TASK-S1-01 to 11 and 13 merged; 12 (Ubuntu Mono) and 14 (NUFFT Lomb–Scargle) not done |  | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
+| S1 a point mass | built and reviewed once; the review's findings fixed (TASK-S1-15 to 19), TASK-S1-14 (NUFFT Lomb–Scargle) and TASK-S1-12 (Ubuntu Mono) done; **awaiting a second look, not tagged** |  | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
 
 ## S1, a point mass: where it stands (22 Nov 2026) — built, awaiting review
 
@@ -17,13 +17,30 @@ you can play, the signal plot and the periodogram with each body's comb and its 
 in `cav-core`; the §2.1 tests; the nulls. `cargo xtask demo S1`; the validation report regenerated
 with `--report --against s0-shell`.
 
-**Numbers** (`docs/slices/S1.md` §7): `quick` 195 tests, 5.3 to 6.8 s warm (9.9 to 14.1 s seen after
-rebuilds and three times unexplained); `gpu` 24; `oracle` 33 in 4.3 s; 53 of 53 validation cases.
-The v1 tie: 1e-15 of the peak against 1e-10. Scripts as published: 1e-12 against 1e-9.
+**Numbers** (`docs/slices/S1.md` §7): `quick` 208 tests, 4.0 to 4.8 s warm (6.7 to 12.2 s straight
+after a rebuild: still over the 10 s gate then); `gpu` 25 in 7.2 s; `oracle` 41 in 7.4 s; 64 of 64
+validation cases. The v1 tie: 1e-15 of the peak against 1e-10. Scripts as published: 1e-12 against
+1e-9. The scripts' rule taken to its limit is the engine: 3e-10 (AICE) and 1e-7 (AION-10), against
+1e-9 and 5e-7. One read allocates about 100 bytes whatever T is and stops at 4,000,000 nodes.
 
-**Not done.** The NUFFT Lomb–Scargle (TASK-S1-14). Ubuntu Mono (TASK-S1-12; see the owner's answers).
-A 10,000-shot series takes 1.8 s and a frame with it plotted 27 ms, both over the brief's own
-budgets (recorded, not gated). Nobody has looked at the real window.
+**After the review (22 Nov 2026).** PRs #54 to #60 and this one:
+- TASK-S1-15: the moved tolerance is gone; script parity is a limit and a two-sided prediction.
+- TASK-S1-16: a read's memory and work are bounded; readings are made off the caller's thread; T is
+  bounded in the schema (1000 s).
+- TASK-S1-17: undo of separate edits; values with strings from the console and MCP; controls and
+  labels that can fail; `quick` no longer builds doctests.
+- TASK-S1-18: the frame says what a pane shows; `render_view` and `cav render` draw plot panes; the
+  plots have marks, zoom (`span`), and labels that fit.
+- TASK-S1-14: the NUFFT Lomb–Scargle, 3e-15 of the peak against the exact one.
+- TASK-S1-12: Ubuntu Mono is the monospace face, its licence built in; screenshots made again.
+- TASK-S1-19: the validation report, the demo and the brief's results regenerated.
+
+**Not done.** `docs/ARCHITECTURE.md` and the recipes in `docs/extending/` (a duty that CLAUDE.md
+gained during the review): neither exists yet, and public items are documented but not yet all with
+units and frames. It is a task of its own, before or with S2. A 10,000-shot series takes 2.5 s and
+a frame with it plotted 27 ms, a reading of four bodies 1.2 ms: all over the brief's own budgets
+(recorded, not gated). The NUFFT Lomb–Scargle is in `cav-core` but no command uses it. Nobody has
+looked at the real window.
 
 **Calls worth a second look (S1).**
 1. **One tolerance was changed after measuring, and the review undid it.** The builder set
@@ -40,17 +57,26 @@ budgets (recorded, not gated). Nobody has looked at the real window.
    3e-15 on the anchors is off by 3.9e-6 rad for a pass 0.5 m from a tower.
 4. **v1 stays a git dependency of the oracle crate** (2.1 s to build from nothing), and its anchor
    outputs are frozen as well so that `quick` checks the tie on every commit.
-5. Three same-time cases (`fig2_10m` b, c, d) sit at 82% to 92% of their tolerance.
+5. **`cav` now depends on `cav-app`** (the plan's crate table says `cav-engine` and `cav-render`),
+   so that an agent's picture of a plot pane is drawn by the application's plot code and not by a
+   second copy. The cost is that the CLI links egui.
 6. `Command::Load` now boxes its scene (a scene with bodies is large); the JSON form is unchanged.
 7. **A load forgets its predecessor's signal** rather than showing it stale under the new scene's
    name; an edit keeps the old signal, marked stale, until the new one is whole.
 8. **The in-house FFT** stays; rustfft measured 3 to 30 times faster and is in `plan/IDEAS.md` for S11.
-9. **`quick` has no room after a rebuild.** Warm it is 5 to 7 s; the 10 s gate was exceeded on runs
-   straight after edits and three times without one. Nothing was changed to hide it.
+9. **`quick` has little room after a rebuild.** Warm it is 4 to 5 s (documentation examples moved
+   to `oracle`); straight after a rebuild of `cav-core` or `cav-app` it was 11 to 12 s. Nothing was
+   changed to hide it.
 10. **The comb test with noise asserts three harmonics, not four:** at the fixtures' 2e4 s the fourth
     is under the scripts' shot noise.
 
-**Next.** A fresh review of S1; then TASK-S1-14 and TASK-S1-12 or S2.
+11. **The read is slower for being bounded:** 10,000 shots went from 1.8 s to 2.5 s when the read
+    stopped keeping tables.
+12. **The NUFFT's two predictions were too cautious** (rounding floor and the kernel's starting
+    error); the criteria were left as written rather than tightened to the measurements.
+
+**Next.** A second look at S1 by the reviewer; then the tag, `docs/ARCHITECTURE.md` and
+`docs/extending/`, and S2.
 
 ## S0, the shell: where it stands (21 Nov 2026)
 
@@ -101,10 +127,9 @@ None open.
 Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
 - **Ubuntu Mono: yes.** `UbuntuMono-Regular.ttf` from the official Ubuntu font family release goes in,
   with the Ubuntu Font Licence 1.0 beside it and a line on where the file came from and its version; it
-  becomes the app's monospace face and the affected screenshots are regenerated. It is TASK-S1-12. **Not
-  done yet:** it is a licence matter and the decision reached the builder through an agent, so the
-  builder has recorded it and left the file for a session the owner starts, or for the owner to
-  confirm in the repository.
+  becomes the app's monospace face and the affected screenshots are regenerated. It is TASK-S1-12. **Done:**
+  the coordinator added the file, `UFL.txt` and `SOURCE.md` on the owner's direct yes; the builder
+  wired it in and built the licence into the binary (PR #60).
 - **The validation report's rules** are in `CLAUDE.md` and the builder and reviewer definitions: the
   owner's PR #41. The builder's step is `cargo xtask validate --report --against <previous slice's
   tag>`; for S1 that is `s0-shell`.
