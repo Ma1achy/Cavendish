@@ -100,6 +100,8 @@ pub struct Engine {
     generation: u64,
     /// The forward stage: its worker, what it has kept, the last whole signal.
     forward: Forward,
+    /// The instrument the scene is also read on, and that reading's own forward stage.
+    compare: Option<(Box<cav_sim::InstrumentSpec>, Forward)>,
     /// How long a text client waits for the signal before it asks for one (`run_line`).
     patience: std::time::Duration,
 }
@@ -117,6 +119,7 @@ struct State<'a> {
     contents: [PaneContent; MAX_PANES],
     spans: [Option<[f64; 2]>; MAX_PANES],
     history: &'a History,
+    compare: Option<&'a cav_sim::InstrumentSpec>,
 }
 
 impl Default for Engine {
@@ -160,6 +163,7 @@ impl Engine {
             log_mark: 0,
             generation: 0,
             forward,
+            compare: None,
             patience: TYPED_LINE_PATIENCE,
         }
     }
@@ -255,7 +259,9 @@ impl Engine {
             | Command::Remove { .. }
             | Command::Undo
             | Command::Redo => (Level::Info, Subsystem::Edit),
-            Command::Run { .. } | Command::Export { .. } => (Level::Info, Subsystem::Engine),
+            Command::Run { .. } | Command::Export { .. } | Command::Compare(_) => {
+                (Level::Info, Subsystem::Engine)
+            }
             Command::Select(_) => (Level::Info, Subsystem::Engine),
             Command::Seek(_) => (Level::Debug, Subsystem::Engine),
             Command::View(_) => (Level::Debug, Subsystem::View),
@@ -363,7 +369,14 @@ impl Engine {
                 )
             }
             Command::Export { what, to } => self.prepare_export(*what, to),
-            Command::Run { .. } => Ok(Prepared::Plain),
+            Command::Run { .. } | Command::Compare(None) => Ok(Prepared::Plain),
+            Command::Compare(Some(instrument)) => {
+                // The scene must be one on that instrument too.
+                self.compared_spec(instrument)
+                    .validate()
+                    .map(|()| Prepared::Plain)
+                    .map_err(|e| format!("the scene cannot be read on that instrument: {}", e.0))
+            }
             Command::Seek(t) if !t.is_finite() => Err(format!("a time must be finite, not {t}")),
             Command::Seek(_) => Ok(Prepared::Plain),
             Command::Select(None) => Ok(Prepared::Plain),
@@ -475,7 +488,10 @@ impl Engine {
                     view.frame(&self.spec);
                 }
                 self.forward.forget();
-                self.forward.schedule(&self.spec, false);
+                if let Some((_, compared)) = &mut self.compare {
+                    compared.forget();
+                }
+                self.schedule(false);
             }
             (_, Prepared::Edit(spec, step)) => {
                 self.spec = *spec;
@@ -485,27 +501,65 @@ impl Engine {
                     self.history.edited(step);
                 }
                 self.settle_after_history();
-                self.forward.schedule(&self.spec, false);
+                self.schedule(false);
             }
             (Command::Undo, Prepared::Restore(spec)) => {
                 self.spec = *spec;
                 self.history.undone();
                 self.settle_after_history();
-                self.forward.schedule(&self.spec, false);
+                self.schedule(false);
             }
             (Command::Redo, Prepared::Restore(spec)) => {
                 self.spec = *spec;
                 self.history.redone();
                 self.settle_after_history();
-                self.forward.schedule(&self.spec, false);
+                self.schedule(false);
             }
-            (Command::Run { .. }, _) => self.forward.schedule(&self.spec, true),
+            (Command::Run { .. }, _) => self.schedule(true),
+            (Command::Compare(None), _) => self.compare = None,
+            (Command::Compare(Some(instrument)), _) => {
+                self.compare = Some((instrument.clone(), Forward::new()));
+                self.schedule(false);
+            }
             (Command::Seek(t), _) => self.time = t.clamp(0.0, self.spec.duration),
             (Command::Select(target), _) => self.selection = *target,
             (Command::View(view), _) => self.perform_view(view),
             // An export changed nothing here; the file was written before this was reached.
             _ => {}
         }
+    }
+
+    /// The scene as it is read on `instrument`: everything the same but the instrument.
+    fn compared_spec(&self, instrument: &cav_sim::InstrumentSpec) -> SceneSpec {
+        let mut spec = self.spec.clone();
+        spec.array.instrument = instrument.clone();
+        spec
+    }
+
+    /// The scene has changed (or `fresh` asks for everything again): the forward stage, and the
+    /// comparison's if there is one, work out what they need.
+    fn schedule(&mut self, fresh: bool) {
+        self.forward.schedule(&self.spec, fresh);
+        if let Some((instrument, _)) = &self.compare {
+            let spec = self.compared_spec(instrument);
+            if let Some((_, compared)) = &mut self.compare {
+                compared.schedule(&spec, fresh);
+            }
+        }
+    }
+
+    /// The instrument the scene is also being read on, if one is.
+    #[must_use]
+    pub fn comparison(&self) -> Option<&cav_sim::InstrumentSpec> {
+        self.compare.as_ref().map(|(instrument, _)| &**instrument)
+    }
+
+    /// Where the comparison's signal stands, and the signal itself if there is a whole one.
+    #[must_use]
+    pub fn compared_signal(&self) -> (SignalState, Option<&std::sync::Arc<cav_sim::read::Signal>>) {
+        self.compare
+            .as_ref()
+            .map_or((SignalState::None, None), |(_, forward)| (forward.state(), forward.signal()))
     }
 
     /// After undo or redo the cameras stay where they are; the playhead and the selection are kept
@@ -598,15 +652,26 @@ impl Engine {
                 self.journal_budget >> 10
             )),
             Query::Journal => Ok(Reply::Journal(self.journal.clone())),
-            Query::Signal { tower, channel, span } => {
+            Query::Signal { tower, channel, span, compared } => {
                 let towers = self.spec.array.towers.len();
                 if *tower == 0 || *tower > towers {
                     return Err(format!("there is no tower {tower}; the scene has towers 1 to {towers}"));
                 }
-                if let Some(why) = self.forward.why() {
+                // The scene's own reading, or the comparison's.
+                let forward = match (&self.compare, compared) {
+                    (_, false) => &self.forward,
+                    (Some((_, forward)), true) => forward,
+                    (None, true) => {
+                        return Err(
+                            "nothing is being compared: `compare aice` reads the scene on AICE as well"
+                                .into(),
+                        );
+                    }
+                };
+                if let Some(why) = forward.why() {
                     return Err(why.to_owned());
                 }
-                let state = match (self.forward.state(), self.forward.signal()) {
+                let state = match (forward.state(), forward.signal()) {
                     (SignalState::Refined, Some(_)) => Standing::Refined,
                     (_, Some(_)) => Standing::Stale,
                     _ => Standing::Computing,
@@ -619,7 +684,7 @@ impl Engine {
                     ));
                 }
                 // A stale signal may be an earlier scene's, with another number of towers.
-                let signal = self.forward.signal().filter(|signal| *tower <= signal.towers);
+                let signal = forward.signal().filter(|signal| *tower <= signal.towers);
                 // The shots inside the span, by this tower's own readout times: they rise, so
                 // the shots are one stretch.
                 let offset = signal.map_or(0.0, |s| s.offsets[tower - 1]);
@@ -643,13 +708,16 @@ impl Engine {
                     warnings: signal.map_or_else(Vec::new, |s| s.warnings.clone()),
                 }))
             }
-            Query::Periodogram { tower, channel } => {
-                let Reply::Signal(signal) =
-                    self.query(&Query::Signal { tower: *tower, channel: *channel, span: None })?
-                else {
+            Query::Periodogram { tower, channel, compared } => {
+                let asked =
+                    Query::Signal { tower: *tower, channel: *channel, span: None, compared: *compared };
+                let Reply::Signal(signal) = self.query(&asked)? else {
                     unreachable!("a signal query answers with a signal")
                 };
-                let instrument = &self.spec.array.instrument;
+                let instrument = match (&self.compare, compared) {
+                    (Some((instrument, _)), true) => &**instrument,
+                    _ => &self.spec.array.instrument,
+                };
                 let nyquist = 0.5 / instrument.cycle;
                 let spectrum = cav_core::spectrum::periodogram(
                     &signal.values,
@@ -728,16 +796,38 @@ impl Engine {
     /// application calls this every frame; nothing in it waits and nothing in it computes.
     pub fn poll(&mut self) -> bool {
         let arrived = self.forward.poll();
-        self.took(arrived)
+        let compared = self.compare.as_mut().is_some_and(|(_, forward)| forward.poll().0);
+        if compared {
+            self.generation += 1;
+        }
+        self.took(arrived) || compared
     }
 
     /// Waits, at most `patience`, for the signal and the reading to be the current scene's. For
     /// clients that print numbers (`cav exec`, MCP); the application polls instead. True when
     /// both are.
     pub fn settle(&mut self, patience: std::time::Duration) -> bool {
+        let started = std::time::Instant::now();
         let arrived = self.forward.settle(patience);
         self.took(arrived);
-        self.forward.state() != SignalState::Stale && self.forward.reading().0 != SignalState::Stale
+        // The comparison has what is left of the patience. (Its reading is never asked for:
+        // only its signal is waited on.)
+        let mut compared = true;
+        if let Some((_, forward)) = &mut self.compare {
+            let left = patience.saturating_sub(started.elapsed());
+            let deadline = std::time::Instant::now() + left;
+            while forward.state() == SignalState::Stale && std::time::Instant::now() < deadline {
+                forward.poll();
+                if forward.state() == SignalState::Stale {
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+            }
+            compared = forward.state() != SignalState::Stale;
+            self.generation += 1;
+        }
+        compared
+            && self.forward.state() != SignalState::Stale
+            && self.forward.reading().0 != SignalState::Stale
     }
 
     /// Waits, at most `patience`, for the reading alone to be the one asked for: a reading that
@@ -808,6 +898,9 @@ impl Engine {
     #[doc(hidden)]
     pub fn hold_workers(&self, held: bool) {
         self.forward.hold(held);
+        if let Some((_, forward)) = &self.compare {
+            forward.hold(held);
+        }
     }
 
     /// Says in the log that a signal has arrived.
@@ -873,6 +966,7 @@ impl Engine {
             contents: self.contents,
             spans: self.spans,
             history: &self.history,
+            compare: self.comparison(),
         };
         // serde_json writes the shortest decimal that reads back to the same f64, so distinct
         // values give distinct text. FNV-1a over that text is the digest.
@@ -903,6 +997,9 @@ impl Engine {
             generation: self.generation,
             digest: self.digest(),
             signal: self.forward.state().name().to_owned(),
+            compare: self.comparison().map(|instrument| {
+                cav_sim::presets::name_of(instrument).unwrap_or("another instrument").to_owned()
+            }),
         }
     }
 

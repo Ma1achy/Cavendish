@@ -53,7 +53,12 @@ fn a_scene_too_large_for_a_signal_is_refused_before_anything_is_allocated() {
     // The engine says the same and keeps nothing.
     let mut engine = Engine::new();
     let (_, peak) = peak_during(|| engine.apply(Command::load(huge.clone())).unwrap());
-    let asked = Query::Signal { tower: 1, channel: cav_engine::ChannelName::Gradiometer, span: None };
+    let asked = Query::Signal {
+        tower: 1,
+        channel: cav_engine::ChannelName::Gradiometer,
+        span: None,
+        compared: false,
+    };
     assert!(engine.query(&asked).unwrap_err().contains("4000000 values"));
     assert_eq!(engine.forward_bytes(), 0);
     // (The scene itself, a thousand towers, is cloned a few times on the way in: megabytes.)
@@ -130,7 +135,12 @@ fn the_forward_store_stays_within_its_budget() {
     assert_eq!(many.validate(), Ok(()));
     let mut engine = Engine::new();
     let (_, peak) = peak_during(|| engine.apply(Command::load(many)).unwrap());
-    let asked = Query::Signal { tower: 1, channel: cav_engine::ChannelName::Gradiometer, span: None };
+    let asked = Query::Signal {
+        tower: 1,
+        channel: cav_engine::ChannelName::Gradiometer,
+        span: None,
+        compared: false,
+    };
     let why = engine.query(&asked).unwrap_err();
     assert!(why.contains("100 source(s) × 5 tower(s) × 100000 shot(s)") && why.contains("256 MiB"), "{why}");
     assert_eq!((engine.contributions_computed(), engine.forward_bytes()), (0, 0));

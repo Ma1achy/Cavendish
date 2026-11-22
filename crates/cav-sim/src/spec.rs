@@ -121,7 +121,7 @@ pub struct InstrumentSpec {
     #[schemars(extend("x-unit" = "m"))]
     pub ifo_separation: f64,
     /// Half the interrogation sequence, T, seconds; a shot lasts 2T from launch to readout.
-    /// 2T is less than `cycle`. At most 1000 s.
+    /// 2T is at most `cycle`. At most 1000 s.
     #[schemars(range(min = 1.0e-3, max = 1.0e3))]
     #[schemars(extend("x-unit" = "s"))]
     pub half_sequence: f64,
@@ -129,7 +129,8 @@ pub struct InstrumentSpec {
     #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0))]
     #[schemars(extend("x-unit" = "m/s"))]
     pub launch_velocity: f64,
-    /// Time between shots of one tower, seconds. More than a shot: `cycle` > 2 × `half_sequence`.
+    /// Time between shots of one tower, seconds. At least a shot: `cycle` ≥ 2 × `half_sequence`
+    /// (AICE's 5 s cycle is exactly its 2T: each shot is launched as the last is read out).
     #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0))]
     #[schemars(extend("x-unit" = "s"))]
     pub cycle: f64,
@@ -487,9 +488,9 @@ impl SceneSpec {
                 i.ifo_separation, i.tower_height
             ));
         }
-        if 2.0 * i.half_sequence >= i.cycle {
+        if 2.0 * i.half_sequence > i.cycle {
             return fail(format!(
-                "array.instrument.cycle: {} s is not longer than a shot, 2T = {} s",
+                "array.instrument.cycle: {} s is shorter than a shot, 2T = {} s",
                 i.cycle,
                 2.0 * i.half_sequence
             ));
@@ -806,7 +807,7 @@ mod tests {
             ("array.towers[1].label", |s| s.array.towers[1].label = "tower 1".into()),
             ("array.towers[2].position", |s| s.array.towers[2].position[1] = f64::NAN),
             ("array.instrument.ifo_separation", |s| s.array.instrument.ifo_separation = 10.0),
-            ("array.instrument.cycle", |s| s.array.instrument.cycle = 1.46),
+            ("array.instrument.cycle", |s| s.array.instrument.cycle = 1.45),
             ("room.size[2]", |s| s.room.as_mut().unwrap().size[2] = -3.0),
             ("floor.density", |s| s.floor.as_mut().unwrap().density = f64::INFINITY),
         ];
@@ -1105,17 +1106,19 @@ mod tests {
         // The rules between fields are in the words, since a schema range cannot hold them.
         let text = |path: &[&str]| field_schema(&schema, path)["description"].as_str().unwrap().to_owned();
         assert!(text(&["InstrumentSpec", "ifo_separation"]).contains("Less than `tower_height`"));
-        assert!(text(&["InstrumentSpec", "cycle"]).contains("`cycle` > 2 × `half_sequence`"));
-        assert!(text(&["InstrumentSpec", "half_sequence"]).contains("2T is less than `cycle`"));
+        assert!(text(&["InstrumentSpec", "cycle"]).contains("`cycle` ≥ 2 × `half_sequence`"));
+        assert!(text(&["InstrumentSpec", "half_sequence"]).contains("2T is at most `cycle`"));
         // And they are the rules: at equality each is refused, just inside each is accepted.
         let mut spec = base.clone();
         spec.array.instrument.ifo_separation = spec.array.instrument.tower_height;
         assert!(spec.validate().is_err());
         spec.array.instrument.ifo_separation = spec.array.instrument.tower_height - 0.01;
         assert_eq!(spec.validate(), Ok(()));
+        // A cycle may be exactly a shot (the plan's AICE: 2T = 5 s, one shot every 5 s); it may
+        // not be shorter.
         spec.array.instrument.cycle = 2.0 * spec.array.instrument.half_sequence;
-        assert!(spec.validate().is_err());
-        spec.array.instrument.cycle = 2.0 * spec.array.instrument.half_sequence + 0.01;
         assert_eq!(spec.validate(), Ok(()));
+        spec.array.instrument.cycle = 2.0 * spec.array.instrument.half_sequence - 0.01;
+        assert!(spec.validate().is_err());
     }
 }

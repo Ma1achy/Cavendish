@@ -118,6 +118,9 @@ pub struct Drawn {
     pub labels: Vec<(String, Rect)>,
     /// What the plot says when it has nothing to draw.
     pub note: Option<String>,
+    /// Whether this is the scene as read on the instrument being compared, drawn under the
+    /// scene's own.
+    pub compared: bool,
     /// For a flight diagram: each shot drawn, as the tower (from 0) and the x of its launch and
     /// of its readout.
     pub flights: Vec<(usize, f32, f32)>,
@@ -281,22 +284,37 @@ impl<'a> Sheet<'a> {
 
 /// Draws what pane `pane` shows, if it is a plot, into `rect`, and records what was drawn.
 pub fn draw(shell: &mut Shell, ui: &egui::Ui, pane: usize, rect: Rect) {
-    if let Some(drawn) = paint(&shell.engine, &ui.painter_at(rect), pane, rect) {
-        shell.layout.plots.push(drawn);
+    let drawn = paint(&shell.engine, &ui.painter_at(rect), pane, rect);
+    shell.layout.plots.extend(drawn);
+}
+
+/// Paints the plot pane `pane` of `engine` shows into `rect`, and says what was drawn: nothing
+/// when the pane shows the scene. While the scene is being compared on another instrument, a
+/// signal or a periodogram is drawn twice, the scene's own above and the comparison's below,
+/// each on its own axes. The application's panes and the pictures `cav render` and the MCP server
+/// make are both this function.
+#[must_use]
+pub fn paint(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> Vec<Drawn> {
+    let one = |rect: Rect, compared: bool| match engine.content(pane) {
+        PaneContent::Scene => None,
+        PaneContent::Signal => Some(signal(engine, painter, pane, rect, compared)),
+        PaneContent::Periodogram => Some(periodogram(engine, painter, pane, rect, compared)),
+        PaneContent::Flight => Some(flight(engine, painter, pane, rect)),
+    };
+    let twice = engine.comparison().is_some()
+        && matches!(engine.content(pane), PaneContent::Signal | PaneContent::Periodogram);
+    if twice {
+        let (above, below) = rect.split_top_bottom_at_fraction(0.5);
+        one(above, false).into_iter().chain(one(below, true)).collect()
+    } else {
+        one(rect, false).into_iter().collect()
     }
 }
 
-/// Paints the plot pane `pane` of `engine` shows into `rect`, and says what was drawn; `None`
-/// when the pane shows the scene. The application's panes and the pictures `cav render` and the
-/// MCP server make are both this function.
-#[must_use]
-pub fn paint(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> Option<Drawn> {
-    match engine.content(pane) {
-        PaneContent::Scene => None,
-        PaneContent::Signal => Some(signal(engine, painter, pane, rect)),
-        PaneContent::Periodogram => Some(periodogram(engine, painter, pane, rect)),
-        PaneContent::Flight => Some(flight(engine, painter, pane, rect)),
-    }
+/// What the comparison's plots say they are: `as AICE 100 m`.
+fn compared_as(engine: &Engine) -> String {
+    let name = engine.comparison().and_then(cav_sim::presets::name_of).unwrap_or("another instrument");
+    format!(" · as {name}")
 }
 
 /// A number of seconds or hertz as an axis shows it: as short as says it.
@@ -306,11 +324,12 @@ fn plain(value: f64) -> String {
     if text.is_empty() || text == "-0" { "0".to_owned() } else { text.to_owned() }
 }
 
-fn signal(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> Drawn {
+fn signal(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect, compared: bool) -> Drawn {
     let spec = engine.spec();
     let frame = engine.frame(pane).expect("the pane exists");
-    let state = engine.signal().0.name();
-    let title = format!("Signal · ΔΦ of every tower · {} · {state}", spec.name);
+    let (state, held) = if compared { engine.compared_signal() } else { engine.signal() };
+    let also = if compared { compared_as(engine) } else { String::new() };
+    let title = format!("Signal · ΔΦ of every tower · {}{also} · {}", spec.name, state.name());
     let mut sheet = Sheet::new(painter, rect, &title, 0);
     let [from, to] = frame.span.unwrap_or([0.0, spec.duration]);
     let x = Axis { lo: from, hi: to, log: false };
@@ -325,9 +344,10 @@ fn signal(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> 
         stems: Vec::new(),
         labels: Vec::new(),
         note: None,
+        compared,
         flights: Vec::new(),
     };
-    let Some(signal) = engine.signal().1 else {
+    let Some(signal) = held else {
         let why = "computing the signal";
         sheet.nothing(why);
         drawn.note = Some(why.into());
@@ -425,6 +445,7 @@ fn flight(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> 
         stems: Vec::new(),
         labels: Vec::new(),
         note: None,
+        compared: false,
         flights: Vec::new(),
     };
     let towers = spec.array.towers.len().min(MAX_FLIGHT_ROWS);
@@ -496,18 +517,20 @@ fn flight(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> 
     drawn
 }
 
-fn periodogram(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> Drawn {
+fn periodogram(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect, compared: bool) -> Drawn {
     let tower = match engine.selection() {
         Some(cav_engine::Target::Tower(n)) => n,
         _ => 1,
     };
-    let query = Query::Periodogram { tower, channel: ChannelName::Gradiometer };
+    let query = Query::Periodogram { tower, channel: ChannelName::Gradiometer, compared };
     let spec = engine.spec();
     let frame = engine.frame(pane).expect("the pane exists");
     let label_of = spec.array.towers.get(tower - 1).map_or("tower", |t| t.label.as_str());
-    let state = engine.signal().0.name();
-    let title = format!("Periodogram · √S of ΔΦ at {label_of} · {} · {state}", spec.name);
-    let nyquist = 0.5 / spec.array.instrument.cycle;
+    let state = if compared { engine.compared_signal().0.name() } else { engine.signal().0.name() };
+    let also = if compared { compared_as(engine) } else { String::new() };
+    let title = format!("Periodogram · √S of ΔΦ at {label_of} · {}{also} · {state}", spec.name);
+    let instrument = engine.comparison().filter(|_| compared).unwrap_or(&spec.array.instrument);
+    let nyquist = 0.5 / instrument.cycle;
     let reply = engine.query(&query);
     let combs = match &reply {
         Ok(Reply::Periodogram(spectrum)) => spectrum.combs.len().min(COMB_COLOURS.len()),
@@ -527,6 +550,7 @@ fn periodogram(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect
         stems: Vec::new(),
         labels: Vec::new(),
         note: None,
+        compared,
         flights: Vec::new(),
     };
     let spectrum = match reply {

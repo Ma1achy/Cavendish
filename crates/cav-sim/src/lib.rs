@@ -6,6 +6,7 @@ pub mod json_f64;
 pub mod library;
 pub mod motion;
 pub mod paths;
+pub mod presets;
 pub mod read;
 pub mod spec;
 pub mod view;
