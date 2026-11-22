@@ -2,4 +2,4 @@
 # Floors only go up: raise one in the commit that adds tests; never lower one to pass.
 quick 195
 gpu 24
-oracle 33
+oracle 41

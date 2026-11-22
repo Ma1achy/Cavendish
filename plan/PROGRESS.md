@@ -26,11 +26,13 @@ A 10,000-shot series takes 1.8 s and a frame with it plotted 27 ms, both over th
 budgets (recorded, not gated). Nobody has looked at the real window.
 
 **Calls worth a second look (S1).**
-1. **One tolerance was changed after measuring.** `oracle.script_same_time_100m_oscillators` measured
-   1.07e-3 against the 3e-4 the brief had fixed and said would not be moved. Two added cases show
-   the gap is the script's own trapezoid for a source 1 m from the atoms (second order as its step is
-   halved) and that the engine's rule is converged (2.7e-11). The tolerance is now 1.5e-3 and is in
-   `docs/validation/acknowledged.txt`. Set it back if a red case is the better record.
+1. **One tolerance was changed after measuring, and the review undid it.** The builder set
+   `oracle.script_same_time_100m_oscillators` to 1.5e-3 after it measured 1.07e-3 against 3e-4, and
+   gave the trapezoid as the cause. The review measured otherwise: 8.1e-4 of it is the scripts'
+   window ending one step short of 2T, and seven other cases passed 3e-4 only by cancellation. The
+   bound is withdrawn. Now: the scripts' rule taken to its limit is the engine (3e-10 on AICE, 1e-7
+   on AION-10), and the engine differs from each fixture by what that rule's error predicts, to
+   within 0.3% of the prediction, two-sided (`docs/slices/S1.md` §7.2, `acknowledged.txt`).
 2. **The published anchor sizes** ("~7 mrad", "~2 mrad peak to peak") are not met by v1 itself: it
    gives 13.66 mrad and 4.34 mrad. George's `1D_oscillator` gives 4.06 mrad peak to peak, so "~2 mrad"
    is the oscillator's amplitude. The engine is held to v1 and the scripts, not to the round numbers.
@@ -137,9 +139,11 @@ Asked in S1 (defaults in use until answered):
   `tilt·cos(2π f t)` from straight down, in a vertical plane turning at a second frequency. What is
   the report's parametrisation?
 - **The site's g.** 9.81 m/s², as in the scripts, is the default.
-- **`100m_oscillators` has its source 1 m from the atoms**, where the scripts' 0.01 s trapezoid is
-  off by 1.1e-3 of the peak (it converges to the engine's answer at second order as the step is
-  halved). Worth knowing if that script's numbers are used as they stand.
+- **The `fig2_*` and `100m_oscillators` scripts integrate to 2T less one step** (`arange(N_fly)`).
+  That is the main term of their difference from the converged integral: 8.1e-4 of the peak on
+  `100m_oscillators` (the trapezoid itself is 2.6e-4), 2.7e-4 to 3.2e-4 on `fig2_10m`. One more node
+  (integrating to 2T) cuts the error on `100m_oscillators` about fourfold. `1D_oscillator` already
+  covers the whole flight.
 
 Still open (asked in S0; defaults in use until answered):
 - The ground layout of a multi-tower array and the room around it. S0 draws v2's layout: five towers,
