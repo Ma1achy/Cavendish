@@ -62,7 +62,8 @@ fn setup() -> (Gpu, Renderer) {
 }
 
 fn render(gpu: &Gpu, renderer: &Renderer, scene: &SceneSpec, view: &ViewSpec) -> Picture {
-    let frame = Frame { scene, view, highlight: None, time: 0.0 };
+    let frame =
+        Frame { scene, view, highlight: None, time: 0.0, content: cav_sim::PaneContent::Scene, span: None };
     Picture { rgba: renderer.render_rgba(gpu, frame, SIZE).expect("render") }
 }
 
@@ -415,8 +416,14 @@ fn gpu_the_largest_valid_scene_renders() {
         [(NamedView::Iso, Projection::Perspective), (NamedView::Top, Projection::Orthographic)]
     {
         let view = ViewSpec::framing(&scene, named, projection, DrawStyle::Shaded);
-        let frame =
-            Frame { scene: &scene, view: &view, highlight: Some(cav_sim::Target::Tower(500)), time: 0.0 };
+        let frame = Frame {
+            scene: &scene,
+            view: &view,
+            highlight: Some(cav_sim::Target::Tower(500)),
+            time: 0.0,
+            content: cav_sim::PaneContent::Scene,
+            span: None,
+        };
         let rgba = renderer.render_rgba(&gpu, frame, SIZE).expect("the largest valid scene must draw");
         let picture = Picture { rgba };
         // Something was drawn, and it is a picture rather than one flat colour. (The scene has an
@@ -581,7 +588,14 @@ fn gpu_a_body_appears_at_its_projected_pixel() {
     let cam = camera(&view);
     let centre = |time: f64| cam.pixel(Vec3::new(10.0, 0.0, -10.0 + 2.5 * time), SIZE).expect("in front");
     let at = |time: f64| {
-        let frame = Frame { scene: &scene, view: &view, highlight: None, time };
+        let frame = Frame {
+            scene: &scene,
+            view: &view,
+            highlight: None,
+            time,
+            content: cav_sim::PaneContent::Scene,
+            span: None,
+        };
         Picture { rgba: renderer.render_rgba(&gpu, frame, SIZE).expect("render") }
     };
     for time in [1.0, 5.0, 9.0] {

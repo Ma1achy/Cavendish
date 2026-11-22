@@ -591,7 +591,7 @@ fn panes_show_plots_and_the_scene() {
     // The periodogram: 100 bins to Nyquist, and a stem for five harmonics of each of four bodies.
     let spectrum = &layout.plots[1];
     assert_eq!(spectrum.points, 100);
-    assert_eq!(spectrum.stems.len(), 4 * 5);
+    assert_eq!(spectrum.stems.len(), 4 * 8, "eight harmonics of each of four bodies");
     let stem = |label: &str, n: u32| {
         spectrum
             .stems
@@ -610,6 +610,54 @@ fn panes_show_plots_and_the_scene() {
     assert!((x - at(0.143_75)).abs() < 1.0 && *folded);
     let (_, _, x, folded) = stem("circular", 2);
     assert!((x - at(0.2125)).abs() < 1.0 && *folded);
+    // Nothing a plot writes is cut off by its pane, and the legend is clear of every stem's label.
+    for drawn in &layout.plots {
+        let pane = layout.panes[drawn.pane].expand(0.5);
+        for (text, took) in &drawn.labels {
+            assert!(pane.contains_rect(*took), "`{text}` at {took:?} leaves pane {pane:?}");
+        }
+    }
+    let legend: Vec<&(String, egui::Rect)> =
+        spectrum.labels.iter().filter(|l| l.0.contains("· f₀ =")).collect();
+    assert_eq!(legend.len(), 4);
+    for (text, took) in spectrum.labels.iter().filter(|l| l.0.ends_with("f₀") || l.0.ends_with("folded")) {
+        assert!(legend.iter().all(|l| !l.1.intersects(*took)), "`{text}` is under the legend");
+        assert!(took.top() >= spectrum.area.top() - 1.0, "`{text}` is above the plot");
+    }
+    // Both axes are marked between their ends: frequencies every 0.05 Hz, and the decades.
+    let said = |text: &str| spectrum.labels.iter().any(|l| l.0 == text);
+    assert!(said("0.05") && said("0.1") && said("0.2") && said("0.25"), "{:?}", spectrum.labels);
+    assert!(spectrum.labels.iter().filter(|l| l.0.starts_with("1e-")).count() >= 3);
+    assert!(
+        (spectrum.y.lo.log10() - spectrum.y.lo.log10().round()).abs() < 1e-9,
+        "the axis ends on a decade"
+    );
+    // A span shows a stretch of the axis: here the first 40 s of the signal, twenty shots a tower.
+    rig.shell.run("span 0 40 @2").unwrap();
+    rig.frames(vec![vec![]]);
+    let zoomed = rig.shell.layout().plots[0].clone();
+    assert_eq!((zoomed.x.lo, zoomed.x.hi), (0.0, 40.0));
+    assert!(zoomed.points >= 5 * 20 && zoomed.points <= 5 * 22, "{} points", zoomed.points);
+    assert_eq!(zoomed.playhead, None, "the playhead, at 100 s, is outside it");
+    // The wheel zooms about the pointer, and `span all` shows all of it again.
+    let centre = zoomed.area.center();
+    let wheel = Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: vec2(0.0, 200.0),
+        modifiers: Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+    };
+    rig.frames(vec![vec![Event::PointerMoved(centre)], vec![wheel]]);
+    // The wheel is smoothed over some frames: let all of it arrive before reading the span.
+    rig.frames(vec![vec![]; 40]);
+    let closer = rig.shell.layout().plots[0].clone();
+    assert!(closer.x.hi - closer.x.lo < 39.0, "{:?}", closer.x);
+    assert!(((closer.x.lo + closer.x.hi) / 2.0 - 20.0).abs() < 0.5, "about the pointer: {:?}", closer.x);
+    rig.shell.run("span all @2").unwrap();
+    rig.frames(vec![vec![]]);
+    let signal = &rig.shell.layout().plots[0].clone();
+    assert_eq!((signal.x.lo, signal.x.hi), (0.0, 400.0));
     // Dragging on the signal plot moves the playhead to where the pointer is.
     let point = pos2(signal.area.left() + 0.6 * signal.area.width(), signal.area.center().y);
     rig.click(point);

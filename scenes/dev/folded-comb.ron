@@ -4,7 +4,7 @@
 (
     version: 1,
     name: "folded-comb",
-    description: "One oscillator at 0.3275 Hz (panel c of the scripts\' fig2_10m), above the Nyquist frequency of          0.25 Hz: every harmonic folds, to 0.1725, 0.155, 0.0175 and 0.19 Hz.",
+    description: "One oscillator at 0.3275 Hz (panel c of the scripts\' fig2_10m), above the Nyquist frequency of 0.25 Hz: every harmonic folds, to 0.1725, 0.155, 0.0175 and 0.19 Hz.",
     duration: 2000.0,
     array: (
         instrument: (

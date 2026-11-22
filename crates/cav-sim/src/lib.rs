@@ -15,5 +15,6 @@ pub use spec::{
     SpecError, Target, TowerSpec,
 };
 pub use view::{
-    DrawStyle, FOV_Y_DEGREES, FRAMING_ASPECT, FRAMING_MARGIN, NamedView, Projection, SceneView, ViewSpec,
+    DrawStyle, FOV_Y_DEGREES, FRAMING_ASPECT, FRAMING_MARGIN, NamedView, PaneContent, Projection, SceneView,
+    ViewSpec,
 };

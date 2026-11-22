@@ -30,7 +30,14 @@ pub fn run() -> Result<(), String> {
     let started = Instant::now();
     let renderer = Renderer::new(&gpu);
     let (scene, view) = self_test_frame();
-    let frame = Frame { scene: &scene, view: &view, highlight: None, time: 0.0 };
+    let frame = Frame {
+        scene: &scene,
+        view: &view,
+        highlight: None,
+        time: 0.0,
+        content: cav_sim::PaneContent::Scene,
+        span: None,
+    };
     let rgba = renderer.render_rgba(&gpu, frame, SIZE)?;
     match check_picture(&rgba, &scene, &view) {
         Ok(()) => println!(

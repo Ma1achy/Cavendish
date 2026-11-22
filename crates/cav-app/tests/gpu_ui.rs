@@ -195,9 +195,10 @@ fn gpu_ui_draws_the_signal_and_the_periodogram() {
     let drawn = shell.layout().plots[0].clone();
     let (_, _, x, folded) = drawn.stems.iter().find(|s| s.0 == "linear" && s.1 == 1).unwrap().clone();
     assert!(!folded);
-    let gold = [0xe7, 0xc4, 0x6a];
+    // The first comb's colour: not the grey of the spectrum's own line.
+    let blue = [0x5a, 0xb4, 0xff];
     let low = f64::from(drawn.area.bottom()) - 6.0;
-    assert!(picture.has_near([f64::from(x), low], 1, gold, 30), "no stem at x = {x}");
+    assert!(picture.has_near([f64::from(x), low], 1, blue, 30), "no stem at x = {x}");
     // Control: a little to the side of the stem, at the same height, there is none.
-    assert!(!picture.has_near([f64::from(x) - 8.0, low], 1, gold, 30));
+    assert!(!picture.has_near([f64::from(x) - 8.0, low], 1, blue, 30));
 }

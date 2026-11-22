@@ -391,6 +391,40 @@ fn the_new_commands_and_queries_round_trip_through_json() {
 }
 
 #[test]
+fn a_pane_says_what_it_shows_and_which_stretch_of_it() {
+    use cav_engine::{PaneContent, ViewCommand};
+    let mut engine = loaded(dev::comb());
+    engine.run_script("panes 2; show signal @2; span 100 300 @2").unwrap();
+    // The frame carries what the pane shows, so nothing that draws a pane has to ask elsewhere.
+    let frame = engine.frame(1).unwrap();
+    assert_eq!((frame.content, frame.span), (PaneContent::Signal, Some([100.0, 300.0])));
+    let scene = engine.frame(0).unwrap();
+    assert_eq!((scene.content, scene.span), (PaneContent::Scene, None));
+    // A span is a view command: it replays, it is not an edit of the scene, and it round-trips.
+    let before = engine.spec().clone();
+    let replayed = Engine::replay(engine.journal()).unwrap();
+    assert_eq!(replayed.frame(1).unwrap().span, Some([100.0, 300.0]));
+    assert_eq!(replayed.digest(), engine.digest());
+    assert_eq!(engine.spec(), &before);
+    let command = Command::View(ViewCommand::Span { pane: 1, span: Some([0.5, 2.0]) });
+    let text = serde_json::to_string(&command).unwrap();
+    assert_eq!(serde_json::from_str::<Command>(&text).unwrap(), command, "{text}");
+    // Another plot has another axis, so the span does not follow the pane to it; `span all`
+    // shows the whole axis.
+    engine.run_line("show periodogram @2").unwrap();
+    assert_eq!(engine.frame(1).unwrap().span, None);
+    engine.run_script("span 0.1 0.2 @2; span all @2").unwrap();
+    assert_eq!(engine.frame(1).unwrap().span, None);
+    // Control: a span that runs backwards, is empty or is not a number is refused and nothing
+    // changes; so is one for a pane that is not there.
+    engine.run_line("span 0.1 0.2 @2").unwrap();
+    for line in ["span 3 1 @2", "span 2 2 @2", "span nan 4 @2", "span 0 1 @5"] {
+        assert!(engine.run_line(line).is_err(), "`{line}` was accepted");
+        assert_eq!(engine.frame(1).unwrap().span, Some([0.1, 0.2]));
+    }
+}
+
+#[test]
 fn a_value_with_strings_in_it_can_be_set_from_the_console() {
     // An agent adds an oscillator with two lines: a mass, then its motion as JSON. The console's
     // quotes used to take the JSON's, so anything but a number or a list could only be loaded.

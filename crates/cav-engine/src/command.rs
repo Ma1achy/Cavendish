@@ -3,7 +3,7 @@
 //! Everything is plain serialisable data, so a command can come from a button, a console line, the
 //! CLI, an MCP tool or a file, and be journalled and replayed.
 
-use cav_sim::{DrawStyle, NamedView, Projection, SceneSpec, Target, ViewSpec};
+use cav_sim::{DrawStyle, NamedView, PaneContent, Projection, SceneSpec, Target, ViewSpec};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +58,9 @@ pub enum ViewCommand {
     Style { pane: usize, style: DrawStyle },
     /// What the pane shows: the scene, or a plot.
     Show { pane: usize, content: PaneContent },
+    /// The stretch of a plot's horizontal axis a pane shows: seconds for the signal, hertz for the
+    /// periodogram; `None` for all of it.
+    Span { pane: usize, span: Option<[f64; 2]> },
     /// Orbit to these angles, degrees; pitch is clamped to ±90.
     Orbit { pane: usize, yaw: f64, pitch: f64 },
     /// Set the distance from the target to the camera, metres.
@@ -79,6 +82,7 @@ impl ViewCommand {
             | Self::Project { pane, .. }
             | Self::Style { pane, .. }
             | Self::Show { pane, .. }
+            | Self::Span { pane, .. }
             | Self::Orbit { pane, .. }
             | Self::Zoom { pane, .. }
             | Self::Pan { pane, .. }
@@ -110,7 +114,11 @@ impl Command {
             (Self::Set { path: a, continues: true, .. }, Self::Set { path: b, .. }) => a == b,
             (Self::View(Orbit { pane: a, .. }), Self::View(Orbit { pane: b, .. }))
             | (Self::View(Zoom { pane: a, .. }), Self::View(Zoom { pane: b, .. }))
-            | (Self::View(Pan { pane: a, .. }), Self::View(Pan { pane: b, .. })) => a == b,
+            | (Self::View(Pan { pane: a, .. }), Self::View(Pan { pane: b, .. }))
+            | (
+                Self::View(ViewCommand::Span { pane: a, .. }),
+                Self::View(ViewCommand::Span { pane: b, .. }),
+            ) => a == b,
             _ => false,
         }
     }
@@ -150,37 +158,6 @@ pub enum Query {
         tower: usize,
         channel: ChannelName,
     },
-}
-
-/// What a pane shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
-pub enum PaneContent {
-    /// The scene in three dimensions.
-    #[default]
-    Scene,
-    /// Every tower's signal against time, with the playhead.
-    Signal,
-    /// The periodogram of a tower's signal, with each oscillating body's comb of harmonics drawn
-    /// where they fold to.
-    Periodogram,
-}
-
-impl PaneContent {
-    /// The word the console uses.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Scene => "scene",
-            Self::Signal => "signal",
-            Self::Periodogram => "periodogram",
-        }
-    }
-
-    /// The content a word names.
-    #[must_use]
-    pub fn parse(word: &str) -> Option<Self> {
-        [Self::Scene, Self::Signal, Self::Periodogram].into_iter().find(|c| c.name() == word)
-    }
 }
 
 /// One harmonic of a body's comb.
@@ -225,7 +202,7 @@ pub struct PeriodogramReply {
 }
 
 /// How many harmonics of each body a comb lists.
-pub const COMB_HARMONICS: u32 = 5;
+pub const COMB_HARMONICS: u32 = 8;
 
 /// A stage of the simulation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

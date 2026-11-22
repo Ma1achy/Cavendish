@@ -18,10 +18,10 @@ pub mod engine;
 pub mod forward;
 pub mod log;
 
-pub use cav_sim::Target;
+pub use cav_sim::{PaneContent, Target};
 pub use command::{
-    COMB_HARMONICS, ChannelName, Comb, Command, Harmonic, MAX_PANES, PaneContent, PeriodogramReply, Query,
-    ReadingReply, Reply, SignalReply, Stage, Stats, TowerReading, ViewCommand,
+    COMB_HARMONICS, ChannelName, Comb, Command, Harmonic, MAX_PANES, PeriodogramReply, Query, ReadingReply,
+    Reply, SignalReply, Stage, Stats, TowerReading, ViewCommand,
 };
 pub use console::{COMMANDS, CommandDoc, Request, describe, help, render};
 pub use engine::{Engine, TYPED_LINE_PATIENCE, estimate_text};

@@ -230,6 +230,47 @@ fn gpu_mcp_render_view_returns_a_png() {
     client.finish();
 }
 
+#[test]
+fn gpu_mcp_render_view_draws_a_plot_pane() {
+    use base64::Engine as _;
+    let (mut client, _) = Client::start();
+    client.text("scene_load", json!({ "scene": "comb" }));
+    client.text("command", json!({ "line": "panes 2" }));
+    let picture = |client: &mut Client, pane: u32| {
+        let (is_error, content) =
+            client.call("render_view", json!({ "pane": pane, "width": 640, "height": 400 }));
+        assert!(!is_error, "{content:?}");
+        let bytes =
+            base64::engine::general_purpose::STANDARD.decode(content[0]["data"].as_str().unwrap()).unwrap();
+        cav_render::decode_png(&bytes).expect("a PNG").0
+    };
+    // How many pixels are near a colour: the comb's blue, which nothing in the scene is.
+    let near = |rgba: &[u8], colour: [u8; 3]| {
+        rgba.as_chunks::<4>().0.iter().filter(|p| (0..3).all(|c| p[c].abs_diff(colour[c]) <= 30)).count()
+    };
+    let blue = [0x5a, 0xb4, 0xff];
+    let scene = picture(&mut client, 2);
+    client.text("command", json!({ "line": "show periodogram @2" }));
+    let spectrum = picture(&mut client, 2);
+    assert!(near(&spectrum, blue) >= 40, "{} pixels of the comb's colour", near(&spectrum, blue));
+    // The signal plot is another picture: every tower's line, and no comb.
+    client.text("command", json!({ "line": "show signal @2" }));
+    let signal = picture(&mut client, 2);
+    assert!(signal != spectrum);
+    let gold = cav_render::tower_srgb(0);
+    assert!(near(&signal, gold) >= 40, "{} pixels of tower 1's colour", near(&signal, gold));
+    assert_eq!(near(&spectrum, gold), 0, "the periodogram draws no tower's line");
+    // A span is drawn: the first 40 s is not the whole 2000 s.
+    client.text("command", json!({ "line": "span 0 40 @2" }));
+    assert!(picture(&mut client, 2) != signal);
+    // Control: once the pane shows the scene again its picture is the scene's, as it was before
+    // any plot, and has none of the comb's colour.
+    client.text("command", json!({ "line": "show scene @2" }));
+    assert!(picture(&mut client, 2) == scene, "the scene, as it was");
+    assert!(scene != signal && near(&scene, blue) == 0);
+    client.finish();
+}
+
 /// Writes a scene file under the test's temporary directory and returns its path with forward
 /// slashes (and no spaces: the console's `load` takes one word).
 fn scene_file(name: &str, spec: &cav_sim::SceneSpec) -> String {

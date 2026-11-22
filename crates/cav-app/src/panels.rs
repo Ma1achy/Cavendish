@@ -855,15 +855,38 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
             commands.push(Command::View(ViewCommand::Activate(pane)));
         }
         if content != cav_engine::PaneContent::Scene {
-            // A plot has no camera. On the signal plot the pointer is the playhead.
-            let drawn = shell.layout.plots.iter().find(|d| d.pane == pane).cloned();
-            if content == cav_engine::PaneContent::Signal
-                && (response.clicked() || response.dragged())
-                && let Some(point) = response.interact_pointer_pos()
-                && let Some(drawn) = drawn
-            {
-                let along = f64::from((point.x - drawn.area.left()) / drawn.area.width()).clamp(0.0, 1.0);
-                commands.push(Command::Seek(drawn.x.lo + along * (drawn.x.hi - drawn.x.lo)));
+            // A plot has no camera. On the signal plot the pointer is the playhead; on either,
+            // the wheel zooms the horizontal axis about the pointer and a double click shows all of it.
+            if let Some(drawn) = shell.layout.plots.iter().find(|d| d.pane == pane).cloned() {
+                let value = |point: egui::Pos2| {
+                    let along = f64::from((point.x - drawn.area.left()) / drawn.area.width()).clamp(0.0, 1.0);
+                    drawn.x.lo + along * (drawn.x.hi - drawn.x.lo)
+                };
+                let spec = shell.engine.spec();
+                let whole = match content {
+                    cav_engine::PaneContent::Signal => spec.duration,
+                    _ => 0.5 / spec.array.instrument.cycle,
+                };
+                let scroll = if response.hovered() { ui.input(|i| i.smooth_scroll_delta.y) } else { 0.0 };
+                if response.double_clicked() {
+                    commands.push(Command::View(ViewCommand::Span { pane, span: None }));
+                } else {
+                    // The wheel's movement is smoothed over several frames, so a click may land
+                    // while it is still arriving: the two are not alternatives.
+                    if scroll != 0.0
+                        && let Some(point) = ui.input(|i| i.pointer.hover_pos())
+                    {
+                        let span =
+                            crate::plots::zoomed([drawn.x.lo, drawn.x.hi], value(point), scroll, whole);
+                        commands.push(Command::View(ViewCommand::Span { pane, span }));
+                    }
+                    if content == cav_engine::PaneContent::Signal
+                        && (response.clicked() || response.dragged())
+                        && let Some(point) = response.interact_pointer_pos()
+                    {
+                        commands.push(Command::Seek(value(point)));
+                    }
+                }
             }
             continue;
         }

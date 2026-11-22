@@ -155,7 +155,7 @@ fn script_oscillator(frequency: f64) -> BodySpec {
 pub fn comb() -> SceneSpec {
     open(
         "comb",
-        "One oscillator at 0.05 Hz (panel b of the scripts' fig2_10m): its periodogram is a comb at 0.05,          0.10, 0.15 and 0.20 Hz, each harmonic lower than the last, all below the Nyquist frequency of          0.25 Hz.",
+        "One oscillator at 0.05 Hz (panel b of the scripts' fig2_10m): its periodogram is a comb at 0.05, 0.10, 0.15 and 0.20 Hz, each harmonic lower than the last, all below the Nyquist frequency of 0.25 Hz.",
         2000.0,
         vec![script_oscillator(0.05)],
     )
@@ -166,7 +166,7 @@ pub fn comb() -> SceneSpec {
 pub fn folded_comb() -> SceneSpec {
     open(
         "folded-comb",
-        "One oscillator at 0.3275 Hz (panel c of the scripts' fig2_10m), above the Nyquist frequency of          0.25 Hz: every harmonic folds, to 0.1725, 0.155, 0.0175 and 0.19 Hz.",
+        "One oscillator at 0.3275 Hz (panel c of the scripts' fig2_10m), above the Nyquist frequency of 0.25 Hz: every harmonic folds, to 0.1725, 0.155, 0.0175 and 0.19 Hz.",
         2000.0,
         vec![script_oscillator(0.3275)],
     )

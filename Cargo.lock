@@ -216,6 +216,7 @@ name = "cav"
 version = "0.0.0"
 dependencies = [
  "base64",
+ "cav-app",
  "cav-core",
  "cav-engine",
  "cav-gpu",

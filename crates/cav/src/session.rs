@@ -7,10 +7,17 @@ use cav_engine::Engine;
 use cav_gpu::Gpu;
 use cav_render::Renderer;
 
+/// The longest a picture of a plot waits for the signal it shows, seconds of wall time. The dev
+/// scenes' signals take well under a second; a picture drawn before the signal is whole says
+/// "computing the signal" (or "stale" in its title) rather than showing nothing.
+const PLOT_PATIENCE: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// One engine and, once something has been drawn, its device and pipelines.
 pub struct Session {
     pub engine: Engine,
     gpu: Option<(Gpu, Renderer)>,
+    /// The application's painter with no window, for panes that show plots.
+    plots: Option<cav_app::headless::Headless>,
 }
 
 impl Session {
@@ -20,7 +27,7 @@ impl Session {
         // A client that prints numbers waits for them: a line that asks for a signal gets the
         // current scene's, or, after a minute, the last whole one marked stale.
         engine.set_patience(std::time::Duration::from_secs(60));
-        Self { engine, gpu: None }
+        Self { engine, gpu: None, plots: None }
     }
 
     /// The device and the renderer, created the first time they are asked for.
@@ -52,14 +59,24 @@ impl Session {
         }
     }
 
-    /// Draws a pane's view of the engine's scene, with the selection highlighted, as a PNG.
+    /// Draws what a pane shows as a PNG: its view of the engine's scene with the selection
+    /// highlighted, or its plot.
     ///
     /// # Errors
     /// When there is no GPU, no such pane, or the read-back fails.
     pub fn render_png(&mut self, pane: usize, size: [u32; 2]) -> Result<Vec<u8>, String> {
         // The engine says what the pane shows; refusing a pane that does not exist comes first,
         // before a device is made for nothing.
-        self.engine.frame(pane)?;
+        let frame = self.engine.frame(pane)?;
+        if frame.content != cav_engine::PaneContent::Scene {
+            // A plot is drawn by the code the application draws it with, once the signal it
+            // shows is the scene's (or as it stands, saying so, if that takes longer than the wait).
+            self.engine.settle(PLOT_PATIENCE);
+            if self.plots.is_none() {
+                self.plots = Some(cav_app::headless::Headless::new()?);
+            }
+            return self.plots.as_mut().expect("just created").plot_png(&self.engine, pane, size);
+        }
         self.gpu()?;
         let (gpu, renderer) = self.gpu.as_ref().expect("just created");
         renderer.render_png(gpu, self.engine.frame(pane)?, size)
