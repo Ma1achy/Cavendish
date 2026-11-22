@@ -423,16 +423,16 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     }
 
     heading(ui, "Array");
+    // With something to read, each tower's row shows what it reads under the playhead.
+    let reads: Vec<f64> = shell.readings().iter().map(|r| r.gradiometer).collect();
+    let silent = spec.bodies.is_empty();
     for (n, tower) in spec.array.towers.iter().enumerate() {
         let [x, y, _] = tower.position;
-        outline_row(
-            shell,
-            ui,
-            Target::Tower(n + 1),
-            theme::tower(n),
-            &tower.label,
-            &format!("{x:+.1} {y:+.1}"),
-        );
+        let detail = match reads.get(n) {
+            Some(phase) if !silent => crate::shell::phase_text(*phase),
+            _ => format!("{x:+.1} {y:+.1}"),
+        };
+        outline_row(shell, ui, Target::Tower(n + 1), theme::tower(n), &tower.label, &detail);
     }
 
     heading(ui, "Surroundings");
@@ -521,7 +521,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     ui.add_space(4.0);
     ui.label(
         RichText::new(
-            "drag to orbit · right-drag to pan · scroll to zoom · O swaps the projection · Home resets",
+            "drag to orbit · right-drag to pan · scroll to zoom · drag a body to move it · O swaps the projection · Home resets",
         )
         .size(11.0)
         .color(theme::WEAK),
@@ -596,12 +596,19 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
                     ("z (base)", format!("{z} m")),
                 ],
             );
-            heading(ui, "Reading");
-            ui.label(
-                RichText::new("no signal yet · the forward model arrives with S1")
-                    .size(11.5)
-                    .color(theme::WEAK),
-            );
+            heading(ui, &format!("Reading · a shot read out at {:.2} s", shell.engine.time()));
+            let reading = shell.readings().get(n - 1).cloned();
+            if let Some(reading) = reading {
+                rows(
+                    ui,
+                    "reading",
+                    &[
+                        ("ΔΦ", crate::shell::phase_text(reading.gradiometer)),
+                        ("δφ₁ lower", crate::shell::phase_text(reading.lower)),
+                        ("δφ₂ upper", crate::shell::phase_text(reading.upper)),
+                    ],
+                );
+            }
         }
         Some(Target::Room) => {
             let room = spec.room.as_ref().expect("a selected room exists");
@@ -705,6 +712,15 @@ fn header(shell: &mut Shell, ui: &mut egui::Ui) {
         if shell.engine.panes() > 1 {
             badge(ui, format!("pane {} of {}", pane + 1, shell.engine.panes()), theme::LINK);
         }
+        // Where the signal stands: a stale one is never mistaken for the current scene's.
+        match shell.engine.signal() {
+            (cav_engine::SignalState::Refined, Some(signal)) => {
+                let text = format!("signal · refined · ±{:.0e} rad", signal.estimate.max(1e-16));
+                badge(ui, text, theme::STRONG);
+            }
+            (cav_engine::SignalState::Stale, _) => badge(ui, "signal · stale", theme::WARN),
+            _ => {}
+        }
         // What the renderer thinned to keep a huge scene drawable is said here, not passed over.
         for note in cav_render::decimation(shell.engine.spec()) {
             badge(ui, note, theme::WARN);
@@ -733,6 +749,7 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     let generation = shell.engine.generation();
     let mut commands: Vec<Command> = Vec::new();
     let mut drags: Vec<(usize, egui::Vec2, bool, egui::Vec2)> = Vec::new();
+    let mut body_drags: Vec<(usize, usize, egui::Vec2, egui::Vec2)> = Vec::new();
     let mut zooms: Vec<(usize, f32)> = Vec::new();
 
     for (pane, pixels) in pane_rects(count, size, PANE_GAP).into_iter().enumerate() {
@@ -779,10 +796,37 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         if (response.clicked() || response.drag_started()) && pane != active {
             commands.push(Command::View(ViewCommand::Activate(pane)));
         }
+        // A click on a body selects it; a drag that starts on one takes hold of it.
+        let within = |point: egui::Pos2| (point - rect.min).to_pos2();
+        if response.clicked()
+            && let Some(point) = response.interact_pointer_pos()
+            && let Some(n) = shell.body_under(pane, within(point), rect.size())
+        {
+            commands.push(Command::Select(Some(Target::Body(n + 1))));
+        }
+        if response.drag_started_by(egui::PointerButton::Primary)
+            && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+            && let Some(n) = shell.body_under(pane, within(origin), rect.size())
+        {
+            shell.dragging = Some((pane, n));
+            if shell.engine.selection() != Some(Target::Body(n + 1)) {
+                commands.push(Command::Select(Some(Target::Body(n + 1))));
+            }
+        }
         if response.dragged() {
-            let panning = response.dragged_by(egui::PointerButton::Secondary)
-                || response.dragged_by(egui::PointerButton::Middle);
-            drags.push((pane, response.drag_delta(), panning, rect.size()));
+            match shell.dragging {
+                Some((held_in, n)) if held_in == pane => {
+                    body_drags.push((pane, n, response.drag_delta(), rect.size()));
+                }
+                _ => {
+                    let panning = response.dragged_by(egui::PointerButton::Secondary)
+                        || response.dragged_by(egui::PointerButton::Middle);
+                    drags.push((pane, response.drag_delta(), panning, rect.size()));
+                }
+            }
+        }
+        if response.drag_stopped() {
+            shell.dragging = None;
         }
         if response.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
@@ -810,6 +854,11 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     for (pane, delta, panning, size) in drags {
         if delta != egui::Vec2::ZERO {
             if panning { shell.pan_by(pane, delta, size) } else { shell.orbit_by(pane, delta) }
+        }
+    }
+    for (pane, n, delta, size) in body_drags {
+        if delta != egui::Vec2::ZERO {
+            shell.drag_body_by(pane, n, delta, size);
         }
     }
     for (pane, scroll) in zooms {
@@ -865,7 +914,7 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
             );
             ui.label("A voxel world around an array of atom-interferometer gravity gradiometers.");
             ui.add_space(4.0);
-            ui.label(RichText::new("Slice S0: the shell. No physics yet.").color(theme::WEAK));
+            ui.label(RichText::new("Slice S1: a point mass, read by every tower.").color(theme::WEAK));
             if let Some(adapter) = &shell.adapter {
                 ui.label(RichText::new(adapter).monospace().size(11.0).color(theme::WEAK));
             }

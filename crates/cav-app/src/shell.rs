@@ -2,7 +2,9 @@
 //! commands. Buttons, keys, menus and the console all end in [`Shell::run`] or [`Shell::apply`],
 //! which end in the engine's API; nothing here edits the scene or the views any other way.
 
-use cav_engine::{Command, Engine, Level, LogFilter, Request, Subsystem, Target, ViewCommand};
+use cav_engine::{
+    Command, Engine, Level, LogFilter, Query, Reply, Request, Subsystem, Target, TowerReading, ViewCommand,
+};
 use egui::{Key, Rect};
 
 use crate::panes::PaneSurface;
@@ -105,6 +107,32 @@ pub struct Shell {
     /// How long the last frame took, for the footer; `None` in screenshots, so they are repeatable.
     pub frame_ms: Option<f32>,
     pub(crate) layout: Layout,
+    /// The body being dragged, from 0, and the pane it is dragged in.
+    pub(crate) dragging: Option<(usize, usize)>,
+    /// Every tower's reading under the playhead, and the engine's generation it was read at.
+    readings: Option<(u64, Vec<TowerReading>)>,
+}
+
+/// How near a body's picture the pointer must be to take hold of it, points.
+pub const GRAB_RADIUS: f32 = 16.0;
+
+/// A phase as people read it: in rad, mrad, µrad or nrad, with four figures.
+#[must_use]
+pub fn phase_text(radians: f64) -> String {
+    let size = radians.abs();
+    if !radians.is_finite() {
+        return if radians.is_nan() { "not a number".into() } else { "unbounded".into() };
+    }
+    let (scaled, unit) = if size == 0.0 || size >= 1.0 {
+        (radians, "rad")
+    } else if size >= 1e-3 {
+        (radians * 1e3, "mrad")
+    } else if size >= 1e-6 {
+        (radians * 1e6, "µrad")
+    } else {
+        (radians * 1e9, "nrad")
+    };
+    format!("{scaled:+.3} {unit}")
 }
 
 impl Default for Shell {
@@ -133,6 +161,8 @@ impl Shell {
             adapter: None,
             frame_ms: None,
             layout: Layout::default(),
+            dragging: None,
+            readings: None,
         }
     }
 
@@ -207,6 +237,74 @@ impl Shell {
         if self.engine.apply(command).is_err() {
             self.console_open = true;
         }
+    }
+
+    /// What every tower reads from a shot read out at the playhead, read again whenever the
+    /// engine's state has changed (a drag, a scrub). Computed here and now: for point masses it is
+    /// microseconds.
+    pub fn readings(&mut self) -> &[TowerReading] {
+        let generation = self.engine.generation();
+        if self.readings.as_ref().is_none_or(|(at, _)| *at != generation) {
+            let towers = match self.engine.query(&Query::Reading(None)) {
+                Ok(Reply::Reading(towers)) => towers,
+                _ => Vec::new(),
+            };
+            self.readings = Some((generation, towers));
+        }
+        &self.readings.as_ref().expect("just read").1
+    }
+
+    /// Where body `n` (from 0) is drawn in a pane of `size` points, from the pane's top-left corner;
+    /// `None` when it is behind the camera.
+    #[must_use]
+    pub fn body_point(&self, pane: usize, n: usize, size: egui::Vec2) -> Option<egui::Pos2> {
+        let spec = self.engine.spec();
+        let body = spec.bodies.get(n)?;
+        let at = body.motion.position(self.engine.time(), spec.array.instrument.gravity);
+        let camera = cav_render::Camera::new(self.engine.view(pane), f64::from(size.x / size.y));
+        // The camera's own arithmetic, in points instead of pixels.
+        let scale = 1024.0;
+        let whole = [(f64::from(size.x) * scale) as u32, (f64::from(size.y) * scale) as u32];
+        let [x, y] = camera.pixel(cav_core::Vec3::from_array(at), whole)?;
+        Some(egui::pos2((x / scale) as f32, (y / scale) as f32))
+    }
+
+    /// The body whose picture is nearest `point` in a pane, if one is within reach.
+    #[must_use]
+    pub fn body_under(&self, pane: usize, point: egui::Pos2, size: egui::Vec2) -> Option<usize> {
+        let near = |n: usize| self.body_point(pane, n, size).map(|at| (n, at.distance(point)));
+        let nearest =
+            (0..self.engine.spec().bodies.len()).filter_map(near).min_by(|a, b| a.1.total_cmp(&b.1))?;
+        (nearest.1 <= GRAB_RADIUS).then_some(nearest.0)
+    }
+
+    /// Drags body `n` by `delta` points across a pane: it moves in the plane that faces the camera
+    /// through where it is, so that it stays under the pointer. A `Set` of the point its motion is
+    /// anchored at; a run of them is one edit.
+    pub(crate) fn drag_body_by(&mut self, pane: usize, n: usize, delta: egui::Vec2, pane_size: egui::Vec2) {
+        let spec = self.engine.spec();
+        let Some(body) = spec.bodies.get(n) else { return };
+        let view = self.engine.view(pane);
+        let camera = cav_render::Camera::new(view, f64::from(pane_size.x / pane_size.y));
+        let at = cav_core::Vec3::from_array(
+            body.motion.position(self.engine.time(), spec.array.instrument.gravity),
+        );
+        // Metres per point at the body's own depth: in perspective that grows with the distance
+        // from the eye; in an orthographic view it is the same everywhere.
+        let at_target = 2.0 * camera.half_height / f64::from(pane_size.y);
+        let scale = match view.projection {
+            cav_sim::Projection::Orthographic => at_target,
+            cav_sim::Projection::Perspective => {
+                at_target * (at - camera.origin - camera.eye).dot(camera.forward) / view.distance
+            }
+        };
+        let moved = camera.right * (f64::from(delta.x) * scale) - camera.up * (f64::from(delta.y) * scale);
+        let (anchor, field) = body.motion.anchor();
+        let value = [anchor[0] + moved.x, anchor[1] + moved.y, anchor[2] + moved.z];
+        self.apply(Command::Set {
+            path: format!("bodies[{n}].motion.{field}"),
+            value: serde_json::json!(value),
+        });
     }
 
     /// The selected tower, from 0.

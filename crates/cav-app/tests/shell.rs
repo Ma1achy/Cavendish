@@ -456,3 +456,83 @@ fn an_answer_is_one_log_entry_and_log_is_not_echoed() {
     assert_eq!(shell.engine.log().len(), entries, "`log` left the log as it was");
     assert!(shell.console_open);
 }
+
+#[test]
+fn dragging_a_body_moves_it_under_the_pointer() {
+    for projection in ["persp", "ortho"] {
+        let mut rig = Rig::new([1440, 900]);
+        rig.shell.run("load point").unwrap();
+        rig.shell.run(&format!("proj {projection}")).unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        let pane = rig.shell.layout().panes[0];
+        let on_screen = |rig: &Rig| pane.min + rig.shell.body_point(0, 0, pane.size()).unwrap().to_vec2();
+        let start = on_screen(&rig);
+        assert!(pane.contains(start), "{projection}: the mass is in the picture at {start:?}");
+        let journal = rig.shell.engine.journal().len();
+        let before = rig.shell.engine.spec().bodies[0].clone();
+
+        // Take hold of the mass and pull it 90 points right and 50 up.
+        let end = start + vec2(90.0, -50.0);
+        rig.drag(start, end, PointerButton::Primary);
+        let after = on_screen(&rig);
+        // It follows the pointer. egui starts a drag only once the pointer has moved a few points,
+        // so the mass is that much behind it and no more.
+        assert!(after.distance(end) <= 8.0, "{projection}: the mass is at {after:?}, the pointer at {end:?}");
+        assert!(after.distance(start) > 80.0, "{projection}: it moved {} points", after.distance(start));
+        // The drag selected it, and is a run of sets of its position: one entry after the selection.
+        assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)));
+        let Some(Command::Set { path, .. }) = rig.last_command() else {
+            panic!("{projection}: the last command is {:?}", rig.last_command())
+        };
+        assert_eq!(path, "bodies[0].motion.Static.position");
+        assert_eq!(rig.shell.engine.journal().len(), journal + 2, "a selection and one drag");
+        assert_ne!(rig.shell.engine.spec().bodies[0], before);
+        // One undo puts it back.
+        rig.shell.run("undo").unwrap();
+        assert_eq!(rig.shell.engine.spec().bodies[0], before);
+
+        // Control: a drag that starts on empty picture orbits the camera and moves no body.
+        let empty = pane.left_top() + vec2(40.0, 40.0);
+        assert!(rig.shell.body_under(0, (empty - pane.min).to_pos2(), pane.size()).is_none());
+        rig.drag(empty, empty + vec2(60.0, 20.0), PointerButton::Primary);
+        assert!(matches!(rig.last_command(), Some(Command::View(ViewCommand::Orbit { .. }))));
+        assert_eq!(rig.shell.engine.spec().bodies[0], before);
+    }
+}
+
+#[test]
+fn a_click_selects_a_body_and_the_panels_show_what_the_towers_read() {
+    let mut rig = Rig::new([1440, 900]);
+    rig.shell.run("load point").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let pane = rig.shell.layout().panes[0];
+    let at = pane.min + rig.shell.body_point(0, 0, pane.size()).unwrap().to_vec2();
+    rig.click(at);
+    assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)));
+    // Every tower has a reading under the playhead, and it is the engine's.
+    let readings = rig.shell.readings().to_vec();
+    assert_eq!(readings.len(), 5);
+    let cav_engine::Reply::Reading(asked) =
+        rig.shell.engine.query(&cav_engine::Query::Reading(None)).unwrap()
+    else {
+        panic!("readings")
+    };
+    assert_eq!(readings, asked);
+    assert!(readings[1].gradiometer.abs() > readings[2].gradiometer.abs(), "tower 2 is the nearer");
+    // Move the mass and the readings are read again; nothing is left over from before.
+    rig.shell.run("set bodies[0].motion.Static.position [-2, 0, 2.5]").unwrap();
+    let moved = rig.shell.readings().to_vec();
+    assert_ne!(moved, readings);
+    assert!(moved[2].gradiometer.abs() > moved[1].gradiometer.abs(), "now tower 3 is");
+    // The text a reading is shown as.
+    use cav_app::shell::phase_text;
+    assert_eq!(phase_text(-0.010_240_1), "-10.240 mrad");
+    assert_eq!(phase_text(3.2e-6), "+3.200 µrad");
+    assert_eq!(phase_text(4.8e3), "+4800.000 rad");
+    assert_eq!(phase_text(2.5e-10), "+0.250 nrad");
+    assert_eq!(phase_text(0.0), "+0.000 rad");
+    assert_eq!(phase_text(f64::INFINITY), "unbounded");
+    // Control: in a scene with nothing to read every reading is exactly zero.
+    rig.shell.run("load void").unwrap();
+    assert!(rig.shell.readings().iter().all(|r| r.gradiometer == 0.0 && r.lower == 0.0));
+}

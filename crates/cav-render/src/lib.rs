@@ -12,5 +12,6 @@ pub mod scene;
 pub use camera::{Camera, PaneRect, pane_rects};
 pub use renderer::{COLOUR_FORMAT, Frame, PaneTarget, Renderer, decode_png, encode_png};
 pub use scene::{
-    BACKGROUND_SRGB, Drawables, MAX_MARKS, PAPER_SRGB, Part, decimation, drawables, mark_step, tower_srgb,
+    BACKGROUND_SRGB, BODY_RADIUS, BODY_SRGB, Drawables, MAX_MARKS, PAPER_SRGB, Part, decimation, drawables,
+    drawables_at, mark_step, tower_srgb,
 };

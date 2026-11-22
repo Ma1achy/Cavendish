@@ -42,6 +42,8 @@ pub enum Part {
     /// Tower `n`, from 0.
     Tower(usize),
     Room,
+    /// Body `n`, from 0.
+    Body(usize),
 }
 
 /// An infinite horizontal floor, drawn as a grid that fades towards the horizon.
@@ -81,6 +83,8 @@ struct Palette {
     selection: u32,
     ground: u32,
     ground_line: u32,
+    body: u32,
+    trail: u32,
 }
 
 /// The mock-up's palette: near-black ground, five tower colours.
@@ -95,6 +99,8 @@ const DARK: Palette = Palette {
     selection: 0x5a_b4ff,
     ground: 0x10_1010,
     ground_line: 0x38_3838,
+    body: 0xe8_e2d0,
+    trail: 0x6a_6658,
 };
 
 /// Ink on cream paper.
@@ -109,11 +115,22 @@ const PAPER: Palette = Palette {
     selection: 0xb0_4a2c,
     ground: 0xec_e7dc,
     ground_line: 0x9b_8f7c,
+    body: 0x2b_2620,
+    trail: 0x9b_8f7c,
 };
 
 /// The sRGB colours the tests look for: the background and tower colours of the dark styles.
 pub const BACKGROUND_SRGB: [u8; 3] = [0x0a, 0x0a, 0x0a];
 pub const PAPER_SRGB: [u8; 3] = [0xf1, 0xed, 0xe4];
+
+/// A body's colour in the dark styles, sRGB bytes.
+pub const BODY_SRGB: [u8; 3] = [0xe8, 0xe2, 0xd0];
+
+/// The smallest radius a body is drawn at, metres: a point mass has none of its own.
+pub const BODY_RADIUS: f64 = 0.14;
+
+/// How many straight pieces a body's path is drawn in.
+pub const TRAIL_PIECES: u32 = 96;
 
 /// Tower `n`'s colour in the dark styles, sRGB bytes.
 #[must_use]
@@ -293,10 +310,22 @@ impl Builder {
     }
 }
 
-/// Builds what to draw for `scene` in `style`, relative to `origin` (the view's target), with
-/// `highlight` drawn as the selection.
+/// Builds what to draw for `scene` at time zero; see [`drawables_at`].
 #[must_use]
 pub fn drawables(scene: &SceneSpec, style: DrawStyle, highlight: Option<Target>, origin: Vec3) -> Drawables {
+    drawables_at(scene, style, highlight, origin, 0.0)
+}
+
+/// Builds what to draw for `scene` in `style`, relative to `origin` (the view's target), with
+/// `highlight` drawn as the selection and every body where it is at `time` seconds.
+#[must_use]
+pub fn drawables_at(
+    scene: &SceneSpec,
+    style: DrawStyle,
+    highlight: Option<Target>,
+    origin: Vec3,
+    time: f64,
+) -> Drawables {
     let paper = style == DrawStyle::Paper;
     let palette = if paper { &PAPER } else { &DARK };
     // Wireframe and paper draw edges; the other styles also fill surfaces.
@@ -396,6 +425,49 @@ pub fn drawables(scene: &SceneSpec, style: DrawStyle, highlight: Option<Target>,
         b.end_part(Part::Tower(n));
     }
 
+    let gravity = scene.array.instrument.gravity;
+    for (n, body) in scene.bodies.iter().enumerate() {
+        let selected = highlight == Some(Target::Body(n + 1));
+        let at = Vec3::from_array(body.motion.position(time, gravity));
+        let radius = body.radius.max(BODY_RADIUS);
+        let (from, until) = body.exists();
+        let colour = linear(if selected { palette.selection } else { palette.body }, 1.0);
+        // Its path over the timeline, if it has one: a count of pieces, whatever the numbers.
+        if body.motion.frequency(gravity).is_some() || !body.motion.breaks().is_empty() {
+            let trail = linear(palette.trail, 1.0);
+            let point = |k: u32| {
+                let t = scene.duration.min(1.0e4) * f64::from(k) / f64::from(TRAIL_PIECES);
+                Vec3::from_array(body.motion.position(t, gravity))
+            };
+            for k in 0..TRAIL_PIECES {
+                b.line(point(k), point(k + 1), 1.0, trail);
+            }
+        }
+        // A body that does not exist at this moment is an outline of where it will be.
+        let present = time >= from && time < until;
+        if filled && present {
+            b.sphere(at, radius, colour);
+        }
+        if !filled || !present || selected {
+            const STEPS: u32 = 32;
+            let ring = |axis: usize, k: u32| {
+                let (sin, cos) = (TAU * f64::from(k) / f64::from(STEPS)).sin_cos();
+                let reach = radius * if selected && filled && present { 1.6 } else { 1.0 };
+                at + match axis {
+                    0 => Vec3::new(cos, sin, 0.0),
+                    1 => Vec3::new(cos, 0.0, sin),
+                    _ => Vec3::new(0.0, cos, sin),
+                } * reach
+            };
+            for axis in 0..3 {
+                for k in 0..STEPS {
+                    b.line(ring(axis, k), ring(axis, k + 1), if selected { 2.0 } else { 1.2 }, colour);
+                }
+            }
+        }
+        b.end_part(Part::Body(n));
+    }
+
     if let Some(floor) = &scene.floor {
         let selected = highlight == Some(Target::Floor);
         let period = 100.0;
@@ -425,6 +497,58 @@ mod tests {
 
     fn has_room(d: &Drawables) -> bool {
         d.parts.iter().any(|(p, ..)| *p == Part::Room)
+    }
+
+    #[test]
+    fn bodies_are_drawn_where_they_are_at_the_playhead() {
+        let scene = dev::pass();
+        let body = |d: &Drawables| {
+            let n = d.parts.iter().position(|(p, ..)| *p == Part::Body(0)).expect("the body is a part");
+            let (first, last) = (d.parts[n - 1].2, d.parts[n].2);
+            d.triangles[first..last].to_vec()
+        };
+        // The centre of the body's sphere, from its triangles' corners.
+        let centre = |d: &Drawables| {
+            let corners = body(d);
+            let sum = corners.iter().fold([0.0f64; 3], |s, v| {
+                [
+                    s[0] + f64::from(v.position[0]),
+                    s[1] + f64::from(v.position[1]),
+                    s[2] + f64::from(v.position[2]),
+                ]
+            });
+            sum.map(|c| c / corners.len() as f64)
+        };
+        for time in [0.0, 4.0, 10.0] {
+            let d = drawables_at(&scene, DrawStyle::Shaded, None, Vec3::ZERO, time);
+            let [x, y, z] = centre(&d);
+            let expected = [10.0, 0.0, -10.0 + 2.5 * time];
+            assert!(
+                (x - expected[0]).abs() < 1e-3 && y.abs() < 1e-3 && (z - expected[2]).abs() < 1e-3,
+                "{time}: {x} {y} {z}"
+            );
+            assert_eq!(body(&d).len(), 8 * 16 * 3, "a sphere of 128 faces");
+        }
+        // Its path is drawn too: the void's lines, and one piece of trail for each step.
+        let lines =
+            |scene: &SceneSpec| drawables_at(scene, DrawStyle::Shaded, None, Vec3::ZERO, 0.0).lines.len();
+        assert_eq!(lines(&scene) - lines(&dev::void()), TRAIL_PIECES as usize);
+        // A mass at rest has no trail; selected, it has rings round it and the selection's colour.
+        let point = dev::point();
+        assert_eq!(lines(&point), lines(&SceneSpec::room()));
+        let selected = drawables_at(&point, DrawStyle::Shaded, Some(Target::Body(1)), Vec3::ZERO, 0.0);
+        assert_eq!(selected.lines.len() - lines(&point), 3 * 32);
+        assert_ne!(
+            body(&selected)[0].colour,
+            body(&drawables(&point, DrawStyle::Shaded, None, Vec3::ZERO))[0].colour
+        );
+        // A body that does not exist yet is an outline, not a solid.
+        let flash = dev::flash();
+        assert!(body(&drawables_at(&flash, DrawStyle::Shaded, None, Vec3::ZERO, 1.0)).is_empty());
+        assert!(!body(&drawables_at(&flash, DrawStyle::Shaded, None, Vec3::ZERO, 4.5005)).is_empty());
+        // Control: with no bodies there is no such part.
+        let none = drawables(&dev::void(), DrawStyle::Shaded, None, Vec3::ZERO);
+        assert!(!none.parts.iter().any(|(p, ..)| matches!(p, Part::Body(_))));
     }
 
     #[test]
