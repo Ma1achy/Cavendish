@@ -2,8 +2,8 @@
 //!
 //! Each is a file in `scenes/dev/` and a builder here; a test holds the two together, so the file a
 //! person reads and the scene a test builds cannot drift apart. S0 has the first two, both empty of
-//! moving matter. Their null tests (every channel exactly zero; the floor's differenced phase zero)
-//! need the forward model and arrive with S1 (TASK-S1-07).
+//! moving matter; S1 adds the scenes with a point mass. Their known answers are validation cases
+//! in `read.rs`.
 
 use crate::{BodySpec, FloorKind, FloorSpec, Motion, SceneSpec};
 
@@ -27,8 +27,7 @@ pub fn infinite_floor() -> SceneSpec {
     SceneSpec {
         name: "infinite-floor".into(),
         description: "A uniform half-space below the array, drawn as a grid to the horizon. An infinite \
-                      uniform slab gives uniform g and no gradient, so its differenced phase is zero. \
-                      Empty in S0: the floor is declared and drawn; its physics arrives with S1."
+                      uniform slab gives uniform g and no gradient, so its differenced phase is zero."
             .into(),
         room: None,
         floor: Some(FloorSpec { height: 0.0, kind: FloorKind::HalfSpace, density: 2400.0 }),
