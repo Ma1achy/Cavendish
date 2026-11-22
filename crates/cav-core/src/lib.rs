@@ -5,6 +5,7 @@
 //! integral and the channels. The voxel tree and the kernels arrive with their slices.
 
 pub mod anchors;
+pub mod cadence;
 pub mod constants;
 pub mod defaults;
 pub mod forward;

@@ -147,8 +147,8 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "show",
-        usage: "show <scene|signal|periodogram|flight> [@N]",
-        about: "what a pane shows: the scene, every tower's signal, the periodogram with the combs, or the atoms' flights on absolute time",
+        usage: "show <scene|signal|periodogram|flight|cadence> [@N]",
+        about: "what a pane shows: the scene, every tower's signal, the periodogram with the combs, the atoms' flights on absolute time, or the cadence's spectral window",
         example: "show signal",
     },
     CommandDoc {
@@ -162,6 +162,18 @@ pub const COMMANDS: &[CommandDoc] = &[
         usage: "periodogram [tower] [gradiometer|lower|upper] [compared]",
         about: "the periodogram of a tower's signal: its largest peaks, and where each body's harmonics fold to",
         example: "periodogram 1",
+    },
+    CommandDoc {
+        name: "cadence",
+        usage: "cadence",
+        about: "what the schedule is predicted to do: mean cycle, Nyquist, shots kept, each alias line and its height, the floor",
+        example: "cadence",
+    },
+    CommandDoc {
+        name: "window",
+        usage: "window [tower] [to <hertz>]",
+        about: "the spectral window of a tower's shots, |W|: its largest lines, one realisation for the scene's seed",
+        example: "window 1 to 1.0",
     },
     CommandDoc { name: "panes", usage: "panes <1|2|4>", about: "split the figure", example: "panes 4" },
     CommandDoc { name: "pane", usage: "pane <N>", about: "make pane N the active one", example: "pane 1" },
@@ -566,6 +578,21 @@ impl Engine {
                     [number(x, "metres", name)?, number(y, "metres", name)?, number(z, "metres", name)?];
                 view(ViewCommand::Pan { pane, target })
             }
+            ("cadence", []) => Ok(Request::Ask(Query::Cadence)),
+            ("window", args) if args.len() <= 3 => {
+                let (tower, to) = match args {
+                    [] => (self.selected_tower().unwrap_or(1), None),
+                    [tower] => (tower.parse().map_err(|_| wrong())?, None),
+                    ["to", hertz] => {
+                        (self.selected_tower().unwrap_or(1), Some(number(hertz, "hertz", name)?))
+                    }
+                    [tower, "to", hertz] => {
+                        (tower.parse().map_err(|_| wrong())?, Some(number(hertz, "hertz", name)?))
+                    }
+                    _ => return Err(wrong()),
+                };
+                Ok(Request::Ask(Query::Window { tower, to }))
+            }
             ("get", []) => Ok(Request::Ask(Query::Spec(None))),
             ("get", [path]) => Ok(Request::Ask(Query::Spec(Some((*path).to_owned())))),
             ("schema", []) => Ok(Request::Ask(Query::Schema(None))),
@@ -694,8 +721,15 @@ pub fn render(reply: &Reply) -> String {
                 crate::estimate_text(signal.estimate, signal.settled)
             )];
             lines.extend(signal.warnings.iter().map(|warning| format!("# warning: {warning}")));
-            let shots = signal.times.iter().zip(&signal.values);
-            lines.extend(shots.take(MAX_LINES).map(|(t, v)| format!("{t}  {v:e}")));
+            let shots = signal.times.iter().zip(&signal.values).enumerate();
+            lines.extend(shots.take(MAX_LINES).map(|(k, (t, v))| {
+                // A shot that was not taken has no value to print.
+                if signal.taken.get(k).copied().unwrap_or(true) {
+                    format!("{t}  {v:e}")
+                } else {
+                    format!("{t}  not taken")
+                }
+            }));
             if signal.times.len() > MAX_LINES {
                 lines.push(format!(
                     "# … {} more shots are not printed: ask for a stretch, `signal {} {} <from> <to>`",
@@ -708,12 +742,14 @@ pub fn render(reply: &Reply) -> String {
         }
         Reply::Periodogram(spectrum) => {
             let mut lines = vec![format!(
-                "# tower {} · {} · {} · {} bins to the Nyquist frequency, {} Hz · f [Hz], √S [rad/√Hz]",
+                "# tower {} · {} · {} · {} bins to the Nyquist frequency, {} Hz · {} of {} shots · f [Hz], √S [rad/√Hz]",
                 spectrum.tower,
                 spectrum.channel.name(),
                 spectrum.state,
                 spectrum.frequencies.len(),
-                spectrum.nyquist
+                spectrum.nyquist,
+                spectrum.method,
+                spectrum.shots
             )];
             // The eight largest bins, largest first.
             let mut bins: Vec<usize> = (0..spectrum.power.len()).collect();
@@ -743,6 +779,44 @@ pub fn render(reply: &Reply) -> String {
                     places.join(", ")
                 ));
             }
+            lines.join("\n")
+        }
+        Reply::Cadence(cadence) => {
+            let fewest = cadence.kept.iter().min().copied().unwrap_or(0);
+            let most = cadence.kept.iter().max().copied().unwrap_or(0);
+            let mut lines = vec![
+                format!(
+                    "# mean cycle {} s · Nyquist {:.6} Hz · {} shots planned · {fewest} to {most} taken a tower",
+                    cadence.mean_cycle, cadence.nyquist, cadence.shots
+                ),
+                format!(
+                    "# floor under a tone {:.3e} of its power · smallest detectable tone × {:.4} for the shots not taken",
+                    cadence.floor, cadence.noise_factor
+                ),
+                "# line [Hz]  height |W| (1 = as tall as the tone)  what".to_owned(),
+            ];
+            lines.extend(
+                cadence
+                    .lines
+                    .iter()
+                    .map(|line| format!("{:.6}  {:.4}  {}", line.frequency, line.height, line.what)),
+            );
+            lines.extend(cadence.notes.iter().map(|note| format!("# note: {note}")));
+            lines.join("\n")
+        }
+        Reply::Window(window) => {
+            let mut lines = vec![format!(
+                "# tower {} · spectral window |W| at {} frequencies to {} Hz · its largest lines: f [Hz], |W|",
+                window.tower,
+                window.frequencies.len(),
+                window.frequencies.last().copied().unwrap_or(0.0)
+            )];
+            // The local maxima away from zero frequency, largest first.
+            let w = &window.window;
+            let mut peaks: Vec<usize> =
+                (1..w.len().saturating_sub(1)).filter(|&k| w[k] > w[k - 1] && w[k] >= w[k + 1]).collect();
+            peaks.sort_by(|&a, &b| w[b].total_cmp(&w[a]));
+            lines.extend(peaks.iter().take(8).map(|&k| format!("{:.6}  {:.4}", window.frequencies[k], w[k])));
             lines.join("\n")
         }
         Reply::Reading(reading) => {

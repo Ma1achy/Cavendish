@@ -342,8 +342,31 @@ pub fn staggered() -> SceneSpec {
     scene
 }
 
+/// `cadence-lab`: the comb's oscillator sampled on a schedule that is not even: each cycle up to
+/// 0.3 s late (a random walk, as the reference scripts draw it) and two shots in a hundred lost.
+/// The tone is known (0.05 Hz and its harmonics); what the cadence does to it is the subject.
+#[must_use]
+pub fn cadence_lab() -> SceneSpec {
+    let mut scene = comb();
+    scene.name = "cadence-lab".into();
+    scene.description = "A known tone on an uneven cadence: the comb's oscillator, each cycle up to 0.3 s late and 2% \
+                         of shots lost. `show cadence` draws the spectral window; edit array.schedule and watch it."
+        .into();
+    scene.array.schedule = crate::ScheduleSpec {
+        jitter: Some(crate::JitterSpec {
+            model: crate::JitterModel::Walk,
+            kind: crate::JitterKind::Positive,
+            delta: 0.3,
+        }),
+        loss: 0.02,
+        seed: 1,
+        ..crate::ScheduleSpec::default()
+    };
+    scene
+}
+
 /// Every dev scene S2 adds, by builder.
-pub const S2_SCENES: [fn() -> SceneSpec; 1] = [staggered];
+pub const S2_SCENES: [fn() -> SceneSpec; 2] = [staggered, cadence_lab];
 
 /// Every dev scene S1 adds, by builder.
 pub const S1_SCENES: [fn() -> SceneSpec; 13] = [

@@ -156,6 +156,9 @@ pub enum PaneContent {
     /// The atoms' flights: each tower's arms as height against absolute time, one row a tower,
     /// so that towers on their own clocks are seen side by side.
     Flight,
+    /// The cadence designer: the spectral window of the schedule, one realisation with the
+    /// lines and the floor the closed forms predict.
+    Cadence,
 }
 
 impl PaneContent {
@@ -167,13 +170,16 @@ impl PaneContent {
             Self::Signal => "signal",
             Self::Periodogram => "periodogram",
             Self::Flight => "flight",
+            Self::Cadence => "cadence",
         }
     }
 
     /// The content a word names.
     #[must_use]
     pub fn parse(word: &str) -> Option<Self> {
-        [Self::Scene, Self::Signal, Self::Periodogram, Self::Flight].into_iter().find(|c| c.name() == word)
+        [Self::Scene, Self::Signal, Self::Periodogram, Self::Flight, Self::Cadence]
+            .into_iter()
+            .find(|c| c.name() == word)
     }
 }
 

@@ -300,6 +300,7 @@ pub fn paint(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) 
         PaneContent::Signal => Some(signal(engine, painter, pane, rect, compared)),
         PaneContent::Periodogram => Some(periodogram(engine, painter, pane, rect, compared)),
         PaneContent::Flight => Some(flight(engine, painter, pane, rect)),
+        PaneContent::Cadence => Some(cadence(engine, painter, pane, rect)),
     };
     let twice = engine.comparison().is_some()
         && matches!(engine.content(pane), PaneContent::Signal | PaneContent::Periodogram);
@@ -399,6 +400,114 @@ fn signal(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect, com
         format!("readout time, s · {shots} shots · {hint}"),
         format!("readout time, s · {shots} shots"),
         "time, s".to_owned(),
+    ]);
+    drawn.labels = sheet.labels;
+    drawn
+}
+
+/// The cadence designer's pane: the spectral window `|W|` of the selected tower's shots (one
+/// realisation, for the scene's seed) on a logarithmic scale, with a stem at each line the
+/// closed forms predict, as tall as they predict it, and the predicted floor as a level.
+fn cadence(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> Drawn {
+    let spec = engine.spec();
+    let frame = engine.frame(pane).expect("the pane exists");
+    let tower = match engine.selection() {
+        Some(cav_engine::Target::Tower(n)) => n,
+        _ => 1,
+    };
+    let label_of = spec.array.towers.get(tower - 1).map_or("tower", |t| t.label.as_str());
+    let title = format!("Cadence · spectral window |W| of {label_of}'s shots · {}", spec.name);
+    let mut sheet = Sheet::new(painter, rect, &title, 2);
+    let mut drawn = Drawn {
+        pane,
+        content: PaneContent::Cadence,
+        area: sheet.area,
+        x: Axis { lo: 0.0, hi: 1.0, log: false },
+        y: Axis { lo: 1e-4, hi: 1.0, log: true },
+        points: 0,
+        playhead: None,
+        stems: Vec::new(),
+        labels: Vec::new(),
+        note: None,
+        compared: false,
+        flights: Vec::new(),
+    };
+    let predicted = match engine.query(&Query::Cadence) {
+        Ok(Reply::Cadence(predicted)) => predicted,
+        other => {
+            let why = other.err().unwrap_or_else(|| "no prediction".to_owned());
+            sheet.nothing(&why);
+            drawn.note = Some(why);
+            drawn.labels = sheet.labels;
+            return drawn;
+        }
+    };
+    let whole = 2.5 / predicted.mean_cycle;
+    let [from, to] = frame.span.unwrap_or([0.0, whole]);
+    let x = Axis { lo: from, hi: to, log: false };
+    let Ok(Reply::Window(window)) = engine.query(&Query::Window { tower, to: Some(to) }) else {
+        sheet.nothing("no window");
+        drawn.labels = sheet.labels;
+        return drawn;
+    };
+    // Four decades, from the peak down: a floor of 1e-4 in amplitude is 1e-8 in power.
+    let y = Axis { lo: 1e-4, hi: 1.0, log: true };
+    (drawn.x, drawn.y) = (x, y);
+    sheet.axes(&x, &y, plain, |value| format!("1e{}", value.log10().round() as i32));
+    let area = sheet.area;
+    let (frequencies, shown) = within(&window.frequencies, &window.window, from, to);
+    let series = thinned(frequencies, shown);
+    drawn.points = series.len();
+    let points: Vec<Pos2> = series.iter().map(|p| place(area, &x, &y, (p.0, p.1.max(y.lo)))).collect();
+    sheet.line(points, SPECTRUM);
+    let clip = painter.with_clip_rect(area.expand(3.0));
+    // The floor the closed forms predict, as a level across the plot.
+    if predicted.floor > 0.0 {
+        let level = place(area, &x, &y, (from, predicted.floor.sqrt().max(y.lo))).y;
+        clip.extend(egui::Shape::dashed_line(
+            &[pos2(area.left(), level), pos2(area.right(), level)],
+            Stroke::new(1.0, theme::WEAK),
+            5.0,
+            4.0,
+        ));
+        sheet.small(pos2(area.right() - 4.0, level - 2.0), Align2::RIGHT_BOTTOM, "predicted floor");
+    }
+    // The predicted lines: a stem to the predicted height, and a dot there.
+    sheet.fixed = sheet.labels.len();
+    let colour = COMB_COLOURS[0];
+    for (k, line) in
+        predicted.lines.iter().enumerate().filter(|(_, line)| (from..=to).contains(&line.frequency))
+    {
+        let top = place(area, &x, &y, (line.frequency, line.height.max(y.lo)));
+        clip.vline(top.x, top.y..=area.bottom(), Stroke::new(1.0, colour));
+        clip.circle_filled(top, 2.5, colour);
+        sheet.stem_label(top, &format!("{:.3}", line.height), colour);
+        drawn.stems.push((line.what.clone(), k as u32 + 1, top.x, false));
+    }
+    let fewest = predicted.kept.iter().min().copied().unwrap_or(0);
+    sheet.text(
+        pos2(area.left(), rect.top() + 24.0),
+        Align2::LEFT_TOP,
+        format!(
+            "mean cycle {} s · Nyquist {} Hz · {} shots, {fewest} taken · sensitivity × {:.3}",
+            plain(predicted.mean_cycle),
+            plain(predicted.nyquist),
+            predicted.shots,
+            predicted.noise_factor
+        ),
+        FontId::proportional(10.5),
+        theme::TEXT,
+    );
+    sheet.text(
+        pos2(area.left(), rect.top() + 37.0),
+        Align2::LEFT_TOP,
+        "grey: this seed's window · blue: the lines the closed forms predict, at their predicted heights",
+        FontId::proportional(10.5),
+        colour,
+    );
+    sheet.caption(&[
+        "frequency offset from a tone, Hz · |W| relative to the tone · scroll to zoom".to_owned(),
+        "frequency offset, Hz".to_owned(),
     ]);
     drawn.labels = sheet.labels;
     drawn
@@ -530,7 +639,8 @@ fn periodogram(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect
     let also = if compared { compared_as(engine) } else { String::new() };
     let title = format!("Periodogram · √S of ΔΦ at {label_of} · {}{also} · {state}", spec.name);
     let instrument = engine.comparison().filter(|_| compared).unwrap_or(&spec.array.instrument);
-    let nyquist = 0.5 / instrument.cycle;
+    // Half the mean shot rate: the schedule's, which for the plain schedule is the cycle's.
+    let nyquist = 0.5 / spec.array.schedule.mean_cycle(instrument.cycle);
     let reply = engine.query(&query);
     let combs = match &reply {
         Ok(Reply::Periodogram(spectrum)) => spectrum.combs.len().min(COMB_COLOURS.len()),

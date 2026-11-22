@@ -55,6 +55,14 @@
                 ),
             ),
         ],
+        schedule: (
+            jitter: None,
+            alternate: None,
+            gaps: None,
+            window: None,
+            loss: 0.0,
+            seed: 0,
+        ),
     ),
     room: Some((
         origin: (-5.0, -5.0, 0.0),

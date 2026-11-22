@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use crate::command::{
     COMB_HARMONICS, Comb, Command, Harmonic, MAX_PANES, PeriodogramReply, Query, ReadingReply, Reply,
-    SignalReply, Standing, Stats, TowerReading, ViewCommand,
+    SignalReply, Standing, Stats, TowerReading, ViewCommand, WindowReply,
 };
 use crate::console;
 use crate::forward::{Forward, SignalState};
@@ -64,6 +64,9 @@ enum Prepared {
     /// An export: the file to write and its bytes.
     Write(std::path::PathBuf, Vec<u8>),
 }
+
+/// How many frequencies a spectral window is answered at.
+pub const WINDOW_POINTS: usize = 1201;
 
 /// How many log entries the engine keeps.
 const LOG_CAPACITY: usize = 2000;
@@ -700,6 +703,7 @@ impl Engine {
                     channel: *channel,
                     state: if signal.is_some() { state } else { Standing::Computing },
                     times: signal.map_or_else(Vec::new, |s| s.readouts(tower - 1)[stretch(s)].to_vec()),
+                    taken: signal.map_or_else(Vec::new, |s| s.taken(tower - 1)[stretch(s)].to_vec()),
                     values: signal.map_or_else(Vec::new, |s| {
                         s.channel(tower - 1, channel.channel())[stretch(s)].to_vec()
                     }),
@@ -718,12 +722,45 @@ impl Engine {
                     (Some((instrument, _)), true) => &**instrument,
                     _ => &self.spec.array.instrument,
                 };
-                let nyquist = 0.5 / instrument.cycle;
-                let spectrum = cav_core::spectrum::periodogram(
-                    &signal.values,
-                    instrument.cycle,
-                    cav_core::spectrum::Classical::SCRIPTS,
-                );
+                let schedule = &self.spec.array.schedule;
+                let nyquist = 0.5 / schedule.mean_cycle(instrument.cycle);
+                // The shots the tower took, at its own times.
+                let (times, values): (Vec<f64>, Vec<f64>) = signal
+                    .times
+                    .iter()
+                    .zip(&signal.values)
+                    .zip(&signal.taken)
+                    .filter(|(_, taken)| **taken)
+                    .map(|((time, value), _)| (*time, *value))
+                    .unzip();
+                let even = schedule.is_uniform() && times.len() == signal.times.len();
+                let (method, spectrum) = if even {
+                    // Evenly spaced and all there: the classical periodogram, as in S1.
+                    let spectrum = cav_core::spectrum::periodogram(
+                        &values,
+                        instrument.cycle,
+                        cav_core::spectrum::Classical::SCRIPTS,
+                    );
+                    ("classical periodogram (FFT)", spectrum)
+                } else if times.len() < 2 {
+                    (
+                        "too few shots",
+                        cav_core::spectrum::Spectrum { frequencies: Vec::new(), power: Vec::new() },
+                    )
+                } else {
+                    // Uneven or gapped: Lomb–Scargle on the shots there are, at multiples of one
+                    // over the span up to the Nyquist frequency of the mean rate.
+                    let span = times[times.len() - 1] - times[0] + schedule.mean_cycle(instrument.cycle);
+                    let df = 1.0 / span;
+                    let count =
+                        ((nyquist / df).floor() as usize).clamp(1, cav_sim::schedule::MAX_FREQUENCIES - 1);
+                    let power = cav_core::spectrum::lomb_scargle_fast(&times, &values, df, count + 1);
+                    let frequencies = (1..=count).map(|k| k as f64 * df).collect();
+                    (
+                        "Lomb–Scargle (non-uniform FFT)",
+                        cav_core::spectrum::Spectrum { frequencies, power: power[1..].to_vec() },
+                    )
+                };
                 let combs = self
                     .spec
                     .bodies
@@ -748,11 +785,24 @@ impl Engine {
                     tower: *tower,
                     channel: *channel,
                     state: signal.state,
+                    method: method.to_owned(),
+                    shots: times.len(),
                     nyquist,
                     frequencies: spectrum.frequencies,
                     power: spectrum.power,
                     combs,
                 }))
+            }
+            Query::Cadence => cav_sim::schedule::predict(&self.spec).map(Reply::Cadence),
+            Query::Window { tower, to } => {
+                let prediction = cav_sim::schedule::predict(&self.spec)?;
+                if *tower == 0 {
+                    return Err("towers are counted from 1".into());
+                }
+                let to = to.unwrap_or(2.5 / prediction.mean_cycle);
+                let (frequencies, window) =
+                    cav_sim::schedule::window(&self.spec, tower - 1, to, WINDOW_POINTS)?;
+                Ok(Reply::Window(WindowReply { tower: *tower, frequencies, window }))
             }
             Query::Reading(time) => {
                 let time = time.unwrap_or(self.time);
