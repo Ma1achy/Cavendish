@@ -340,9 +340,9 @@ its oracle checks, a performance note, screenshots in `docs/slices/`. Main alway
 | S5 | **Gravity on the GPU, at scale** | Real-time phase for big scenes; the bounded walk and instrument LOD with the error badge; the error ledger in bundles | GPU = CPU f64 ≤1e-9 with float-float; walk error ≤ tol; no steps in time |
 | S6 | **Things that move** | Paths, populations (traffic, birds, drones, aircraft), articulated walkers on per-bone trees, the outdoor library scenes | mass conserved bit-exact through poses; signal-size guide holds within ×10 |
 | S7 | **Things that fall and stack** | Rigid dynamics with voxel contact; drop, bounce, stack; recorded tracks | free fall ≤1e-10 m; slept pose bit-constant; box on box rests |
-| S8 | **Air** | Uniform GPU fluid with the radiator scene; slices, volumes, streamlines; the response and contribution maps | de Vahl Davis Nu within 1%; moving-ball oracle through the grid path |
-| S9 | **Adaptive air** | The air on a balanced octree refined by what the towers see; the adaptive grid visible | fully refined = uniform; at-rest on a graded grid; no step on regrid |
-| S10 | **Water** | Liquids with a free surface: tanks, a river's level changing, boats, a waterfall | floating box at Archimedes draught; steady river silent |
+| S8 | **Fluids: air** | One fluid solver, first on a uniform GPU grid, with air and the radiator scene; slices, volumes, streamlines; the response and contribution maps | de Vahl Davis Nu within 1%; moving-ball oracle through the grid path |
+| S9 | **Fluids: the adaptive grid** | The same solver on a balanced octree refined by what the towers see, for any fluid; the adaptive grid visible | fully refined = uniform; at-rest on a graded grid; no step on regrid |
+| S10 | **Fluids: water** | Liquids with a free surface on that adaptive grid, refined at the surface and by what the towers see: tanks, a river's level changing, boats, a waterfall | floating box at Archimedes draught; steady river silent; fully refined = uniform and no step on regrid, for water as for air |
 | S11 | **Datasets and Gradar** | Dataset builder in the GUI and CLI, manifests, `verify`, Python and torch; the non-learned baseline beside a trained model | manifests regenerate; CRB ≤ baseline error |
 | S12 | **The site** | The Beecroft stairwell scene with its populations, seismic noise, the published ordering reproduced | published ordering; masked fraction within ×2 |
 | S13 | **Heat everywhere** | Anything can be hot: people, machines, radiators, sunlit walls. Heat conducts through solids, radiates between surfaces, is carried by air and by water, and warms structure so that it expands; every one of those shows in the towers' readings, with temperature and heat flux drawn in the viewer | energy conserved in a closed box; the analytic and published cases of `VALIDATION-AND-RESEARCH.md` §2.5; a uniformly heated sphere gives no signal |
@@ -397,6 +397,25 @@ spec file in `scenes/dev/`, loads in one keystroke from the library, and most do
 Outdoor and world scenes — aircraft over a field, traffic on a road, birds, drones, boats, rivers,
 the town — are the scene library (`reference/milestones/M18-scene-library.md`) and arrive with S6, S9 and S10;
 many are near-null by design (an airliner at 1 km is well under shot noise), which is a test too.
+
+### 9.1a Fluids (S8–S10) — air and water are one thing
+
+Owner's decision (22 Nov 2026): air and water are both **fluids**, one solver and one grid, and water
+is adaptive as the air is. A fluid is a material with a density, a viscosity and an equation of
+state; air and water differ in those numbers and in whether there is a free surface, not in code
+path. So:
+
+- **One solver** (S8): the MAC projection solver on the world volume, written for a fluid, not for
+  air. Air is its first user because its benchmarks are the simplest.
+- **One adaptive grid** (S9): the balanced octree, its level transfers, the well-balanced buoyancy and
+  the goal-oriented refinement by tower response belong to the solver, so every fluid gets them.
+- **Water** (S10) adds what a liquid needs and nothing else: the free surface (a level set on the same
+  octree, refined at the surface), the full-density read, two-way coupling with bodies. Air above
+  the water is the same solver's other phase where it matters, and still air otherwise.
+- The viewer, the spec and the commands say `fluid` with a material, not `air` and `water` as
+  separate kinds; the debug views, the regrid events and the response maps are shared.
+- Every property proved for air on the adaptive grid is proved again for water: fully refined equals
+  uniform, at rest on a graded grid, no step in any signal on regrid, mass conserved to the bit.
 
 ### 9.2 Heat (S13) — one temperature field through solids, air and water
 

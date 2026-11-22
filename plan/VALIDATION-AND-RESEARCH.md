@@ -243,7 +243,8 @@ noise models; the Beecroft site measurements.
 - **S6** adds the §2.2 motion-geometry tests and source fingerprinting.
 - **S7** gains a structural-dynamics track (modal voxel FE) after its research note.
 - **S11** reproduces the paper's sampling results (§2.4) through the dataset path, on both presets.
-- **S8–S10** take the air and water rows of §2.5 that need no new physics (the cavities, onset, the
+- **S8–S10** are one fluid solver for air and water (`REBUILD.md` §9.1a); the adaptive-grid properties
+  are asserted for both. They take the air and water rows of §2.5 that need no new physics (the cavities, onset, the
   plume, the water equation of state, stratification).
 - **S13** (heat everywhere, `REBUILD.md` §9.2) takes the rest of §2.5: conduction, radiation, conjugate
   transfer, expansion and the instrument cases. Its research note comes first: methods, the exact
