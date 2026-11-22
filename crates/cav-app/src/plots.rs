@@ -185,16 +185,19 @@ struct Sheet<'a> {
     rect: Rect,
     area: Rect,
     labels: Vec<(String, Rect)>,
+    /// How many of the labels are the title and the axes' own, which a stem's label may sit on
+    /// (a mark's number is outside the axes; the title is above them).
+    fixed: usize,
 }
 
 impl<'a> Sheet<'a> {
     /// A sheet with its title at the top and `legend` lines under it, above the axes.
     fn new(painter: &'a egui::Painter, rect: Rect, title: &str, legend: usize) -> Self {
         painter.rect_filled(rect, 0.0, theme::BACKGROUND);
-        let top = 26.0 + 13.0 * legend as f32;
+        let top = 38.0 + 13.0 * legend as f32;
         let area = Rect::from_min_max(rect.min + vec2(86.0, top), rect.max - vec2(16.0, 34.0));
         painter.rect_stroke(area, 0.0, Stroke::new(1.0, theme::RULE), egui::StrokeKind::Outside);
-        let mut sheet = Self { painter, rect, area, labels: Vec::new() };
+        let mut sheet = Self { painter, rect, area, labels: Vec::new(), fixed: 0 };
         sheet.text(
             rect.left_top() + vec2(8.0, 5.0),
             Align2::LEFT_TOP,
@@ -214,6 +217,38 @@ impl<'a> Sheet<'a> {
 
     fn small(&mut self, at: Pos2, anchor: Align2, text: impl Into<String>) {
         self.text(at, anchor, text, FontId::monospace(10.5), theme::WEAK);
+    }
+
+    /// The caption under the horizontal axis: the first of `forms` that fits the width of the
+    /// axes, or the last if none does.
+    fn caption(&mut self, forms: &[String]) {
+        let font = FontId::monospace(10.5);
+        let fits = |text: &String| {
+            self.painter.layout_no_wrap(text.clone(), font.clone(), theme::WEAK).size().x <= self.area.width()
+        };
+        let text = forms.iter().find(|text| fits(text)).or(forms.last()).cloned().unwrap_or_default();
+        self.small(pos2(self.area.center().x, self.area.bottom() + 18.0), Align2::CENTER_TOP, text);
+    }
+
+    /// Writes a stem's label by its top, where it covers no label already written: to the right
+    /// of the stem (to the left near the right edge), then higher, a line at a time. A label
+    /// with nowhere to go is left out; its stem and its dot still stand. True when written.
+    fn stem_label(&mut self, top: Pos2, text: &str, colour: Color32) -> bool {
+        let font = FontId::proportional(10.0);
+        let size = self.painter.layout_no_wrap(text.to_owned(), font.clone(), colour).size();
+        let left = top.x + 3.0 + size.x > self.area.right();
+        for lift in 0..4 {
+            let bottom = (top.y - 3.0 - 11.0 * lift as f32).max(self.area.top() + size.y + 1.0);
+            let min = pos2(if left { top.x - 3.0 - size.x } else { top.x + 3.0 }, bottom - size.y);
+            let took = Rect::from_min_size(min, size);
+            // With a little air round it: labels that touch read as one.
+            let air = took.expand2(vec2(4.0, 1.0));
+            if self.labels[self.fixed..].iter().all(|(_, other)| !other.intersects(air)) {
+                self.text(min, Align2::LEFT_TOP, text, font, colour);
+                return true;
+            }
+        }
+        false
     }
 
     fn nothing(&mut self, why: &str) {
@@ -329,17 +364,15 @@ fn signal(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> 
         painter.vline(at, area.y_range(), Stroke::new(1.0, theme::LINK));
         drawn.playhead = Some(at);
     }
-    sheet.small(pos2(area.left() - 5.0, area.bottom() + 18.0), Align2::RIGHT_TOP, unit);
-    let whole = if frame.span.is_some() {
-        " · scroll to zoom, double-click for all of it"
-    } else {
-        " · scroll to zoom"
-    };
-    sheet.small(
-        pos2(area.center().x, area.bottom() + 18.0),
-        Align2::CENTER_TOP,
-        format!("readout time, s · {} shots{whole}", signal.times.len()),
-    );
+    sheet.small(area.left_top() + vec2(-5.0, -19.0), Align2::RIGHT_TOP, unit);
+    let shots = signal.times.len();
+    let hint =
+        if frame.span.is_some() { "scroll to zoom, double-click for all of it" } else { "scroll to zoom" };
+    sheet.caption(&[
+        format!("readout time, s · {shots} shots · {hint}"),
+        format!("readout time, s · {shots} shots"),
+        "time, s".to_owned(),
+    ]);
     drawn.labels = sheet.labels;
     drawn
 }
@@ -409,6 +442,7 @@ fn periodogram(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect
     // The combs: a stem at each harmonic, at the height the spectrum has there. A harmonic above
     // Nyquist stands where it folds to, dashed, and says so.
     let clip = painter.with_clip_rect(area.expand(3.0));
+    sheet.fixed = sheet.labels.len();
     for (n, comb) in spectrum.combs.iter().enumerate() {
         let colour = COMB_COLOURS[n % COMB_COLOURS.len()];
         let mut named: Vec<(Pos2, String)> = Vec::new();
@@ -447,16 +481,7 @@ fn periodogram(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect
             drawn.stems.push((comb.label.clone(), harmonic.n, top.x, harmonic.folded));
         }
         for (top, text) in named {
-            // To the right of its stem, or to the left when the right edge is too near for the
-            // words; never above the top of the plot.
-            let width = 5.5 * text.chars().count() as f32 + 8.0;
-            let (anchor, offset) = if top.x + width > area.right() {
-                (Align2::RIGHT_BOTTOM, vec2(-3.0, -3.0))
-            } else {
-                (Align2::LEFT_BOTTOM, vec2(3.0, -3.0))
-            };
-            let at = pos2(top.x, top.y.max(area.top() + 13.0)) + offset;
-            sheet.text(at, anchor, text, FontId::proportional(10.0), colour);
+            sheet.stem_label(top, &text, colour);
         }
         // The legend has a line of its own above the axes, where no peak can be under it.
         if n < COMB_COLOURS.len() {
@@ -469,12 +494,12 @@ fn periodogram(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect
             );
         }
     }
-    sheet.small(pos2(area.left() - 5.0, area.bottom() + 18.0), Align2::RIGHT_TOP, "rad/√Hz");
-    sheet.small(
-        pos2(area.center().x, area.bottom() + 18.0),
-        Align2::CENTER_TOP,
+    sheet.small(area.left_top() + vec2(-5.0, -19.0), Align2::RIGHT_TOP, "rad/√Hz");
+    sheet.caption(&[
         format!("frequency, Hz · Nyquist {} Hz · scroll to zoom", plain(nyquist)),
-    );
+        format!("frequency, Hz · Nyquist {} Hz", plain(nyquist)),
+        "frequency, Hz".to_owned(),
+    ]);
     drawn.labels = sheet.labels;
     drawn
 }

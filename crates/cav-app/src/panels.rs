@@ -1015,6 +1015,15 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
                 ui.label(RichText::new(adapter).monospace().size(11.0).color(theme::WEAK));
             }
             ui.add_space(4.0);
+            ui.label(
+                RichText::new(
+                    "Numbers are set in Ubuntu Mono, © Canonical Ltd, used unmodified under the Ubuntu Font                      Licence 1.0 (hover for the licence).",
+                )
+                .size(11.0)
+                .color(theme::WEAK),
+            )
+            .on_hover_text(RichText::new(theme::MONO_FONT_LICENCE).size(10.0));
+            ui.add_space(4.0);
             ui.label(RichText::new("The window's own commands:").size(11.5));
             for (name, about) in APP_COMMANDS {
                 ui.label(

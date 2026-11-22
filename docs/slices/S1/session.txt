@@ -1,5 +1,6 @@
 $ cav exec "load point; reading 3; set bodies[0].motion.Static.position [3, 0, 2.5]; reading 3; load pass; signal 2; load comb; periodogram 1; load folded-comb; periodogram 1"
 load point
+# a shot read out at 3 s · refined · quadrature within 5e-14 rad
 # tower    ΔΦ [rad]  δφ₁ lower [rad]  δφ₂ upper [rad]
 tower 1  -1.9672023919207982e0  -7.312815445482002e-1  1.235920847372598e0
 tower 2  -1.9672023919207982e0  -7.312815445482002e-1  1.235920847372598e0
@@ -7,6 +8,7 @@ tower 3  -3.737626808365296e-1  -4.50131817896895e-2  3.287494990468401e-1
 tower 4  -6.454436162210904e-1  -1.020135437209701e-1  5.434300725001202e-1
 tower 5  -6.454436162210904e-1  -1.020135437209701e-1  5.434300725001202e-1
 set bodies[0].motion.Static.position [3,0,2.5]
+# a shot read out at 3 s · refined · quadrature within 1e-13 rad
 # tower    ΔΦ [rad]  δφ₁ lower [rad]  δφ₂ upper [rad]
 tower 1  -1.1877136245803137e0  -2.8889047457906974e-1  8.988231500012439e-1
 tower 2  -3.985351438053199e0  -2.409135463547522e0  1.576215974505677e0
@@ -31,7 +33,7 @@ load comb
 0.0505  3.341667853063999e-16
 0.0495  3.3068426752684183e-16
 0.051  1.5781135192539593e-16
-# comb of `oscillator`, f₀ = 0.050000 Hz: 1f₀ at 0.050000 Hz, 2f₀ at 0.100000 Hz, 3f₀ at 0.150000 Hz, 4f₀ at 0.200000 Hz, 5f₀ at 0.250000 Hz
+# comb of `oscillator`, f₀ = 0.050000 Hz: 1f₀ at 0.050000 Hz, 2f₀ at 0.100000 Hz, 3f₀ at 0.150000 Hz, 4f₀ at 0.200000 Hz, 5f₀ at 0.250000 Hz, 6f₀ at 0.200000 Hz (folded), 7f₀ at 0.150000 Hz (folded), 8f₀ at 0.100000 Hz (folded)
 load folded-comb
 # tower 1 · gradiometer · refined · 500 bins to the Nyquist frequency, 0.25 Hz · f [Hz], √S [rad/√Hz]
 0.1725  6.140951446339137e-2
@@ -42,4 +44,4 @@ load folded-comb
 0.035  5.505126073169603e-9
 0.2075  4.4384527917313293e-10
 0.12  2.3426017378346562e-11
-# comb of `oscillator`, f₀ = 0.327500 Hz: 1f₀ at 0.172500 Hz (folded), 2f₀ at 0.155000 Hz (folded), 3f₀ at 0.017500 Hz (folded), 4f₀ at 0.190000 Hz (folded), 5f₀ at 0.137500 Hz (folded)
+# comb of `oscillator`, f₀ = 0.327500 Hz: 1f₀ at 0.172500 Hz (folded), 2f₀ at 0.155000 Hz (folded), 3f₀ at 0.017500 Hz (folded), 4f₀ at 0.190000 Hz (folded), 5f₀ at 0.137500 Hz (folded), 6f₀ at 0.035000 Hz (folded), 7f₀ at 0.207500 Hz (folded), 8f₀ at 0.120000 Hz (folded)

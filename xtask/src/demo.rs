@@ -194,7 +194,7 @@ fn s1(root: &Path) -> Result<(), String> {
     // by the `set` a drag issues (the drag itself, by pointer, is `dragging_a_body_moves_it_under_the_pointer`).
     let drag = "load point; select body 1; set bodies[0].motion.Static.position";
     let pass = "load pass; panes 2; show signal @2; select tower 2; seek";
-    let shots: [(&str, String); 10] = [
+    let shots: [(&str, String); 11] = [
         ("drag-1.png", format!("{drag} [2, 0, 2.5]")),
         ("drag-2.png", format!("{drag} [2.9, 0.9, 2.5]")),
         ("drag-3.png", format!("{drag} [3.6, 1.6, 2.5]")),
@@ -202,6 +202,11 @@ fn s1(root: &Path) -> Result<(), String> {
         ("pass-2.png", format!("{pass} 5.46")),
         ("pass-3.png", format!("{pass} 9.46")),
         ("signal.png", "load oscillator-zoo; panes 2; show signal @2; seek 600".to_owned()),
+        // The same plot zoomed to its first two minutes: the shots themselves.
+        (
+            "signal-zoom.png",
+            "load oscillator-zoo; panes 2; show signal @2; span 0 120 @2; seek 60".to_owned(),
+        ),
         ("periodogram-comb.png", "load comb; panes 2; show periodogram @2".to_owned()),
         ("periodogram-folded.png", "load folded-comb; panes 2; show periodogram @2".to_owned()),
         (
@@ -214,6 +219,14 @@ fn s1(root: &Path) -> Result<(), String> {
         capture(&app, &["--screenshot", &target, "--size", "1440x900", "--exec", script])?;
         expect_png(&out, file, [1440, 900], &mut made)?;
     }
+
+    // 4b. A plot pane as an agent sees it: `cav render` (and MCP `render_view`) draw the pane's plot.
+    let target = path("render-periodogram.png");
+    capture(
+        &cav,
+        &["render", "folded-comb", "--size", "900x520", "--exec", "show periodogram", "--out", &target],
+    )?;
+    expect_png(&out, "render-periodogram.png", [900, 520], &mut made)?;
 
     // 5. What the console answers.
     let script = "load point; reading 3; set bodies[0].motion.Static.position [3, 0, 2.5]; reading 3; \
