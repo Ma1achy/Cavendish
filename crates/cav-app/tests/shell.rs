@@ -624,6 +624,17 @@ fn panes_show_plots_and_the_scene() {
         assert!(legend.iter().all(|l| !l.1.intersects(*took)), "`{text}` is under the legend");
         assert!(took.top() >= spectrum.area.top() - 1.0, "`{text}` is above the plot");
     }
+    // No stem's label is written over another's, of its own comb or of another body's; a label
+    // with nowhere to go is left out, but each body's f₀ is always named.
+    let stems: Vec<&(String, egui::Rect)> =
+        spectrum.labels.iter().filter(|l| l.0.ends_with("f₀") || l.0.ends_with("folded")).collect();
+    for (k, a) in stems.iter().enumerate() {
+        for b in &stems[k + 1..] {
+            assert!(!a.1.intersects(b.1), "`{}` and `{}` are written over each other", a.0, b.0);
+        }
+    }
+    assert!(stems.len() >= 8, "only {} stems are named", stems.len());
+    assert_eq!(stems.iter().filter(|l| l.0 == "f₀" || l.0 == "f₀ folded").count(), 4);
     // Both axes are marked between their ends: frequencies every 0.05 Hz, and the decades.
     let said = |text: &str| spectrum.labels.iter().any(|l| l.0 == text);
     assert!(said("0.05") && said("0.1") && said("0.2") && said("0.25"), "{:?}", spectrum.labels);
