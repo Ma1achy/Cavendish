@@ -147,6 +147,14 @@ Still open (asked in S0; defaults in use until answered):
   10 × 10 × 3 m room, each 10 m tall so they rise through the ceiling. Is there a real or intended
   layout, and where is the tower base relative to the floor people walk on?
 
+## Owner's ruling (22 Nov 2026): built for other people, and figures
+The owner wants the project easy for others to extend and work with (clean architecture, documented
+and easy-to-follow code) and a good way to make plots and figures from it. Written in as principle
+10 of `REBUILD.md` §2, a line in `CLAUDE.md`'s quality bar, and duties in the builder's and
+reviewer's definitions; figure export is a must-have of §6. Two tasks in S2: TASK-S2-07 (figure
+export) and TASK-S2-08 (`docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, recipes in `docs/extending/`, a
+lint for undocumented public items). Every later slice keeps them true.
+
 ## Owner's ruling (22 Nov 2026): beyond the scene
 The owner asked for the world beyond the voxel scene (weather, clouds, the Moon and tides,
 earthquakes, tsunamis, real planet data, Earth's rotation), for towers of different heights, a

@@ -36,6 +36,9 @@ unclear, do the sensible thing and record one line on what you chose and why.
 - A suspicious number gets a measurement, not a story. Write the pass criterion before measuring.
 - Every approximation is bounded or audited against the phase tolerance (radians) and recorded.
 - British English. Simplicity over cleverness. Dependencies only where they earn their place.
+- Built for other people (plan §2.10): code a newcomer can follow; every public item documented, with
+  units and frames stated; each crate's purpose and allowed dependencies at the top of its `lib.rs`;
+  `docs/ARCHITECTURE.md` and the recipes in `docs/extending/` kept true by the slice that changes them.
 
 ## Ask the owner first only for
 Money; contacting anyone outside; licences and publishing; deleting history or force-pushing; anything

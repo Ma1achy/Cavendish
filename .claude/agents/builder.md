@@ -11,6 +11,9 @@ plan/PROGRESS.md and any docs/research/ notes for this slice first.
 3. Run the slice's oracle and GPU tiers locally; record results in the brief.
 4. Run `cargo xtask demo <slice>`; save screenshots to docs/slices/<slice>/.
 5. Improve beyond the plan where you can (accuracy, speed, polish, UX); note what and why.
+   Write for the next person: document every public item (units, frames, what it must not be used
+   for), keep `docs/ARCHITECTURE.md` true, and add or update the recipe in `docs/extending/` for any
+   kind of thing the slice makes extensible.
 6. Regenerate the validation report at the end of the slice (`cargo xtask validate --report
    --against <previous slice's tag>`) and commit `docs/validation/`; new physics gets new cases
    (`cav_validate::case!`) beside its tests. Never drop a case; a tolerance changes only with a line
