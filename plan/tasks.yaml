@@ -55,7 +55,7 @@
   title: 'Point mass you can drag; live phase per tower: Set, Run, Signal, the worker, per-source caching'
 - id: TASK-S1-04
   milestone: S1
-  title: Signal plot and periodograms (classical, Lomb–Scargle, NUFFT) with the comb and fold overlay
+  title: 'Periodograms in cav-core: classical, exact Lomb–Scargle, Nyquist folding, a notch'
 - id: TASK-S1-05
   milestone: S1
   title: 'Bodies in the scene spec; oscillator library: linear, circular, pendulum, sphere; the S1 dev scenes'
@@ -77,6 +77,12 @@
 - id: TASK-S1-11
   milestone: S1
   title: 'Bodies drawn in the view; dragging a body in a pane; live readings beside the towers'
+- id: TASK-S1-13
+  milestone: S1
+  title: 'Signal plot and periodogram panes, with the comb and fold overlay'
+- id: TASK-S1-14
+  milestone: S1
+  title: 'NUFFT Lomb–Scargle for long series, held to the exact one'
 - id: TASK-S1-12
   milestone: S1
   title: 'Ubuntu Mono as the monospace face, with its licence; screenshots regenerated'
