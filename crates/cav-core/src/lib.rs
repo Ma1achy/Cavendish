@@ -9,6 +9,7 @@ pub mod constants;
 pub mod defaults;
 pub mod forward;
 pub mod maths;
+pub mod npy;
 pub mod spectrum;
 
 pub use maths::{Mat4, Vec3};
