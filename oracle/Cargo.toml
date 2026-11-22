@@ -10,13 +10,14 @@ publish = false
 # Only `cargo xtask oracle` and `cargo xtask validate` build this crate (REBUILD §3.1).
 [workspace]
 
+# The library reads fixtures with cav-core's `.npy` reader.
 [dependencies]
-cav-validate = { path = "../crates/cav-validate" }
+cav-core = { path = "../crates/cav-core" }
 
 # v1's forward model, pinned to the commit the tag `v1-final` names (a tag can be moved; a commit
 # cannot). `instrument` brings `gravity`, `source`, `shape` and `math` with it.
 [dev-dependencies]
-cav-core = { path = "../crates/cav-core" }
+cav-validate = { path = "../crates/cav-validate" }
 instrument = { git = "https://github.com/Ma1achy/Cavendish.git", rev = "56df4ab2126dce30fa0f26cb9321885511a105cc" }
 gravity = { git = "https://github.com/Ma1achy/Cavendish.git", rev = "56df4ab2126dce30fa0f26cb9321885511a105cc" }
 source = { git = "https://github.com/Ma1achy/Cavendish.git", rev = "56df4ab2126dce30fa0f26cb9321885511a105cc" }
