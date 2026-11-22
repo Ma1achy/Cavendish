@@ -37,6 +37,7 @@ pub enum NamedView {
 }
 
 impl NamedView {
+    /// Every named view, in the order menus list them.
     pub const ALL: [Self; 7] =
         [Self::Iso, Self::Top, Self::Bottom, Self::North, Self::South, Self::East, Self::West];
 
@@ -103,6 +104,7 @@ pub enum DrawStyle {
 }
 
 impl DrawStyle {
+    /// Every draw style, in the order menus list them.
     pub const ALL: [Self; 5] = [Self::Shaded, Self::Flat, Self::XRay, Self::Wireframe, Self::Paper];
 
     /// The word used in commands and file names.
@@ -128,7 +130,8 @@ impl DrawStyle {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ViewSpec {
-    /// The point the camera looks at and orbits, metres.
+    /// The point the camera looks at and orbits: `[x, y, z]` (east, north, up), metres, in the
+    /// world's frame.
     pub target: [f64; 3],
     /// Compass direction from the target to the camera, degrees anticlockwise from east.
     pub yaw: f64,
@@ -188,16 +191,20 @@ impl PaneContent {
 /// the same thing.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SceneView<'a> {
+    /// The scene to draw: its array, room, floor and bodies, in the world's frame.
     pub scene: &'a SceneSpec,
+    /// The camera, projection and style to draw it with.
     pub view: &'a ViewSpec,
     /// What is selected, drawn highlighted.
     pub highlight: Option<crate::Target>,
-    /// The playhead, seconds: bodies are drawn where they are at this time.
+    /// The playhead, seconds on the scene's clock: bodies are drawn where they are at this time.
     pub time: f64,
     /// What the pane shows. A renderer of scenes draws [`PaneContent::Scene`] and must refuse the
     /// others rather than draw the scene in their place.
     pub content: PaneContent,
-    /// The stretch of a plot's horizontal axis the pane shows; `None` for all of it.
+    /// The stretch of a plot's horizontal axis the pane shows, `[from, to]` in the axis's own
+    /// unit: seconds on the scene's clock for a signal or a flight diagram, hertz for a
+    /// periodogram or a cadence window. `None` for all of it. A scene pane has no span.
     pub span: Option<[f64; 2]>,
 }
 
@@ -235,9 +242,10 @@ impl ViewSpec {
         self.distance = FRAMING_MARGIN * distance;
     }
 
-    /// The basis of the camera from its angles: the unit vectors from the target towards the
-    /// camera, to the right of the picture and up it. Defined at the poles too, where yaw says
-    /// which way is up.
+    /// The basis of the camera from its angles, `(to_eye, right, up)`: the unit vectors from the
+    /// target towards the camera, to the right of the picture and up it. Each is `[x, y, z]`
+    /// (east, north, up) in the world's frame, dimensionless. Defined at the poles too, where yaw
+    /// says which way is up.
     #[must_use]
     pub fn basis(&self) -> ([f64; 3], [f64; 3], [f64; 3]) {
         let (yaw, pitch) = (self.yaw.to_radians(), self.pitch.to_radians());

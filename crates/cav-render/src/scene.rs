@@ -14,14 +14,17 @@ use cav_sim::{DrawStyle, SceneSpec, Target};
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
 #[repr(C)]
 pub struct Line {
-    /// Start, metres from the view's target.
+    /// Start: `[x, y, z]` (east, north, up), metres from the view's target.
     pub a: [f32; 3],
     /// Width, pixels.
     pub width: f32,
-    /// End, metres from the view's target.
+    /// End: `[x, y, z]` (east, north, up), metres from the view's target.
     pub b: [f32; 3],
+    /// Padding that keeps `colour` on a 16-byte boundary, as WGSL lays the instance out. Always
+    /// zero; it means nothing.
     pub _pad: f32,
-    /// Linear RGB and alpha.
+    /// `[red, green, blue, alpha]`, each 0 to 1: linear light (not sRGB-encoded), alpha not
+    /// premultiplied.
     pub colour: [f32; 4],
 }
 
@@ -29,10 +32,11 @@ pub struct Line {
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
 #[repr(C)]
 pub struct Vertex {
-    /// Metres from the view's target.
+    /// `[x, y, z]` (east, north, up), metres from the view's target.
     pub position: [f32; 3],
+    /// The unit vector out of the surface at this corner, `[x, y, z]` in the world's axes.
     pub normal: [f32; 3],
-    /// Linear RGB and alpha.
+    /// `[red, green, blue, alpha]`, each 0 to 1: linear light (not sRGB-encoded).
     pub colour: [f32; 4],
 }
 
@@ -41,6 +45,7 @@ pub struct Vertex {
 pub enum Part {
     /// Tower `n`, from 0.
     Tower(usize),
+    /// The room: its floor, its grid and its edges.
     Room,
     /// Body `n`, from 0.
     Body(usize),
@@ -51,23 +56,29 @@ pub enum Part {
 pub struct Ground {
     /// Height of the surface relative to the view's target, metres.
     pub height: f32,
-    /// The target's x and y modulo the 100 m grid period, so the grid stays put as the camera moves
-    /// without the shader ever seeing a large coordinate.
+    /// `[x, y]` (east, north): the target's world x and y modulo the 100 m grid period, metres, so
+    /// the grid stays put as the camera moves without the shader ever seeing a large coordinate.
     pub phase: [f32; 2],
-    /// Linear RGB of the surface and of its grid lines.
+    /// The surface's colour: `[red, green, blue, alpha]`, linear light, each 0 to 1.
     pub surface: [f32; 4],
+    /// The grid lines' colour: `[red, green, blue, alpha]`, linear light, each 0 to 1.
     pub line: [f32; 4],
 }
 
 /// Everything to draw for one view.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Drawables {
+    /// Every line segment, part by part in the order of `parts`.
     pub lines: Vec<Line>,
+    /// Every triangle corner, three to a triangle, part by part in the order of `parts`.
     pub triangles: Vec<Vertex>,
+    /// The infinite floor, when the scene has one.
     pub ground: Option<Ground>,
-    /// The background colour, linear RGB.
+    /// The background colour: `[red, green, blue]`, linear light, each 0 to 1.
     pub background: [f32; 3],
-    /// Each part with where its lines and triangle corners end (they start where the previous ended).
+    /// `(part, lines end, corners end)`: each part with the index in `lines` and the index in
+    /// `triangles` just past its last entry (a part's entries start where the previous part's
+    /// ended, the first part's at 0).
     pub parts: Vec<(Part, usize, usize)>,
 }
 
@@ -119,11 +130,13 @@ const PAPER: Palette = Palette {
     trail: 0x9b_8f7c,
 };
 
-/// The sRGB colours the tests look for: the background and tower colours of the dark styles.
+/// The background of the dark styles, `[red, green, blue]` as sRGB bytes: one of the colours the
+/// tests look for in a picture.
 pub const BACKGROUND_SRGB: [u8; 3] = [0x0a, 0x0a, 0x0a];
+/// The background of the paper style, `[red, green, blue]` as sRGB bytes.
 pub const PAPER_SRGB: [u8; 3] = [0xf1, 0xed, 0xe4];
 
-/// A body's colour in the dark styles, sRGB bytes.
+/// A body's colour in the dark styles, `[red, green, blue]` as sRGB bytes.
 pub const BODY_SRGB: [u8; 3] = [0xe8, 0xe2, 0xd0];
 
 /// The smallest radius a body is drawn at, metres: a point mass has none of its own.
@@ -132,7 +145,8 @@ pub const BODY_RADIUS: f64 = 0.14;
 /// How many straight pieces a body's path is drawn in.
 pub const TRAIL_PIECES: u32 = 96;
 
-/// Tower `n`'s colour in the dark styles, sRGB bytes.
+/// Tower `n`'s colour (from 0; the five colours repeat) in the dark styles, `[red, green, blue]`
+/// as sRGB bytes.
 #[must_use]
 pub fn tower_srgb(n: usize) -> [u8; 3] {
     let hex = DARK.towers[n % DARK.towers.len()];
@@ -206,8 +220,9 @@ pub fn decimation(scene: &SceneSpec) -> Vec<String> {
     notes
 }
 
-/// A world position as an `f32` offset from `origin`. The subtraction is in `f64`; only the small
-/// result is rounded.
+/// A world position as an `f32` offset from `origin`: `[x, y, z]` (east, north, up), metres.
+/// Both arguments are in the world's frame. The subtraction is in `f64`; only the small result
+/// is rounded.
 #[must_use]
 pub fn local(world: Vec3, origin: Vec3) -> [f32; 3] {
     (world - origin).to_f32()
@@ -316,8 +331,9 @@ pub fn drawables(scene: &SceneSpec, style: DrawStyle, highlight: Option<Target>,
     drawables_at(scene, style, highlight, origin, 0.0)
 }
 
-/// Builds what to draw for `scene` in `style`, relative to `origin` (the view's target), with
-/// `highlight` drawn as the selection and every body where it is at `time` seconds.
+/// Builds what to draw for `scene` in `style`, relative to `origin` (the view's target, metres,
+/// the world's frame), with `highlight` drawn as the selection and every body where it is at
+/// `time` seconds on the scene's clock.
 #[must_use]
 pub fn drawables_at(
     scene: &SceneSpec,

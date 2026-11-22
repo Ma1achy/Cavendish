@@ -32,7 +32,9 @@ const PREFIX: usize = 10;
 /// The values of an array, in C order (the last index runs fastest).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Data {
+    /// `float64` values, every bit as stored. The file carries no unit: the caller knows it.
     F64(Vec<f64>),
+    /// `bool` values, one for each byte of the file.
     Bool(Vec<bool>),
 }
 
@@ -41,6 +43,7 @@ pub enum Data {
 pub struct Array {
     /// The length of each axis; empty for a scalar.
     pub shape: Vec<usize>,
+    /// The values in C order: as many as the product of `shape`.
     pub data: Data,
 }
 
@@ -54,7 +57,7 @@ impl Array {
         }
     }
 
-    /// The shape and the values of an `f64` array.
+    /// `(shape, values)` of an `f64` array: the length of each axis, and the values in C order.
     ///
     /// # Errors
     /// When the array is of `bool`.
@@ -65,7 +68,7 @@ impl Array {
         }
     }
 
-    /// The shape and the values of a `bool` array.
+    /// `(shape, values)` of a `bool` array: the length of each axis, and the values in C order.
     ///
     /// # Errors
     /// When the array is of `f64`.
