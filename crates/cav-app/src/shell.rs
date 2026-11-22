@@ -240,10 +240,13 @@ impl Shell {
     }
 
     /// Applies a typed command, as a drag or a scrub issues it. A refusal opens the console.
-    pub fn apply(&mut self, command: Command) {
-        if self.engine.apply(command).is_err() {
+    /// True when it was applied.
+    pub fn apply(&mut self, command: Command) -> bool {
+        let applied = self.engine.apply(command).is_ok();
+        if !applied {
             self.console_open = true;
         }
+        applied
     }
 
     /// What every tower reads from a shot read out at the playhead, as the engine's reading worker
@@ -257,9 +260,10 @@ impl Shell {
                 Ok(Reply::Reading(reply)) => reply,
                 _ => ReadingReply {
                     time: self.engine.time(),
-                    state: "computing".into(),
+                    state: cav_engine::Standing::Computing,
                     towers: Vec::new(),
                     estimate: 0.0,
+                    settled: true,
                     warnings: Vec::new(),
                 },
             };
@@ -320,13 +324,15 @@ impl Shell {
         let moved = camera.right * (f64::from(delta.x) * scale) - camera.up * (f64::from(delta.y) * scale);
         let (anchor, field) = body.motion.anchor();
         let value = [anchor[0] + moved.x, anchor[1] + moved.y, anchor[2] + moved.z];
-        // The first step of a drag is an edit; the steps after it continue it.
-        let continues = std::mem::replace(&mut self.drag_under_way, true);
-        self.apply(Command::Set {
+        // The first step of a drag that is applied is an edit; the steps after it continue it. A
+        // step that is refused (the body dragged out of range, say) continues nothing.
+        let continues = self.drag_under_way;
+        let applied = self.apply(Command::Set {
             path: format!("bodies[{n}].motion.{field}"),
             value: serde_json::json!(value),
             continues,
         });
+        self.drag_under_way = continues || applied;
     }
 
     /// The selected tower, from 0.
@@ -459,7 +465,9 @@ impl Shell {
         // Take whatever the forward worker has finished; while it is still at work, keep drawing so
         // that its result is shown when it comes. Nothing here waits.
         self.engine.poll();
-        if self.engine.signal().0 == cav_engine::SignalState::Stale || self.reading().state == "stale" {
+        if self.engine.signal().0 == cav_engine::SignalState::Stale
+            || self.reading().state == cav_engine::Standing::Stale
+        {
             ctx.request_repaint_after(std::time::Duration::from_millis(30));
         }
         crate::panels::draw(self, ui, surface);

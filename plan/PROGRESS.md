@@ -47,10 +47,12 @@ looked at the real window.
 1. **One tolerance was changed after measuring, and the review undid it.** The builder set
    `oracle.script_same_time_100m_oscillators` to 1.5e-3 after it measured 1.07e-3 against 3e-4, and
    gave the trapezoid as the cause. The review measured otherwise: 8.1e-4 of it is the scripts'
-   window ending one step short of 2T, and seven other cases passed 3e-4 only by cancellation. The
-   bound is withdrawn. Now: the scripts' rule taken to its limit is the engine (3e-10 on AICE, 1e-7
-   on AION-10), and the engine differs from each fixture by what that rule's error predicts, to
-   within 0.3% of the prediction, two-sided (`docs/slices/S1.md` §7.2, `acknowledged.txt`).
+   window ending one step short of 2T, and two other cases (`fig2_10m` c and d) passed 3e-4 only by
+   cancellation (this said seven; corrected after the second review). The bound is withdrawn. Now:
+   the scripts' rule taken to its limit is the engine (3e-10 on AICE, 1e-7 on AION-10; since S2's
+   TASK-S2-10, 5e-9 at dt/128 against 1e-8), and the engine differs from each fixture by what that
+   rule's error predicts, to within 0.3% of the prediction, two-sided. The second is the first
+   rescaled, not an independent check (`docs/slices/S1.md` §7.2, §7.5, `acknowledged.txt`).
 2. **The published anchor sizes** ("~7 mrad", "~2 mrad peak to peak") are not met by v1 itself: it
    gives 13.66 mrad and 4.34 mrad. George's `1D_oscillator` gives 4.06 mrad peak to peak, so "~2 mrad"
    is the oscillator's amplitude. The engine is held to v1 and the scripts, not to the round numbers.

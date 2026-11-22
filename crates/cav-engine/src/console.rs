@@ -514,26 +514,12 @@ impl Engine {
                 let described = describe(&command, self.active_pane());
                 self.apply(command).map(|()| described)
             }
-            Request::Ask(query) => {
-                // A client that prints numbers waits for them (`cav exec`, MCP); the application's
-                // patience is zero and it is told `stale` instead.
-                match query {
-                    Query::Signal { .. } | Query::Periodogram { .. } | Query::Reading(None) => {
-                        self.settle(self.patience());
-                        self.answer(&query)
-                    }
-                    Query::Reading(Some(time)) => {
-                        // A reading away from the playhead: ask for it, answer, and ask for the
-                        // playhead's again, which is what the panels show.
-                        self.ask_reading(time);
-                        self.settle(self.patience());
-                        let answer = self.answer(&query);
-                        self.ask_reading(self.time());
-                        answer
-                    }
-                    _ => self.answer(&query),
-                }
-            }
+            // A client that prints numbers waits for the ones it asked for and no others
+            // (`cav exec`, MCP); the application's patience is a tenth of a second, after which
+            // it is told `stale`.
+            Request::Ask(query) => self.ask(&query).map(|reply| render(&reply)).inspect_err(|why| {
+                self.note(Level::Error, Subsystem::Engine, why.clone());
+            }),
             Request::Help(None) => Ok(help()),
 
             Request::Help(Some(topic)) => COMMANDS
@@ -553,13 +539,6 @@ impl Engine {
                 Ok(lines.join("\n"))
             }
         }
-    }
-
-    /// Answers a query as the console prints it; a refusal goes in the log.
-    fn answer(&mut self, query: &Query) -> Result<String, String> {
-        self.query(query).map(|reply| render(&reply)).inspect_err(|why| {
-            self.note(Level::Error, Subsystem::Engine, why.clone());
-        })
     }
 
     /// The selected tower, from 1, if a tower is selected.
@@ -609,7 +588,7 @@ pub fn render(reply: &Reply) -> String {
                 signal.channel.name(),
                 signal.state,
                 signal.times.len(),
-                crate::estimate_text(signal.estimate)
+                crate::estimate_text(signal.estimate, signal.settled)
             )];
             lines.extend(signal.warnings.iter().map(|warning| format!("# warning: {warning}")));
             let shots = signal.times.iter().zip(&signal.values);
@@ -670,7 +649,7 @@ pub fn render(reply: &Reply) -> String {
                 "# a shot read out at {} s · {} · quadrature {}",
                 reading.time,
                 reading.state,
-                crate::estimate_text(reading.estimate)
+                crate::estimate_text(reading.estimate, reading.settled)
             )];
             lines.extend(reading.warnings.iter().map(|warning| format!("# warning: {warning}")));
             lines.push(format!("# {:<width$}  ΔΦ [rad]  δφ₁ lower [rad]  δφ₂ upper [rad]", "tower"));

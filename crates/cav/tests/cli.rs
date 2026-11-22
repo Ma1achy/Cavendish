@@ -276,3 +276,20 @@ fn gpu_named_views_fill_the_picture() {
     let share = height as f64 / 600.0;
     assert!((share - 1.0 / (1.12 * 1.25)).abs() < 0.02, "the plan takes {share:.2} of the picture's height");
 }
+
+#[test]
+fn cli_prints_the_font_licence() {
+    let out = cav(&["licences"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let text = stdout(&out);
+    // The licence itself, whole, as it is in the repository beside the font.
+    let file = include_str!("../../cav-app/assets/fonts/UFL.txt").replace("\r\n", "\n");
+    assert!(text.contains("Ubuntu Mono") && text.contains("Ubuntu Font Licence 1.0"), "{text}");
+    assert!(text.contains(file.trim()), "the licence text is not printed whole");
+    assert!(file.len() > 3000, "the file is the licence, not a stub");
+    // The American spelling finds it too; `help` lists it.
+    assert_eq!(stdout(&cav(&["licenses"])), text);
+    assert!(stdout(&cav(&["help"])).contains("licences"));
+    // Control: a word that is not a command is refused.
+    assert!(!cav(&["license-plate"]).status.success());
+}

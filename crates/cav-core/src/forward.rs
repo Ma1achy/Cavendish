@@ -407,9 +407,15 @@ pub struct Node {
     pub upper: f64,
 }
 
-/// The nodes of one flight. They depend on the instrument alone, so they are built once.
+/// The nodes of one flight, gathered into a table. They depend on the instrument alone.
+///
+/// For tests and for looking at a rule: the reads themselves visit their nodes one at a time and
+/// keep no table, because this one grows with the length of the flight (over a megabyte at
+/// T = 320 s with the floor off).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Flight {
+    /// The nodes in time order. Each has its time after launch (`tau`, seconds), its weight
+    /// (seconds) and the two arms' rise above their own launch point (metres, up).
     pub nodes: Vec<Node>,
     /// 2T, seconds: a shot read out at `t` was launched at `t − duration`.
     pub duration: f64,
@@ -452,7 +458,8 @@ pub fn gauss_legendre(n: usize) -> Vec<(f64, f64)> {
 /// Something with mass, as the flight integral sees it.
 pub trait Source: Sync {
     /// `(V(upper arm) − V(lower arm)) / G` for each interferometer at absolute time `time`,
-    /// kilograms per metre. It is nothing when `lower` equals `upper` (the two arms at one point):
+    /// kilograms per metre: `[lower interferometer, upper interferometer]`. Frame: the world's
+    /// (x east, y north, z up, metres); `time` is seconds on the scene's clock. It is nothing when `lower` equals `upper` (the two arms at one point):
     /// the integrator relies on that and does not ask while both arms are on the floor. `tower` is the tower's base (the lower launch point), `heights` the
     /// two launch points' heights above it, and `lower` and `upper` the arms' rise above their
     /// launch point.

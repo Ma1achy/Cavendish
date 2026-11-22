@@ -165,6 +165,42 @@ pub enum Query {
     },
 }
 
+/// Where an answer stands against what was asked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Standing {
+    /// It is the current scene's, for the time asked.
+    Refined,
+    /// The scene (or the time) has changed and this is the last whole answer; ask again.
+    Stale,
+    /// There is nothing to show yet.
+    Computing,
+}
+
+impl Standing {
+    /// The word used in text and in JSON: `refined`, `stale` or `computing`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Refined => "refined",
+            Self::Stale => "stale",
+            Self::Computing => "computing",
+        }
+    }
+}
+
+impl std::fmt::Display for Standing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl PartialEq<&str> for Standing {
+    fn eq(&self, word: &&str) -> bool {
+        self.as_str() == *word
+    }
+}
+
 /// One harmonic of a body's comb.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Harmonic {
@@ -194,8 +230,8 @@ pub struct PeriodogramReply {
     /// The tower, from 1.
     pub tower: usize,
     pub channel: ChannelName,
-    /// As for a signal: `refined`, `stale` or `computing`.
-    pub state: String,
+    /// As for a signal: whether it is the current scene's.
+    pub state: Standing,
     /// The Nyquist frequency, hertz: half the shot rate.
     pub nyquist: f64,
     /// The bins' frequencies, hertz, from one over the timeline's length to Nyquist.
@@ -264,15 +300,18 @@ pub struct SignalReply {
     pub channel: ChannelName,
     /// `refined`: the current scene's signal. `stale`: the scene has changed and this is the last
     /// whole signal; ask again. `computing`: there is none to show yet.
-    pub state: String,
+    pub state: Standing,
     /// When each shot is read out, seconds.
     pub times: Vec<f64>,
     /// The channel's value at each shot, radians.
     pub values: Vec<f64>,
     /// The largest quadrature estimate of any shot of any source, radians.
     pub estimate: f64,
-    /// What a person should know about these readings.
-    pub warnings: Vec<String>,
+    /// Whether every read settled to the tolerance; when false the estimate is how far the worst
+    /// was from settling, not a bound that was met.
+    pub settled: bool,
+    /// What a person should know about these readings, each with the tower it is about (from 0).
+    pub warnings: Vec<cav_sim::read::Warning>,
 }
 
 /// What every tower reads from one shot.
@@ -282,15 +321,18 @@ pub struct ReadingReply {
     pub time: f64,
     /// `refined`: the reading asked for. `stale`: the last whole reading, for an earlier time or
     /// scene; ask again. `computing`: there is none to show yet.
-    pub state: String,
+    pub state: Standing,
     /// Each tower's reading, in the towers' order; empty while `computing`.
     pub towers: Vec<TowerReading>,
     /// The largest quadrature estimate of any source at any tower, radians: how far these numbers
     /// can be trusted.
     pub estimate: f64,
+    /// Whether every read settled to the tolerance; when false the estimate is how far the worst
+    /// was from settling, not a bound that was met.
+    pub settled: bool,
     /// What a person should know about these numbers: a reading that did not settle, a body in
-    /// the atoms' path, an unbounded floor.
-    pub warnings: Vec<String>,
+    /// the atoms' path, an unbounded floor. Each with the tower it is about (from 0).
+    pub warnings: Vec<cav_sim::read::Warning>,
 }
 
 /// What one tower reads from one shot, radians.

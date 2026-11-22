@@ -22,7 +22,7 @@ pub mod log;
 pub use cav_sim::{PaneContent, Target};
 pub use command::{
     COMB_HARMONICS, ChannelName, Comb, Command, Harmonic, MAX_PANES, PeriodogramReply, Query, ReadingReply,
-    Reply, SignalReply, Stage, Stats, TowerReading, ViewCommand,
+    Reply, SignalReply, Stage, Standing, Stats, TowerReading, ViewCommand,
 };
 pub use console::{COMMANDS, CommandDoc, Request, describe, help, render};
 pub use engine::{Engine, TYPED_LINE_PATIENCE, estimate_text};

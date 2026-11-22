@@ -224,7 +224,7 @@ fn the_latest_edit_wins_and_stale_work_is_dropped() {
     let Reply::Reading(reading) = engine.query(&Query::Reading(None)).unwrap() else { panic!("a reading") };
     let cold = read::reading(engine.spec(), 0.0, &|| false).unwrap();
     assert_eq!(reading.state, "refined");
-    assert_eq!(reading.towers[1].gradiometer.to_bits(), cold.towers[1][2].to_bits());
+    assert_eq!(reading.towers[1].gradiometer.to_bits(), cold.towers[1].gradiometer.to_bits());
     // (That a job already under way is abandoned between shots is `contribution`'s own test, in
     // cav-sim: `the_reading_is_the_series_at_a_readout_and_contributions_can_be_cancelled`.)
 }
@@ -490,4 +490,98 @@ fn a_long_answer_is_cut_and_says_so() {
     assert!(engine.run_line("signal 1 5 2").unwrap_err().contains("from one time up to a later one"));
     // Two numbers are a tower and then nothing else: `signal 1 2` is not a span.
     assert!(engine.run_line("signal 1 2").is_err() || engine.spec().array.towers.len() >= 2);
+}
+
+#[test]
+fn a_reading_does_not_wait_for_the_series() {
+    // A series that takes minutes: 200,000 shots of a pass, five towers.
+    let mut scene = dev::pass();
+    scene.array.instrument.half_sequence = 0.002;
+    scene.array.instrument.cycle = 0.005;
+    scene.duration = 1000.0;
+    let mut engine = loaded(scene);
+    engine.set_patience(LONG);
+    // The reading is asked for with a minute's patience and is back long before the series is:
+    // it waited for the reading worker and for nothing else. (It once waited the whole minute.)
+    let started = std::time::Instant::now();
+    let said = engine.run_line("reading").unwrap();
+    assert!(said.contains("· refined ·"), "{said}");
+    let away = engine.run_line("reading 2.5").unwrap();
+    assert!(away.contains("a shot read out at 2.5 s · refined"), "{away}");
+    assert!(started.elapsed() < Duration::from_secs(20), "two readings took {:?}", started.elapsed());
+    assert_eq!(engine.signal().0, SignalState::Stale, "the series is still under way");
+    // The typed form of the same: `ask` waits for what the query needs and asks the worker for a
+    // time that is not the playhead's, which `query` alone never does.
+    let Reply::Reading(direct) = engine.query(&Query::Reading(Some(7.5))).unwrap() else { panic!() };
+    assert_ne!(direct.state, "refined", "nobody had asked for 7.5 s");
+    let Reply::Reading(asked) = engine.ask(&Query::Reading(Some(7.5))).unwrap() else { panic!() };
+    assert_eq!((asked.state.as_str(), asked.time), ("refined", 7.5));
+    // Control: a signal is what does wait for the series; with no patience it says where it stands.
+    engine.set_patience(Duration::ZERO);
+    let signal = engine.run_line("signal 1 0 1").unwrap_or_else(|why| why);
+    assert!(signal.contains("computing") || signal.contains("stale"), "{signal}");
+}
+
+#[test]
+fn an_unsettled_reading_says_so() {
+    // The words: an estimate is "within" only when the read settled.
+    assert_eq!(cav_engine::estimate_text(0.0, true), "exact");
+    assert_eq!(cav_engine::estimate_text(3e-11, true), "within 3e-11 rad");
+    assert_eq!(cav_engine::estimate_text(0.1, false), "did not settle, estimate 1e-1 rad");
+    assert_eq!(cav_engine::estimate_text(f64::INFINITY, false), "did not settle");
+    // A point mass on a tower's axis does not settle. The reading that comes back is the one
+    // asked for (`refined`), and its heading must not pass the estimate off as a bound.
+    let mut engine = loaded(dev::point());
+    engine.set_patience(LONG);
+    set(&mut engine, "bodies[0].motion.Static.position", json!([0.0, 0.0, 1.0])).unwrap();
+    let Reply::Reading(reply) = engine.ask(&Query::Reading(None)).unwrap() else { panic!("a reading") };
+    assert!(reply.state == "refined" && !reply.settled && reply.estimate > 1e-7);
+    let said = engine.run_line("reading").unwrap();
+    let heading = said.lines().next().unwrap();
+    assert!(heading.contains("did not settle, estimate") && !heading.contains("within"), "{heading}");
+    let signal = engine.run_line("signal 1").unwrap();
+    assert!(signal.lines().next().unwrap().contains("did not settle"), "{signal}");
+    let Reply::Signal(series) =
+        engine.ask(&Query::Signal { tower: 1, channel: ChannelName::Lower, span: None }).unwrap()
+    else {
+        panic!("a signal")
+    };
+    assert!(!series.settled);
+    // The warning names its tower by number, from 0.
+    assert!(reply.warnings.iter().all(|w| w.tower == Some(0)) && !reply.warnings.is_empty());
+    // Control: the mass moved off the axis settles, and says "within".
+    set(&mut engine, "bodies[0].motion.Static.position", json!([3.0, 0.0, 2.5])).unwrap();
+    let said = engine.run_line("reading").unwrap();
+    assert!(said.lines().next().unwrap().contains("quadrature within"), "{said}");
+    let Reply::Reading(reply) = engine.ask(&Query::Reading(None)).unwrap() else { panic!("a reading") };
+    assert!(reply.settled && reply.warnings.is_empty());
+}
+
+#[test]
+fn a_refused_first_step_is_not_a_continuation() {
+    let mut engine = loaded(dev::point());
+    let path = "bodies[0].motion.Static.position".to_owned();
+    // An edit of the body's place, on its own.
+    set(&mut engine, &path, json!([2.0, 0.0, 2.5])).unwrap();
+    let journal = engine.journal().len();
+    // A drag begins with a step that is refused (out of range), and goes on with steps that say
+    // they continue. There is nothing for them to continue: the first one applied is an edit of
+    // its own, and must not be folded into the set above.
+    let step =
+        |x: f64, continues: bool| Command::Set { path: path.clone(), value: json!([x, 0.0, 2.5]), continues };
+    assert!(engine.apply(step(1.0e9, false)).is_err());
+    engine.apply(step(2.5, true)).unwrap();
+    engine.apply(step(3.0, true)).unwrap();
+    assert_eq!(engine.journal().len(), journal + 1, "the drag is one new entry, not none");
+    // One undo takes back the drag and leaves the earlier edit standing.
+    engine.apply(Command::Undo).unwrap();
+    assert_eq!(engine.spec().bodies[0].motion, cav_sim::Motion::Static { position: [2.0, 0.0, 2.5] });
+    assert_eq!(Engine::replay(engine.journal()).unwrap().digest(), engine.digest());
+    // Control: with no refusal between them, steps that continue are one entry with the edit
+    // they continue, as a drag is.
+    let mut smooth = loaded(dev::point());
+    smooth.apply(step(2.0, false)).unwrap();
+    let journal = smooth.journal().len();
+    smooth.apply(step(2.5, true)).unwrap();
+    assert_eq!(smooth.journal().len(), journal);
 }

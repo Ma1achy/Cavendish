@@ -429,7 +429,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     for (n, tower) in spec.array.towers.iter().enumerate() {
         let [x, y, _] = tower.position;
         // A number the audit warns of carries a mark; the warning is in the tower's properties.
-        let warned = reply.warnings.iter().any(|w| w.contains(tower.label.as_str()));
+        let warned = reply.warnings.iter().any(|w| w.tower == Some(n));
         let detail = match reply.towers.get(n) {
             Some(reading) if !silent => {
                 format!("{}{}", crate::shell::phase_text(reading.gradiometer), if warned { " ⚠" } else { "" })
@@ -473,9 +473,9 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     let forward = match shell.engine.signal() {
         (cav_engine::SignalState::Refined, Some(signal)) => {
             format!(
-                "forward · {} shots · refined · ±{:.0e} rad",
+                "forward · {} shots · refined · {}",
                 signal.times.len(),
-                signal.estimate.max(1e-16)
+                cav_engine::estimate_text(signal.estimate, signal.settled)
             )
         }
         (cav_engine::SignalState::Stale, _) => "forward · computing".to_owned(),
@@ -641,17 +641,16 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
                         ("ΔΦ", crate::shell::phase_text(reading.gradiometer)),
                         ("δφ₁ lower", crate::shell::phase_text(reading.lower)),
                         ("δφ₂ upper", crate::shell::phase_text(reading.upper)),
-                        ("quadrature", cav_engine::estimate_text(reply.estimate)),
-                        ("state", reply.state.clone()),
+                        ("quadrature", cav_engine::estimate_text(reply.estimate, reply.settled)),
+                        ("state", reply.state.to_string()),
                     ],
                 );
             } else {
                 ui.label(RichText::new("computing").size(11.5).color(theme::WEAK));
             }
             // What the audit warns of about this tower's number is said beside it.
-            let label = &spec.array.towers[n - 1].label;
-            for warning in reply.warnings.iter().filter(|w| w.contains(label.as_str())) {
-                ui.label(RichText::new(warning).size(11.0).color(theme::WARN));
+            for warning in reply.warnings.iter().filter(|w| w.concerns(n - 1)) {
+                ui.label(RichText::new(&warning.text).size(11.0).color(theme::WARN));
             }
         }
         Some(Target::Room) => {
@@ -766,8 +765,10 @@ fn header(shell: &mut Shell, ui: &mut egui::Ui) {
         // Where the signal stands: a stale one is never mistaken for the current scene's.
         match shell.engine.signal() {
             (cav_engine::SignalState::Refined, Some(signal)) => {
-                let text = format!("signal · refined · ±{:.0e} rad", signal.estimate.max(1e-16));
-                badge(ui, text, theme::STRONG);
+                // A signal some of whose reads did not settle is the scene's, and is not good to
+                // the tolerance: the badge says which, and never "within" for the second.
+                let text = format!("signal · {}", cav_engine::estimate_text(signal.estimate, signal.settled));
+                badge(ui, text, if signal.settled { theme::STRONG } else { theme::WARN });
             }
             (cav_engine::SignalState::Stale, _) => badge(ui, "signal · stale", theme::WARN),
             _ => {}
@@ -1017,7 +1018,8 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
             ui.add_space(4.0);
             ui.label(
                 RichText::new(
-                    "Numbers are set in Ubuntu Mono, © Canonical Ltd, used unmodified under the Ubuntu Font                      Licence 1.0 (hover for the licence).",
+                    "Numbers are set in Ubuntu Mono, © Canonical Ltd, used unmodified under the Ubuntu Font \
+                     Licence 1.0 (hover for the licence; `cav licences` prints it).",
                 )
                 .size(11.0)
                 .color(theme::WEAK),

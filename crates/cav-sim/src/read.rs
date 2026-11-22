@@ -73,6 +73,59 @@ pub fn readouts(spec: &SceneSpec) -> Result<Vec<f64>, String> {
     Ok((0..count as usize).map(|k| k as f64 * instrument.cycle + flight).collect())
 }
 
+/// Something a person should know about a reading, and the tower it is about.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+pub struct Warning {
+    /// The tower it concerns, from 0 in the scene's order; `None` when it concerns them all.
+    pub tower: Option<usize>,
+    /// The warning, in words.
+    pub text: String,
+}
+
+impl Warning {
+    /// A warning about every tower.
+    #[must_use]
+    pub fn general(text: impl Into<String>) -> Self {
+        Self { tower: None, text: text.into() }
+    }
+
+    /// A warning about tower `tower` (from 0).
+    #[must_use]
+    pub fn about(tower: usize, text: impl Into<String>) -> Self {
+        Self { tower: Some(tower), text: text.into() }
+    }
+
+    /// Whether the warning is about tower `tower` (from 0), or about all of them.
+    #[must_use]
+    pub fn concerns(&self, tower: usize) -> bool {
+        self.tower.is_none_or(|own| own == tower)
+    }
+}
+
+impl std::ops::Deref for Warning {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.text
+    }
+}
+
+impl std::fmt::Display for Warning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.text)
+    }
+}
+
+/// One tower's three phases from one shot, radians. Interferometer 1 is the lower one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Phases {
+    /// δφ₁, the lower interferometer alone.
+    pub lower: f64,
+    /// δφ₂, the upper interferometer alone.
+    pub upper: f64,
+    /// ΔΦ, the gradiometer, with the instrument's sign (lower minus upper by default).
+    pub gradiometer: f64,
+}
+
 /// What one source adds to every tower's every shot.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Contribution {
@@ -84,8 +137,11 @@ pub struct Contribution {
     pub gradiometer: Vec<f64>,
     /// The largest quadrature estimate of any shot, radians.
     pub estimate: f64,
+    /// Whether every shot's read settled to the tolerance. When false, `estimate` is not a bound
+    /// that was met but how far the worst read was from settling.
+    pub settled: bool,
     /// What a person should know about this source's readings.
-    pub warnings: Vec<String>,
+    pub warnings: Vec<Warning>,
 }
 
 fn base(position: [f64; 3]) -> Vec3 {
@@ -131,6 +187,7 @@ pub fn contribution(
         upper: Vec::with_capacity(count),
         gradiometer: Vec::with_capacity(count),
         estimate: 0.0,
+        settled: true,
         warnings: Vec::new(),
     };
     let signed = |lower: f64, upper: f64| match instrument.sign {
@@ -167,17 +224,16 @@ pub fn contribution(
                 out.gradiometer.extend(std::iter::repeat_n(difference, readouts.len()));
             }
             if floor.kind == FloorKind::HalfSpace {
-                out.warnings.push(
+                out.warnings.push(Warning::general(
                     "the floor is a half-space: its uniform field is unbounded, so each interferometer's \
-                     own phase is infinite; it is the same for both and the gradiometer reads none of it"
-                        .into(),
-                );
+                     own phase is infinite; it is the same for both and the gradiometer reads none of it",
+                ));
             }
         }
         SourceId::Body(n) => {
             let body = mass(spec, n);
             let label = &spec.bodies[n].label;
-            for tower in towers {
+            for (at, tower) in towers.iter().enumerate() {
                 let (mut inside, mut unsettled) = (None, None);
                 for (k, &readout) in readouts.iter().enumerate() {
                     if cancelled() {
@@ -192,6 +248,7 @@ pub fn contribution(
                     // budget, a reading that is not a number) is said, never passed off as refined.
                     if !audited.settled {
                         unsettled.get_or_insert((k, estimate));
+                        out.settled = false;
                     }
                     if inside.is_none() && watched.crossed() {
                         inside = Some(k);
@@ -202,19 +259,30 @@ pub fn contribution(
                     out.gradiometer.push(signed(lower, upper));
                 }
                 if let Some(k) = inside {
-                    out.warnings.push(format!(
-                        "`{label}` passes through the atoms' path of {} during shot {} (read out at {} s)",
-                        tower.label,
-                        k + 1,
-                        readouts[k]
+                    out.warnings.push(Warning::about(
+                        at,
+                        format!(
+                            "`{label}` passes through the atoms' path of {} during shot {} (read out at {} s)",
+                            tower.label,
+                            k + 1,
+                            readouts[k]
+                        ),
                     ));
                 }
                 if let Some((k, estimate)) = unsettled {
-                    out.warnings.push(format!(
-                        "`{label}` at {}: shot {} did not settle; its quadrature estimate is {estimate:.1e} rad{}",
-                        tower.label,
-                        k + 1,
-                        if spec.bodies[n].radius == 0.0 { " (a point mass on the atoms' path has no finite phase)" } else { "" }
+                    let point = if spec.bodies[n].radius == 0.0 {
+                        " (a point mass on the atoms' path has no finite phase)"
+                    } else {
+                        ""
+                    };
+                    out.warnings.push(Warning::about(
+                        at,
+                        format!(
+                            "`{label}` at {}: shot {} did not settle; its quadrature estimate is \
+                             {estimate:.1e} rad{point}",
+                            tower.label,
+                            k + 1
+                        ),
                     ));
                 }
             }
@@ -277,14 +345,18 @@ pub struct Signal {
     pub times: Vec<f64>,
     /// How many towers there are.
     pub towers: usize,
-    /// δφ₁, δφ₂ and ΔΦ of each shot of each tower, radians: tower by tower.
+    /// δφ₁ of each shot of each tower, radians: tower by tower, `towers × shots` values.
     pub lower: Vec<f64>,
+    /// δφ₂ likewise.
     pub upper: Vec<f64>,
+    /// ΔΦ likewise, with the instrument's sign.
     pub gradiometer: Vec<f64>,
     /// The largest quadrature estimate of any source's any shot, radians.
     pub estimate: f64,
+    /// Whether every read of every source settled to the tolerance.
+    pub settled: bool,
     /// What a person should know about these readings.
-    pub warnings: Vec<String>,
+    pub warnings: Vec<Warning>,
 }
 
 impl Signal {
@@ -300,6 +372,7 @@ impl Signal {
             upper: zeros.clone(),
             gradiometer: zeros,
             estimate: 0.0,
+            settled: true,
             warnings: Vec::new(),
         }
     }
@@ -318,6 +391,7 @@ impl Signal {
             sum.iter_mut().zip(part).for_each(|(s, p)| *s += p);
         }
         self.estimate = self.estimate.max(contribution.estimate);
+        self.settled &= contribution.settled;
         self.warnings.extend(contribution.warnings.iter().cloned());
     }
 
@@ -366,13 +440,15 @@ pub fn signal_at(spec: &SceneSpec, times: Vec<f64>) -> Result<Signal, String> {
 pub struct ReadingAt {
     /// When the shot is read out, seconds.
     pub time: f64,
-    /// δφ₁, δφ₂ and ΔΦ of each tower, radians, in the towers' order.
-    pub towers: Vec<[f64; 3]>,
+    /// Each tower's phases, in the towers' order.
+    pub towers: Vec<Phases>,
     /// The largest quadrature estimate of any source at any tower, radians.
     pub estimate: f64,
+    /// Whether every read settled to the tolerance.
+    pub settled: bool,
     /// What a person should know about these numbers: a reading that did not settle, a body in
     /// the atoms' path, an unbounded floor.
-    pub warnings: Vec<String>,
+    pub warnings: Vec<Warning>,
 }
 
 /// What each tower would read from a shot read out at `time`: the live reading under the
@@ -384,8 +460,16 @@ pub fn reading(spec: &SceneSpec, time: f64, cancelled: &dyn Fn() -> bool) -> Opt
     for source in sources(spec) {
         total.add(&contribution(spec, source, &total.times, cancelled)?);
     }
-    let towers = (0..total.towers).map(|t| [total.lower[t], total.upper[t], total.gradiometer[t]]).collect();
-    Some(ReadingAt { time, towers, estimate: total.estimate, warnings: total.warnings })
+    let towers = (0..total.towers)
+        .map(|t| Phases { lower: total.lower[t], upper: total.upper[t], gradiometer: total.gradiometer[t] })
+        .collect();
+    Some(ReadingAt {
+        time,
+        towers,
+        estimate: total.estimate,
+        settled: total.settled,
+        warnings: total.warnings,
+    })
 }
 
 /// A scene with only the listed bodies kept, for reading sources apart.
@@ -745,6 +829,32 @@ mod tests {
     }
 
     #[test]
+    fn a_warning_marks_its_own_tower_only() {
+        // Twelve towers in a row, and a point mass on the axis of the twelfth. Its label, "tower
+        // 12", begins with the first tower's: a mark found by looking for the label in the words
+        // of the warning (as the outliner once did) lights tower 1 as well.
+        let mut scene = dev::point();
+        scene.array.towers = (0..12)
+            .map(|n| crate::TowerSpec {
+                label: format!("tower {}", n + 1),
+                position: [f64::from(n) * 3.0, 0.0, 0.0],
+            })
+            .collect();
+        scene.bodies[0].motion = crate::Motion::Static { position: [33.0, 0.0, 1.0] };
+        let read = reading(&scene, 3.0, &|| false).unwrap();
+        assert!(!read.warnings.is_empty());
+        assert!(read.warnings.iter().all(|w| w.tower == Some(11)), "{:?}", read.warnings);
+        let marked: Vec<usize> =
+            (0..12).filter(|&n| read.warnings.iter().any(|w| w.tower == Some(n))).collect();
+        assert_eq!(marked, [11]);
+        // Control: the words alone cannot tell the two apart.
+        let by_words: Vec<usize> = (0..12)
+            .filter(|&n| read.warnings.iter().any(|w| w.contains(&scene.array.towers[n].label)))
+            .collect();
+        assert_eq!(by_words, [0, 11], "matching by substring marks tower 1 too");
+    }
+
+    #[test]
     fn the_crossing_check_is_inside_the_reads_budget() {
         use std::sync::atomic::{AtomicU64, Ordering};
         // A long flight with the floor off and a ball on the atoms' own path: the most work a
@@ -793,11 +903,14 @@ mod tests {
         // The live reading at a shot's readout is that shot's value, to the bit.
         let live = reading(&scene, read.times[3], &|| false).unwrap().towers;
         for (tower, values) in live.iter().enumerate() {
-            assert_eq!(values[2].to_bits(), read.channel(tower, Channel::Gradiometer)[3].to_bits());
-            assert_eq!(values[0].to_bits(), read.channel(tower, Channel::Lower)[3].to_bits());
+            assert_eq!(values.gradiometer.to_bits(), read.channel(tower, Channel::Gradiometer)[3].to_bits());
+            assert_eq!(values.lower.to_bits(), read.channel(tower, Channel::Lower)[3].to_bits());
         }
         // Control: at another time it is another value.
-        assert_ne!(reading(&scene, read.times[3] + 0.3, &|| false).unwrap().towers[0][2], live[0][2]);
+        assert_ne!(
+            reading(&scene, read.times[3] + 0.3, &|| false).unwrap().towers[0].gradiometer,
+            live[0].gradiometer
+        );
         // The reading carries what the audit found. A point mass on a tower's axis does not
         // settle, and the number beside that tower says so.
         let mut point = dev::point();
@@ -805,8 +918,14 @@ mod tests {
         let unsettled = reading(&point, 3.0, &|| false).unwrap();
         assert!(unsettled.estimate > 1e3 * PHASE_TOLERANCE, "{:e}", unsettled.estimate);
         assert!(unsettled.warnings.iter().any(|w| w.contains("did not settle") && w.contains("tower 1")));
+        assert!(!unsettled.settled, "and it says so as a fact, not only in words");
+        // A warning names its tower by number: tower 1 is the one on whose axis the mass sits,
+        // and a tower whose label merely starts the same way is not it.
+        assert!(unsettled.warnings.iter().all(|w| w.tower == Some(0)), "{:?}", unsettled.warnings);
+        assert!(unsettled.warnings[0].concerns(0) && !unsettled.warnings[0].concerns(1));
+        assert!(Warning::general("the floor").concerns(3));
         let settled = reading(&dev::point(), 3.0, &|| false).unwrap();
-        assert!(settled.warnings.is_empty() && settled.estimate <= PHASE_TOLERANCE);
+        assert!(settled.warnings.is_empty() && settled.settled && settled.estimate <= PHASE_TOLERANCE);
         // And it can be cancelled like any other read.
         assert_eq!(reading(&scene, 3.0, &|| true), None);
         // Cancelled work returns nothing at all: no half-filled contribution.
