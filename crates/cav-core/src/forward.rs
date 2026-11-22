@@ -1239,4 +1239,31 @@ mod tests {
             cav_validate::Measured::Error(worst_of_peak(&shifted_series(far, false), &near))
         },
     }
+    cav_validate::case! {
+        test: validation_finite_floor_converges,
+        name: "nulls.finite_floor_edge",
+        subsystem: "nulls",
+        slice: "S1",
+        reference: ClosedForm,
+        against: "a concrete disc 1 m thick under a tower on its axis, radius 400 m to 6.4 km: the gradiometer's reading as a fraction of what one interferometer reads from the infinite slab; it falls as 1/R, the edge's uniform gradient, towards the slab's zero",
+        unit: Relative,
+        tolerance: 1e-3,
+        order: (1.0, 0.05),
+        measure: {
+            let instrument = Instrument::aion10();
+            let reader = Reader::new(instrument);
+            let slab = reader.read(ORIGIN, &Slab { density: 2400.0, thickness: 1.0 }, 2.0).lower;
+            let points: Vec<(f64, f64)> = [400.0, 800.0, 1600.0, 3200.0, 6400.0]
+                .iter()
+                .map(|&radius| {
+                    let disc = AxialDisc { density: 2400.0, thickness: 1.0, radius, depth: 0.0 };
+                    (1.0 / radius, (reader.phase(ORIGIN, &disc, 2.0) / slab).abs())
+                })
+                .collect();
+            // The leading term is Δr/R: 7.8e-4 at 6.4 km.
+            let (step, error) = points[4];
+            assert!((error / (instrument.ifo_separation * step) - 1.0).abs() < 0.05, "{error:e}");
+            cav_validate::Measured::Convergence(points)
+        },
+    }
 }

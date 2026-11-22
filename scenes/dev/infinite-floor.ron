@@ -3,7 +3,7 @@
 (
     version: 1,
     name: "infinite-floor",
-    description: "A uniform half-space below the array, drawn as a grid to the horizon. An infinite uniform slab gives uniform g and no gradient, so its differenced phase is zero. Empty in S0: the floor is declared and drawn; its physics arrives with S1.",
+    description: "A uniform half-space below the array, drawn as a grid to the horizon. An infinite uniform slab gives uniform g and no gradient, so its differenced phase is zero.",
     duration: 12.0,
     array: (
         // AION-10: a 10 m tower, interferometers 5 m apart, 2T = 1.46 s, one shot every 2 s.
@@ -24,7 +24,7 @@
         ],
     ),
     room: None,
-    // Concrete, all the way down. A finite floor growing towards this is S1's convergence test.
+    // Concrete, all the way down. A finite floor growing towards this is the case nulls.finite_floor_edge.
     floor: Some((
         height: 0.0,
         kind: HalfSpace,
