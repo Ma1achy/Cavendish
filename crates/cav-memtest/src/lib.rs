@@ -35,6 +35,11 @@ unsafe impl GlobalAlloc for Counting {
     }
 }
 
+/// The bytes live now. Meaningful only in a binary whose global allocator is [`Counting`].
+pub fn live() -> usize {
+    LIVE.load(Ordering::Relaxed)
+}
+
 /// Runs `work` and returns its result with the most bytes that were live at once during it, over
 /// and above what was live when it began. Meaningful only in a binary whose global allocator is
 /// [`Counting`], and only while no other thread is allocating.

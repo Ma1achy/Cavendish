@@ -125,6 +125,18 @@
 - id: TASK-S2-08
   milestone: S2
   title: 'For other people: ARCHITECTURE.md, CONTRIBUTING.md, recipes for extending, documented public items'
+- id: TASK-S2-09
+  milestone: S2
+  title: 'Review: everything sized by a spec, a view or a command bounded and tested with the counting allocator; the S2 brief'
+- id: TASK-S2-10
+  milestone: S2
+  title: "The minor findings of S1's second review"
+- id: TASK-S2-11
+  milestone: S2
+  title: 'cargo xtask demo S2, screenshots, sample figures, results, progress, the validation report'
+- id: TASK-S2-12
+  milestone: S2
+  title: 'The read in parallel by tower and shot, the same bits at any thread count'
 - id: TASK-S3-01
   milestone: S3
   title: 'VoxTree: Morton keys, build, sidecars, moments'

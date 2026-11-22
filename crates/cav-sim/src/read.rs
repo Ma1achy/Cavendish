@@ -16,6 +16,25 @@ use crate::{FloorKind, SceneSpec};
 /// The most shots a signal is computed for. A scene with more is refused, with the count.
 pub const MAX_SHOTS: usize = 2_000_000;
 
+/// The most values (towers × shots) one channel of a signal holds. A source's contribution is
+/// three such arrays of `f64`, 96 MiB at this cap, and so is the signal; a scene that asks for
+/// more is refused with the numbers before anything is reserved. The schema allows a thousand
+/// towers and two million shots: together they would be 48 GB a source.
+pub const MAX_SIGNAL_VALUES: usize = 4_000_000;
+
+/// Whether a signal of `towers` towers and `shots` shots is one the engine makes.
+///
+/// # Errors
+/// When it holds more than [`MAX_SIGNAL_VALUES`] values, with the counts.
+pub fn fits(towers: usize, shots: usize) -> Result<(), String> {
+    match towers.checked_mul(shots) {
+        Some(values) if values <= MAX_SIGNAL_VALUES => Ok(()),
+        _ => Err(format!(
+            "{towers} tower(s) × {shots} shot(s) is more than the {MAX_SIGNAL_VALUES} values a signal holds;              shorten the timeline, lengthen the cycle or use fewer towers"
+        )),
+    }
+}
+
 /// One thing in a scene that has mass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SourceId {
@@ -36,7 +55,8 @@ pub fn sources(spec: &SceneSpec) -> Vec<SourceId> {
 /// same shots).
 ///
 /// # Errors
-/// When there are more than [`MAX_SHOTS`] of them.
+/// When there are more than [`MAX_SHOTS`] of them, or more values than [`MAX_SIGNAL_VALUES`] over
+/// the scene's towers. Nothing is reserved before both counts have passed.
 pub fn readouts(spec: &SceneSpec) -> Result<Vec<f64>, String> {
     let instrument = &spec.array.instrument;
     let count = (spec.duration / instrument.cycle).ceil();
@@ -47,6 +67,7 @@ pub fn readouts(spec: &SceneSpec) -> Result<Vec<f64>, String> {
             spec.duration, instrument.cycle
         ));
     }
+    fits(spec.array.towers.len(), count as usize)?;
     let flight = 2.0 * instrument.half_sequence;
     // k·cycle, not a running sum, so the thousandth shot is as exact as the first.
     Ok((0..count as usize).map(|k| k as f64 * instrument.cycle + flight).collect())
@@ -86,6 +107,11 @@ fn mass(spec: &SceneSpec, n: usize) -> Mass<impl Fn(f64) -> Vec3 + Sync + '_> {
 
 /// The contribution of `source` to the shots read out at `readouts`. `cancelled` is asked between
 /// shots; when it says yes the work stops and nothing is returned.
+///
+/// # Panics
+/// When towers × shots is more than [`MAX_SIGNAL_VALUES`]: [`readouts`] and [`signal_at`] refuse
+/// such a scene first, so reaching here with one is a fault in the caller, and nothing has been
+/// reserved when it is found.
 #[must_use]
 pub fn contribution(
     spec: &SceneSpec,
@@ -96,6 +122,9 @@ pub fn contribution(
     let instrument = spec.array.instrument.instrument();
     let reader = Reader::new(instrument);
     let towers = &spec.array.towers;
+    if let Err(why) = fits(towers.len(), readouts.len()) {
+        panic!("a contribution was asked for a signal that is refused: {why}");
+    }
     let count = towers.len() * readouts.len();
     let mut out = Contribution {
         lower: Vec::with_capacity(count),
@@ -154,7 +183,9 @@ pub fn contribution(
                     if cancelled() {
                         return None;
                     }
-                    let audited = reader.read_to(base(tower.position), &body, readout, PHASE_TOLERANCE);
+                    // The body is watched as it is read: the crossing check costs no node of its own.
+                    let watched = Watched::new(&body);
+                    let audited = reader.read_to(base(tower.position), &watched, readout, PHASE_TOLERANCE);
                     let (lower, upper) = (audited.reading.lower, audited.reading.upper);
                     let estimate = audited.estimate.unwrap_or(0.0);
                     // Whatever stopped the audit short of its tolerance (the halvings, the work
@@ -162,7 +193,7 @@ pub fn contribution(
                     if !audited.settled {
                         unsettled.get_or_insert((k, estimate));
                     }
-                    if inside.is_none() && crosses(&reader, &body, base(tower.position), readout) {
+                    if inside.is_none() && watched.crossed() {
                         inside = Some(k);
                     }
                     out.estimate = out.estimate.max(if estimate.is_nan() { f64::INFINITY } else { estimate });
@@ -192,29 +223,51 @@ pub fn contribution(
     Some(out)
 }
 
-/// Whether the body's surface (or, for a point, a millimetre about it) reaches an arm during the
-/// flight read out at `readout`: checked at the nodes of the flight with its panels halved twice
-/// (a quarter of the engine's own spacing), one at a time.
-fn crosses(reader: &Reader, body: &Mass<impl Fn(f64) -> Vec3 + Sync>, tower: Vec3, readout: f64) -> bool {
-    let instrument = reader.instrument();
-    let reach = body.radius.max(1e-3);
-    let launch = readout - instrument.flight_time();
-    let mut hit = false;
-    reader.visit(2, &[], &mut |node| {
-        let time = launch + node.tau;
-        if hit || !(time >= body.exists.0 && time < body.exists.1) {
-            return;
+/// A body watched while it is read: it is the body as a [`Source`], and it notes whether its
+/// surface (or, for a point, a millimetre about it) came between the two arms of an
+/// interferometer at any node the read evaluated.
+///
+/// The check rides on the read's own nodes, so it is inside the read's budget of work
+/// ([`cav_core::forward::MAX_NODES`]) by construction. (In S1 it was a second pass over the
+/// flight at a quarter of the spacing: up to 480,000 nodes that no budget counted.)
+struct Watched<'a, P: Fn(f64) -> Vec3 + Sync> {
+    body: &'a Mass<P>,
+    /// How near the atoms' path counts as on it, metres.
+    reach: f64,
+    crossed: std::sync::atomic::AtomicBool,
+}
+
+impl<'a, P: Fn(f64) -> Vec3 + Sync> Watched<'a, P> {
+    fn new(body: &'a Mass<P>) -> Self {
+        Self { body, reach: body.radius.max(1e-3), crossed: std::sync::atomic::AtomicBool::new(false) }
+    }
+
+    /// Whether the body came between an interferometer's arms during the reads so far.
+    fn crossed(&self) -> bool {
+        self.crossed.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+impl<P: Fn(f64) -> Vec3 + Sync> cav_core::forward::Source for Watched<'_, P> {
+    fn difference(&self, tower: Vec3, heights: [f64; 2], lower: f64, upper: f64, time: f64) -> [f64; 2] {
+        if time >= self.body.exists.0 && time < self.body.exists.1 && !self.crossed() {
+            let offset = (self.body.position)(time) - tower;
+            let reach = self.reach;
+            // Between the two arms of an interferometer, give or take the body's reach.
+            if offset.x.hypot(offset.y) <= reach
+                && heights
+                    .iter()
+                    .any(|height| offset.z >= height + lower - reach && offset.z <= height + upper + reach)
+            {
+                self.crossed.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
         }
-        let offset = (body.position)(time) - tower;
-        if offset.x.hypot(offset.y) > reach {
-            return;
-        }
-        // Between the two arms of an interferometer, give or take the body's reach.
-        hit = [0.0, instrument.ifo_separation]
-            .iter()
-            .any(|height| offset.z >= height + node.lower - reach && offset.z <= height + node.upper + reach);
-    });
-    hit
+        self.body.difference(tower, heights, lower, upper, time)
+    }
+
+    fn breaks(&self, from: f64, to: f64, out: &mut Vec<f64>) {
+        self.body.breaks(from, to, out);
+    }
 }
 
 /// What every tower reads over the timeline.
@@ -297,8 +350,9 @@ pub fn signal(spec: &SceneSpec) -> Result<Signal, String> {
 /// The signal for shots read out at the given times, which need not be the scene's own.
 ///
 /// # Errors
-/// Never at present; the result is kept for the day a source can refuse.
+/// When towers × shots is more than [`MAX_SIGNAL_VALUES`].
 pub fn signal_at(spec: &SceneSpec, times: Vec<f64>) -> Result<Signal, String> {
+    fits(spec.array.towers.len(), times.len())?;
     let mut total = Signal::silent(spec.array.towers.len(), times);
     for source in sources(spec) {
         let part = contribution(spec, source, &total.times, &|| false).expect("not cancelled");
@@ -688,6 +742,48 @@ mod tests {
         let quiet = signal(&clear).unwrap();
         assert!(quiet.warnings.is_empty(), "{:?}", quiet.warnings);
         assert!(quiet.estimate <= PHASE_TOLERANCE);
+    }
+
+    #[test]
+    fn the_crossing_check_is_inside_the_reads_budget() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        // A long flight with the floor off and a ball on the atoms' own path: the most work a
+        // read is asked for, and a crossing to find.
+        let instrument = cav_core::forward::Instrument {
+            half_sequence: 30.0,
+            floor: false,
+            ..cav_core::forward::Instrument::aion10()
+        };
+        let reader = Reader::new(instrument);
+        let asked = AtomicU64::new(0);
+        let ball = Mass {
+            mass: 1.0,
+            radius: 0.2,
+            position: |_| {
+                asked.fetch_add(1, Ordering::Relaxed);
+                Vec3::new(0.0, 0.0, 1.0)
+            },
+            exists: (f64::NEG_INFINITY, f64::INFINITY),
+            breaks: Vec::new(),
+        };
+        let watched = Watched::new(&ball);
+        let audited = reader.read_to(Vec3::ZERO, &watched, 90.0, PHASE_TOLERANCE);
+        assert!(watched.crossed(), "a ball on the path is seen");
+        // The body was asked where it is at the read's own nodes and nowhere else: once by the
+        // watch until it has seen a crossing, once by the kernel. No second pass over the flight.
+        let asked = asked.load(Ordering::Relaxed);
+        assert!(audited.nodes <= cav_core::forward::MAX_NODES);
+        assert!(
+            asked <= 2 * audited.nodes && asked >= audited.nodes / 2,
+            "{asked} for {} nodes",
+            audited.nodes
+        );
+        // Control: a ball that keeps clear is not seen, and the watch changes no reading.
+        let clear = Mass { mass: 1.0, radius: 0.2, ..Mass::point(1.0, |_| Vec3::new(3.0, 0.0, 1.0)) };
+        let watched = Watched::new(&clear);
+        let audited = reader.read_to(Vec3::ZERO, &watched, 90.0, PHASE_TOLERANCE);
+        assert!(!watched.crossed());
+        assert_eq!(audited, reader.read_to(Vec3::ZERO, &clear, 90.0, PHASE_TOLERANCE));
     }
 
     #[test]

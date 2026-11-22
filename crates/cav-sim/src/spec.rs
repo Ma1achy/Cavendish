@@ -54,6 +54,10 @@ pub mod limits {
     pub const ATOM_MASS: (f64, f64) = (1.0e-27, 1.0e-24);
     /// Local gravity, metres per second squared.
     pub const GRAVITY: (f64, f64) = (0.1, 100.0);
+    /// The longest name or label, characters.
+    pub const LABEL: usize = 200;
+    /// The longest description, characters.
+    pub const DESCRIPTION: usize = 4000;
 }
 
 /// The version of the spec format this build reads and writes.
@@ -65,9 +69,11 @@ pub const SPEC_VERSION: u32 = 1;
 pub struct SceneSpec {
     /// Version of the spec format; this build reads version 1.
     pub version: u32,
-    /// Short name, as shown in the library and the title bar.
+    /// Short name, as shown in the library and the title bar. At most 200 characters.
+    #[schemars(length(min = 1, max = 200))]
     pub name: String,
-    /// One or two sentences on what the scene is and what it checks.
+    /// One or two sentences on what the scene is and what it checks. At most 4000 characters.
+    #[schemars(length(max = 4000))]
     pub description: String,
     /// Length of the timeline, seconds.
     #[schemars(range(max = 1.0e6), extend("exclusiveMinimum" = 0.0))]
@@ -157,7 +163,8 @@ pub enum SignSpec {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BodySpec {
-    /// Name shown in the outliner; no two bodies share one.
+    /// Name shown in the outliner; no two bodies share one. At most 200 characters.
+    #[schemars(length(min = 1, max = 200))]
     pub label: String,
     /// Kilograms.
     #[schemars(range(max = 1.0e12), extend("exclusiveMinimum" = 0.0))]
@@ -181,7 +188,8 @@ pub struct BodySpec {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TowerSpec {
-    /// Name shown in the outliner and on the timeline lane.
+    /// Name shown in the outliner and on the timeline lane. At most 200 characters.
+    #[schemars(length(min = 1, max = 200))]
     pub label: String,
     /// The base of the tower (the lower launch point): x east, y north, z up, metres; each within ±1e6.
     pub position: [f64; 3],
@@ -390,6 +398,8 @@ impl SceneSpec {
         if self.name.trim().is_empty() {
             return fail("name: must not be empty".into());
         }
+        short("name", &self.name, limits::LABEL)?;
+        short("description", &self.description, limits::DESCRIPTION)?;
         positive("duration", self.duration, limits::DURATION)?;
         let i = &self.array.instrument;
         positive("array.instrument.tower_height", i.tower_height, limits::TOWER_HEIGHT)?;
@@ -427,12 +437,16 @@ impl SceneSpec {
                 limits::TOWERS
             ));
         }
+        // Labels seen so far, for the check that no two are the same: a set, so that a thousand
+        // towers are a thousand look-ups and not a million comparisons.
+        let mut seen = std::collections::HashSet::with_capacity(self.array.towers.len());
         for (n, tower) in self.array.towers.iter().enumerate() {
             finite(&format!("array.towers[{n}].position"), &tower.position)?;
             if tower.label.trim().is_empty() {
                 return fail(format!("array.towers[{n}].label: must not be empty"));
             }
-            if self.array.towers[..n].iter().any(|t| t.label == tower.label) {
+            short(&format!("array.towers[{n}].label"), &tower.label, limits::LABEL)?;
+            if !seen.insert(tower.label.as_str()) {
                 return fail(format!("array.towers[{n}].label: `{}` is used twice", tower.label));
             }
         }
@@ -462,12 +476,14 @@ impl SceneSpec {
         if self.bodies.len() > limits::BODIES {
             return fail(format!("bodies: {} bodies is more than {}", self.bodies.len(), limits::BODIES));
         }
+        let mut seen = std::collections::HashSet::with_capacity(self.bodies.len());
         for (n, body) in self.bodies.iter().enumerate() {
             let at = format!("bodies[{n}]");
             if body.label.trim().is_empty() {
                 return fail(format!("{at}.label: must not be empty"));
             }
-            if self.bodies[..n].iter().any(|b| b.label == body.label) {
+            short(&format!("{at}.label"), &body.label, limits::LABEL)?;
+            if !seen.insert(body.label.as_str()) {
                 return fail(format!("{at}.label: `{}` is used twice", body.label));
             }
             positive(&format!("{at}.mass"), body.mass, limits::MASS)?;
@@ -519,6 +535,16 @@ impl SceneSpec {
             }
         }
         (lo, hi)
+    }
+}
+
+/// Text in a spec has a length: a label of a gigabyte is a valid string and not a valid label.
+fn short(path: &str, text: &str, most: usize) -> Result<(), SpecError> {
+    let length = text.chars().count();
+    if length <= most {
+        Ok(())
+    } else {
+        Err(SpecError(format!("{path}: {length} characters is longer than {most}")))
     }
 }
 
@@ -872,7 +898,11 @@ mod tests {
         type Break = fn(&mut SceneSpec);
         // The first three are the specs that hung the renderer or exhausted memory before the
         // ranges existed (S0 review, finding 1).
-        let cases: [(&str, Break); 12] = [
+        let cases: [(&str, Break); 16] = [
+            ("name", |s| s.name = "n".repeat(limits::LABEL + 1)),
+            ("description", |s| s.description = "d".repeat(limits::DESCRIPTION + 1)),
+            ("array.towers[2].label", |s| s.array.towers[2].label = "t".repeat(limits::LABEL + 1)),
+            ("bodies[0].label", |s| s.bodies[0].label = "b".repeat(limits::LABEL + 1)),
             ("room.origin", |s| s.room.as_mut().unwrap().origin[0] = 1e17),
             ("room.size[0]", |s| s.room.as_mut().unwrap().size[0] = 1e10),
             ("array.instrument.tower_height", |s| {
@@ -897,6 +927,7 @@ mod tests {
         ];
         let mut base = SceneSpec::room();
         base.floor = Some(FloorSpec { height: 0.0, kind: FloorKind::HalfSpace, density: 2400.0 });
+        base.bodies.push(BodySpec::point("mass", 1.0, [3.0, 0.0, 1.0]));
         for (field, break_it) in cases {
             let mut spec = base.clone();
             break_it(&mut spec);
@@ -907,6 +938,9 @@ mod tests {
         // Control: a spec at the edge of every range is accepted, so the ranges are the stated ones.
         let mut edge = base;
         edge.duration = limits::DURATION;
+        edge.name = "é".repeat(limits::LABEL);
+        edge.description = "d".repeat(limits::DESCRIPTION);
+        edge.bodies[0].label = "b".repeat(limits::LABEL);
         edge.array.instrument.tower_height = limits::TOWER_HEIGHT;
         edge.array.instrument.ifo_separation = 500.0;
         edge.array.instrument.half_sequence = limits::HALF_SEQUENCE_MIN;
@@ -920,6 +954,9 @@ mod tests {
         assert_eq!(schema["properties"]["duration"]["maximum"], 1.0e6);
         assert_eq!(schema["$defs"]["InstrumentSpec"]["properties"]["tower_height"]["maximum"], 1.0e3);
         assert!(schema.to_string().contains("each above 0 and at most 1e4"));
+        assert_eq!(schema["properties"]["name"]["maxLength"], limits::LABEL);
+        assert_eq!(schema["properties"]["description"]["maxLength"], limits::DESCRIPTION);
+        assert_eq!(schema["$defs"]["BodySpec"]["properties"]["label"]["maxLength"], limits::LABEL);
     }
 
     /// The schema of the field at `path`: `["InstrumentSpec", "cycle"]`, or `["duration"]` at the root.

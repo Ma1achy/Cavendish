@@ -101,6 +101,28 @@ impl LogFilter {
     }
 }
 
+/// The most bytes one message holds. A longer one is cut there and says how much was left out:
+/// the ring bounds how many entries there are, and this bounds each, so the log has a size
+/// whatever is written to it (an answer of two million lines was once noted whole).
+pub const MAX_MESSAGE_BYTES: usize = 64 << 10;
+
+/// `message`, cut to [`MAX_MESSAGE_BYTES`] at a character's edge if it is longer.
+fn capped(mut message: String) -> String {
+    if message.len() <= MAX_MESSAGE_BYTES {
+        return message;
+    }
+    let left_out = message.len();
+    let mut cut = MAX_MESSAGE_BYTES;
+    while !message.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    message.truncate(cut);
+    message.push_str(&format!("\n… cut here: {cut} of {left_out} bytes kept"));
+    // The long message's own buffer is given back: what is kept is the cut text and no more.
+    message.shrink_to_fit();
+    message
+}
+
 /// A ring of the most recent entries.
 #[derive(Debug)]
 pub struct Log {
@@ -133,7 +155,7 @@ impl Log {
             at,
             level,
             subsystem,
-            message: message.into(),
+            message: capped(message.into()),
         });
         self.next_seq += 1;
     }
@@ -141,7 +163,7 @@ impl Log {
     /// Replaces the newest entry's message, for a run of commands that overwrite one another.
     pub fn amend_last(&mut self, message: impl Into<String>) {
         if let Some(last) = self.entries.back_mut() {
-            last.message = message.into();
+            last.message = capped(message.into());
             last.at = self.started.elapsed().as_secs_f64();
         }
     }

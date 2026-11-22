@@ -144,7 +144,12 @@ pub enum Query {
     Signal {
         /// The tower, counted from 1 as on screen.
         tower: usize,
+        /// Which of the tower's three channels.
         channel: ChannelName,
+        /// Only the shots read out in this stretch of the timeline, seconds: from the first
+        /// number up to and including the second. All of them if absent.
+        #[serde(default)]
+        span: Option<[f64; 2]>,
     },
     /// What every tower would read from a shot read out at this time, seconds (the playhead if
     /// none is given). The engine's reading worker computes it; this answers with the last whole
@@ -350,6 +355,9 @@ pub struct Stats {
     pub active_pane: usize,
     /// Commands in the journal.
     pub journal: usize,
+    /// Whether the journal holds every command applied: false once it has reached its size
+    /// and stopped recording.
+    pub journal_whole: bool,
     /// Edits that can be undone.
     pub undo: usize,
     /// Edits that can be redone.

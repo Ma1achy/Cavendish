@@ -59,7 +59,9 @@ pub fn load(name_or_path: &str) -> Result<SceneSpec, SpecError> {
     // At most one byte past the cap is ever read, whatever the file's size claims to be: a scene
     // file is text a person can read, and a path given by an agent may point at anything.
     let file = std::fs::File::open(name_or_path).map_err(unreadable)?;
-    let mut bytes = Vec::new();
+    // Room for the cap and the one byte that says the file is over it, reserved once: a buffer
+    // that grew by doubling would hold three times the cap for a moment.
+    let mut bytes = Vec::with_capacity(MAX_SCENE_FILE_BYTES as usize + 1);
     std::io::Read::read_to_end(&mut std::io::Read::take(file, MAX_SCENE_FILE_BYTES + 1), &mut bytes)
         .map_err(unreadable)?;
     if bytes.len() as u64 > MAX_SCENE_FILE_BYTES {
