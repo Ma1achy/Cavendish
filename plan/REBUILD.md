@@ -497,6 +497,13 @@ away is tides and waves, not attraction.
 **S16, the science case.**
 - **Signal injection and recovery**: gravitational-wave and ultralight-dark-matter signals through the
   full world, with the analysis layer finding them or not.
+- **Gravitational waves from cosmic events** (owner, 22 Nov 2026): a source library, not one test
+  tone. Inspiralling binaries (black holes, neutron stars, intermediate-mass black holes, white
+  dwarfs) with their chirp through the instrument's band, a stochastic background, bursts; each with
+  a sky position, distance, inclination and polarisation, read through the antenna pattern of the
+  baseline as the Earth turns (S14's frames). Known events can be replayed: where a catalogued
+  merger would have been in this band in the days before it reached the ground detectors' band.
+  The strain is drawn beside the phase it produces, with the instrument's sensitivity curve.
 - **Networks**: two or more sites on one planet sharing the far field, with independent local worlds.
 - **Site selection**: a noise budget for any place on Earth from the data of S14.
 - **A twin**: the simulation run on the same inputs as a real instrument, and the difference drawn.
