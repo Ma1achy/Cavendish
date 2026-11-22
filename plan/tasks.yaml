@@ -293,3 +293,57 @@
 - id: TASK-S13-09
   milestone: S13
   title: 'Heat validation suite: conservation, conduction, radiation, convection, water, expansion'
+- id: TASK-S14-01
+  milestone: S14
+  title: Frames from the Sun to the tower, two-part time, precision-globe
+- id: TASK-S14-02
+  milestone: S14
+  title: Lunar and solar tides with the solid-Earth and ocean response
+- id: TASK-S14-03
+  milestone: S14
+  title: Weather - pressure systems, fronts, clouds, rain and ground water
+- id: TASK-S14-04
+  milestone: S14
+  title: Seismic and atmospheric Newtonian noise, ocean microseisms
+- id: TASK-S14-05
+  milestone: S14
+  title: Earthquakes from anywhere - arriving waves and the prompt gravity signal
+- id: TASK-S14-06
+  milestone: S14
+  title: Earth rotation - Coriolis, centrifugal and Sagnac terms
+- id: TASK-S14-07
+  milestone: S14
+  title: Planet data - models and datasets cached outside the repo, licences recorded
+- id: TASK-S14-08
+  milestone: S14
+  title: Replay a real day at a real site
+- id: TASK-S14-09
+  milestone: S14
+  title: Far field to voxel scene hand-over and the far-field validation cases
+- id: TASK-S15-01
+  milestone: S15
+  title: Per-tower instruments - unequal heights and sequences in one array
+- id: TASK-S15-02
+  milestone: S15
+  title: A gradiometer on any axis, horizontal included
+- id: TASK-S15-03
+  milestone: S15
+  title: Local gravity and gradient from the field model, Moon and Mars presets
+- id: TASK-S15-04
+  milestone: S15
+  title: A gradiometer in orbit - one satellite and a two-satellite baseline
+- id: TASK-S15-05
+  milestone: S15
+  title: Instrument systematics budget, with the blackbody shift from S13
+- id: TASK-S16-01
+  milestone: S16
+  title: Inject gravitational-wave and dark-matter signals and recover them
+- id: TASK-S16-02
+  milestone: S16
+  title: Two or more sites on one planet, correlated
+- id: TASK-S16-03
+  milestone: S16
+  title: Site selection - a noise budget anywhere on Earth
+- id: TASK-S16-04
+  milestone: S16
+  title: A twin beside a real instrument

@@ -334,8 +334,14 @@ its oracle checks, a performance note, screenshots in `docs/slices/`. Main alway
 | S11 | **Datasets and Gradar** | Dataset builder in the GUI and CLI, manifests, `verify`, Python and torch; the non-learned baseline beside a trained model | manifests regenerate; CRB ≤ baseline error |
 | S12 | **The site** | The Beecroft stairwell scene with its populations, seismic noise, the published ordering reproduced | published ordering; masked fraction within ×2 |
 | S13 | **Heat everywhere** | Anything can be hot: people, machines, radiators, sunlit walls. Heat conducts through solids, radiates between surfaces, is carried by air and by water, and warms structure so that it expands; every one of those shows in the towers' readings, with temperature and heat flux drawn in the viewer | energy conserved in a closed box; the analytic and published cases of `VALIDATION-AND-RESEARCH.md` §2.5; a uniformly heated sphere gives no signal |
+| S14 | **The wider world** | Put the site at a real latitude and longitude on a rotating Earth with the Moon and the Sun: tides, weather and clouds, ground water, ocean microseisms, earthquakes from anywhere, a pressure wave from the far side of the planet. Replay a real day from open data | tides against standard tidal prediction; the same local scene reads the same phase at the origin and on the globe; each far source against its closed form or published record |
+| S15 | **Instruments anywhere** | Towers of different heights in one array; a gradiometer on any axis, horizontal included; local g and its gradient from the Earth's gravity field at the site; the same instrument on the Moon or Mars, and in orbit; a full budget of instrument systematics | vertical case unchanged to the bit; a horizontal baseline against the closed-form gradient tensor; an orbiting gradiometer against the gravity model's tensor and published GOCE-class gradients |
+| S16 | **The science case** | Inject a gravitational wave or a dark-matter signal and try to find it through a full simulated day; two sites on one planet, correlated; choose a site anywhere on Earth and get its noise budget; run beside the real instrument as its twin | injected signals recovered at the published sensitivity in a quiet world; two-site correlation rejects local noise by the predicted factor |
 
 Order is a default. Slices that do not depend on each other (S6 and S8, say) can run in parallel.
+S14–S16 were added by the owner on 22 Nov 2026. What they hold is in §9.3; each starts with a
+research note that sizes every effect in radians, and what a note shows to be invisible is built as
+a null test and no further.
 S13 was added by the owner on 22 Nov 2026 and is numbered by when it was added, not by when it runs:
 it follows S10 (it needs air, adaptive air and water) and comes before S11 and S12, whose datasets
 and site scenes should include heat. What it holds is in §9.2.
@@ -412,6 +418,57 @@ from a tower at 2.2e-2 rad, twenty times the shot noise, so none of this is deco
 Method choices (radiation by ray-traced view factors or discrete ordinates; implicit or explicit
 conduction; how air beyond Boussinesq is handled) are open until the research note
 `docs/research/s13-heat.md` is written and checked.
+
+### 9.3 Beyond the scene (S14–S16) — the planet, other instruments, the science case
+
+The voxel scene is at most a small town. Everything beyond it is **never voxelised**: it enters as
+analytic and tabulated sources evaluated at the site, through the same forward model and the same
+error budget in radians. A gradiometer's signal from a mass falls as 1/r³, so what arrives from far
+away is tides and waves, not attraction.
+
+**S14, the wider world.**
+- **Frames, as planet-scale engines do it.** Sun-centred → Earth-centred inertial → Earth-fixed and
+  rotating → local east-north-up at the site → each tower's frame (§3.4). Positions stay in the frame
+  they belong to and are converted in f64 only where frames meet; time is kept as a two-part date.
+  The GPU still sees only local offsets (split doubles where a far position must reach it); the
+  viewer gains a depth range from a room to a planet. The dev scene `precision-far` grows to
+  `precision-globe`.
+- **Never difference big numbers** applies here most of all: the Moon enters as a tidal gradient at
+  the tower, not as two attractions 5 m apart.
+- **Far sources**, each a small model with a stated error: lunar and solar tides with the solid
+  Earth's and the oceans' response; pressure systems, fronts, clouds, rain and ground water;
+  atmospheric and seismic Newtonian noise as spectra; ocean microseisms; teleseismic waves and the
+  prompt gravity signal of great earthquakes; a global pressure wave; tsunamis and other cases
+  expected to read nothing.
+- **Earth's rotation**: Coriolis and centrifugal terms on the atoms' flight and the Sagnac phase, as
+  instrument terms; Coriolis on air and water where the scene is large enough to care.
+- **Real data, cached outside the repo**: an Earth interior model, topography and bathymetry, a global
+  gravity field, ocean-tide models, weather reanalysis, earthquake catalogues, ephemerides. Each
+  dataset's licence is checked before it is used and recorded in the bundle; none is committed.
+- **Replay a real day**: the Moon, the weather and the earthquakes of a chosen date at a chosen site.
+- **The boundary**: a far source hands over to the voxel scene at its edge without double counting;
+  a test moves a mass across the boundary and demands no step.
+
+**S15, instruments anywhere.**
+- **Per-tower instruments**: height, separation, sequence and launch per tower, not one for the array
+  (today `ArraySpec` has one `InstrumentSpec`; any height is allowed, but all towers share it).
+- **Any axis**: the baseline is a direction, not "up". A horizontal gradiometer reads a different
+  component of the gradient tensor and its atoms fall across the beam; the flight, the arms and the
+  propagation integral are generalised, with the vertical case unchanged to the bit.
+- **Any gravity**: local g and its gradient from latitude, height and the gravity field model at the
+  site, feeding the launch rule and the flight; other bodies (Moon, Mars) as presets.
+- **In orbit**: free fall, long interrogation times, the Earth's field along the orbit as the signal;
+  one satellite, or two with a long baseline as the space proposals have it.
+- **Systematics budget**: laser phase noise, mirror vibration, magnetic fields, the cloud's size and
+  temperature, launch jitter, rotation, and the blackbody shift from warm surfaces (from S13's
+  temperature field).
+
+**S16, the science case.**
+- **Signal injection and recovery**: gravitational-wave and ultralight-dark-matter signals through the
+  full world, with the analysis layer finding them or not.
+- **Networks**: two or more sites on one planet sharing the far field, with independent local worlds.
+- **Site selection**: a noise budget for any place on Earth from the data of S14.
+- **A twin**: the simulation run on the same inputs as a real instrument, and the difference drawn.
 
 ## 10. How the work runs — builders and reviewers
 

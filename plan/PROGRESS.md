@@ -147,6 +147,18 @@ Still open (asked in S0; defaults in use until answered):
   10 × 10 × 3 m room, each 10 m tall so they rise through the ceiling. Is there a real or intended
   layout, and where is the tower base relative to the floor people walk on?
 
+## Owner's ruling (22 Nov 2026): beyond the scene
+The owner asked for the world beyond the voxel scene (weather, clouds, the Moon and tides,
+earthquakes, tsunamis, real planet data, Earth's rotation), for towers of different heights, a
+gradiometer on a horizontal axis, other gravity environments, one in orbit, and said to plan the
+ideas that followed (signal injection, two sites, replaying a real day, site selection, a twin,
+ground water, what is underground, a systematics budget). Added to the plan: **S14, the wider
+world**, **S15, instruments anywhere**, **S16, the science case** (`REBUILD.md` §9 and §9.3;
+validation in `VALIDATION-AND-RESEARCH.md` §2.6; TASK-S14-01 to 09, S15-01 to 05, S16-01 to 04). Each
+starts with a research note that sizes every effect in radians; what a note shows to be invisible
+is built as a null test and no further. The remaining ideas are in `plan/IDEAS.md`. Datasets are
+cached outside the repo; each licence is checked and reported to the owner before use.
+
 ## Owner's ruling (22 Nov 2026): heat everywhere
 The owner asked for full thermal physics, in air and in water, and for a way to validate it. Added to
 the plan: slice **S13, heat everywhere** (`REBUILD.md` §9 and §9.2) — sources, conduction in solids,
