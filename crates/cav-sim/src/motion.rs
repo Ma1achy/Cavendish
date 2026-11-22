@@ -21,45 +21,59 @@ pub enum Motion {
     /// At rest.
     Static {
         /// Where it is, metres.
+        #[schemars(extend("x-unit" = "m"))]
         position: [f64; 3],
     },
     /// A straight pass at constant speed: at `from` until `start`, then towards `to`, where it stops.
     Pass {
         /// Where it waits before `start`, metres.
+        #[schemars(extend("x-unit" = "m"))]
         from: [f64; 3],
         /// Where it stops, metres. Not the same point as `from`.
+        #[schemars(extend("x-unit" = "m"))]
         to: [f64; 3],
         /// When it sets off, seconds.
+        #[schemars(extend("x-unit" = "s"))]
         start: f64,
         /// Its speed on the way, metres per second.
         #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0))]
+        #[schemars(extend("x-unit" = "m/s"))]
         speed: f64,
     },
     /// A linear oscillator: `centre + amplitude · cos(2π·frequency·t + phase)`.
     Linear {
         /// The middle of the swing, metres.
+        #[schemars(extend("x-unit" = "m"))]
         centre: [f64; 3],
         /// The displacement at the top of the swing, metres: its direction is the line of motion.
+        #[schemars(extend("x-unit" = "m"))]
         amplitude: [f64; 3],
         /// Hertz.
         #[schemars(range(min = 0.0, max = 1.0e3))]
+        #[schemars(extend("x-unit" = "Hz"))]
         frequency: f64,
         /// Degrees.
+        #[schemars(extend("x-unit" = "°"))]
         phase: f64,
     },
     /// A circle, or an ellipse: `centre + u · cos θ + v · sin θ`, with `θ = 2π·frequency·t + phase`.
     /// A circle when `u` and `v` are perpendicular and equally long.
     Circular {
         /// The middle of the orbit, metres.
+        #[schemars(extend("x-unit" = "m"))]
         centre: [f64; 3],
         /// Where the body is at θ = 0, relative to the centre, metres.
+        #[schemars(extend("x-unit" = "m"))]
         u: [f64; 3],
         /// Where it is a quarter of a turn later, relative to the centre, metres.
+        #[schemars(extend("x-unit" = "m"))]
         v: [f64; 3],
         /// Turns per second, hertz.
         #[schemars(range(min = 0.0, max = 1.0e3))]
+        #[schemars(extend("x-unit" = "Hz"))]
         frequency: f64,
         /// Degrees.
+        #[schemars(extend("x-unit" = "°"))]
         phase: f64,
     },
     /// A spherical pendulum under gravity, small-amplitude solution with the leading precession:
@@ -68,17 +82,22 @@ pub enum Motion {
     /// the pivot, so its height moves at twice the frequency of its swing.
     Pendulum {
         /// The point it hangs from, metres.
+        #[schemars(extend("x-unit" = "m"))]
         pivot: [f64; 3],
         /// The length of the string, metres.
         #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0))]
+        #[schemars(extend("x-unit" = "m"))]
         length: f64,
         /// The longer semi-axis of the bob's ellipse, metres; less than `length`.
         #[schemars(range(min = 0.0, max = 1.0e4))]
+        #[schemars(extend("x-unit" = "m"))]
         major: f64,
         /// The shorter semi-axis, metres; zero for a plane pendulum.
         #[schemars(range(min = 0.0, max = 1.0e4))]
+        #[schemars(extend("x-unit" = "m"))]
         minor: f64,
         /// The compass direction of the major axis at t = 0, degrees anticlockwise from east.
+        #[schemars(extend("x-unit" = "°"))]
         azimuth: f64,
     },
     /// Forced motion on a sphere (this slice's own parametrisation; see the module's note): the
@@ -86,18 +105,23 @@ pub enum Motion {
     /// down, in a vertical plane that turns about the vertical at `spin_frequency`.
     Sphere {
         /// The centre of the sphere, metres.
+        #[schemars(extend("x-unit" = "m"))]
         centre: [f64; 3],
         /// Metres.
         #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0))]
+        #[schemars(extend("x-unit" = "m"))]
         radius: f64,
         /// The largest angle from straight down, degrees.
         #[schemars(range(min = 0.0, max = 180.0))]
+        #[schemars(extend("x-unit" = "°"))]
         tilt: f64,
         /// Hertz.
         #[schemars(range(min = 0.0, max = 1.0e3))]
+        #[schemars(extend("x-unit" = "Hz"))]
         tilt_frequency: f64,
         /// Turns of the plane per second, hertz.
         #[schemars(range(min = 0.0, max = 1.0e3))]
+        #[schemars(extend("x-unit" = "Hz"))]
         spin_frequency: f64,
     },
 }

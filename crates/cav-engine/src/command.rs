@@ -129,8 +129,12 @@ impl Command {
 pub enum Query {
     /// The scene spec, or the part of it at a path such as `array.towers[2].position`.
     Spec(Option<String>),
-    /// The JSON Schema of the scene spec.
-    Schema,
+    /// The JSON Schema of the scene spec, or of the field at a path: its type, range, unit
+    /// (`x-unit`), the stage an edit of it invalidates (`x-stage`) and its doc string.
+    Schema(Option<String>),
+    /// What is inside the field at a path (the whole spec if none): each child with its kind,
+    /// unit, range, doc string and value. A field that holds one value lists itself.
+    Ls(Option<String>),
     /// Counts and state at a glance.
     Stats,
     /// Entries of the event log.
@@ -303,9 +307,14 @@ pub struct SignalReply {
     pub state: Standing,
     /// When each shot is read out, seconds.
     pub times: Vec<f64>,
-    /// The channel's value at each shot, radians.
+    /// The channel's value at each shot, radians. Over a half-space a single interferometer's
+    /// phase is infinite: in JSON that is the string `"inf"` (`cav_sim::json_f64`).
+    #[serde(with = "cav_sim::json_f64::list")]
+    #[schemars(schema_with = "cav_sim::json_f64::list_schema")]
     pub values: Vec<f64>,
     /// The largest quadrature estimate of any shot of any source, radians.
+    #[serde(with = "cav_sim::json_f64")]
+    #[schemars(schema_with = "cav_sim::json_f64::schema")]
     pub estimate: f64,
     /// Whether every read settled to the tolerance; when false the estimate is how far the worst
     /// was from settling, not a bound that was met.
@@ -326,6 +335,8 @@ pub struct ReadingReply {
     pub towers: Vec<TowerReading>,
     /// The largest quadrature estimate of any source at any tower, radians: how far these numbers
     /// can be trusted.
+    #[serde(with = "cav_sim::json_f64")]
+    #[schemars(schema_with = "cav_sim::json_f64::schema")]
     pub estimate: f64,
     /// Whether every read settled to the tolerance; when false the estimate is how far the worst
     /// was from settling, not a bound that was met.
@@ -338,12 +349,19 @@ pub struct ReadingReply {
 /// What one tower reads from one shot, radians.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TowerReading {
+    /// The tower's label.
     pub label: String,
     /// δφ₁, the lower interferometer.
+    #[serde(with = "cav_sim::json_f64")]
+    #[schemars(schema_with = "cav_sim::json_f64::schema")]
     pub lower: f64,
     /// δφ₂, the upper interferometer.
+    #[serde(with = "cav_sim::json_f64")]
+    #[schemars(schema_with = "cav_sim::json_f64::schema")]
     pub upper: f64,
     /// ΔΦ, with the instrument's sign.
+    #[serde(with = "cav_sim::json_f64")]
+    #[schemars(schema_with = "cav_sim::json_f64::schema")]
     pub gradiometer: f64,
 }
 
@@ -354,6 +372,8 @@ pub enum Reply {
     Spec(serde_json::Value),
     /// A JSON Schema.
     Schema(serde_json::Value),
+    /// The fields inside a path, in the order they are declared.
+    Entries(Vec<cav_sim::paths::Entry>),
     /// See [`Stats`].
     Stats(Stats),
     /// Log entries, oldest first.

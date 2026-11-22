@@ -64,6 +64,25 @@ impl Args {
     }
 }
 
+impl Args {
+    /// The positional words, which must number at most `most`.
+    ///
+    /// # Errors
+    /// Too many words.
+    pub fn finish_up_to(self, most: usize) -> Result<Vec<String>, String> {
+        if self.positional.len() <= most {
+            Ok(self.positional)
+        } else {
+            Err(format!(
+                "expected at most {most} argument{}, found {}: {:?}",
+                if most == 1 { "" } else { "s" },
+                self.positional.len(),
+                self.positional
+            ))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -75,6 +75,22 @@ pub fn load(name_or_path: &str) -> Result<SceneSpec, SpecError> {
     SceneSpec::from_ron(&text).map_err(|e| SpecError(format!("{name_or_path}: {e}")))
 }
 
+/// A scene given whole, as JSON: what an agent sends in place of a name or a path. Held to the
+/// size of a scene file, counted on the text before it is parsed.
+///
+/// # Errors
+/// When the text is over [`MAX_SCENE_FILE_BYTES`], is not a scene, or is a scene that is refused.
+pub fn inline(json: &str) -> Result<SceneSpec, SpecError> {
+    if json.len() as u64 > MAX_SCENE_FILE_BYTES {
+        return Err(SpecError(format!(
+            "an inline scene of {} bytes is larger than {MAX_SCENE_FILE_BYTES} bytes (1 MiB), the most a scene \
+             may be",
+            json.len()
+        )));
+    }
+    SceneSpec::from_json(json)
+}
+
 /// The largest scene file [`load`] reads, bytes: 1 MiB. The largest valid spec (a thousand towers)
 /// is about a tenth of that.
 pub const MAX_SCENE_FILE_BYTES: u64 = 1 << 20;

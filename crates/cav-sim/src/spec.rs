@@ -68,25 +68,33 @@ pub const SPEC_VERSION: u32 = 1;
 #[serde(deny_unknown_fields)]
 pub struct SceneSpec {
     /// Version of the spec format; this build reads version 1.
+    #[schemars(extend("x-stage" = "nothing"))]
     pub version: u32,
     /// Short name, as shown in the library and the title bar. At most 200 characters.
     #[schemars(length(min = 1, max = 200))]
+    #[schemars(extend("x-stage" = "nothing"))]
     pub name: String,
     /// One or two sentences on what the scene is and what it checks. At most 4000 characters.
     #[schemars(length(max = 4000))]
+    #[schemars(extend("x-stage" = "nothing"))]
     pub description: String,
     /// Length of the timeline, seconds.
     #[schemars(range(max = 1.0e6), extend("exclusiveMinimum" = 0.0))]
+    #[schemars(extend("x-stage" = "forward", "x-unit" = "s"))]
     pub duration: f64,
     /// The towers and the instrument they share.
+    #[schemars(extend("x-stage" = "forward"))]
     pub array: ArraySpec,
     /// The room around the array, or none for an open scene.
+    #[schemars(extend("x-stage" = "view"))]
     pub room: Option<RoomSpec>,
     /// A floor under the array that extends to the horizon, or none. Its top lies at or below
     /// every tower's base: in S1 the floor is an analytic slab, and the atoms fly above it.
+    #[schemars(extend("x-stage" = "forward"))]
     pub floor: Option<FloorSpec>,
     /// The bodies: point masses and uniform spheres, each on its path. At most 1000.
     #[serde(default)]
+    #[schemars(extend("x-stage" = "forward"))]
     pub bodies: Vec<BodySpec>,
 }
 
@@ -106,27 +114,34 @@ pub struct ArraySpec {
 pub struct InstrumentSpec {
     /// Height of the tower, metres.
     #[schemars(range(max = 1.0e3), extend("exclusiveMinimum" = 0.0))]
+    #[schemars(extend("x-unit" = "m"))]
     pub tower_height: f64,
     /// Vertical separation of the two interferometers (Δr), metres. Less than `tower_height`.
     #[schemars(range(max = 1.0e3), extend("exclusiveMinimum" = 0.0))]
+    #[schemars(extend("x-unit" = "m"))]
     pub ifo_separation: f64,
     /// Half the interrogation sequence, T, seconds; a shot lasts 2T from launch to readout.
     /// 2T is less than `cycle`. At most 1000 s.
     #[schemars(range(min = 1.0e-3, max = 1.0e3))]
+    #[schemars(extend("x-unit" = "s"))]
     pub half_sequence: f64,
     /// Launch velocity u₀, metres per second.
     #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0))]
+    #[schemars(extend("x-unit" = "m/s"))]
     pub launch_velocity: f64,
     /// Time between shots of one tower, seconds. More than a shot: `cycle` > 2 × `half_sequence`.
     #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0))]
+    #[schemars(extend("x-unit" = "s"))]
     pub cycle: f64,
     /// The atom's mass, kilograms. The default is ⁸⁷Sr, 1.443 155 87e-25 kg.
     #[serde(default = "default_atom_mass")]
     #[schemars(range(min = 1.0e-27, max = 1.0e-24))]
+    #[schemars(extend("x-unit" = "kg"))]
     pub atom_mass: f64,
     /// Local gravity, metres per second squared. The default is 9.81.
     #[serde(default = "default_gravity")]
     #[schemars(range(min = 0.1, max = 100.0))]
+    #[schemars(extend("x-unit" = "m/s²"))]
     pub gravity: f64,
     /// Whether an arm that falls back to its launch height stops there and waits (for the kick at
     /// T, or for the next sequence). The default is true.
@@ -168,19 +183,23 @@ pub struct BodySpec {
     pub label: String,
     /// Kilograms.
     #[schemars(range(max = 1.0e12), extend("exclusiveMinimum" = 0.0))]
+    #[schemars(extend("x-unit" = "kg"))]
     pub mass: f64,
     /// The radius of the sphere, metres; zero (the default) for a point. A sphere is a point
     /// outside itself and may cross an atom's path, where a point may not.
     #[serde(default)]
     #[schemars(range(min = 0.0, max = 1.0e3))]
+    #[schemars(extend("x-unit" = "m"))]
     pub radius: f64,
     /// How it moves.
     pub motion: Motion,
     /// When it comes into being, seconds; from the start if absent.
     #[serde(default)]
+    #[schemars(extend("x-unit" = "s"))]
     pub appears: Option<f64>,
     /// When it ceases to be, seconds; never if absent. Later than `appears`.
     #[serde(default)]
+    #[schemars(extend("x-unit" = "s"))]
     pub vanishes: Option<f64>,
 }
 
@@ -192,6 +211,7 @@ pub struct TowerSpec {
     #[schemars(length(min = 1, max = 200))]
     pub label: String,
     /// The base of the tower (the lower launch point): x east, y north, z up, metres; each within ±1e6.
+    #[schemars(extend("x-unit" = "m"))]
     pub position: [f64; 3],
 }
 
@@ -200,8 +220,10 @@ pub struct TowerSpec {
 #[serde(deny_unknown_fields)]
 pub struct RoomSpec {
     /// The corner with the smallest x, y and z, metres; each within ±1e6.
+    #[schemars(extend("x-unit" = "m"))]
     pub origin: [f64; 3],
     /// Extent along x, y and z, metres; each above 0 and at most 1e4.
+    #[schemars(extend("x-unit" = "m"))]
     pub size: [f64; 3],
 }
 
@@ -211,11 +233,13 @@ pub struct RoomSpec {
 pub struct FloorSpec {
     /// Height of the floor's top surface, metres.
     #[schemars(range(min = -1.0e6, max = 1.0e6))]
+    #[schemars(extend("x-unit" = "m"))]
     pub height: f64,
     /// What lies below the surface.
     pub kind: FloorKind,
     /// Density of the floor's matter, kilograms per cubic metre.
     #[schemars(range(max = 1.0e5), extend("exclusiveMinimum" = 0.0))]
+    #[schemars(extend("x-unit" = "kg/m³"))]
     pub density: f64,
 }
 
@@ -228,6 +252,7 @@ pub enum FloorKind {
     Slab {
         /// Thickness of the slab, metres.
         #[schemars(range(max = 1.0e6), extend("exclusiveMinimum" = 0.0))]
+        #[schemars(extend("x-unit" = "m"))]
         thickness: f64,
     },
 }
@@ -358,6 +383,23 @@ impl SceneSpec {
     pub fn to_ron(&self) -> String {
         let pretty = ron::ser::PrettyConfig::new().struct_names(false);
         ron::ser::to_string_pretty(self, pretty).expect("a scene spec always serialises")
+    }
+
+    /// Writes the scene to a `.ron` file, replacing what is there. The scene is checked first, and
+    /// the text is written beside the file and moved into place, so a refusal or a failure half
+    /// way leaves the file as it was. Comments in a file that is saved over are not kept.
+    ///
+    /// # Errors
+    /// The first failed check of [`Self::validate`], or why the file could not be written.
+    pub fn save(&self, path: &str) -> Result<(), SpecError> {
+        self.validate()?;
+        let failed = |e: std::io::Error| SpecError(format!("{path}: the scene was not saved: {e}"));
+        let beside = format!("{path}.saving");
+        std::fs::write(&beside, self.to_ron()).map_err(failed)?;
+        std::fs::rename(&beside, path).map_err(|e| {
+            let _ = std::fs::remove_file(&beside);
+            failed(e)
+        })
     }
 
     /// Reads a spec from JSON, refusing unknown fields and specs that make no sense.
