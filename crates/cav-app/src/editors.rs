@@ -166,7 +166,12 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, prefix: &str) {
             // set in under the choice it belongs to.
             let below = entry.path.strip_prefix(prefix).unwrap_or(&entry.path).trim_start_matches('.');
             let depth = below.matches('.').count();
-            let name = below.rsplit('.').next().unwrap_or(below);
+            // (A field shown on its own, `duration` say, is its own name.)
+            let name = if below.is_empty() {
+                entry.name.as_str()
+            } else {
+                below.rsplit('.').next().unwrap_or(below)
+            };
             let hover = format!("{}\n\n{}", entry.doc, entry.path);
             // A vector says its unit once, beside its name; its components have no room for it.
             let unit = match (&entry.kind, entry.unit.as_deref()) {

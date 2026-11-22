@@ -639,7 +639,8 @@ fn periodogram(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect
     let also = if compared { compared_as(engine) } else { String::new() };
     let title = format!("Periodogram · √S of ΔΦ at {label_of} · {}{also} · {state}", spec.name);
     let instrument = engine.comparison().filter(|_| compared).unwrap_or(&spec.array.instrument);
-    let nyquist = 0.5 / instrument.cycle;
+    // Half the mean shot rate: the schedule's, which for the plain schedule is the cycle's.
+    let nyquist = 0.5 / spec.array.schedule.mean_cycle(instrument.cycle);
     let reply = engine.query(&query);
     let combs = match &reply {
         Ok(Reply::Periodogram(spectrum)) => spectrum.combs.len().min(COMB_COLOURS.len()),
