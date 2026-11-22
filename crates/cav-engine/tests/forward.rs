@@ -908,3 +908,112 @@ fn a_preset_is_one_undoable_edit() {
     assert!(engine.run_line("signal 1 compared").unwrap_err().contains("nothing is being compared"));
     assert!(engine.run_line("compare moon").is_err());
 }
+
+/// The shots tower `tower` took and what it read, from the engine's own answer.
+fn taken_series(engine: &mut Engine, tower: usize) -> (Vec<f64>, Vec<f64>) {
+    let query = Query::Signal { tower, channel: ChannelName::Gradiometer, span: None, compared: false };
+    let Reply::Signal(signal) = engine.ask(&query).unwrap() else { panic!("a signal") };
+    assert_eq!(signal.state, "refined");
+    let kept = signal.times.iter().zip(&signal.values).zip(&signal.taken).filter(|(_, taken)| **taken);
+    kept.map(|((time, value), _)| (*time, *value)).unzip()
+}
+
+cav_validate::case! {
+    test: validation_periodogram_on_uneven_shots,
+    name: "cadence.periodogram_on_uneven_shots",
+    subsystem: "cadence",
+    slice: "S2",
+    reference: Exact,
+    against: "the cadence-lab scene (each cycle up to 0.3 s late, 2% of shots lost): the engine's periodogram of tower 2, by non-uniform FFT, against the exact Lomb–Scargle of the same shots; largest difference as a fraction of the peak",
+    unit: Relative,
+    tolerance: 1e-9,
+    measure: {
+        let mut scene = dev::cadence_lab();
+        scene.duration = 600.0;
+        let mut engine = loaded(scene);
+        engine.set_patience(LONG);
+        let (times, values) = taken_series(&mut engine, 2);
+        let asked = Query::Periodogram { tower: 2, channel: ChannelName::Gradiometer, compared: false };
+        let Reply::Periodogram(ours) = engine.ask(&asked).unwrap() else { panic!("a periodogram") };
+        assert_eq!(ours.method, "Lomb–Scargle (non-uniform FFT)");
+        assert_eq!(ours.shots, times.len());
+        assert!(times.len() < 280 && times.len() > 250, "{} shots taken of about 279", times.len());
+        // The mean cycle is 2.15 s, so the Nyquist frequency of the mean rate is 1/4.3 Hz.
+        assert!((ours.nyquist - 1.0 / 4.3).abs() < 1e-12);
+        let exact = cav_core::spectrum::lomb_scargle(&times, &values, &ours.frequencies);
+        let peak = exact.iter().fold(0.0f64, |m, s| m.max(*s));
+        let worst = exact.iter().zip(&ours.power).fold(0.0f64, |m, (a, b)| m.max((a - b).abs()));
+        // The oscillator's line is the tallest thing in it, at 0.05 Hz, to a bin.
+        let top = (0..ours.power.len()).max_by(|&a, &b| ours.power[a].total_cmp(&ours.power[b])).unwrap();
+        let bin = ours.frequencies[1] - ours.frequencies[0];
+        assert!((ours.frequencies[top] - 0.05).abs() <= bin, "the peak is at {} Hz", ours.frequencies[top]);
+        // Control: the classical periodogram of the same values, as if they were evenly spaced,
+        // is another spectrum: the method matters on these shots.
+        let naive = cav_core::spectrum::periodogram(&values, 2.15, cav_core::spectrum::Classical::SCRIPTS);
+        let top_naive = naive.peak().unwrap();
+        assert!((top_naive.2 / peak - 1.0).abs() > 1e-3, "{} against {peak}", top_naive.2);
+        cav_validate::Measured::Error(worst / peak)
+    },
+}
+
+#[test]
+fn an_even_cadence_keeps_the_classical_periodogram() {
+    let mut scene = dev::comb();
+    scene.duration = 400.0;
+    let mut engine = loaded(scene.clone());
+    engine.set_patience(LONG);
+    let asked = Query::Periodogram { tower: 1, channel: ChannelName::Gradiometer, compared: false };
+    let Reply::Periodogram(ours) = engine.ask(&asked).unwrap() else { panic!("a periodogram") };
+    assert_eq!((ours.method.as_str(), ours.shots), ("classical periodogram (FFT)", 200));
+    // To the bit what S1 computed: the classical periodogram of the tower's series.
+    let cold = read::signal(&scene).unwrap();
+    let spectrum = cav_core::spectrum::periodogram(
+        cold.channel(0, cav_core::forward::Channel::Gradiometer),
+        2.0,
+        cav_core::spectrum::Classical::SCRIPTS,
+    );
+    assert_eq!(bits(&ours.power), bits(&spectrum.power));
+    assert_eq!(bits(&ours.frequencies), bits(&spectrum.frequencies));
+    // A seed alone changes nothing: the schedule is still the plain one.
+    set(&mut engine, "array.schedule.seed", json!(77)).unwrap();
+    let Reply::Periodogram(seeded) = engine.ask(&asked).unwrap() else { panic!("a periodogram") };
+    assert_eq!(bits(&seeded.power), bits(&ours.power));
+    // Control: one lost shot in a hundred, and it is Lomb–Scargle on the shots that are left.
+    set(&mut engine, "array.schedule.loss", json!(0.05)).unwrap();
+    let Reply::Periodogram(lossy) = engine.ask(&asked).unwrap() else { panic!("a periodogram") };
+    assert_eq!(lossy.method, "Lomb–Scargle (non-uniform FFT)");
+    assert!(lossy.shots < 200 && lossy.shots > 170, "{}", lossy.shots);
+    // The signal says which shots were not taken, and prints them as such.
+    let text = engine.run_line("signal 1").unwrap();
+    assert_eq!(text.lines().filter(|line| line.ends_with("not taken")).count(), 200 - lossy.shots);
+}
+
+#[test]
+fn the_cadence_answer_is_the_closed_forms() {
+    let mut engine = loaded(dev::cadence_lab());
+    // The engine's answer is the prediction, and the console prints it.
+    let Reply::Cadence(answer) = engine.query(&Query::Cadence).unwrap() else { panic!("a prediction") };
+    assert_eq!(answer, cav_sim::schedule::predict(engine.spec()).unwrap());
+    assert_eq!(answer.mean_cycle, 2.15);
+    let said = engine.run_line("cadence").unwrap();
+    assert!(said.starts_with("# mean cycle 2.15 s · Nyquist 0.232558 Hz"), "{said}");
+    assert!(said.contains("cycle jitter (a random walk)") && said.contains("as if alone"), "{said}");
+    // Editing the schedule changes the answer at once: nothing is simulated to give it.
+    engine.hold_workers(true);
+    engine.run_line("set array.schedule.jitter null").unwrap();
+    engine.run_line("set array.schedule.alternate 2.5").unwrap();
+    let said = engine.run_line("cadence").unwrap();
+    assert!(said.contains("0.444444  0.9397  alternation, sideband 2"), "{said}");
+    // The window of the same schedule, one realisation: its largest lines are where the forms
+    // put them (2/4.5 Hz first: the tallest sideband).
+    let window = engine.run_line("window 1 to 1").unwrap();
+    let first = window.lines().nth(1).unwrap();
+    assert!(first.starts_with("0.44"), "{window}");
+    let Reply::Window(reply) = engine.query(&Query::Window { tower: 1, to: Some(1.0) }).unwrap() else {
+        panic!()
+    };
+    assert_eq!((reply.frequencies.len(), reply.window[0]), (cav_engine::engine::WINDOW_POINTS, 1.0));
+    // Control: refusals.
+    assert!(engine.run_line("window 9").unwrap_err().contains("no tower 9"));
+    assert!(engine.run_line("window 1 to -1").is_err());
+}

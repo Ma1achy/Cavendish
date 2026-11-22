@@ -76,6 +76,13 @@ fn starter(spec: &cav_sim::SceneSpec, path: &str, variant: Option<&str>) -> Opti
         ("room", None) => serde_json::to_value(cav_sim::SceneSpec::room().room).ok(),
         ("floor", None) => Some(json!({"height": 0.0, "kind": "HalfSpace", "density": 2400.0})),
         ("floor.kind", Some("Slab")) => Some(json!({"Slab": {"thickness": 1.0}})),
+        // The parts of a schedule start as something gentle and valid for any instrument.
+        ("array.schedule.jitter", None) => Some(json!({"model": "Walk", "kind": "Positive", "delta": 0.1})),
+        ("array.schedule.alternate", None) => Some(json!(spec.array.instrument.cycle * 1.25)),
+        ("array.schedule.gaps", None) => Some(json!({"on": 4, "period": 5})),
+        ("array.schedule.window", None) => {
+            Some(json!({"start": 0.0, "length": spec.duration / 4.0, "period": spec.duration / 2.0}))
+        }
         (_, Some(name)) => paths::template(path).map(|first| match first {
             // The template is of the first variant; a plain variant is its own name.
             Value::Object(_) => first,
@@ -292,7 +299,8 @@ fn edit(
             ui.label(RichText::new("none").size(12.0).color(theme::WEAK));
             if ui.small_button("add").clicked() {
                 let value = match (&entry.kind, starter(spec, path, None)) {
-                    // A number that may be absent starts at the playhead's side of sense: zero.
+                    (_, Some(value)) if !value.is_null() && path.starts_with("array.schedule") => value,
+                    // A number that may be absent starts at the bottom of its range, or zero.
                     (Kind::Number, _) => json!(entry.minimum.map_or(0.0, |(low, _)| low)),
                     (_, Some(value)) => value,
                     (_, None) => Value::Null,

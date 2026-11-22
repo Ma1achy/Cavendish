@@ -315,3 +315,25 @@ fn files_are_read_up_to_their_cap() {
     let (bytes, whole) = peak_during(|| std::fs::read(&big).unwrap());
     assert!(bytes.len() == 20 * MIB && whole >= 20 * MIB);
 }
+
+#[test]
+fn a_periodogram_and_a_window_are_bounded_in_frequencies() {
+    use cav_sim::schedule::{MAX_FREQUENCIES, window};
+    // A window asked for at more frequencies than there are numbers: it is made at the cap. A
+    // thousand shots at a million frequencies goes by the non-uniform FFT, whose grid is twice
+    // the frequencies: 32 MiB of grid, the transform's own working copy, and the answer.
+    let scene = dev::comb();
+    let (answer, peak) = peak_during(|| window(&scene, 0, 1.0, usize::MAX).unwrap());
+    assert_eq!(answer.0.len(), MAX_FREQUENCIES);
+    eprintln!("a window at {MAX_FREQUENCIES} frequencies: {} MiB at once", peak / MIB);
+    assert!(peak <= 192 * MIB, "{} MiB at once", peak / MIB);
+    // Its work is bounded with it: the direct sum is used only while shots × frequencies is
+    // small, so a long run at many frequencies is never a product of the two.
+    let (short, small) = peak_during(|| window(&scene, 0, 1.0, 1000).unwrap());
+    assert_eq!(short.0.len(), 1000);
+    assert!(small < MIB, "a thousand frequencies took {small} bytes");
+    // Control: the two agree where they overlap, so the cap changes how fine, not what.
+    let coarse_at = |k: usize| short.1[k];
+    let fine_at = |k: usize| answer.1[k * (MAX_FREQUENCIES - 1) / 999];
+    assert!((coarse_at(0) - 1.0).abs() < 1e-9 && (fine_at(0) - 1.0).abs() < 1e-9);
+}

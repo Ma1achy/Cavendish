@@ -210,6 +210,18 @@ pub enum Query {
         #[serde(default)]
         compared: bool,
     },
+    /// What the scene's schedule is predicted to do to a spectrum, from its closed forms: the
+    /// mean rate, the alias lines and their heights, the floor, the shots kept.
+    Cadence,
+    /// The spectral window of the shots one tower takes: `|W(ν)|` from 0 to a frequency, one
+    /// realisation for the scene's seed.
+    Window {
+        /// The tower, counted from 1 as on screen.
+        tower: usize,
+        /// The highest frequency, hertz; 2.5 times the mean shot rate if absent.
+        #[serde(default)]
+        to: Option<f64>,
+    },
     /// What every tower would read from a shot read out at this time, seconds (the playhead if
     /// none is given). The engine's reading worker computes it; this answers with the last whole
     /// reading and says whether it is the one asked for (`refined`), an earlier one (`stale`) or
@@ -297,12 +309,28 @@ pub struct PeriodogramReply {
     pub state: Standing,
     /// The Nyquist frequency, hertz: half the shot rate.
     pub nyquist: f64,
+    /// How it was made: the classical periodogram (an FFT) when the tower's shots are evenly
+    /// spaced and all taken, the Lomb–Scargle periodogram (by non-uniform FFT) when they are not.
+    pub method: String,
+    /// How many shots went into it: those the tower took.
+    pub shots: usize,
     /// The bins' frequencies, hertz, from one over the timeline's length to Nyquist.
     pub frequencies: Vec<f64>,
     /// `S_k = (Δt/N)·|FFT(y − ȳ)|²` at each bin, rad² per hertz: one-sided, not doubled.
     pub power: Vec<f64>,
     /// Each oscillating body's first harmonics and where they fold to.
     pub combs: Vec<Comb>,
+}
+
+/// The spectral window of one tower's shots.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WindowReply {
+    /// The tower, from 1.
+    pub tower: usize,
+    /// The frequencies, hertz, from 0.
+    pub frequencies: Vec<f64>,
+    /// `|W(ν)|` at each: 1 at zero frequency; a tone at `f` is imaged at `f ± ν` at this height.
+    pub window: Vec<f64>,
 }
 
 /// How many harmonics of each body a comb lists.
@@ -366,6 +394,10 @@ pub struct SignalReply {
     pub state: Standing,
     /// When this tower read each shot out, seconds: the array's clock and the tower's own offset.
     pub times: Vec<f64>,
+    /// Whether the tower took each shot. A shot not taken (a planned gap, a lost shot) keeps its
+    /// place, with a value of zero that is not a measurement.
+    #[serde(default)]
+    pub taken: Vec<bool>,
     /// The channel's value at each shot, radians. Over a half-space a single interferometer's
     /// phase is infinite: in JSON that is the string `"inf"` (`cav_sim::json_f64`).
     #[serde(with = "cav_sim::json_f64::list")]
@@ -447,6 +479,10 @@ pub enum Reply {
     Reading(ReadingReply),
     /// See [`PeriodogramReply`].
     Periodogram(PeriodogramReply),
+    /// What the schedule is predicted to do.
+    Cadence(cav_sim::schedule::Prediction),
+    /// See [`WindowReply`].
+    Window(WindowReply),
 }
 
 /// The engine's state at a glance.

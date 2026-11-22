@@ -8,6 +8,7 @@ pub mod motion;
 pub mod paths;
 pub mod presets;
 pub mod read;
+pub mod schedule;
 pub mod spec;
 pub mod view;
 

@@ -572,7 +572,8 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
         ],
     );
     let flight = shell.engine.content(pane) == cav_engine::PaneContent::Flight;
-    button_row(shell, ui, "", &[("flight", "show flight", flight)]);
+    let cadence = shell.engine.content(pane) == cav_engine::PaneContent::Cadence;
+    button_row(shell, ui, "", &[("flight", "show flight", flight), ("cadence", "show cadence", cadence)]);
     ui.add_space(4.0);
     ui.label(
         RichText::new(
@@ -658,6 +659,9 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
             rows(ui, "body", &[("now at", format!("{x:.3}, {y:.3}, {z:.3} m"))]);
         }
     }
+
+    heading(ui, "Cadence · when the array fires");
+    crate::editors::show(shell, ui, "array.schedule");
 
     heading(ui, "Instrument · shared by every tower");
     let instrument = shell.engine.spec().array.instrument.clone();
@@ -835,7 +839,10 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                 let spec = shell.engine.spec();
                 let whole = match content {
                     cav_engine::PaneContent::Signal | cav_engine::PaneContent::Flight => spec.duration,
-                    _ => 0.5 / spec.array.instrument.cycle,
+                    cav_engine::PaneContent::Cadence => {
+                        2.5 / spec.array.schedule.mean_cycle(spec.array.instrument.cycle)
+                    }
+                    _ => 0.5 / spec.array.schedule.mean_cycle(spec.array.instrument.cycle),
                 };
                 let scroll = if response.hovered() { ui.input(|i| i.smooth_scroll_delta.y) } else { 0.0 };
                 if response.double_clicked() {
