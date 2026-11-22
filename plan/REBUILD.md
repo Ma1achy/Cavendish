@@ -44,6 +44,11 @@ and it is a tool a person or an agent can explore interactively, at scales up to
    are separate and both first-class.
 8. **Fast to build, fast to test, local first.** Seconds, not minutes. Heavy validation runs on demand.
 9. **British English; simplicity over cleverness; dependencies only where they earn their place.**
+10. **Built for other people.** Someone new can read the code, find where a thing lives, and add a
+    body, a motion, a source, a field, a command or a validation case by following a written recipe
+    and one existing example. Every public item is documented; every crate says what it is for and
+    what it must not depend on; `docs/ARCHITECTURE.md` is kept true. A slice that adds a kind of
+    thing adds or updates its recipe.
 
 ## 3. Architecture
 
@@ -276,6 +281,13 @@ scopes with a focus ring and breadcrumb; F3 hides the GUI; the footer opens into
 - **Debug views** — tree bounds by level, the walk's accepted nodes per tower, LOD bands, the fluid's
   adaptive grid, regrid events, contact manifolds, GPU vs CPU difference maps, the error ledger.
 - **Capture** — screenshots, frame sequences, video, and every view reproducible from a command.
+- **Figures for papers and talks** — any plot or view exported as SVG, PDF or PNG at a stated size
+  and resolution, with a house style (fonts, line weights, colour maps safe for colour-blind readers
+  and for print) and named presets (paper column, paper full width, slide, poster); the data behind
+  every figure exported beside it (`.csv` or `.npy` plus a small JSON of axes, units and provenance:
+  scene, engine SHA, numerics) so it can be redrawn elsewhere; the same from the CLI
+  (`cav figure …`), MCP and Python (a matplotlib style sheet and helpers that redraw a figure from
+  its exported data). A figure regenerates bit for bit from its command.
 
 ## 7. Interfaces
 

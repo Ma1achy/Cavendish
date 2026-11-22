@@ -104,6 +104,12 @@
 - id: TASK-S2-06
   milestone: S2
   title: Headless run writes a bundle (.npy) with numerics block
+- id: TASK-S2-07
+  milestone: S2
+  title: 'Figure export: SVG, PDF and PNG with presets, the data and provenance beside each figure'
+- id: TASK-S2-08
+  milestone: S2
+  title: 'For other people: ARCHITECTURE.md, CONTRIBUTING.md, recipes for extending, documented public items'
 - id: TASK-S3-01
   milestone: S3
   title: 'VoxTree: Morton keys, build, sidecars, moments'
