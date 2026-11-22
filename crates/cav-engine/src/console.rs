@@ -6,7 +6,7 @@
 
 use cav_sim::{DrawStyle, LIBRARY, NamedView, Projection, SceneSpec, Target};
 
-use crate::command::{ChannelName, Command, Query, Reply, Stage, ViewCommand};
+use crate::command::{ChannelName, Command, ExportKind, Query, Reply, Stage, ViewCommand};
 use crate::engine::Engine;
 use crate::log::{Level, LogFilter, Subsystem};
 use cav_sim::PaneContent;
@@ -57,6 +57,24 @@ pub const COMMANDS: &[CommandDoc] = &[
         usage: "set <path> <value>",
         about: "set a value of the scene by its path, as JSON: a number, true, [x, y, z] (an edit; a drag is a run of these)",
         example: "set duration 20",
+    },
+    CommandDoc {
+        name: "add",
+        usage: "add <list> <value> | add <list> <index> <value>",
+        about: "put an item into a list of the scene (bodies, array.towers), as JSON: at the end, or before item <index> (an edit)",
+        example: "add array.towers {\"label\": \"tower 6\", \"position\": [6, 0, 0]}",
+    },
+    CommandDoc {
+        name: "remove",
+        usage: "remove <path[index]>",
+        about: "take an item out of a list of the scene; the items after it move down (an edit)",
+        example: "remove array.towers[4]",
+    },
+    CommandDoc {
+        name: "save",
+        usage: "save <file.ron>",
+        about: "write the scene to a file that `load` reads back; quote a path with spaces",
+        example: "save saved-scene.ron",
     },
     CommandDoc {
         name: "mass",
@@ -175,8 +193,8 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "journal",
-        usage: "journal",
-        about: "the commands applied so far, as JSON: a session that can be replayed",
+        usage: "journal [save <file.json>]",
+        about: "the commands applied so far, as JSON: a session that can be replayed (`cav replay <file>`); with `save`, written to a file",
         example: "journal",
     },
 ];
@@ -200,6 +218,11 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
             }
         }
         Command::Set { path, value, .. } => format!("set {path} {value}"),
+        Command::Insert { path, index: None, value } => format!("add {path} {value}"),
+        Command::Insert { path, index: Some(at), value } => format!("add {path} {at} {value}"),
+        Command::Remove { path } => format!("remove {path}"),
+        Command::Export { what: ExportKind::Scene, to } => format!("save {}", quoted(to)),
+        Command::Export { what: ExportKind::Journal, to } => format!("journal save {}", quoted(to)),
         Command::Run { from: Stage::Forward } => "run".into(),
         Command::Seek(t) => format!("seek {t}"),
         Command::Select(None) => "select none".into(),
@@ -227,6 +250,11 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
             ViewCommand::Pan { pane, target: [x, y, z] } => format!("pan {x} {y} {z}{}", at(pane)),
         },
     }
+}
+
+/// A path as a console word: in double quotes when it has a space in it.
+fn quoted(path: &str) -> String {
+    if path.contains(char::is_whitespace) { format!("\"{path}\"") } else { path.to_owned() }
 }
 
 /// Splits a console line into words. Double quotes keep what is between them together, so a path
@@ -329,6 +357,20 @@ impl Engine {
                 serde_json::from_str(text).unwrap_or_else(|_| serde_json::Value::String(text.to_owned()));
             return Ok(Request::Do(Command::set(path, value)));
         }
+        // `add` too: a list, an index if there is one, and the item as it was written.
+        if let Some(rest) = line.trim_start().strip_prefix("add")
+            && rest.starts_with(char::is_whitespace)
+            && let Some((list, rest)) = rest.trim().split_once(char::is_whitespace)
+        {
+            let rest = rest.trim();
+            let (index, text) = match rest.split_once(char::is_whitespace) {
+                Some((first, item)) if first.parse::<usize>().is_ok() => (first.parse().ok(), item.trim()),
+                _ => (None, rest),
+            };
+            let value = serde_json::from_str(text)
+                .map_err(|e| format!("`{text}` is not JSON ({e}); {}", usage("add")))?;
+            return Ok(Request::Do(Command::Insert { path: list.to_owned(), index, value }));
+        }
         let owned = words(line)?;
         let mut words: Vec<&str> = owned.iter().map(String::as_str).collect();
         let Some(&name) = words.first() else {
@@ -358,10 +400,15 @@ impl Engine {
                 let taken = |label: &str| self.spec().bodies.iter().any(|b| b.label == label);
                 let label = (1..).map(|n| format!("mass {n}")).find(|l| !taken(l)).expect("a free label");
                 let body = cav_sim::BodySpec::point(&label, number(kg, "kilograms", name)?, position);
-                let mut bodies = self.spec().bodies.clone();
-                bodies.push(body);
-                let value = serde_json::to_value(bodies).expect("bodies are JSON");
-                Ok(Request::Do(Command::set("bodies", value)))
+                let value = serde_json::to_value(body).expect("a body is JSON");
+                Ok(Request::Do(Command::Insert { path: "bodies".into(), index: None, value }))
+            }
+            ("remove", [path]) => Ok(Request::Do(Command::Remove { path: (*path).to_owned() })),
+            ("save", [file]) => {
+                Ok(Request::Do(Command::Export { what: ExportKind::Scene, to: (*file).to_owned() }))
+            }
+            ("journal", ["save", file]) => {
+                Ok(Request::Do(Command::Export { what: ExportKind::Journal, to: (*file).to_owned() }))
             }
             ("run", []) => Ok(Request::Do(Command::Run { from: Stage::Forward })),
             ("signal", args) if args.len() <= 4 => {
@@ -760,6 +807,11 @@ mod tests {
     #[test]
     fn every_documented_command_parses() {
         let mut engine = Engine::new();
+        // The examples that write a file write it under the build's own directory.
+        let scratch =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp/console examples");
+        std::fs::create_dir_all(&scratch).unwrap();
+        engine.set_exports(crate::Exports::Into(scratch));
         for doc in COMMANDS {
             assert!(doc.example.starts_with(doc.name), "{}: the example shows the command", doc.name);
             assert!(doc.usage.starts_with(doc.name));

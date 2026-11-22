@@ -14,7 +14,7 @@ use crate::command::{
 };
 use crate::console;
 use crate::forward::{Forward, SignalState};
-use crate::history::{History, JOURNAL_BYTES, weigh};
+use crate::history::{Edit, History, JOURNAL_BYTES, Step, weigh};
 use crate::log::{Level, Log, Subsystem};
 
 /// How long a line typed at a console waits for the numbers it asks for, unless a client sets
@@ -38,6 +38,31 @@ pub fn estimate_text(estimate: f64, settled: bool) -> String {
     } else {
         format!("within {estimate:.0e} rad")
     }
+}
+
+/// Where an engine's exports go.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub enum Exports {
+    /// To the path each command names: a session a person or an agent is driving.
+    #[default]
+    AsNamed,
+    /// Into this directory, under each path's file name alone: a replay, which must never write
+    /// where someone else's journal says.
+    Into(std::path::PathBuf),
+    /// Nowhere: the command is applied and journalled and nothing is written.
+    Skipped,
+}
+
+/// What a command will do, worked out before anything is changed.
+enum Prepared {
+    /// Nothing needs working out beforehand.
+    Plain,
+    /// An edit: the scene it makes, and the step that undoes and redoes it.
+    Edit(Box<SceneSpec>, Step),
+    /// An undo or a redo: the scene it restores.
+    Restore(Box<SceneSpec>),
+    /// An export: the file to write and its bytes.
+    Write(std::path::PathBuf, Vec<u8>),
 }
 
 /// How many log entries the engine keeps.
@@ -67,6 +92,8 @@ pub struct Engine {
     /// Whether the last command offered was refused: a step that says it continues the edit
     /// before it then has nothing to continue.
     refused: bool,
+    /// Where exports are written.
+    exports: Exports,
     log: Log,
     /// `log.total()` just after the last command's entry: tells whether that entry is still the newest.
     log_mark: u64,
@@ -128,6 +155,7 @@ impl Engine {
             journal_whole: true,
             journal_budget: JOURNAL_BYTES,
             refused: false,
+            exports: Exports::AsNamed,
             log,
             log_mark: 0,
             generation: 0,
@@ -148,16 +176,39 @@ impl Engine {
         engine
     }
 
-    /// A fresh engine with `journal` applied in order.
+    /// A fresh engine with `journal` applied in order. Exports in the journal are applied and
+    /// written nowhere: see [`Self::replay_into`].
     ///
     /// # Errors
     /// The first command that is refused, with its position; a journal the engine wrote never fails.
     pub fn replay(journal: &[Command]) -> Result<Self, String> {
+        Self::replay_with(journal, Exports::Skipped)
+    }
+
+    /// A fresh engine with `journal` applied in order, its exports written into `directory`
+    /// under their file names alone. A journal is someone's record of where they wrote; replaying
+    /// it must not write there.
+    ///
+    /// # Errors
+    /// As [`Self::replay`], and when an export cannot be written.
+    pub fn replay_into(journal: &[Command], directory: &std::path::Path) -> Result<Self, String> {
+        Self::replay_with(journal, Exports::Into(directory.to_path_buf()))
+    }
+
+    fn replay_with(journal: &[Command], exports: Exports) -> Result<Self, String> {
         let mut engine = Self::new();
+        engine.exports = exports;
         for (n, command) in journal.iter().enumerate() {
             engine.apply(command.clone()).map_err(|why| format!("replay: command {n}: {why}"))?;
         }
+        // The replayed engine goes on as a session of its own would.
+        engine.exports = Exports::AsNamed;
         Ok(engine)
+    }
+
+    /// Says where this engine's exports go from now on.
+    pub fn set_exports(&mut self, exports: Exports) {
+        self.exports = exports;
     }
 
     /// Applies a command. On success the state has changed, the command is in the journal and the
@@ -167,10 +218,24 @@ impl Engine {
     /// Why the command was refused.
     pub fn apply(&mut self, command: Command) -> Result<(), String> {
         let described = console::describe(&command, self.active);
-        if let Err(why) = self.check(&command) {
-            self.note(Level::Error, Subsystem::Engine, format!("refused `{described}`: {why}"));
-            self.refused = true;
-            return Err(why);
+        let prepared = match self.prepare(&command) {
+            Ok(prepared) => prepared,
+            Err(why) => {
+                self.note(Level::Error, Subsystem::Engine, format!("refused `{described}`: {why}"));
+                self.refused = true;
+                return Err(why);
+            }
+        };
+        // A file is written before anything is recorded: an export that fails is a refusal.
+        let mut wrote = None;
+        if let Prepared::Write(path, bytes) = &prepared {
+            if let Err(why) = std::fs::write(path, bytes) {
+                let why = format!("{}: not written: {why}", path.display());
+                self.note(Level::Error, Subsystem::Engine, format!("refused `{described}`: {why}"));
+                self.refused = true;
+                return Err(why);
+            }
+            wrote = Some(format!("{} ({} bytes)", path.display(), bytes.len()));
         }
         // A step of a drag continues the step before it. If that step was refused there is
         // nothing to continue, and this one is an edit of its own: it must not be folded into
@@ -184,22 +249,29 @@ impl Engine {
             *continues = false;
         }
         let (level, subsystem) = match &command {
-            Command::Load(_) | Command::Set { .. } | Command::Undo | Command::Redo => {
-                (Level::Info, Subsystem::Edit)
-            }
-            Command::Run { .. } => (Level::Info, Subsystem::Engine),
+            Command::Load(_)
+            | Command::Set { .. }
+            | Command::Insert { .. }
+            | Command::Remove { .. }
+            | Command::Undo
+            | Command::Redo => (Level::Info, Subsystem::Edit),
+            Command::Run { .. } | Command::Export { .. } => (Level::Info, Subsystem::Engine),
             Command::Select(_) => (Level::Info, Subsystem::Engine),
             Command::Seek(_) => (Level::Debug, Subsystem::Engine),
             Command::View(_) => (Level::Debug, Subsystem::View),
         };
-        let message = match &command {
-            Command::Load(spec) => format!("{described} · {}", summary(spec)),
+        let message = match (&command, &prepared) {
+            (Command::Load(spec), _) => format!("{described} · {}", summary(spec)),
+            (Command::Export { .. }, _) => match (&wrote, &self.exports) {
+                (Some(wrote), _) => format!("{described} · wrote {wrote}"),
+                _ => format!("{described} · not written (a replay with nowhere for exports to go)"),
+            },
             _ => described,
         };
         // A run of commands that overwrite one another (a scrub, a drag) is one journal entry and
         // one log line: the last. For an edit it is also one step of undo: the first of the run.
         let overwrites = self.journal.last().is_some_and(|previous| command.overwrites(previous));
-        self.perform(&command, overwrites);
+        self.perform(&command, prepared, overwrites);
         self.generation += 1;
         // Whatever changed the scene or moved the playhead changes what the towers read under it.
         if !matches!(command, Command::Select(_) | Command::View(_)) {
@@ -249,21 +321,97 @@ impl Engine {
         Ok(())
     }
 
-    /// Whether the command can be applied to the current state; changes nothing.
-    fn check(&self, command: &Command) -> Result<(), String> {
+    /// Works out what the command will do to the current state, or why it cannot be applied;
+    /// changes nothing. An edit's scene is made here, once, and handed to [`Self::perform`].
+    fn prepare(&self, command: &Command) -> Result<Prepared, String> {
+        let edit =
+            |spec: SceneSpec, undo: Edit, redo: Edit| Ok(Prepared::Edit(Box::new(spec), Step { undo, redo }));
         match command {
-            Command::Load(spec) => spec.validate().map_err(|e| e.0),
-            Command::Set { path, value, .. } => self.spec.edited(path, value).map(|_| ()),
-            Command::Run { .. } => Ok(()),
+            Command::Load(spec) => {
+                spec.validate().map_err(|e| e.0)?;
+                edit(
+                    (**spec).clone(),
+                    Edit::Replace(Box::new(self.spec.clone())),
+                    Edit::Replace(spec.clone()),
+                )
+            }
+            Command::Set { path, value, .. } => {
+                let (spec, before) = self.spec.edited(path, value)?;
+                edit(
+                    spec,
+                    Edit::Put { path: path.clone(), value: before },
+                    Edit::Put { path: path.clone(), value: value.clone() },
+                )
+            }
+            Command::Insert { path, index, value } => {
+                let (spec, at) = self.spec.inserted(path, *index, value)?;
+                edit(
+                    spec,
+                    Edit::Remove { path: format!("{path}[{at}]") },
+                    Edit::Insert { list: path.clone(), index: at, value: value.clone() },
+                )
+            }
+            Command::Remove { path } => {
+                let (spec, item) = self.spec.removed(path)?;
+                // `removed` has checked that the path ends in an index of a list.
+                let (list, index) = path.trim().rsplit_once('[').ok_or("not an item of a list")?;
+                let index = index.trim_end_matches(']').parse().map_err(|_| "not an item of a list")?;
+                edit(
+                    spec,
+                    Edit::Insert { list: list.to_owned(), index, value: item },
+                    Edit::Remove { path: path.clone() },
+                )
+            }
+            Command::Export { what, to } => self.prepare_export(*what, to),
+            Command::Run { .. } => Ok(Prepared::Plain),
             Command::Seek(t) if !t.is_finite() => Err(format!("a time must be finite, not {t}")),
-            Command::Seek(_) => Ok(()),
-            Command::Select(None) => Ok(()),
-            Command::Select(Some(target)) => self.check_target(*target),
-            Command::Undo if self.history.depth().0 == 0 => Err("nothing to undo".into()),
-            Command::Redo if self.history.depth().1 == 0 => Err("nothing to redo".into()),
-            Command::Undo | Command::Redo => Ok(()),
-            Command::View(view) => self.check_view(view),
+            Command::Seek(_) => Ok(Prepared::Plain),
+            Command::Select(None) => Ok(Prepared::Plain),
+            Command::Select(Some(target)) => self.check_target(*target).map(|()| Prepared::Plain),
+            Command::Undo => match self.history.last() {
+                None => Err("nothing to undo".into()),
+                Some(step) => step
+                    .undo
+                    .apply(&self.spec)
+                    .map(|spec| Prepared::Restore(Box::new(spec)))
+                    .map_err(|why| format!("the history no longer fits the scene: {why}")),
+            },
+            Command::Redo => match self.history.next() {
+                None => Err("nothing to redo".into()),
+                Some(step) => step
+                    .redo
+                    .apply(&self.spec)
+                    .map(|spec| Prepared::Restore(Box::new(spec)))
+                    .map_err(|why| format!("the history no longer fits the scene: {why}")),
+            },
+            Command::View(view) => self.check_view(view).map(|()| Prepared::Plain),
         }
+    }
+
+    /// The file an export writes and its bytes; `Plain` when exports are skipped.
+    fn prepare_export(&self, what: crate::ExportKind, to: &str) -> Result<Prepared, String> {
+        if to.trim().is_empty() {
+            return Err("an export needs a file to write".into());
+        }
+        let path = match &self.exports {
+            Exports::Skipped => return Ok(Prepared::Plain),
+            Exports::AsNamed => std::path::PathBuf::from(to),
+            Exports::Into(directory) => {
+                let name =
+                    std::path::Path::new(to).file_name().ok_or_else(|| format!("`{to}` names no file"))?;
+                directory.join(name)
+            }
+        };
+        let bytes = match what {
+            crate::ExportKind::Scene => self.spec.to_ron().into_bytes(),
+            crate::ExportKind::Journal => {
+                if !self.journal_whole {
+                    return Err("the journal stopped recording: it is not the whole session and is not written as one".into());
+                }
+                crate::journal::write(&self.journal).into_bytes()
+            }
+        };
+        Ok(Prepared::Write(path, bytes))
     }
 
     fn check_target(&self, target: Target) -> Result<(), String> {
@@ -313,25 +461,13 @@ impl Engine {
         }
     }
 
-    /// Carries out a command that [`Self::check`] has accepted. `continues` says that it overwrites
-    /// the command before it: a drag in progress.
-    fn perform(&mut self, command: &Command, continues: bool) {
-        match command {
-            Command::Set { path, value, .. } => {
-                let (edited, _) = self.spec.edited(path, value).expect("checked");
-                let before = std::mem::replace(&mut self.spec, edited);
-                if continues {
-                    self.history.continued();
-                } else {
-                    self.history.edited(before);
-                }
-                self.settle_after_history();
-                self.forward.schedule(&self.spec, false);
-            }
-            Command::Run { .. } => self.forward.schedule(&self.spec, true),
-            Command::Load(spec) => {
-                let before = std::mem::replace(&mut self.spec, (**spec).clone());
-                self.history.edited(before);
+    /// Carries out a command that [`Self::prepare`] has accepted. `continues` says that it
+    /// overwrites the command before it: a drag in progress.
+    fn perform(&mut self, command: &Command, prepared: Prepared, continues: bool) {
+        match (command, prepared) {
+            (Command::Load(_), Prepared::Edit(spec, step)) => {
+                self.spec = *spec;
+                self.history.edited(step);
                 self.time = 0.0;
                 self.selection = None;
                 // Every pane keeps its direction, projection and style and re-frames the new scene.
@@ -341,21 +477,34 @@ impl Engine {
                 self.forward.forget();
                 self.forward.schedule(&self.spec, false);
             }
-            Command::Seek(t) => self.time = t.clamp(0.0, self.spec.duration),
-            Command::Select(target) => self.selection = *target,
-            Command::Undo => {
-                let previous = self.history.undo(self.spec.clone()).expect("checked");
-                self.spec = previous;
+            (_, Prepared::Edit(spec, step)) => {
+                self.spec = *spec;
+                if continues {
+                    self.history.continued(step.redo);
+                } else {
+                    self.history.edited(step);
+                }
                 self.settle_after_history();
                 self.forward.schedule(&self.spec, false);
             }
-            Command::Redo => {
-                let next = self.history.redo(self.spec.clone()).expect("checked");
-                self.spec = next;
+            (Command::Undo, Prepared::Restore(spec)) => {
+                self.spec = *spec;
+                self.history.undone();
                 self.settle_after_history();
                 self.forward.schedule(&self.spec, false);
             }
-            Command::View(view) => self.perform_view(view),
+            (Command::Redo, Prepared::Restore(spec)) => {
+                self.spec = *spec;
+                self.history.redone();
+                self.settle_after_history();
+                self.forward.schedule(&self.spec, false);
+            }
+            (Command::Run { .. }, _) => self.forward.schedule(&self.spec, true),
+            (Command::Seek(t), _) => self.time = t.clamp(0.0, self.spec.duration),
+            (Command::Select(target), _) => self.selection = *target,
+            (Command::View(view), _) => self.perform_view(view),
+            // An export changed nothing here; the file was written before this was reached.
+            _ => {}
         }
     }
 

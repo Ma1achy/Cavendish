@@ -617,3 +617,192 @@ fn non_finite_numbers_survive_a_reply() {
     assert_eq!(serde_json::to_string(&f64::INFINITY).unwrap(), "null");
     assert!(serde_json::from_str::<f64>("null").is_err());
 }
+
+/// A session of every kind of edit, each a command a panel, the console or an agent could issue.
+fn edits() -> Vec<Command> {
+    let body = |label: &str, x: f64| json!({"label": label, "mass": 2.0, "motion": {"Static": {"position": [x, 1.0, 2.0]}}});
+    let drag = |x: f64, continues: bool| Command::Set {
+        path: "bodies[0].motion.Static.position".into(),
+        value: json!([x, 0.0, 2.5]),
+        continues,
+    };
+    vec![
+        Command::set("bodies[0].mass", json!(0.1 + 0.2)),
+        Command::Insert { path: "bodies".into(), index: None, value: body("second", 3.0) },
+        Command::Insert { path: "bodies".into(), index: Some(0), value: body("first", -3.0) },
+        Command::set("bodies[2].radius", json!(1.0 / 3.0)),
+        Command::Remove { path: "bodies[1]".into() },
+        Command::set("room", json!(null)),
+        Command::set("room", json!({"origin": [-5.0, -5.0, 0.0], "size": [10.0, 10.0, 3.0]})),
+        drag(2.0, false),
+        drag(2.25, true),
+        drag(2.5, true),
+        Command::set(
+            "bodies[0].motion",
+            json!({"Linear": {"centre": [3, 0, 1], "amplitude": [0, 0, 0.5], "frequency": 0.05, "phase": 0}}),
+        ),
+        Command::set("array.towers[3].position[1]", json!(4.5)),
+        Command::Insert {
+            path: "array.towers".into(),
+            index: None,
+            value: json!({"label": "tower 6", "position": [6, 0, 0]}),
+        },
+        Command::load(dev::superposition()),
+        Command::set("name", json!("renamed")),
+        Command::Remove { path: "bodies[0]".into() },
+        Command::set("duration", json!(55.0)),
+    ]
+}
+
+#[test]
+fn edits_undo_and_redo_to_the_bit() {
+    let mut engine = loaded(dev::point());
+    // The scene after each edit. (The drag's three steps are one edit: one entry.)
+    let mut scenes = vec![engine.spec().to_ron()];
+    for command in edits() {
+        let continues = matches!(command, Command::Set { continues: true, .. });
+        engine.apply(command).unwrap();
+        if continues {
+            scenes.pop();
+        }
+        scenes.push(engine.spec().to_ron());
+    }
+    let steps = scenes.len() - 1;
+    assert_eq!(steps, 15);
+    // Undone one at a time, the scene is each earlier scene in turn, as text (so that -0.0 and
+    // 0.0, which compare equal, would show).
+    for back in (0..steps).rev() {
+        engine.apply(Command::Undo).unwrap();
+        assert_eq!(engine.spec().to_ron(), scenes[back], "undo to step {back}");
+    }
+    assert_eq!(engine.spec(), &dev::point());
+    // The load itself is still there to undo; then nothing is.
+    engine.apply(Command::Undo).unwrap();
+    assert_eq!(engine.spec(), &SceneSpec::room());
+    assert_eq!(engine.apply(Command::Undo), Err("nothing to undo".into()));
+    engine.apply(Command::Redo).unwrap();
+    // Redone, each later scene in turn, and at the end the last.
+    for (forward, scene) in scenes.iter().enumerate().skip(1) {
+        engine.apply(Command::Redo).unwrap();
+        assert_eq!(&engine.spec().to_ron(), scene, "redo to step {forward}");
+    }
+    assert_eq!(engine.apply(Command::Redo), Err("nothing to redo".into()));
+    // The whole session, undos and redos and all, replays to the same state.
+    assert_eq!(Engine::replay(engine.journal()).unwrap().digest(), engine.digest());
+    // The history holds edits, not scenes: sixteen steps on small scenes are a few kilobytes,
+    // most of it the two loads (a scene each way).
+    let (history, _, _) = engine.held();
+    assert!(history < 24_000, "{history} bytes of history");
+    // Control: the scenes do differ from step to step, so matching each is a claim about each.
+    for pair in scenes.windows(2) {
+        assert_ne!(pair[0], pair[1]);
+    }
+    // And an edit between an undo and its redo forgets the redo.
+    engine.apply(Command::Undo).unwrap();
+    set(&mut engine, "name", json!("forked")).unwrap();
+    assert_eq!(engine.apply(Command::Redo), Err("nothing to redo".into()));
+}
+
+#[test]
+fn insert_and_remove_are_each_others_inverse() {
+    let mut engine = loaded(dev::superposition());
+    let before = engine.spec().clone();
+    let labels = |engine: &Engine| engine.spec().bodies.iter().map(|b| b.label.clone()).collect::<Vec<_>>();
+    let (a, b) = (before.bodies[0].label.clone(), before.bodies[1].label.clone());
+    let third = json!({"label": "third", "mass": 2.0, "motion": {"Static": {"position": [1.0, 2.0, 3.0]}}});
+    engine.apply(Command::Insert { path: "bodies".into(), index: Some(1), value: third.clone() }).unwrap();
+    assert_eq!(labels(&engine), [a.clone(), "third".to_owned(), b.clone()]);
+    engine.apply(Command::Remove { path: "bodies[1]".into() }).unwrap();
+    assert_eq!(engine.spec(), &before);
+    // Undo puts the removed item back where it was; undo again takes the inserted one out.
+    engine.apply(Command::Undo).unwrap();
+    assert_eq!(engine.spec().bodies[1].label, "third");
+    engine.apply(Command::Undo).unwrap();
+    assert_eq!(engine.spec(), &before);
+    // The console's words for the same, and the log's line says what the edit invalidates.
+    engine.run_line(&format!("add bodies 0 {third}")).unwrap();
+    assert_eq!(engine.spec().bodies[0].label, "third");
+    assert_eq!(
+        engine.journal().last(),
+        Some(&Command::Insert { path: "bodies".into(), index: Some(0), value: third })
+    );
+    let said = engine.log().iter().next_back().unwrap().message.clone();
+    // The log's line is the line that issues the command again.
+    let mut again = loaded(dev::superposition());
+    again.run_line(&said).unwrap();
+    assert_eq!(again.spec(), engine.spec());
+    engine.run_line("remove bodies[0]").unwrap();
+    assert_eq!(engine.spec(), &before);
+    engine.run_line(r#"add array.towers {"label": "tower 6", "position": [6, 0, 0]}"#).unwrap();
+    assert_eq!(engine.spec().array.towers.len(), 6);
+    // A selection that the removal takes away is dropped.
+    engine.run_script("select tower 6; remove array.towers[5]").unwrap();
+    assert_eq!(engine.selection(), None);
+    // Control: refusals change nothing and name what is wrong.
+    let digest = engine.digest();
+    for (line, why) in [
+        ("remove bodies[7]", "has 2 items"),
+        ("remove bodies", "ends in an index"),
+        ("add bodies 9 {}", "at [0] to [2]"),
+        ("add bodies not-json", "is not JSON"),
+        ("add name 3", "not a list"),
+    ] {
+        let refused = engine.run_line(line).unwrap_err();
+        assert!(refused.contains(why), "`{line}`: {refused}");
+    }
+    assert_eq!(engine.digest(), digest);
+}
+
+#[test]
+fn a_replay_never_writes_where_the_journal_says() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp/replay exports");
+    let (first, second) = (root.join("where the session wrote"), root.join("where the replay writes"));
+    for dir in [&first, &second] {
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    let scene = first.join("my scene.ron");
+    let session = first.join("session.json");
+    let mut engine = loaded(dev::point());
+    for command in edits().into_iter().take(6) {
+        engine.apply(command).unwrap();
+    }
+    engine.run_line(&format!("save \"{}\"", scene.display())).unwrap();
+    engine.run_line("set duration 30").unwrap();
+    engine.run_line(&format!("journal save \"{}\"", session.display())).unwrap();
+    // The saved scene is the scene as it stood at the save, and loads.
+    let saved = std::fs::read(&scene).unwrap();
+    let mut at_save = engine.spec().clone();
+    at_save.duration = dev::point().duration;
+    assert_eq!(cav_sim::load(scene.to_str().unwrap()).unwrap(), at_save);
+    // The journal on disk is the session up to the command that wrote it.
+    let journal = cav_engine::journal::read(session.to_str().unwrap()).unwrap();
+    assert_eq!(journal.as_slice(), &engine.journal()[..engine.journal().len() - 1]);
+    // A plain replay writes nothing at all: the files are gone and stay gone.
+    std::fs::remove_file(&scene).unwrap();
+    std::fs::remove_file(&session).unwrap();
+    let replayed = Engine::replay(engine.journal()).unwrap();
+    assert_eq!(replayed.digest(), engine.digest());
+    assert!(!scene.exists() && !session.exists(), "a replay wrote where the journal said");
+    // A replay with somewhere to write puts each export there under its file name, and the
+    // bytes are the bytes the session wrote.
+    let again = Engine::replay_into(&journal, &second).unwrap();
+    assert_eq!(again.spec(), engine.spec());
+    assert!(!scene.exists(), "still nothing where the journal said");
+    assert_eq!(std::fs::read(second.join("my scene.ron")).unwrap(), saved);
+    // A journal that names a path outside is held to the directory all the same.
+    let outside =
+        vec![Command::Export { what: cav_engine::ExportKind::Scene, to: "../../../escaped.ron".into() }];
+    Engine::replay_into(&outside, &second).unwrap();
+    assert!(second.join("escaped.ron").exists());
+    assert!(!second.join("../../../escaped.ron").exists());
+    // Control: a session of one's own does write where it says, and a path that cannot be
+    // written is a refusal that leaves no entry in the journal.
+    let mut own = loaded(dev::void());
+    let entries = own.journal().len();
+    let nowhere = first.join("no such folder").join("x.ron");
+    assert!(own.run_line(&format!("save \"{}\"", nowhere.display())).unwrap_err().contains("not written"));
+    assert_eq!(own.journal().len(), entries);
+    own.run_line(&format!("save \"{}\"", scene.display())).unwrap();
+    assert_eq!(cav_sim::load(scene.to_str().unwrap()).unwrap(), dev::void());
+}

@@ -29,6 +29,33 @@ pub enum Command {
         #[serde(default)]
         continues: bool,
     },
+    /// Put an item into a list of the scene spec (`bodies`, `array.towers`): before item `index`,
+    /// or at the end if there is none. The scene that results must be a valid one. An edit.
+    Insert {
+        /// The path of the list.
+        path: String,
+        /// Where the item goes, from 0; at the end if absent.
+        #[serde(default)]
+        index: Option<usize>,
+        /// The item, as JSON of the list's item type.
+        value: serde_json::Value,
+    },
+    /// Take an item out of a list of the scene spec: the path ends in its index, `bodies[1]`. The
+    /// items after it move down by one. An edit.
+    Remove {
+        /// The path of the item.
+        path: String,
+    },
+    /// Write something to a file. Not an edit and not a change of state: it is a command so that
+    /// the journal says what a session wrote. Replaying a journal never writes to the paths in
+    /// it: the replayer names a directory for exports, or they are skipped
+    /// ([`crate::Exports`]).
+    Export {
+        /// What is written.
+        what: ExportKind,
+        /// The file (or, for kinds that are several files, the directory) to write.
+        to: String,
+    },
     /// Compute again from a stage, dropping what was kept for it and the stages after it.
     Run { from: Stage },
     /// Move the playhead to this time, seconds; clamped to the scene's duration.
@@ -41,6 +68,26 @@ pub enum Command {
     Undo,
     /// Reapply the edit last taken back.
     Redo,
+}
+
+/// What an [`Command::Export`] writes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ExportKind {
+    /// The scene as a `.ron` file: what `load` reads back.
+    Scene,
+    /// The journal so far as JSON: a session that `cav replay` runs again.
+    Journal,
+}
+
+impl ExportKind {
+    /// The word the console uses.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Scene => "scene",
+            Self::Journal => "journal",
+        }
+    }
 }
 
 /// A change to the figure's panes and their cameras.
