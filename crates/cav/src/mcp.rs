@@ -26,8 +26,24 @@ pub struct Cav {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct SceneLoadArgs {
-    /// A library scene name (`room`, `void`, `point`, `pass`, `oscillator-zoo` and the others `cav scenes` lists), or the path of a `.ron` scene file.
-    pub scene: String,
+    /// A library scene name (`room`, `void`, `point`, `pass`, `oscillator-zoo` and the others `cav scenes` lists), or the path of a `.ron` scene file. Give this or `spec`.
+    pub scene: Option<String>,
+    /// A whole scene, inline, as the JSON object `scene_get` returns and `scene_schema` describes. Give this or `scene`. At most 1 MiB.
+    pub spec: Option<serde_json::Value>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct SceneSetArgs {
+    /// A path into the scene spec, such as `bodies[0].mass`, `array.towers[2].timing.offset` or `bodies[0].motion` (an enum is addressed through its variant: `bodies[0].motion.Static.position`).
+    pub path: String,
+    /// The new value, as JSON of the field's own type: a number, a string, `[x, y, z]`, an object, or `null` to remove an optional part.
+    pub value: serde_json::Value,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ScenePathArgs {
+    /// A path into the scene spec. Omit it for the top of the spec.
+    pub path: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -94,19 +110,64 @@ fn answered<T>(tool: &str, body: impl FnOnce() -> Result<T, String>) -> Result<T
 
 #[tool_router]
 impl Cav {
-    /// The JSON Schema of the scene spec: every field, its type and its meaning.
+    /// The JSON Schema of the scene spec, or of the field at a path: its type, range, unit
+    /// (`x-unit`), doc string and the stage an edit of it invalidates (`x-stage`).
     #[tool(name = "scene_schema")]
-    fn scene_schema(&self) -> Result<String, String> {
-        answered("scene_schema", || self.session().engine.run_line("schema"))
+    fn scene_schema(&self, Parameters(args): Parameters<ScenePathArgs>) -> Result<String, String> {
+        answered("scene_schema", || {
+            let query = Query::Schema(args.path);
+            self.session().engine.query(&query).map(|reply| cav_engine::render(&reply))
+        })
     }
 
-    /// Replace the scene with a library scene or a `.ron` file. Returns the engine's state.
+    /// Replace the scene with a library scene, a `.ron` file, or a whole scene given inline as
+    /// JSON. Returns the engine's state. An edit: `undo` takes it back.
     #[tool(name = "scene_load")]
     fn scene_load(&self, Parameters(args): Parameters<SceneLoadArgs>) -> Result<String, String> {
         answered("scene_load", || {
             let mut session = self.session();
-            session.load(&args.scene)?;
+            match (&args.scene, &args.spec) {
+                (Some(scene), None) => session.load(scene)?,
+                (None, Some(spec)) => {
+                    let scene = cav_sim::inline(&spec.to_string()).map_err(|why| {
+                        session.engine.note(Level::Error, Subsystem::Mcp, format!("scene_load: {}", why.0));
+                        why.0
+                    })?;
+                    session.engine.apply(cav_engine::Command::load(scene))?;
+                }
+                _ => return Err(
+                    "scene_load takes `scene` (a name or a path) or `spec` (a scene, inline): one of them"
+                        .into(),
+                ),
+            }
             session.engine.run_line("stats")
+        })
+    }
+
+    /// Set the value at a path of the scene: the same edit a panel or the console's `set` makes,
+    /// checked the same way and undone by `undo`. Returns the line that makes the edit and what
+    /// it invalidates. Indices are positions: removing an item renumbers the ones after it.
+    #[tool(name = "scene_set")]
+    fn scene_set(&self, Parameters(args): Parameters<SceneSetArgs>) -> Result<String, String> {
+        answered("scene_set", || {
+            let mut session = self.session();
+            let before = session.engine.spec().clone();
+            let command = cav_engine::Command::set(&args.path, args.value);
+            let described = cav_engine::describe(&command, session.engine.active_pane());
+            session.engine.apply(command)?;
+            let stage = cav_sim::paths::diff(&before, session.engine.spec());
+            Ok(format!("{described}\ninvalidates: {}", stage.name()))
+        })
+    }
+
+    /// List what is inside a path of the scene: each field with its value, unit, kind, range and
+    /// doc string, as JSON. A field that holds one value lists itself.
+    #[tool(name = "scene_ls")]
+    fn scene_ls(&self, Parameters(args): Parameters<ScenePathArgs>) -> Result<String, String> {
+        answered("scene_ls", || {
+            let entries =
+                cav_sim::paths::ls(self.session().engine.spec(), args.path.as_deref().unwrap_or_default())?;
+            serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())
         })
     }
 
@@ -184,8 +245,9 @@ impl Cav {
     version = "0.0.0",
     instructions = "Cavendish: a voxel world around an array of atom-interferometer gravity gradiometers. \
                     Scenes hold the array, a room or a floor, and point masses on paths. Load one with \
-                    scene_load (`cav scenes` names them), read it with scene_get (its shape is scene_schema), and \
-                    do everything else with command (try `help`): `set <path> <json>` edits any value, \
+                    scene_load (`cav scenes` names them; or give a whole scene inline), read it with scene_get \
+                    and scene_ls (its shape is scene_schema), edit any value with scene_set, and \
+                    do everything else with command (try `help`): \
                     `reading`, `signal` and `periodogram` give what the towers read, `show signal` puts a plot \
                     in a pane. Look at a pane with render_view, and read what happened with log."
 )]
@@ -243,7 +305,7 @@ mod tests {
     fn every_tool_runs_where_a_panic_is_an_answer() {
         let source = include_str!("mcp.rs");
         let production = source.split("#[cfg(test)]").next().unwrap();
-        assert_eq!(production.matches("#[tool(name = \"").count(), 6, "the scan sees the six tools");
+        assert_eq!(production.matches("#[tool(name = \"").count(), 8, "the scan sees the eight tools");
         assert_eq!(unguarded(production), Vec::<String>::new());
         // Control: a tool whose body calls the engine bare is found.
         let bare = "    #[tool(name = \"log\")]\n    fn log(&self) -> Result<String, String> {\n        \

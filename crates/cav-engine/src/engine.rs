@@ -253,7 +253,7 @@ impl Engine {
     fn check(&self, command: &Command) -> Result<(), String> {
         match command {
             Command::Load(spec) => spec.validate().map_err(|e| e.0),
-            Command::Set { path, value, .. } => self.edited(path, value).map(|_| ()),
+            Command::Set { path, value, .. } => self.spec.edited(path, value).map(|_| ()),
             Command::Run { .. } => Ok(()),
             Command::Seek(t) if !t.is_finite() => Err(format!("a time must be finite, not {t}")),
             Command::Seek(_) => Ok(()),
@@ -313,22 +313,12 @@ impl Engine {
         }
     }
 
-    /// The scene with the value at `path` replaced by `value`, if that is a valid scene.
-    fn edited(&self, path: &str, value: &serde_json::Value) -> Result<SceneSpec, String> {
-        let mut whole = serde_json::to_value(&self.spec).expect("a scene spec is JSON");
-        *at_path_mut(&mut whole, path)? = value.clone();
-        let spec: SceneSpec =
-            serde_json::from_value(whole).map_err(|e| format!("`{path}` cannot be set to {value}: {e}"))?;
-        spec.validate().map_err(|e| e.0)?;
-        Ok(spec)
-    }
-
     /// Carries out a command that [`Self::check`] has accepted. `continues` says that it overwrites
     /// the command before it: a drag in progress.
     fn perform(&mut self, command: &Command, continues: bool) {
         match command {
             Command::Set { path, value, .. } => {
-                let edited = self.edited(path, value).expect("checked");
+                let (edited, _) = self.spec.edited(path, value).expect("checked");
                 let before = std::mem::replace(&mut self.spec, edited);
                 if continues {
                     self.history.continued();
@@ -437,13 +427,16 @@ impl Engine {
     pub fn query(&self, query: &Query) -> Result<Reply, String> {
         match query {
             Query::Spec(path) => {
-                let whole = serde_json::to_value(&self.spec).expect("a scene spec is JSON");
-                match path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
-                    None => Ok(Reply::Spec(whole)),
-                    Some(path) => at_path(&whole, path).map(|v| Reply::Spec(v.clone())),
-                }
+                let whole = self.spec.to_value();
+                cav_sim::paths::get(&whole, path.as_deref().unwrap_or_default())
+                    .map(|v| Reply::Spec(v.clone()))
             }
-            Query::Schema => Ok(Reply::Schema(SceneSpec::schema())),
+            Query::Schema(path) => {
+                cav_sim::paths::schema_at(path.as_deref().unwrap_or_default()).map(Reply::Schema)
+            }
+            Query::Ls(path) => {
+                cav_sim::paths::ls(&self.spec, path.as_deref().unwrap_or_default()).map(Reply::Entries)
+            }
             Query::Stats => Ok(Reply::Stats(self.stats())),
             Query::Log(filter) => Ok(Reply::Log(self.log.select(filter))),
             Query::View(pane) => self
@@ -894,57 +887,6 @@ fn summary(spec: &SceneSpec) -> String {
     format!("{towers} tower{}, {room}, {floor}, {bodies}", if towers == 1 { "" } else { "s" })
 }
 
-/// The place at a path inside a JSON value, to be written to. The last step may name a field
-/// that is absent only if its parent is an object that already has it: nothing is created.
-fn at_path_mut<'a>(root: &'a mut serde_json::Value, path: &str) -> Result<&'a mut serde_json::Value, String> {
-    // Walk read-only first, for the same refusals as a `get`; then again to borrow mutably.
-    at_path(root, path)?;
-    let mut here = root;
-    for segment in path.split('.') {
-        let (name, indices) = segment.split_once('[').map_or((segment, ""), |(n, rest)| (n, rest));
-        if !name.is_empty() {
-            here = here.get_mut(name).expect("walked");
-        }
-        for index in indices.split('[').filter(|i| !i.is_empty()) {
-            let n: usize = index.trim_end_matches(']').parse().expect("walked");
-            here = here.get_mut(n).expect("walked");
-        }
-    }
-    Ok(here)
-}
-
-/// The value at a path such as `array.towers[2].position[0]` inside a JSON value.
-fn at_path<'a>(root: &'a serde_json::Value, path: &str) -> Result<&'a serde_json::Value, String> {
-    let mut here = root;
-    let mut walked = String::new();
-    for segment in path.split('.') {
-        let (name, indices) = segment.split_once('[').map_or((segment, ""), |(n, rest)| (n, rest));
-        if !name.is_empty() {
-            here = here.get(name).ok_or_else(|| {
-                let fields: Vec<&str> =
-                    here.as_object().map(|o| o.keys().map(String::as_str).collect()).unwrap_or_default();
-                let at = if walked.is_empty() { "the scene".to_owned() } else { format!("`{walked}`") };
-                format!("{at} has no field `{name}`; it has: {}", fields.join(", "))
-            })?;
-            if !walked.is_empty() {
-                walked.push('.');
-            }
-            walked.push_str(name);
-        }
-        for index in indices.split('[').filter(|i| !i.is_empty()) {
-            let number = index.strip_suffix(']').ok_or_else(|| format!("`{segment}`: a `[` needs a `]`"))?;
-            let n: usize = number.parse().map_err(|_| format!("`{segment}`: `{number}` is not an index"))?;
-            let length = here.as_array().map(Vec::len);
-            here = here.get(n).ok_or_else(|| match length {
-                Some(len) => format!("`{walked}` has {len} items; there is no [{n}]"),
-                None => format!("`{walked}` is not a list"),
-            })?;
-            walked.push_str(&format!("[{n}]"));
-        }
-    }
-    Ok(here)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1215,6 +1157,17 @@ mod tests {
         assert!(get("array.towers[5]").unwrap_err().contains("has 5 items"));
         assert!(get("name[0]").unwrap_err().contains("not a list"));
         assert!(get("array.towers[x]").unwrap_err().contains("not an index"));
+        // `ls` and the schema at a path are the same walk, answered by the engine.
+        let Ok(Reply::Entries(inside)) = engine.query(&Query::Ls(Some("array.instrument".into()))) else {
+            panic!("entries")
+        };
+        assert_eq!(inside[0].path, "array.instrument.tower_height");
+        assert_eq!(inside[0].unit.as_deref(), Some("m"));
+        let Ok(Reply::Schema(schema)) = engine.query(&Query::Schema(Some("duration".into()))) else {
+            panic!("a schema")
+        };
+        assert_eq!(schema["x-unit"], "s");
+        assert!(engine.query(&Query::Ls(Some("array.nothing".into()))).is_err());
     }
 
     cav_validate::case! {

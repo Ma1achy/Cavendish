@@ -154,10 +154,16 @@ pub const COMMANDS: &[CommandDoc] = &[
         example: "get array.instrument",
     },
     CommandDoc {
+        name: "ls",
+        usage: "ls [path]",
+        about: "what is inside a path: each field with its value, unit, kind, range and what it is",
+        example: "ls array.instrument",
+    },
+    CommandDoc {
         name: "schema",
-        usage: "schema",
-        about: "the JSON Schema of the scene spec",
-        example: "schema",
+        usage: "schema [path]",
+        about: "the JSON Schema of the scene spec, or of the field at a path",
+        example: "schema bodies",
     },
     CommandDoc { name: "stats", usage: "stats", about: "the engine's state at a glance", example: "stats" },
     CommandDoc { name: "camera", usage: "camera [@N]", about: "a pane's view as data", example: "camera" },
@@ -471,7 +477,10 @@ impl Engine {
             }
             ("get", []) => Ok(Request::Ask(Query::Spec(None))),
             ("get", [path]) => Ok(Request::Ask(Query::Spec(Some((*path).to_owned())))),
-            ("schema", []) => Ok(Request::Ask(Query::Schema)),
+            ("schema", []) => Ok(Request::Ask(Query::Schema(None))),
+            ("schema", [path]) => Ok(Request::Ask(Query::Schema(Some((*path).to_owned())))),
+            ("ls", []) => Ok(Request::Ask(Query::Ls(None))),
+            ("ls", [path]) => Ok(Request::Ask(Query::Ls(Some((*path).to_owned())))),
             ("stats", []) => Ok(Request::Ask(Query::Stats)),
             ("camera", []) => Ok(Request::Ask(Query::View(pane))),
             ("journal", []) => Ok(Request::Ask(Query::Journal)),
@@ -578,6 +587,9 @@ pub fn render(reply: &Reply) -> String {
     let json = |value: &dyn erased::Json| value.pretty();
     match reply {
         Reply::Spec(value) | Reply::Schema(value) => json(value),
+        Reply::Entries(entries) => {
+            entries.iter().map(cav_sim::paths::Entry::line).collect::<Vec<_>>().join("\n")
+        }
         Reply::Stats(stats) => json(stats),
         Reply::View(view) => json(view),
         Reply::Journal(journal) => serde_json::to_string(journal).expect("commands are JSON"),
@@ -815,6 +827,14 @@ mod tests {
         assert!(engine.run_line("stats").unwrap().contains("\"towers\": 5"));
         assert!(engine.run_line("camera").unwrap().contains("\"projection\": \"Perspective\""));
         assert!(engine.run_line("schema").unwrap().contains("Length of the timeline, seconds."));
+        let cycle = engine.run_line("schema array.instrument.cycle").unwrap();
+        assert!(cycle.contains("\"x-unit\": \"s\"") && !cycle.contains("tower_height"), "{cycle}");
+        let listed = engine.run_line("ls array.towers[1]").unwrap();
+        assert_eq!(listed.lines().count(), 2, "{listed}");
+        assert!(listed.contains("label  =  \"tower 2\"  (text)"), "{listed}");
+        assert!(listed.contains("position  =  [4.0,0.0,0.0] m  (vector of 3)"), "{listed}");
+        assert!(engine.run_line("ls").unwrap().lines().count() == 8);
+        assert!(engine.run_line("ls room.colour").unwrap_err().contains("it has: origin, size"));
         let scenes = engine.run_line("scenes").unwrap();
         assert!(scenes.contains("void") && scenes.contains("scenes/dev/infinite-floor.ron"));
         engine.run_script("seek 1; select tower 2").unwrap();

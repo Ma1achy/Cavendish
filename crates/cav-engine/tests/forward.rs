@@ -585,3 +585,35 @@ fn a_refused_first_step_is_not_a_continuation() {
     smooth.apply(step(2.5, true)).unwrap();
     assert_eq!(smooth.journal().len(), journal);
 }
+
+#[test]
+fn non_finite_numbers_survive_a_reply() {
+    // Over a half-space each interferometer's own phase is infinite. The reply that carries it
+    // must survive JSON, which is how it reaches an agent (S1: it did not).
+    let mut engine = loaded(dev::infinite_floor());
+    assert!(engine.settle(LONG));
+    for query in [Query::Signal { tower: 2, channel: ChannelName::Lower, span: None }, Query::Reading(None)] {
+        let reply = engine.query(&query).unwrap();
+        let text = serde_json::to_string(&reply).unwrap();
+        assert!(text.contains("\"inf\"") && !text.contains("null,null"), "{text}");
+        assert_eq!(serde_json::from_str::<Reply>(&text).unwrap(), reply, "{text}");
+        let value = serde_json::to_value(&reply).unwrap();
+        assert_eq!(serde_json::from_value::<Reply>(value).unwrap(), reply);
+    }
+    let Reply::Signal(lower) =
+        engine.query(&Query::Signal { tower: 2, channel: ChannelName::Lower, span: None }).unwrap()
+    else {
+        panic!("a signal")
+    };
+    assert!(lower.values.iter().all(|v| *v == f64::INFINITY) && lower.values.len() == 6);
+    // The gradiometer over the same floor is finite, and exactly nothing.
+    let Reply::Signal(null) =
+        engine.query(&Query::Signal { tower: 2, channel: ChannelName::Gradiometer, span: None }).unwrap()
+    else {
+        panic!("a signal")
+    };
+    assert!(null.values.iter().all(|v| v.to_bits() == 0));
+    // Control: the plain derive would have written `null` and failed to read it back.
+    assert_eq!(serde_json::to_string(&f64::INFINITY).unwrap(), "null");
+    assert!(serde_json::from_str::<f64>("null").is_err());
+}

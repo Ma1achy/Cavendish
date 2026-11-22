@@ -293,3 +293,62 @@ fn cli_prints_the_font_licence() {
     // Control: a word that is not a command is refused.
     assert!(!cav(&["license-plate"]).status.success());
 }
+
+#[test]
+fn cli_get_set_ls_edit_a_file() {
+    // A scene file of our own: the comb, saved by the library's own writer.
+    let file = scratch("edited comb.ron");
+    let scene = cav_sim::load("comb").unwrap();
+    scene.save(file.to_str().unwrap()).unwrap();
+    let path = file.to_str().unwrap();
+    // get: the whole scene, or the value at a path, as JSON.
+    let mass = cav(&["get", path, "bodies[0].mass"]);
+    assert!(mass.status.success(), "{}", stderr(&mass));
+    assert_eq!(stdout(&mass).trim(), serde_json::to_string(&scene.bodies[0].mass).unwrap());
+    let whole: serde_json::Value = serde_json::from_str(&stdout(&cav(&["get", path]))).unwrap();
+    assert_eq!(whole, scene.to_value());
+    // ls: the children with their units and kinds, in the order they are declared.
+    let listed = stdout(&cav(&["ls", path, "bodies[0]"]));
+    let names: Vec<&str> = listed.lines().filter_map(|line| line.split_whitespace().next()).collect();
+    assert_eq!(names, ["label", "mass", "radius", "motion", "appears", "vanishes"], "{listed}");
+    assert!(listed.contains("mass  =  ") && listed.contains(" kg  (number"), "{listed}");
+    assert!(stdout(&cav(&["ls", "room"])).lines().count() == 8, "a library scene lists too");
+    // set: the file is the edited scene, and nothing else in it has changed.
+    let set = cav(&["set", path, "bodies[0].mass", "42.5"]);
+    assert!(set.status.success(), "{}", stderr(&set));
+    assert!(stdout(&set).starts_with("set bodies[0].mass 42.5\nsaved "), "{}", stdout(&set));
+    let mut expected = scene.clone();
+    expected.bodies[0].mass = 42.5;
+    assert_eq!(cav_sim::load(path).unwrap(), expected);
+    // A bare word is text; JSON is JSON; --out leaves the source alone.
+    let other = scratch("renamed.ron");
+    let renamed = cav(&["set", path, "name", "another", "--out", other.to_str().unwrap()]);
+    assert!(renamed.status.success(), "{}", stderr(&renamed));
+    assert_eq!(cav_sim::load(other.to_str().unwrap()).unwrap().name, "another");
+    assert_eq!(cav_sim::load(path).unwrap(), expected, "the source is untouched");
+    let room = cav(&["set", path, "room", r#"{"origin": [-5, -5, 0], "size": [10, 10, 3]}"#]);
+    assert!(room.status.success(), "{}", stderr(&room));
+    assert!(cav_sim::load(path).unwrap().room.is_some());
+    // The schema at a path, with no scene at all.
+    let schema: serde_json::Value =
+        serde_json::from_str(&stdout(&cav(&["schema", "bodies[0].mass"]))).unwrap();
+    assert_eq!(
+        (&schema["x-unit"], &schema["type"]),
+        (&serde_json::json!("kg"), &serde_json::json!("number"))
+    );
+    // Control: refusals change no file and say why. A value out of range, a path that is not
+    // there, a library scene with nowhere to go.
+    let before = std::fs::read(&file).unwrap();
+    for (args, why) in [
+        (vec!["set", path, "bodies[0].mass", "-1"], "bodies[0].mass"),
+        (vec!["set", path, "bodies[0].weight", "1"], "has no field `weight`"),
+        (vec!["set", "comb", "bodies[0].mass", "1"], "--out"),
+        (vec!["get", path, "bodies[7]"], "has 1 items"),
+        (vec!["ls", "no-such-scene"], "not a library scene"),
+    ] {
+        let out = cav(&args);
+        assert!(!out.status.success(), "{args:?} was accepted");
+        assert!(stderr(&out).contains(why), "{args:?}: {}", stderr(&out));
+    }
+    assert_eq!(std::fs::read(&file).unwrap(), before);
+}

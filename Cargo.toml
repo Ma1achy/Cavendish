@@ -31,7 +31,9 @@ rmcp = { version = "=3.11.0", default-features = false, features = ["server", "m
 ron = "=0.12.3"
 schemars = "1.2"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0", features = ["float_roundtrip"] }
+# preserve_order: a value's keys stay in the order its struct declares them, which is the order
+# `ls`, the editors and the schema show fields in. float_roundtrip: every f64 survives JSON exactly.
+serde_json = { version = "1.0", features = ["float_roundtrip", "preserve_order"] }
 tokio = { version = "1.54", default-features = false, features = ["rt", "macros", "io-std"] }
 wgpu = { version = "=30.0.2", default-features = false, features = ["std", "parking_lot", "vulkan", "dx12", "wgsl"] }
 
@@ -46,6 +48,17 @@ debug = "line-tables-only" # Cargo's guidance; measured 6 s -> 4.5 s rebuild on 
 
 [profile.dev.package."*"]
 debug = false # dependencies carry no debug info
+
+# The text formats are optimised in dev too: every edit by path is a trip through JSON, and the
+# round-trip cases push a million floats through each (measured: 5.0 s and 2.4 s without this).
+[profile.dev.package.ron]
+opt-level = 3
+[profile.dev.package.serde_json]
+opt-level = 3
+[profile.dev.package.serde]
+opt-level = 3
+[profile.dev.package.serde_core]
+opt-level = 3
 
 [profile.dev.package.cav-core]
 opt-level = 3 # the hot numerical crate is optimised even in dev (REBUILD §8)

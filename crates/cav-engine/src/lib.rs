@@ -82,7 +82,9 @@ mod tests {
         let queries = vec![
             Query::Spec(None),
             Query::Spec(Some("room.size".into())),
-            Query::Schema,
+            Query::Schema(None),
+            Query::Schema(Some("array.instrument.cycle".into())),
+            Query::Ls(Some("bodies".into())),
             Query::Stats,
             Query::Log(LogFilter { min_level: Some(Level::Warn), last: Some(3), ..LogFilter::default() }),
             Query::View(2),

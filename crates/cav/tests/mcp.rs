@@ -104,7 +104,10 @@ fn mcp_lists_its_tools_with_their_arguments() {
     let tools = listed["result"]["tools"].as_array().expect("a list of tools");
     let mut names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     names.sort_unstable();
-    assert_eq!(names, ["command", "log", "render_view", "scene_get", "scene_load", "scene_schema"]);
+    assert_eq!(
+        names,
+        ["command", "log", "render_view", "scene_get", "scene_load", "scene_ls", "scene_schema", "scene_set"]
+    );
     for tool in tools {
         assert!(tool["description"].as_str().is_some_and(|d| d.len() > 20), "{tool}");
         assert_eq!(tool["inputSchema"]["type"], "object", "{tool}");
@@ -117,7 +120,12 @@ fn mcp_lists_its_tools_with_their_arguments() {
             .unwrap()
             .contains("library scene name")
     );
-    assert_eq!(load["inputSchema"]["required"], json!(["scene"]));
+    // A scene is named or given whole, so neither argument is required on its own; the tool
+    // refuses a call with neither or both (`mcp_sets_lists_and_loads_inline`).
+    assert!(load["inputSchema"]["properties"]["spec"]["description"].as_str().unwrap().contains("inline"));
+    assert!(load["inputSchema"]["required"].as_array().is_none_or(Vec::is_empty));
+    let set = tools.iter().find(|t| t["name"] == "scene_set").unwrap();
+    assert_eq!(set["inputSchema"]["required"], json!(["path", "value"]));
     client.finish();
 }
 
@@ -356,4 +364,62 @@ fn mcp_loads_a_scene_whose_path_has_spaces() {
     client.text("scene_load", json!({ "scene": "void" }));
     assert!(client.text("log", json!({ "last": 1 })).contains("load void ·"));
     client.finish();
+}
+
+#[test]
+fn mcp_sets_lists_and_loads_inline() {
+    let (mut client, _) = Client::start();
+    client.text("scene_load", json!({ "scene": "comb" }));
+    // scene_set is the console's `set`: the same command in the journal, the same refusals.
+    let said = client.text("scene_set", json!({ "path": "bodies[0].mass", "value": 42.5 }));
+    assert_eq!(said, "set bodies[0].mass 42.5\ninvalidates: forward");
+    assert_eq!(client.text("scene_get", json!({ "path": "bodies[0].mass" })), "42.5");
+    let renamed = client.text("scene_set", json!({ "path": "name", "value": "mine" }));
+    assert!(renamed.ends_with("invalidates: nothing"), "{renamed}");
+    let journal: Value = serde_json::from_str(&client.text("command", json!({ "line": "journal" }))).unwrap();
+    assert_eq!(journal[1], json!({ "Set": { "path": "bodies[0].mass", "value": 42.5, "continues": false } }));
+    // A structured value, and null for an optional part.
+    client.text(
+        "scene_set",
+        json!({ "path": "room", "value": { "origin": [-5, -5, 0], "size": [10, 10, 3] } }),
+    );
+    client.text("scene_set", json!({ "path": "room", "value": null }));
+    assert_eq!(client.text("scene_get", json!({ "path": "room" })), "null");
+    // scene_ls: the children as data, with unit, kind and range.
+    let listed: Value =
+        serde_json::from_str(&client.text("scene_ls", json!({ "path": "array.instrument" }))).unwrap();
+    let cycle = listed.as_array().unwrap().iter().find(|e| e["name"] == "cycle").expect("cycle");
+    assert_eq!(
+        (&cycle["unit"], &cycle["kind"], &cycle["value"]),
+        (&json!("s"), &json!("Number"), &json!(2.0))
+    );
+    assert_eq!(cycle["path"], "array.instrument.cycle");
+    let schema: Value =
+        serde_json::from_str(&client.text("scene_schema", json!({ "path": "duration" }))).unwrap();
+    assert_eq!(schema["x-unit"], "s");
+    // A whole scene inline: what scene_get returned, edited by the agent, sent back.
+    let mut scene: Value = serde_json::from_str(&client.text("scene_get", json!({}))).unwrap();
+    scene["name"] = json!("inline");
+    scene["bodies"][0]["mass"] = json!(7.0);
+    let stats: Value = serde_json::from_str(&client.text("scene_load", json!({ "spec": scene }))).unwrap();
+    assert_eq!((&stats["scene"], &stats["bodies"]), (&json!("inline"), &json!(1)));
+    assert_eq!(client.text("scene_get", json!({ "path": "bodies[0].mass" })), "7.0");
+    // Control: refusals are tool errors with the reason, and change nothing.
+    for (tool, arguments, why) in [
+        ("scene_set", json!({ "path": "bodies[0].mass", "value": -1 }), "bodies[0].mass"),
+        ("scene_set", json!({ "path": "bodies[0].weight", "value": 1 }), "has no field `weight`"),
+        ("scene_ls", json!({ "path": "room.size" }), "is absent"),
+        ("scene_load", json!({}), "one of them"),
+        ("scene_load", json!({ "scene": "comb", "spec": {} }), "one of them"),
+        ("scene_load", json!({ "spec": { "name": "half a scene" } }), "missing field"),
+    ] {
+        let (is_error, content) = client.call(tool, arguments.clone());
+        assert!(is_error, "{tool} {arguments} was accepted");
+        assert!(format!("{content:?}").contains(why), "{tool} {arguments}: {content:?}");
+    }
+    assert_eq!(client.text("scene_get", json!({ "path": "bodies[0].mass" })), "7.0");
+    // An inline scene over the cap is refused by its size, before it is read as a scene.
+    let big = json!({ "name": "x".repeat(1_100_000) });
+    let (is_error, content) = client.call("scene_load", json!({ "spec": big }));
+    assert!(is_error && format!("{content:?}").contains("larger than 1048576 bytes"), "{content:?}");
 }

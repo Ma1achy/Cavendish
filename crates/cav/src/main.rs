@@ -19,7 +19,12 @@ cav <command>
          [--size 1280x720] [--exec \"<commands>\"]
                                  draw a scene to a PNG, with no window
   scenes                         list the built-in scene library
-  schema                         print the JSON Schema of the scene spec
+  schema [path]                  print the JSON Schema of the scene spec, or of the field at a path
+  get <scene> [path]             print a scene, or the value at a path of it, as JSON
+  ls <scene> [path]              list what is inside a path: each field's value, unit, kind and range
+  set <scene> <path> <value> [--out <file.ron>]
+                                 set the value at a path (JSON, or a bare word for text) and save the
+                                 scene: over the file it came from, or to --out (needed for a library scene)
   exec \"<commands>\"              run console commands (separated by `;`) and print what each answers;
                                  `cav exec help` lists them
   mcp                            serve the engine to an agent: an MCP server on stdin and stdout
@@ -60,10 +65,25 @@ fn run(raw: &[String]) -> Result<(), String> {
             Ok(())
         }
         "schema" => {
-            Args::parse(rest, &[])?.finish(0)?;
-            println!("{}", Session::new().engine.run_line("schema")?);
+            let words = Args::parse(rest, &[])?.finish_up_to(1)?;
+            let query = cav_engine::Query::Schema(words.first().cloned());
+            println!("{}", cav_engine::render(&Session::new().engine.query(&query)?));
             Ok(())
         }
+        "get" | "ls" => {
+            let words = Args::parse(rest, &[])?.finish_up_to(2)?;
+            let Some(scene) = words.first() else {
+                return Err(format!("`cav {command}` needs a scene: a library name or a .ron file"));
+            };
+            let mut session = Session::new();
+            session.load(scene)?;
+            let path = words.get(1).cloned();
+            let query =
+                if command == "get" { cav_engine::Query::Spec(path) } else { cav_engine::Query::Ls(path) };
+            println!("{}", cav_engine::render(&session.engine.query(&query)?));
+            Ok(())
+        }
+        "set" => set(rest),
         "exec" => {
             let args = Args::parse(rest, &[])?;
             let [script]: [String; 1] = args.finish(1)?.try_into().map_err(|_| "exec takes one argument")?;
@@ -98,6 +118,31 @@ fn run(raw: &[String]) -> Result<(), String> {
         }
         other => Err(format!("`{other}` is not a command\n\n{USAGE}")),
     }
+}
+
+/// `cav set`: load, one `Set` through the engine (the same command a panel or an agent issues,
+/// with the same checks), save.
+fn set(rest: &[String]) -> Result<(), String> {
+    let mut args = Args::parse(rest, &["out"])?;
+    let out = args.option("out");
+    let [scene, path, value]: [String; 3] =
+        args.finish(3)?.try_into().map_err(|_| "set takes a scene, a path and a value")?;
+    let is_library = cav_sim::LIBRARY.iter().any(|known| known.name == scene);
+    let Some(target) = out.or_else(|| (!is_library).then(|| scene.clone())) else {
+        return Err(format!(
+            "`{scene}` is a library scene, built into the binary: say where the edited scene goes with --out <file.ron>"
+        ));
+    };
+    let mut session = Session::new();
+    session.load(&scene)?;
+    // The value as the console takes it: JSON, or a bare word for text.
+    let value = serde_json::from_str(&value).unwrap_or(serde_json::Value::String(value));
+    let command = cav_engine::Command::set(&path, value);
+    let described = cav_engine::describe(&command, 0);
+    session.engine.apply(command)?;
+    session.engine.spec().save(&target).map_err(|e| e.0)?;
+    println!("{described}\nsaved {target}");
+    Ok(())
 }
 
 /// `cav render`: every option becomes a console command, so a render is a short engine session.
