@@ -27,6 +27,8 @@ pub const LIBRARY: &[LibraryScene] = &[
     scene!("infinite-floor", "scenes/dev/infinite-floor.ron"),
     scene!("point", "scenes/dev/point.ron"),
     scene!("pass", "scenes/dev/pass.ron"),
+    scene!("comb", "scenes/dev/comb.ron"),
+    scene!("folded-comb", "scenes/dev/folded-comb.ron"),
     scene!("oscillator-zoo", "scenes/dev/oscillator-zoo.ron"),
     scene!("superposition", "scenes/dev/superposition.ron"),
     scene!("mirror-pair", "scenes/dev/mirror-pair.ron"),

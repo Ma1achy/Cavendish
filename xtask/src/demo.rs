@@ -13,7 +13,8 @@ use crate::{cargo, step};
 pub fn run(root: &Path, slice: &str) -> Result<(), String> {
     match slice {
         "S0" | "s0" => s0(root),
-        other => Err(format!("no demo for slice `{other}`: the slices with demos are: S0")),
+        "S1" | "s1" => s1(root),
+        other => Err(format!("no demo for slice `{other}`: the slices with demos are: S0, S1")),
     }
 }
 
@@ -172,6 +173,83 @@ fn s0(root: &Path) -> Result<(), String> {
     write(&out, "timings.txt", &timings, &mut made)?;
 
     eprintln!("xtask: demo S0 wrote {} files to {}:", made.len(), out.display());
+    for file in &made {
+        eprintln!("  {file}");
+    }
+    Ok(())
+}
+
+/// S1, a point mass: a drag, a pass, the signal, the periodogram with its comb and its folds,
+/// what the console answers, and the timings. No window is opened.
+fn s1(root: &Path) -> Result<(), String> {
+    let out = root.join("docs").join("slices").join("S1");
+    std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    step("build cav and cav-app", cargo(root, &["build", "--quiet", "-p", "cav", "-p", "cav-app"]))?;
+    let cav = binary(root, "cav");
+    let app = binary(root, "cav-app");
+    let path = |name: &str| out.join(name).to_string_lossy().into_owned();
+    let mut made: Vec<String> = Vec::new();
+
+    // 1 to 4. The application. A drag is shown as three of the places it passes through, each made
+    // by the `set` a drag issues (the drag itself, by pointer, is `dragging_a_body_moves_it_under_the_pointer`).
+    let drag = "load point; select body 1; set bodies[0].motion.Static.position";
+    let pass = "load pass; panes 2; show signal @2; select tower 2; seek";
+    let shots: [(&str, String); 10] = [
+        ("drag-1.png", format!("{drag} [2, 0, 2.5]")),
+        ("drag-2.png", format!("{drag} [2.9, 0.9, 2.5]")),
+        ("drag-3.png", format!("{drag} [3.6, 1.6, 2.5]")),
+        ("pass-1.png", format!("{pass} 1.46")),
+        ("pass-2.png", format!("{pass} 5.46")),
+        ("pass-3.png", format!("{pass} 9.46")),
+        ("signal.png", "load oscillator-zoo; panes 2; show signal @2; seek 600".to_owned()),
+        ("periodogram-comb.png", "load comb; panes 2; show periodogram @2".to_owned()),
+        ("periodogram-folded.png", "load folded-comb; panes 2; show periodogram @2".to_owned()),
+        (
+            "periodogram-zoo.png",
+            "load oscillator-zoo; panes 2; show periodogram @2; select tower 1".to_owned(),
+        ),
+    ];
+    for (file, script) in &shots {
+        let target = path(file);
+        capture(&app, &["--screenshot", &target, "--size", "1440x900", "--exec", script])?;
+        expect_png(&out, file, [1440, 900], &mut made)?;
+    }
+
+    // 5. What the console answers.
+    let script = "load point; reading 3; set bodies[0].motion.Static.position [3, 0, 2.5]; reading 3; \
+                  load pass; signal 2; load comb; periodogram 1; load folded-comb; periodogram 1";
+    let session = capture(&cav, &["exec", script])?;
+    for expected in ["tower 5", "· refined · 6 shots", "2f₀ at 0.100000 Hz", "f₀ at 0.172500 Hz (folded)"]
+    {
+        if !session.contains(expected) {
+            return Err(format!("the session does not say `{expected}`:\n{session}"));
+        }
+    }
+    write(&out, "session.txt", &format!("$ cav exec \"{script}\"\n{session}"), &mut made)?;
+
+    // 6. Timings: frames, the reading, the series, a drag step; and a series of 10,000 shots.
+    let scratch = root.join("target").join("demo-timing.png").to_string_lossy().into_owned();
+    let mut timings = String::new();
+    for (what, script) in [
+        ("point (one body at rest, 6 shots)", "load point; panes 2; show signal @2"),
+        ("oscillator-zoo (four bodies, 1000 shots)", "load oscillator-zoo; panes 2; show periodogram @2"),
+        (
+            "comb stretched to 10,000 shots (one body)",
+            "load comb; set duration 20000; panes 2; show signal @2",
+        ),
+    ] {
+        let lines =
+            capture(&app, &["--screenshot", &scratch, "--size", "1440x900", "--timings", "--exec", script])?;
+        if !lines.contains("drag step") || lines.contains("NOT FINISHED") {
+            return Err(format!("the timings of {what} are incomplete:\n{lines}"));
+        }
+        timings.push_str(&format!("## {what}\n"));
+        timings.extend(lines.lines().skip(1).map(|line| format!("{line}\n")));
+        timings.push('\n');
+    }
+    write(&out, "timings.txt", &timings, &mut made)?;
+
+    eprintln!("xtask: demo S1 wrote {} files to {}:", made.len(), out.display());
     for file in &made {
         eprintln!("  {file}");
     }

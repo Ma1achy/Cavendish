@@ -1,0 +1,27 @@
+## point (one body at rest, 6 shots)
+adapter: NVIDIA GeForce GTX 1660 SUPER · Vulkan · DiscreteGpu · driver NVIDIA 581.29
+frame, nothing changed (UI only, panes reused): median 8.04 ms over 60 frames
+frame, camera moving (1 pane redraw(s) per frame): median 10.35 ms over 60 frames
+each time includes copying the 1440 × 900 picture back to the CPU, which a window does not do
+reading, 5 towers × 1 bodies, computed when asked: 164.2 µs each over 200
+signal from nothing, 6 shots × 5 towers × 1 bodies, on the worker: 1.1 ms
+drag step (set, readings, one frame with its read-back): median 13.47 ms over 60 steps
+
+## oscillator-zoo (four bodies, 1000 shots)
+adapter: NVIDIA GeForce GTX 1660 SUPER · Vulkan · DiscreteGpu · driver NVIDIA 581.29
+frame, nothing changed (UI only, panes reused): median 9.40 ms over 60 frames
+frame, camera moving (1 pane redraw(s) per frame): median 13.98 ms over 60 frames
+each time includes copying the 1440 × 900 picture back to the CPU, which a window does not do
+reading, 5 towers × 4 bodies, computed when asked: 1010.3 µs each over 200
+signal from nothing, 1000 shots × 5 towers × 4 bodies, on the worker: 926.8 ms
+drag step (set, readings, one frame with its read-back): median 17.62 ms over 60 steps
+
+## comb stretched to 10,000 shots (one body)
+adapter: NVIDIA GeForce GTX 1660 SUPER · Vulkan · DiscreteGpu · driver NVIDIA 581.29
+frame, nothing changed (UI only, panes reused): median 26.73 ms over 60 frames
+frame, camera moving (1 pane redraw(s) per frame): median 29.87 ms over 60 frames
+each time includes copying the 1440 × 900 picture back to the CPU, which a window does not do
+reading, 5 towers × 1 bodies, computed when asked: 184.3 µs each over 200
+signal from nothing, 10000 shots × 5 towers × 1 bodies, on the worker: 1784.0 ms
+drag step (set, readings, one frame with its read-back): median 34.00 ms over 60 steps
+
