@@ -390,3 +390,59 @@ fn cli_replays_a_saved_session() {
     let wrong = cav(&["replay", out.join("replayed scene.ron").to_str().unwrap()]);
     assert!(!wrong.status.success() && stderr(&wrong).contains("not a journal"), "{}", stderr(&wrong));
 }
+
+#[test]
+fn cli_run_writes_a_bundle_twice_the_same() {
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli run");
+    let _ = std::fs::remove_dir_all(&root);
+    let (a, b) = (root.join("a"), root.join("b"));
+    let run = |out: &PathBuf| {
+        let done = cav(&[
+            "run",
+            "staggered",
+            "--out",
+            out.to_str().unwrap(),
+            "--exec",
+            "set duration 60; set array.schedule.loss 0.1",
+        ]);
+        assert!(done.status.success(), "{}", stderr(&done));
+        stdout(&done)
+    };
+    let said = run(&a);
+    assert!(said.contains("scene `staggered`, 5 tower(s) × 30 shot(s), quadrature within"), "{said}");
+    run(&b);
+    // The same command twice: the same eleven files, byte for byte.
+    let names = |dir: &PathBuf| {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    };
+    assert_eq!(names(&a).len(), 11);
+    assert_eq!(names(&a), names(&b));
+    for name in names(&a) {
+        assert_eq!(std::fs::read(a.join(&name)).unwrap(), std::fs::read(b.join(&name)).unwrap(), "{name}");
+    }
+    // The bundle's own scene, run again, is the bundle again: it carries what regenerates it.
+    let c = root.join("c");
+    let again = cav(&["run", a.join("scene.ron").to_str().unwrap(), "--out", c.to_str().unwrap()]);
+    assert!(again.status.success(), "{}", stderr(&again));
+    for name in ["signal.npy", "detector_time.npy", "valid.npy", "signal_per_ifo.npy", "error_estimate.npy"] {
+        assert_eq!(std::fs::read(a.join(name)).unwrap(), std::fs::read(c.join(name)).unwrap(), "{name}");
+    }
+    // A preset is an edit before the run: another instrument, another bundle.
+    let d = root.join("d");
+    let aice =
+        cav(&["run", "comb", "--preset", "aice", "--out", d.to_str().unwrap(), "--exec", "set duration 100"]);
+    assert!(aice.status.success(), "{}", stderr(&aice));
+    assert!(stdout(&aice).contains("5 tower(s) × 20 shot(s)"), "{}", stdout(&aice));
+    // Control: refusals. No --out; a scene that is not one; a patience that is not a number.
+    assert!(stderr(&cav(&["run", "comb"])).contains("--out"));
+    assert!(!cav(&["run", "nowhere", "--out", d.to_str().unwrap()]).status.success());
+    assert!(
+        stderr(&cav(&["run", "comb", "--out", d.to_str().unwrap(), "--patience", "soon"]))
+            .contains("not a patience")
+    );
+}

@@ -81,6 +81,10 @@ pub enum ExportKind {
     Scene,
     /// The journal so far as JSON: a session that `cav replay` runs again.
     Journal,
+    /// The bundle: a directory of `.npy` arrays named and shaped as v1's `StateBundle`, each
+    /// tower's readout times, the numerics and the per-tower error estimate, with a manifest
+    /// (`cav_sim::bundle`). Written only from a refined signal.
+    Bundle,
 }
 
 impl ExportKind {
@@ -90,6 +94,7 @@ impl ExportKind {
         match self {
             Self::Scene => "scene",
             Self::Journal => "journal",
+            Self::Bundle => "bundle",
         }
     }
 }

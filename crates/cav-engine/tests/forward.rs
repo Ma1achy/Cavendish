@@ -1017,3 +1017,207 @@ fn the_cadence_answer_is_the_closed_forms() {
     assert!(engine.run_line("window 9").unwrap_err().contains("no tower 9"));
     assert!(engine.run_line("window 1 to -1").is_err());
 }
+
+/// Every file under `dir`, by name, with its bytes.
+fn files_of(dir: &std::path::Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    let mut out = std::collections::BTreeMap::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(at) = stack.pop() {
+        for entry in std::fs::read_dir(&at).unwrap_or_else(|e| panic!("{}: {e}", at.display())) {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let name = path.strip_prefix(dir).unwrap().to_string_lossy().replace('\\', "/");
+                out.insert(name, std::fs::read(&path).unwrap());
+            }
+        }
+    }
+    out
+}
+
+/// How many files of two directories differ, counting a file that only one of them has.
+fn files_differing(a: &std::path::Path, b: &std::path::Path) -> usize {
+    let (a, b) = (files_of(a), files_of(b));
+    let names: std::collections::BTreeSet<&String> = a.keys().chain(b.keys()).collect();
+    names.into_iter().filter(|name| a.get(*name) != b.get(*name)).count()
+}
+
+/// The session of the exit test: a scene loaded, edited every way there is (a drag among them),
+/// its towers staggered, its cadence jittered and thinned, undone and redone, and exported
+/// twice, once before the last edits and once after.
+fn exit_session(engine: &mut Engine, out: &std::path::Path, settle_each: bool) {
+    let step = |engine: &mut Engine, line: &str| {
+        engine.run_line(line).unwrap_or_else(|why| panic!("`{line}`: {why}"));
+        if settle_each {
+            assert!(engine.settle(LONG));
+        }
+    };
+    step(engine, "load comb");
+    step(engine, "set duration 120");
+    step(engine, "mass 25 at 3 -2 1.5");
+    step(
+        engine,
+        r#"set bodies[1].motion {"Pass": {"from": [-6, 3, 1], "to": [6, 3, 1], "start": 10, "speed": 1.5}}"#,
+    );
+    // A drag: forty steps, each superseding the work begun for the one before.
+    for n in 0..40 {
+        let x = 3.0 + 0.01 * f64::from(n);
+        engine
+            .apply(Command::Set {
+                path: "bodies[0].motion.Linear.centre".into(),
+                value: json!([x, 0.0, 1.0]),
+                continues: n > 0,
+            })
+            .unwrap();
+    }
+    if settle_each {
+        assert!(engine.settle(LONG));
+    }
+    step(engine, "set array.towers[2].timing.offset 0.292");
+    step(engine, "set array.towers[4].timing.offset -0.5");
+    step(engine, &format!("export bundle \"{}\"", out.join("first").display()));
+    step(engine, r#"set array.schedule.jitter {"model": "Walk", "kind": "Positive", "delta": 0.3}"#);
+    step(engine, "set array.schedule.loss 0.05");
+    step(engine, "set array.schedule.seed 7");
+    step(engine, "remove bodies[1]");
+    step(engine, "undo");
+    step(engine, "undo");
+    step(engine, "redo");
+    step(engine, "preset aice");
+    step(engine, "undo");
+    step(engine, &format!("save \"{}\"", out.join("scene at the end.ron").display()));
+    step(engine, &format!("export bundle \"{}\"", out.join("second").display()));
+}
+
+cav_validate::case! {
+    test: validation_replay_writes_identical_bundles,
+    name: "engine.replay_bundles",
+    subsystem: "engine",
+    slice: "S2",
+    reference: Exact,
+    against: "a session (every kind of edit, a drag, staggered towers, a jittered and thinned cadence, undo and redo) that exports two bundles and a scene, against the same session replayed four ways: from its journal in memory, from its journal saved to disk and read back, with the workers settled after every command, and with them never waited for; files of any replay that differ in any byte",
+    unit: Count,
+    tolerance: 0.0,
+    measure: {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp/exit test");
+        let _ = std::fs::remove_dir_all(&root);
+        let dirs: Vec<std::path::PathBuf> = ["session", "replayed", "from disk", "settled", "rushed"].iter().map(|name| root.join(name)).collect();
+        for dir in &dirs {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        // The session itself: commands back to back, the signal waited for only by the exports.
+        let mut engine = Engine::new();
+        engine.set_patience(LONG);
+        exit_session(&mut engine, &dirs[0], false);
+        let journal = engine.journal().to_vec();
+        // 1: replayed from the journal in memory.
+        let mut replayed = Engine::new();
+        replayed.set_patience(LONG);
+        replayed.set_exports(cav_engine::Exports::Into(dirs[1].clone()));
+        for command in &journal {
+            replayed.apply(command.clone()).unwrap();
+        }
+        assert_eq!(replayed.digest(), engine.digest());
+        // 2: the journal written to disk as a file, read back, and replayed.
+        let file = root.join("session.json");
+        std::fs::write(&file, cav_engine::journal::write(&journal)).unwrap();
+        let read = cav_engine::journal::read(file.to_str().unwrap()).unwrap();
+        assert_eq!(read, journal);
+        let mut from_disk = Engine::new();
+        from_disk.set_patience(LONG);
+        from_disk.set_exports(cav_engine::Exports::Into(dirs[2].clone()));
+        for command in &read {
+            from_disk.apply(command.clone()).unwrap();
+        }
+        // 3 and 4: the session run again by its own lines, once with the workers let finish
+        // after every command (nothing is ever superseded), once as the first time (work for
+        // superseded scenes is dropped part-way: latest wins).
+        let mut settled = Engine::new();
+        settled.set_patience(LONG);
+        exit_session(&mut settled, &dirs[3], true);
+        let mut rushed = Engine::new();
+        rushed.set_patience(LONG);
+        exit_session(&mut rushed, &dirs[4], false);
+        // The replays put their exports under file names alone, so the layouts are the same:
+        // two bundles of eleven files and a scene.
+        let files = files_of(&dirs[0]);
+        assert_eq!(files.len(), 23, "{:?}", files.keys().collect::<Vec<_>>());
+        assert!(files.contains_key("first/signal.npy") && files.contains_key("second/manifest.json"));
+        let differing: usize = dirs[1..].iter().map(|dir| files_differing(&dirs[0], dir)).sum();
+        // The two bundles are different bundles: the session did something between them.
+        assert_ne!(files["first/signal.npy"], files["second/signal.npy"]);
+        assert_ne!(files["first/valid.npy"], files["second/valid.npy"]);
+        // Control: a journal with one command dropped, and one with one bit of one number
+        // changed, write bundles that differ.
+        let control = |edit: &dyn Fn(&mut Vec<Command>), name: &str| {
+            let dir = root.join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            let mut changed = journal.clone();
+            edit(&mut changed);
+            let mut other = Engine::new();
+            other.set_patience(LONG);
+            other.set_exports(cav_engine::Exports::Into(dir.clone()));
+            for command in changed {
+                other.apply(command).unwrap();
+            }
+            files_differing(&dirs[0], &dir)
+        };
+        let mass = journal.iter().position(|c| matches!(c, Command::Insert { .. })).expect("the mass");
+        assert!(control(&|journal| { journal.remove(mass + 1); }, "one dropped") >= 2);
+        let nudged = control(
+            &|journal| {
+                let at = journal.iter().position(|c| matches!(c, Command::Set { path, .. } if path == "array.towers[2].timing.offset")).unwrap();
+                journal[at] = Command::set("array.towers[2].timing.offset", json!(f64::from_bits(0.292f64.to_bits() + 1)));
+            },
+            "one bit",
+        );
+        assert!(nudged >= 2, "one unit in the last place of one offset changed {nudged} files");
+        cav_validate::Measured::Error(differing as f64)
+    },
+}
+
+#[test]
+fn a_bundle_waits_for_a_refined_signal() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp/bundle waits");
+    let _ = std::fs::remove_dir_all(&root);
+    let mut engine = loaded(dev::pass());
+    assert!(engine.settle(LONG));
+    // The scene changes and the workers are held: the signal on show is the old scene's. A
+    // bundle asked for now is refused, and nothing is written, however long the patience.
+    engine.hold_workers(true);
+    set(&mut engine, "bodies[0].mass", json!(20.0)).unwrap();
+    engine.set_patience(Duration::from_millis(50));
+    let journal = engine.journal().len();
+    let line = format!("export bundle \"{}\"", root.join("stale").display());
+    let why = engine.run_line(&line).unwrap_err();
+    assert!(why.contains("only from a refined signal"), "{why}");
+    assert!(!root.join("stale").exists());
+    assert_eq!(engine.journal().len(), journal, "a refused export is not in the journal");
+    // Let the workers go: the same line waits for the signal and writes the new scene's bundle.
+    engine.hold_workers(false);
+    engine.set_patience(LONG);
+    engine.run_line(&line).unwrap();
+    let written = std::fs::read(root.join("stale").join("signal.npy")).unwrap();
+    let cold = read::signal(engine.spec()).unwrap();
+    let (_, values) = cav_core::npy::parse(&written).unwrap().into_f64().unwrap();
+    assert_eq!(
+        values[..5].iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+        (0..5)
+            .map(|d| cold.channel(d, cav_core::forward::Channel::Gradiometer)[0].to_bits())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(engine.journal().len(), journal + 1);
+    assert!(engine.log().iter().next_back().unwrap().message.contains("(11 files)"));
+    // The manifest names the engine's revision, as git has it for this source tree.
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join("stale").join("manifest.json")).unwrap())
+            .unwrap();
+    let revision = manifest["numerics"]["engine"]["revision"].as_str().unwrap();
+    assert!(revision.len() == 40 && revision.chars().all(|c| c.is_ascii_hexdigit()), "{revision}");
+    // A scene that cannot have a signal has no bundle, and says why.
+    set(&mut engine, "array.instrument.half_sequence", json!(0.001)).unwrap();
+    set(&mut engine, "array.instrument.cycle", json!(0.0021)).unwrap();
+    set(&mut engine, "duration", json!(1.0e6)).unwrap();
+    assert!(engine.run_line(&line).unwrap_err().contains("no signal to bundle"));
+}

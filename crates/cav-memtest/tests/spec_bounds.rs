@@ -337,3 +337,25 @@ fn a_periodogram_and_a_window_are_bounded_in_frequencies() {
     let fine_at = |k: usize| answer.1[k * (MAX_FREQUENCIES - 1) / 999];
     assert!((coarse_at(0) - 1.0).abs() < 1e-9 && (fine_at(0) - 1.0).abs() < 1e-9);
 }
+
+#[test]
+fn a_bundle_is_written_without_a_second_copy() {
+    // A signal of two towers and a million shots over a slab: 48 MB of channels and 8 MB of
+    // times. Writing its bundle goes value by value through a buffer: what is held while it is
+    // written is the buffers and the manifest, not another copy of anything.
+    let scene = slab_scene(2, 1_000_000, 2400.0);
+    let signal = read::signal(&scene).unwrap();
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp/bundle memory");
+    let _ = std::fs::remove_dir_all(&dir);
+    let build = cav_sim::bundle::Build { version: "test".into(), revision: "none".into(), dirty: None };
+    let (files, peak) = peak_during(|| cav_sim::bundle::write(&dir, &scene, &signal, &build).unwrap());
+    assert_eq!(files.len(), 11);
+    eprintln!("a bundle of 2 × 1,000,000: {} KiB held at once while writing", peak >> 10);
+    assert!(peak <= 2 * MIB, "{peak} bytes at once to write a 74 MB bundle");
+    let written: u64 = files.iter().map(|file| std::fs::metadata(file).unwrap().len()).sum();
+    assert!(written > 70_000_000, "{written} bytes on disk");
+    // Control: the allocator sees an array that is gathered before it is written.
+    let (_, gathered) = peak_during(|| cav_core::npy::encode_f64(&[1_000_000, 2], &signal.gradiometer));
+    assert!(gathered >= 16_000_000, "{gathered}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
