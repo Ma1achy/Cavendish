@@ -183,9 +183,11 @@ impl Cav {
     name = "cavendish",
     version = "0.0.0",
     instructions = "Cavendish: a voxel world around an array of atom-interferometer gravity gradiometers. \
-                    S0 has the array, a room and the first dev scenes. Load a scene with scene_load, read it \
-                    with scene_get (its shape is scene_schema), change the view with command (try `help`), \
-                    look at it with render_view, and read what happened with log."
+                    Scenes hold the array, a room or a floor, and point masses on paths. Load one with \
+                    scene_load (`cav scenes` names them), read it with scene_get (its shape is scene_schema), and \
+                    do everything else with command (try `help`): `set <path> <json>` edits any value, \
+                    `reading`, `signal` and `periodogram` give what the towers read, `show signal` puts a plot \
+                    in a pane. Look at a pane with render_view, and read what happened with log."
 )]
 impl ServerHandler for Cav {}
 

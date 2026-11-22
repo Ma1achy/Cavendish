@@ -558,7 +558,7 @@ mod tests {
         name: "scenes.switch_on",
         subsystem: "scenes",
         slice: "S1",
-        reference: ClosedForm,
+        reference: Exact,
         against: "switch-on: the shot in flight when the mass appears reads the always-there mass's integral from the switch to the readout (12 nodes on 2 ms panels); shots before read nothing, shots after read all of it; largest difference as a fraction of the full reading",
         unit: Relative,
         tolerance: 1e-10,

@@ -20,8 +20,15 @@ pub enum Command {
     Load(Box<SceneSpec>),
     /// Set the value at a path of the scene spec, such as `bodies[0].mass` or
     /// `bodies[0].motion.Static.position`. The scene that results must be a valid one. An edit: it
-    /// can be undone, and a run of sets of the same path (a drag) is undone as one.
-    Set { path: String, value: serde_json::Value },
+    /// can be undone. `continues` marks a step of a drag after its first: such a set overwrites the
+    /// set before it (same path), so a whole drag is one journal entry and one undo. Two sets that
+    /// a person or an agent issues separately are two edits, whatever their paths.
+    Set {
+        path: String,
+        value: serde_json::Value,
+        #[serde(default)]
+        continues: bool,
+    },
     /// Compute again from a stage, dropping what was kept for it and the stages after it.
     Run { from: Stage },
     /// Move the playhead to this time, seconds; clamped to the scene's duration.
@@ -81,6 +88,12 @@ impl ViewCommand {
 }
 
 impl Command {
+    /// The command that sets the value at `path`: an edit of its own.
+    #[must_use]
+    pub fn set(path: &str, value: serde_json::Value) -> Self {
+        Self::Set { path: path.to_owned(), value, continues: false }
+    }
+
     /// The command that replaces the scene with `spec`.
     #[must_use]
     pub fn load(spec: SceneSpec) -> Self {
@@ -94,7 +107,7 @@ impl Command {
         use ViewCommand::{Orbit, Pan, Zoom};
         match (self, previous) {
             (Self::Seek(_), Self::Seek(_)) => true,
-            (Self::Set { path: a, .. }, Self::Set { path: b, .. }) => a == b,
+            (Self::Set { path: a, continues: true, .. }, Self::Set { path: b, .. }) => a == b,
             (Self::View(Orbit { pane: a, .. }), Self::View(Orbit { pane: b, .. }))
             | (Self::View(Zoom { pane: a, .. }), Self::View(Zoom { pane: b, .. }))
             | (Self::View(Pan { pane: a, .. }), Self::View(Pan { pane: b, .. })) => a == b,

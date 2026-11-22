@@ -113,6 +113,8 @@ pub struct Shell {
     pub(crate) layout: Layout,
     /// The body being dragged, from 0, and the pane it is dragged in.
     pub(crate) dragging: Option<(usize, usize)>,
+    /// Whether the drag in hand has already moved its body: its next step continues that edit.
+    pub(crate) drag_under_way: bool,
     /// Every tower's reading under the playhead, and the engine's generation it was read at.
     readings: Option<(u64, ReadingReply)>,
 }
@@ -166,6 +168,7 @@ impl Shell {
             frame_ms: None,
             layout: Layout::default(),
             dragging: None,
+            drag_under_way: false,
             readings: None,
         }
     }
@@ -317,9 +320,12 @@ impl Shell {
         let moved = camera.right * (f64::from(delta.x) * scale) - camera.up * (f64::from(delta.y) * scale);
         let (anchor, field) = body.motion.anchor();
         let value = [anchor[0] + moved.x, anchor[1] + moved.y, anchor[2] + moved.z];
+        // The first step of a drag is an edit; the steps after it continue it.
+        let continues = std::mem::replace(&mut self.drag_under_way, true);
         self.apply(Command::Set {
             path: format!("bodies[{n}].motion.{field}"),
             value: serde_json::json!(value),
+            continues,
         });
     }
 

@@ -46,10 +46,13 @@ fn oscillation(t: f64) -> Vec3 {
 /// 100 kg at rest 2 m from the tower, half-way up the lower interferometer's reach.
 pub const STATIC: Anchor = Anchor { name: "static", mass: 100.0, path: still, readouts: (2.0, 1.0, 3) };
 
-/// 10 kg at D = 10 m passing vertically at 2.5 m/s, from 10 m below the base: about 7 mrad.
+/// 10 kg at D = 10 m passing vertically at 2.5 m/s, from 10 m below the base. The reference
+/// design says "~7 mrad"; v1 and the engine give a peak of 13.7 mrad, and what the figure measures
+/// is a question for George (`plan/PROGRESS.md`).
 pub const PASS: Anchor = Anchor { name: "pass", mass: 10.0, path: pass, readouts: (0.0, 0.5, 21) };
 
-/// 1 kg at D = 5 m, at height 1 + cos(2π·0.1·t) m: about 2 mrad peak to peak.
+/// 1 kg at D = 5 m, at height 1 + cos(2π·0.1·t) m: about 2 mrad in amplitude, 4 mrad peak to
+/// peak (George's `1D_oscillator`: 4.06).
 pub const OSCILLATION: Anchor =
     Anchor { name: "oscillation", mass: 1.0, path: oscillation, readouts: (0.0, 0.25, 41) };
 

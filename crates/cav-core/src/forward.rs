@@ -1138,12 +1138,12 @@ mod tests {
 
     // The published anchors (reference/design/instrument.md §12), as paths.
 
-    /// 10 kg at D = 10 m passing vertically at 2.5 m/s: about 7 mrad.
+    /// 10 kg at D = 10 m passing vertically at 2.5 m/s: a peak of 13.7 mrad.
     fn anchor_pass(t: f64) -> Vec3 {
         Vec3::new(10.0, 0.0, -10.0 + 2.5 * t)
     }
 
-    /// 1 kg at D = 5 m, h = 1 + cos(2π·0.1·t): about 2 mrad peak to peak.
+    /// 1 kg at D = 5 m, h = 1 + cos(2π·0.1·t): about 4 mrad peak to peak.
     fn anchor_oscillation(t: f64) -> Vec3 {
         Vec3::new(5.0, 0.0, 1.0 + (TAU * 0.1 * t).cos())
     }
@@ -1214,7 +1214,7 @@ mod tests {
         subsystem: "forward",
         slice: "S1",
         reference: ClosedForm,
-        against: "Gauss-Legendre with 3 nodes a panel converges as h^6: the oscillation anchor's lower-interferometer phase at panels of T/2, T/4, T/8, T/16 against 12 nodes on T/64 (floor off, so the pieces are the two halves)",
+        against: "Gauss-Legendre with 3 nodes a panel converges as h^6: the oscillation anchor's lower-interferometer phase at panels of T/2, T/4, T/8, T/16 against 12 nodes on T/64 (floor off, so the pieces are the two halves). The case is about the order; the 1e-9 on the finest step is a ceiling with no prediction behind it",
         unit: Relative,
         tolerance: 1e-9,
         order: (6.0, 0.5),

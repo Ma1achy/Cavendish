@@ -1,7 +1,7 @@
 //! The Cavendish engine: one command/query API that the app, the CLI and the MCP server all drive
 //! (REBUILD §3.2), with a journal that replays and an event log.
 //!
-//! ```
+//! ```text
 //! use cav_engine::{Command, Engine, Query, Reply};
 //!
 //! let mut engine = Engine::new();
@@ -35,6 +35,24 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 mod tests {
     use super::*;
     use cav_sim::{DrawStyle, NamedView, Projection, SceneSpec};
+
+    #[test]
+    fn the_example_at_the_top_of_the_crate_runs() {
+        // The example in this crate's documentation, as a test: `quick` does not build doctests
+        // (one cost it two to three seconds of its ten), so the example is held here.
+        let mut engine = Engine::new();
+        engine.run_line("load void").unwrap();
+        engine.apply(Command::Seek(1.5)).unwrap();
+        let Reply::Stats(stats) = engine.query(&Query::Stats).unwrap() else { unreachable!() };
+        assert_eq!((stats.scene.as_str(), stats.time), ("void", 1.5));
+        assert_eq!(Engine::replay(engine.journal()).unwrap().digest(), engine.digest());
+        // Control: the text in the documentation is this code. If either changes, this fails.
+        let documented = include_str!("lib.rs");
+        for line in ["engine.run_line(\"load void\").unwrap();", "engine.apply(Command::Seek(1.5)).unwrap();"]
+        {
+            assert!(documented.contains(&format!("//! {line}")), "the example no longer says `{line}`");
+        }
+    }
 
     #[test]
     fn commands_and_queries_round_trip_through_json() {

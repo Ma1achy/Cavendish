@@ -186,7 +186,7 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
                 format!("load <the scene `{}`, not a library scene: load it from its file>", spec.name)
             }
         }
-        Command::Set { path, value } => format!("set {path} {value}"),
+        Command::Set { path, value, .. } => format!("set {path} {value}"),
         Command::Run { from: Stage::Forward } => "run".into(),
         Command::Seek(t) => format!("seek {t}"),
         Command::Select(None) => "select none".into(),
@@ -302,6 +302,18 @@ impl Engine {
     /// # Errors
     /// What was expected instead.
     pub fn parse(&self, line: &str) -> Result<Request, String> {
+        // `set` takes its value as it was written, quotes and all: the value is JSON, and a
+        // body's motion or a label has strings in it. Every other line is words.
+        if let Some(rest) = line.trim_start().strip_prefix("set")
+            && rest.starts_with(char::is_whitespace)
+            && let Some((path, value)) = rest.trim().split_once(char::is_whitespace)
+        {
+            let text = value.trim();
+            // A word that is not JSON is taken as a string, so that `set name pass` needs no quotes.
+            let value =
+                serde_json::from_str(text).unwrap_or_else(|_| serde_json::Value::String(text.to_owned()));
+            return Ok(Request::Do(Command::set(path, value)));
+        }
         let owned = words(line)?;
         let mut words: Vec<&str> = owned.iter().map(String::as_str).collect();
         let Some(&name) = words.first() else {
@@ -324,13 +336,6 @@ impl Engine {
             ("load", [scene]) => {
                 cav_sim::load(scene).map(|spec| Request::Do(Command::load(spec))).map_err(|e| e.0)
             }
-            ("set", [path, value @ ..]) if !value.is_empty() => {
-                // The value is JSON; a word that is not JSON is taken as a string, so that
-                // `set name pass` needs no quotes within quotes.
-                let text = value.join(" ");
-                let value = serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text));
-                Ok(Request::Do(Command::Set { path: (*path).to_owned(), value }))
-            }
             ("mass", [kg, "at", x, y, z]) => {
                 let position =
                     [number(x, "metres", name)?, number(y, "metres", name)?, number(z, "metres", name)?];
@@ -341,7 +346,7 @@ impl Engine {
                 let mut bodies = self.spec().bodies.clone();
                 bodies.push(body);
                 let value = serde_json::to_value(bodies).expect("bodies are JSON");
-                Ok(Request::Do(Command::Set { path: "bodies".into(), value }))
+                Ok(Request::Do(Command::set("bodies", value)))
             }
             ("run", []) => Ok(Request::Do(Command::Run { from: Stage::Forward })),
             ("signal", args) if args.len() <= 2 => {

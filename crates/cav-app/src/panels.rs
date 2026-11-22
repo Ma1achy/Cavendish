@@ -880,6 +880,7 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
             && let Some(n) = shell.body_under(pane, within(origin), rect.size())
         {
             shell.dragging = Some((pane, n));
+            shell.drag_under_way = false;
             if shell.engine.selection() != Some(Target::Body(n + 1)) {
                 commands.push(Command::Select(Some(Target::Body(n + 1))));
             }
@@ -898,6 +899,7 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         }
         if response.drag_stopped() {
             shell.dragging = None;
+            shell.drag_under_way = false;
         }
         if response.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);

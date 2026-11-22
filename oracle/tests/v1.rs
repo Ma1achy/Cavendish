@@ -150,42 +150,43 @@ fn the_published_anchor_sizes_are_what_the_references_give() {
     let peak = |v: &[f64]| v.iter().fold(0.0f64, |m, x| m.max(x.abs()));
     let swing =
         |v: &[f64]| v.iter().fold(f64::MIN, |m, &x| m.max(x)) - v.iter().fold(f64::MAX, |m, &x| m.min(x));
+    let within = |value: f64, of: f64, fraction: f64| (value / of - 1.0).abs() < fraction;
     let mrad = 1e3;
 
     // The oscillator. George's `1D_oscillator` is this scene; its series is the reference.
     let script = fixture("scripts/1d_oscillator/phase_published.npy");
-    let amplitude = 0.5 * swing(&script) * mrad;
+    let script_swing = swing(&script) * mrad;
     eprintln!(
-        "oscillation, George's script: {:.4} mrad peak to peak, {amplitude:.4} mrad amplitude",
-        2.0 * amplitude
+        "oscillation, George's script: {script_swing:.4} mrad peak to peak, {:.4} mrad amplitude",
+        0.5 * script_swing
     );
-    assert!((amplitude / 2.0 - 1.0).abs() < 0.10, "the script's amplitude is {amplitude} mrad");
+    assert!(within(0.5 * script_swing, 2.0, 0.10), "the script's amplitude is {} mrad", 0.5 * script_swing);
     // Control: read as peak to peak, the published figure does not fit the script that made it.
-    assert!((2.0 * amplitude / 2.0 - 1.0).abs() > 0.10);
+    assert!(!within(script_swing, 2.0, 0.10), "the script's peak to peak is {script_swing} mrad");
     // The engine with the defaults, read at the script's own shot times.
-    let reader = Reader::new(Instrument::aion10());
-    let source = Mass::point(anchors::OSCILLATION.mass, anchors::OSCILLATION.path);
-    let ours: Vec<f64> = fixture("scripts/1d_oscillator/t.npy")
-        .iter()
-        .map(|&t| reader.phase(Vec3::ZERO, &source, t))
-        .collect();
-    let ours_amplitude = 0.5 * swing(&ours) * mrad;
-    eprintln!("oscillation, the engine with the defaults: {ours_amplitude:.4} mrad amplitude");
-    assert!((ours_amplitude / 2.0 - 1.0).abs() < 0.10, "the engine's amplitude is {ours_amplitude} mrad");
+    let times = fixture("scripts/1d_oscillator/t.npy");
+    let engine_swing = |mass: f64| {
+        let reader = Reader::new(Instrument::aion10());
+        let source = Mass::point(mass, anchors::OSCILLATION.path);
+        let series: Vec<f64> = times.iter().map(|&t| reader.phase(Vec3::ZERO, &source, t)).collect();
+        swing(&series) * mrad
+    };
+    let ours = 0.5 * engine_swing(anchors::OSCILLATION.mass);
+    eprintln!("oscillation, the engine with the defaults: {ours:.4} mrad amplitude");
+    assert!(within(ours, 2.0, 0.10), "the engine's amplitude is {ours} mrad");
+    // Control: an engine a fifth too strong would fail this.
+    assert!(!within(0.5 * engine_swing(1.2 * anchors::OSCILLATION.mass), 2.0, 0.10));
 
     // The moving anchor. Nothing here is held to "~7 mrad": v1 and the engine both give about
     // twice that, and what the figure measures is a question for George. The engine with the
     // defaults is held to v1's peak, allowing for the conventions that differ.
     let v1 = peak(&v1_series(&anchors::PASS, Vec3::ZERO)) * mrad;
-    let engine = peak(&engine_series(Instrument::aion10(), &anchors::PASS, Vec3::ZERO)) * mrad;
+    let engine_peak = |mass: f64| {
+        peak(&engine_series(Instrument::aion10(), &Anchor { mass, ..anchors::PASS }, Vec3::ZERO)) * mrad
+    };
+    let engine = engine_peak(anchors::PASS.mass);
     eprintln!("moving anchor: v1 peaks at {v1:.4} mrad, the engine with the defaults at {engine:.4} mrad");
-    eprintln!(
-        "oscillation anchor, every 0.25 s: v1 {:.4} mrad peak to peak, the engine with the defaults {:.4}",
-        swing(&v1_series(&anchors::OSCILLATION, Vec3::ZERO)) * mrad,
-        swing(&engine_series(Instrument::aion10(), &anchors::OSCILLATION, Vec3::ZERO)) * mrad
-    );
-    assert!((engine / v1 - 1.0).abs() < 0.05, "the engine peaks at {engine} mrad against v1's {v1}");
-    // Control: a tenth of the mass is a tenth of the phase, well outside 5%.
-    let light = Anchor { mass: 1.0, ..anchors::PASS };
-    assert!((peak(&v1_series(&light, Vec3::ZERO)) * mrad / v1 - 0.1).abs() < 1e-12);
+    assert!(within(engine, v1, 0.05), "the engine peaks at {engine} mrad against v1's {v1}");
+    // Control: an engine a tenth too strong would fail this.
+    assert!(!within(engine_peak(1.1 * anchors::PASS.mass), v1, 0.05));
 }
