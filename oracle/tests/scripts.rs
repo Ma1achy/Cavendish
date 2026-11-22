@@ -6,9 +6,16 @@
 //! - **Published** is matched by `Quadrature::ScriptTrapezoid { lag: 1 }`, a rule that copies the
 //!   scripts' sampling. It proves the geometry, the constants, the floor, the timing and the
 //!   kernel, to 1e-9 of the peak.
-//! - **Same-time** is what the engine's own model is held to: its own rule, audited, against the
-//!   scripts' trapezoid with the offset gone. The tolerance, 3e-4 of the peak, is the scripts'
-//!   quadrature error as estimated before measuring (`docs/slices/S1.md` §3.1).
+//! - **Same-time** is what the engine's own model is held to, in three steps. The fixture is the
+//!   scripts' rule with the offset gone (the tie, 1e-9). That rule on the whole flight, taken to
+//!   its limit, is the engine (the limit: two Richardson steps on AICE, a step of dt/32 on
+//!   AION-10, where the arms land between nodes). And the engine differs from each fixture by
+//!   what the rule's own error predicts, shot by shot (the gap, two-sided, 2%).
+//!
+//! The scripts' error has two parts of opposite sign on these scenes: their window stops one
+//! step short of 2T, which is the larger, and the trapezoid itself. A single bound on the
+//! engine-against-fixture difference passed by that cancellation on seven series and failed on
+//! the eighth; the review replaced it (`docs/slices/S1.md` §3.1, §7.2).
 //!
 //! The engine is run with the scripts' constants (their mass, ħ and G) in both.
 
@@ -120,16 +127,53 @@ impl Series {
         self.times().iter().map(|&t| reader.phase(Vec3::ZERO, &source, t)).collect()
     }
 
-    /// The scripts' rule with the offset gone, at another step: nodes at `j·step` up to `2T − step`,
-    /// as the script would place them if its `dt` were `step`.
-    fn copied_at(&self, step: f64) -> Vec<f64> {
+    /// The scripts' rule with the offset gone at `step`, on the window `[0, 2T − step]` as the
+    /// `fig2_*` and `100m` scripts place it (`whole` false), or on the whole flight `[0, 2T]`.
+    fn rule(&self, step: f64, whole: bool) -> Vec<f64> {
         let instrument = script_instrument(self.aice);
-        let nodes = (instrument.flight_time() / step).round() as usize;
+        let nodes = (instrument.flight_time() / step).round() as usize + usize::from(whole);
         let quadrature = Quadrature::ScriptTrapezoid { step, nodes, lag: 0 };
         let reader = Reader::new(Instrument { quadrature, ..instrument });
         let oscillator = self.oscillator;
         let source = Mass::point(oscillator.mass, move |t| oscillator.at(t));
         self.times().iter().map(|&t| reader.phase(Vec3::ZERO, &source, t)).collect()
+    }
+
+    /// The scripts' rule at another step, on the scripts' window.
+    fn copied_at(&self, step: f64) -> Vec<f64> {
+        self.rule(step, false)
+    }
+
+    /// The scripts' rule on the whole flight taken to its limit. On AICE the arms close exactly
+    /// at 2T and every kink is on a node, so the trapezoid's error is a series in the step
+    /// squared and two Richardson steps remove its first two terms. On AION-10 the arms land
+    /// between nodes and it is not; there the rule is simply run at a thirty-second of the step.
+    fn limit(&self) -> Vec<f64> {
+        const DT: f64 = 0.01;
+        if !self.aice {
+            return self.rule(DT / 32.0, true);
+        }
+        let (t1, t2, t4) = (self.rule(DT, true), self.rule(DT / 2.0, true), self.rule(DT / 4.0, true));
+        (0..t1.len())
+            .map(|k| {
+                let (first, second) = ((4.0 * t2[k] - t1[k]) / 3.0, (4.0 * t4[k] - t2[k]) / 3.0);
+                (16.0 * second - first) / 15.0
+            })
+            .collect()
+    }
+
+    /// R10, the limit: the scripts' rule taken to its limit against the engine's own model.
+    fn limit_error(&self) -> f64 {
+        let engine = self.engine();
+        // Control: the rule at the scripts' own step is not the limit, and this measure sees it.
+        let coarse = worst_of_peak(&self.rule(0.01, true), &engine);
+        assert!(
+            coarse > 1e-6,
+            "{}/{}: the rule at dt is already {coarse:e} from the engine",
+            self.dir,
+            self.stem
+        );
+        worst_of_peak(&self.limit(), &engine)
     }
 
     /// The series from the engine's own model: its Gauss rule, read until it stops changing.
@@ -161,29 +205,48 @@ impl Series {
         worst_of_peak(&self.copied(1), &reference)
     }
 
-    /// R10: the engine's own model against the script with the offset corrected.
+    /// R10, the gap: the engine minus the corrected fixture against what the scripts' rule's own
+    /// error predicts for it, the limit minus the rule at the scripts' step and window. Returned as
+    /// the largest difference between the two, shot by shot, as a fraction of the largest predicted
+    /// gap: two-sided, so an engine that drifted either way would fail it.
     fn same_time(&self) -> f64 {
-        let (corrected, published) = (self.file("same_time"), self.file("published"));
+        let corrected = self.file("same_time");
         let ours = self.engine();
-        let error = worst_of_peak(&ours, &corrected);
-        // The rest of the gap is the scripts' rule: the same sampling with the offset gone must
-        // reproduce the corrected fixture as closely as the published one is reproduced.
-        let copied = worst_of_peak(&self.copied(0), &corrected);
-        // Control: the engine is nearer the corrected script than the published one.
-        let to_published = worst_of_peak(&ours, &published);
-        eprintln!(
-            "{}/{}: engine against same-time {error:e}; against published {to_published:e}; the scripts' rule \
-             with the offset gone against same-time {copied:e}",
-            self.dir, self.stem
-        );
+        // The tie: the fixture is the scripts' rule with the offset gone.
+        let at_dt = self.copied(0);
+        let tie = worst_of_peak(&at_dt, &corrected);
         assert!(
-            copied < 1e-9,
-            "{}/{}: the same-time fixture is not the scripts' rule with lag 0: {copied:e}",
+            tie < 1e-9,
+            "{}/{}: the same-time fixture is not the scripts' rule with lag 0: {tie:e}",
             self.dir,
             self.stem
         );
-        assert!(to_published > error, "{}/{}: {to_published:e} against {error:e}", self.dir, self.stem);
-        error
+        let limit = self.limit();
+        let peak = corrected.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+        let (mut predicted, mut off) = (0.0f64, 0.0f64);
+        for k in 0..ours.len() {
+            let (measured, expected) = (ours[k] - corrected[k], limit[k] - at_dt[k]);
+            predicted = predicted.max(expected.abs());
+            off = off.max((measured - expected).abs());
+        }
+        // The parts of the scripts' error, for the record: the window that ends a step short, and
+        // the trapezoid on the whole flight.
+        let whole = self.rule(0.01, true);
+        let truncation = worst_of_peak(&whole, &at_dt);
+        let trapezoid = worst_of_peak(&whole, &limit);
+        eprintln!(
+            "{}/{}: engine against the fixture {:e} of peak; predicted {:e}; apart by {:e} of the prediction; \
+             the window a step short {truncation:e}; the trapezoid {trapezoid:e}",
+            self.dir,
+            self.stem,
+            worst_of_peak(&ours, &corrected),
+            predicted / peak,
+            off / predicted
+        );
+        // Control: the prediction is not nothing. An engine that simply equalled the fixture
+        // would be a whole prediction away.
+        assert!(predicted / peak > 1e-6, "{}/{}: nothing is predicted", self.dir, self.stem);
+        off / predicted
     }
 }
 
@@ -198,7 +261,7 @@ cav_validate::case! {
     subsystem: "oracle",
     slice: "S1",
     reference: Script,
-    against: "the scripts' trapezoid on the 100m_oscillators scene, offset gone, at steps of 0.01, 0.005, 0.0025, 0.00125 s (the first is the fixture's rule, held to it to 1e-9) against the engine's own model; largest difference as a fraction of the peak",
+    against: "the scripts' trapezoid on the 100m_oscillators scene, offset gone, on the scripts' own window (which ends one step short of 2T), at steps of 0.01, 0.005, 0.0025, 0.00125 s (the first is the fixture's rule, held to it to 1e-9) against the engine's own model: both the missing step and the trapezoid shrink as the step does; largest difference as a fraction of the peak",
     unit: Relative,
     tolerance: 3e-5,
     order: (2.0, 0.2),
@@ -236,6 +299,7 @@ cav_validate::case! {
             HUNDRED_M.times().iter().map(|&t| fixed.phase(Vec3::ZERO, &source, t)).collect();
         let without = worst_of_peak(&unaudited, &reference);
         eprintln!("100m scene: the fixed rule without the audit is {without:e} of the peak from the fine rule");
+        assert!(without > 1e-6, "the fixed rule is already within {without:e}: the audit is not being tested");
         cav_validate::Measured::Error(worst_of_peak(&HUNDRED_M.engine(), &reference))
     },
 }
@@ -393,15 +457,39 @@ cav_validate::case! {
 }
 
 cav_validate::case! {
+    test: validation_script_limit_1d_oscillator,
+    name: "oracle.script_limit_1d_oscillator",
+    subsystem: "oracle",
+    slice: "S1",
+    reference: Script,
+    against: "1D_oscillator: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/32, against the engine's own model; largest difference as a fraction of the peak",
+    unit: Relative,
+    tolerance: 5e-7,
+    measure: cav_validate::Measured::Error(ONE_D.limit_error()),
+}
+
+cav_validate::case! {
     test: validation_script_same_time_1d_oscillator,
     name: "oracle.script_same_time_1d_oscillator",
     subsystem: "oracle",
     slice: "S1",
     reference: Script,
-    against: "1D_oscillator with only the one-step offset corrected, against the engine's own model (its rule, audited; the script's constants); largest difference as a fraction of the peak",
+    against: "1D_oscillator with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt)",
     unit: Relative,
-    tolerance: 3e-4,
+    tolerance: 0.02,
     measure: cav_validate::Measured::Error(ONE_D.same_time()),
+}
+
+cav_validate::case! {
+    test: validation_script_limit_100m_oscillators,
+    name: "oracle.script_limit_100m_oscillators",
+    subsystem: "oracle",
+    slice: "S1",
+    reference: Script,
+    against: "100m_oscillators: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by two Richardson steps (dt, dt/2, dt/4), against the engine's own model; largest difference as a fraction of the peak",
+    unit: Relative,
+    tolerance: 1e-9,
+    measure: cav_validate::Measured::Error(HUNDRED_M.limit_error()),
 }
 
 cav_validate::case! {
@@ -410,12 +498,22 @@ cav_validate::case! {
     subsystem: "oracle",
     slice: "S1",
     reference: Script,
-    against: "100m_oscillators with only the one-step offset corrected, against the engine's own model (its rule, audited; the script's constants); largest difference as a fraction of the peak. The tolerance was 3e-4 before measuring and is 1.5e-3 after: the script's own trapezoid is off by 1.07e-3 for this source, 1 m from the atoms (oracle.script_rule_converges_100m)",
+    against: "100m_oscillators with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt)",
     unit: Relative,
-    // Changed after measuring, against what the brief promised: docs/slices/S1.md §7.1 and
-    // docs/validation/acknowledged.txt say why. The other seven series are at the 3e-4 written first.
-    tolerance: 1.5e-3,
+    tolerance: 0.02,
     measure: cav_validate::Measured::Error(HUNDRED_M.same_time()),
+}
+
+cav_validate::case! {
+    test: validation_script_limit_fig2_10m_b,
+    name: "oracle.script_limit_fig2_10m_b",
+    subsystem: "oracle",
+    slice: "S1",
+    reference: Script,
+    against: "fig2_10m panel b: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/32, against the engine's own model; largest difference as a fraction of the peak",
+    unit: Relative,
+    tolerance: 5e-7,
+    measure: cav_validate::Measured::Error(TEN_B.limit_error()),
 }
 
 cav_validate::case! {
@@ -424,10 +522,22 @@ cav_validate::case! {
     subsystem: "oracle",
     slice: "S1",
     reference: Script,
-    against: "fig2_10m panel b with only the one-step offset corrected, against the engine's own model; largest difference as a fraction of the peak",
+    against: "fig2_10m panel b with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt)",
     unit: Relative,
-    tolerance: 3e-4,
+    tolerance: 0.02,
     measure: cav_validate::Measured::Error(TEN_B.same_time()),
+}
+
+cav_validate::case! {
+    test: validation_script_limit_fig2_10m_c,
+    name: "oracle.script_limit_fig2_10m_c",
+    subsystem: "oracle",
+    slice: "S1",
+    reference: Script,
+    against: "fig2_10m panel c (0.3275 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/32, against the engine's own model; largest difference as a fraction of the peak",
+    unit: Relative,
+    tolerance: 5e-7,
+    measure: cav_validate::Measured::Error(TEN_C.limit_error()),
 }
 
 cav_validate::case! {
@@ -436,10 +546,22 @@ cav_validate::case! {
     subsystem: "oracle",
     slice: "S1",
     reference: Script,
-    against: "fig2_10m panel c (0.3275 Hz) with only the one-step offset corrected, against the engine's own model; largest difference as a fraction of the peak",
+    against: "fig2_10m panel c (0.3275 Hz) with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt)",
     unit: Relative,
-    tolerance: 3e-4,
+    tolerance: 0.02,
     measure: cav_validate::Measured::Error(TEN_C.same_time()),
+}
+
+cav_validate::case! {
+    test: validation_script_limit_fig2_10m_d,
+    name: "oracle.script_limit_fig2_10m_d",
+    subsystem: "oracle",
+    slice: "S1",
+    reference: Script,
+    against: "fig2_10m panel d (a circle at 0.35625 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/32, against the engine's own model; largest difference as a fraction of the peak",
+    unit: Relative,
+    tolerance: 5e-7,
+    measure: cav_validate::Measured::Error(TEN_D.limit_error()),
 }
 
 cav_validate::case! {
@@ -448,10 +570,22 @@ cav_validate::case! {
     subsystem: "oracle",
     slice: "S1",
     reference: Script,
-    against: "fig2_10m panel d (a circle at 0.35625 Hz) with only the one-step offset corrected, against the engine's own model; largest difference as a fraction of the peak",
+    against: "fig2_10m panel d (a circle at 0.35625 Hz) with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt)",
     unit: Relative,
-    tolerance: 3e-4,
+    tolerance: 0.02,
     measure: cav_validate::Measured::Error(TEN_D.same_time()),
+}
+
+cav_validate::case! {
+    test: validation_script_limit_fig2_uldm_folding_b,
+    name: "oracle.script_limit_fig2_uldm_folding_b",
+    subsystem: "oracle",
+    slice: "S1",
+    reference: Script,
+    against: "fig2_uldm_folding panel b: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by two Richardson steps (dt, dt/2, dt/4), against the engine's own model; largest difference as a fraction of the peak",
+    unit: Relative,
+    tolerance: 1e-9,
+    measure: cav_validate::Measured::Error(AICE_B.limit_error()),
 }
 
 cav_validate::case! {
@@ -460,10 +594,22 @@ cav_validate::case! {
     subsystem: "oracle",
     slice: "S1",
     reference: Script,
-    against: "fig2_uldm_folding panel b with only the one-step offset corrected, against the engine's own model; largest difference as a fraction of the peak",
+    against: "fig2_uldm_folding panel b with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt)",
     unit: Relative,
-    tolerance: 3e-4,
+    tolerance: 0.02,
     measure: cav_validate::Measured::Error(AICE_B.same_time()),
+}
+
+cav_validate::case! {
+    test: validation_script_limit_fig2_uldm_folding_c,
+    name: "oracle.script_limit_fig2_uldm_folding_c",
+    subsystem: "oracle",
+    slice: "S1",
+    reference: Script,
+    against: "fig2_uldm_folding panel c (0.131 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by two Richardson steps (dt, dt/2, dt/4), against the engine's own model; largest difference as a fraction of the peak",
+    unit: Relative,
+    tolerance: 1e-9,
+    measure: cav_validate::Measured::Error(AICE_C.limit_error()),
 }
 
 cav_validate::case! {
@@ -472,10 +618,22 @@ cav_validate::case! {
     subsystem: "oracle",
     slice: "S1",
     reference: Script,
-    against: "fig2_uldm_folding panel c (0.131 Hz) with only the one-step offset corrected, against the engine's own model; largest difference as a fraction of the peak",
+    against: "fig2_uldm_folding panel c (0.131 Hz) with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt)",
     unit: Relative,
-    tolerance: 3e-4,
+    tolerance: 0.02,
     measure: cav_validate::Measured::Error(AICE_C.same_time()),
+}
+
+cav_validate::case! {
+    test: validation_script_limit_fig2_uldm_folding_d,
+    name: "oracle.script_limit_fig2_uldm_folding_d",
+    subsystem: "oracle",
+    slice: "S1",
+    reference: Script,
+    against: "fig2_uldm_folding panel d (a circle at 0.1425 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by two Richardson steps (dt, dt/2, dt/4), against the engine's own model; largest difference as a fraction of the peak",
+    unit: Relative,
+    tolerance: 1e-9,
+    measure: cav_validate::Measured::Error(AICE_D.limit_error()),
 }
 
 cav_validate::case! {
@@ -484,8 +642,8 @@ cav_validate::case! {
     subsystem: "oracle",
     slice: "S1",
     reference: Script,
-    against: "fig2_uldm_folding panel d (a circle at 0.1425 Hz) with only the one-step offset corrected, against the engine's own model; largest difference as a fraction of the peak",
+    against: "fig2_uldm_folding panel d (a circle at 0.1425 Hz) with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt)",
     unit: Relative,
-    tolerance: 3e-4,
+    tolerance: 0.02,
     measure: cav_validate::Measured::Error(AICE_D.same_time()),
 }

@@ -86,6 +86,21 @@
 - id: TASK-S1-12
   milestone: S1
   title: 'Ubuntu Mono as the monospace face, with its licence; screenshots regenerated'
+- id: TASK-S1-15
+  milestone: S1
+  title: 'Review: script parity as a limit and a two-sided prediction, in place of the moved tolerance'
+- id: TASK-S1-16
+  milestone: S1
+  title: 'Review: a read whose memory and work are bounded whatever T is; readings off the caller''s thread'
+- id: TASK-S1-17
+  milestone: S1
+  title: 'Review: readings carry their estimate and warnings; undo of separate edits; tests and labels that can fail'
+- id: TASK-S1-18
+  milestone: S1
+  title: 'Review: the frame says what a pane shows and render_view draws plots; plot ticks, colours and labels'
+- id: TASK-S1-19
+  milestone: S1
+  title: 'Review: validation report, demo, results and progress regenerated'
 - id: TASK-S2-01
   milestone: S2
   title: SceneSpec, RON files, paths and schema
