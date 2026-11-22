@@ -462,7 +462,18 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     }
 
     heading(ui, "Run");
-    ui.label(RichText::new("no stages yet · the forward pass arrives with S1").size(11.5).color(theme::WEAK));
+    let forward = match shell.engine.signal() {
+        (cav_engine::SignalState::Refined, Some(signal)) => {
+            format!(
+                "forward · {} shots · refined · ±{:.0e} rad",
+                signal.times.len(),
+                signal.estimate.max(1e-16)
+            )
+        }
+        (cav_engine::SignalState::Stale, _) => "forward · computing".to_owned(),
+        _ => "forward · no signal".to_owned(),
+    };
+    ui.label(RichText::new(forward).size(11.5).color(theme::WEAK));
 
     heading(ui, "View");
     let pane = shell.engine.active_pane();
@@ -516,6 +527,22 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
         &[
             ("wireframe", "style wireframe", style(DrawStyle::Wireframe)),
             ("paper", "style paper", style(DrawStyle::Paper)),
+        ],
+    );
+    let shows = |c: cav_engine::PaneContent| shell.engine.content(pane) == c;
+    let (scene, signal, periodogram) = (
+        shows(cav_engine::PaneContent::Scene),
+        shows(cav_engine::PaneContent::Signal),
+        shows(cav_engine::PaneContent::Periodogram),
+    );
+    button_row(
+        shell,
+        ui,
+        "show",
+        &[
+            ("scene", "show scene", scene),
+            ("signal", "show signal", signal),
+            ("periodogram", "show periodogram", periodogram),
         ],
     );
     ui.add_space(4.0);
@@ -694,7 +721,9 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
     );
     ui.add_space(6.0);
     ui.label(
-        RichText::new("read-only in S0 · editing any field arrives with S2").size(11.0).color(theme::WEAK),
+        RichText::new("edit by path in the console: set <path> <value> · editors here arrive with S2")
+            .size(11.0)
+            .color(theme::WEAK),
     );
 }
 
@@ -707,8 +736,13 @@ fn header(shell: &mut Shell, ui: &mut egui::Ui) {
         let direction = view.named().map_or("free", NamedView::name);
         let projection =
             if view.projection == Projection::Perspective { "perspective" } else { "orthographic" };
-        badge(ui, format!("{direction} · {projection}"), theme::STRONG);
-        badge(ui, view.style.name(), theme::STRONG);
+        match shell.engine.content(pane) {
+            cav_engine::PaneContent::Scene => {
+                badge(ui, format!("{direction} · {projection}"), theme::STRONG);
+                badge(ui, view.style.name(), theme::STRONG);
+            }
+            plot => badge(ui, plot.name(), theme::STRONG),
+        }
         if shell.engine.panes() > 1 {
             badge(ui, format!("pane {} of {}", pane + 1, shell.engine.panes()), theme::LINK);
         }
@@ -761,40 +795,60 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         if pixels.width == 0 || pixels.height == 0 {
             continue;
         }
-        let frame = shell.engine.frame(pane).expect("pane_rects gives no more panes than the engine has");
-        match surface.texture(pane, [pixels.width, pixels.height], generation, frame) {
-            Some(texture) => {
-                let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-                ui.painter().image(texture, rect, uv, Color32::WHITE);
+        let content = shell.engine.content(pane);
+        if content == cav_engine::PaneContent::Scene {
+            let frame = shell.engine.frame(pane).expect("pane_rects gives no more panes than the engine has");
+            match surface.texture(pane, [pixels.width, pixels.height], generation, frame) {
+                Some(texture) => {
+                    let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+                    ui.painter().image(texture, rect, uv, Color32::WHITE);
+                }
+                None => {
+                    ui.painter().text(
+                        rect.center(),
+                        Align2::CENTER_CENTER,
+                        surface.problem(pane).unwrap_or_else(|| "no GPU surface".to_owned()),
+                        FontId::proportional(12.0),
+                        theme::WEAK,
+                    );
+                }
             }
-            None => {
-                ui.painter().text(
-                    rect.center(),
-                    Align2::CENTER_CENTER,
-                    surface.problem(pane).unwrap_or_else(|| "no GPU surface".to_owned()),
-                    FontId::proportional(12.0),
-                    theme::WEAK,
-                );
-            }
+        } else {
+            crate::plots::draw(shell, ui, pane, rect);
         }
         if count > 1 {
             let (colour, width) =
                 if pane == active { (theme::SELECTION_EDGE, 1.5) } else { (theme::RULE, 1.0) };
             ui.painter().rect_stroke(rect, 0.0, Stroke::new(width, colour), StrokeKind::Inside);
-            let view = shell.engine.view(pane);
-            let name = view.named().map_or("free", NamedView::name);
-            let text = theme::WEAK;
-            ui.painter().text(
-                rect.left_top() + vec2(6.0, 4.0),
-                Align2::LEFT_TOP,
-                name,
-                FontId::proportional(11.0),
-                text,
-            );
+            // A plot says what it is in its own title.
+            if content == cav_engine::PaneContent::Scene {
+                let view = shell.engine.view(pane);
+                let name = view.named().map_or("free", NamedView::name);
+                ui.painter().text(
+                    rect.left_top() + vec2(6.0, 4.0),
+                    Align2::LEFT_TOP,
+                    name,
+                    FontId::proportional(11.0),
+                    theme::WEAK,
+                );
+            }
         }
         let response = ui.interact(rect, egui::Id::unique(("pane", pane)), Sense::click_and_drag());
         if (response.clicked() || response.drag_started()) && pane != active {
             commands.push(Command::View(ViewCommand::Activate(pane)));
+        }
+        if content != cav_engine::PaneContent::Scene {
+            // A plot has no camera. On the signal plot the pointer is the playhead.
+            let drawn = shell.layout.plots.iter().find(|d| d.pane == pane).cloned();
+            if content == cav_engine::PaneContent::Signal
+                && (response.clicked() || response.dragged())
+                && let Some(point) = response.interact_pointer_pos()
+                && let Some(drawn) = drawn
+            {
+                let along = f64::from((point.x - drawn.area.left()) / drawn.area.width()).clamp(0.0, 1.0);
+                commands.push(Command::Seek(drawn.x.lo + along * (drawn.x.hi - drawn.x.lo)));
+            }
+            continue;
         }
         // A click on a body selects it; a drag that starts on one takes hold of it.
         let within = |point: egui::Pos2| (point - rect.min).to_pos2();

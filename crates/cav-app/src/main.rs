@@ -105,6 +105,9 @@ fn screenshot(shell: &mut Shell, options: &Options, path: &str) -> Result<(), St
     let started = Instant::now();
     let mut headless = Headless::new()?;
     shell.adapter = Some(headless.adapter());
+    // A picture of the application is a picture of finished numbers: wait for the signal, which the
+    // window itself never does.
+    shell.engine.settle(std::time::Duration::from_secs(120));
     let png = headless.screenshot(shell, options.size)?;
     std::fs::write(path, &png).map_err(|e| format!("writing {path}: {e}"))?;
     println!(

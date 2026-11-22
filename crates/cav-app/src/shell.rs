@@ -59,6 +59,8 @@ pub struct Layout {
     pub panes: Vec<Rect>,
     /// Buttons worth finding from a test, by the console line they run.
     pub buttons: Vec<(String, Rect)>,
+    /// What each pane that shows a plot drew.
+    pub plots: Vec<crate::plots::Drawn>,
 }
 
 impl Default for Layout {
@@ -69,6 +71,7 @@ impl Default for Layout {
             figure: Rect::NOTHING,
             panes: Vec::new(),
             buttons: Vec::new(),
+            plots: Vec::new(),
         }
     }
 }

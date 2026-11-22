@@ -8,7 +8,10 @@
 use cav_sim::{DrawStyle, NamedView, Projection, SceneSpec, SceneView, Target, ViewSpec};
 use serde::Serialize;
 
-use crate::command::{Command, MAX_PANES, Query, Reply, SignalReply, Stats, TowerReading, ViewCommand};
+use crate::command::{
+    COMB_HARMONICS, Comb, Command, Harmonic, MAX_PANES, PaneContent, PeriodogramReply, Query, Reply,
+    SignalReply, Stats, TowerReading, ViewCommand,
+};
 use crate::console;
 use crate::forward::{Forward, SignalState};
 use crate::log::{Level, Log, Subsystem};
@@ -27,6 +30,8 @@ pub struct Engine {
     panes: usize,
     active: usize,
     views: [ViewSpec; MAX_PANES],
+    /// What each pane shows.
+    contents: [PaneContent; MAX_PANES],
     undo: Vec<SceneSpec>,
     redo: Vec<SceneSpec>,
     journal: Vec<Command>,
@@ -50,6 +55,7 @@ struct State<'a> {
     panes: usize,
     active: usize,
     views: &'a [ViewSpec; MAX_PANES],
+    contents: [PaneContent; MAX_PANES],
     undo: &'a [SceneSpec],
     redo: &'a [SceneSpec],
 }
@@ -81,6 +87,7 @@ impl Engine {
             panes: 1,
             active: 0,
             views,
+            contents: [PaneContent::Scene; MAX_PANES],
             undo: Vec::new(),
             redo: Vec::new(),
             journal: Vec::new(),
@@ -241,6 +248,7 @@ impl Engine {
                 for view in &mut self.views {
                     view.frame(&self.spec);
                 }
+                self.forward.forget();
                 self.forward.schedule(&self.spec, false);
             }
             Command::Seek(t) => self.time = t.clamp(0.0, self.spec.duration),
@@ -298,6 +306,7 @@ impl Engine {
                 }
             }
             ViewCommand::Style { pane, style } => self.views[pane].style = style,
+            ViewCommand::Show { pane, content } => self.contents[pane] = content,
             ViewCommand::Orbit { pane, yaw, pitch } => {
                 // Yaw is kept in (−180, 180]; pitch cannot pass the poles.
                 let wrapped = 180.0 - (180.0 - yaw).rem_euclid(360.0);
@@ -362,6 +371,49 @@ impl Engine {
                     warnings: signal.map_or_else(Vec::new, |s| s.warnings.clone()),
                 }))
             }
+            Query::Periodogram { tower, channel } => {
+                let Reply::Signal(signal) =
+                    self.query(&Query::Signal { tower: *tower, channel: *channel })?
+                else {
+                    unreachable!("a signal query answers with a signal")
+                };
+                let instrument = &self.spec.array.instrument;
+                let nyquist = 0.5 / instrument.cycle;
+                let spectrum = cav_core::spectrum::periodogram(
+                    &signal.values,
+                    instrument.cycle,
+                    cav_core::spectrum::Classical::SCRIPTS,
+                );
+                let combs = self
+                    .spec
+                    .bodies
+                    .iter()
+                    .filter_map(|body| {
+                        let fundamental = body.motion.frequency(instrument.gravity)?;
+                        let harmonics = (1..=COMB_HARMONICS)
+                            .map(|n| {
+                                let frequency = f64::from(n) * fundamental;
+                                Harmonic {
+                                    n,
+                                    frequency,
+                                    appears_at: cav_core::spectrum::fold_frequency(frequency, nyquist),
+                                    folded: frequency > nyquist,
+                                }
+                            })
+                            .collect();
+                        Some(Comb { label: body.label.clone(), fundamental, harmonics })
+                    })
+                    .collect();
+                Ok(Reply::Periodogram(PeriodogramReply {
+                    tower: *tower,
+                    channel: *channel,
+                    state: signal.state,
+                    nyquist,
+                    frequencies: spectrum.frequencies,
+                    power: spectrum.power,
+                    combs,
+                }))
+            }
             Query::Reading(time) => {
                 let time = time.unwrap_or(self.time);
                 if !time.is_finite() {
@@ -424,7 +476,7 @@ impl Engine {
             Level::Info,
             Subsystem::Engine,
             format!(
-                "signal: {} tower(s) × {} shot(s), quadrature within {:.0e} rad, {took:.1} ms",
+                "signal: {} tower(s) × {} shot(s), quadrature within {:.0e} rad, whole {took:.0} ms after the edit",
                 signal.towers,
                 signal.times.len(),
                 signal.estimate.max(f64::MIN_POSITIVE)
@@ -468,6 +520,7 @@ impl Engine {
             panes: self.panes,
             active: self.active,
             views: &self.views,
+            contents: self.contents,
             undo: &self.undo,
             redo: &self.redo,
         };
@@ -544,6 +597,15 @@ impl Engine {
     #[must_use]
     pub fn view(&self, pane: usize) -> &ViewSpec {
         &self.views[pane]
+    }
+
+    /// Whether pane `pane` shows the scene or a plot.
+    ///
+    /// # Panics
+    /// When `pane` is not below [`MAX_PANES`].
+    #[must_use]
+    pub const fn content(&self, pane: usize) -> PaneContent {
+        self.contents[pane]
     }
 
     /// What pane `pane` shows, for a renderer to draw: the scene, the pane's view, the selection

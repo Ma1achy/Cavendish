@@ -149,3 +149,55 @@ fn gpu_pane_count_changes_the_figure() {
     assert_eq!(shell.layout().panes, vec![shell.layout().figure]);
     assert!(single.has_near(tower_on_screen(&shell, 0, 0, 1), 2, tower_srgb(1), 12));
 }
+
+#[test]
+fn gpu_ui_draws_the_signal_and_the_periodogram() {
+    use cav_app::plots::place;
+    let mut headless = Headless::new().expect("the GPU tier needs an adapter");
+    let mut shell = Shell::new();
+    for line in ["load pass", "panes 2", "show signal @2", "seek 5.46"] {
+        shell.run(line).unwrap();
+    }
+    assert!(shell.engine.settle(std::time::Duration::from_secs(60)));
+    let picture = render(&mut headless, &mut shell);
+    let drawn = shell.layout().plots[0].clone();
+    let signal = shell.engine.signal().1.unwrap().clone();
+    // Each tower's value at each shot is a dot of that tower's colour where the axes put it.
+    let channel = cav_core::forward::Channel::Gradiometer;
+    for tower in [0, 1, 2] {
+        for shot in [0, 3, 5] {
+            let value = signal.channel(tower, channel)[shot];
+            let at = place(drawn.area, &drawn.x, &drawn.y, (signal.times[shot], value));
+            assert!(
+                picture.has_near([f64::from(at.x), f64::from(at.y)], 1, tower_srgb(tower), 12),
+                "tower {} shot {shot}: no dot at {at:?}",
+                tower + 1
+            );
+        }
+    }
+    // The playhead is a line down the plot at 5.46 s.
+    let playhead = drawn.playhead.unwrap();
+    let link = [0x5a, 0xb4, 0xff];
+    let on_line = (drawn.area.top() as u32 + 4..drawn.area.bottom() as u32 - 4)
+        .filter(|&y| picture.has_near([f64::from(playhead), f64::from(y)], 1, link, 40))
+        .count();
+    assert!(on_line as f32 > 0.8 * drawn.area.height(), "the playhead covers {on_line} rows");
+    // Control: the scene pane beside it holds no such dot; the plot is in its own pane.
+    let scene_pane = shell.layout().panes[0];
+    assert!(!scene_pane.contains(drawn.area.center()));
+
+    // The periodogram of the zoo: a stem of the first comb's colour at the linear oscillator's f₀.
+    for line in ["load oscillator-zoo", "set duration 400", "panes 2", "show periodogram @2"] {
+        shell.run(line).unwrap();
+    }
+    assert!(shell.engine.settle(std::time::Duration::from_secs(60)));
+    let picture = render(&mut headless, &mut shell);
+    let drawn = shell.layout().plots[0].clone();
+    let (_, _, x, folded) = drawn.stems.iter().find(|s| s.0 == "linear" && s.1 == 1).unwrap().clone();
+    assert!(!folded);
+    let gold = [0xe7, 0xc4, 0x6a];
+    let low = f64::from(drawn.area.bottom()) - 6.0;
+    assert!(picture.has_near([f64::from(x), low], 1, gold, 30), "no stem at x = {x}");
+    // Control: a little to the side of the stem, at the same height, there is none.
+    assert!(!picture.has_near([f64::from(x) - 8.0, low], 1, gold, 30));
+}

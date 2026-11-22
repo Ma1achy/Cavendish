@@ -154,9 +154,13 @@ fn slow_scene() -> SceneSpec {
 
 #[test]
 fn a_query_never_waits_for_the_worker() {
-    let mut engine = Engine::new();
+    // A scene with a whole signal: six shots of the pass.
+    let mut engine = loaded(dev::pass());
+    assert!(engine.settle(LONG));
     let started = Instant::now();
-    engine.apply(Command::load(slow_scene())).unwrap();
+    // Stretch its timeline to 200,000 shots and swap in four oscillators: seconds of work.
+    set(&mut engine, "bodies", serde_json::to_value(slow_scene().bodies).unwrap()).unwrap();
+    set(&mut engine, "duration", json!(400_000.0)).unwrap();
     let query = Query::Signal { tower: 1, channel: ChannelName::Gradiometer };
     let Reply::Signal(first) = engine.query(&query).unwrap() else { panic!("a signal") };
     engine.query(&Query::Reading(Some(10.0))).unwrap();
@@ -164,10 +168,14 @@ fn a_query_never_waits_for_the_worker() {
     engine.poll();
     let took = started.elapsed();
     // 200,000 shots of four bodies at five towers is seconds of work; none of it was done here.
-    assert!(took < Duration::from_millis(1500), "load, three queries and a poll took {took:?}");
+    assert!(took < Duration::from_millis(1500), "two edits, three queries and a poll took {took:?}");
     assert_eq!(engine.signal().0, SignalState::Stale, "the worker is still at it");
-    // What is shown meanwhile is the last whole signal, marked stale: the default scene's, six shots.
+    // What is shown meanwhile is the last whole signal, marked stale: six shots.
     assert_eq!((first.state.as_str(), first.times.len()), ("stale", 6));
+    // A load is another scene altogether: its predecessor's signal is not shown under its name.
+    engine.apply(Command::load(slow_scene())).unwrap();
+    let Reply::Signal(fresh) = engine.query(&query).unwrap() else { panic!("a signal") };
+    assert_eq!((fresh.state.as_str(), fresh.times.len()), ("computing", 0));
     // Commands do not wait either, and a run of them leaves the worker with the last scene only.
     let started = Instant::now();
     for step in 0..20 {

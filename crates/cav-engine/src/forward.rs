@@ -187,6 +187,12 @@ impl Forward {
         self.assemble();
     }
 
+    /// Forgets the last whole signal: it belongs to another scene altogether (a load), and showing
+    /// it under the new scene's name, even marked stale, would mislead.
+    pub fn forget(&mut self) {
+        self.signal = None;
+    }
+
     /// Sums the kept contributions into the signal if every one the scene needs is here.
     fn assemble(&mut self) -> bool {
         if self.state != SignalState::Stale || !self.wanted.iter().all(|key| self.kept.contains_key(key)) {
