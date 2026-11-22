@@ -8,14 +8,21 @@
 //!   kernel, to 1e-9 of the peak.
 //! - **Same-time** is what the engine's own model is held to, in three steps. The fixture is the
 //!   scripts' rule with the offset gone (the tie, 1e-9). That rule on the whole flight, taken to
-//!   its limit, is the engine (the limit: two Richardson steps on AICE, a step of dt/32 on
+//!   its limit, is the engine (the limit: two Richardson steps on AICE, a step of dt/128 on
 //!   AION-10, where the arms land between nodes). And the engine differs from each fixture by
 //!   what the rule's own error predicts, shot by shot (the gap, two-sided, 2%).
 //!
-//! The scripts' error has two parts of opposite sign on these scenes: their window stops one
-//! step short of 2T, which is the larger, and the trapezoid itself. A single bound on the
-//! engine-against-fixture difference passed by that cancellation on seven series and failed on
-//! the eighth; the review replaced it (`docs/slices/S1.md` §3.1, §7.2).
+//! The gap is not a check independent of the limit. Given the tie, the engine minus the fixture
+//! less the limit minus the rule is the engine minus the limit, so the gap is the limit's number
+//! divided by the size of the predicted difference: the same measurement on another scale. What
+//! it adds is the record of how large the scripts' own error is, and of its parts.
+//!
+//! The scripts' error has two parts: their window stops one step short of 2T, which is the
+//! larger wherever it applies, and the trapezoid itself. On `fig2_10m` the two have opposite
+//! signs. A single bound of 3e-4 on the engine-against-fixture difference failed on one series
+//! (`100m_oscillators`) and passed on seven, two of them (`fig2_10m` c and d, whose window alone
+//! is over the bound) only by that cancellation; the review replaced it (`docs/slices/S1.md`
+//! §3.1, §7.2, §7.5).
 //!
 //! The engine is run with the scripts' constants (their mass, ħ and G) in both.
 
@@ -147,11 +154,12 @@ impl Series {
     /// The scripts' rule on the whole flight taken to its limit. On AICE the arms close exactly
     /// at 2T and every kink is on a node, so the trapezoid's error is a series in the step
     /// squared and two Richardson steps remove its first two terms. On AION-10 the arms land
-    /// between nodes and it is not; there the rule is simply run at a thirty-second of the step.
+    /// between nodes and it is not; there the rule is simply run at dt/128, where what is left of
+    /// it is 1e-9 to 5e-9 of the peak and still falling (`docs/slices/S1.md` §7.5).
     fn limit(&self) -> Vec<f64> {
         const DT: f64 = 0.01;
         if !self.aice {
-            return self.rule(DT / 32.0, true);
+            return self.rule(DT / 128.0, true);
         }
         let (t1, t2, t4) = (self.rule(DT, true), self.rule(DT / 2.0, true), self.rule(DT / 4.0, true));
         (0..t1.len())
@@ -208,7 +216,9 @@ impl Series {
     /// R10, the gap: the engine minus the corrected fixture against what the scripts' rule's own
     /// error predicts for it, the limit minus the rule at the scripts' step and window. Returned as
     /// the largest difference between the two, shot by shot, as a fraction of the largest predicted
-    /// gap: two-sided, so an engine that drifted either way would fail it.
+    /// gap: two-sided, so an engine that drifted either way would fail it. With the tie holding,
+    /// this is `limit_error` times the peak over the largest predicted gap: the limit rescaled,
+    /// not a second check.
     fn same_time(&self) -> f64 {
         let corrected = self.file("same_time");
         let ours = self.engine();
@@ -462,9 +472,9 @@ cav_validate::case! {
     subsystem: "oracle",
     slice: "S1",
     reference: Script,
-    against: "1D_oscillator: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/32, against the engine's own model; largest difference as a fraction of the peak",
+    against: "1D_oscillator: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/128, against the engine's own model; largest difference as a fraction of the peak",
     unit: Relative,
-    tolerance: 5e-7,
+    tolerance: 1e-8,
     measure: cav_validate::Measured::Error(ONE_D.limit_error()),
 }
 
@@ -510,9 +520,9 @@ cav_validate::case! {
     subsystem: "oracle",
     slice: "S1",
     reference: Script,
-    against: "fig2_10m panel b: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/32, against the engine's own model; largest difference as a fraction of the peak",
+    against: "fig2_10m panel b: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/128, against the engine's own model; largest difference as a fraction of the peak",
     unit: Relative,
-    tolerance: 5e-7,
+    tolerance: 1e-8,
     measure: cav_validate::Measured::Error(TEN_B.limit_error()),
 }
 
@@ -534,9 +544,9 @@ cav_validate::case! {
     subsystem: "oracle",
     slice: "S1",
     reference: Script,
-    against: "fig2_10m panel c (0.3275 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/32, against the engine's own model; largest difference as a fraction of the peak",
+    against: "fig2_10m panel c (0.3275 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/128, against the engine's own model; largest difference as a fraction of the peak",
     unit: Relative,
-    tolerance: 5e-7,
+    tolerance: 1e-8,
     measure: cav_validate::Measured::Error(TEN_C.limit_error()),
 }
 
@@ -558,9 +568,9 @@ cav_validate::case! {
     subsystem: "oracle",
     slice: "S1",
     reference: Script,
-    against: "fig2_10m panel d (a circle at 0.35625 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/32, against the engine's own model; largest difference as a fraction of the peak",
+    against: "fig2_10m panel d (a circle at 0.35625 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/128, against the engine's own model; largest difference as a fraction of the peak",
     unit: Relative,
-    tolerance: 5e-7,
+    tolerance: 1e-8,
     measure: cav_validate::Measured::Error(TEN_D.limit_error()),
 }
 
