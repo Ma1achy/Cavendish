@@ -257,6 +257,12 @@
 - id: TASK-S10-04
   milestone: S10
   title: Tanks, boats, river level changes, waterfall stand-in
+- id: TASK-S10-05
+  milestone: S10
+  title: Water on the adaptive octree, refined at the free surface and by tower response
+- id: TASK-S10-06
+  milestone: S10
+  title: 'Adaptive water proved as adaptive air was: refined equals uniform, at rest, no step on regrid'
 - id: TASK-S11-01
   milestone: S11
   title: Python package cavendish in Four's style
@@ -368,3 +374,6 @@
 - id: TASK-S16-04
   milestone: S16
   title: A twin beside a real instrument
+- id: TASK-S16-05
+  milestone: S16
+  title: Gravitational waves from cosmic events - source library, antenna pattern, replay of catalogued events

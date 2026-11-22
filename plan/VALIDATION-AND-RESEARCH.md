@@ -176,6 +176,10 @@ hold, before any row is used. Tolerances are written in the slice brief before m
 | `local_gravity_from_field_model` | g and its vertical gradient at a site | normal gravity formula; the field model's own test values |
 | `orbit_gradient_tensor` | the gradient tensor along a circular orbit for a point-mass Earth, then with J2, then the full model | closed forms; published GOCE gradients |
 | `injection_recovered` | a gravitational-wave or dark-matter signal injected into a quiet world is recovered at the published sensitivity | the instrument proposals' sensitivity curves |
+| `gw_phase_closed_form` | a monochromatic plane wave of strain h on a gradiometer of baseline L: phase amplitude and its dependence on frequency and T | the published gradiometer response to a gravitational wave |
+| `chirp_matches_post_newtonian` | frequency against time for an inspiral of given chirp mass | the leading-order chirp formula; time to merger exact |
+| `antenna_pattern_rotates` | response against sky position and polarisation over a sidereal day; the sky average | closed form for a single baseline |
+| `sensitivity_curve_reproduced` | strain sensitivity from the phase noise floor, for AION-10 and AICE | the instrument proposals' published curves |
 | `two_sites_reject_local_noise` | correlation of two sites with independent local noise | the predicted 1/√N and common-mode factors |
 
 ## 3. Features these sources suggest
@@ -243,7 +247,8 @@ noise models; the Beecroft site measurements.
 - **S6** adds the §2.2 motion-geometry tests and source fingerprinting.
 - **S7** gains a structural-dynamics track (modal voxel FE) after its research note.
 - **S11** reproduces the paper's sampling results (§2.4) through the dataset path, on both presets.
-- **S8–S10** take the air and water rows of §2.5 that need no new physics (the cavities, onset, the
+- **S8–S10** are one fluid solver for air and water (`REBUILD.md` §9.1a); the adaptive-grid properties
+  are asserted for both. They take the air and water rows of §2.5 that need no new physics (the cavities, onset, the
   plume, the water equation of state, stratification).
 - **S13** (heat everywhere, `REBUILD.md` §9.2) takes the rest of §2.5: conduction, radiation, conjugate
   transfer, expansion and the instrument cases. Its research note comes first: methods, the exact

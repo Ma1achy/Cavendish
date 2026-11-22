@@ -221,6 +221,18 @@ Still open (asked in S0; defaults in use until answered):
   10 × 10 × 3 m room, each 10 m tall so they rise through the ceiling. Is there a real or intended
   layout, and where is the tower base relative to the floor people walk on?
 
+## Owner's ruling (22 Nov 2026): gravitational waves from cosmic events
+Added to S16 (`REBUILD.md` §9.3, TASK-S16-05; validation rows in `VALIDATION-AND-RESEARCH.md` §2.6): a
+library of sources (inspirals, a stochastic background, bursts) with sky position and polarisation,
+read through the baseline's antenna pattern as the Earth turns, and replay of catalogued events.
+
+## Owner's ruling (22 Nov 2026): air and water are fluids
+The owner wants water adaptive like the air, and air and water under one heading. In the plan:
+S8 "Fluids: air", S9 "Fluids: the adaptive grid", S10 "Fluids: water" (`REBUILD.md` §9 and §9.1a) —
+one solver and one adaptive octree for any fluid; water adds the free surface, refined at the
+surface and by tower response; every adaptive-grid property is proved for water as for air
+(TASK-S10-05, TASK-S10-06). The spec, commands and viewer say `fluid` with a material.
+
 ## Owner's ruling (22 Nov 2026): built for other people, and figures
 The owner wants the project easy for others to extend and work with (clean architecture, documented
 and easy-to-follow code) and a good way to make plots and figures from it. Written in as principle
