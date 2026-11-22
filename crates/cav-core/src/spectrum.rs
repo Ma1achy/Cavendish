@@ -11,7 +11,8 @@
 //!   `dt_eff = (t_last − t_first)/(N − 1)`, which makes it the classical periodogram on a uniform
 //!   grid.
 //!
-//! The NUFFT form of Lomb–Scargle for long series is not here yet (`docs/slices/S1.md` §7).
+//! [`lomb_scargle`] is exact and takes `N·M` steps; [`lomb_scargle_fast`] is the same estimator from
+//! two non-uniform FFTs, for long series, held to the exact one (`docs/slices/S1.md` §3.2).
 
 use std::f64::consts::{PI, TAU};
 
@@ -258,6 +259,144 @@ pub fn lomb_scargle(t: &[f64], y: &[f64], frequencies: &[f64]) -> Vec<f64> {
         .collect()
 }
 
+/// The width of the spreading kernel of [`lomb_scargle_fast`], in points of the fine grid. Each
+/// point of width buys about a decade: 14 puts the kernel's error near 1e-13 of `Σ|c|`, below the
+/// rounding floor of a long series.
+pub const NUFFT_WIDTH: usize = 14;
+
+/// The fine grid of the non-uniform FFT has at least this many points per mode.
+const NUFFT_UPSAMPLING: usize = 2;
+
+/// The type-1 non-uniform FFT: `F_k = Σ_j c_j e^{i·k·x_j}` for `k = 0 … modes − 1`, with `x` in
+/// radians (any real value; only its value modulo 2π matters).
+///
+/// Each point is spread onto a fine uniform grid with the "exponential of semicircle" kernel
+/// `φ(z) = e^{β(√(1 − z²) − 1)}`, `β = 2.3·width` (Barnett, Magland & af Klinteberg 2019), the grid
+/// is transformed, and each mode is divided by the kernel's own transform. The modes are centred
+/// first (`c_j` is turned by `e^{i·x_j·modes/2}`), so the grid is `2·modes` points and not `4·modes`.
+///
+/// The error is about `10^(1 − width)` of `Σ|c_j|` until rounding takes over, near `N·ε`. Memory is
+/// the fine grid: `32·modes` bytes rounded up to a power of two.
+///
+/// # Panics
+/// When `x` and `c` differ in length, or `width` is less than 2.
+#[must_use]
+pub fn nufft1(x: &[f64], c: &[Complex], modes: usize, width: usize) -> Vec<Complex> {
+    assert_eq!(x.len(), c.len(), "a weight for every point");
+    assert!(width >= 2, "a kernel is at least two grid points wide");
+    if modes == 0 {
+        return Vec::new();
+    }
+    let half = modes.div_ceil(2);
+    // At least `width` points, so that a kernel never wraps onto itself.
+    let size = (NUFFT_UPSAMPLING * 2 * half).max(2 * width).next_power_of_two();
+    let step = TAU / size as f64;
+    let beta = 2.3 * width as f64;
+    let reach = width as f64 / 2.0;
+    let kernel = |z: f64| if z.abs() < 1.0 { (beta * ((1.0 - z * z).sqrt() - 1.0)).exp() } else { 0.0 };
+    let mut grid = vec![Complex::default(); size];
+    for (&at, &weight) in x.iter().zip(c) {
+        // The point's place on the grid, in grid steps, within one turn.
+        let turns = at / TAU;
+        let place = (turns - turns.floor()) * size as f64;
+        let angle = place * step;
+        let turned = weight.times(Complex::unit(angle * half as f64));
+        let first = (place - reach).ceil() as i64;
+        for l in first..first + width as i64 {
+            let value = kernel((l as f64 - place) / reach);
+            let cell = &mut grid[l.rem_euclid(size as i64) as usize];
+            cell.re += turned.re * value;
+            cell.im += turned.im * value;
+        }
+    }
+    // Σ_l b_l e^{+i·k·l·step} is the conjugate-direction transform: the forward one at −k.
+    radix2(&mut grid, false);
+    // The kernel's transform at mode k: reach·∫φ(z)·cos(k·step·reach·z) dz over [−1, 1], by a
+    // Gauss–Legendre rule on eight panels of [0, 1] (the integrand is smooth and turns at most a
+    // few times there).
+    let rule = crate::forward::gauss_legendre(8);
+    const PANELS: usize = 8;
+    let nodes: Vec<(f64, f64)> = (0..PANELS)
+        .flat_map(|panel| {
+            let rule = &rule;
+            rule.iter().map(move |(node, weight)| {
+                let z = (panel as f64 + 0.5 * (node + 1.0)) / PANELS as f64;
+                (z, 0.5 * weight / PANELS as f64)
+            })
+        })
+        .map(|(z, weight)| (z, weight * kernel(z)))
+        .collect();
+    let transform = |k: i64| {
+        let rate = k as f64 * step * reach;
+        2.0 * reach * nodes.iter().map(|(z, weight)| weight * (rate * z).cos()).sum::<f64>()
+    };
+    (0..modes)
+        .map(|k| {
+            let centred = k as i64 - half as i64;
+            let cell = grid[(-centred).rem_euclid(size as i64) as usize];
+            let scale = 1.0 / transform(centred);
+            Complex::new(cell.re * scale, cell.im * scale)
+        })
+        .collect()
+}
+
+/// [`lomb_scargle`] at the frequencies `k·df`, `k = 0 … count − 1`, from two non-uniform FFTs in
+/// about `N·width + M·log M` steps: the same estimator, held to 1e-9 of its largest value and
+/// measured at a few 1e-15 for 2000 and for 100 000 shots (`docs/slices/S1.md` §7.3). `t` in seconds, `df` in hertz.
+///
+/// The four sums of Scargle's form come from `A(ω) = Σ(y − ȳ)e^{iωt}` and `B(ω) = Σe^{2iωt}`:
+/// `2ωτ = arg B`, `Σcos²ω(t − τ) = (N + |B|)/2`, `Σsin²ω(t − τ) = (N − |B|)/2`, and the two
+/// numerators are the real and imaginary parts of `A·e^{−iωτ}`.
+///
+/// Not for a list of arbitrary frequencies (use [`lomb_scargle`]) and not for `f32`: in single
+/// precision the result is wrong by per cent at 1e5 shots (the research note measured it).
+///
+/// # Panics
+/// When `t` and `y` differ in length.
+#[must_use]
+pub fn lomb_scargle_fast(t: &[f64], y: &[f64], df: f64, count: usize) -> Vec<f64> {
+    lomb_scargle_nufft(t, y, df, count, NUFFT_WIDTH)
+}
+
+/// [`lomb_scargle_fast`] with a kernel of `width` grid points: narrower is faster and less
+/// accurate, by about a decade a point.
+///
+/// # Panics
+/// When `t` and `y` differ in length, or `width` is less than 2.
+#[must_use]
+pub fn lomb_scargle_nufft(t: &[f64], y: &[f64], df: f64, count: usize, width: usize) -> Vec<f64> {
+    assert_eq!(t.len(), y.len(), "a time for every sample");
+    let n = t.len();
+    if n < 2 || count == 0 {
+        return vec![0.0; count];
+    }
+    let mean = y.iter().sum::<f64>() / n as f64;
+    let spacing = (t[n - 1] - t[0]) / (n as f64 - 1.0);
+    // Times from the first one: the estimator does not depend on the origin, and small angles
+    // keep their digits.
+    let x: Vec<f64> = t.iter().map(|time| TAU * df * (time - t[0])).collect();
+    let centred: Vec<Complex> = y.iter().map(|value| Complex::new(value - mean, 0.0)).collect();
+    let ones = vec![Complex::new(1.0, 0.0); n];
+    let a = nufft1(&x, &centred, count, width);
+    // B at ω_k is the sum of e^{i·(2k)·x}: every second mode of a transform twice as long.
+    let b = nufft1(&x, &ones, 2 * count - 1, width);
+    (0..count)
+        .map(|k| {
+            let b = b[2 * k];
+            let size = b.norm_squared().sqrt();
+            // e^{−iωτ} = e^{−i·arg(B)/2}.
+            let turn = Complex::unit(-0.5 * b.im.atan2(b.re));
+            let numerator = a[k].times(turn);
+            let (cc, ss) = (0.5 * (n as f64 + size), 0.5 * (n as f64 - size));
+            // A denominator the transforms' error alone keeps from zero is zero (the Nyquist
+            // frequency of a uniform grid); the exact form's 1e-12 would sit inside that error.
+            let term =
+                |top: f64, bottom: f64| if bottom > 1e-10 * n as f64 { top * top / bottom } else { 0.0 };
+            spacing * 0.5 * (term(numerator.re, cc) + term(numerator.im, ss))
+        })
+        .collect()
+}
+
 /// The least-squares fit of `a·cos(2πft) + b·sin(2πft)` to the samples: `(a, b)`.
 #[must_use]
 pub fn fit_tone(t: &[f64], y: &[f64], frequency: f64) -> (f64, f64) {
@@ -425,6 +564,174 @@ mod tests {
         unit: Relative,
         tolerance: 1e-9,
         measure: cav_validate::Measured::Error(lomb_scargle_against_fft(2000, 0.0)),
+    }
+
+    /// `n` shots at a cycle of 2 s, each up to `jitter` seconds late: a comb at 0.05 Hz, a tone
+    /// above Nyquist and noise.
+    fn jittered(n: usize, jitter: f64, seed: u64) -> (Vec<f64>, Vec<f64>) {
+        let mut noise = Noise(seed);
+        let t: Vec<f64> = (0..n).map(|k| 2.0 * k as f64 + jitter * noise.uniform()).collect();
+        let y = t
+            .iter()
+            .map(|&time| {
+                1e-3 * (TAU * 0.05 * time + 0.3).cos()
+                    + 2e-4 * (TAU * 0.10 * time).cos()
+                    + 5e-5 * (TAU * 0.3275 * time).sin()
+                    + 1e-5 * noise.normal()
+            })
+            .collect();
+        (t, y)
+    }
+
+    /// The largest difference between the fast periodogram and the exact one over `bins` (indices
+    /// of the fast one's frequencies `k·df`), as a fraction of the exact one's largest value there.
+    fn fast_against_exact(t: &[f64], y: &[f64], df: f64, count: usize, width: usize, bins: &[usize]) -> f64 {
+        let fast = lomb_scargle_nufft(t, y, df, count, width);
+        let frequencies: Vec<f64> = bins.iter().map(|&k| k as f64 * df).collect();
+        let exact = lomb_scargle(t, y, &frequencies);
+        let peak = exact.iter().copied().fold(0.0f64, f64::max);
+        bins.iter().zip(&exact).map(|(&k, e)| (fast[k] - e).abs()).fold(0.0f64, f64::max) / peak
+    }
+
+    fn nufft_error(width: usize) -> f64 {
+        let (t, y) = jittered(2000, 0.3, 21);
+        let all: Vec<usize> = (0..1001).collect();
+        fast_against_exact(&t, &y, 0.25 / 1000.0, 1001, width, &all)
+    }
+
+    #[test]
+    fn nufft_is_the_sum_it_stands_for() {
+        // The transform itself against its definition, complex weights, any x.
+        let mut noise = Noise(3);
+        let x: Vec<f64> = (0..300).map(|_| 40.0 * (noise.uniform() - 0.5)).collect();
+        let c: Vec<Complex> = (0..300).map(|_| Complex::new(noise.normal(), noise.normal())).collect();
+        let size: f64 = c.iter().map(|z| z.norm_squared().sqrt()).sum();
+        for modes in [1, 2, 7, 64, 201] {
+            let fast = nufft1(&x, &c, modes, NUFFT_WIDTH);
+            assert_eq!(fast.len(), modes);
+            for (k, value) in fast.iter().enumerate() {
+                let direct = x.iter().zip(&c).fold(Complex::default(), |sum, (&at, &weight)| {
+                    let term = weight.times(Complex::unit(k as f64 * at));
+                    Complex::new(sum.re + term.re, sum.im + term.im)
+                });
+                let off = Complex::new(value.re - direct.re, value.im - direct.im).norm_squared().sqrt();
+                assert!(off <= 1e-12 * size, "{modes} modes, mode {k}: off by {off:e} of {size:e}");
+            }
+        }
+        assert!(nufft1(&x, &c, 0, NUFFT_WIDTH).is_empty());
+        // Control: a transform of the other sign is not this one.
+        let fast = nufft1(&x, &c, 8, NUFFT_WIDTH);
+        let other = x.iter().zip(&c).fold(Complex::default(), |sum, (&at, &weight)| {
+            let term = weight.times(Complex::unit(-3.0 * at));
+            Complex::new(sum.re + term.re, sum.im + term.im)
+        });
+        assert!((fast[3].re - other.re).abs() + (fast[3].im - other.im).abs() > 1e-3 * size);
+    }
+
+    #[test]
+    fn nufft_lomb_scargle_equals_exact() {
+        let worst = nufft_error(NUFFT_WIDTH);
+        eprintln!("NUFFT Lomb–Scargle, 2000 jittered shots: {worst:e} of the peak");
+        assert!(worst <= 1e-9, "{worst:e} of the peak");
+        // A uniform grid, its Nyquist bin among the frequencies, where a denominator vanishes.
+        let (t, y) = jittered(2000, 0.0, 22);
+        let all: Vec<usize> = (0..1001).collect();
+        let uniform = fast_against_exact(&t, &y, 0.25 / 1000.0, 1001, NUFFT_WIDTH, &all);
+        eprintln!("NUFFT Lomb–Scargle, uniform grid with its Nyquist bin: {uniform:e} of the peak");
+        assert!(uniform <= 1e-9, "{uniform:e} of the peak on a uniform grid");
+        // The origin of time does not matter; the scale of time does.
+        let (t, y) = jittered(2000, 0.3, 21);
+        let fast = lomb_scargle_fast(&t, &y, 0.25 / 1000.0, 1001);
+        let peak = fast.iter().copied().fold(0.0f64, f64::max);
+        let apart =
+            |other: &[f64]| fast.iter().zip(other).map(|(a, b)| (a - b).abs()).fold(0.0f64, f64::max) / peak;
+        let moved: Vec<f64> = t.iter().map(|time| time + 1.0).collect();
+        assert!(apart(&lomb_scargle_fast(&moved, &y, 0.25 / 1000.0, 1001)) <= 1e-9);
+        // Controls: stretched times are another series, and a kernel four points wide is not
+        // accurate enough to pass.
+        let stretched: Vec<f64> = t.iter().map(|time| time * 1.001).collect();
+        assert!(apart(&lomb_scargle_fast(&stretched, &y, 0.25 / 1000.0, 1001)) > 1e-3);
+        assert!(nufft_error(4) > 1e-9, "a kernel four points wide passed: {:e}", nufft_error(4));
+    }
+
+    cav_validate::case! {
+        test: validation_nufft_lomb_scargle_equals_exact,
+        name: "spectrum.nufft_lomb_scargle_equals_exact",
+        subsystem: "spectrum",
+        slice: "S1",
+        reference: Exact,
+        against: "the NUFFT Lomb-Scargle (two type-1 transforms, exponential-of-semicircle kernel 14 points wide, upsampling 2) against the exact N*M sum: 2000 shots at 2 s with up to 0.3 s of jitter, 1001 frequencies from 0 to 0.25 Hz; largest difference as a fraction of the peak",
+        unit: Relative,
+        tolerance: 1e-9,
+        measure: cav_validate::Measured::Error(nufft_error(NUFFT_WIDTH)),
+    }
+
+    /// The error at each kernel width of the convergence case, and the worst of
+    /// `error(w)/10^(2−w)` over them: at most 1 when every width is within its prediction.
+    fn kernel_convergence() -> (Vec<(usize, f64)>, f64) {
+        let errors: Vec<(usize, f64)> = [4, 6, 8, 10, 12].into_iter().map(|w| (w, nufft_error(w))).collect();
+        let worst = errors.iter().map(|(w, e)| e / 10f64.powi(2 - *w as i32)).fold(0.0f64, f64::max);
+        (errors, worst)
+    }
+
+    #[test]
+    fn nufft_kernel_converges() {
+        let (errors, worst) = kernel_convergence();
+        for (width, error) in &errors {
+            eprintln!("NUFFT kernel width {width}: {error:e} of the peak");
+        }
+        assert!(worst <= 1.0, "a width is outside 10^(2-w): {errors:?}");
+        for pair in errors.windows(2) {
+            assert!(pair[1].1 <= pair[0].1 / 10.0, "two more points gained less than a decade: {pair:?}");
+        }
+        // Control: the errors are not all at the floor already, or nothing would be converging.
+        assert!(errors[0].1 > 1e4 * errors[4].1);
+    }
+
+    cav_validate::case! {
+        test: validation_nufft_kernel_converges,
+        name: "spectrum.nufft_kernel_converges",
+        subsystem: "spectrum",
+        slice: "S1",
+        reference: Exact,
+        against: "the NUFFT Lomb-Scargle's error against the exact sum at kernel widths 4, 6, 8, 10, 12, each as a fraction of its predicted ceiling 10^(2-w) of the peak (a decade a grid point, one decade in hand); the largest of the five",
+        unit: Relative,
+        tolerance: 1.0,
+        measure: cav_validate::Measured::Error(kernel_convergence().1),
+    }
+
+    /// 100 000 jittered shots, 50 000 frequencies, compared with the exact sum at 48 of them: the
+    /// peak's bin, the two beside it, and the rest spread evenly.
+    fn nufft_long() -> f64 {
+        let (t, y) = jittered(100_000, 0.3, 23);
+        let (count, df) = (50_000usize, 0.25f64 / 50_000.0);
+        let peak = (0.05 / df).round() as usize;
+        let mut bins: Vec<usize> = (0..45).map(|k| 1 + k * (count - 2) / 44).collect();
+        bins.extend([peak - 1, peak, peak + 1]);
+        fast_against_exact(&t, &y, df, count, NUFFT_WIDTH, &bins)
+    }
+
+    #[test]
+    fn nufft_lomb_scargle_long() {
+        let started = std::time::Instant::now();
+        let worst = nufft_long();
+        eprintln!(
+            "NUFFT Lomb–Scargle, 100 000 shots: {worst:e} of the peak, {:?} with the check",
+            started.elapsed()
+        );
+        assert!(worst <= 1e-9, "{worst:e} of the peak");
+    }
+
+    cav_validate::case! {
+        test: validation_nufft_lomb_scargle_long,
+        name: "spectrum.nufft_lomb_scargle_long",
+        subsystem: "spectrum",
+        slice: "S1",
+        reference: Exact,
+        against: "the NUFFT Lomb-Scargle on 100 000 jittered shots, 50 000 frequencies to 0.25 Hz, against the exact sum at 48 of them (the peak's bin, its neighbours, the rest spread evenly); largest difference as a fraction of the peak; the rounding floor is predicted near N*eps = 2e-11",
+        unit: Relative,
+        tolerance: 1e-9,
+        measure: cav_validate::Measured::Error(nufft_long()),
     }
 
     #[test]
