@@ -27,6 +27,9 @@ cav <command>
                                  scene: over the file it came from, or to --out (needed for a library scene)
   exec \"<commands>\"              run console commands (separated by `;`) and print what each answers;
                                  `cav exec help` lists them
+  run <scene> --out <dir> [--preset aion10|aice|file.ron] [--exec \"<commands>\"] [--patience <seconds>]
+                                 compute the scene's signal and write its bundle: .npy arrays, each tower's
+                                 readout times, the numerics and the error estimate (see the manifest)
   replay <journal.json> [--out <dir>]
                                  run a saved session again (`journal save <file>` writes one); what it
                                  exported is written into --out under each file's own name, or not at all
@@ -88,6 +91,7 @@ fn run(raw: &[String]) -> Result<(), String> {
         }
         "set" => set(rest),
         "replay" => replay(rest),
+        "run" => run_scene(rest),
         "exec" => {
             let args = Args::parse(rest, &[])?;
             let [script]: [String; 1] = args.finish(1)?.try_into().map_err(|_| "exec takes one argument")?;
@@ -122,6 +126,48 @@ fn run(raw: &[String]) -> Result<(), String> {
         }
         other => Err(format!("`{other}` is not a command\n\n{USAGE}")),
     }
+}
+
+/// `cav run`: load, any edits asked for, wait for the signal, write the bundle. Each step is the
+/// console command a person would type, so the run is a short session like any other.
+fn run_scene(rest: &[String]) -> Result<(), String> {
+    let mut args = Args::parse(rest, &["out", "preset", "exec", "patience"])?;
+    let out = args.option("out").ok_or("run needs --out <directory> for the bundle")?;
+    let preset = args.option("preset");
+    let exec = args.option("exec");
+    let patience = match args.option("patience") {
+        None => 600.0,
+        Some(text) => text
+            .parse::<f64>()
+            .ok()
+            .filter(|seconds| seconds.is_finite() && *seconds >= 0.0 && *seconds <= 86_400.0)
+            .ok_or_else(|| format!("`{text}` is not a patience: seconds, from 0 to 86400"))?,
+    };
+    let [scene]: [String; 1] = args.finish(1)?.try_into().map_err(|_| "run takes one scene")?;
+    let started = std::time::Instant::now();
+    let mut session = Session::new();
+    session.engine.set_patience(std::time::Duration::from_secs_f64(patience));
+    session.load(&scene)?;
+    if let Some(preset) = preset {
+        session.engine.run_line(&format!("preset {preset}"))?;
+    }
+    if let Some(script) = exec {
+        session.engine.run_script(&script)?;
+    }
+    session
+        .engine
+        .apply(cav_engine::Command::Export { what: cav_engine::ExportKind::Bundle, to: out.clone() })?;
+    let (_, signal) = session.engine.signal();
+    let signal = signal.ok_or("the bundle was written from no signal")?;
+    println!(
+        "{out}: scene `{}`, {} tower(s) × {} shot(s), quadrature {}, {:.2} s",
+        session.engine.spec().name,
+        signal.towers,
+        signal.times.len(),
+        cav_engine::estimate_text(signal.estimate, signal.settled),
+        started.elapsed().as_secs_f64()
+    );
+    Ok(())
 }
 
 /// `cav replay`: a journal run again on a fresh engine. Exports go into `--out` by file name; a

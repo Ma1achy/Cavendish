@@ -34,6 +34,40 @@ pub use log::{Level, Log, LogEntry, LogFilter, Subsystem};
 /// The engine's version, as `cav doctor`, `stats` and the About box report it.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Who is running: the engine's version, and the git revision of the source tree it was built
+/// from with whether that tree has uncommitted changes. The revision is asked of git, in the
+/// source tree, the first time it is wanted (a bundle's manifest, a figure's provenance); where
+/// there is no git or no tree (a binary copied elsewhere) it is `unknown`.
+///
+/// This is the tree as it stands when asked, not as it stood when the binary was compiled: a
+/// binary run through `cargo run` is always built from the tree it is asked about; one run by
+/// hand after the tree has moved on is not, and nothing here can tell.
+#[must_use]
+pub fn build() -> &'static cav_sim::bundle::Build {
+    static BUILD: std::sync::OnceLock<cav_sim::bundle::Build> = std::sync::OnceLock::new();
+    BUILD.get_or_init(|| {
+        let git = |arguments: &[&str]| {
+            std::process::Command::new("git")
+                .args(arguments)
+                .current_dir(env!("CARGO_MANIFEST_DIR"))
+                .output()
+                .ok()
+                .filter(|output| output.status.success())
+                .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        };
+        let revision = git(&["rev-parse", "HEAD"]).filter(|sha| !sha.is_empty());
+        let dirty = revision
+            .as_ref()
+            .and_then(|_| git(&["status", "--porcelain"]))
+            .map(|changes| !changes.is_empty());
+        cav_sim::bundle::Build {
+            version: VERSION.to_owned(),
+            revision: revision.unwrap_or_else(|| "unknown".to_owned()),
+            dirty,
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

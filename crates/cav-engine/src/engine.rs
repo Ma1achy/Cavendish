@@ -63,6 +63,8 @@ enum Prepared {
     Restore(Box<SceneSpec>),
     /// An export: the file to write and its bytes.
     Write(std::path::PathBuf, Vec<u8>),
+    /// An export of a bundle: the directory to write it into.
+    Bundle(std::path::PathBuf),
 }
 
 /// How many frequencies a spectral window is answered at.
@@ -225,6 +227,14 @@ impl Engine {
     /// Why the command was refused.
     pub fn apply(&mut self, command: Command) -> Result<(), String> {
         let described = console::describe(&command, self.active);
+        // A bundle is of finished numbers: the signal is waited for, as long as this client
+        // waits for anything (a tenth of a second in the application, which is then told to
+        // try again; a minute or more from the command line).
+        if matches!(command, Command::Export { what: crate::ExportKind::Bundle, .. })
+            && self.exports != Exports::Skipped
+        {
+            self.settle(self.patience);
+        }
         let prepared = match self.prepare(&command) {
             Ok(prepared) => prepared,
             Err(why) => {
@@ -243,6 +253,17 @@ impl Engine {
                 return Err(why);
             }
             wrote = Some(format!("{} ({} bytes)", path.display(), bytes.len()));
+        }
+        if let Prepared::Bundle(directory) = &prepared {
+            let signal = self.forward.signal().expect("prepare saw a refined signal");
+            match cav_sim::bundle::write(directory, &self.spec, signal, crate::build()) {
+                Ok(files) => wrote = Some(format!("{} ({} files)", directory.display(), files.len())),
+                Err(why) => {
+                    self.note(Level::Error, Subsystem::Engine, format!("refused `{described}`: {why}"));
+                    self.refused = true;
+                    return Err(why);
+                }
+            }
         }
         // A step of a drag continues the step before it. If that step was refused there is
         // nothing to continue, and this one is an edit of its own: it must not be folded into
@@ -419,6 +440,16 @@ impl Engine {
             }
         };
         let bytes = match what {
+            crate::ExportKind::Bundle => {
+                // Never from a stale signal: the numbers would be another scene's.
+                return match (self.forward.why(), self.forward.state(), self.forward.signal()) {
+                    (Some(why), _, _) => Err(format!("the scene has no signal to bundle: {why}")),
+                    (None, SignalState::Refined, Some(_)) => Ok(Prepared::Bundle(path)),
+                    _ => Err("the signal is still being computed: a bundle is written only from a refined signal; \
+                              try again when it is (the header says `signal · …`)"
+                        .into()),
+                };
+            }
             crate::ExportKind::Scene => self.spec.to_ron().into_bytes(),
             crate::ExportKind::Journal => {
                 if !self.journal_whole {

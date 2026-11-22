@@ -276,6 +276,8 @@ pub struct Contribution {
     pub gradiometer: Vec<f64>,
     /// The largest quadrature estimate of any shot, radians.
     pub estimate: f64,
+    /// The same for each tower on its own, radians, in the towers' order.
+    pub estimates: Vec<f64>,
     /// Whether every shot's read settled to the tolerance. When false, `estimate` is not a bound
     /// that was met but how far the worst read was from settling.
     pub settled: bool,
@@ -328,6 +330,7 @@ pub fn contribution(
         upper: Vec::with_capacity(count),
         gradiometer: Vec::with_capacity(count),
         estimate: 0.0,
+        estimates: vec![0.0; towers.len()],
         settled: true,
         warnings: Vec::new(),
     };
@@ -406,7 +409,9 @@ pub fn contribution(
                     if inside.is_none() && watched.crossed() {
                         inside = Some(k);
                     }
-                    out.estimate = out.estimate.max(if estimate.is_nan() { f64::INFINITY } else { estimate });
+                    let estimate = if estimate.is_nan() { f64::INFINITY } else { estimate };
+                    out.estimate = out.estimate.max(estimate);
+                    out.estimates[at] = out.estimates[at].max(estimate);
                     out.lower.push(lower);
                     out.upper.push(upper);
                     out.gradiometer.push(signed(lower, upper));
@@ -512,6 +517,10 @@ pub struct Signal {
     pub gradiometer: Vec<f64>,
     /// The largest quadrature estimate of any source's any shot, radians.
     pub estimate: f64,
+    /// The same for each tower on its own, radians, in the towers' order: the largest estimate
+    /// of any one source's any shot at that tower. (The estimates of several sources are not
+    /// added: each is a bound on its own read, and the largest says how far to trust the tower.)
+    pub estimates: Vec<f64>,
     /// Whether every read of every source settled to the tolerance.
     pub settled: bool,
     /// What a person should know about these readings.
@@ -534,6 +543,7 @@ impl Signal {
             upper: zeros.clone(),
             gradiometer: zeros,
             estimate: 0.0,
+            estimates: vec![0.0; towers],
             settled: true,
             warnings: Vec::new(),
         }
@@ -553,6 +563,9 @@ impl Signal {
             sum.iter_mut().zip(part).for_each(|(s, p)| *s += p);
         }
         self.estimate = self.estimate.max(contribution.estimate);
+        for (own, part) in self.estimates.iter_mut().zip(&contribution.estimates) {
+            *own = own.max(*part);
+        }
         self.settled &= contribution.settled;
         self.warnings.extend(contribution.warnings.iter().cloned());
     }
@@ -1316,6 +1329,31 @@ mod tests {
         // Control: the schema describes the schedule, with units.
         assert_eq!(crate::paths::schema_at("array.schedule.jitter.delta").unwrap()["x-unit"], "s");
         assert_eq!(crate::paths::entry(&dev::cadence_lab(), "array.schedule.loss").unwrap().value, 0.02);
+    }
+
+    #[test]
+    fn error_estimates_are_per_tower() {
+        // A sphere that passes through tower 1's atoms and well clear of tower 5: the read at
+        // tower 1 does not settle and says how far it was off; tower 5's is good to the tolerance.
+        let scene = dev::through_the_tower();
+        let read = signal(&scene).unwrap();
+        assert_eq!(read.estimates.len(), 5);
+        assert!(read.estimates[0] > PHASE_TOLERANCE && !read.settled, "{:e}", read.estimates[0]);
+        assert!(read.estimates[4] <= PHASE_TOLERANCE, "{:e}", read.estimates[4]);
+        // The signal's one number is the largest of them.
+        let largest = read.estimates.iter().fold(0.0f64, |m, e| m.max(*e));
+        assert_eq!(read.estimate, largest);
+        // With two sources a tower's estimate is the larger of the two, not their sum.
+        let both = signal(&dev::superposition()).unwrap();
+        let (a, b) = (
+            signal(&only(&dev::superposition(), &[0])).unwrap(),
+            signal(&only(&dev::superposition(), &[1])).unwrap(),
+        );
+        for tower in 0..5 {
+            assert_eq!(both.estimates[tower], a.estimates[tower].max(b.estimates[tower]));
+        }
+        // Control: a scene with nothing in it has nothing to estimate.
+        assert_eq!(signal(&dev::void()).unwrap().estimates, [0.0; 5]);
     }
 
     #[test]

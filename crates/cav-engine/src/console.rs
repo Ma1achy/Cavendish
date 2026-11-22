@@ -77,6 +77,12 @@ pub const COMMANDS: &[CommandDoc] = &[
         example: "save saved-scene.ron",
     },
     CommandDoc {
+        name: "export",
+        usage: "export bundle <directory>",
+        about: "write the bundle: .npy arrays as v1's StateBundle, each tower's readout times, the numerics, the per-tower error estimate and a manifest; only from a refined signal",
+        example: "export bundle a-bundle",
+    },
+    CommandDoc {
         name: "mass",
         usage: "mass <kg> at <x> <y> <z>",
         about: "add a point mass at rest (an edit)",
@@ -253,6 +259,7 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
         Command::Remove { path } => format!("remove {path}"),
         Command::Export { what: ExportKind::Scene, to } => format!("save {}", quoted(to)),
         Command::Export { what: ExportKind::Journal, to } => format!("journal save {}", quoted(to)),
+        Command::Export { what: ExportKind::Bundle, to } => format!("export bundle {}", quoted(to)),
         Command::Run { from: Stage::Forward } => "run".into(),
         Command::Compare(None) => "compare off".into(),
         Command::Compare(Some(instrument)) => {
@@ -448,6 +455,9 @@ impl Engine {
             ("remove", [path]) => Ok(Request::Do(Command::Remove { path: (*path).to_owned() })),
             ("save", [file]) => {
                 Ok(Request::Do(Command::Export { what: ExportKind::Scene, to: (*file).to_owned() }))
+            }
+            ("export", ["bundle", directory]) => {
+                Ok(Request::Do(Command::Export { what: ExportKind::Bundle, to: (*directory).to_owned() }))
             }
             ("journal", ["save", file]) => {
                 Ok(Request::Do(Command::Export { what: ExportKind::Journal, to: (*file).to_owned() }))

@@ -19,8 +19,7 @@ pub fn fixtures() -> PathBuf {
 /// checked nothing, and must not pass.
 #[must_use]
 pub fn fixture(relative: &str) -> Vec<f64> {
-    cav_validate::npy::read(&fixtures().join(relative))
-        .unwrap_or_else(|why| panic!("fixture {relative}: {why}"))
+    cav_core::npy::read(&fixtures().join(relative)).unwrap_or_else(|why| panic!("fixture {relative}: {why}"))
 }
 
 /// The largest difference between two series, as a fraction of the largest value of the second.

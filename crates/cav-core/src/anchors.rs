@@ -84,7 +84,7 @@ mod tests {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../oracle/fixtures/v1")
             .join(format!("{name}.npy"));
-        cav_validate::npy::read(&path).unwrap_or_else(|why| panic!("{why}"))
+        crate::npy::read(&path).unwrap_or_else(|why| panic!("{why}"))
     }
 
     /// The engine's series for an anchor at a tower, and its largest distance from `reference` as

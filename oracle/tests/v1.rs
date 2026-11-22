@@ -129,7 +129,7 @@ fn the_frozen_v1_fixtures_are_what_v1_computes() {
         let path = fixtures().join(&file);
         if freeze && !path.exists() {
             std::fs::create_dir_all(path.parent().expect("a directory")).expect("fixtures/v1");
-            cav_validate::npy::write(&path, &series).expect("writing the fixture");
+            cav_core::npy::write(&path, &series).expect("writing the fixture");
         }
         let kept = fixture(&file);
         let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
