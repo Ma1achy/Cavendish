@@ -1,0 +1,12 @@
+[package]
+name = "s15_engine_lab"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# A throwaway lab outside the workspace: it calls the engine's own forward model (`cav-core`).
+# Run from this folder: `cargo run --release --bin floor_off` and `cargo run --release --bin gravity_sweep`.
+[dependencies]
+cav-core = { path = "../../../../crates/cav-core" }
+
+[workspace]

@@ -1,0 +1,34 @@
+equator 0 g=9.780325 g(h=100m)-g=-0.00031
+Oxford 51.76 g=9.812263 g(h=100m)-g=-0.00031
+Fermilab 41.83N 41.83 g=9.803335 g(h=100m)-g=-0.00031
+pole 90 g=9.832185 g(h=100m)-g=-0.00031
+J2 tensor in ENU (s^-2, E=1e-9) = d(grad V): note sign: V positive; gravity acc = +gradV
+0 diag EE NN UU = [-1538.7 -1543.7  3082.4]  EN,EU,NU = [0. 0. 0.] trace 0.0
+45 diag EE NN UU = [-1540.2 -1542.8  3083. ]  EN,EU,NU = [ 0.    0.   -5.47] trace 0.0
+51.76 diag EE NN UU = [-1540.6 -1542.5  3083.1]  EN,EU,NU = [ 0.   0.  -5.3] trace -0.0
+90 diag EE NN UU = [-1541.6 -1541.6  3083.3]  EN,EU,NU = [0. 0. 0.] trace -0.0
+point-mass 2g/R = 3079.5793439020563 E ; -g/R = -1539.7896719510281
+AION vertical Earth gradient phase (Gzz=3.086e-6,L=5,T=.73): 7.402e+04 rad
+AION horizontal Earth gradient (Gxx=-1.54e-6, L=5 m horizontal): 3.694e+04 rad
+check quasi-static vs engine: 1kg point d=5,z=5 engine -8.06e-3; gradient tensor Gzz of point mass at tower mid:
+ point-mass tensor at tower middle (1 kg, 5 m east): Gzz=-5.339e-13 Gxx=1.068e-12 s^-2
+ quasi-static vertical phase n k Gzz L T^2 = -1.281e-02  (engine -8.06e-3 incl. finite arms, signs)
+ horizontal gradiometer same mass: along x, L=5 m: 2.561e-02
+Coriolis common-mode, k horizontal, v vertical 7.161 m/s: 5.010e+06 rad ; per 1 m/s of velocity mismatch: 6.996e+05 rad ; 1urad needs dv=1.43e-12 m/s
+Coriolis common-mode, k horizontal, v vertical 0.010 m/s: 6.996e+03 rad ; per 1 m/s of velocity mismatch: 6.996e+05 rad ; 1urad needs dv=1.43e-12 m/s
+free-fall drop over 2T=1.46 s: 10.46 m ; apex of launch to carry across: 
+free-fall drop over 2T=5.00 s: 122.62 m ; apex of launch to carry across: 
+tilt 1e-06 rad: common-mode phase 4.706e+04 rad; differential via gradient 3.086e-6*dz(5m)*... 
+tilt 1e-09 rad: common-mode phase 4.706e+01 rad; differential via gradient 3.086e-6*dz(5m)*... 
+orbit h=255 km: omega=1.1687e-03 rad/s period 5376 s; Gzz=2w^2=2.732e-06 (2732 E) ; Gxx=Gyy=-w^2=-1.366e-06; M(rotating frame)=w^2 diag(0,-1,3)->Mzz=4.097e-06
+orbit h=373 km: omega=1.1382e-03 rad/s period 5520 s; Gzz=2w^2=2.591e-06 (2591 E) ; Gxx=Gyy=-w^2=-1.295e-06; M(rotating frame)=w^2 diag(0,-1,3)->Mzz=3.886e-06
+orbit h=500 km: omega=1.1068e-03 rad/s period 5677 s; Gzz=2w^2=2.450e-06 (2450 E) ; Gxx=Gyy=-w^2=-1.225e-06; M(rotating frame)=w^2 diag(0,-1,3)->Mzz=3.675e-06
+orbit gradiometer L=0.5 T=2.0: phase keff*Gzz*L*T^2 = 8.801e+01 rad ; 1 mE/sqrt(Hz)=1e-12 s^-2 -> 3.222e-05 rad
+orbit gradiometer L=0.5 T=5.0: phase keff*Gzz*L*T^2 = 5.501e+02 rad ; 1 mE/sqrt(Hz)=1e-12 s^-2 -> 2.014e-04 rad
+orbit gradiometer L=1.0 T=10.0: phase keff*Gzz*L*T^2 = 4.401e+03 rad ; 1 mE/sqrt(Hz)=1e-12 s^-2 -> 1.611e-03 rad
+keff 16110731.556870732 rotation w=1.169e-03: Coriolis phase 2 keff w dv T^2 for dv=1 um/s, T=5: 9.414e-01 rad
+rotation angle over T=5 s: 5.843e-03 rad ; centrifugal Omega^2 L: 6.829e-07 m/s^2
+Moon tidal gradient 2GM/d^3 = 1.726e-13 s^-2 -> AION vertical phase 4.141e-03 rad
+Moon 2g/R= 1.865e-06 s^-2 (point-mass) ; AION-like phase 4.473e+04
+Mars 2g/R= 2.189e-06 s^-2 (point-mass) ; AION-like phase 5.251e+04
+Earth 2g/R= 3.080e-06 s^-2 (point-mass) ; AION-like phase 7.386e+04

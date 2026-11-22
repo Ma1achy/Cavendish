@@ -1,0 +1,10 @@
+vertical py d=5 z=5 -8.062868268392e-03
+vertical py d=10 z=5 -1.390061096996e-03
+vertical py d=50 z=5 -1.272837317890e-05
+vertical py d=200 z=5 -2.000271234258e-07
+vertical py d=3 z=12 5.640124975711e-03
+--- horizontal ---
+broadside y=1000 m py -1.600751e-09  |nkΓxxLT²| 1.600833e-09  ratio 0.99995  Gxx=-6.674e-20
+end-on x=1000 m py 3.249235e-09  |nkΓxxLT²| 3.225798e-09  ratio 1.00727  Gxx=1.345e-19
+vertical far d=1000: py -1.600808e-09 ; n k Gzz L T^2 -1.600652e-09 ratio 1.00010
+near mass 5 m beside beam centre, drop from rest: with fall -4.120857e-03 ; without fall(g=0) -4.578880e-03
