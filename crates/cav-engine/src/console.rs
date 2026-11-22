@@ -129,8 +129,8 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "show",
-        usage: "show <scene|signal|periodogram> [@N]",
-        about: "what a pane shows: the scene, every tower's signal, or the periodogram with the combs",
+        usage: "show <scene|signal|periodogram|flight> [@N]",
+        about: "what a pane shows: the scene, every tower's signal, the periodogram with the combs, or the atoms' flights on absolute time",
         example: "show signal",
     },
     CommandDoc {

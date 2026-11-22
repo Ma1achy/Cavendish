@@ -327,7 +327,7 @@ fn timeline_panel(shell: &mut Shell, ui: &mut egui::Ui) {
             )
         } else {
             format!(
-                "one lane per tower · each bar is a shot, launch to readout (2T = {:.2} s) · one shot every {:.1} s · drag to scrub",
+                "one lane per tower · each bar is a shot, launch to readout (2T = {:.2} s) · one shot every {:.1} s · drag to scrub · Shift-drag a lane to move its clock",
                 2.0 * instrument.half_sequence,
                 instrument.cycle
             )
@@ -335,12 +335,28 @@ fn timeline_panel(shell: &mut Shell, ui: &mut egui::Ui) {
         ui.label(RichText::new(caption).size(11.0).color(theme::WEAK));
     });
     let labels: Vec<String> = spec.array.towers.iter().map(|t| t.label.clone()).collect();
+    let offsets: Vec<f64> = spec.array.towers.iter().map(|t| t.timing.offset).collect();
     let (time, selected) = (shell.engine.time(), shell.selected_tower());
     let response = egui::ScrollArea::vertical()
         .id_salt("lanes")
         .auto_shrink([false, false])
-        .show(ui, |ui| timeline::lanes(ui, &labels, &all_shots, spec.duration, time, selected))
+        .show(ui, |ui| timeline::lanes(ui, &labels, &all_shots, &offsets, spec.duration, time, selected))
         .inner;
+    shell.layout.lanes.clone_from(&response.bars);
+    // A lane dragged with Shift: a `set` of that tower's offset, each step continuing the last,
+    // so that the whole drag is one edit.
+    if let Some((tower, seconds)) = response.offset
+        && seconds != 0.0
+    {
+        let path = format!("array.towers[{tower}].timing.offset");
+        let continues = shell.editing.as_deref() == Some(path.as_str());
+        let value = serde_json::json!(offsets[tower] + seconds);
+        let applied = shell.apply(Command::Set { path: path.clone(), value, continues });
+        shell.editing = (applied || continues).then_some(path);
+    }
+    if response.offset_ended {
+        shell.editing = None;
+    }
     if let Some(t) = response.seek {
         shell.playing = false;
         shell.apply(Command::Seek(t));
@@ -555,6 +571,8 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             ("periodogram", "show periodogram", periodogram),
         ],
     );
+    let flight = shell.engine.content(pane) == cav_engine::PaneContent::Flight;
+    button_row(shell, ui, "", &[("flight", "show flight", flight)]);
     ui.add_space(4.0);
     ui.label(
         RichText::new(
@@ -788,7 +806,7 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                 };
                 let spec = shell.engine.spec();
                 let whole = match content {
-                    cav_engine::PaneContent::Signal => spec.duration,
+                    cav_engine::PaneContent::Signal | cav_engine::PaneContent::Flight => spec.duration,
                     _ => 0.5 / spec.array.instrument.cycle,
                 };
                 let scroll = if response.hovered() { ui.input(|i| i.smooth_scroll_delta.y) } else { 0.0 };
@@ -804,7 +822,7 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                             crate::plots::zoomed([drawn.x.lo, drawn.x.hi], value(point), scroll, whole);
                         commands.push(Command::View(ViewCommand::Span { pane, span }));
                     }
-                    if content == cav_engine::PaneContent::Signal
+                    if matches!(content, cav_engine::PaneContent::Signal | cav_engine::PaneContent::Flight)
                         && (response.clicked() || response.dragged())
                         && let Some(point) = response.interact_pointer_pos()
                     {

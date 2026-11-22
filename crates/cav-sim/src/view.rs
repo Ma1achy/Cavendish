@@ -153,6 +153,9 @@ pub enum PaneContent {
     /// The periodogram of a tower's signal, with each oscillating body's comb of harmonics drawn
     /// where they fold to.
     Periodogram,
+    /// The atoms' flights: each tower's arms as height against absolute time, one row a tower,
+    /// so that towers on their own clocks are seen side by side.
+    Flight,
 }
 
 impl PaneContent {
@@ -163,13 +166,14 @@ impl PaneContent {
             Self::Scene => "scene",
             Self::Signal => "signal",
             Self::Periodogram => "periodogram",
+            Self::Flight => "flight",
         }
     }
 
     /// The content a word names.
     #[must_use]
     pub fn parse(word: &str) -> Option<Self> {
-        [Self::Scene, Self::Signal, Self::Periodogram].into_iter().find(|c| c.name() == word)
+        [Self::Scene, Self::Signal, Self::Periodogram, Self::Flight].into_iter().find(|c| c.name() == word)
     }
 }
 
