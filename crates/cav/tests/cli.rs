@@ -352,3 +352,41 @@ fn cli_get_set_ls_edit_a_file() {
     }
     assert_eq!(std::fs::read(&file).unwrap(), before);
 }
+
+#[test]
+fn cli_replays_a_saved_session() {
+    let journal = scratch("session to replay.json");
+    let scene = scratch("replayed scene.ron");
+    let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("replay out");
+    let _ = std::fs::remove_dir_all(&out);
+    // A session through `cav exec`: edits, a save, the journal saved.
+    let script = format!(
+        "load comb; set bodies[0].mass 42.5; add array.towers {{\"label\": \"tower 6\", \"position\": [6, 0, 0]}}; \
+         save \"{}\"; set duration 300; journal save \"{}\"; stats",
+        scene.display(),
+        journal.display()
+    );
+    let session = cav(&["exec", &script]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let text = stdout(&session);
+    let stats: serde_json::Value = serde_json::from_str(&text[text.rfind("\n{").unwrap()..]).unwrap();
+    let saved = std::fs::read(&scene).unwrap();
+    std::fs::remove_file(&scene).unwrap();
+    // Replayed with somewhere to write: the same scene file, byte for byte, under its own name.
+    let replayed = cav(&["replay", journal.to_str().unwrap(), "--out", out.to_str().unwrap()]);
+    assert!(replayed.status.success(), "{}", stderr(&replayed));
+    let said = stdout(&replayed);
+    assert!(said.starts_with("replayed 5 command(s) · scene `comb`"), "{said}");
+    assert!(said.contains("1 export(s) written into"), "{said}");
+    assert_eq!(std::fs::read(out.join("replayed scene.ron")).unwrap(), saved);
+    assert!(!scene.exists(), "the replay wrote where the journal said");
+    // The session went one command further (the journal's own save), which changes no state:
+    // the digests agree.
+    assert!(said.contains(stats["digest"].as_str().unwrap()), "{said} against {}", stats["digest"]);
+    // Without --out nothing is written at all.
+    let plain = cav(&["replay", journal.to_str().unwrap()]);
+    assert!(stdout(&plain).contains("not written (no --out)") && !scene.exists());
+    // Control: what is not a journal is refused.
+    let wrong = cav(&["replay", out.join("replayed scene.ron").to_str().unwrap()]);
+    assert!(!wrong.status.success() && stderr(&wrong).contains("not a journal"), "{}", stderr(&wrong));
+}

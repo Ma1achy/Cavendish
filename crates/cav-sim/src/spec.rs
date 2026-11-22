@@ -422,7 +422,15 @@ impl SceneSpec {
     /// The JSON Schema of the scene spec (draft 2020-12), with every field's doc string.
     #[must_use]
     pub fn schema() -> serde_json::Value {
-        serde_json::to_value(schemars::schema_for!(Self)).expect("a schema is JSON")
+        Self::schema_ref().clone()
+    }
+
+    /// The same schema, made once and kept: it is derived from the types, so it cannot change
+    /// while the program runs. Paths read it on every look-up.
+    #[must_use]
+    pub fn schema_ref() -> &'static serde_json::Value {
+        static SCHEMA: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
+        SCHEMA.get_or_init(|| serde_json::to_value(schemars::schema_for!(Self)).expect("a schema is JSON"))
     }
 
     /// Checks that the spec describes something that can exist.

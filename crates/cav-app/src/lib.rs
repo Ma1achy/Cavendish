@@ -4,6 +4,7 @@
 //! all against an `egui::Ui` and a [`PaneSurface`]. `main.rs` puts it in an eframe window;
 //! [`headless::Headless`] draws it into a texture for screenshots and tests.
 
+pub mod editors;
 pub mod headless;
 pub mod menus;
 mod panels;

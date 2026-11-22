@@ -62,6 +62,8 @@ pub struct Layout {
     pub buttons: Vec<(String, Rect)>,
     /// What each pane that shows a plot drew.
     pub plots: Vec<crate::plots::Drawn>,
+    /// Each property editor that was shown: the path it edits and where its widget is.
+    pub editors: Vec<(String, Rect)>,
 }
 
 impl Default for Layout {
@@ -73,6 +75,7 @@ impl Default for Layout {
             panes: Vec::new(),
             buttons: Vec::new(),
             plots: Vec::new(),
+            editors: Vec::new(),
         }
     }
 }
@@ -82,6 +85,12 @@ impl Layout {
     #[must_use]
     pub fn panel(&self, name: &str) -> Option<Rect> {
         self.panels.iter().find(|(n, _)| *n == name).map(|(_, r)| *r)
+    }
+
+    /// The editor of the field at `path`, if it was shown.
+    #[must_use]
+    pub fn editor(&self, path: &str) -> Option<Rect> {
+        self.editors.iter().find(|(p, _)| p == path).map(|(_, r)| *r)
     }
 
     /// The button that runs `line`, if it was shown.
@@ -117,6 +126,12 @@ pub struct Shell {
     pub(crate) drag_under_way: bool,
     /// Every tower's reading under the playhead, and the engine's generation it was read at.
     readings: Option<(u64, ReadingReply)>,
+    /// The path whose editor is being dragged, once a step of the drag has been applied: the
+    /// next step continues that edit.
+    pub(crate) editing: Option<String>,
+    /// The text field being typed in: its path and what has been typed so far. The scene is
+    /// not edited until the field is left.
+    pub(crate) typing: Option<(String, String)>,
 }
 
 /// How near a body's picture the pointer must be to take hold of it, points.
@@ -170,6 +185,8 @@ impl Shell {
             dragging: None,
             drag_under_way: false,
             readings: None,
+            editing: None,
+            typing: None,
         }
     }
 

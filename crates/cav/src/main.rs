@@ -27,6 +27,9 @@ cav <command>
                                  scene: over the file it came from, or to --out (needed for a library scene)
   exec \"<commands>\"              run console commands (separated by `;`) and print what each answers;
                                  `cav exec help` lists them
+  replay <journal.json> [--out <dir>]
+                                 run a saved session again (`journal save <file>` writes one); what it
+                                 exported is written into --out under each file's own name, or not at all
   mcp                            serve the engine to an agent: an MCP server on stdin and stdout
   licences                       the licences of what is built into the binaries (the monospace font)
   help                           this text
@@ -84,6 +87,7 @@ fn run(raw: &[String]) -> Result<(), String> {
             Ok(())
         }
         "set" => set(rest),
+        "replay" => replay(rest),
         "exec" => {
             let args = Args::parse(rest, &[])?;
             let [script]: [String; 1] = args.finish(1)?.try_into().map_err(|_| "exec takes one argument")?;
@@ -118,6 +122,36 @@ fn run(raw: &[String]) -> Result<(), String> {
         }
         other => Err(format!("`{other}` is not a command\n\n{USAGE}")),
     }
+}
+
+/// `cav replay`: a journal run again on a fresh engine. Exports go into `--out` by file name; a
+/// journal is never allowed to write where it says.
+fn replay(rest: &[String]) -> Result<(), String> {
+    let mut args = Args::parse(rest, &["out"])?;
+    let out = args.option("out");
+    let [file]: [String; 1] = args.finish(1)?.try_into().map_err(|_| "replay takes one journal file")?;
+    let journal = cav_engine::journal::read(&file)?;
+    let mut engine = match &out {
+        Some(directory) => {
+            std::fs::create_dir_all(directory).map_err(|e| format!("{directory}: {e}"))?;
+            cav_engine::Engine::replay_into(&journal, std::path::Path::new(directory))?
+        }
+        None => cav_engine::Engine::replay(&journal)?,
+    };
+    engine.settle(std::time::Duration::from_secs(600));
+    let exports =
+        journal.iter().filter(|command| matches!(command, cav_engine::Command::Export { .. })).count();
+    println!(
+        "replayed {} command(s) · scene `{}` · state {} · {exports} export(s) {}",
+        journal.len(),
+        engine.spec().name,
+        engine.digest(),
+        out.map_or_else(
+            || "not written (no --out)".to_owned(),
+            |directory| format!("written into {directory}")
+        )
+    );
+    Ok(())
 }
 
 /// `cav set`: load, one `Set` through the engine (the same command a panel or an agent issues,

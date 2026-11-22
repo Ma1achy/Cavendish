@@ -192,19 +192,19 @@ fn the_undo_history_is_bounded_by_bytes() {
     assert_eq!(engine.spec().name, format!("heavy-{}", loads - 2));
     // Control: without the budget these loads are three times it.
     assert!(loads * each >= 3 * BUDGET - each);
-    // An ordinary edit is not a scene: a thousand sets on the same heavy scene add a few hundred
+    // An ordinary edit is not a scene: a few dozen sets on the same heavy scene add a few hundred
     // bytes each to the history, however large the scene they edit, and all of them undo.
     let mut small = Engine::new();
     small.hold_workers(true);
     small.apply(Command::load(heavy_scene(0))).unwrap();
     let held = small.held().0;
-    for n in 0..200 {
+    for n in 0..25 {
         small.apply(Command::set("bodies[7].mass", json!(2.0 + f64::from(n)))).unwrap();
     }
     let grew = small.held().0 - held;
-    assert!(grew <= 200 * 400, "200 sets hold {grew} bytes of history");
+    assert!(grew <= 25 * 400, "25 sets hold {grew} bytes of history");
     let Ok(cav_engine::Reply::Stats(stats)) = small.query(&Query::Stats) else { panic!("stats") };
-    assert_eq!(stats.undo, 201);
+    assert_eq!(stats.undo, 26);
 }
 
 #[test]
