@@ -160,6 +160,44 @@ fn timings(shell: &mut Shell, headless: &mut Headless, size: [u32; 2]) -> Result
         "each time includes copying the {} × {} picture back to the CPU, which a window does not do",
         size[0], size[1]
     );
+    // The forward model, on the scene as loaded: the reading under the playhead, and the series.
+    let spec = shell.engine.spec().clone();
+    let (towers, bodies) = (spec.array.towers.len(), spec.bodies.len());
+    let started = Instant::now();
+    const READINGS: u32 = 200;
+    for step in 0..READINGS {
+        shell.engine.query(&cav_engine::Query::Reading(Some(f64::from(step) * 0.01)))?;
+    }
+    println!(
+        "reading, {towers} towers × {bodies} bodies, computed when asked: {:.1} µs each over {READINGS}",
+        started.elapsed().as_secs_f64() * 1e6 / f64::from(READINGS)
+    );
+    let started = Instant::now();
+    shell.run("run")?;
+    let whole = shell.engine.settle(std::time::Duration::from_secs(300));
+    let shots = shell.engine.signal().1.map_or(0, |signal| signal.times.len());
+    println!(
+        "signal from nothing, {shots} shots × {towers} towers × {bodies} bodies, on the worker: {:.1} ms{}",
+        started.elapsed().as_secs_f64() * 1e3,
+        if whole { "" } else { " (NOT FINISHED in 300 s)" }
+    );
+    // A drag: a set of the first body's anchor, then the reading and a frame, as the window does it.
+    if let Some(body) = spec.bodies.first() {
+        let (anchor, field) = body.motion.anchor();
+        let mut drag = Vec::new();
+        for step in 0..FRAMES {
+            let started = Instant::now();
+            let moved = [anchor[0] + 0.01 * f64::from(step), anchor[1], anchor[2]];
+            shell.run(&format!("set bodies[0].motion.{field} [{}, {}, {}]", moved[0], moved[1], moved[2]))?;
+            shell.readings();
+            headless.render(shell, size, vec![Vec::new()])?;
+            drag.push(started.elapsed().as_secs_f64() * 1e3);
+        }
+        println!(
+            "drag step (set, readings, one frame with its read-back): median {:.2} ms over {FRAMES} steps",
+            median(drag)
+        );
+    }
     Ok(())
 }
 

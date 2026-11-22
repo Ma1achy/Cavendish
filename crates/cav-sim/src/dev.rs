@@ -142,6 +142,36 @@ pub fn oscillator_zoo() -> SceneSpec {
     )
 }
 
+/// The reference scripts' oscillator: 1 kg, 3 m from the centre tower, moving 0.5 m either side
+/// of 1 m up, at `frequency` hertz.
+fn script_oscillator(frequency: f64) -> BodySpec {
+    let motion =
+        Motion::Linear { centre: [3.0, 0.0, 1.0], amplitude: [0.0, 0.0, 0.5], frequency, phase: 0.0 };
+    BodySpec::moving("oscillator", 1.0, motion)
+}
+
+/// `comb`: one oscillator below Nyquist, whose harmonics stand where they are.
+#[must_use]
+pub fn comb() -> SceneSpec {
+    open(
+        "comb",
+        "One oscillator at 0.05 Hz (panel b of the scripts' fig2_10m): its periodogram is a comb at 0.05,          0.10, 0.15 and 0.20 Hz, each harmonic lower than the last, all below the Nyquist frequency of          0.25 Hz.",
+        2000.0,
+        vec![script_oscillator(0.05)],
+    )
+}
+
+/// `folded-comb`: the same oscillator above Nyquist, whose harmonics all fold.
+#[must_use]
+pub fn folded_comb() -> SceneSpec {
+    open(
+        "folded-comb",
+        "One oscillator at 0.3275 Hz (panel c of the scripts' fig2_10m), above the Nyquist frequency of          0.25 Hz: every harmonic folds, to 0.1725, 0.155, 0.0175 and 0.19 Hz.",
+        2000.0,
+        vec![script_oscillator(0.3275)],
+    )
+}
+
 /// `superposition`: two bodies, to be read alone and together.
 #[must_use]
 pub fn superposition() -> SceneSpec {
@@ -296,9 +326,11 @@ pub fn precision_far() -> SceneSpec {
 }
 
 /// Every dev scene S1 adds, by builder.
-pub const S1_SCENES: [fn() -> SceneSpec; 11] = [
+pub const S1_SCENES: [fn() -> SceneSpec; 13] = [
     point,
     pass,
+    comb,
+    folded_comb,
     oscillator_zoo,
     superposition,
     mirror_pair,
@@ -478,7 +510,16 @@ mod tests {
             [p[0] - tower[0], p[1] - tower[1], p[2] - tower[2]]
         };
         assert!(distance(offset(&far, 3.3), offset(&near, 3.3)) < 1e-9);
-        assert_eq!(S1_SCENES.len(), 11);
+        assert_eq!(S1_SCENES.len(), 13);
+
+        // comb and folded-comb: the scripts' oscillator, below and above Nyquist.
+        let nyquist = 0.25;
+        let (below, above) = (comb(), folded_comb());
+        assert_eq!(below.bodies[0].motion.frequency(9.81), Some(0.05));
+        assert_eq!(above.bodies[0].motion.frequency(9.81), Some(0.3275));
+        assert!(4.0 * 0.05 < nyquist && 0.3275 > nyquist);
+        assert_eq!(at(&below, 0, 0.0), [3.0, 0.0, 1.5]);
+        assert_eq!(below.bodies[0].motion.anchor().0, above.bodies[0].motion.anchor().0);
     }
 
     #[test]

@@ -5,31 +5,27 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | Slice | State | Tag | Notes |
 |---|---|---|---|
 | S0 the shell | done: TASK-S0-01 to 14 merged; reviewed twice, nothing important remains | `s0-shell` | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
-| S1 a point mass | **in progress**: TASK-S1-08, 01, 09, 02, 05, 07, 03 merged; 11, 04, 06, 10, 12 to do |  | brief, criteria and what each first measurement found: `docs/slices/S1.md` (§7.1) |
+| S1 a point mass | built, **not yet reviewed**: TASK-S1-01 to 11 and 13 merged; 12 (Ubuntu Mono) and 14 (NUFFT Lomb–Scargle) not done |  | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
 
-## S1, a point mass: where it stands (22 Nov 2026) — in progress, not finished
+## S1, a point mass: where it stands (22 Nov 2026) — built, awaiting review
 
-**Merged.** The six findings of S0's second review (TASK-S1-08); the forward model in `cav-core`
-(TASK-S1-01); fixtures from George's scripts (TASK-S1-09); the oracle crate and tier (TASK-S1-02);
-bodies, the oscillator library and eleven dev scenes in the scene spec (TASK-S1-05).
+**Done.** The forward model in `cav-core` with George's defaults; the oracle crate (v1 at `v1-final`
+compiled from source, George's scripts as fixtures) and `cargo xtask oracle`; bodies, the oscillator
+library and thirteen dev scenes; `Set`, `Run`, `Signal`, `Reading`, `Periodogram`, the forward worker
+and per-source caching; in the app, a mass you can drag with every tower's reading beside it, a pass
+you can play, the signal plot and the periodogram with each body's comb and its folds; the spectra
+in `cav-core`; the §2.1 tests; the nulls. `cargo xtask demo S1`; the validation report regenerated
+with `--report --against s0-shell`.
 
-**Measured so far** (each against a criterion written first; `docs/slices/S1.md` §3.1 and §7.1):
-- the v1 tie, engine in v1's conventions: 2.2e-16 to 1.6e-15 of the peak on four anchors, against 1e-10;
-- the scripts as published, by the rule that copies their sampling: 3.9e-14 to 1.6e-12, against 1e-9;
-- the engine's own model against the scripts with the offset corrected: 1.5e-5 to 2.8e-4 on seven
-  series, against 3e-4; **1.07e-3 on `100m_oscillators`** (see the calls below);
-- the engine's quadrature on the anchors: 2.9e-15; 10 km from the origin: 1.0e-12.
+**Numbers** (`docs/slices/S1.md` §7): `quick` 195 tests, 5.3 to 6.8 s warm (9.9 to 14.1 s seen after
+rebuilds and three times unexplained); `gpu` 24; `oracle` 33 in 4.3 s; 53 of 53 validation cases.
+The v1 tie: 1e-15 of the peak against 1e-10. Scripts as published: 1e-12 against 1e-9.
 
-**Also merged since:** the nulls and the dev scenes' known answers (07: ten cases, all inside
-their criteria); `Set`, `Run`, `Signal`, `Reading`, the forward worker, per-source caching (03).
-`cav exec "load pass; reading 5.46; signal 1"` prints readings and a signal.
+**Not done.** The NUFFT Lomb–Scargle (TASK-S1-14). Ubuntu Mono (TASK-S1-12; see the owner's answers).
+A 10,000-shot series takes 1.8 s and a frame with it plotted 27 ms, both over the brief's own
+budgets (recorded, not gated). Nobody has looked at the real window.
 
-**Not done.** Bodies drawn in the view, dragging, live readings in the panels (11); periodograms and
-the plots (04); the comb and folding tests (06); the demo, screenshots, the regenerated validation
-report (10); Ubuntu Mono (12). **In the app a body can be loaded, listed and selected, and its signal
-is computed, but it is not yet drawn, dragged or plotted.**
-
-**Calls worth a second look (S1 so far).**
+**Calls worth a second look (S1).**
 1. **One tolerance was changed after measuring.** `oracle.script_same_time_100m_oscillators` measured
    1.07e-3 against the 3e-4 the brief had fixed and said would not be moved. Two added cases show
    the gap is the script's own trapezoid for a source 1 m from the atoms (second order as its step is
@@ -44,6 +40,15 @@ is computed, but it is not yet drawn, dragged or plotted.**
    outputs are frozen as well so that `quick` checks the tie on every commit.
 5. Three same-time cases (`fig2_10m` b, c, d) sit at 82% to 92% of their tolerance.
 6. `Command::Load` now boxes its scene (a scene with bodies is large); the JSON form is unchanged.
+7. **A load forgets its predecessor's signal** rather than showing it stale under the new scene's
+   name; an edit keeps the old signal, marked stale, until the new one is whole.
+8. **The in-house FFT** stays; rustfft measured 3 to 30 times faster and is in `plan/IDEAS.md` for S11.
+9. **`quick` has no room after a rebuild.** Warm it is 5 to 7 s; the 10 s gate was exceeded on runs
+   straight after edits and three times without one. Nothing was changed to hide it.
+10. **The comb test with noise asserts three harmonics, not four:** at the fixtures' 2e4 s the fourth
+    is under the scripts' shot noise.
+
+**Next.** A fresh review of S1; then TASK-S1-14 and TASK-S1-12 or S2.
 
 ## S0, the shell: where it stands (21 Nov 2026)
 
