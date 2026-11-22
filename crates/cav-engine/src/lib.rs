@@ -15,12 +15,16 @@
 pub mod command;
 pub mod console;
 pub mod engine;
+pub mod forward;
 pub mod log;
 
 pub use cav_sim::Target;
-pub use command::{Command, MAX_PANES, Query, Reply, Stats, ViewCommand};
+pub use command::{
+    ChannelName, Command, MAX_PANES, Query, Reply, SignalReply, Stage, Stats, TowerReading, ViewCommand,
+};
 pub use console::{COMMANDS, CommandDoc, Request, describe, help, render};
 pub use engine::Engine;
+pub use forward::SignalState;
 pub use log::{Level, Log, LogEntry, LogFilter, Subsystem};
 
 /// The engine's version, as `cav doctor`, `stats` and the About box report it.

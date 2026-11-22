@@ -7,6 +7,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+cav-core.workspace = true
 cav-sim.workspace = true
 schemars.workspace = true
 serde.workspace = true

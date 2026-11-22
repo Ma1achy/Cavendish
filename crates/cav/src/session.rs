@@ -16,7 +16,11 @@ pub struct Session {
 impl Session {
     /// A fresh engine; no device yet.
     pub fn new() -> Self {
-        Self { engine: Engine::new(), gpu: None }
+        let mut engine = Engine::new();
+        // A client that prints numbers waits for them: a line that asks for a signal gets the
+        // current scene's, or, after a minute, the last whole one marked stale.
+        engine.set_patience(std::time::Duration::from_secs(60));
+        Self { engine, gpu: None }
     }
 
     /// The device and the renderer, created the first time they are asked for.

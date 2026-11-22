@@ -8,8 +8,9 @@
 use cav_sim::{DrawStyle, NamedView, Projection, SceneSpec, SceneView, Target, ViewSpec};
 use serde::Serialize;
 
-use crate::command::{Command, MAX_PANES, Query, Reply, Stats, ViewCommand};
+use crate::command::{Command, MAX_PANES, Query, Reply, SignalReply, Stats, TowerReading, ViewCommand};
 use crate::console;
+use crate::forward::{Forward, SignalState};
 use crate::log::{Level, Log, Subsystem};
 
 /// How many log entries the engine keeps.
@@ -33,6 +34,10 @@ pub struct Engine {
     /// `log.total()` just after the last command's entry: tells whether that entry is still the newest.
     log_mark: u64,
     generation: u64,
+    /// The forward stage: its worker, what it has kept, the last whole signal.
+    forward: Forward,
+    /// How long a text client waits for the signal before it asks for one (`run_line`).
+    patience: std::time::Duration,
 }
 
 /// Everything a replay must reproduce, in one serialisable piece. The journal and the log are not
@@ -67,6 +72,8 @@ impl Engine {
             Subsystem::Engine,
             format!("cavendish {} · scene `{}`", crate::VERSION, spec.name),
         );
+        let mut forward = Forward::new();
+        forward.schedule(&spec, false);
         Self {
             spec,
             time: 0.0,
@@ -80,6 +87,8 @@ impl Engine {
             log,
             log_mark: 0,
             generation: 0,
+            forward,
+            patience: std::time::Duration::ZERO,
         }
     }
 
@@ -107,7 +116,10 @@ impl Engine {
             return Err(why);
         }
         let (level, subsystem) = match &command {
-            Command::Load(_) | Command::Undo | Command::Redo => (Level::Info, Subsystem::Edit),
+            Command::Load(_) | Command::Set { .. } | Command::Undo | Command::Redo => {
+                (Level::Info, Subsystem::Edit)
+            }
+            Command::Run { .. } => (Level::Info, Subsystem::Engine),
             Command::Select(_) => (Level::Info, Subsystem::Engine),
             Command::Seek(_) => (Level::Debug, Subsystem::Engine),
             Command::View(_) => (Level::Debug, Subsystem::View),
@@ -116,12 +128,11 @@ impl Engine {
             Command::Load(spec) => format!("{described} · {}", summary(spec)),
             _ => described,
         };
-        self.perform(&command);
-        self.generation += 1;
-
         // A run of commands that overwrite one another (a scrub, a drag) is one journal entry and
-        // one log line: the last.
+        // one log line: the last. For an edit it is also one step of undo: the first of the run.
         let overwrites = self.journal.last().is_some_and(|previous| command.overwrites(previous));
+        self.perform(&command, overwrites);
+        self.generation += 1;
         if overwrites {
             *self.journal.last_mut().expect("there is a previous command") = command;
             if self.log.total() == self.log_mark {
@@ -141,6 +152,8 @@ impl Engine {
     fn check(&self, command: &Command) -> Result<(), String> {
         match command {
             Command::Load(spec) => spec.validate().map_err(|e| e.0),
+            Command::Set { path, value } => self.edited(path, value).map(|_| ()),
+            Command::Run { .. } => Ok(()),
             Command::Seek(t) if !t.is_finite() => Err(format!("a time must be finite, not {t}")),
             Command::Seek(_) => Ok(()),
             Command::Select(None) => Ok(()),
@@ -194,9 +207,31 @@ impl Engine {
         }
     }
 
-    /// Carries out a command that [`Self::check`] has accepted.
-    fn perform(&mut self, command: &Command) {
+    /// The scene with the value at `path` replaced by `value`, if that is a valid scene.
+    fn edited(&self, path: &str, value: &serde_json::Value) -> Result<SceneSpec, String> {
+        let mut whole = serde_json::to_value(&self.spec).expect("a scene spec is JSON");
+        *at_path_mut(&mut whole, path)? = value.clone();
+        let spec: SceneSpec =
+            serde_json::from_value(whole).map_err(|e| format!("`{path}` cannot be set to {value}: {e}"))?;
+        spec.validate().map_err(|e| e.0)?;
+        Ok(spec)
+    }
+
+    /// Carries out a command that [`Self::check`] has accepted. `continues` says that it overwrites
+    /// the command before it: a drag in progress.
+    fn perform(&mut self, command: &Command, continues: bool) {
         match command {
+            Command::Set { path, value } => {
+                let edited = self.edited(path, value).expect("checked");
+                let before = std::mem::replace(&mut self.spec, edited);
+                if !continues {
+                    self.undo.push(before);
+                }
+                self.redo.clear();
+                self.settle_after_history();
+                self.forward.schedule(&self.spec, false);
+            }
+            Command::Run { .. } => self.forward.schedule(&self.spec, true),
             Command::Load(spec) => {
                 self.undo.push(std::mem::replace(&mut self.spec, (**spec).clone()));
                 self.redo.clear();
@@ -206,6 +241,7 @@ impl Engine {
                 for view in &mut self.views {
                     view.frame(&self.spec);
                 }
+                self.forward.schedule(&self.spec, false);
             }
             Command::Seek(t) => self.time = t.clamp(0.0, self.spec.duration),
             Command::Select(target) => self.selection = *target,
@@ -213,11 +249,13 @@ impl Engine {
                 let previous = self.undo.pop().expect("checked");
                 self.redo.push(std::mem::replace(&mut self.spec, previous));
                 self.settle_after_history();
+                self.forward.schedule(&self.spec, false);
             }
             Command::Redo => {
                 let next = self.redo.pop().expect("checked");
                 self.undo.push(std::mem::replace(&mut self.spec, next));
                 self.settle_after_history();
+                self.forward.schedule(&self.spec, false);
             }
             Command::View(view) => self.perform_view(view),
         }
@@ -298,7 +336,115 @@ impl Engine {
                 .map(|v| Reply::View(v.clone()))
                 .ok_or_else(|| format!("there is no pane {}; panes are 1 to {MAX_PANES}", pane + 1)),
             Query::Journal => Ok(Reply::Journal(self.journal.clone())),
+            Query::Signal { tower, channel } => {
+                let towers = self.spec.array.towers.len();
+                if *tower == 0 || *tower > towers {
+                    return Err(format!("there is no tower {tower}; the scene has towers 1 to {towers}"));
+                }
+                if let Some(why) = self.forward.why() {
+                    return Err(why.to_owned());
+                }
+                let state = match (self.forward.state(), self.forward.signal()) {
+                    (SignalState::Refined, Some(_)) => "refined",
+                    (_, Some(_)) => "stale",
+                    _ => "computing",
+                };
+                // A stale signal may be an earlier scene's, with another number of towers.
+                let signal = self.forward.signal().filter(|signal| *tower <= signal.towers);
+                Ok(Reply::Signal(SignalReply {
+                    tower: *tower,
+                    channel: *channel,
+                    state: if signal.is_some() { state } else { "computing" }.to_owned(),
+                    times: signal.map_or_else(Vec::new, |s| s.times.clone()),
+                    values: signal
+                        .map_or_else(Vec::new, |s| s.channel(tower - 1, channel.channel()).to_vec()),
+                    estimate: signal.map_or(0.0, |s| s.estimate),
+                    warnings: signal.map_or_else(Vec::new, |s| s.warnings.clone()),
+                }))
+            }
+            Query::Reading(time) => {
+                let time = time.unwrap_or(self.time);
+                if !time.is_finite() {
+                    return Err(format!("a time must be finite, not {time}"));
+                }
+                let readings = cav_sim::read::reading(&self.spec, time);
+                let towers = self.spec.array.towers.iter().zip(readings);
+                Ok(Reply::Reading(
+                    towers
+                        .map(|(tower, [lower, upper, gradiometer])| TowerReading {
+                            label: tower.label.clone(),
+                            lower,
+                            upper,
+                            gradiometer,
+                        })
+                        .collect(),
+                ))
+            }
         }
+    }
+
+    /// Takes what the forward worker has finished. True when a new whole signal has just arrived;
+    /// the log then says so, with anything the signal warns of. The application calls this every
+    /// frame; nothing in it waits.
+    pub fn poll(&mut self) -> bool {
+        if !self.forward.poll() {
+            return false;
+        }
+        self.announce();
+        true
+    }
+
+    /// Waits, at most `patience`, for the signal to be the current scene's. For clients that print
+    /// numbers (`cav exec`, MCP); the application polls instead. True when it is.
+    pub fn settle(&mut self, patience: std::time::Duration) -> bool {
+        let before = self.forward.state();
+        let whole = self.forward.settle(patience);
+        if whole && before != SignalState::Refined {
+            self.announce();
+        }
+        whole
+    }
+
+    /// How long `run_line` waits for the signal before a line that asks for one. Zero (the
+    /// default) in the application, where nothing may wait.
+    pub const fn set_patience(&mut self, patience: std::time::Duration) {
+        self.patience = patience;
+    }
+
+    pub(crate) const fn patience(&self) -> std::time::Duration {
+        self.patience
+    }
+
+    /// Says in the log that a signal has arrived.
+    fn announce(&mut self) {
+        let Some(signal) = self.forward.signal().cloned() else { return };
+        self.generation += 1;
+        let took = self.forward.took.map_or(0.0, |d| d.as_secs_f64() * 1e3);
+        self.log.push(
+            Level::Info,
+            Subsystem::Engine,
+            format!(
+                "signal: {} tower(s) × {} shot(s), quadrature within {:.0e} rad, {took:.1} ms",
+                signal.towers,
+                signal.times.len(),
+                signal.estimate.max(f64::MIN_POSITIVE)
+            ),
+        );
+        for warning in &signal.warnings {
+            self.log.push(Level::Warn, Subsystem::Engine, warning.clone());
+        }
+    }
+
+    /// Where the signal stands, and the signal itself if there is a whole one to show.
+    #[must_use]
+    pub fn signal(&self) -> (SignalState, Option<&std::sync::Arc<cav_sim::read::Signal>>) {
+        (self.forward.state(), self.forward.signal())
+    }
+
+    /// How many contributions the forward worker has been asked for since the engine started.
+    #[must_use]
+    pub const fn contributions_computed(&self) -> u64 {
+        self.forward.computed
     }
 
     /// Adds a line to the log on behalf of a client (the app, the renderer, the MCP server).
@@ -352,6 +498,12 @@ impl Engine {
             redo: self.redo.len(),
             generation: self.generation,
             digest: self.digest(),
+            signal: match self.forward.state() {
+                SignalState::Refined => "refined",
+                SignalState::Stale => "stale",
+                SignalState::None => "none",
+            }
+            .to_owned(),
         }
     }
 
@@ -456,6 +608,25 @@ fn summary(spec: &SceneSpec) -> String {
         n => format!("{n} bodies"),
     };
     format!("{towers} tower{}, {room}, {floor}, {bodies}", if towers == 1 { "" } else { "s" })
+}
+
+/// The place at a path inside a JSON value, to be written to. The last step may name a field
+/// that is absent only if its parent is an object that already has it: nothing is created.
+fn at_path_mut<'a>(root: &'a mut serde_json::Value, path: &str) -> Result<&'a mut serde_json::Value, String> {
+    // Walk read-only first, for the same refusals as a `get`; then again to borrow mutably.
+    at_path(root, path)?;
+    let mut here = root;
+    for segment in path.split('.') {
+        let (name, indices) = segment.split_once('[').map_or((segment, ""), |(n, rest)| (n, rest));
+        if !name.is_empty() {
+            here = here.get_mut(name).expect("walked");
+        }
+        for index in indices.split('[').filter(|i| !i.is_empty()) {
+            let n: usize = index.trim_end_matches(']').parse().expect("walked");
+            here = here.get_mut(n).expect("walked");
+        }
+    }
+    Ok(here)
 }
 
 /// The value at a path such as `array.towers[2].position[0]` inside a JSON value.

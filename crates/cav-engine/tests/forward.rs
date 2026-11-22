@@ -1,0 +1,342 @@
+//! Editing by path, and the forward stage: the signal is computed off the caller's thread, kept
+//! source by source, and never waited for by a command or a query.
+
+use std::time::{Duration, Instant};
+
+use cav_engine::{ChannelName, Command, Engine, Level, LogFilter, Query, Reply, SignalState, Stage, Target};
+use cav_sim::read;
+use cav_sim::{SceneSpec, dev};
+use serde_json::json;
+
+const LONG: Duration = Duration::from_secs(60);
+
+fn loaded(scene: SceneSpec) -> Engine {
+    let mut engine = Engine::new();
+    engine.apply(Command::load(scene)).unwrap();
+    engine
+}
+
+fn set(engine: &mut Engine, path: &str, value: serde_json::Value) -> Result<(), String> {
+    engine.apply(Command::Set { path: path.into(), value })
+}
+
+fn bits(values: &[f64]) -> Vec<u64> {
+    values.iter().map(|v| v.to_bits()).collect()
+}
+
+#[test]
+fn set_edits_any_path_and_undo_restores_it() {
+    let mut engine = loaded(dev::point());
+    let before = engine.spec().clone();
+    set(&mut engine, "bodies[0].mass", json!(250.0)).unwrap();
+    set(&mut engine, "bodies[0].motion.Static.position", json!([1.0, -2.0, 0.5])).unwrap();
+    set(&mut engine, "array.instrument.launch_floor", json!(false)).unwrap();
+    set(&mut engine, "array.towers[4].position[1]", json!(-6.5)).unwrap();
+    set(&mut engine, "name", json!("mine")).unwrap();
+    let spec = engine.spec();
+    assert_eq!((spec.bodies[0].mass, spec.name.as_str()), (250.0, "mine"));
+    assert_eq!(spec.bodies[0].motion, cav_sim::Motion::Static { position: [1.0, -2.0, 0.5] });
+    assert!(!spec.array.instrument.launch_floor);
+    assert_eq!(spec.array.towers[4].position, [0.0, -6.5, 0.0]);
+    // A whole part of the scene can be set at once: here, the bodies.
+    set(&mut engine, "bodies", json!([])).unwrap();
+    assert!(engine.spec().bodies.is_empty());
+    // Each set is an edit: six undos give back the scene as it was, to the bit.
+    for _ in 0..6 {
+        engine.apply(Command::Undo).unwrap();
+    }
+    assert_eq!(engine.spec(), &before);
+    assert_eq!(engine.apply(Command::Undo).map_err(|_| ()), Ok(()), "the load itself is still there to undo");
+    // The session replays from its journal, sets and all.
+    let replayed = Engine::replay(engine.journal()).unwrap();
+    assert_eq!(replayed.digest(), engine.digest());
+    // Control: a set that changes nothing visible still changes the state it says it changes.
+    let mut other = loaded(dev::point());
+    set(&mut other, "bodies[0].mass", json!(100.000_000_000_000_01)).unwrap();
+    assert_ne!(other.digest(), loaded(dev::point()).digest());
+}
+
+#[test]
+fn a_refused_set_changes_nothing() {
+    let mut engine = loaded(dev::point());
+    engine.apply(Command::Select(Some(Target::Body(1)))).unwrap();
+    let refused = [
+        ("bodies[0].mass", json!(-1.0), "bodies[0].mass"),
+        ("bodies[0].mass", json!("heavy"), "cannot be set"),
+        ("bodies[3].mass", json!(1.0), "has 1 items"),
+        ("bodies[0].weight", json!(1.0), "has no field `weight`"),
+        ("array.instrument.cycle", json!(1.0), "array.instrument.cycle"),
+        ("duration", json!(null), "cannot be set"),
+        ("array.towers", json!([]), "at least one tower"),
+    ];
+    for (path, value, expected) in refused {
+        let before = (engine.digest(), engine.journal().len(), engine.generation());
+        let why = set(&mut engine, path, value.clone()).unwrap_err();
+        assert!(why.contains(expected), "set {path} {value}: `{why}` should mention `{expected}`");
+        assert_eq!(before, (engine.digest(), engine.journal().len(), engine.generation()), "{path}");
+        assert_eq!(engine.log().iter().next_back().unwrap().level, Level::Error);
+    }
+    // Control: the same paths take values that make a scene.
+    set(&mut engine, "bodies[0].mass", json!(1.0)).unwrap();
+    set(&mut engine, "array.instrument.cycle", json!(3.0)).unwrap();
+    // A selection that the edit removes is dropped, not left pointing at nothing.
+    set(&mut engine, "bodies", json!([])).unwrap();
+    assert_eq!(engine.selection(), None);
+}
+
+#[test]
+fn a_drag_is_one_journal_entry_and_replays() {
+    let mut engine = loaded(dev::point());
+    let before = engine.spec().clone();
+    let journal_before = engine.journal().len();
+    for step in 0..40 {
+        let x = 2.0 + 0.05 * f64::from(step);
+        set(&mut engine, "bodies[0].motion.Static.position", json!([x, 0.0, 2.5])).unwrap();
+    }
+    assert_eq!(engine.journal().len(), journal_before + 1, "forty sets of one path are one entry");
+    assert_eq!(engine.generation(), 41, "and forty changes");
+    assert_eq!(Engine::replay(engine.journal()).unwrap().digest(), engine.digest());
+    // One undo takes the whole drag back.
+    engine.apply(Command::Undo).unwrap();
+    assert_eq!(engine.spec(), &before);
+    // Control: sets of different paths are different edits.
+    set(&mut engine, "bodies[0].mass", json!(5.0)).unwrap();
+    set(&mut engine, "bodies[0].radius", json!(0.1)).unwrap();
+    assert_eq!(engine.journal().len(), journal_before + 4, "the drag, the undo, and two sets");
+    engine.apply(Command::Undo).unwrap();
+    assert_eq!(engine.spec().bodies[0].mass, 5.0, "the second set alone was undone");
+}
+
+#[test]
+fn the_signal_is_computed_on_the_worker_and_arrives() {
+    let mut engine = loaded(dev::pass());
+    assert!(engine.settle(LONG), "the signal arrives");
+    let (state, signal) = engine.signal();
+    assert_eq!(state, SignalState::Refined);
+    let cold = read::signal(&dev::pass()).unwrap();
+    assert_eq!(signal.unwrap().as_ref(), &cold, "what arrives is what a run here and now computes");
+    // The query gives one tower's channel, and says it is the current scene's.
+    let query = Query::Signal { tower: 2, channel: ChannelName::Lower };
+    let Reply::Signal(reply) = engine.query(&query).unwrap() else { panic!("a signal") };
+    assert_eq!((reply.state.as_str(), reply.tower), ("refined", 2));
+    assert_eq!(bits(&reply.values), bits(cold.channel(1, cav_core::forward::Channel::Lower)));
+    assert_eq!(reply.times, cold.times);
+    assert!(reply.estimate <= 1e-10);
+    // The log says a signal arrived.
+    let said = engine
+        .log()
+        .select(&LogFilter { text: Some("signal: 5 tower(s) × 6 shot(s)".into()), ..LogFilter::default() });
+    assert_eq!(said.len(), 1);
+    // The void's signal is all zeros and is there at once: nothing to compute.
+    let mut void = loaded(dev::void());
+    void.poll();
+    assert_eq!(void.signal().0, SignalState::Refined);
+    // Control: a tower that is not there is refused, and a scene with too many shots says why.
+    assert!(
+        engine
+            .query(&Query::Signal { tower: 6, channel: ChannelName::Gradiometer })
+            .unwrap_err()
+            .contains("no tower 6")
+    );
+    set(&mut engine, "array.instrument.half_sequence", json!(0.001)).unwrap();
+    set(&mut engine, "array.instrument.cycle", json!(0.0021)).unwrap();
+    set(&mut engine, "duration", json!(1.0e6)).unwrap();
+    assert!(engine.query(&query).unwrap_err().contains("at most 2000000"));
+    assert_eq!(engine.signal().0, SignalState::None);
+}
+
+/// The oscillator zoo over a timeline long enough to keep the worker busy for seconds.
+fn slow_scene() -> SceneSpec {
+    let mut scene = dev::oscillator_zoo();
+    scene.duration = 400_000.0;
+    scene
+}
+
+#[test]
+fn a_query_never_waits_for_the_worker() {
+    let mut engine = Engine::new();
+    let started = Instant::now();
+    engine.apply(Command::load(slow_scene())).unwrap();
+    let query = Query::Signal { tower: 1, channel: ChannelName::Gradiometer };
+    let Reply::Signal(first) = engine.query(&query).unwrap() else { panic!("a signal") };
+    engine.query(&Query::Reading(Some(10.0))).unwrap();
+    engine.query(&Query::Stats).unwrap();
+    engine.poll();
+    let took = started.elapsed();
+    // 200,000 shots of four bodies at five towers is seconds of work; none of it was done here.
+    assert!(took < Duration::from_millis(1500), "load, three queries and a poll took {took:?}");
+    assert_eq!(engine.signal().0, SignalState::Stale, "the worker is still at it");
+    // What is shown meanwhile is the last whole signal, marked stale: the default scene's, six shots.
+    assert_eq!((first.state.as_str(), first.times.len()), ("stale", 6));
+    // Commands do not wait either, and a run of them leaves the worker with the last scene only.
+    let started = Instant::now();
+    for step in 0..20 {
+        set(&mut engine, "bodies[0].mass", json!(1.0 + f64::from(step))).unwrap();
+    }
+    assert!(started.elapsed() < Duration::from_millis(1500), "{:?}", started.elapsed());
+    // Control: the same scene made short does arrive, so "stale" above was not a stuck worker.
+    set(&mut engine, "duration", json!(20.0)).unwrap();
+    assert!(engine.settle(LONG));
+}
+
+#[test]
+fn the_latest_edit_wins_and_stale_work_is_dropped() {
+    let mut engine = loaded(slow_scene());
+    // The scene changes while its signal is being computed: the long job is no longer wanted.
+    engine.apply(Command::load(dev::pass())).unwrap();
+    let started = Instant::now();
+    assert!(engine.settle(LONG));
+    let took = started.elapsed();
+    // The worker dropped the long job between shots rather than finishing it first.
+    assert!(took < Duration::from_secs(5), "the short scene's signal took {took:?} to arrive");
+    let (state, signal) = engine.signal();
+    assert_eq!(state, SignalState::Refined);
+    assert_eq!(signal.unwrap().as_ref(), &read::signal(&dev::pass()).unwrap(), "and it is the last scene's");
+    // Nothing of the dropped run is visible: no signal of 200,000 shots was ever shown.
+    assert_eq!(signal.unwrap().times.len(), 6);
+    let arrivals = engine.log().select(&LogFilter { text: Some("signal:".into()), ..LogFilter::default() });
+    assert!(arrivals.iter().all(|entry| !entry.message.contains("200000 shot")), "{arrivals:?}");
+}
+
+cav_validate::case! {
+    test: validation_cached_sum_equals_cold_run,
+    name: "engine.cached_sum_equals_cold_run",
+    subsystem: "engine",
+    slice: "S1",
+    reference: Exact,
+    against: "superposition after a drag of one body and back, summed from kept contributions, against a cold run of the same scene; values of any channel that differ, to the bit",
+    unit: Count,
+    tolerance: 0.0,
+    measure: {
+        let mut engine = loaded(dev::superposition());
+        assert!(engine.settle(LONG));
+        // Drag the second body away and to a new place; the first body's contribution is reused.
+        for x in [-2.5, -3.0, -3.5] {
+            set(&mut engine, "bodies[1].motion.Static.position", json!([x, 3.0, 4.0])).unwrap();
+        }
+        assert!(engine.settle(LONG));
+        let cold = read::signal(engine.spec()).unwrap();
+        let kept = engine.signal().1.unwrap();
+        let differing = |a: &[f64], b: &[f64]| a.iter().zip(b).filter(|(x, y)| x.to_bits() != y.to_bits()).count();
+        let count = differing(&kept.lower, &cold.lower)
+            + differing(&kept.upper, &cold.upper)
+            + differing(&kept.gradiometer, &cold.gradiometer);
+        // Control: the drag did change the signal, so equality is not of two untouched things.
+        assert_ne!(cold, read::signal(&dev::superposition()).unwrap());
+        cav_validate::Measured::Error(count as f64)
+    },
+}
+
+#[test]
+fn dragging_one_body_recomputes_that_body_only() {
+    let mut engine = loaded(dev::superposition());
+    assert!(engine.settle(LONG));
+    let after_load = engine.contributions_computed();
+    assert_eq!(after_load, 2, "two bodies, two contributions");
+    set(&mut engine, "bodies[1].motion.Static.position", json!([-2.5, 3.0, 4.0])).unwrap();
+    assert!(engine.settle(LONG));
+    assert_eq!(engine.contributions_computed(), after_load + 1, "the moved body, and not the other");
+    // Back where it was: that contribution is still kept, and nothing is computed at all.
+    set(&mut engine, "bodies[1].motion.Static.position", json!([-2.0, 3.0, 4.0])).unwrap();
+    engine.poll();
+    assert_eq!(engine.signal().0, SignalState::Refined, "whole at once, from what was kept");
+    assert_eq!(engine.contributions_computed(), after_load + 1);
+    // `run` drops what was kept and computes both again.
+    engine.apply(Command::Run { from: Stage::Forward }).unwrap();
+    assert!(engine.settle(LONG));
+    assert_eq!(engine.contributions_computed(), after_load + 3);
+    // Control: a change to the instrument is a change to every source.
+    set(&mut engine, "array.instrument.launch_velocity", json!(3.9)).unwrap();
+    assert!(engine.settle(LONG));
+    assert_eq!(engine.contributions_computed(), after_load + 5);
+}
+
+#[test]
+fn the_reading_follows_a_drag_and_the_console_speaks_of_it() {
+    let mut engine = loaded(dev::point());
+    engine.set_patience(LONG);
+    let reading = |engine: &Engine| {
+        let Reply::Reading(towers) = engine.query(&Query::Reading(Some(3.0))).unwrap() else {
+            panic!("readings")
+        };
+        towers
+    };
+    let before = reading(&engine);
+    assert_eq!(before.len(), 5);
+    assert_eq!(before[0].label, "tower 1");
+    assert_eq!(before[0].gradiometer, before[0].lower - before[0].upper, "lower minus upper");
+    // A static mass reads the same at every readout: the live reading is the series' value.
+    assert!(engine.settle(LONG));
+    let series = engine.signal().1.unwrap().channel(0, cav_core::forward::Channel::Gradiometer).to_vec();
+    assert_eq!(bits(&series), bits(&[before[0].gradiometer; 6]));
+    // Drag the mass a metre nearer tower 2: tower 2 reads more, at once, with no waiting.
+    set(&mut engine, "bodies[0].motion.Static.position", json!([3.0, 0.0, 2.5])).unwrap();
+    let after = reading(&engine);
+    assert!(
+        after[1].gradiometer.abs() > 2.0 * before[1].gradiometer.abs(),
+        "{:?} then {:?}",
+        before[1],
+        after[1]
+    );
+    assert_ne!(after[0].gradiometer, before[0].gradiometer);
+    // The console: the same things as text.
+    let table = engine.run_line("reading 3").unwrap();
+    assert!(table.lines().count() == 6 && table.contains("tower 5"), "{table}");
+    let signal = engine.run_line("signal 2").unwrap();
+    assert!(signal.starts_with("# tower 2 · gradiometer · refined · 6 shots"), "{signal}");
+    assert_eq!(signal.lines().count(), 7);
+    assert!(signal.lines().nth(1).unwrap().starts_with("1.46  "), "{signal}");
+    engine.run_line("mass 10 at 3 0 1").unwrap();
+    engine.run_line("mass 5 at -3 0 1").unwrap();
+    let labels: Vec<&str> = engine.spec().bodies.iter().map(|b| b.label.as_str()).collect();
+    assert_eq!(labels, ["mass", "mass 1", "mass 2"]);
+    engine.run_line("set bodies[2].mass 7.5").unwrap();
+    assert_eq!(engine.spec().bodies[2].mass, 7.5);
+    engine.run_line("select body 3").unwrap();
+    assert_eq!(engine.log().iter().next_back().unwrap().message, "select body 3");
+    // Control: a channel that is not one is refused with the usage.
+    assert!(engine.run_line("signal 2 middle").unwrap_err().contains("usage: signal"));
+}
+
+#[test]
+fn a_body_through_the_tower_is_warned_of_in_the_log() {
+    let mut engine = loaded(dev::through_the_tower());
+    assert!(engine.settle(LONG));
+    let warnings = engine.log().select(&LogFilter { min_level: Some(Level::Warn), ..LogFilter::default() });
+    assert_eq!(warnings.len(), 3, "{warnings:?}");
+    assert!(warnings.iter().all(|w| w.message.contains("`ball` passes through the atoms' path")));
+    // Control: the pass that keeps clear of every tower warns of nothing.
+    let mut clear = loaded(dev::pass());
+    assert!(clear.settle(LONG));
+    assert!(
+        clear.log().select(&LogFilter { min_level: Some(Level::Warn), ..LogFilter::default() }).is_empty()
+    );
+}
+
+#[test]
+fn the_new_commands_and_queries_round_trip_through_json() {
+    let commands = [
+        Command::Set { path: "bodies[0].motion.Static.position".into(), value: json!([0.1, -2.0, 3.0]) },
+        Command::Run { from: Stage::Forward },
+        Command::Select(Some(Target::Body(2))),
+        Command::load(dev::oscillator_zoo()),
+    ];
+    for command in &commands {
+        let text = serde_json::to_string(command).unwrap();
+        assert_eq!(&serde_json::from_str::<Command>(&text).unwrap(), command, "{text}");
+    }
+    let mut engine = loaded(dev::pass());
+    assert!(engine.settle(LONG));
+    for query in [
+        Query::Signal { tower: 3, channel: ChannelName::Upper },
+        Query::Reading(None),
+        Query::Reading(Some(2.5)),
+    ] {
+        let text = serde_json::to_string(&query).unwrap();
+        assert_eq!(serde_json::from_str::<Query>(&text).unwrap(), query, "{text}");
+        let reply = engine.query(&query).unwrap();
+        assert_eq!(serde_json::from_str::<Reply>(&serde_json::to_string(&reply).unwrap()).unwrap(), reply);
+    }
+    // Control: the wire form names the command.
+    assert_eq!(serde_json::to_string(&commands[1]).unwrap(), r#"{"Run":{"from":"Forward"}}"#);
+}
