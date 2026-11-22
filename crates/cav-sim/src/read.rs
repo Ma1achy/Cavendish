@@ -94,39 +94,122 @@ impl Shots {
     pub fn taken(&self, tower: usize, k: usize) -> bool {
         self.valid[tower * self.times.len() + k]
     }
+
+    /// Whether tower `tower` takes each shot, in shot order.
+    #[must_use]
+    pub fn taken_all(&self, tower: usize) -> &[bool] {
+        let shots = self.times.len();
+        &self.valid[tower * shots..(tower + 1) * shots]
+    }
 }
 
-/// When the array's clock reads each shot out, seconds: a shot is launched every cycle from time
-/// zero while the launch is before the end of the timeline, and read out 2T later (the
+/// When the array's clock launches each shot, seconds, by the scene's schedule: one every cycle
+/// from time zero, or as the alternation and the jitter have it, while the launch is before the
+/// end of the timeline. With the plain schedule these are `k·cycle` exactly, as S1 had them.
+///
+/// # Errors
+/// When there could be more than [`MAX_SHOTS`] of them, or more values than
+/// [`MAX_SIGNAL_VALUES`] over the scene's towers. The count is taken from the shortest time
+/// between launches the schedule allows, before anything is reserved.
+pub fn launches(spec: &SceneSpec) -> Result<Vec<f64>, String> {
+    use crate::{JitterKind, JitterModel};
+    use cav_core::cadence::{STREAM_JITTER, unit};
+    let (instrument, schedule) = (&spec.array.instrument, &spec.array.schedule);
+    let cycle = instrument.cycle;
+    // The most shots there can be: one every shortest cycle. (For the plain schedule this is
+    // the count itself.)
+    let most = (spec.duration / schedule.shortest_cycle(cycle).max(f64::MIN_POSITIVE)).ceil();
+    if !(most.is_finite() && most <= MAX_SHOTS as f64) {
+        return Err(format!(
+            "the timeline holds {most} shots ({} s at one every {} s); a signal is computed for at most \
+             {MAX_SHOTS}",
+            spec.duration,
+            schedule.shortest_cycle(cycle)
+        ));
+    }
+    let most = most as usize;
+    fits(spec.array.towers.len(), most)?;
+    // The launch of shot k on a clock that keeps time: k·cycle, or the two cycle times in turn.
+    // A product, not a running sum, so the thousandth shot is as exact as the first.
+    let grid = |k: usize| match schedule.alternate {
+        None => k as f64 * cycle,
+        Some(other) => (k / 2) as f64 * (cycle + other) + (k % 2) as f64 * cycle,
+    };
+    let draw = |k: usize, kind: JitterKind| {
+        let u = unit(schedule.seed, STREAM_JITTER, 0, k as u64);
+        if kind == JitterKind::Symmetric { 2.0 * u - 1.0 } else { u }
+    };
+    let mut times = Vec::with_capacity(most);
+    match schedule.jitter {
+        Some(jitter) if jitter.model == JitterModel::Walk => {
+            // Each cycle is drawn afresh and the launches are their running sum: a late shot
+            // delays every later one. Summed in shot order, so the bits are the same anywhere.
+            let mut now = 0.0;
+            for k in 0..most {
+                if now >= spec.duration {
+                    break;
+                }
+                times.push(now);
+                let own = if k % 2 == 1 { schedule.alternate.unwrap_or(cycle) } else { cycle };
+                now += own + jitter.delta * draw(k, jitter.kind);
+            }
+        }
+        jitter => {
+            for k in 0..most {
+                let late = jitter.map_or(0.0, |j| j.delta * draw(k, j.kind));
+                // A shot is one of the timeline's if its place on the clock is before the end.
+                if grid(k) >= spec.duration {
+                    break;
+                }
+                times.push(if late == 0.0 { grid(k) } else { grid(k) + late });
+            }
+        }
+    }
+    Ok(times)
+}
+
+/// When the array's clock reads each shot out, seconds: its launch ([`launches`]) and 2T (the
 /// timeline's lanes draw the same shots).
 ///
 /// # Errors
-/// When there are more than [`MAX_SHOTS`] of them, or more values than [`MAX_SIGNAL_VALUES`] over
-/// the scene's towers. Nothing is reserved before both counts have passed.
+/// As [`launches`].
 pub fn readouts(spec: &SceneSpec) -> Result<Vec<f64>, String> {
-    let instrument = &spec.array.instrument;
-    let count = (spec.duration / instrument.cycle).ceil();
-    if !(count.is_finite() && count <= MAX_SHOTS as f64) {
-        return Err(format!(
-            "the timeline holds {count} shots ({} s at one every {} s); a signal is computed for at most \
-             {MAX_SHOTS}",
-            spec.duration, instrument.cycle
-        ));
-    }
-    fits(spec.array.towers.len(), count as usize)?;
-    let flight = 2.0 * instrument.half_sequence;
-    // k·cycle, not a running sum, so the thousandth shot is as exact as the first.
-    Ok((0..count as usize).map(|k| k as f64 * instrument.cycle + flight).collect())
+    let flight = 2.0 * spec.array.instrument.half_sequence;
+    Ok(launches(spec)?.into_iter().map(|launch| launch + flight).collect())
 }
 
-/// The scene's shots: the array's clock ([`readouts`]) and each tower's offset from it.
+/// The scene's shots: the array's clock ([`readouts`]), each tower's offset from it, and which
+/// shots each tower takes: those inside the planned pattern and the daily window, less the ones
+/// lost (each tower loses its own, keyed by seed, tower and shot).
 ///
 /// # Errors
-/// As [`readouts`].
+/// As [`launches`].
 pub fn shots(spec: &SceneSpec) -> Result<Shots, String> {
-    let times = readouts(spec)?;
+    use cav_core::cadence::{STREAM_LOSS, unit};
+    let schedule = &spec.array.schedule;
+    let launches = launches(spec)?;
+    let flight = 2.0 * spec.array.instrument.half_sequence;
     let offsets: Vec<f64> = spec.array.towers.iter().map(|tower| tower.timing.offset).collect();
-    Ok(Shots { valid: vec![true; offsets.len() * times.len()], offsets, times })
+    // What the plan itself leaves out, the same for every tower.
+    let planned = |k: usize| {
+        let in_pattern = schedule.gaps.is_none_or(|gaps| (k % gaps.period as usize) < gaps.on as usize);
+        let in_window = schedule.window.is_none_or(|window| {
+            let phase = launches[k].rem_euclid(window.period) - window.start;
+            // The window may run past the end of the period into the next.
+            (0.0..window.length).contains(&phase) || phase + window.period < window.length
+        });
+        in_pattern && in_window
+    };
+    let mut valid = Vec::with_capacity(offsets.len() * launches.len());
+    for tower in 0..offsets.len() {
+        valid.extend((0..launches.len()).map(|k| {
+            planned(k)
+                && (schedule.loss == 0.0
+                    || unit(schedule.seed, STREAM_LOSS, tower as u64, k as u64) >= schedule.loss)
+        }));
+    }
+    let times = launches.into_iter().map(|launch| launch + flight).collect();
+    Ok(Shots { times, offsets, valid })
 }
 
 /// Something a person should know about a reading, and the tower it is about.
@@ -1065,6 +1148,174 @@ mod tests {
         assert_eq!(gapped.channel(2, Channel::Gradiometer)[5].to_bits(), 0);
         assert!(!gapped.taken(2)[5] && gapped.taken(2)[4] && gapped.taken(1)[5]);
         assert_eq!(gapped.channel(2, Channel::Gradiometer)[4], read.channel(2, Channel::Gradiometer)[4]);
+    }
+
+    /// The comb with a schedule, short enough to look at shot by shot.
+    fn scheduled(edit: impl FnOnce(&mut crate::ScheduleSpec)) -> SceneSpec {
+        let mut scene = dev::comb();
+        scene.duration = 400.0;
+        edit(&mut scene.array.schedule);
+        assert_eq!(scene.validate(), Ok(()));
+        scene
+    }
+
+    #[test]
+    fn schedules_draw_what_they_say() {
+        use crate::{GapSpec, JitterKind, JitterModel, JitterSpec, WindowSpec};
+        use cav_core::cadence;
+        let jitter = |model, kind, delta| Some(JitterSpec { model, kind, delta });
+        // The plain schedule: k·cycle, to the bit, all taken.
+        let plain = launches(&scheduled(|_| {})).unwrap();
+        assert_eq!(plain, cadence::uniform_times(200, 2.0));
+        // Cycle jitter is the reference scripts' random walk, and is the generator the closed
+        // forms were checked against, shot for shot.
+        for (kind, symmetric) in [(JitterKind::Positive, false), (JitterKind::Symmetric, true)] {
+            let scene = scheduled(|s| (s.jitter, s.seed) = (jitter(JitterModel::Walk, kind, 0.3), 9));
+            let walk = launches(&scene).unwrap();
+            assert_eq!(walk[..], cadence::walk_times(walk.len(), 2.0, 0.3, symmetric, 9)[..]);
+            assert!(
+                walk.windows(2)
+                    .all(|w| w[1] - w[0] >= if symmetric { 1.7 } else { 2.0 } && w[1] - w[0] <= 2.3)
+            );
+            assert!(*walk.last().unwrap() < 400.0, "every launch is before the end");
+            let grid =
+                launches(&scheduled(|s| (s.jitter, s.seed) = (jitter(JitterModel::Grid, kind, 0.2), 9)))
+                    .unwrap();
+            assert_eq!(grid, cadence::grid_times(200, 2.0, 0.2, symmetric, 9));
+        }
+        // Alternation: the two cycle times in turn.
+        let alternating = launches(&scheduled(|s| s.alternate = Some(2.5))).unwrap();
+        assert_eq!(alternating[..5], [0.0, 2.0, 4.5, 6.5, 9.0]);
+        assert_eq!(alternating, cadence::alternating_times(alternating.len(), 2.0, 2.5));
+        // Planned gaps and the window say which shots are fired; the times are still all there.
+        let gapped = shots(&scheduled(|s| s.gaps = Some(GapSpec { on: 3, period: 5 }))).unwrap();
+        assert_eq!(gapped.times.len(), 200);
+        for tower in 0..5 {
+            assert!((0..200).all(|k| gapped.taken(tower, k) == (k % 5 < 3)));
+        }
+        let windowed =
+            shots(&scheduled(|s| s.window = Some(WindowSpec { start: 30.0, length: 20.0, period: 100.0 })))
+                .unwrap();
+        for k in 0..200 {
+            let launch = k as f64 * 2.0;
+            assert_eq!(
+                windowed.taken(0, k),
+                (30.0..50.0).contains(&(launch % 100.0)),
+                "shot {k} at {launch} s"
+            );
+        }
+        // A window that runs past the end of its period wraps into the next.
+        let late =
+            shots(&scheduled(|s| s.window = Some(WindowSpec { start: 90.0, length: 20.0, period: 100.0 })))
+                .unwrap();
+        assert!(
+            late.taken(0, 2) && late.taken(0, 47) && !late.taken(0, 20),
+            "4 s and 94 s are in, 40 s is out"
+        );
+        // Loss: about the stated fraction, each tower its own shots.
+        let lossy = shots(&scheduled(|s| (s.loss, s.seed) = (0.2, 3))).unwrap();
+        let lost: Vec<usize> =
+            (0..5).map(|tower| (0..200).filter(|&k| !lossy.taken(tower, k)).count()).collect();
+        assert!(lost.iter().all(|n| (20..=60).contains(n)), "{lost:?} of 200 at p = 0.2");
+        assert!((0..200).any(|k| lossy.taken(0, k) != lossy.taken(1, k)), "towers lose their own shots");
+        // Control: no loss, nothing lost; and the schedule that is plain says so.
+        assert!(shots(&scheduled(|_| {})).unwrap().valid.iter().all(|taken| *taken));
+        assert!(scheduled(|s| s.seed = 5).array.schedule.is_uniform());
+        assert!(!scheduled(|s| s.loss = 0.1).array.schedule.is_uniform());
+    }
+
+    #[test]
+    fn jitter_is_keyed_not_ordered() {
+        use crate::{JitterKind, JitterModel, JitterSpec};
+        let scene = scheduled(|s| {
+            s.jitter =
+                Some(JitterSpec { model: JitterModel::Grid, kind: JitterKind::Symmetric, delta: 0.25 });
+            (s.loss, s.seed) = (0.1, 42);
+        });
+        let whole = shots(&scene).unwrap();
+        // The same shots, asked for again, on four threads at once, and as part of a timeline
+        // twice as long: each shot's time and fate depend on the seed, the tower and the shot's
+        // own number, and on nothing that was drawn before it.
+        assert_eq!(shots(&scene).unwrap(), whole);
+        let threads: Vec<Shots> = std::thread::scope(|scope| {
+            let jobs: Vec<_> = (0..4).map(|_| scope.spawn(|| shots(&scene).unwrap())).collect();
+            jobs.into_iter().map(|job| job.join().unwrap()).collect()
+        });
+        assert!(threads.iter().all(|other| *other == whole));
+        let mut longer = scene.clone();
+        longer.duration = 800.0;
+        let more = shots(&longer).unwrap();
+        assert_eq!(more.times[..200], whole.times[..]);
+        for tower in 0..5 {
+            assert_eq!(more.taken_all(tower)[..200], whole.taken_all(tower)[..]);
+        }
+        // Fewer towers: the towers that remain keep their shots.
+        let mut fewer = scene.clone();
+        fewer.array.towers.truncate(2);
+        assert_eq!(shots(&fewer).unwrap().taken_all(1), whole.taken_all(1));
+        // Control: another seed is another schedule.
+        let mut other = scene.clone();
+        other.array.schedule.seed = 43;
+        let reseeded = shots(&other).unwrap();
+        assert_ne!(reseeded.times, whole.times);
+        assert_ne!(reseeded.valid, whole.valid);
+    }
+
+    #[test]
+    fn a_schedule_that_cannot_fly_is_refused() {
+        use crate::{GapSpec, JitterKind, JitterModel, JitterSpec, WindowSpec};
+        type Break = fn(&mut crate::ScheduleSpec);
+        let walk = |kind, delta| Some(JitterSpec { model: JitterModel::Walk, kind, delta });
+        let cases: [(&str, Break); 10] = [
+            // The comb's cycle is 2 s and a shot 1.46 s: a cycle may not be drawn shorter.
+            ("array.schedule.jitter.delta", |s| {
+                s.jitter =
+                    Some(JitterSpec { model: JitterModel::Walk, kind: JitterKind::Symmetric, delta: 0.6 })
+            }),
+            ("array.schedule.jitter.delta", |s| {
+                s.jitter =
+                    Some(JitterSpec { model: JitterModel::Grid, kind: JitterKind::Symmetric, delta: 0.3 })
+            }),
+            ("array.schedule.jitter.delta", |s| {
+                s.jitter =
+                    Some(JitterSpec { model: JitterModel::Grid, kind: JitterKind::Positive, delta: f64::NAN })
+            }),
+            ("array.schedule.alternate", |s| s.alternate = Some(1.4)),
+            ("array.schedule.alternate", |s| s.alternate = Some(-2.0)),
+            ("array.schedule.gaps", |s| s.gaps = Some(GapSpec { on: 0, period: 5 })),
+            ("array.schedule.gaps", |s| s.gaps = Some(GapSpec { on: 6, period: 5 })),
+            ("array.schedule.window.length", |s| {
+                s.window = Some(WindowSpec { start: 0.0, length: 200.0, period: 100.0 })
+            }),
+            ("array.schedule.loss", |s| s.loss = 1.0),
+            ("array.schedule.seed", |s| s.seed = (1 << 53) + 2),
+        ];
+        for (field, break_it) in cases {
+            let mut scene = dev::comb();
+            break_it(&mut scene.array.schedule);
+            let why = scene.validate().expect_err(field).0;
+            assert!(why.starts_with(field), "`{why}` should name `{field}`");
+        }
+        // At the edge each is accepted: a cycle drawn down to exactly a shot, late-only jitter of
+        // any size the cycle allows, the largest seed.
+        let edge = scheduled(|s| {
+            s.jitter = walk(JitterKind::Symmetric, 2.0 - 1.46);
+            s.seed = 1 << 53;
+            s.loss = 0.99;
+        });
+        assert!(shots(&edge).is_ok());
+        assert!(shots(&scheduled(|s| s.jitter = walk(JitterKind::Positive, 500.0))).is_ok());
+        // Too many shots are refused by count before anything is made, jitter or not: the count
+        // is taken at the shortest cycle the schedule allows.
+        let mut long = scheduled(|s| s.jitter = walk(JitterKind::Positive, 1.0));
+        long.array.instrument.half_sequence = 0.001;
+        long.array.instrument.cycle = 0.0021;
+        long.duration = 1.0e6;
+        assert_eq!(long.validate(), Ok(()));
+        assert!(launches(&long).unwrap_err().contains("at most 2000000"));
+        // Control: the schema describes the schedule, with units.
+        assert_eq!(crate::paths::schema_at("array.schedule.jitter.delta").unwrap()["x-unit"], "s");
+        assert_eq!(crate::paths::entry(&dev::cadence_lab(), "array.schedule.loss").unwrap().value, 0.02);
     }
 
     #[test]

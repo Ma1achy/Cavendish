@@ -1,0 +1,88 @@
+// Dev scene `cadence-lab` (REBUILD §9.1), written from its builder in crates/cav-sim/src/dev.rs; a test
+// holds the two together. Frame: metres, x east, y north, z up; seconds; angles in degrees.
+// `cav schema` describes every field.
+(
+    version: 1,
+    name: "cadence-lab",
+    description: "A known tone on an uneven cadence: the comb\'s oscillator, each cycle up to 0.3 s late and 2% of shots lost. `show cadence` draws the spectral window; edit array.schedule and watch it.",
+    duration: 2000.0,
+    array: (
+        instrument: (
+            tower_height: 10.0,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+            atom_mass: 1.4431558652473234e-25,
+            gravity: 9.81,
+            launch_floor: true,
+            sign: LowerMinusUpper,
+        ),
+        towers: [
+            (
+                label: "tower 1",
+                position: (0.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+            ),
+            (
+                label: "tower 2",
+                position: (4.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+            ),
+            (
+                label: "tower 3",
+                position: (-4.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+            ),
+            (
+                label: "tower 4",
+                position: (0.0, 4.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+            ),
+            (
+                label: "tower 5",
+                position: (0.0, -4.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+            ),
+        ],
+        schedule: (
+            jitter: Some((
+                model: Walk,
+                kind: Positive,
+                delta: 0.3,
+            )),
+            alternate: None,
+            gaps: None,
+            window: None,
+            loss: 0.02,
+            seed: 1,
+        ),
+    ),
+    room: None,
+    floor: None,
+    bodies: [
+        (
+            label: "oscillator",
+            mass: 1.0,
+            radius: 0.0,
+            motion: Linear(
+                centre: (3.0, 0.0, 1.0),
+                amplitude: (0.0, 0.0, 0.5),
+                frequency: 0.05,
+                phase: 0.0,
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+    ],
+)

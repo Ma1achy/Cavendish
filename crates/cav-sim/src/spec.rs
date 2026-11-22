@@ -106,6 +106,146 @@ pub struct ArraySpec {
     pub instrument: InstrumentSpec,
     /// The towers, in display order; tower 1 is the first. From 1 to 1000 of them.
     pub towers: Vec<TowerSpec>,
+    /// When the array fires: how its shots depart from one every `cycle`, and which are not
+    /// taken. The default is one shot every cycle, all taken.
+    #[serde(default)]
+    pub schedule: ScheduleSpec,
+}
+
+/// The array's cadence: how the launch times depart from one shot every `cycle`, and which
+/// shots are not taken. Every part is optional and they combine: the launch times come from the
+/// cycle, the alternation and the jitter; of those shots, the planned gaps and the daily window
+/// say which are fired at all, and the loss takes some of the rest at random, tower by tower.
+///
+/// Random numbers are keyed by `(seed, shot)` (and the tower, for loss), never drawn from a
+/// stream: the same schedule is the same shots on any machine, in any order.
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScheduleSpec {
+    /// Random variation of the timing, or none.
+    #[serde(default)]
+    pub jitter: Option<JitterSpec>,
+    /// A second cycle time, seconds, taken in turn with `cycle`: `cycle`, this, `cycle`, this, …
+    /// At least a shot (2T). None for a single cycle time.
+    #[serde(default)]
+    #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0, "x-unit" = "s"))]
+    pub alternate: Option<f64>,
+    /// Planned gaps: so many shots fired of every so many, or none.
+    #[serde(default)]
+    pub gaps: Option<GapSpec>,
+    /// A window of time that repeats, outside which nothing is fired (night-only running, say),
+    /// or none.
+    #[serde(default)]
+    pub window: Option<WindowSpec>,
+    /// The probability that a shot is lost, for each shot of each tower on its own. From 0 (the
+    /// default) to 0.99.
+    #[serde(default)]
+    #[schemars(range(min = 0.0, max = 0.99), extend("x-unit" = "1"))]
+    pub loss: f64,
+    /// The seed of the schedule's random numbers. At most 2⁵³, so that it survives any JSON
+    /// client. The default is 0.
+    #[serde(default)]
+    #[schemars(range(max = 9_007_199_254_740_992u64))]
+    pub seed: u64,
+}
+
+/// Random variation of the shots' timing.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct JitterSpec {
+    /// What is jittered: the cycle (a late shot delays every later one), or each shot about a
+    /// clock that keeps time.
+    pub model: JitterModel,
+    /// Either way, or late only.
+    pub kind: JitterKind,
+    /// The width of the variation, seconds: uniform on `[−delta, delta]` (`Symmetric`) or on
+    /// `[0, delta]` (`Positive`). No shot may begin before the one before it has been read out.
+    #[schemars(range(min = 0.0, max = 1.0e4), extend("x-unit" = "s"))]
+    pub delta: f64,
+}
+
+/// What a schedule's jitter is applied to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum JitterModel {
+    /// The cycle time: each cycle is drawn afresh, so the shot times are a random walk. This is
+    /// what the reference scripts do. The alias lines broaden and recede as shots are added.
+    Walk,
+    /// Each shot's time about a grid that keeps time. The alias lines stay, lowered, for ever.
+    Grid,
+}
+
+/// Which way a schedule's jitter goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum JitterKind {
+    /// Early or late, equally.
+    Symmetric,
+    /// Late only.
+    Positive,
+}
+
+/// Planned gaps in a schedule: of every `period` shots, the first `on` are fired.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GapSpec {
+    /// How many shots are fired in each period. From 1 to `period`.
+    #[schemars(range(min = 1, max = 1_000_000))]
+    pub on: u32,
+    /// The length of the pattern, shots. At most 1,000,000.
+    #[schemars(range(min = 1, max = 1_000_000))]
+    pub period: u32,
+}
+
+/// A repeating window of time in which shots are fired: from `start` for `length` seconds, every
+/// `period` seconds. A shot is fired if it is launched inside the window.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WindowSpec {
+    /// When the window opens in each period, seconds from the period's start. From 0 to less
+    /// than `period`.
+    #[schemars(range(min = 0.0, max = 1.0e6), extend("x-unit" = "s"))]
+    pub start: f64,
+    /// How long it stays open, seconds. Above 0, at most `period`.
+    #[schemars(range(max = 1.0e6), extend("exclusiveMinimum" = 0.0, "x-unit" = "s"))]
+    pub length: f64,
+    /// How often it repeats, seconds: 86400 for a day.
+    #[schemars(range(max = 1.0e6), extend("exclusiveMinimum" = 0.0, "x-unit" = "s"))]
+    pub period: f64,
+}
+
+impl ScheduleSpec {
+    /// Whether this is the plain schedule: one shot every cycle, all taken.
+    #[must_use]
+    pub fn is_uniform(&self) -> bool {
+        *self == Self::default() || (*self == Self { seed: self.seed, ..Self::default() })
+    }
+
+    /// The shortest time from one launch to the next, seconds, for an instrument with this
+    /// `cycle`: what must be at least a shot.
+    #[must_use]
+    pub fn shortest_cycle(&self, cycle: f64) -> f64 {
+        let base = self.alternate.map_or(cycle, |other| other.min(cycle));
+        match self.jitter {
+            None | Some(JitterSpec { model: JitterModel::Walk, kind: JitterKind::Positive, .. }) => base,
+            Some(JitterSpec { model: JitterModel::Walk, kind: JitterKind::Symmetric, delta }) => base - delta,
+            // About a grid, one shot may be late and the next early (or on time).
+            Some(JitterSpec { model: JitterModel::Grid, kind: JitterKind::Symmetric, delta }) => {
+                base - 2.0 * delta
+            }
+            Some(JitterSpec { model: JitterModel::Grid, kind: JitterKind::Positive, delta }) => base - delta,
+        }
+    }
+
+    /// The mean time from one launch to the next, seconds.
+    #[must_use]
+    pub fn mean_cycle(&self, cycle: f64) -> f64 {
+        let base = self.alternate.map_or(cycle, |other| 0.5 * (other + cycle));
+        match self.jitter {
+            Some(JitterSpec { model: JitterModel::Walk, kind: JitterKind::Positive, delta }) => {
+                base + 0.5 * delta
+            }
+            _ => base,
+        }
+    }
 }
 
 /// One gradiometer: two atom interferometers stacked in a vertical tower.
@@ -373,7 +513,7 @@ impl Default for ArraySpec {
             .enumerate()
             .map(|(i, p)| TowerSpec::at(&format!("tower {}", i + 1), [p[0], p[1], 0.0]))
             .collect();
-        Self { instrument: InstrumentSpec::default(), towers }
+        Self { instrument: InstrumentSpec::default(), towers, schedule: ScheduleSpec::default() }
     }
 }
 
@@ -551,6 +691,7 @@ impl SceneSpec {
                 ));
             }
         }
+        self.validate_schedule()?;
         within("array.instrument.atom_mass", i.atom_mass, limits::ATOM_MASS)?;
         within("array.instrument.gravity", i.gravity, limits::GRAVITY)?;
         if self.bodies.len() > limits::BODIES {
@@ -579,6 +720,52 @@ impl SceneSpec {
             {
                 return fail(format!("{at}.vanishes: {vanishes} s is not later than `appears`, {appears} s"));
             }
+        }
+        Ok(())
+    }
+
+    /// The schedule's own checks: every number in its range, and no shot begun before the one
+    /// before it has been read out.
+    fn validate_schedule(&self) -> Result<(), SpecError> {
+        let fail = |why: String| Err(SpecError(why));
+        let (schedule, i) = (&self.array.schedule, &self.array.instrument);
+        let at = "array.schedule";
+        if let Some(other) = schedule.alternate {
+            positive(&format!("{at}.alternate"), other, limits::CYCLE)?;
+        }
+        if let Some(jitter) = schedule.jitter {
+            within(&format!("{at}.jitter.delta"), jitter.delta, (0.0, limits::CYCLE))?;
+        }
+        let shortest = schedule.shortest_cycle(i.cycle);
+        if shortest < 2.0 * i.half_sequence {
+            let part = if schedule.jitter.is_some() { "jitter.delta" } else { "alternate" };
+            return fail(format!(
+                "{at}.{part}: the shortest time between launches would be {shortest} s, less than a shot, 2T = {} s",
+                2.0 * i.half_sequence
+            ));
+        }
+        if let Some(gaps) = schedule.gaps
+            && !(gaps.on >= 1 && gaps.on <= gaps.period && gaps.period <= 1_000_000)
+        {
+            return fail(format!(
+                "{at}.gaps: {} shots on of every {} is not a pattern: from 1 to the period, and the period at most \
+                 1000000",
+                gaps.on, gaps.period
+            ));
+        }
+        if let Some(window) = schedule.window {
+            positive(&format!("{at}.window.period"), window.period, limits::DURATION)?;
+            positive(&format!("{at}.window.length"), window.length, window.period)?;
+            if !(window.start >= 0.0 && window.start < window.period) {
+                return fail(format!(
+                    "{at}.window.start: {} s must be at least 0 and less than the period, {} s",
+                    window.start, window.period
+                ));
+            }
+        }
+        within(&format!("{at}.loss"), schedule.loss, (0.0, 0.99))?;
+        if schedule.seed > (1 << 53) {
+            return fail(format!("{at}.seed: {} is more than 2^53 = 9007199254740992", schedule.seed));
         }
         Ok(())
     }

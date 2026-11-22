@@ -14,8 +14,9 @@ pub mod view;
 pub use library::{LIBRARY, LibraryScene, inline, load};
 pub use motion::Motion;
 pub use spec::{
-    ArraySpec, BodySpec, FloorKind, FloorSpec, InstrumentSpec, RoomSpec, SPEC_VERSION, SceneSpec, SignSpec,
-    SpecError, Target, TimingSpec, TowerSpec,
+    ArraySpec, BodySpec, FloorKind, FloorSpec, GapSpec, InstrumentSpec, JitterKind, JitterModel, JitterSpec,
+    RoomSpec, SPEC_VERSION, SceneSpec, ScheduleSpec, SignSpec, SpecError, Target, TimingSpec, TowerSpec,
+    WindowSpec,
 };
 pub use view::{
     DrawStyle, FOV_Y_DEGREES, FRAMING_ASPECT, FRAMING_MARGIN, NamedView, PaneContent, Projection, SceneView,
