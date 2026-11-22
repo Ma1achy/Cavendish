@@ -9,17 +9,29 @@
 # S1, after the review (docs/slices/S1.md §3.1, §7.2). The eight same-time cases bounded the engine's
 # difference from each corrected fixture: 3e-4 written beforehand, and for 100m_oscillators 1.5e-3 set
 # by the builder after it measured 1.07e-3, with the wrong cause given (the trapezoid; in fact mostly
-# the scripts' window ending one step short of 2T). Seven of them passed 3e-4 only because the two
-# parts of the scripts' error have opposite signs. The bound is withdrawn. Each case now measures
+# the scripts' window ending one step short of 2T). Two of the seven that passed 3e-4 (fig2_10m c and
+# d, whose window alone is 3.16e-4 and 3.11e-4) passed only because the two parts of the scripts'
+# error have opposite signs there. (Corrected in S2's TASK-S2-10: this said "seven of them".) The
+# bound is withdrawn. Each case now measures
 # something else under the same name: how far the engine-minus-fixture difference is from what the
 # scripts' rule's own error predicts, as a fraction of that prediction, two-sided, tolerance 2%
 # written before measuring. Eight new cases (oracle.script_limit_*) hold the scripts' rule, taken to
 # its limit on the whole flight, to the engine.
 tolerance oracle.script_same_time_100m_oscillators 0.0015 -> 0.02: the case no longer bounds the difference (measured 1.07e-3: 8.1e-4 from the window one step short, 2.6e-4 from the trapezoid) but its distance from the predicted difference; measured 3.1e-7 of the prediction
 tolerance oracle.script_same_time_1d_oscillator 0.0003 -> 0.02: now the two-sided distance from the predicted difference; measured 2.7e-3 of it
-tolerance oracle.script_same_time_fig2_10m_b 0.0003 -> 0.02: now the two-sided distance from the predicted difference; measured 4.7e-4 of it. The old bound passed at 2.45e-4 by cancellation: window 2.67e-4, trapezoid 2.2e-5 of the other sign
+tolerance oracle.script_same_time_fig2_10m_b 0.0003 -> 0.02: now the two-sided distance from the predicted difference; measured 4.7e-4 of it. The old bound was met at 2.45e-4 and did not need cancellation here: the window alone is 2.67e-4, under it, with the trapezoid 2.2e-5 of the other sign
 tolerance oracle.script_same_time_fig2_10m_c 0.0003 -> 0.02: as panel b; measured 5.1e-4. The window alone is 3.16e-4, over the old bound
 tolerance oracle.script_same_time_fig2_10m_d 0.0003 -> 0.02: as panel b; measured 5.0e-4. The window alone is 3.11e-4, over the old bound
 tolerance oracle.script_same_time_fig2_uldm_folding_b 0.0003 -> 0.02: now the two-sided distance from the predicted difference; measured 3.1e-8 of it
 tolerance oracle.script_same_time_fig2_uldm_folding_c 0.0003 -> 0.02: as panel b; measured 3.2e-8
 tolerance oracle.script_same_time_fig2_uldm_folding_d 0.0003 -> 0.02: as panel b; measured 3.8e-8
+
+# 22 Nov 2026, S2's TASK-S2-10, following S1's second review (docs/slices/S1.md §7.5). The four
+# AION-10 limit cases took the scripts' rule to dt/32 and were held to 5e-7, which is what is left of
+# the reference's trapezoid there (4e-8 to 1.4e-7), not the engine's error: an engine regression of
+# 3e-7 of the peak would have passed. They now take the rule to dt/128 and are held to 1e-8, written
+# before measuring. This tightens them; nothing is loosened.
+tolerance oracle.script_limit_1d_oscillator 5e-7 -> 1e-8: the rule at dt/128 in place of dt/32, so the bound is on the engine and not on the trapezoid's residual; measured 1.0e-9 (4.1e-8 at dt/32)
+tolerance oracle.script_limit_fig2_10m_b 5e-7 -> 1e-8: as 1d_oscillator; measured 2.4e-9 (1.15e-7 at dt/32)
+tolerance oracle.script_limit_fig2_10m_c 5e-7 -> 1e-8: as 1d_oscillator; measured 4.3e-9 (1.41e-7 at dt/32)
+tolerance oracle.script_limit_fig2_10m_d 5e-7 -> 1e-8: as 1d_oscillator; measured 5.0e-9 (1.27e-7 at dt/32)
