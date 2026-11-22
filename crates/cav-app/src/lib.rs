@@ -8,6 +8,7 @@ pub mod headless;
 pub mod menus;
 mod panels;
 pub mod panes;
+pub mod plots;
 pub mod shell;
 pub mod theme;
 pub mod timeline;

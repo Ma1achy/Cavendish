@@ -6,7 +6,7 @@
 
 use cav_sim::{DrawStyle, LIBRARY, NamedView, Projection, SceneSpec, Target};
 
-use crate::command::{ChannelName, Command, Query, Reply, Stage, ViewCommand};
+use crate::command::{ChannelName, Command, PaneContent, Query, Reply, Stage, ViewCommand};
 use crate::engine::Engine;
 use crate::log::{Level, LogFilter, Subsystem};
 
@@ -108,6 +108,18 @@ pub const COMMANDS: &[CommandDoc] = &[
         about: "the draw style",
         example: "style paper",
     },
+    CommandDoc {
+        name: "show",
+        usage: "show <scene|signal|periodogram> [@N]",
+        about: "what a pane shows: the scene, every tower's signal, or the periodogram with the combs",
+        example: "show signal",
+    },
+    CommandDoc {
+        name: "periodogram",
+        usage: "periodogram [tower] [gradiometer|lower|upper]",
+        about: "the periodogram of a tower's signal: its largest peaks, and where each body's harmonics fold to",
+        example: "periodogram 1",
+    },
     CommandDoc { name: "panes", usage: "panes <1|2|4>", about: "split the figure", example: "panes 4" },
     CommandDoc { name: "pane", usage: "pane <N>", about: "make pane N the active one", example: "pane 1" },
     CommandDoc {
@@ -194,6 +206,7 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
                 format!("proj {word}{}", at(pane))
             }
             ViewCommand::Style { pane, style } => format!("style {}{}", style.name(), at(pane)),
+            ViewCommand::Show { pane, content } => format!("show {}{}", content.name(), at(pane)),
             ViewCommand::Orbit { pane, yaw, pitch } => format!("orbit {yaw} {pitch}{}", at(pane)),
             ViewCommand::Zoom { pane, distance } => format!("zoom {distance}{}", at(pane)),
             ViewCommand::Pan { pane, target: [x, y, z] } => format!("pan {x} {y} {z}{}", at(pane)),
@@ -384,6 +397,26 @@ impl Engine {
                 Some(style) => view(ViewCommand::Style { pane, style }),
                 None => Err(format!("`{word}` is not a draw style; {}", usage(name))),
             },
+            ("show", [word]) => match PaneContent::parse(word) {
+                Some(content) => view(ViewCommand::Show { pane, content }),
+                None => Err(format!("`{word}` is not something a pane shows; {}", usage(name))),
+            },
+            ("periodogram", args) if args.len() <= 2 => {
+                let (mut tower, mut channel) = (self.selected_tower().unwrap_or(1), ChannelName::default());
+                for &arg in args {
+                    match (arg.parse::<usize>(), ChannelName::parse(arg)) {
+                        (Ok(n), _) => tower = n,
+                        (_, Some(named)) => channel = named,
+                        _ => {
+                            return Err(format!(
+                                "`{arg}` is neither a tower number nor a channel; {}",
+                                usage(name)
+                            ));
+                        }
+                    }
+                }
+                Ok(Request::Ask(Query::Periodogram { tower, channel }))
+            }
             ("panes", [n]) => match n.parse() {
                 Ok(n) => view(ViewCommand::Panes(n)),
                 Err(_) => Err(wrong()),
@@ -453,7 +486,7 @@ impl Engine {
             Request::Ask(query) => {
                 // A client that prints numbers waits for them (`cav exec`, MCP); the application's
                 // patience is zero and it is told `stale` instead.
-                if matches!(query, Query::Signal { .. }) {
+                if matches!(query, Query::Signal { .. } | Query::Periodogram { .. }) {
                     self.settle(self.patience());
                 }
                 self.answer(&query)
@@ -533,6 +566,45 @@ pub fn render(reply: &Reply) -> String {
             )];
             lines.extend(signal.warnings.iter().map(|warning| format!("# warning: {warning}")));
             lines.extend(signal.times.iter().zip(&signal.values).map(|(t, v)| format!("{t}  {v:e}")));
+            lines.join("\n")
+        }
+        Reply::Periodogram(spectrum) => {
+            let mut lines = vec![format!(
+                "# tower {} · {} · {} · {} bins to the Nyquist frequency, {} Hz · f [Hz], √S [rad/√Hz]",
+                spectrum.tower,
+                spectrum.channel.name(),
+                spectrum.state,
+                spectrum.frequencies.len(),
+                spectrum.nyquist
+            )];
+            // The eight largest bins, largest first.
+            let mut bins: Vec<usize> = (0..spectrum.power.len()).collect();
+            bins.sort_by(|&a, &b| spectrum.power[b].total_cmp(&spectrum.power[a]));
+            lines.extend(
+                bins.iter()
+                    .take(8)
+                    .map(|&k| format!("{}  {:e}", spectrum.frequencies[k], spectrum.power[k].sqrt())),
+            );
+            for comb in &spectrum.combs {
+                let places: Vec<String> = comb
+                    .harmonics
+                    .iter()
+                    .map(|h| {
+                        format!(
+                            "{}f₀ at {:.6} Hz{}",
+                            h.n,
+                            h.appears_at,
+                            if h.folded { " (folded)" } else { "" }
+                        )
+                    })
+                    .collect();
+                lines.push(format!(
+                    "# comb of `{}`, f₀ = {:.6} Hz: {}",
+                    comb.label,
+                    comb.fundamental,
+                    places.join(", ")
+                ));
+            }
             lines.join("\n")
         }
         Reply::Reading(towers) => {

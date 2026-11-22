@@ -20,7 +20,8 @@ pub mod log;
 
 pub use cav_sim::Target;
 pub use command::{
-    ChannelName, Command, MAX_PANES, Query, Reply, SignalReply, Stage, Stats, TowerReading, ViewCommand,
+    COMB_HARMONICS, ChannelName, Comb, Command, Harmonic, MAX_PANES, PaneContent, PeriodogramReply, Query,
+    Reply, SignalReply, Stage, Stats, TowerReading, ViewCommand,
 };
 pub use console::{COMMANDS, CommandDoc, Request, describe, help, render};
 pub use engine::Engine;

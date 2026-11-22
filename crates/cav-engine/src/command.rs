@@ -49,6 +49,8 @@ pub enum ViewCommand {
     Project { pane: usize, projection: Projection },
     /// The draw style.
     Style { pane: usize, style: DrawStyle },
+    /// What the pane shows: the scene, or a plot.
+    Show { pane: usize, content: PaneContent },
     /// Orbit to these angles, degrees; pitch is clamped to ±90.
     Orbit { pane: usize, yaw: f64, pitch: f64 },
     /// Set the distance from the target to the camera, metres.
@@ -69,6 +71,7 @@ impl ViewCommand {
             | Self::Look { pane, .. }
             | Self::Project { pane, .. }
             | Self::Style { pane, .. }
+            | Self::Show { pane, .. }
             | Self::Orbit { pane, .. }
             | Self::Zoom { pane, .. }
             | Self::Pan { pane, .. }
@@ -125,7 +128,89 @@ pub enum Query {
     /// What every tower would read from a shot read out at this time, seconds (the playhead if
     /// none is given). Computed when asked, in full.
     Reading(Option<f64>),
+    /// The classical periodogram of one channel of one tower's signal, with the combs of the
+    /// scene's oscillating bodies. Computed when asked, from the signal as it stands.
+    Periodogram {
+        /// The tower, counted from 1 as on screen.
+        tower: usize,
+        channel: ChannelName,
+    },
 }
+
+/// What a pane shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+pub enum PaneContent {
+    /// The scene in three dimensions.
+    #[default]
+    Scene,
+    /// Every tower's signal against time, with the playhead.
+    Signal,
+    /// The periodogram of a tower's signal, with each oscillating body's comb of harmonics drawn
+    /// where they fold to.
+    Periodogram,
+}
+
+impl PaneContent {
+    /// The word the console uses.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Scene => "scene",
+            Self::Signal => "signal",
+            Self::Periodogram => "periodogram",
+        }
+    }
+
+    /// The content a word names.
+    #[must_use]
+    pub fn parse(word: &str) -> Option<Self> {
+        [Self::Scene, Self::Signal, Self::Periodogram].into_iter().find(|c| c.name() == word)
+    }
+}
+
+/// One harmonic of a body's comb.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Harmonic {
+    /// Which harmonic: 1 is the fundamental.
+    pub n: u32,
+    /// Its true frequency, `n·f₀`, hertz.
+    pub frequency: f64,
+    /// Where it appears in the periodogram, hertz: itself below Nyquist, its fold above.
+    pub appears_at: f64,
+    /// Whether it is above Nyquist and so appears folded.
+    pub folded: bool,
+}
+
+/// The comb of one oscillating body.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Comb {
+    /// The body's label.
+    pub label: String,
+    /// Its fundamental, hertz.
+    pub fundamental: f64,
+    pub harmonics: Vec<Harmonic>,
+}
+
+/// The periodogram of one channel of one tower's signal.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PeriodogramReply {
+    /// The tower, from 1.
+    pub tower: usize,
+    pub channel: ChannelName,
+    /// As for a signal: `refined`, `stale` or `computing`.
+    pub state: String,
+    /// The Nyquist frequency, hertz: half the shot rate.
+    pub nyquist: f64,
+    /// The bins' frequencies, hertz, from one over the timeline's length to Nyquist.
+    pub frequencies: Vec<f64>,
+    /// `S_k = (Δt/N)·|FFT(y − ȳ)|²` at each bin, rad² per hertz: one-sided, not doubled.
+    pub power: Vec<f64>,
+    /// Each oscillating body's first harmonics and where they fold to.
+    pub combs: Vec<Comb>,
+}
+
+/// How many harmonics of each body a comb lists.
+pub const COMB_HARMONICS: u32 = 5;
 
 /// A stage of the simulation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -224,6 +309,8 @@ pub enum Reply {
     Signal(SignalReply),
     /// Each tower's reading of one shot, in the towers' order.
     Reading(Vec<TowerReading>),
+    /// See [`PeriodogramReply`].
+    Periodogram(PeriodogramReply),
 }
 
 /// The engine's state at a glance.

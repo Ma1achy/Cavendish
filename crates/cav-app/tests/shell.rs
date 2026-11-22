@@ -536,3 +536,71 @@ fn a_click_selects_a_body_and_the_panels_show_what_the_towers_read() {
     rig.shell.run("load void").unwrap();
     assert!(rig.shell.readings().iter().all(|r| r.gradiometer == 0.0 && r.lower == 0.0));
 }
+
+#[test]
+fn panes_show_plots_and_the_scene() {
+    use cav_app::plots::place;
+    use cav_engine::PaneContent;
+    let mut rig = Rig::new([1440, 900]);
+    rig.shell.run("load oscillator-zoo").unwrap();
+    rig.shell.run("set duration 400").unwrap();
+    rig.shell.run("panes 4").unwrap();
+    rig.shell.run("show signal @2").unwrap();
+    rig.shell.run("show periodogram @3").unwrap();
+    assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
+    rig.shell.run("seek 100").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let layout = rig.shell.layout().clone();
+    assert_eq!(layout.panes.len(), 4);
+    // Two panes drew plots, each inside its own pane; the other two are the scene.
+    let kinds: Vec<(usize, PaneContent)> = layout.plots.iter().map(|d| (d.pane, d.content)).collect();
+    assert_eq!(kinds, [(1, PaneContent::Signal), (2, PaneContent::Periodogram)]);
+    for drawn in &layout.plots {
+        assert!(layout.panes[drawn.pane].contains_rect(drawn.area), "pane {}", drawn.pane + 1);
+        assert_eq!(drawn.note, None);
+    }
+    // The signal: five towers of 200 shots, and the playhead a quarter of the way along.
+    let signal = &layout.plots[0];
+    assert_eq!(signal.points, 5 * 200);
+    let quarter = signal.area.left() + 0.25 * signal.area.width();
+    assert!((signal.playhead.unwrap() - quarter).abs() < 1.0);
+    // Every value is inside the axes: the largest of the series is drawn within the area.
+    let series = rig.shell.engine.signal().1.unwrap().clone();
+    let peak = series.gradiometer.iter().fold(f64::MIN, |m, v| m.max(*v));
+    let top = place(signal.area, &signal.x, &signal.y, (0.0, peak));
+    assert!(signal.area.contains(top), "{top:?} in {:?}", signal.area);
+    // The periodogram: 100 bins to Nyquist, and a stem for five harmonics of each of four bodies.
+    let spectrum = &layout.plots[1];
+    assert_eq!(spectrum.points, 100);
+    assert_eq!(spectrum.stems.len(), 4 * 5);
+    let stem = |label: &str, n: u32| {
+        spectrum
+            .stems
+            .iter()
+            .find(|s| s.0 == label && s.1 == n)
+            .unwrap_or_else(|| panic!("no stem {label} {n}"))
+    };
+    let at = |f: f64| spectrum.area.left() + spectrum.area.width() * (f / 0.25) as f32;
+    // The linear oscillator at 0.05 Hz: harmonics where they are, and not folded …
+    for n in 1..=4 {
+        let (_, _, x, folded) = stem("linear", n);
+        assert!((x - at(0.05 * f64::from(n))).abs() < 1.0 && !folded, "{n}f₀ at {x}");
+    }
+    // … the circular one at 0.35625 Hz: every harmonic folded, the second onto 0.2125 Hz.
+    let (_, _, x, folded) = stem("circular", 1);
+    assert!((x - at(0.143_75)).abs() < 1.0 && *folded);
+    let (_, _, x, folded) = stem("circular", 2);
+    assert!((x - at(0.2125)).abs() < 1.0 && *folded);
+    // Dragging on the signal plot moves the playhead to where the pointer is.
+    let point = pos2(signal.area.left() + 0.6 * signal.area.width(), signal.area.center().y);
+    rig.click(point);
+    assert!((rig.shell.engine.time() - 240.0).abs() < 1.0, "the playhead is at {}", rig.shell.engine.time());
+    // Control: back to the scene, and nothing is plotted in that pane.
+    rig.shell.run("show scene @2").unwrap();
+    rig.frames(vec![vec![]]);
+    assert_eq!(rig.shell.layout().plots.len(), 1);
+    // A scene with nothing to resolve says so instead of drawing an empty axis.
+    rig.shell.run("load void").unwrap();
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.layout().plots[0].note.as_deref().unwrap().contains("constant"));
+}
