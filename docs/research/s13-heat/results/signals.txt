@@ -1,0 +1,54 @@
+==================== signals ====================
+S = k_eff T^2 = 4.7970e+09 rad per m/s^2; k_eff = 9.0017e+09 rad/m; interferometers at z = 2.5, 7.5 m
+calibration: 70 kg point mass 2.0 m from the axis at mid-height: -3.41 rad (plan: ~3 rad at 2 m)
+calibration: 10 kg at 10 m, mid-height, static: -14.6 mrad (instrument.md anchor: ~7 mrad moving at 2.5 m/s)
+
+(1) a person as a 100 W source, plume from z = 1 m to a 2.6 m ceiling, MTT top-hat, alpha = 0.083
+    P =    60 W, D =  1.0 m: plume deficit   -0.56 g, phase -4.11e-05 rad
+    P =    60 W, D =  2.0 m: plume deficit   -0.56 g, phase -4.73e-06 rad
+    P =    60 W, D =  5.0 m: plume deficit   -0.56 g, phase +1.61e-06 rad
+    P =    60 W, D = 10.0 m: plume deficit   -0.56 g, phase +5.61e-07 rad
+    P =   100 W, D =  1.0 m: plume deficit   -0.78 g, phase -5.78e-05 rad
+    P =   100 W, D =  2.0 m: plume deficit   -0.78 g, phase -6.64e-06 rad
+    P =   100 W, D =  5.0 m: plume deficit   -0.78 g, phase +2.26e-06 rad
+    P =   100 W, D = 10.0 m: plume deficit   -0.78 g, phase +7.89e-07 rad
+    alpha sensitivity at 100 W, 2 m: alpha = 0.083: deficit -0.78 g, phase -6.64e-06 rad
+    alpha sensitivity at 100 W, 2 m: alpha = 0.12: deficit -1.00 g, phase -8.50e-06 rad
+    alpha sensitivity at 100 W, 2 m: alpha = 0.16: deficit -1.21 g, phase -1.03e-05 rad
+    for scale: the person's own 70 kg at 2 m (z = 1 m) reads 1.69 rad; plume / body = -3.9e-06
+
+(2) a radiator: 500 W convective plume, 0.3 to 2.6 m, at D = 1, 2, 3 m; v2 recorded 2.2e-2 rad at 1 m for a 70 C panel
+    D = 1.0 m: deficit    -3.8 g, phase -2.74e-04 rad
+    D = 2.0 m: deficit    -3.8 g, phase -4.80e-05 rad
+    D = 3.0 m: deficit    -3.8 g, phase -4.54e-06 rad
+
+(2b) the whole air of a room warmed uniformly: 1 K, leaky room (constant pressure)
+    shaft 1 m radius, 0-10 m: phase per kelvin of whole-room temperature change +2.15e-03 rad
+    hall 5 m radius, 0-6 m: phase per kelvin of whole-room temperature change +2.22e-02 rad
+    hall 5 m radius, 0-12 m: phase per kelvin of whole-room temperature change +2.12e-02 rad
+    hall 10 m radius, 0-12 m: phase per kelvin of whole-room temperature change +4.11e-02 rad
+    infinite horizontal slab (closed form): dPhi = 4 pi G S |drho| dz = 8.23e-02 rad per K for the 5 m between the interferometers
+
+(3) sunlit concrete wall 10 x 10 x 0.3 m, 2400 kg/m3 (72 t), plane at D, free expansion, strain 1e-4 (alpha 1e-5 x dT 10 K)
+    D =  5.0 m, strain: +3.54e-02 rad
+    D =  5.0 m, bow   : +2.75e-01 rad
+    D =  5.0 m, rigid : -6.77e-02 rad
+    D = 10.0 m, strain: +4.61e-03 rad
+    D = 10.0 m, bow   : +4.73e-02 rad
+    D = 10.0 m, rigid : -1.53e-02 rad
+
+(4) warm water: open tank, 1 m tall, 1 m^2, fixed mass of water from 20 C; D to axis
+    uniform 60 C                         D = 2.0 m: surface rise  15.27 mm, phase +3.52e-02 rad
+    uniform 60 C                         D = 5.0 m: surface rise  15.27 mm, phase -1.43e-02 rad
+    uniform 30 C                         D = 2.0 m: surface rise   2.57 mm, phase +5.99e-03 rad
+    uniform 30 C                         D = 5.0 m: surface rise   2.57 mm, phase -2.40e-03 rad
+    stratified 20 C bottom to 60 C top   D = 2.0 m: surface rise   6.57 mm, phase +7.87e-03 rad
+    stratified 20 C bottom to 60 C top   D = 5.0 m: surface rise   6.57 mm, phase -3.95e-03 rad
+    200 L cylinder (0.2 m^2 x 1 m) uniform 60 C  D = 2.0 m: surface rise 15.268 mm, phase +5.94e-03 rad
+    1 m^2 x 1 m tank, 20 -> 21 C                 D = 2.0 m: surface rise  0.212 mm, phase +4.95e-04 rad
+
+(5) the plan's closed forms for the read itself
+    infinite stratified column: Delta a = -4 pi G int drho dz; with drho = -4e-3 kg/m3 over 5 m: S x that = 8.047e-02 rad
+
+Noise: one-sided PSD 1e-4 rad/sqrt(Hz); one shot at 2 s cadence (f_N = 0.25 Hz): 5.0e-05 rad; a mean over 1 h: 1.2e-06 rad; over 1 day: 2.4e-07 rad
+

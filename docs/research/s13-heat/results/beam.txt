@@ -1,0 +1,6 @@
+==================== beam ====================
+Pure thermal bending of a free beam, L = 10 h, plane stress, square elements: kappa_FE / (alpha dT / h)
+  elements through thickness:    1       2       4       8
+  Q4 (Q1 hex analogue)  : -0.9630  -0.9877  -0.9966  -0.9991
+  Q4 + incompatible modes: -1.0000  -1.0000  -1.0000  -1.0000
+

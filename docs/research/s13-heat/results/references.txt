@@ -1,0 +1,38 @@
+==================== references ====================
+Rayleigh-Benard linear stability, Chebyshev collocation (N = 28), Pr-independent for the marginal state:
+  rigid-rigid : Ra_c =   1707.762, k_c = 3.1163   (free-free closed form 27 pi^4/4 = 657.511, k = pi/sqrt2 = 2.2214)
+  rigid-free  : Ra_c =   1100.650, k_c = 2.6823   (free-free closed form 27 pi^4/4 = 657.511, k = pi/sqrt2 = 2.2214)
+  free-free   : Ra_c =    657.511, k_c = 2.2214   (free-free closed form 27 pi^4/4 = 657.511, k = pi/sqrt2 = 2.2214)
+  box width pi/k_c for one half-wavelength with free-slip adiabatic side walls: Gamma = 1.0081 x depth
+Schluter-Lortz-Busse weakly nonlinear slope (recalled): Nu - 1 = eps / (0.69942 - 0.00472/Pr + 0.00832/Pr^2):
+    Pr =     0.71: slope 1.4099
+    Pr =     7.00: slope 1.4308
+    Pr = 1000000000.00: slope 1.4298
+Churchill-Chu isothermal vertical plate, Pr = 0.71 (air); Nu_L = hL/k (all-range form, laminar form for Ra < 1e9):
+    Ra_L =    1e+03: Nu =     3.43  laminar form     3.57   boundary layer ~ L/Nu = 0.2919 L
+    Ra_L =    1e+05: Nu =     9.21  laminar form     9.82   boundary layer ~ L/Nu = 0.1085 L
+    Ra_L =    1e+06: Nu =    16.56  laminar form    16.94   boundary layer ~ L/Nu = 0.0604 L
+    Ra_L =    1e+07: Nu =    31.21  laminar form    29.60   boundary layer ~ L/Nu = 0.0320 L
+    Ra_L =    1e+08: Nu =    61.07  laminar form    52.10   boundary layer ~ L/Nu = 0.0164 L
+    Ra_L =    1e+09: Nu =   122.86  laminar form    92.13   boundary layer ~ L/Nu = 0.0081 L
+    Ra_L =    1e+10: Nu =   252.28  laminar form      nan   boundary layer ~ L/Nu = 0.0040 L
+  worked example in the textbook source (Pr 0.69, Gr 2.63e9 -> Ra 1.815e+09): Nu = 147.16 (ht docs: 147.16)
+Fourier-series plate, one hot edge of a square: centre temperature by series vs the symmetry value 1/4:
+    terms up to n =   1: T(centre)/T0 = 0.253716
+    terms up to n =   3: T(centre)/T0 = 0.249904
+    terms up to n =  21: T(centre)/T0 = 0.250000
+    terms up to n = 201: T(centre)/T0 = 0.250000
+Heat kernel enclosed fraction F(r, t) = erf(r / 2 sqrt(kappa t)) - r/sqrt(pi kappa t) exp(-r^2 / 4 kappa t), checked by quadrature:
+    r = 0.5: formula 0.01902786, quadrature 0.01902786
+    r = 1.0: formula 0.13016123, quadrature 0.13016123
+    r = 2.0: formula 0.58582063, quadrature 0.58582063
+    r = 4.0: formula 0.99037957, quadrature 0.99037957
+  mass deficit of 100 J released as a point in air at 293.15 K (constant pressure): beta Q / c_p = 0.339 g
+Dissipation number g beta L / c_p (neglected by Boussinesq): air 3 m 1.0e-04; water 1 m at 20 C 4.9e-07
+Buoyant plume (top-hat MTT), B = g P/(rho cp T0): volume flux at 1 m for 100 W, alpha = 0.083 18.5 L/s
+Solid conduction explicit limits dt = h^2/(6 alpha), alpha: concrete 7e-7, steel 1.3e-5, copper 1.1e-4, air 2.2e-5, water 1.4e-7 m^2/s
+    h =  5.0 cm: concrete    595.24 s, steel     32.05 s, copper      3.79 s, air     18.94 s, water   2976.19 s
+    h =  1.0 cm: concrete     23.81 s, steel      1.28 s, copper      0.15 s, air      0.76 s, water    119.05 s
+    h =  0.5 cm: concrete      5.95 s, steel      0.32 s, copper      0.04 s, air      0.19 s, water     29.76 s
+Radiative coefficient 4 sigma T^3 at 293 K: 5.71 W/m2/K (times emissivity); sealed-room pressure rate (gamma-1) P / V for 100 W in 50 m3: 0.80 Pa/s
+

@@ -1,0 +1,20 @@
+==================== views ====================
+closed forms: unit squares parallel at 1: 0.199825; perpendicular sharing an edge: 0.200044
+              coaxial discs r=1,1,h=1: 0.381966; concentric spheres r1/r2=0.5: 0.7500
+Monte-Carlo (uniform area sampling), pass: |MC - closed form| < 4 sigma, sigma ~ N^-1/2
+  parallel   N =     1000: 0.20208 +- 0.00224   err 0.00225  rel sigma 1.11%
+  parallel   N =    10000: 0.19974 +- 0.00070   err 0.00008  rel sigma 0.35%
+  parallel   N =   100000: 0.20013 +- 0.00022   err 0.00031  rel sigma 0.11%
+  parallel   N =  1000000: 0.19980 +- 0.00007   err 0.00003  rel sigma 0.03%
+  perpend.   N =    10000: 0.18533 +- 0.00481   err 0.01472
+  perpend.   N =  1000000: 0.19810 +- 0.00152   err 0.00195
+  unit cube, one face: 4 x perpendicular + 1 x parallel = 1.000000 (must be 1; summation rule)
+  voxel-face (staircase) area / true area for a sphere = mean(|nx|+|ny|+|nz|) = 1.4998  (3/2)
+  linearised radiation: sigma(T1^4 - T2^4) vs 4 sigma Tm^3 dT, error (dT/2Tm)^2:
+    Tm =  293.1 K, dT =    10 K: linear / exact = 0.99971  (1/(1+(dT/2Tm)^2) = 0.99971)
+    Tm =  305.0 K, dT =    50 K: linear / exact = 0.99333  (1/(1+(dT/2Tm)^2) = 0.99333)
+    Tm =  320.0 K, dT =   100 K: linear / exact = 0.97617  (1/(1+(dT/2Tm)^2) = 0.97617)
+    Tm =  400.0 K, dT =   200 K: linear / exact = 0.94118  (1/(1+(dT/2Tm)^2) = 0.94118)
+    Tm =  500.0 K, dT =   400 K: linear / exact = 0.86207  (1/(1+(dT/2Tm)^2) = 0.86207)
+  Monte-Carlo rays for 1 % relative sigma on F: N ~ (1-F)/(F x 1e-4); for F = 0.2: 40000; for F = 0.02: 490000
+

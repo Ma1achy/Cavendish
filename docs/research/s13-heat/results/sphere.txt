@@ -1,0 +1,9 @@
+==================== sphere ====================
+u = (1+nu)/(1-nu) a/r^2 int_0^r T s^2 ds + 2(1-2nu)/(1-nu) a r/R^3 int_0^R T s^2 ds
+  T = uniform 1 : Navier residual 0; sigma_rr(R) x (1-2nu)/2G = 0
+  T = r^2       : Navier residual 0; sigma_rr(R) x (1-2nu)/2G = 0
+  T = r^4 + 3   : Navier residual 0; sigma_rr(R) x (1-2nu)/2G = 0
+  T = exp(-r^2) : Navier residual 0; sigma_rr(R) x (1-2nu)/2G = 0
+  uniform T: u = alpha*r  (must be alpha r)
+  mass enclosed inside radius r changes by -4 pi rho0 r^2 u(r) (mass conservation, first order); outside the sphere the field changes only through the displaced surface, which is O(alpha dT R) relative.
+

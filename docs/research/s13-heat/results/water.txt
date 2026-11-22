@@ -1,0 +1,24 @@
+==================== water ====================
+IAPWS-95 at 101.325 kPa: max density 999.9749 kg/m3 at 3.9775 C (coarse grid 4.00)
+Tanaka-IAPWS95, 0-40 C: max |diff| 1.144 g/m3 (1.15 ppm)
+Gebhart-Mollendorf vs IAPWS-95, 0-20 C: max |diff| 16.0 g/m3; 0-40 C: 515.4 g/m3
+Polynomial least-squares fits of rho(T) to IAPWS-95 (max abs error, g/m3):
+  degree   0-10 C    0-40 C    0-95 C   (monotone beyond range? coefficients in T/100)
+      2       4.07    143.14    887.85
+      3       0.16     18.11    200.69
+      4       0.01      2.42     45.37
+      5       0.00      0.34     10.99
+      6       0.00      0.05      2.69
+      8       0.00      0.00      0.17
+  linear beta at    4 C: beta =      0.3 1e-6/K; max error over +-10 K = 0.8941 kg/m3
+  linear beta at   10 C: beta =     87.9 1e-6/K; max error over +-10 K = 0.7379 kg/m3
+  linear beta at   20 C: beta =    206.8 1e-6/K; max error over +-10 K = 0.5687 kg/m3
+  linear beta at   60 C: beta =    523.2 1e-6/K; max error over +-10 K = 0.3053 kg/m3
+  air dT =    1 K: rho ratio ideal 0.99660, Boussinesq 0.99659, relative error of the anomaly +0.341%
+  air dT =   10 K: rho ratio ideal 0.96701, Boussinesq 0.96589, relative error of the anomaly +3.411%
+  air dT =   30 K: rho ratio ideal 0.90716, Boussinesq 0.89766, relative error of the anomaly +10.234%
+  air dT =   50 K: rho ratio ideal 0.85429, Boussinesq 0.82944, relative error of the anomaly +17.056%
+  hydrostatic compression, +1 m head at 4 C: 4.85e-06 (relative)
+  density maximum at   0.101 MPa: 4.000 C
+  density maximum at  10.000 MPa: 1.950 C
+
