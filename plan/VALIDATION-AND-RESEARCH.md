@@ -76,6 +76,82 @@ These are also the natural first users of the voxel tree: the scaffold is exactl
 | `notch_filter_removes_known_tone` *quick* | least-squares â cos + b̂ sin at f_c subtracted; neighbouring tones untouched | paper §IV |
 | `week_and_night_schedules` | a 7-day night-only run (18:00–08:00 ± 30 min), lift excision, MOT failures, thinning | `week_pipeline`, `nighttime_gapped_series`, `thinning_pipeline` |
 
+### 2.5 Heat and fluids (S8–S10, S13; added by the owner, 22 Nov 2026)
+
+Heat has no paper of George's to reproduce, so it is held to closed forms, to published benchmarks
+of heat transfer, and to gravity cases whose answer is known. Tolerances are written in the slice
+brief before measuring; the numbers below are the references, to be confirmed against their sources
+by the research note (`docs/research/s13-heat.md`) before any is used. Each row is a case in the
+validation report; convergence cases state their expected order.
+
+**Conservation and nulls** (*quick* where small)
+
+| Test | Asserts | Against |
+|---|---|---|
+| `closed_box_conserves_energy` | an insulated box with solids, air and water: total energy constant to round-off over a long run | exact |
+| `steady_state_balances` | heat in = heat out at steady state, per surface and in total | exact |
+| `isothermal_world_is_silent` | everything at one temperature: no flow, no expansion, every channel exactly zero | exact |
+| `uniformly_heated_sphere_is_silent` | a sphere expanding uniformly keeps its mass and its symmetry: no change outside it (shell theorem) | closed form |
+| `heated_infinite_slab_is_silent` | a slab warmed uniformly thickens but its areal mass is unchanged: no differenced phase | closed form |
+| `expansion_conserves_mass` | mass of every body before and after heating, to the bit | exact |
+
+**Conduction in solids**
+
+| Test | Asserts | Against |
+|---|---|---|
+| `slab_steady_profile` | linear temperature across a slab; flux = kΔT/L; a composite wall as resistances in series | closed form |
+| `semi_infinite_step` | surface stepped to T_s: T(x, t) follows erfc(x / 2√(αt)); second order in space | closed form (Carslaw & Jaeger) |
+| `plate_fourier_series` | steady temperature in a rectangle with one hot edge | closed form |
+| `lumped_cooling` | a small body in a stream cools as exp(−t/τ), τ = ρcV/hA, when Bi ≪ 1 | closed form |
+| `contact_between_bodies` | two blocks brought together relax to the energy-weighted mean | closed form |
+
+**Radiation between surfaces**
+
+| Test | Asserts | Against |
+|---|---|---|
+| `view_factors_closed_forms` | parallel rectangles, perpendicular rectangles with a common edge, concentric spheres | closed forms (Howell's catalogue) |
+| `view_factor_rules` *quick* | reciprocity A_i F_ij = A_j F_ji and summation Σ_j F_ij = 1 in a closed room | exact identities |
+| `two_surface_enclosure` | net exchange between two grey surfaces | closed form |
+| `radiation_shield` | a thin shield between two plates halves the exchange (equal emissivities) | closed form |
+
+**Convection in air** (with the cases already in the plan: de Vahl Davis, Rayleigh–Bénard onset)
+
+| Test | Asserts | Against |
+|---|---|---|
+| `heated_cavity_2d` | Nu at Ra = 10³–10⁶, uniform and adaptive | de Vahl Davis (1983) |
+| `heated_cavity_3d` | Nu in the cubic cavity | Fusegi et al. (1991) |
+| `rayleigh_benard_onset` | convection starts at Ra_c = 1708 between rigid plates | linear theory |
+| `vertical_plate` | mean Nu on a heated vertical plate | Churchill & Chu correlation, within its stated band |
+| `plume_scaling` | a steady point source: centreline velocity ∝ z^(−1/3), buoyancy ∝ z^(−5/3) | Morton, Taylor & Turner (1956) |
+| `conjugate_cavity` | a cavity with one conducting wall: interface temperature and Nu | Kaminski & Prakash (1986) |
+
+**Water**
+
+| Test | Asserts | Against |
+|---|---|---|
+| `water_density_maximum` | the equation of state against tabulated density, 0–40 °C; maximum near 4 °C | IAPWS-95 tables |
+| `water_cavity_with_inversion` | the cavity straddling 4 °C: two counter-rotating cells | published benchmark (to be chosen by the research note) |
+| `stable_stratification_is_still` | warm over cold water at rest stays at rest; internal waves at the buoyancy frequency N | closed form |
+| `heated_tank_from_below` | onset and Nu at Pr ≈ 7 | published Rayleigh–Bénard data |
+
+**Thermal expansion of solids**
+
+| Test | Asserts | Against |
+|---|---|---|
+| `free_bar_expands` | ΔL = αLΔT, uniformly heated, unconstrained | closed form |
+| `clamped_bar_stress` | σ = −EαΔT, both ends held | closed form |
+| `bimetal_strip` | curvature of a two-layer strip | Timoshenko (1925) |
+| `gradient_bends_a_beam` | a linear through-thickness gradient bends a free beam to curvature αΔT/h | closed form |
+
+**Heat through the instrument**
+
+| Test | Asserts | Against |
+|---|---|---|
+| `warm_air_column_phase` | a cylinder of air held ΔT above ambient: phase = that of a cylinder of density −ρβΔT | the engine's own cylinder kernel (S3) and closed form on axis |
+| `radiator_anchor` | the 70 °C radiator a metre from a tower | v2's recorded 2.2e-2 rad, within a stated factor, and explained if not |
+| `response_map_superposes` | the first-order response map × a temperature field = the full read, for small ΔT; the error grows as ΔT² | exact to first order |
+| `expanding_wall_phase` | a wall warmed on one face: phase from the displaced-body read = phase from re-voxelising the expanded wall | the engine's own two paths |
+
 ## 3. Features these sources suggest
 
 1. **An analysis layer in the engine, not only in Python:** Lomb–Scargle (exact and NUFFT-accelerated),
@@ -141,3 +217,8 @@ noise models; the Beecroft site measurements.
 - **S6** adds the §2.2 motion-geometry tests and source fingerprinting.
 - **S7** gains a structural-dynamics track (modal voxel FE) after its research note.
 - **S11** reproduces the paper's sampling results (§2.4) through the dataset path, on both presets.
+- **S8–S10** take the air and water rows of §2.5 that need no new physics (the cavities, onset, the
+  plume, the water equation of state, stratification).
+- **S13** (heat everywhere, `REBUILD.md` §9.2) takes the rest of §2.5: conduction, radiation, conjugate
+  transfer, expansion and the instrument cases. Its research note comes first: methods, the exact
+  reference numbers and their sources, and which published water benchmark to use.

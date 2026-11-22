@@ -266,3 +266,30 @@
 - id: TASK-S12-03
   milestone: S12
   title: Published ordering and masked fraction reproduced
+- id: TASK-S13-01
+  milestone: S13
+  title: 'Temperature on the voxels: material thermal properties, sources, the energy ledger'
+- id: TASK-S13-02
+  milestone: S13
+  title: Conduction in solids and contact between bodies
+- id: TASK-S13-03
+  milestone: S13
+  title: 'Conjugate heat transfer: solids coupled to air and water'
+- id: TASK-S13-04
+  milestone: S13
+  title: 'Heat in water: real equation of state, density maximum, stratification'
+- id: TASK-S13-05
+  milestone: S13
+  title: Radiation between surfaces with view factors checked against closed forms
+- id: TASK-S13-06
+  milestone: S13
+  title: Thermal expansion of solids through the displaced-body read
+- id: TASK-S13-07
+  milestone: S13
+  title: 'The thermal read: air, water and expansion separable; response maps'
+- id: TASK-S13-08
+  milestone: S13
+  title: 'Heat in the viewer: temperature, heat flux, sources, the energy balance'
+- id: TASK-S13-09
+  milestone: S13
+  title: 'Heat validation suite: conservation, conduction, radiation, convection, water, expansion'

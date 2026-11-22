@@ -333,8 +333,12 @@ its oracle checks, a performance note, screenshots in `docs/slices/`. Main alway
 | S10 | **Water** | Liquids with a free surface: tanks, a river's level changing, boats, a waterfall | floating box at Archimedes draught; steady river silent |
 | S11 | **Datasets and Gradar** | Dataset builder in the GUI and CLI, manifests, `verify`, Python and torch; the non-learned baseline beside a trained model | manifests regenerate; CRB ≤ baseline error |
 | S12 | **The site** | The Beecroft stairwell scene with its populations, seismic noise, the published ordering reproduced | published ordering; masked fraction within ×2 |
+| S13 | **Heat everywhere** | Anything can be hot: people, machines, radiators, sunlit walls. Heat conducts through solids, radiates between surfaces, is carried by air and by water, and warms structure so that it expands; every one of those shows in the towers' readings, with temperature and heat flux drawn in the viewer | energy conserved in a closed box; the analytic and published cases of `VALIDATION-AND-RESEARCH.md` §2.5; a uniformly heated sphere gives no signal |
 
 Order is a default. Slices that do not depend on each other (S6 and S8, say) can run in parallel.
+S13 was added by the owner on 22 Nov 2026 and is numbered by when it was added, not by when it runs:
+it follows S10 (it needs air, adaptive air and water) and comes before S11 and S12, whose datasets
+and site scenes should include heat. What it holds is in §9.2.
 
 ### 9.1 Dev and debug scenes (from S0, grown with every slice)
 
@@ -375,6 +379,39 @@ spec file in `scenes/dev/`, loads in one keystroke from the library, and most do
 Outdoor and world scenes — aircraft over a field, traffic on a road, birds, drones, boats, rivers,
 the town — are the scene library (`reference/milestones/M18-scene-library.md`) and arrive with S6, S9 and S10;
 many are near-null by design (an airliner at 1 km is well under shot noise), which is a test too.
+
+### 9.2 Heat (S13) — one temperature field through solids, air and water
+
+S8–S10 give air and water that move and a wall that can be held warm. S13 makes heat a property of
+the whole world, because the instrument reads every way heat moves mass: warm air and warm water are
+lighter, and warm structure expands. `reference/design/physics.md` records a 70 °C radiator a metre
+from a tower at 2.2e-2 rad, twenty times the shot noise, so none of this is decoration.
+
+- **One temperature field, one energy budget.** Temperature lives on the same voxels as matter. Each
+  material in the palette carries conductivity, heat capacity, emissivity and expansion coefficient.
+  Energy is conserved to round-off across solid, air and water in every step; the bundle records the
+  balance (in, out, stored) as it records the phase error.
+- **Sources.** Any body or surface can be a source: fixed temperature, fixed power (a person at about
+  100 W, a machine, a radiator), a schedule in time, or sunlight on outside surfaces.
+- **Conduction in solids** on the voxel tree (the fluid's multigrid, reused), with contact between
+  touching bodies.
+- **Convection in air and in water**, coupled to solids at their surfaces (conjugate heat transfer):
+  the wall temperature is solved, not set. Water uses its real equation of state, with the density
+  maximum near 4 °C; air keeps Boussinesq where the temperature range allows and the bundle says
+  when it does not.
+- **Radiation between surfaces** (grey, diffuse) by tracing the world's coarse volume, as the lighting
+  does; view factors are checked against closed forms. Participating air is out of scope.
+- **Thermal expansion.** Warm solids expand: displacement from the voxel finite elements of S7, played
+  back through the displaced-body read, mass conserved to the bit.
+- **The read.** Three contributions, separable in the viewer and in bundles: the density change of
+  air, of water, and the displacement of solids. Each is first order in ΔT, so each has a response
+  map: "which warm cell does this tower hear".
+- **Not in S13:** phase change (boiling, freezing, condensation), combustion, humidity. They go in
+  `plan/IDEAS.md` until someone needs them.
+
+Method choices (radiation by ray-traced view factors or discrete ordinates; implicit or explicit
+conduction; how air beyond Boussinesq is handled) are open until the research note
+`docs/research/s13-heat.md` is written and checked.
 
 ## 10. How the work runs — builders and reviewers
 
