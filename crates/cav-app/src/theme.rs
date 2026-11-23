@@ -5,15 +5,25 @@ use egui::{Color32, CornerRadius, FontFamily, FontId, Stroke, TextStyle};
 pub use cav_plot::fonts::{MONO_FONT, MONO_FONT_LICENCE, MONO_FONT_NAME, definitions as fonts};
 pub use cav_plot::theme::{BACKGROUND, LINK, PLAYHEAD, RULE, STRONG, TEXT, WEAK, tower};
 
+/// The background of a panel. sRGB.
 pub const PANEL: Color32 = Color32::from_rgb(0x1b, 0x1b, 0x1b);
+/// The background of the status line. sRGB.
 pub const FOOTER: Color32 = Color32::from_rgb(0x14, 0x14, 0x14);
+/// The fill of a button or a field at rest. sRGB.
 pub const WIDGET: Color32 = Color32::from_rgb(0x3c, 0x3c, 0x3c);
+/// The outline of a button or a field. sRGB.
 pub const WIDGET_EDGE: Color32 = Color32::from_rgb(0x4a, 0x4a, 0x4a);
+/// The fill of a button or a field under the pointer. sRGB.
 pub const HOVER: Color32 = Color32::from_rgb(0x46, 0x46, 0x46);
+/// The fill of what is selected or switched on. sRGB.
 pub const SELECTION: Color32 = Color32::from_rgb(0x00, 0x5c, 0x80);
+/// The outline of what is selected. sRGB.
 pub const SELECTION_EDGE: Color32 = Color32::from_rgb(0x1a, 0x7c, 0xa3);
+/// A warning's text. sRGB.
 pub const WARN: Color32 = Color32::from_rgb(0xe0, 0xc0, 0x70);
+/// An error's text. sRGB.
 pub const ERROR: Color32 = Color32::from_rgb(0xe0, 0x70, 0x5a);
+/// The scene's name and other marks of the present state. sRGB.
 pub const GOLD: Color32 = Color32::from_rgb(0xe7, 0xc4, 0x6a);
 
 /// Installs the fonts and their sizes, the colours and the spacing.

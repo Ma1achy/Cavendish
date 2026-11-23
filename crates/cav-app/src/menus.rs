@@ -5,13 +5,30 @@
 #[derive(Clone, Copy, Debug)]
 pub enum Item {
     /// Runs a console line. `shortcut` is shown beside the label.
-    Run { label: &'static str, line: &'static str, shortcut: &'static str },
+    Run {
+        /// What the entry says.
+        label: &'static str,
+        /// The console line it runs.
+        line: &'static str,
+        /// The key that does the same, as shown; empty for none.
+        shortcut: &'static str,
+    },
     /// Something a later slice brings: shown greyed out, with the slice that brings it.
-    Later { label: &'static str, slice: &'static str },
+    Later {
+        /// What the entry says.
+        label: &'static str,
+        /// The slice that brings it, such as `S3`.
+        slice: &'static str,
+    },
     /// A rule between groups.
     Separator,
     /// A nested menu.
-    Sub { label: &'static str, items: &'static [Item] },
+    Sub {
+        /// What the entry says.
+        label: &'static str,
+        /// The entries of the nested menu.
+        items: &'static [Item],
+    },
 }
 
 const fn run(label: &'static str, line: &'static str) -> Item {

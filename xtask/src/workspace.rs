@@ -181,7 +181,7 @@ impl Allowances {
 
 /// TEMPORARY: the library crates that do not yet carry `#![warn(missing_docs)]`: `cav-app`,
 /// whose plots moved to `cav-plot` in TASK-S2-07; empty this list when it is documented.
-pub const NOT_YET_DOCUMENTED: &[&str] = &["cav-app"];
+pub const NOT_YET_DOCUMENTED: &[&str] = &[];
 
 /// Every way the manifests break the plan, in words; empty when they keep it.
 ///

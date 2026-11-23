@@ -40,9 +40,12 @@ const STEP: f64 = 0.1;
 /// Which log entries the console shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ConsoleFilter {
+    /// Every entry.
     #[default]
     All,
+    /// Warnings and errors.
     Warnings,
+    /// Errors only.
     Errors,
 }
 
@@ -50,6 +53,7 @@ pub enum ConsoleFilter {
 /// check that no panel covers the figure.
 #[derive(Clone, Debug)]
 pub struct Layout {
+    /// The whole window, points.
     pub screen: Rect,
     /// Each panel that was shown, by name: `menu`, `outliner`, `properties`, `timeline`,
     /// `console`, `footer`, `header`.
@@ -110,16 +114,23 @@ impl Layout {
 
 /// The application's state.
 pub struct Shell {
+    /// The engine this window drives. All scene state is here: the shell sends commands and reads replies.
     pub engine: Engine,
+    /// Whether the console is shown.
     pub console_open: bool,
+    /// Which log entries the console shows.
     pub console_filter: ConsoleFilter,
     pub(crate) console_line: String,
     pub(crate) history: Vec<String>,
     pub(crate) history_at: Option<usize>,
     pub(crate) focus_console: bool,
+    /// Whether the panels are hidden, leaving the figure alone.
     pub gui_hidden: bool,
+    /// Whether the playhead is advancing with the clock.
     pub playing: bool,
+    /// Whether the list of keys is shown.
     pub keys_open: bool,
+    /// Whether the About box is shown.
     pub about_open: bool,
     /// Set by `quit`; the window closes at the end of the frame.
     pub quit: bool,
