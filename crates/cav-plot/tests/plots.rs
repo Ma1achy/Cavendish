@@ -295,3 +295,133 @@ fn the_cadence_pane_draws_lines_where_predicted() {
         plain.drawn.stems.len()
     );
 }
+
+/// The comb's oscillator on a walk of late cycles, 4 shots of every 10 planned and a fifth of
+/// those lost, over a minute: a scene whose towers do not take every shot.
+const LOSSY: &str = r#"load cadence-lab; set array.schedule.gaps {"on":4,"period":10}; set array.schedule.loss 0.2; set duration 60"#;
+
+/// Whether any point of `points` is within a point's width of any of the times' places `at`.
+fn touches(points: &[[f32; 2]], at: &[f32]) -> bool {
+    points.iter().any(|point| at.iter().any(|x| (point[0] - x).abs() <= 1.0))
+}
+
+#[test]
+fn a_signal_plot_breaks_at_a_shot_not_taken() {
+    // I2 of S2's review: a shot not taken was a point at 0 rad, joined into the line.
+    let engine = engine(LOSSY);
+    let style = Style::screen();
+    let one = Subject { tower: Some(1), ..subject(PaneContent::Signal) };
+    let plot = build(&engine, &one, &style, [960.0, 600.0]);
+    let (drawn, area) = (&plot.drawn, plot.drawn.area);
+    let signal = engine.signal().1.unwrap().clone();
+    let (times, taken) = (signal.readouts(0), signal.taken(0).to_vec());
+    let values = signal.channel(0, cav_core::forward::Channel::Gradiometer);
+    let (shots, kept) = (taken.len(), taken.iter().filter(|taken| **taken).count());
+    assert!(shots >= 24 && kept >= 4 && kept < shots / 2, "{kept} of {shots} shots taken");
+    let x_of = |time: f64| area.left() + area.width() * drawn.x.fraction(time) as f32;
+    let lost: Vec<f32> =
+        times.iter().zip(&taken).filter(|(_, taken)| !**taken).map(|(time, _)| x_of(*time)).collect();
+    // The runs of shots taken: a line for each run of two or more, and nothing else in the
+    // series' colour that joins points.
+    let mut runs: Vec<usize> = Vec::new();
+    for (k, taken) in taken.iter().enumerate() {
+        match (taken, k > 0 && signal.taken(0)[k - 1]) {
+            (true, true) => *runs.last_mut().unwrap() += 1,
+            (true, false) => runs.push(1),
+            _ => {}
+        }
+    }
+    let colour = style.series(0).0;
+    let lines: Vec<&[[f32; 2]]> = plot
+        .drawing
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Line { points, colour: c, .. } if *c == colour => Some(points.as_slice()),
+            _ => None,
+        })
+        .collect();
+    let long: Vec<usize> = runs.iter().copied().filter(|run| *run >= 2).collect();
+    assert!(long.len() >= 2, "{runs:?}");
+    assert_eq!(lines.iter().map(|line| line.len()).collect::<Vec<_>>(), long, "one line for each run");
+    // No line has a vertex at a shot not taken, and no dot stands there.
+    assert!(lines.iter().all(|line| !touches(line, &lost)));
+    let dots: Vec<[f32; 2]> = plot
+        .drawing
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Circle { centre, fill, .. } if *fill == colour => Some(*centre),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(dots.len(), kept, "a dot for each shot taken");
+    assert!(!touches(&dots, &lost));
+    assert_eq!(drawn.points, kept);
+    // Each shot not taken has a hollow square at the foot of the axis, at its time (the last
+    // shot is read out after the end of the timeline, off the axis, and has none).
+    assert!(lost.iter().filter(|x| **x <= area.right()).count() >= lost.len() - 1);
+    for x in lost.iter().filter(|x| **x <= area.right()) {
+        let marked = plot.drawing.items.iter().any(|item| match item {
+            Item::Rect { min, max, fill: None, stroke: Some((_, c)) } => {
+                *c == colour
+                    && ((min[0] + max[0]) / 2.0 - x).abs() <= 0.5
+                    && ((min[1] + max[1]) / 2.0 - area.bottom()).abs() <= 0.5
+                    && max[0] - min[0] < 8.0
+            }
+            _ => false,
+        });
+        assert!(marked, "no hollow square at the foot of the axis at {x} pt");
+    }
+    // The caption counts them.
+    let said = format!("{kept} of {shots} shots taken");
+    assert!(drawn.labels.iter().any(|(text, _)| text.contains(&said)), "{:?}", drawn.labels.last());
+    assert_eq!(plot.described.marks["shots_taken"], serde_json::json!([kept]));
+    // Control: the line as it was drawn before, every slot joined, has a vertex at each shot
+    // not taken, at 0 rad, and the same check finds it.
+    let old: Vec<[f32; 2]> = times
+        .iter()
+        .zip(values)
+        .map(|(time, value)| {
+            let at = plots::place(area, &drawn.x, &drawn.y, (*time, *value));
+            [at.x, at.y]
+        })
+        .collect();
+    assert!(touches(&old, &lost));
+    let zero = plots::place(area, &drawn.x, &drawn.y, (0.0, 0.0)).y;
+    let at_zero = old.iter().filter(|point| touches(&[**point], &lost) && point[1] == zero).count();
+    assert_eq!(at_zero, shots - kept, "the old line passes through 0 rad at every shot not taken");
+    // Control: with every shot taken there is one line, no hollow square and the plain count.
+    let whole = self::engine("load comb; set duration 60");
+    let plot = build(&whole, &one, &style, [960.0, 600.0]);
+    assert_eq!(series(&plot.drawing).len(), 1);
+    let hollow =
+        |item: &Item| matches!(item, Item::Rect { fill: None, stroke: Some((_, c)), .. } if *c == colour);
+    assert!(!plot.drawing.items.iter().any(hollow));
+    assert!(plot.drawn.labels.iter().any(|(text, _)| text.contains("· 30 shots")));
+}
+
+#[test]
+fn a_long_series_is_broken_where_no_shot_is_taken() {
+    // More shots than points: the series is thinned, a stretch at a time, and a daily window
+    // that leaves most of the run untaken is a break in the line, not a line along 0 rad.
+    let (n, lit) = (10_000usize, 2_000usize..3_000);
+    let x: Vec<f64> = (0..n).map(|k| k as f64).collect();
+    let y: Vec<f64> = (0..n).map(|k| 5.0 + (k as f64 * 0.1).sin()).collect();
+    let taken: Vec<bool> = (0..n).map(|k| lit.contains(&k) || k >= 9_000).collect();
+    let runs = plots::runs(&x, &y, &taken);
+    assert_eq!(runs.len(), 2, "two stretches of shots taken, two lines");
+    let points: usize = runs.iter().map(Vec::len).sum();
+    assert!(points <= plots::MAX_POINTS + 2, "{points} points");
+    assert!(runs[0].iter().all(|(at, _)| lit.contains(&(*at as usize))));
+    assert!(runs.iter().flatten().all(|(_, value)| *value >= 4.0), "no slot not taken is on a line");
+    // The extremes of what was taken are kept.
+    let top = runs.iter().flatten().fold(f64::NEG_INFINITY, |m, (_, value)| m.max(*value));
+    assert!((top - 6.0).abs() < 1e-3);
+    // Control: thinned as it was before, with the slots not taken at zero, the line goes there.
+    let zeroed: Vec<f64> =
+        y.iter().zip(&taken).map(|(value, taken)| if *taken { *value } else { 0.0 }).collect();
+    assert!(plots::thinned(&x, &zeroed).iter().any(|(_, value)| *value == 0.0));
+    // Control: every shot taken is one run.
+    assert_eq!(plots::runs(&x, &y, &vec![true; n]).len(), 1);
+}

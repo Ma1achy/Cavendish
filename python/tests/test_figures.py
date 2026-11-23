@@ -12,6 +12,7 @@ test reads and redraws every one of them; ``cargo xtask oracle`` sets it.
 
 from __future__ import annotations
 
+import json
 import os
 import struct
 import sys
@@ -284,7 +285,7 @@ def test_redraw_draws_the_house_style() -> None:
     signal    = loaded(directory, "signal")
     _, axes   = draw(signal).unwrap()
     assert axes.get_yscale() == "linear"
-    drawn = axes.get_lines()
+    drawn = [line for line in axes.get_lines() if line.get_marker() != "s"]
     assert [line.get_color() for line in drawn] == list(SERIES[:2])
     assert drawn[0].get_linestyle() == "-" and drawn[1].get_linestyle() != "-"
     assert not [line for line in drawn if line.get_marker() == "D" or line.get_color() == "#8c8c8c"]
@@ -293,6 +294,49 @@ def test_redraw_draws_the_house_style() -> None:
     # The other kinds draw too.
     for what in ("cadence", "flight"):
         assert png_size(redraw(loaded(directory, what), directory / f"{what}.png").unwrap())[0] in (2007, 2008)
+
+
+def test_a_shot_not_taken_is_not_plotted() -> None:
+    # I2 of S2's review: the redraw never read the column that says which shots were taken, and
+    # drew a lost shot as a measurement of 0 rad, joined into the line.
+    directory = scratch()
+    signal    = loaded(directory, "signal")
+    # Tower 2 does not take its third shot (read out at 5.75 s); its slot in the file holds 0.
+    assert [bool(flag) for flag in signal.series[1].taken] == [True, True, False, True, True, True]
+    assert float(signal.series[1].y[2]) == 0.0 and bool(signal.series[0].taken.all())
+    _, axes = draw(signal).unwrap()
+    lines   = [line for line in axes.get_lines() if line.get_marker() != "s"]
+    second  = np.asarray(lines[1].get_ydata(), dtype = np.float64)
+    # The value is masked: matplotlib breaks the line there and draws no marker.
+    assert [bool(np.isnan(value)) for value in second] == [False, False, True, False, False, False]
+    kept = signal.series[1].y[signal.series[1].taken] * 1e3
+    assert [float(value) for value in second[~np.isnan(second)]] == [float(value) for value in kept]
+    # A hollow square at the foot of the axes at the lost shot's time, in the tower's colour.
+    hollow = [line for line in axes.get_lines() if line.get_marker() == "s"]
+    assert len(hollow) == 1 and hollow[0].get_color() == SERIES[1]
+    assert str(hollow[0].get_markerfacecolor()) == "none" and hollow[0].get_linestyle() == "None"
+    assert [float(value) for value in np.asarray(hollow[0].get_xdata(), dtype = np.float64)] == [5.75]
+    assert [float(value) for value in np.asarray(hollow[0].get_ydata(), dtype = np.float64)] == [signal.y.range[0] * 1e3]
+    # A figure written before the series named the column is read by the column's own name.
+    source   = synthetic.write(directory / "older", "signal")
+    document = json.loads(source.read_text(encoding = "utf-8"))
+    for entry in document["series"]:
+        del entry["taken_column"]
+    source.write_text(json.dumps(document, ensure_ascii = False), encoding = "utf-8")
+    assert [bool(flag) for flag in load(source).unwrap().series[1].taken] == [True, True, False, True, True, True]
+    # Control: tower 1 takes every shot: nothing of its line is masked, and it has no hollow marker.
+    first = np.asarray(lines[0].get_ydata(), dtype = np.float64)
+    assert not np.isnan(first).any() and len(first) == 6
+    # Control: drawn as it was before (every slot joined), the lost shot is a point at 0 rad.
+    assert float((signal.series[1].y * 1e3)[2]) == 0.0 and not np.isnan(signal.series[1].y).any()
+    # A flight diagram's shot not taken is the bar's outline; the others are filled.
+    flight  = loaded(directory, "flight")
+    _, axes = draw(flight).unwrap()
+    # (Each tower's filled bars are one collection; a collection with no face colour is outlines.)
+    bars    = [(len(group.get_paths()), len(np.asarray(group.get_facecolor()))) for group in axes.collections]
+    assert sorted(bars) == [(1, 0), (3, 1), (4, 1), (4, 1)], bars
+    # Control: a spectrum has no flags, and every value of it is a measurement.
+    assert bool(loaded(directory, "periodogram").series[0].taken.all())
 
 
 def test_redraw_refuses_what_it_cannot_do() -> None:
