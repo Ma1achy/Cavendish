@@ -7,51 +7,70 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
 /// A vector or point, `f64`.
+///
+/// The type carries no unit and no frame: what it holds says which. Throughout the workspace a
+/// position is metres in the world's frame (x east, y north, z up) unless its documentation says
+/// otherwise (an offset from a tower's base, a camera's view space, normalised device
+/// coordinates).
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Vec3 {
+    /// The first component: east, for a position or direction in the world's frame.
     pub x: f64,
+    /// The second component: north, in the world's frame.
     pub y: f64,
+    /// The third component: up, in the world's frame.
     pub z: f64,
 }
 
 impl Vec3 {
+    /// The zero vector; as a position, the frame's origin.
     pub const ZERO: Self = Self::new(0.0, 0.0, 0.0);
+    /// The unit vector along x: east, in the world's frame.
     pub const X: Self = Self::new(1.0, 0.0, 0.0);
+    /// The unit vector along y: north, in the world's frame.
     pub const Y: Self = Self::new(0.0, 1.0, 0.0);
+    /// The unit vector along z: up, in the world's frame.
     pub const Z: Self = Self::new(0.0, 0.0, 1.0);
 
+    /// The vector with components `x`, `y`, `z`, in whatever unit and frame the caller means.
     #[must_use]
     pub const fn new(x: f64, y: f64, z: f64) -> Self {
         Self { x, y, z }
     }
 
+    /// The vector `[x, y, z]`: the order every positional array in the scene spec uses.
     #[must_use]
     pub const fn from_array(a: [f64; 3]) -> Self {
         Self::new(a[0], a[1], a[2])
     }
 
+    /// The components as `[x, y, z]`, unit and frame unchanged.
     #[must_use]
     pub const fn to_array(self) -> [f64; 3] {
         [self.x, self.y, self.z]
     }
 
-    /// Rounded to `f32`. Call it on offsets from a nearby origin, never on world positions.
+    /// `[x, y, z]` rounded to `f32`. Call it on offsets from a nearby origin, never on world
+    /// positions: an `f32` holds a position 10 km from the origin to about a millimetre.
     #[must_use]
     #[allow(clippy::cast_possible_truncation)]
     pub const fn to_f32(self) -> [f32; 3] {
         [self.x as f32, self.y as f32, self.z as f32]
     }
 
+    /// The scalar product, in the product of the two vectors' units.
     #[must_use]
     pub fn dot(self, o: Self) -> f64 {
         self.x * o.x + self.y * o.y + self.z * o.z
     }
 
+    /// The vector product `self × o`, right-handed: `X × Y = Z`.
     #[must_use]
     pub fn cross(self, o: Self) -> Self {
         Self::new(self.y * o.z - self.z * o.y, self.z * o.x - self.x * o.z, self.x * o.y - self.y * o.x)
     }
 
+    /// The Euclidean length, in the vector's own unit.
     #[must_use]
     pub fn length(self) -> f64 {
         self.dot(self).sqrt()
@@ -94,16 +113,25 @@ impl Mul<f64> for Vec3 {
 }
 
 /// A 4×4 matrix, `f64`, stored by columns (`m[column][row]`), acting on column vectors.
+///
+/// For cameras: world to view, view to clip, and their product. Not a general linear-algebra
+/// type (there is no inverse), and not for the forward model.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Mat4 {
+    /// The entries by columns: `m[column][row]`, so `m[3]` is the translation column
+    /// `[x, y, z, w]` of an affine transform.
     pub m: [[f64; 4]; 4],
 }
 
 impl Mat4 {
+    /// The matrix that changes nothing.
     pub const IDENTITY: Self =
         Self { m: [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]] };
 
     /// A view matrix: a camera at `eye` looking at `target`, right-handed, looking down its own −z.
+    /// `eye` and `target` are positions and `up` a direction (it need not be a unit vector, and
+    /// must not be parallel to the line of sight), all in the world's frame, metres. The result
+    /// takes world positions to view space: x right, y up, −z ahead, metres from the eye.
     #[must_use]
     pub fn look_at(eye: Vec3, target: Vec3, up: Vec3) -> Self {
         let f = (target - eye).normalised();
@@ -119,8 +147,9 @@ impl Mat4 {
         }
     }
 
-    /// A perspective projection to wgpu's clip space (depth 0 at `near`, 1 at `far`).
-    /// `fov_y` is the full vertical angle in radians; `aspect` is width over height.
+    /// A perspective projection from view space to wgpu's clip space (depth 0 at `near`, 1 at
+    /// `far`). `fov_y` is the full vertical angle in radians; `aspect` is width over height;
+    /// `near` and `far` are positive distances ahead of the eye, metres.
     #[must_use]
     pub fn perspective(fov_y: f64, aspect: f64, near: f64, far: f64) -> Self {
         let f = 1.0 / (0.5 * fov_y).tan();
@@ -135,8 +164,9 @@ impl Mat4 {
         }
     }
 
-    /// An orthographic projection to wgpu's clip space. `half_height` is half the visible height in
-    /// metres; `aspect` is width over height.
+    /// An orthographic projection from view space to wgpu's clip space. `half_height` is half the
+    /// visible height in metres; `aspect` is width over height; `near` and `far` are distances
+    /// ahead of the eye, metres (depth 0 at `near`, 1 at `far`).
     #[must_use]
     pub fn orthographic(half_height: f64, aspect: f64, near: f64, far: f64) -> Self {
         let r = 1.0 / (near - far);
@@ -150,7 +180,8 @@ impl Mat4 {
         }
     }
 
-    /// The homogeneous image of a point: `self · (p, 1)`.
+    /// The homogeneous image of a point: `self · (p, 1)`, as `[x, y, z, w]`, before any division
+    /// by `w`.
     #[must_use]
     pub fn transform(&self, p: Vec3) -> [f64; 4] {
         let v = [p.x, p.y, p.z, 1.0];
@@ -161,15 +192,19 @@ impl Mat4 {
         out
     }
 
-    /// A point taken to normalised device coordinates (x, y in −1…1, depth in 0…1), or `None` when it
-    /// is not in front of the camera.
+    /// A point taken to normalised device coordinates, or `None` when it is not in front of the
+    /// camera. In the result `x` runs −1…1 from the left edge to the right, `y` −1…1 from the
+    /// bottom to the top, and `z` is depth, 0 at the near plane and 1 at the far; values outside
+    /// those ranges are off the screen. Meaningful when `self` is a projection times a view.
     #[must_use]
     pub fn project(&self, p: Vec3) -> Option<Vec3> {
         let [x, y, z, w] = self.transform(p);
         (w > 0.0).then(|| Vec3::new(x / w, y / w, z / w))
     }
 
-    /// Rounded to `f32`, by columns, as a shader expects it.
+    /// Rounded to `f32`, by columns (`[column][row]`), as a shader expects it. Round a matrix
+    /// whose translation is small (a view relative to a nearby origin), not one that carries
+    /// world positions.
     #[must_use]
     #[allow(clippy::cast_possible_truncation)]
     pub fn to_f32(&self) -> [[f32; 4]; 4] {

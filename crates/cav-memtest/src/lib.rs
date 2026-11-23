@@ -7,6 +7,17 @@
 //! Depends on nothing. It is the only crate in the workspace with `unsafe` in it (two functions
 //! that pass straight through to the system allocator), which is why it is a crate of its own and
 //! does not take the workspace's lints.
+//!
+//! ## What this crate is for
+//! Test support: measuring how much memory a computation takes, so that a bound on it is a test
+//! and not an argument.
+//!
+//! ## What it may depend on
+//! Nothing in `[dependencies]`. Its own tests (in `tests/`) take the crates they measure as
+//! dev-dependencies. It must not be linked by anything that ships: it is for tests only, and no
+//! other `unsafe` may be added to it.
+
+#![warn(missing_docs)]
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};

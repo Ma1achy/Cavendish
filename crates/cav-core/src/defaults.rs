@@ -16,16 +16,18 @@ pub const LAUNCH_VELOCITY: f64 = 3.86;
 /// Time between shots of one tower, seconds (Nyquist 0.25 Hz).
 pub const CYCLE: f64 = 2.0;
 
-/// Ground positions (x east, y north) of the five towers, metres: one at the centre and four on a
-/// cross with 4 m arms.
+/// Ground positions of the five towers, each `[x, y]` (east, north) in metres in the world's
+/// frame; the towers' bases are at z = 0. One at the centre and four on a cross with 4 m arms.
 pub const TOWER_POSITIONS: [[f64; 2]; 5] = [[0.0, 0.0], [4.0, 0.0], [-4.0, 0.0], [0.0, 4.0], [0.0, -4.0]];
 
-/// The room's minimum corner, metres. Its floor is the plane z = 0, where the towers stand.
+/// The room's minimum corner, `[x, y, z]` (east, north, up) in metres in the world's frame. Its
+/// floor is the plane z = 0, where the towers stand.
 pub const ROOM_ORIGIN: [f64; 3] = [-5.0, -5.0, 0.0];
-/// The room's size, metres: 10 × 10 in plan, 3 high. The towers rise through its ceiling.
+/// The room's size, `[east–west, north–south, height]` in metres: 10 × 10 in plan, 3 high. The
+/// towers rise through its ceiling.
 pub const ROOM_SIZE: [f64; 3] = [10.0, 10.0, 3.0];
 
-/// How long a new scene's timeline is, seconds.
+/// How long a new scene's timeline is, seconds of scene time from t = 0.
 pub const DURATION: f64 = 12.0;
 
 #[cfg(test)]

@@ -50,14 +50,33 @@ pub enum Sign {
 pub enum Quadrature {
     /// Gauss–Legendre with `order` nodes on every panel; each smooth piece of the flight is cut
     /// into equal panels no longer than `panel` seconds. The engine's rule.
-    Gauss { order: usize, panel: f64 },
+    Gauss {
+        /// Nodes per panel (a count, at least one). The rule is exact for polynomials of degree
+        /// `2·order − 1` on each panel.
+        order: usize,
+        /// The longest a panel may be, seconds of flight time.
+        panel: f64,
+    },
     /// Composite Simpson at about `step` seconds on `[0, T]` and on `[T, 2T]`, with no regard for
     /// landings: v1's rule, node for node, for the oracle tie.
-    Simpson { step: f64 },
+    Simpson {
+        /// The spacing of the nodes aimed at, seconds of flight time; each half is cut into the
+        /// nearest even number of steps, so the spacing used may differ a little.
+        step: f64,
+    },
     /// The reference scripts' sampling, for parity tests only: `nodes` nodes at `j·step` joined by
     /// the trapezoid rule, with the arm taken `lag` steps later than the source. The scripts as
     /// published have `lag = 1`; `lag = 0` is the same rule with the offset corrected.
-    ScriptTrapezoid { step: f64, nodes: usize, lag: usize },
+    ScriptTrapezoid {
+        /// The spacing of the nodes, seconds of flight time.
+        step: f64,
+        /// How many nodes (a count, at least two): the rule covers `(nodes − 1)·step` seconds
+        /// from launch, whatever 2T is.
+        nodes: usize,
+        /// How many steps later than the source the arms are taken (a count of steps, not
+        /// seconds).
+        lag: usize,
+    },
 }
 
 /// The engine's rule: sixth-order panels of at most T/8 at AION-10's T. Its error on the anchors
@@ -161,8 +180,8 @@ impl Instrument {
         self.kicks * self.hbar * (TAU / self.wavelength) / self.atom_mass
     }
 
-    /// The launch velocity that brings both arms back to the launch height exactly at 2T:
-    /// `gT − v_kick/2`. Each arm is then its own mirror image about T.
+    /// The launch velocity, metres per second, that brings both arms back to the launch height
+    /// exactly at 2T: `gT − v_kick/2`. Each arm is then its own mirror image about T.
     #[must_use]
     pub fn symmetric_launch(&self) -> f64 {
         self.gravity * self.half_sequence - 0.5 * self.kick_velocity()
@@ -174,7 +193,8 @@ impl Instrument {
         2.0 * self.half_sequence
     }
 
-    /// The lower and the upper arm. Both interferometers fly the same pair.
+    /// `[lower arm, upper arm]`: the one launched at u₀ and kicked up at T, and the one
+    /// launched a kick faster and kicked down at T. Both interferometers fly the same pair.
     #[must_use]
     pub fn arms(&self) -> [Arm; 2] {
         let kick = self.kick_velocity();
@@ -182,7 +202,7 @@ impl Instrument {
         [arm(self.launch_velocity, kick), arm(self.launch_velocity + kick, -kick)]
     }
 
-    /// `G·m_A/ħ`: what turns the flight's sum (kg s / m) into radians.
+    /// `G·m_A/ħ`, in m s⁻¹ kg⁻¹: what turns the flight's sum (kg s / m) into radians.
     #[must_use]
     pub fn phase_scale(&self) -> f64 {
         self.big_g * self.atom_mass / self.hbar
@@ -217,6 +237,7 @@ impl Instrument {
     }
 
     /// How many nodes [`Self::visit`] would visit: the work of one read, known before it is done.
+    /// `breaks` are flight times, seconds after launch.
     #[must_use]
     pub fn node_count(&self, breaks: &[f64]) -> u64 {
         match self.quadrature {
@@ -235,7 +256,7 @@ impl Instrument {
     /// so a read's memory does not grow with the length of the flight. `breaks` are flight times
     /// (seconds after launch) at which the source is not smooth; the Gauss rule cuts its pieces
     /// there, the reference rules do not. `rule` is the Gauss rule for the instrument's order
-    /// ([`gauss_legendre`]); the reference rules ignore it.
+    /// ([`gauss_legendre`]: `(node, weight)` pairs on [−1, 1]); the reference rules ignore it.
     ///
     /// # Panics
     /// When the quadrature asks for nothing: no nodes, or a step or panel that is not positive.
@@ -295,7 +316,8 @@ impl Instrument {
     }
 
     /// The nodes of the flight integral, gathered into a table. For looking at a rule (tests, the
-    /// oracle tier); a read does not use it, because the table grows with the flight.
+    /// oracle tier); a read does not use it, because the table grows with the flight: not for hot
+    /// loops. `breaks` are flight times, seconds after launch.
     #[must_use]
     pub fn flight(&self, breaks: &[f64]) -> Flight {
         let rule = match self.quadrature {
@@ -329,7 +351,9 @@ pub struct Arm {
 }
 
 impl Arm {
-    /// An arm launched at `first` metres per second and kicked by `kick` at `half`.
+    /// An arm launched upwards at `first` metres per second and given `kick` metres per second
+    /// more (upwards positive) at `half` seconds after launch, under `gravity` metres per second
+    /// squared (positive, acting downwards); `floor` says whether it stops at its launch height.
     #[must_use]
     pub fn new(first: f64, kick: f64, half: f64, gravity: f64, floor: bool) -> Self {
         let fall = |v: f64, t: f64| v * t - 0.5 * gravity * t * t;
@@ -378,7 +402,8 @@ impl Arm {
         }
     }
 
-    /// Whether the arm is on the floor at `tau`: landed, and not yet kicked off it again.
+    /// Whether the arm is on the floor at `tau` seconds after launch: landed, and not yet kicked
+    /// off it again.
     #[must_use]
     pub fn grounded(&self, tau: f64) -> bool {
         if tau <= self.half {
@@ -388,7 +413,8 @@ impl Arm {
         }
     }
 
-    /// The flight times at which the arm lands, where its path has a kink.
+    /// The flight times at which the arm lands, where its path has a kink: seconds after
+    /// launch, in increasing order, at most two.
     #[must_use]
     pub fn landings(&self) -> Vec<f64> {
         self.landed_first.into_iter().chain(self.landed_second.map(|back| self.half + back)).collect()
@@ -402,8 +428,11 @@ pub struct Node {
     pub tau: f64,
     /// The node's weight, seconds.
     pub weight: f64,
-    /// The lower and the upper arm's rise above the launch point, metres.
+    /// The lower arm's rise above its launch point at this node, metres, up. The same number
+    /// serves both interferometers: add the interferometer's launch height to get a height
+    /// above the tower's base.
     pub lower: f64,
+    /// The upper arm's rise above its launch point at this node, metres, up.
     pub upper: f64,
 }
 
@@ -414,14 +443,19 @@ pub struct Node {
 /// T = 320 s with the floor off).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Flight {
-    /// The nodes in time order. Each has its time after launch (`tau`, seconds), its weight
-    /// (seconds) and the two arms' rise above their own launch point (metres, up).
+    /// The nodes in time order. Each has its time after launch (`tau`, seconds of flight time,
+    /// not scene time: the scene time of a node is `readout − duration + tau`), its weight
+    /// (seconds) and the two arms' rise above their own launch point (metres, up; relative to
+    /// the launch point, not to the tower's base and not to the world's origin).
     pub nodes: Vec<Node>,
-    /// 2T, seconds: a shot read out at `t` was launched at `t − duration`.
+    /// 2T, seconds: a shot read out at scene time `t` was launched at `t − duration`.
     pub duration: f64,
 }
 
-/// The nodes and weights of the `n`-point Gauss–Legendre rule on [−1, 1].
+/// The nodes and weights of the `n`-point Gauss–Legendre rule on [−1, 1]: each pair is
+/// `(node, weight)`, both dimensionless, the nodes in increasing order and the weights summing
+/// to 2. To use it on a panel `[a, b]` seconds long, the node is `a + (b − a)(node + 1)/2` and
+/// the weight `(b − a)·weight/2`.
 ///
 /// # Panics
 /// When `n` is zero.
@@ -457,16 +491,32 @@ pub fn gauss_legendre(n: usize) -> Vec<(f64, f64)> {
 
 /// Something with mass, as the flight integral sees it.
 pub trait Source: Sync {
-    /// `(V(upper arm) − V(lower arm)) / G` for each interferometer at absolute time `time`,
-    /// kilograms per metre: `[lower interferometer, upper interferometer]`. Frame: the world's
-    /// (x east, y north, z up, metres); `time` is seconds on the scene's clock. It is nothing when `lower` equals `upper` (the two arms at one point):
-    /// the integrator relies on that and does not ask while both arms are on the floor. `tower` is the tower's base (the lower launch point), `heights` the
-    /// two launch points' heights above it, and `lower` and `upper` the arms' rise above their
-    /// launch point.
+    /// `(V(upper arm) − V(lower arm)) / G` for each interferometer at one instant, kilograms per
+    /// metre. The result is `[lower interferometer, upper interferometer]` (δφ₁'s integrand,
+    /// then δφ₂'s); G is left out so that the sum over the flight stays of order one.
+    ///
+    /// The arguments, with their units and frames:
+    /// - `tower`: the tower's base, which is the lower interferometer's launch point. Metres, in
+    ///   the world's frame (x east, y north, z up). A source takes its own position relative to
+    ///   this before anything else.
+    /// - `heights`: `[lower interferometer, upper interferometer]`, each launch point's height
+    ///   above the tower's base, metres, up. The engine passes `[0, Δr]`.
+    /// - `lower`, `upper`: the lower and the upper *arm's* rise above its launch point, metres,
+    ///   up. Both interferometers fly the same pair of arms, so an arm point of interferometer
+    ///   `k` is at `tower + ẑ·(heights[k] + rise)`.
+    /// - `time`: seconds on the scene's clock (absolute scene time, not flight time τ): the
+    ///   source is evaluated at the same instant as the atoms.
+    ///
+    /// It must be nothing when `lower` equals `upper` (the two arms at one point): the
+    /// integrator relies on that and does not ask while both arms are on the floor. Multiply by
+    /// [`Instrument::phase_scale`] and a weight in seconds to get radians; the result is not a
+    /// potential and must not be compared between sources without that.
     fn difference(&self, tower: Vec3, heights: [f64; 2], lower: f64, upper: f64, time: f64) -> [f64; 2];
 
-    /// The times in `(from, to)` at which the source is not smooth: it appears, vanishes, starts
-    /// or stops. The Gauss rule cuts its pieces there.
+    /// Pushes onto `out` the times strictly inside `(from, to)` at which the source is not
+    /// smooth: it appears, vanishes, starts or stops. All three are seconds on the scene's clock
+    /// (not flight time); the order pushed does not matter. The Gauss rule cuts its pieces
+    /// there.
     fn breaks(&self, _from: f64, _to: f64, _out: &mut Vec<f64>) {}
 }
 
@@ -491,6 +541,7 @@ pub enum Channel {
 }
 
 impl Channel {
+    /// Every channel, in the order signals and bundles keep them: gradiometer, lower, upper.
     pub const ALL: [Self; 3] = [Self::Gradiometer, Self::Lower, Self::Upper];
 }
 
@@ -525,6 +576,7 @@ impl std::ops::Add for Reading {
 /// A reading with a measured bound on its quadrature error.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Audited {
+    /// The two interferometers' phases by the finest rule tried, radians.
     pub reading: Reading,
     /// How far the last two rules disagreed, radians, over the two interferometers and their
     /// difference: an estimate of the error of the coarser of the two, so an overestimate of the
@@ -572,6 +624,7 @@ impl Reader {
         Self { instrument, rule }
     }
 
+    /// The instrument this reader was made for, unchanged.
     #[must_use]
     pub const fn instrument(&self) -> &Instrument {
         &self.instrument
@@ -603,7 +656,8 @@ impl Reader {
     }
 
     /// Visits the nodes of the flight with the panels halved `level` times, cut at `breaks`: the
-    /// nodes a read at that level uses.
+    /// nodes a read at that level uses. `breaks` are flight times, seconds after launch (not
+    /// scene times).
     pub fn visit(&self, level: u32, breaks: &[f64], visitor: &mut dyn FnMut(Node)) {
         self.halved(level).visit(breaks, &self.rule, visitor);
     }
@@ -622,8 +676,8 @@ impl Reader {
         Reading { lower: scale * sum[0], upper: scale * sum[1] }
     }
 
-    /// What `source` adds to the shot of the tower at `tower` that is read out at `readout`
-    /// seconds: launched at `readout − 2T`, integrated over the flight with the rule of the
+    /// What `source` adds to the shot of the tower at `tower` (its base, metres, the world's
+    /// frame) that is read out at `readout` seconds of scene time: launched at `readout − 2T`, integrated over the flight with the rule of the
     /// instrument as it stands. [`Self::read_to`] is the read that checks itself.
     #[must_use]
     pub fn read(&self, tower: Vec3, source: &dyn Source, readout: f64) -> Reading {
@@ -672,7 +726,8 @@ impl Reader {
         Audited { reading, estimate: Some(estimate), halvings, settled, nodes }
     }
 
-    /// The gradiometer's phase from `source` alone, with the sign and the rule of the instrument.
+    /// The gradiometer's phase from `source` alone, radians, with the sign and the rule of the
+    /// instrument. `tower` and `readout` are as for [`Self::read`].
     #[must_use]
     pub fn phase(&self, tower: Vec3, source: &dyn Source, readout: f64) -> f64 {
         self.read(tower, source, readout).gradiometer(self.instrument.sign)
@@ -689,16 +744,19 @@ pub struct Mass<P: Fn(f64) -> Vec3 + Sync> {
     pub mass: f64,
     /// The sphere's radius, metres; zero for a point.
     pub radius: f64,
-    /// Where its centre is at a time, metres, in the world's frame.
+    /// Where its centre is at a time: seconds on the scene's clock in, metres in the world's
+    /// frame (x east, y north, z up) out.
     pub position: P,
-    /// It exists from the first time up to the second, seconds.
+    /// `(from, until)`, seconds on the scene's clock: it exists from the first time up to but
+    /// not including the second, and adds nothing outside.
     pub exists: (f64, f64),
-    /// Times at which its motion is not smooth.
+    /// Times at which its motion is not smooth, seconds on the scene's clock, in any order.
     pub breaks: Vec<f64>,
 }
 
 impl<P: Fn(f64) -> Vec3 + Sync> Mass<P> {
-    /// A point mass that always exists and moves smoothly.
+    /// A point mass of `mass` kilograms that always exists and moves smoothly; `position` is as
+    /// the field of that name.
     pub const fn point(mass: f64, position: P) -> Self {
         Self { mass, radius: 0.0, position, exists: (f64::NEG_INFINITY, f64::INFINITY), breaks: Vec::new() }
     }
@@ -749,7 +807,7 @@ impl<P: Fn(f64) -> Vec3 + Sync> Source for Mass<P> {
 pub struct Slab {
     /// Kilograms per cubic metre.
     pub density: f64,
-    /// Metres.
+    /// Metres, vertical. Where the slab is does not matter, so long as it is below every arm.
     pub thickness: f64,
 }
 
@@ -766,9 +824,9 @@ impl Source for Slab {
 pub struct AxialDisc {
     /// Kilograms per cubic metre.
     pub density: f64,
-    /// Metres.
+    /// Metres, vertical.
     pub thickness: f64,
-    /// Metres.
+    /// Metres, horizontal, from the tower's axis.
     pub radius: f64,
     /// How far the disc's top surface lies below the tower's base, metres; not negative.
     pub depth: f64,

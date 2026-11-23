@@ -19,28 +19,33 @@ use std::f64::consts::{PI, TAU};
 /// A complex number, as much of one as a transform needs.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Complex {
+    /// The real part.
     pub re: f64,
+    /// The imaginary part.
     pub im: f64,
 }
 
 impl Complex {
+    /// `re + i·im`.
     #[must_use]
     pub const fn new(re: f64, im: f64) -> Self {
         Self { re, im }
     }
 
-    /// `e^{iθ}`.
+    /// `e^{iθ}`, with `theta` in radians.
     #[must_use]
     pub fn unit(theta: f64) -> Self {
         let (im, re) = theta.sin_cos();
         Self { re, im }
     }
 
+    /// The product `self · o`.
     #[must_use]
     pub fn times(self, o: Self) -> Self {
         Self { re: self.re * o.re - self.im * o.im, im: self.re * o.im + self.im * o.re }
     }
 
+    /// The complex conjugate, `re − i·im`.
     #[must_use]
     pub const fn conjugate(self) -> Self {
         Self { re: self.re, im: -self.im }
@@ -164,19 +169,24 @@ impl Classical {
 /// A spectrum: frequencies in hertz and the power at each, in the series' unit squared per hertz.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Spectrum {
+    /// The frequency of each bin, hertz, in rising order.
     pub frequencies: Vec<f64>,
+    /// The power in each bin, in the series' unit squared per hertz (rad²/Hz for a phase),
+    /// one-sided and not doubled. As long as `frequencies`.
     pub power: Vec<f64>,
 }
 
 impl Spectrum {
-    /// The bin with the most power: its index, frequency and power.
+    /// The bin with the most power, as `(index, frequency, power)`: its place in the two
+    /// vectors, its frequency in hertz and its power in the series' unit squared per hertz.
+    /// `None` for an empty spectrum.
     #[must_use]
     pub fn peak(&self) -> Option<(usize, f64, f64)> {
         let best = (0..self.power.len()).max_by(|&a, &b| self.power[a].total_cmp(&self.power[b]))?;
         Some((best, self.frequencies[best], self.power[best]))
     }
 
-    /// The bin nearest a frequency.
+    /// The index of the bin nearest `frequency` (hertz); `None` for an empty spectrum.
     #[must_use]
     pub fn bin_of(&self, frequency: f64) -> Option<usize> {
         (0..self.frequencies.len()).min_by(|&a, &b| {
@@ -187,6 +197,8 @@ impl Spectrum {
 
 /// The classical periodogram of a series sampled every `dt` seconds:
 /// `S_k = (dt/N)·|FFT(y)|²` at `f_k = k/(N·dt)` for `k` up to `N/2` (Nyquist included).
+/// Frequencies are in hertz and the power in `y`'s unit squared per hertz (rad²/Hz for a phase
+/// in radians). Not for unevenly spaced samples: use [`lomb_scargle`] or [`lomb_scargle_fast`].
 #[must_use]
 pub fn periodogram(y: &[f64], dt: f64, options: Classical) -> Spectrum {
     let n = y.len();
@@ -205,7 +217,8 @@ pub fn periodogram(y: &[f64], dt: f64, options: Classical) -> Spectrum {
 }
 
 /// Where a frequency appears when sampled with Nyquist frequency `nyquist`: folded into
-/// `[0, nyquist]` by reflection about its multiples, a triangle wave in `frequency`.
+/// `[0, nyquist]` by reflection about its multiples, a triangle wave in `frequency`. Both
+/// arguments and the result are in hertz (or any one unit of frequency).
 #[must_use]
 pub fn fold_frequency(frequency: f64, nyquist: f64) -> f64 {
     let sampling = 2.0 * nyquist;
@@ -214,15 +227,21 @@ pub fn fold_frequency(frequency: f64, nyquist: f64) -> f64 {
 }
 
 /// The Lomb–Scargle periodogram of samples `y` at times `t`, at each of `frequencies` (hertz):
-/// Scargle's form on the series with its mean taken off, times the mean spacing,
+/// one value for each frequency, in `y`'s unit squared per hertz (rad²/Hz for a phase). `t` is
+/// in seconds, in rising order, on any clock (the estimator does not depend on the origin of
+/// time). It is Scargle's form on the series with its mean taken off, times the mean spacing,
 ///
 /// ```text
 /// tan 2ωτ = Σ sin 2ωt / Σ cos 2ωt
 /// S(f) = dt_eff · ½ · [ (Σ y cos ω(t − τ))² / Σ cos² ω(t − τ) + (Σ y sin ω(t − τ))² / Σ sin² ω(t − τ) ]
 /// ```
 ///
-/// Exact, in `N·M` steps. A term whose denominator vanishes (the Nyquist frequency of a uniform
-/// grid) contributes nothing, which is its limit.
+/// Exact, in `N·M` steps, so not for long series on a fine grid (use [`lomb_scargle_fast`]).
+/// A term whose denominator vanishes (the Nyquist frequency of a uniform grid) contributes
+/// nothing, which is its limit.
+///
+/// # Panics
+/// When `t` and `y` differ in length.
 #[must_use]
 pub fn lomb_scargle(t: &[f64], y: &[f64], frequencies: &[f64]) -> Vec<f64> {
     assert_eq!(t.len(), y.len(), "a time for every sample");
@@ -268,7 +287,8 @@ pub const NUFFT_WIDTH: usize = 14;
 const NUFFT_UPSAMPLING: usize = 2;
 
 /// The type-1 non-uniform FFT: `F_k = Σ_j c_j e^{i·k·x_j}` for `k = 0 … modes − 1`, with `x` in
-/// radians (any real value; only its value modulo 2π matters).
+/// radians (any real value; only its value modulo 2π matters). `width` is the kernel's width in
+/// points of the fine grid ([`NUFFT_WIDTH`]); the result has `modes` entries, in `c`'s unit.
 ///
 /// Each point is spread onto a fine uniform grid with the "exponential of semicircle" kernel
 /// `φ(z) = e^{β(√(1 − z²) − 1)}`, `β = 2.3·width` (Barnett, Magland & af Klinteberg 2019), the grid
@@ -344,8 +364,11 @@ pub fn nufft1(x: &[f64], c: &[Complex], modes: usize, width: usize) -> Vec<Compl
 /// about `N·width + M·log M` steps: the same estimator, held to 1e-9 of its largest value and
 /// measured at a few 1e-15 for 2000 and for 100 000 shots (`docs/slices/S1.md` §7.3).
 ///
-/// Units: `t` in seconds, in rising order; `y` in any unit (radians for a phase); `df` in hertz.
-/// The result is in `y`'s unit squared per hertz, in the scripts' convention: the mean spacing
+/// Units: `t` in seconds, in rising order, on any clock (scene time or time from the first
+/// shot: only differences of times enter); `y` in any unit (radians for a phase); `df` in hertz,
+/// the spacing of the frequencies asked for; `count` is how many of them, starting at zero
+/// frequency. The result has `count` entries, entry `k` at `k·df` hertz,
+/// in `y`'s unit squared per hertz (rad²/Hz for a phase), in the scripts' convention: the mean spacing
 /// of the samples times Scargle's power, one-sided and not doubled, so that a tone of amplitude
 /// `a` on a bin of a run of length `T_obs` has `√S = a·√T_obs/2`.
 ///
@@ -364,7 +387,8 @@ pub fn lomb_scargle_fast(t: &[f64], y: &[f64], df: f64, count: usize) -> Vec<f64
 }
 
 /// [`lomb_scargle_fast`] with a kernel of `width` grid points: narrower is faster and less
-/// accurate, by about a decade a point.
+/// accurate, by about a decade a point. The other arguments, the result and their units are
+/// [`lomb_scargle_fast`]'s.
 ///
 /// # Panics
 /// When `t` and `y` differ in length, or `width` is less than 2.
@@ -402,7 +426,9 @@ pub fn lomb_scargle_nufft(t: &[f64], y: &[f64], df: f64, count: usize, width: us
         .collect()
 }
 
-/// The least-squares fit of `a·cos(2πft) + b·sin(2πft)` to the samples: `(a, b)`.
+/// The least-squares fit of `a·cos(2πft) + b·sin(2πft)` to the samples: `(a, b)`, the cosine's
+/// amplitude then the sine's, both in `y`'s unit. `t` is in seconds and `frequency` in hertz;
+/// the phase of the fit is relative to `t = 0` on whatever clock `t` is on.
 #[must_use]
 pub fn fit_tone(t: &[f64], y: &[f64], frequency: f64) -> (f64, f64) {
     let (mut cc, mut cs, mut ss, mut yc, mut ys) = (0.0, 0.0, 0.0, 0.0, 0.0);
@@ -422,7 +448,8 @@ pub fn fit_tone(t: &[f64], y: &[f64], frequency: f64) -> (f64, f64) {
     ((yc * ss - ys * cs) / determinant, (ys * cc - yc * cs) / determinant)
 }
 
-/// A notch: the series with the least-squares tone at `frequency` taken out.
+/// A notch: the series with the least-squares tone at `frequency` (hertz) taken out. `t` is in
+/// seconds; the result is in `y`'s unit, one value for each sample.
 #[must_use]
 pub fn notch(t: &[f64], y: &[f64], frequency: f64) -> Vec<f64> {
     let (a, b) = fit_tone(t, y, frequency);

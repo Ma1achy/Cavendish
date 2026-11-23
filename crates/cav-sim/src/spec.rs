@@ -50,9 +50,10 @@ pub mod limits {
     pub const FREQUENCY: f64 = 1.0e3;
     /// The largest angle written in a spec, degrees either way.
     pub const ANGLE: f64 = 3.6e5;
-    /// The atom's mass, kilograms: from a hydrogen atom to well past any atom there is.
+    /// The atom's mass, kilograms, `(least, greatest)`: from a hydrogen atom to well past any
+    /// atom there is.
     pub const ATOM_MASS: (f64, f64) = (1.0e-27, 1.0e-24);
-    /// Local gravity, metres per second squared.
+    /// Local gravity, metres per second squared, `(least, greatest)`.
     pub const GRAVITY: (f64, f64) = (0.1, 100.0);
     /// The longest name or label, characters.
     pub const LABEL: usize = 200;
@@ -373,7 +374,8 @@ pub struct TimingSpec {
 }
 
 impl TowerSpec {
-    /// A tower at `position` (its base, metres) that fires with the array's schedule.
+    /// A tower at `position` (its base: `[x, y, z]`, east, north, up, metres, the world's frame)
+    /// that fires with the array's schedule.
     #[must_use]
     pub fn at(label: &str, position: [f64; 3]) -> Self {
         Self { label: label.to_owned(), position, timing: TimingSpec::default() }
@@ -486,19 +488,21 @@ impl InstrumentSpec {
 }
 
 impl BodySpec {
-    /// A point mass at rest.
+    /// A point mass of `mass` kilograms at rest at `position` (`[x, y, z]`, east, north, up,
+    /// metres, the world's frame).
     #[must_use]
     pub fn point(label: &str, mass: f64, position: [f64; 3]) -> Self {
         Self::moving(label, mass, Motion::Static { position })
     }
 
-    /// A point mass on a path, there for the whole timeline.
+    /// A point mass of `mass` kilograms on a path, there for the whole timeline.
     #[must_use]
     pub fn moving(label: &str, mass: f64, motion: Motion) -> Self {
         Self { label: label.to_owned(), mass, radius: 0.0, motion, appears: None, vanishes: None }
     }
 
-    /// When the body exists: from the first time up to the second, seconds.
+    /// When the body exists, `(from, until)`: from the first time up to the second, seconds on
+    /// the scene's clock; −∞ and +∞ where the spec gives no time.
     #[must_use]
     pub fn exists(&self) -> (f64, f64) {
         (self.appears.unwrap_or(f64::NEG_INFINITY), self.vanishes.unwrap_or(f64::INFINITY))
@@ -770,7 +774,8 @@ impl SceneSpec {
         Ok(())
     }
 
-    /// The box that holds everything the spec places: `(minimum corner, maximum corner)`, metres.
+    /// The box that holds everything the spec places: `(minimum corner, maximum corner)`, each
+    /// `[x, y, z]` (east, north, up), metres, in the world's frame.
     #[must_use]
     pub fn bounds(&self) -> ([f64; 3], [f64; 3]) {
         let mut lo = [f64::INFINITY; 3];
