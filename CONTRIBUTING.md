@@ -12,11 +12,13 @@ numpy, matplotlib and pyright.
 
 ```
 cargo run -p cav-app                      # the window
-cargo run -p cav -- help                  # the command line: doctor, render, scenes, get, set, ls, run, replay, figure, exec, mcp
+cargo run -p cav -- help                  # the command line: doctor, render, scenes, schema, get, set, ls, run, replay, figure, exec, mcp, licences
 cargo run -p cav -- exec "load comb; periodogram 1"
 ```
 
-Everything runs locally. There is no CI.
+Everything runs locally: no check runs on a server and nothing gates a merge but the tiers below,
+run by whoever merges. (The one workflow in `.github/workflows/` draws the README's progress
+picture after a push to `main`; it tests nothing.)
 
 ## The tiers
 

@@ -10,6 +10,8 @@
 //! ```
 
 mod demo;
+#[cfg(test)]
+mod json;
 mod python;
 #[cfg(test)]
 mod recipes;

@@ -500,32 +500,38 @@ fn a_long_answer_is_cut_and_says_so() {
 
 #[test]
 fn a_reading_does_not_wait_for_the_series() {
-    // A series that takes minutes: 200,000 shots of a pass, five towers.
-    let mut scene = dev::pass();
-    scene.array.instrument.half_sequence = 0.002;
-    scene.array.instrument.cycle = 0.005;
-    scene.duration = 1000.0;
-    let mut engine = loaded(scene);
+    // A series that never arrives while this test wants it not to: its worker is held at its
+    // gate, so nothing here depends on how long a series takes or how busy the machine is. (This
+    // was a 200,000-shot series and a limit of 20 s on the clock; the read in parallel made the
+    // series quick and a busy machine made the readings slow, and the test failed for neither
+    // reason it was written for.)
+    let mut engine = Engine::new();
+    engine.hold_series(true);
+    engine.apply(Command::load(dev::pass())).unwrap();
     engine.set_patience(LONG);
-    // The reading is asked for with a minute's patience and is back long before the series is:
-    // it waited for the reading worker and for nothing else. (It once waited the whole minute.)
-    let started = std::time::Instant::now();
+    // The reading is asked for with a long patience and comes back refined although the series
+    // cannot: it waited for the reading worker and for nothing else. (It once waited for the
+    // series: with the series held, that fault would wait out the whole patience and then say
+    // `stale`, and the assertions below would fail.)
     let said = engine.run_line("reading").unwrap();
     assert!(said.contains("· refined ·"), "{said}");
     let away = engine.run_line("reading 2.5").unwrap();
     assert!(away.contains("a shot read out at 2.5 s · refined"), "{away}");
-    assert!(started.elapsed() < Duration::from_secs(20), "two readings took {:?}", started.elapsed());
-    assert_eq!(engine.signal().0, SignalState::Stale, "the series is still under way");
+    assert_ne!(engine.signal().0, SignalState::Refined, "the series is held: it cannot have arrived");
     // The typed form of the same: `ask` waits for what the query needs and asks the worker for a
     // time that is not the playhead's, which `query` alone never does.
     let Reply::Reading(direct) = engine.query(&Query::Reading(Some(7.5))).unwrap() else { panic!() };
     assert_ne!(direct.state, "refined", "nobody had asked for 7.5 s");
     let Reply::Reading(asked) = engine.ask(&Query::Reading(Some(7.5))).unwrap() else { panic!() };
     assert_eq!((asked.state.as_str(), asked.time), ("refined", 7.5));
-    // Control: a signal is what does wait for the series; with no patience it says where it stands.
+    // Control: a signal is what does wait for the series; with no patience it says where it
+    // stands, and once the series is let go it arrives.
     engine.set_patience(Duration::ZERO);
     let signal = engine.run_line("signal 1 0 1").unwrap_or_else(|why| why);
     assert!(signal.contains("computing") || signal.contains("stale"), "{signal}");
+    engine.hold_series(false);
+    assert!(engine.settle(LONG), "the series, let go, arrives");
+    assert_eq!(engine.signal().0, SignalState::Refined);
 }
 
 #[test]

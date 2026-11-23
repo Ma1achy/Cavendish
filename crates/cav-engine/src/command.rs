@@ -425,8 +425,10 @@ pub enum Query {
     /// reading and says whether it is the one asked for (`refined`), an earlier one (`stale`) or
     /// none yet (`computing`). Nothing is computed on the caller's thread.
     Reading(Option<f64>),
-    /// The classical periodogram of one channel of one tower's signal, with the combs of the
-    /// scene's oscillating bodies. Computed when asked, from the signal as it stands.
+    /// The periodogram of one channel of one tower's signal, with the combs of the scene's
+    /// oscillating bodies: the classical periodogram when the tower's shots are evenly spaced and
+    /// all taken, the Lomb–Scargle periodogram (by non-uniform FFT) otherwise; the reply's
+    /// `method` says which. Computed when asked, from the signal as it stands.
     Periodogram {
         /// The tower, counted from 1 as on screen.
         tower: usize,
