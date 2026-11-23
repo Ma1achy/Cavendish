@@ -819,6 +819,10 @@ fn all_entry_points_issue_the_same_edit() {
     // tests compare their journals with the same `Command::set`).
     let mut rig = Rig::new([1440, 900]);
     rig.shell.run("select tower 1").unwrap();
+    // The reading is waited for before anything is clicked: when it arrives the properties
+    // panel gains its rows and every editor below them moves. (Not waiting, the click landed
+    // where the tick box had been, once in three runs on a busy machine.)
+    assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
     rig.frames(vec![vec![], vec![]]);
     let tick = rig.shell.layout().editor("array.instrument.launch_floor").expect("the flag has an editor");
     rig.click(tick.left_center() + vec2(8.0, 0.0));
