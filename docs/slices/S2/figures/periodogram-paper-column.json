@@ -1,0 +1,327 @@
+{
+  "cavendish_figure": 1,
+  "what": "periodogram",
+  "file": "periodogram-paper-column.png",
+  "format": "png",
+  "preset": "paper-column",
+  "size_mm": [
+    85.0,
+    60.0
+  ],
+  "size_points": [
+    240.9448818897638,
+    170.07874015748033
+  ],
+  "subject": {
+    "tower": 1,
+    "channel": "gradiometer",
+    "span": null,
+    "pane": 1,
+    "playhead_s": 0.0
+  },
+  "command": {
+    "console": "figure periodogram tower 1 as paper-column to periodogram-paper-column.png",
+    "cli": "cav figure comb periodogram --out periodogram-paper-column.png --preset paper-column --tower 1",
+    "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's"
+  },
+  "engine": {
+    "version": "0.0.0",
+    "revision": "5d688f48927e5325ea40fb205c50ae980bafe256",
+    "dirty": true
+  },
+  "numerics": {
+    "engine": {
+      "version": "0.0.0",
+      "revision": "5d688f48927e5325ea40fb205c50ae980bafe256",
+      "dirty": true
+    },
+    "platform": "x86_64-windows",
+    "precision": "f64 on the CPU",
+    "quadrature": "Gauss { order: 6, panel: 0.1 }, panels halved until two rules agree",
+    "phase_tolerance_rad": 1e-10,
+    "phase_tolerance_relative": 1e-12,
+    "max_halvings": 8,
+    "max_nodes_per_read": 4000000,
+    "constants": {
+      "big_g": 6.6743e-11,
+      "hbar": 1.0545718176461565e-34,
+      "atom_mass_kg": 1.4431558652473234e-25,
+      "kick_velocity_m_per_s": 6.577901532502563,
+      "gravity_m_per_s2": 9.81
+    },
+    "replay": "bit-identical with the same binary on the same platform (sin and cos are the platform's)"
+  },
+  "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
+  "scene": {
+    "name": "comb",
+    "spec": {
+      "version": 1,
+      "name": "comb",
+      "description": "One oscillator at 0.05 Hz (panel b of the scripts' fig2_10m): its periodogram is a comb at 0.05, 0.10, 0.15 and 0.20 Hz, each harmonic lower than the last, all below the Nyquist frequency of 0.25 Hz.",
+      "duration": 2000.0,
+      "array": {
+        "instrument": {
+          "tower_height": 10.0,
+          "ifo_separation": 5.0,
+          "half_sequence": 0.73,
+          "launch_velocity": 3.86,
+          "cycle": 2.0,
+          "atom_mass": 1.4431558652473234e-25,
+          "gravity": 9.81,
+          "launch_floor": true,
+          "sign": "LowerMinusUpper"
+        },
+        "towers": [
+          {
+            "label": "tower 1",
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          },
+          {
+            "label": "tower 2",
+            "position": [
+              4.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          },
+          {
+            "label": "tower 3",
+            "position": [
+              -4.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          },
+          {
+            "label": "tower 4",
+            "position": [
+              0.0,
+              4.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          },
+          {
+            "label": "tower 5",
+            "position": [
+              0.0,
+              -4.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          }
+        ],
+        "schedule": {
+          "jitter": null,
+          "alternate": null,
+          "gaps": null,
+          "window": null,
+          "loss": 0.0,
+          "seed": 0
+        }
+      },
+      "room": null,
+      "floor": null,
+      "bodies": [
+        {
+          "label": "oscillator",
+          "mass": 1.0,
+          "radius": 0.0,
+          "motion": {
+            "Linear": {
+              "centre": [
+                3.0,
+                0.0,
+                1.0
+              ],
+              "amplitude": [
+                0.0,
+                0.0,
+                0.5
+              ],
+              "frequency": 0.05,
+              "phase": 0.0
+            }
+          },
+          "appears": null,
+          "vanishes": null
+        }
+      ]
+    }
+  },
+  "title": "Periodogram · √S of ΔΦ at tower 1 · comb",
+  "pixels": [
+    2008,
+    1417
+  ],
+  "dpi": 600.0,
+  "axes": {
+    "x": {
+      "name": "frequency",
+      "unit": "Hz",
+      "scale": "linear",
+      "range": [
+        0.0,
+        0.25
+      ]
+    },
+    "y": {
+      "name": "√S",
+      "unit": "rad/√Hz",
+      "scale": "log",
+      "range": [
+        1e-10,
+        0.1
+      ]
+    }
+  },
+  "series": [
+    {
+      "name": "√S of ΔΦ at tower 1",
+      "colour": "#6e6e6e",
+      "x": "frequency",
+      "y": "√S",
+      "x_column": 0,
+      "y_column": 2
+    }
+  ],
+  "marks": {
+    "combs": [
+      {
+        "body": "oscillator",
+        "fundamental_hz": 0.05,
+        "colour": "#0b0dff",
+        "stems": [
+          {
+            "n": 1,
+            "frequency_hz": 0.05,
+            "appears_at_hz": 0.05,
+            "folded": false,
+            "height": 0.08012588832756835
+          },
+          {
+            "n": 2,
+            "frequency_hz": 0.1,
+            "appears_at_hz": 0.1,
+            "folded": false,
+            "height": 0.00496543938387368
+          },
+          {
+            "n": 3,
+            "frequency_hz": 0.15000000000000002,
+            "appears_at_hz": 0.15000000000000002,
+            "folded": false,
+            "height": 0.00028246107804815335
+          },
+          {
+            "n": 4,
+            "frequency_hz": 0.2,
+            "appears_at_hz": 0.2,
+            "folded": false,
+            "height": 0.000022489283146560866
+          },
+          {
+            "n": 5,
+            "frequency_hz": 0.25,
+            "appears_at_hz": 0.25,
+            "folded": false,
+            "height": 1.0253295473315195e-6
+          },
+          {
+            "n": 6,
+            "frequency_hz": 0.30000000000000004,
+            "appears_at_hz": 0.19999999999999996,
+            "folded": true,
+            "height": 0.000022489283146560866
+          },
+          {
+            "n": 7,
+            "frequency_hz": 0.35000000000000003,
+            "appears_at_hz": 0.14999999999999997,
+            "folded": true,
+            "height": 0.00028246107804815335
+          },
+          {
+            "n": 8,
+            "frequency_hz": 0.4,
+            "appears_at_hz": 0.09999999999999998,
+            "folded": true,
+            "height": 0.00496543938387368
+          }
+        ]
+      }
+    ],
+    "reference": {
+      "shot_noise_floors_rad_per_sqrt_hz": [
+        0.0001,
+        0.00001
+      ],
+      "shot_noise_note": "the plan's two reference levels (baseline and stretch), drawn as grey lines: not computed from this scene",
+      "uldm_benchmark": {
+        "frequency_hz": 0.04835978484169836,
+        "amplitude_rad": 1e-8,
+        "height_rad_per_sqrt_hz": 2.23606797749979e-7,
+        "run_length_s": 2000.0,
+        "note": "a reference mark from the plan, not a simulated signal: a scalar of mass 2e-16 eV (f = m c²/h) at 1e-2 µrad, drawn at the height a tone of that amplitude has in this periodogram, a·√T_obs/2, over this run's length"
+      }
+    },
+    "method": "classical periodogram (FFT)",
+    "shots": 1000,
+    "nyquist_hz": 0.25,
+    "folded": "a dashed stem is a harmonic above Nyquist, standing where it folds to"
+  },
+  "colours": {
+    "background": "#ffffff",
+    "ink": "#111111",
+    "rule": "#cfcfcf",
+    "spectrum": "#6e6e6e",
+    "reference": "#8c8c8c",
+    "series": [
+      "#0b0dff",
+      "#e76f11",
+      "#c61604",
+      "#8a6aae",
+      "#28a682",
+      "#cb64fe",
+      "#910c59",
+      "#6d1ba7"
+    ]
+  },
+  "data": {
+    "file": "periodogram-paper-column.csv",
+    "format": "csv",
+    "rows": 500,
+    "columns": [
+      {
+        "name": "frequency",
+        "unit": "Hz"
+      },
+      {
+        "name": "S",
+        "unit": "rad²/Hz"
+      },
+      {
+        "name": "√S",
+        "unit": "rad/√Hz"
+      }
+    ],
+    "note": "every value, to the bit; the line drawn is thinned to at most 2000 points a series (the least and the greatest of each stretch)"
+  }
+}

@@ -465,6 +465,76 @@ fn s2(root: &Path) -> Result<(), String> {
     );
     write(&out, "replay.txt", &replay, &mut made)?;
 
+    // 7. Figures: each in a preset's style and size, with its data and its provenance beside it;
+    // and one redrawn from that data alone by the Python helper.
+    let figures = out.join("figures");
+    let _ = std::fs::remove_dir_all(&figures);
+    std::fs::create_dir_all(&figures).map_err(|e| format!("{}: {e}", figures.display()))?;
+    let mut said = String::new();
+    for (scene, what, preset, file) in [
+        ("comb", "periodogram", "paper-column", "periodogram-paper-column.svg"),
+        ("comb", "periodogram", "paper-column", "periodogram-paper-column.pdf"),
+        ("comb", "periodogram", "paper-column", "periodogram-paper-column.png"),
+        ("pass", "signal", "slide", "signal-slide.svg"),
+        ("cadence-lab", "cadence", "paper-full", "cadence-paper-full.pdf"),
+        ("staggered", "flight", "paper-full", "flight-paper-full.svg"),
+    ] {
+        // Run from the figures' directory, so that nothing a figure records names this machine.
+        let output = Command::new(&cav)
+            .args(["figure", scene, what, "--preset", preset, "--out", file])
+            .current_dir(&figures)
+            .output()
+            .map_err(|e| format!("cav figure: {e}"))?;
+        if !output.status.success() {
+            return Err(format!("cav figure {scene} {what}: {}", String::from_utf8_lossy(&output.stderr)));
+        }
+        said.push_str(&format!(
+            "$ cav figure {scene} {what} --preset {preset} --out {file}\n{}",
+            String::from_utf8_lossy(&output.stdout)
+        ));
+        let stem = file.rsplit_once('.').map_or(file, |(stem, _)| stem);
+        for name in [file.to_owned(), format!("{stem}.csv"), format!("{stem}.json")] {
+            let bytes = std::fs::read(figures.join(&name)).map_err(|e| format!("figures/{name}: {e}"))?;
+            let is_what_it_says = match name.rsplit_once('.').map_or("", |(_, ext)| ext) {
+                "svg" => bytes.starts_with(b"<?xml") || bytes.starts_with(b"<svg"),
+                "pdf" => bytes.starts_with(b"%PDF-1.") && bytes.ends_with(b"%%EOF\n"),
+                "png" => png_size_of(&bytes).is_some(),
+                "json" => bytes.starts_with(b"{") && String::from_utf8_lossy(&bytes).contains("\"revision\""),
+                _ => !bytes.is_empty(),
+            };
+            if !is_what_it_says {
+                return Err(format!("figures/{name} is not what its name says"));
+            }
+            let listed = format!("figures/{name}");
+            if !made.contains(&listed) {
+                made.push(listed);
+            }
+        }
+    }
+    let python = std::env::var(crate::python::INTERPRETER).unwrap_or_else(|_| "python".to_owned());
+    if let Some(lacking) = crate::python::missing(&python) {
+        return Err(format!("the figure cannot be redrawn in Python: {lacking}"));
+    }
+    let code = "import sys; from cavendish_figures import load, redraw; \
+                print(redraw(load(sys.argv[1]).unwrap(), sys.argv[2]).unwrap().name)";
+    let from = figures.join("periodogram-paper-column.json").to_string_lossy().into_owned();
+    let to = figures.join("redrawn.png").to_string_lossy().into_owned();
+    let output = Command::new(&python)
+        .args(["-c", code, &from, &to])
+        .current_dir(root.join("python"))
+        .output()
+        .map_err(|e| format!("{python}: {e}"))?;
+    if !output.status.success() || png_size(&figures.join("redrawn.png")).is_err() {
+        return Err(format!("the Python redraw failed: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+    said.push_str(
+        "$ python -c \"from cavendish_figures import load, redraw; \
+         redraw(load('periodogram-paper-column.json').unwrap(), 'redrawn.png').unwrap()\"\nredrawn.png\n",
+    );
+    made.push("figures/redrawn.png".to_owned());
+    std::fs::write(figures.join("made.txt"), &said).map_err(|e| format!("figures/made.txt: {e}"))?;
+    made.push("figures/made.txt".to_owned());
+
     // 8. Timings: a 10,000-shot series on one thread and on six, and the same bytes from both.
     let mut timings =
         String::from("Debug build (cav-core optimised), this machine; recorded, not gated.\n\n");

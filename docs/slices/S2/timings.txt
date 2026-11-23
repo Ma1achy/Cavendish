@@ -1,24 +1,24 @@
 Debug build (cav-core optimised), this machine; recorded, not gated.
 
-CAV_THREADS=1: bundle: scene `comb`, 5 tower(s) × 10000 shot(s), quadrature within 6e-11 rad, 2.55 s
-CAV_THREADS=6: bundle: scene `comb`, 5 tower(s) × 10000 shot(s), quadrature within 6e-11 rad, 0.66 s
+CAV_THREADS=1: bundle: scene `comb`, 5 tower(s) × 10000 shot(s), quadrature within 6e-11 rad, 2.56 s
+CAV_THREADS=6: bundle: scene `comb`, 5 tower(s) × 10000 shot(s), quadrature within 6e-11 rad, 0.67 s
 signal.npy: the same bytes on one thread and on six.
 
 ## staggered (five towers, each with its own offset, 1000 shots)
 adapter: NVIDIA GeForce GTX 1660 SUPER · Vulkan · DiscreteGpu · driver NVIDIA 581.29
-frame, nothing changed (UI only, panes reused): median 16.68 ms over 60 frames
-frame, camera moving (1 pane redraw(s) per frame): median 19.56 ms over 60 frames
+frame, nothing changed (UI only, panes reused): median 16.41 ms over 60 frames
+frame, camera moving (1 pane redraw(s) per frame): median 18.95 ms over 60 frames
 each time includes copying the 1440 × 900 picture back to the CPU, which a window does not do
-reading, 5 towers × 1 bodies, the audited read itself (the engine runs it off the caller's thread): 0.491 ms each over 200
-signal from nothing, 1000 shots × 5 towers × 1 bodies, on the worker: 52.8 ms
-drag step (set, readings, one frame with its read-back): median 28.27 ms over 60 steps
+reading, 5 towers × 1 bodies, the audited read itself (the engine runs it off the caller's thread): 0.449 ms each over 200
+signal from nothing, 1000 shots × 5 towers × 1 bodies, on the worker: 47.4 ms
+drag step (set, readings, one frame with its read-back): median 26.62 ms over 60 steps
 
 ## cadence-lab with the designer open
 adapter: NVIDIA GeForce GTX 1660 SUPER · Vulkan · DiscreteGpu · driver NVIDIA 581.29
-frame, nothing changed (UI only, panes reused): median 51.97 ms over 60 frames
-frame, camera moving (1 pane redraw(s) per frame): median 53.55 ms over 60 frames
+frame, nothing changed (UI only, panes reused): median 51.68 ms over 60 frames
+frame, camera moving (1 pane redraw(s) per frame): median 53.75 ms over 60 frames
 each time includes copying the 1440 × 900 picture back to the CPU, which a window does not do
-reading, 5 towers × 1 bodies, the audited read itself (the engine runs it off the caller's thread): 0.445 ms each over 200
-signal from nothing, 930 shots × 5 towers × 1 bodies, on the worker: 43.4 ms
-drag step (set, readings, one frame with its read-back): median 68.61 ms over 60 steps
+reading, 5 towers × 1 bodies, the audited read itself (the engine runs it off the caller's thread): 0.479 ms each over 200
+signal from nothing, 930 shots × 5 towers × 1 bodies, on the worker: 46.7 ms
+drag step (set, readings, one frame with its read-back): median 68.64 ms over 60 steps
 
