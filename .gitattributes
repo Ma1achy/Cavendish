@@ -1,0 +1,14 @@
+# Line endings, decided once (S2's review, finding 27): text is LF in the repository and in every
+# working tree, on every platform. Scene files, fixtures and figures are compared byte for byte and
+# built into the binaries, so a checkout must not rewrite them.
+* text=auto eol=lf
+
+# Never text, whatever their bytes look like. A PDF with an uncompressed content stream has no NUL
+# byte, so git took it for text and added carriage returns on Windows: every xref offset was wrong.
+*.pdf binary
+*.png binary
+*.npy binary
+*.ttf binary
+*.ico binary
+*.gif binary
+*.jpg binary

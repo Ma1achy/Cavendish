@@ -177,12 +177,13 @@ impl PaneContent {
         }
     }
 
+    /// Every content, in the order the application offers them.
+    pub const ALL: [Self; 5] = [Self::Scene, Self::Signal, Self::Periodogram, Self::Flight, Self::Cadence];
+
     /// The content a word names.
     #[must_use]
     pub fn parse(word: &str) -> Option<Self> {
-        [Self::Scene, Self::Signal, Self::Periodogram, Self::Flight, Self::Cadence]
-            .into_iter()
-            .find(|c| c.name() == word)
+        Self::ALL.into_iter().find(|c| c.name() == word)
     }
 }
 

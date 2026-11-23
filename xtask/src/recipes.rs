@@ -5,7 +5,11 @@
 //! What counts as a name (anything else in backticks is prose or an example and is not checked):
 //! - a path under `crates/`, `scenes/`, `docs/`, `xtask/`, `oracle/` or `plan/`: the file exists;
 //! - `name()`: a function `fn name` is declared somewhere in the source;
-//! - `A::b` (also `a::tests::b`): the last segment is a word of the source;
+//! - `Type::member` (a path whose last-but-one segment starts with a capital): `member` is
+//!   written inside an `impl`, `enum`, `struct` or `trait` block of `Type`, so a method, a
+//!   constant or a variant that some other type has does not count (S2's review, finding 32:
+//!   the plot recipe named a constant that only another enum had);
+//! - `a::tests::b` (a path through modules): the last segment is a word of the source;
 //! - a snake-case word with two or more underscores (a test's name), or an upper-case constant
 //!   with an underscore: a word of the source;
 //! - `subsystem.case_name`: a validation case's name, quoted in the source.
@@ -53,7 +57,12 @@ fn named(text: &str) -> Vec<(Kind, String)> {
                 let last = token.rsplit("::").next().unwrap_or(token);
                 let last = last.split('(').next().unwrap_or(last);
                 if word(last) && token.split("::").all(|part| word(part.split('(').next().unwrap_or(part))) {
-                    out.push((Kind::Word, last.to_owned()));
+                    let owner = token.rsplit("::").nth(1).unwrap_or("");
+                    if owner.starts_with(|c: char| c.is_ascii_uppercase()) {
+                        out.push((Kind::Member, format!("{owner}::{last}")));
+                    } else {
+                        out.push((Kind::Word, last.to_owned()));
+                    }
                 }
             } else if word(token) {
                 let underscores = token.matches('_').count();
@@ -80,7 +89,48 @@ enum Kind {
     File,
     Function,
     Word,
+    Member,
     Case,
+}
+
+/// Whether `member` is written inside a block that declares or implements `owner`: the braces
+/// after a header (`impl … owner …`, `enum owner`, `struct owner`, `trait owner`).
+fn has_member(source: &str, owner: &str, member: &str) -> bool {
+    let edge = |c: Option<char>| c.is_none_or(|c| !(c.is_ascii_alphanumeric() || c == '_'));
+    for (at, _) in source.match_indices(owner) {
+        if !(edge(source[..at].chars().next_back()) && edge(source[at + owner.len()..].chars().next())) {
+            continue;
+        }
+        // The header runs from the end of whatever came before to the block's opening brace.
+        let start = source[..at].rfind(['}', ';', '{']).map_or(0, |end| end + 1);
+        let header = &source[start..at];
+        if !["impl", "enum", "struct", "trait"].iter().any(|keyword| has_word(header, keyword)) {
+            continue;
+        }
+        let Some(open) = source[at..].find(['{', ';']).map(|offset| at + offset) else { continue };
+        if source.as_bytes()[open] != b'{' {
+            continue;
+        }
+        let mut depth = 0usize;
+        let mut end = source.len();
+        for (offset, byte) in source.as_bytes()[open..].iter().enumerate() {
+            match byte {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = open + offset;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if has_word(&source[open..end], member) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Whether `name` is in `source` as a whole word.
@@ -99,6 +149,10 @@ fn missing(root: &Path, source: &str, recipe: &str) -> Vec<String> {
             Kind::File => !root.join(name).exists(),
             Kind::Function => !has_word(source, &format!("fn {name}")),
             Kind::Word => !has_word(source, name),
+            Kind::Member => {
+                let (owner, member) = name.split_once("::").unwrap_or((name.as_str(), ""));
+                !has_member(source, owner, member)
+            }
             Kind::Case => !source.contains(&format!("\"{name}\"")),
         })
         .map(|(kind, name)| format!("{kind:?} `{name}`"))
@@ -162,12 +216,25 @@ mod tests {
 
         // Controls: each kind of name, wrong, is found; right, is not.
         let wrong = "Run `no_such_test_at_all`, call `nowhere_fn()`, read `crates/cav-core/src/absent.rs`, \
-                     see `Engine::not_a_method`, case `timing.no_such_case`, and `NOT_A_CONSTANT`.";
-        assert_eq!(missing(root, &source, wrong).len(), 6, "{:?}", missing(root, &source, wrong));
+                     see `Engine::not_a_method`, `FigureKind::starter`, case `timing.no_such_case`, and `NOT_A_CONSTANT`.";
+        assert_eq!(missing(root, &source, wrong).len(), 7, "{:?}", missing(root, &source, wrong));
         let right = "Run `the_recipes_name_things_that_exist`? No: `every_documented_command_parses`, call \
                      `sources()`, read `crates/cav-core/src/forward.rs`, see `Engine::prepare`, case \
                      `timing.offset_shifts_one_tower`, and `S2_SCENES`.";
         assert_eq!(missing(root, &source, right), Vec::<String>::new());
+        // A member is its own type's: a constant another enum has, a variant of another enum
+        // and a method of another type are each not it.
+        let two = "pub enum One { A, B }\nimpl One {\n    pub const ALL: [Self; 2] = [Self::A, Self::B];\n}\n\
+                   pub enum Two { C }\nimpl Two {\n    pub fn name(self) -> &'static str { if true { \"c\" } else { \"\" } }\n}\n\
+                   impl std::fmt::Display for Two { fn fmt(&self) {} }\n";
+        assert!(
+            has_member(two, "One", "ALL") && has_member(two, "One", "B") && has_member(two, "Two", "name")
+        );
+        assert!(has_member(two, "Two", "fmt"), "a trait's method implemented for the type is the type's");
+        assert!(
+            !has_member(two, "Two", "ALL") && !has_member(two, "One", "name") && !has_member(two, "Two", "A")
+        );
+        assert_eq!(missing(root, two, "`Two::ALL` and `One::ALL`"), ["Member `Two::ALL`"]);
         // A word inside a longer word is not that word.
         assert!(has_word("fn key(", "key") && !has_word("fn monkey(", "key") && !has_word("keyed", "key"));
         // Made-up examples and code blocks are not checked.

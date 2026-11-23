@@ -1,8 +1,10 @@
 //! Cavendish core: units, maths, the instrument's geometry and the forward model.
 //!
 //! `f64` vectors and matrices for cameras and frames, the default array and room, the physical
-//! constants with their sources, and (from S1) the forward model: flight, arms, the propagation
-//! integral and the channels. The voxel tree and the kernels arrive with their slices.
+//! constants with their sources, the forward model (flight, arms, the propagation integral, the
+//! audited read and the channels), spectra (FFT, Lomb–Scargle, the non-uniform FFT), the closed
+//! forms of a cadence's spectral window with keyed random numbers, and `.npy` files. The voxel
+//! tree and the kernels arrive with their slices.
 //!
 //! ## What this crate is for
 //! The numbers and the physics every other crate shares: `f64` vectors and matrices, the physical

@@ -1,5 +1,5 @@
-//! The Cavendish renderer. S0 draws the array, the room and the infinite floor; the big-scene
-//! renderer of REBUILD §5 grows from here.
+//! The Cavendish renderer: the array, the room, the infinite floor and the bodies of a scene,
+//! drawn in three dimensions. The big-scene renderer of REBUILD §5 grows from here.
 //!
 //! One entry point, [`Renderer::draw`], draws a [`Frame`] into a [`PaneTarget`]'s texture. The app
 //! shows that texture in a pane; `cav render` and MCP `render_view` read it back and encode a PNG

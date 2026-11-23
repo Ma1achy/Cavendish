@@ -196,6 +196,9 @@ pub struct Forward {
     reading: Option<Arc<ReadingAt>>,
     reading_state: SignalState,
     gate: Arc<Gate>,
+    /// A second gate that only the series worker passes: a test can hold the series and let
+    /// readings through.
+    series_gate: Arc<Gate>,
 }
 
 impl std::fmt::Debug for Forward {
@@ -258,14 +261,17 @@ impl Forward {
     #[must_use]
     pub fn new() -> Self {
         let gate = Arc::new(Gate::default());
+        let series_gate = Arc::new(Gate::default());
         let batches = Arc::new(Slot::<Batch>::new());
         let (outbox, done) = channel::<Done>();
         let epoch = Arc::new(AtomicU64::new(0));
         let (current, held, inbox) = (Arc::clone(&epoch), Arc::clone(&gate), Arc::clone(&batches));
+        let series_held = Arc::clone(&series_gate);
         let series = std::thread::Builder::new().name("cav-forward".into()).spawn(move || {
             // Ends when the engine goes: the slot is closed and `take` gives nothing.
             'batches: while let Some(batch) = inbox.take() {
                 held.pass();
+                series_held.pass();
                 let stale = || current.load(Ordering::Relaxed) != batch.epoch;
                 for &(source, key) in &batch.work {
                     if stale() {
@@ -327,6 +333,7 @@ impl Forward {
             reading: None,
             reading_state: SignalState::None,
             gate,
+            series_gate,
         }
     }
 
@@ -335,6 +342,13 @@ impl Forward {
     /// did without timing it.
     pub fn hold(&self, held: bool) {
         self.gate.set(held);
+    }
+
+    /// Holds the series worker alone before its next job (`true`), or lets it go on; the reading
+    /// worker is not held. For tests that must say a reading did not wait for the series,
+    /// without timing either.
+    pub fn hold_series(&self, held: bool) {
+        self.series_gate.set(held);
     }
 
     /// How many bytes of contributions are kept now: never more than [`FORWARD_STORE_BYTES`].
@@ -592,6 +606,7 @@ impl Drop for Forward {
         self.batches.close();
         self.read_jobs.close();
         self.gate.set(false);
+        self.series_gate.set(false);
     }
 }
 
