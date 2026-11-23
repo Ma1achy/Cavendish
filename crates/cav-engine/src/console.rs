@@ -340,8 +340,15 @@ pub fn words(line: &str) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     let mut word = String::new();
     let (mut quoted, mut started) = (false, false);
-    for c in line.chars() {
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
         match c {
+            // Inside quotes `\"` is a quote in the word, not the end of it. Nothing else is
+            // escaped: a backslash is otherwise itself, as in a Windows path.
+            '\\' if quoted && chars.peek() == Some(&'"') => {
+                chars.next();
+                word.push('"');
+            }
             '"' => {
                 quoted = !quoted;
                 started = true;
@@ -375,10 +382,24 @@ pub fn statements(script: &str) -> Vec<&str> {
     let (mut start, mut quoted) = (0, false);
     // Whether the statement being read has begun, and whether it began with `#`.
     let (mut begun, mut comment) = (false, false);
+    // Whether the character before was a backslash that escapes this one.
+    let mut escaped = false;
     for (at, c) in script.char_indices() {
         if !begun && !c.is_whitespace() {
             begun = true;
             comment = c == '#';
+        }
+        // Inside quotes a backslash takes the next character with it, as in JSON: `\"` does not
+        // end the string and `\\` is one backslash. (It once did end it: over MCP,
+        // `set name "a\"; get duration; set name \"b"` ran as three statements.)
+        if quoted && !comment {
+            if std::mem::take(&mut escaped) {
+                continue;
+            }
+            if c == '\\' {
+                escaped = true;
+                continue;
+            }
         }
         match c {
             '\n' if comment || !quoted => {
@@ -400,6 +421,24 @@ pub fn statements(script: &str) -> Vec<&str> {
         out.push(&script[start..]);
     }
     out.into_iter().map(str::trim).filter(|line| !line.is_empty()).collect()
+}
+
+/// The value `set` is given, as it was written: JSON, or a bare word taken as text, so that
+/// `set name pass` needs no quotes. What begins as JSON's strings, lists and objects do (`"`,
+/// `[`, `{`) must be JSON: a string with a quote missing is a mistake to be told about, not a
+/// name with a quote in it.
+///
+/// # Errors
+/// What is wrong with text that set out to be JSON.
+pub fn value_of(text: &str) -> Result<serde_json::Value, String> {
+    let text = text.trim();
+    match serde_json::from_str(text) {
+        Ok(value) => Ok(value),
+        Err(why) if text.starts_with(['"', '[', '{']) => {
+            Err(format!("`{text}` begins as JSON and is not JSON ({why}); a bare word needs no quotes"))
+        }
+        Err(_) => Ok(serde_json::Value::String(text.to_owned())),
+    }
 }
 
 /// The usage line of a command, for error messages.
@@ -425,11 +464,7 @@ impl Engine {
             && rest.starts_with(char::is_whitespace)
             && let Some((path, value)) = rest.trim().split_once(char::is_whitespace)
         {
-            let text = value.trim();
-            // A word that is not JSON is taken as a string, so that `set name pass` needs no quotes.
-            let value =
-                serde_json::from_str(text).unwrap_or_else(|_| serde_json::Value::String(text.to_owned()));
-            return Ok(Request::Do(Command::set(path, value)));
+            return Ok(Request::Do(Command::set(path, value_of(value)?)));
         }
         // `add` too: a list, an index if there is one, and the item as it was written.
         if let Some(rest) = line.trim_start().strip_prefix("add")
@@ -1243,6 +1278,31 @@ mod tests {
         // A script is not cut inside quotes.
         assert_eq!(statements(r#"load "a; b.ron"; panes 2"#), [r#"load "a; b.ron""#, "panes 2"]);
         assert_eq!(statements("panes 2;;\n view top \n"), ["panes 2", "view top"]);
+        // An escaped quote does not end a string: this is one statement, a name with a quote,
+        // a semicolon and what looks like two more commands in it. Control: without the
+        // backslashes the same text is three statements.
+        let sly = r#"set name "a\"; get duration; set name \"b""#;
+        assert_eq!(statements(sly), [sly]);
+        assert_eq!(statements(&sly.replace('\\', "")).len(), 3);
+        assert_eq!(
+            statements(r#"set name "a\\"; panes 2"#),
+            [r#"set name "a\\""#, "panes 2"],
+            "an escaped backslash"
+        );
+        assert_eq!(words(r#"load "my \"best\" scene.ron""#).unwrap(), ["load", r#"my "best" scene.ron"#]);
+        assert_eq!(
+            words(r#"load "C:\scenes\pass.ron""#).unwrap(),
+            ["load", r"C:\scenes\pass.ron"],
+            "a path keeps its backslashes"
+        );
+        // What `set` takes: JSON, or a bare word; what begins as JSON must be JSON.
+        assert_eq!(value_of("pass").unwrap(), serde_json::json!("pass"));
+        assert_eq!(value_of(r#""a\"b""#).unwrap(), serde_json::json!("a\"b"));
+        assert_eq!(value_of("[1, 2]").unwrap(), serde_json::json!([1, 2]));
+        assert_eq!(value_of("3rd").unwrap(), serde_json::json!("3rd"));
+        for broken in [r#""open"#, "[1, 2", r#"{"a": }"#, r#""a" b"#] {
+            assert!(value_of(broken).unwrap_err().contains("is not JSON"), "{broken}");
+        }
 
         // End to end: a scene file in a folder whose name has a space.
         let dir =
