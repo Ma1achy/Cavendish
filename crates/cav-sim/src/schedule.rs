@@ -41,16 +41,27 @@ pub struct Prediction {
     pub kept: Vec<usize>,
     /// The lines, in rising frequency.
     pub lines: Vec<Line>,
-    /// The flat floor the cadence lays under a tone, in `|W|²` relative to the peak: from jitter
-    /// about a grid and from lost shots. Zero for a cadence that has neither.
-    pub floor: f64,
+    /// The flat floor the cadence lays under a tone, in `|W|²` relative to the peak (a power, as
+    /// a fraction of the tone's own): from jitter about a grid and from lost shots. Zero for a
+    /// cadence that has neither. Absent when loss leaves a tower fewer than
+    /// [`FLOOR_HOLDS_FROM`] shots expected: the closed form does not hold there (a note says
+    /// so), and the realisation is what there is.
+    pub floor: Option<f64>,
     /// By how much the smallest detectable tone grows because shots were not taken, against the
     /// same span fully sampled: `√(planned / kept)` for the tower that keeps fewest. Shot noise
-    /// alone; leakage from strong lines is the floor above.
-    pub noise_factor: f64,
+    /// alone; leakage from strong lines is the floor above. Absent when a tower takes no shot
+    /// at all: nothing can be detected there, and no factor says that.
+    pub noise_factor: Option<f64>,
     /// What to bear in mind when reading the numbers.
     pub notes: Vec<String>,
 }
+
+/// The fewest shots a tower must be expected to keep, `(1 − p)·N`, for the loss floor
+/// `p/((1 − p)·N)` to be given. The form is the first term of `E[1/K] − 1/N` for `K` shots kept
+/// of `N`; the next is that floor times `1/((1 − p)·N)`, so it is good to about one part in the
+/// shots expected to be kept: 5% at 20, the tolerance it was held to (`docs/slices/S2.md` §3.3).
+/// With far fewer it is not small and not a fraction of anything (0.99 lost of 6 gives 16.5).
+pub const FLOOR_HOLDS_FROM: f64 = 20.0;
 
 fn magnitude(z: Complex) -> f64 {
     z.re.hypot(z.im)
@@ -145,8 +156,20 @@ pub fn predict(spec: &SceneSpec) -> Result<Prediction, String> {
             });
         }
     }
+    let mut floor = Some(floor);
     if schedule.loss > 0.0 {
-        floor += cadence::loss_floor(schedule.loss, n.max(1));
+        let expected = (1.0 - schedule.loss) * n as f64;
+        if expected >= FLOOR_HOLDS_FROM {
+            floor = floor.map(|floor| floor + cadence::loss_floor(schedule.loss, n));
+        } else {
+            floor = None;
+            notes.push(format!(
+                "loss: the floor p/((1 − p)·N) is given while a tower is expected to keep \
+                 {FLOOR_HOLDS_FROM} shots or more (it is good to about one part in that number); here \
+                 {} of {n} lost leaves about {expected:.1}, so no floor is given: read the realisation",
+                schedule.loss
+            ));
+        }
     }
     let features =
         [schedule.jitter.is_some(), schedule.gaps.is_some(), schedule.window.is_some(), schedule.loss > 0.0];
@@ -158,7 +181,15 @@ pub fn predict(spec: &SceneSpec) -> Result<Prediction, String> {
     }
     lines.sort_by(|a, b| a.frequency.total_cmp(&b.frequency));
     let fewest = kept.iter().copied().min().unwrap_or(0);
-    let noise_factor = if fewest == 0 { f64::INFINITY } else { (n as f64 / fewest as f64).sqrt() };
+    let noise_factor = (fewest > 0).then(|| (n as f64 / fewest as f64).sqrt());
+    let none = kept.iter().filter(|kept| **kept == 0).count();
+    if none > 0 {
+        notes.push(format!(
+            "{none} of {} tower(s) take no shot at all: nothing can be detected there, and the loss of \
+             sensitivity is not a factor",
+            kept.len()
+        ));
+    }
     Ok(Prediction {
         mean_cycle,
         nyquist: 0.5 / mean_cycle,
@@ -234,7 +265,7 @@ mod tests {
         assert_eq!((even.mean_cycle, even.nyquist, even.shots), (2.0, 0.25, 1000));
         assert_eq!(even.kept, [1000; 5]);
         assert_eq!((even.lines.len(), even.lines[0].frequency, even.lines[0].height), (1, 0.5, 1.0));
-        assert_eq!((even.floor, even.noise_factor), (0.0, 1.0));
+        assert_eq!((even.floor, even.noise_factor), (Some(0.0), Some(1.0)));
         // Alternating 2 s and 2.5 s: four sidebands of 1/4.5 s at |cos(πk·2/4.5)|, and the
         // realisation has them there to three decimals (the form does not depend on N).
         let scene = comb_with(|s| s.alternate = Some(2.5));
@@ -255,7 +286,7 @@ mod tests {
         let scene = comb_with(|s| s.gaps = Some(GapSpec { on: 3, period: 5 }));
         let gapped = predict(&scene).unwrap();
         assert_eq!(gapped.kept, [600; 5]);
-        assert!((gapped.noise_factor - (1000.0f64 / 600.0).sqrt()).abs() < 1e-12);
+        assert!((gapped.noise_factor.unwrap() - (1000.0f64 / 600.0).sqrt()).abs() < 1e-12);
         let first = gapped.lines.iter().find(|line| line.what.starts_with("planned gaps")).unwrap();
         assert_eq!((first.frequency, first.height), (0.1, cadence::gapped_line(1, 3, 5)));
         assert!((realised(&scene, 0.1) - first.height).abs() < 1e-9);
@@ -281,11 +312,11 @@ mod tests {
         .unwrap();
         let psi = cadence::psi_uniform(0.5, 0.25).abs();
         assert_eq!(grid.lines[0].height, psi);
-        assert!((grid.floor - (1.0 - psi * psi) / 1000.0).abs() < 1e-15);
+        assert!((grid.floor.unwrap() - (1.0 - psi * psi) / 1000.0).abs() < 1e-15);
         // Loss: a floor, and fewer shots; the notes say when features are combined.
         let lossy =
             predict(&comb_with(|s| (s.loss, s.gaps) = (0.05, Some(GapSpec { on: 3, period: 5 })))).unwrap();
-        assert_eq!(lossy.floor, cadence::loss_floor(0.05, 1000));
+        assert_eq!(lossy.floor, Some(cadence::loss_floor(0.05, 1000)));
         assert!(lossy.kept.iter().all(|kept| (520..=600).contains(kept)), "{:?}", lossy.kept);
         assert!(lossy.notes.iter().any(|note| note.contains("as if alone")));
         // Control: the realisation off a line is nowhere near a line's height, so agreement on

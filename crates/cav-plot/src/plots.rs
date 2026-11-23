@@ -133,7 +133,8 @@ pub struct Drawn {
     pub compared: bool,
     /// For a flight diagram: each shot drawn, as the tower (from 0) and the x of its launch and
     /// of its readout.
-    pub flights: Vec<(usize, f32, f32)>,
+    /// of its readout, and whether the tower takes it (a shot not taken is drawn dashed).
+    pub flights: Vec<(usize, f32, f32, bool)>,
 }
 
 impl Drawn {
@@ -246,10 +247,56 @@ pub fn thinned(x: &[f64], y: &[f64]) -> Vec<(f64, f64)> {
 /// The part of a series inside `[lo, hi]` on its x, with one point either side so that the line
 /// runs to the edges.
 fn within<'a>(x: &'a [f64], y: &'a [f64], lo: f64, hi: f64) -> (&'a [f64], &'a [f64]) {
+    let stretch = stretch_within(x, lo, hi);
+    (&x[stretch.clone()], &y[stretch])
+}
+
+/// Which of the rising `x` are inside `[lo, hi]`, with one either side.
+fn stretch_within(x: &[f64], lo: f64, hi: f64) -> std::ops::Range<usize> {
     let first = x.partition_point(|v| *v < lo).saturating_sub(1);
     let last = (x.partition_point(|v| *v <= hi) + 1).min(x.len());
-    if first >= last { (&[], &[]) } else { (&x[first..last], &y[first..last]) }
+    if first >= last { 0..0 } else { first..last }
 }
+
+/// A tower's series as the lines it is drawn with: one for each run of shots taken, so that a
+/// shot not taken (whose slot holds a zero that is no measurement) is on no line and the line
+/// is broken there. `x`, `y` and `taken` are the shots shown, in order.
+///
+/// With no more than [`MAX_POINTS`] shots every taken shot is a point of its run. With more,
+/// the series is thinned as [`thinned`] does it, to the smallest and the largest taken value of
+/// each stretch, and the line is broken wherever a whole stretch holds no shot taken: a gap
+/// narrower than a stretch (under a point wide) is not drawn. At most about [`MAX_POINTS`]
+/// points in all, and no more runs than points.
+#[must_use]
+pub fn runs(x: &[f64], y: &[f64], taken: &[bool]) -> Vec<Vec<(f64, f64)>> {
+    let n = x.len().min(y.len()).min(taken.len());
+    let stretch = if n <= MAX_POINTS { 1 } else { (2 * n).div_ceil(MAX_POINTS) };
+    let mut out = Vec::new();
+    let mut run: Vec<(f64, f64)> = Vec::new();
+    for start in (0..n).step_by(stretch) {
+        let end = (start + stretch).min(n);
+        let lowest = (start..end).filter(|&k| taken[k]).min_by(|&a, &b| y[a].total_cmp(&y[b]));
+        let highest = (start..end).filter(|&k| taken[k]).max_by(|&a, &b| y[a].total_cmp(&y[b]));
+        match lowest.zip(highest) {
+            None if !run.is_empty() => out.push(std::mem::take(&mut run)),
+            None => {}
+            Some((lowest, highest)) if lowest == highest => run.push((x[lowest], y[lowest])),
+            Some((lowest, highest)) => {
+                for k in [lowest.min(highest), lowest.max(highest)] {
+                    run.push((x[k], y[k]));
+                }
+            }
+        }
+    }
+    if !run.is_empty() {
+        out.push(run);
+    }
+    out
+}
+
+/// The most shots of a series that are each given a dot, and a hollow square at the foot of
+/// the axis when not taken: beyond that the marks would run together.
+pub const MAX_SHOTS_MARKED: usize = 200;
 
 /// The span a wheel movement of `scroll` points leaves, zooming about `about` on an axis whose
 /// whole extent is `[0, whole]`: the point under the pointer stays where it is, the span never
@@ -647,14 +694,30 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
         Some(n) if n >= 1 && n <= towers => vec![n - 1],
         Some(n) => return empty(&format!("there is no tower {n}"), drawn, described),
     };
-    // Each tower against its own readout times.
+    // Each tower against its own readout times, with which of its shots it took.
     let own: Vec<Vec<f64>> = which.iter().map(|t| signal.readouts(*t)).collect();
-    let shown: Vec<(&[f64], &[f64])> = which
+    let shown: Vec<(&[f64], &[f64], &[bool])> = which
         .iter()
         .zip(&own)
-        .map(|(t, times)| within(times, signal.channel(*t, channel), from, to))
+        .map(|(t, times)| {
+            let stretch = stretch_within(times, from, to);
+            (
+                &times[stretch.clone()],
+                &signal.channel(*t, channel)[stretch.clone()],
+                &signal.taken(*t)[stretch],
+            )
+        })
         .collect();
-    let y = Axis::linear(shown.iter().flat_map(|(_, values)| values.iter().copied()));
+    // The axis is fitted to the shots taken: the zero in a slot not taken is not a measurement.
+    let measured = |(_, values, taken): &(&[f64], &[f64], &[bool])| {
+        values
+            .iter()
+            .zip(taken.iter())
+            .filter(|(_, taken)| **taken)
+            .map(|(value, _)| *value)
+            .collect::<Vec<_>>()
+    };
+    let y = Axis::linear(shown.iter().flat_map(measured));
     drawn.y = y;
     // The unit of the vertical axis is chosen once, from the larger end, so the marks agree.
     let largest = y.lo.abs().max(y.hi.abs());
@@ -692,33 +755,69 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
     sheet.fixed = sheet.labels.len();
     // The towers that swing furthest are drawn first, so that over all of a long run, where
     // each series is a band, no band lies wholly under another.
-    let extent = |values: &[f64]| {
-        let (lo, hi) = values
-            .iter()
-            .filter(|v| v.is_finite())
-            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| (lo.min(*v), hi.max(*v)));
-        if hi >= lo { hi - lo } else { 0.0 }
-    };
+    let extents: Vec<f64> = shown
+        .iter()
+        .map(|series| {
+            let (lo, hi) = measured(series)
+                .into_iter()
+                .filter(|v| v.is_finite())
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| (lo.min(v), hi.max(v)));
+            if hi >= lo { hi - lo } else { 0.0 }
+        })
+        .collect();
     let mut order: Vec<usize> = (0..which.len()).collect();
-    order.sort_by(|a, b| extent(shown[*b].1).total_cmp(&extent(shown[*a].1)).then(a.cmp(b)));
+    order.sort_by(|a, b| extents[*b].total_cmp(&extents[*a]).then(a.cmp(b)));
     for n in order {
-        let (tower, (times, values)) = (which[n], shown[n]);
+        let (tower, (times, values, taken)) = (which[n], shown[n]);
         let (colour, dash) = style.series(tower);
-        let series = thinned(times, values);
-        drawn.points += series.len();
-        let points: Vec<Pos2> = series.iter().map(|point| place(area, &x, &y, *point)).collect();
-        // Few shots are drawn as dots as well: six points joined by lines hide that they are six.
-        if points.len() <= 200 {
-            sheet.clip(3.0);
-            for point in &points {
-                sheet.dot(*point, colour);
+        // One line for each run of shots taken: a shot not taken is on none of them.
+        let lines: Vec<Vec<Pos2>> = runs(times, values, taken)
+            .iter()
+            .map(|run| run.iter().map(|point| place(area, &x, &y, *point)).collect())
+            .collect();
+        let count: usize = lines.iter().map(Vec::len).sum();
+        drawn.points += count;
+        // Few shots are drawn as dots as well: six points joined by lines hide that they are
+        // six. A shot not taken has no dot: a small hollow square at the foot of the axis, at
+        // the time it would have been read out, says one was planned.
+        let marked = times.len() <= MAX_SHOTS_MARKED;
+        sheet.clip(4.0 * sheet.u);
+        for line in &lines {
+            // A run of one shot has no line to show it, so it has a dot whatever the count.
+            if marked || line.len() == 1 {
+                for point in line {
+                    sheet.dot(*point, colour);
+                }
             }
-            sheet.unclip();
         }
+        if marked {
+            let half = style.dot * 1.2;
+            for (time, _) in
+                times.iter().zip(taken).filter(|(time, taken)| !**taken && (from..=to).contains(*time))
+            {
+                let foot = place(area, &x, &y, (*time, y.lo));
+                sheet.drawing.items.push(Item::Rect {
+                    min: [foot.x - half, foot.y - half],
+                    max: [foot.x + half, foot.y + half],
+                    fill: None,
+                    stroke: Some((style.rule_width, colour)),
+                });
+            }
+        }
+        sheet.unclip();
         // More than a point to a point of width: the line is a band, and a thinner one shows more.
-        let dense = points.len() as f32 > area.width();
+        let dense = count as f32 > area.width();
         let width = if dense { style.line * 0.6 } else { style.line };
-        sheet.line(&points, width, colour, if dense { &[] } else { dash });
+        sheet.clip(1.0);
+        for line in lines.iter().filter(|line| line.len() > 1) {
+            sheet.drawing.items.push(Item::Line {
+                points: line.iter().map(|point| p(*point)).collect(),
+                width,
+                colour,
+                dash: if dense { Vec::new() } else { dash.to_vec() },
+            });
+        }
+        sheet.unclip();
         described.series.push((spec.array.towers[tower].label.clone(), colour));
     }
     described.series.sort_by_key(|(label, _)| spec.array.towers.iter().position(|t| &t.label == label));
@@ -729,14 +828,31 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
         drawn.playhead = Some(at);
     }
     sheet.unit(unit);
+    // How many shots there are and how many each tower drawn took, over the whole signal.
     let shots = signal.times.len();
-    described.marks = json!({ "vertical_axis_written_in": unit, "shots": shots });
+    let taken: Vec<usize> =
+        which.iter().map(|t| signal.taken(*t).iter().filter(|taken| **taken).count()).collect();
+    let (fewest, most) =
+        (taken.iter().min().copied().unwrap_or(shots), taken.iter().max().copied().unwrap_or(shots));
+    let count = match (fewest == shots, which.len() == 1 || fewest == most) {
+        (true, _) => format!("{shots} shots"),
+        (_, true) => format!("{most} of {shots} shots taken"),
+        _ => format!("{shots} shots, {fewest} to {most} taken a tower"),
+    };
+    described.marks = json!({
+        "vertical_axis_written_in": unit,
+        "shots": shots,
+        "shots_taken": taken,
+        "not_taken": "a shot not taken is on no line (the line is broken there) and has no dot; with few \
+                      shots shown a hollow square at the foot of the axis marks its time. Its slot in the \
+                      data file holds 0 and its flag is 0: it is not a measurement",
+    });
     let hint =
         if subject.span.is_some() { "scroll to zoom, double-click for all of it" } else { "scroll to zoom" };
     let mut forms =
-        vec![format!("readout time, s · {shots} shots"), "readout time, s".to_owned(), "time, s".to_owned()];
+        vec![format!("readout time, s · {count}"), "readout time, s".to_owned(), "time, s".to_owned()];
     if !style.house {
-        forms.insert(0, format!("readout time, s · {shots} shots · {hint}"));
+        forms.insert(0, format!("readout time, s · {count} · {hint}"));
     }
     sheet.caption(&forms);
     sheet.finish(drawn, described)
@@ -785,8 +901,8 @@ fn cadence(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Meas
     described.series.push((format!("|W| of {label_of}'s shots, this seed"), style.spectrum));
     sheet.fixed = sheet.labels.len();
     // The floor the closed forms predict, as a level across the plot.
-    if predicted.floor > 0.0 {
-        let level = place(area, &x, &y, (from, predicted.floor.sqrt().max(y.lo))).y;
+    if let Some(floor) = predicted.floor.filter(|floor| *floor > 0.0) {
+        let level = place(area, &x, &y, (from, floor.sqrt().max(y.lo))).y;
         sheet.clip(3.0);
         let dash = [5.0 * sheet.u, 4.0 * sheet.u];
         sheet.rule(pos2(area.left(), level), pos2(area.right(), level), style.reference, &dash);
@@ -815,22 +931,30 @@ fn cadence(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Meas
     }
     described.marks = json!({
         "predicted_lines": lines,
-        "predicted_floor": predicted.floor.sqrt(),
+        "predicted_floor": predicted.floor.map(f64::sqrt),
         "mean_cycle_s": predicted.mean_cycle,
         "nyquist_hz": predicted.nyquist,
         "note": "stems and the dashed level are the closed forms' predictions (cav_sim::schedule), not data",
     });
     let fewest = predicted.kept.iter().min().copied().unwrap_or(0);
+    let most = predicted.kept.iter().max().copied().unwrap_or(0);
     let u = sheet.u;
     sheet.text(
         pos2(area.left(), 24.0 * u),
         Anchor::LEFT_TOP,
         format!(
-            "mean cycle {} s · Nyquist {} Hz · {} shots, {fewest} taken · sensitivity × {:.3}",
+            "mean cycle {} s · Nyquist {} Hz · {} · {}",
             plain(predicted.mean_cycle),
             plain(predicted.nyquist),
-            predicted.shots,
-            predicted.noise_factor
+            match (fewest == predicted.shots, fewest == most) {
+                (true, _) => format!("{} shots", predicted.shots),
+                (_, true) => format!("{} shots planned, {most} taken a tower", predicted.shots),
+                _ => format!("{} shots planned, {fewest} to {most} taken a tower", predicted.shots),
+            },
+            predicted.noise_factor.map_or_else(
+                || "a tower takes no shot".to_owned(),
+                |factor| format!("smallest detectable tone × {factor:.3}")
+            )
         ),
         Face::Sans,
         style.text_size,
@@ -879,16 +1003,17 @@ pub fn arm_heights(instrument: &cav_core::forward::Instrument, tau: f64) -> [f64
 
 /// The shots of one tower a flight diagram draws over `[from, to]` seconds: how many shots
 /// touch the span, and the launch time of each that is drawn (at most [`MAX_FLIGHT_SHOTS`]).
+///
+/// The shots are the scene's own (`Engine::shots`): the schedule's times and the tower's
+/// offset, each with whether the tower takes it. Nothing here works a time out.
 #[must_use]
-pub fn flights_drawn(spec: &cav_sim::SceneSpec, tower: usize, [from, to]: [f64; 2]) -> (usize, Vec<f64>) {
-    let instrument = spec.array.instrument.instrument();
-    let (cycle, flight_time) = (spec.array.instrument.cycle, instrument.flight_time());
-    // The shots of this tower whose flight touches the span: launched at k·cycle + offset.
-    let offset = spec.array.towers[tower].timing.offset;
-    let first = ((from - offset - flight_time) / cycle).floor().max(0.0);
-    let last = ((to - offset) / cycle).ceil().min((spec.duration / cycle).ceil() - 1.0);
-    let count = if last >= first { (last - first) as usize + 1 } else { 0 };
-    (count, (0..count.min(MAX_FLIGHT_SHOTS)).map(|k| (first + k as f64) * cycle + offset).collect())
+pub fn flights_drawn(
+    shots: &cav_sim::read::Shots,
+    tower: usize,
+    span: [f64; 2],
+) -> (usize, Vec<cav_sim::read::Flown>) {
+    let touching = shots.touching(tower, span);
+    (touching.len(), touching.take(MAX_FLIGHT_SHOTS).map(|k| shots.flown(tower, k)).collect())
 }
 
 /// The span a flight diagram shows: its own, or, with none, two cycles either side of the
@@ -913,6 +1038,19 @@ fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
     let towers = spec.array.towers.len().min(MAX_FLIGHT_ROWS);
     let left: Vec<String> = spec.array.towers.iter().take(towers).map(|t| t.label.clone()).collect();
     let mut sheet = Sheet::new(style, measure, size, &titles, 0, &left);
+    // The scene's shots, as the engine keeps them; a scene whose signal is refused has none.
+    let shots = match engine.shots() {
+        Ok(shots) if shots.towers() >= towers => shots,
+        other => {
+            let why = other.err().unwrap_or("the shots are being made").to_owned();
+            let mut drawn =
+                blank(subject, Axis { lo: 0.0, hi: 1.0, log: false }, Axis { lo: 0.0, hi: 1.0, log: false });
+            sheet.nothing(&why);
+            drawn.note = Some(why);
+            let described = described(("absolute time", "s"), ("height above each tower's base", "m"));
+            return sheet.finish(drawn, described);
+        }
+    };
     let time = engine.time();
     let [from, to] = flight_span(engine, subject.span);
     let x = Axis { lo: from, hi: to, log: false };
@@ -923,7 +1061,7 @@ fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
     let area = sheet.area;
     sheet.x_marks(&x, plain);
     let row_height = area.height() / towers.max(1) as f32;
-    let mut left_out = 0usize;
+    let (mut left_out, mut not_taken) = (0usize, 0usize);
     for (n, tower) in spec.array.towers.iter().take(towers).enumerate() {
         let row = Rect::from_min_size(
             pos2(area.left(), area.top() + row_height * n as f32),
@@ -936,14 +1074,16 @@ fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
             Anchor::RIGHT_CENTRE,
             tower.label.clone(),
         );
-        let (count, launches) = flights_drawn(spec, n, [from, to]);
-        left_out += count - launches.len();
+        let (count, flown) = flights_drawn(shots, n, [from, to]);
+        left_out += count - flown.len();
         let (colour, _) = style.series(n);
         described.series.push((tower.label.clone(), colour));
         sheet.drawing.items.push(Item::Clip { min: p(area.min), max: p(area.max) });
-        for launch in launches {
+        for shot in flown {
+            let launch = shot.launch;
+            not_taken += usize::from(!shot.taken);
             let at = |seconds: f64| inner.left() + inner.width() * x.fraction(seconds) as f32;
-            drawn.flights.push((n, at(launch), at(launch + flight_time)));
+            drawn.flights.push((n, at(launch), at(shot.readout), shot.taken));
             // Each of the four arm paths as a line through 33 points of the flight.
             const STEPS: usize = 32;
             for arm in 0..4 {
@@ -955,17 +1095,24 @@ fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
                     })
                     .collect();
                 drawn.points += points.len();
-                // The upper interferometer's arms are fainter than the lower's.
+                // The upper interferometer's arms are fainter than the lower's. A shot the
+                // tower does not take is where it was planned, dashed and fainter still: no
+                // atoms flew it.
                 let shade = if arm < 2 { colour } else { colour.mixed(style.background, 0.7) };
+                let (shade, dash) = if shot.taken {
+                    (shade, Vec::new())
+                } else {
+                    (shade.mixed(style.background, 0.55), vec![2.5 * sheet.u, 2.0 * sheet.u])
+                };
                 sheet.drawing.items.push(Item::Line {
                     points,
                     width: style.line * (1.2 / 1.3),
                     colour: shade,
-                    dash: Vec::new(),
+                    dash,
                 });
             }
             // Where the clouds are at the playhead, if this shot is in flight.
-            if !style.house && (launch..=launch + flight_time).contains(&time) {
+            if !style.house && shot.taken && (launch..=launch + flight_time).contains(&time) {
                 for height in arm_heights(&instrument, time - launch) {
                     let point = pos2(at(time), inner.bottom() - inner.height() * y.fraction(height) as f32);
                     sheet.dot(point, style.ink);
@@ -982,6 +1129,9 @@ fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
     let more = spec.array.towers.len() - towers;
     let mut said =
         format!("absolute time, s · each row a tower, 0 to {} m · 2T = {} s", plain(top), plain(flight_time));
+    if not_taken > 0 {
+        said.push_str(&format!(" · dashed: {not_taken} shot(s) not taken"));
+    }
     if more > 0 || left_out > 0 {
         said.push_str(&format!(" · not drawn: {more} tower(s), {left_out} shot(s); zoom in"));
         drawn.note = Some(format!("{more} tower(s) and {left_out} shot(s) are not drawn"));
@@ -990,9 +1140,15 @@ fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
         "row_height_m": top,
         "flight_time_s": flight_time,
         "arms": "each shot: the lower interferometer's two arms, and the upper's (fainter), as the forward model flies them",
+        "not_taken": { "shots": not_taken, "drawn": "dashed and faint, where the schedule planned them" },
         "not_drawn": { "towers": more, "shots": left_out },
     });
-    sheet.caption(&[said, "absolute time, s".to_owned()]);
+    let short = if not_taken > 0 {
+        format!("absolute time, s · dashed: {not_taken} shot(s) not taken")
+    } else {
+        "absolute time, s".to_owned()
+    };
+    sheet.caption(&[said, short, "absolute time, s".to_owned()]);
     sheet.finish(drawn, described)
 }
 

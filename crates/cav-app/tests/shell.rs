@@ -940,10 +940,18 @@ fn flight_rows_share_absolute_time() {
     // The pane follows the playhead: two cycles either side, on one time axis for every row.
     assert_eq!((drawn.x.lo, drawn.x.hi), (2.0, 10.0));
     let points_per_second = drawn.area.width() / 8.0;
-    let first =
-        |tower: usize| drawn.flights.iter().find(|(row, _, _)| *row == tower).copied().expect("a shot");
+    // Each row's first shot launched inside the span: the same shot of the schedule in every
+    // row (the one the array's clock launches at 2 s). A shot launched before the span is drawn
+    // only where its flight reaches into it, which depends on the row's offset.
+    let first = |tower: usize| {
+        let inside = |(row, launch, _, _): &&(usize, f32, f32, bool)| {
+            *row == tower && *launch >= drawn.area.left() - 0.5
+        };
+        drawn.flights.iter().find(inside).copied().expect("a shot")
+    };
     for tower in 0..5 {
-        let (_, launch, readout) = first(tower);
+        let (_, launch, readout, taken) = first(tower);
+        assert!(taken, "the staggered scene takes every shot");
         // A shot is 2T wide, and tower n's is drawn n·0.292 s to the right of tower 1's.
         assert!((readout - launch - 1.46 * points_per_second).abs() <= 1.0);
         let expected = first(0).1 + 0.292 * tower as f32 * points_per_second;
@@ -957,7 +965,7 @@ fn flight_rows_share_absolute_time() {
     rig.shell.run("seek 6").unwrap();
     rig.frames(vec![vec![], vec![]]);
     let drawn = rig.shell.layout().plots[0].clone();
-    let x_of = |tower: usize| drawn.flights.iter().find(|(row, _, _)| *row == tower).unwrap().1;
+    let x_of = |tower: usize| drawn.flights.iter().find(|(row, _, _, _)| *row == tower).unwrap().1;
     assert!((0..5).all(|tower| x_of(tower) == x_of(0)));
 }
 
@@ -976,7 +984,7 @@ fn the_flight_diagram_and_the_lanes_are_bounded() {
     rig.shell.run("span 0 2000").unwrap();
     rig.frames(vec![vec![], vec![]]);
     let drawn = rig.shell.layout().plots[0].clone();
-    let rows: std::collections::BTreeSet<usize> = drawn.flights.iter().map(|(row, _, _)| *row).collect();
+    let rows: std::collections::BTreeSet<usize> = drawn.flights.iter().map(|(row, _, _, _)| *row).collect();
     assert_eq!(rows.len(), MAX_FLIGHT_ROWS);
     assert_eq!(drawn.flights.len(), MAX_FLIGHT_ROWS * MAX_FLIGHT_SHOTS);
     let note = drawn.note.expect("it says what it left out");

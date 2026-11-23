@@ -71,6 +71,12 @@ pub struct Layout {
     /// The first shot of each timeline lane that was drawn: the tower (from 0) and its bar,
     /// from the tower's launch to its readout.
     pub lanes: Vec<(usize, Rect)>,
+    /// Every bar the lanes drew: at most `timeline::MAX_SHOTS_DRAWN` for each lane in view.
+    pub shots: Vec<crate::timeline::Bar>,
+    /// What the timeline's heading says about the shots.
+    pub timeline_caption: String,
+    /// What the outliner says about the forward stage.
+    pub status: String,
     /// The numbers on the timeline's ruler, each with the rectangle it took, and the rectangle
     /// the timeline is drawn inside.
     pub ruler: (Vec<(String, Rect)>, Rect),
@@ -87,6 +93,9 @@ impl Default for Layout {
             plots: Vec::new(),
             editors: Vec::new(),
             lanes: Vec::new(),
+            shots: Vec::new(),
+            timeline_caption: String::new(),
+            status: String::new(),
             ruler: (Vec::new(), Rect::NOTHING),
         }
     }

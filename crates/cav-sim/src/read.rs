@@ -57,14 +57,35 @@ pub fn sources(spec: &SceneSpec) -> Vec<SourceId> {
 /// towers. Tower `d` launches shot `k` at `times[k] + offsets[d] − 2T` and reads it out at
 /// `times[k] + offsets[d]`. A shot a tower does not take (a planned gap, a lost shot) keeps its
 /// place and is marked not valid.
-#[derive(Clone, Debug, PartialEq)]
+///
+/// This is the one source of shot times and of which shots are taken: the read, the timeline's
+/// lanes, the flight diagram, the signal plot and every caption that counts shots go by it.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Shots {
-    /// When the array's clock reads each shot out, seconds: the launch plus 2T.
+    /// When the array's clock reads each shot out, seconds: the launch plus 2T. They rise.
     pub times: Vec<f64>,
     /// How much later than that each tower reads out, seconds, in the towers' order.
     pub offsets: Vec<f64>,
     /// Whether each tower takes each shot: tower by tower, `towers × shots` flags.
     pub valid: Vec<bool>,
+    /// How long a shot is in flight, seconds: 2T, from its launch to its readout.
+    pub flight: f64,
+    /// What a person should know about the schedule: a tower whose offset puts shots outside
+    /// the timeline. The signal read from these shots carries them.
+    pub warnings: Vec<Warning>,
+}
+
+/// One shot of one tower, as it is drawn.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Flown {
+    /// Which shot of the schedule it is, from 0.
+    pub k: usize,
+    /// When the tower launches it, seconds.
+    pub launch: f64,
+    /// When the tower reads it out, seconds: the launch and 2T.
+    pub readout: f64,
+    /// Whether the tower takes it.
+    pub taken: bool,
 }
 
 impl Shots {
@@ -73,7 +94,13 @@ impl Shots {
     #[must_use]
     pub fn together(spec: &SceneSpec, times: Vec<f64>) -> Self {
         let towers = spec.array.towers.len();
-        Self { valid: vec![true; towers * times.len()], offsets: vec![0.0; towers], times }
+        Self {
+            valid: vec![true; towers * times.len()],
+            offsets: vec![0.0; towers],
+            times,
+            flight: 2.0 * spec.array.instrument.half_sequence,
+            warnings: Vec::new(),
+        }
     }
 
     /// How many towers there are.
@@ -101,11 +128,44 @@ impl Shots {
         let shots = self.times.len();
         &self.valid[tower * shots..(tower + 1) * shots]
     }
+
+    /// When tower `tower` (from 0) launches shot `k`, seconds: its readout less 2T.
+    #[must_use]
+    pub fn launch(&self, tower: usize, k: usize) -> f64 {
+        self.readout(tower, k) - self.flight
+    }
+
+    /// Shot `k` of tower `tower` (from 0), as it is drawn.
+    #[must_use]
+    pub fn flown(&self, tower: usize, k: usize) -> Flown {
+        let readout = self.readout(tower, k);
+        Flown { k, launch: readout - self.flight, readout, taken: self.taken(tower, k) }
+    }
+
+    /// The shots of tower `tower` (from 0) any part of whose flight is inside `[from, to]`
+    /// seconds: launched at or before `to` and read out at or after `from`. One stretch, since
+    /// the times rise; found by bisection, so it costs the same for six shots and two million.
+    #[must_use]
+    pub fn touching(&self, tower: usize, [from, to]: [f64; 2]) -> std::ops::Range<usize> {
+        let offset = self.offsets[tower];
+        let first = self.times.partition_point(|time| time + offset < from);
+        let end = self.times.partition_point(|time| time + offset - self.flight <= to);
+        first..end.max(first)
+    }
 }
 
 /// When the array's clock launches each shot, seconds, by the scene's schedule: one every cycle
-/// from time zero, or as the alternation and the jitter have it, while the launch is before the
-/// end of the timeline. With the plain schedule these are `k·cycle` exactly, as S1 had them.
+/// from time zero, or as the alternation and the jitter have it, while the shot's place on the
+/// clock is before the end of the timeline. With the plain schedule these are `k·cycle` exactly,
+/// as S1 had them.
+///
+/// **No launch is before time zero.** The clock starts at zero and nothing is launched before
+/// it starts. Jitter that can only delay never does that; symmetric jitter about a grid would
+/// (shot 0 drawn early), so there the grid stands `delta` after zero: shot `k` is launched at
+/// `k·cycle + delta + delta·(2u − 1)`, in `[k·cycle, k·cycle + 2·delta)`. A shift of every shot
+/// alike changes no height of the spectral window. A shot's launch may be later than the end of
+/// the timeline by its jitter, and its readout by 2T more: it is the timeline's shot because its
+/// place on the grid is.
 ///
 /// # Errors
 /// When there could be more than [`MAX_SHOTS`] of them, or more values than
@@ -161,7 +221,14 @@ pub fn launches(spec: &SceneSpec) -> Result<Vec<f64>, String> {
                 if grid(k) >= spec.duration {
                     break;
                 }
-                times.push(if late == 0.0 { grid(k) } else { grid(k) + late });
+                // The symmetric grid stands `delta` late (see above): the unshifted time first,
+                // as `cav_core::cadence::grid_times` has it, and then the shift.
+                let shift = jitter.filter(|j| j.kind == JitterKind::Symmetric).map_or(0.0, |j| j.delta);
+                times.push(match (late == 0.0, shift == 0.0) {
+                    (true, true) => grid(k),
+                    (_, true) => grid(k) + late,
+                    _ => (grid(k) + late) + shift,
+                });
             }
         }
     }
@@ -181,6 +248,12 @@ pub fn readouts(spec: &SceneSpec) -> Result<Vec<f64>, String> {
 /// The scene's shots: the array's clock ([`readouts`]), each tower's offset from it, and which
 /// shots each tower takes: those inside the planned pattern and the daily window, less the ones
 /// lost (each tower loses its own, keyed by seed, tower and shot).
+///
+/// **A tower's offset moves its shots and nothing else.** Every shot stays as it was, taken or
+/// not, and is read at the tower's own time, either side of the timeline's ends (an offset may
+/// be negative: that tower's clock is ahead of the array's). When an offset puts a launch before
+/// time zero, or at or after the end of the timeline a shot the array's clock launches before
+/// it, the shots carry a warning about that tower, and so does the signal read from them.
 ///
 /// # Errors
 /// As [`launches`].
@@ -208,8 +281,39 @@ pub fn shots(spec: &SceneSpec) -> Result<Shots, String> {
                     || unit(schedule.seed, STREAM_LOSS, tower as u64, k as u64) >= schedule.loss)
         }));
     }
+    let mut warnings = Vec::new();
+    for (tower, offset) in offsets.iter().enumerate().filter(|(_, offset)| **offset != 0.0) {
+        let label = &spec.array.towers[tower].label;
+        // The launches rise, so those an offset puts outside are a stretch at one end.
+        let early = launches.partition_point(|launch| launch + offset < 0.0);
+        if early > 0 {
+            warnings.push(Warning::about(
+                tower,
+                format!(
+                    "{label}'s clock is offset by {offset} s: {early} of its {} shot(s) are launched before the \
+                     timeline begins, the first at {} s",
+                    launches.len(),
+                    launches[0] + offset
+                ),
+            ));
+        }
+        let inside = launches.partition_point(|launch| *launch < spec.duration);
+        let late = inside - launches[..inside].partition_point(|launch| launch + offset < spec.duration);
+        if late > 0 {
+            warnings.push(Warning::about(
+                tower,
+                format!(
+                    "{label}'s clock is offset by {offset} s: {late} of its {} shot(s) are launched at or after \
+                     the end of the timeline ({} s), the last at {} s",
+                    launches.len(),
+                    spec.duration,
+                    launches[inside - 1] + offset
+                ),
+            ));
+        }
+    }
     let times = launches.into_iter().map(|launch| launch + flight).collect();
-    Ok(Shots { times, offsets, valid })
+    Ok(Shots { times, offsets, valid, flight, warnings })
 }
 
 /// Something a person should know about a reading, and the tower it is about.
@@ -676,7 +780,7 @@ impl Signal {
             estimate: 0.0,
             estimates: vec![0.0; towers],
             settled: true,
-            warnings: Vec::new(),
+            warnings: shots.warnings.clone(),
         }
     }
 
@@ -1325,7 +1429,14 @@ mod tests {
             let grid =
                 launches(&scheduled(|s| (s.jitter, s.seed) = (jitter(JitterModel::Grid, kind, 0.2), 9)))
                     .unwrap();
-            assert_eq!(grid, cadence::grid_times(200, 2.0, 0.2, symmetric, 9));
+            // The generator's times; the symmetric grid stands δ after zero (finding 22 of S2's
+            // review: no shot is launched before the clock starts), to the bit.
+            let shift = if symmetric { 0.2 } else { 0.0 };
+            let expected: Vec<f64> = cadence::grid_times(200, 2.0, 0.2, symmetric, 9)
+                .into_iter()
+                .map(|time| if symmetric { time + shift } else { time })
+                .collect();
+            assert_eq!(grid, expected);
         }
         // Alternation: the two cycle times in turn.
         let alternating = launches(&scheduled(|s| s.alternate = Some(2.5))).unwrap();

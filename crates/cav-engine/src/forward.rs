@@ -310,7 +310,7 @@ impl Forward {
             kept_bytes: 0,
             kept_count: 0,
             wanted: Vec::new(),
-            shots: Arc::new(Shots { times: Vec::new(), offsets: Vec::new(), valid: Vec::new() }),
+            shots: Arc::new(Shots::default()),
             signal: None,
             state: SignalState::None,
             why: None,
@@ -379,7 +379,7 @@ impl Forward {
             Err(why) => {
                 (self.signal, self.state, self.why) = (None, SignalState::None, Some(why));
                 self.wanted.clear();
-                self.shots = Arc::new(Shots { times: Vec::new(), offsets: Vec::new(), valid: Vec::new() });
+                self.shots = Arc::new(Shots::default());
                 self.trim();
                 return;
             }
@@ -574,6 +574,13 @@ impl Forward {
     #[must_use]
     pub fn why(&self) -> Option<&str> {
         self.why.as_deref()
+    }
+
+    /// The shots of the scene as it is now: the ones the signal is read at. Made once an edit,
+    /// in [`Self::schedule`]; empty while the scene is refused ([`Self::why`]).
+    #[must_use]
+    pub fn shots(&self) -> &Shots {
+        &self.shots
     }
 }
 

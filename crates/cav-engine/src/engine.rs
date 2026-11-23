@@ -127,6 +127,8 @@ pub struct Engine {
     drawer: Drawer,
     /// The last spectral window answered, with what it was made from.
     window: std::sync::Mutex<Option<(String, WindowReply)>>,
+    /// The last cadence prediction answered, with what it was made from.
+    prediction: std::sync::Mutex<Option<(String, cav_sim::schedule::Prediction)>>,
     log: Log,
     /// `log.total()` just after the last command's entry: tells whether that entry is still the newest.
     log_mark: u64,
@@ -194,6 +196,7 @@ impl Engine {
             exports: Exports::AsNamed,
             drawer: Drawer::default(),
             window: std::sync::Mutex::new(None),
+            prediction: std::sync::Mutex::new(None),
             log,
             log_mark: 0,
             generation: 0,
@@ -618,6 +621,30 @@ impl Engine {
         .to_string()
     }
 
+    /// Everything a cadence prediction is made from, as text: the timeline's length, the
+    /// instrument, the schedule and how many towers there are (each loses its own shots). Not
+    /// the towers' offsets: they move shots and neither add nor take any.
+    fn prediction_key(&self) -> String {
+        serde_json::json!([
+            self.spec.duration,
+            self.spec.array.instrument,
+            self.spec.array.schedule,
+            self.spec.array.towers.len(),
+        ])
+        .to_string()
+    }
+
+    /// The shots of the scene as it is now: when each tower launches and reads out each one,
+    /// and which it takes. They are made once an edit (`cav_sim::read::shots`) and kept, so
+    /// asking costs nothing; whatever draws or counts shots goes by these.
+    ///
+    /// # Errors
+    /// When the scene's signal is refused (too many shots, or more than the engine keeps), with
+    /// the reason.
+    pub fn shots(&self) -> Result<&cav_sim::read::Shots, &str> {
+        self.forward.why().map_or_else(|| Ok(self.forward.shots()), Err)
+    }
+
     fn check_target(&self, target: Target) -> Result<(), String> {
         let towers = self.spec.array.towers.len();
         match target {
@@ -981,13 +1008,28 @@ impl Engine {
                     combs,
                 }))
             }
-            Query::Cadence => cav_sim::schedule::predict(&self.spec).map(Reply::Cadence),
-            Query::Window { tower, to } => {
+            Query::Cadence => {
+                // A pane and the timeline's caption ask every frame, and a prediction counts
+                // every shot of every tower: the last answer is kept, under everything it was
+                // made from (one answer: a count for each tower and a dozen lines).
+                let key = self.prediction_key();
+                let mut kept = self.prediction.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                if let Some((made_from, prediction)) = kept.as_ref()
+                    && *made_from == key
+                {
+                    return Ok(Reply::Cadence(prediction.clone()));
+                }
                 let prediction = cav_sim::schedule::predict(&self.spec)?;
+                *kept = Some((key, prediction.clone()));
+                Ok(Reply::Cadence(prediction))
+            }
+            Query::Window { tower, to } => {
                 if *tower == 0 {
                     return Err("towers are counted from 1".into());
                 }
-                let to = to.unwrap_or(2.5 / prediction.mean_cycle);
+                // The mean cycle is the schedule's own arithmetic: no prediction is made for it.
+                let mean_cycle = self.spec.array.schedule.mean_cycle(self.spec.array.instrument.cycle);
+                let to = to.unwrap_or(2.5 / mean_cycle);
                 // A pane asks for the same window every frame: the last answer is kept, under
                 // everything it was made from (one answer, about 20 kB).
                 let key = self.window_key(*tower, to);

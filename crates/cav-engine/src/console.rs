@@ -897,9 +897,18 @@ pub fn render(reply: &Reply) -> String {
                     "# mean cycle {} s · Nyquist {:.6} Hz · {} shots planned · {fewest} to {most} taken a tower",
                     cadence.mean_cycle, cadence.nyquist, cadence.shots
                 ),
+                // Each is said only where it is true: no floor outside the closed form's regime,
+                // no factor for a tower that takes nothing (the notes below say why).
                 format!(
-                    "# floor under a tone {:.3e} of its power · smallest detectable tone × {:.4} for the shots not taken",
-                    cadence.floor, cadence.noise_factor
+                    "# {} · {}",
+                    cadence.floor.map_or_else(
+                        || "floor under a tone: not given here".to_owned(),
+                        |floor| format!("floor under a tone {floor:.3e} of its power")
+                    ),
+                    cadence.noise_factor.map_or_else(
+                        || "a tower takes no shot: no tone can be detected there".to_owned(),
+                        |factor| format!("smallest detectable tone × {factor:.4} for the shots not taken")
+                    )
                 ),
                 "# line [Hz]  height |W| (1 = as tall as the tone)  what".to_owned(),
             ];
