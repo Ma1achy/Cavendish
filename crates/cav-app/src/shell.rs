@@ -67,6 +67,9 @@ pub struct Layout {
     /// The first shot of each timeline lane that was drawn: the tower (from 0) and its bar,
     /// from the tower's launch to its readout.
     pub lanes: Vec<(usize, Rect)>,
+    /// The numbers on the timeline's ruler, each with the rectangle it took, and the rectangle
+    /// the timeline is drawn inside.
+    pub ruler: (Vec<(String, Rect)>, Rect),
 }
 
 impl Default for Layout {
@@ -80,6 +83,7 @@ impl Default for Layout {
             plots: Vec::new(),
             editors: Vec::new(),
             lanes: Vec::new(),
+            ruler: (Vec::new(), Rect::NOTHING),
         }
     }
 }
@@ -170,8 +174,11 @@ impl Shell {
     /// A shell on a fresh engine: the default scene, one pane, the console closed.
     #[must_use]
     pub fn new() -> Self {
+        let mut engine = Engine::new();
+        // The console's `figure` line is drawn by cav-plot: the engine does not draw.
+        cav_plot::figure::install(&mut engine);
         Self {
-            engine: Engine::new(),
+            engine,
             console_open: false,
             console_filter: ConsoleFilter::All,
             console_line: String::new(),

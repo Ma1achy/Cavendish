@@ -994,3 +994,97 @@ fn the_flight_diagram_and_the_lanes_are_bounded() {
     let drawn = whole.shell.layout().plots[0].clone();
     assert!(drawn.note.is_none() && whole.shell.layout().lanes.len() == 5);
 }
+
+#[test]
+fn the_last_tick_label_fits() {
+    // S1's second review: a timeline of 2000 s ended in a mark labelled "200", the last digit
+    // cut off by the panel's edge.
+    for (scene, last) in [("comb", "2000"), ("pass", "12"), ("oscillator-zoo", "2000")] {
+        let mut rig = Rig::new([1440, 900]);
+        rig.shell.run(&format!("load {scene}")).unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        let (ruler, within) = rig.shell.layout().ruler.clone();
+        assert!(ruler.len() >= 3, "{scene}: {ruler:?}");
+        assert_eq!(ruler.last().unwrap().0, last, "{scene}: the last mark is the end of the run");
+        // Every number is whole inside the rectangle the timeline is cut to …
+        for (text, took) in &ruler {
+            assert!(within.contains_rect(*took), "{scene}: `{text}` at {took:?} leaves {within:?}");
+            assert!(took.width() > 4.0 * text.len() as f32, "{scene}: `{text}` is {} wide", took.width());
+        }
+        // … and no two of them touch.
+        for pair in ruler.windows(2) {
+            assert!(
+                pair[0].1.right() < pair[1].1.left(),
+                "{scene}: `{}` runs into `{}`",
+                pair[0].0,
+                pair[1].0
+            );
+        }
+    }
+    // Control: the number is as wide as its digits, so a label left where S1 put it (starting
+    // two points right of the last mark) would not fit: the mark is 18 points from the edge.
+    let mut rig = Rig::new([1440, 900]);
+    rig.shell.run("load comb").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let (ruler, within) = rig.shell.layout().ruler.clone();
+    let (_, took) = ruler.last().unwrap();
+    let mark = took.right() + 2.0;
+    assert!((within.right() - mark - 18.0).abs() < 0.5, "the last mark is at {mark}");
+    assert!(mark + 2.0 + took.width() > within.right(), "to the right of its mark it would be cut off");
+}
+
+#[test]
+fn home_does_not_cover_a_title() {
+    use cav_engine::PaneContent;
+    let home = |rig: &Rig| rig.shell.layout().button("view home");
+    let title = |rig: &Rig, pane: usize| {
+        let layout = rig.shell.layout();
+        layout.plots.iter().find(|drawn| drawn.pane == pane).map(|drawn| drawn.labels[0].clone())
+    };
+    // One pane showing a plot: there is no camera to send home, and no Home over the title.
+    let mut rig = Rig::new([1440, 900]);
+    rig.shell.run("load oscillator-zoo").unwrap();
+    let before = home(&rig).expect("with the scene shown, Home is on the figure");
+    rig.shell.run("show periodogram").unwrap();
+    assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
+    rig.frames(vec![vec![], vec![]]);
+    assert_eq!(home(&rig), None);
+    let (text, took) = title(&rig, 0).unwrap();
+    assert!(text.starts_with("Periodogram ·"), "{text}");
+    // Control: where Home stood, it would have been on the title's line.
+    assert!(before.y_range().intersects(took.y_range()), "{before:?} against {took:?}");
+    // Two panes, the plot on the right (under the figure's corner): Home moves to the corner
+    // of the pane that has a camera, and touches no plot's text.
+    rig.shell.run("show scene").unwrap();
+    rig.shell.run("panes 2").unwrap();
+    rig.shell.run("show signal @2").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let layout = rig.shell.layout().clone();
+    let button = home(&rig).expect("a pane shows the scene");
+    assert!(
+        layout.panes[0].contains_rect(button),
+        "{button:?} is not in the scene's pane {:?}",
+        layout.panes[0]
+    );
+    for drawn in &layout.plots {
+        assert_eq!(drawn.content, PaneContent::Signal);
+        for (text, took) in &drawn.labels {
+            assert!(!took.intersects(button), "Home is over `{text}`");
+        }
+    }
+    // It still resets the camera of the pane it stands in.
+    rig.shell.run("orbit 10 80").unwrap();
+    rig.frames(vec![vec![]]);
+    rig.click_button("view home");
+    assert_eq!(rig.shell.engine.view(0).named(), Some(cav_sim::NamedView::Iso));
+    // Control: with the scene in every pane Home is where it has always been, in the figure's
+    // top right corner.
+    rig.shell.run("show scene @2").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let figure = rig.shell.layout().figure;
+    let button = home(&rig).unwrap();
+    assert!(
+        (figure.right() - button.right() - 8.0).abs() < 0.5
+            && (button.top() - figure.top() - 8.0).abs() < 0.5
+    );
+}

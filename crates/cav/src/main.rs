@@ -30,11 +30,17 @@ cav <command>
   run <scene> --out <dir> [--preset aion10|aice|file.ron] [--exec \"<commands>\"] [--patience <seconds>]
                                  compute the scene's signal and write its bundle: .npy arrays, each tower's
                                  readout times, the numerics and the error estimate (see the manifest)
+  figure <scene> <signal|periodogram|cadence|flight|view> --out <file.svg|.pdf|.png>
+         [--preset paper-column|paper-full|slide|poster|screen] [--tower <n>]
+         [--channel gradiometer|lower|upper] [--span <from>,<to>] [--size <W>x<H>] [--dpi <n>]
+         [--exec \"<commands>\"] [--patience <seconds>]
+                                 write a figure in a preset's style and size (size in mm; dpi for a PNG),
+                                 with its data (.csv or .npy) and a .json of axes, units and provenance
   replay <journal.json> [--out <dir>]
                                  run a saved session again (`journal save <file>` writes one); what it
                                  exported is written into --out under each file's own name, or not at all
   mcp                            serve the engine to an agent: an MCP server on stdin and stdout
-  licences                       the licences of what is built into the binaries (the monospace font)
+  licences                       the licences of what is built into the binaries (the two fonts)
   help                           this text
 
 <scene> is a library name (see `cav scenes`) or the path of a .ron file.
@@ -92,6 +98,7 @@ fn run(raw: &[String]) -> Result<(), String> {
         "set" => set(rest),
         "replay" => replay(rest),
         "run" => run_scene(rest),
+        "figure" => figure(rest),
         "exec" => {
             let args = Args::parse(rest, &[])?;
             let [script]: [String; 1] = args.finish(1)?.try_into().map_err(|_| "exec takes one argument")?;
@@ -118,7 +125,10 @@ fn run(raw: &[String]) -> Result<(), String> {
         "licences" | "licenses" => {
             Args::parse(rest, &[])?.finish(0)?;
             println!(
-                "{} is built into cav and cav-app, unmodified, under the Ubuntu Font Licence 1.0:\n",
+                "{} (from the file in this repository) and Ubuntu Light (the copy egui carries) are built into \
+                 cav and cav-app, unmodified, under the Ubuntu Font Licence 1.0. A figure written as SVG or \
+                 PDF holds its text as outlines of their glyphs: a document created using the fonts, which \
+                 the licence's clause 4 leaves under no obligation.\n",
                 cav_plot::fonts::MONO_FONT_NAME
             );
             println!("{}", cav_plot::fonts::MONO_FONT_LICENCE);
@@ -135,14 +145,7 @@ fn run_scene(rest: &[String]) -> Result<(), String> {
     let out = args.option("out").ok_or("run needs --out <directory> for the bundle")?;
     let preset = args.option("preset");
     let exec = args.option("exec");
-    let patience = match args.option("patience") {
-        None => 600.0,
-        Some(text) => text
-            .parse::<f64>()
-            .ok()
-            .filter(|seconds| seconds.is_finite() && *seconds >= 0.0 && *seconds <= 86_400.0)
-            .ok_or_else(|| format!("`{text}` is not a patience: seconds, from 0 to 86400"))?,
-    };
+    let patience = patience_of(args.option("patience"))?;
     let [scene]: [String; 1] = args.finish(1)?.try_into().map_err(|_| "run takes one scene")?;
     let started = std::time::Instant::now();
     let mut session = Session::new();
@@ -166,6 +169,97 @@ fn run_scene(rest: &[String]) -> Result<(), String> {
         signal.times.len(),
         cav_engine::estimate_text(signal.estimate, signal.settled),
         started.elapsed().as_secs_f64()
+    );
+    Ok(())
+}
+
+/// A patience as `--patience` gives it: seconds, from 0 to a day; ten minutes if not given.
+fn patience_of(given: Option<String>) -> Result<f64, String> {
+    match given {
+        None => Ok(600.0),
+        Some(text) => text
+            .parse::<f64>()
+            .ok()
+            .filter(|seconds| seconds.is_finite() && *seconds >= 0.0 && *seconds <= 86_400.0)
+            .ok_or_else(|| format!("`{text}` is not a patience: seconds, from 0 to 86400")),
+    }
+}
+
+/// `cav figure`: load, any edits asked for, and one export of a figure: the command the
+/// console's `figure` line issues.
+fn figure(rest: &[String]) -> Result<(), String> {
+    use cav_engine::{ChannelName, Figure, FigureFormat, FigureKind};
+    let options = ["out", "preset", "tower", "channel", "span", "size", "dpi", "exec", "patience"];
+    let mut args = Args::parse(rest, &options)?;
+    let out = args.option("out").ok_or("figure needs --out <file.svg|.pdf|.png>")?;
+    let format = FigureFormat::of_file(&out)
+        .ok_or_else(|| format!("`{out}` does not end in .svg, .pdf or .png, so it names no format"))?;
+    let preset = args.option("preset");
+    let tower = args
+        .option("tower")
+        .map(|text| text.parse::<usize>().map_err(|_| format!("`{text}` is not a tower number")))
+        .transpose()?;
+    let channel = args
+        .option("channel")
+        .map(|text| {
+            ChannelName::parse(&text)
+                .ok_or_else(|| format!("`{text}` is not a channel: gradiometer, lower or upper"))
+        })
+        .transpose()?;
+    let pair = |text: &str, between: &[char], what: &str| -> Result<[f64; 2], String> {
+        text.split_once(between)
+            .and_then(|(a, b)| Some([a.trim().parse::<f64>().ok()?, b.trim().parse::<f64>().ok()?]))
+            .ok_or_else(|| format!("`{text}` is not {what}"))
+    };
+    let span =
+        args.option("span").map(|text| pair(&text, &[','], "a span; write it as 0,200")).transpose()?;
+    let size_mm = args
+        .option("size")
+        .map(|text| pair(&text, &['x', '×'], "a size; write it as 85x60 (millimetres)"))
+        .transpose()?;
+    let dpi = args
+        .option("dpi")
+        .map(|text| text.parse::<f64>().map_err(|_| format!("`{text}` is not a resolution: pixels per inch")))
+        .transpose()?;
+    let exec = args.option("exec");
+    let patience = patience_of(args.option("patience"))?;
+    let [scene, what]: [String; 2] =
+        args.finish(2)?.try_into().map_err(|_| "figure takes a scene and what to draw")?;
+    let what = FigureKind::parse(&what).ok_or_else(|| {
+        format!("`{what}` is not something a figure shows: signal, periodogram, cadence, flight or view")
+    })?;
+    let started = std::time::Instant::now();
+    let mut session = Session::new();
+    session.engine.set_patience(std::time::Duration::from_secs_f64(patience));
+    session.load(&scene)?;
+    if let Some(script) = exec {
+        session.engine.run_script(&script)?;
+    }
+    let mut figure = Figure::new(what, format);
+    figure.preset = preset.unwrap_or(figure.preset);
+    // A periodogram and a window are one tower's: the first unless another is named.
+    figure.tower = tower.or(matches!(what, FigureKind::Periodogram | FigureKind::Cadence).then_some(1));
+    figure.channel = channel.unwrap_or_default();
+    (figure.span, figure.size_mm, figure.dpi) = (span, size_mm, dpi);
+    figure.pane = if what == FigureKind::View { session.engine.active_pane() } else { 0 };
+    let preset = figure.preset.clone();
+    session.engine.apply(cav_engine::Command::Export {
+        what: cav_engine::ExportKind::Figure(Box::new(figure)),
+        to: out.clone(),
+    })?;
+    let path = std::path::Path::new(&out);
+    let beside: Vec<String> = ["csv", "npy", "json"]
+        .iter()
+        .map(|extension| path.with_extension(extension))
+        .filter(|file| file.exists())
+        .map(|file| file.display().to_string())
+        .collect();
+    println!(
+        "{out}: {} of scene `{}`, preset {preset}, {:.2} s\nbeside it: {}",
+        what.name(),
+        session.engine.spec().name,
+        started.elapsed().as_secs_f64(),
+        beside.join(", ")
     );
     Ok(())
 }

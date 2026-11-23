@@ -79,6 +79,28 @@ pub struct RenderArgs {
     pub pane: Option<usize>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct FigureArgs {
+    /// What the figure shows: `signal` (every tower's, or one's), `periodogram`, `cadence` (the spectral window), `flight` (the atoms' flights) or `view` (a pane's view of the scene).
+    pub what: String,
+    /// The file to write: its extension is the format, `.svg`, `.pdf` or `.png`. The data (`.csv`, or `.npy` when long) and a `.json` of axes, units and provenance are written beside it under the same name.
+    pub file: String,
+    /// The look and size: `paper-column` (85 mm wide, the default), `paper-full` (178 mm), `slide` (254 × 143 mm), `poster` (400 mm) or `screen` (the application's dark theme).
+    pub preset: Option<String>,
+    /// The tower, from 1: whose periodogram or window (default 1); for a signal, the one tower drawn (default: all).
+    pub tower: Option<usize>,
+    /// The channel of a signal or a periodogram: `gradiometer` (default), `lower` or `upper`.
+    pub channel: Option<String>,
+    /// The stretch of the horizontal axis, `[from, to]`: seconds for a signal or flights, hertz for a periodogram or a window. Default: all of it.
+    pub span: Option<[f64; 2]>,
+    /// Width and height in millimetres, in place of the preset's.
+    pub size_mm: Option<[f64; 2]>,
+    /// For a PNG: pixels per inch, in place of the preset's. Each side of the picture is at most 8192 pixels.
+    pub dpi: Option<f64>,
+    /// For a view: which pane's camera, from 1 (default: the active pane).
+    pub pane: Option<usize>,
+}
+
 impl Cav {
     fn new() -> Self {
         Self { session: Arc::new(Mutex::new(Session::new())) }
@@ -205,6 +227,15 @@ impl Cav {
         })
     }
 
+    /// Write a figure for a paper or a talk: a plot or a view as SVG, PDF or PNG at a stated
+    /// size, with the data behind it and a JSON of its axes, units and provenance beside it.
+    /// Returns the files written, and the picture itself when it is a PNG. A figure of a signal
+    /// or a periodogram waits for the signal.
+    #[tool(name = "figure")]
+    fn figure(&self, Parameters(args): Parameters<FigureArgs>) -> Result<CallToolResult, String> {
+        answered("figure", || self.draw_figure(args))
+    }
+
     /// Draw the scene as a pane sees it and return the picture as a PNG.
     #[tool(name = "render_view")]
     fn render_view(&self, Parameters(args): Parameters<RenderArgs>) -> Result<CallToolResult, String> {
@@ -213,6 +244,61 @@ impl Cav {
 }
 
 impl Cav {
+    fn draw_figure(&self, args: FigureArgs) -> Result<CallToolResult, String> {
+        use cav_engine::{ChannelName, Figure, FigureFormat, FigureKind};
+        let what = FigureKind::parse(&args.what).ok_or_else(|| {
+            format!(
+                "`{}` is not something a figure shows: signal, periodogram, cadence, flight or view",
+                args.what
+            )
+        })?;
+        let format = FigureFormat::of_file(&args.file).ok_or_else(|| {
+            format!("`{}` does not end in .svg, .pdf or .png, so it names no format", args.file)
+        })?;
+        let channel = match &args.channel {
+            None => ChannelName::default(),
+            Some(word) => ChannelName::parse(word)
+                .ok_or_else(|| format!("`{word}` is not a channel: gradiometer, lower or upper"))?,
+        };
+        let mut session = self.session();
+        let pane = match args.pane {
+            None => session.engine.active_pane(),
+            Some(0) => return Err("panes are counted from 1".into()),
+            Some(n) => n - 1,
+        };
+        let mut figure = Figure::new(what, format);
+        figure.preset = args.preset.unwrap_or(figure.preset);
+        figure.tower =
+            args.tower.or(matches!(what, FigureKind::Periodogram | FigureKind::Cadence).then_some(1));
+        figure.channel = channel;
+        (figure.span, figure.size_mm, figure.dpi) = (args.span, args.size_mm, args.dpi);
+        figure.pane = if what == FigureKind::View { pane } else { 0 };
+        let command = cav_engine::Command::Export {
+            what: cav_engine::ExportKind::Figure(Box::new(figure)),
+            to: args.file.clone(),
+        };
+        let described = cav_engine::describe(&command, session.engine.active_pane());
+        session.engine.apply(command)?;
+        let path = std::path::Path::new(&args.file);
+        let mut files = vec![args.file.clone()];
+        files.extend(
+            ["csv", "npy", "json"]
+                .iter()
+                .map(|extension| path.with_extension(extension))
+                .filter(|file| file.exists())
+                .map(|file| file.display().to_string()),
+        );
+        let mut blocks = vec![ContentBlock::text(format!("{described}\nwrote: {}", files.join(", ")))];
+        if format == FigureFormat::Png {
+            let png = std::fs::read(path).map_err(|e| format!("{}: {e}", args.file))?;
+            blocks.push(ContentBlock::image(
+                base64::engine::general_purpose::STANDARD.encode(png),
+                "image/png",
+            ));
+        }
+        Ok(CallToolResult::success(blocks))
+    }
+
     fn render(&self, args: &RenderArgs) -> Result<CallToolResult, String> {
         let size = [args.width.unwrap_or(960), args.height.unwrap_or(600)];
         if size.iter().any(|side| !(1..=MAX_SIDE).contains(side)) {
@@ -249,7 +335,8 @@ impl Cav {
                     and scene_ls (its shape is scene_schema), edit any value with scene_set, and \
                     do everything else with command (try `help`): \
                     `reading`, `signal` and `periodogram` give what the towers read, `show signal` puts a plot \
-                    in a pane. Look at a pane with render_view, and read what happened with log."
+                    in a pane. Look at a pane with render_view, write a figure with its data and provenance \
+                    with figure, and read what happened with log."
 )]
 impl ServerHandler for Cav {}
 
@@ -305,7 +392,7 @@ mod tests {
     fn every_tool_runs_where_a_panic_is_an_answer() {
         let source = include_str!("mcp.rs");
         let production = source.split("#[cfg(test)]").next().unwrap();
-        assert_eq!(production.matches("#[tool(name = \"").count(), 8, "the scan sees the eight tools");
+        assert_eq!(production.matches("#[tool(name = \"").count(), 9, "the scan sees the nine tools");
         assert_eq!(unguarded(production), Vec::<String>::new());
         // Control: a tool whose body calls the engine bare is found.
         let bare = "    #[tool(name = \"log\")]\n    fn log(&self) -> Result<String, String> {\n        \

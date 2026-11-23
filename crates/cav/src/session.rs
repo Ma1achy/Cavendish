@@ -27,6 +27,8 @@ impl Session {
         // A client that prints numbers waits for them: a line that asks for a signal gets the
         // current scene's, or, after a minute, the last whole one marked stale.
         engine.set_patience(std::time::Duration::from_secs(60));
+        // The engine does not draw: figures are cav-plot's.
+        cav_plot::figure::install(&mut engine);
         Self { engine, gpu: None, plots: None }
     }
 

@@ -107,6 +107,10 @@ pub struct TimelineResponse {
     pub offset_ended: bool,
     /// Where the first shot of each lane that was drawn stands: the tower (from 0) and its bar.
     pub bars: Vec<(usize, Rect)>,
+    /// The ruler's numbers, with the rectangle each took.
+    pub ruler: Vec<(String, Rect)>,
+    /// The rectangle everything is drawn inside: what is outside it is cut off.
+    pub rect: Option<Rect>,
 }
 
 /// The height the lanes need for `towers` towers, points.
@@ -145,8 +149,19 @@ pub fn lanes(
             [pos2(x, plot.top() + 9.0), pos2(x, plot.top() + RULER)],
             Stroke::new(1.0, theme::WIDGET_EDGE),
         );
-        painter.text(pos2(x + 2.0, plot.top()), Align2::LEFT_TOP, format!("{at}"), mono.clone(), theme::WEAK);
+        // A number stands to the right of its mark; one that would run off the end of the
+        // timeline (the last, at the end of the run) stands to the left of it instead.
+        let text = format!("{at}");
+        let wide = painter.layout_no_wrap(text.clone(), mono.clone(), theme::WEAK).size().x;
+        let (at, anchor) = if x + 2.0 + wide > rect.right() {
+            (pos2(x - 2.0, plot.top()), Align2::RIGHT_TOP)
+        } else {
+            (pos2(x + 2.0, plot.top()), Align2::LEFT_TOP)
+        };
+        let took = painter.text(at, anchor, &text, mono.clone(), theme::WEAK);
+        response.ruler.push((text, took));
     }
+    response.rect = Some(rect);
     painter.text(pos2(rect.left() + 4.0, plot.top()), Align2::LEFT_TOP, "seconds", mono.clone(), theme::WEAK);
 
     // Only the lanes in view are drawn: an array of a thousand towers costs what eight do.
