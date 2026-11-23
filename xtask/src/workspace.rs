@@ -188,7 +188,7 @@ pub const UNTIL_CAV_PLOT_LANDS: Allowances =
 /// TEMPORARY: the library crates that do not yet carry `#![warn(missing_docs)]`. `cav-engine` and
 /// `cav-app` are being restructured by TASK-S2-07, which also adds `cav-plot`; empty this list
 /// when they are documented.
-pub const NOT_YET_DOCUMENTED: &[&str] = &["cav-engine", "cav-app", "cav-plot"];
+pub const NOT_YET_DOCUMENTED: &[&str] = &["cav-app", "cav-plot"];
 
 /// Every way the manifests break the plan, in words; empty when they keep it.
 ///
