@@ -1221,3 +1221,39 @@ fn a_bundle_waits_for_a_refined_signal() {
     set(&mut engine, "duration", json!(1.0e6)).unwrap();
     assert!(engine.run_line(&line).unwrap_err().contains("no signal to bundle"));
 }
+
+#[test]
+fn a_replay_waits_for_the_signal_an_export_needs() {
+    // A session that wrote a bundle of a long series: the journal has the export straight after
+    // the edit, as `cav exec` records it. Replaying it must wait for the signal as the session
+    // did (found by the S2 demo: `cav replay` refused its own journal after a tenth of a second).
+    let scratch = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("replay-waits");
+    let _ = std::fs::remove_dir_all(&scratch);
+    std::fs::create_dir_all(&scratch).unwrap();
+    let mut session = Engine::new();
+    session.set_exports(cav_engine::Exports::Into(scratch.join("first")));
+    std::fs::create_dir_all(scratch.join("first")).unwrap();
+    session.set_patience(std::time::Duration::from_secs(600));
+    for line in ["load comb", "set duration 4000", "export bundle out"] {
+        session.run_line(line).unwrap();
+    }
+    let journal = session.journal().to_vec();
+
+    // Control: with no patience the replay's export finds the signal still being computed (ten
+    // thousand reads cannot have finished in the instant since the edit, on any machine: a busy
+    // one is slower still), and writes nothing.
+    let refused = Engine::replay_into_within(&journal, &scratch.join("none"), std::time::Duration::ZERO);
+    let why = refused.err().expect("an export with no signal is refused");
+    assert!(why.contains("command 2") && why.contains("still being computed"), "{why}");
+    assert!(!scratch.join("none").join("out").join("signal.npy").exists());
+
+    // The replay proper waits, and writes the same bytes as the session.
+    std::fs::create_dir_all(scratch.join("again")).unwrap();
+    Engine::replay_into(&journal, &scratch.join("again")).unwrap();
+    for file in ["signal.npy", "detector_time.npy", "manifest.json"] {
+        let first = std::fs::read(scratch.join("first").join("out").join(file)).unwrap();
+        let again = std::fs::read(scratch.join("again").join("out").join(file)).unwrap();
+        assert!(!first.is_empty() && first == again, "{file} differs");
+    }
+    let _ = std::fs::remove_dir_all(&scratch);
+}

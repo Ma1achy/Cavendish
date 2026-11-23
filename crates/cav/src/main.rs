@@ -30,9 +30,10 @@ cav <command>
   run <scene> --out <dir> [--preset aion10|aice|file.ron] [--exec \"<commands>\"] [--patience <seconds>]
                                  compute the scene's signal and write its bundle: .npy arrays, each tower's
                                  readout times, the numerics and the error estimate (see the manifest)
-  replay <journal.json> [--out <dir>]
+  replay <journal.json> [--out <dir>] [--patience <seconds>]
                                  run a saved session again (`journal save <file>` writes one); what it
-                                 exported is written into --out under each file's own name, or not at all
+                                 exported is written into --out under each file's own name, or not at all;
+                                 an export waits for its signal, an hour unless --patience says otherwise
   mcp                            serve the engine to an agent: an MCP server on stdin and stdout
   licences                       the licences of what is built into the binaries (the monospace font)
   help                           this text
@@ -173,14 +174,23 @@ fn run_scene(rest: &[String]) -> Result<(), String> {
 /// `cav replay`: a journal run again on a fresh engine. Exports go into `--out` by file name; a
 /// journal is never allowed to write where it says.
 fn replay(rest: &[String]) -> Result<(), String> {
-    let mut args = Args::parse(rest, &["out"])?;
+    let mut args = Args::parse(rest, &["out", "patience"])?;
     let out = args.option("out");
+    let patience = match args.option("patience") {
+        None => cav_engine::REPLAY_PATIENCE,
+        Some(text) => text
+            .parse::<f64>()
+            .ok()
+            .filter(|seconds| (0.0..=86400.0).contains(seconds))
+            .map(std::time::Duration::from_secs_f64)
+            .ok_or_else(|| format!("`{text}` is not a patience: seconds, from 0 to 86400"))?,
+    };
     let [file]: [String; 1] = args.finish(1)?.try_into().map_err(|_| "replay takes one journal file")?;
     let journal = cav_engine::journal::read(&file)?;
     let mut engine = match &out {
         Some(directory) => {
             std::fs::create_dir_all(directory).map_err(|e| format!("{directory}: {e}"))?;
-            cav_engine::Engine::replay_into(&journal, std::path::Path::new(directory))?
+            cav_engine::Engine::replay_into_within(&journal, std::path::Path::new(directory), patience)?
         }
         None => cav_engine::Engine::replay(&journal)?,
     };
