@@ -335,7 +335,7 @@ its oracle checks, a performance note, screenshots in `docs/slices/`. Main alway
 | S0 | **The shell** | Open the app: the room, five towers, the panels, the console, the timeline, the view controls (projections, named views, panes, styles). `cav doctor`, `cav render` of an empty scene; `cav mcp` answering `scene_schema` | builds in under a minute cold on the build PC; `quick` under 10 s |
 | S1 | **A point mass** | Drag a mass around; see each tower's phase update live; play a straight pass; plot the signal | phase vs v1 rigid source ≤1e-10 on the anchors (`oracle`) |
 | S2 | **Scenes as files, the API everywhere** | Load and save `.ron` scenes; edit any path from a panel, the console, the CLI or an agent over MCP; undo; per-tower timing lanes; headless `run` writes a bundle | a session replays from its log bit-identically; `.npy` round-trips |
-| S3 | **Voxel bodies** | Shapes library (primitives, Platonic solids, meshes); bodies drawn as trees; colour by any field with generated legends; debug overlays | tree expanded = raster voxeliser bit-exact; merged = unmerged ≤1e-12; mass and inertia vs analytic |
+| S3 | **Voxel bodies** | Shapes library (primitives, Platonic solids, meshes); bodies drawn as trees; colour by any field with generated legends; debug overlays; towers of different heights and sequences in one array, and a scene with no towers at all | tree expanded = raster voxeliser bit-exact; merged = unmerged ≤1e-12; mass and inertia vs analytic; an array of unequal towers = each tower simulated alone, bit for bit |
 | S4 | **Big scenes** | A 10¹⁰-cell scene (terrain, buildings, a road) at 60 fps with streaming and view LOD; paper style export to SVG | frame-time budget met on the build PC, measured |
 | S5 | **Gravity on the GPU, at scale** | Real-time phase for big scenes; the bounded walk and instrument LOD with the error badge; the error ledger in bundles | GPU = CPU f64 ≤1e-9 with float-float; walk error ≤ tol; no steps in time |
 | S6 | **Things that move** | Paths, populations (traffic, birds, drones, aircraft), articulated walkers on per-bone trees, the outdoor library scenes | mass conserved bit-exact through poses; signal-size guide holds within ×10 |
@@ -347,7 +347,7 @@ its oracle checks, a performance note, screenshots in `docs/slices/`. Main alway
 | S12 | **The site** | The Beecroft stairwell scene with its populations, seismic noise, the published ordering reproduced | published ordering; masked fraction within ×2 |
 | S13 | **Heat everywhere** | Anything can be hot: people, machines, radiators, sunlit walls. Heat conducts through solids, radiates between surfaces, is carried by air and by water, and warms structure so that it expands; every one of those shows in the towers' readings, with temperature and heat flux drawn in the viewer | energy conserved in a closed box; the analytic and published cases of `VALIDATION-AND-RESEARCH.md` §2.5; a uniformly heated sphere gives no signal |
 | S14 | **The wider world** | Put the site at a real latitude and longitude on a rotating Earth with the Moon and the Sun: tides, weather and clouds, ground water, ocean microseisms, earthquakes from anywhere, a pressure wave from the far side of the planet. Replay a real day from open data | tides against standard tidal prediction; the same local scene reads the same phase at the origin and on the globe; each far source against its closed form or published record |
-| S15 | **Instruments anywhere** | Towers of different heights in one array; a gradiometer on any axis, horizontal included; local g and its gradient from the Earth's gravity field at the site; the same instrument on the Moon or Mars, and in orbit; a full budget of instrument systematics | vertical case unchanged to the bit; a horizontal baseline against the closed-form gradient tensor; an orbiting gradiometer against the gravity model's tensor and published GOCE-class gradients |
+| S15 | **Instruments anywhere** | A gradiometer on any axis, horizontal included; local g and its gradient from the Earth's gravity field at the site; the same instrument on the Moon or Mars, and in orbit; a full budget of instrument systematics | vertical case unchanged to the bit; a horizontal baseline against the closed-form gradient tensor; an orbiting gradiometer against the gravity model's tensor and published GOCE-class gradients |
 | S16 | **The science case** | Inject a gravitational wave or a dark-matter signal and try to find it through a full simulated day; two sites on one planet, correlated; choose a site anywhere on Earth and get its noise budget; run beside the real instrument as its twin | injected signals recovered at the published sensitivity in a quiet world; two-site correlation rejects local noise by the predicted factor |
 
 Order is a default. Slices that do not depend on each other (S6 and S8, say) can run in parallel.
@@ -481,8 +481,10 @@ away is tides and waves, not attraction.
   a test moves a mass across the boundary and demands no step.
 
 **S15, instruments anywhere.**
-- **Per-tower instruments**: height, separation, sequence and launch per tower, not one for the array
-  (today `ArraySpec` has one `InstrumentSpec`; any height is allowed, but all towers share it).
+- **Per-tower instruments** came forward to S3 (owner, 23 Nov 2026): height, separation, sequence and
+  launch per tower as an override on the array's default, readers shared by instrument, readout
+  times per tower, so bundles are ragged (`docs/research/s15-instruments-anywhere.md` §3). What stays
+  here is mixing across axes and gravity environments.
 - **Any axis**: the baseline is a direction, not "up". A horizontal gradiometer reads a different
   component of the gradient tensor and its atoms fall across the beam; the flight, the arms and the
   propagation integral are generalised, with the vertical case unchanged to the bit.

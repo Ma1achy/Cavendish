@@ -174,6 +174,15 @@ Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
   tag>`; for S1 that is `s0-shell`.
 
 ## For George
+- **Which AICE is the preset?** (`docs/research/s15-instruments-anywhere.md` §1, owner item 1.) The plan's
+  "AICE 100 m: 70 m separation, T = 2.5 s, 5 s cycle, 21.27 m/s" mixes two documents. The note reads
+  70 m / 2.5 s in the Technical Proposal's 140 m shaft (arXiv:2608.18743), and Δz = 50 m, T = 1.4 s,
+  n = 5494, repetition 1.5 s in the "100 m" letter of intent and feasibility study; the 5 s cycle and
+  21.27 m/s are in neither. In the second, 2T = 2.8 s exceeds the 1.5 s repetition, which the engine
+  refuses today (`2T ≥ cycle`). Which preset is canonical, and may shots overlap (each has its own
+  cloud)? Until answered the preset keeps the plan's numbers, labelled as unconfirmed.
+- **AION-10's T.** The note could not find a hardware T: 0.73 s is Carlton & McCabe's assumption, and
+  Badurina et al. Table 1 uses 1.4 s. Is 0.73 s right for the preset?
 - **AICE's geometry, for the far-field estimates** (`docs/research/s14-wider-world.md`): the note assumes
   the 100 m instrument has interferometers 70 m apart and the same laser kick number as AION-10. Right?
 Answered 21 Nov 2026 (through the owner). The defaults below replace v1's conventions from S1 on.
@@ -222,6 +231,11 @@ Still open (asked in S0; defaults in use until answered):
   one at the centre and four on a cross with 4 m arms, standing on the floor (z = 0) of a
   10 × 10 × 3 m room, each 10 m tall so they rise through the ceiling. Is there a real or intended
   layout, and where is the tower base relative to the floor people walk on?
+
+## Owner's ruling (23 Nov 2026): mixed towers come forward
+Towers of different heights and sequences in one array move from S15 to S3 (TASK-S3-08), with a
+scene of zero towers allowed. The research is done (`docs/research/s15-instruments-anywhere.md` §3 and
+the second note beside it). S15 keeps mixing across axes and gravity environments.
 
 ## Owner's ruling (22 Nov 2026): theoretical and speculative sources
 Added to S16 (`REBUILD.md` §9.3, TASK-S16-06; three validation rows in §2.6): hypothetical sources,
