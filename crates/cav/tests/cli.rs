@@ -283,7 +283,7 @@ fn cli_prints_the_font_licence() {
     assert!(out.status.success(), "{}", stderr(&out));
     let text = stdout(&out);
     // The licence itself, whole, as it is in the repository beside the font.
-    let file = include_str!("../../cav-app/assets/fonts/UFL.txt").replace("\r\n", "\n");
+    let file = include_str!("../../cav-plot/assets/fonts/UFL.txt").replace("\r\n", "\n");
     assert!(text.contains("Ubuntu Mono") && text.contains("Ubuntu Font Licence 1.0"), "{text}");
     assert!(text.contains(file.trim()), "the licence text is not printed whole");
     assert!(file.len() > 3000, "the file is the licence, not a stub");

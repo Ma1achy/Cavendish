@@ -805,7 +805,8 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                 }
             }
         } else {
-            crate::plots::draw(shell, ui, pane, rect);
+            let drawn = crate::plots::paint(&shell.engine, &ui.painter_at(rect), pane, rect);
+            shell.layout.plots.extend(drawn);
         }
         if count > 1 {
             let (colour, width) =

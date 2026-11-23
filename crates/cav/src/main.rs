@@ -119,9 +119,9 @@ fn run(raw: &[String]) -> Result<(), String> {
             Args::parse(rest, &[])?.finish(0)?;
             println!(
                 "{} is built into cav and cav-app, unmodified, under the Ubuntu Font Licence 1.0:\n",
-                cav_app::theme::MONO_FONT_NAME
+                cav_plot::fonts::MONO_FONT_NAME
             );
-            println!("{}", cav_app::theme::MONO_FONT_LICENCE);
+            println!("{}", cav_plot::fonts::MONO_FONT_LICENCE);
             Ok(())
         }
         other => Err(format!("`{other}` is not a command\n\n{USAGE}")),

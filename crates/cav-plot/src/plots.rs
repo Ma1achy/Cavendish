@@ -8,14 +8,14 @@
 use cav_engine::{ChannelName, Engine, PaneContent, Query, Reply};
 use egui::{Align2, Color32, FontId, Pos2, Rect, Stroke, pos2, vec2};
 
-use crate::shell::Shell;
 use crate::theme;
 
 /// One axis of a plot: a range of values laid along a range of points.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Axis {
-    /// The value at the start of the axis and at its end.
+    /// The value at the start of the axis.
     pub lo: f64,
+    /// The value at its end.
     pub hi: f64,
     /// Whether the axis is logarithmic. Both ends are then positive.
     pub log: bool,
@@ -103,10 +103,15 @@ pub fn place(area: Rect, x: &Axis, y: &Axis, point: (f64, f64)) -> Pos2 {
 /// axes, the axes, and the marks.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Drawn {
+    /// The pane, from 0.
     pub pane: usize,
+    /// Which plot it is.
     pub content: PaneContent,
+    /// The area inside the axes, points.
     pub area: Rect,
+    /// The horizontal axis.
     pub x: Axis,
+    /// The vertical axis.
     pub y: Axis,
     /// How many data points were joined, over all the series.
     pub points: usize,
@@ -280,12 +285,6 @@ impl<'a> Sheet<'a> {
         let clip = self.painter.with_clip_rect(self.area.expand(1.0));
         clip.add(egui::Shape::line(points, Stroke::new(1.3, colour)));
     }
-}
-
-/// Draws what pane `pane` shows, if it is a plot, into `rect`, and records what was drawn.
-pub fn draw(shell: &mut Shell, ui: &egui::Ui, pane: usize, rect: Rect) {
-    let drawn = paint(&shell.engine, &ui.painter_at(rect), pane, rect);
-    shell.layout.plots.extend(drawn);
 }
 
 /// Paints the plot pane `pane` of `engine` shows into `rect`, and says what was drawn: nothing
