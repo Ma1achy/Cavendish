@@ -34,7 +34,7 @@ is the difference of its potential between the upper and the lower arm of each i
    order of `sources()` is the order contributions are summed in, which is part of what makes a
    signal the same bits every time: add to the end unless there is a reason.
 6. Read it in `contribution()`: for each tower and each shot the tower takes, `reader.read_to(…)`
-   at `shots.readout(tower, k)`; untaken shots are exactly zero. Ask `cancelled()` between shots.
+   at `shots.readout(tower, k)`; untaken shots are exactly zero. Ask the `cancelled` closure between shots.
    Report the estimate per tower, and a `Warning::about(tower, …)` for anything a person should
    know. If your source is the same for every shot (as the slab is), read it once per tower.
 7. Tell the engine what its contribution depends on: `key()` in

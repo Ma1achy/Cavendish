@@ -17,6 +17,5 @@ Whatever you add: every public item documented with its unit and frame; a test w
 arm; and if its size can be set by a scene, a view or a command, a bound and a row in the table
 of `docs/slices/S2.md` §3.1.
 
-How these were written: each was followed once, on a throwaway branch, by someone who had not
-written the code, adding a small made-up example and running `cargo xtask quick`; what the first
-attempt got wrong is what the "Things that go wrong" section of each records.
+Every function, test and case a recipe names is checked against the code by a test (`xtask`:
+`the_recipes_name_things_that_exist`), so a rename fails `quick` until the recipe follows it.

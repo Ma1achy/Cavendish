@@ -10,6 +10,8 @@
 //! ```
 
 mod demo;
+#[cfg(test)]
+mod recipes;
 mod tiers;
 mod validate;
 #[cfg(test)]
