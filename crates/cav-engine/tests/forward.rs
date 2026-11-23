@@ -1257,3 +1257,56 @@ fn a_replay_waits_for_the_signal_an_export_needs() {
     }
     let _ = std::fs::remove_dir_all(&scratch);
 }
+
+#[test]
+fn a_kept_window_is_the_window_of_the_scene_as_it_is() {
+    // The engine keeps the last spectral window between frames. After any edit that changes a
+    // tower's shots, the answer must be the edited scene's, not the one kept.
+    let mut engine = Engine::new();
+    engine.run_line("load cadence-lab").unwrap();
+    let ask = |engine: &Engine, tower: usize, to: Option<f64>| {
+        let Ok(Reply::Window(reply)) = engine.query(&Query::Window { tower, to }) else {
+            panic!("no window")
+        };
+        reply
+    };
+    let fresh = |engine: &Engine, tower: usize, to: f64| {
+        cav_sim::schedule::window(engine.spec(), tower - 1, to, cav_engine::engine::WINDOW_POINTS).unwrap()
+    };
+    let first = ask(&engine, 1, Some(0.5));
+    assert_eq!(first, ask(&engine, 1, Some(0.5)), "asked twice, the same answer");
+    let mut differing = 0;
+    for line in [
+        "set array.schedule.loss 0.3",
+        "set array.schedule.seed 7",
+        r#"set array.schedule.jitter {"model":"Grid","kind":"Symmetric","delta":0.1}"#,
+        "set array.schedule.jitter null",
+        r#"set array.schedule.gaps {"on":3,"period":7}"#,
+        "set array.schedule.alternate 3.5",
+        "set array.instrument.cycle 2.5",
+        "set duration 900",
+        "set array.towers[0].timing.offset 0.4",
+        "undo",
+        "redo",
+    ] {
+        let before = ask(&engine, 1, Some(0.5));
+        engine.run_line(line).unwrap();
+        let after = ask(&engine, 1, Some(0.5));
+        let (frequencies, window) = fresh(&engine, 1, 0.5);
+        assert!(after.frequencies == frequencies && after.window == window, "stale after `{line}`");
+        differing += usize::from(after != before);
+    }
+    // The edits did change the window (all but the offset, which moves every shot of the tower
+    // alike), so a kept answer served stale would have been seen.
+    assert!(differing >= 9, "only {differing} of the edits changed the window");
+    // Another tower and another span are other windows.
+    let other = ask(&engine, 2, Some(0.5));
+    let (frequencies, window) = fresh(&engine, 2, 0.5);
+    assert!(other.tower == 2 && other.frequencies == frequencies && other.window == window);
+    assert_ne!(ask(&engine, 2, Some(0.25)).frequencies, other.frequencies);
+    // What does not touch the shots keeps the answer: the same numbers again.
+    let before = ask(&engine, 2, Some(0.5));
+    engine.run_line("seek 3").unwrap();
+    engine.run_line("set bodies[0].mass 3").unwrap();
+    assert_eq!(before, ask(&engine, 2, Some(0.5)));
+}

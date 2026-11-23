@@ -125,6 +125,8 @@ pub struct Engine {
     exports: Exports,
     /// What draws figures: the client's.
     drawer: Drawer,
+    /// The last spectral window answered, with what it was made from.
+    window: std::sync::Mutex<Option<(String, WindowReply)>>,
     log: Log,
     /// `log.total()` just after the last command's entry: tells whether that entry is still the newest.
     log_mark: u64,
@@ -191,6 +193,7 @@ impl Engine {
             refused: false,
             exports: Exports::AsNamed,
             drawer: Drawer::default(),
+            window: std::sync::Mutex::new(None),
             log,
             log_mark: 0,
             generation: 0,
@@ -599,6 +602,22 @@ impl Engine {
         Ok(())
     }
 
+    /// Everything a tower's spectral window is made from, as text: the timeline's length, the
+    /// instrument, the schedule, the tower and its own timing, and where the window ends. Two
+    /// scenes with the same key have the same shots at that tower.
+    fn window_key(&self, tower: usize, to: f64) -> String {
+        let timing = self.spec.array.towers.get(tower.wrapping_sub(1)).map(|tower| &tower.timing);
+        serde_json::json!([
+            self.spec.duration,
+            self.spec.array.instrument,
+            self.spec.array.schedule,
+            tower,
+            timing,
+            to.to_bits(),
+        ])
+        .to_string()
+    }
+
     fn check_target(&self, target: Target) -> Result<(), String> {
         let towers = self.spec.array.towers.len();
         match target {
@@ -969,9 +988,20 @@ impl Engine {
                     return Err("towers are counted from 1".into());
                 }
                 let to = to.unwrap_or(2.5 / prediction.mean_cycle);
+                // A pane asks for the same window every frame: the last answer is kept, under
+                // everything it was made from (one answer, about 20 kB).
+                let key = self.window_key(*tower, to);
+                let mut kept = self.window.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                if let Some((made_from, reply)) = kept.as_ref()
+                    && *made_from == key
+                {
+                    return Ok(Reply::Window(reply.clone()));
+                }
                 let (frequencies, window) =
                     cav_sim::schedule::window(&self.spec, tower - 1, to, WINDOW_POINTS)?;
-                Ok(Reply::Window(WindowReply { tower: *tower, frequencies, window }))
+                let reply = WindowReply { tower: *tower, frequencies, window };
+                *kept = Some((key, reply.clone()));
+                Ok(Reply::Window(reply))
             }
             Query::Reading(time) => {
                 let time = time.unwrap_or(self.time);
