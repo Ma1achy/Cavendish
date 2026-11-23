@@ -28,7 +28,7 @@ TASK-S2-11's.
 in; 16.9 s straight after an edit of `cav-sim`); `gpu` 29 in 9.3 s; `oracle` 41, pyright strict
 and 8 Python tests; 82 of 82 validation cases (18 new, none dropped, four tolerances tightened
 from 5e-7 to 1e-8). The exit test: a session replayed four ways writes the same 23 files, 0
-differ; 1, 2, 3 and 6 reading threads, 0 bits differ. A 10,000-shot series: 0.6 s (S1: 2.5 s).
+differ; 1, 2, 3 and 6 reading threads, 0 bits differ. A 10,000-shot series: 0.4 s on six threads, 1.5 s on one (S1: 2.5 s).
 
 **Decided** (the full list is `docs/slices/S2.md` §7.9).
 1. **`cav-plot`** is a new crate: plots are display lists, and `cav` no longer links the window.
