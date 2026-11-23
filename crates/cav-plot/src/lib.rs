@@ -13,7 +13,10 @@
 
 #![warn(missing_docs)]
 
+pub mod drawing;
 pub mod fonts;
 pub mod headless;
+pub mod paint;
 pub mod plots;
+pub mod style;
 pub mod theme;

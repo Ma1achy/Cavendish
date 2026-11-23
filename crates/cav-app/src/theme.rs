@@ -3,7 +3,7 @@
 use egui::{Color32, CornerRadius, FontFamily, FontId, Stroke, TextStyle};
 
 pub use cav_plot::fonts::{MONO_FONT, MONO_FONT_LICENCE, MONO_FONT_NAME, definitions as fonts};
-pub use cav_plot::theme::{BACKGROUND, LINK, RULE, STRONG, TEXT, WEAK, tower};
+pub use cav_plot::theme::{BACKGROUND, LINK, PLAYHEAD, RULE, STRONG, TEXT, WEAK, tower};
 
 pub const PANEL: Color32 = Color32::from_rgb(0x1b, 0x1b, 0x1b);
 pub const FOOTER: Color32 = Color32::from_rgb(0x14, 0x14, 0x14);

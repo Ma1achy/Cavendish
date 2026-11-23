@@ -237,9 +237,9 @@ pub fn lanes(
     let x = x_of(time);
     painter.line_segment(
         [pos2(x, plot.top() + 2.0), pos2(x, plot.bottom() - 2.0)],
-        Stroke::new(1.5, theme::STRONG),
+        Stroke::new(1.5, theme::PLAYHEAD),
     );
-    painter.circle_filled(pos2(x, plot.top() + 3.0), 3.0, theme::STRONG);
+    painter.circle_filled(pos2(x, plot.top() + 3.0), 3.0, theme::PLAYHEAD);
     response
 }
 

@@ -1,14 +1,18 @@
-//! The plots a pane can show in place of the scene: every tower's signal against time, and the
-//! periodogram of a tower's signal with each oscillating body's comb drawn over it.
+//! The plots a pane can show in place of the scene, and a figure can hold: every tower's signal
+//! against time, the periodogram of a tower's signal with each oscillating body's comb drawn
+//! over it, the cadence's spectral window, and the atoms' flights on absolute time.
 //!
-//! Drawn with egui's painter: lines and text, no plotting crate. The mapping from data to the
-//! pane is [`Axis`], plain arithmetic that the tests hold to; what was drawn is recorded in the
-//! shell's layout ([`Drawn`]) so that a test can ask where a point went without reading pixels.
+//! Each is built once, as a [`Drawing`] in points, from the engine, a [`Subject`] (which plot,
+//! of what), a [`Style`] and a [`Measure`] of text. The mapping from data to the plot is
+//! [`Axis`], plain arithmetic that the tests hold to; what was drawn is recorded beside the
+//! drawing ([`Drawn`]) so that a test can ask where a point went without reading pixels.
 
 use cav_engine::{ChannelName, Engine, PaneContent, Query, Reply};
-use egui::{Align2, Color32, FontId, Pos2, Rect, Stroke, pos2, vec2};
+use egui::{Pos2, Rect, pos2, vec2};
+use serde_json::json;
 
-use crate::theme;
+use crate::drawing::{Anchor, Colour, Drawing, Face, Item, Measure};
+use crate::style::{SHOT_NOISE_FLOORS, Style, ULDM_AMPLITUDE, ULDM_FREQUENCY};
 
 /// One axis of a plot: a range of values laid along a range of points.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -100,7 +104,8 @@ pub fn place(area: Rect, x: &Axis, y: &Axis, point: (f64, f64)) -> Pos2 {
 }
 
 /// What a plot drew, for tests and for the layout: which pane, what kind, the area inside the
-/// axes, the axes, and the marks.
+/// axes, the axes, and the marks. Positions are points, in the coordinates the plot was painted
+/// in (the window's, in the application).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Drawn {
     /// The pane, from 0.
@@ -129,6 +134,88 @@ pub struct Drawn {
     /// For a flight diagram: each shot drawn, as the tower (from 0) and the x of its launch and
     /// of its readout.
     pub flights: Vec<(usize, f32, f32)>,
+}
+
+impl Drawn {
+    /// The same record for a plot painted with its top left corner at `origin`.
+    #[must_use]
+    pub fn moved(mut self, origin: Pos2) -> Self {
+        let by = origin.to_vec2();
+        self.area = self.area.translate(by);
+        self.playhead = self.playhead.map(|x| x + by.x);
+        self.stems.iter_mut().for_each(|stem| stem.2 += by.x);
+        self.labels.iter_mut().for_each(|(_, rect)| *rect = rect.translate(by));
+        self.flights.iter_mut().for_each(|flight| (flight.1, flight.2) = (flight.1 + by.x, flight.2 + by.x));
+        self
+    }
+}
+
+/// What a plot is of: the words and the marks a figure's provenance records beside its data.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Described {
+    /// The horizontal axis: its name and its unit.
+    pub x: (String, String),
+    /// The vertical axis: its name and its unit (the data's; the marks may be written in a
+    /// multiple of it, which `marks` then says).
+    pub y: (String, String),
+    /// Each series drawn: its name and its colour.
+    pub series: Vec<(String, Colour)>,
+    /// What else is drawn that is not a series, as JSON: comb stems, predicted lines, reference
+    /// levels, the benchmark mark, each saying what it is.
+    pub marks: serde_json::Value,
+}
+
+/// A plot, built: the picture, what it drew and what it is of.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Plot {
+    /// The picture, in points from its own top left corner.
+    pub drawing: Drawing,
+    /// Where things went, in the picture's own coordinates.
+    pub drawn: Drawn,
+    /// The words for a figure's provenance.
+    pub described: Described,
+}
+
+/// Which plot to build, and of what.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Subject {
+    /// The pane it is for, from 0: recorded in [`Drawn`], nothing else.
+    pub pane: usize,
+    /// Which plot. `Scene` is not a plot.
+    pub content: PaneContent,
+    /// The tower, from 1: the one whose periodogram or window is drawn (the first if `None`);
+    /// for a signal, the only tower drawn (every tower if `None`).
+    pub tower: Option<usize>,
+    /// The channel of a signal or a periodogram.
+    pub channel: ChannelName,
+    /// The stretch of the horizontal axis shown: seconds, or hertz; all of it if `None`.
+    pub span: Option<[f64; 2]>,
+    /// The scene as read on the instrument being compared, in place of its own.
+    pub compared: bool,
+}
+
+impl Subject {
+    /// What pane `pane` of `engine` shows, as the application draws it: the selected tower's
+    /// periodogram, every tower's signal, the pane's own span.
+    ///
+    /// # Panics
+    /// When the engine has no such pane.
+    #[must_use]
+    pub fn of_pane(engine: &Engine, pane: usize, compared: bool) -> Self {
+        let content = engine.content(pane);
+        let selected = match engine.selection() {
+            Some(cav_engine::Target::Tower(n)) => Some(n),
+            _ => None,
+        };
+        Self {
+            pane,
+            content,
+            tower: if content == PaneContent::Signal { None } else { selected },
+            channel: ChannelName::Gradiometer,
+            span: engine.frame(pane).expect("the pane exists").span,
+            compared,
+        }
+    }
 }
 
 /// The most points a series is drawn with; a longer one is thinned to its extremes in each
@@ -178,23 +265,24 @@ pub fn zoomed([lo, hi]: [f64; 2], about: f64, scroll: f32, whole: f64) -> Option
     (lo > 0.0 || hi < whole).then_some([lo, hi])
 }
 
-/// The colours of the combs, in the order of the bodies: none of them a tower's colour, and none
-/// the grey of the spectrum itself.
-pub const COMB_COLOURS: [Color32; 4] = [
-    Color32::from_rgb(0x5a, 0xb4, 0xff),
-    Color32::from_rgb(0xd0, 0x8a, 0xe0),
-    Color32::from_rgb(0x7f, 0xe0, 0xb0),
-    Color32::from_rgb(0xf0, 0xa0, 0xa0),
-];
+/// The most stems that are labelled in one periodogram, shared among the bodies: with one body
+/// every harmonic says which it is; with many, each body's first few do and the legend names
+/// the rest by colour.
+pub const MAX_STEM_LABELS: u32 = 8;
 
-/// The colour of the spectrum's own line: the grey of the paper's periodograms.
-pub const SPECTRUM: Color32 = Color32::from_rgb(0x9a, 0xa5, 0xab);
+const fn p(point: Pos2) -> [f32; 2] {
+    [point.x, point.y]
+}
 
 /// The plot being drawn: where it is, and what it has written.
 struct Sheet<'a> {
-    painter: &'a egui::Painter,
+    style: &'a Style,
+    measure: &'a dyn Measure,
+    drawing: Drawing,
     rect: Rect,
     area: Rect,
+    /// The layout's scale: 1 in the application.
+    u: f32,
     labels: Vec<(String, Rect)>,
     /// How many of the labels are the title and the axes' own, which a stem's label may sit on
     /// (a mark's number is outside the axes; the title is above them).
@@ -202,60 +290,102 @@ struct Sheet<'a> {
 }
 
 impl<'a> Sheet<'a> {
-    /// A sheet with its title at the top and `legend` lines under it, above the axes.
-    fn new(painter: &'a egui::Painter, rect: Rect, title: &str, legend: usize) -> Self {
-        painter.rect_filled(rect, 0.0, theme::BACKGROUND);
-        let top = 38.0 + 13.0 * legend as f32;
-        let area = Rect::from_min_max(rect.min + vec2(86.0, top), rect.max - vec2(16.0, 34.0));
-        painter.rect_stroke(area, 0.0, Stroke::new(1.0, theme::RULE), egui::StrokeKind::Outside);
-        let mut sheet = Self { painter, rect, area, labels: Vec::new(), fixed: 0 };
-        sheet.text(
-            rect.left_top() + vec2(8.0, 5.0),
-            Align2::LEFT_TOP,
-            title,
-            FontId::proportional(12.0),
-            theme::STRONG,
-        );
+    /// A sheet of `size` points with a title at the top (the first of `titles` that fits) and
+    /// `legend` lines under it, above the axes. `left` is what is written to the left of the
+    /// axes: where the style does not fix the margin there, it is as wide as the widest needs.
+    fn new(
+        style: &'a Style,
+        measure: &'a dyn Measure,
+        size: [f32; 2],
+        titles: &[String],
+        legend: usize,
+        left: &[String],
+    ) -> Self {
+        let u = style.unit();
+        let rect = Rect::from_min_size(Pos2::ZERO, vec2(size[0], size[1]));
+        let fits = |text: &String| measure.size(text, Face::Sans, style.title_size)[0] <= size[0] - 16.0 * u;
+        let title = titles.iter().find(|text| fits(text)).or(titles.last()).cloned().unwrap_or_default();
+        let widest =
+            left.iter().map(|text| measure.size(text, Face::Mono, style.tick_size)[0]).fold(0.0f32, f32::max);
+        let margin = style.left.unwrap_or(widest + 11.0 * u);
+        let top = (38.0 + 13.0 * legend as f32) * u;
+        let area = Rect::from_min_max(pos2(margin, top), rect.max - vec2(16.0 * u, 34.0 * u));
+        let mut drawing = Drawing::new(size, title.clone());
+        drawing.items.push(Item::Rect {
+            min: p(rect.min),
+            max: p(rect.max),
+            fill: Some(style.background),
+            stroke: None,
+        });
+        drawing.items.push(Item::Rect {
+            min: p(area.min),
+            max: p(area.max),
+            fill: None,
+            stroke: Some((style.rule_width, style.rule)),
+        });
+        let mut sheet = Self { style, measure, drawing, rect, area, u, labels: Vec::new(), fixed: 0 };
+        sheet.text(pos2(8.0 * u, 5.0 * u), Anchor::LEFT_TOP, title, Face::Sans, style.title_size, style.ink);
         sheet
     }
 
-    /// Writes text and remembers where it went.
-    fn text(&mut self, at: Pos2, anchor: Align2, text: impl Into<String>, font: FontId, colour: Color32) {
-        let text = text.into();
-        let took = self.painter.text(at, anchor, &text, font, colour);
-        self.labels.push((text, took));
+    /// The rectangle a text would take.
+    fn took(&self, at: Pos2, anchor: Anchor, text: &str, face: Face, size: f32) -> Rect {
+        let [w, h] = self.measure.size(text, face, size);
+        let [x, y] = anchor.corner(p(at), [w, h]);
+        Rect::from_min_size(pos2(x, y), vec2(w, h))
     }
 
-    fn small(&mut self, at: Pos2, anchor: Align2, text: impl Into<String>) {
-        self.text(at, anchor, text, FontId::monospace(10.5), theme::WEAK);
+    /// Writes text and remembers where it went.
+    fn text(
+        &mut self,
+        at: Pos2,
+        anchor: Anchor,
+        text: impl Into<String>,
+        face: Face,
+        size: f32,
+        colour: Colour,
+    ) -> Rect {
+        let text = text.into();
+        let took = self.took(at, anchor, &text, face, size);
+        self.drawing.items.push(Item::Text { at: p(at), anchor, text: text.clone(), face, size, colour });
+        self.labels.push((text, took));
+        took
+    }
+
+    fn small(&mut self, at: Pos2, anchor: Anchor, text: impl Into<String>) {
+        self.text(at, anchor, text, Face::Mono, self.style.tick_size, self.style.weak);
+    }
+
+    /// The unit of the vertical axis, above its numbers.
+    fn unit(&mut self, text: &str) {
+        let at = self.area.left_top() + vec2(-5.0, -19.0) * self.u;
+        self.small(at, Anchor::RIGHT_TOP, text);
     }
 
     /// The caption under the horizontal axis: the first of `forms` that fits the width of the
     /// axes, or the last if none does.
     fn caption(&mut self, forms: &[String]) {
-        let font = FontId::monospace(10.5);
-        let fits = |text: &String| {
-            self.painter.layout_no_wrap(text.clone(), font.clone(), theme::WEAK).size().x <= self.area.width()
-        };
+        let fits =
+            |text: &String| self.measure.size(text, Face::Mono, self.style.tick_size)[0] <= self.area.width();
         let text = forms.iter().find(|text| fits(text)).or(forms.last()).cloned().unwrap_or_default();
-        self.small(pos2(self.area.center().x, self.area.bottom() + 18.0), Align2::CENTER_TOP, text);
+        self.small(pos2(self.area.center().x, self.area.bottom() + 18.0 * self.u), Anchor::CENTRE_TOP, text);
     }
 
-    /// Writes a stem's label by its top, where it covers no label already written: to the right
-    /// of the stem (to the left near the right edge), then higher, a line at a time. A label
-    /// with nowhere to go is left out; its stem and its dot still stand. True when written.
-    fn stem_label(&mut self, top: Pos2, text: &str, colour: Color32) -> bool {
-        let font = FontId::proportional(10.0);
-        let size = self.painter.layout_no_wrap(text.to_owned(), font.clone(), colour).size();
-        let left = top.x + 3.0 + size.x > self.area.right();
+    /// Writes a mark's label by its top, where it covers no label already written: to the right
+    /// of the mark (to the left near the right edge), then higher, a line at a time. A label
+    /// with nowhere to go is left out; its mark still stands. True when written.
+    fn stem_label(&mut self, top: Pos2, text: &str, colour: Colour) -> bool {
+        let (u, font) = (self.u, self.style.label_size);
+        let [w, h] = self.measure.size(text, Face::Sans, font);
+        let left = top.x + 3.0 * u + w > self.area.right();
         for lift in 0..4 {
-            let bottom = (top.y - 3.0 - 11.0 * lift as f32).max(self.area.top() + size.y + 1.0);
-            let min = pos2(if left { top.x - 3.0 - size.x } else { top.x + 3.0 }, bottom - size.y);
-            let took = Rect::from_min_size(min, size);
+            let bottom = (top.y - 3.0 * u - 11.0 * u * lift as f32).max(self.area.top() + h + 1.0);
+            let min = pos2(if left { top.x - 3.0 * u - w } else { top.x + 3.0 * u }, bottom - h);
+            let took = Rect::from_min_size(min, vec2(w, h));
             // With a little air round it: labels that touch read as one.
-            let air = took.expand2(vec2(4.0, 1.0));
+            let air = took.expand2(vec2(4.0 * u, u));
             if self.labels[self.fixed..].iter().all(|(_, other)| !other.intersects(air)) {
-                self.text(min, Align2::LEFT_TOP, text, font, colour);
+                self.text(min, Anchor::LEFT_TOP, text, Face::Sans, font, colour);
                 return true;
             }
         }
@@ -263,52 +393,162 @@ impl<'a> Sheet<'a> {
     }
 
     fn nothing(&mut self, why: &str) {
-        self.text(self.rect.center(), Align2::CENTER_CENTER, why, FontId::proportional(12.0), theme::WEAK);
+        let at = self.rect.center();
+        self.text(at, Anchor::CENTRE, why, Face::Sans, self.style.title_size, self.style.weak);
+    }
+
+    /// A straight line of the rules' width.
+    fn rule(&mut self, from: Pos2, to: Pos2, colour: Colour, dash: &[f32]) {
+        self.drawing.items.push(Item::Line {
+            points: vec![p(from), p(to)],
+            width: self.style.rule_width,
+            colour,
+            dash: dash.to_vec(),
+        });
+    }
+
+    /// The marks of the horizontal axis: a faint line up the plot and a number under it.
+    fn x_marks(&mut self, x: &Axis, text: impl Fn(f64) -> String) {
+        let area = self.area;
+        for value in x.ticks(6) {
+            let at = area.left() + area.width() * x.fraction(value) as f32;
+            self.rule(pos2(at, area.top()), pos2(at, area.bottom()), self.style.rule, &[]);
+            self.small(pos2(at, area.bottom() + 4.0 * self.u), Anchor::CENTRE_TOP, text(value));
+        }
     }
 
     /// The marks of both axes: a faint line across the plot and a number outside it.
     fn axes(&mut self, x: &Axis, y: &Axis, x_text: impl Fn(f64) -> String, y_text: impl Fn(f64) -> String) {
         let area = self.area;
-        for value in x.ticks(6) {
-            let at = area.left() + area.width() * x.fraction(value) as f32;
-            self.painter.vline(at, area.y_range(), Stroke::new(1.0, theme::RULE));
-            self.small(pos2(at, area.bottom() + 4.0), Align2::CENTER_TOP, x_text(value));
-        }
+        self.x_marks(x, x_text);
         for value in y.ticks(6) {
             let at = area.bottom() - area.height() * y.fraction(value) as f32;
-            self.painter.hline(area.x_range(), at, Stroke::new(1.0, theme::RULE));
-            self.small(pos2(area.left() - 5.0, at), Align2::RIGHT_CENTER, y_text(value));
+            self.rule(pos2(area.left(), at), pos2(area.right(), at), self.style.rule, &[]);
+            self.small(pos2(area.left() - 5.0 * self.u, at), Anchor::RIGHT_CENTRE, y_text(value));
         }
     }
 
-    fn line(&self, points: Vec<Pos2>, colour: Color32) {
-        let clip = self.painter.with_clip_rect(self.area.expand(1.0));
-        clip.add(egui::Shape::line(points, Stroke::new(1.3, colour)));
+    /// From here to [`Self::unclip`], nothing is drawn further than `margin` outside the axes.
+    fn clip(&mut self, margin: f32) {
+        let area = self.area.expand(margin);
+        self.drawing.items.push(Item::Clip { min: p(area.min), max: p(area.max) });
+    }
+
+    fn unclip(&mut self) {
+        self.drawing.items.push(Item::Unclip);
+    }
+
+    fn dot(&mut self, centre: Pos2, colour: Colour) {
+        self.drawing.items.push(Item::Circle { centre: p(centre), radius: self.style.dot, fill: colour });
+    }
+
+    /// A series' line, kept inside the axes.
+    fn line(&mut self, points: &[Pos2], width: f32, colour: Colour, dash: &[f32]) {
+        self.clip(1.0);
+        self.drawing.items.push(Item::Line {
+            points: points.iter().map(|point| p(*point)).collect(),
+            width,
+            colour,
+            dash: dash.to_vec(),
+        });
+        self.unclip();
+    }
+
+    /// One entry of a key on legend line `line` (from 0), starting at `x`: a sample of the
+    /// mark's line, then its name. Returns where the next entry starts, or `None` (and writes
+    /// nothing) when the entry would run past the axes' right edge.
+    fn key(&mut self, x: f32, line: usize, name: &str, colour: Colour, dash: &[f32]) -> Option<f32> {
+        let (u, size) = (self.u, self.style.text_size);
+        let top = (24.0 + 13.0 * line as f32) * u;
+        let [w, h] = self.measure.size(name, Face::Sans, size);
+        let end = x + 18.0 * u + w;
+        if end > self.area.right() {
+            return None;
+        }
+        let middle = top + h / 2.0;
+        self.drawing.items.push(Item::Line {
+            points: vec![[x, middle], [x + 14.0 * u, middle]],
+            width: self.style.line,
+            colour,
+            dash: dash.to_vec(),
+        });
+        let ink = self.style.naming(colour);
+        self.text(pos2(x + 18.0 * u, top), Anchor::LEFT_TOP, name, Face::Sans, size, ink);
+        Some(end + 12.0 * u)
+    }
+
+    fn finish(self, mut drawn: Drawn, described: Described) -> Plot {
+        drawn.area = self.area;
+        drawn.labels = self.labels;
+        Plot { drawing: self.drawing, drawn, described }
+    }
+}
+
+/// Builds the plot `subject` names, `size` points wide and high: `None` when it names the
+/// scene, which is not a plot.
+#[must_use]
+pub fn build(
+    engine: &Engine,
+    subject: &Subject,
+    style: &Style,
+    measure: &dyn Measure,
+    size: [f32; 2],
+) -> Option<Plot> {
+    match subject.content {
+        PaneContent::Scene => None,
+        PaneContent::Signal => Some(signal(engine, subject, style, measure, size)),
+        PaneContent::Periodogram => Some(periodogram(engine, subject, style, measure, size)),
+        PaneContent::Flight => Some(flight(engine, subject, style, measure, size)),
+        PaneContent::Cadence => Some(cadence(engine, subject, style, measure, size)),
+    }
+}
+
+/// The plots pane `pane` of `engine` shows in a pane of `size` points, in the application's
+/// style: none when the pane shows the scene. While the scene is being compared on another
+/// instrument, a signal or a periodogram is drawn twice, the scene's own above and the
+/// comparison's below, each on its own axes: the second value of each pair is how far down
+/// the pane the plot starts, points.
+#[must_use]
+pub fn of_pane(
+    engine: &Engine,
+    pane: usize,
+    style: &Style,
+    measure: &dyn Measure,
+    size: [f32; 2],
+) -> Vec<(Plot, f32)> {
+    let content = engine.content(pane);
+    let twice =
+        engine.comparison().is_some() && matches!(content, PaneContent::Signal | PaneContent::Periodogram);
+    let one = |compared: bool, size: [f32; 2]| {
+        build(engine, &Subject::of_pane(engine, pane, compared), style, measure, size)
+    };
+    if twice {
+        let half = [size[0], size[1] * 0.5];
+        one(false, half)
+            .map(|plot| (plot, 0.0))
+            .into_iter()
+            .chain(one(true, half).map(|p| (p, half[1])))
+            .collect()
+    } else {
+        one(false, size).map(|plot| (plot, 0.0)).into_iter().collect()
     }
 }
 
 /// Paints the plot pane `pane` of `engine` shows into `rect`, and says what was drawn: nothing
-/// when the pane shows the scene. While the scene is being compared on another instrument, a
-/// signal or a periodogram is drawn twice, the scene's own above and the comparison's below,
-/// each on its own axes. The application's panes and the pictures `cav render` and the MCP server
-/// make are both this function.
+/// when the pane shows the scene. The application's panes and the pictures `cav render` and the
+/// MCP server make are both this function.
 #[must_use]
 pub fn paint(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> Vec<Drawn> {
-    let one = |rect: Rect, compared: bool| match engine.content(pane) {
-        PaneContent::Scene => None,
-        PaneContent::Signal => Some(signal(engine, painter, pane, rect, compared)),
-        PaneContent::Periodogram => Some(periodogram(engine, painter, pane, rect, compared)),
-        PaneContent::Flight => Some(flight(engine, painter, pane, rect)),
-        PaneContent::Cadence => Some(cadence(engine, painter, pane, rect)),
-    };
-    let twice = engine.comparison().is_some()
-        && matches!(engine.content(pane), PaneContent::Signal | PaneContent::Periodogram);
-    if twice {
-        let (above, below) = rect.split_top_bottom_at_fraction(0.5);
-        one(above, false).into_iter().chain(one(below, true)).collect()
-    } else {
-        one(rect, false).into_iter().collect()
-    }
+    let style = Style::screen();
+    let measure = crate::paint::EguiMeasure(painter);
+    of_pane(engine, pane, &style, &measure, [rect.width(), rect.height()])
+        .into_iter()
+        .map(|(plot, down)| {
+            let origin = rect.min + vec2(0.0, down);
+            crate::paint::paint(painter, origin, &plot.drawing);
+            plot.drawn.moved(origin)
+        })
+        .collect()
 }
 
 /// What the comparison's plots say they are: `as AICE 100 m`.
@@ -324,169 +564,263 @@ fn plain(value: f64) -> String {
     if text.is_empty() || text == "-0" { "0".to_owned() } else { text.to_owned() }
 }
 
-fn signal(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect, compared: bool) -> Drawn {
-    let spec = engine.spec();
-    let frame = engine.frame(pane).expect("the pane exists");
-    let (state, held) = if compared { engine.compared_signal() } else { engine.signal() };
-    let also = if compared { compared_as(engine) } else { String::new() };
-    let title = format!("Signal · ΔΦ of every tower · {}{also} · {}", spec.name, state.name());
-    let mut sheet = Sheet::new(painter, rect, &title, 0);
-    let [from, to] = frame.span.unwrap_or([0.0, spec.duration]);
-    let x = Axis { lo: from, hi: to, log: false };
-    let mut drawn = Drawn {
-        pane,
-        content: PaneContent::Signal,
-        area: sheet.area,
+/// A decade as a logarithmic axis shows it: `1e-5`.
+fn decade(value: f64) -> String {
+    format!("1e{}", value.log10().round() as i32)
+}
+
+/// What a channel is called in a title.
+const fn channel_name(channel: ChannelName) -> &'static str {
+    match channel {
+        ChannelName::Gradiometer => "ΔΦ",
+        ChannelName::Lower => "δφ₁",
+        ChannelName::Upper => "δφ₂",
+    }
+}
+
+fn blank(subject: &Subject, x: Axis, y: Axis) -> Drawn {
+    Drawn {
+        pane: subject.pane,
+        content: subject.content,
+        area: Rect::NOTHING,
         x,
-        y: Axis { lo: -1.0, hi: 1.0, log: false },
+        y,
         points: 0,
         playhead: None,
         stems: Vec::new(),
         labels: Vec::new(),
         note: None,
-        compared,
+        compared: subject.compared,
         flights: Vec::new(),
+    }
+}
+
+fn described(x: (&str, &str), y: (&str, &str)) -> Described {
+    Described {
+        x: (x.0.to_owned(), x.1.to_owned()),
+        y: (y.0.to_owned(), y.1.to_owned()),
+        series: Vec::new(),
+        marks: json!({}),
+    }
+}
+
+/// The titles a plot may have, longest first; the house style never says where the signal
+/// stands (a figure is made only from a refined one).
+fn titles(style: &Style, with_state: String, without: String, short: String) -> Vec<String> {
+    if style.house { vec![without, short] } else { vec![with_state, without, short] }
+}
+
+fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measure, size: [f32; 2]) -> Plot {
+    let spec = engine.spec();
+    let (state, held) = if subject.compared { engine.compared_signal() } else { engine.signal() };
+    let also = if subject.compared { compared_as(engine) } else { String::new() };
+    let name = channel_name(subject.channel);
+    let of = match subject.tower {
+        None => "every tower".to_owned(),
+        Some(n) => {
+            spec.array.towers.get(n.wrapping_sub(1)).map_or_else(|| format!("tower {n}"), |t| t.label.clone())
+        }
+    };
+    let titles = titles(
+        style,
+        format!("Signal · {name} of {of} · {}{also} · {}", spec.name, state.name()),
+        format!("Signal · {name} of {of} · {}{also}", spec.name),
+        format!("Signal · {name}"),
+    );
+    let [from, to] = subject.span.unwrap_or([0.0, spec.duration]);
+    let x = Axis { lo: from, hi: to, log: false };
+    let mut drawn = blank(subject, x, Axis { lo: -1.0, hi: 1.0, log: false });
+    let mut described = described(("readout time", "s"), (name, "rad"));
+    let empty = |why: &str, mut drawn: Drawn, described: Described| {
+        let mut sheet = Sheet::new(style, measure, size, &titles, 0, &[]);
+        sheet.nothing(why);
+        drawn.note = Some(why.to_owned());
+        sheet.finish(drawn, described)
     };
     let Some(signal) = held else {
-        let why = "computing the signal";
-        sheet.nothing(why);
-        drawn.note = Some(why.into());
-        drawn.labels = sheet.labels;
-        return drawn;
+        return empty("computing the signal", drawn, described);
     };
-    let channel = ChannelName::Gradiometer.channel();
+    let channel = subject.channel.channel();
     let towers = signal.towers.min(spec.array.towers.len());
+    let which: Vec<usize> = match subject.tower {
+        None => (0..towers).collect(),
+        Some(n) if n >= 1 && n <= towers => vec![n - 1],
+        Some(n) => return empty(&format!("there is no tower {n}"), drawn, described),
+    };
     // Each tower against its own readout times.
-    let own: Vec<Vec<f64>> = (0..towers).map(|t| signal.readouts(t)).collect();
-    let shown: Vec<(&[f64], &[f64])> =
-        (0..towers).map(|t| within(&own[t], signal.channel(t, channel), from, to)).collect();
+    let own: Vec<Vec<f64>> = which.iter().map(|t| signal.readouts(*t)).collect();
+    let shown: Vec<(&[f64], &[f64])> = which
+        .iter()
+        .zip(&own)
+        .map(|(t, times)| within(times, signal.channel(*t, channel), from, to))
+        .collect();
     let y = Axis::linear(shown.iter().flat_map(|(_, values)| values.iter().copied()));
     drawn.y = y;
     // The unit of the vertical axis is chosen once, from the larger end, so the marks agree.
-    let size = y.lo.abs().max(y.hi.abs());
-    let (scale, unit) = match size {
+    let largest = y.lo.abs().max(y.hi.abs());
+    let (scale, unit) = match largest {
         s if s >= 1.0 => (1.0, "rad"),
         s if s >= 1e-3 => (1e3, "mrad"),
         s if s >= 1e-6 => (1e6, "µrad"),
         _ => (1e9, "nrad"),
     };
-    sheet.axes(&x, &y, plain, |value| plain(value * scale));
+    let y_text = |value: f64| plain(value * scale);
+    let mut left: Vec<String> = y.ticks(6).into_iter().map(y_text).collect();
+    left.push(unit.to_owned());
+    // A key of the towers' colours, on a line of its own, when there is more than one.
+    let keyed = which.len() > 1;
+    let mut sheet = Sheet::new(style, measure, size, &titles, usize::from(keyed), &left);
+    sheet.axes(&x, &y, plain, y_text);
     let area = sheet.area;
-    for (tower, (times, values)) in shown.iter().enumerate() {
-        let series = thinned(times, values);
-        drawn.points += series.len();
-        let points: Vec<Pos2> = series.iter().map(|p| place(area, &x, &y, *p)).collect();
-        // Few shots are drawn as dots as well: six points joined by lines hide that they are six.
-        if points.len() <= 200 {
-            let clip = painter.with_clip_rect(area.expand(3.0));
-            for point in &points {
-                clip.circle_filled(*point, 2.5, theme::tower(tower));
+    if keyed {
+        let mut at = area.left();
+        for (n, tower) in which.iter().enumerate() {
+            let (colour, dash) = style.series(*tower);
+            match sheet.key(at, 0, &spec.array.towers[*tower].label, colour, dash) {
+                Some(next) => at = next,
+                None => {
+                    let more = format!("and {} more", which.len() - n);
+                    let top = pos2(at, 24.0 * sheet.u);
+                    if at + measure.size(&more, Face::Sans, style.text_size)[0] <= area.right() {
+                        sheet.text(top, Anchor::LEFT_TOP, more, Face::Sans, style.text_size, style.weak);
+                    }
+                    break;
+                }
             }
         }
-        sheet.line(points, theme::tower(tower));
     }
+    sheet.fixed = sheet.labels.len();
+    // The towers that swing furthest are drawn first, so that over all of a long run, where
+    // each series is a band, no band lies wholly under another.
+    let extent = |values: &[f64]| {
+        let (lo, hi) = values
+            .iter()
+            .filter(|v| v.is_finite())
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| (lo.min(*v), hi.max(*v)));
+        if hi >= lo { hi - lo } else { 0.0 }
+    };
+    let mut order: Vec<usize> = (0..which.len()).collect();
+    order.sort_by(|a, b| extent(shown[*b].1).total_cmp(&extent(shown[*a].1)).then(a.cmp(b)));
+    for n in order {
+        let (tower, (times, values)) = (which[n], shown[n]);
+        let (colour, dash) = style.series(tower);
+        let series = thinned(times, values);
+        drawn.points += series.len();
+        let points: Vec<Pos2> = series.iter().map(|point| place(area, &x, &y, *point)).collect();
+        // Few shots are drawn as dots as well: six points joined by lines hide that they are six.
+        if points.len() <= 200 {
+            sheet.clip(3.0);
+            for point in &points {
+                sheet.dot(*point, colour);
+            }
+            sheet.unclip();
+        }
+        // More than a point to a point of width: the line is a band, and a thinner one shows more.
+        let dense = points.len() as f32 > area.width();
+        let width = if dense { style.line * 0.6 } else { style.line };
+        sheet.line(&points, width, colour, if dense { &[] } else { dash });
+        described.series.push((spec.array.towers[tower].label.clone(), colour));
+    }
+    described.series.sort_by_key(|(label, _)| spec.array.towers.iter().position(|t| &t.label == label));
     let time = engine.time();
-    if (from..=to).contains(&time) {
+    if !style.house && (from..=to).contains(&time) {
         let at = place(area, &x, &y, (time, y.lo)).x;
-        painter.vline(at, area.y_range(), Stroke::new(1.0, theme::LINK));
+        sheet.rule(pos2(at, area.top()), pos2(at, area.bottom()), style.playhead, &[]);
         drawn.playhead = Some(at);
     }
-    sheet.small(area.left_top() + vec2(-5.0, -19.0), Align2::RIGHT_TOP, unit);
+    sheet.unit(unit);
     let shots = signal.times.len();
+    described.marks = json!({ "vertical_axis_written_in": unit, "shots": shots });
     let hint =
-        if frame.span.is_some() { "scroll to zoom, double-click for all of it" } else { "scroll to zoom" };
-    sheet.caption(&[
-        format!("readout time, s · {shots} shots · {hint}"),
-        format!("readout time, s · {shots} shots"),
-        "time, s".to_owned(),
-    ]);
-    drawn.labels = sheet.labels;
-    drawn
+        if subject.span.is_some() { "scroll to zoom, double-click for all of it" } else { "scroll to zoom" };
+    let mut forms =
+        vec![format!("readout time, s · {shots} shots"), "readout time, s".to_owned(), "time, s".to_owned()];
+    if !style.house {
+        forms.insert(0, format!("readout time, s · {shots} shots · {hint}"));
+    }
+    sheet.caption(&forms);
+    sheet.finish(drawn, described)
 }
 
-/// The cadence designer's pane: the spectral window `|W|` of the selected tower's shots (one
+/// The cadence designer's pane: the spectral window `|W|` of one tower's shots (one
 /// realisation, for the scene's seed) on a logarithmic scale, with a stem at each line the
 /// closed forms predict, as tall as they predict it, and the predicted floor as a level.
-fn cadence(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> Drawn {
+fn cadence(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measure, size: [f32; 2]) -> Plot {
     let spec = engine.spec();
-    let frame = engine.frame(pane).expect("the pane exists");
-    let tower = match engine.selection() {
-        Some(cav_engine::Target::Tower(n)) => n,
-        _ => 1,
-    };
-    let label_of = spec.array.towers.get(tower - 1).map_or("tower", |t| t.label.as_str());
-    let title = format!("Cadence · spectral window |W| of {label_of}'s shots · {}", spec.name);
-    let mut sheet = Sheet::new(painter, rect, &title, 2);
-    let mut drawn = Drawn {
-        pane,
-        content: PaneContent::Cadence,
-        area: sheet.area,
-        x: Axis { lo: 0.0, hi: 1.0, log: false },
-        y: Axis { lo: 1e-4, hi: 1.0, log: true },
-        points: 0,
-        playhead: None,
-        stems: Vec::new(),
-        labels: Vec::new(),
-        note: None,
-        compared: false,
-        flights: Vec::new(),
-    };
+    let tower = subject.tower.unwrap_or(1);
+    let label_of = spec.array.towers.get(tower.wrapping_sub(1)).map_or("tower", |t| t.label.as_str());
+    let long = format!("Cadence · spectral window |W| of {label_of}'s shots · {}", spec.name);
+    let titles = vec![long, format!("Cadence · |W| of {label_of}'s shots"), "Cadence · |W|".to_owned()];
+    // Four decades, from the peak down: a floor of 1e-4 in amplitude is 1e-8 in power.
+    let y = Axis { lo: 1e-4, hi: 1.0, log: true };
+    let left: Vec<String> = y.ticks(6).into_iter().map(decade).collect();
+    let mut sheet = Sheet::new(style, measure, size, &titles, 2, &left);
+    let mut drawn = blank(subject, Axis { lo: 0.0, hi: 1.0, log: false }, y);
+    let mut described = described(("frequency offset from a tone", "Hz"), ("|W| relative to the tone", "1"));
     let predicted = match engine.query(&Query::Cadence) {
         Ok(Reply::Cadence(predicted)) => predicted,
         other => {
             let why = other.err().unwrap_or_else(|| "no prediction".to_owned());
             sheet.nothing(&why);
             drawn.note = Some(why);
-            drawn.labels = sheet.labels;
-            return drawn;
+            return sheet.finish(drawn, described);
         }
     };
     let whole = 2.5 / predicted.mean_cycle;
-    let [from, to] = frame.span.unwrap_or([0.0, whole]);
+    let [from, to] = subject.span.unwrap_or([0.0, whole]);
     let x = Axis { lo: from, hi: to, log: false };
     let Ok(Reply::Window(window)) = engine.query(&Query::Window { tower, to: Some(to) }) else {
         sheet.nothing("no window");
-        drawn.labels = sheet.labels;
-        return drawn;
+        drawn.note = Some("no window".to_owned());
+        return sheet.finish(drawn, described);
     };
-    // Four decades, from the peak down: a floor of 1e-4 in amplitude is 1e-8 in power.
-    let y = Axis { lo: 1e-4, hi: 1.0, log: true };
-    (drawn.x, drawn.y) = (x, y);
-    sheet.axes(&x, &y, plain, |value| format!("1e{}", value.log10().round() as i32));
+    drawn.x = x;
+    sheet.axes(&x, &y, plain, decade);
     let area = sheet.area;
     let (frequencies, shown) = within(&window.frequencies, &window.window, from, to);
     let series = thinned(frequencies, shown);
     drawn.points = series.len();
-    let points: Vec<Pos2> = series.iter().map(|p| place(area, &x, &y, (p.0, p.1.max(y.lo)))).collect();
-    sheet.line(points, SPECTRUM);
-    let clip = painter.with_clip_rect(area.expand(3.0));
+    let points: Vec<Pos2> = series.iter().map(|q| place(area, &x, &y, (q.0, q.1.max(y.lo)))).collect();
+    sheet.line(&points, style.line, style.spectrum, &[]);
+    described.series.push((format!("|W| of {label_of}'s shots, this seed"), style.spectrum));
+    sheet.fixed = sheet.labels.len();
     // The floor the closed forms predict, as a level across the plot.
     if predicted.floor > 0.0 {
         let level = place(area, &x, &y, (from, predicted.floor.sqrt().max(y.lo))).y;
-        clip.extend(egui::Shape::dashed_line(
-            &[pos2(area.left(), level), pos2(area.right(), level)],
-            Stroke::new(1.0, theme::WEAK),
-            5.0,
-            4.0,
-        ));
-        sheet.small(pos2(area.right() - 4.0, level - 2.0), Align2::RIGHT_BOTTOM, "predicted floor");
+        sheet.clip(3.0);
+        let dash = [5.0 * sheet.u, 4.0 * sheet.u];
+        sheet.rule(pos2(area.left(), level), pos2(area.right(), level), style.reference, &dash);
+        sheet.unclip();
+        let at = pos2(area.right() - 4.0 * sheet.u, level - 2.0 * sheet.u);
+        sheet.small(at, Anchor::RIGHT_BOTTOM, "predicted floor");
     }
     // The predicted lines: a stem to the predicted height, and a dot there.
-    sheet.fixed = sheet.labels.len();
-    let colour = COMB_COLOURS[0];
+    let colour = style.comb(0);
+    let mut lines = Vec::new();
     for (k, line) in
         predicted.lines.iter().enumerate().filter(|(_, line)| (from..=to).contains(&line.frequency))
     {
         let top = place(area, &x, &y, (line.frequency, line.height.max(y.lo)));
-        clip.vline(top.x, top.y..=area.bottom(), Stroke::new(1.0, colour));
-        clip.circle_filled(top, 2.5, colour);
-        sheet.stem_label(top, &format!("{:.3}", line.height), colour);
+        sheet.clip(3.0);
+        sheet.rule(top, pos2(top.x, area.bottom()), colour, &[]);
+        sheet.dot(top, colour);
+        sheet.unclip();
+        sheet.stem_label(top, &format!("{:.3}", line.height), style.naming(colour));
         drawn.stems.push((line.what.clone(), k as u32 + 1, top.x, false));
+        lines.push(json!({ "what": line.what, "frequency_hz": line.frequency, "height": line.height }));
     }
+    described.marks = json!({
+        "predicted_lines": lines,
+        "predicted_floor": predicted.floor.sqrt(),
+        "mean_cycle_s": predicted.mean_cycle,
+        "nyquist_hz": predicted.nyquist,
+        "note": "stems and the dashed level are the closed forms' predictions (cav_sim::schedule), not data",
+    });
     let fewest = predicted.kept.iter().min().copied().unwrap_or(0);
+    let u = sheet.u;
     sheet.text(
-        pos2(area.left(), rect.top() + 24.0),
-        Align2::LEFT_TOP,
+        pos2(area.left(), 24.0 * u),
+        Anchor::LEFT_TOP,
         format!(
             "mean cycle {} s · Nyquist {} Hz · {} shots, {fewest} taken · sensitivity × {:.3}",
             plain(predicted.mean_cycle),
@@ -494,22 +828,30 @@ fn cadence(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) ->
             predicted.shots,
             predicted.noise_factor
         ),
-        FontId::proportional(10.5),
-        theme::TEXT,
+        Face::Sans,
+        style.text_size,
+        style.text,
     );
     sheet.text(
-        pos2(area.left(), rect.top() + 37.0),
-        Align2::LEFT_TOP,
+        pos2(area.left(), 37.0 * u),
+        Anchor::LEFT_TOP,
         "grey: this seed's window · blue: the lines the closed forms predict, at their predicted heights",
-        FontId::proportional(10.5),
-        colour,
+        Face::Sans,
+        style.text_size,
+        style.naming(colour),
     );
-    sheet.caption(&[
-        "frequency offset from a tone, Hz · |W| relative to the tone · scroll to zoom".to_owned(),
+    let mut forms = vec![
+        "frequency offset from a tone, Hz · |W| relative to the tone".to_owned(),
         "frequency offset, Hz".to_owned(),
-    ]);
-    drawn.labels = sheet.labels;
-    drawn
+    ];
+    if !style.house {
+        forms.insert(
+            0,
+            "frequency offset from a tone, Hz · |W| relative to the tone · scroll to zoom".to_owned(),
+        );
+    }
+    sheet.caption(&forms);
+    sheet.finish(drawn, described)
 }
 
 /// The most towers a flight diagram gives a row to, and the most shots it draws in a row.
@@ -527,90 +869,106 @@ pub fn arm_heights(instrument: &cav_core::forward::Instrument, tau: f64) -> [f64
     [low, high, instrument.ifo_separation + low, instrument.ifo_separation + high]
 }
 
-/// The atoms' flights on absolute time: a row for each tower, each shot a pair of arcs for each
-/// interferometer from its launch to its readout, at the tower's own times.
-fn flight(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> Drawn {
-    let spec = engine.spec();
-    let frame = engine.frame(pane).expect("the pane exists");
+/// The shots of one tower a flight diagram draws over `[from, to]` seconds: how many shots
+/// touch the span, and the launch time of each that is drawn (at most [`MAX_FLIGHT_SHOTS`]).
+#[must_use]
+pub fn flights_drawn(spec: &cav_sim::SceneSpec, tower: usize, [from, to]: [f64; 2]) -> (usize, Vec<f64>) {
     let instrument = spec.array.instrument.instrument();
     let (cycle, flight_time) = (spec.array.instrument.cycle, instrument.flight_time());
-    let title = format!("Flight · the atoms' arms, height against absolute time · {}", spec.name);
-    let mut sheet = Sheet::new(painter, rect, &title, 0);
-    // With no span of its own the pane follows the playhead: two cycles either side.
+    // The shots of this tower whose flight touches the span: launched at k·cycle + offset.
+    let offset = spec.array.towers[tower].timing.offset;
+    let first = ((from - offset - flight_time) / cycle).floor().max(0.0);
+    let last = ((to - offset) / cycle).ceil().min((spec.duration / cycle).ceil() - 1.0);
+    let count = if last >= first { (last - first) as usize + 1 } else { 0 };
+    (count, (0..count.min(MAX_FLIGHT_SHOTS)).map(|k| (first + k as f64) * cycle + offset).collect())
+}
+
+/// The span a flight diagram shows: its own, or, with none, two cycles either side of the
+/// playhead.
+#[must_use]
+pub fn flight_span(engine: &Engine, span: Option<[f64; 2]>) -> [f64; 2] {
+    let spec = engine.spec();
+    let (cycle, flight_time) =
+        (spec.array.instrument.cycle, spec.array.instrument.instrument().flight_time());
     let time = engine.time();
-    let [from, to] = frame.span.unwrap_or([(time - 2.0 * cycle).max(-flight_time), time + 2.0 * cycle]);
+    span.unwrap_or([(time - 2.0 * cycle).max(-flight_time), time + 2.0 * cycle])
+}
+
+/// The atoms' flights on absolute time: a row for each tower, each shot a pair of arcs for each
+/// interferometer from its launch to its readout, at the tower's own times.
+fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measure, size: [f32; 2]) -> Plot {
+    let spec = engine.spec();
+    let instrument = spec.array.instrument.instrument();
+    let flight_time = instrument.flight_time();
+    let long = format!("Flight · the atoms' arms, height against absolute time · {}", spec.name);
+    let titles = vec![long, format!("Flight · the atoms' arms · {}", spec.name), "Flight".to_owned()];
+    let towers = spec.array.towers.len().min(MAX_FLIGHT_ROWS);
+    let left: Vec<String> = spec.array.towers.iter().take(towers).map(|t| t.label.clone()).collect();
+    let mut sheet = Sheet::new(style, measure, size, &titles, 0, &left);
+    let time = engine.time();
+    let [from, to] = flight_span(engine, subject.span);
     let x = Axis { lo: from, hi: to, log: false };
     let top = spec.array.instrument.tower_height.max(arm_heights(&instrument, instrument.half_sequence)[3]);
     let y = Axis { lo: 0.0, hi: top, log: false };
-    let mut drawn = Drawn {
-        pane,
-        content: PaneContent::Flight,
-        area: sheet.area,
-        x,
-        y,
-        points: 0,
-        playhead: None,
-        stems: Vec::new(),
-        labels: Vec::new(),
-        note: None,
-        compared: false,
-        flights: Vec::new(),
-    };
-    let towers = spec.array.towers.len().min(MAX_FLIGHT_ROWS);
+    let mut drawn = blank(subject, x, y);
+    let mut described = described(("absolute time", "s"), ("height above each tower's base", "m"));
     let area = sheet.area;
-    for value in x.ticks(6) {
-        let at = area.left() + area.width() * x.fraction(value) as f32;
-        painter.vline(at, area.y_range(), Stroke::new(1.0, theme::RULE));
-        sheet.small(pos2(at, area.bottom() + 4.0), Align2::CENTER_TOP, plain(value));
-    }
+    sheet.x_marks(&x, plain);
     let row_height = area.height() / towers.max(1) as f32;
-    let clip = painter.with_clip_rect(area);
     let mut left_out = 0usize;
     for (n, tower) in spec.array.towers.iter().take(towers).enumerate() {
         let row = Rect::from_min_size(
             pos2(area.left(), area.top() + row_height * n as f32),
             vec2(area.width(), row_height),
         );
-        let inner = row.shrink2(vec2(0.0, 3.0));
-        painter.hline(row.x_range(), row.bottom(), Stroke::new(1.0, theme::RULE));
-        sheet.small(pos2(area.left() - 5.0, row.center().y), Align2::RIGHT_CENTER, tower.label.clone());
-        // The shots of this tower whose flight touches the span: launched at k·cycle + offset.
-        let offset = tower.timing.offset;
-        let first = ((from - offset - flight_time) / cycle).floor().max(0.0);
-        let last = ((to - offset) / cycle).ceil().min((spec.duration / cycle).ceil() - 1.0);
-        let count = if last >= first { (last - first) as usize + 1 } else { 0 };
-        left_out += count.saturating_sub(MAX_FLIGHT_SHOTS);
-        let colour = theme::tower(n);
-        for k in 0..count.min(MAX_FLIGHT_SHOTS) {
-            let launch = (first + k as f64) * cycle + offset;
+        let inner = row.shrink2(vec2(0.0, 3.0 * sheet.u));
+        sheet.rule(row.left_bottom(), row.right_bottom(), style.rule, &[]);
+        sheet.small(
+            pos2(area.left() - 5.0 * sheet.u, row.center().y),
+            Anchor::RIGHT_CENTRE,
+            tower.label.clone(),
+        );
+        let (count, launches) = flights_drawn(spec, n, [from, to]);
+        left_out += count - launches.len();
+        let (colour, _) = style.series(n);
+        described.series.push((tower.label.clone(), colour));
+        sheet.drawing.items.push(Item::Clip { min: p(area.min), max: p(area.max) });
+        for launch in launches {
             let at = |seconds: f64| inner.left() + inner.width() * x.fraction(seconds) as f32;
             drawn.flights.push((n, at(launch), at(launch + flight_time)));
             // Each of the four arm paths as a line through 33 points of the flight.
             const STEPS: usize = 32;
             for arm in 0..4 {
-                let points: Vec<Pos2> = (0..=STEPS)
+                let points: Vec<[f32; 2]> = (0..=STEPS)
                     .map(|step| {
                         let tau = flight_time * step as f64 / STEPS as f64;
                         let height = arm_heights(&instrument, tau)[arm];
-                        pos2(at(launch + tau), inner.bottom() - inner.height() * y.fraction(height) as f32)
+                        [at(launch + tau), inner.bottom() - inner.height() * y.fraction(height) as f32]
                     })
                     .collect();
                 drawn.points += points.len();
-                let shade = if arm < 2 { colour } else { colour.gamma_multiply(0.7) };
-                clip.add(egui::Shape::line(points, Stroke::new(1.2, shade)));
+                // The upper interferometer's arms are fainter than the lower's.
+                let shade = if arm < 2 { colour } else { colour.mixed(style.background, 0.7) };
+                sheet.drawing.items.push(Item::Line {
+                    points,
+                    width: style.line * (1.2 / 1.3),
+                    colour: shade,
+                    dash: Vec::new(),
+                });
             }
             // Where the clouds are at the playhead, if this shot is in flight.
-            if (launch..=launch + flight_time).contains(&time) {
+            if !style.house && (launch..=launch + flight_time).contains(&time) {
                 for height in arm_heights(&instrument, time - launch) {
                     let point = pos2(at(time), inner.bottom() - inner.height() * y.fraction(height) as f32);
-                    clip.circle_filled(point, 2.5, theme::STRONG);
+                    sheet.dot(point, style.ink);
                 }
             }
         }
+        sheet.unclip();
     }
-    if (from..=to).contains(&time) {
+    if !style.house && (from..=to).contains(&time) {
         let at = area.left() + area.width() * x.fraction(time) as f32;
-        painter.vline(at, area.y_range(), Stroke::new(1.0, theme::LINK));
+        sheet.rule(pos2(at, area.top()), pos2(at, area.bottom()), style.playhead, &[]);
         drawn.playhead = Some(at);
     }
     let more = spec.array.towers.len() - towers;
@@ -620,85 +978,106 @@ fn flight(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) -> 
         said.push_str(&format!(" · not drawn: {more} tower(s), {left_out} shot(s); zoom in"));
         drawn.note = Some(format!("{more} tower(s) and {left_out} shot(s) are not drawn"));
     }
+    described.marks = json!({
+        "row_height_m": top,
+        "flight_time_s": flight_time,
+        "arms": "each shot: the lower interferometer's two arms, and the upper's (fainter), as the forward model flies them",
+        "not_drawn": { "towers": more, "shots": left_out },
+    });
     sheet.caption(&[said, "absolute time, s".to_owned()]);
-    drawn.labels = sheet.labels;
-    drawn
+    sheet.finish(drawn, described)
 }
 
-fn periodogram(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect, compared: bool) -> Drawn {
-    let tower = match engine.selection() {
-        Some(cav_engine::Target::Tower(n)) => n,
-        _ => 1,
-    };
-    let query = Query::Periodogram { tower, channel: ChannelName::Gradiometer, compared };
+/// The height the ULDM benchmark's tone has in a periodogram of `shots` shots whose Nyquist
+/// frequency is `nyquist` hertz, rad/√Hz: `a·√T_obs/2` (the convention of
+/// `cav_core::spectrum`), with `T_obs` the run's length, `shots` mean cycles.
+#[must_use]
+pub fn uldm_height(shots: usize, nyquist: f64) -> f64 {
+    let run = shots as f64 / (2.0 * nyquist);
+    ULDM_AMPLITUDE * run.sqrt() / 2.0
+}
+
+fn periodogram(
+    engine: &Engine,
+    subject: &Subject,
+    style: &Style,
+    measure: &dyn Measure,
+    size: [f32; 2],
+) -> Plot {
+    let compared = subject.compared;
+    let tower = subject.tower.unwrap_or(1);
+    let query = Query::Periodogram { tower, channel: subject.channel, compared };
     let spec = engine.spec();
-    let frame = engine.frame(pane).expect("the pane exists");
-    let label_of = spec.array.towers.get(tower - 1).map_or("tower", |t| t.label.as_str());
+    let label_of = spec.array.towers.get(tower.wrapping_sub(1)).map_or("tower", |t| t.label.as_str());
     let state = if compared { engine.compared_signal().0.name() } else { engine.signal().0.name() };
     let also = if compared { compared_as(engine) } else { String::new() };
-    let title = format!("Periodogram · √S of ΔΦ at {label_of} · {}{also} · {state}", spec.name);
+    let name = channel_name(subject.channel);
+    let titles = titles(
+        style,
+        format!("Periodogram · √S of {name} at {label_of} · {}{also} · {state}", spec.name),
+        format!("Periodogram · √S of {name} at {label_of} · {}{also}", spec.name),
+        format!("Periodogram · {label_of}"),
+    );
     let instrument = engine.comparison().filter(|_| compared).unwrap_or(&spec.array.instrument);
     // Half the mean shot rate: the schedule's, which for the plain schedule is the cycle's.
     let nyquist = 0.5 / spec.array.schedule.mean_cycle(instrument.cycle);
     let reply = engine.query(&query);
     let combs = match &reply {
-        Ok(Reply::Periodogram(spectrum)) => spectrum.combs.len().min(COMB_COLOURS.len()),
+        Ok(Reply::Periodogram(spectrum)) => spectrum.combs.len().min(style.combs.len()),
         _ => 0,
     };
-    let mut sheet = Sheet::new(painter, rect, &title, combs);
-    let [from, to] = frame.span.unwrap_or([0.0, nyquist]);
+    let [from, to] = subject.span.unwrap_or([0.0, nyquist]);
     let x = Axis { lo: from, hi: to, log: false };
-    let mut drawn = Drawn {
-        pane,
-        content: PaneContent::Periodogram,
-        area: sheet.area,
-        x,
-        y: Axis { lo: 1e-9, hi: 1.0, log: true },
-        points: 0,
-        playhead: None,
-        stems: Vec::new(),
-        labels: Vec::new(),
-        note: None,
-        compared,
-        flights: Vec::new(),
+    let mut drawn = blank(subject, x, Axis { lo: 1e-9, hi: 1.0, log: true });
+    let mut described = described(("frequency", "Hz"), ("√S", "rad/√Hz"));
+    let empty = |why: &str, mut drawn: Drawn, described: Described| {
+        let mut sheet = Sheet::new(style, measure, size, &titles, combs, &[]);
+        sheet.nothing(why);
+        drawn.note = Some(why.to_owned());
+        sheet.finish(drawn, described)
     };
     let spectrum = match reply {
         Ok(Reply::Periodogram(spectrum)) if spectrum.power.len() >= 2 => spectrum,
-        other => {
-            let why = match other {
-                Err(why) => why,
-                _ => "too few shots for a periodogram".to_owned(),
-            };
-            sheet.nothing(&why);
-            drawn.note = Some(why);
-            drawn.labels = sheet.labels;
-            return drawn;
-        }
+        Err(why) => return empty(&why, drawn, described),
+        _ => return empty("too few shots for a periodogram", drawn, described),
     };
-    let amplitude: Vec<f64> = spectrum.power.iter().map(|p| p.sqrt()).collect();
+    let amplitude: Vec<f64> = spectrum.power.iter().map(|power| power.sqrt()).collect();
     if !amplitude.iter().any(|a| *a > 0.0) {
-        let why = "the signal is constant: nothing to resolve";
-        sheet.nothing(why);
-        drawn.note = Some(why.into());
-        drawn.labels = sheet.labels;
-        return drawn;
+        return empty("the signal is constant: nothing to resolve", drawn, described);
     }
     let (frequencies, shown) = within(&spectrum.frequencies, &amplitude, from, to);
-    let y = Axis::log(shown.iter().copied(), 9.0);
+    // The house style's reference marks are on the axis with the data: the two shot-noise
+    // floors always, the ULDM benchmark when its frequency is in the span.
+    let uldm = (style.house && (from..=to).contains(&ULDM_FREQUENCY))
+        .then(|| uldm_height(spectrum.shots, spectrum.nyquist));
+    let floors: &[f64] = if style.house { &SHOT_NOISE_FLOORS } else { &[] };
+    let y = Axis::log(shown.iter().copied().chain(floors.iter().copied()).chain(uldm), 9.0);
     drawn.y = y;
-    sheet.axes(&x, &y, plain, |value| format!("1e{}", value.log10().round() as i32));
-    let area = sheet.area;
+    let mut left: Vec<String> = y.ticks(6).into_iter().map(decade).collect();
+    left.push("rad/√Hz".to_owned());
+    let mut sheet = Sheet::new(style, measure, size, &titles, combs, &left);
+    sheet.axes(&x, &y, plain, decade);
+    let (area, u) = (sheet.area, sheet.u);
+    sheet.fixed = sheet.labels.len();
+    for floor in floors.iter().filter(|floor| **floor >= y.lo) {
+        let level = place(area, &x, &y, (from, *floor)).y;
+        sheet.rule(pos2(area.left(), level), pos2(area.right(), level), style.reference, &[]);
+        let at = pos2(area.right() - 4.0 * u, level - u);
+        sheet.small(at, Anchor::RIGHT_BOTTOM, format!("shot noise {}", decade(*floor)));
+    }
     let series = thinned(frequencies, shown);
     drawn.points = series.len();
-    let points: Vec<Pos2> = series.iter().map(|p| place(area, &x, &y, (p.0, p.1.max(y.lo)))).collect();
-    sheet.line(points, SPECTRUM);
+    let points: Vec<Pos2> = series.iter().map(|q| place(area, &x, &y, (q.0, q.1.max(y.lo)))).collect();
+    sheet.line(&points, style.line, style.spectrum, &[]);
+    described.series.push((format!("√S of {name} at {label_of}"), style.spectrum));
     // The combs: a stem at each harmonic, at the height the spectrum has there. A harmonic above
     // Nyquist stands where it folds to, dashed, and says so.
-    let clip = painter.with_clip_rect(area.expand(3.0));
-    sheet.fixed = sheet.labels.len();
+    let labelled = (MAX_STEM_LABELS / spectrum.combs.len().max(1) as u32).max(1);
+    let mut marks = Vec::new();
     for (n, comb) in spectrum.combs.iter().enumerate() {
-        let colour = COMB_COLOURS[n % COMB_COLOURS.len()];
+        let colour = style.comb(n);
         let mut named: Vec<(Pos2, String)> = Vec::new();
+        let mut stems = Vec::new();
         for harmonic in comb.harmonics.iter().filter(|h| (from..=to).contains(&h.appears_at)) {
             let bin = spectrum
                 .frequencies
@@ -709,13 +1088,24 @@ fn periodogram(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect
                 })
                 .map_or(0, |(k, _)| k);
             let top = place(area, &x, &y, (harmonic.appears_at, amplitude[bin].max(y.lo)));
-            let stroke = Stroke::new(1.0, colour);
-            if harmonic.folded {
-                clip.extend(egui::Shape::dashed_line(&[pos2(top.x, area.bottom()), top], stroke, 4.0, 3.0));
-            } else {
-                clip.vline(top.x, top.y..=area.bottom(), stroke);
+            sheet.clip(3.0);
+            let dash = if harmonic.folded { vec![4.0 * u, 3.0 * u] } else { Vec::new() };
+            sheet.rule(pos2(top.x, area.bottom()), top, colour, &dash);
+            sheet.dot(top, colour);
+            sheet.unclip();
+            drawn.stems.push((comb.label.clone(), harmonic.n, top.x, harmonic.folded));
+            stems.push(json!({
+                "n": harmonic.n,
+                "frequency_hz": harmonic.frequency,
+                "appears_at_hz": harmonic.appears_at,
+                "folded": harmonic.folded,
+                "height": amplitude[bin],
+            }));
+            // With many bodies only each one's first harmonics say which they are; the rest
+            // are told by their colour, which the legend names.
+            if harmonic.n > labelled {
+                continue;
             }
-            clip.circle_filled(top, 2.5, colour);
             let text = match (harmonic.n, harmonic.folded) {
                 (1, false) => "f₀".to_owned(),
                 (1, true) => "f₀ folded".to_owned(),
@@ -724,37 +1114,73 @@ fn periodogram(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect
             };
             // Harmonics that stand in the same place (5f₀ at Nyquist's edge and 6f₀ folded back
             // onto 4f₀, say) share one label rather than write over each other.
-            match named.iter_mut().find(|(at, _): &&mut (Pos2, String)| (at.x - top.x).abs() < 3.0) {
+            match named.iter_mut().find(|(at, _): &&mut (Pos2, String)| (at.x - top.x).abs() < 3.0 * u) {
                 Some((_, names)) => {
                     names.push_str(" · ");
                     names.push_str(&text);
                 }
                 None => named.push((top, text)),
             }
-            drawn.stems.push((comb.label.clone(), harmonic.n, top.x, harmonic.folded));
         }
         for (top, text) in named {
-            sheet.stem_label(top, &text, colour);
+            sheet.stem_label(top, &text, style.naming(colour));
         }
+        marks.push(json!({ "body": comb.label, "fundamental_hz": comb.fundamental, "colour": colour.css(), "stems": stems }));
         // The legend has a line of its own above the axes, where no peak can be under it.
-        if n < COMB_COLOURS.len() {
-            sheet.text(
-                pos2(area.left(), rect.top() + 24.0 + 13.0 * n as f32),
-                Align2::LEFT_TOP,
-                format!("{} · f₀ = {:.4} Hz", comb.label, comb.fundamental),
-                FontId::proportional(10.5),
-                colour,
-            );
+        if n < style.combs.len() {
+            let text = format!("{} · f₀ = {:.4} Hz", comb.label, comb.fundamental);
+            if style.house {
+                sheet.key(area.left(), n, &text, colour, &[]);
+            } else {
+                let at = pos2(area.left(), (24.0 + 13.0 * n as f32) * u);
+                sheet.text(at, Anchor::LEFT_TOP, text, Face::Sans, style.text_size, colour);
+            }
         }
     }
-    sheet.small(area.left_top() + vec2(-5.0, -19.0), Align2::RIGHT_TOP, "rad/√Hz");
-    sheet.caption(&[
-        format!("frequency, Hz · Nyquist {} Hz · scroll to zoom", plain(nyquist)),
-        format!("frequency, Hz · Nyquist {} Hz", plain(nyquist)),
-        "frequency, Hz".to_owned(),
-    ]);
-    drawn.labels = sheet.labels;
-    drawn
+    let mut reference = json!({});
+    if style.house {
+        reference = json!({
+            "shot_noise_floors_rad_per_sqrt_hz": SHOT_NOISE_FLOORS,
+            "shot_noise_note": "the plan's two reference levels (baseline and stretch), drawn as grey lines: not computed from this scene",
+        });
+    }
+    if let Some(height) = uldm {
+        let centre = place(area, &x, &y, (ULDM_FREQUENCY, height));
+        sheet.clip(3.0);
+        sheet.drawing.items.push(Item::Diamond {
+            centre: p(centre),
+            radius: style.dot * 1.6,
+            fill: style.ink,
+            stroke: (style.rule_width, style.ink),
+        });
+        sheet.unclip();
+        sheet.stem_label(centre, "ULDM benchmark", style.text);
+        reference["uldm_benchmark"] = json!({
+            "frequency_hz": ULDM_FREQUENCY,
+            "amplitude_rad": ULDM_AMPLITUDE,
+            "height_rad_per_sqrt_hz": height,
+            "run_length_s": spectrum.shots as f64 / (2.0 * spectrum.nyquist),
+            "note": "a reference mark from the plan, not a simulated signal: a scalar of mass 2e-16 eV (f = m c²/h) at 1e-2 µrad, drawn at the height a tone of that amplitude has in this periodogram, a·√T_obs/2, over this run's length",
+        });
+    }
+    described.marks = json!({
+        "combs": marks,
+        "reference": reference,
+        "method": spectrum.method,
+        "shots": spectrum.shots,
+        "nyquist_hz": spectrum.nyquist,
+        "folded": "a dashed stem is a harmonic above Nyquist, standing where it folds to",
+    });
+    sheet.unit("rad/√Hz");
+    let mut forms =
+        vec![format!("frequency, Hz · Nyquist {} Hz", plain(nyquist)), "frequency, Hz".to_owned()];
+    if style.house {
+        forms.insert(0, format!("frequency, Hz · Nyquist {} Hz · dashed stems are folded", plain(nyquist)));
+    } else {
+        forms.insert(0, format!("frequency, Hz · Nyquist {} Hz · scroll to zoom", plain(nyquist)));
+    }
+    sheet.caption(&forms);
+    sheet.finish(drawn, described)
 }
 
 #[cfg(test)]
