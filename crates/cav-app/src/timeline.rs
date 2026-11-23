@@ -14,7 +14,9 @@ use crate::theme;
 /// One shot: the atoms are launched at `launch` and read out at `readout`, seconds.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Shot {
+    /// When the atoms are launched, seconds on the scene's clock.
     pub launch: f64,
+    /// When they are read out, seconds on the scene's clock: the launch and 2T.
     pub readout: f64,
 }
 
