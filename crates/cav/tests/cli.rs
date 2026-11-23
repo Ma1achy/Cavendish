@@ -447,6 +447,129 @@ fn cli_run_writes_a_bundle_twice_the_same() {
     );
 }
 
+/// A file in the repository that git does not know, removed when this is dropped: also when the
+/// test fails.
+struct Untracked(PathBuf);
+
+impl Untracked {
+    fn new(path: PathBuf) -> Self {
+        std::fs::write(&path, "made by a test of `cav`; safe to delete\n").unwrap();
+        Self(path)
+    }
+}
+
+impl Drop for Untracked {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// Every file under `dir`, by its path within it, with its bytes.
+fn files_under(dir: &std::path::Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    let mut out = std::collections::BTreeMap::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(at) = stack.pop() {
+        for entry in std::fs::read_dir(&at).unwrap_or_else(|e| panic!("{}: {e}", at.display())) {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let name = path.strip_prefix(dir).unwrap().to_string_lossy().replace('\\', "/");
+                out.insert(name, std::fs::read(&path).unwrap());
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn cli_provenance_is_the_builds_whatever_the_tree_or_the_directory() {
+    // The revision and the dirty flag in a manifest and in a figure's .json are the build's.
+    // The same binary, run before and after the working tree changes and from another
+    // directory, writes the same bytes. (S2's review, I3: they were asked of git at run time,
+    // so one untracked file between two runs changed thirteen files of a replay. Inside one
+    // process the old code asked once and kept the answer, so only separate processes show it.)
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli provenance");
+    let _ = std::fs::remove_dir_all(&root);
+    let write = |name: &str, from: Option<&std::path::Path>| {
+        let dir = root.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (bundle, figure) = (dir.join("bundle"), dir.join("p.svg"));
+        for args in [
+            vec!["run", "staggered", "--out", bundle.to_str().unwrap(), "--exec", "set duration 60"],
+            vec![
+                "figure",
+                "comb",
+                "periodogram",
+                "--out",
+                figure.to_str().unwrap(),
+                "--exec",
+                "set duration 200",
+            ],
+        ] {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_cav"));
+            command.args(&args);
+            if let Some(directory) = from {
+                command.current_dir(directory);
+            }
+            let done = command.output().expect("cav runs");
+            assert!(done.status.success(), "{args:?}: {}", stderr(&done));
+        }
+        files_under(&dir)
+    };
+    // What git says of the tree, asked without letting it rewrite its index.
+    let status = || {
+        Command::new("git")
+            .args(["--no-optional-locks", "status", "--porcelain"])
+            .current_dir(&repository)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| output.stdout)
+    };
+
+    let before = status();
+    let first = write("first", None);
+    // A file git does not know, in the repository's root, under a name no ignore rule covers.
+    let made =
+        Untracked::new(repository.join(format!("untracked-by-a-test-of-cav-{}.txt", std::process::id())));
+    let between = status();
+    let second = write("second", None);
+    // And from another directory, outside the repository, with the tree still changed.
+    let third = write("third", Some(&std::env::temp_dir()));
+    drop(made);
+
+    // A bundle of eleven files and a figure of three, each time; every byte the same.
+    assert_eq!(first.len(), 14, "{:?}", first.keys().collect::<Vec<_>>());
+    for (name, files) in [("after an untracked file appeared", &second), ("from another directory", &third)] {
+        assert_eq!(files.keys().collect::<Vec<_>>(), first.keys().collect::<Vec<_>>(), "{name}");
+        for (file, bytes) in files {
+            assert!(*bytes == first[file], "{file} differs {name}");
+        }
+    }
+    // The provenance is there, in both, is the same block, and says it is the build's.
+    let manifest: serde_json::Value = serde_json::from_slice(&first["bundle/manifest.json"]).unwrap();
+    let figure: serde_json::Value = serde_json::from_slice(&first["p.json"]).unwrap();
+    let engine = &manifest["numerics"]["engine"];
+    assert_eq!(engine, &figure["engine"]);
+    assert_eq!(engine, &cav_engine::build().json(), "the binary's build is this test's");
+    assert!(engine["built_from"].as_str().unwrap().contains("fixed at compile time"), "{engine}");
+    assert!(engine["revision"].is_string() && (engine["dirty"].is_boolean() || engine["dirty"] == "unknown"));
+
+    // Control: what git says of the tree did change between the first run and the second, so a
+    // binary that asked git when it wrote would have written another `dirty` or the same one
+    // for the wrong reason. Where there is no git or no repository there is nothing to compare.
+    match (before, between) {
+        (Some(before), Some(between)) => {
+            assert_ne!(before, between, "the untracked file did not change `git status`");
+            assert!(String::from_utf8_lossy(&between).contains("untracked-by-a-test-of-cav-"));
+        }
+        _ => eprintln!("git or the repository is not there: the control (git status changed) was not run"),
+    }
+    assert!(!repository.join(format!("untracked-by-a-test-of-cav-{}.txt", std::process::id())).exists());
+}
+
 #[test]
 fn cli_figure_writes_a_figure_with_its_data_twice_the_same() {
     let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli figure");

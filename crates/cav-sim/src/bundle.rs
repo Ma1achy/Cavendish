@@ -46,15 +46,39 @@ use crate::{SceneSpec, SignSpec};
 /// The version of the bundle's layout this build writes.
 pub const BUNDLE_VERSION: u32 = 1;
 
-/// Who made a bundle: the engine's version and the revision of its source.
+/// Who made a bundle: the engine's version and the revision of its source. These are the
+/// build's, fixed when the engine was compiled (`cav_engine::build`); nothing here is found out
+/// when a file is written.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Build {
     /// The engine's version, as `cav doctor` reports it.
     pub version: String,
-    /// The git revision of the source the engine was built from, or `unknown`.
+    /// The git revision that was checked out when the engine was compiled, or `unknown`.
     pub revision: String,
-    /// Whether that source had changes that were not committed; `None` when it is not known.
+    /// Whether the engine's sources then had changes that were not committed; `None` when it is
+    /// not known.
     pub dirty: Option<bool>,
+}
+
+/// What a manifest and a figure's provenance say `revision` and `dirty` are.
+pub const BUILT_FROM: &str = "revision is the commit checked out when the engine was compiled; dirty is whether \
+     the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file \
+     and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are \
+     the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when \
+     the engine was built outside a git repository";
+
+impl Build {
+    /// The build as a manifest and a figure's provenance carry it: `version`, `revision`, `dirty`
+    /// (`true`, `false` or `"unknown"`) and `built_from`, which says what the two are.
+    #[must_use]
+    pub fn json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "version": self.version,
+            "revision": self.revision,
+            "dirty": self.dirty.map_or_else(|| serde_json::json!("unknown"), serde_json::Value::Bool),
+            "built_from": BUILT_FROM,
+        })
+    }
 }
 
 /// One array of a bundle, as the manifest lists it.
@@ -250,7 +274,7 @@ pub fn write(dir: &Path, spec: &SceneSpec, signal: &Signal, build: &Build) -> Re
 pub fn numerics(spec: &SceneSpec, build: &Build) -> serde_json::Value {
     let instrument = spec.array.instrument.instrument();
     serde_json::json!({
-        "engine": { "version": build.version, "revision": build.revision, "dirty": build.dirty },
+        "engine": build.json(),
         "platform": format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
         "precision": "f64 on the CPU",
         "quadrature": format!("{DEFAULT_QUADRATURE:?}, panels halved until two rules agree"),
@@ -457,10 +481,19 @@ mod tests {
         );
         // The numerics: precision, quadrature, tolerances, the engine's revision, the platform.
         let numerics = &manifest["numerics"];
+        // With what the two are: the build's, not the tree's at the time of writing.
         assert_eq!(
             numerics["engine"],
-            serde_json::json!({"version": "0.0.0", "revision": "0123abc", "dirty": false})
+            serde_json::json!({"version": "0.0.0", "revision": "0123abc", "dirty": false, "built_from": BUILT_FROM})
         );
+        assert!(BUILT_FROM.contains("fixed at compile time") && BUILT_FROM.contains("git is not asked"));
+        // A build that does not know says so in a word, not with a null; a dirty one says true.
+        let unknown = Build { version: "0.0.0".into(), revision: "unknown".into(), dirty: None };
+        assert_eq!(
+            (&unknown.json()["revision"], &unknown.json()["dirty"]),
+            (&"unknown".into(), &"unknown".into())
+        );
+        assert_eq!(Build { dirty: Some(true), ..build() }.json()["dirty"], true);
         assert_eq!(numerics["precision"], "f64 on the CPU");
         assert_eq!(numerics["phase_tolerance_rad"], 1e-10);
         assert!(numerics["quadrature"].as_str().unwrap().contains("Gauss"));

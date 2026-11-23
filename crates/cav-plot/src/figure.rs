@@ -287,11 +287,7 @@ fn provenance(engine: &Engine, figure: &Figure, file: &str, style: &Style) -> se
             "cli": cli_line(engine, figure, file),
             "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's",
         },
-        "engine": {
-            "version": cav_engine::build().version,
-            "revision": cav_engine::build().revision,
-            "dirty": cav_engine::build().dirty,
-        },
+        "engine": cav_engine::build().json(),
         "numerics": cav_sim::bundle::numerics(spec, cav_engine::build()),
         "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
         "scene": { "name": spec.name, "spec": spec },

@@ -1102,7 +1102,7 @@ cav_validate::case! {
     subsystem: "engine",
     slice: "S2",
     reference: Exact,
-    against: "a session (every kind of edit, a drag, staggered towers, a jittered and thinned cadence, undo and redo) that exports two bundles and a scene, against the same session replayed four ways: from its journal in memory, from its journal saved to disk and read back, with the workers settled after every command, and with them never waited for; files of any replay that differ in any byte",
+    against: "a session (every kind of edit, a drag, staggered towers, a jittered and thinned cadence, undo and redo) that exports two bundles and a scene, against the same session replayed four ways: from its journal in memory, from its journal saved to disk and read back, with the workers settled after every command, and with them never waited for; files of any replay that differ in any byte (each manifest's provenance, the build's revision and dirty flag, among them)",
     unit: Count,
     tolerance: 0.0,
     measure: {
@@ -1151,6 +1151,20 @@ cav_validate::case! {
         assert_eq!(files.len(), 23, "{:?}", files.keys().collect::<Vec<_>>());
         assert!(files.contains_key("first/signal.npy") && files.contains_key("second/manifest.json"));
         let differing: usize = dirs[1..].iter().map(|dir| files_differing(&dirs[0], dir)).sum();
+        // The provenance in particular: each manifest's bytes are the session's in every replay,
+        // and what they say of the engine is the build's, which no replay can change. (Within
+        // one process this could not have caught a revision asked of git when the file is
+        // written: the answer was asked once and kept. `cav`'s
+        // `cli_provenance_is_the_builds_whatever_the_tree_or_the_directory` runs the binary
+        // twice with the tree changed in between, and does.)
+        for dir in &dirs[1..] {
+            let replay = files_of(dir);
+            for manifest in ["first/manifest.json", "second/manifest.json"] {
+                assert!(replay[manifest] == files[manifest], "{manifest} of {}", dir.display());
+                let said: serde_json::Value = serde_json::from_slice(&replay[manifest]).unwrap();
+                assert_eq!(said["numerics"]["engine"], cav_engine::build().json());
+            }
+        }
         // The two bundles are different bundles: the session did something between them.
         assert_ne!(files["first/signal.npy"], files["second/signal.npy"]);
         assert_ne!(files["first/valid.npy"], files["second/valid.npy"]);
@@ -1215,12 +1229,16 @@ fn a_bundle_waits_for_a_refined_signal() {
     );
     assert_eq!(engine.journal().len(), journal + 1);
     assert!(engine.log().iter().next_back().unwrap().message.contains("(11 files)"));
-    // The manifest names the engine's revision, as git has it for this source tree.
+    // The manifest names the engine's revision: the build's, a commit or `unknown`.
     let manifest: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(root.join("stale").join("manifest.json")).unwrap())
             .unwrap();
+    assert_eq!(manifest["numerics"]["engine"], cav_engine::build().json());
     let revision = manifest["numerics"]["engine"]["revision"].as_str().unwrap();
-    assert!(revision.len() == 40 && revision.chars().all(|c| c.is_ascii_hexdigit()), "{revision}");
+    assert!(
+        revision == "unknown" || (revision.len() == 40 && revision.chars().all(|c| c.is_ascii_hexdigit())),
+        "{revision}"
+    );
     // A scene that cannot have a signal has no bundle, and says why.
     set(&mut engine, "array.instrument.half_sequence", json!(0.001)).unwrap();
     set(&mut engine, "array.instrument.cycle", json!(0.0021)).unwrap();

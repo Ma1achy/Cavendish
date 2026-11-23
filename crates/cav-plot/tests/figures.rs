@@ -84,7 +84,7 @@ cav_validate::case! {
     subsystem: "figure",
     slice: "S2",
     reference: Exact,
-    against: "six figures of the comb (periodogram, signal, one tower's lower channel over a span, cadence window, flight diagram; SVG and PDF; four presets) written by two engines from the same commands: each figure, its .csv and its .json; files that differ in any byte",
+    against: "six figures of the comb (periodogram, signal, one tower's lower channel over a span, cadence window, flight diagram; SVG and PDF; four presets) written by two engines from the same commands: each figure, its .csv and its .json; files that differ in any byte (each .json's provenance, the build's revision and dirty flag, among them)",
     unit: Count,
     tolerance: 0.0,
     measure: {
@@ -103,6 +103,18 @@ cav_validate::case! {
             assert!(files.contains_key(name), "no {name}");
         }
         assert!(files.values().all(|bytes| !bytes.is_empty()));
+        // The provenance in particular: every figure's .json is the same bytes from the second
+        // engine, and what it says of the engine is the build's. (Two engines in one process
+        // could not have caught a revision asked of git when the file is written; `cav`'s
+        // `cli_provenance_is_the_builds_whatever_the_tree_or_the_directory` runs the binary
+        // twice with the tree changed in between, and does.)
+        let again = files_of(&dirs[1]);
+        for (name, bytes) in files.iter().filter(|(name, _)| name.ends_with(".json")) {
+            assert!(again[name] == *bytes, "{name} differs between the two engines");
+            let said: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+            assert_eq!(said["engine"], cav_engine::build().json(), "{name}");
+            assert_eq!(said["numerics"]["engine"], said["engine"], "{name}");
+        }
         // Control: another tower changes the pictures and data of that tower's figures; one
         // bit of one number of the scene changes every figure of the signal.
         session(&dirs[2], 3, &format!("{mass:?}"));
