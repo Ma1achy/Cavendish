@@ -1243,7 +1243,7 @@ fn a_replay_waits_for_the_signal_an_export_needs() {
     // thousand reads cannot have finished in the instant since the edit, on any machine: a busy
     // one is slower still), and writes nothing.
     let refused = Engine::replay_into_within(&journal, &scratch.join("none"), std::time::Duration::ZERO);
-    let why = refused.err().expect("an export with no signal is refused");
+    let Err(why) = refused else { panic!("an export with no signal was not refused") };
     assert!(why.contains("command 2") && why.contains("still being computed"), "{why}");
     assert!(!scratch.join("none").join("out").join("signal.npy").exists());
 
