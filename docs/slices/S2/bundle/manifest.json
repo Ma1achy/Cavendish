@@ -1,0 +1,243 @@
+{
+  "cavendish_bundle": 1,
+  "scene": "staggered",
+  "shots": 1000,
+  "towers": 5,
+  "sources": 1,
+  "sign": "lower minus upper (δφ₁ − δφ₂): George's convention. v1's bundles are upper minus lower: the opposite sign",
+  "settled": true,
+  "warnings": [],
+  "numerics": {
+    "engine": {
+      "version": "0.0.0",
+      "revision": "10b58c03e60ce563fedd216cab2c0f8ce41027bd",
+      "dirty": true
+    },
+    "platform": "x86_64-windows",
+    "precision": "f64 on the CPU",
+    "quadrature": "Gauss { order: 6, panel: 0.1 }, panels halved until two rules agree",
+    "phase_tolerance_rad": 1e-10,
+    "phase_tolerance_relative": 1e-12,
+    "max_halvings": 8,
+    "max_nodes_per_read": 4000000,
+    "constants": {
+      "big_g": 6.6743e-11,
+      "hbar": 1.0545718176461565e-34,
+      "atom_mass_kg": 1.4431558652473234e-25,
+      "kick_velocity_m_per_s": 6.577901532502563,
+      "gravity_m_per_s2": 9.81
+    },
+    "replay": "bit-identical with the same binary on the same platform (sin and cos are the platform's)"
+  },
+  "arrays": [
+    {
+      "name": "time",
+      "file": "time.npy",
+      "shape": [
+        1000
+      ],
+      "dtype": "<f8",
+      "unit": "s",
+      "about": "each shot's readout on the array's clock"
+    },
+    {
+      "name": "detector_time",
+      "file": "detector_time.npy",
+      "shape": [
+        1000,
+        5
+      ],
+      "dtype": "<f8",
+      "unit": "s",
+      "about": "each tower's own readout time: the array's clock and the tower's offset"
+    },
+    {
+      "name": "valid",
+      "file": "valid.npy",
+      "shape": [
+        1000,
+        5
+      ],
+      "dtype": "|b1",
+      "unit": "",
+      "about": "whether the tower took the shot; where false the signal holds 0, which is not a measurement"
+    },
+    {
+      "name": "signal",
+      "file": "signal.npy",
+      "shape": [
+        1000,
+        5
+      ],
+      "dtype": "<f8",
+      "unit": "rad",
+      "about": "the gradiometer's differential phase, with the sign the manifest states"
+    },
+    {
+      "name": "signal_per_ifo",
+      "file": "signal_per_ifo.npy",
+      "shape": [
+        1000,
+        5,
+        2
+      ],
+      "dtype": "<f8",
+      "unit": "rad",
+      "about": "the two interferometers' own phases: [..., 0] the lower (δφ₁), [..., 1] the upper (δφ₂)"
+    },
+    {
+      "name": "detector_placement",
+      "file": "detector_placement.npy",
+      "shape": [
+        5,
+        7
+      ],
+      "dtype": "<f8",
+      "unit": "m, then 1",
+      "about": "each tower's base x, y, z, then the quaternion w, x, y, z of its axis (upright)"
+    },
+    {
+      "name": "source_position",
+      "file": "source_position.npy",
+      "shape": [
+        1,
+        1000,
+        3
+      ],
+      "dtype": "<f8",
+      "unit": "m",
+      "about": "each body's position at `time` (the array's clock), whether or not it exists then"
+    },
+    {
+      "name": "source_mass",
+      "file": "source_mass.npy",
+      "shape": [
+        1
+      ],
+      "dtype": "<f8",
+      "unit": "kg",
+      "about": "each body's mass, in the scene's order"
+    },
+    {
+      "name": "error_estimate",
+      "file": "error_estimate.npy",
+      "shape": [
+        5
+      ],
+      "dtype": "<f8",
+      "unit": "rad",
+      "about": "the largest quadrature estimate of any shot of any source at the tower: measured, by reading until two rules agree"
+    }
+  ],
+  "spec": {
+    "version": 1,
+    "name": "staggered",
+    "description": "The comb's oscillator read by five towers on their own clocks: tower n fires (n − 1)·2T/5 after tower 1. Each tower has its own readout times; drag a lane with Shift to move one.",
+    "duration": 2000.0,
+    "array": {
+      "instrument": {
+        "tower_height": 10.0,
+        "ifo_separation": 5.0,
+        "half_sequence": 0.73,
+        "launch_velocity": 3.86,
+        "cycle": 2.0,
+        "atom_mass": 1.4431558652473234e-25,
+        "gravity": 9.81,
+        "launch_floor": true,
+        "sign": "LowerMinusUpper"
+      },
+      "towers": [
+        {
+          "label": "tower 1",
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "timing": {
+            "offset": 0.0
+          }
+        },
+        {
+          "label": "tower 2",
+          "position": [
+            4.0,
+            0.0,
+            0.0
+          ],
+          "timing": {
+            "offset": 0.292
+          }
+        },
+        {
+          "label": "tower 3",
+          "position": [
+            -4.0,
+            0.0,
+            0.0
+          ],
+          "timing": {
+            "offset": 0.584
+          }
+        },
+        {
+          "label": "tower 4",
+          "position": [
+            0.0,
+            4.0,
+            0.0
+          ],
+          "timing": {
+            "offset": 0.8759999999999999
+          }
+        },
+        {
+          "label": "tower 5",
+          "position": [
+            0.0,
+            -4.0,
+            0.0
+          ],
+          "timing": {
+            "offset": 1.168
+          }
+        }
+      ],
+      "schedule": {
+        "jitter": null,
+        "alternate": null,
+        "gaps": null,
+        "window": null,
+        "loss": 0.0,
+        "seed": 0
+      }
+    },
+    "room": null,
+    "floor": null,
+    "bodies": [
+      {
+        "label": "oscillator",
+        "mass": 1.0,
+        "radius": 0.0,
+        "motion": {
+          "Linear": {
+            "centre": [
+              3.0,
+              0.0,
+              1.0
+            ],
+            "amplitude": [
+              0.0,
+              0.0,
+              0.5
+            ],
+            "frequency": 0.05,
+            "phase": 0.0
+          }
+        },
+        "appears": null,
+        "vanishes": null
+      }
+    ]
+  }
+}
