@@ -177,7 +177,9 @@ fn gpu_ui_draws_the_signal_and_the_periodogram() {
     }
     // The playhead is a line down the plot at 5.46 s.
     let playhead = drawn.playhead.unwrap();
-    let link = [0x5a, 0xb4, 0xff];
+    // One colour in every plot and in the timeline, and no series' (`the_playhead_is_one_colour`).
+    let c = cav_app::theme::PLAYHEAD;
+    let link = [c.r(), c.g(), c.b()];
     let on_line = (drawn.area.top() as u32 + 4..drawn.area.bottom() as u32 - 4)
         .filter(|&y| picture.has_near([f64::from(playhead), f64::from(y)], 1, link, 40))
         .count();

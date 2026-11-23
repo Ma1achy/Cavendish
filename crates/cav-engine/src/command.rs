@@ -81,7 +81,7 @@ pub enum Command {
 }
 
 /// What an [`Command::Export`] writes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub enum ExportKind {
     /// The scene as a `.ron` file: what `load` reads back.
     Scene,
@@ -91,17 +91,159 @@ pub enum ExportKind {
     /// tower's readout times, the numerics and the per-tower error estimate, with a manifest
     /// (`cav_sim::bundle`). Written only from a refined signal.
     Bundle,
+    /// A figure: a plot or a view as an SVG, a PDF or a PNG at a stated size, with the data
+    /// behind it (`.csv`, or `.npy` when it is long) and a `.json` of its axes, units and
+    /// provenance beside it, under the same name. The engine does not draw: the client's
+    /// exporter does ([`crate::Engine::set_figure_exporter`]; `cav-plot` has one). A figure of a
+    /// signal or a periodogram is written only from a refined signal.
+    Figure(Box<Figure>),
 }
 
 impl ExportKind {
     /// The word the console uses.
     #[must_use]
-    pub const fn name(self) -> &'static str {
+    pub const fn name(&self) -> &'static str {
         match self {
             Self::Scene => "scene",
             Self::Journal => "journal",
             Self::Bundle => "bundle",
+            Self::Figure(_) => "figure",
         }
+    }
+}
+
+/// What a figure shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum FigureKind {
+    /// A channel of every tower's signal (or of one tower's) against readout time.
+    Signal,
+    /// The periodogram of one tower's signal, with the combs.
+    Periodogram,
+    /// The spectral window of one tower's shots, with the predicted lines.
+    Cadence,
+    /// The atoms' flights on absolute time.
+    Flight,
+    /// A pane's view of the scene, as the renderer draws it.
+    View,
+}
+
+impl FigureKind {
+    /// Every kind, in the order the console lists them.
+    pub const ALL: [Self; 5] = [Self::Signal, Self::Periodogram, Self::Cadence, Self::Flight, Self::View];
+
+    /// The word the console uses.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Signal => "signal",
+            Self::Periodogram => "periodogram",
+            Self::Cadence => "cadence",
+            Self::Flight => "flight",
+            Self::View => "view",
+        }
+    }
+
+    /// The kind a word names.
+    #[must_use]
+    pub fn parse(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.name() == word)
+    }
+}
+
+/// The format of a figure's file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum FigureFormat {
+    /// SVG: vector, text as outlines.
+    Svg,
+    /// PDF: vector, text as outlines, one page the size of the figure.
+    Pdf,
+    /// PNG: pixels, at the figure's size times its resolution.
+    Png,
+}
+
+impl FigureFormat {
+    /// The file extension, which is also the word for the format: `svg`, `pdf`, `png`.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Svg => "svg",
+            Self::Pdf => "pdf",
+            Self::Png => "png",
+        }
+    }
+
+    /// The format a file's name asks for, by its extension (in either case).
+    #[must_use]
+    pub fn of_file(file: &str) -> Option<Self> {
+        let extension = std::path::Path::new(file).extension()?.to_str()?.to_ascii_lowercase();
+        [Self::Svg, Self::Pdf, Self::Png].into_iter().find(|format| format.name() == extension)
+    }
+}
+
+/// The preset a figure has when none is named.
+pub const DEFAULT_FIGURE_PRESET: &str = "paper-column";
+
+/// The largest side of a figure, millimetres, and the largest resolution, pixels per inch: a
+/// size a person may write decides how much is drawn. (A PNG's pixels are bounded as well, by
+/// the exporter: size × resolution, each side.)
+pub const MAX_FIGURE_MM: f64 = 2000.0;
+/// See [`MAX_FIGURE_MM`].
+pub const MAX_FIGURE_DPI: f64 = 2400.0;
+
+/// A figure to export: what it shows, how it looks and how big it is.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Figure {
+    /// What it shows.
+    pub what: FigureKind,
+    /// The format of the file; the file's extension must be the format's.
+    pub format: FigureFormat,
+    /// The preset that gives its look and its size: `paper-column`, `paper-full`, `slide`,
+    /// `poster` or `screen`.
+    pub preset: String,
+    /// The tower, from 1: whose periodogram or spectral window it is; for a signal, the one
+    /// tower drawn (every tower if absent). Not used by a flight diagram or a view.
+    #[serde(default)]
+    pub tower: Option<usize>,
+    /// The channel of a signal or a periodogram.
+    #[serde(default)]
+    pub channel: ChannelName,
+    /// The stretch of the horizontal axis shown: seconds for a signal or a flight diagram, hertz
+    /// for a periodogram or a window; all of it if absent.
+    #[serde(default)]
+    pub span: Option<[f64; 2]>,
+    /// For a view: the pane whose camera it is, from 0.
+    #[serde(default)]
+    pub pane: usize,
+    /// The width and height, millimetres, in place of the preset's.
+    #[serde(default)]
+    pub size_mm: Option<[f64; 2]>,
+    /// The resolution of a PNG, pixels per inch, in place of the preset's.
+    #[serde(default)]
+    pub dpi: Option<f64>,
+}
+
+impl Figure {
+    /// A figure of `what` in `format` with the default preset and everything else as the
+    /// preset has it.
+    #[must_use]
+    pub fn new(what: FigureKind, format: FigureFormat) -> Self {
+        Self {
+            what,
+            format,
+            preset: DEFAULT_FIGURE_PRESET.to_owned(),
+            tower: None,
+            channel: ChannelName::default(),
+            span: None,
+            pane: 0,
+            size_mm: None,
+            dpi: None,
+        }
+    }
+
+    /// Whether the figure is of the signal, and so is written only from a refined one.
+    #[must_use]
+    pub const fn needs_signal(&self) -> bool {
+        matches!(self.what, FigureKind::Signal | FigureKind::Periodogram)
     }
 }
 

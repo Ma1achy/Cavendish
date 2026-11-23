@@ -283,7 +283,7 @@ fn cli_prints_the_font_licence() {
     assert!(out.status.success(), "{}", stderr(&out));
     let text = stdout(&out);
     // The licence itself, whole, as it is in the repository beside the font.
-    let file = include_str!("../../cav-app/assets/fonts/UFL.txt").replace("\r\n", "\n");
+    let file = include_str!("../../cav-plot/assets/fonts/UFL.txt").replace("\r\n", "\n");
     assert!(text.contains("Ubuntu Mono") && text.contains("Ubuntu Font Licence 1.0"), "{text}");
     assert!(text.contains(file.trim()), "the licence text is not printed whole");
     assert!(file.len() > 3000, "the file is the licence, not a stub");
@@ -445,4 +445,65 @@ fn cli_run_writes_a_bundle_twice_the_same() {
         stderr(&cav(&["run", "comb", "--out", d.to_str().unwrap(), "--patience", "soon"]))
             .contains("not a patience")
     );
+}
+
+#[test]
+fn cli_figure_writes_a_figure_with_its_data_twice_the_same() {
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli figure");
+    let _ = std::fs::remove_dir_all(&root);
+    let (a, b) = (root.join("a"), root.join("b"));
+    let run = |dir: &PathBuf, file: &str, more: &[&str]| {
+        std::fs::create_dir_all(dir).unwrap();
+        let out = dir.join(file);
+        let mut args = vec!["figure", "comb", "periodogram", "--out", out.to_str().unwrap()];
+        args.extend_from_slice(more);
+        let done = cav(&args);
+        assert!(done.status.success(), "{}", stderr(&done));
+        stdout(&done)
+    };
+    let options = ["--tower", "2", "--preset", "paper-full", "--exec", "set duration 200"];
+    let said = run(&a, "p.svg", &options);
+    assert!(said.contains("periodogram of scene `comb`, preset paper-full"), "{said}");
+    assert!(said.contains("p.csv") && said.contains("p.json"), "{said}");
+    run(&b, "p.svg", &options);
+    run(&a, "q.pdf", &["--size", "120x70", "--span", "0,0.2"]);
+    run(&b, "q.pdf", &["--size", "120x70", "--span", "0,0.2"]);
+    // The same commands twice: the same six files, byte for byte.
+    let mut names: Vec<String> = std::fs::read_dir(&a)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["p.csv", "p.json", "p.svg", "q.csv", "q.json", "q.pdf"]);
+    for name in &names {
+        assert_eq!(std::fs::read(a.join(name)).unwrap(), std::fs::read(b.join(name)).unwrap(), "{name}");
+    }
+    // The files are what they say: an SVG of the preset's width, a PDF of the size asked for.
+    let svg = std::fs::read_to_string(a.join("p.svg")).unwrap();
+    assert!(svg.contains("width=\"178mm\" height=\"90mm\""), "{}", &svg[..200]);
+    let pdf = std::fs::read(a.join("q.pdf")).unwrap();
+    assert_eq!(cav_plot::pdf::check(&pdf).unwrap().media_box, [0.0, 0.0, 340.157, 198.425]);
+    // The provenance carries the line that made it, with the edits a library name does not say.
+    let json: serde_json::Value = serde_json::from_slice(&std::fs::read(a.join("p.json")).unwrap()).unwrap();
+    assert_eq!(json["command"]["console"], "figure periodogram tower 2 as paper-full to p.svg");
+    assert_eq!(json["scene"]["spec"]["duration"], 200.0);
+    // Control: refusals, each with its reason, and nothing written.
+    let c = root.join("c");
+    std::fs::create_dir_all(&c).unwrap();
+    let out = c.join("x.svg");
+    let out = out.to_str().unwrap();
+    for (args, why) in [
+        (vec!["figure", "comb", "periodogram"], "--out"),
+        (vec!["figure", "comb", "periodogram", "--out", "x.jpg"], "names no format"),
+        (vec!["figure", "comb", "spectrum", "--out", out], "is not something a figure shows"),
+        (vec!["figure", "comb", "periodogram", "--out", out, "--preset", "a4"], "is not a figure preset"),
+        (vec!["figure", "comb", "periodogram", "--out", out, "--tower", "9"], "there is no tower 9"),
+        (vec!["figure", "comb", "periodogram", "--out", out, "--size", "wide"], "is not a size"),
+        (vec!["figure", "nowhere", "periodogram", "--out", out], "not a library scene"),
+    ] {
+        let done = cav(&args);
+        assert!(!done.status.success() && stderr(&done).contains(why), "{args:?}: {}", stderr(&done));
+    }
+    assert_eq!(std::fs::read_dir(&c).unwrap().count(), 0);
+    assert!(stdout(&cav(&["help"])).contains("figure <scene> <signal|periodogram|cadence|flight|view>"));
 }

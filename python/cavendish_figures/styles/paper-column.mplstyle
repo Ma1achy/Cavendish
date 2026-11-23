@@ -1,0 +1,13 @@
+# The paper-column preset: 85 x 60 mm, as Cavendish's own figures of that name.
+figure.figsize: 3.34646, 2.36220
+font.size: 7
+axes.titlesize: 8.05
+axes.labelsize: 7
+xtick.labelsize: 7
+ytick.labelsize: 7
+legend.fontsize: 7
+lines.linewidth: 0.8
+axes.linewidth: 0.48
+grid.linewidth: 0.48
+lines.markersize: 3.0
+savefig.dpi: 600

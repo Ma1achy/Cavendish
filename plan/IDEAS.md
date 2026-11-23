@@ -55,3 +55,8 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **A pure-Rust `libm` for the forward model**, so that bundles are identical across Windows, Linux and macOS (the note, §5.8): a decision for the owner; it would change every golden once.
 - **Vector export of the 3-D view**: a figure of a scene pane is a PNG, or an SVG/PDF holding that picture. S4's paper style.
 - **A scene's memory at 1000 bodies × 1000 towers × long labels**: a `set` takes tens of milliseconds there (each edit is a trip of the whole spec through JSON); splice the smallest enclosing item instead (the note, §3.2). When a real scene is that large.
+- **Figures of the comparison** (`compare aice`): a figure draws the scene's own instrument only; the panes draw both. A `compared` word on the `figure` line, and both on one page. S4.
+- **Kerning in a figure's text**: outlines are placed by each glyph's own advance, so a PNG (egui's shaping) and the SVG/PDF of one figure can differ by a fraction of a point in a label's width. Read the fonts' `kern`/GPOS pairs, or lay figures' PNG text out from the same outlines. When a figure's labels are tight.
+- **The Python helper's flight diagram** draws each shot as a bar: the arms' arcs are the forward model's. Export the arcs as data, or wait for the Python bindings. S11.
+- **pytest for `python/`**: the tests are plain asserts with a runner of their own, because pytest is not installed on the build PC; they run under pytest unchanged. Install it when the Python side grows (S11).
+- **One figure, several formats**: `fig.svg`, `fig.pdf` and `fig.png` share `fig.csv` and `fig.json`, and the `.json` names the format written last. A `formats` list in one command would say all three.

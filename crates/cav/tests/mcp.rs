@@ -106,7 +106,17 @@ fn mcp_lists_its_tools_with_their_arguments() {
     names.sort_unstable();
     assert_eq!(
         names,
-        ["command", "log", "render_view", "scene_get", "scene_load", "scene_ls", "scene_schema", "scene_set"]
+        [
+            "command",
+            "figure",
+            "log",
+            "render_view",
+            "scene_get",
+            "scene_load",
+            "scene_ls",
+            "scene_schema",
+            "scene_set"
+        ]
     );
     for tool in tools {
         assert!(tool["description"].as_str().is_some_and(|d| d.len() > 20), "{tool}");
@@ -422,4 +432,78 @@ fn mcp_sets_lists_and_loads_inline() {
     let big = json!({ "name": "x".repeat(1_100_000) });
     let (is_error, content) = client.call("scene_load", json!({ "spec": big }));
     assert!(is_error && format!("{content:?}").contains("larger than 1048576 bytes"), "{content:?}");
+}
+
+#[test]
+fn mcp_figure_writes_a_figure_and_says_what_it_wrote() {
+    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("mcp figure");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = |name: &str| dir.join(name).display().to_string();
+    let (mut client, _) = Client::start();
+    client.text("scene_load", json!({ "scene": "comb" }));
+    client.text("scene_set", json!({ "path": "duration", "value": 200.0 }));
+    let said = client.text("figure", json!({ "what": "periodogram", "file": file("p.pdf"), "tower": 3 }));
+    assert!(said.starts_with("figure periodogram tower 3 as paper-column to "), "{said}");
+    assert!(said.contains("p.pdf") && said.contains("p.csv") && said.contains("p.json"), "{said}");
+    cav_plot::pdf::check(&std::fs::read(dir.join("p.pdf")).unwrap()).unwrap();
+    let provenance: Value = serde_json::from_slice(&std::fs::read(dir.join("p.json")).unwrap()).unwrap();
+    assert_eq!(provenance["subject"]["tower"], 3);
+    assert_eq!(provenance["scene"]["spec"]["duration"], 200.0);
+    // The signal of every tower as a slide, over a span, at a size of its own.
+    let arguments = json!({ "what": "signal", "file": file("s.svg"), "preset": "slide", "span": [0, 50], "size_mm": [200, 100] });
+    client.text("figure", arguments);
+    let svg = std::fs::read_to_string(dir.join("s.svg")).unwrap();
+    assert!(svg.contains("width=\"200mm\" height=\"100mm\""));
+    // It is a command like any other: the journal has it, and the log.
+    let journal = client.text("command", json!({ "line": "journal" }));
+    assert_eq!(journal.matches("\"Figure\"").count(), 2, "{journal}");
+    // Control: refusals are tool errors with the reason, and write nothing.
+    for (arguments, why) in [
+        (json!({ "what": "spectrum", "file": file("x.svg") }), "is not something a figure shows"),
+        (json!({ "what": "signal", "file": file("x.gif") }), "names no format"),
+        (json!({ "what": "signal", "file": file("x.svg"), "preset": "a4" }), "is not a figure preset"),
+        (
+            json!({ "what": "signal", "file": file("x.png"), "preset": "poster", "dpi": 600 }),
+            "each side is 1 to 8192",
+        ),
+        (json!({ "what": "view", "file": file("x.png"), "pane": 0 }), "counted from 1"),
+    ] {
+        let (is_error, content) = client.call("figure", arguments.clone());
+        assert!(is_error && format!("{content:?}").contains(why), "{arguments}: {content:?}");
+    }
+    assert!(!dir.join("x.svg").exists() && !dir.join("x.png").exists() && !dir.join("x.json").exists());
+    client.finish();
+}
+
+#[test]
+fn gpu_mcp_figure_returns_the_png_it_wrote() {
+    use base64::Engine as _;
+    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("mcp figure png");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (mut client, _) = Client::start();
+    client.text("scene_load", json!({ "scene": "comb" }));
+    client.text("scene_set", json!({ "path": "duration", "value": 200.0 }));
+    let file = dir.join("p.png").display().to_string();
+    let (is_error, content) =
+        client.call("figure", json!({ "what": "periodogram", "file": file, "dpi": 150 }));
+    assert!(!is_error, "{content:?}");
+    assert_eq!((&content[0]["type"], &content[1]["type"]), (&json!("text"), &json!("image")));
+    assert_eq!(content[1]["mimeType"], "image/png");
+    let bytes =
+        base64::engine::general_purpose::STANDARD.decode(content[1]["data"].as_str().unwrap()).unwrap();
+    assert_eq!(bytes, std::fs::read(dir.join("p.png")).unwrap(), "the picture returned is the file written");
+    let (_, size) = cav_render::decode_png(&bytes).unwrap();
+    assert_eq!(size, [502, 354], "85 × 60 mm at 150 pixels per inch");
+    // A view of the scene, as a figure.
+    let file = dir.join("v.png").display().to_string();
+    let (is_error, content) =
+        client.call("figure", json!({ "what": "view", "file": file, "preset": "screen" }));
+    assert!(!is_error && content[1]["type"] == "image", "{content:?}");
+    // Control: a vector figure returns no picture.
+    let file = dir.join("p.svg").display().to_string();
+    let (_, content) = client.call("figure", json!({ "what": "periodogram", "file": file }));
+    assert_eq!(content.len(), 1);
+    client.finish();
 }

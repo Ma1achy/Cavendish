@@ -179,16 +179,9 @@ impl Allowances {
     pub const NONE: Self = Self { absent: &[], edges: &[] };
 }
 
-/// TEMPORARY, until TASK-S2-07 merges: `cav-plot` is not in the workspace yet, and `cav` still
-/// takes its plots from `cav-app`. Delete this constant when that task lands and hold the real
-/// workspace to [`Allowances::NONE`]; nothing else may be added to it.
-pub const UNTIL_CAV_PLOT_LANDS: Allowances =
-    Allowances { absent: &["cav-plot"], edges: &[("cav", "cav-app")] };
-
-/// TEMPORARY: the library crates that do not yet carry `#![warn(missing_docs)]`. `cav-engine` and
-/// `cav-app` are being restructured by TASK-S2-07, which also adds `cav-plot`; empty this list
-/// when they are documented.
-pub const NOT_YET_DOCUMENTED: &[&str] = &["cav-app", "cav-plot"];
+/// TEMPORARY: the library crates that do not yet carry `#![warn(missing_docs)]`: `cav-app`,
+/// whose plots moved to `cav-plot` in TASK-S2-07; empty this list when it is documented.
+pub const NOT_YET_DOCUMENTED: &[&str] = &["cav-app"];
 
 /// Every way the manifests break the plan, in words; empty when they keep it.
 ///
@@ -350,7 +343,7 @@ cav-app = { path = "crates/cav-app" }
     #[test]
     fn the_crates_depend_as_the_plan_says() {
         let real = real_manifests();
-        let faults = dependency_faults(&real, &UNTIL_CAV_PLOT_LANDS);
+        let faults = dependency_faults(&real, &Allowances::NONE);
         assert!(faults.is_empty(), "the workspace breaks the plan's table:\n{}", faults.join("\n"));
         // The reading itself is not vacuous: the real workspace has the edges it is known to have.
         let of = |name: &str| real.iter().find(|m| m.name == name).unwrap_or_else(|| panic!("no {name}"));
@@ -387,17 +380,19 @@ cav-app = { path = "crates/cav-app" }
             })
             .collect();
         assert_eq!(dependency_faults(&without_plot, &Allowances::NONE).len(), 1);
-        assert!(dependency_faults(&without_plot, &UNTIL_CAV_PLOT_LANDS).is_empty());
-        // The command line depending on the application is refused without today's allowance, and
-        // the allowance lets through that edge and no other.
+        // An allowance, as the workspace had until `cav-plot` landed: it excuses what it names.
+        let allowed = Allowances { absent: &["cav-plot"], edges: &[("cav", "cav-app")] };
+        assert!(dependency_faults(&without_plot, &allowed).is_empty());
+        // The command line depending on the application is refused without an allowance, and
+        // an allowance lets through that edge and no other.
         let mut cli_on_app = as_planned();
         let cav = cli_on_app.iter_mut().find(|m| m.name == "cav").unwrap();
         cav.normal.push("cav-app".into());
         assert_eq!(dependency_faults(&cli_on_app, &Allowances::NONE).len(), 1);
-        assert!(dependency_faults(&cli_on_app, &UNTIL_CAV_PLOT_LANDS).is_empty());
+        assert!(dependency_faults(&cli_on_app, &allowed).is_empty());
         let engine = cli_on_app.iter_mut().find(|m| m.name == "cav-engine").unwrap();
         engine.normal.push("cav-app".into());
-        assert_eq!(dependency_faults(&cli_on_app, &UNTIL_CAV_PLOT_LANDS).len(), 1);
+        assert_eq!(dependency_faults(&cli_on_app, &allowed).len(), 1);
         // Dev-dependencies are judged apart: test support anywhere, the engine in the memory
         // tests, but not the engine in the core's tests.
         let mut tests = as_planned();

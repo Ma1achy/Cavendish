@@ -76,6 +76,8 @@ pub fn oracle(root: &Path) -> Result<(), String> {
     step("oracle clippy", cargo(root, &[&clippy[..], &lints[..]].concat()))?;
     // nextest does not run documentation examples, and `quick` has no time for them.
     step("doctests", cargo(root, &["test", "--doc", "--workspace", "--quiet"]))?;
+    // The Python side: typed, and its tests pass on figures this build writes. Never skipped.
+    crate::python::run(root)?;
     run_tests(root, "oracle", &ORACLE_NEXTEST)
 }
 

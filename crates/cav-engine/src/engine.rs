@@ -65,6 +65,25 @@ enum Prepared {
     Write(std::path::PathBuf, Vec<u8>),
     /// An export of a bundle: the directory to write it into.
     Bundle(std::path::PathBuf),
+    /// An export of a figure: the file to write, which the client's exporter draws.
+    Figure(std::path::PathBuf),
+}
+
+/// What draws a figure and writes its files: the figure's file at the path given, its data and
+/// its provenance beside it. It answers with every file it wrote. The engine cannot draw (it
+/// knows nothing of fonts or pictures), so a client that can installs one
+/// ([`Engine::set_figure_exporter`]).
+pub type FigureExporter =
+    Box<dyn Fn(&Engine, &crate::Figure, &std::path::Path) -> Result<Vec<std::path::PathBuf>, String> + Send>;
+
+/// The client's figure exporter, if it has installed one.
+#[derive(Default)]
+struct Drawer(Option<FigureExporter>);
+
+impl std::fmt::Debug for Drawer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.is_some() { "a figure exporter" } else { "no figure exporter" })
+    }
 }
 
 /// How many frequencies a spectral window is answered at.
@@ -99,6 +118,8 @@ pub struct Engine {
     refused: bool,
     /// Where exports are written.
     exports: Exports,
+    /// What draws figures: the client's.
+    drawer: Drawer,
     log: Log,
     /// `log.total()` just after the last command's entry: tells whether that entry is still the newest.
     log_mark: u64,
@@ -164,6 +185,7 @@ impl Engine {
             journal_budget: JOURNAL_BYTES,
             refused: false,
             exports: Exports::AsNamed,
+            drawer: Drawer::default(),
             log,
             log_mark: 0,
             generation: 0,
@@ -220,6 +242,17 @@ impl Engine {
         self.exports = exports;
     }
 
+    /// Installs what draws this engine's figures. Without one, a figure export is refused.
+    pub fn set_figure_exporter(&mut self, exporter: FigureExporter) {
+        self.drawer = Drawer(Some(exporter));
+    }
+
+    /// Whether a figure exporter is installed.
+    #[must_use]
+    pub const fn draws_figures(&self) -> bool {
+        self.drawer.0.is_some()
+    }
+
     /// Applies a command. On success the state has changed, the command is in the journal and the
     /// log says what was done. On refusal nothing has changed except the log, which has the reason.
     ///
@@ -230,9 +263,14 @@ impl Engine {
         // A bundle is of finished numbers: the signal is waited for, as long as this client
         // waits for anything (a tenth of a second in the application, which is then told to
         // try again; a minute or more from the command line).
-        if matches!(command, Command::Export { what: crate::ExportKind::Bundle, .. })
-            && self.exports != Exports::Skipped
-        {
+        let of_the_signal = match &command {
+            Command::Export { what: crate::ExportKind::Bundle, .. } => true,
+            Command::Export { what: crate::ExportKind::Figure(figure), .. } => {
+                figure.needs_signal() && self.draws_figures()
+            }
+            _ => false,
+        };
+        if of_the_signal && self.exports != Exports::Skipped {
             self.settle(self.patience);
         }
         let prepared = match self.prepare(&command) {
@@ -258,6 +296,19 @@ impl Engine {
             let signal = self.forward.signal().expect("prepare saw a refined signal");
             match cav_sim::bundle::write(directory, &self.spec, signal, crate::build()) {
                 Ok(files) => wrote = Some(format!("{} ({} files)", directory.display(), files.len())),
+                Err(why) => {
+                    self.note(Level::Error, Subsystem::Engine, format!("refused `{described}`: {why}"));
+                    self.refused = true;
+                    return Err(why);
+                }
+            }
+        }
+        if let (Prepared::Figure(path), Command::Export { what: crate::ExportKind::Figure(figure), .. }) =
+            (&prepared, &command)
+        {
+            let exporter = self.drawer.0.as_ref().expect("prepare saw an exporter");
+            match exporter(self, figure, path) {
+                Ok(files) => wrote = Some(format!("{} ({} files)", path.display(), files.len())),
                 Err(why) => {
                     self.note(Level::Error, Subsystem::Engine, format!("refused `{described}`: {why}"));
                     self.refused = true;
@@ -392,7 +443,7 @@ impl Engine {
                     Edit::Remove { path: path.clone() },
                 )
             }
-            Command::Export { what, to } => self.prepare_export(*what, to),
+            Command::Export { what, to } => self.prepare_export(what, to),
             Command::Run { .. } | Command::Compare(None) => Ok(Prepared::Plain),
             Command::Compare(Some(instrument)) => {
                 // The scene must be one on that instrument too.
@@ -426,9 +477,12 @@ impl Engine {
     }
 
     /// The file an export writes and its bytes; `Plain` when exports are skipped.
-    fn prepare_export(&self, what: crate::ExportKind, to: &str) -> Result<Prepared, String> {
+    fn prepare_export(&self, what: &crate::ExportKind, to: &str) -> Result<Prepared, String> {
         if to.trim().is_empty() {
             return Err("an export needs a file to write".into());
+        }
+        if let crate::ExportKind::Figure(figure) = what {
+            self.check_figure(figure, to)?;
         }
         let path = match &self.exports {
             Exports::Skipped => return Ok(Prepared::Plain),
@@ -450,6 +504,26 @@ impl Engine {
                         .into()),
                 };
             }
+            crate::ExportKind::Figure(figure) => {
+                if self.drawer.0.is_none() {
+                    return Err("no figure exporter is installed in this client: the engine does not draw; \
+                                `cav`, the MCP server and the application install cav-plot's"
+                        .into());
+                }
+                if !figure.needs_signal() {
+                    return Ok(Prepared::Figure(path));
+                }
+                // As a bundle: never from a stale signal.
+                return match (self.forward.why(), self.forward.state(), self.forward.signal()) {
+                    (Some(why), _, _) => Err(format!("the scene has no signal to draw: {why}")),
+                    (None, SignalState::Refined, Some(_)) => Ok(Prepared::Figure(path)),
+                    _ => Err(
+                        "the signal is still being computed: a figure of it is written only from a refined \
+                              signal; try again when it is (the header says `signal · …`)"
+                            .into(),
+                    ),
+                };
+            }
             crate::ExportKind::Scene => self.spec.to_ron().into_bytes(),
             crate::ExportKind::Journal => {
                 if !self.journal_whole {
@@ -459,6 +533,45 @@ impl Engine {
             }
         };
         Ok(Prepared::Write(path, bytes))
+    }
+
+    /// Whether a figure can be asked for at all: what the engine can say without drawing.
+    fn check_figure(&self, figure: &crate::Figure, to: &str) -> Result<(), String> {
+        use crate::{FigureKind, MAX_FIGURE_DPI, MAX_FIGURE_MM};
+        if crate::FigureFormat::of_file(to) != Some(figure.format) {
+            return Err(format!(
+                "`{to}` is not the name of a .{} file: a figure's file ends in .svg, .pdf or .png, and is that format",
+                figure.format.name()
+            ));
+        }
+        if let Some(size) = figure.size_mm
+            && !size.iter().all(|side| side.is_finite() && *side >= 10.0 && *side <= MAX_FIGURE_MM)
+        {
+            return Err(format!(
+                "a figure of {} × {} mm cannot be made: each side is from 10 to {MAX_FIGURE_MM} mm",
+                size[0], size[1]
+            ));
+        }
+        if let Some(dpi) = figure.dpi
+            && !(dpi.is_finite() && (10.0..=MAX_FIGURE_DPI).contains(&dpi))
+        {
+            return Err(format!("{dpi} is not a resolution: pixels per inch, from 10 to {MAX_FIGURE_DPI}"));
+        }
+        if let Some([from, to]) = figure.span
+            && !(from.is_finite() && to.is_finite() && from < to)
+        {
+            return Err(format!("a span runs from a number to a larger one, not from {from} to {to}"));
+        }
+        let towers = self.spec.array.towers.len();
+        if let Some(n) = figure.tower
+            && (n == 0 || n > towers)
+        {
+            return Err(format!("there is no tower {n}; the scene has towers 1 to {towers}"));
+        }
+        if figure.what == FigureKind::View && figure.pane >= self.panes {
+            return Err(format!("there is no pane {}; the figure has {}", figure.pane + 1, self.panes));
+        }
+        Ok(())
     }
 
     fn check_target(&self, target: Target) -> Result<(), String> {

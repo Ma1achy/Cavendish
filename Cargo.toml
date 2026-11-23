@@ -15,7 +15,7 @@ publish = false
 cav-core = { path = "crates/cav-core" }
 cav-engine = { path = "crates/cav-engine" }
 cav-gpu = { path = "crates/cav-gpu" }
-cav-app = { path = "crates/cav-app" }
+cav-plot = { path = "crates/cav-plot" }
 cav-render = { path = "crates/cav-render" }
 cav-sim = { path = "crates/cav-sim" }
 cav-validate = { path = "crates/cav-validate" }
@@ -23,7 +23,8 @@ cav-validate = { path = "crates/cav-validate" }
 base64 = "0.23"
 eframe = { version = "=0.37.0", default-features = false, features = ["wgpu_no_default_features", "default_fonts"] }
 egui = { version = "=0.37.0", default-features = false, features = ["default_fonts"] }
-egui-wgpu = { version = "=0.37.0", default-features = false, features = ["winit"] }
+# No `winit` here: `cav-plot` paints with no window and `cav` must not link one; `cav-app` asks for it.
+egui-wgpu = { version = "=0.37.0", default-features = false }
 bytemuck = { version = "1.25", features = ["derive"] }
 png = "0.18"
 pollster = "1.0"
@@ -31,6 +32,8 @@ rmcp = { version = "=3.11.0", default-features = false, features = ["server", "m
 ron = "=0.12.3"
 schemars = "1.2"
 serde = { version = "1.0", features = ["derive"] }
+# The version egui already compiles (epaint 0.37): glyph outlines for figures, no second copy.
+skrifa = { version = "=0.44.0", default-features = false, features = ["std"] }
 # preserve_order: a value's keys stay in the order its struct declares them, which is the order
 # `ls`, the editors and the schema show fields in. float_roundtrip: every f64 survives JSON exactly.
 serde_json = { version = "1.0", features = ["float_roundtrip", "preserve_order"] }

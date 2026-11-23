@@ -10,6 +10,7 @@
 //! ```
 
 mod demo;
+mod python;
 #[cfg(test)]
 mod recipes;
 mod tiers;
@@ -32,7 +33,9 @@ cargo xtask <tier>
   oracle             the oracle tier: the `oracle` crate, which compiles v1's forward model at tag
                      v1-final and holds the engine to it and to arrays made by running George's
                      reference scripts. A workspace of its own, built only by this command and by
-                     validate; formatted, linted and held to a floor like the other tiers.
+                     validate; formatted, linted and held to a floor like the other tiers. Then the
+                     Python side (python/): pyright in strict mode and the tests of cavendish_figures on
+                     figures this build writes; a missing Python, numpy, matplotlib or pyright fails it.
   demo <slice>       runs the slice's demo headlessly and saves screenshots to docs/slices/<slice>/.
   validate [--report] [--against <revision>]
                      runs every validation case (tests named `validation_…`, declared with

@@ -1,0 +1,13 @@
+# The slide preset: 254 x 143 mm, as Cavendish's own figures of that name.
+figure.figsize: 10.0, 5.62992
+font.size: 15
+axes.titlesize: 17.25
+axes.labelsize: 15
+xtick.labelsize: 15
+ytick.labelsize: 15
+legend.fontsize: 15
+lines.linewidth: 1.8
+axes.linewidth: 1.08
+grid.linewidth: 1.08
+lines.markersize: 6.8
+savefig.dpi: 150

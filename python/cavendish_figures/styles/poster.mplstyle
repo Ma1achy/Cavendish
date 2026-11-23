@@ -1,0 +1,13 @@
+# The poster preset: 400 x 250 mm, as Cavendish's own figures of that name.
+figure.figsize: 15.74803, 9.84252
+font.size: 24
+axes.titlesize: 27.6
+axes.labelsize: 24
+xtick.labelsize: 24
+ytick.labelsize: 24
+legend.fontsize: 24
+lines.linewidth: 3.0
+axes.linewidth: 1.8
+grid.linewidth: 1.8
+lines.markersize: 11.4
+savefig.dpi: 150

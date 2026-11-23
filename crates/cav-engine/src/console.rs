@@ -83,6 +83,12 @@ pub const COMMANDS: &[CommandDoc] = &[
         example: "export bundle a-bundle",
     },
     CommandDoc {
+        name: "figure",
+        usage: "figure <signal|periodogram|cadence|flight|view> [tower <N>] [gradiometer|lower|upper] [from <a> to <b>] [as <paper-column|paper-full|slide|poster|screen>] [size <W>x<H>] [dpi <N>] to <file.svg|.pdf|.png> [@N]",
+        about: "write a figure: a plot or a pane's view as SVG, PDF or PNG in a preset's style and size (size in mm, dpi for a PNG), with its data (.csv or .npy) and a .json of axes, units and provenance beside it",
+        example: "figure periodogram tower 2 as paper-column to fig.pdf",
+    },
+    CommandDoc {
         name: "mass",
         usage: "mass <kg> at <x> <y> <z>",
         about: "add a point mass at rest (an edit)",
@@ -260,6 +266,30 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
         Command::Export { what: ExportKind::Scene, to } => format!("save {}", quoted(to)),
         Command::Export { what: ExportKind::Journal, to } => format!("journal save {}", quoted(to)),
         Command::Export { what: ExportKind::Bundle, to } => format!("export bundle {}", quoted(to)),
+        Command::Export { what: ExportKind::Figure(figure), to } => {
+            let mut line = format!("figure {}", figure.what.name());
+            if let Some(tower) = figure.tower {
+                line.push_str(&format!(" tower {tower}"));
+            }
+            if figure.channel != ChannelName::default() {
+                line.push_str(&format!(" {}", figure.channel.name()));
+            }
+            if let Some([from, to]) = figure.span {
+                line.push_str(&format!(" from {from} to {to}"));
+            }
+            line.push_str(&format!(" as {}", figure.preset));
+            if let Some([width, height]) = figure.size_mm {
+                line.push_str(&format!(" size {width}x{height}"));
+            }
+            if let Some(dpi) = figure.dpi {
+                line.push_str(&format!(" dpi {dpi}"));
+            }
+            line.push_str(&format!(" to {}", quoted(to)));
+            if figure.what == crate::FigureKind::View {
+                line.push_str(&at(figure.pane));
+            }
+            line
+        }
         Command::Run { from: Stage::Forward } => "run".into(),
         Command::Compare(None) => "compare off".into(),
         Command::Compare(Some(instrument)) => {
@@ -458,6 +488,13 @@ impl Engine {
             }
             ("export", ["bundle", directory]) => {
                 Ok(Request::Do(Command::Export { what: ExportKind::Bundle, to: (*directory).to_owned() }))
+            }
+            ("figure", [kind, options @ ..]) => {
+                let kind = crate::FigureKind::parse(kind)
+                    .ok_or_else(|| format!("`{kind}` is not something a figure shows; {}", usage(name)))?;
+                self.parse_figure(kind, options, pane).map(|(figure, to)| {
+                    Request::Do(Command::Export { what: ExportKind::Figure(Box::new(figure)), to })
+                })
             }
             ("journal", ["save", file]) => {
                 Ok(Request::Do(Command::Export { what: ExportKind::Journal, to: (*file).to_owned() }))
@@ -678,6 +715,67 @@ impl Engine {
         }
     }
 
+    /// The words of a `figure` line after what it shows: options in any order, then `to <file>`.
+    fn parse_figure(
+        &self,
+        what: crate::FigureKind,
+        mut words: &[&str],
+        pane: usize,
+    ) -> Result<(crate::Figure, String), String> {
+        use crate::FigureKind;
+        let wrong = |why: String| format!("{why}; {}", usage("figure"));
+        let mut figure = crate::Figure::new(what, crate::FigureFormat::Svg);
+        figure.pane = if what == FigureKind::View { pane } else { 0 };
+        // A periodogram and a window are one tower's: the selected one, or the first.
+        if matches!(what, FigureKind::Periodogram | FigureKind::Cadence) {
+            figure.tower = Some(self.selected_tower().unwrap_or(1));
+        }
+        loop {
+            match words {
+                ["to", file] => {
+                    figure.format = crate::FigureFormat::of_file(file).ok_or_else(|| {
+                        wrong(format!("`{file}` does not end in .svg, .pdf or .png, so it names no format"))
+                    })?;
+                    return Ok((figure, (*file).to_owned()));
+                }
+                ["tower", n, rest @ ..] => {
+                    figure.tower =
+                        Some(n.parse().map_err(|_| wrong(format!("`{n}` is not a tower number")))?);
+                    words = rest;
+                }
+                ["from", from, "to", to, rest @ ..] if !rest.is_empty() => {
+                    figure.span =
+                        Some([number(from, "the start", "figure")?, number(to, "the end", "figure")?]);
+                    words = rest;
+                }
+                ["as", preset, rest @ ..] => {
+                    figure.preset = (*preset).to_owned();
+                    words = rest;
+                }
+                ["size", size, rest @ ..] => {
+                    let sides = size
+                        .split_once(['x', '×'])
+                        .and_then(|(w, h)| Some([w.parse::<f64>().ok()?, h.parse::<f64>().ok()?]))
+                        .ok_or_else(|| {
+                            wrong(format!("`{size}` is not a size; write it as 85x60 (millimetres)"))
+                        })?;
+                    figure.size_mm = Some(sides);
+                    words = rest;
+                }
+                ["dpi", dpi, rest @ ..] => {
+                    figure.dpi = Some(number(dpi, "pixels per inch", "figure")?);
+                    words = rest;
+                }
+                [channel, rest @ ..] if ChannelName::parse(channel).is_some() => {
+                    figure.channel = ChannelName::parse(channel).expect("just checked");
+                    words = rest;
+                }
+                [] | ["to"] => return Err(wrong("a figure needs `to <file>` at the end".into())),
+                [other, ..] => return Err(wrong(format!("`{other}` is not an option of a figure"))),
+            }
+        }
+    }
+
     /// The selected tower, from 1, if a tower is selected.
     fn selected_tower(&self) -> Option<usize> {
         match self.selection() {
@@ -873,6 +971,7 @@ mod erased {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{FigureFormat, FigureKind};
     use cav_sim::dev;
 
     #[test]
@@ -906,6 +1005,31 @@ mod tests {
             ("orbit -60 25", Command::View(ViewCommand::Orbit { pane: 0, yaw: -60.0, pitch: 25.0 })),
             ("zoom 0.30000000000000004", Command::View(ViewCommand::Zoom { pane: 0, distance: 0.1 + 0.2 })),
             ("pan 1 -2 0.5 @4", Command::View(ViewCommand::Pan { pane: 3, target: [1.0, -2.0, 0.5] })),
+            (
+                "figure periodogram tower 2 as paper-column to fig.pdf",
+                figure(FigureKind::Periodogram, FigureFormat::Pdf, "fig.pdf", |f| f.tower = Some(2)),
+            ),
+            (
+                "figure signal lower from 0.5 to 6 as slide size 200x100 dpi 96 to \"my figures/s.png\"",
+                figure(FigureKind::Signal, FigureFormat::Png, "my figures/s.png", |f| {
+                    f.channel = ChannelName::Lower;
+                    f.span = Some([0.5, 6.0]);
+                    f.preset = "slide".into();
+                    f.size_mm = Some([200.0, 100.0]);
+                    f.dpi = Some(96.0);
+                }),
+            ),
+            (
+                "figure cadence tower 1 as paper-column to window.svg",
+                figure(FigureKind::Cadence, FigureFormat::Svg, "window.svg", |f| f.tower = Some(1)),
+            ),
+            (
+                "figure view as screen to plan.png @3",
+                figure(FigureKind::View, FigureFormat::Png, "plan.png", |f| {
+                    f.preset = "screen".into();
+                    f.pane = 2;
+                }),
+            ),
         ];
         let engine = Engine::new();
         for (line, command) in &rows {
@@ -917,6 +1041,78 @@ mod tests {
         assert_ne!(engine.parse("view top"), engine.parse("view bottom"));
         assert_ne!(engine.parse("view top"), engine.parse("view top @2"));
         assert_ne!(engine.parse("seek 4.2"), engine.parse("seek 4.200000000000001"));
+    }
+
+    /// The export of a figure of `what` to `to`, as `with` leaves it.
+    fn figure(
+        what: FigureKind,
+        format: FigureFormat,
+        to: &str,
+        with: impl Fn(&mut crate::Figure),
+    ) -> Command {
+        let mut figure = crate::Figure::new(what, format);
+        with(&mut figure);
+        Command::Export { what: ExportKind::Figure(Box::new(figure)), to: to.to_owned() }
+    }
+
+    #[test]
+    fn a_figure_line_is_checked_before_anything_is_drawn() {
+        let mut engine = Engine::new();
+        // Words that are not a figure's are refused with the usage.
+        for (line, expected) in [
+            ("figure spectrum to a.svg", "`spectrum` is not something a figure shows"),
+            ("figure signal", "a figure needs `to <file>` at the end"),
+            ("figure signal to a.jpg", "`a.jpg` does not end in .svg, .pdf or .png"),
+            ("figure signal tower two to a.svg", "`two` is not a tower number"),
+            ("figure signal size big to a.svg", "`big` is not a size; write it as 85x60"),
+            ("figure signal sideways to a.svg", "`sideways` is not an option of a figure"),
+            ("figure signal to a.svg b.svg", "is not an option of a figure"),
+        ] {
+            let why = engine.run_line(line).unwrap_err();
+            assert!(why.contains(expected) && why.contains("usage: figure <signal|"), "`{line}`: {why}");
+        }
+        // A figure the engine can see is impossible is refused for that, before the exporter
+        // (there is none here) is asked for anything.
+        for (line, expected) in [
+            ("figure signal tower 9 to a.svg", "there is no tower 9; the scene has towers 1 to 5"),
+            ("figure signal size 5x60 to a.svg", "a figure of 5 × 60 mm cannot be made"),
+            ("figure signal size 85x1e9 to a.svg", "each side is from 10 to 2000 mm"),
+            ("figure signal dpi 0 to a.png", "0 is not a resolution"),
+            ("figure signal dpi 1e9 to a.png", "from 10 to 2400"),
+            ("figure signal from 6 to 2 to a.svg", "not from 6 to 2"),
+            ("figure view to a.png @3", "there is no pane 3; the figure has 1"),
+        ] {
+            let why = engine.run_line(line).unwrap_err();
+            assert!(why.contains(expected), "`{line}`: {why}");
+        }
+        // A command whose format is not its file's is refused too: a journal cannot say .pdf
+        // and write a PNG.
+        let lying = figure(FigureKind::Signal, FigureFormat::Png, "a.pdf", |_| {});
+        assert!(engine.apply(lying).unwrap_err().contains("`a.pdf` is not the name of a .png file"));
+        // Nothing of all that changed the engine or reached its journal.
+        assert!(engine.journal().is_empty() && !engine.draws_figures());
+        // Control: with an exporter the same kind of line is applied, journalled, and the
+        // exporter is handed the figure and the path; a replay that skips exports calls nothing.
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let record = std::sync::Arc::clone(&seen);
+        engine.set_figure_exporter(Box::new(move |_, figure, path| {
+            record.lock().unwrap().push((figure.what, path.to_path_buf()));
+            Ok(vec![path.to_path_buf()])
+        }));
+        engine.run_line("figure flight as slide to somewhere/f.svg").unwrap();
+        assert_eq!(
+            *seen.lock().unwrap(),
+            [(FigureKind::Flight, std::path::PathBuf::from("somewhere/f.svg"))]
+        );
+        assert_eq!(engine.journal().len(), 1);
+        assert!(engine.log().iter().next_back().unwrap().message.ends_with("f.svg (1 files)"));
+        let replayed = Engine::replay(engine.journal()).unwrap();
+        assert_eq!(replayed.digest(), engine.digest());
+        assert_eq!(seen.lock().unwrap().len(), 1, "a replay with nowhere for exports to go draws nothing");
+        // An exporter's own refusal is the command's.
+        engine.set_figure_exporter(Box::new(|_, _, _| Err("no ink".into())));
+        assert_eq!(engine.run_line("figure flight to f.svg").unwrap_err(), "no ink");
+        assert_eq!(engine.journal().len(), 1);
     }
 
     #[test]
@@ -951,6 +1147,18 @@ mod tests {
                 engine.run_line("load void").unwrap();
             }
             let out = engine.run_line(doc.example);
+            if doc.name == "figure" {
+                // The engine does not draw, and no client has given this one an exporter: the
+                // example parses to a figure and is refused for that reason and no other.
+                // (`cav-plot`'s tests run the same line with the exporter installed.)
+                assert!(matches!(
+                    engine.parse(doc.example),
+                    Ok(Request::Do(Command::Export { what: ExportKind::Figure(_), .. }))
+                ));
+                let why = out.unwrap_err();
+                assert!(why.starts_with("no figure exporter is installed in this client"), "{why}");
+                continue;
+            }
             assert!(out.is_ok(), "`{}` failed: {out:?}", doc.example);
         }
         assert!(help().lines().count() == COMMANDS.len());
