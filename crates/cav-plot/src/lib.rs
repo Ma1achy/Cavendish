@@ -17,6 +17,8 @@ pub mod drawing;
 pub mod fonts;
 pub mod headless;
 pub mod paint;
+pub mod pdf;
 pub mod plots;
 pub mod style;
+pub mod svg;
 pub mod theme;

@@ -228,3 +228,244 @@ impl Style {
 
 /// The names of the presets.
 pub const PRESETS: [&str; 5] = ["paper-column", "paper-full", "slide", "poster", "screen"];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    type Lab = [f64; 3];
+    type Matrix = [[f64; 3]; 3];
+
+    /// The transforms of Machado, Oliveira and Fernandes, "A physiologically-based model for
+    /// simulation of color vision deficiency", IEEE TVCG 15(6), 2009, at severity 1.0
+    /// (dichromacy), applied to linear RGB: protanopia, deuteranopia, tritanopia. The same
+    /// matrices as the `dataviz` skill's validator.
+    const MACHADO: [(&str, Matrix); 3] = [
+        (
+            "protanopia",
+            [
+                [0.152_286, 1.052_583, -0.204_868],
+                [0.114_503, 0.786_281, 0.099_216],
+                [-0.003_882, -0.048_116, 1.051_998],
+            ],
+        ),
+        (
+            "deuteranopia",
+            [
+                [0.367_322, 0.860_646, -0.227_968],
+                [0.280_085, 0.672_501, 0.047_413],
+                [-0.011_820, 0.042_940, 0.968_881],
+            ],
+        ),
+        (
+            "tritanopia",
+            [
+                [1.255_528, -0.076_749, -0.178_779],
+                [-0.078_411, 0.930_809, 0.147_602],
+                [0.004_733, 0.691_367, 0.303_900],
+            ],
+        ),
+    ];
+
+    /// sRGB bytes as linear RGB (IEC 61966-2-1).
+    fn linear(colour: Colour) -> [f64; 3] {
+        colour.0.map(|byte| {
+            let c = f64::from(byte) / 255.0;
+            if c <= 0.040_45 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+        })
+    }
+
+    /// Linear RGB as a dichromat sees it, clamped to the gamut; `None` is normal vision.
+    fn seen(rgb: [f64; 3], deficiency: Option<&Matrix>) -> [f64; 3] {
+        deficiency.map_or(rgb, |m| {
+            [0, 1, 2]
+                .map(|row| (m[row][0] * rgb[0] + m[row][1] * rgb[1] + m[row][2] * rgb[2]).clamp(0.0, 1.0))
+        })
+    }
+
+    /// Linear sRGB as CIE L*a*b* (D65).
+    fn lab([r, g, b]: [f64; 3]) -> Lab {
+        let x = 0.412_456_4 * r + 0.357_576_1 * g + 0.180_437_5 * b;
+        let y = 0.212_672_9 * r + 0.715_152_2 * g + 0.072_175_0 * b;
+        let z = 0.019_333_9 * r + 0.119_192_0 * g + 0.950_304_1 * b;
+        let f = |t: f64| if t > 216.0 / 24389.0 { t.cbrt() } else { (24389.0 / 27.0 * t + 16.0) / 116.0 };
+        let (fx, fy, fz) = (f(x / 0.950_47), f(y), f(z / 1.088_83));
+        [116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz)]
+    }
+
+    /// Linear sRGB as OKLab × 100 (Ottosson 2020): the `dataviz` skill's own measure.
+    fn oklab([r, g, b]: [f64; 3]) -> Lab {
+        let l = (0.412_221_470_8 * r + 0.536_332_536_3 * g + 0.051_445_992_9 * b).cbrt();
+        let m = (0.211_903_498_2 * r + 0.680_699_545_1 * g + 0.107_396_956_6 * b).cbrt();
+        let s = (0.088_302_461_9 * r + 0.281_718_837_6 * g + 0.629_978_700_5 * b).cbrt();
+        [
+            100.0 * (0.210_454_255_3 * l + 0.793_617_785_0 * m - 0.004_072_046_8 * s),
+            100.0 * (1.977_998_495_1 * l - 2.428_592_205_0 * m + 0.450_593_709_9 * s),
+            100.0 * (0.025_904_037_1 * l + 0.782_771_766_2 * m - 0.808_675_766_0 * s),
+        ]
+    }
+
+    fn euclid(a: Lab, b: Lab) -> f64 {
+        ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+    }
+
+    /// CIEDE2000 (Sharma, Wu and Dalal, "The CIEDE2000 color-difference formula", Color Research
+    /// and Application 30(1), 2005), with unit weights.
+    fn ciede2000([l1, a1, b1]: Lab, [l2, a2, b2]: Lab) -> f64 {
+        let seventh = |c: f64| (c.powi(7) / (c.powi(7) + 25f64.powi(7))).sqrt();
+        let mean_c = (a1.hypot(b1) + a2.hypot(b2)) / 2.0;
+        let g = 0.5 * (1.0 - seventh(mean_c));
+        let (a1, a2) = ((1.0 + g) * a1, (1.0 + g) * a2);
+        let (c1, c2) = (a1.hypot(b1), a2.hypot(b2));
+        let hue =
+            |a: f64, b: f64, c: f64| if c == 0.0 { 0.0 } else { b.atan2(a).to_degrees().rem_euclid(360.0) };
+        let (h1, h2) = (hue(a1, b1, c1), hue(a2, b2, c2));
+        let (dl, dc) = (l2 - l1, c2 - c1);
+        let turn = if c1 * c2 == 0.0 {
+            0.0
+        } else if (h2 - h1).abs() <= 180.0 {
+            h2 - h1
+        } else if h2 - h1 > 180.0 {
+            h2 - h1 - 360.0
+        } else {
+            h2 - h1 + 360.0
+        };
+        let dh = 2.0 * (c1 * c2).sqrt() * (turn / 2.0).to_radians().sin();
+        let (l, c) = (f64::midpoint(l1, l2), f64::midpoint(c1, c2));
+        let h = if c1 * c2 == 0.0 {
+            h1 + h2
+        } else if (h1 - h2).abs() <= 180.0 {
+            f64::midpoint(h1, h2)
+        } else if h1 + h2 < 360.0 {
+            (h1 + h2 + 360.0) / 2.0
+        } else {
+            (h1 + h2 - 360.0) / 2.0
+        };
+        let t = 1.0 - 0.17 * (h - 30.0).to_radians().cos()
+            + 0.24 * (2.0 * h).to_radians().cos()
+            + 0.32 * (3.0 * h + 6.0).to_radians().cos()
+            - 0.20 * (4.0 * h - 63.0).to_radians().cos();
+        let swing = 30.0 * (-((h - 275.0) / 25.0).powi(2)).exp();
+        let rotation = -(2.0 * swing).to_radians().sin() * 2.0 * seventh(c);
+        let sl = 1.0 + 0.015 * (l - 50.0).powi(2) / (20.0 + (l - 50.0).powi(2)).sqrt();
+        let (sc, sh) = (1.0 + 0.045 * c, 1.0 + 0.015 * c * t);
+        ((dl / sl).powi(2) + (dc / sc).powi(2) + (dh / sh).powi(2) + rotation * (dc / sc) * (dh / sh)).sqrt()
+    }
+
+    /// The least difference between any two of `colours`, by `measure`, under each of normal
+    /// vision and the three dichromacies: the vision's name, the difference and the pair.
+    fn least(
+        colours: &[Colour],
+        space: fn([f64; 3]) -> Lab,
+        measure: fn(Lab, Lab) -> f64,
+    ) -> Vec<(&'static str, f64, (usize, usize))> {
+        let visions =
+            std::iter::once(("normal vision", None)).chain(MACHADO.iter().map(|(name, m)| (*name, Some(m))));
+        visions
+            .map(|(name, deficiency)| {
+                let seen: Vec<Lab> = colours.iter().map(|c| space(seen(linear(*c), deficiency))).collect();
+                let mut worst = (f64::INFINITY, (0, 0));
+                for a in 0..seen.len() {
+                    for b in a + 1..seen.len() {
+                        let apart = measure(seen[a], seen[b]);
+                        if apart < worst.0 {
+                            worst = (apart, (a + 1, b + 1));
+                        }
+                    }
+                }
+                (name, worst.0, worst.1)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_palette_survives_colour_blindness_and_print() {
+        // The measure itself, against published check pairs of Sharma et al. (their table 1,
+        // pairs 1, 17 and 25), before it is trusted with ours.
+        for (a, b, expected) in [
+            ([50.0, 2.6772, -79.7751], [50.0, 0.0, -82.7485], 2.0425),
+            ([50.0, 2.5, 0.0], [73.0, 25.0, -18.0], 27.1492),
+            ([60.2574, -34.0099, 36.2677], [60.4626, -34.1751, 39.4387], 1.2644),
+        ] {
+            assert!((ciede2000(a, b) - expected).abs() < 1e-4, "{}", ciede2000(a, b));
+        }
+        // The criterion of the brief (S2.md §3.3, written before any palette was measured):
+        // every pair of the eight at least 12 apart, in normal vision and under each simulated
+        // dichromacy. Held in CIEDE2000 and, as well, in the skill's own measure (OKLab × 100).
+        for (measure, table) in [
+            ("CIEDE2000", least(&PAPER_SERIES, lab, ciede2000)),
+            ("OKLab × 100", least(&PAPER_SERIES, oklab, euclid)),
+        ] {
+            for (vision, apart, pair) in table {
+                println!(
+                    "{measure:>12} · {vision:<13} least ΔE {apart:6.2} (series {} and {})",
+                    pair.0, pair.1
+                );
+                assert!(apart >= 12.0, "{measure}, {vision}: series {pair:?} are {apart:.2} apart");
+            }
+        }
+        // The first four survive grey print: at least 8 L* between any two.
+        let lightness: Vec<f64> = PAPER_SERIES.iter().map(|c| lab(linear(*c))[0]).collect();
+        println!("L*: {:?}", lightness.iter().map(|l| (l * 10.0).round() / 10.0).collect::<Vec<_>>());
+        for a in 0..4 {
+            for b in a + 1..4 {
+                let apart = (lightness[a] - lightness[b]).abs();
+                assert!(apart >= 8.0, "series {} and {} are {apart:.1} L* apart", a + 1, b + 1);
+            }
+        }
+        // And every series has a dash of its own, for when there is no colour at all; each mark
+        // is at least 3:1 against the white it is drawn on (WCAG's relative luminance).
+        let paper = Style::preset("paper-column").unwrap();
+        for a in 0..8 {
+            for b in a + 1..8 {
+                assert_ne!(
+                    paper.series(a).1,
+                    paper.series(b).1,
+                    "series {} and {} share a dash",
+                    a + 1,
+                    b + 1
+                );
+                assert_ne!(paper.series(a), paper.series(b));
+            }
+            let [r, g, b] = linear(paper.series(a).0);
+            let contrast = 1.05 / (0.2126 * r + 0.7152 * g + 0.0722 * b + 0.05);
+            assert!(contrast >= 3.0, "series {} is {contrast:.2}:1 on white", a + 1);
+        }
+        // A ninth series is not the first again: the colour comes round with another dash.
+        assert_ne!(paper.series(8), paper.series(0));
+        assert_eq!(paper.series(8).0, paper.series(0).0);
+        // Control: a plain red and green (matplotlib's tab:red and tab:green) are far apart to
+        // normal eyes and fail under deuteranopia; and two greys 5 L* apart fail the print rule.
+        let naive = least(&[Colour::hex(0xd6_2728), Colour::hex(0x2c_a02c)], lab, ciede2000);
+        assert!(naive[0].1 > 50.0, "{naive:?}");
+        assert!(
+            naive.iter().any(|(vision, apart, _)| *vision == "deuteranopia" && *apart < 12.0),
+            "{naive:?}"
+        );
+        let greys = [lab(linear(Colour::hex(0x70_7070)))[0], lab(linear(Colour::hex(0x7c_7c7c)))[0]];
+        assert!((greys[0] - greys[1]).abs() < 8.0);
+    }
+
+    #[test]
+    fn presets_are_the_stated_sizes() {
+        let widths = [("paper-column", 85.0), ("paper-full", 178.0), ("slide", 254.0), ("poster", 400.0)];
+        for (name, width) in widths {
+            let style = Style::preset(name).unwrap();
+            assert_eq!((style.name, style.size_mm[0]), (name, width));
+            assert!(style.house && style.background == Colour::hex(0xff_ffff));
+            assert!(style.size_mm[1] > 0.4 * width && style.size_mm[1] < width);
+        }
+        assert_eq!(Style::preset("slide").unwrap().size_mm, [254.0, 143.0]);
+        assert!(PRESETS.iter().all(|name| Style::preset(name).is_ok()));
+        // The screen preset is the application's theme, to the colour.
+        let screen = Style::preset("screen").unwrap();
+        assert!(!screen.house && screen.series.len() == 5 && screen.left == Some(86.0));
+        assert_eq!(screen.series[1], Colour(cav_render::tower_srgb(1)));
+        assert_eq!(screen.series(6).0, Colour(cav_render::tower_srgb(6)), "past the last, as the renderer");
+        // The benchmark's frequency: 2e-16 eV over Planck's constant.
+        assert!((ULDM_FREQUENCY - 0.048_359_8).abs() < 1e-6, "{ULDM_FREQUENCY}");
+        // Control: a name that is no preset is refused, with the names that are.
+        let why = Style::preset("paper").unwrap_err();
+        assert!(why.contains("`paper` is not a figure preset") && why.contains("paper-column"), "{why}");
+    }
+}
