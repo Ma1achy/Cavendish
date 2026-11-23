@@ -89,6 +89,7 @@ a journal being replayed ─┘     │          │                            
 | The workers, the cache of contributions | `cav-engine/src/forward.rs` | — |
 | Undo and the journal's budget | `cav-engine/src/history.rs`, `journal.rs` | — |
 | A plot or a figure | `cav-plot` | [a plot](extending/a-plot.md) |
+| Redrawing a figure from its data, in Python | `python/cavendish_figures` (matplotlib style sheets, `load`, `redraw`) | [a plot](extending/a-plot.md) |
 | A panel, an editor, the timeline | `cav-app/src/panels.rs`, `editors.rs`, `timeline.rs` | — |
 | A CLI subcommand, an MCP tool | `cav/src/main.rs`, `mcp.rs` | [a command](extending/a-command.md) |
 | A validation case | beside the test of what it checks, with `cav_validate::case!` | [a validation case](extending/a-validation-case.md) |

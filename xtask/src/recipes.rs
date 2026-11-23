@@ -156,8 +156,8 @@ mod tests {
                 assert!(text.contains("**Example to read:**"), "{} names no example", path.display());
             }
         }
-        // The index and a recipe for each kind (the plot recipe comes with `cav-plot`); and the check is not empty.
-        assert!(recipes >= 6, "{recipes} recipes");
+        // The index and a recipe for each of the six kinds; and the check is not empty.
+        assert!(recipes >= 7, "{recipes} recipes");
         assert!(names >= 100, "only {names} names were checked");
 
         // Controls: each kind of name, wrong, is found; right, is not.
