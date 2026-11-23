@@ -1050,8 +1050,10 @@ fn files_differing(a: &std::path::Path, b: &std::path::Path) -> usize {
 }
 
 /// The session of the exit test: a scene loaded, edited every way there is (a drag among them),
-/// its towers staggered, its cadence jittered and thinned, undone and redone, and exported
-/// twice, once before the last edits and once after.
+/// its towers staggered, read on a second instrument for a while, its cadence jittered and
+/// thinned, undone and redone, and exported twice, once before the last edits and once after.
+/// (Figures are not in it: this crate cannot draw. `cav-plot`'s
+/// `a_session_with_figures_and_a_bundle_replays_to_the_same_files` has them.)
 fn exit_session(engine: &mut Engine, out: &std::path::Path, settle_each: bool) {
     let step = |engine: &mut Engine, line: &str| {
         engine.run_line(line).unwrap_or_else(|why| panic!("`{line}`: {why}"));
@@ -1082,7 +1084,10 @@ fn exit_session(engine: &mut Engine, out: &std::path::Path, settle_each: bool) {
     }
     step(engine, "set array.towers[2].timing.offset 0.292");
     step(engine, "set array.towers[4].timing.offset -0.5");
+    // A comparison, on for the first bundle (whose manifest says so) and off for the second.
+    step(engine, "compare aice");
     step(engine, &format!("export bundle \"{}\"", out.join("first").display()));
+    step(engine, "compare off");
     step(engine, r#"set array.schedule.jitter {"model": "Walk", "kind": "Positive", "delta": 0.3}"#);
     step(engine, "set array.schedule.loss 0.05");
     step(engine, "set array.schedule.seed 7");
@@ -1102,7 +1107,7 @@ cav_validate::case! {
     subsystem: "engine",
     slice: "S2",
     reference: Exact,
-    against: "a session (every kind of edit, a drag, staggered towers, a jittered and thinned cadence, undo and redo) that exports two bundles and a scene, against the same session replayed four ways: from its journal in memory, from its journal saved to disk and read back, with the workers settled after every command, and with them never waited for; files of any replay that differ in any byte (each manifest's provenance, the build's revision and dirty flag, among them)",
+    against: "a session (every kind of edit, a drag, staggered towers, a comparison switched on and off, a jittered and thinned cadence, undo and redo) that exports two bundles and a scene, against the same session replayed four ways: from its journal in memory, from its journal saved to disk and read back, with the workers settled after every command, and with them never waited for; files of any replay that differ in any byte (each manifest's provenance, the build's revision and dirty flag, among them)",
     unit: Count,
     tolerance: 0.0,
     measure: {

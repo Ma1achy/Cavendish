@@ -51,8 +51,19 @@ pub enum Exports {
     /// To the path each command names: a session a person or an agent is driving.
     #[default]
     AsNamed,
-    /// Into this directory, under each path's file name alone: a replay, which must never write
-    /// where someone else's journal says.
+    /// Into this directory and never outside it: a replay, which must not write where someone
+    /// else's journal says.
+    ///
+    /// - A relative path keeps its folders under the directory: `figures/a.svg` is written as
+    ///   `<directory>/figures/a.svg`, the folders made as needed.
+    /// - An absolute path, or one with `..` anywhere in it, keeps its file name alone.
+    /// - `/` and `\` both separate, whatever the platform, so a journal lands the same way
+    ///   wherever it is replayed.
+    /// - The same journal path lands in the same place every time, as it did in the session
+    ///   (a file saved twice is written twice). Two different journal paths that would land on
+    ///   one file (`b.ron` and `/somewhere/b.ron`) are kept apart: the later is written as
+    ///   `b (2).ron`, the next as `b (3).ron`, and the log says so. Names are compared without
+    ///   regard to case, as Windows compares them.
     Into(std::path::PathBuf),
     /// Nowhere: the command is applied and journalled and nothing is written.
     Skipped,
@@ -72,6 +83,21 @@ enum Prepared {
     Bundle(std::path::PathBuf),
     /// An export of a figure: the file to write, which the client's exporter draws.
     Figure(std::path::PathBuf),
+}
+
+impl Prepared {
+    /// The file or the directory an export writes, if this is one.
+    fn path(&self) -> Option<&std::path::Path> {
+        match self {
+            Self::Write(path, _) | Self::Bundle(path) | Self::Figure(path) => Some(path),
+            _ => None,
+        }
+    }
+}
+
+/// What the instrument of a comparison is called.
+fn compared_name(instrument: &cav_sim::InstrumentSpec) -> &'static str {
+    cav_sim::presets::name_of(instrument).unwrap_or("another instrument")
 }
 
 /// What draws a figure and writes its files: the figure's file at the path given, its data and
@@ -118,6 +144,14 @@ pub struct Engine {
     journal_bytes: usize,
     journal_whole: bool,
     journal_budget: usize,
+    /// The bytes the journal's last entry is counted as.
+    journal_last: usize,
+    /// The last command applied since the journal stopped recording: what a run of overwrites
+    /// is then compared with, in place of the journal's last entry, which no longer moves.
+    unrecorded: Option<Command>,
+    /// While exports go into a directory: each journal path exported so far and where under the
+    /// directory it landed.
+    landed: Vec<(String, std::path::PathBuf)>,
     /// Whether the last command offered was refused: a step that says it continues the edit
     /// before it then has nothing to continue.
     refused: bool,
@@ -187,9 +221,12 @@ impl Engine {
             spans: [None; MAX_PANES],
             history: History::default(),
             journal: Vec::new(),
-            journal_bytes: 0,
+            journal_bytes: crate::journal::envelope(),
             journal_whole: true,
             journal_budget: JOURNAL_BYTES,
+            journal_last: 0,
+            unrecorded: None,
+            landed: Vec::new(),
             refused: false,
             exports: Exports::AsNamed,
             drawer: Drawer::default(),
@@ -260,14 +297,16 @@ impl Engine {
             engine.apply(command.clone()).map_err(|why| format!("replay: command {n}: {why}"))?;
         }
         // The replayed engine goes on as a session of its own would.
-        engine.exports = Exports::AsNamed;
+        engine.set_exports(Exports::AsNamed);
         engine.patience = TYPED_LINE_PATIENCE;
         Ok(engine)
     }
 
-    /// Says where this engine's exports go from now on.
+    /// Says where this engine's exports go from now on. Which paths have landed where
+    /// ([`Exports::Into`]) starts again.
     pub fn set_exports(&mut self, exports: Exports) {
         self.exports = exports;
+        self.landed.clear();
     }
 
     /// Installs what draws this engine's figures. Without one, a figure export is refused.
@@ -309,6 +348,17 @@ impl Engine {
                 return Err(why);
             }
         };
+        // A replay's export may land in a folder the journal names: it is made under the
+        // replay's directory, where the session had it already.
+        if matches!(self.exports, Exports::Into(_))
+            && let Some(folder) = prepared.path().and_then(std::path::Path::parent)
+            && let Err(why) = std::fs::create_dir_all(folder)
+        {
+            let why = format!("{}: not made: {why}", folder.display());
+            self.note(Level::Error, Subsystem::Engine, format!("refused `{described}`: {why}"));
+            self.refused = true;
+            return Err(why);
+        }
         // A file is written before anything is recorded: an export that fails is a refusal.
         let mut wrote = None;
         if let Prepared::Write(path, bytes) = &prepared {
@@ -322,8 +372,16 @@ impl Engine {
         }
         if let Prepared::Bundle(directory) = &prepared {
             let signal = self.forward.signal().expect("prepare saw a refined signal");
-            match cav_sim::bundle::write(directory, &self.spec, signal, crate::build()) {
-                Ok(files) => wrote = Some(format!("{} ({} files)", directory.display(), files.len())),
+            // A bundle is of the scene's own instrument. With a comparison on, the manifest and
+            // the log say that the other reading is not in it.
+            let compared = self.comparison().map(compared_name);
+            match cav_sim::bundle::write(directory, &self.spec, signal, crate::build(), compared) {
+                Ok(files) => {
+                    let also = compared.map_or_else(String::new, |name| {
+                        format!(", of the scene's own instrument: the comparison with {name} is not in it")
+                    });
+                    wrote = Some(format!("{} ({} files{also})", directory.display(), files.len()));
+                }
                 Err(why) => {
                     self.note(Level::Error, Subsystem::Engine, format!("refused `{described}`: {why}"));
                     self.refused = true;
@@ -369,65 +427,208 @@ impl Engine {
             Command::Seek(_) => (Level::Debug, Subsystem::Engine),
             Command::View(_) => (Level::Debug, Subsystem::View),
         };
+        // A replay's export: where it landed is kept, so that the same journal path lands there
+        // again and another path does not; and the log says when it was moved aside for one.
+        let mut aside = String::new();
+        if let (Exports::Into(_), Command::Export { to, .. }, Some(_)) = (&self.exports, &command, &wrote)
+            && let Ok((landing, moved)) = self.landing(to)
+        {
+            if moved {
+                aside = format!(
+                    " · as `{}`: an earlier export of this replay, of another path, has the plain name",
+                    landing.display()
+                );
+            }
+            if !self.landed.iter().any(|(named, _)| named == to) {
+                self.landed.push((to.clone(), landing));
+            }
+        }
         let message = match (&command, &prepared) {
             (Command::Load(spec), _) => format!("{described} · {}", summary(spec)),
             (Command::Export { .. }, _) => match (&wrote, &self.exports) {
-                (Some(wrote), _) => format!("{described} · wrote {wrote}"),
+                (Some(wrote), _) => format!("{described} · wrote {wrote}{aside}"),
                 _ => format!("{described} · not written (a replay with nowhere for exports to go)"),
             },
             _ => described,
         };
         // A run of commands that overwrite one another (a scrub, a drag) is one journal entry and
         // one log line: the last. For an edit it is also one step of undo: the first of the run.
-        let overwrites = self.journal.last().is_some_and(|previous| command.overwrites(previous));
+        // The run is told by the command before this one: the journal's last entry while the
+        // journal records, and the last command applied once it has stopped. (The journal's last
+        // entry then no longer moves; compared with it, a seek long after the journal stopped
+        // was taken for a step of a scrub that ended there, and rewrote the entry.)
+        let previous = if self.journal_whole { self.journal.last() } else { self.unrecorded.as_ref() };
+        let overwrites = previous.is_some_and(|previous| command.overwrites(previous));
+        // A run of sets is journalled as its last step, standing where its first stood: it
+        // continues what the first continued, which for a drag is nothing. (Kept as the last
+        // step's own flag, a drag replayed after an edit of the same path merged into it.)
+        let mut command = command;
+        if overwrites
+            && let (Some(Command::Set { continues: first, .. }), Command::Set { continues, .. }) =
+                (previous, &mut command)
+        {
+            *continues = *first;
+        }
         self.perform(&command, prepared, overwrites);
         self.generation += 1;
         // Whatever changed the scene or moved the playhead changes what the towers read under it.
         if !matches!(command, Command::Select(_) | Command::View(_)) {
             self.forward.request_reading(&self.spec, self.time);
         }
-        let weight = weigh(&command);
-        if overwrites {
-            let last = self.journal.last_mut().expect("there is a previous command");
-            self.journal_bytes = self.journal_bytes - weigh(last) + weight;
-            // A run of sets is journalled as its last step, standing where its first stood: it
-            // continues what the first continued, which for a drag is nothing. (Kept as the last
-            // step's own flag, a drag replayed after an edit of the same path merged into it.)
-            let mut command = command;
-            if let (Command::Set { continues: first, .. }, Command::Set { continues, .. }) =
-                (&*last, &mut command)
-            {
-                *continues = *first;
-            }
-            *last = command;
-            if self.log.total() == self.log_mark {
-                self.log.amend_last(message);
-            } else {
-                self.log.push(level, subsystem, message);
-            }
-        } else if self.journal_whole && self.journal_bytes + weight > self.journal_budget {
-            // The journal grows with the session, so it has a size. Past it the command is still
-            // applied; what stops is the record, and it says so rather than replay as if whole.
-            self.journal_whole = false;
+        if overwrites && self.log.total() == self.log_mark {
+            self.log.amend_last(message);
+        } else {
             self.log.push(level, subsystem, message);
+        }
+        // The journal grows with the session, so it has a size: the bytes of the file it would
+        // be written as. A command that would take it past that is still applied; what stops is
+        // the record, and it says so rather than replay as if whole.
+        let weight = weigh(&command);
+        let replaced = if overwrites { self.journal_last } else { 0 };
+        if !self.journal_whole {
+            self.unrecorded = Some(command);
+        } else if self.journal_bytes - replaced + weight > self.journal_budget {
+            self.journal_whole = false;
+            self.unrecorded = Some(command);
             self.log.push(
                 Level::Error,
                 Subsystem::Engine,
                 format!(
                     "the journal has reached its {} KiB and records no further commands: this session can \
-                     no longer be replayed from it",
+                     no longer be replayed from it. `journal restart` starts a new journal from the session \
+                     as it stands",
                     self.journal_budget >> 10
                 ),
             );
         } else {
-            if self.journal_whole {
-                self.journal_bytes += weight;
+            self.journal_bytes = self.journal_bytes - replaced + weight;
+            self.journal_last = weight;
+            if overwrites {
+                *self.journal.last_mut().expect("there is a previous command") = command;
+            } else {
                 self.journal.push(command);
             }
-            self.log.push(level, subsystem, message);
         }
         self.log_mark = self.log.total();
         Ok(())
+    }
+
+    /// Starts the journal again from the session as it stands, and answers with how many
+    /// commands the new journal opens with. The way on when the journal has stopped recording
+    /// ([`crate::JOURNAL_BYTES`]), and allowed at any time.
+    ///
+    /// The new journal opens with the commands that make this state on a fresh engine: a load of
+    /// the scene as it is, the comparison if one is on, the panes with what each shows and its
+    /// camera, the playhead and the selection. The engine then *is* a fresh engine with those
+    /// commands applied, so the new journal replays to it exactly. What that costs: the undo
+    /// history starts again (the edits before this can no longer be undone), and the signal is
+    /// computed again. The log, the figure exporter and where exports go are kept.
+    ///
+    /// # Errors
+    /// When the scene alone is larger than the journal's budget; nothing has changed.
+    pub fn restart_journal(&mut self) -> Result<usize, String> {
+        let mut fresh = Self::with_budgets(self.history.budget(), self.journal_budget);
+        for command in self.standing() {
+            fresh.apply(command).map_err(|why| format!("the journal was not started again: {why}"))?;
+        }
+        if !fresh.journal_whole {
+            return Err(format!(
+                "the journal was not started again: the session as it stands is larger than the journal's {} KiB",
+                self.journal_budget >> 10
+            ));
+        }
+        // What is not state goes with the engine: its log, what draws its figures, where its
+        // exports go and how long it waits.
+        std::mem::swap(&mut fresh.log, &mut self.log);
+        fresh.drawer = std::mem::take(&mut self.drawer);
+        fresh.exports = self.exports.clone();
+        fresh.landed = std::mem::take(&mut self.landed);
+        fresh.patience = self.patience;
+        fresh.generation = self.generation + 1;
+        let commands = fresh.journal.len();
+        *self = fresh;
+        self.log.push(
+            Level::Info,
+            Subsystem::Engine,
+            format!(
+                "journal restart · a new journal of {commands} commands that make the session as it stands; \
+                 the undo history starts again"
+            ),
+        );
+        self.log_mark = self.log.total();
+        Ok(commands)
+    }
+
+    /// The commands that make this engine's state on a fresh engine, the undo history apart.
+    fn standing(&self) -> Vec<Command> {
+        let mut commands = vec![Command::load(self.spec.clone())];
+        if let Some(instrument) = self.comparison() {
+            commands.push(Command::Compare(Some(Box::new(instrument.clone()))));
+        }
+        let view = |change: ViewCommand| Command::View(change);
+        commands.push(view(ViewCommand::Panes(self.panes)));
+        for (pane, camera) in self.views.iter().enumerate() {
+            commands.extend([
+                // The projection and what is shown first: each may move the camera or forget
+                // the span, which are then put where they were.
+                view(ViewCommand::Project { pane, projection: camera.projection }),
+                view(ViewCommand::Style { pane, style: camera.style }),
+                view(ViewCommand::Show { pane, content: self.contents[pane] }),
+                view(ViewCommand::Span { pane, span: self.spans[pane] }),
+                view(ViewCommand::Orbit { pane, yaw: camera.yaw, pitch: camera.pitch }),
+                view(ViewCommand::Zoom { pane, distance: camera.distance }),
+                view(ViewCommand::Pan { pane, target: camera.target }),
+            ]);
+        }
+        commands.push(view(ViewCommand::Activate(self.active)));
+        commands.push(Command::Seek(self.time));
+        commands.push(Command::Select(self.selection));
+        commands
+    }
+
+    /// Where under a replay's directory the export that a journal names `to` lands
+    /// ([`Exports::Into`]), and whether it was moved aside for an earlier export of another path.
+    fn landing(&self, to: &str) -> Result<(std::path::PathBuf, bool), String> {
+        if let Some((_, landing)) = self.landed.iter().find(|(named, _)| named == to) {
+            return Ok((landing.clone(), false));
+        }
+        // Both separators, on every platform: a journal lands the same way wherever it is replayed.
+        let parts: Vec<&str> = to.split(['/', '\\']).collect();
+        let outside = to.starts_with(['/', '\\'])
+            || parts.first().is_some_and(|first| first.contains(':'))
+            || parts.contains(&"..");
+        let mut kept: Vec<&str> =
+            parts.iter().copied().filter(|part| !part.is_empty() && *part != "." && *part != "..").collect();
+        if outside {
+            // A path that is absolute or climbs: its file name alone.
+            kept.drain(..kept.len().saturating_sub(1));
+        }
+        let Some((name, folders)) = kept.split_last() else {
+            return Err(format!("`{to}` names no file"));
+        };
+        let folder: std::path::PathBuf = folders.iter().collect();
+        // Names are compared as Windows compares them, on every platform.
+        let taken = |candidate: &std::path::Path| {
+            let key = candidate.to_string_lossy().to_lowercase().replace('\\', "/");
+            self.landed
+                .iter()
+                .any(|(_, landing)| landing.to_string_lossy().to_lowercase().replace('\\', "/") == key)
+        };
+        let plain = folder.join(name);
+        if !taken(&plain) {
+            return Ok((plain, false));
+        }
+        // `b.ron` is another export's: `b (2).ron`, `b (3).ron`, … the first that is free. There
+        // is one, since only as many are taken as there have been exports.
+        let (stem, extension) = match name.rsplit_once('.') {
+            Some((stem, extension)) if !stem.is_empty() => (stem, format!(".{extension}")),
+            _ => (*name, String::new()),
+        };
+        let free = (2..)
+            .map(|n| folder.join(format!("{stem} ({n}){extension}")))
+            .find(|candidate| !taken(candidate))
+            .expect("fewer names are taken than there are numbers");
+        Ok((free, true))
     }
 
     /// Works out what the command will do to the current state, or why it cannot be applied;
@@ -515,11 +716,7 @@ impl Engine {
         let path = match &self.exports {
             Exports::Skipped => return Ok(Prepared::Plain),
             Exports::AsNamed => std::path::PathBuf::from(to),
-            Exports::Into(directory) => {
-                let name =
-                    std::path::Path::new(to).file_name().ok_or_else(|| format!("`{to}` names no file"))?;
-                directory.join(name)
-            }
+            Exports::Into(directory) => directory.join(self.landing(to)?.0),
         };
         let bytes = match what {
             crate::ExportKind::Bundle => {
@@ -555,7 +752,10 @@ impl Engine {
             crate::ExportKind::Scene => self.spec.to_ron().into_bytes(),
             crate::ExportKind::Journal => {
                 if !self.journal_whole {
-                    return Err("the journal stopped recording: it is not the whole session and is not written as one".into());
+                    return Err("the journal stopped recording: it is not the whole session and is not written \
+                                as one. `journal restart` starts a new journal from the session as it stands, \
+                                which can then be saved"
+                        .into());
                 }
                 crate::journal::write(&self.journal).into_bytes()
             }
@@ -839,7 +1039,8 @@ impl Engine {
                 .map(|v| Reply::View(v.clone()))
                 .ok_or_else(|| format!("there is no pane {}; panes are 1 to {MAX_PANES}", pane + 1)),
             Query::Journal if !self.journal_whole => Err(format!(
-                "the journal stopped recording at {} KiB: it is not the whole session and is not offered as one",
+                "the journal stopped recording at {} KiB: it is not the whole session and is not offered as \
+                 one. `journal restart` starts a new journal from the session as it stands",
                 self.journal_budget >> 10
             )),
             Query::Journal => Ok(Reply::Journal(self.journal.clone())),
@@ -1253,9 +1454,7 @@ impl Engine {
             generation: self.generation,
             digest: self.digest(),
             signal: self.forward.state().name().to_owned(),
-            compare: self.comparison().map(|instrument| {
-                cav_sim::presets::name_of(instrument).unwrap_or("another instrument").to_owned()
-            }),
+            compare: self.comparison().map(|instrument| compared_name(instrument).to_owned()),
         }
     }
 

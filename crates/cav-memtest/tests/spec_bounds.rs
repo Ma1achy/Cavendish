@@ -314,6 +314,69 @@ fn files_are_read_up_to_their_cap() {
     // Control: the allocator sees a whole read of the same file.
     let (bytes, whole) = peak_during(|| std::fs::read(&big).unwrap());
     assert!(bytes.len() == 20 * MIB && whole >= 20 * MIB);
+    drop(bytes);
+    std::fs::remove_file(&big).unwrap();
+
+    // Each of the four things read from outside (§3.1, A12), at its cap and one byte over. At
+    // the cap the file is read (and is then found not to be what it should be: it is padding);
+    // one byte over it is refused for its size, and no more than the cap and a byte is held.
+    let path = |name: &str| dir.join(name).to_str().unwrap().to_owned();
+    let padding = |bytes: u64| vec![b' '; bytes as usize];
+
+    // A scene file: 1 MiB.
+    let cap = cav_sim::library::MAX_SCENE_FILE_BYTES;
+    std::fs::write(path("at the cap.ron"), padding(cap)).unwrap();
+    std::fs::write(path("over the cap.ron"), padding(cap + 1)).unwrap();
+    let (at, read) = peak_during(|| cav_sim::load(&path("at the cap.ron")));
+    let (over, held) = peak_during(|| cav_sim::load(&path("over the cap.ron")));
+    let (at, over) = (at.unwrap_err().0, over.unwrap_err().0);
+    assert!(!at.contains("larger than") && read >= cap as usize, "{at}: {read} bytes");
+    assert!(
+        over.contains("larger than 1048576 bytes") && held <= cap as usize + (64 << 10),
+        "{over}: {held}"
+    );
+
+    // A preset file: 64 KiB.
+    let cap = cav_sim::presets::MAX_PRESET_FILE_BYTES;
+    std::fs::write(path("at the cap.preset.ron"), padding(cap)).unwrap();
+    std::fs::write(path("over the cap.preset.ron"), padding(cap + 1)).unwrap();
+    let (at, read) = peak_during(|| cav_sim::presets::load(&path("at the cap.preset.ron")));
+    let (over, held) = peak_during(|| cav_sim::presets::load(&path("over the cap.preset.ron")));
+    let (at, over) = (at.unwrap_err().0, over.unwrap_err().0);
+    assert!(at.contains("not an instrument") && read >= cap as usize, "{at}: {read} bytes");
+    assert!(over.contains("larger than 65536 bytes") && held <= cap as usize + (16 << 10), "{over}: {held}");
+
+    // An inline spec, as an agent sends one: 1 MiB of text. At the cap it is a scene (the void,
+    // padded with spaces); a byte over, it is refused before anything is parsed.
+    let cap = cav_sim::library::MAX_SCENE_FILE_BYTES as usize;
+    let mut text = serde_json::to_string(&dev::void()).unwrap();
+    text.push_str(&" ".repeat(cap - text.len()));
+    let (at, parsed) = peak_during(|| cav_sim::inline(&text));
+    assert_eq!(at.unwrap(), dev::void());
+    text.push(' ');
+    let (over, held) = peak_during(|| cav_sim::inline(&text));
+    let over = over.unwrap_err().0;
+    assert!(over.contains("larger than 1048576 bytes") && held <= 4096, "{over}: {held} bytes");
+    assert!(parsed > held, "parsing a scene held {parsed} bytes, refusing one {held}");
+    drop(text);
+
+    // A journal file: 64 MiB, the size at which a journal stops recording. Over the cap its
+    // length alone refuses it and nothing of it is read.
+    let cap = cav_engine::journal::MAX_JOURNAL_FILE_BYTES;
+    assert_eq!(cap, JOURNAL_BYTES as u64);
+    let journal = path("a journal.json");
+    std::fs::write(&journal, padding(cap)).unwrap();
+    let (at, read) = peak_during(|| cav_engine::journal::read(&journal));
+    let at = at.unwrap_err();
+    assert!(at.contains("not a journal") && !at.contains("larger than"), "{at}");
+    assert!(read >= cap as usize && read <= cap as usize + MIB, "{read} bytes to read a journal at its cap");
+    std::fs::write(&journal, padding(cap + 1)).unwrap();
+    let (over, held) = peak_during(|| cav_engine::journal::read(&journal));
+    let over = over.unwrap_err();
+    assert!(over.contains("larger than 67108864 bytes") && over.contains("not read"), "{over}");
+    assert!(held <= 64 << 10, "{held} bytes to refuse a journal one byte over its cap");
+    // The files are large: they do not stay.
+    std::fs::remove_file(&journal).unwrap();
 }
 
 #[test]
@@ -348,7 +411,7 @@ fn a_bundle_is_written_without_a_second_copy() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp/bundle memory");
     let _ = std::fs::remove_dir_all(&dir);
     let build = cav_sim::bundle::Build { version: "test".into(), revision: "none".into(), dirty: None };
-    let (files, peak) = peak_during(|| cav_sim::bundle::write(&dir, &scene, &signal, &build).unwrap());
+    let (files, peak) = peak_during(|| cav_sim::bundle::write(&dir, &scene, &signal, &build, None).unwrap());
     assert_eq!(files.len(), 11);
     eprintln!("a bundle of 2 × 1,000,000: {} KiB held at once while writing", peak >> 10);
     assert!(peak <= 2 * MIB, "{peak} bytes at once to write a 74 MB bundle");

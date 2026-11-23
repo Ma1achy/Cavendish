@@ -18,8 +18,10 @@ use crate::command::Command;
 /// edits can no longer be undone.
 pub const HISTORY_BYTES: usize = 32 << 20;
 
-/// The most bytes of commands the journal holds. Past it the journal stops recording, says so
-/// once in the log, and is no longer offered as a session that can be replayed.
+/// The most bytes the journal holds, counted as the file it would be written as
+/// ([`weigh`]). Past it the journal stops recording, says so once in the log, and is no longer
+/// offered as a session that can be replayed; `journal restart` (`Engine::restart_journal`)
+/// starts a new one from the session as it stands.
 pub const JOURNAL_BYTES: usize = 64 << 20;
 
 /// One change to a scene, as the history replays it in either direction.
@@ -203,6 +205,12 @@ impl History {
         self.bytes
     }
 
+    /// The most bytes this history holds.
+    #[must_use]
+    pub const fn budget(&self) -> usize {
+        self.budget
+    }
+
     /// How many of the oldest steps have been dropped for room.
     #[must_use]
     pub const fn dropped(&self) -> u64 {
@@ -210,20 +218,15 @@ impl History {
     }
 }
 
-/// How many bytes a command is counted as in the journal.
+/// How many bytes a command is counted as in the journal: the bytes it takes in a journal file
+/// (its JSON, as [`crate::journal::write`] writes it) and one for the comma after it. Counted
+/// this way a journal within its budget is a file within its budget, which is the most
+/// [`crate::journal::read`] reads: what is offered as whole can be read back. (Counted by what
+/// a command holds in memory, as it was, a figure's export weighed less than its text and a
+/// "whole" journal could be written larger than it could be read.)
 #[must_use]
 pub fn weigh(command: &Command) -> usize {
-    let own = std::mem::size_of::<Command>();
-    match command {
-        Command::Load(spec) => own + weigh_spec(spec),
-        Command::Set { path, value, .. } | Command::Insert { path, value, .. } => {
-            own + path.len() + weigh_value(value)
-        }
-        Command::Remove { path } => own + path.len(),
-        Command::Export { to, .. } => own + to.len(),
-        Command::Compare(Some(_)) => own + std::mem::size_of::<cav_sim::InstrumentSpec>(),
-        _ => own,
-    }
+    serde_json::to_vec(command).map_or(0, |text| text.len()) + 1
 }
 
 /// The bytes of a JSON value, counted without writing it out.

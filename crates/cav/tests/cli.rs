@@ -392,6 +392,59 @@ fn cli_replays_a_saved_session() {
 }
 
 #[test]
+fn cli_replay_with_nowhere_to_write_computes_no_series() {
+    use cav_engine::{Command as Edit, Engine, ExportKind, SignalState};
+    // A journal of a long series (two hundred thousand shots of five towers) that exported a
+    // bundle. Replayed with no --out nothing is written, so nothing needs the series: the
+    // replay says what state it reached and that the signal was not waited for. (S2's review:
+    // it ended with a wait of up to ten minutes for a signal nobody had asked for.)
+    let journal = vec![
+        Edit::load(cav_sim::load("comb").unwrap()),
+        Edit::set("duration", serde_json::json!(400_000.0)),
+        Edit::Export { what: ExportKind::Bundle, to: "bundle".into() },
+        Edit::Seek(12.5),
+    ];
+    let file = scratch("a long series.json");
+    std::fs::write(&file, cav_engine::journal::write(&journal)).unwrap();
+    let done = cav(&["replay", file.to_str().unwrap()]);
+    assert!(done.status.success(), "{}", stderr(&done));
+    let said = stdout(&done);
+    // The state it reached is the state of the journal, which does not depend on the signal.
+    let expected = Engine::replay(&journal).unwrap().digest();
+    assert!(
+        said.starts_with(&format!("replayed 4 command(s) · scene `comb` · state {expected} · ")),
+        "{said}"
+    );
+    assert!(said.contains("1 export(s) not written (no --out)"), "{said}");
+    // What is printed says the series was not computed: the signal is still the stale one. Had
+    // the replay waited, as it did, this would read `signal refined`.
+    assert!(said.trim_end().ends_with("signal stale, not waited for: nothing written needed it"), "{said}");
+
+    // The digest does not depend on the signal: the same state with the workers held (no signal)
+    // and after they have run (a refined one) has the same digest. Control: the signal's
+    // standing did change between the two, and a short journal replayed with somewhere to
+    // write does end with a refined signal, since its export waited for one.
+    let short = [journal[0].clone(), Edit::set("duration", serde_json::json!(60.0)), journal[2].clone()];
+    let mut engine = Engine::new();
+    engine.hold_workers(true);
+    for command in &short[..2] {
+        engine.apply(command.clone()).unwrap();
+    }
+    let (held, digest) = (engine.signal().0, engine.digest());
+    engine.hold_workers(false);
+    assert!(engine.settle(std::time::Duration::from_secs(120)));
+    assert_eq!((held, engine.signal().0), (SignalState::Stale, SignalState::Refined));
+    assert_eq!(engine.digest(), digest);
+    let file = scratch("a short series.json");
+    std::fs::write(&file, cav_engine::journal::write(&short)).unwrap();
+    let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("replay short out");
+    let _ = std::fs::remove_dir_all(&out);
+    let done = cav(&["replay", file.to_str().unwrap(), "--out", out.to_str().unwrap()]);
+    assert!(stdout(&done).trim_end().ends_with("signal refined"), "{}{}", stdout(&done), stderr(&done));
+    assert!(out.join("bundle").join("manifest.json").exists());
+}
+
+#[test]
 fn cli_run_writes_a_bundle_twice_the_same() {
     let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli run");
     let _ = std::fs::remove_dir_all(&root);
