@@ -12,7 +12,8 @@ marks with a `Style` and a text measurer, and returns a `Plot`.
 ## The plot
 
 1. **Its name.** A variant of `PaneContent` in `crates/cav-sim/src/view.rs`, with its word in
-   `name` and its place in `ALL`: `show <word>` and the pane buttons follow.
+   `PaneContent::name` and its place in `PaneContent::ALL`: the console's `show <word>` and the
+   `show` buttons of the View panel (`crates/cav-app/src/panels.rs`) are made from that list.
 2. **Its numbers.** Ask the engine with a `Query`; if the engine cannot answer yet, add the query
    first ([a-command.md](a-command.md)). A plot computes nothing the engine could be asked for:
    an agent must be able to read the same numbers as text.

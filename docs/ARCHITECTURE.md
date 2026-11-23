@@ -21,13 +21,20 @@ the gradiometer reads lower minus upper unless a scene says otherwise. British E
 | `cav-render` | The 3-D picture of a scene: camera, geometry, the wgpu renderer, PNG | `cav-core`, `cav-sim`, `cav-gpu` | depend on the engine (it draws a `SceneView`, which the engine makes) |
 | `cav-plot` | Plots as display lists (signal, periodogram, cadence, flight), painted by egui, written as SVG and PDF, drawn to PNG with no window; figure presets, data and provenance | `cav-core`, `cav-sim`, `cav-engine`, `cav-gpu`, `cav-render` | open a window; depend on `cav-app`, eframe or winit |
 | `cav-app` | The window: panels, editors, timeline, panes; and the same application drawn headless for screenshots and tests | all of the above | hold scene state of its own: it sends commands and reads replies |
-| `cav` | The command line and the MCP server | all but `cav-app` | link the window (eframe, winit) |
+| `cav` | The command line and the MCP server | all but `cav-app` | link the window (eframe, winit) when built on its own |
 | `cav-validate` | Declaring validation cases (`case!`) and judging them | nothing | depend on anything: every crate's tests use it |
 | `cav-memtest` | A counting allocator and the tests that hold memory to a bound | dev-dependencies only | be linked by anything but its own tests (it is the one crate with `unsafe`) |
 | `xtask` | The local tiers: `quick`, `gpu`, `oracle`, `demo`, `validate`, `hooks` | nothing | gain a dependency: it must never add to the build |
 | `oracle/` | A workspace of its own: v1 at tag `v1-final` and George's scripts as fixtures, holding the engine to both | `cav-core`, `cav-validate` | be compiled by `quick` |
 
 Dev-dependencies are apart from this table: any crate's tests may use `cav-validate`.
+
+"Does not link the window" is held by a test for `cav`, `cav-plot`, `cav-engine` and `cav-sim`
+(`xtask`: `nothing_that_runs_without_a_window_links_one`), and it means **built on its own**
+(`cargo build -p cav`, `cargo install`): cargo then gives `egui-wgpu` only the features `cav` asks
+for. In a build of the whole workspace cargo unifies features, so `egui-wgpu` is compiled once with
+the window's feature, which `cav-app` asks for, and that copy is the one `cav` links; no code of
+`cav` reaches it. A binary to hand to someone else is built with `-p cav`.
 
 ## From a command to a pixel, and to a bundle
 

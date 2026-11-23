@@ -1,5 +1,7 @@
-//! Cavendish simulation: in S0, the scene spec, the view spec and the built-in scene library.
-//! Bodies, paths, dynamics, fluids and bundles arrive with their slices.
+//! Cavendish simulation: scenes as data, and what the instrument reads from them. The scene spec
+//! with its schema and paths, motions, presets, the schedule and its predicted spectral window,
+//! the read of a scene into a signal, bundles, the view spec and the built-in scene library.
+//! Voxel bodies, dynamics and fluids arrive with their slices.
 //!
 //! ## What this crate is for
 //! What a scene *is* and what the instrument reads from it: the scene spec, its validation and its

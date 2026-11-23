@@ -219,7 +219,8 @@ impl Motion {
         }
     }
 
-    /// The times at which the motion is not smooth: a pass starts and stops.
+    /// The times at which the motion is not smooth, seconds on the scene's clock, in rising
+    /// order: a pass starts and stops. Empty for a motion that is smooth throughout.
     #[must_use]
     pub fn breaks(&self) -> Vec<f64> {
         match *self {

@@ -1184,6 +1184,13 @@ impl Engine {
         self.patience = patience;
     }
 
+    /// Holds the series worker alone before its next job, or lets it go on; readings still
+    /// arrive. For tests that must say a reading did not wait for the series, without a clock.
+    #[doc(hidden)]
+    pub fn hold_series(&self, held: bool) {
+        self.forward.hold_series(held);
+    }
+
     /// Holds the forward workers before their next job, or lets them go on: for tests that must
     /// say what happened on the caller's thread without a clock.
     #[doc(hidden)]

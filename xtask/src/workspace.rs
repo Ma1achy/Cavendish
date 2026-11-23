@@ -2,9 +2,10 @@
 //! "Crates after S2"): which crate may depend on which, and that every library crate warns of
 //! undocumented public items.
 //!
-//! Tests only. The manifests are read as text, since xtask has no dependencies: a manifest's
-//! name and the keys of its dependency tables are all that is wanted, and `Cargo.toml` writes
-//! those one to a line.
+//! Tests only. What depends on what is asked of cargo itself (`cargo metadata`, read with the
+//! small JSON reader beside this file, since xtask has no dependencies): the workspace's own edges,
+//! and everything each crate links, so that "the command line does not link the window" is held
+//! as well. The manifests are also read as text, and the two readings must agree.
 
 use std::path::Path;
 
@@ -188,7 +189,8 @@ pub const NOT_YET_DOCUMENTED: &[&str] = &[];
 /// A crate that is not in the plan, a crate of the plan that is not in the workspace, a normal
 /// dependency on a workspace crate the plan does not give it, and a dev-dependency on a
 /// workspace crate that is neither test support nor something the crate may depend on anyway.
-/// Dependencies on crates outside the workspace are not this test's business.
+/// Dependencies on crates outside the workspace are not this function's business: what a crate
+/// links from outside is [`links`] and [`MUST_NOT_LINK`].
 pub fn dependency_faults(manifests: &[Manifest], allowances: &Allowances) -> Vec<String> {
     let in_workspace = |name: &str| manifests.iter().any(|m| m.name == name);
     let mut faults = Vec::new();
@@ -225,6 +227,60 @@ pub fn dependency_faults(manifests: &[Manifest], allowances: &Allowances) -> Vec
         }
     }
     faults
+}
+
+/// What a crate must never link, directly or through anything it depends on: the command line,
+/// the MCP server and the plots run with no window (REBUILD §3.1; S1's review, finding 8).
+pub const MUST_NOT_LINK: &[(&str, &[&str])] = &[
+    ("cav", &["winit", "eframe", "cav-app"]),
+    ("cav-plot", &["winit", "eframe", "cav-app"]),
+    ("cav-engine", &["egui", "wgpu", "winit", "eframe"]),
+    ("cav-sim", &["egui", "wgpu", "winit", "eframe"]),
+    ("cav-core", &["serde", "egui", "wgpu"]),
+];
+
+/// The workspace's members as cargo reads their manifests (`cargo metadata --format-version 1`).
+///
+/// # Errors
+/// When the text is not what cargo writes.
+pub fn members(metadata: &str) -> Result<Vec<Manifest>, String> {
+    let json = crate::json::parse(metadata)?;
+    let text = |value: &crate::json::Json, what: &str| {
+        value.text().map(str::to_owned).ok_or_else(|| format!("cargo metadata: no {what}"))
+    };
+    let ids: Vec<&str> = json.get("workspace_members").items().iter().filter_map(|id| id.text()).collect();
+    let mut members = Vec::new();
+    for package in json.get("packages").items() {
+        if !ids.contains(&text(package.get("id"), "package id")?.as_str()) {
+            continue;
+        }
+        let (mut normal, mut dev) = (Vec::new(), Vec::new());
+        for dependency in package.get("dependencies").items() {
+            let name = text(dependency.get("name"), "dependency name")?;
+            // `kind` is null for a normal dependency, "build" or "dev" otherwise.
+            if dependency.get("kind").text() == Some("dev") { dev.push(name) } else { normal.push(name) }
+        }
+        members.push(Manifest { name: text(package.get("name"), "package name")?, normal, dev });
+    }
+    if members.is_empty() {
+        return Err("cargo metadata: no workspace members".into());
+    }
+    members.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(members)
+}
+
+/// The names of everything a crate links, itself included, from what
+/// `cargo tree -p <crate> -e normal,build --prefix none` prints: a package to a line, its name
+/// first. Asked for one crate, cargo resolves features for that crate alone, which is what
+/// `cargo build -p` and `cargo install` link. (In a build of the whole workspace features are
+/// unified, and `cargo metadata`'s graph is that union: there `egui-wgpu` has the window's
+/// feature because the application asks for it, whoever else uses it.)
+pub fn linked(tree: &str) -> Vec<String> {
+    let mut names: Vec<String> =
+        tree.lines().filter_map(|line| line.split_whitespace().next()).map(str::to_owned).collect();
+    names.sort();
+    names.dedup();
+    names
 }
 
 /// Whether a crate's `lib.rs` turns the `missing_docs` lint on for the whole crate: the inner
@@ -340,9 +396,79 @@ cav-app = { path = "crates/cav-app" }
         assert!(parse_manifest("[dependencies]\ncav-core.workspace = true\n").is_err());
     }
 
+    fn cargo(args: &[&str]) -> String {
+        let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+        let output =
+            std::process::Command::new(cargo).args(args).current_dir(root()).output().expect("cargo runs");
+        assert!(output.status.success(), "cargo {args:?}: {}", String::from_utf8_lossy(&output.stderr));
+        String::from_utf8(output.stdout).expect("cargo writes UTF-8")
+    }
+
+    /// What cargo says of this workspace's manifests. Offline and locked: nothing is fetched or
+    /// rewritten.
+    fn cargo_members() -> Vec<Manifest> {
+        members(&cargo(&["metadata", "--format-version", "1", "--no-deps", "--locked", "--offline"])).unwrap()
+    }
+
+    /// Everything the crate links when it is built on its own.
+    fn links(name: &str) -> Vec<String> {
+        linked(&cargo(&[
+            "tree",
+            "-p",
+            name,
+            "-e",
+            "normal,build",
+            "--prefix",
+            "none",
+            "--locked",
+            "--offline",
+        ]))
+    }
+
+    #[test]
+    fn nothing_that_runs_without_a_window_links_one() {
+        for (name, forbidden) in MUST_NOT_LINK {
+            let linked = links(name);
+            assert!(linked.iter().any(|l| l == name), "{name} is not in its own tree: the tree was not read");
+            let found: Vec<&&str> = forbidden.iter().filter(|f| linked.iter().any(|l| l == **f)).collect();
+            assert!(found.is_empty(), "{name}, built on its own, links {found:?}, which it must not");
+        }
+        // The tree goes all the way down: the command line links what its dependencies link.
+        let cav = links("cav");
+        for through in ["cav-core", "egui", "wgpu", "skrifa", "serde_json"] {
+            assert!(cav.iter().any(|l| l == through), "cav should link {through}");
+        }
+        // Control: the application does link the window, by the same reading, so it can be seen.
+        let app = links("cav-app");
+        assert!(app.iter().any(|l| l == "winit") && app.iter().any(|l| l == "eframe"), "the control arm");
+        // Control: a made-up tree in which the window is two steps down; a name is the first
+        // word of a line, whatever follows it.
+        let made_up = "cav v0.0.0 (C:\\somewhere)\nmiddle v1.2.3\nwinit v0.30.0 (*)\n\nmiddle v1.2.3 (*)\n";
+        assert_eq!(linked(made_up), ["cav", "middle", "winit"]);
+        assert!(members("{}").is_err() && members("not json").is_err());
+    }
+
     #[test]
     fn the_crates_depend_as_the_plan_says() {
-        let real = real_manifests();
+        // Cargo's own reading of the manifests is what is held to the plan; the text reading
+        // must agree with it, so that neither can drift unnoticed.
+        let real = cargo_members();
+        let mut as_text = real_manifests();
+        as_text.sort_by(|a, b| a.name.cmp(&b.name));
+        let sorted = |manifests: &[Manifest]| -> Vec<Manifest> {
+            manifests
+                .iter()
+                .map(|m| {
+                    let (mut normal, mut dev) = (m.normal.clone(), m.dev.clone());
+                    normal.sort();
+                    normal.dedup();
+                    dev.sort();
+                    dev.dedup();
+                    Manifest { name: m.name.clone(), normal, dev }
+                })
+                .collect()
+        };
+        assert_eq!(sorted(&real), sorted(&as_text), "cargo and the manifests' text disagree");
         let faults = dependency_faults(&real, &Allowances::NONE);
         assert!(faults.is_empty(), "the workspace breaks the plan's table:\n{}", faults.join("\n"));
         // The reading itself is not vacuous: the real workspace has the edges it is known to have.
