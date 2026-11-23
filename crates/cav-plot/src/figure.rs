@@ -218,7 +218,7 @@ fn table(engine: &Engine, figure: &Figure) -> Result<Table, String> {
                     readout.push(at + flight_time);
                 }
             }
-            column("tower".into(), "its number, from 1", tower);
+            column("tower".into(), "its number from 1", tower);
             column("launch".into(), "s", launch);
             column("readout".into(), "s", readout);
         }
