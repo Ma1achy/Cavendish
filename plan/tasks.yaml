@@ -158,6 +158,9 @@
 - id: TASK-S3-07
   milestone: S3
   title: 'Debug overlays: leaf bounds, LOD cut'
+- id: TASK-S3-08
+  milestone: S3
+  title: 'Per-tower instruments: unequal heights and sequences in one array, ragged readout times; zero towers allowed'
 - id: TASK-S4-01
   milestone: S4
   title: World volume in chunks with palettes and region-file cache
@@ -361,7 +364,7 @@
   title: Far field to voxel scene hand-over and the far-field validation cases
 - id: TASK-S15-01
   milestone: S15
-  title: Per-tower instruments - unequal heights and sequences in one array
+  title: Mixed arrays across axes and gravity environments (per-tower heights and sequences came forward to TASK-S3-08)
 - id: TASK-S15-02
   milestone: S15
   title: A gradiometer on any axis, horizontal included
