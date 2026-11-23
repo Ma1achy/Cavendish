@@ -137,6 +137,21 @@
 - id: TASK-S2-12
   milestone: S2
   title: 'The read in parallel by tower and shot, the same bits at any thread count'
+- id: TASK-S2-13
+  milestone: S2
+  title: "Review I3: the revision and dirty state are the build's, fixed at compile time; replay and journal findings 1 to 4; the exit session with a comparison and figures"
+- id: TASK-S2-14
+  milestone: S2
+  title: "Review I1 and I2: one source of shot times for the read, the lanes, the flight diagram and every caption; shots not taken drawn as not taken"
+- id: TASK-S2-15
+  milestone: S2
+  title: "Review, minor: the edit path (15 to 20), tests that could not fail (5 to 8, 23, 37), cadence and timing (21 to 25), bounds 11 and 12"
+- id: TASK-S2-16
+  milestone: S2
+  title: "Review, minor: figures and Python (10, 13, 26, 28 to 30)"
+- id: TASK-S2-17
+  milestone: S2
+  title: "Review, minor: built for other people (27, 31 to 36), a deterministic demo; the report, the demo and the results regenerated"
 - id: TASK-S3-01
   milestone: S3
   title: 'VoxTree: Morton keys, build, sidecars, moments'
