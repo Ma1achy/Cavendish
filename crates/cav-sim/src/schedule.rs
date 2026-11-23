@@ -324,6 +324,60 @@ mod tests {
         assert!(realised(&comb_with(|s| s.gaps = Some(GapSpec { on: 3, period: 5 })), 0.137) < 0.02);
     }
 
+    /// The mean of the realised `|W|²` over `seeds` keyed losses of `n` shots two seconds apart,
+    /// at 64 frequencies where the even window is exactly zero, so that what is left is the
+    /// floor loss lays down. Realisations that keep no shot have no window and are left out.
+    fn measured_loss_floor(p: f64, n: usize, seeds: u64) -> f64 {
+        let frequencies: Vec<f64> = (1..=64).map(|m| f64::from(m) / (n as f64 * 2.0)).collect();
+        let (mut sum, mut count) = (0.0, 0usize);
+        for seed in 0..seeds {
+            let times: Vec<f64> = (0..n)
+                .filter(|&k| cadence::unit(seed, cadence::STREAM_LOSS, 0, k as u64) >= p)
+                .map(|k| k as f64 * 2.0)
+                .collect();
+            if !times.is_empty() {
+                sum += cadence::window(&times, &frequencies).iter().sum::<f64>();
+                count += frequencies.len();
+            }
+        }
+        sum / count as f64
+    }
+
+    #[test]
+    fn a_tower_that_keeps_no_shot_or_few_is_said_plainly() {
+        // Finding 21 of S2's review: `load void; set array.schedule.loss 0.99; cadence` printed
+        // "0 to 0 taken", a floor of 16.5 "of its power" and "× inf".
+        let mut scene = dev::void();
+        scene.array.schedule.loss = 0.99;
+        assert_eq!(scene.validate(), Ok(()));
+        let lost = predict(&scene).unwrap();
+        assert_eq!(lost.shots, 6);
+        assert!(lost.kept.contains(&0), "{:?}", lost.kept);
+        assert_eq!(lost.noise_factor, None, "no factor says that a tower sees nothing");
+        assert_eq!(lost.floor, None, "16.5 is not a fraction of a tone's power");
+        assert!(cadence::loss_floor(0.99, 6) > 16.0);
+        assert!(lost.notes.iter().any(|note| note.contains("20 shots or more") && note.contains("no floor")));
+        assert!(lost.notes.iter().any(|note| note.contains("take no shot at all")));
+        // The regime, measured: at 20 shots expected kept the closed form is within 10% of what
+        // loss does (about 6% under, from its next term), and at 2 it is not.
+        let at = |p: f64| measured_loss_floor(p, 200, 2000) / cadence::loss_floor(p, 200);
+        let (holds, fails) = (at(0.9), at(0.99));
+        eprintln!(
+            "loss floor, measured over the closed form: {holds:.4} at 20 expected kept, {fails:.4} at 2"
+        );
+        assert!((holds - 1.0).abs() < 0.10, "{holds}");
+        assert!((fails - 1.0).abs() > 0.10, "{fails}");
+        // Control: a loss that leaves many shots has its floor and a finite factor, as before.
+        let mild = predict(&comb_with(|s| s.loss = 0.05)).unwrap();
+        assert_eq!(mild.floor, Some(cadence::loss_floor(0.05, 1000)));
+        let fewest = *mild.kept.iter().min().unwrap();
+        assert_eq!(mild.noise_factor, Some((1000.0 / fewest as f64).sqrt()));
+        assert!(mild.notes.is_empty(), "{:?}", mild.notes);
+        // Just inside the regime the floor is given; just outside it is not.
+        let edge = |loss: f64| predict(&comb_with(|s| s.loss = loss)).unwrap().floor;
+        assert!(edge(0.98).is_some() && edge(0.981).is_none(), "1000 shots: 20 kept at 0.98");
+    }
+
     #[test]
     fn the_window_is_one_realisation() {
         let scene = comb_with(|s| s.alternate = Some(2.5));

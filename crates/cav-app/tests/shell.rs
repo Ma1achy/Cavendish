@@ -929,6 +929,223 @@ fn lane_drag_edits_offset() {
     assert!(rig.shell.engine.time() > 0.0);
 }
 
+const JITTERED: &[&str] = &[
+    r#"set array.schedule.jitter {"model":"Walk","kind":"Positive","delta":0.5}"#,
+    "set array.schedule.seed 3",
+];
+const GAPPED: &[&str] = &[r#"set array.schedule.gaps {"on":4,"period":10}"#];
+const LOSSY: &[&str] = &["set array.schedule.loss 0.3"];
+const SCHEDULES: [(&str, &[&str]); 3] = [("jittered", JITTERED), ("gapped", GAPPED), ("lossy", LOSSY)];
+
+/// The comb over a minute (thirty shots on the plain schedule) with a schedule set.
+fn scheduled_rig(lines: &[&str]) -> Rig {
+    let mut rig = Rig::new([1440, 900]);
+    rig.shell.run("load comb").unwrap();
+    rig.shell.run("set duration 60").unwrap();
+    for line in lines {
+        rig.shell.run(line).unwrap();
+    }
+    rig.frames(vec![vec![], vec![]]);
+    rig
+}
+
+/// Where time zero is on the lanes and how many points a second is, from the plain schedule,
+/// whose first bar runs from 0 to 2T: the same window, so the same scale.
+fn lane_scale() -> (f32, f32) {
+    let plain = scheduled_rig(&[]);
+    let bar = plain.shell.layout().lanes[0].1;
+    (bar.left(), bar.width() / 1.46)
+}
+
+#[test]
+fn lanes_draw_the_schedule_s_shots() {
+    // I1 of S2's review: the lanes drew k·cycle, all taken, whatever the schedule.
+    let (zero, per_second) = lane_scale();
+    for (name, lines) in SCHEDULES {
+        let rig = scheduled_rig(lines);
+        let shots = cav_sim::read::shots(rig.shell.engine.spec()).unwrap();
+        let drawn = &rig.shell.layout().shots;
+        for tower in 0..5 {
+            let bars: Vec<_> = drawn.iter().filter(|bar| bar.tower == tower).collect();
+            assert_eq!(bars.len(), shots.times.len(), "{name}, tower {}: as many bars as shots", tower + 1);
+            for (k, bar) in bars.iter().enumerate() {
+                let (launch, readout) = (shots.launch(tower, k), shots.readout(tower, k));
+                let expected = [zero + launch as f32 * per_second, zero + readout as f32 * per_second];
+                assert!(
+                    bar.k == k
+                        && (bar.rect.left() - expected[0]).abs() <= 1.0
+                        && (bar.rect.right() - expected[1]).abs() <= 1.0,
+                    "{name}, tower {}, shot {k}: {:?} against {expected:?}",
+                    tower + 1,
+                    bar.rect
+                );
+            }
+        }
+        // Control: the old arithmetic (shot k launched at k·cycle, ⌈duration/cycle⌉ of them, all
+        // taken) does not describe this scene: by more than a point, or in what is taken.
+        let furthest = (0..shots.times.len())
+            .map(|k| (shots.launch(0, k) - 2.0 * k as f64).abs() as f32 * per_second)
+            .fold(0.0f32, f32::max);
+        let all_taken = shots.valid.iter().all(|taken| *taken);
+        assert!(furthest > 1.0 || !all_taken, "{name}: the plain schedule would do");
+        if name == "jittered" {
+            assert!(furthest > 20.0 && shots.times.len() != 30, "{furthest} points, {}", shots.times.len());
+        }
+    }
+}
+
+#[test]
+fn a_shot_not_taken_is_a_hollow_bar() {
+    for (name, lines) in [("gapped", GAPPED), ("lossy", LOSSY)] {
+        let rig = scheduled_rig(lines);
+        let shots = cav_sim::read::shots(rig.shell.engine.spec()).unwrap();
+        let drawn = &rig.shell.layout().shots;
+        assert_eq!(drawn.len(), 5 * 30);
+        for bar in drawn {
+            assert_eq!(
+                bar.filled,
+                shots.taken(bar.tower, bar.k),
+                "{name}: tower {}, shot {}",
+                bar.tower + 1,
+                bar.k
+            );
+        }
+        let hollow = drawn.iter().filter(|bar| !bar.filled).count();
+        let not_taken = shots.valid.iter().filter(|taken| !**taken).count();
+        assert!(
+            hollow == not_taken && hollow > 20,
+            "{name}: {hollow} hollow bars, {not_taken} shots not taken"
+        );
+    }
+    // The gaps are the same for every tower; each tower loses its own shots.
+    let lossy = scheduled_rig(LOSSY);
+    let of = |tower: usize| -> Vec<bool> {
+        lossy.shell.layout().shots.iter().filter(|bar| bar.tower == tower).map(|bar| bar.filled).collect()
+    };
+    assert_ne!(of(0), of(1));
+    // Control: the plain schedule, which is all the lanes used to draw, has no hollow bar.
+    let plain = scheduled_rig(&[]);
+    assert!(
+        plain.shell.layout().shots.len() == 150 && plain.shell.layout().shots.iter().all(|bar| bar.filled)
+    );
+}
+
+#[test]
+fn the_captions_count_the_shots_taken() {
+    let mut rig = scheduled_rig(&[GAPPED[0], LOSSY[0]]);
+    assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
+    rig.frames(vec![vec![], vec![]]);
+    let shots = cav_sim::read::shots(rig.shell.engine.spec()).unwrap();
+    let taken: Vec<usize> =
+        (0..5).map(|tower| shots.taken_all(tower).iter().filter(|taken| **taken).count()).collect();
+    let (fewest, most) = (*taken.iter().min().unwrap(), *taken.iter().max().unwrap());
+    assert!(fewest < most && most < 12, "{taken:?}: 4 of every 10, less those lost");
+    let layout = rig.shell.layout();
+    let said = format!("30 shots planned, {fewest} to {most} taken a tower");
+    assert!(layout.timeline_caption.contains(&said), "{}", layout.timeline_caption);
+    assert!(layout.timeline_caption.contains("an outline: not taken"));
+    let said = format!("forward · 30 shots, {fewest} to {most} taken a tower · refined");
+    assert!(layout.status.starts_with(&said), "{}", layout.status);
+    // Control: the plain schedule takes every shot, and says only how many there are.
+    let mut plain = scheduled_rig(&[]);
+    assert!(plain.shell.engine.settle(std::time::Duration::from_secs(60)));
+    plain.frames(vec![vec![], vec![]]);
+    let layout = plain.shell.layout();
+    assert!(layout.timeline_caption.contains("· 30 shots a tower ·"), "{}", layout.timeline_caption);
+    assert!(
+        !layout.timeline_caption.contains("taken")
+            && layout.status.starts_with("forward · 30 shots · refined")
+    );
+}
+
+#[test]
+fn a_lane_drags_on_an_uneven_schedule() {
+    let (_, per_second) = lane_scale();
+    let mut rig = scheduled_rig(&[JITTERED[0], JITTERED[1], LOSSY[0]]);
+    let bars = |rig: &Rig| -> Vec<cav_app::timeline::Bar> {
+        rig.shell.layout().shots.iter().filter(|bar| bar.tower == 3).copied().collect()
+    };
+    let before = bars(&rig);
+    // Control: this is not the plain schedule: the tenth bar is nowhere near ten cycles in.
+    let tenth = (before[10].rect.left() - before[0].rect.left()) / per_second;
+    assert!((tenth - 20.0).abs() > 1.0, "the tenth shot is launched {tenth} s after the first");
+    let journal = rig.shell.engine.journal().len();
+    let shift = Modifiers { shift: true, ..Modifiers::NONE };
+    let held =
+        Event::Key { key: Key::F20, physical_key: None, pressed: true, repeat: true, modifiers: shift };
+    let from = before[4].rect.center();
+    let press = |pos: Pos2, pressed: bool| Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: shift,
+    };
+    rig.frames(vec![
+        vec![held.clone(), Event::PointerMoved(from)],
+        vec![press(from, true)],
+        vec![held.clone(), Event::PointerMoved(from + vec2(20.0, 0.0))],
+        vec![held.clone(), Event::PointerMoved(from + vec2(40.0, 0.0))],
+        vec![held.clone(), Event::PointerMoved(from + vec2(60.0, 0.0))],
+        vec![press(from + vec2(60.0, 0.0), false)],
+        vec![],
+        vec![],
+    ]);
+    let offset = rig.shell.engine.spec().array.towers[3].timing.offset;
+    let moved = offset as f32 * per_second;
+    assert!((moved - 60.0).abs() <= 8.0, "the lane moved {moved} points for a drag of 60");
+    assert_eq!(rig.shell.engine.journal().len(), journal + 1, "one edit");
+    // Every bar of that lane followed, taken or not, and no other lane moved.
+    let after = bars(&rig);
+    assert_eq!(after.len(), before.len());
+    for (now, then) in after.iter().zip(&before) {
+        assert!((now.rect.left() - then.rect.left() - moved).abs() <= 1.0 && now.filled == then.filled);
+    }
+    assert!(after.iter().any(|bar| !bar.filled), "the scene loses shots");
+    let other = rig.shell.layout().shots.iter().find(|bar| bar.tower == 2).unwrap();
+    assert!((other.rect.left() - before[0].rect.left()).abs() <= 1.0);
+}
+
+#[test]
+fn the_flight_diagram_draws_the_schedule_s_shots() {
+    // I1 of S2's review: the diagram drew (first + k)·cycle + offset, all taken.
+    for (name, lines) in SCHEDULES {
+        let mut rig = scheduled_rig(lines);
+        rig.shell.run("show flight").unwrap();
+        rig.shell.run("seek 30").unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        let drawn = rig.shell.layout().plots[0].clone();
+        assert_eq!((drawn.x.lo, drawn.x.hi), (26.0, 34.0));
+        let per_second = drawn.area.width() / 8.0;
+        let x_of = |seconds: f64| drawn.area.left() + (seconds - 26.0) as f32 * per_second;
+        let shots = cav_sim::read::shots(rig.shell.engine.spec()).unwrap();
+        let mut off_the_grid = 0.0f32;
+        for tower in 0..5 {
+            let row: Vec<_> = drawn.flights.iter().filter(|flight| flight.0 == tower).collect();
+            let touching: Vec<usize> = shots.touching(tower, [26.0, 34.0]).collect();
+            assert_eq!(row.len(), touching.len(), "{name}, tower {}", tower + 1);
+            assert!(row.len() >= 3, "{name}: {} shots in eight seconds", row.len());
+            for (flight, k) in row.iter().zip(touching) {
+                let (launch, readout) = (shots.launch(tower, k), shots.readout(tower, k));
+                assert!((flight.1 - x_of(launch)).abs() <= 1.0 && (flight.2 - x_of(readout)).abs() <= 1.0);
+                assert_eq!(flight.3, shots.taken(tower, k), "{name}: tower {}, shot {k}", tower + 1);
+                // How far the launch is from the nearest whole cycle, where the old diagram drew it.
+                let cycles = launch / 2.0;
+                off_the_grid = off_the_grid.max((cycles - cycles.round()).abs() as f32 * 2.0 * per_second);
+            }
+        }
+        // Control: the old arithmetic is not this scene's: a shot is off the even grid by more
+        // than a point, or some shot drawn is not taken.
+        let dashed = drawn.flights.iter().filter(|flight| !flight.3).count();
+        assert!(off_the_grid > 1.0 || dashed > 0, "{name}: the plain schedule would do");
+        match name {
+            "jittered" => assert!(off_the_grid > 10.0 && dashed == 0, "{off_the_grid} points"),
+            _ => assert!(dashed > 0 && off_the_grid <= 1.0, "{name}: {dashed} dashed"),
+        }
+        let caption = drawn.labels.iter().any(|(text, _)| text.contains("shot(s) not taken"));
+        assert_eq!(caption, dashed > 0, "{name}: the caption says what dashed means");
+    }
+}
+
 #[test]
 fn flight_rows_share_absolute_time() {
     let mut rig = staggered_rig();
