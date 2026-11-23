@@ -33,6 +33,7 @@ FIGURE_VERSION: int = 1
 """The version of the ``.json`` layout this module reads."""
 
 Column = npt.NDArray[np.float64]
+Flags  = npt.NDArray[np.bool_]
 
 # ========================================= THE FIGURE =========================================
 
@@ -65,12 +66,17 @@ class Series:
         colour (str):    The colour Cavendish drew it in, ``#rrggbb``.
         x      (Column): Its horizontal values, shape ``[N]``, in the x axis's unit.
         y      (Column): Its vertical values, shape ``[N]``, in the y axis's unit.
+        taken  (Flags):  Which of its values are measurements, shape ``[N]``. A signal's shot
+                         that the tower did not take (a planned gap, a lost shot) keeps its slot
+                         in the file, holding 0, and is ``False`` here; every other series is
+                         ``True`` throughout.
     """
 
     name:   str
     colour: str
     x:      Column
     y:      Column
+    taken:  Flags
 
 
 @dataclass(frozen = True)
@@ -255,7 +261,12 @@ def load(path: str | Path) -> Result[Figure, FigureError]:
             continue
         if across not in columns.value or up not in columns.value:
             return Err(NotAFigure(path = source, why = f"series `{name}` names columns the data does not have"))
-        series.append(Series(name = name, colour = colour, x = columns.value[across], y = columns.value[up]))
+        # A signal's series names the column that says which shots were taken (figures written
+        # before it did have the column all the same, under the tower's name).
+        at    = entry.get("taken_column")
+        flags = names[at] if isinstance(at, int) and not isinstance(at, bool) and 0 <= at < len(names) else f"shot taken by {name}"
+        taken = columns.value[flags] != 0.0 if flags in columns.value else np.ones(held, dtype = np.bool_)
+        series.append(Series(name = name, colour = colour, x = columns.value[across], y = columns.value[up], taken = taken))
     return Ok(Figure(
         path       = source,
         what       = what,

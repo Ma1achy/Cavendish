@@ -306,32 +306,37 @@ fn console(shell: &mut Shell, ui: &mut egui::Ui) {
     });
 }
 
+/// The fewest and the most shots any tower of the scene takes: the engine's cadence answer,
+/// which it keeps between frames. `None` when the scene has no shots to count.
+fn taken_a_tower(engine: &cav_engine::Engine) -> Option<(usize, usize)> {
+    match engine.query(&cav_engine::Query::Cadence) {
+        Ok(cav_engine::Reply::Cadence(cadence)) => {
+            cadence.kept.iter().min().copied().zip(cadence.kept.iter().max().copied())
+        }
+        _ => None,
+    }
+}
+
 fn timeline_panel(shell: &mut Shell, ui: &mut egui::Ui) {
     let spec = shell.engine.spec().clone();
-    let instrument = &spec.array.instrument;
-    let all_shots = timeline::shots(instrument, spec.duration);
+    // The shots are the engine's (the ones the signal is read at), and the counts are its
+    // cadence answer, kept between frames: nothing here works out a shot's time.
+    let taken = taken_a_tower(&shell.engine);
+    let mean_cycle = spec.array.schedule.mean_cycle(spec.array.instrument.cycle);
+    let caption = timeline::caption(shell.engine.shots(), mean_cycle, taken);
+    shell.layout.timeline_caption.clone_from(&caption);
     ui.horizontal(|ui| {
         ui.label(RichText::new("Timeline").color(theme::STRONG).strong());
-        if ui.add(Button::new(if shell.playing { "pause" } else { "play" }).min_size(vec2(48.0, 0.0))).clicked() {
+        if ui
+            .add(Button::new(if shell.playing { "pause" } else { "play" }).min_size(vec2(48.0, 0.0)))
+            .clicked()
+        {
             let _ = shell.run("play");
         }
         if ui.button("rewind").clicked() {
             let _ = shell.run("seek 0");
         }
         ui.label(RichText::new(format!("t {:.2} s", shell.engine.time())).monospace().color(theme::STRONG));
-        let caption = if all_shots.decimated() {
-            // Said in words, so that a lane drawn as one band is not mistaken for one long shot.
-            format!(
-                "one lane per tower · {} shots each, too many to draw one by one (one every {} s) · drag to scrub",
-                all_shots.total, instrument.cycle
-            )
-        } else {
-            format!(
-                "one lane per tower · each bar is a shot, launch to readout (2T = {:.2} s) · one shot every {:.1} s · drag to scrub · Shift-drag a lane to move its clock",
-                2.0 * instrument.half_sequence,
-                instrument.cycle
-            )
-        };
         ui.label(RichText::new(caption).size(11.0).color(theme::WEAK));
     });
     let labels: Vec<String> = spec.array.towers.iter().map(|t| t.label.clone()).collect();
@@ -340,9 +345,10 @@ fn timeline_panel(shell: &mut Shell, ui: &mut egui::Ui) {
     let response = egui::ScrollArea::vertical()
         .id_salt("lanes")
         .auto_shrink([false, false])
-        .show(ui, |ui| timeline::lanes(ui, &labels, &all_shots, &offsets, spec.duration, time, selected))
+        .show(ui, |ui| timeline::lanes(ui, &labels, shell.engine.shots().ok(), spec.duration, time, selected))
         .inner;
     shell.layout.lanes.clone_from(&response.bars);
+    shell.layout.shots.clone_from(&response.shots);
     shell.layout.ruler = (response.ruler.clone(), response.rect.unwrap_or(Rect::NOTHING));
     // A lane dragged with Shift: a `set` of that tower's offset, each step continuing the last,
     // so that the whole drag is one edit.
@@ -491,15 +497,24 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     heading(ui, "Run");
     let forward = match shell.engine.signal() {
         (cav_engine::SignalState::Refined, Some(signal)) => {
+            // A refined signal is the scene's as it is: its shots are the schedule's, and how
+            // many each tower takes is the engine's count (kept between frames, not made here).
+            let shots = signal.times.len();
+            let (fewest, most) = taken_a_tower(&shell.engine).unwrap_or((shots, shots));
+            let count = match (fewest == shots, fewest == most) {
+                (true, _) => format!("{shots} shots"),
+                (_, true) => format!("{shots} shots, {most} taken a tower"),
+                _ => format!("{shots} shots, {fewest} to {most} taken a tower"),
+            };
             format!(
-                "forward · {} shots · refined · {}",
-                signal.times.len(),
+                "forward · {count} · refined · {}",
                 cav_engine::estimate_text(signal.estimate, signal.settled)
             )
         }
         (cav_engine::SignalState::Stale, _) => "forward · computing".to_owned(),
         _ => "forward · no signal".to_owned(),
     };
+    shell.layout.status.clone_from(&forward);
     ui.label(RichText::new(forward).size(11.5).color(theme::WEAK));
 
     heading(ui, "View");
@@ -556,25 +571,18 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             ("paper", "style paper", style(DrawStyle::Paper)),
         ],
     );
-    let shows = |c: cav_engine::PaneContent| shell.engine.content(pane) == c;
-    let (scene, signal, periodogram) = (
-        shows(cav_engine::PaneContent::Scene),
-        shows(cav_engine::PaneContent::Signal),
-        shows(cav_engine::PaneContent::Periodogram),
-    );
-    button_row(
-        shell,
-        ui,
-        "show",
-        &[
-            ("scene", "show scene", scene),
-            ("signal", "show signal", signal),
-            ("periodogram", "show periodogram", periodogram),
-        ],
-    );
-    let flight = shell.engine.content(pane) == cav_engine::PaneContent::Flight;
-    let cadence = shell.engine.content(pane) == cav_engine::PaneContent::Cadence;
-    button_row(shell, ui, "", &[("flight", "show flight", flight), ("cadence", "show cadence", cadence)]);
+    // A button for every content there is, three to a row: a content added to
+    // `PaneContent::ALL` has its button with no line here.
+    let shown = shell.engine.content(pane);
+    let lines = cav_engine::PaneContent::ALL.map(|content| format!("show {}", content.name()));
+    for (row, contents) in cav_engine::PaneContent::ALL.chunks(3).enumerate() {
+        let buttons: Vec<(&str, &str, bool)> = contents
+            .iter()
+            .enumerate()
+            .map(|(n, content)| (content.name(), lines[3 * row + n].as_str(), *content == shown))
+            .collect();
+        button_row(shell, ui, if row == 0 { "show" } else { "" }, &buttons);
+    }
     ui.add_space(4.0);
     ui.label(
         RichText::new(

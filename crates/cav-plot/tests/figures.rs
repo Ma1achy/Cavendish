@@ -608,3 +608,107 @@ fn gpu_a_view_figure_is_the_renderers_picture() {
         .unwrap();
     assert_ne!(std::fs::read(dir.join("north.png")).unwrap(), std::fs::read(dir.join("plan.png")).unwrap());
 }
+
+/// A scene whose towers do not take every shot (as `plots.rs` has it).
+const LOSSY: &str = r#"load cadence-lab; set array.schedule.gaps {"on":4,"period":10}; set array.schedule.loss 0.2; set duration 60"#;
+
+#[test]
+fn a_flight_figure_says_which_shots_were_taken() {
+    let dir = scratch("flight-taken");
+    let mut engine = engine(LOSSY);
+    engine
+        .run_line(&format!("figure flight from 0 to 40 as paper-full to {}", word(&dir.join("f.svg"))))
+        .unwrap();
+    let (header, columns) = read_csv(&dir.join("f.csv"));
+    assert_eq!(
+        header,
+        ["tower [its number from 1]", "launch [s]", "readout [s]", "taken [1 if taken or 0 if not]"]
+    );
+    // The rows are the schedule's shots that touch the span, tower by tower, with its flags.
+    let shots = cav_sim::read::shots(engine.spec()).unwrap();
+    let mut row = 0;
+    for tower in 0..shots.towers() {
+        for k in shots.touching(tower, [0.0, 40.0]) {
+            let taken = f64::from(u8::from(shots.taken(tower, k)));
+            let expected = [(tower + 1) as f64, shots.launch(tower, k), shots.readout(tower, k), taken];
+            let found = [columns[0][row], columns[1][row], columns[2][row], columns[3][row]];
+            assert!(same_bits(&found, &expected), "row {row}: {found:?} against {expected:?}");
+            row += 1;
+        }
+    }
+    assert_eq!(row, columns[0].len());
+    let lost = columns[3].iter().filter(|taken| **taken == 0.0).count();
+    assert!(lost > row / 2, "{lost} of {row} shots not taken");
+    let json: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("f.json")).unwrap()).unwrap();
+    assert_eq!(json["marks"]["not_taken"]["shots"], serde_json::json!(lost));
+    // A signal's series name the column that says which shots were taken.
+    engine.run_line(&format!("figure signal as paper-full to {}", word(&dir.join("s.svg")))).unwrap();
+    let json: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("s.json")).unwrap()).unwrap();
+    assert_eq!(json["series"][1]["taken_column"], serde_json::json!(5));
+    assert_eq!(json["marks"]["shots_taken"].as_array().unwrap().len(), 5);
+    // Control: the plain schedule takes every shot, and the column is all ones.
+    let mut plain = self::engine("load comb; set duration 60");
+    plain
+        .run_line(&format!("figure flight from 0 to 40 as paper-full to {}", word(&dir.join("p.svg"))))
+        .unwrap();
+    let (_, columns) = read_csv(&dir.join("p.csv"));
+    assert!(columns[3].len() >= 100 && columns[3].iter().all(|taken| *taken == 1.0));
+}
+
+#[test]
+fn gpu_a_lost_shot_is_a_gap_in_the_png() {
+    let dir = scratch("gap");
+    let mut engine = engine(LOSSY);
+    let file = dir.join("lost.png");
+    engine.run_line(&format!("figure signal tower 1 as paper-full dpi 150 to {}", word(&file))).unwrap();
+    let (rgba, [width, height]) = cav_render::decode_png(&std::fs::read(&file).unwrap()).unwrap();
+    // The same figure, built here, says where things are in points; the picture is that, scaled.
+    let figure = Figure {
+        tower: Some(1),
+        preset: "paper-full".into(),
+        dpi: Some(150.0),
+        ..Figure::new(FigureKind::Signal, FigureFormat::Png)
+    };
+    let built = figure::build(&engine, &figure, "lost.png").unwrap();
+    let style = Style::preset("paper-full").unwrap();
+    let scale = width as f32 / built.drawing.size[0];
+    let frame = |item: &Item| match item {
+        Item::Rect { min, max, fill: None, stroke: Some(_) } => Some((*min, *max)),
+        _ => None,
+    };
+    let (min, max) = built.drawing.items.iter().find_map(frame).expect("the frame of the axes");
+    let range = &built.provenance["axes"]["x"]["range"];
+    let (from, to) = (range[0].as_f64().unwrap(), range[1].as_f64().unwrap());
+    let column_of = |time: f64| {
+        ((min[0] + (max[0] - min[0]) * ((time - from) / (to - from)) as f32) * scale).round() as u32
+    };
+    // The series' colour in a column of pixels, from the top of the axes down to just above
+    // the foot (where a hollow square marks a shot not taken).
+    let colour = style.series(0).0;
+    let (top, foot) = ((min[1] * scale) as u32, (((max[1] - 6.0) * scale) as u32).min(height));
+    let inked = |column: u32| {
+        (top..foot)
+            .filter(|row| {
+                let at = ((row * width + column) * 4) as usize;
+                (0..3).all(|c| rgba[at + c].abs_diff(colour.0[c]) <= 40)
+            })
+            .count()
+    };
+    let signal = engine.signal().1.unwrap().clone();
+    let (times, taken) = (signal.readouts(0), signal.taken(0));
+    let mut lost = 0;
+    for k in 1..times.len() - 1 {
+        // A shot not taken with one not taken either side: nothing of the series is near it.
+        if !taken[k] && !taken[k - 1] && !taken[k + 1] {
+            assert_eq!(inked(column_of(times[k])), 0, "shot {k} at {} s is drawn", times[k]);
+            lost += 1;
+        }
+        // The neighbours are the control: a shot taken has its dot in its column.
+        if taken[k] {
+            assert!(inked(column_of(times[k])) >= 2, "shot {k} at {} s is not drawn", times[k]);
+        }
+    }
+    assert!(lost >= 5, "{lost} lost shots looked at");
+}

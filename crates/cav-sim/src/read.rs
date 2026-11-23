@@ -57,14 +57,35 @@ pub fn sources(spec: &SceneSpec) -> Vec<SourceId> {
 /// towers. Tower `d` launches shot `k` at `times[k] + offsets[d] − 2T` and reads it out at
 /// `times[k] + offsets[d]`. A shot a tower does not take (a planned gap, a lost shot) keeps its
 /// place and is marked not valid.
-#[derive(Clone, Debug, PartialEq)]
+///
+/// This is the one source of shot times and of which shots are taken: the read, the timeline's
+/// lanes, the flight diagram, the signal plot and every caption that counts shots go by it.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Shots {
-    /// When the array's clock reads each shot out, seconds: the launch plus 2T.
+    /// When the array's clock reads each shot out, seconds: the launch plus 2T. They rise.
     pub times: Vec<f64>,
     /// How much later than that each tower reads out, seconds, in the towers' order.
     pub offsets: Vec<f64>,
     /// Whether each tower takes each shot: tower by tower, `towers × shots` flags.
     pub valid: Vec<bool>,
+    /// How long a shot is in flight, seconds: 2T, from its launch to its readout.
+    pub flight: f64,
+    /// What a person should know about the schedule: a tower whose offset puts shots outside
+    /// the timeline. The signal read from these shots carries them.
+    pub warnings: Vec<Warning>,
+}
+
+/// One shot of one tower, as it is drawn.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Flown {
+    /// Which shot of the schedule it is, from 0.
+    pub k: usize,
+    /// When the tower launches it, seconds.
+    pub launch: f64,
+    /// When the tower reads it out, seconds: the launch and 2T.
+    pub readout: f64,
+    /// Whether the tower takes it.
+    pub taken: bool,
 }
 
 impl Shots {
@@ -73,7 +94,13 @@ impl Shots {
     #[must_use]
     pub fn together(spec: &SceneSpec, times: Vec<f64>) -> Self {
         let towers = spec.array.towers.len();
-        Self { valid: vec![true; towers * times.len()], offsets: vec![0.0; towers], times }
+        Self {
+            valid: vec![true; towers * times.len()],
+            offsets: vec![0.0; towers],
+            times,
+            flight: 2.0 * spec.array.instrument.half_sequence,
+            warnings: Vec::new(),
+        }
     }
 
     /// How many towers there are.
@@ -101,11 +128,44 @@ impl Shots {
         let shots = self.times.len();
         &self.valid[tower * shots..(tower + 1) * shots]
     }
+
+    /// When tower `tower` (from 0) launches shot `k`, seconds: its readout less 2T.
+    #[must_use]
+    pub fn launch(&self, tower: usize, k: usize) -> f64 {
+        self.readout(tower, k) - self.flight
+    }
+
+    /// Shot `k` of tower `tower` (from 0), as it is drawn.
+    #[must_use]
+    pub fn flown(&self, tower: usize, k: usize) -> Flown {
+        let readout = self.readout(tower, k);
+        Flown { k, launch: readout - self.flight, readout, taken: self.taken(tower, k) }
+    }
+
+    /// The shots of tower `tower` (from 0) any part of whose flight is inside `[from, to]`
+    /// seconds: launched at or before `to` and read out at or after `from`. One stretch, since
+    /// the times rise; found by bisection, so it costs the same for six shots and two million.
+    #[must_use]
+    pub fn touching(&self, tower: usize, [from, to]: [f64; 2]) -> std::ops::Range<usize> {
+        let offset = self.offsets[tower];
+        let first = self.times.partition_point(|time| time + offset < from);
+        let end = self.times.partition_point(|time| time + offset - self.flight <= to);
+        first..end.max(first)
+    }
 }
 
 /// When the array's clock launches each shot, seconds, by the scene's schedule: one every cycle
-/// from time zero, or as the alternation and the jitter have it, while the launch is before the
-/// end of the timeline. With the plain schedule these are `k·cycle` exactly, as S1 had them.
+/// from time zero, or as the alternation and the jitter have it, while the shot's place on the
+/// clock is before the end of the timeline. With the plain schedule these are `k·cycle` exactly,
+/// as S1 had them.
+///
+/// **No launch is before time zero.** The clock starts at zero and nothing is launched before
+/// it starts. Jitter that can only delay never does that; symmetric jitter about a grid would
+/// (shot 0 drawn early), so there the grid stands `delta` after zero: shot `k` is launched at
+/// `k·cycle + delta + delta·(2u − 1)`, in `[k·cycle, k·cycle + 2·delta)`. A shift of every shot
+/// alike changes no height of the spectral window. A shot's launch may be later than the end of
+/// the timeline by its jitter, and its readout by 2T more: it is the timeline's shot because its
+/// place on the grid is.
 ///
 /// # Errors
 /// When there could be more than [`MAX_SHOTS`] of them, or more values than
@@ -161,7 +221,14 @@ pub fn launches(spec: &SceneSpec) -> Result<Vec<f64>, String> {
                 if grid(k) >= spec.duration {
                     break;
                 }
-                times.push(if late == 0.0 { grid(k) } else { grid(k) + late });
+                // The symmetric grid stands `delta` late (see above): the unshifted time first,
+                // as `cav_core::cadence::grid_times` has it, and then the shift.
+                let shift = jitter.filter(|j| j.kind == JitterKind::Symmetric).map_or(0.0, |j| j.delta);
+                times.push(match (late == 0.0, shift == 0.0) {
+                    (true, true) => grid(k),
+                    (_, true) => grid(k) + late,
+                    _ => (grid(k) + late) + shift,
+                });
             }
         }
     }
@@ -181,6 +248,12 @@ pub fn readouts(spec: &SceneSpec) -> Result<Vec<f64>, String> {
 /// The scene's shots: the array's clock ([`readouts`]), each tower's offset from it, and which
 /// shots each tower takes: those inside the planned pattern and the daily window, less the ones
 /// lost (each tower loses its own, keyed by seed, tower and shot).
+///
+/// **A tower's offset moves its shots and nothing else.** Every shot stays as it was, taken or
+/// not, and is read at the tower's own time, either side of the timeline's ends (an offset may
+/// be negative: that tower's clock is ahead of the array's). When an offset puts a launch before
+/// time zero, or at or after the end of the timeline a shot the array's clock launches before
+/// it, the shots carry a warning about that tower, and so does the signal read from them.
 ///
 /// # Errors
 /// As [`launches`].
@@ -208,8 +281,39 @@ pub fn shots(spec: &SceneSpec) -> Result<Shots, String> {
                     || unit(schedule.seed, STREAM_LOSS, tower as u64, k as u64) >= schedule.loss)
         }));
     }
+    let mut warnings = Vec::new();
+    for (tower, offset) in offsets.iter().enumerate().filter(|(_, offset)| **offset != 0.0) {
+        let label = &spec.array.towers[tower].label;
+        // The launches rise, so those an offset puts outside are a stretch at one end.
+        let early = launches.partition_point(|launch| launch + offset < 0.0);
+        if early > 0 {
+            warnings.push(Warning::about(
+                tower,
+                format!(
+                    "{label}'s clock is offset by {offset} s: {early} of its {} shot(s) are launched before the \
+                     timeline begins, the first at {} s",
+                    launches.len(),
+                    launches[0] + offset
+                ),
+            ));
+        }
+        let inside = launches.partition_point(|launch| *launch < spec.duration);
+        let late = inside - launches[..inside].partition_point(|launch| launch + offset < spec.duration);
+        if late > 0 {
+            warnings.push(Warning::about(
+                tower,
+                format!(
+                    "{label}'s clock is offset by {offset} s: {late} of its {} shot(s) are launched at or after \
+                     the end of the timeline ({} s), the last at {} s",
+                    launches.len(),
+                    spec.duration,
+                    launches[inside - 1] + offset
+                ),
+            ));
+        }
+    }
     let times = launches.into_iter().map(|launch| launch + flight).collect();
-    Ok(Shots { times, offsets, valid })
+    Ok(Shots { times, offsets, valid, flight, warnings })
 }
 
 /// Something a person should know about a reading, and the tower it is about.
@@ -676,7 +780,7 @@ impl Signal {
             estimate: 0.0,
             estimates: vec![0.0; towers],
             settled: true,
-            warnings: Vec::new(),
+            warnings: shots.warnings.clone(),
         }
     }
 
@@ -1325,7 +1429,14 @@ mod tests {
             let grid =
                 launches(&scheduled(|s| (s.jitter, s.seed) = (jitter(JitterModel::Grid, kind, 0.2), 9)))
                     .unwrap();
-            assert_eq!(grid, cadence::grid_times(200, 2.0, 0.2, symmetric, 9));
+            // The generator's times; the symmetric grid stands δ after zero (finding 22 of S2's
+            // review: no shot is launched before the clock starts), to the bit.
+            let shift = if symmetric { 0.2 } else { 0.0 };
+            let expected: Vec<f64> = cadence::grid_times(200, 2.0, 0.2, symmetric, 9)
+                .into_iter()
+                .map(|time| if symmetric { time + shift } else { time })
+                .collect();
+            assert_eq!(grid, expected);
         }
         // Alternation: the two cycle times in turn.
         let alternating = launches(&scheduled(|s| s.alternate = Some(2.5))).unwrap();
@@ -1668,5 +1779,182 @@ mod tests {
         assert!(contribution(&scene, SourceId::Body(0), &shots(&scene).unwrap(), &|| false).is_some());
         assert_eq!(sources(&dev::infinite_floor()), [SourceId::Floor]);
         assert_eq!(sources(&dev::superposition()), [SourceId::Body(0), SourceId::Body(1)]);
+    }
+
+    #[test]
+    fn no_shot_is_launched_before_the_clock_starts() {
+        use crate::{JitterKind, JitterModel, JitterSpec};
+        use cav_core::cadence;
+        // Symmetric jitter about a grid, a quarter of a second either way, on 200 seeds: shot 0
+        // would be drawn early for about half of them.
+        let (mut early, delta) = (0, 0.25);
+        for seed in 0..200 {
+            let scene = scheduled(|s| {
+                s.jitter = Some(JitterSpec { model: JitterModel::Grid, kind: JitterKind::Symmetric, delta });
+                s.seed = seed;
+            });
+            let ours = launches(&scene).unwrap();
+            let least = ours.iter().fold(f64::INFINITY, |m, t| m.min(*t));
+            assert!(least >= 0.0, "seed {seed}: a shot is launched at {least} s");
+            // The generator the closed forms were held to, and the grid standing δ late.
+            let unshifted = cadence::grid_times(ours.len(), 2.0, delta, true, seed);
+            assert!(ours.iter().zip(&unshifted).all(|(a, b)| a.to_bits() == (b + delta).to_bits()));
+            // Control: without the shift the same schedule launches shot 0 before zero.
+            early += usize::from(unshifted[0] < 0.0);
+        }
+        assert!((60..=140).contains(&early), "{early} of 200 seeds would launch shot 0 before zero");
+        // Jitter that only delays, a walk and the plain schedule begin at zero or after as they did.
+        for (model, kind) in [
+            (JitterModel::Grid, JitterKind::Positive),
+            (JitterModel::Walk, JitterKind::Positive),
+            (JitterModel::Walk, JitterKind::Symmetric),
+        ] {
+            let scene = scheduled(|s| s.jitter = Some(JitterSpec { model, kind, delta }));
+            assert!(launches(&scene).unwrap()[0] >= 0.0);
+        }
+    }
+
+    /// The least time from one launch to the next, and the largest departure of a shot's length
+    /// (readout less launch) from 2T, over the array's clock.
+    fn spacing_and_length(scene: &SceneSpec) -> (f64, f64) {
+        let (launched, all) = (launches(scene).unwrap(), shots(scene).unwrap());
+        let flight = 2.0 * scene.array.instrument.half_sequence;
+        assert_eq!((all.flight, all.times.len()), (flight, launched.len()));
+        let least = launched.windows(2).fold(f64::INFINITY, |m, w| m.min(w[1] - w[0]));
+        let off = launched.iter().zip(&all.times).fold(0.0f64, |m, (l, r)| m.max((r - l - flight).abs()));
+        (least, off)
+    }
+
+    #[test]
+    fn a_shot_is_two_t_long_and_shots_do_not_overlap() {
+        // George: lateness is only ever in the pause between shots; the sequence itself never
+        // varies (2T for every shot), and shots do not overlap. So whatever the schedule, the
+        // array's launches are at least 2T apart and every readout is its launch and 2T; gaps,
+        // the window and loss say which shots are taken and move none.
+        use crate::{GapSpec, JitterKind, JitterModel, JitterSpec, WindowSpec};
+        type Edit = fn(&mut crate::ScheduleSpec);
+        fn jitter(model: JitterModel, kind: JitterKind, delta: f64) -> Option<JitterSpec> {
+            Some(JitterSpec { model, kind, delta })
+        }
+        let schedules: [(&str, Edit); 9] = [
+            ("plain", |_| {}),
+            ("walk, late only", |s| s.jitter = jitter(JitterModel::Walk, JitterKind::Positive, 0.5)),
+            ("walk, either way", |s| s.jitter = jitter(JitterModel::Walk, JitterKind::Symmetric, 0.5)),
+            ("grid, late only", |s| s.jitter = jitter(JitterModel::Grid, JitterKind::Positive, 0.5)),
+            ("grid, either way", |s| s.jitter = jitter(JitterModel::Grid, JitterKind::Symmetric, 0.25)),
+            ("alternating", |s| s.alternate = Some(1.5)),
+            ("gaps", |s| s.gaps = Some(GapSpec { on: 3, period: 5 })),
+            ("window", |s| s.window = Some(WindowSpec { start: 30.0, length: 20.0, period: 100.0 })),
+            ("loss", |s| s.loss = 0.3),
+        ];
+        let flight = 1.46;
+        let plain = shots(&scheduled(|_| {})).unwrap();
+        for (name, edit) in schedules {
+            for seed in [0, 1, 7] {
+                let scene = scheduled(|s| {
+                    edit(s);
+                    s.seed = seed;
+                });
+                let (least, off) = spacing_and_length(&scene);
+                assert!(
+                    least >= flight - 1e-12,
+                    "{name}, seed {seed}: launches {least} s apart, a shot is {flight} s"
+                );
+                assert!(off <= 1e-12, "{name}, seed {seed}: a shot's length is {off} s from 2T");
+                let all = shots(&scene).unwrap();
+                // Every tower's shot is 2T long as well, whatever its offset would be.
+                assert!((0..all.towers()).all(|d| all.readout(d, 3) - all.launch(d, 3) == flight));
+                if ["gaps", "window", "loss"].contains(&name) {
+                    assert_eq!(all.times, plain.times, "{name} moves no shot");
+                    assert!(all.valid.iter().any(|taken| !taken), "{name} does leave shots out");
+                }
+            }
+        }
+        // The library's uneven scene is the random walk, late only: lateness accumulates.
+        let lab = dev::cadence_lab().array.schedule.jitter.unwrap();
+        assert_eq!((lab.model, lab.kind), (JitterModel::Walk, JitterKind::Positive));
+        // Control: a jitter the validation refuses (a cycle may be drawn shorter than a shot)
+        // does overlap, and the same measure sees it.
+        let mut overlapping = dev::comb();
+        overlapping.duration = 400.0;
+        overlapping.array.schedule.jitter = jitter(JitterModel::Walk, JitterKind::Symmetric, 0.9);
+        assert!(overlapping.validate().is_err());
+        let (least, _) = spacing_and_length(&overlapping);
+        assert!(least < flight, "the control's closest launches are {least} s apart");
+    }
+
+    #[test]
+    fn an_offset_that_puts_shots_outside_the_timeline_is_said() {
+        let mut plain = dev::comb();
+        plain.duration = 12.0;
+        let mut scene = plain.clone();
+        scene.array.towers[1].timing.offset = -0.5;
+        scene.array.towers[3].timing.offset = 3.0;
+        assert_eq!(scene.validate(), Ok(()));
+        let all = shots(&scene).unwrap();
+        assert_eq!(all.warnings.len(), 2, "{:?}", all.warnings);
+        let (early, late) = (&all.warnings[0], &all.warnings[1]);
+        assert_eq!((early.tower, late.tower), (Some(1), Some(3)));
+        assert!(
+            early.contains("1 of its 6 shot(s) are launched before the timeline begins, the first at -0.5 s"),
+            "{early}"
+        );
+        assert!(
+            late.contains(
+                "1 of its 6 shot(s) are launched at or after the end of the timeline (12 s), the last at 13 s"
+            ),
+            "{late}"
+        );
+        // The offset moves the shots and nothing else: all are still taken, the signal says the
+        // same two things, and every other tower reads the bits it read.
+        assert!(all.valid.iter().all(|taken| *taken));
+        let (moved, still) = (signal(&scene).unwrap(), signal(&plain).unwrap());
+        assert_eq!(moved.warnings, all.warnings);
+        for tower in [0, 2, 4] {
+            for channel in CHANNELS {
+                assert_eq!(moved.channel(tower, channel), still.channel(tower, channel));
+            }
+        }
+        assert_ne!(moved.channel(1, Channel::Gradiometer), still.channel(1, Channel::Gradiometer));
+        // Control: no offsets, and offsets that keep every launch inside, say nothing.
+        assert!(shots(&plain).unwrap().warnings.is_empty() && still.warnings.is_empty());
+        assert!(shots(&dev::staggered()).unwrap().warnings.is_empty());
+    }
+
+    #[test]
+    fn shots_touching_a_span_are_one_stretch() {
+        use crate::{JitterKind, JitterModel, JitterSpec};
+        let mut scene = scheduled(|s| {
+            s.jitter = Some(JitterSpec { model: JitterModel::Walk, kind: JitterKind::Positive, delta: 0.5 });
+            s.seed = 4;
+        });
+        scene.array.towers[2].timing.offset = 0.7;
+        let all = shots(&scene).unwrap();
+        let spans =
+            [[10.0, 20.0], [-5.0, 3.0], [300.0, 320.0], [395.0, 500.0], [1000.0, 1100.0], [50.0, 50.0]];
+        for tower in [0, 2] {
+            for [from, to] in spans {
+                let found: Vec<usize> = (0..all.times.len())
+                    .filter(|&k| all.launch(tower, k) <= to && all.readout(tower, k) >= from)
+                    .collect();
+                let stretch: Vec<usize> = all.touching(tower, [from, to]).collect();
+                assert_eq!(stretch, found, "tower {tower}, {from} to {to} s");
+                for k in stretch {
+                    let shot = all.flown(tower, k);
+                    assert_eq!(
+                        (shot.k, shot.readout, shot.taken),
+                        (k, all.readout(tower, k), all.taken(tower, k))
+                    );
+                    assert_eq!(shot.launch, shot.readout - 1.46);
+                }
+            }
+        }
+        assert!(all.touching(0, [1000.0, 1100.0]).is_empty() && !all.touching(0, [10.0, 20.0]).is_empty());
+        // Control: these are the schedule's shots, not the plain one's: by 300 s the walk is
+        // tens of seconds behind an even clock, and other shots touch the span.
+        let even = shots(&scheduled(|_| {})).unwrap();
+        assert_ne!(all.touching(0, [300.0, 320.0]), even.touching(0, [300.0, 320.0]));
+        // And the tower with the offset has its own.
+        assert_ne!(all.touching(2, [50.0, 50.0]), all.touching(0, [50.0, 50.0]));
     }
 }
