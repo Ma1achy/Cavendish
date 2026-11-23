@@ -571,25 +571,18 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             ("paper", "style paper", style(DrawStyle::Paper)),
         ],
     );
-    let shows = |c: cav_engine::PaneContent| shell.engine.content(pane) == c;
-    let (scene, signal, periodogram) = (
-        shows(cav_engine::PaneContent::Scene),
-        shows(cav_engine::PaneContent::Signal),
-        shows(cav_engine::PaneContent::Periodogram),
-    );
-    button_row(
-        shell,
-        ui,
-        "show",
-        &[
-            ("scene", "show scene", scene),
-            ("signal", "show signal", signal),
-            ("periodogram", "show periodogram", periodogram),
-        ],
-    );
-    let flight = shell.engine.content(pane) == cav_engine::PaneContent::Flight;
-    let cadence = shell.engine.content(pane) == cav_engine::PaneContent::Cadence;
-    button_row(shell, ui, "", &[("flight", "show flight", flight), ("cadence", "show cadence", cadence)]);
+    // A button for every content there is, three to a row: a content added to
+    // `PaneContent::ALL` has its button with no line here.
+    let shown = shell.engine.content(pane);
+    let lines = cav_engine::PaneContent::ALL.map(|content| format!("show {}", content.name()));
+    for (row, contents) in cav_engine::PaneContent::ALL.chunks(3).enumerate() {
+        let buttons: Vec<(&str, &str, bool)> = contents
+            .iter()
+            .enumerate()
+            .map(|(n, content)| (content.name(), lines[3 * row + n].as_str(), *content == shown))
+            .collect();
+        button_row(shell, ui, if row == 0 { "show" } else { "" }, &buttons);
+    }
     ui.add_space(4.0);
     ui.label(
         RichText::new(

@@ -368,6 +368,9 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
                 "y": table.columns.get(y).map(|c| &c.0),
                 "x_column": x,
                 "y_column": y,
+                // A signal's third column says which of its shots the tower took: a slot not
+                // taken holds 0 and is not a measurement.
+                "taken_column": (figure.what == FigureKind::Signal).then_some(per_series * n + 2),
             })
         })
         .collect();

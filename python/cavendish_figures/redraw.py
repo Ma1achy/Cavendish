@@ -40,18 +40,38 @@ from .style import INK, PRESETS, REFERENCE, SERIES, SPECTRUM, dash, sheets
 
 _SUBMULTIPLES: dict[str, float] = {"rad": 1.0, "mrad": 1e3, "µrad": 1e6, "nrad": 1e9}
 
+_SHOTS_MARKED: int = 200
+"""The most shots of a series that each get a marker (Cavendish's ``MAX_SHOTS_MARKED``)."""
+
 
 def _signal(axes: Axes, figure: Figure, width: float) -> None:
-    """Every tower's series, in the palette's colours and dashes, in the unit the figure used."""
+    """
+    Every tower's series, in the palette's colours and dashes, in the unit the figure used.
+
+    A shot the tower did not take is not a measurement: its value is masked, so the line is
+    broken there and no marker is drawn; with few shots a small hollow square at the foot of
+    the axes marks the time it would have been read out.
+    """
     unit  = figure.marks.get("vertical_axis_written_in")
     unit  = unit if isinstance(unit, str) and unit in _SUBMULTIPLES else figure.y.unit
     scale = _SUBMULTIPLES.get(unit, 1.0)
+    foot  = figure.y.range[0] * scale
     for n, series in enumerate(figure.series):
+        few    = len(series.x) <= _SHOTS_MARKED
+        colour = SERIES[n % len(SERIES)]
         axes.plot(
-            series.x, series.y * scale,
-            color = SERIES[n % len(SERIES)], linestyle = dash(n, width), label = series.name,
-            marker = "o" if len(series.x) <= 200 else "",
+            series.x, np.where(series.taken, series.y * scale, np.nan),
+            color = colour, linestyle = dash(n, width), label = series.name,
+            marker = "o" if few else "",
         )
+        lost = series.x[~series.taken]
+        lost = lost[(lost >= figure.x.range[0]) & (lost <= figure.x.range[1])]
+        if few and len(lost) > 0:
+            axes.plot(
+                lost, np.full(len(lost), foot),
+                color = colour, linestyle = "none", marker = "s", markerfacecolor = "none",
+                markeredgewidth = width * 0.6, clip_on = False,
+            )
     axes.set_ylim(figure.y.range[0] * scale, figure.y.range[1] * scale)
     axes.set_ylabel(f"{figure.y.name}, {unit}")
     if len(figure.series) > 1:
@@ -118,15 +138,24 @@ def _cadence(axes: Axes, figure: Figure, width: float) -> None:
 
 
 def _flight(axes: Axes, figure: Figure, width: float) -> None:
-    """Each tower's shots as bars from launch to readout: the arms' arcs need the forward model."""
+    """
+    Each tower's shots as bars from launch to readout: the arms' arcs need the forward model.
+
+    A shot the tower did not take is the bar's outline only.
+    """
     tower, launch, readout = figure.columns.get("tower"), figure.columns.get("launch"), figure.columns.get("readout")
     if tower is None or launch is None or readout is None:
         return
-    rows = sorted({int(n) for n in tower})
+    flags = figure.columns.get("taken")
+    taken = flags != 0.0 if flags is not None else np.ones(len(tower), dtype = np.bool_)
+    rows  = sorted({int(n) for n in tower})
     for n in rows:
-        chosen = tower == n
-        spans  = [(float(a), float(b - a)) for a, b in zip(launch[chosen], readout[chosen])]
-        axes.broken_barh(spans, (float(n) - 0.3, 0.6), color = SERIES[(n - 1) % len(SERIES)])
+        colour = SERIES[(n - 1) % len(SERIES)]
+        for flown, face in ((taken, colour), (~taken, "none")):
+            chosen = (tower == n) & flown
+            spans  = [(float(a), float(b - a)) for a, b in zip(launch[chosen], readout[chosen])]
+            if spans:
+                axes.broken_barh(spans, (float(n) - 0.3, 0.6), facecolor = face, edgecolor = colour, linewidth = width * 0.6)
     axes.set_yticks([float(n) for n in rows], [f"tower {n}" for n in rows])
     axes.set_ylim(len(rows) + 0.6, 0.4)
     axes.set_ylabel("each bar a shot, launch to readout")
