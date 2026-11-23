@@ -791,8 +791,12 @@ fn cadence(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Meas
         let dash = [5.0 * sheet.u, 4.0 * sheet.u];
         sheet.rule(pos2(area.left(), level), pos2(area.right(), level), style.reference, &dash);
         sheet.unclip();
-        let at = pos2(area.right() - 4.0 * sheet.u, level - 2.0 * sheet.u);
-        sheet.small(at, Anchor::RIGHT_BOTTOM, "predicted floor");
+        // In a figure the window's own line runs through where the words would be: there the
+        // legend names the level.
+        if !style.house {
+            let at = pos2(area.right() - 4.0 * sheet.u, level - 2.0 * sheet.u);
+            sheet.small(at, Anchor::RIGHT_BOTTOM, "predicted floor");
+        }
     }
     // The predicted lines: a stem to the predicted height, and a dot there.
     let colour = style.comb(0);
@@ -835,7 +839,11 @@ fn cadence(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Meas
     sheet.text(
         pos2(area.left(), 37.0 * u),
         Anchor::LEFT_TOP,
-        "grey: this seed's window · blue: the lines the closed forms predict, at their predicted heights",
+        if style.house {
+            "grey: this seed's window · blue: the lines the closed forms predict · dashed: the floor they predict"
+        } else {
+            "grey: this seed's window · blue: the lines the closed forms predict, at their predicted heights"
+        },
         Face::Sans,
         style.text_size,
         style.naming(colour),
@@ -1031,7 +1039,7 @@ fn periodogram(
     let mut drawn = blank(subject, x, Axis { lo: 1e-9, hi: 1.0, log: true });
     let mut described = described(("frequency", "Hz"), ("√S", "rad/√Hz"));
     let empty = |why: &str, mut drawn: Drawn, described: Described| {
-        let mut sheet = Sheet::new(style, measure, size, &titles, combs, &[]);
+        let mut sheet = Sheet::new(style, measure, size, &titles, combs + usize::from(style.house), &[]);
         sheet.nothing(why);
         drawn.note = Some(why.to_owned());
         sheet.finish(drawn, described)
@@ -1055,16 +1063,21 @@ fn periodogram(
     drawn.y = y;
     let mut left: Vec<String> = y.ticks(6).into_iter().map(decade).collect();
     left.push("rad/√Hz".to_owned());
-    let mut sheet = Sheet::new(style, measure, size, &titles, combs, &left);
+    // The house style's key has a line more: the floors are named there, where no stem can
+    // cross the words, and told apart by the axis they lie on.
+    let mut sheet = Sheet::new(style, measure, size, &titles, combs + usize::from(style.house), &left);
     sheet.axes(&x, &y, plain, decade);
     let (area, u) = (sheet.area, sheet.u);
-    sheet.fixed = sheet.labels.len();
     for floor in floors.iter().filter(|floor| **floor >= y.lo) {
         let level = place(area, &x, &y, (from, *floor)).y;
         sheet.rule(pos2(area.left(), level), pos2(area.right(), level), style.reference, &[]);
-        let at = pos2(area.right() - 4.0 * u, level - u);
-        sheet.small(at, Anchor::RIGHT_BOTTOM, format!("shot noise {}", decade(*floor)));
     }
+    if style.house {
+        let named: Vec<String> = floors.iter().map(|floor| decade(*floor)).collect();
+        let text = format!("shot-noise floors, {} rad/√Hz", named.join(" and "));
+        sheet.key(area.left(), combs, &text, style.reference, &[]);
+    }
+    sheet.fixed = sheet.labels.len();
     let series = thinned(frequencies, shown);
     drawn.points = series.len();
     let points: Vec<Pos2> = series.iter().map(|q| place(area, &x, &y, (q.0, q.1.max(y.lo)))).collect();

@@ -334,7 +334,11 @@ fn the_paper_periodogram_is_the_house_style() {
         assert!(drawn, "no level at {floor} rad/√Hz");
     }
     let texts = built.drawing.texts();
-    assert!(texts.contains(&"shot noise 1e-4") && texts.contains(&"shot noise 1e-5"), "{texts:?}");
+    // They are named in the key above the axes, beside a sample of their grey.
+    assert!(texts.contains(&"shot-noise floors, 1e-4 and 1e-5 rad/√Hz"), "{texts:?}");
+    let (_, named) =
+        plot.drawn.labels.iter().find(|(text, _)| text.starts_with("shot-noise floors")).unwrap();
+    assert!(named.bottom() <= area.top(), "{named:?}");
     assert!(texts.contains(&"rad/√Hz") && texts.iter().any(|t| t.starts_with("frequency, Hz")));
     // A stem for every harmonic of the comb, from the axis up: solid, or dashed if it is folded.
     let Reply::Periodogram(spectrum) = engine
@@ -414,7 +418,7 @@ fn the_paper_periodogram_is_the_house_style() {
     let screen = Figure { preset: "screen".into(), ..figure };
     let built = figure::build(&engine, &screen, "s.svg").unwrap();
     assert!(!built.drawing.items.iter().any(|item| matches!(item, Item::Diamond { .. })));
-    assert!(!built.drawing.texts().iter().any(|text| text.starts_with("shot noise")));
+    assert!(!built.drawing.texts().iter().any(|text| text.starts_with("shot-noise")));
 }
 
 #[test]
