@@ -51,6 +51,10 @@ debug = "line-tables-only" # Cargo's guidance; measured 6 s -> 4.5 s rebuild on 
 
 [profile.dev.package."*"]
 debug = false # dependencies carry no debug info
+# Dependencies are optimised in dev: they are built once (three minutes from nothing, once), and
+# the tests lay out egui and read glyph outlines thousands of times. Measured in S2 (§7 of its
+# brief): quick's tests 12.2 s -> 10.7 s warm.
+opt-level = 2
 
 # The text formats are optimised in dev too: every edit by path is a trip through JSON, and the
 # round-trip cases push a million floats through each (measured: 5.0 s and 2.4 s without this).
@@ -62,6 +66,17 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.serde_core]
 opt-level = 3
+
+# The scene, the engine and the plots at opt-level 1: their tests push millions of values through
+# plain loops (the largest signal, a million floats through each text format, a 16 MiB history).
+# Measured in S2: quick's tests 10.7 s -> 7.4 s warm, and 20 s -> 13 s straight after an edit of
+# cav-sim, the build included.
+[profile.dev.package.cav-sim]
+opt-level = 1
+[profile.dev.package.cav-engine]
+opt-level = 1
+[profile.dev.package.cav-plot]
+opt-level = 1
 
 [profile.dev.package.cav-core]
 opt-level = 3 # the hot numerical crate is optimised even in dev (REBUILD §8)

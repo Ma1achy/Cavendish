@@ -36,9 +36,10 @@ cav <command>
          [--exec \"<commands>\"] [--patience <seconds>]
                                  write a figure in a preset's style and size (size in mm; dpi for a PNG),
                                  with its data (.csv or .npy) and a .json of axes, units and provenance
-  replay <journal.json> [--out <dir>]
+  replay <journal.json> [--out <dir>] [--patience <seconds>]
                                  run a saved session again (`journal save <file>` writes one); what it
-                                 exported is written into --out under each file's own name, or not at all
+                                 exported is written into --out under each file's own name, or not at all;
+                                 an export waits for its signal, an hour unless --patience says otherwise
   mcp                            serve the engine to an agent: an MCP server on stdin and stdout
   licences                       the licences of what is built into the binaries (the two fonts)
   help                           this text
@@ -267,17 +268,34 @@ fn figure(rest: &[String]) -> Result<(), String> {
 /// `cav replay`: a journal run again on a fresh engine. Exports go into `--out` by file name; a
 /// journal is never allowed to write where it says.
 fn replay(rest: &[String]) -> Result<(), String> {
-    let mut args = Args::parse(rest, &["out"])?;
+    let mut args = Args::parse(rest, &["out", "patience"])?;
     let out = args.option("out");
+    let patience = match args.option("patience") {
+        None => cav_engine::REPLAY_PATIENCE,
+        Some(text) => text
+            .parse::<f64>()
+            .ok()
+            .filter(|seconds| (0.0..=86400.0).contains(seconds))
+            .map(std::time::Duration::from_secs_f64)
+            .ok_or_else(|| format!("`{text}` is not a patience: seconds, from 0 to 86400"))?,
+    };
     let [file]: [String; 1] = args.finish(1)?.try_into().map_err(|_| "replay takes one journal file")?;
     let journal = cav_engine::journal::read(&file)?;
-    let mut engine = match &out {
+    // The journal is applied to an engine that can draw, so that the figures a session exported
+    // are written again too (`Engine::replay_into` makes an engine of its own, which cannot).
+    let mut engine = cav_engine::Engine::new();
+    cav_plot::figure::install(&mut engine);
+    match &out {
         Some(directory) => {
             std::fs::create_dir_all(directory).map_err(|e| format!("{directory}: {e}"))?;
-            cav_engine::Engine::replay_into(&journal, std::path::Path::new(directory))?
+            engine.set_exports(cav_engine::Exports::Into(std::path::PathBuf::from(directory)));
+            engine.set_patience(patience);
         }
-        None => cav_engine::Engine::replay(&journal)?,
-    };
+        None => engine.set_exports(cav_engine::Exports::Skipped),
+    }
+    for (n, command) in journal.iter().enumerate() {
+        engine.apply(command.clone()).map_err(|why| format!("replay: command {n}: {why}"))?;
+    }
     engine.settle(std::time::Duration::from_secs(600));
     let exports =
         journal.iter().filter(|command| matches!(command, cav_engine::Command::Export { .. })).count();

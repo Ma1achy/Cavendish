@@ -250,3 +250,48 @@ fn a_crowded_periodogram_labels_few_harmonics() {
     let labels = named(&build(&comb, &subject(PaneContent::Periodogram), &style, [960.0, 600.0]));
     assert!(labels.iter().any(|label| label.contains("3f₀")), "{labels:?}");
 }
+
+#[test]
+fn the_cadence_pane_draws_lines_where_predicted() {
+    use cav_engine::{Query, Reply};
+    // Planned gaps, 4 shots of every 10: the closed forms predict lines at k/(10 T₀).
+    let engine = engine(
+        r#"load cadence-lab; set array.schedule.jitter null; set array.schedule.loss 0; set array.schedule.gaps {"on":4,"period":10}"#,
+    );
+    let Ok(Reply::Cadence(predicted)) = engine.query(&Query::Cadence) else { panic!("no prediction") };
+    let subject = Subject { tower: Some(1), ..subject(PaneContent::Cadence) };
+    let plot = build(&engine, &subject, &Style::screen(), [640.0, 420.0]);
+    let (drawn, area) = (&plot.drawn, plot.drawn.area);
+    let on_axis: Vec<_> =
+        predicted.lines.iter().filter(|line| (drawn.x.lo..=drawn.x.hi).contains(&line.frequency)).collect();
+    assert!(on_axis.len() >= 4, "{} lines predicted on the axis", on_axis.len());
+    assert_eq!(drawn.stems.len(), on_axis.len(), "a stem for each predicted line, and no other");
+    // Each stem stands where its frequency is on the axis, to a point; and a vertical rule and a
+    // dot are in the drawing at that x, the dot at the predicted height.
+    let x_of = |f: f64| area.left() + (((f - drawn.x.lo) / (drawn.x.hi - drawn.x.lo)) as f32) * area.width();
+    let y_of = |h: f64| {
+        let decades = (h.max(drawn.y.lo) / drawn.y.lo).log10() / (drawn.y.hi / drawn.y.lo).log10();
+        area.bottom() - (decades as f32) * area.height()
+    };
+    for (line, stem) in on_axis.iter().zip(&drawn.stems) {
+        assert!((stem.2 - x_of(line.frequency)).abs() <= 1.0, "{} Hz at {} pt", line.frequency, stem.2);
+        let dot = plot.drawing.items.iter().any(|item| match item {
+            Item::Circle { centre, .. } => {
+                (centre[0] - stem.2).abs() <= 0.5 && (centre[1] - y_of(line.height)).abs() <= 1.0
+            }
+            _ => false,
+        });
+        assert!(dot, "no dot at the predicted height {} of the line at {} Hz", line.height, line.frequency);
+    }
+    // The realisation is drawn too: one long line across the axes.
+    assert!(series(&plot.drawing).iter().any(|(_, points)| points.len() > 100));
+    // Control: an even cadence predicts no line but the alias, and the pane draws no more stems
+    // than that; so the stems above are the gaps', not decoration.
+    let even = self::engine("load cadence-lab; set array.schedule.jitter null; set array.schedule.loss 0");
+    let plain = build(&even, &subject, &Style::screen(), [640.0, 420.0]);
+    assert!(
+        plain.drawn.stems.len() < drawn.stems.len(),
+        "{} stems on an even cadence",
+        plain.drawn.stems.len()
+    );
+}

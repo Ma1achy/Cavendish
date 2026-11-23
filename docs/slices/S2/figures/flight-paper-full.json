@@ -1,0 +1,280 @@
+{
+  "cavendish_figure": 1,
+  "what": "flight",
+  "file": "flight-paper-full.svg",
+  "format": "svg",
+  "preset": "paper-full",
+  "size_mm": [
+    178.0,
+    90.0
+  ],
+  "size_points": [
+    504.5669291338583,
+    255.1181102362205
+  ],
+  "subject": {
+    "tower": null,
+    "channel": "gradiometer",
+    "span": null,
+    "pane": 1,
+    "playhead_s": 0.0
+  },
+  "command": {
+    "console": "figure flight as paper-full to flight-paper-full.svg",
+    "cli": "cav figure staggered flight --out flight-paper-full.svg --preset paper-full",
+    "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's"
+  },
+  "engine": {
+    "version": "0.0.0",
+    "revision": "78af98d0491f331dbe393b02a663b6e8e15c6b1c",
+    "dirty": true
+  },
+  "numerics": {
+    "engine": {
+      "version": "0.0.0",
+      "revision": "78af98d0491f331dbe393b02a663b6e8e15c6b1c",
+      "dirty": true
+    },
+    "platform": "x86_64-windows",
+    "precision": "f64 on the CPU",
+    "quadrature": "Gauss { order: 6, panel: 0.1 }, panels halved until two rules agree",
+    "phase_tolerance_rad": 1e-10,
+    "phase_tolerance_relative": 1e-12,
+    "max_halvings": 8,
+    "max_nodes_per_read": 4000000,
+    "constants": {
+      "big_g": 6.6743e-11,
+      "hbar": 1.0545718176461565e-34,
+      "atom_mass_kg": 1.4431558652473234e-25,
+      "kick_velocity_m_per_s": 6.577901532502563,
+      "gravity_m_per_s2": 9.81
+    },
+    "replay": "bit-identical with the same binary on the same platform (sin and cos are the platform's)"
+  },
+  "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
+  "scene": {
+    "name": "staggered",
+    "spec": {
+      "version": 1,
+      "name": "staggered",
+      "description": "The comb's oscillator read by five towers on their own clocks: tower n fires (n − 1)·2T/5 after tower 1. Each tower has its own readout times; drag a lane with Shift to move one.",
+      "duration": 2000.0,
+      "array": {
+        "instrument": {
+          "tower_height": 10.0,
+          "ifo_separation": 5.0,
+          "half_sequence": 0.73,
+          "launch_velocity": 3.86,
+          "cycle": 2.0,
+          "atom_mass": 1.4431558652473234e-25,
+          "gravity": 9.81,
+          "launch_floor": true,
+          "sign": "LowerMinusUpper"
+        },
+        "towers": [
+          {
+            "label": "tower 1",
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          },
+          {
+            "label": "tower 2",
+            "position": [
+              4.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.292
+            }
+          },
+          {
+            "label": "tower 3",
+            "position": [
+              -4.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.584
+            }
+          },
+          {
+            "label": "tower 4",
+            "position": [
+              0.0,
+              4.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.8759999999999999
+            }
+          },
+          {
+            "label": "tower 5",
+            "position": [
+              0.0,
+              -4.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 1.168
+            }
+          }
+        ],
+        "schedule": {
+          "jitter": null,
+          "alternate": null,
+          "gaps": null,
+          "window": null,
+          "loss": 0.0,
+          "seed": 0
+        }
+      },
+      "room": null,
+      "floor": null,
+      "bodies": [
+        {
+          "label": "oscillator",
+          "mass": 1.0,
+          "radius": 0.0,
+          "motion": {
+            "Linear": {
+              "centre": [
+                3.0,
+                0.0,
+                1.0
+              ],
+              "amplitude": [
+                0.0,
+                0.0,
+                0.5
+              ],
+              "frequency": 0.05,
+              "phase": 0.0
+            }
+          },
+          "appears": null,
+          "vanishes": null
+        }
+      ]
+    }
+  },
+  "title": "Flight · the atoms' arms, height against absolute time · staggered",
+  "pixels": null,
+  "dpi": null,
+  "axes": {
+    "x": {
+      "name": "absolute time",
+      "unit": "s",
+      "scale": "linear",
+      "range": [
+        -1.46,
+        4.0
+      ]
+    },
+    "y": {
+      "name": "height above each tower's base",
+      "unit": "m",
+      "scale": "linear",
+      "range": [
+        0.0,
+        10.005793618726871
+      ]
+    }
+  },
+  "series": [
+    {
+      "name": "tower 1",
+      "colour": "#0b0dff",
+      "x": "launch",
+      "y": "tower",
+      "x_column": 1,
+      "y_column": 0
+    },
+    {
+      "name": "tower 2",
+      "colour": "#e76f11",
+      "x": "launch",
+      "y": "tower",
+      "x_column": 1,
+      "y_column": 0
+    },
+    {
+      "name": "tower 3",
+      "colour": "#c61604",
+      "x": "launch",
+      "y": "tower",
+      "x_column": 1,
+      "y_column": 0
+    },
+    {
+      "name": "tower 4",
+      "colour": "#8a6aae",
+      "x": "launch",
+      "y": "tower",
+      "x_column": 1,
+      "y_column": 0
+    },
+    {
+      "name": "tower 5",
+      "colour": "#28a682",
+      "x": "launch",
+      "y": "tower",
+      "x_column": 1,
+      "y_column": 0
+    }
+  ],
+  "marks": {
+    "row_height_m": 10.005793618726871,
+    "flight_time_s": 1.46,
+    "arms": "each shot: the lower interferometer's two arms, and the upper's (fainter), as the forward model flies them",
+    "not_drawn": {
+      "towers": 0,
+      "shots": 0
+    }
+  },
+  "colours": {
+    "background": "#ffffff",
+    "ink": "#111111",
+    "rule": "#cfcfcf",
+    "spectrum": "#6e6e6e",
+    "reference": "#8c8c8c",
+    "series": [
+      "#0b0dff",
+      "#e76f11",
+      "#c61604",
+      "#8a6aae",
+      "#28a682",
+      "#cb64fe",
+      "#910c59",
+      "#6d1ba7"
+    ]
+  },
+  "data": {
+    "file": "flight-paper-full.csv",
+    "format": "csv",
+    "rows": 15,
+    "columns": [
+      {
+        "name": "tower",
+        "unit": "its number from 1"
+      },
+      {
+        "name": "launch",
+        "unit": "s"
+      },
+      {
+        "name": "readout",
+        "unit": "s"
+      }
+    ],
+    "note": "every value, to the bit; the line drawn is thinned to at most 2000 points a series (the least and the greatest of each stretch)"
+  }
+}

@@ -507,3 +507,45 @@ fn cli_figure_writes_a_figure_with_its_data_twice_the_same() {
     assert_eq!(std::fs::read_dir(&c).unwrap().count(), 0);
     assert!(stdout(&cav(&["help"])).contains("figure <scene> <signal|periodogram|cadence|flight|view>"));
 }
+
+#[test]
+fn cli_replay_writes_the_bundle_and_the_figure_a_session_exported() {
+    // A session at the command line exports a bundle and a figure and saves its journal; the
+    // replay writes both again, into its own directory, the same bytes. (Found by the S2 demo:
+    // the replay refused the bundle after a tenth of a second, and could not draw.)
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli-replay-exports");
+    let _ = std::fs::remove_dir_all(&root);
+    let (first, again) = (root.join("first"), root.join("again"));
+    std::fs::create_dir_all(&first).unwrap();
+    let at = |name: &str| first.join(name).to_string_lossy().replace('\\', "/");
+    let script = format!(
+        "load comb; set duration 4000; export bundle {}; figure periodogram tower 2 as paper-column to {}; \
+         journal save {}",
+        at("bundle"),
+        at("fig.svg"),
+        at("session.json")
+    );
+    let done = cav(&["exec", &script]);
+    assert!(done.status.success(), "{}", stderr(&done));
+    let journal = at("session.json");
+    let done = cav(&["replay", &journal, "--out", again.to_str().unwrap()]);
+    assert!(done.status.success(), "{}", stderr(&done));
+    assert!(stdout(&done).contains("2 export(s) written into"), "{}", stdout(&done));
+    for name in ["bundle/signal.npy", "bundle/manifest.json", "fig.svg", "fig.csv", "fig.json"] {
+        let (a, b) = (std::fs::read(first.join(name)).unwrap(), std::fs::read(again.join(name)).unwrap());
+        assert!(!a.is_empty() && a == b, "{name} differs between the session and its replay");
+    }
+    // Control: with no patience the bundle's signal is not there yet, the replay says which
+    // command it stopped at, and nothing of it is written. Without --out nothing is written at all.
+    let none = root.join("none");
+    let done = cav(&["replay", &journal, "--out", none.to_str().unwrap(), "--patience", "0"]);
+    assert!(!done.status.success());
+    assert!(
+        stderr(&done).contains("command 2") && stderr(&done).contains("still being computed"),
+        "{}",
+        stderr(&done)
+    );
+    assert!(!none.join("bundle").join("signal.npy").exists() && !none.join("fig.svg").exists());
+    let done = cav(&["replay", &journal]);
+    assert!(done.status.success() && stdout(&done).contains("not written (no --out)"), "{}", stdout(&done));
+}

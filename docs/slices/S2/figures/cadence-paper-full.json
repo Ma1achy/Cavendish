@@ -1,0 +1,252 @@
+{
+  "cavendish_figure": 1,
+  "what": "cadence",
+  "file": "cadence-paper-full.pdf",
+  "format": "pdf",
+  "preset": "paper-full",
+  "size_mm": [
+    178.0,
+    90.0
+  ],
+  "size_points": [
+    504.5669291338583,
+    255.1181102362205
+  ],
+  "subject": {
+    "tower": 1,
+    "channel": "gradiometer",
+    "span": null,
+    "pane": 1,
+    "playhead_s": 0.0
+  },
+  "command": {
+    "console": "figure cadence tower 1 as paper-full to cadence-paper-full.pdf",
+    "cli": "cav figure cadence-lab cadence --out cadence-paper-full.pdf --preset paper-full --tower 1",
+    "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's"
+  },
+  "engine": {
+    "version": "0.0.0",
+    "revision": "78af98d0491f331dbe393b02a663b6e8e15c6b1c",
+    "dirty": true
+  },
+  "numerics": {
+    "engine": {
+      "version": "0.0.0",
+      "revision": "78af98d0491f331dbe393b02a663b6e8e15c6b1c",
+      "dirty": true
+    },
+    "platform": "x86_64-windows",
+    "precision": "f64 on the CPU",
+    "quadrature": "Gauss { order: 6, panel: 0.1 }, panels halved until two rules agree",
+    "phase_tolerance_rad": 1e-10,
+    "phase_tolerance_relative": 1e-12,
+    "max_halvings": 8,
+    "max_nodes_per_read": 4000000,
+    "constants": {
+      "big_g": 6.6743e-11,
+      "hbar": 1.0545718176461565e-34,
+      "atom_mass_kg": 1.4431558652473234e-25,
+      "kick_velocity_m_per_s": 6.577901532502563,
+      "gravity_m_per_s2": 9.81
+    },
+    "replay": "bit-identical with the same binary on the same platform (sin and cos are the platform's)"
+  },
+  "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
+  "scene": {
+    "name": "cadence-lab",
+    "spec": {
+      "version": 1,
+      "name": "cadence-lab",
+      "description": "A known tone on an uneven cadence: the comb's oscillator, each cycle up to 0.3 s late and 2% of shots lost. `show cadence` draws the spectral window; edit array.schedule and watch it.",
+      "duration": 2000.0,
+      "array": {
+        "instrument": {
+          "tower_height": 10.0,
+          "ifo_separation": 5.0,
+          "half_sequence": 0.73,
+          "launch_velocity": 3.86,
+          "cycle": 2.0,
+          "atom_mass": 1.4431558652473234e-25,
+          "gravity": 9.81,
+          "launch_floor": true,
+          "sign": "LowerMinusUpper"
+        },
+        "towers": [
+          {
+            "label": "tower 1",
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          },
+          {
+            "label": "tower 2",
+            "position": [
+              4.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          },
+          {
+            "label": "tower 3",
+            "position": [
+              -4.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          },
+          {
+            "label": "tower 4",
+            "position": [
+              0.0,
+              4.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          },
+          {
+            "label": "tower 5",
+            "position": [
+              0.0,
+              -4.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          }
+        ],
+        "schedule": {
+          "jitter": {
+            "model": "Walk",
+            "kind": "Positive",
+            "delta": 0.3
+          },
+          "alternate": null,
+          "gaps": null,
+          "window": null,
+          "loss": 0.02,
+          "seed": 1
+        }
+      },
+      "room": null,
+      "floor": null,
+      "bodies": [
+        {
+          "label": "oscillator",
+          "mass": 1.0,
+          "radius": 0.0,
+          "motion": {
+            "Linear": {
+              "centre": [
+                3.0,
+                0.0,
+                1.0
+              ],
+              "amplitude": [
+                0.0,
+                0.0,
+                0.5
+              ],
+              "frequency": 0.05,
+              "phase": 0.0
+            }
+          },
+          "appears": null,
+          "vanishes": null
+        }
+      ]
+    }
+  },
+  "title": "Cadence · spectral window |W| of tower 1's shots · cadence-lab",
+  "pixels": null,
+  "dpi": null,
+  "axes": {
+    "x": {
+      "name": "frequency offset from a tone",
+      "unit": "Hz",
+      "scale": "linear",
+      "range": [
+        0.0,
+        1.1627906976744187
+      ]
+    },
+    "y": {
+      "name": "|W| relative to the tone",
+      "unit": "1",
+      "scale": "log",
+      "range": [
+        0.0001,
+        1.0
+      ]
+    }
+  },
+  "series": [
+    {
+      "name": "|W| of tower 1's shots, this seed",
+      "colour": "#6e6e6e",
+      "x": "frequency offset from a tone",
+      "y": "|W| relative to the tone",
+      "x_column": 0,
+      "y_column": 1
+    }
+  ],
+  "marks": {
+    "predicted_lines": [
+      {
+        "what": "cycle jitter (a random walk): the alias broadens and recedes as 1/√N",
+        "frequency_hz": 0.46511627906976744,
+        "height": 0.25396034163364306
+      }
+    ],
+    "predicted_floor": 0.004684470255599664,
+    "mean_cycle_s": 2.15,
+    "nyquist_hz": 0.23255813953488372,
+    "note": "stems and the dashed level are the closed forms' predictions (cav_sim::schedule), not data"
+  },
+  "colours": {
+    "background": "#ffffff",
+    "ink": "#111111",
+    "rule": "#cfcfcf",
+    "spectrum": "#6e6e6e",
+    "reference": "#8c8c8c",
+    "series": [
+      "#0b0dff",
+      "#e76f11",
+      "#c61604",
+      "#8a6aae",
+      "#28a682",
+      "#cb64fe",
+      "#910c59",
+      "#6d1ba7"
+    ]
+  },
+  "data": {
+    "file": "cadence-paper-full.csv",
+    "format": "csv",
+    "rows": 1201,
+    "columns": [
+      {
+        "name": "frequency offset from a tone",
+        "unit": "Hz"
+      },
+      {
+        "name": "|W| relative to the tone",
+        "unit": "1"
+      }
+    ],
+    "note": "every value, to the bit; the line drawn is thinned to at most 2000 points a series (the least and the greatest of each stretch)"
+  }
+}

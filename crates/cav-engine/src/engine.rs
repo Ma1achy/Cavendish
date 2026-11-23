@@ -22,6 +22,11 @@ use crate::log::{Level, Log, Subsystem};
 /// (the answer then says `stale` or `computing`). Nothing the application does every frame waits.
 pub const TYPED_LINE_PATIENCE: std::time::Duration = std::time::Duration::from_millis(100);
 
+/// How long a replay waits for the signal an export is written from, unless told otherwise
+/// ([`Engine::replay_into_within`]): an hour. A replay is a batch job, and a journal may hold a
+/// long series; a tenth of a second would refuse what the session itself wrote.
+pub const REPLAY_PATIENCE: std::time::Duration = std::time::Duration::from_secs(3600);
+
 /// A quadrature estimate as people read it. `settled` says whether every read reached the
 /// tolerance: only then is the estimate a bound ("within"); otherwise it is how far the worst
 /// read was from settling, and is said as that.
@@ -120,6 +125,8 @@ pub struct Engine {
     exports: Exports,
     /// What draws figures: the client's.
     drawer: Drawer,
+    /// The last spectral window answered, with what it was made from.
+    window: std::sync::Mutex<Option<(String, WindowReply)>>,
     log: Log,
     /// `log.total()` just after the last command's entry: tells whether that entry is still the newest.
     log_mark: u64,
@@ -186,6 +193,7 @@ impl Engine {
             refused: false,
             exports: Exports::AsNamed,
             drawer: Drawer::default(),
+            window: std::sync::Mutex::new(None),
             log,
             log_mark: 0,
             generation: 0,
@@ -213,7 +221,7 @@ impl Engine {
     /// # Errors
     /// The first command that is refused, with its position; a journal the engine wrote never fails.
     pub fn replay(journal: &[Command]) -> Result<Self, String> {
-        Self::replay_with(journal, Exports::Skipped)
+        Self::replay_with(journal, Exports::Skipped, TYPED_LINE_PATIENCE)
     }
 
     /// A fresh engine with `journal` applied in order, its exports written into `directory`
@@ -223,17 +231,37 @@ impl Engine {
     /// # Errors
     /// As [`Self::replay`], and when an export cannot be written.
     pub fn replay_into(journal: &[Command], directory: &std::path::Path) -> Result<Self, String> {
-        Self::replay_with(journal, Exports::Into(directory.to_path_buf()))
+        Self::replay_into_within(journal, directory, REPLAY_PATIENCE)
     }
 
-    fn replay_with(journal: &[Command], exports: Exports) -> Result<Self, String> {
+    /// [`Self::replay_into`], waiting at most `patience` for the signal each export is written
+    /// from. A replay is a batch: nobody is typing, so it waits far longer than a typed line.
+    ///
+    /// # Errors
+    /// As [`Self::replay_into`]; an export whose signal is not refined within `patience` is a
+    /// refusal, and nothing of it is written.
+    pub fn replay_into_within(
+        journal: &[Command],
+        directory: &std::path::Path,
+        patience: std::time::Duration,
+    ) -> Result<Self, String> {
+        Self::replay_with(journal, Exports::Into(directory.to_path_buf()), patience)
+    }
+
+    fn replay_with(
+        journal: &[Command],
+        exports: Exports,
+        patience: std::time::Duration,
+    ) -> Result<Self, String> {
         let mut engine = Self::new();
         engine.exports = exports;
+        engine.patience = patience;
         for (n, command) in journal.iter().enumerate() {
             engine.apply(command.clone()).map_err(|why| format!("replay: command {n}: {why}"))?;
         }
         // The replayed engine goes on as a session of its own would.
         engine.exports = Exports::AsNamed;
+        engine.patience = TYPED_LINE_PATIENCE;
         Ok(engine)
     }
 
@@ -572,6 +600,22 @@ impl Engine {
             return Err(format!("there is no pane {}; the figure has {}", figure.pane + 1, self.panes));
         }
         Ok(())
+    }
+
+    /// Everything a tower's spectral window is made from, as text: the timeline's length, the
+    /// instrument, the schedule, the tower and its own timing, and where the window ends. Two
+    /// scenes with the same key have the same shots at that tower.
+    fn window_key(&self, tower: usize, to: f64) -> String {
+        let timing = self.spec.array.towers.get(tower.wrapping_sub(1)).map(|tower| &tower.timing);
+        serde_json::json!([
+            self.spec.duration,
+            self.spec.array.instrument,
+            self.spec.array.schedule,
+            tower,
+            timing,
+            to.to_bits(),
+        ])
+        .to_string()
     }
 
     fn check_target(&self, target: Target) -> Result<(), String> {
@@ -944,9 +988,20 @@ impl Engine {
                     return Err("towers are counted from 1".into());
                 }
                 let to = to.unwrap_or(2.5 / prediction.mean_cycle);
+                // A pane asks for the same window every frame: the last answer is kept, under
+                // everything it was made from (one answer, about 20 kB).
+                let key = self.window_key(*tower, to);
+                let mut kept = self.window.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                if let Some((made_from, reply)) = kept.as_ref()
+                    && *made_from == key
+                {
+                    return Ok(Reply::Window(reply.clone()));
+                }
                 let (frequencies, window) =
                     cav_sim::schedule::window(&self.spec, tower - 1, to, WINDOW_POINTS)?;
-                Ok(Reply::Window(WindowReply { tower: *tower, frequencies, window }))
+                let reply = WindowReply { tower: *tower, frequencies, window };
+                *kept = Some((key, reply.clone()));
+                Ok(Reply::Window(reply))
             }
             Query::Reading(time) => {
                 let time = time.unwrap_or(self.time);

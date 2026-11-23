@@ -14,7 +14,8 @@ pub fn run(root: &Path, slice: &str) -> Result<(), String> {
     match slice {
         "S0" | "s0" => s0(root),
         "S1" | "s1" => s1(root),
-        other => Err(format!("no demo for slice `{other}`: the slices with demos are: S0, S1")),
+        "S2" | "s2" => s2(root),
+        other => Err(format!("no demo for slice `{other}`: the slices with demos are: S0, S1, S2")),
     }
 }
 
@@ -269,6 +270,324 @@ fn s1(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// The directory's regular files, by name, with their bytes.
+fn files_of(dir: &Path) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?.flatten() {
+        if entry.path().is_file() {
+            let bytes =
+                std::fs::read(entry.path()).map_err(|e| format!("{}: {e}", entry.path().display()))?;
+            out.push((entry.file_name().to_string_lossy().into_owned(), bytes));
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+fn s2(root: &Path) -> Result<(), String> {
+    let out = root.join("docs").join("slices").join("S2");
+    std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    step("build cav and cav-app", cargo(root, &["build", "--quiet", "-p", "cav", "-p", "cav-app"]))?;
+    let cav = binary(root, "cav");
+    let app = binary(root, "cav-app");
+    let path = |name: &str| out.join(name).to_string_lossy().into_owned();
+    let mut made: Vec<String> = Vec::new();
+    // Everything that is not kept is written here, never where a journal or a scene says.
+    let scratch = root.join("target").join("demo-s2");
+    let _ = std::fs::remove_dir_all(&scratch);
+    std::fs::create_dir_all(&scratch).map_err(|e| format!("{}: {e}", scratch.display()))?;
+    let temp = |name: &str| scratch.join(name).to_string_lossy().replace('\\', "/");
+
+    // 1 to 4. The application: editors made from the schema, a lane per tower, the flights on
+    // absolute time, two instruments on one scene, and the cadence designer.
+    let lab = "load cadence-lab; set array.schedule.jitter null; panes 2; show cadence @2;";
+    let shots: [(&str, String); 8] = [
+        ("editors.png", "load comb; select body 1".to_owned()),
+        ("editors-tower.png", "load staggered; select tower 2".to_owned()),
+        ("lanes.png", "load staggered; set duration 30; panes 2; show signal @2; seek 12".to_owned()),
+        ("flight.png", "load staggered; set duration 30; panes 2; show flight @2; seek 12".to_owned()),
+        ("preset-compare.png", "load comb; compare aice; panes 2; show periodogram @2".to_owned()),
+        (
+            "cadence-jitter.png",
+            format!(r#"{lab} set array.schedule.jitter {{"model":"Walk","kind":"Symmetric","delta":0.2}}"#),
+        ),
+        ("cadence-alternating.png", format!("{lab} set array.schedule.alternate 3.0")),
+        (
+            "cadence-gaps-loss.png",
+            format!(r#"{lab} set array.schedule.gaps {{"on":4,"period":10}}; set array.schedule.loss 0.2"#),
+        ),
+    ];
+    for (file, script) in &shots {
+        let target = path(file);
+        capture(&app, &["--screenshot", &target, "--size", "1440x900", "--exec", script])?;
+        expect_png(&out, file, [1440, 900], &mut made)?;
+    }
+
+    // 5. Scenes as files, from the command line; then what the console answers.
+    let mine = temp("mine.ron");
+    let mut session = String::new();
+    let said = |args: &[&str], expected: &[&str]| -> Result<String, String> {
+        let answer = capture(&cav, args)?;
+        for text in expected {
+            if !answer.contains(text) {
+                return Err(format!("`cav {}` does not say `{text}`:\n{answer}", args.join(" ")));
+            }
+        }
+        let shown: Vec<String> = args
+            .iter()
+            .map(|arg| if arg.contains(' ') { format!("\"{arg}\"") } else { (*arg).to_owned() })
+            .collect();
+        Ok(format!(
+            "$ cav {}
+{}
+",
+            shown.join(" "),
+            abridged(answer.trim_end(), 2400)
+        ))
+    };
+    session.push_str(&said(
+        &["ls", "staggered", "array.towers[1]"],
+        &["timing", "position", "x east, y north, z up"],
+    )?);
+    session.push_str(&said(
+        &["set", "staggered", "array.towers[1].timing.offset", "0.5", "--out", &mine],
+        &["saved"],
+    )?);
+    session.push_str(&said(&["get", &mine, "array.towers[1].timing"], &["\"offset\": 0.5"])?);
+    match said(&["set", &mine, "bodies[0].mass", "-1"], &[]) {
+        Ok(_) => return Err("a negative mass was accepted from the command line".to_owned()),
+        Err(refusal) if refusal.contains("mass") => {
+            // What `cav` itself said, without this machine's path to the binary.
+            let said = refusal.split_once("): ").map_or(refusal.as_str(), |(_, said)| said);
+            session.push_str(&format!("$ cav set {mine} bodies[0].mass -1\n{}\n", said.trim_end()));
+        }
+        Err(other) => return Err(format!("the refusal does not name the field: {other}")),
+    }
+    session.push_str(&said(&["schema", "array.schedule.loss"], &["probability"])?);
+    let saved = temp("saved.ron");
+    let script = format!(
+        "load cadence-lab; cadence; window 1 to 0.5; periodogram 1; set array.schedule.loss 0.3; undo; \
+         redo; periodogram 1; preset aice; launch symmetric; undo; undo; save {saved}; load {saved}; stats"
+    );
+    session.push_str(&said(&["exec", &script], &["mean cycle", "Lomb–Scargle", "saved"])?);
+    session = session.replace(&scratch.to_string_lossy().replace('\\', "/"), "target/demo-s2");
+    write(&out, "session.txt", &session, &mut made)?;
+
+    // 5b. An agent: an inline spec, paths, a set, a refusal that says where.
+    let mut mcp =
+        Mcp::start(&cav, "An MCP session with `cav mcp` over stdio, as `cargo xtask demo S2` ran it.")?;
+    mcp.hello()?;
+    let tools = mcp.exchange("tools/list", "{}", "what the server offers")?;
+    for tool in ["scene_set", "scene_ls", "scene_schema", "scene_load", "scene_get"] {
+        if !tools.contains(&format!("\"name\":\"{tool}\"")) {
+            return Err(format!("the tool list lacks `{tool}`"));
+        }
+    }
+    let spec = capture(&cav, &["get", "staggered"])?;
+    let spec: String = spec.split_whitespace().collect::<Vec<_>>().join(" ");
+    mcp.call("scene_load", &format!(r#"{{"spec":{spec}}}"#), "a scene given inline, as JSON, not by name")?;
+    let listed = mcp.call("scene_ls", r#"{"path":"array.towers[0].timing"}"#, "what is inside a path")?;
+    if !listed.contains("offset") {
+        return Err(format!("scene_ls did not list the timing: {}", abridged(&listed, 300)));
+    }
+    mcp.call(
+        "scene_set",
+        r#"{"path":"array.towers[0].timing.offset","value":0.25}"#,
+        "set a field by its path",
+    )?;
+    let read = mcp.call("scene_get", r#"{"path":"array.towers[0].timing.offset"}"#, "and read it back")?;
+    if !read.contains("0.25") {
+        return Err(format!("scene_get did not answer with the value set: {}", abridged(&read, 300)));
+    }
+    let refused = mcp.call(
+        "scene_set",
+        r#"{"path":"array.towers[0].timing.offset","value":1e9}"#,
+        "a value out of range is refused, saying the field and the range",
+    )?;
+    if !refused.contains("offset") || !refused.contains("isError\":true") {
+        return Err(format!("the refusal did not say where: {}", abridged(&refused, 400)));
+    }
+    mcp.call(
+        "command",
+        r#"{"line":"undo; signal 1 0 6"}"#,
+        "console lines work as before: undo, and the signal",
+    )?;
+    write(&out, "mcp-session.txt", &mcp.finish()?, &mut made)?;
+
+    // 6. A bundle from a scene file, and a session replayed: the same bytes.
+    let bundle = temp("bundle");
+    let ran = capture(&cav, &["run", "staggered", "--out", &bundle])?;
+    let mut listing = format!(
+        "$ cav run staggered --out target/demo-s2/bundle\n{}\n",
+        ran.replace(&bundle, "target/demo-s2/bundle")
+    );
+    let files = files_of(Path::new(&bundle))?;
+    for (name, bytes) in &files {
+        listing.push_str(&format!("  {name:<24} {:>9} bytes\n", bytes.len()));
+    }
+    let manifest =
+        files.iter().find(|(name, _)| name == "manifest.json").ok_or("the bundle has no manifest")?;
+    for expected in ["\"numerics\"", "\"error_estimate", "\"scene\""] {
+        if !String::from_utf8_lossy(&manifest.1).contains(expected) {
+            return Err(format!("the manifest does not have {expected}"));
+        }
+    }
+    std::fs::create_dir_all(out.join("bundle")).map_err(|e| format!("bundle: {e}"))?;
+    std::fs::write(out.join("bundle").join("manifest.json"), &manifest.1)
+        .map_err(|e| format!("manifest: {e}"))?;
+    made.push("bundle/manifest.json".to_owned());
+    std::fs::write(out.join("bundle").join("listing.txt"), &listing).map_err(|e| format!("listing: {e}"))?;
+    made.push("bundle/listing.txt".to_owned());
+
+    let (first, journal, again) = (temp("first"), temp("session.json"), temp("again"));
+    let script = format!(
+        "load staggered; set duration 600; set bodies[0].mass 2; preset aice; undo; \
+         set array.schedule.loss 0.1; export bundle {first}; journal save {journal}"
+    );
+    capture(&cav, &["exec", &script])?;
+    let replayed = capture(&cav, &["replay", &journal, "--out", &again])?;
+    let (one, two) = (files_of(Path::new(&first))?, files_of(&Path::new(&again).join("first"))?);
+    let differing = one.iter().zip(&two).filter(|(a, b)| a != b).count() + one.len().abs_diff(two.len());
+    if one.len() < 10 || differing != 0 {
+        return Err(format!(
+            "the replay wrote {} file(s) against {}, {differing} differing",
+            two.len(),
+            one.len()
+        ));
+    }
+    let bytes: usize = one.iter().map(|(_, bytes)| bytes.len()).sum();
+    let replay = format!(
+        "$ cav exec \"{}\"\n$ cav replay target/demo-s2/session.json --out target/demo-s2/again\n{}\n\
+         {} files, {bytes} bytes: {differing} differ between the session's bundle and the replay's.\n",
+        script.replace(&scratch.to_string_lossy().replace('\\', "/"), "target/demo-s2"),
+        replayed.trim_end().replace(&scratch.to_string_lossy().replace('\\', "/"), "target/demo-s2"),
+        one.len()
+    );
+    write(&out, "replay.txt", &replay, &mut made)?;
+
+    // 7. Figures: each in a preset's style and size, with its data and its provenance beside it;
+    // and one redrawn from that data alone by the Python helper.
+    let figures = out.join("figures");
+    let _ = std::fs::remove_dir_all(&figures);
+    std::fs::create_dir_all(&figures).map_err(|e| format!("{}: {e}", figures.display()))?;
+    let mut said = String::new();
+    for (scene, what, preset, file) in [
+        ("comb", "periodogram", "paper-column", "periodogram-paper-column.svg"),
+        ("comb", "periodogram", "paper-column", "periodogram-paper-column.pdf"),
+        ("comb", "periodogram", "paper-column", "periodogram-paper-column.png"),
+        ("pass", "signal", "slide", "signal-slide.svg"),
+        ("cadence-lab", "cadence", "paper-full", "cadence-paper-full.pdf"),
+        ("staggered", "flight", "paper-full", "flight-paper-full.svg"),
+    ] {
+        // Run from the figures' directory, so that nothing a figure records names this machine.
+        let output = Command::new(&cav)
+            .args(["figure", scene, what, "--preset", preset, "--out", file])
+            .current_dir(&figures)
+            .output()
+            .map_err(|e| format!("cav figure: {e}"))?;
+        if !output.status.success() {
+            return Err(format!("cav figure {scene} {what}: {}", String::from_utf8_lossy(&output.stderr)));
+        }
+        said.push_str(&format!(
+            "$ cav figure {scene} {what} --preset {preset} --out {file}\n{}",
+            String::from_utf8_lossy(&output.stdout)
+        ));
+        let stem = file.rsplit_once('.').map_or(file, |(stem, _)| stem);
+        for name in [file.to_owned(), format!("{stem}.csv"), format!("{stem}.json")] {
+            let bytes = std::fs::read(figures.join(&name)).map_err(|e| format!("figures/{name}: {e}"))?;
+            let is_what_it_says = match name.rsplit_once('.').map_or("", |(_, ext)| ext) {
+                "svg" => bytes.starts_with(b"<?xml") || bytes.starts_with(b"<svg"),
+                "pdf" => bytes.starts_with(b"%PDF-1.") && bytes.ends_with(b"%%EOF\n"),
+                "png" => png_size_of(&bytes).is_some(),
+                "json" => bytes.starts_with(b"{") && String::from_utf8_lossy(&bytes).contains("\"revision\""),
+                _ => !bytes.is_empty(),
+            };
+            if !is_what_it_says {
+                return Err(format!("figures/{name} is not what its name says"));
+            }
+            let listed = format!("figures/{name}");
+            if !made.contains(&listed) {
+                made.push(listed);
+            }
+        }
+    }
+    let python = std::env::var(crate::python::INTERPRETER).unwrap_or_else(|_| "python".to_owned());
+    if let Some(lacking) = crate::python::missing(&python) {
+        return Err(format!("the figure cannot be redrawn in Python: {lacking}"));
+    }
+    let code = "import sys; from cavendish_figures import load, redraw; \
+                print(redraw(load(sys.argv[1]).unwrap(), sys.argv[2]).unwrap().name)";
+    let from = figures.join("periodogram-paper-column.json").to_string_lossy().into_owned();
+    let to = figures.join("redrawn.png").to_string_lossy().into_owned();
+    let output = Command::new(&python)
+        .args(["-c", code, &from, &to])
+        .current_dir(root.join("python"))
+        .output()
+        .map_err(|e| format!("{python}: {e}"))?;
+    if !output.status.success() || png_size(&figures.join("redrawn.png")).is_err() {
+        return Err(format!("the Python redraw failed: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+    said.push_str(
+        "$ python -c \"from cavendish_figures import load, redraw; \
+         redraw(load('periodogram-paper-column.json').unwrap(), 'redrawn.png').unwrap()\"\nredrawn.png\n",
+    );
+    made.push("figures/redrawn.png".to_owned());
+    std::fs::write(figures.join("made.txt"), &said).map_err(|e| format!("figures/made.txt: {e}"))?;
+    made.push("figures/made.txt".to_owned());
+
+    // 8. Timings: a 10,000-shot series on one thread and on six, and the same bytes from both.
+    let mut timings =
+        String::from("Debug build (cav-core optimised), this machine; recorded, not gated.\n\n");
+    let mut signals = Vec::new();
+    for threads in ["1", "6"] {
+        let target = temp(&format!("threads-{threads}"));
+        let output = Command::new(&cav)
+            .args(["run", "comb", "--exec", "set duration 20000", "--out", &target])
+            .env("CAV_THREADS", threads)
+            .output()
+            .map_err(|e| format!("cav run: {e}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "cav run on {threads} thread(s): {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        let line = String::from_utf8_lossy(&output.stdout).replace(&target, "bundle");
+        timings.push_str(&format!("CAV_THREADS={threads}: {}", line.trim_start()));
+        signals.push(
+            std::fs::read(Path::new(&target).join("signal.npy")).map_err(|e| format!("signal.npy: {e}"))?,
+        );
+    }
+    if signals[0].is_empty() || signals[0] != signals[1] {
+        return Err("the signal differs between one thread and six".to_owned());
+    }
+    timings.push_str("signal.npy: the same bytes on one thread and on six.\n\n");
+    let shot = root.join("target").join("demo-timing.png").to_string_lossy().into_owned();
+    for (what, script) in [
+        (
+            "staggered (five towers, each with its own offset, 1000 shots)",
+            "load staggered; panes 2; show signal @2",
+        ),
+        ("cadence-lab with the designer open", "load cadence-lab; panes 2; show cadence @2"),
+    ] {
+        let lines =
+            capture(&app, &["--screenshot", &shot, "--size", "1440x900", "--timings", "--exec", script])?;
+        if !lines.contains("drag step") || lines.contains("NOT FINISHED") {
+            return Err(format!("the timings of {what} are incomplete:\n{lines}"));
+        }
+        timings.push_str(&format!("## {what}\n"));
+        timings.extend(lines.lines().skip(1).map(|line| format!("{line}\n")));
+        timings.push('\n');
+    }
+    write(&out, "timings.txt", &timings, &mut made)?;
+
+    eprintln!("xtask: demo S2 wrote {} files to {}:", made.len(), out.display());
+    for file in &made {
+        eprintln!("  {file}");
+    }
+    Ok(())
+}
+
 fn write(dir: &Path, name: &str, text: &str, made: &mut Vec<String>) -> Result<(), String> {
     std::fs::write(dir.join(name), text).map_err(|e| format!("{name}: {e}"))?;
     made.push(name.to_owned());
@@ -284,55 +603,93 @@ fn expect_png(dir: &Path, name: &str, size: [u32; 2], made: &mut Vec<String>) ->
     Ok(())
 }
 
-/// Speaks MCP to `cav mcp` as an agent would: the handshake, the tool list, the schema, a scene, a
-/// refusal, and a picture. Returns the transcript and the PNG that `render_view` sent.
-fn mcp_session(cav: &Path) -> Result<(String, Vec<u8>), String> {
-    let mut child = Command::new(cav)
-        .arg("mcp")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("cav mcp: {e}"))?;
-    let mut stdin = child.stdin.take().expect("stdin is piped");
-    let mut stdout = BufReader::new(child.stdout.take().expect("stdout is piped"));
-    let mut transcript =
-        String::from("An MCP session with `cav mcp` over stdio, as `cargo xtask demo S0` ran it.\n\n");
-    let mut id = 0u32;
-    let mut picture = None;
-    let mut exchange = |method: &str, params: &str, note: &str| -> Result<String, String> {
-        id += 1;
+/// A client of `cav mcp` over stdio, keeping a transcript of what was said.
+struct Mcp {
+    child: std::process::Child,
+    stdin: Option<std::process::ChildStdin>,
+    stdout: BufReader<std::process::ChildStdout>,
+    id: u32,
+    transcript: String,
+}
+
+impl Mcp {
+    fn start(cav: &Path, heading: &str) -> Result<Self, String> {
+        let mut child = Command::new(cav)
+            .arg("mcp")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("cav mcp: {e}"))?;
+        let stdin = child.stdin.take();
+        let stdout = BufReader::new(child.stdout.take().expect("stdout is piped"));
+        Ok(Self { child, stdin, stdout, id: 0, transcript: format!("{heading}\n\n") })
+    }
+
+    /// One request and its answer, both added to the transcript under `note`.
+    fn exchange(&mut self, method: &str, params: &str, note: &str) -> Result<String, String> {
+        self.id += 1;
+        let id = self.id;
         let request = format!(r#"{{"jsonrpc":"2.0","id":{id},"method":"{method}","params":{params}}}"#);
+        let stdin = self.stdin.as_mut().expect("the session is open");
         writeln!(stdin, "{request}").and_then(|()| stdin.flush()).map_err(|e| format!("cav mcp: {e}"))?;
         let marker = format!("\"id\":{id}");
         loop {
             let mut line = String::new();
-            let read = stdout.read_line(&mut line).map_err(|e| format!("cav mcp: {e}"))?;
+            let read = self.stdout.read_line(&mut line).map_err(|e| format!("cav mcp: {e}"))?;
             if read == 0 {
                 return Err(format!("cav mcp closed its output during `{method}`"));
             }
             if line.contains(&marker) {
-                transcript.push_str(&format!("# {note}\n→ {request}\n← {}\n\n", abridged(line.trim(), 700)));
+                self.transcript
+                    .push_str(&format!("# {note}\n→ {request}\n← {}\n\n", abridged(line.trim(), 700)));
                 if method == "initialize" {
                     // The client confirms the handshake; a notification has no answer.
                     let confirmed = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
                     writeln!(stdin, "{confirmed}")
                         .and_then(|()| stdin.flush())
                         .map_err(|e| format!("cav mcp: {e}"))?;
-                    transcript.push_str(&format!("→ {confirmed}\n\n"));
+                    self.transcript.push_str(&format!("→ {confirmed}\n\n"));
                 }
                 return Ok(line);
             }
         }
-    };
-
-    let hello = exchange(
-        "initialize",
-        r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"xtask-demo","version":"0"}}"#,
-        "the handshake",
-    )?;
-    if !hello.contains("cavendish") {
-        return Err(format!("the server did not introduce itself: {hello}"));
     }
+
+    /// A tool call.
+    fn call(&mut self, tool: &str, arguments: &str, note: &str) -> Result<String, String> {
+        self.exchange("tools/call", &format!(r#"{{"name":"{tool}","arguments":{arguments}}}"#), note)
+    }
+
+    fn hello(&mut self) -> Result<(), String> {
+        let hello = self.exchange(
+            "initialize",
+            r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"xtask-demo","version":"0"}}"#,
+            "the handshake",
+        )?;
+        if hello.contains("cavendish") {
+            Ok(())
+        } else {
+            Err(format!("the server did not introduce itself: {hello}"))
+        }
+    }
+
+    /// Closes the session (the server exits when its input ends) and gives the transcript.
+    fn finish(mut self) -> Result<String, String> {
+        drop(self.stdin.take());
+        let status = self.child.wait().map_err(|e| format!("cav mcp: {e}"))?;
+        if status.success() { Ok(self.transcript) } else { Err(format!("cav mcp exited with {status}")) }
+    }
+}
+
+/// Speaks MCP to `cav mcp` as an agent would: the handshake, the tool list, the schema, a scene, a
+/// refusal, and a picture. Returns the transcript and the PNG that `render_view` sent.
+fn mcp_session(cav: &Path) -> Result<(String, Vec<u8>), String> {
+    let mut mcp =
+        Mcp::start(cav, "An MCP session with `cav mcp` over stdio, as `cargo xtask demo S0` ran it.")?;
+    let mut picture = None;
+    mcp.hello()?;
+    let mut exchange = |method: &str, params: &str, note: &str| mcp.exchange(method, params, note);
+
     let tools = exchange("tools/list", "{}", "what the server offers")?;
     for tool in ["scene_schema", "scene_load", "scene_get", "command", "log", "render_view"] {
         if !tools.contains(&format!("\"name\":\"{tool}\"")) {
@@ -376,12 +733,7 @@ fn mcp_session(cav: &Path) -> Result<(String, Vec<u8>), String> {
     }
     exchange("tools/call", r#"{"name":"log","arguments":{"last":6}}"#, "what the engine did, and refused")?;
 
-    drop(exchange);
-    drop(stdin);
-    let status = child.wait().map_err(|e| format!("cav mcp: {e}"))?;
-    if !status.success() {
-        return Err(format!("cav mcp exited with {status}"));
-    }
+    let transcript = mcp.finish()?;
     let picture = picture.ok_or("render_view sent no picture")?;
     Ok((transcript, picture))
 }

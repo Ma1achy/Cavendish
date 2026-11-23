@@ -1,0 +1,14 @@
+$ cav run staggered --out target/demo-s2/bundle
+target/demo-s2/bundle: scene `staggered`, 5 tower(s) × 1000 shot(s), quadrature within 6e-11 rad, 0.09 s
+
+  detector_placement.npy         408 bytes
+  detector_time.npy            40128 bytes
+  error_estimate.npy             168 bytes
+  manifest.json                 5719 bytes
+  scene.ron                     2250 bytes
+  signal.npy                   40128 bytes
+  signal_per_ifo.npy           80128 bytes
+  source_mass.npy                136 bytes
+  source_position.npy          24128 bytes
+  time.npy                      8128 bytes
+  valid.npy                     5128 bytes

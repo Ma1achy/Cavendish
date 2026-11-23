@@ -1,0 +1,323 @@
+{
+  "cavendish_figure": 1,
+  "what": "signal",
+  "file": "signal-slide.svg",
+  "format": "svg",
+  "preset": "slide",
+  "size_mm": [
+    254.0,
+    143.0
+  ],
+  "size_points": [
+    720.0000000000001,
+    405.35433070866145
+  ],
+  "subject": {
+    "tower": null,
+    "channel": "gradiometer",
+    "span": null,
+    "pane": 1,
+    "playhead_s": 0.0
+  },
+  "command": {
+    "console": "figure signal as slide to signal-slide.svg",
+    "cli": "cav figure pass signal --out signal-slide.svg --preset slide",
+    "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's"
+  },
+  "engine": {
+    "version": "0.0.0",
+    "revision": "78af98d0491f331dbe393b02a663b6e8e15c6b1c",
+    "dirty": true
+  },
+  "numerics": {
+    "engine": {
+      "version": "0.0.0",
+      "revision": "78af98d0491f331dbe393b02a663b6e8e15c6b1c",
+      "dirty": true
+    },
+    "platform": "x86_64-windows",
+    "precision": "f64 on the CPU",
+    "quadrature": "Gauss { order: 6, panel: 0.1 }, panels halved until two rules agree",
+    "phase_tolerance_rad": 1e-10,
+    "phase_tolerance_relative": 1e-12,
+    "max_halvings": 8,
+    "max_nodes_per_read": 4000000,
+    "constants": {
+      "big_g": 6.6743e-11,
+      "hbar": 1.0545718176461565e-34,
+      "atom_mass_kg": 1.4431558652473234e-25,
+      "kick_velocity_m_per_s": 6.577901532502563,
+      "gravity_m_per_s2": 9.81
+    },
+    "replay": "bit-identical with the same binary on the same platform (sin and cos are the platform's)"
+  },
+  "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
+  "scene": {
+    "name": "pass",
+    "spec": {
+      "version": 1,
+      "name": "pass",
+      "description": "A straight pass: 10 kg, 10 m from the centre tower, rising at 2.5 m/s from 10 m below the base. The published moving anchor. Press play.",
+      "duration": 12.0,
+      "array": {
+        "instrument": {
+          "tower_height": 10.0,
+          "ifo_separation": 5.0,
+          "half_sequence": 0.73,
+          "launch_velocity": 3.86,
+          "cycle": 2.0,
+          "atom_mass": 1.4431558652473234e-25,
+          "gravity": 9.81,
+          "launch_floor": true,
+          "sign": "LowerMinusUpper"
+        },
+        "towers": [
+          {
+            "label": "tower 1",
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          },
+          {
+            "label": "tower 2",
+            "position": [
+              4.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          },
+          {
+            "label": "tower 3",
+            "position": [
+              -4.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          },
+          {
+            "label": "tower 4",
+            "position": [
+              0.0,
+              4.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          },
+          {
+            "label": "tower 5",
+            "position": [
+              0.0,
+              -4.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            }
+          }
+        ],
+        "schedule": {
+          "jitter": null,
+          "alternate": null,
+          "gaps": null,
+          "window": null,
+          "loss": 0.0,
+          "seed": 0
+        }
+      },
+      "room": null,
+      "floor": null,
+      "bodies": [
+        {
+          "label": "lift",
+          "mass": 10.0,
+          "radius": 0.0,
+          "motion": {
+            "Pass": {
+              "from": [
+                10.0,
+                0.0,
+                -10.0
+              ],
+              "to": [
+                10.0,
+                0.0,
+                15.0
+              ],
+              "start": 0.0,
+              "speed": 2.5
+            }
+          },
+          "appears": null,
+          "vanishes": null
+        }
+      ]
+    }
+  },
+  "title": "Signal · ΔΦ of every tower · pass",
+  "pixels": null,
+  "dpi": null,
+  "axes": {
+    "x": {
+      "name": "readout time",
+      "unit": "s",
+      "scale": "linear",
+      "range": [
+        0.0,
+        12.0
+      ]
+    },
+    "y": {
+      "name": "ΔΦ",
+      "unit": "rad",
+      "scale": "linear",
+      "range": [
+        -0.04067917286033931,
+        0.016140146888414617
+      ]
+    }
+  },
+  "series": [
+    {
+      "name": "tower 1",
+      "colour": "#0b0dff",
+      "x": "readout time of tower 1",
+      "y": "ΔΦ of tower 1",
+      "x_column": 0,
+      "y_column": 1
+    },
+    {
+      "name": "tower 2",
+      "colour": "#e76f11",
+      "x": "readout time of tower 2",
+      "y": "ΔΦ of tower 2",
+      "x_column": 3,
+      "y_column": 4
+    },
+    {
+      "name": "tower 3",
+      "colour": "#c61604",
+      "x": "readout time of tower 3",
+      "y": "ΔΦ of tower 3",
+      "x_column": 6,
+      "y_column": 7
+    },
+    {
+      "name": "tower 4",
+      "colour": "#8a6aae",
+      "x": "readout time of tower 4",
+      "y": "ΔΦ of tower 4",
+      "x_column": 9,
+      "y_column": 10
+    },
+    {
+      "name": "tower 5",
+      "colour": "#28a682",
+      "x": "readout time of tower 5",
+      "y": "ΔΦ of tower 5",
+      "x_column": 12,
+      "y_column": 13
+    }
+  ],
+  "marks": {
+    "vertical_axis_written_in": "mrad",
+    "shots": 6
+  },
+  "colours": {
+    "background": "#ffffff",
+    "ink": "#111111",
+    "rule": "#cfcfcf",
+    "spectrum": "#6e6e6e",
+    "reference": "#8c8c8c",
+    "series": [
+      "#0b0dff",
+      "#e76f11",
+      "#c61604",
+      "#8a6aae",
+      "#28a682",
+      "#cb64fe",
+      "#910c59",
+      "#6d1ba7"
+    ]
+  },
+  "data": {
+    "file": "signal-slide.csv",
+    "format": "csv",
+    "rows": 6,
+    "columns": [
+      {
+        "name": "readout time of tower 1",
+        "unit": "s"
+      },
+      {
+        "name": "ΔΦ of tower 1",
+        "unit": "rad"
+      },
+      {
+        "name": "shot taken by tower 1",
+        "unit": "1 if taken or 0 if not"
+      },
+      {
+        "name": "readout time of tower 2",
+        "unit": "s"
+      },
+      {
+        "name": "ΔΦ of tower 2",
+        "unit": "rad"
+      },
+      {
+        "name": "shot taken by tower 2",
+        "unit": "1 if taken or 0 if not"
+      },
+      {
+        "name": "readout time of tower 3",
+        "unit": "s"
+      },
+      {
+        "name": "ΔΦ of tower 3",
+        "unit": "rad"
+      },
+      {
+        "name": "shot taken by tower 3",
+        "unit": "1 if taken or 0 if not"
+      },
+      {
+        "name": "readout time of tower 4",
+        "unit": "s"
+      },
+      {
+        "name": "ΔΦ of tower 4",
+        "unit": "rad"
+      },
+      {
+        "name": "shot taken by tower 4",
+        "unit": "1 if taken or 0 if not"
+      },
+      {
+        "name": "readout time of tower 5",
+        "unit": "s"
+      },
+      {
+        "name": "ΔΦ of tower 5",
+        "unit": "rad"
+      },
+      {
+        "name": "shot taken by tower 5",
+        "unit": "1 if taken or 0 if not"
+      }
+    ],
+    "note": "every value, to the bit; the line drawn is thinned to at most 2000 points a series (the least and the greatest of each stretch)"
+  }
+}

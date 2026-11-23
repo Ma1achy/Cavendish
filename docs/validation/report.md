@@ -4,7 +4,7 @@ Written by `cargo xtask validate --report`; do not edit by hand. Every case is d
 `cav_validate::case!` beside the code it checks, and all of them are listed here: one that did not run
 is shown as **missing**, never left out.
 
-**64 of 64 cases pass; worst margin: nulls.finite_floor_edge at 78% of its tolerance.**
+**82 of 82 cases pass; worst margin: nulls.finite_floor_edge at 78% of its tolerance.**
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="error-vs-tolerance-dark.svg"><img src="error-vs-tolerance-light.svg" alt="Each case's measured error against its tolerance, on a log scale." width="100%"></picture>
 
@@ -15,12 +15,40 @@ is shown as **missing**, never left out.
 |---|---|---|---|---|---|---|---|
 | `array.geometry_vs_v2_recording` (S0) | reference recording: tower x, y and base z, the room and 2T of docs/viewer-mockup/replay.json (the v2 recording); largest difference | 0 | 0 | metres | 0% |  | pass |
 
+## bundle
+
+| Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
+|---|---|---|---|---|---|---|---|
+| `bundle.npy_round_trip` (S2) | exact self-consistency: 10^6 random f64 bit patterns and the awkward values written as .npy and read back; values whose bits differ | 0 | 0 | count | 0% |  | pass |
+| `bundle.round_trip` (S2) | exact self-consistency: a bundle of the staggered scene (five towers on their own clocks, a fifth of the shots lost, two bodies) written and read back; values of any array that differ in any bit from what the engine holds, and shapes that are not the stated ones | 0 | 0 | count | 0% |  | pass |
+
+## cadence
+
+| Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
+|---|---|---|---|---|---|---|---|
+| `cadence.window_loss_floor` (S2) | closed form: shots lost independently with probability p = 0.01 and 0.05 from 4000 shots every 5 s: the mean over 400 keyed seeds and 64 frequencies between the first two lines of /W/^2 - /W0/^2 (W normalised by the kept count, W0 the Dirichlet kernel of the plan) against p/((1-p)N); the worse /measured/predicted - 1/ | 0.0289 | 0.05 | relative | 58% |  | pass |
+| `cadence.window_cycle_jitter` (S2) | closed form: cycle jitter as a random walk, positive U(T0, T0+d) and symmetric U(T0-d, T0+d), d = 0.1 and 0.3 s, T0 = 5 s, 500 shots: the mean of /W/^2 over 2000 keyed seeds at the alias 1/Tbar, 1.5 line-widths above it and at 1.37 times it, against (1/N^2)[N + 2 Re sum (N-k) phi^k]; the worst /measured/predicted - 1/ of the twelve (each is also held to 3 standard errors of its mean) | 0.032 | 0.08 | relative | 40% |  | pass |
+| `cadence.window_uniform` (S2) | closed form: the spectral window /W/ of 200 shots every 5 s by direct sum against the Dirichlet kernel /sin(N pi nu T0)/(N sin(pi nu T0))/ at 257 frequencies from 0 to 0.8 Hz, the five lines among them; largest absolute difference of /W/ (the peak is 1) | 4.121e-14 | 1.000e-12 | relative | 4% |  | pass |
+| `cadence.window_grid_jitter` (S2) | closed form: jitter about a grid, shot times n T0 + U(-0.3, 0.3) s, T0 = 5 s, 500 shots: the mean of /W/^2 over 2000 keyed seeds at the first alias 1/T0 against /psi/^2 /D_N/^2 + (1 - /psi/^2)/N; /measured/predicted - 1/ (also held to 3 standard errors of the mean, and the line's height at N and 10 N to 3%) | 6.658e-5 | 0.08 | relative | 0% |  | pass |
+| `cadence.window_gapped` (S2) | closed form: planned gaps, L of every P slots of 5 s taken, L/P = 0.4 as 4 of 10 and as 40 of 100, fifty whole periods: the window's height at k/(P T0), k = 1..4, by direct sum against /sin(pi k L/P)/(L sin(pi k/P))/; largest absolute difference of heights (the peak is 1) | 6.078e-15 | 1.000e-9 | relative | 0% |  | pass |
+| `cadence.periodogram_on_uneven_shots` (S2) | exact self-consistency: the cadence-lab scene (each cycle up to 0.3 s late, 2% of shots lost): the engine's periodogram of tower 2, by non-uniform FFT, against the exact Lomb–Scargle of the same shots; largest difference as a fraction of the peak | 2.493e-15 | 1.000e-9 | relative | 0% |  | pass |
+| `cadence.window_alternating` (S2) | closed form: cycles of 5.5 s and 6.0 s in turn: the window's height at k/T_s, k = 1..4, by direct sum at 2000 shots against /cos(pi k T_A/T_s)/, and against the same at 20 000 shots; the larger absolute difference of heights (the peak is 1) | 1.089e-12 | 0.001 | relative | 0% |  | pass |
+
 ## engine
 
 | Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
 |---|---|---|---|---|---|---|---|
 | `engine.cached_sum_equals_cold_run` (S1) | exact self-consistency: superposition after a drag of one body and back, summed from kept contributions, against a cold run of the same scene; values of any channel that differ, to the bit | 0 | 0 | count | 0% |  | pass |
 | `engine.replay` (S0) | exact self-consistency: a session replayed from its journal, and from its journal saved as JSON; replays whose state digest differs | 0 | 0 | count | 0% |  | pass |
+| `engine.replay_bundles` (S2) | exact self-consistency: a session (every kind of edit, a drag, staggered towers, a jittered and thinned cadence, undo and redo) that exports two bundles and a scene, against the same session replayed four ways: from its journal in memory, from its journal saved to disk and read back, with the workers settled after every command, and with them never waited for; files of any replay that differ in any byte | 0 | 0 | count | 0% |  | pass |
+| `engine.thread_count` (S2) | exact self-consistency: the signals of three scenes (staggered towers on a jittered, thinned cadence; a sphere through the towers, with its warnings; two bodies) read on 1, 2, 3 and 6 threads; values, estimates, warnings and flags that differ in any way from the one-thread read | 0 | 0 | count | 0% |  | pass |
+
+## figure
+
+| Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
+|---|---|---|---|---|---|---|---|
+| `figure.png_regenerates` (S2) | exact self-consistency: the comb's periodogram and signal as PNG figures (paper-column at 300 pixels per inch, slide), painted by two engines on the local adapter, each with a device of its own: the .png, .csv and .json files that differ in any byte | 0 | 0 | count | 0% |  | pass |
+| `figure.regenerates` (S2) | exact self-consistency: six figures of the comb (periodogram, signal, one tower's lower channel over a span, cadence window, flight diagram; SVG and PDF; four presets) written by two engines from the same commands: each figure, its .csv and its .json; files that differ in any byte | 0 | 0 | count | 0% |  | pass |
 
 ## forward
 
@@ -52,21 +80,21 @@ is shown as **missing**, never left out.
 |---|---|---|---|---|---|---|---|
 | `oracle.script_arm_tables` (S1) | George's script: the four arm tables of 1D_oscillator, fig2_10m, 100m_oscillators and fig2_uldm_folding against the closed-form arms with the floor, at (j + 1)·dt; largest difference | 6.357e-13 | 1.000e-12 | metres | 64% |  | pass |
 | `oracle.script_rule_converges_100m` (S1) | George's script: the scripts' trapezoid on the 100m_oscillators scene, offset gone, on the scripts' own window (which ends one step short of 2T), at steps of 0.01, 0.005, 0.0025, 0.00125 s (the first is the fixture's rule, held to it to 1e-9) against the engine's own model: both the missing step and the trapezoid shrink as the step does; largest difference as a fraction of the peak | 1.688e-5 | 3.000e-5 | relative | 56% | 1.99 (expected 2 ± 0.2) | pass |
+| `oracle.script_limit_fig2_10m_d` (S1) | George's script: fig2_10m panel d (a circle at 0.35625 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/128, against the engine's own model; largest difference as a fraction of the peak | 5.041e-9 | 1.000e-8 | relative | 50% |  | pass |
+| `oracle.script_limit_fig2_10m_c` (S1) | George's script: fig2_10m panel c (0.3275 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/128, against the engine's own model; largest difference as a fraction of the peak | 4.295e-9 | 1.000e-8 | relative | 43% |  | pass |
 | `oracle.script_limit_100m_oscillators` (S1) | George's script: 100m_oscillators: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by two Richardson steps (dt, dt/2, dt/4), against the engine's own model; largest difference as a fraction of the peak | 3.298e-10 | 1.000e-9 | relative | 33% |  | pass |
-| `oracle.script_limit_fig2_10m_c` (S1) | George's script: fig2_10m panel c (0.3275 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/32, against the engine's own model; largest difference as a fraction of the peak | 1.407e-7 | 5.000e-7 | relative | 28% |  | pass |
-| `oracle.script_limit_fig2_10m_d` (S1) | George's script: fig2_10m panel d (a circle at 0.35625 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/32, against the engine's own model; largest difference as a fraction of the peak | 1.269e-7 | 5.000e-7 | relative | 25% |  | pass |
-| `oracle.script_limit_fig2_10m_b` (S1) | George's script: fig2_10m panel b: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/32, against the engine's own model; largest difference as a fraction of the peak | 1.150e-7 | 5.000e-7 | relative | 23% |  | pass |
-| `oracle.script_same_time_1d_oscillator` (S1) | George's script: 1D_oscillator with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 0.0027 | 0.02 | relative | 13% |  | pass |
-| `oracle.script_limit_1d_oscillator` (S1) | George's script: 1D_oscillator: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/32, against the engine's own model; largest difference as a fraction of the peak | 4.065e-8 | 5.000e-7 | relative | 8% |  | pass |
+| `oracle.script_limit_fig2_10m_b` (S1) | George's script: fig2_10m panel b: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/128, against the engine's own model; largest difference as a fraction of the peak | 2.435e-9 | 1.000e-8 | relative | 24% |  | pass |
+| `oracle.script_limit_1d_oscillator` (S1) | George's script: 1D_oscillator: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/128, against the engine's own model; largest difference as a fraction of the peak | 9.993e-10 | 1.000e-8 | relative | 10% |  | pass |
 | `oracle.engine_rule_converged_100m` (S1) | exact self-consistency: the engine's audited read on the 100m_oscillators scene (a source 1 m from the atoms) against 12 nodes on 3 ms panels, 4000 shots; largest difference as a fraction of the peak | 2.742e-11 | 1.000e-9 | relative | 3% |  | pass |
-| `oracle.script_same_time_fig2_10m_c` (S1) | George's script: fig2_10m panel c (0.3275 Hz) with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 5.075e-4 | 0.02 | relative | 3% |  | pass |
-| `oracle.script_same_time_fig2_10m_d` (S1) | George's script: fig2_10m panel d (a circle at 0.35625 Hz) with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 5.029e-4 | 0.02 | relative | 3% |  | pass |
-| `oracle.script_same_time_fig2_10m_b` (S1) | George's script: fig2_10m panel b with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 4.694e-4 | 0.02 | relative | 2% |  | pass |
 | `oracle.script_limit_fig2_uldm_folding_d` (S1) | George's script: fig2_uldm_folding panel d (a circle at 0.1425 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by two Richardson steps (dt, dt/2, dt/4), against the engine's own model; largest difference as a fraction of the peak | 7.346e-12 | 1.000e-9 | relative | 1% |  | pass |
 | `oracle.script_limit_fig2_uldm_folding_c` (S1) | George's script: fig2_uldm_folding panel c (0.131 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by two Richardson steps (dt, dt/2, dt/4), against the engine's own model; largest difference as a fraction of the peak | 4.827e-12 | 1.000e-9 | relative | 0% |  | pass |
 | `oracle.script_limit_fig2_uldm_folding_b` (S1) | George's script: fig2_uldm_folding panel b: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by two Richardson steps (dt, dt/2, dt/4), against the engine's own model; largest difference as a fraction of the peak | 4.781e-12 | 1.000e-9 | relative | 0% |  | pass |
+| `oracle.script_same_time_1d_oscillator` (S1) | George's script: 1D_oscillator with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 6.597e-5 | 0.02 | relative | 0% |  | pass |
 | `oracle.script_published_1d_oscillator` (S1) | George's script: 1D_oscillator as published (AION-10, 1 kg, D = 5 m, 0.1 Hz, 1000 shots), by the rule that copies its sampling; largest difference as a fraction of the peak | 1.599e-12 | 1.000e-9 | relative | 0% |  | pass |
 | `oracle.script_published_fig2_10m_c` (S1) | George's script: fig2_10m panel c as published (AION-10, 0.3275 Hz, above Nyquist), by the rule that copies its sampling; largest difference as a fraction of the peak | 1.037e-12 | 1.000e-9 | relative | 0% |  | pass |
+| `oracle.script_same_time_fig2_10m_d` (S1) | George's script: fig2_10m panel d (a circle at 0.35625 Hz) with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 1.998e-5 | 0.02 | relative | 0% |  | pass |
+| `oracle.script_same_time_fig2_10m_c` (S1) | George's script: fig2_10m panel c (0.3275 Hz) with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 1.549e-5 | 0.02 | relative | 0% |  | pass |
+| `oracle.script_same_time_fig2_10m_b` (S1) | George's script: fig2_10m panel b with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 9.934e-6 | 0.02 | relative | 0% |  | pass |
 | `oracle.script_published_fig2_10m_d` (S1) | George's script: fig2_10m panel d as published (AION-10, a circle in the D-h plane at 0.35625 Hz), by the rule that copies its sampling; largest difference as a fraction of the peak | 2.918e-13 | 1.000e-9 | relative | 0% |  | pass |
 | `oracle.script_published_fig2_10m_b` (S1) | George's script: fig2_10m panel b as published (AION-10, 0.05 Hz, 10000 shots), by the rule that copies its sampling; largest difference as a fraction of the peak | 1.494e-13 | 1.000e-9 | relative | 0% |  | pass |
 | `oracle.script_published_100m_oscillators` (S1) | George's script: 100m_oscillators as published (AICE, 0.05 kg, D = 1 m, 0.08 Hz, 4000 shots), by the rule that copies its sampling; largest difference as a fraction of the peak | 7.818e-14 | 1.000e-9 | relative | 0% |  | pass |
@@ -83,6 +111,12 @@ is shown as **missing**, never left out.
 | `oracle.script_same_time_fig2_uldm_folding_c` (S1) | George's script: fig2_uldm_folding panel c (0.131 Hz) with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 3.158e-8 | 0.02 | relative | 0% |  | pass |
 | `oracle.script_same_time_fig2_uldm_folding_b` (S1) | George's script: fig2_uldm_folding panel b with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 3.096e-8 | 0.02 | relative | 0% |  | pass |
 | `oracle.fold_vs_script` (S1) | George's script: fold_frequency against fig2_folding_map.py's own, at 2001 frequencies from 0 to five times its Nyquist frequency of 0.1 Hz; largest difference | 0 | 1.000e-12 | relative | 0% |  | pass |
+
+## presets
+
+| Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
+|---|---|---|---|---|---|---|---|
+| `presets.compare_equals_other_preset` (S2) | exact self-consistency: the comb read on AION-10 and, by `compare aice`, on AICE 100 m as well: the comparison's signal against the same scene loaded with the AICE instrument; values of any channel that differ in any bit | 0 | 0 | count | 0% |  | pass |
 
 ## render
 
@@ -110,7 +144,9 @@ is shown as **missing**, never left out.
 
 | Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
 |---|---|---|---|---|---|---|---|
+| `spec.json_f64_exact` (S2) | exact self-consistency: 10^6 random finite f64 bit patterns and the awkward values (negative zero, subnormals, the largest), written as JSON and read back, as text and through serde_json::Value; values whose bits differ | 0 | 0 | count | 0% |  | pass |
 | `spec.json_round_trip` (S0) | exact self-consistency: a spec of awkward numbers written to JSON and read back; numbers whose bits differ | 0 | 0 | count | 0% |  | pass |
+| `spec.ron_f64_exact` (S2) | exact self-consistency: 10^6 random finite f64 bit patterns and the awkward values, written as RON and read back; values whose bits differ | 0 | 0 | count | 0% |  | pass |
 | `spec.ron_round_trip` (S0) | exact self-consistency: a spec of awkward numbers written to RON and read back; numbers whose bits differ | 0 | 0 | count | 0% |  | pass |
 
 ## spectrum
@@ -122,11 +158,25 @@ is shown as **missing**, never left out.
 | `spectrum.nufft_lomb_scargle_long` (S1) | exact self-consistency: the NUFFT Lomb-Scargle on 100 000 jittered shots, 50 000 frequencies to 0.25 Hz, against the exact sum at 48 of them (the peak's bin, its neighbours, the rest spread evenly); largest difference as a fraction of the peak; the rounding floor is predicted near N*eps = 2e-11 | 4.717e-15 | 1.000e-9 | relative | 0% |  | pass |
 | `spectrum.nufft_lomb_scargle_equals_exact` (S1) | exact self-consistency: the NUFFT Lomb-Scargle (two type-1 transforms, exponential-of-semicircle kernel 14 points wide, upsampling 2) against the exact N*M sum: 2000 shots at 2 s with up to 0.3 s of jitter, 1001 frequencies from 0 to 0.25 Hz; largest difference as a fraction of the peak | 3.111e-15 | 1.000e-9 | relative | 0% |  | pass |
 
+## timing
+
+| Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
+|---|---|---|---|---|---|---|---|
+| `timing.offset_shifts_one_tower` (S2) | exact self-consistency: the comb with tower 3 fired 0.292 s late: that tower reads what the synchronous scene reads at t + 0.292 s; largest difference as a fraction of the peak (the other towers must be unchanged to the bit) | 0 | 1.000e-12 | relative | 0% |  | pass |
+| `timing.zero_offsets` (S2) | exact self-consistency: the comb and the pass with every tower's offset zero, against each shot read as S1 read it (the audited read at k·cycle + 2T, sources summed in the scene's order); values of any channel that differ in any bit | 0 | 0 | count | 0% |  | pass |
+
 ## validate
 
 | Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
 |---|---|---|---|---|---|---|---|
 | `validate.fitted_order` (S0) | closed form: the report's own order fit, not the engine: the slope of log(3h²) against log h is 2 | 0 | 1.000e-12 | relative | 0% |  | pass |
+
+## Changes against the earlier report, each with its reason
+
+- `oracle.script_limit_fig2_10m_c`: tolerance 5e-7 → 1e-8: as 1d_oscillator; measured 4.3e-9 (1.41e-7 at dt/32)
+- `oracle.script_limit_fig2_10m_d`: tolerance 5e-7 → 1e-8: as 1d_oscillator; measured 5.0e-9 (1.27e-7 at dt/32)
+- `oracle.script_limit_fig2_10m_b`: tolerance 5e-7 → 1e-8: as 1d_oscillator; measured 2.4e-9 (1.15e-7 at dt/32)
+- `oracle.script_limit_1d_oscillator`: tolerance 5e-7 → 1e-8: the rule at dt/128 in place of dt/32, so the bound is on the engine and not on the trapezoid's residual; measured 1.0e-9 (4.1e-8 at dt/32)
 
 ## Convergence
 

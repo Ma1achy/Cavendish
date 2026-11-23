@@ -1,0 +1,63 @@
+$ cav ls staggered array.towers[1]
+label  =  "tower 2"  (text)  Name shown in the outliner and on the timeline lane
+position  =  [4.0,0.0,0.0] m  (vector of 3)  The base of the tower (the lower launch point): x east, y north, z up, metres; each within ±1e6
+timing  =  …  (group)  The tower's own clock: when it fires relative to the array's schedule
+$ cav set staggered array.towers[1].timing.offset 0.5 --out target/demo-s2/mine.ron
+set array.towers[1].timing.offset 0.5
+saved target/demo-s2/mine.ron
+$ cav get target/demo-s2/mine.ron array.towers[1].timing
+{
+  "offset": 0.5
+}
+$ cav set target/demo-s2/mine.ron bodies[0].mass -1
+cav: bodies[0].mass: -1 must be a positive number, at most 1000000000000
+$ cav schema array.schedule.loss
+{
+  "description": "The probability that a shot is lost, for each shot of each tower on its own. From 0 (the\ndefault) to 0.99.",
+  "type": "number",
+  "format": "double",
+  "minimum": 0.0,
+  "maximum": 0.99,
+  "default": 0.0,
+  "x-unit": "1"
+}
+$ cav exec "load cadence-lab; cadence; window 1 to 0.5; periodogram 1; set array.schedule.loss 0.3; undo; redo; periodogram 1; preset aice; launch symmetric; undo; undo; save target/demo-s2/saved.ron; load target/demo-s2/saved.ron; stats"
+load cadence-lab
+# mean cycle 2.15 s · Nyquist 0.232558 Hz · 930 shots planned · 908 to 911 taken a tower
+# floor under a tone 2.194e-5 of its power · smallest detectable tone × 1.0120 for the shots not taken
+# line [Hz]  height |W| (1 = as tall as the tone)  what
+0.465116  0.2540  cycle jitter (a random walk): the alias broadens and recedes as 1/√N
+# note: several features are on: each is predicted as if alone; the realisation is the combination
+# tower 1 · spectral window |W| at 1201 frequencies to 0.5 Hz · its largest lines: f [Hz], |W|
+0.464167  0.4508
+0.463333  0.3382
+0.465000  0.3123
+0.465833  0.2448
+0.467500  0.1731
+0.475417  0.1536
+0.471667  0.1396
+0.460000  0.1375
+# tower 1 · gradiometer · refined · 465 bins to the Nyquist frequency, 0.23255813953488372 Hz · Lomb–Scargle (non-uniform FFT) of 911 shots · f [Hz], √S [rad/√Hz]
+0.05000202251973245  8.003560939700566e-2
+0.1000040450394649  5.464288443268454e-3
+0.22300902043800674  1.4856921240310953e-3
+0.09800396413867561  1.361380664780994e-3
+0.03950159779058864  1.3268953458725546e-3
+0.21950887886162548  1.1985005315546069e-3
+0.1120045304442007  1.1489782198333685e-3
+0.19850802940333784  1.1387626635807134e-3
+# comb of `oscillator`, f₀ = 0.050000 Hz: 1f₀ at 0.050000 Hz, 2f₀ at 0.100000 Hz, 3f₀ at 0.150000 Hz, 4f₀ at 0.200000 Hz, 5f₀ at 0.215116 Hz (folded), 6f₀ at 0.165116 Hz (folded), 7f₀ at 0.115116 Hz (folded), 8f₀ at 0.065116 Hz (folded)
+set array.schedule.loss 0.3
+undo
+redo
+# tower 1 · gradiometer · refined · 464 bins to the Nyquist frequency, 0.23255813953488372 Hz · Lomb–Scargle (non-uniform FFT) of 640 shots · f [Hz], √S [rad/√Hz]
+0.050052111552265015  7.845485483170077e-2
+0.050552632667787666  8.019535776961866e-3
+0.04905106932121971  7.356508141608796e-3
+0.049551590436742364  6.9238022182041845e-3
+0.201710009555628  6.145729376279547e-3
+0.05255471712987826  5.905637816515267e-3
+0.003503647808658551  5.7995682709575625e-3
+0.05355575936092356  5.7938304015433045e-3
+# comb of `oscillator`, f₀ = 0.050000 Hz: 1f₀ at 0.050000 Hz, 2f₀ at 0.100000 Hz, 3f₀ at 0.150000 Hz, 4f₀ at 0.200000 Hz, 5f₀ at 0.215116 Hz (folded), 6f₀ at 0.165116 Hz (folded), 7f₀ at 0.115116 Hz (folded), 8f₀ at 0.065116 Hz (folded)
+set array.instrument {"tower_height":100.0,"ifo_separation":70.0,"half_sequence":2.5,"launch_velocity":21.23604923374872,"cycle":5.0,"atom_mass":1.4431558652473234e-25,"gravity":9.81,"launch_floor":tr… [584 more characters]

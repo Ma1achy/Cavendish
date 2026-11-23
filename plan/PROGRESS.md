@@ -6,7 +6,75 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 |---|---|---|---|
 | S0 the shell | done: TASK-S0-01 to 14 merged; reviewed twice, nothing important remains | `s0-shell` | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
 | S1 a point mass | done: TASK-S1-01 to 19 merged; reviewed twice, nothing important remains | `s1-point-mass` | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
-| S2 scenes as files | building; research: `docs/research/s2-replay-spec-paths-cadence.md` | | |
+| S2 scenes as files | built: TASK-S2-01 to 12 merged; awaiting review | | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
+
+## S2, scenes as files: where it stands (23 Nov 2026) — built, not yet reviewed or tagged
+
+**Done.** A scene is a file and every field has a path (`get`, `set`, `ls`, `schema`, from the
+console, `cav` and MCP, with inline specs); every f64 survives RON, JSON and `.npy` to the bit. One
+edit path with inverse undo and redo, editors made from the schema, journals as files, `cav replay`.
+Each tower on its own clock: offsets, a lane per tower that can be dragged, flight diagrams on
+absolute time. Presets AION-10 and AICE, your own from a file, and `compare` to read the same scene
+on another instrument. The cadence designer: jitter, alternation, gaps, windows and loss, with the
+closed forms' predictions beside one realisation, and the NUFFT Lomb–Scargle behind `periodogram`
+on uneven shots. `cav run scene.ron --out dir/` writes the bundle. Figures: `cav-plot`, SVG, PDF
+and PNG in five presets with a colour-blind-safe palette, each with its data and provenance, from
+the console, `cav figure` and MCP; a Python helper that redraws one. For other people:
+`docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, six recipes in `docs/extending/`, every public item of
+every library crate documented, the dependency table held by a test. PRs #64 to #77 and
+TASK-S2-11's.
+
+**Numbers** (`docs/slices/S2.md` §7): `quick` 325 tests, 8.8 s warm (it was 13.6 s with all of S2
+in; 16.9 s straight after an edit of `cav-sim`); `gpu` 29 in 9.3 s; `oracle` 41, pyright strict
+and 8 Python tests; 82 of 82 validation cases (18 new, none dropped, four tolerances tightened
+from 5e-7 to 1e-8). The exit test: a session replayed four ways writes the same 23 files, 0
+differ; 1, 2, 3 and 6 reading threads, 0 bits differ. A 10,000-shot series: 0.4 s on six threads, 1.5 s on one (S1: 2.5 s).
+
+**Decided** (the full list is `docs/slices/S2.md` §7.9).
+1. **`cav-plot`** is a new crate: plots are display lists, and `cav` no longer links the window.
+2. **A replay never writes where its journal says**: exports go into the replayer's directory, or
+   nowhere.
+3. **Dependencies are optimised in dev, and `cav-sim`, `cav-engine`, `cav-plot` are at
+   `opt-level = 1`**: that, and nothing cut, is what brought `quick` back under its gate. Building
+   from nothing takes about three minutes longer, once.
+4. **The build's revision is asked of git at run time**, not compiled in.
+5. **Text in SVG and PDF is glyph outlines** from the two Ubuntu faces, and the PDF writer is
+   in-house: no new dependency but `skrifa`, which egui already builds.
+6. **One schedule for the whole array**, loss drawn per tower; per-tower instruments and jitter
+   wait for S15.
+7. **`cycle ≥ 2T`** (it was `>`): the AICE preset's cycle is exactly a shot.
+8. **AICE launches at 21.236 m/s**, the symmetric rule with ⁸⁷Sr, not the plan's 21.27.
+
+**Calls worth a second look (S2).**
+1. **The palette passes by a hair**: least CIEDE2000 12.17 against 12, the first four colours 8.3 L*
+   apart against 8. The colours were searched for under the criterion, which was written first.
+2. **`quick`'s margin is thin** (8.8 s against 10; 9 to 12 s from the pre-push hook on a busy
+   machine), and it was bought with optimisation levels. S3 will need a real answer: the memory
+   tests and the figure tests are the slow ones.
+3. **Two faults were found by the demo, not by the tests**: `cav replay` refused its own journal
+   (a replay waited a tenth of a second for a bundle's signal) and could not draw figures. Both
+   are fixed with tests; the exit test's scenes had been too quick to show the first.
+4. **The dense-signal criterion was restated** from "every tower" to "every distinct series": two
+   towers of the comb read the same to the bit, and no drawing order shows both.
+5. **The recipes were not followed by a second person.** They were written from the code, and a
+   test holds every name in them to the code; the brief asked for each to be followed once.
+6. **The fonts in figures**: the Ubuntu Font Licence's text says documents made with the font are
+   not affected; that is a reading, not advice. It matters when a figure is published.
+7. **`serde_json`'s `preserve_order`** is on for the whole workspace.
+8. **The Python tests have their own runner** rather than pytest, which is not installed.
+9. **A figure's revision is the commit it was made at**, so the demo's sample figures change with
+   every run of the demo.
+
+**Open.**
+- Nobody has looked at the real window (every picture is headless); DX12; SVG in a browser.
+- A harmonic's label can cross a neighbouring stem in the narrowest figure preset.
+- Figures of the compared instrument; a vector drawing of the 3-D view.
+- `apply(Set)` at 1000 bodies was not measured; at the largest valid scene a set is tens of
+  milliseconds.
+- Carried again, in `plan/IDEAS.md`: Tab scopes, completion and a command palette, the clipboard,
+  MCP resources, saved layouts.
+
+**Next.** A fresh review of S2 against its brief; fixes as further tasks; then the tag, and S3.
 
 ## S1, a point mass: where it stands (22 Nov 2026) — done, tagged `s1-point-mass`
 
@@ -203,6 +271,19 @@ Answered 21 Nov 2026 (through the owner). The defaults below replace v1's conven
    there until the next sequence starts.
 5. **Floor:** the arms never go below launch. There is a floor, coded as the Python scripts code the
    sequence; copy that.
+
+Asked in S2 (defaults in use until answered):
+- **When a shot is late, are the later ones late too?** The schedule offers both: each cycle's
+  length varies, so lateness accumulates (a random walk), or each shot varies about a fixed grid.
+  They look very different in a periodogram (the first smears the alias, the second leaves it sharp
+  over a floor). Default: the random walk, only ever late (`Walk`, `Positive`), as the research note
+  took a control system that waits to behave.
+- **Do the towers of an array share one clock and one laser?** Default: yes. One schedule for the
+  array; each tower has its own fixed offset from it; a shot is lost at each tower independently.
+  Jitter is the array's, not a tower's.
+- **AICE's launch speed.** The plan has 21.27 m/s; the rule `g·T − v_kick/2` with ⁸⁷Sr and the
+  exact ħ gives 21.236 m/s, and the preset uses the rule. Is 21.27 a measured or intended number,
+  or the same rule with other constants?
 
 Asked in S1 (defaults in use until answered):
 - **What do the published anchor sizes measure?** "10 kg at 10 m passing at 2.5 m/s, ~7 mrad (Fig 12)"
