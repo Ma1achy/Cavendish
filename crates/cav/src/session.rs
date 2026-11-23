@@ -16,8 +16,8 @@ const PLOT_PATIENCE: std::time::Duration = std::time::Duration::from_secs(10);
 pub struct Session {
     pub engine: Engine,
     gpu: Option<(Gpu, Renderer)>,
-    /// The application's painter with no window, for panes that show plots.
-    plots: Option<cav_app::headless::Headless>,
+    /// The painter with no window, for panes that show plots.
+    plots: Option<cav_plot::headless::Painter>,
 }
 
 impl Session {
@@ -27,6 +27,8 @@ impl Session {
         // A client that prints numbers waits for them: a line that asks for a signal gets the
         // current scene's, or, after a minute, the last whole one marked stale.
         engine.set_patience(std::time::Duration::from_secs(60));
+        // The engine does not draw: figures are cav-plot's.
+        cav_plot::figure::install(&mut engine);
         Self { engine, gpu: None, plots: None }
     }
 
@@ -73,7 +75,7 @@ impl Session {
             // shows is the scene's (or as it stands, saying so, if that takes longer than the wait).
             self.engine.settle(PLOT_PATIENCE);
             if self.plots.is_none() {
-                self.plots = Some(cav_app::headless::Headless::new()?);
+                self.plots = Some(cav_plot::headless::Painter::new(cav_plot::headless::context())?);
             }
             return self.plots.as_mut().expect("just created").plot_png(&self.engine, pane, size);
         }

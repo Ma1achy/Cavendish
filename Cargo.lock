@@ -216,10 +216,10 @@ name = "cav"
 version = "0.0.0"
 dependencies = [
  "base64",
- "cav-app",
  "cav-core",
  "cav-engine",
  "cav-gpu",
+ "cav-plot",
  "cav-render",
  "cav-sim",
  "rmcp",
@@ -236,6 +236,7 @@ dependencies = [
  "cav-core",
  "cav-engine",
  "cav-gpu",
+ "cav-plot",
  "cav-render",
  "cav-sim",
  "eframe",
@@ -279,6 +280,22 @@ dependencies = [
  "cav-engine",
  "cav-sim",
  "serde_json",
+]
+
+[[package]]
+name = "cav-plot"
+version = "0.0.0"
+dependencies = [
+ "cav-core",
+ "cav-engine",
+ "cav-gpu",
+ "cav-render",
+ "cav-sim",
+ "cav-validate",
+ "egui",
+ "egui-wgpu",
+ "serde_json",
+ "skrifa",
 ]
 
 [[package]]

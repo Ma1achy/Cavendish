@@ -10,11 +10,12 @@ publish.workspace = true
 cav-core.workspace = true
 cav-engine.workspace = true
 cav-gpu.workspace = true
+cav-plot.workspace = true
 cav-render.workspace = true
 cav-sim.workspace = true
 eframe.workspace = true
 egui.workspace = true
-egui-wgpu.workspace = true
+egui-wgpu = { workspace = true, features = ["winit"] }
 serde_json.workspace = true
 
 [lints]

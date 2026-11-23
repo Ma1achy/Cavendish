@@ -1,0 +1,29 @@
+# Cavendish's house style for matplotlib: white paper, near-black ink, grey rules, and the eight
+# series colours of crates/cav-plot/src/style.rs, each with a dash of its own (in points at a line
+# width of one) so that a figure printed in black and white still tells its series apart.
+# Apply it before one of the preset sheets beside it, which give the size and the type.
+figure.facecolor: white
+axes.facecolor: white
+savefig.facecolor: white
+text.color: 111111
+axes.edgecolor: cfcfcf
+axes.labelcolor: 555555
+axes.titlecolor: 111111
+axes.titlelocation: left
+axes.titleweight: normal
+axes.grid: True
+axes.axisbelow: True
+grid.color: cfcfcf
+xtick.color: cfcfcf
+ytick.color: cfcfcf
+xtick.labelcolor: 555555
+ytick.labelcolor: 555555
+xtick.direction: in
+ytick.direction: in
+legend.frameon: False
+legend.labelcolor: 222222
+font.family: sans-serif
+font.sans-serif: Ubuntu, DejaVu Sans
+svg.fonttype: path
+pdf.fonttype: 42
+axes.prop_cycle: cycler('color', ['0b0dff', 'e76f11', 'c61604', '8a6aae', '28a682', 'cb64fe', '910c59', '6d1ba7']) + cycler('linestyle', ['-', (0, (6.0, 2.5)), (0, (1.5, 2.0)), (0, (7.0, 2.0, 1.5, 2.0)), (0, (3.5, 3.5)), (0, (10.0, 2.5)), (0, (7.0, 2.0, 1.5, 2.0, 1.5, 2.0)), (0, (3.0, 1.5))])

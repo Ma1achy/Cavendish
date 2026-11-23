@@ -8,10 +8,10 @@ publish.workspace = true
 
 [dependencies]
 base64.workspace = true
-cav-app.workspace = true
 cav-core.workspace = true
 cav-engine.workspace = true
 cav-gpu.workspace = true
+cav-plot.workspace = true
 cav-render.workspace = true
 cav-sim.workspace = true
 rmcp.workspace = true

@@ -9,7 +9,7 @@ pub mod headless;
 pub mod menus;
 mod panels;
 pub mod panes;
-pub mod plots;
+pub use cav_plot::plots;
 pub mod shell;
 pub mod theme;
 pub mod timeline;

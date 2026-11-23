@@ -36,11 +36,12 @@ pub mod log;
 
 pub use cav_sim::{PaneContent, Target};
 pub use command::{
-    COMB_HARMONICS, ChannelName, Comb, Command, ExportKind, Harmonic, MAX_PANES, PeriodogramReply, Query,
-    ReadingReply, Reply, SignalReply, Stage, Standing, Stats, TowerReading, ViewCommand, WindowReply,
+    COMB_HARMONICS, ChannelName, Comb, Command, DEFAULT_FIGURE_PRESET, ExportKind, Figure, FigureFormat,
+    FigureKind, Harmonic, MAX_FIGURE_DPI, MAX_FIGURE_MM, MAX_PANES, PeriodogramReply, Query, ReadingReply,
+    Reply, SignalReply, Stage, Standing, Stats, TowerReading, ViewCommand, WindowReply,
 };
 pub use console::{COMMANDS, CommandDoc, Request, describe, help, render};
-pub use engine::{Engine, Exports, REPLAY_PATIENCE, TYPED_LINE_PATIENCE, estimate_text};
+pub use engine::{Engine, Exports, FigureExporter, REPLAY_PATIENCE, TYPED_LINE_PATIENCE, estimate_text};
 pub use forward::{FORWARD_STORE_BYTES, SignalState};
 pub use history::{HISTORY_BYTES, JOURNAL_BYTES};
 pub use log::{Level, Log, LogEntry, LogFilter, Subsystem};
@@ -123,6 +124,17 @@ mod tests {
             Command::View(ViewCommand::Zoom { pane: 3, distance: 28.7 }),
             Command::View(ViewCommand::Pan { pane: 2, target: [0.1, 0.2, 0.3] }),
             Command::View(ViewCommand::Home { pane: 0 }),
+            Command::Export { what: ExportKind::Bundle, to: "a bundle".into() },
+            Command::Export {
+                what: ExportKind::Figure(Box::new(Figure {
+                    tower: Some(2),
+                    span: Some([0.1 + 0.2, 7.0]),
+                    size_mm: Some([85.0, 60.0]),
+                    dpi: Some(300.0),
+                    ..Figure::new(FigureKind::Periodogram, FigureFormat::Png)
+                })),
+                to: "fig.png".into(),
+            },
         ];
         for command in &commands {
             let text = serde_json::to_string(command).unwrap();

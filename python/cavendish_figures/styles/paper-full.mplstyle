@@ -1,0 +1,13 @@
+# The paper-full preset: 178 x 90 mm, as Cavendish's own figures of that name.
+figure.figsize: 7.00787, 3.54331
+font.size: 8
+axes.titlesize: 9.2
+axes.labelsize: 8
+xtick.labelsize: 8
+ytick.labelsize: 8
+legend.fontsize: 8
+lines.linewidth: 0.9
+axes.linewidth: 0.54
+grid.linewidth: 0.54
+lines.markersize: 3.4
+savefig.dpi: 300

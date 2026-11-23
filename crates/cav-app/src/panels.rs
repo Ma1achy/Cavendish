@@ -343,6 +343,7 @@ fn timeline_panel(shell: &mut Shell, ui: &mut egui::Ui) {
         .show(ui, |ui| timeline::lanes(ui, &labels, &all_shots, &offsets, spec.duration, time, selected))
         .inner;
     shell.layout.lanes.clone_from(&response.bars);
+    shell.layout.ruler = (response.ruler.clone(), response.rect.unwrap_or(Rect::NOTHING));
     // A lane dragged with Shift: a `set` of that tower's offset, each step continuing the last,
     // so that the whole drag is one edit.
     if let Some((tower, seconds)) = response.offset
@@ -805,7 +806,8 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                 }
             }
         } else {
-            crate::plots::draw(shell, ui, pane, rect);
+            let drawn = crate::plots::paint(&shell.engine, &ui.painter_at(rect), pane, rect);
+            shell.layout.plots.extend(drawn);
         }
         if count > 1 {
             let (colour, width) =
@@ -909,9 +911,21 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         }
     }
 
-    // Home: the one control on the figure.
-    if !shell.gui_hidden {
-        let home = Rect::from_min_size(pos2(area.right() - 62.0, area.top() + 8.0), vec2(54.0, 20.0));
+    // Home: the one control on the figure. It resets a camera, so it stands in the corner of a
+    // pane that has one: the pane in the figure's top right corner if that shows the scene, else
+    // the active pane, else the first that does. A plot has its title along its top and no
+    // camera; with no scene in any pane there is no Home.
+    let shows_scene = |pane: &usize| shell.engine.content(*pane) == cav_engine::PaneContent::Scene;
+    let corner = pos2(area.right() - 4.0, area.top() + 4.0);
+    let under = (0..count).find(|pane| shell.layout.panes[*pane].contains(corner));
+    let home_pane = under
+        .into_iter()
+        .chain([active])
+        .chain(0..count)
+        .find(shows_scene)
+        .map(|pane| shell.layout.panes[pane]);
+    if let (false, Some(pane)) = (shell.gui_hidden, home_pane) {
+        let home = Rect::from_min_size(pos2(pane.right() - 62.0, pane.top() + 8.0), vec2(54.0, 20.0));
         let response = ui
             .put(home, Button::new(RichText::new("Home").size(12.0)))
             .on_hover_text("reset the camera (Home)");

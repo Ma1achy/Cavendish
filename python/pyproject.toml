@@ -1,0 +1,20 @@
+[project]
+name = "cavendish-figures"
+version = "0.0.0"
+description = "Redraw the figures Cavendish exports, from their data, with matplotlib and the same house style."
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26", "matplotlib>=3.8"]
+
+[tool.setuptools.packages.find]
+include = ["cavendish_figures*"]
+
+[tool.setuptools.package-data]
+cavendish_figures = ["py.typed", "styles/*.mplstyle"]
+
+[tool.pyright]
+include = ["cavendish_figures", "tests"]
+typeCheckingMode = "strict"
+pythonVersion = "3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

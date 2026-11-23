@@ -283,7 +283,7 @@ fn cli_prints_the_font_licence() {
     assert!(out.status.success(), "{}", stderr(&out));
     let text = stdout(&out);
     // The licence itself, whole, as it is in the repository beside the font.
-    let file = include_str!("../../cav-app/assets/fonts/UFL.txt").replace("\r\n", "\n");
+    let file = include_str!("../../cav-plot/assets/fonts/UFL.txt").replace("\r\n", "\n");
     assert!(text.contains("Ubuntu Mono") && text.contains("Ubuntu Font Licence 1.0"), "{text}");
     assert!(text.contains(file.trim()), "the licence text is not printed whole");
     assert!(file.len() > 3000, "the file is the licence, not a stub");
@@ -445,4 +445,107 @@ fn cli_run_writes_a_bundle_twice_the_same() {
         stderr(&cav(&["run", "comb", "--out", d.to_str().unwrap(), "--patience", "soon"]))
             .contains("not a patience")
     );
+}
+
+#[test]
+fn cli_figure_writes_a_figure_with_its_data_twice_the_same() {
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli figure");
+    let _ = std::fs::remove_dir_all(&root);
+    let (a, b) = (root.join("a"), root.join("b"));
+    let run = |dir: &PathBuf, file: &str, more: &[&str]| {
+        std::fs::create_dir_all(dir).unwrap();
+        let out = dir.join(file);
+        let mut args = vec!["figure", "comb", "periodogram", "--out", out.to_str().unwrap()];
+        args.extend_from_slice(more);
+        let done = cav(&args);
+        assert!(done.status.success(), "{}", stderr(&done));
+        stdout(&done)
+    };
+    let options = ["--tower", "2", "--preset", "paper-full", "--exec", "set duration 200"];
+    let said = run(&a, "p.svg", &options);
+    assert!(said.contains("periodogram of scene `comb`, preset paper-full"), "{said}");
+    assert!(said.contains("p.csv") && said.contains("p.json"), "{said}");
+    run(&b, "p.svg", &options);
+    run(&a, "q.pdf", &["--size", "120x70", "--span", "0,0.2"]);
+    run(&b, "q.pdf", &["--size", "120x70", "--span", "0,0.2"]);
+    // The same commands twice: the same six files, byte for byte.
+    let mut names: Vec<String> = std::fs::read_dir(&a)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["p.csv", "p.json", "p.svg", "q.csv", "q.json", "q.pdf"]);
+    for name in &names {
+        assert_eq!(std::fs::read(a.join(name)).unwrap(), std::fs::read(b.join(name)).unwrap(), "{name}");
+    }
+    // The files are what they say: an SVG of the preset's width, a PDF of the size asked for.
+    let svg = std::fs::read_to_string(a.join("p.svg")).unwrap();
+    assert!(svg.contains("width=\"178mm\" height=\"90mm\""), "{}", &svg[..200]);
+    let pdf = std::fs::read(a.join("q.pdf")).unwrap();
+    assert_eq!(cav_plot::pdf::check(&pdf).unwrap().media_box, [0.0, 0.0, 340.157, 198.425]);
+    // The provenance carries the line that made it, with the edits a library name does not say.
+    let json: serde_json::Value = serde_json::from_slice(&std::fs::read(a.join("p.json")).unwrap()).unwrap();
+    assert_eq!(json["command"]["console"], "figure periodogram tower 2 as paper-full to p.svg");
+    assert_eq!(json["scene"]["spec"]["duration"], 200.0);
+    // Control: refusals, each with its reason, and nothing written.
+    let c = root.join("c");
+    std::fs::create_dir_all(&c).unwrap();
+    let out = c.join("x.svg");
+    let out = out.to_str().unwrap();
+    for (args, why) in [
+        (vec!["figure", "comb", "periodogram"], "--out"),
+        (vec!["figure", "comb", "periodogram", "--out", "x.jpg"], "names no format"),
+        (vec!["figure", "comb", "spectrum", "--out", out], "is not something a figure shows"),
+        (vec!["figure", "comb", "periodogram", "--out", out, "--preset", "a4"], "is not a figure preset"),
+        (vec!["figure", "comb", "periodogram", "--out", out, "--tower", "9"], "there is no tower 9"),
+        (vec!["figure", "comb", "periodogram", "--out", out, "--size", "wide"], "is not a size"),
+        (vec!["figure", "nowhere", "periodogram", "--out", out], "not a library scene"),
+    ] {
+        let done = cav(&args);
+        assert!(!done.status.success() && stderr(&done).contains(why), "{args:?}: {}", stderr(&done));
+    }
+    assert_eq!(std::fs::read_dir(&c).unwrap().count(), 0);
+    assert!(stdout(&cav(&["help"])).contains("figure <scene> <signal|periodogram|cadence|flight|view>"));
+}
+
+#[test]
+fn cli_replay_writes_the_bundle_and_the_figure_a_session_exported() {
+    // A session at the command line exports a bundle and a figure and saves its journal; the
+    // replay writes both again, into its own directory, the same bytes. (Found by the S2 demo:
+    // the replay refused the bundle after a tenth of a second, and could not draw.)
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli-replay-exports");
+    let _ = std::fs::remove_dir_all(&root);
+    let (first, again) = (root.join("first"), root.join("again"));
+    std::fs::create_dir_all(&first).unwrap();
+    let at = |name: &str| first.join(name).to_string_lossy().replace('\\', "/");
+    let script = format!(
+        "load comb; set duration 4000; export bundle {}; figure periodogram tower 2 as paper-column to {}; \
+         journal save {}",
+        at("bundle"),
+        at("fig.svg"),
+        at("session.json")
+    );
+    let done = cav(&["exec", &script]);
+    assert!(done.status.success(), "{}", stderr(&done));
+    let journal = at("session.json");
+    let done = cav(&["replay", &journal, "--out", again.to_str().unwrap()]);
+    assert!(done.status.success(), "{}", stderr(&done));
+    assert!(stdout(&done).contains("2 export(s) written into"), "{}", stdout(&done));
+    for name in ["bundle/signal.npy", "bundle/manifest.json", "fig.svg", "fig.csv", "fig.json"] {
+        let (a, b) = (std::fs::read(first.join(name)).unwrap(), std::fs::read(again.join(name)).unwrap());
+        assert!(!a.is_empty() && a == b, "{name} differs between the session and its replay");
+    }
+    // Control: with no patience the bundle's signal is not there yet, the replay says which
+    // command it stopped at, and nothing of it is written. Without --out nothing is written at all.
+    let none = root.join("none");
+    let done = cav(&["replay", &journal, "--out", none.to_str().unwrap(), "--patience", "0"]);
+    assert!(!done.status.success());
+    assert!(
+        stderr(&done).contains("command 2") && stderr(&done).contains("still being computed"),
+        "{}",
+        stderr(&done)
+    );
+    assert!(!none.join("bundle").join("signal.npy").exists() && !none.join("fig.svg").exists());
+    let done = cav(&["replay", &journal]);
+    assert!(done.status.success() && stdout(&done).contains("not written (no --out)"), "{}", stdout(&done));
 }
