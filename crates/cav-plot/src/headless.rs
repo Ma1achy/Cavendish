@@ -181,4 +181,66 @@ impl Painter {
         let rgba = self.paint(output.expect("two frames"), size, crate::theme::BACKGROUND)?;
         cav_render::encode_png(&rgba, size)
     }
+
+    /// A drawing as RGBA8 of `pixels` wide and high, rows top to bottom: the whole drawing fills
+    /// the picture, at as many pixels per point as that takes, over `clear`.
+    ///
+    /// # Errors
+    /// When the read-back fails.
+    pub fn drawing_rgba(
+        &mut self,
+        drawing: &crate::drawing::Drawing,
+        pixels: [u32; 2],
+        clear: egui::Color32,
+    ) -> Result<Vec<u8>, String> {
+        let pixels = [pixels[0].max(1), pixels[1].max(1)];
+        let per_point = pixels[0] as f32 / drawing.size[0];
+        self.ctx.set_pixels_per_point(per_point);
+        let mut output = None;
+        // The scale takes hold at the start of a frame and the text is laid out in the next:
+        // three frames, the last one kept.
+        for _ in 0..3 {
+            self.clock += FRAME_DT;
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(drawing.size[0], drawing.size[1]),
+                )),
+                time: Some(self.clock),
+                predicted_dt: FRAME_DT as f32,
+                focused: true,
+                ..Default::default()
+            };
+            let mut frame = self.ctx.run_ui(input, |ui| {
+                let painter = ui.painter_at(egui::Rect::EVERYTHING);
+                crate::paint::paint(&painter, egui::Pos2::ZERO, drawing);
+            });
+            self.take_textures(&mut frame);
+            output = Some(frame);
+        }
+        // The context goes back to a pixel a point for whatever is painted next.
+        self.ctx.set_pixels_per_point(1.0);
+        let output = output.expect("three frames");
+        if (output.pixels_per_point - per_point).abs() > 1e-3 * per_point {
+            return Err(format!(
+                "the picture was laid out at {} pixels per point, not the {per_point} asked for",
+                output.pixels_per_point
+            ));
+        }
+        self.paint(output, pixels, clear)
+    }
+
+    /// As [`Self::drawing_rgba`], encoded as a PNG.
+    ///
+    /// # Errors
+    /// When the read-back or the encoding fails.
+    pub fn drawing_png(
+        &mut self,
+        drawing: &crate::drawing::Drawing,
+        pixels: [u32; 2],
+        clear: egui::Color32,
+    ) -> Result<Vec<u8>, String> {
+        let rgba = self.drawing_rgba(drawing, pixels, clear)?;
+        cav_render::encode_png(&rgba, [pixels[0].max(1), pixels[1].max(1)])
+    }
 }
