@@ -24,8 +24,11 @@ pub enum Command {
     /// set before it (same path), so a whole drag is one journal entry and one undo. Two sets that
     /// a person or an agent issues separately are two edits, whatever their paths.
     Set {
+        /// The field's path in the scene spec.
         path: String,
+        /// Its new value, as JSON, in the field's own unit (the schema says which).
         value: serde_json::Value,
+        /// Whether this is a step of a drag after its first.
         #[serde(default)]
         continues: bool,
     },
@@ -61,7 +64,10 @@ pub enum Command {
     /// periodograms can be asked for `compared`, and the plots draw both.
     Compare(Option<Box<cav_sim::InstrumentSpec>>),
     /// Compute again from a stage, dropping what was kept for it and the stages after it.
-    Run { from: Stage },
+    Run {
+        /// The first stage to compute again.
+        from: Stage,
+    },
     /// Move the playhead to this time, seconds; clamped to the scene's duration.
     Seek(f64),
     /// Select something, or nothing.
@@ -107,24 +113,69 @@ pub enum ViewCommand {
     /// Make this pane (from 0) the one that keys and unaddressed commands act on.
     Activate(usize),
     /// Look from a named direction, keeping the target and the distance.
-    Look { pane: usize, view: NamedView },
+    Look {
+        /// The pane, from 0.
+        pane: usize,
+        /// The direction to look from.
+        view: NamedView,
+    },
     /// Perspective or orthographic.
-    Project { pane: usize, projection: Projection },
+    Project {
+        /// The pane, from 0.
+        pane: usize,
+        /// The projection.
+        projection: Projection,
+    },
     /// The draw style.
-    Style { pane: usize, style: DrawStyle },
+    Style {
+        /// The pane, from 0.
+        pane: usize,
+        /// How the scene is drawn.
+        style: DrawStyle,
+    },
     /// What the pane shows: the scene, or a plot.
-    Show { pane: usize, content: PaneContent },
+    Show {
+        /// The pane, from 0.
+        pane: usize,
+        /// What it shows.
+        content: PaneContent,
+    },
     /// The stretch of a plot's horizontal axis a pane shows: seconds for the signal, hertz for the
     /// periodogram; `None` for all of it.
-    Span { pane: usize, span: Option<[f64; 2]> },
+    Span {
+        /// The pane, from 0.
+        pane: usize,
+        /// `[from, to]` on the plot's horizontal axis, in that axis's unit; `None` for all of it.
+        span: Option<[f64; 2]>,
+    },
     /// Orbit to these angles, degrees; pitch is clamped to ±90.
-    Orbit { pane: usize, yaw: f64, pitch: f64 },
+    Orbit {
+        /// The pane, from 0.
+        pane: usize,
+        /// The angle about the world's z axis (up), degrees.
+        yaw: f64,
+        /// The angle above the horizontal, degrees.
+        pitch: f64,
+    },
     /// Set the distance from the target to the camera, metres.
-    Zoom { pane: usize, distance: f64 },
+    Zoom {
+        /// The pane, from 0.
+        pane: usize,
+        /// From the target to the camera, metres.
+        distance: f64,
+    },
     /// Move the target, metres.
-    Pan { pane: usize, target: [f64; 3] },
+    Pan {
+        /// The pane, from 0.
+        pane: usize,
+        /// The point looked at: `[x, y, z]` in the world's frame (x east, y north, z up), metres.
+        target: [f64; 3],
+    },
     /// Back to the pane's home camera for the current scene; the style is kept.
-    Home { pane: usize },
+    Home {
+        /// The pane, from 0.
+        pane: usize,
+    },
 }
 
 impl ViewCommand {
@@ -301,6 +352,7 @@ pub struct Comb {
     pub label: String,
     /// Its fundamental, hertz.
     pub fundamental: f64,
+    /// Its harmonics on the axis, from the fundamental up, at most [`COMB_HARMONICS`].
     pub harmonics: Vec<Harmonic>,
 }
 
@@ -309,6 +361,7 @@ pub struct Comb {
 pub struct PeriodogramReply {
     /// The tower, from 1.
     pub tower: usize,
+    /// Which of the tower's channels: an interferometer's phase or the gradiometer's, radians.
     pub channel: ChannelName,
     /// As for a signal: whether it is the current scene's.
     pub state: Standing,
@@ -393,6 +446,7 @@ impl ChannelName {
 pub struct SignalReply {
     /// The tower, from 1.
     pub tower: usize,
+    /// Which of the tower's channels: an interferometer's phase or the gradiometer's, radians.
     pub channel: ChannelName,
     /// `refined`: the current scene's signal. `stale`: the scene has changed and this is the last
     /// whole signal; ask again. `computing`: there is none to show yet.

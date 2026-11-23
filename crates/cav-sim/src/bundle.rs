@@ -22,7 +22,7 @@
 //! v1's bundles were upper minus lower. The manifest says which this one is.
 //!
 //! **What a bundle never holds.** A NaN: its bits are not the same from run to run, so a bundle
-//! with one could not be compared with its own regeneration; [`write`] refuses, naming the
+//! with one could not be compared with its own regeneration; [`write()`] refuses, naming the
 //! place. A value for a shot that was not taken: those hold 0 and `valid` says so. An infinity
 //! is allowed and is exact in `.npy`: over a half-space floor each interferometer's own phase is
 //! infinite (the gradiometer's is not), and the manifest carries the warning.

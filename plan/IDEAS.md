@@ -39,3 +39,19 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **A simulated year** as the long test set for Gradar and the cadence studies. S11 and S14.
 - **Nulls for show**: the space station, Jupiter, a passing asteroid read zero, convincingly; useful for outreach. S14's `distant_nulls`.
 - **Phase change, humidity, combustion** in the thermal model. After S13.
+
+## From S2
+- **Tab walks scopes, tab completion and a command palette (Ctrl+K)** over `COMMANDS` and the schema's paths (`cav_sim::paths::ls` gives the children to complete). Carried from S0; not done in S2. S3.
+- **Copy and paste in the console, copy a value or a path from an editor** (eframe's clipboard feature). Carried from S0. S3.
+- **MCP resources** (the scene spec, the library index, the last bundle) and structured tool output. Carried from S0. S11, with datasets.
+- **Docking and saved layouts.** Carried from S0; the panels are still fixed. When panels multiply (S3's legends and debug overlays).
+- **Addressing list items by label** (`bodies[label=tank].mass`) so that an agent's paths survive a removal; today indices are positions and the tools say so. S3.
+- **`reset <path>`** to a field's default, and a mark on a field edited since the last run (M13 §9.4). S3.
+- **`cav verify <bundle>`**: regenerate a bundle from its manifest's scene and compare bytes; `cli_run_writes_a_bundle_twice_the_same` does it by hand. S11 (M16-R5).
+- **A cryptographic hash in the manifest** for each array (the digest of state is FNV-1a, fine for a test, not for a dataset). S11.
+- **Per-tower instruments and per-tower jitter** (M15-R2): every tower shares one instrument and one schedule; only the offset is its own. S15.
+- **The expected window for combined features** (jitter with gaps, loss with alternation): each is predicted as if alone and the realisation drawn beside it; the note's composition rule (loss multiplies the lines by 1 − p and adds a floor) could be shown. S11, with the sampling studies.
+- **The periodic-source table** of the research note (§4.3): one simulated period of an oscillator serves any cadence without the forward model. Not built: the read in parallel made a 10,000-shot series 0.6 s. S11, if the cadence studies need millions of shots.
+- **A pure-Rust `libm` for the forward model**, so that bundles are identical across Windows, Linux and macOS (the note, §5.8): a decision for the owner; it would change every golden once.
+- **Vector export of the 3-D view**: a figure of a scene pane is a PNG, or an SVG/PDF holding that picture. S4's paper style.
+- **A scene's memory at 1000 bodies × 1000 towers × long labels**: a `set` takes tens of milliseconds there (each edit is a trip of the whole spec through JSON); splice the smallest enclosing item instead (the note, §3.2). When a real scene is that large.

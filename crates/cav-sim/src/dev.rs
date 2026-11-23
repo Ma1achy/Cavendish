@@ -291,12 +291,13 @@ pub fn through_the_tower() -> SceneSpec {
     )
 }
 
-/// How far `precision-far` is from the origin, metres. Not whole numbers: those are held exactly
-/// and would test nothing.
+/// How far `precision-far` is from the origin: `[x, y, z]` (east, north, up), metres, in the
+/// world's frame. Not whole numbers: those are held exactly and would test nothing.
 pub const FAR: [f64; 3] = [10_000.3, -7_000.7, 300.1];
 
-/// `precision-far`: the oscillation anchor and the array, 10 km from the origin; with `shift` of
-/// zero, the same scene at the origin to compare it with.
+/// `precision-far`: the oscillation anchor and the array, moved by `shift` (`[x, y, z]`, metres,
+/// the world's frame; [`FAR`] puts it 10 km from the origin); with `shift` of zero, the same
+/// scene at the origin to compare it with.
 #[must_use]
 pub fn precision_far_at(shift: [f64; 3]) -> SceneSpec {
     let moved = |p: [f64; 3]| [p[0] + shift[0], p[1] + shift[1], p[2] + shift[2]];

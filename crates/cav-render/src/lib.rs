@@ -4,6 +4,18 @@
 //! One entry point, [`Renderer::draw`], draws a [`Frame`] into a [`PaneTarget`]'s texture. The app
 //! shows that texture in a pane; `cav render` and MCP `render_view` read it back and encode a PNG
 //! ([`Renderer::render_png`]). Nothing here knows about windows or egui.
+//!
+//! ## What this crate is for
+//! Turning a scene spec and a view into pixels in a texture, with or without a window: the
+//! camera, the drawables of a scene (towers, room, floor, bodies, marks) and the renderer that
+//! draws them and encodes PNGs.
+//!
+//! ## What it may depend on
+//! Of the workspace, `cav-core`, `cav-sim` and `cav-gpu` (`cav-validate` in its tests).
+//! It must not depend on the engine, and must not hold anything that knows about windows, egui
+//! or plots: the app and `cav-plot` sit above it.
+
+#![warn(missing_docs)]
 
 pub mod camera;
 pub mod renderer;

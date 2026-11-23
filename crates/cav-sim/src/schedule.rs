@@ -175,8 +175,10 @@ pub fn predict(spec: &SceneSpec) -> Result<Prediction, String> {
 pub const MAX_FREQUENCIES: usize = 1 << 20;
 
 /// The spectral window of the shots tower `tower` (from 0) takes: `|W(ν)|` at `count` frequencies
-/// from 0 up to `to` hertz, with the frequencies. One realisation, for the scene's seed: the
-/// closed forms of [`predict`] are what it is expected to be.
+/// from 0 up to `to` hertz, with the frequencies. The result is `(frequencies, heights)`: the
+/// frequencies in hertz, evenly spaced and rising, and `|W|` at each as a fraction of its peak
+/// (dimensionless, 1 at zero frequency; a height, not a power). One realisation, for the scene's
+/// seed: the closed forms of [`predict`] are what it is expected to be.
 ///
 /// The sum is direct while shots × frequencies is at most 2×10⁶, and by the non-uniform FFT
 /// beyond; `count` is held to [`MAX_FREQUENCIES`].

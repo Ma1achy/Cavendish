@@ -3,6 +3,20 @@
 //! `f64` vectors and matrices for cameras and frames, the default array and room, the physical
 //! constants with their sources, and (from S1) the forward model: flight, arms, the propagation
 //! integral and the channels. The voxel tree and the kernels arrive with their slices.
+//!
+//! ## What this crate is for
+//! The numbers and the physics every other crate shares: `f64` vectors and matrices, the physical
+//! constants with their sources, the default array and room, the forward model (flight, arms, the
+//! propagation integral, the channels), spectra of unevenly sampled series, the cadence of a
+//! schedule (keyed random numbers, spectral windows) and `.npy` files.
+//!
+//! ## What it may depend on
+//! No other workspace crate, and no outside crate either (`cav-validate` in its tests only).
+//! It must not hold anything that knows about a scene's file format, a GPU, a window or the
+//! engine: serde, wgpu and egui stay out, so that the hot numerical crate compiles fast and can
+//! be optimised on its own.
+
+#![warn(missing_docs)]
 
 pub mod anchors;
 pub mod cadence;

@@ -10,19 +10,22 @@ use cav_sim::{FOV_Y_DEGREES, FRAMING_ASPECT, Projection, ViewSpec};
 /// A camera for one view at one aspect ratio.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Camera {
-    /// The local frame's origin in the world: the view's target.
+    /// The local frame's origin in the world: the view's target, metres, in the world's frame
+    /// (x east, y north, z up). The local frame has the world's axes and this origin.
     pub origin: Vec3,
-    /// From the target to the camera, in the local frame.
+    /// From the target to the camera, metres, in the local frame (so the camera's world position
+    /// is `origin + eye`).
     pub eye: Vec3,
-    /// Unit vector the camera looks along.
+    /// Unit vector the camera looks along, in the world's axes.
     pub forward: Vec3,
-    /// Unit vector to the right of the picture.
+    /// Unit vector to the right of the picture, in the world's axes.
     pub right: Vec3,
-    /// Unit vector up the picture.
+    /// Unit vector up the picture, in the world's axes.
     pub up: Vec3,
-    /// Local offsets → clip space.
+    /// Local offsets (metres from `origin`) → wgpu's clip space. Not for world positions: take
+    /// `origin` off first, in `f64`.
     pub view_proj: Mat4,
-    /// Distance to the far plane, metres.
+    /// Distance from the camera to the far plane, metres.
     pub far: f64,
     /// Half the height of the picture at the target's depth, metres.
     pub half_height: f64,
@@ -74,8 +77,10 @@ impl Camera {
         }
     }
 
-    /// Where a world point lands in a picture of `size` pixels: `(x, y)` from the top-left corner,
-    /// or `None` when the point is behind the camera.
+    /// Where a world point (metres, the world's frame) lands in a picture of `size` pixels
+    /// (`[width, height]`): `[x, y]` in pixels from the top-left corner, x to the right and y
+    /// down, or `None` when the point is behind the camera. A point off the picture's edge gives
+    /// a pixel outside `size`.
     #[must_use]
     pub fn pixel(&self, world: Vec3, size: [u32; 2]) -> Option<[f64; 2]> {
         let ndc = self.view_proj.project(world - self.origin)?;
@@ -86,13 +91,17 @@ impl Camera {
 /// A rectangle of whole pixels inside a figure.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PaneRect {
+    /// Its left edge, pixels from the figure's left edge.
     pub x: u32,
+    /// Its top edge, pixels down from the figure's top edge.
     pub y: u32,
+    /// Its width, pixels.
     pub width: u32,
+    /// Its height, pixels.
     pub height: u32,
 }
 
-/// How a figure of `size` pixels is split into `panes` panes (1, 2 or 4), with `gap` pixels between
+/// How a figure of `size` pixels (`[width, height]`) is split into `panes` panes (1, 2 or 4), with `gap` pixels between
 /// neighbours: two side by side, four as a 2 × 2 grid in reading order.
 ///
 /// # Panics

@@ -1,6 +1,18 @@
 //! The Cavendish engine: one command/query API that the app, the CLI and the MCP server all drive
 //! (REBUILD §3.2), with a journal that replays and an event log.
 //!
+//! ## What this crate is for
+//! Everything a person or an agent can do to a scene is a [`Command`]; everything they can ask is a
+//! [`Query`] answered by a [`Reply`]. The engine applies commands (or refuses them, changing
+//! nothing), keeps the journal, the undo history and the event log, and hands the forward model to
+//! its workers so that no command waits for a computation.
+//!
+//! ## What it may depend on
+//! `cav-core` and `cav-sim`, and nothing that draws: no `cav-gpu`, `cav-render`, `cav-plot` or
+//! `cav-app`. A client that can draw installs what the engine cannot do itself (a figure exporter).
+//! It must not block a command on a computation, and must not hold state that a journal cannot
+//! reproduce.
+//!
 //! ```text
 //! use cav_engine::{Command, Engine, Query, Reply};
 //!
@@ -11,6 +23,8 @@
 //! assert_eq!((stats.scene.as_str(), stats.time), ("void", 1.5));
 //! assert_eq!(Engine::replay(engine.journal()).unwrap().digest(), engine.digest());
 //! ```
+
+#![warn(missing_docs)]
 
 pub mod command;
 pub mod console;
