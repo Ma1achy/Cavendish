@@ -27,7 +27,7 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 
-from ._json import pair, rows_of, table
+from ._json import number, pair, rows_of, table
 from .errors import DataMismatch, FigureError, Missing, NotAFigure, NotDrawable, UnsupportedVersion
 from .result import Err, Ok, Result
 
@@ -43,19 +43,34 @@ Flags  = npt.NDArray[np.bool_]
 @dataclass(frozen = True)
 class Axis:
     """
-    One axis of a figure.
+    One axis of a figure, with the marks Cavendish drew on it.
+
+    The marks' values are in the data's unit, even where the figure wrote them in a multiple of
+    it: a signal's ``ΔΦ`` is in rad and its marks may be written in mrad (the record's
+    ``marks.vertical_axis_written_in`` says so).
 
     Attributes:
-        name  (str):                 What is along it.
-        unit  (str):                 The unit of the data along it.
-        log   (bool):                Whether it is logarithmic.
-        range (tuple[float, float]): The values at its two ends.
+        name        (str):                 What is along it.
+        unit        (str):                 The unit of the data along it.
+        log         (bool):                Whether it is logarithmic.
+        range       (tuple[float, float]): The values at its two ends.
+        label       (str | None):          Its label as drawn (``"√S, rad/√Hz"``); ``None`` when
+                                           none was drawn.
+        ticks       (tuple[float, ...]):   The values of its major marks.
+        tick_labels (tuple[str, ...]):     The text written at each major mark, one for each of
+                                           ``ticks``; a power of ten is written ``10^-5``.
+        minor_ticks (tuple[float, ...]):   The values of its minor marks; empty on a linear axis
+                                           and where there was no room.
     """
 
-    name:  str
-    unit:  str
-    log:   bool
-    range: tuple[float, float]
+    name:        str
+    unit:        str
+    log:         bool
+    range:       tuple[float, float]
+    label:       str | None
+    ticks:       tuple[float, ...]
+    tick_labels: tuple[str, ...]
+    minor_ticks: tuple[float, ...]
 
 
 @dataclass(frozen = True)
@@ -167,14 +182,40 @@ def _colours(node: object) -> Colours | None:
     )
 
 
+def _numbers(node: object) -> tuple[float, ...] | None:
+    """``node`` as an array of numbers, if it is that."""
+    if not isinstance(node, list):
+        return None
+    values = [number(item) for item in rows_of(cast(object, node))]
+    if any(value is None for value in values):
+        return None
+    return tuple(value for value in values if value is not None)
+
+
 def _axis(node: object) -> Axis | None:
-    """An axis from its JSON, if every field is there."""
+    """An axis from its JSON, if every field is there: its marks and its label too."""
     fields = table(node)
     name, unit, scale = fields.get("name"), fields.get("unit"), fields.get("scale")
     ends              = pair(fields.get("range"))
     if not isinstance(name, str) or not isinstance(unit, str) or scale not in ("linear", "log") or ends is None:
         return None
-    return Axis(name = name, unit = unit, log = scale == "log", range = ends)
+    label        = fields.get("label")
+    ticks, minor = _numbers(fields.get("ticks")), _numbers(fields.get("minor_ticks"))
+    written      = rows_of(fields.get("tick_labels"))
+    if "label" not in fields or not (label is None or isinstance(label, str)) or ticks is None or minor is None:
+        return None
+    if len(written) != len(ticks) or not all(isinstance(text, str) for text in written):
+        return None
+    return Axis(
+        name        = name,
+        unit        = unit,
+        log         = scale == "log",
+        range       = ends,
+        label       = label,
+        ticks       = ticks,
+        tick_labels = tuple(str(text) for text in written),
+        minor_ticks = minor,
+    )
 
 
 def _read_csv(path: Path, names: list[str]) -> Result[dict[str, Column], FigureError]:
@@ -273,12 +314,14 @@ def load(path: str | Path) -> Result[Figure, FigureError]:
     picture = entries[listed.index(wanted)]
     title, preset = picture.get("title"), picture.get("preset")
     size          = pair(picture.get("size_mm"))
-    if not (isinstance(title, str) or title is None) or not isinstance(preset, str) or size is None:
+    titled        = "title" in picture and (title is None or isinstance(title, str))
+    if not titled or not isinstance(preset, str) or size is None:
         return Err(NotAFigure(path = source, why = f"`title`, `preset` or `size_mm` of `{wanted}` is missing"))
     axes = table(picture.get("axes"))
     x, y = _axis(axes.get("x")), _axis(axes.get("y"))
     if x is None or y is None:
-        return Err(NotAFigure(path = source, why = f"`axes.x` or `axes.y` of `{wanted}` is missing or incomplete"))
+        why = f"`axes.x` or `axes.y` of `{wanted}` is missing or incomplete (name, unit, scale, range, label, marks)"
+        return Err(NotAFigure(path = source, why = why))
     colours = _colours(picture.get("colours"))
     if colours is None:
         return Err(NotAFigure(path = source, why = f"`colours` of `{wanted}` is missing or incomplete"))
@@ -318,7 +361,7 @@ def load(path: str | Path) -> Result[Figure, FigureError]:
         file       = wanted,
         files      = listed,
         what       = what,
-        title      = title,
+        title      = title if isinstance(title, str) else None,
         preset     = preset,
         size_mm    = size,
         x          = x,

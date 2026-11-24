@@ -10,7 +10,8 @@ and a stable ``code``.
         ├── DataMismatch        figure.data_mismatch
         ├── UnknownPreset       figure.unknown_preset
         ├── NotDrawable         figure.not_drawable
-        └── NotWritten          figure.not_written
+        ├── NotWritten          figure.not_written
+        └── NoFonts             figure.no_fonts
 
 Narrow with ``isinstance`` or ``match``; never parse the text.
 """
@@ -148,6 +149,22 @@ class NotWritten(FigureError):
     why:  str
 
 
+@dataclass(frozen = True)
+class NoFonts(FigureError):
+    """
+    A folder of fonts was given and holds no face to draw with: it is not there, or the
+    proportional face (``Ubuntu-Light.ttf``, which ``cav fonts --out <dir>`` writes) is not in it.
+
+    Attributes:
+        folder (Path): The folder given.
+        why    (str):  What is missing from it.
+    """
+
+    code: ClassVar[str] = "figure.no_fonts"
+    folder: Path
+    why:    str
+
+
 def error_catalog() -> dict[str, type[FigureError]]:
     """
     Every error of the family by its code.
@@ -157,5 +174,6 @@ def error_catalog() -> dict[str, type[FigureError]]:
     """
     variants: tuple[type[FigureError], ...] = (
         Missing, NotAFigure, UnsupportedVersion, DataMismatch, UnknownPreset, NotDrawable, NotWritten,
+        NoFonts,
     )
     return {variant.code: variant for variant in variants}

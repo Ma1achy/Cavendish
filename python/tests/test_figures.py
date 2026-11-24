@@ -14,15 +14,24 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import struct
 import sys
 import tempfile
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
-from typing import Callable
+from typing import Callable, cast
 
 import matplotlib.style
 import numpy as np
+from matplotlib import font_manager
+from matplotlib.axes import Axes
+from matplotlib.axis import Axis as Ruler
+from matplotlib.colors import to_hex
+from matplotlib.figure import Figure as Canvas
+from matplotlib.lines import Line2D
+from matplotlib.text import Text
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -32,11 +41,13 @@ import synthetic  # noqa: E402
 from cavendish_figures import (  # noqa: E402
     DASHES,
     PRESETS,
+    Axis,
     SERIES,
     DataMismatch,
     Err,
     Figure,
     Missing,
+    NoFonts,
     NotAFigure,
     NotDrawable,
     NotWritten,
@@ -78,6 +89,100 @@ def png_size(path: Path) -> tuple[int, int]:
 def loaded(directory: Path, what: str, layout: str = "csv") -> Figure:
     """The synthetic figure of ``what``, written and read back."""
     return load(synthetic.write(directory, what, layout)).unwrap()
+
+
+def headline(canvas: Canvas) -> Text:
+    """The figure's title as drawn: the one text of the canvas whose words are the title's."""
+    titles = [text for text in canvas.texts if text.get_text() == canvas.get_suptitle() != ""]
+    assert len(titles) == 1, [text.get_text() for text in canvas.texts]
+    return titles[0]
+
+
+WRITTEN_IN: dict[str, float] ={"rad": 1.0, "mrad": 1e3, "µrad": 1e6, "nrad": 1e9}
+"""How many of each unit a signal's marks may be written in make a radian."""
+
+
+def plain(text: str) -> str:
+    """A mark's text as the record writes it: matplotlib's raised exponent back to ``10^-5``."""
+    text = re.sub(r"\$\\mathdefault\{10\^\{(-?\d+)\}\}\$", r"10^\1", text)
+    return text.replace("−", "-")
+
+
+def entries(node: object) -> list[dict[str, object]]:
+    """The JSON objects in a JSON array; none when ``node`` is not one."""
+    if not isinstance(node, list):
+        return []
+    return [cast(dict[str, object], item) for item in cast(list[object], node) if isinstance(item, dict)]
+
+
+def entry(node: object) -> dict[str, object]:
+    """``node`` as a JSON object; empty when it is not one."""
+    return cast(dict[str, object], node) if isinstance(node, dict) else {}
+
+
+def named(figure: Figure) -> list[str]:
+    """Every text the record says the figure wrote by a mark: harmonics, the benchmark, lines."""
+    texts = [stem.get("label") for comb in entries(figure.marks.get("combs")) for stem in entries(comb.get("stems"))]
+    texts.append(entry(entry(figure.marks.get("reference")).get("uldm_benchmark")).get("label"))
+    texts.extend(line.get("label") for line in entries(figure.marks.get("predicted_lines")))
+    return sorted(text for text in texts if isinstance(text, str))
+
+
+def disagreements(canvas: Canvas, axes: Axes, figure: Figure) -> list[str]:
+    """
+    Where a drawing is not the figure its record describes: structure, not pixels.
+
+    Checks the series (as many as the record has, in its colours), each axis's limits, scale,
+    major marks and their text, minor marks and label, the title or its absence, and every text
+    the record says was written by a mark. A flight diagram's vertical axis is the redraw's own
+    (a row for each tower) and is not checked.
+
+    Returns:
+        list[str]: One line for each disagreement; empty when the drawing is the figure.
+    """
+    found: list[str] = []
+    series  = [artist for artist in axes.get_children() if artist.get_gid() == "series"]
+    palette = figure.colours.series
+    if len(series) != len(figure.series):
+        found.append(f"{len(series)} series drawn, the record has {len(figure.series)}")
+    else:
+        for n, artist in enumerate(series):
+            if isinstance(artist, Line2D):
+                colour = to_hex(artist.get_color())
+            else:
+                colour = to_hex(tuple(np.asarray(getattr(artist, "get_edgecolor")(), dtype = np.float64)[0]))
+            wanted = figure.colours.spectrum if figure.what in ("periodogram", "cadence") else palette[n % len(palette)]
+            if colour != wanted:
+                found.append(f"series {n} is drawn in {colour}, the record's colour is {wanted}")
+    multiple = WRITTEN_IN.get(str(figure.marks.get("vertical_axis_written_in")), 1.0)
+    rulers: list[tuple[str, Ruler, Axis, float, tuple[float, float], str, str]] = [
+        ("x", axes.xaxis, figure.x, 1.0, axes.get_xlim(), axes.get_xscale(), axes.get_xlabel()),
+    ]
+    if figure.what != "flight":
+        rulers.append(("y", axes.yaxis, figure.y, multiple, axes.get_ylim(), axes.get_yscale(), axes.get_ylabel()))
+    for name, ruler, axis, scale, ends, kind, label in rulers:
+        if not np.allclose(np.asarray(ends) / scale, axis.range, rtol = 1e-12, atol = 0.0):
+            found.append(f"{name}: limits {ends}, the record's are {axis.range}")
+        if kind != ("log" if axis.log else "linear"):
+            found.append(f"{name}: a {kind} scale")
+        ticks = np.asarray(ruler.get_majorticklocs(), dtype = np.float64) / scale
+        if ticks.shape != (len(axis.ticks),) or not np.allclose(ticks, axis.ticks, rtol = 1e-12, atol = 1e-300):
+            found.append(f"{name}: major marks at {ticks.tolist()}, the record's are {list(axis.ticks)}")
+        written = [plain(text) for text in ruler.get_major_formatter().format_ticks(list(ruler.get_majorticklocs()))]
+        if written != [text.replace("−", "-") for text in axis.tick_labels]:
+            found.append(f"{name}: marks written {written}, the record wrote {list(axis.tick_labels)}")
+        minor = np.asarray(ruler.get_minorticklocs(), dtype = np.float64) / scale
+        if minor.shape != (len(axis.minor_ticks),) or not np.allclose(minor, axis.minor_ticks, rtol = 1e-12, atol = 1e-300):
+            found.append(f"{name}: minor marks at {minor.tolist()}, the record's are {list(axis.minor_ticks)}")
+        if label != (axis.label or ""):
+            found.append(f"{name}: labelled {label!r}, the record's label is {axis.label!r}")
+    title = canvas.get_suptitle()
+    if title != (figure.title or ""):
+        found.append(f"titled {title!r}, the record's title is {figure.title!r}")
+    texts = sorted(text.get_text() for text in axes.texts)
+    if texts != named(figure):
+        found.append(f"texts by the marks {texts}, the record's are {named(figure)}")
+    return found
 
 
 # =========================================== RESULT ===========================================
@@ -123,8 +228,8 @@ def test_result_has_rusts_methods() -> None:
 def test_the_error_catalogue_is_whole() -> None:
     catalogue = error_catalog()
     assert sorted(catalogue) == [
-        "figure.data_mismatch", "figure.missing", "figure.not_a_figure", "figure.not_drawable",
-        "figure.not_written", "figure.unknown_preset", "figure.unsupported_version",
+        "figure.data_mismatch", "figure.missing", "figure.no_fonts", "figure.not_a_figure",
+        "figure.not_drawable", "figure.not_written", "figure.unknown_preset", "figure.unsupported_version",
     ]
     for code, variant in catalogue.items():
         assert variant.code == code and issubclass(variant, FigureError) and variant is not FigureError
@@ -299,7 +404,7 @@ def test_redraw_draws_the_house_style() -> None:
     _, axes   = draw(signal).unwrap()
     assert axes.get_yscale() == "linear"
     drawn = [line for line in axes.get_lines() if line.get_marker() != "s"]
-    assert [line.get_color() for line in drawn] == list(SERIES[:2])
+    assert [line.get_color() for line in drawn] == list(synthetic.PALETTE[:2]), "the record's colours"
     assert drawn[0].get_linestyle() == "-" and drawn[1].get_linestyle() != "-"
     assert not [line for line in drawn if line.get_marker() == "D" or line.get_color() == "#8c8c8c"]
     # The vertical axis is in the unit the figure was written in.
@@ -326,7 +431,7 @@ def test_a_shot_not_taken_is_not_plotted() -> None:
     assert [float(value) for value in second[~np.isnan(second)]] == [float(value) for value in kept]
     # A hollow square at the foot of the axes at the lost shot's time, in the tower's colour.
     hollow = [line for line in axes.get_lines() if line.get_marker() == "s"]
-    assert len(hollow) == 1 and hollow[0].get_color() == SERIES[1]
+    assert len(hollow) == 1 and hollow[0].get_color() == synthetic.PALETTE[1]
     assert str(hollow[0].get_markerfacecolor()) == "none" and hollow[0].get_linestyle() == "None"
     assert [float(value) for value in np.asarray(hollow[0].get_xdata(), dtype = np.float64)] == [5.75]
     assert [float(value) for value in np.asarray(hollow[0].get_ydata(), dtype = np.float64)] == [signal.y.range[0] * 1e3]
@@ -351,6 +456,101 @@ def test_a_shot_not_taken_is_not_plotted() -> None:
     assert sorted(bars) == [(1, 0), (3, 1), (4, 1), (4, 1)], bars
     # Control: a spectrum has no flags, and every value of it is a measurement.
     assert bool(loaded(directory, "periodogram").series[0].taken.all())
+
+
+def test_the_redraw_is_the_same_figure() -> None:
+    # Review 30 of S2: the redraw had no harmonic labels, other decades and another title rule.
+    # It now draws what the record says the figure was: every kind, both pictures of each.
+    directory = scratch()
+    for what in ("signal", "periodogram", "cadence", "flight"):
+        source = synthetic.write(directory, what)
+        for picture in (f"{what}.pdf", f"{what}.svg"):
+            figure       = load(source.with_name(picture)).unwrap()
+            canvas, axes = draw(figure).unwrap()
+            assert disagreements(canvas, axes, figure) == [], (picture, disagreements(canvas, axes, figure))
+    # The untitled picture has no title, the titled one its own; a log axis is written in powers.
+    titled   = load(directory / "periodogram.pdf").unwrap()
+    untitled = load(directory / "periodogram.svg").unwrap()
+    assert titled.title == "A synthetic periodogram" and untitled.title is None
+    assert draw(untitled).unwrap()[0].get_suptitle() == ""
+    canvas, axes = draw(titled).unwrap()
+    written      = axes.yaxis.get_major_formatter().format_ticks(list(axes.yaxis.get_majorticklocs()))
+    assert written[0] == "$\\mathdefault{10^{-8}}$", written
+    assert sorted(text.get_text() for text in axes.texts) == ["7f₀ folded", "ULDM benchmark", "f₀"]
+    # Control: a record with one mark or one label changed is not what this drawing has, and
+    # the same check says so; each change on its own is caught.
+    record = json.loads((directory / "periodogram.json").read_text(encoding = "utf-8"))
+
+    def changed(edit: Callable[[dict[str, object]], None]) -> list[str]:
+        document = json.loads(json.dumps(record))
+        edit(document["files"][0])
+        other = scratch()
+        shutil.copy(directory / "periodogram.csv", other / "periodogram.csv")
+        (other / "periodogram.json").write_text(json.dumps(document, ensure_ascii = False), encoding = "utf-8")
+        return disagreements(canvas, axes, load(other / "periodogram.pdf").unwrap())
+
+    def tick(picture: dict[str, object]) -> None:
+        entry(entry(picture["axes"])["y"])["ticks"] = [1e-8, 1e-5, 1e-4, 1e-2, 1.0]
+
+    def written_as(picture: dict[str, object]) -> None:
+        entry(entry(picture["axes"])["x"])["tick_labels"] = ["0.00", "0.05", "0.10", "0.15", "0.20", "¼"]
+
+    def harmonic(picture: dict[str, object]) -> None:
+        entries(entries(entry(picture["marks"])["combs"])[0]["stems"])[1]["label"] = "2f₀"
+
+    def untitle(picture: dict[str, object]) -> None:
+        picture["title"] = None
+
+    for edit, says in ((tick, "y: major marks"), (written_as, "x: marks written"), (harmonic, "texts by the marks"),
+                       (untitle, "titled")):
+        found = changed(edit)
+        assert len(found) == 1 and found[0].startswith(says), (edit.__name__, found)
+
+    def both(picture: dict[str, object]) -> None:
+        tick(picture)
+        harmonic(picture)
+
+    assert len(changed(both)) == 2
+    # A record that lacks the marks is not a figure this package can redraw as it was.
+    del entry(entry(record["files"][0]["axes"])["y"])["ticks"]
+    (directory / "periodogram.json").write_text(json.dumps(record, ensure_ascii = False), encoding = "utf-8")
+    bare = load(directory / "periodogram.pdf")
+    assert isinstance(bare, Err) and isinstance(bare.error, NotAFigure) and "axes" in bare.error.why
+
+
+def test_the_redraw_is_in_cavendishs_faces_when_given_them() -> None:
+    directory = scratch()
+    figure    = loaded(directory, "periodogram")
+    # Without a folder of fonts the face is matplotlib's own, whatever the machine has.
+    canvas, _ = draw(figure).unwrap()
+    title     = canvas.get_suptitle()
+    assert title and "DejaVuSans" in font_manager.findfont(headline(canvas).get_fontproperties())
+    # A folder as `cav fonts --out` writes it. The test has only the monospace face to hand (the
+    # proportional one is egui's), so it stands in for both: what is tested is that the folder's
+    # faces are registered and used, the text in one and the marks' numbers in the other.
+    fonts = directory / "fonts"
+    fonts.mkdir()
+    mono  = Path(__file__).resolve().parents[2] / "crates" / "cav-plot" / "assets" / "fonts" / "UbuntuMono-Regular.ttf"
+    for name in ("Ubuntu-Light.ttf", "UbuntuMono-Regular.ttf"):
+        shutil.copy(mono, fonts / name)
+    canvas, axes = draw(figure, fonts = fonts).unwrap()
+    face         = Path(font_manager.findfont(headline(canvas).get_fontproperties()))
+    assert face.parent == fonts.resolve(), face
+    label = axes.yaxis.get_major_ticks()[0].label1
+    assert Path(font_manager.findfont(label.get_fontproperties())).parent == fonts.resolve()
+    assert disagreements(canvas, axes, figure) == [], "the faces change nothing else"
+    assert redraw(figure, directory / "faces.pdf", fonts = fonts).unwrap().read_bytes().startswith(b"%PDF")
+    # Control: a folder that is not there, one with no fonts, and one without the text face are refused.
+    empty = directory / "empty"
+    empty.mkdir()
+    only  = directory / "only mono"
+    only.mkdir()
+    shutil.copy(mono, only / "UbuntuMono-Regular.ttf")
+    for folder, says in ((directory / "nowhere", "not a folder"), (empty, "no .ttf"), (only, "Ubuntu-Light.ttf")):
+        refused = draw(figure, fonts = folder)
+        assert isinstance(refused, Err) and isinstance(refused.error, NoFonts), refused
+        assert refused.error.code == "figure.no_fonts" and says in refused.error.why, refused.error
+        assert isinstance(redraw(figure, directory / "x.png", fonts = folder).err(), NoFonts)
 
 
 def test_redraw_refuses_what_it_cannot_do() -> None:
@@ -394,10 +594,14 @@ def test_real_figures_are_read_and_redrawn() -> None:
         out = redraw(figure, source.with_name(source.stem + "-redrawn.png")).unwrap()
         width, _ = png_size(out)
         assert width > 300, f"{out} is {width} pixels wide"
-        if figure.what == "periodogram":
-            _, axes = draw(figure).unwrap()
-            assert axes.get_yscale() == "log"
-            assert any(line.get_marker() == "D" for line in axes.get_lines()), "no diamond at the benchmark"
+        # Each picture of the figure, redrawn, is the picture its record describes.
+        for picture in figure.files:
+            each         = load(source.with_name(picture)).unwrap()
+            canvas, axes = draw(each).unwrap()
+            found        = disagreements(canvas, axes, each)
+            assert found == [], f"{picture}: {found}"
+            if each.what == "periodogram":
+                assert any(line.get_marker() == "D" for line in axes.get_lines()), "no diamond at the benchmark"
     assert {"periodogram", "signal", "cadence"} <= kinds, kinds
 
 

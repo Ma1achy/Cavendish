@@ -22,8 +22,10 @@ xtick.direction: in
 ytick.direction: in
 legend.frameon: False
 legend.labelcolor: 222222
+# matplotlib's own face, whatever the machine has installed: Cavendish's faces are used only when
+# a folder of them is given (`redraw(figure, out, fonts = dir)`; `cav fonts --out dir` writes it).
 font.family: sans-serif
-font.sans-serif: Ubuntu, DejaVu Sans
+font.sans-serif: DejaVu Sans
 svg.fonttype: path
 pdf.fonttype: 42
 axes.prop_cycle: cycler('color', ['0b0dff', 'e76f11', 'c61604', '8a6aae', '28a682', 'cb64fe', '910c59', '6d1ba7']) + cycler('linestyle', ['-', (0, (6.0, 2.5)), (0, (1.5, 2.0)), (0, (7.0, 2.0, 1.5, 2.0)), (0, (3.5, 3.5)), (0, (10.0, 2.5)), (0, (7.0, 2.0, 1.5, 2.0, 1.5, 2.0)), (0, (3.0, 1.5))])

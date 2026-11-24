@@ -46,7 +46,10 @@ marks with a `Style` and a text measurer, and returns a `Plot`.
    whatever the format goes in `Built::figure`; what is one picture's own (anything that
    depends on the preset or the size) goes in its entry, `Built::provenance`.
 7. In `python/cavendish_figures/redraw.py`, a function that draws it from the data file alone,
-   and its line in `draw`.
+   and its line in `draw`. It chooses nothing the record says: `draw` puts the marks at the
+   axes' `ticks` and `minor_ticks`, written as `tick_labels`, with the axes' `label` and the
+   title; the function writes each label the plot's `marks` name (`null` where none was
+   drawn), uses the record's `colours`, and gives each series' artist the `gid` `"series"`.
 
 Console (`figure <word> … to <file>`), `cav figure` and MCP's `figure` follow from the kind.
 
