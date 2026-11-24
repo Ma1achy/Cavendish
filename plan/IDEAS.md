@@ -66,3 +66,13 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **The whole instrument on screen at 900 px**: with the kick number the properties panel's instrument block is one row longer than a 1440 × 900 window shows without scrolling (`launch_floor` and `sign` are below the fold). Collapse the schedule block by default, or two columns. S3.
 
 - The Python redraw's palette (`python/cavendish_figures/style.py` and its style sheet) is a copy of `PAPER_SERIES`; nothing holds the two together but the redraw taking colours from the record. A test that reads the Rust constant would (S2 review 28).
+
+## From S3 (voxel bodies)
+- **The scalar trick as the engine's fast path for Motion::Modes**: one `V(α)` per flight node and tower (Chebyshev in α), then every shot is a polynomial evaluation instead of every leaf again. The oracle's table method is that, test-side; the engine reads George's scaffold leaf by leaf, minutes for 22 Hz modes. With S5's modal synthesis (VALIDATION §4).
+- **Voxelise on a worker**: the engine makes a body's tree on the thread that applies the command (milliseconds for the dev scenes, up to the voxeliser's work cap for any scene). The forward workers already build their own; the view's could arrive stale-not-blocked like the signal.
+- **Draw only exposed faces** of voxel bodies (greedy faces per tree): today every drawn leaf is twelve triangles, capped at 20,000 cubes a view. S4's meshing.
+- **Cache the per-leaf phase field** by body position and tower: colour phase reads every leaf again at every seek. Static bodies could keep it.
+- **Turning bodies**: a body's tree is in the world's axes; an orientation (a quaternion in the spec) is S6/S7's, with the rigid socket of eference/design/voxel.md §7.
+- **Mesh import beyond OBJ and STL** (glTF, PLY), and meshes held in the scene file rather than a path relative to where the program runs.
+- **A crossing warning for voxel bodies**: a body made of voxels that passes through the atoms' path is finite (cube kernel) but not said; points and spheres are.
+- **Quickhull for polyhedra**: the hull is found by trying every triple (cap 100 vertices).

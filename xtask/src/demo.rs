@@ -15,6 +15,7 @@ pub fn run(root: &Path, slice: &str) -> Result<(), String> {
         "S0" | "s0" => s0(root),
         "S1" | "s1" => s1(root),
         "S2" | "s2" => s2(root),
+        "S3" | "s3" => s3(root),
         other => Err(format!("no demo for slice `{other}`: the slices with demos are: S0, S1, S2")),
     }
 }
@@ -602,6 +603,124 @@ fn s2(root: &Path) -> Result<(), String> {
     write(&out, "timings.txt", &timings, &mut made)?;
 
     eprintln!("xtask: demo S2 wrote {} files to {}:", made.len(), out.display());
+    for file in &made {
+        eprintln!("  {file}");
+    }
+    Ok(())
+}
+
+/// S3: voxel bodies drawn as trees, coloured by fields, with overlays; George's scaffold; a mixed
+/// array and an array of none; a voxel view as a figure; the voxeliser's speed.
+fn s3(root: &Path) -> Result<(), String> {
+    let out = root.join("docs").join("slices").join("S3");
+    std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    step("build cav and cav-app", cargo(root, &["build", "--quiet", "-p", "cav", "-p", "cav-app"]))?;
+    let (cav, app) = (binary(root, "cav"), binary(root, "cav-app"));
+    let path = |name: &str| out.join(name).to_string_lossy().into_owned();
+    let mut made: Vec<String> = Vec::new();
+    let scratch = root.join("target").join("demo-s3");
+    let _ = std::fs::remove_dir_all(&scratch);
+    std::fs::create_dir_all(&scratch).map_err(|e| format!("{}: {e}", scratch.display()))?;
+    let temp = |name: &str| scratch.join(name).to_string_lossy().replace('\\', "/");
+
+    // 1 to 5. The application, headless.
+    let close = |pane: u32| format!("view iso @{pane}; pan 0 0 2.5 @{pane}; zoom 9 @{pane}");
+    let shots: [(&str, String); 7] = [
+        ("shapes.png", format!("load platonic-row; {}; colour level", close(1))),
+        (
+            "colour-by-field.png",
+            format!(
+                "load platonic-row; panes 4; {}; {}; {}; {}; colour distance @1; colour mass @2; colour fill @3; \
+                 colour phase 1 @4",
+                close(1),
+                close(2),
+                close(3),
+                close(4)
+            ),
+        ),
+        ("overlay-leaves.png", "load sphere; pan 2 0 2.5; zoom 2.5; colour height; overlay leaves".to_owned()),
+        ("overlay-cut.png", "load sphere; pan 2 0 2.5; zoom 2.5; colour mass; overlay cut 2".to_owned()),
+        ("scaffold.png", "load scaffold; pan 0 0 5; zoom 16; colour height".to_owned()),
+        ("mixed-array.png", "load mixed-array; panes 2; show flight @2; seek 20".to_owned()),
+        ("zero-towers.png", "load no-towers; panes 2; show signal @2".to_owned()),
+    ];
+    for (file, script) in &shots {
+        capture(&app, &["--screenshot", &path(file), "--size", "1440x900", "--exec", script])?;
+        expect_png(&out, file, [1440, 900], &mut made)?;
+    }
+    // The same picture when it is taken again.
+    let again = temp("again.png");
+    capture(&app, &["--screenshot", &again, "--size", "1440x900", "--exec", &shots[1].1])?;
+    if std::fs::read(out.join(shots[1].0)).ok() != std::fs::read(&again).ok() {
+        return Err(format!("{} is not the same picture when it is taken again", shots[1].0));
+    }
+
+    // 6. A voxel view as a figure, and the cylinder against the point mass.
+    let figures = out.join("figures");
+    let _ = std::fs::remove_dir_all(&figures);
+    std::fs::create_dir_all(&figures).map_err(|e| format!("{}: {e}", figures.display()))?;
+    let mut said = String::new();
+    for file in ["platonic-row.svg", "platonic-row.pdf", "platonic-row.png"] {
+        let exec = "view top; proj ortho; colour height";
+        let output = Command::new(&cav)
+            .args(["figure", "platonic-row", "view", "--preset", "paper-full", "--exec", exec, "--out", file])
+            .current_dir(&figures)
+            .output()
+            .map_err(|e| format!("cav figure: {e}"))?;
+        if !output.status.success() {
+            return Err(format!("cav figure platonic-row view: {}", String::from_utf8_lossy(&output.stderr)));
+        }
+        said.push_str(&format!(
+            "$ cav figure platonic-row view --preset paper-full --exec \"{exec}\" --out {file}\n{}",
+            String::from_utf8_lossy(&output.stdout)
+        ));
+        made.push(format!("figures/{file}"));
+    }
+    std::fs::write(figures.join("made.txt"), &said).map_err(|e| format!("figures/made.txt: {e}"))?;
+    made.push("figures/made.txt".to_owned());
+
+    // 7. A session: shapes and colours from the console; the mixed array's ragged bundle.
+    let mut session = String::new();
+    let script = "load unit-cube; ls bodies[0].shape; set bodies[0].shape.pitch 0.25; colour phase 1; \
+                  overlay leaves cut 1; set bodies[0].shape.pitch 1e-4; stats";
+    let answer = capture(&cav, &["exec", script]).or_else(|refused| Ok::<_, String>(refused))?;
+    if !answer.contains("pitch") {
+        return Err(format!("the session does not speak of the pitch:\n{answer}"));
+    }
+    session.push_str(&format!("$ cav exec \"{script}\"\n{}\n", abridged(answer.trim_end(), 3000)));
+    let bundle = temp("mixed");
+    let ran = capture(&cav, &["run", "mixed-array", "--out", &bundle])?;
+    session.push_str(&format!("$ cav run mixed-array --out target/demo-s3/mixed\n{}\n", ran.replace(&bundle, "target/demo-s3/mixed")));
+    for (name, bytes) in files_of(Path::new(&bundle))? {
+        session.push_str(&format!("  {name:<24} {:>9} bytes\n", bytes.len()));
+    }
+    write(&out, "session.txt", &session.replace(&scratch.to_string_lossy().replace('\\', "/"), "target/demo-s3"), &mut made)?;
+
+    // 8. Timings: the voxeliser on spheres, optimised as the hot crate is; frame times with leaves.
+    let mut timings = String::from("This machine; recorded, not gated.\n\n");
+    let output = Command::new("cargo")
+        .args(["run", "--quiet", "--release", "-p", "cav-core", "--example", "voxel_timing"])
+        .current_dir(root)
+        .output()
+        .map_err(|e| format!("voxel_timing: {e}"))?;
+    if !output.status.success() {
+        return Err(format!("voxel_timing: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+    timings.push_str("## The voxeliser (release build)\n");
+    timings.push_str(&String::from_utf8_lossy(&output.stdout));
+    let shot = root.join("target").join("demo-timing.png").to_string_lossy().into_owned();
+    for (what, script) in [
+        ("platonic-row: five solids drawn as their leaves", "load platonic-row; colour height"),
+        ("sphere: a voxel sphere at r/16 beside the analytic one", "load sphere; colour height"),
+    ] {
+        let lines =
+            capture(&app, &["--screenshot", &shot, "--size", "1440x900", "--timings", "--exec", script])?;
+        timings.push_str(&format!("\n## {what}\n"));
+        timings.extend(lines.lines().skip(1).map(|line| format!("{line}\n")));
+    }
+    write(&out, "timings.txt", &timings, &mut made)?;
+
+    eprintln!("xtask: demo S3 wrote {} files to {}:", made.len(), out.display());
     for file in &made {
         eprintln!("  {file}");
     }
