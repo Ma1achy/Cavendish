@@ -1,20 +1,20 @@
 $ cav figure comb periodogram --preset paper-column --out periodogram-paper-column.svg
-periodogram-paper-column.svg: periodogram of scene `comb`, preset paper-column, 0.10 s
+periodogram-paper-column.svg: periodogram of scene `comb`, preset paper-column, 0.05 s
 beside it: periodogram-paper-column.csv, periodogram-paper-column.json
 $ cav figure comb periodogram --preset paper-column --out periodogram-paper-column.pdf
-periodogram-paper-column.pdf: periodogram of scene `comb`, preset paper-column, 0.11 s
+periodogram-paper-column.pdf: periodogram of scene `comb`, preset paper-column, 0.05 s
 beside it: periodogram-paper-column.csv, periodogram-paper-column.json
 $ cav figure comb periodogram --preset paper-column --out periodogram-paper-column.png
-periodogram-paper-column.png: periodogram of scene `comb`, preset paper-column, 0.64 s
+periodogram-paper-column.png: periodogram of scene `comb`, preset paper-column, 0.61 s
 beside it: periodogram-paper-column.csv, periodogram-paper-column.json
 $ cav figure pass signal --preset slide --out signal-slide.svg
-signal-slide.svg: signal of scene `pass`, preset slide, 0.07 s
+signal-slide.svg: signal of scene `pass`, preset slide, 0.01 s
 beside it: signal-slide.csv, signal-slide.json
 $ cav figure cadence-lab cadence --preset paper-full --out cadence-paper-full.pdf
-cadence-paper-full.pdf: cadence of scene `cadence-lab`, preset paper-full, 0.13 s
+cadence-paper-full.pdf: cadence of scene `cadence-lab`, preset paper-full, 0.07 s
 beside it: cadence-paper-full.csv, cadence-paper-full.json
 $ cav figure staggered flight --preset paper-full --out flight-paper-full.svg
-flight-paper-full.svg: flight of scene `staggered`, preset paper-full, 0.09 s
+flight-paper-full.svg: flight of scene `staggered`, preset paper-full, 0.02 s
 beside it: flight-paper-full.csv, flight-paper-full.json
 $ python -c "from cavendish_figures import load, redraw; redraw(load('periodogram-paper-column.json').unwrap(), 'redrawn.png').unwrap()"
 redrawn.png
