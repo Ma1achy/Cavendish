@@ -110,3 +110,97 @@ The comb of `fig2_10m` panel b (`S_clean_b`, T_obs = 2×10⁴ s), √S at the bi
   147 nodes, the full 2T).
 - The first measurement time `t[0]` is 2T in every case (1.46 s and 5.0 s), and the shots are one
   cycle apart; the source's phase is zero at the first launch.
+
+## Extended bodies (S3, TASK-S3-12)
+
+Four more scripts, for `plan/VALIDATION-AND-RESEARCH.md` §2.3: `cuboid`, `cylinder`, `scaffold`
+and `scaffold_multimode`, at the same commit (`d7d360a`; none of the four has changed since, to
+the head of 24 Nov 2026, `5ff8152`). Run on 24 Nov 2026 on the build PC, Python 3.14.3, numpy
+2.5.5, scipy 1.18.1, matplotlib 3.11.2 (Agg), each case in a process of its own:
+
+```
+<venv>/Scripts/python -I scripts/reference_fixtures.py <clone> oracle/fixtures/scripts --only cuboid
+                                                                  (likewise cylinder, scaffold, scaffold_multimode)
+```
+
+Their lengths are `N` cycles of 2 s (`scaffold_multimode`: `T_total`), and the shots they will make
+(`subsample_times`) are checked against the cap before and after. Their tables of the potential
+are module constants too, so each phase series is also made a second time with the table's grids
+doubled: the change is the scripts' own table error, which the oracle tests take as the measure of
+how far the scripts can be trusted. An override that spans several lines (`R_sweep = np.array([…`)
+is replaced whole (`_replaced`), the old cases keep the old rule.
+
+All four scripts use their own constants: `m_atom = 1.46e-25` kg (⁸⁸Sr), `hbar = 1.055e-34`,
+`G = 6.67430e-11`, `u_initial = 3.86` m/s, `T = 0.73` s, 1000 kicks of 698 nm, `g = 9.81`, IFOs
+launched from 0 and 5 m, a floor at each launch height, arm tables at `dt = 0.01` s interpolated
+linearly (`interp1d`) with the scripts' one-step offset (the arm at `(j + 1)·dt` paired with the
+source at `j·dt`), the potential tabulated and interpolated by `RectBivariateSpline`, and the
+flight integral by `scipy.integrate.quad`.
+
+| Case | Script | Overrides | Shots | Time |
+|---|---|---|---|---|
+| `cuboid/` | `cuboid` | `N = 20` (published 100); doubled: `n_zgrid = 100`, `n_x0grid = 100` | 20 | 67 s, doubled 278 s |
+| `cylinder/` | `cylinder` | `R_sweep`, `H_sweep` (six each), `H_vals = logspace(log10 0.05, log10 30, 25)[::3]` (nine), `h0_vals = [0, 1, 2.5, 5]` | 50 | 2402 s |
+| `scaffold/` | `scaffold` | `N = 50` (as published); doubled: `n_zgrid = 60`, `n_alpha = 24` | 50 | 1431 s, doubled 3890 s |
+| `scaffold_multimode/` | `scaffold_multimode` | `T_total = 200` (published 3×10⁶); doubled: `n_zgrid = 60`, `n_alpha = 24` | 100 | 1407 s, doubled 3925 s |
+
+| Directory | Arrays (all float64) |
+|---|---|
+| `cuboid/` | `V_grid [50, 50]`: the script's `gravitational_potential` (its `nquad`) at the atom on the tower's axis (x = y = 0) at height `z_grid[j]` with the wall's centre at `x0_grid[i]`, J/kg; `x0_grid [50]`, `z_grid [50]`, m; `subsample_times [20]`, s: shot k is integrated over `[t_k − 1, t_k − 1 + 2T]` (the script's own window); `phase [20]`: its `phase_difference` (lower minus upper), rad; `phase_doubled [20]`: the same with both grids at 100 |
+| `cylinder/` | `R_sweep [6]`, `max_R [6]`: part 1, the largest AC |ΔΦ| (rad) of a cylinder of 100 kg, H = 1 m, centred at height 1 m, oscillating as `x₀ = 3 + 0.1 cos(2π·0.1 t)` m, at each radius; `H_sweep [6]`, `max_H [6]`: the same at R = 0.5 m for each height; `pm_max [1]`: the point mass of part 1; `H_vals [9]`, `h0_vals [4]`, `results [4, 9]`: part 2, R = 0.5 m, centre height `h0_vals[i]`, height `H_vals[j]`; `pm_refs [4]`: the point mass at each `h0`; `potential_points [10, 9]` (x, y, z of the point, x₀, y₀, z₀ of the centre, M, R, H) and `potential [10]`: the script's `cylinder_potential` there, J/kg |
+| `scaffold/`, `scaffold_multimode/` | `V_grid [12, 30]`: the script's `scaffold_potential_mode` (48 steel members, each by `nquad`) on the axis at height `z_grid[j]` with every member displaced by `amplitudes[i]·alpha_grid[i]` in x, J/kg; `alpha_grid [12]`, `z_grid [30]`; `subsample_times`, s (readouts, the shot launched 2T earlier); `phase`: `phase_diff` (`phase_diff_raw` in the multimode script), rad; `phase_ac`: `pd_ac`, the series less its mean; `phase_ac_doubled`: the same with `n_zgrid = 60`, `n_alpha = 24`; `amplitudes [48]`, m: each member's amplitude, linear in its centre's height; `member_centre [48, 3]`, `member_mass [48]`, `member_radius [48]`, `member_length [48]`, m and kg; `member_axis [48]`: 0, 1, 2 for a cylinder along x, y, z |
+
+`meta.json` beside each holds the script's constants, the overrides, the doubled grids, the
+scaffold's modes, the run's seconds and the sizes below.
+
+**For George** (recorded in `meta.json`, not acted on): `scaffold_multimode` sets
+`A_top = 1e-4` m while its comment says "1 mm"; the fixture keeps the script's number.
+
+### Sanity numbers (this run)
+
+| Case | Largest AC \|ΔΦ\| | Its doubled-grid series differs by (of that) |
+|---|---|---|
+| `cuboid` | 29.86 µrad | 1.16% |
+| `scaffold` | 1.850 µrad | 242% |
+| `scaffold_multimode` | 0.934 µrad | 101% |
+
+The cuboid's potential is −3.35×10⁻⁷ to −4.25×10⁻⁷ J/kg over its grid; its `nquad` agrees with the
+prism in 40-digit arithmetic to 1.1×10⁻¹⁴ at five points (measured before the fixture was made,
+docs/slices/S3.md §3.3). **The scaffolds' phase series are dominated by their tables:** doubling
+`n_zgrid` and `n_alpha` changes them by more than their own size (the members are 3.4 cm rods
+0.5 m from the axis, and 30 heights over 10.5 m do not resolve them), so a phase-level comparison
+with these scripts can hold the engine only to within that change; their potential tables
+(`V_grid`, by `nquad`) are the precise part. The cylinder's ratio of the largest AC |ΔΦ| to the
+point mass's, by `h0` (rows) and `H` (columns, 0.05 to 30 m):
+
+| h0 | 0.05 | 0.111 | 0.247 | 0.551 | 1.22 | 2.72 | 6.06 | 13.5 | 30 |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 | 1.0193 | 1.0190 | 1.0177 | 1.0114 | 0.9806 | 0.8416 | 0.3734 | 0.2638 | 0.0066 |
+| 1 | 1.0298 | 1.0294 | 1.0274 | 1.0176 | 0.9699 | 0.7567 | 0.0620 | 0.4639 | 0.0081 |
+| 2.5 | 1.0075 | 1.0074 | 1.0069 | 1.0044 | 0.9924 | 0.9421 | 0.8090 | 0.2735 | 0.0044 |
+| 5 | 1.0120 | 1.0119 | 1.0111 | 1.0071 | 0.9879 | 0.8997 | 0.5811 | 0.0718 | 0.0014 |
+
+At small H the ratio is 1.007 to 1.030, not 1: the cylinder's 0.5 m radius at 3 m, as well as its
+height. It leaves 1 by 10% between H = 1.22 and 2.72 m at every h0.
+
+## The scaffolds' potential, integrated tightly (`tight_*.npy`)
+
+The scaffold scripts integrate each tube's potential with `nquad` at scipy's default tolerances,
+an absolute 1.49e-8 on values of about 1e-9 J/kg, so each value is good to about 2e-7 of the
+potential, while the change of the potential as the scaffold moves is about 1e-15 J/kg. Measured
+on 24 Nov 2026: at α = −0.636, z = 7.57 m the scaffold's table changes by −1.80e-14 J/kg from
+α = −0.091, and the same integrand integrated with `epsabs = 0`, `epsrel = 1e-12` changes by
++9.7e-16. The tables, and the phase series made from them, are mostly that error (which is why
+doubling their grids moves the series by 242% and 101% of its peak).
+
+`scripts/scaffold_reference.py` evaluates the scripts' integrand (the same arithmetic, written
+again, with the members and amplitudes of these fixtures) tightly at 3 × 6 of each table's points
+and writes, for `scaffold/` and `scaffold_multimode/`:
+
+| Array | Shape | What |
+|---|---|---|
+| `tight_alpha.npy` | (3,) | α of each row: the table's α nearest zero, then its 1st and 4th |
+| `tight_z.npy` | (6,) | heights on the tower's axis, metres: every 5th of the table's `z_grid` |
+| `tight_V.npy` | (3, 6) | the potential, J/kg |
+
+Run 24 Nov 2026, Python 3.14.3, numpy 2.5.5, scipy 1.18.1: 223 s and 239 s.

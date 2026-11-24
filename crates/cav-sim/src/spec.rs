@@ -1842,8 +1842,12 @@ mod tests {
         assert_eq!(spec.array.instrument_of(2), aice);
         assert_eq!(spec.array.instrument_of(1), spec.array.instrument);
         assert!(!spec.array.is_uniform());
-        // The tower's taller arms are said, not refused: AICE's reach 108.9 m in its 100 m tower.
-        let warnings = spec.reach_warnings();
+        // Arms above a tower are said, not refused: AICE's 108.9 m fit its 140 m tower (George,
+        // 24 Nov 2026), and in a tower of 100 m they would not.
+        assert!(spec.reach_warnings().is_empty(), "{:?}", spec.reach_warnings());
+        let mut short = spec.clone();
+        short.array.towers[2].instrument.as_mut().unwrap().tower_height = Some(100.0);
+        let warnings = short.reach_warnings();
         assert!(
             warnings.len() == 1 && warnings[0].starts_with("tower 3: the arms reach 108.8"),
             "{warnings:?}"

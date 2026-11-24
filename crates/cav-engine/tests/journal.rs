@@ -264,7 +264,7 @@ fn a_journal_that_has_stopped_can_be_started_again() {
     let answer = engine.run_line("journal restart").unwrap();
     assert!(answer.starts_with("the journal starts again"), "{answer}");
     assert_eq!(state(&engine), kept);
-    assert_eq!(kept.1, (Some("AICE 100 m".to_owned()), 2, 0, 4.25, Some(Target::Tower(3))));
+    assert_eq!(kept.1, (Some("AICE 140 m".to_owned()), 2, 0, 4.25, Some(Target::Tower(3))));
     assert_eq!(engine.history(), (true, false));
     assert_eq!(steps(&engine), 1);
     // The journal is whole again and is the session: it replays to this state, from memory and
@@ -365,12 +365,12 @@ fn a_bundle_under_a_comparison_is_the_scenes_own_and_says_so() {
     // With the comparison on: the manifest and the log line both say whose reading this is.
     let (compared, said) = export(&mut engine, "compared");
     assert!(
-        said.contains("of the scene's own instrument: the comparison with AICE 100 m is not in it"),
+        said.contains("of the scene's own instrument: the comparison with AICE 140 m is not in it"),
         "{said}"
     );
     let manifest: serde_json::Value = serde_json::from_slice(&compared["manifest.json"]).unwrap();
     let note = manifest["comparison"].as_str().expect("a note on the comparison");
-    assert!(note.contains("the scene's own instruments alone") && note.contains("on AICE 100 m"), "{note}");
+    assert!(note.contains("the scene's own instruments alone") && note.contains("on AICE 140 m"), "{note}");
     // The numbers are the scene's own instrument's: AION-10's, not AICE's.
     assert_eq!(
         manifest["spec"]["array"]["instrument"],

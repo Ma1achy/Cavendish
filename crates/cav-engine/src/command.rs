@@ -757,6 +757,6 @@ pub struct Stats {
     /// Where the signal stands: `refined`, `stale` or `none`.
     pub signal: String,
     /// The instrument the scene is also being read on, by its preset's name if it is one
-    /// (`AICE 100 m`), else `another instrument`; `None` when nothing is being compared.
+    /// (`AICE 140 m`), else `another instrument`; `None` when nothing is being compared.
     pub compare: Option<String>,
 }

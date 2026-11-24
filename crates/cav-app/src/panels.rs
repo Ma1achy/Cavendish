@@ -737,7 +737,7 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
         shell,
         ui,
         "preset",
-        &[("AION-10", "preset aion10", is("aion10")), ("AICE 100 m", "preset aice", is("aice"))],
+        &[("AION-10", "preset aion10", is("aion10")), ("AICE 140 m", "preset aice", is("aice"))],
     );
     let other = shell.engine.comparison().cloned();
     let with = |name: &str| cav_sim::presets::load(name).is_ok_and(|preset| Some(preset) == other);

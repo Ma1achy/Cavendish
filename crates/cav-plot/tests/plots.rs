@@ -1163,8 +1163,9 @@ fn a_mixed_array_flies_each_tower_s_own_arms() {
     for (n, two_t) in [1.46f32, 5.0, 1.8].into_iter().enumerate() {
         assert!((width(n) - two_t * per_second).abs() < 0.5, "tower {}: {}", n + 1, width(n));
     }
-    // One height scale for the rows: AICE's arms, 108.9 m, the tallest thing flown.
-    assert!((plot.drawn.y.hi - 108.88).abs() < 0.01, "{}", plot.drawn.y.hi);
+    // One height scale for the rows: AICE's tower, 140 m, the tallest thing drawn (its arms reach
+    // 108.9 m inside it; it was the arms while the tower was 100 m).
+    assert!((plot.drawn.y.hi - 140.0).abs() < 0.01, "{}", plot.drawn.y.hi);
     // The AICE tower's periodogram runs to its own Nyquist frequency, 0.1 Hz; AION-10's to 0.25.
     let mut aice = subject(PaneContent::Periodogram);
     aice.tower = Some(2);

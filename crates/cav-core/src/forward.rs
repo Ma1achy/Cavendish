@@ -160,7 +160,7 @@ impl Instrument {
         }
     }
 
-    /// The AICE 100 m preset of the reference scripts: Δr = 70 m, T = 2.5 s, and the launch
+    /// The AICE 140 m preset of the reference scripts: Δr = 70 m, T = 2.5 s, and the launch
     /// derived from this instrument's own gravity, T, atom and kick number by
     /// [`Self::symmetric_launch`], as George's `fig2_final.py` derives it.
     #[must_use]

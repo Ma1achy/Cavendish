@@ -7,6 +7,12 @@
     <clone>/fig2_10m             ──>  <out>/fig2_10m/           panels b, c, d; ULDM; noise; periodograms
     <clone>/fig2_uldm_folding    ──>  <out>/fig2_uldm_folding/  the same, on the 100 m instrument
     <clone>/fig2_folding_map.py  ──>  <out>/fig2_folding_map/   the fold_frequency triangle wave
+    <clone>/cuboid               ──>  <out>/cuboid/             the shaky wall: potential table, phase series, doubled grid
+    <clone>/cylinder             ──>  <out>/cylinder/           cylinder against point mass, the sweeps of parts 1 and 2
+    <clone>/scaffold             ──>  <out>/scaffold/           48 members, one mode: potential table, phase, doubled grid
+    <clone>/scaffold_multimode   ──>  <out>/scaffold_multimode/ the same, eight modes
+
+The S3 cases take minutes to an hour each: ``--only cuboid,cylinder`` runs some of them alone.
 
 The scripts (github.com/Thranduil02/atom-interferometry) have no command line and their lengths are
 module constants, so each script's source is executed with those constants replaced, every match of
@@ -26,7 +32,7 @@ The clone is untrusted input: run this from outside it, with ``-I``, from a thro
 has numpy and matplotlib and nothing else.
 
 Usage:
-    python -I scripts/reference_fixtures.py <clone-dir> <out-dir>
+    python -I scripts/reference_fixtures.py <clone-dir> <out-dir> [--only cuboid,cylinder,scaffold,scaffold_multimode]
 
 Needs Python 3.10, numpy 2 and matplotlib.
 """
@@ -38,6 +44,7 @@ import io
 import json
 import re
 import sys
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -144,7 +151,7 @@ def _load(clone: Path, case: Case) -> Namespace:
 
 def _array(value: object) -> Array:
     """A copy of ``value`` as contiguous float64."""
-    return np.ascontiguousarray(np.asarray(value, dtype = np.float64)).copy()
+    return np.array(np.asarray(value, dtype = np.float64), order = "C", copy = True)
 
 
 def _number(namespace: Namespace, name: str) -> float:
@@ -191,7 +198,7 @@ def _write(out: Path, case: Case, arrays: Mapping[str, Array], meta: dict[str, o
         "overrides":  case.overrides,
         "seed":       SEED,
         "numpy":      np.__version__,
-        "matplotlib": matplotlib.__version__,
+        "matplotlib": str(getattr(matplotlib, "__version__")),
         "python":     sys.version.split()[0],
         **meta,
         "arrays":     {name: list(array.shape) for name, array in arrays.items()},
@@ -370,23 +377,229 @@ def folding_map(clone: Path, out: Path) -> None:
     _write(out, case, {"f_true": true, "f_obs": seen}, {"f_N": nyquist})
 
 
+# ==================================== EXTENDED BODIES (S3) ====================================
+#
+# ``cuboid``, ``cylinder``, ``scaffold`` and ``scaffold_multimode`` (VALIDATION §2.3). Their
+# lengths are ``N`` cycles of 2 s (or ``T_total``), and their tables of the potential are module
+# constants too, so a second run with the tables' grids doubled measures the scripts' own table
+# error: the change in their phase series.
+
+
+def _statement_end(source: str, start: int) -> int:
+    """Where the statement whose right-hand side begins at ``start`` ends: the first newline or
+    ``;`` outside brackets, so that an assignment over several lines is replaced whole."""
+    depth = 0
+    for at in range(start, len(source)):
+        char = source[at]
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        elif char in "\n;" and depth <= 0:
+            return at
+    return len(source)
+
+
+def _replaced(source: str, overrides: Mapping[str, str]) -> str:
+    """The script's source with every assignment to each overridden name replaced whole, however
+    many lines it takes. An override that matches nothing is an error."""
+    for name, value in overrides.items():
+        pattern = re.compile(rf"^(\s*){re.escape(name)}(\s*)=(?!=)", re.M)
+        pieces: list[str] = []
+        at, found = 0, 0
+        for match in pattern.finditer(source):
+            if match.start() < at:
+                continue
+            end = _statement_end(source, match.end())
+            pieces += [source[at:match.start()], f"{match.group(1)}{name}{match.group(2)}= {value} "]
+            at, found = end, found + 1
+        if found < 1:
+            raise SystemExit(f"override `{name}` matched nothing: the script has changed")
+        source = "".join(pieces) + source[at:]
+    return source
+
+
+def _run(clone: Path, script: str, overrides: Mapping[str, str], shots: Callable[[Namespace], int], expected: int) -> tuple[Namespace, float]:
+    """Executes ``script`` with ``overrides`` as ``_load`` does, after checking the shots the
+    overrides imply against the cap, and checks the namespace agrees afterwards. Returns the
+    namespace and the seconds it took."""
+    if not 0 < expected <= MAX_SHOTS:
+        raise SystemExit(f"{script}: {expected} shots is outside 1 to {MAX_SHOTS}")
+    path   = clone / script
+    source = _replaced(path.read_text(encoding = "utf-8"), overrides)
+    np.random.seed(SEED)
+    namespace: Namespace = {"__name__": "ref"}
+    started = time.perf_counter()
+    with contextlib.redirect_stdout(io.StringIO()):
+        exec(compile(source, str(path), "exec"), namespace)  # noqa: S102 - the point of this harness
+    took = time.perf_counter() - started
+    plt.close("all")
+    if shots(namespace) != expected:
+        raise SystemExit(f"{script}: the overrides did not take: {shots(namespace)} shots, not {expected}")
+    return namespace, took
+
+
+def _shots_of(namespace: Namespace) -> int:
+    """How many readouts the script made: its ``subsample_times``."""
+    return len(_array(namespace["subsample_times"]))
+
+
+_SCRIPT_CONSTANTS = ("G", "u_initial", "m_atom", "hbar", "wavelength", "T", "g")
+
+
+def _base(namespace: Namespace, names: tuple[str, ...]) -> dict[str, float]:
+    """Named module constants, as floats, that exist in the namespace."""
+    return {name: _number(namespace, name) for name in names if name in namespace}
+
+
+def _members(namespace: Namespace) -> dict[str, Array]:
+    """A scaffold's members as columns: centre (dx, dy, dz), mass, radius, length and axis
+    (0 = x, 1 = y, 2 = z), each ``[48]``."""
+    members = cast(list[dict[str, object]], namespace["members"])
+    axis    = {"x": 0.0, "y": 1.0, "z": 2.0}
+    return {
+        "member_centre": np.array([[float(cast(float, m[k])) for k in ("dx", "dy", "dz")] for m in members]),
+        "member_mass":   np.array([float(cast(float, m["M"])) for m in members]),
+        "member_radius": np.array([float(cast(float, m["R"])) for m in members]),
+        "member_length": np.array([float(cast(float, m["H"])) for m in members]),
+        "member_axis":   np.array([axis[str(m["axis"])] for m in members]),
+    }
+
+
+def cuboid(clone: Path, out: Path) -> None:
+    """``cuboid``: the shaky wall. Its potential table, its phase series at 20 cycles, and the
+    same series with both of its table's grids doubled."""
+    case = Case("cuboid", "cuboid", {"N": "20"}, 2.0)
+    ns, took = _run(clone, case.script, case.overrides, _shots_of, 20)
+    doubled, took2 = _run(clone, case.script, {"N": "20", "n_zgrid": "100", "n_x0grid": "100"}, _shots_of, 20)
+    series, series2 = _array(ns["phase_difference"]), _array(doubled["phase_difference"])
+    arrays = {
+        "V_grid": _array(ns["V_grid"]), "x0_grid": _array(ns["x0_grid"]), "z_grid": _array(ns["z_grid"]),
+        "subsample_times": _array(ns["subsample_times"]), "phase": series, "phase_doubled": series2,
+    }
+    peak = float(np.max(np.abs(series - series.mean())))
+    _write(out, case, arrays, {
+        "constants": _base(ns, (*_SCRIPT_CONSTANTS, "n", "dt", "N", "M_cub", "a_cub", "b_cub", "c_cub", "y_0", "z_0",
+                                "x_0_centre", "x_0_amp", "f_osc", "n_zgrid", "n_x0grid")),
+        "doubled_overrides": {"n_zgrid": 100, "n_x0grid": 100},
+        "readout": "shot k is integrated over [t_k - 1, t_k - 1 + 2T], t_k = subsample_times[k] (the script's own window)",
+        "peak_ac_phase": peak,
+        "table_change_over_peak_ac": float(np.max(np.abs(series2 - series))) / peak,
+        "seconds": {"run": took, "doubled": took2},
+    })
+
+
+def cylinder(clone: Path, out: Path) -> None:
+    """``cylinder``: parts 1 and 2 on subsets of their sweeps, and the cylinder's potential at a
+    few points for a check of the potential itself."""
+    overrides = {
+        "R_sweep": "np.array([0.05, 0.2, 0.5, 1.0, 1.5, 2.5])",
+        "H_sweep": "np.array([0.05, 0.5, 2.0, 5, 10.0, 25])",
+        "H_vals":  "np.logspace(np.log10(0.05), np.log10(30), 25)[::3]",
+        "h0_vals": "[0.0, 1.0, 2.5, 5.0]",
+    }
+    case = Case("cylinder", "cylinder", overrides, 2.0)
+    ns, took = _run(clone, case.script, overrides, _shots_of, 50)
+    potential = cast(Callable[..., float], ns["cylinder_potential"])
+    # (x, y, z) of the point, then the cylinder: centre (x0, y0, z0), M, R, H.
+    points = np.array([
+        [0.0, 0.0, z, 3.0, 0.0, h0, 100.0, 0.5, height]
+        for z in (0.0, 1.0, 2.5, 5.0, 10.0) for (h0, height) in ((1.0, 1.0), (2.5, 10.0))
+    ])
+    values = np.array([potential(*row) for row in points])
+    h0s    = cast(list[float], ns["h0_vals"])
+    results = cast(dict[float, Array], ns["results"])
+    refs    = cast(dict[float, float], ns["pm_refs"])
+    arrays = {
+        "R_sweep": _array(ns["R_sweep"]), "max_R": _array(ns["max_R"]),
+        "H_sweep": _array(ns["H_sweep"]), "max_H": _array(ns["max_H"]),
+        "pm_max": np.array([_number(ns, "pm_max")]),
+        "H_vals": _array(ns["H_vals"]), "h0_vals": _array(h0s),
+        "results": np.array([results[h0] for h0 in h0s]), "pm_refs": np.array([refs[h0] for h0 in h0s]),
+        "potential_points": points, "potential": values,
+    }
+    _write(out, case, arrays, {
+        "constants": _base(ns, (*_SCRIPT_CONSTANTS, "n_kicks", "dt", "N", "M_total", "x_0_centre", "x_0_amp", "f_osc", "y_0",
+                                "z_0_cyl", "H_fixed", "R_fixed", "n_zgrid", "n_x0grid", "M_cyl", "R_cyl", "x_0_cen",
+                                "x_0_amp2", "f_osc2", "w_0", "n_x0grid2", "n_zgrid2")),
+        "part1": "max_R[i]: largest AC |ΔΦ| of the cylinder (H = H_fixed) at R_sweep[i], centre height z_0_cyl; max_H likewise with R = R_fixed; pm_max the point mass",
+        "part2": "results[i, j]: largest AC |ΔΦ| of the cylinder (R = R_cyl) at h0_vals[i], H_vals[j]; pm_refs[i] the point mass at h0_vals[i]",
+        "potential_points": "columns x, y, z, x0, y0, z0, M, R, H: the script's cylinder_potential at each row",
+        "seconds": {"run": took},
+    })
+
+
+def _scaffold(clone: Path, out: Path, case: Case, shots: int, doubled: dict[str, str], modes: bool) -> None:
+    """A scaffold script: its potential table, its phase series, and the series again with the
+    table's grids doubled."""
+    ns, took = _run(clone, case.script, case.overrides, _shots_of, shots)
+    ns2, took2 = _run(clone, case.script, {**case.overrides, **doubled}, _shots_of, shots)
+    series, series2 = _array(ns["pd_ac"]), _array(ns2["pd_ac"])
+    arrays = {
+        "V_grid": _array(ns["V_grid"]), "alpha_grid": _array(ns["alpha_grid"]), "z_grid": _array(ns["z_grid"]),
+        "subsample_times": _array(ns["subsample_times"]),
+        "phase": _array(ns["phase_diff_raw" if modes else "phase_diff"]), "phase_ac": series,
+        "phase_ac_doubled": series2, "amplitudes": _array(ns["amplitudes"]), **_members(ns),
+    }
+    meta: dict[str, object] = {
+        "constants": _base(ns, (*_SCRIPT_CONSTANTS, "n_kicks", "dt", "N", "T_total", "T_cycle", "rho_steel", "R_edge",
+                                "L_cube", "N_cubes", "A_bottom", "A_top", "n_zgrid", "n_alpha", "f_osc")),
+        "doubled_overrides": doubled,
+        "peak_ac_phase": float(np.max(np.abs(series))),
+        "table_change_over_peak_ac": float(np.max(np.abs(series2 - series))) / float(np.max(np.abs(series))),
+        "seconds": {"run": took, "doubled": took2},
+    }
+    if modes:
+        meta["modes"] = [_plain(m) for m in cast(list[dict[str, object]], ns["modes"])]
+        meta["note_for_george"] = "A_top is 1e-4 m while the script's comment says 1 mm; the fixture keeps 1e-4"
+    _write(out, case, arrays, meta)
+
+
+def scaffold(clone: Path, out: Path) -> None:
+    """``scaffold``: one mode at 22.4 Hz, 50 cycles."""
+    _scaffold(clone, out, Case("scaffold", "scaffold", {"N": "50"}, 2.0), 50, {"n_zgrid": "60", "n_alpha": "24"}, False)
+
+
+def scaffold_multimode(clone: Path, out: Path) -> None:
+    """``scaffold_multimode``: eight modes sharing one profile, 200 s (100 shots)."""
+    _scaffold(clone, out, Case("scaffold_multimode", "scaffold_multimode", {"T_total": "200"}, 2.0), 100,
+              {"n_zgrid": "60", "n_alpha": "24"}, True)
+
+
+BODIES: dict[str, Callable[[Path, Path], None]] = {
+    "cuboid": cuboid, "cylinder": cylinder, "scaffold": scaffold, "scaffold_multimode": scaffold_multimode,
+}
+"""The S3 cases, by name: each can be run on its own (``--only``), since together they take hours."""
+
+
 # ======================================== MAIN ========================================
 
 
 def main(arguments: list[str]) -> int:
     """Runs every case. ``arguments`` is the clone's directory and the fixtures' directory."""
-    if len(arguments) != 2:
+    only: list[str] = []
+    if len(arguments) == 4 and arguments[2] == "--only":
+        only = arguments[3].split(",")
+        if not all(name in BODIES for name in only):
+            raise SystemExit(f"--only takes some of {', '.join(BODIES)}")
+    elif len(arguments) != 2:
         print(__doc__)
         return 2
     clone, out = Path(arguments[0]).resolve(), Path(arguments[1]).resolve()
     if clone in Path(__file__).resolve().parents or clone in Path.cwd().resolve().parents or clone == Path.cwd().resolve():
         raise SystemExit("run this from outside the clone, and keep the harness outside it")
     _silence()
+    if only:
+        for name in only:
+            BODIES[name](clone, out)
+        return 0
     one_d_oscillator(clone, out)
     hundred_metre_oscillators(clone, out)
     figure_two(clone, out, Case("fig2_10m", "fig2_10m", {"T_total": "2e4"}, 2.0))
     figure_two(clone, out, Case("fig2_uldm_folding", "fig2_uldm_folding", {"T_total": "2e4"}, 5.0))
     folding_map(clone, out)
+    for case in BODIES.values():
+        case(clone, out)
     total = sum(f.stat().st_size for f in out.rglob("*") if f.is_file() and f.suffix in {".npy", ".json"})
     print(f"{'total':<20} {total / 1e6:.2f} MB in {out}")
     return 0

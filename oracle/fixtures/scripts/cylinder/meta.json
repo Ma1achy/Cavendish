@@ -1,0 +1,88 @@
+{
+  "script": "cylinder",
+  "upstream": "https://github.com/Thranduil02/atom-interferometry",
+  "commit": "d7d360ad92837bec929b85091b2bdd9af81d285c",
+  "overrides": {
+    "R_sweep": "np.array([0.05, 0.2, 0.5, 1.0, 1.5, 2.5])",
+    "H_sweep": "np.array([0.05, 0.5, 2.0, 5, 10.0, 25])",
+    "H_vals": "np.logspace(np.log10(0.05), np.log10(30), 25)[::3]",
+    "h0_vals": "[0.0, 1.0, 2.5, 5.0]"
+  },
+  "seed": 0,
+  "numpy": "2.5.5",
+  "matplotlib": "3.11.2",
+  "python": "3.14.3",
+  "constants": {
+    "G": 6.6743e-11,
+    "u_initial": 3.86,
+    "m_atom": 1.46e-25,
+    "hbar": 1.055e-34,
+    "wavelength": 6.98e-07,
+    "T": 0.73,
+    "g": 9.81,
+    "n_kicks": 1000.0,
+    "dt": 0.01,
+    "N": 50.0,
+    "M_total": 100.0,
+    "x_0_centre": 3.0,
+    "x_0_amp": 0.1,
+    "f_osc": 0.1,
+    "y_0": 0.0,
+    "z_0_cyl": 1.0,
+    "H_fixed": 1.0,
+    "R_fixed": 0.5,
+    "n_zgrid": 30.0,
+    "n_x0grid": 15.0,
+    "M_cyl": 100.0,
+    "R_cyl": 0.5,
+    "x_0_cen": 3.0,
+    "x_0_amp2": 0.1,
+    "f_osc2": 0.1,
+    "w_0": 0.0,
+    "n_x0grid2": 20.0,
+    "n_zgrid2": 50.0
+  },
+  "part1": "max_R[i]: largest AC |\u0394\u03a6| of the cylinder (H = H_fixed) at R_sweep[i], centre height z_0_cyl; max_H likewise with R = R_fixed; pm_max the point mass",
+  "part2": "results[i, j]: largest AC |\u0394\u03a6| of the cylinder (R = R_cyl) at h0_vals[i], H_vals[j]; pm_refs[i] the point mass at h0_vals[i]",
+  "potential_points": "columns x, y, z, x0, y0, z0, M, R, H: the script's cylinder_potential at each row",
+  "seconds": {
+    "run": 2401.9050083999755
+  },
+  "arrays": {
+    "R_sweep": [
+      6
+    ],
+    "max_R": [
+      6
+    ],
+    "H_sweep": [
+      6
+    ],
+    "max_H": [
+      6
+    ],
+    "pm_max": [
+      1
+    ],
+    "H_vals": [
+      9
+    ],
+    "h0_vals": [
+      4
+    ],
+    "results": [
+      4,
+      9
+    ],
+    "pm_refs": [
+      4
+    ],
+    "potential_points": [
+      10,
+      9
+    ],
+    "potential": [
+      10
+    ]
+  }
+}

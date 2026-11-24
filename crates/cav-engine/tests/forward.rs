@@ -832,7 +832,7 @@ cav_validate::case! {
     subsystem: "presets",
     slice: "S2",
     reference: Exact,
-    against: "the comb read on AION-10 and, by `compare aice`, on AICE 100 m as well: the comparison's signal against the same scene loaded with the AICE instrument; values of any channel that differ in any bit",
+    against: "the comb read on AION-10 and, by `compare aice`, on AICE 140 m as well: the comparison's signal against the same scene loaded with the AICE instrument; values of any channel that differ in any bit",
     unit: Count,
     tolerance: 0.0,
     measure: {
@@ -904,7 +904,7 @@ fn a_preset_is_one_undoable_edit() {
         own.contains("Nyquist frequency, 0.25 Hz") && other.contains("Nyquist frequency, 0.1 Hz"),
         "{own}\n{other}"
     );
-    assert!(engine.run_line("stats").unwrap().contains("\"compare\": \"AICE 100 m\""));
+    assert!(engine.run_line("stats").unwrap().contains("\"compare\": \"AICE 140 m\""));
     assert_eq!(Engine::replay(engine.journal()).unwrap().digest(), engine.digest());
     engine.run_line("compare off").unwrap();
     assert!(engine.comparison().is_none());
