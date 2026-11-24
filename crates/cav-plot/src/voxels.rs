@@ -9,8 +9,8 @@
 //! The vector view ([`view`]) draws a pane's voxel bodies as a technical drawing would: an
 //! orthographic projection along the pane's direction, each cube's faces that look towards the
 //! viewer (at most three) as filled polygons, far to near (painter's order; no other hiding),
-//! each face a little darker the more it turns from the light, the towers as lines, and the
-//! legend. It draws at most the cubes the frame holds ([`cav_sim::voxel_view::MAX_DRAWN_CUBES`]).
+//! each face a little darker the more it turns from the light, the towers as lines, a scale bar
+//! and the legend. It draws at most the cubes the frame holds ([`cav_sim::voxel_view::MAX_DRAWN_CUBES`]).
 
 use cav_core::Vec3;
 use cav_sim::voxel_view::{LeafField, VoxelFrame};
@@ -268,6 +268,15 @@ pub struct Drawn {
     pub cubes: usize,
     /// Whether the pane's own projection was perspective (the drawing is orthographic always).
     pub was_perspective: bool,
+    /// The length of the scale bar drawn, metres.
+    pub scale: f64,
+}
+
+/// The longest of 1, 2 or 5 times a power of ten that is at most `most` metres.
+#[must_use]
+pub fn scale_length(most: f64) -> f64 {
+    let power = 10f64.powf(most.log10().floor());
+    [5.0, 2.0, 1.0].into_iter().map(|m| m * power).find(|l| *l <= most).unwrap_or(power)
 }
 
 /// A pane's view of `scene` as a vector drawing of `points` (width, height): the voxel bodies
@@ -409,8 +418,36 @@ pub fn view(
             }
         }
     }
+    // The scale: a bar of a round length at the bottom left, about a fifth of the width at most.
+    let margin = style.text_size;
+    let metres = scale_length(0.2 * width / scale);
+    let bar = (metres * scale) as f32;
+    let y = points[1] - 1.5 * margin;
+    let label = if metres >= 1.0 { format!("{metres} m") } else { format!("{} cm", metres * 100.0) };
+    drawing.items.push(Item::Line {
+        points: vec![[margin, y], [margin + bar, y]],
+        width: 2.0 * style.rule_width,
+        colour: style.ink,
+        dash: Vec::new(),
+    });
+    for x in [margin, margin + bar] {
+        drawing.items.push(Item::Line {
+            points: vec![[x, y - 0.3 * margin], [x, y + 0.3 * margin]],
+            width: style.rule_width,
+            colour: style.ink,
+            dash: Vec::new(),
+        });
+    }
+    drawing.items.push(Item::Text {
+        at: [margin + 0.5 * bar, y - 0.4 * margin],
+        anchor: Anchor(0.5, 1.0),
+        text: label,
+        face: Face::Sans,
+        size: style.text_size,
+        colour: style.text,
+        turned: false,
+    });
     if let Some(key) = legend(frame, scene, style, measure) {
-        let margin = style.text_size;
         let at = [points[0] - key.size[0] - margin, points[1] - key.size[1] - margin];
         drawing.append(&key, at);
     }
@@ -419,6 +456,7 @@ pub fn view(
         faces: faces.len(),
         cubes,
         was_perspective: view.projection == cav_sim::Projection::Perspective,
+        scale: metres,
     };
     (drawing, drawn)
 }
