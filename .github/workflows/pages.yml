@@ -1,0 +1,89 @@
+# The application as a web page (docs/slices/S17.md): after every push to `main`, `cargo xtask web build` compiles
+# `cav-web` for wasm32 with WebGPU, runs wasm-bindgen and wasm-opt and stamps the revision into the page; the folder
+# `target/web/dist` is uploaded as the Pages artifact and deployed to https://ma1achy.github.io/Cavendish/. It commits
+# nothing anywhere (the artifact goes to Pages' own store), runs on no pull request and gates nothing: a failed run
+# leaves the last good page up. Independent of `progress.yml` (its own concurrency group; neither reads the other).
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Read only, except where the deploy job asks for more.
+permissions:
+  contents: read
+
+# One deployment at a time; a newer push waits for the one under way rather than cutting it short.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      # build.rs asks git for HEAD to stamp the revision; one commit is enough.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      # The toolchain is the one rust-toolchain.toml pins; rustup installs it on first use, here.
+      - name: The wasm target
+        run: rustup target add wasm32-unknown-unknown
+      # Its own key, so that this cache and any native one do not evict each other.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: web
+      # Prebuilt binaries at pinned versions, checked against hashes written here (read from each release's own
+      # checksum file on 24 Nov 2026). wasm-bindgen must be the version Cargo.lock has: `cargo xtask web build`
+      # refuses any other, so a lock that moves on fails here until the version and hash below follow it.
+      - name: wasm-bindgen 0.2.130 and binaryen version_133
+        run: |
+          set -euo pipefail
+          tools="$RUNNER_TEMP/tools"
+          mkdir -p "$tools/bin"
+          cd "$tools"
+          wb=wasm-bindgen-0.2.130-x86_64-unknown-linux-musl
+          curl -sSfL -o wb.tar.gz "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/0.2.130/$wb.tar.gz"
+          echo "9687f3bb551b9f66f37ed32a40d7913a00f7962db653054e56857bc306c3227f  wb.tar.gz" | sha256sum -c -
+          tar xzf wb.tar.gz
+          cp "$wb/wasm-bindgen" bin/
+          curl -sSfL -o binaryen.tar.gz \
+            https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz
+          echo "2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489  binaryen.tar.gz" | sha256sum -c -
+          tar xzf binaryen.tar.gz
+          cp binaryen-version_133/bin/wasm-opt bin/
+          cp -r binaryen-version_133/lib "$tools/lib" 2>/dev/null || true
+          echo "$tools/bin" >> "$GITHUB_PATH"
+          "$tools/bin/wasm-bindgen" --version
+          "$tools/bin/wasm-opt" --version
+      - name: Build the page
+        run: cargo xtask web build
+      - name: What was built
+        run: |
+          set -euo pipefail
+          ls -l target/web/dist
+          echo "revision stamped: $(grep -o 'name="revision" content="[^"]*"' target/web/dist/index.html)"
+          echo "the commit: $GITHUB_SHA"
+          grep -q "content=\"$GITHUB_SHA\"" target/web/dist/index.html
+          gzip -9 -c target/web/dist/cavendish_bg.wasm | wc -c | xargs echo "cavendish_bg.wasm gzipped, bytes:"
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: target/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # The least a Pages deployment needs (the deploy-pages action's documentation).
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
