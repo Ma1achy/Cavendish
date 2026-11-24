@@ -458,7 +458,15 @@ impl<'a> Sheet<'a> {
     ) -> Rect {
         let text = text.into();
         let took = self.took(at, anchor, &text, face, size);
-        self.drawing.items.push(Item::Text { at: p(at), anchor, text: text.clone(), face, size, colour });
+        self.drawing.items.push(Item::Text {
+            at: p(at),
+            anchor,
+            text: text.clone(),
+            face,
+            size,
+            colour,
+            turned: false,
+        });
         self.labels.push((text, took));
         took
     }
