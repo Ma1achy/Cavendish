@@ -86,8 +86,8 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "figure",
-        usage: "figure <signal|periodogram|cadence|flight|view> [tower <N>] [gradiometer|lower|upper] [from <a> to <b>] [as <paper-column|paper-full|slide|poster|screen>] [size <W>x<H>] [dpi <N>] to <file.svg|.pdf|.png> [@N]",
-        about: "write a figure: a plot or a pane's view as SVG, PDF or PNG in a preset's style and size (size in mm, dpi for a PNG), with its data (.csv or .npy) and a .json of axes, units and provenance beside it",
+        usage: "figure <signal|periodogram|cadence|flight|view> [tower <N>] [gradiometer|lower|upper] [from <a> to <b>] [as <paper-column|paper-full|slide|poster|screen>] [size <W>x<H>] [dpi <N>] [untitled] to <file.svg|.pdf|.png> [@N]",
+        about: "write a figure: a plot or a pane's view as SVG, PDF or PNG in a preset's style and size (size in mm, dpi for a PNG; untitled: no title, the axes take the room), with its data (.csv or .npy) and a .json of axes, units and provenance beside it",
         example: "figure periodogram tower 2 as paper-column to fig.pdf",
     },
     CommandDoc {
@@ -285,6 +285,9 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
             }
             if let Some(dpi) = figure.dpi {
                 line.push_str(&format!(" dpi {dpi}"));
+            }
+            if !figure.title {
+                line.push_str(" untitled");
             }
             line.push_str(&format!(" to {}", quoted(to)));
             if figure.what == crate::FigureKind::View {
@@ -813,6 +816,10 @@ impl Engine {
                     figure.dpi = Some(number(dpi, "pixels per inch", "figure")?);
                     words = rest;
                 }
+                ["untitled", rest @ ..] => {
+                    figure.title = false;
+                    words = rest;
+                }
                 [channel, rest @ ..] if ChannelName::parse(channel).is_some() => {
                     figure.channel = ChannelName::parse(channel).expect("just checked");
                     words = rest;
@@ -1125,6 +1132,13 @@ mod tests {
             (
                 "figure cadence tower 1 as paper-column to window.svg",
                 figure(FigureKind::Cadence, FigureFormat::Svg, "window.svg", |f| f.tower = Some(1)),
+            ),
+            (
+                "figure flight as paper-full untitled to flight.pdf",
+                figure(FigureKind::Flight, FigureFormat::Pdf, "flight.pdf", |f| {
+                    f.preset = "paper-full".into();
+                    f.title = false;
+                }),
             ),
             (
                 "figure view as screen to plan.png @3",

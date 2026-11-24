@@ -241,6 +241,7 @@ fn subject(figure: &Figure, content: PaneContent) -> Subject {
         tower: figure.tower,
         channel: figure.channel,
         span: figure.span,
+        title: figure.title,
         ..Subject::new(figure.pane, content)
     }
 }
@@ -357,6 +358,9 @@ fn cli_line(engine: &Engine, figure: &Figure, file: &str) -> String {
     if let Some(dpi) = figure.dpi {
         line.push_str(&format!(" --dpi {dpi}"));
     }
+    if !figure.title {
+        line.push_str(" --no-title");
+    }
     line
 }
 
@@ -441,12 +445,18 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
     }
     let table = table(engine, figure)?;
     let data_file = beside(file, if table.is_long() { "npy" } else { "csv" });
-    let axis = |name: &(String, String), axis: &plots::Axis| {
+    // Each axis as it was drawn: its marks, what is written at them, the short marks between,
+    // and its label, so that a redraw can be the same figure.
+    let axis = |name: &(String, String), axis: &plots::Axis, n: usize| {
         json!({
             "name": name.0,
             "unit": name.1,
             "scale": if axis.log { "log" } else { "linear" },
             "range": [axis.lo, axis.hi],
+            "label": drawn.axis_labels[n],
+            "ticks": drawn.ticks[n],
+            "tick_labels": drawn.tick_labels[n],
+            "minor_ticks": drawn.minor_ticks[n],
         })
     };
     // Which columns each series is: a signal's table has three for each of its towers, and a
@@ -487,10 +497,11 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
         .collect();
     let (mut shared, mut provenance) = provenance(engine, figure, file, &style);
     let extra = json!({
-        "title": drawing.title,
+        // The title drawn, or none; the drawing keeps its name for the file's metadata.
+        "title": figure.title.then_some(&drawing.title),
         "pixels": pixels,
         "dpi": pixels.map(|_| figure.dpi.unwrap_or(style.dpi)),
-        "axes": { "x": axis(&described.x, &drawn.x), "y": axis(&described.y, &drawn.y) },
+        "axes": { "x": axis(&described.x, &drawn.x, 0), "y": axis(&described.y, &drawn.y, 1) },
         "series": series,
         "marks": described.marks,
         "colours": {

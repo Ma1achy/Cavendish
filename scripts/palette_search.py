@@ -182,13 +182,20 @@ def apart(first: Array, second: Array) -> Array:
     a, b  = seen(linear_of(first)), seen(linear_of(second))
     worst = np.full((len(first), len(second)), np.inf)
     for n, (left, right) in enumerate(zip(a, b)):
-        worst = np.minimum(worst, ciede2000(lab_of(left), lab_of(right)))
+        # With ``--hold`` the conditions the palette before was held to (normal vision and
+        # Machado's three) are shifted so that they still pass only at 12, whatever the target.
+        shift = SHIFT if n < 4 else 0.0
+        worst = np.minimum(worst, ciede2000(lab_of(left), lab_of(right)) + shift)
         if n < 4:
             # OKLab x 100: at least 12 under normal vision and Machado's three (the palette
             # before was held to it), and at least 15 in normal vision (the validator's floor).
             ok    = np.linalg.norm(oklab_of(left)[:, None, :] - oklab_of(right)[None, :, :], axis = 2)
-            worst = np.minimum(worst, ok - 3.0 if n == 0 else ok)
+            worst = np.minimum(worst, (ok - 3.0 if n == 0 else ok) + shift)
     return worst
+
+
+SHIFT: float = 0.0
+"""What ``apart`` adds to the conditions of the palette before: ``target - 12`` with ``--hold``, else 0."""
 
 
 # ========================================= THE SEARCH =========================================
@@ -224,7 +231,7 @@ def score(rgb: Array) -> float:
     """The least of a palette's pairs (``apart``) and of its grey rule, 12 the pass mark of both."""
     pairs = apart(rgb, rgb)
     least = float(np.min(pairs[np.triu_indices(len(rgb), 1)]))
-    return min(least, greys(rgb) + 4.0)
+    return min(least, greys(rgb) + 4.0 + SHIFT)
 
 
 def greys_of_first(rgb: Array) -> float:
@@ -235,6 +242,9 @@ def greys_of_first(rgb: Array) -> float:
 
 TARGETS: tuple[float, ...] = (14.0, 13.5, 13.0, 12.75, 12.5, 12.25, 12.0, 11.75, 11.5, 11.25, 11.0)
 """The least pair asked for, tried from the top: the first that is met is the one refined."""
+
+HELD_TARGETS: tuple[float, ...] = (12.0, 11.75, 11.5, 11.25, 11.0, 10.75, 10.5)
+"""With ``--hold``: the least pair asked of Vienot's and Brettel's simulations alone."""
 
 
 def settle(pairs: Array, lightness: Array, target: float, rng: np.random.Generator, moves: int) -> tuple[list[int], float]:
@@ -291,25 +301,31 @@ def settle(pairs: Array, lightness: Array, target: float, rng: np.random.Generat
     return best
 
 
-def search(step: int = 12, starts: int = 64) -> Array:
+def search(step: int = 12, starts: int = 64, hold: bool = False) -> Array:
     """
     The best eight colours found: for each target of ``TARGETS`` in turn, ``starts`` seeded
     attempts to place eight colours with no pair nearer than it; the first target met is taken
     (or, if none is, the attempt that came nearest), then refined to single bytes.
 
     Args:
-        step   (int): The grid's spacing, sRGB bytes.
-        starts (int): How many attempts a target is given.
+        step   (int):  The grid's spacing, sRGB bytes.
+        starts (int):  How many attempts a target is given.
+        hold   (bool): Hold normal vision and Machado's three at 12 (and OKLab at its floors)
+                       and lower only the target of Vienot's and Brettel's simulations.
     Returns:
         Array: The palette, sRGB bytes ``[8, 3]``, the first four those held apart in grey.
     """
+    global SHIFT
     pool      = candidates(step)
     pairs     = apart(pool, pool)
     lightness = lab_of(linear_of(pool))[:, 0]
     rng       = np.random.default_rng(20261124)
     print(f"{len(pool)} candidate colours on a grid of {step}", file = sys.stderr)
     nearest: tuple[float, list[int]] | None = None
-    for target in TARGETS:
+    for target in (HELD_TARGETS if hold else TARGETS):
+        if hold:
+            SHIFT = target - 12.0
+            pairs = apart(pool, pool)
         for attempt in range(starts):
             members, short = settle(pairs, lightness, target, rng, moves = 400)
             if nearest is None or short < nearest[0]:
@@ -386,12 +402,13 @@ def main() -> int:
     parser.add_argument("--measure", help = "eight colours as rrggbb,rrggbb,...: measure them, search nothing")
     parser.add_argument("--step", type = int, default = 12, help = "the grid's spacing, sRGB bytes")
     parser.add_argument("--starts", type = int, default = 64, help = "how many first colours to start from")
+    parser.add_argument("--hold", action = "store_true", help = "hold the conditions of the palette before at 12; lower only Vienot's and Brettel's")
     args = parser.parse_args()
     if args.measure:
         rgb = np.array([[int(colour.strip().lstrip("#")[k:k + 2], 16) for k in (0, 2, 4)]
                         for colour in args.measure.split(",")], dtype = np.float64)
     else:
-        rgb = ordered(search(args.step, args.starts))
+        rgb = ordered(search(args.step, args.starts, args.hold))
     return 0 if table(rgb) else 1
 
 

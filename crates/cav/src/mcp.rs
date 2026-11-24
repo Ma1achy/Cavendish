@@ -113,6 +113,8 @@ pub struct FigureArgs {
     pub dpi: Option<f64>,
     /// For a view: which pane's camera, from 1 (default: the active pane).
     pub pane: Option<usize>,
+    /// Whether the picture has a title at its top (default true). Without one the axes take the room and the record's `title` is null.
+    pub title: Option<bool>,
 }
 
 impl Cav {
@@ -286,6 +288,7 @@ impl Cav {
             args.tower.or(matches!(what, FigureKind::Periodogram | FigureKind::Cadence).then_some(1));
         figure.channel = channel;
         (figure.span, figure.size_mm, figure.dpi) = (args.span, args.size_mm, args.dpi);
+        figure.title = args.title.unwrap_or(true);
         figure.pane = if what == FigureKind::View { pane } else { 0 };
         within_this_server(&figure)?;
         let command = cav_engine::Command::Export {

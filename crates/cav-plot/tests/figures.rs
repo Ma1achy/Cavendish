@@ -488,11 +488,11 @@ fn the_paper_periodogram_is_the_house_style() {
     }
     let texts = built.drawing.texts();
     // They are named in the key above the axes, beside a sample of their grey.
-    assert!(texts.contains(&"shot-noise floors, 1e-4 and 1e-5 rad/√Hz"), "{texts:?}");
+    assert!(texts.contains(&"shot-noise floors, 100 and 10 µrad/√Hz"), "{texts:?}");
     let (_, named) =
         plot.drawn.labels.iter().find(|(text, _)| text.starts_with("shot-noise floors")).unwrap();
     assert!(named.bottom() <= area.top(), "{named:?}");
-    assert!(texts.contains(&"rad/√Hz") && texts.iter().any(|t| t.starts_with("frequency, Hz")));
+    assert!(texts.contains(&"√S, rad/√Hz") && texts.iter().any(|t| t.starts_with("frequency, Hz")));
     // A stem for every harmonic of the comb, from the axis up: solid, or dashed if it is folded.
     let Reply::Periodogram(spectrum) = engine
         .query(&Query::Periodogram { tower: 2, channel: ChannelName::Gradiometer, compared: false })
@@ -543,9 +543,43 @@ fn the_paper_periodogram_is_the_house_style() {
             _ => None,
         })
         .collect();
-    assert_eq!(diamonds.len(), 1);
+    // Two diamonds: the mark on the axes, and its sample in the key above them, beside its name.
+    assert_eq!(diamonds.len(), 2);
     assert!((diamonds[0][0] - expected.x).abs() < 0.01 && (diamonds[0][1] - expected.y).abs() < 0.01);
+    assert!(diamonds[1][1] < area.top(), "the key's diamond is above the axes");
     assert!(area.contains(expected) && texts.contains(&"ULDM benchmark"));
+    assert_eq!(built.provenance["marks"]["reference"]["uldm_benchmark"]["named_in_the_key"], true);
+    // Review 29: no label by a mark meets a stem, a dot or a diamond but its own.
+    assert!(!plot.drawn.marked.is_empty(), "the harmonics are labelled");
+    for (text, took, own) in &plot.drawn.marked {
+        for (n, mark) in plot.drawn.marks.iter().enumerate() {
+            assert!(
+                own.contains(&n) || !took.intersects(*mark),
+                "`{text}` at {took:?} meets mark {n} at {mark:?}"
+            );
+        }
+    }
+    // Control: where the rule before put "ULDM benchmark" (to the right of its mark, a line
+    // above it), the rectangle meets the stem of the comb's second harmonic.
+    let u = style.unit();
+    let [w, h] = cav_plot::drawing::Measure::size(
+        &cav_plot::fonts::Outlines,
+        "ULDM benchmark",
+        cav_plot::drawing::Face::Sans,
+        style.label_size,
+    );
+    let before = egui::Rect::from_min_size(
+        egui::pos2(expected.x + 3.0 * u, expected.y - 3.0 * u - h),
+        egui::vec2(w, h),
+    );
+    let second = plot.drawn.stems.iter().find(|stem| stem.1 == 2).unwrap().2;
+    let stem = plot
+        .drawn
+        .marks
+        .iter()
+        .find(|mark| (mark.center().x - second).abs() < 0.5 && mark.height() > 5.0)
+        .unwrap();
+    assert!(before.intersects(*stem), "the old place {before:?} is clear of the 2f₀ stem {stem:?}");
     // The provenance says the mark is the plan's reference, not something simulated.
     let mark = &built.provenance["marks"]["reference"]["uldm_benchmark"];
     assert!(
@@ -606,7 +640,8 @@ fn a_figure_is_bounded_in_points_and_pixels() {
             _ => None,
         })
         .collect();
-    assert_eq!(series.len(), 5);
+    // Five towers of 21,000 shots, each drawn as its envelope: two lines (review 29).
+    assert_eq!(series.len(), 2 * 5);
     assert!(series.iter().all(|points| *points <= plots::MAX_POINTS + 2), "{series:?}");
     // … while the data beside it keeps every value, as .npy because it is long.
     let table = built.table.as_ref().unwrap();

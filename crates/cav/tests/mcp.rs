@@ -455,9 +455,18 @@ fn mcp_figure_writes_a_figure_and_says_what_it_wrote() {
     client.text("figure", arguments);
     let svg = std::fs::read_to_string(dir.join("s.svg")).unwrap();
     assert!(svg.contains("width=\"200mm\" height=\"100mm\""));
+    let record =
+        |name: &str| -> Value { serde_json::from_slice(&std::fs::read(dir.join(name)).unwrap()).unwrap() };
+    assert!(record("s.json")["files"][0]["title"].is_string(), "titled unless told otherwise");
+    // Without its title: the record says none, and the line said is the console's `untitled`.
+    let arguments = json!({ "what": "flight", "file": file("f.svg"), "title": false });
+    let said = client.text("figure", arguments);
+    assert!(said.starts_with("figure flight as paper-column untitled to "), "{said}");
+    assert_eq!(record("f.json")["files"][0]["title"], Value::Null);
     // It is a command like any other: the journal has it, and the log.
     let journal = client.text("command", json!({ "line": "journal" }));
-    assert_eq!(journal.matches("\"Figure\"").count(), 2, "{journal}");
+    assert_eq!(journal.matches("\"Figure\"").count(), 3, "{journal}");
+    assert_eq!(journal.matches("\"title\":false").count(), 1, "{journal}");
     // Control: refusals are tool errors with the reason, and write nothing.
     for (arguments, why) in [
         (json!({ "what": "spectrum", "file": file("x.svg") }), "is not something a figure shows"),

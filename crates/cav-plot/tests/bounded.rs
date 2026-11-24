@@ -135,18 +135,20 @@ fn a_figure_is_bounded_in_series_and_its_data_is_streamed() {
         assert_eq!(at(row, 3 * tower + 1).to_bits(), signal.channel(tower, channel)[row].to_bits());
         assert_eq!(at(row, 3 * tower + 2), 1.0);
     }
-    // The same figure built here, with no file: twelve series of at most 2002 points.
+    // The same figure built here, with no file: twelve series of at most 2002 points, each
+    // (4000 shots in fewer points across) drawn as its envelope, two lines (review 29).
     let asked = Figure::new(FigureKind::Signal, FigureFormat::Svg);
     let built = figure::build(&engine, &asked, "sig.svg").unwrap();
     let (lines, points) = points_of(&built.drawing);
-    assert_eq!(lines, 12);
+    assert_eq!(lines, 2 * 12);
     assert!(points <= 12 * (plots::MAX_POINTS + 2), "{points} points");
     let table = built.table.as_ref().unwrap();
     assert_eq!((table.rows(), table.columns.len()), (shots, 3 * towers));
 
     // Control, the cap: the same plot with the cap lifted is every tower's line. Built here, it
-    // holds more than the export may, and more points than 2 MB of SVG can say (a point is at
-    // least four characters there: two digits, a comma and a space).
+    // holds more than the export may, and its SVG is more than 2 MB. (Before review 29 drew a
+    // dense tower as its envelope this was said of the points, at four characters at least
+    // apiece; the envelope has fewer points, 200,000, so the SVG itself is measured.)
     let style = cav_plot::style::Style::preset("paper-column").unwrap();
     let size = style.size_mm.map(|mm| (mm / cav_plot::style::MM_PER_POINT) as f32);
     let lifted = plots::Subject { most_series: usize::MAX, ..plots::Subject::new(0, PaneContent::Signal) };
@@ -156,8 +158,10 @@ fn a_figure_is_bounded_in_series_and_its_data_is_streamed() {
         "with the cap lifted: {lines} series, {points} points, {:.1} MiB to build",
         uncapped as f64 / MIB as f64
     );
-    assert_eq!(lines, towers);
-    assert!(points * 4 > SVG_BYTES, "{points} points");
+    assert_eq!(lines, 2 * towers, "every tower's envelope");
+    let written = svg::write(&plot.drawing).unwrap().len();
+    println!("its SVG: {written} bytes");
+    assert!(written > SVG_BYTES, "{points} points, {written} bytes");
     assert!(uncapped > EXPORT_BYTES, "building every series held only {uncapped} bytes");
     drop(plot);
     // Control, the streaming: the table as it was held before, every column in memory, is more
