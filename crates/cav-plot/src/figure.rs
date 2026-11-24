@@ -333,6 +333,40 @@ fn table(engine: &Engine, figure: &Figure) -> Result<Table, String> {
     Ok(Table { columns: names, values: Values::Held(held) })
 }
 
+/// The data behind a view of voxel bodies: every cube drawn, a row each.
+fn cubes_table(frame: &cav_sim::voxel_view::VoxelFrame) -> Table {
+    let unit = frame.colouring.field.unit().to_owned();
+    let mut columns: Vec<Vec<f64>> = vec![Vec::new(); 7];
+    for body in &frame.bodies {
+        for cube in &body.cubes {
+            let row = [
+                (body.body + 1) as f64,
+                cube.centre.x,
+                cube.centre.y,
+                cube.centre.z,
+                cube.side,
+                f64::from(cube.level),
+                cube.value,
+            ];
+            for (column, value) in columns.iter_mut().zip(row) {
+                column.push(value);
+            }
+        }
+    }
+    let names = [
+        ("body", "its number from 1"),
+        ("x", "m"),
+        ("y", "m"),
+        ("z", "m"),
+        ("side", "m"),
+        ("level", "levels above the finest"),
+    ];
+    let mut named: Vec<(String, String)> =
+        names.iter().map(|(n, u)| ((*n).to_owned(), (*u).to_owned())).collect();
+    named.push((frame.colouring.field.name().to_owned(), unit));
+    Table { columns: named, values: Values::Held(columns) }
+}
+
 /// The `cav figure` line that makes `figure` again from the scene of `engine`, to `file`.
 fn cli_line(engine: &Engine, figure: &Figure, file: &str) -> String {
     let spec = engine.spec();
@@ -655,9 +689,10 @@ impl Studio {
     }
 }
 
-/// A figure of a pane's view: the renderer's picture, alone (PNG) or held by a drawing; or, for
-/// an SVG or a PDF of a pane with voxel bodies, a vector drawing of them
-/// ([`crate::voxels::view`]), which needs no device. The PNG's bytes come back beside it.
+/// A figure of a pane's view: for a pane with voxel bodies, in every format, a drawing of them
+/// ([`crate::voxels::view`]: on the preset's paper, with its title, legend and scale, and the
+/// cubes drawn as its data file); otherwise the renderer's picture, alone (PNG) or held by a
+/// drawing. The PNG's bytes come back beside it when it is the renderer's.
 fn view(
     engine: &Engine,
     figure: &Figure,
@@ -666,28 +701,35 @@ fn view(
 ) -> Result<(Built, Option<Vec<u8>>), String> {
     let style = Style::preset(&figure.preset)?;
     let size = size_mm(figure, &style);
-    if figure.format != FigureFormat::Png
-        && let Some(voxels) = engine.frame(figure.pane)?.voxels
-    {
+    if let Some(voxels) = engine.frame(figure.pane)?.voxels {
         let spec = engine.spec();
         let points = [(size[0] / MM_PER_POINT) as f32, (size[1] / MM_PER_POINT) as f32];
         let name = format!("View · {}", spec.name);
         let title = figure.title.then_some(name.as_str());
         let camera = engine.view(figure.pane);
         let (drawing, drawn) = crate::voxels::view(spec, camera, voxels, &style, points, title, &Outlines);
+        let pixels = if figure.format == FigureFormat::Png {
+            Some(pixels(size, figure.dpi.unwrap_or(style.dpi))?)
+        } else {
+            None
+        };
         let (mut shared, mut provenance) = provenance(engine, figure, file, &style);
         let field = voxels.colouring.field;
         merge(
             &mut provenance,
             json!({
                 "title": title,
-                "vector": true,
+                "vector": pixels.is_none(),
+                "pixels": pixels,
+                "dpi": pixels.map(|_| figure.dpi.unwrap_or(style.dpi)),
                 "projection": "orthographic",
                 "note": if drawn.was_perspective {
                     "the pane is in perspective; the drawing is orthographic along its direction, faces far to near"
                 } else {
                     "orthographic along the pane's direction, faces far to near"
                 },
+                "scale_m": drawn.scale,
+                "colours": { "background": style.background.css(), "ink": style.ink.css() },
                 "voxels": {
                     "field": field.name(),
                     "unit": field.unit(),
@@ -701,8 +743,22 @@ fn view(
                 },
             }),
         );
-        merge(&mut shared, json!({ "camera": camera, "data": null }));
-        return Ok((Built { drawing, table: None, figure: shared, provenance, style, pixels: None }, None));
+        let table = cubes_table(voxels);
+        let data_file = beside(file, if table.is_long() { "npy" } else { "csv" });
+        merge(
+            &mut shared,
+            json!({
+                "camera": camera,
+                "data": {
+                    "file": data_file,
+                    "format": if table.is_long() { "npy" } else { "csv" },
+                    "rows": table.rows(),
+                    "columns": table.columns.iter().map(|(name, unit)| json!({ "name": name, "unit": unit })).collect::<Vec<_>>(),
+                    "note": "every cube drawn, a row each: the body it is of, its centre and side in the world's frame, its level and the value it is coloured by",
+                },
+            }),
+        );
+        return Ok((Built { drawing, table: Some(table), figure: shared, provenance, style, pixels }, None));
     }
     let pixels = pixels(size, figure.dpi.unwrap_or(style.dpi))?;
     let rgba = studio.view(engine, figure.pane, pixels)?;

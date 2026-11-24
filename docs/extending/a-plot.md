@@ -99,13 +99,15 @@ The console's `figure <word> … to <file>`, `cav figure` and MCP's `figure` the
 from `FigureKind::ALL`, and `cav render` and MCP's `render_view` paint a pane through `paint`.
 
 **A view is not a plot.** `figure view` is the renderer's picture of a scene pane (a PNG, or an
-SVG or a PDF holding that picture), except that an SVG or a PDF of a pane showing voxel bodies is
-a vector drawing of them (`cav_plot::voxels::view`, called from `view` in `figure.rs`): an
-orthographic projection, each cube's visible faces as `Item::Polygon`, far to near, the towers
-as lines and the legend (`cav_plot::voxels::legend`, the same one the application paints in the
-pane's corner). Its record says `"vector": true` and what colours it (`voxels.field`, `unit`,
-`range`, `cut`). A new field to colour by is a `LeafField` in `crates/cav-sim/src/voxel_view.rs`
-(its value in `voxel_frame`), and its legend follows.
+SVG or a PDF holding that picture), except that a pane showing voxel bodies is drawn, in every
+format, as a vector drawing of them (`cav_plot::voxels::view`, called from `view` in
+`figure.rs`; a PNG is that drawing rasterised): an orthographic projection on the preset's
+paper, each cube's visible faces as `Item::Polygon`, far to near, the towers as lines, the title,
+a scale bar of a round length and the legend (`cav_plot::voxels::legend`, the same one the
+application paints in the pane's corner). Its data file is every cube drawn, a row each (body,
+centre, side, level, value). Its record says what colours it (`voxels.field`, `unit`, `range`,
+`cut`) and the scale (`scale_m`). A new field to colour by is a `LeafField` in
+`crates/cav-sim/src/voxel_view.rs` (its value in `voxel_frame`), and its legend follows.
 
 ## Tests that then hold it
 

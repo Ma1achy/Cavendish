@@ -178,10 +178,47 @@ fn a_voxel_view_is_a_vector_figure() {
     let scene = cav_sim::dev::unit_cube();
     let (lo, hi) = frame_of(&scene, LeafField::Height).range.unwrap();
     assert_eq!((range[0].as_f64().unwrap(), range[1].as_f64().unwrap()), (lo, hi));
-    assert!(!dir.join("view.csv").exists());
+    // It is a figure as the presets promise one (REBUILD §6, R10; S3's review, finding 6): on the
+    // preset's paper, with its title, the legend's heading and numbers, a scale, and the cubes it
+    // draws as its data file.
+    let paper = Style::preset("paper-full").unwrap().background;
+    assert!(text.contains(&format!("fill=\"{}\"", paper.css())), "the paper's colour");
+    let labels: Vec<&str> = text.split("aria-label=\"").skip(1).map(|t| &t[..t.find('"').unwrap()]).collect();
+    for wanted in ["View · unit-cube", "height, m", &number(lo, LeafField::Height)] {
+        assert!(labels.contains(&wanted), "{wanted:?} not in {labels:?}");
+    }
+    let scale = svg_entry["scale_m"].as_f64().unwrap();
+    assert!(labels.iter().any(|l| l.ends_with(" m") && l.starts_with(&format!("{scale}"))), "{labels:?}");
+    assert_eq!(record["data"]["file"], "view.csv");
+    let data = std::fs::read_to_string(dir.join("view.csv")).unwrap();
+    let mut lines = data.lines();
+    assert_eq!(
+        lines.next().unwrap(),
+        "body [its number from 1],x [m],y [m],z [m],side [m],level [levels above the finest],height [m]"
+    );
+    let cubes = svg_entry["voxels"]["cubes"].as_u64().unwrap() as usize;
+    assert_eq!(lines.count(), cubes, "a row a cube drawn");
     // Control: a scene with no voxel bodies has no voxel frame, and its view stays the
     // renderer's picture (`gpu_a_view_figure_is_the_renderers_picture`).
     assert!(engine("load comb").frame(0).unwrap().voxels.is_none());
+}
+
+#[test]
+fn gpu_a_voxel_view_as_png_is_the_same_figure() {
+    // A PNG of a view with voxel bodies is the drawing, rasterised: the preset's paper, not the
+    // window's dark picture with no key (S3's review, finding 6); with the same data file.
+    let dir = scratch("png");
+    let mut cube = engine("load unit-cube; view iso; colour height");
+    cube.run_line(&format!("figure view as paper-full dpi 100 to {}", word(&dir.join("view.png")))).unwrap();
+    let (rgba, _) = cav_render::decode_png(&std::fs::read(dir.join("view.png")).unwrap()).unwrap();
+    let paper = Style::preset("paper-full").unwrap().background;
+    assert_eq!(&rgba[..3], &paper.0);
+    assert!(dir.join("view.csv").is_file());
+    // Control: a scene with no voxel bodies is still the renderer's picture, on its own ground.
+    let mut plain = engine("load comb; view top");
+    plain.run_line(&format!("figure view as paper-full dpi 100 to {}", word(&dir.join("comb.png")))).unwrap();
+    let (rgba, _) = cav_render::decode_png(&std::fs::read(dir.join("comb.png")).unwrap()).unwrap();
+    assert_ne!(&rgba[..3], &paper.0);
 }
 
 /// Files that differ in any byte between two directories, a missing file counting.
@@ -214,7 +251,7 @@ cav_validate::case! {
         write_view(&dirs[1], "height");
         // Control: another field is another figure, every file of it.
         write_view(&dirs[2], "level");
-        assert_eq!(differing(&dirs[0], &dirs[2]), 3);
+        assert_eq!(differing(&dirs[0], &dirs[2]), 4);
         cav_validate::Measured::Error(differing(&dirs[0], &dirs[1]) as f64)
     },
 }
