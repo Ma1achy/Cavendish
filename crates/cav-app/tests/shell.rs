@@ -557,6 +557,71 @@ fn a_click_selects_a_body_and_the_panels_show_what_the_towers_read() {
 }
 
 #[test]
+fn four_plots_in_a_small_window_keep_their_text_in_their_panes() {
+    // Review 29 (S2.md §7.14), written first: every line of text a plot writes is the first of
+    // its forms that fits, the last cut short with an ellipsis. At 1280 × 720 with four panes,
+    // each a plot (cadence among them), every text's rectangle is inside its pane. Control: the
+    // cadence legend's old line, measured the same way, is wider than the pane's axes.
+    use cav_engine::{PaneContent, Query, Reply};
+    let mut rig = Rig::new([1280, 720]);
+    rig.shell.run("load comb").unwrap();
+    rig.shell.run("set array.schedule.loss 0.05").unwrap();
+    rig.shell.run("panes 4").unwrap();
+    rig.shell.run("show signal @1").unwrap();
+    rig.shell.run("show periodogram @2").unwrap();
+    rig.shell.run("show cadence @3").unwrap();
+    rig.shell.run("show flight @4").unwrap();
+    assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
+    rig.frames(vec![vec![], vec![]]);
+    let layout = rig.shell.layout().clone();
+    let kinds: Vec<PaneContent> = layout.plots.iter().map(|d| d.content).collect();
+    assert_eq!(
+        kinds,
+        [PaneContent::Signal, PaneContent::Periodogram, PaneContent::Cadence, PaneContent::Flight]
+    );
+    for drawn in &layout.plots {
+        let pane = layout.panes[drawn.pane].expand(0.5);
+        for (text, took) in &drawn.labels {
+            assert!(
+                pane.contains_rect(*took),
+                "{:?}: `{text}` at {took:?} leaves pane {pane:?}",
+                drawn.content
+            );
+        }
+    }
+    // Control: the legend's line as it was written before, whole, in the same face and size.
+    let cadence = &layout.plots[2];
+    let Ok(Reply::Cadence(predicted)) = rig.shell.engine.query(&Query::Cadence) else {
+        panic!("a prediction")
+    };
+    let fewest = predicted.kept.iter().min().unwrap();
+    let most = predicted.kept.iter().max().unwrap();
+    let old = format!(
+        "mean cycle {} s · Nyquist {} Hz · {} shots planned, {fewest} to {most} taken a tower · smallest detectable tone × {:.3}",
+        predicted.mean_cycle,
+        predicted.nyquist,
+        predicted.shots,
+        predicted.noise_factor.unwrap()
+    );
+    let style = cav_plot::style::Style::screen();
+    let wide = cav_plot::drawing::Measure::size(
+        &cav_plot::fonts::Outlines,
+        &old,
+        cav_plot::drawing::Face::Sans,
+        style.text_size,
+    )[0];
+    assert!(
+        wide > cadence.area.width(),
+        "the old line, {wide} points, fits the axes' {}",
+        cadence.area.width()
+    );
+    assert!(
+        cadence.labels.iter().any(|(text, _)| text.starts_with("mean cycle")),
+        "the line is written, in a form that fits"
+    );
+}
+
+#[test]
 fn panes_show_plots_and_the_scene() {
     use cav_app::plots::place;
     use cav_engine::PaneContent;
@@ -638,7 +703,9 @@ fn panes_show_plots_and_the_scene() {
     // Both axes are marked between their ends: frequencies every 0.05 Hz, and the decades.
     let said = |text: &str| spectrum.labels.iter().any(|l| l.0 == text);
     assert!(said("0.05") && said("0.1") && said("0.2") && said("0.25"), "{:?}", spectrum.labels);
-    assert!(spectrum.labels.iter().filter(|l| l.0.starts_with("1e-")).count() >= 3);
+    // Decades are written as powers: `10` with the exponent raised (review 29).
+    assert!(spectrum.tick_labels[1].iter().filter(|said| said.starts_with("10^-")).count() >= 3);
+    assert!(spectrum.labels.iter().filter(|l| l.0 == "10").count() >= 3);
     assert!(
         (spectrum.y.lo.log10() - spectrum.y.lo.log10().round()).abs() < 1e-9,
         "the axis ends on a decade"

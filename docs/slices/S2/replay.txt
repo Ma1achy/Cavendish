@@ -1,4 +1,4 @@
 $ cav exec "load staggered; set duration 600; set bodies[0].mass 2; preset aice; undo; set array.schedule.loss 0.1; export bundle target/demo-s2/first; journal save target/demo-s2/session.json"
 $ cav replay target/demo-s2/session.json --out target/demo-s2/again
-replayed 7 command(s) · scene `staggered` · state bbf33f25a9bea8f6 · 1 export(s) written into target/demo-s2/again
-11 files, 68540 bytes: 0 differ between the session's bundle and the replay's.
+replayed 7 command(s) · scene `staggered` · state b1a105d6e191fed0 · 1 export(s) written into target/demo-s2/again · signal refined
+11 files, 69090 bytes: 0 differ between the session's bundle and the replay's.

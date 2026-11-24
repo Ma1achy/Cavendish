@@ -4,7 +4,7 @@ Written by `cargo xtask validate --report`; do not edit by hand. Every case is d
 `cav_validate::case!` beside the code it checks, and all of them are listed here: one that did not run
 is shown as **missing**, never left out.
 
-**82 of 82 cases pass; worst margin: nulls.finite_floor_edge at 78% of its tolerance.**
+**84 of 84 cases pass; worst margin: nulls.finite_floor_edge at 78% of its tolerance.**
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="error-vs-tolerance-dark.svg"><img src="error-vs-tolerance-light.svg" alt="Each case's measured error against its tolerance, on a log scale." width="100%"></picture>
 
@@ -40,7 +40,7 @@ is shown as **missing**, never left out.
 |---|---|---|---|---|---|---|---|
 | `engine.cached_sum_equals_cold_run` (S1) | exact self-consistency: superposition after a drag of one body and back, summed from kept contributions, against a cold run of the same scene; values of any channel that differ, to the bit | 0 | 0 | count | 0% |  | pass |
 | `engine.replay` (S0) | exact self-consistency: a session replayed from its journal, and from its journal saved as JSON; replays whose state digest differs | 0 | 0 | count | 0% |  | pass |
-| `engine.replay_bundles` (S2) | exact self-consistency: a session (every kind of edit, a drag, staggered towers, a jittered and thinned cadence, undo and redo) that exports two bundles and a scene, against the same session replayed four ways: from its journal in memory, from its journal saved to disk and read back, with the workers settled after every command, and with them never waited for; files of any replay that differ in any byte | 0 | 0 | count | 0% |  | pass |
+| `engine.replay_bundles` (S2) | exact self-consistency: a session (every kind of edit, a drag, staggered towers, a comparison switched on and off, a jittered and thinned cadence, undo and redo) that exports two bundles and a scene, against the same session replayed four ways: from its journal in memory, from its journal saved to disk and read back, with the workers settled after every command, and with them never waited for; files of any replay that differ in any byte (each manifest's provenance, the build's revision and dirty flag, among them) | 0 | 0 | count | 0% |  | pass |
 | `engine.thread_count` (S2) | exact self-consistency: the signals of three scenes (staggered towers on a jittered, thinned cadence; a sphere through the towers, with its warnings; two bodies) read on 1, 2, 3 and 6 threads; values, estimates, warnings and flags that differ in any way from the one-thread read | 0 | 0 | count | 0% |  | pass |
 
 ## figure
@@ -48,7 +48,7 @@ is shown as **missing**, never left out.
 | Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
 |---|---|---|---|---|---|---|---|
 | `figure.png_regenerates` (S2) | exact self-consistency: the comb's periodogram and signal as PNG figures (paper-column at 300 pixels per inch, slide), painted by two engines on the local adapter, each with a device of its own: the .png, .csv and .json files that differ in any byte | 0 | 0 | count | 0% |  | pass |
-| `figure.regenerates` (S2) | exact self-consistency: six figures of the comb (periodogram, signal, one tower's lower channel over a span, cadence window, flight diagram; SVG and PDF; four presets) written by two engines from the same commands: each figure, its .csv and its .json; files that differ in any byte | 0 | 0 | count | 0% |  | pass |
+| `figure.regenerates` (S2) | exact self-consistency: six figures of the comb (periodogram, signal, one tower's lower channel over a span, cadence window, flight diagram; SVG and PDF; four presets) written by two engines from the same commands: each figure, its .csv and its .json; files that differ in any byte (each .json's provenance, the build's revision and dirty flag, among them) | 0 | 0 | count | 0% |  | pass |
 
 ## forward
 
@@ -78,6 +78,7 @@ is shown as **missing**, never left out.
 
 | Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
 |---|---|---|---|---|---|---|---|
+| `oracle.published_anchor_oscillation_amplitude` (S2) | published paper: the published size of the oscillation anchor, about 2 mrad (1 kg at D = 5 m, 0.1 Hz; reference/design/instrument.md §12, Fig 15), read as an amplitude, half the peak to peak (George, 23 Nov 2026): the engine's half peak to peak with its defaults over one period, 41 shots; difference as a fraction of 2 mrad | 0.0766 | 0.1 | relative | 77% |  | pass |
 | `oracle.script_arm_tables` (S1) | George's script: the four arm tables of 1D_oscillator, fig2_10m, 100m_oscillators and fig2_uldm_folding against the closed-form arms with the floor, at (j + 1)·dt; largest difference | 6.357e-13 | 1.000e-12 | metres | 64% |  | pass |
 | `oracle.script_rule_converges_100m` (S1) | George's script: the scripts' trapezoid on the 100m_oscillators scene, offset gone, on the scripts' own window (which ends one step short of 2T), at steps of 0.01, 0.005, 0.0025, 0.00125 s (the first is the fixture's rule, held to it to 1e-9) against the engine's own model: both the missing step and the trapezoid shrink as the step does; largest difference as a fraction of the peak | 1.688e-5 | 3.000e-5 | relative | 56% | 1.99 (expected 2 ± 0.2) | pass |
 | `oracle.script_limit_fig2_10m_d` (S1) | George's script: fig2_10m panel d (a circle at 0.35625 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/128, against the engine's own model; largest difference as a fraction of the peak | 5.041e-9 | 1.000e-8 | relative | 50% |  | pass |
@@ -111,6 +112,7 @@ is shown as **missing**, never left out.
 | `oracle.script_same_time_fig2_uldm_folding_c` (S1) | George's script: fig2_uldm_folding panel c (0.131 Hz) with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 3.158e-8 | 0.02 | relative | 0% |  | pass |
 | `oracle.script_same_time_fig2_uldm_folding_b` (S1) | George's script: fig2_uldm_folding panel b with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 3.096e-8 | 0.02 | relative | 0% |  | pass |
 | `oracle.fold_vs_script` (S1) | George's script: fold_frequency against fig2_folding_map.py's own, at 2001 frequencies from 0 to five times its Nyquist frequency of 0.1 Hz; largest difference | 0 | 1.000e-12 | relative | 0% |  | pass |
+| `oracle.script_launch_rule` (S2) | George's script: the kick and the launch speed the AICE scripts computed as they ran (v_kick and u0 in the meta.json of 100m_oscillators and fig2_uldm_folding; fig2_final.py computes them by the same two lines) against the engine's kick n·ħk/m and its rule g·T − v_kick/2 with the scripts' constants; largest relative difference | 0 | 1.000e-12 | relative | 0% |  | pass |
 
 ## presets
 
@@ -123,7 +125,7 @@ is shown as **missing**, never left out.
 | Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
 |---|---|---|---|---|---|---|---|
 | `render.gpu_projection` (S0) | closed form: the f64 camera's projection of a point on each tower; distance to the centre of the nearest pixel of that tower's colour, worst over five towers and four views. The measure resolves no finer than half a pixel's diagonal, 0.71 px | 0.7071 | 2 | pixels | 35% |  | pass |
-| `render.gpu_perspective_ratio` (S0) | closed form: the ratio of the on-screen heights of a near and a far tower, as the f64 camera predicts it | 0.0026 | 0.03 | relative | 9% |  | pass |
+| `render.gpu_perspective_ratio` (S0) | closed form: the ratio of the on-screen heights of a near and a far tower, as the f64 camera predicts it | 0.0023 | 0.03 | relative | 8% |  | pass |
 | `render.gpu_determinism` (S0) | exact self-consistency: the same frame drawn twice, and by a second renderer on the same device; bytes that differ | 0 | 0 | count | 0% |  | pass |
 | `render.gpu_local_frame_at_10_km` (S0) | exact self-consistency: end to end on the GPU: the infinite-floor scene moved by (10000, -7000, 300) m, camera and all, against the same scene at the origin; bytes of the picture that differ | 0 | 0 | count | 0% |  | pass |
 | `render.local_frame_at_10_km` (S0) | exact self-consistency: CPU geometry only: the vertices of the same scene built at the world origin, each relative to its own target | 0 | 1.000e-5 | metres | 0% |  | pass |
@@ -163,7 +165,7 @@ is shown as **missing**, never left out.
 | Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
 |---|---|---|---|---|---|---|---|
 | `timing.offset_shifts_one_tower` (S2) | exact self-consistency: the comb with tower 3 fired 0.292 s late: that tower reads what the synchronous scene reads at t + 0.292 s; largest difference as a fraction of the peak (the other towers must be unchanged to the bit) | 0 | 1.000e-12 | relative | 0% |  | pass |
-| `timing.zero_offsets` (S2) | exact self-consistency: the comb and the pass with every tower's offset zero, against each shot read as S1 read it (the audited read at k·cycle + 2T, sources summed in the scene's order); values of any channel that differ in any bit | 0 | 0 | count | 0% |  | pass |
+| `timing.zero_offsets` (S2) | exact self-consistency: the comb's signal against what the engine at the tag s1-point-mass printed (a fixture: 5000 readout times and phases); and the comb and the pass with every tower's offset zero, against each shot read as S1 read it (the audited read at k·cycle + 2T, sources summed in the scene's order); values of any channel that differ in any bit | 0 | 0 | count | 0% |  | pass |
 
 ## validate
 

@@ -41,6 +41,7 @@ fn everything() -> Drawing {
             face: Face::Sans,
             size: 8.0,
             colour: ink,
+            turned: false,
         },
         Item::Text {
             at: [125.0, 150.0],
@@ -49,6 +50,7 @@ fn everything() -> Drawing {
             face: Face::Mono,
             size: 7.0,
             colour: ink,
+            turned: false,
         },
     ];
     drawing

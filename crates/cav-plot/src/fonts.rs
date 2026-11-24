@@ -222,7 +222,7 @@ mod tests {
         // Every character the plots write is in one of the two faces; these come from the
         // other face than the one asked for.
         let written =
-            "ΔΦ√S·µ₀δφ₁₂×|–-+=,.:()/'\"0123456789 abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            "ΔΦ√S·µ₀δφ₁₂×|–−…-+=,.:()/'\"0123456789 abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
         for face in [Face::Sans, Face::Mono] {
             let absent: Vec<char> = written.chars().filter(|c| face_of(*c, face).is_none()).collect();
             assert!(absent.is_empty(), "{face:?} cannot write {absent:?}");

@@ -36,9 +36,17 @@ pub struct Stamp {
 
 /// What `program` prints when run in `directory` with `arguments`; `None` when it cannot be run
 /// (git is not installed) or says it failed (there is no repository, or no commit).
+///
+/// The repository is the one `directory` is in, found from there: the variables git sets for a
+/// hook it runs (`GIT_DIR` and its kin) are not passed on, or a build inside a hook (the
+/// pre-push hook runs `cargo xtask quick`) would ask that repository whatever the directory.
 pub fn ask(program: &str, directory: &Path, arguments: &[&str]) -> Option<String> {
-    let output =
-        std::process::Command::new(program).args(arguments).current_dir(directory).output().ok()?;
+    let mut command = std::process::Command::new(program);
+    for name in ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_PREFIX"]
+    {
+        command.env_remove(name);
+    }
+    let output = command.args(arguments).current_dir(directory).output().ok()?;
     output.status.success().then(|| String::from_utf8_lossy(&output.stdout).into_owned())
 }
 

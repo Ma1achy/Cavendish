@@ -1,17 +1,6 @@
 {
-  "cavendish_figure": 1,
+  "cavendish_figure": 2,
   "what": "signal",
-  "file": "signal-slide.svg",
-  "format": "svg",
-  "preset": "slide",
-  "size_mm": [
-    254.0,
-    143.0
-  ],
-  "size_points": [
-    720.0000000000001,
-    405.35433070866145
-  ],
   "subject": {
     "tower": null,
     "channel": "gradiometer",
@@ -19,21 +8,18 @@
     "pane": 1,
     "playhead_s": 0.0
   },
-  "command": {
-    "console": "figure signal as slide to signal-slide.svg",
-    "cli": "cav figure pass signal --out signal-slide.svg --preset slide",
-    "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's"
-  },
   "engine": {
     "version": "0.0.0",
-    "revision": "78af98d0491f331dbe393b02a663b6e8e15c6b1c",
-    "dirty": true
+    "revision": "ef2b22c53835a2b61090b3e09780a556217994b5",
+    "dirty": false,
+    "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
   },
   "numerics": {
     "engine": {
       "version": "0.0.0",
-      "revision": "78af98d0491f331dbe393b02a663b6e8e15c6b1c",
-      "dirty": true
+      "revision": "ef2b22c53835a2b61090b3e09780a556217994b5",
+      "dirty": false,
+      "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
     },
     "platform": "x86_64-windows",
     "precision": "f64 on the CPU",
@@ -51,7 +37,6 @@
     },
     "replay": "bit-identical with the same binary on the same platform (sin and cos are the platform's)"
   },
-  "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
   "scene": {
     "name": "pass",
     "spec": {
@@ -61,13 +46,14 @@
       "duration": 12.0,
       "array": {
         "instrument": {
-          "tower_height": 10.0,
+          "tower_height": 10.1,
           "ifo_separation": 5.0,
           "half_sequence": 0.73,
           "launch_velocity": 3.86,
           "cycle": 2.0,
           "atom_mass": 1.4431558652473234e-25,
           "gravity": 9.81,
+          "kicks": 1000.0,
           "launch_floor": true,
           "sign": "LowerMinusUpper"
         },
@@ -166,92 +152,6 @@
       ]
     }
   },
-  "title": "Signal · ΔΦ of every tower · pass",
-  "pixels": null,
-  "dpi": null,
-  "axes": {
-    "x": {
-      "name": "readout time",
-      "unit": "s",
-      "scale": "linear",
-      "range": [
-        0.0,
-        12.0
-      ]
-    },
-    "y": {
-      "name": "ΔΦ",
-      "unit": "rad",
-      "scale": "linear",
-      "range": [
-        -0.04067917286033931,
-        0.016140146888414617
-      ]
-    }
-  },
-  "series": [
-    {
-      "name": "tower 1",
-      "colour": "#0b0dff",
-      "x": "readout time of tower 1",
-      "y": "ΔΦ of tower 1",
-      "x_column": 0,
-      "y_column": 1
-    },
-    {
-      "name": "tower 2",
-      "colour": "#e76f11",
-      "x": "readout time of tower 2",
-      "y": "ΔΦ of tower 2",
-      "x_column": 3,
-      "y_column": 4
-    },
-    {
-      "name": "tower 3",
-      "colour": "#c61604",
-      "x": "readout time of tower 3",
-      "y": "ΔΦ of tower 3",
-      "x_column": 6,
-      "y_column": 7
-    },
-    {
-      "name": "tower 4",
-      "colour": "#8a6aae",
-      "x": "readout time of tower 4",
-      "y": "ΔΦ of tower 4",
-      "x_column": 9,
-      "y_column": 10
-    },
-    {
-      "name": "tower 5",
-      "colour": "#28a682",
-      "x": "readout time of tower 5",
-      "y": "ΔΦ of tower 5",
-      "x_column": 12,
-      "y_column": 13
-    }
-  ],
-  "marks": {
-    "vertical_axis_written_in": "mrad",
-    "shots": 6
-  },
-  "colours": {
-    "background": "#ffffff",
-    "ink": "#111111",
-    "rule": "#cfcfcf",
-    "spectrum": "#6e6e6e",
-    "reference": "#8c8c8c",
-    "series": [
-      "#0b0dff",
-      "#e76f11",
-      "#c61604",
-      "#8a6aae",
-      "#28a682",
-      "#cb64fe",
-      "#910c59",
-      "#6d1ba7"
-    ]
-  },
   "data": {
     "file": "signal-slide.csv",
     "format": "csv",
@@ -318,6 +218,176 @@
         "unit": "1 if taken or 0 if not"
       }
     ],
-    "note": "every value, to the bit; the line drawn is thinned to at most 2000 points a series (the least and the greatest of each stretch)"
-  }
+    "note": "every value of every tower, to the bit; the line drawn is thinned to at most 2000 points a series (the least and the greatest of each stretch), and a signal draws at most 12 towers"
+  },
+  "files": [
+    {
+      "file": "signal-slide.svg",
+      "format": "svg",
+      "preset": "slide",
+      "size_mm": [
+        254.0,
+        143.0
+      ],
+      "size_points": [
+        720.0000000000001,
+        405.35433070866145
+      ],
+      "command": {
+        "console": "figure signal as slide to signal-slide.svg",
+        "cli": "cav figure pass signal --out signal-slide.svg --preset slide",
+        "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's"
+      },
+      "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
+      "title": "Signal · ΔΦ of every tower · pass",
+      "pixels": null,
+      "dpi": null,
+      "axes": {
+        "x": {
+          "name": "readout time",
+          "unit": "s",
+          "scale": "linear",
+          "range": [
+            0.0,
+            12.0
+          ],
+          "label": "readout time, s · 6 shots",
+          "ticks": [
+            0.0,
+            2.0,
+            4.0,
+            6.0,
+            8.0,
+            10.0,
+            12.0
+          ],
+          "tick_labels": [
+            "0",
+            "2",
+            "4",
+            "6",
+            "8",
+            "10",
+            "12"
+          ],
+          "minor_ticks": []
+        },
+        "y": {
+          "name": "ΔΦ",
+          "unit": "rad",
+          "scale": "linear",
+          "range": [
+            -0.04067917286033931,
+            0.016140146888414617
+          ],
+          "label": "ΔΦ, mrad",
+          "ticks": [
+            -0.04,
+            -0.03,
+            -0.02,
+            -0.01,
+            0.0,
+            0.01
+          ],
+          "tick_labels": [
+            "-40",
+            "-30",
+            "-20",
+            "-10",
+            "0",
+            "10"
+          ],
+          "minor_ticks": []
+        }
+      },
+      "series": [
+        {
+          "name": "tower 1",
+          "colour": "#900c60",
+          "x": "readout time of tower 1",
+          "y": "ΔΦ of tower 1",
+          "x_column": 0,
+          "y_column": 1,
+          "taken_column": 2
+        },
+        {
+          "name": "tower 2",
+          "colour": "#2c84b2",
+          "x": "readout time of tower 2",
+          "y": "ΔΦ of tower 2",
+          "x_column": 3,
+          "y_column": 4,
+          "taken_column": 5
+        },
+        {
+          "name": "tower 3",
+          "colour": "#846000",
+          "x": "readout time of tower 3",
+          "y": "ΔΦ of tower 3",
+          "x_column": 6,
+          "y_column": 7,
+          "taken_column": 8
+        },
+        {
+          "name": "tower 4",
+          "colour": "#a878fc",
+          "x": "readout time of tower 4",
+          "y": "ΔΦ of tower 4",
+          "x_column": 9,
+          "y_column": 10,
+          "taken_column": 11
+        },
+        {
+          "name": "tower 5",
+          "colour": "#3a469e",
+          "x": "readout time of tower 5",
+          "y": "ΔΦ of tower 5",
+          "x_column": 12,
+          "y_column": 13,
+          "taken_column": 14
+        }
+      ],
+      "marks": {
+        "vertical_axis_written_in": "mrad",
+        "shots": 6,
+        "shots_taken": [
+          6,
+          6,
+          6,
+          6,
+          6
+        ],
+        "towers": {
+          "in_the_scene": 5,
+          "drawn": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "note": null
+        },
+        "not_taken": "a shot not taken is on no line (the line is broken there) and has no dot; with few shots shown a hollow square at the foot of the axis marks its time. Its slot in the data file holds 0 and its flag is 0: it is not a measurement"
+      },
+      "colours": {
+        "background": "#ffffff",
+        "ink": "#111111",
+        "rule": "#cfcfcf",
+        "spectrum": "#6e6e6e",
+        "reference": "#8c8c8c",
+        "series": [
+          "#900c60",
+          "#2c84b2",
+          "#846000",
+          "#a878fc",
+          "#3a469e",
+          "#8200f2",
+          "#ca4076",
+          "#c08400"
+        ]
+      }
+    }
+  ],
+  "not_this_figure": []
 }

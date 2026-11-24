@@ -80,7 +80,18 @@ pub fn paint(painter: &egui::Painter, origin: Pos2, drawing: &Drawing) {
                     Stroke::new(stroke.0, stroke.1.egui()),
                 ));
             }
-            Item::Text { at: position, anchor: Anchor(x, y), text, face, size, colour } => {
+            Item::Text { at: position, anchor, text, face, size, colour, turned: true } => {
+                // Laid out as egui lays it out, then turned about the anchor: egui turns a text
+                // about its top left corner, clockwise, so that corner is placed first.
+                let galley = painter.layout_no_wrap(text.clone(), font(*face, *size), colour.egui());
+                let took = [galley.size().x, galley.size().y];
+                let corner = crate::drawing::text_point(*position, *anchor, took, true, [0.0, 0.0]);
+                painter.add(
+                    egui::epaint::TextShape::new(at(corner), galley, colour.egui())
+                        .with_angle(-std::f32::consts::FRAC_PI_2),
+                );
+            }
+            Item::Text { at: position, anchor: Anchor(x, y), text, face, size, colour, turned: false } => {
                 painter.text(
                     at(*position),
                     Align2([align(*x), align(*y)]),

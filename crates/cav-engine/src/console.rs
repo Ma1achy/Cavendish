@@ -86,8 +86,8 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "figure",
-        usage: "figure <signal|periodogram|cadence|flight|view> [tower <N>] [gradiometer|lower|upper] [from <a> to <b>] [as <paper-column|paper-full|slide|poster|screen>] [size <W>x<H>] [dpi <N>] to <file.svg|.pdf|.png> [@N]",
-        about: "write a figure: a plot or a pane's view as SVG, PDF or PNG in a preset's style and size (size in mm, dpi for a PNG), with its data (.csv or .npy) and a .json of axes, units and provenance beside it",
+        usage: "figure <signal|periodogram|cadence|flight|view> [tower <N>] [gradiometer|lower|upper] [from <a> to <b>] [as <paper-column|paper-full|slide|poster|screen>] [size <W>x<H>] [dpi <N>] [untitled] to <file.svg|.pdf|.png> [@N]",
+        about: "write a figure: a plot or a pane's view as SVG, PDF or PNG in a preset's style and size (size in mm, dpi for a PNG; untitled: no title, the axes take the room), with its data (.csv or .npy) and a .json of axes, units and provenance beside it",
         example: "figure periodogram tower 2 as paper-column to fig.pdf",
     },
     CommandDoc {
@@ -285,6 +285,9 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
             }
             if let Some(dpi) = figure.dpi {
                 line.push_str(&format!(" dpi {dpi}"));
+            }
+            if !figure.title {
+                line.push_str(" untitled");
             }
             line.push_str(&format!(" to {}", quoted(to)));
             if figure.what == crate::FigureKind::View {
@@ -813,6 +816,10 @@ impl Engine {
                     figure.dpi = Some(number(dpi, "pixels per inch", "figure")?);
                     words = rest;
                 }
+                ["untitled", rest @ ..] => {
+                    figure.title = false;
+                    words = rest;
+                }
                 [channel, rest @ ..] if ChannelName::parse(channel).is_some() => {
                     figure.channel = ChannelName::parse(channel).expect("just checked");
                     words = rest;
@@ -1127,6 +1134,13 @@ mod tests {
                 figure(FigureKind::Cadence, FigureFormat::Svg, "window.svg", |f| f.tower = Some(1)),
             ),
             (
+                "figure flight as paper-full untitled to flight.pdf",
+                figure(FigureKind::Flight, FigureFormat::Pdf, "flight.pdf", |f| {
+                    f.preset = "paper-full".into();
+                    f.title = false;
+                }),
+            ),
+            (
                 "figure view as screen to plan.png @3",
                 figure(FigureKind::View, FigureFormat::Png, "plan.png", |f| {
                     f.preset = "screen".into();
@@ -1268,6 +1282,25 @@ mod tests {
         // Control: what is not documented is not a command, and says so.
         let why = engine.run_line("frobnicate 3").unwrap_err();
         assert!(why.contains("not a command"), "{why}");
+    }
+
+    #[test]
+    fn the_usage_lines_name_every_figure_and_every_pane_content() {
+        // `show` and `figure` parse their word from `PaneContent::ALL` and `FigureKind::ALL`, so a
+        // new plot works with no line here; their usage lines are written by hand and did not
+        // follow it (docs/extending/a-plot.md, followed end to end).
+        let choices = |usage: &str| -> Vec<String> {
+            let open = usage.find('<').expect("a list of choices") + 1;
+            let close = open + usage[open..].find('>').expect("its end");
+            usage[open..close].split('|').map(str::to_owned).collect()
+        };
+        let usage_of = |name: &str| COMMANDS.iter().find(|doc| doc.name == name).expect(name).usage;
+        let contents: Vec<String> = PaneContent::ALL.iter().map(|c| c.name().to_owned()).collect();
+        let kinds: Vec<String> = FigureKind::ALL.iter().map(|k| k.name().to_owned()).collect();
+        assert_eq!(choices(usage_of("show")), contents);
+        assert_eq!(choices(usage_of("figure")), kinds);
+        // Control: a line that lacks one of them is found.
+        assert_ne!(choices("figure <signal|periodogram|cadence|view> to <file>"), kinds);
     }
 
     #[test]

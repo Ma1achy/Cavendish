@@ -6,9 +6,9 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 |---|---|---|---|
 | S0 the shell | done: TASK-S0-01 to 14 merged; reviewed twice, nothing important remains | `s0-shell` | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
 | S1 a point mass | done: TASK-S1-01 to 19 merged; reviewed twice, nothing important remains | `s1-point-mass` | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
-| S2 scenes as files | built: TASK-S2-01 to 12 merged; awaiting review | | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
+| S2 scenes as files | built and reviewed; review fixes TASK-S2-13 to 19 merged; awaiting re-review | | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
 
-## S2, scenes as files: where it stands (23 Nov 2026) — built, not yet reviewed or tagged
+## S2, scenes as files: where it stands (24 Nov 2026) — reviewed, every finding fixed, awaiting re-review; not tagged
 
 **Done.** A scene is a file and every field has a path (`get`, `set`, `ls`, `schema`, from the
 console, `cav` and MCP, with inline specs); every f64 survives RON, JSON and `.npy` to the bit. One
@@ -56,6 +56,29 @@ cases, 84 in all. `quick` 369 tests, `gpu` 30, `oracle` 43. **Two things for the
 the moving anchor's "~7 mrad" is not half its peak to peak (8.34 mrad; half its largest phase is
 6.83), and AICE's arms reach 108.9 m in its 100 m tower; both are back with George.
 
+**The review's findings (24 Nov 2026).** Every finding of the fresh review is done: I1 and I2
+(TASK-S2-14, with 14, 21, 22 and George's rule on lateness), I3 (TASK-S2-13, with 1 to 4, 6, 12,
+24), 5, 7, 11, 15 to 20, 23, 25, 37 (TASK-S2-15), 8, 27, 31 to 36 (TASK-S2-17), 10, 13, 26, 28,
+29, 30 (TASK-S2-16) and George's answers (TASK-S2-18). The plot recipe was followed end to end
+(TASK-S2-19); all six recipes have now been. Detail: `docs/slices/S2.md` §7.11 to §7.14.
+Numbers now: `quick` 383 tests, 10.5 to 10.7 s warm (over its 10 s budget by a hair, reported not
+failed; 21.4 s after an edit of `cav-sim`); `gpu` 32; `oracle` 43 and 11 Python tests; 84 of 84
+validation cases, the oracle tier to the last digit as before.
+
+**Calls worth a second look (after the review).**
+1. **The palette misses its own criterion and is restated** (finding 28): no eight colours were
+   found at 12 under all seven simulations; the palette now is 11.41 at worst over all seven
+   (the old one 10.37 under Viénot), but 11.44 under Machado's protanopia (old 12.17) and 14.86
+   in OKLab against the `dataviz` validator's 15. §7.14 has both searches.
+2. **The ULDM benchmark is named in the key**, not by its mark: by the mark there is no room
+   among the comb's stems.
+3. **The dense signal's control holds in the figure, not the pane**: joined, the comb's shots
+   covered 65% of the figure's cells but only 19% of a 960 × 600 pane's.
+4. **`quick` is 0.5 to 0.7 s over its 10 s budget warm**: the plot tests grew; S3 needs the
+   answer item 2 below already asked for.
+5. **A Python figure record of the old layout no longer loads**: the redraw now needs each
+   axis's marks and labels, which only this build writes.
+
 **Calls worth a second look (S2).**
 1. **The palette passes by a hair**: least CIEDE2000 12.17 against 12, the first four colours 8.3 L*
    apart against 8. The colours were searched for under the criterion, which was written first.
@@ -78,14 +101,13 @@ the moving anchor's "~7 mrad" is not half its peak to peak (8.34 mrad; half its 
 
 **Open.**
 - Nobody has looked at the real window (every picture is headless); DX12; SVG in a browser.
-- A harmonic's label can cross a neighbouring stem in the narrowest figure preset.
 - Figures of the compared instrument; a vector drawing of the 3-D view.
 - `apply(Set)` at 1000 bodies was not measured; at the largest valid scene a set is tens of
   milliseconds.
 - Carried again, in `plan/IDEAS.md`: Tab scopes, completion and a command palette, the clipboard,
   MCP resources, saved layouts.
 
-**Next.** A fresh review of S2 against its brief; fixes as further tasks; then the tag, and S3.
+**Next.** A re-review of the fixes; then the tag `s2-scenes-as-files`, and S3.
 
 ## S1, a point mass: where it stands (22 Nov 2026) — done, tagged `s1-point-mass`
 

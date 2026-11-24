@@ -139,11 +139,13 @@ pub fn write(drawing: &Drawing) -> Result<String, String> {
                     stroke_of(stroke.0, stroke.1)
                 );
             }
-            Item::Text { at, anchor, text, face, size, colour } => {
+            Item::Text { at, anchor, text, face, size, colour, turned } => {
                 let outline = crate::fonts::outline(text, *face, *size);
-                let [left, top] = anchor.corner(*at, outline.size);
                 let mut d = String::new();
-                let q = |point: &[f32; 2]| format!("{} {}", number(point[0] + left), number(point[1] + top));
+                let q = |point: &[f32; 2]| {
+                    let [x, y] = crate::drawing::text_point(*at, *anchor, outline.size, *turned, *point);
+                    format!("{} {}", number(x), number(y))
+                };
                 for segment in &outline.segments {
                     match segment {
                         Segment::Move(to) => {

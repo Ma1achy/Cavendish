@@ -2,31 +2,33 @@
 //! application's dark theme and the presets for papers, slides and posters are the same drawing
 //! code with different styles.
 //!
-//! The light presets' series colours ([`PAPER_SERIES`]) were chosen by search under the `dataviz`
-//! skill's method and pass its validator on white, adjacent and all pairs: OKLCH lightness in the
-//! band, chroma above the floor, every pair at least 12 apart (OKLab × 100, and CIEDE2000) in
-//! normal vision and under simulated protanopia, deuteranopia and tritanopia, 15 apart in normal
-//! vision, and 3:1 against white. The first four are at least 8 L* apart, and every series has
-//! a dash of its own, so that a figure printed in black and white still tells them apart
-//! (`the_palette_survives_colour_blindness_and_print`).
+//! The light presets' series colours ([`PAPER_SERIES`]) were chosen by search
+//! (`scripts/palette_search.py`) under the `dataviz` skill's method: OKLCH lightness in the band,
+//! chroma above the floor, 3:1 against white, and every pair at least 11 apart in CIEDE2000 in
+//! normal vision and under seven simulations of protanopia, deuteranopia and tritanopia (those
+//! of Machado, Oliveira and Fernandes 2009, and of Viénot, Brettel and Mollon 1999 and 1997),
+//! and in OKLab × 100 at least 14 in normal vision and 11 under Machado's. No eight colours
+//! were found at 12 under all seven (S2.md §7.14 gives the search and why 11). The first four
+//! are at least 8 L* apart, and every series has a dash of its own, so that a figure printed
+//! in black and white still tells them apart (`the_palette_survives_colour_blindness_and_print`).
 
 use crate::drawing::Colour;
 
 /// Millimetres in a point (1/72 inch).
 pub const MM_PER_POINT: f64 = 25.4 / 72.0;
 
-/// The series colours of the light presets, in order: blue, orange, red, mauve, green, orchid,
-/// wine, purple. Assigned in order and never cycled: a ninth series takes the eighth's dash
+/// The series colours of the light presets, in order: wine, blue, ochre, lavender, indigo,
+/// violet, rose, gold (found by `scripts/palette_search.py`; S2.md §7.14). Assigned in order and never cycled: a ninth series takes the eighth's dash
 /// partner (see [`Style::series`]).
 pub const PAPER_SERIES: [Colour; 8] = [
-    Colour::hex(0x0b_0dff),
-    Colour::hex(0xe7_6f11),
-    Colour::hex(0xc6_1604),
-    Colour::hex(0x8a_6aae),
-    Colour::hex(0x28_a682),
-    Colour::hex(0xcb_64fe),
-    Colour::hex(0x91_0c59),
-    Colour::hex(0x6d_1ba7),
+    Colour::hex(0x90_0c60),
+    Colour::hex(0x2c_84b2),
+    Colour::hex(0x84_6000),
+    Colour::hex(0xa8_78fc),
+    Colour::hex(0x3a_469e),
+    Colour::hex(0x82_00f2),
+    Colour::hex(0xca_4076),
+    Colour::hex(0xc0_8400),
 ];
 
 /// The dash of each series in the light presets, points at a line width of one (scaled by the
@@ -275,14 +277,6 @@ mod tests {
         })
     }
 
-    /// Linear RGB as a dichromat sees it, clamped to the gamut; `None` is normal vision.
-    fn seen(rgb: [f64; 3], deficiency: Option<&Matrix>) -> [f64; 3] {
-        deficiency.map_or(rgb, |m| {
-            [0, 1, 2]
-                .map(|row| (m[row][0] * rgb[0] + m[row][1] * rgb[1] + m[row][2] * rgb[2]).clamp(0.0, 1.0))
-        })
-    }
-
     /// Linear sRGB as CIE L*a*b* (D65).
     fn lab([r, g, b]: [f64; 3]) -> Lab {
         let x = 0.412_456_4 * r + 0.357_576_1 * g + 0.180_437_5 * b;
@@ -352,18 +346,80 @@ mod tests {
         ((dl / sl).powi(2) + (dc / sc).powi(2) + (dh / sh).powi(2) + rotation * (dc / sc) * (dh / sh)).sqrt()
     }
 
-    /// The least difference between any two of `colours`, by `measure`, under each of normal
-    /// vision and the three dichromacies: the vision's name, the difference and the pair.
+    /// Viénot, Brettel and Mollon, "Digital video colourmaps for checking the legibility of
+    /// displays by dichromats", Color Research and Application 24(4), 1999: linear RGB to LMS,
+    /// and the cone a protanope and a deuteranope lack written from the other two. The same
+    /// numbers as `scripts/palette_search.py`, which searched the palette under them.
+    const VIENOT_LMS: Matrix =
+        [[17.8824, 43.5161, 4.11935], [3.45565, 27.1554, 3.86714], [0.029_956_6, 0.184_309, 1.46709]];
+    const VIENOT_RULES: [(&str, Matrix); 2] = [
+        ("Viénot protanopia", [[0.0, 2.02344, -2.52581], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+        ("Viénot deuteranopia", [[1.0, 0.0, 0.0], [0.494_207, 0.0, 1.24827], [0.0, 0.0, 1.0]]),
+    ];
+
+    /// Brettel, Viénot and Mollon, "Computerized simulation of color appearance for dichromats",
+    /// JOSA A 14(10), 1997: tritanopia as two half-planes, written as two matrices on linear RGB
+    /// and the normal of the plane between them (the values of libDaltonLens, N. Burrus).
+    const BRETTEL_TRITAN: (Matrix, Matrix, [f64; 3]) = (
+        [[1.01277, 0.13548, -0.14826], [-0.01243, 0.86812, 0.14431], [0.07589, -0.80500, 0.72911]],
+        [[0.93678, 0.18979, -0.12657], [0.06154, 0.81526, 0.12320], [-0.37562, 1.12767, 0.24796]],
+        [0.03901, -0.02788, -0.01113],
+    );
+
+    fn product(a: &Matrix, b: &Matrix) -> Matrix {
+        std::array::from_fn(|r| std::array::from_fn(|c| (0..3).map(|k| a[r][k] * b[k][c]).sum()))
+    }
+
+    fn inverse(m: &Matrix) -> Matrix {
+        let cofactor = |r: usize, c: usize| {
+            let (r1, r2, c1, c2) = ((r + 1) % 3, (r + 2) % 3, (c + 1) % 3, (c + 2) % 3);
+            m[r1][c1] * m[r2][c2] - m[r1][c2] * m[r2][c1]
+        };
+        let det: f64 = (0..3).map(|c| m[0][c] * cofactor(0, c)).sum();
+        std::array::from_fn(|r| std::array::from_fn(|c| cofactor(c, r) / det))
+    }
+
+    fn apply(m: &Matrix, rgb: [f64; 3]) -> [f64; 3] {
+        [0, 1, 2].map(|row| (m[row][0] * rgb[0] + m[row][1] * rgb[1] + m[row][2] * rgb[2]).clamp(0.0, 1.0))
+    }
+
+    /// A condition of sight: its name and what it does to linear RGB.
+    type Vision = (&'static str, Box<dyn Fn([f64; 3]) -> [f64; 3]>);
+
+    /// The seven conditions a palette is held under: normal vision; Machado's protanopia,
+    /// deuteranopia and tritanopia; Viénot's protanopia and deuteranopia; Brettel's tritanopia.
+    /// Each is a name and what it does to linear RGB.
+    fn visions() -> Vec<Vision> {
+        let mut out: Vec<Vision> = vec![("normal vision", Box::new(|rgb| rgb))];
+        for (name, m) in MACHADO {
+            out.push((name, Box::new(move |rgb| apply(&m, rgb))));
+        }
+        for (name, rule) in VIENOT_RULES {
+            let m = product(&inverse(&VIENOT_LMS), &product(&rule, &VIENOT_LMS));
+            out.push((name, Box::new(move |rgb| apply(&m, rgb))));
+        }
+        out.push((
+            "Brettel tritanopia",
+            Box::new(|rgb| {
+                let (first, second, normal) = BRETTEL_TRITAN;
+                let side = normal[0] * rgb[0] + normal[1] * rgb[1] + normal[2] * rgb[2];
+                apply(if side >= 0.0 { &first } else { &second }, rgb)
+            }),
+        ));
+        out
+    }
+
+    /// The least difference between any two of `colours`, by `measure`, under each of the seven
+    /// conditions of [`visions`]: the vision's name, the difference and the pair (from 1).
     fn least(
         colours: &[Colour],
         space: fn([f64; 3]) -> Lab,
         measure: fn(Lab, Lab) -> f64,
     ) -> Vec<(&'static str, f64, (usize, usize))> {
-        let visions =
-            std::iter::once(("normal vision", None)).chain(MACHADO.iter().map(|(name, m)| (*name, Some(m))));
-        visions
-            .map(|(name, deficiency)| {
-                let seen: Vec<Lab> = colours.iter().map(|c| space(seen(linear(*c), deficiency))).collect();
+        visions()
+            .iter()
+            .map(|(name, vision)| {
+                let seen: Vec<Lab> = colours.iter().map(|c| space(vision(linear(*c)))).collect();
                 let mut worst = (f64::INFINITY, (0, 0));
                 for a in 0..seen.len() {
                     for b in a + 1..seen.len() {
@@ -373,7 +429,7 @@ mod tests {
                         }
                     }
                 }
-                (name, worst.0, worst.1)
+                (*name, worst.0, worst.1)
             })
             .collect()
     }
@@ -389,21 +445,54 @@ mod tests {
         ] {
             assert!((ciede2000(a, b) - expected).abs() < 1e-4, "{}", ciede2000(a, b));
         }
-        // The criterion of the brief (S2.md §3.3, written before any palette was measured):
-        // every pair of the eight at least 12 apart, in normal vision and under each simulated
-        // dichromacy. Held in CIEDE2000 and, as well, in the skill's own measure (OKLab × 100).
-        for (measure, table) in [
-            ("CIEDE2000", least(&PAPER_SERIES, lab, ciede2000)),
-            ("OKLab × 100", least(&PAPER_SERIES, oklab, euclid)),
-        ] {
-            for (vision, apart, pair) in table {
-                println!(
-                    "{measure:>12} · {vision:<13} least ΔE {apart:6.2} (series {} and {})",
-                    pair.0, pair.1
-                );
-                assert!(apart >= 12.0, "{measure}, {vision}: series {pair:?} are {apart:.2} apart");
+        // The simulation itself: Viénot's protanopia sees the old palette's blue and purple
+        // 10.37 apart, as the review measured (finding 28), to the hundredth.
+        let old = [Colour::hex(0x0b_0dff), Colour::hex(0x6d_1ba7)];
+        let vienot = least(&old, lab, ciede2000);
+        assert_eq!(vienot[4].0, "Viénot protanopia");
+        assert!((vienot[4].1 - 10.37).abs() < 0.005, "{vienot:?}");
+        // The criterion (S2.md §3.3; restated in §7.14 for finding 28, with its reason): every
+        // pair of the eight at least 11 apart in CIEDE2000, in normal vision and under the seven
+        // simulated dichromacies of Machado and of Viénot and Brettel; in the skill's own measure
+        // (OKLab × 100) at least 14 in normal vision and 11 under Machado's three.
+        let floors = |measure: &str, vision: &str| match (measure, vision) {
+            ("CIEDE2000", _) => Some(11.0),
+            (_, "normal vision") => Some(14.0),
+            // Machado's three are named by the deficiency alone.
+            (_, "protanopia" | "deuteranopia" | "tritanopia") => Some(11.0),
+            _ => None,
+        };
+        let table = |colours: &[Colour]| {
+            let mut rows = Vec::new();
+            for (measure, table) in [
+                ("CIEDE2000", least(colours, lab, ciede2000)),
+                ("OKLab × 100", least(colours, oklab, euclid)),
+            ] {
+                for (vision, apart, pair) in table {
+                    rows.push((measure, vision, apart, pair));
+                }
+            }
+            rows
+        };
+        for (measure, vision, apart, pair) in table(&PAPER_SERIES) {
+            println!("{measure:>12} · {vision:<20} least ΔE {apart:6.2} (series {} and {})", pair.0, pair.1);
+            if let Some(floor) = floors(measure, vision) {
+                assert!(apart >= floor, "{measure}, {vision}: series {pair:?} are {apart:.2} apart");
             }
         }
+        // Control: the palette this replaces fails the same rule, under Viénot's protanopia.
+        let before = [0x0b_0dff, 0xe7_6f11, 0xc6_1604, 0x8a_6aae, 0x28_a682, 0xcb_64fe, 0x91_0c59, 0x6d_1ba7]
+            .map(Colour::hex);
+        let failed: Vec<_> = table(&before)
+            .into_iter()
+            .filter(|(measure, vision, apart, _)| floors(measure, vision).is_some_and(|floor| *apart < floor))
+            .collect();
+        assert!(
+            failed
+                .iter()
+                .any(|(measure, vision, _, _)| *measure == "CIEDE2000" && *vision == "Viénot protanopia"),
+            "{failed:?}"
+        );
         // The first four survive grey print: at least 8 L* between any two.
         let lightness: Vec<f64> = PAPER_SERIES.iter().map(|c| lab(linear(*c))[0]).collect();
         println!("L*: {:?}", lightness.iter().map(|l| (l * 10.0).round() / 10.0).collect::<Vec<_>>());

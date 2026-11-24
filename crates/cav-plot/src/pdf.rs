@@ -84,13 +84,14 @@ fn content(drawing: &Drawing) -> (String, Vec<Picture<'_>>) {
                     xy([x - r, *y])
                 );
             }
-            Item::Text { at, anchor, text, face, size, colour } => {
+            Item::Text { at, anchor, text, face, size, colour, turned } => {
                 let outline = crate::fonts::outline(text, *face, *size);
                 if outline.segments.is_empty() {
                     continue;
                 }
-                let [left, top] = anchor.corner(*at, outline.size);
-                let q = |point: &[f32; 2]| xy([point[0] + left, point[1] + top]);
+                let q = |point: &[f32; 2]| {
+                    xy(crate::drawing::text_point(*at, *anchor, outline.size, *turned, *point))
+                };
                 out.push_str(&rgb(*colour, "rg"));
                 for segment in &outline.segments {
                     match segment {

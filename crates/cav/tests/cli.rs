@@ -295,6 +295,53 @@ fn cli_prints_the_font_licence() {
 }
 
 #[test]
+fn cli_writes_the_fonts_and_their_licence() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli fonts").join("faces");
+    let _ = std::fs::remove_dir_all(&dir);
+    let out = cav(&["fonts", "--out", dir.to_str().unwrap()]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    // The folder is made, and each file is the binary's own bytes, named where it was written.
+    let files: [(&str, &[u8]); 3] = [
+        ("Ubuntu-Light.ttf", cav_plot::fonts::bytes(cav_plot::fonts::Face::Sans)),
+        ("UbuntuMono-Regular.ttf", cav_plot::fonts::MONO_FONT),
+        ("UFL.txt", cav_plot::fonts::MONO_FONT_LICENCE.as_bytes()),
+    ];
+    for (name, bytes) in files {
+        let path = dir.join(name);
+        assert!(std::fs::read(&path).unwrap() == bytes, "{name} is not the binary's own");
+        assert!(stdout(&out).contains(&path.display().to_string()), "{}", stdout(&out));
+    }
+    assert!(cav_plot::fonts::bytes(cav_plot::fonts::Face::Sans) != cav_plot::fonts::MONO_FONT, "two faces");
+    assert!(stdout(&cav(&["help"])).contains("fonts --out <dir>"));
+    // Control: without --out nothing is written, and the refusal says what is needed.
+    let refused = cav(&["fonts"]);
+    assert!(!refused.status.success());
+    assert!(stderr(&refused).contains("fonts needs --out"), "{}", stderr(&refused));
+}
+
+#[test]
+fn cli_figure_without_a_title() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli no title");
+    std::fs::create_dir_all(&dir).unwrap();
+    let title = |name: &str, extra: &[&str]| -> serde_json::Value {
+        let out = dir.join(format!("{name}.svg"));
+        let mut args = vec!["figure", "comb", "periodogram", "--out", out.to_str().unwrap()];
+        args.extend_from_slice(extra);
+        let done = cav(&args);
+        assert!(done.status.success(), "{}", stderr(&done));
+        let record: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(out.with_extension("json")).unwrap()).unwrap();
+        record["files"][0]["title"].clone()
+    };
+    assert_eq!(title("untitled", &["--no-title"]), serde_json::Value::Null);
+    // Control: without the flag the picture has its title.
+    assert!(title("titled", &[]).is_string());
+    // A flag takes no value.
+    let refused = cav(&["figure", "comb", "periodogram", "--out", "x.svg", "--no-title=yes"]);
+    assert!(!refused.status.success() && stderr(&refused).contains("takes no value"), "{}", stderr(&refused));
+}
+
+#[test]
 fn cli_get_set_ls_edit_a_file() {
     // A scene file of our own: the comb, saved by the library's own writer.
     let file = scratch("edited comb.ron");
@@ -655,6 +702,32 @@ fn cli_provenance_is_the_builds_whatever_the_tree_or_the_directory() {
 }
 
 #[test]
+fn gpu_cli_figure_takes_a_picture_wider_than_mcp_does() {
+    // A16: a figure's picture is at most 8192 pixels a side at the command line, 4096 over MCP
+    // (`mcp_figure_writes_a_figure_and_says_what_it_wrote` has the refusal of 4097 there).
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli figure wide");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = dir.join("wide.png");
+    // 1041.4 mm at 100 pixels per inch is 4100 pixels.
+    let wide = |dpi: &str| {
+        let out = out.to_str().unwrap();
+        let size = "1041.4x60";
+        cav(&["figure", "comb", "signal", "--out", out, "--size", size, "--dpi", dpi, "--preset", "slide"])
+    };
+    let done = wide("100");
+    assert!(done.status.success(), "{}", stderr(&done));
+    let (_, size) = cav_render::decode_png(&std::fs::read(&out).unwrap()).unwrap();
+    assert_eq!(size, [4100, 236]);
+    // Control: past 8192 it is refused here too, with the numbers, and the file is left as it was.
+    let before = std::fs::read(&out).unwrap();
+    let done = wide("200");
+    assert!(!done.status.success());
+    assert!(stderr(&done).contains("8200 × 472 pixels; each side is 1 to 8192"), "{}", stderr(&done));
+    assert_eq!(std::fs::read(&out).unwrap(), before);
+}
+
+#[test]
 fn cli_figure_writes_a_figure_with_its_data_twice_the_same() {
     let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli figure");
     let _ = std::fs::remove_dir_all(&root);
@@ -692,7 +765,7 @@ fn cli_figure_writes_a_figure_with_its_data_twice_the_same() {
     assert_eq!(cav_plot::pdf::check(&pdf).unwrap().media_box, [0.0, 0.0, 340.157, 198.425]);
     // The provenance carries the line that made it, with the edits a library name does not say.
     let json: serde_json::Value = serde_json::from_slice(&std::fs::read(a.join("p.json")).unwrap()).unwrap();
-    assert_eq!(json["command"]["console"], "figure periodogram tower 2 as paper-full to p.svg");
+    assert_eq!(json["files"][0]["command"]["console"], "figure periodogram tower 2 as paper-full to p.svg");
     assert_eq!(json["scene"]["spec"]["duration"], 200.0);
     // Control: refusals, each with its reason, and nothing written.
     let c = root.join("c");

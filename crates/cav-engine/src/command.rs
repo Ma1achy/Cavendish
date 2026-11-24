@@ -220,6 +220,17 @@ pub struct Figure {
     /// The resolution of a PNG, pixels per inch, in place of the preset's.
     #[serde(default)]
     pub dpi: Option<f64>,
+    /// Whether the picture has a title at its top (it has unless told otherwise: `untitled` on
+    /// the console, `--no-title` at the command line, `"title": false` over MCP). Without one
+    /// the axes take the room, and the record's `title` is `null`; the name an SVG or a PDF
+    /// carries in its metadata, which is not drawn, is kept.
+    #[serde(default = "titled")]
+    pub title: bool,
+}
+
+/// A figure has a title unless told otherwise.
+const fn titled() -> bool {
+    true
 }
 
 impl Figure {
@@ -237,6 +248,7 @@ impl Figure {
             pane: 0,
             size_mm: None,
             dpi: None,
+            title: true,
         }
     }
 

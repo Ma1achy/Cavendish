@@ -18,6 +18,7 @@ serde_json.workspace = true
 skrifa.workspace = true
 
 [dev-dependencies]
+cav-memtest.workspace = true
 cav-validate.workspace = true
 
 [lints]

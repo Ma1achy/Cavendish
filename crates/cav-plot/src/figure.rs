@@ -3,20 +3,40 @@
 //!
 //! A figure `fig.pdf` is three files: the picture; `fig.csv`, every value plotted, in plain
 //! columns under a header that names each column and its unit (`fig.npy`, a `(rows, columns)`
-//! array, when there are more than [`CSV_ROWS`] rows); and `fig.json`: what was plotted, the
-//! axes, the series and which columns they are, the marks that are not data, the preset and the
-//! size, the scene verbatim, the engine's version and revision, the numerics, and the command
-//! that makes the figure again. Nothing in any of them is the time of day or the machine's
-//! name: the same command on the same build writes the same bytes.
+//! array, when it is long); and `fig.json`, the figure's record.
 //!
-//! The line drawn is thinned to [`crate::plots::MAX_POINTS`] points a series; the data file
-//! keeps every value. A PNG is at most [`MAX_PIXELS`] pixels a side.
+//! ## The record, and the same figure in several formats
+//! `fig.json` is the record of the figure `fig`: one set of data (what is plotted, of which
+//! tower, channel, span and pane, from which scene verbatim, engine build and numerics, in which
+//! data file) and, under `files`, every picture written of it, each with what is its own: the
+//! format, the preset and the size, a PNG's pixels and resolution, the title, the axes, the
+//! series and which columns they are, the marks that are not data, the colours, and the command
+//! that makes it again.
+//!
+//! 1. Writing `fig.pdf` when `fig.json` records the same data adds `fig.pdf` to `files`, or
+//!    replaces its entry. The entries are in the order of their names. An entry whose file is no
+//!    longer there is dropped.
+//! 2. Writing it when `fig.json` records other data (another scene, tower, span or build), or is
+//!    not a record this build reads, replaces the record and the data file with the new
+//!    figure's. Pictures the old record listed that are still there are not this figure: they
+//!    are named under `not_this_figure` until they are written again, and never under `files`.
+//! 3. So the record depends on which figures were written and what was in the directory, not on
+//!    the order they were written in, and the same command twice changes no byte.
+//!
+//! Nothing in any of the files is the time of day or the machine's name: the same commands on
+//! the same build write the same bytes.
+//!
+//! The line drawn is thinned to [`crate::plots::MAX_POINTS`] points a series, and a signal draws
+//! at most [`crate::plots::MAX_SERIES`] towers; the data file keeps every value of every tower,
+//! and is written a row at a time from the engine's own signal ([`Table`]): no second copy of
+//! it is made. A PNG is at most [`MAX_PIXELS`] pixels a side.
 //!
 //! [`install`] gives an engine the exporter, after which `figure …` on its console, `cav
 //! figure` and the MCP `figure` tool are all [`cav_engine::Command::Export`].
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use cav_engine::{ChannelName, Engine, Figure, FigureFormat, FigureKind, PaneContent, Query, Reply};
 use serde_json::json;
@@ -30,70 +50,124 @@ use crate::style::{MM_PER_POINT, Style};
 /// The most rows a figure's data has as text; more are written as `.npy`.
 pub const CSV_ROWS: usize = 20_000;
 
+/// The most values (rows × columns) a figure's data has as text: what [`CSV_ROWS`] rows of five
+/// towers' signal are. A thousand towers' signal is `.npy` however short it is.
+pub const CSV_VALUES: usize = 300_000;
+
 /// The most pixels a PNG figure has on a side.
 pub const MAX_PIXELS: u32 = 8192;
 
-/// The version of the layout of a figure's `.json`.
-pub const FIGURE_VERSION: u32 = 1;
+/// The size of the buffer a data file is written through, bytes.
+pub const WRITE_BUFFER: usize = 64 << 10;
 
-/// The data behind a figure: columns of equal length.
+/// The version of the layout of a figure's `.json`.
+pub const FIGURE_VERSION: u32 = 2;
+
+/// The most bytes of an existing record that are read before a figure is added to it: a record
+/// holds a scene (1 MiB at most) and a line for each column.
+const RECORD_BYTES: u64 = 16 << 20;
+
+/// Where a table's values are.
+#[derive(Clone, Debug, PartialEq)]
+enum Values {
+    /// Held here, a column at a time: a spectrum, a window, the flights of a span. Each is
+    /// bounded by its own cap (S2.md §3.1: A13, A19).
+    Held(Vec<Vec<f64>>),
+    /// The engine's own signal, shared and not copied: for each of `towers` (from 0) three
+    /// columns, its readout times, its values on `channel`, and whether it took each shot.
+    Signal { signal: Arc<cav_sim::read::Signal>, towers: Vec<usize>, channel: cav_core::forward::Channel },
+}
+
+/// The data behind a figure: columns of equal length. A signal's table is the engine's signal
+/// itself, read as it is written out, so a thousand towers' data costs no memory here.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Table {
     /// Each column's name and unit.
     pub columns: Vec<(String, String)>,
-    /// Each column's values, in the order of `columns`.
-    pub values: Vec<Vec<f64>>,
+    values: Values,
 }
 
 impl Table {
     /// How many rows the table has.
     #[must_use]
     pub fn rows(&self) -> usize {
-        self.values.first().map_or(0, Vec::len)
+        match &self.values {
+            Values::Held(columns) => columns.first().map_or(0, Vec::len),
+            Values::Signal { signal, .. } => signal.times.len(),
+        }
     }
 
-    /// The table as CSV: a header of `name [unit]`, then a row a line. Every number is written
-    /// with the fewest digits that read back as the same `f64`; an infinity is `inf` or `-inf`.
+    /// The value in row `row` of column `column`.
+    ///
+    /// # Panics
+    /// When the table has no such row or column.
     #[must_use]
-    pub fn csv(&self) -> String {
-        let quoted = |field: String| {
-            if field.contains([',', '"', '\n']) {
-                format!("\"{}\"", field.replace('"', "\"\""))
-            } else {
-                field
-            }
-        };
-        let header: Vec<String> =
-            self.columns.iter().map(|(name, unit)| quoted(format!("{name} [{unit}]"))).collect();
-        let mut out = header.join(",");
-        out.push('\n');
-        for row in 0..self.rows() {
-            for (n, column) in self.values.iter().enumerate() {
-                if n > 0 {
-                    out.push(',');
+    pub fn value(&self, row: usize, column: usize) -> f64 {
+        match &self.values {
+            Values::Held(columns) => columns[column][row],
+            Values::Signal { signal, towers, channel } => {
+                let tower = towers[column / 3];
+                match column % 3 {
+                    0 => signal.readout(tower, row),
+                    1 => signal.channel(tower, *channel)[row],
+                    _ => f64::from(u8::from(signal.taken(tower)[row])),
                 }
-                out.push_str(&format!("{:?}", column[row]));
             }
-            out.push('\n');
         }
-        out
     }
 
-    /// The table as a `(rows, columns)` array of `f64` in `.npy`.
+    /// Column `column`, whole: for a test, or a caller that wants one series.
+    ///
+    /// # Panics
+    /// When the table has no such column.
     #[must_use]
-    pub fn npy(&self) -> Vec<u8> {
-        let rows = self.rows();
-        let mut values = Vec::with_capacity(rows * self.values.len());
-        for row in 0..rows {
-            values.extend(self.values.iter().map(|column| column[row]));
-        }
-        cav_core::npy::encode_f64(&[rows, self.values.len()], &values)
+    pub fn column(&self, column: usize) -> Vec<f64> {
+        (0..self.rows()).map(|row| self.value(row, column)).collect()
     }
 
-    /// Whether the table is long enough to be written as `.npy`.
+    /// Writes the table as CSV: a header of `name [unit]`, then a row a line. Every number is
+    /// written with the fewest digits that read back as the same `f64`; an infinity is `inf` or
+    /// `-inf`. A row at a time: hand it a buffered writer.
+    ///
+    /// # Errors
+    /// The writer's.
+    pub fn write_csv(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        for (n, (name, unit)) in self.columns.iter().enumerate() {
+            let field = format!("{name} [{unit}]");
+            let comma = if n > 0 { "," } else { "" };
+            if field.contains([',', '"', '\n']) {
+                write!(writer, "{comma}\"{}\"", field.replace('"', "\"\""))?;
+            } else {
+                write!(writer, "{comma}{field}")?;
+            }
+        }
+        writeln!(writer)?;
+        for row in 0..self.rows() {
+            for column in 0..self.columns.len() {
+                let comma = if column > 0 { "," } else { "" };
+                write!(writer, "{comma}{:?}", self.value(row, column))?;
+            }
+            writeln!(writer)?;
+        }
+        Ok(())
+    }
+
+    /// Writes the table as a `(rows, columns)` array of `f64` in `.npy`, a value at a time: hand
+    /// it a buffered writer.
+    ///
+    /// # Errors
+    /// The writer's.
+    pub fn write_npy(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        let (rows, columns) = (self.rows(), self.columns.len());
+        let values = (0..rows).flat_map(|row| (0..columns).map(move |column| self.value(row, column)));
+        cav_core::npy::write_f64(writer, &[rows, columns], values)
+    }
+
+    /// Whether the table is written as `.npy`: more than [`CSV_ROWS`] rows, or more than
+    /// [`CSV_VALUES`] values.
     #[must_use]
     pub fn is_long(&self) -> bool {
-        self.rows() > CSV_ROWS
+        self.rows() > CSV_ROWS || self.rows().saturating_mul(self.columns.len()) > CSV_VALUES
     }
 }
 
@@ -104,7 +178,11 @@ pub struct Built {
     pub drawing: Drawing,
     /// Its data; a view of the scene has none.
     pub table: Option<Table>,
-    /// Its `.json`: axes, series, marks, preset, scene, provenance.
+    /// What the record says of the figure whatever the format: what is plotted, of what, the
+    /// scene, the build, the numerics, the data file.
+    pub figure: serde_json::Value,
+    /// This picture's entry in the record's `files`: its file, format, preset, size, title,
+    /// axes, series, marks, colours and command.
     pub provenance: serde_json::Value,
     /// The style it was drawn in.
     pub style: Style,
@@ -122,12 +200,21 @@ fn size_mm(figure: &Figure, style: &Style) -> [f64; 2] {
 /// # Errors
 /// When a side would be over [`MAX_PIXELS`] or under one pixel, with the numbers.
 pub fn pixels(size_mm: [f64; 2], dpi: f64) -> Result<[u32; 2], String> {
+    pixels_within(size_mm, dpi, MAX_PIXELS)
+}
+
+/// As [`pixels`], with no side over `most`: a caller that hands the picture on in a message (the
+/// MCP server) takes fewer than a file may hold.
+///
+/// # Errors
+/// When a side would be over `most` or under one pixel, with the numbers.
+pub fn pixels_within(size_mm: [f64; 2], dpi: f64, most: u32) -> Result<[u32; 2], String> {
     let side = |mm: f64| (mm / 25.4 * dpi).round();
     let [w, h] = [side(size_mm[0]), side(size_mm[1])];
-    let most = f64::from(MAX_PIXELS);
-    if !(w >= 1.0 && h >= 1.0 && w <= most && h <= most) {
+    let limit = f64::from(most);
+    if !(w >= 1.0 && h >= 1.0 && w <= limit && h <= limit) {
         return Err(format!(
-            "a figure of {} × {} mm at {dpi} pixels per inch is {w} × {h} pixels; each side is 1 to {MAX_PIXELS}: \
+            "a figure of {} × {} mm at {dpi} pixels per inch is {w} × {h} pixels; each side is 1 to {most}: \
              make it smaller (`size`) or coarser (`dpi`)",
             size_mm[0], size_mm[1]
         ));
@@ -135,24 +222,38 @@ pub fn pixels(size_mm: [f64; 2], dpi: f64) -> Result<[u32; 2], String> {
     Ok([w as u32, h as u32])
 }
 
+/// The size and the resolution `figure` has if it is made of pixels (a PNG, or a view of the
+/// scene in any format): millimetres and pixels per inch, its own or its preset's. `None` for a
+/// plot written as SVG or PDF, which has no pixels.
+///
+/// # Errors
+/// A preset that does not exist.
+pub fn raster(figure: &Figure) -> Result<Option<([f64; 2], f64)>, String> {
+    if figure.format != FigureFormat::Png && figure.what != FigureKind::View {
+        return Ok(None);
+    }
+    let style = Style::preset(&figure.preset)?;
+    Ok(Some((size_mm(figure, &style), figure.dpi.unwrap_or(style.dpi))))
+}
+
 fn subject(figure: &Figure, content: PaneContent) -> Subject {
     Subject {
-        pane: figure.pane,
-        content,
         tower: figure.tower,
         channel: figure.channel,
         span: figure.span,
-        compared: false,
+        title: figure.title,
+        ..Subject::new(figure.pane, content)
     }
 }
 
 /// The data behind a plot: the engine's own numbers, every one.
 fn table(engine: &Engine, figure: &Figure) -> Result<Table, String> {
     let spec = engine.spec();
-    let mut table = Table { columns: Vec::new(), values: Vec::new() };
+    let mut names = Vec::new();
+    let mut held = Vec::new();
     let mut column = |name: String, unit: &str, values: Vec<f64>| {
-        table.columns.push((name, unit.to_owned()));
-        table.values.push(values);
+        names.push((name, unit.to_owned()));
+        held.push(values);
     };
     match figure.what {
         FigureKind::Signal => {
@@ -166,20 +267,17 @@ fn table(engine: &Engine, figure: &Figure) -> Result<Table, String> {
                 ChannelName::Lower => "δφ₁",
                 ChannelName::Upper => "δφ₂",
             };
-            for tower in towers {
-                let label = &spec.array.towers[tower].label;
-                column(format!("readout time of {label}"), "s", signal.readouts(tower));
-                column(
-                    format!("{channel} of {label}"),
-                    "rad",
-                    signal.channel(tower, figure.channel.channel()).to_vec(),
-                );
-                column(
-                    format!("shot taken by {label}"),
-                    "1 if taken or 0 if not",
-                    signal.taken(tower).iter().map(|taken| f64::from(u8::from(*taken))).collect(),
-                );
+            let mut columns = Vec::with_capacity(3 * towers.len());
+            for tower in &towers {
+                let label = &spec.array.towers[*tower].label;
+                columns.push((format!("readout time of {label}"), "s".to_owned()));
+                columns.push((format!("{channel} of {label}"), "rad".to_owned()));
+                columns.push((format!("shot taken by {label}"), "1 if taken or 0 if not".to_owned()));
             }
+            // The signal itself, shared: its values are read as the file is written.
+            let values =
+                Values::Signal { signal: Arc::clone(signal), towers, channel: figure.channel.channel() };
+            return Ok(Table { columns, values });
         }
         FigureKind::Periodogram => {
             let query = Query::Periodogram {
@@ -228,7 +326,7 @@ fn table(engine: &Engine, figure: &Figure) -> Result<Table, String> {
         }
         FigureKind::View => {}
     }
-    Ok(table)
+    Ok(Table { columns: names, values: Values::Held(held) })
 }
 
 /// The `cav figure` line that makes `figure` again from the scene of `engine`, to `file`.
@@ -260,25 +358,28 @@ fn cli_line(engine: &Engine, figure: &Figure, file: &str) -> String {
     if let Some(dpi) = figure.dpi {
         line.push_str(&format!(" --dpi {dpi}"));
     }
+    if !figure.title {
+        line.push_str(" --no-title");
+    }
     line
 }
 
-/// What every figure's `.json` says of where it came from.
-fn provenance(engine: &Engine, figure: &Figure, file: &str, style: &Style) -> serde_json::Value {
+/// What a figure's record says of it whatever its format, and the start of this picture's entry.
+fn provenance(
+    engine: &Engine,
+    figure: &Figure,
+    file: &str,
+    style: &Style,
+) -> (serde_json::Value, serde_json::Value) {
     let spec = engine.spec();
     let command = cav_engine::Command::Export {
         what: cav_engine::ExportKind::Figure(Box::new(figure.clone())),
         to: file.to_owned(),
     };
     let size = size_mm(figure, style);
-    json!({
+    let shared = json!({
         "cavendish_figure": FIGURE_VERSION,
         "what": figure.what.name(),
-        "file": file,
-        "format": figure.format.name(),
-        "preset": style.name,
-        "size_mm": size,
-        "size_points": [size[0] / MM_PER_POINT, size[1] / MM_PER_POINT],
         "subject": {
             "tower": figure.tower,
             "channel": figure.channel.name(),
@@ -286,16 +387,24 @@ fn provenance(engine: &Engine, figure: &Figure, file: &str, style: &Style) -> se
             "pane": figure.pane + 1,
             "playhead_s": engine.time(),
         },
+        "engine": cav_engine::build().json(),
+        "numerics": cav_sim::bundle::numerics(spec, cav_engine::build()),
+        "scene": { "name": spec.name, "spec": spec },
+    });
+    let entry = json!({
+        "file": file,
+        "format": figure.format.name(),
+        "preset": style.name,
+        "size_mm": size,
+        "size_points": [size[0] / MM_PER_POINT, size[1] / MM_PER_POINT],
         "command": {
             "console": cav_engine::describe(&command, figure.pane),
             "cli": cli_line(engine, figure, file),
             "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's",
         },
-        "engine": cav_engine::build().json(),
-        "numerics": cav_sim::bundle::numerics(spec, cav_engine::build()),
         "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
-        "scene": { "name": spec.name, "spec": spec },
-    })
+    });
+    (shared, entry)
 }
 
 /// The file a figure's data or provenance goes in: the figure's own name with another extension.
@@ -336,23 +445,39 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
     }
     let table = table(engine, figure)?;
     let data_file = beside(file, if table.is_long() { "npy" } else { "csv" });
-    let axis = |name: &(String, String), axis: &plots::Axis| {
+    // Each axis as it was drawn: its marks, what is written at them, the short marks between,
+    // and its label, so that a redraw can be the same figure.
+    let axis = |name: &(String, String), axis: &plots::Axis, n: usize| {
         json!({
             "name": name.0,
             "unit": name.1,
             "scale": if axis.log { "log" } else { "linear" },
             "range": [axis.lo, axis.hi],
+            "label": drawn.axis_labels[n],
+            "ticks": drawn.ticks[n],
+            "tick_labels": drawn.tick_labels[n],
+            "minor_ticks": drawn.minor_ticks[n],
         })
     };
-    // Which columns each series is: the table's are laid out a series at a time.
-    let per_series = if figure.what == FigureKind::Signal { 3 } else { 0 };
+    // Which columns each series is: a signal's table has three for each of its towers, and a
+    // series drawn is one of those towers (all of them, unless there are more than a plot draws).
+    let first = match (&table.values, figure.what) {
+        (Values::Signal { towers, .. }, FigureKind::Signal) => described
+            .towers
+            .iter()
+            .map(|tower| {
+                3 * towers.iter().position(|held| held == tower).expect("a tower drawn is in the table")
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
     let series: Vec<serde_json::Value> = described
         .series
         .iter()
         .enumerate()
         .map(|(n, (name, colour))| {
             let (x, y) = match figure.what {
-                FigureKind::Signal => (per_series * n, per_series * n + 1),
+                FigureKind::Signal => (first[n], first[n] + 1),
                 FigureKind::Periodogram => (0, 2),
                 FigureKind::Cadence => (0, 1),
                 _ => (1, 0),
@@ -366,16 +491,17 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
                 "y_column": y,
                 // A signal's third column says which of its shots the tower took: a slot not
                 // taken holds 0 and is not a measurement.
-                "taken_column": (figure.what == FigureKind::Signal).then_some(per_series * n + 2),
+                "taken_column": (figure.what == FigureKind::Signal).then(|| first[n] + 2),
             })
         })
         .collect();
-    let mut provenance = provenance(engine, figure, file, &style);
+    let (mut shared, mut provenance) = provenance(engine, figure, file, &style);
     let extra = json!({
-        "title": drawing.title,
+        // The title drawn, or none; the drawing keeps its name for the file's metadata.
+        "title": figure.title.then_some(&drawing.title),
         "pixels": pixels,
         "dpi": pixels.map(|_| figure.dpi.unwrap_or(style.dpi)),
-        "axes": { "x": axis(&described.x, &drawn.x), "y": axis(&described.y, &drawn.y) },
+        "axes": { "x": axis(&described.x, &drawn.x, 0), "y": axis(&described.y, &drawn.y, 1) },
         "series": series,
         "marks": described.marks,
         "colours": {
@@ -386,19 +512,39 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
             "reference": style.reference.css(),
             "series": style.series.iter().map(|c| c.css()).collect::<Vec<_>>(),
         },
+    });
+    let data = json!({
         "data": {
             "file": data_file,
             "format": if table.is_long() { "npy" } else { "csv" },
             "rows": table.rows(),
             "columns": table.columns.iter().map(|(name, unit)| json!({ "name": name, "unit": unit })).collect::<Vec<_>>(),
             "note": format!(
-                "every value, to the bit; the line drawn is thinned to at most {} points a series (the least and the greatest of each stretch)",
-                plots::MAX_POINTS
+                "every value of every tower, to the bit; the line drawn is thinned to at most {} points a series (the least and the greatest of each stretch), and a signal draws at most {} towers",
+                plots::MAX_POINTS,
+                plots::MAX_SERIES
             ),
         },
     });
     merge(&mut provenance, extra);
-    Ok(Built { drawing, table: Some(table), provenance, style, pixels })
+    merge(&mut shared, data);
+    Ok(Built { drawing, table: Some(table), figure: shared, provenance, style, pixels })
+}
+
+/// A record as the text of its file.
+fn text_of(record: &serde_json::Value) -> String {
+    let mut text = serde_json::to_string_pretty(record).expect("a figure's record is JSON");
+    text.push('\n');
+    text
+}
+
+/// The record at `path`, if there is one that is JSON and no larger than a record is.
+fn read_record(path: &Path) -> Option<serde_json::Value> {
+    let length = std::fs::metadata(path).ok()?.len();
+    if length > RECORD_BYTES {
+        return None;
+    }
+    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
 }
 
 /// Puts the fields of `more` into `into`, after its own.
@@ -408,21 +554,73 @@ fn merge(into: &mut serde_json::Value, more: serde_json::Value) {
     }
 }
 
+/// A name a record may give a picture beside it: a file's name alone, never a path.
+fn plain_name(name: &str) -> bool {
+    !name.is_empty() && !name.contains(['/', '\\', ':']) && name != "." && name != ".."
+}
+
 impl Built {
-    /// The text of the figure's `.json`.
+    /// The figure's record with this picture in it, given the record already beside it (`old`,
+    /// if one could be read) and which of the pictures that one names are still there
+    /// (`there`): the rule at the top of this module.
     #[must_use]
-    pub fn json(&self) -> String {
-        let mut text = serde_json::to_string_pretty(&self.provenance).expect("a figure's provenance is JSON");
-        text.push('\n');
-        text
+    pub fn record(&self, old: Option<&serde_json::Value>, there: &dyn Fn(&str) -> bool) -> serde_json::Value {
+        let own = self.provenance["file"].as_str().unwrap_or_default();
+        let mut files = vec![self.provenance.clone()];
+        let mut strangers: Vec<String> = Vec::new();
+        if let Some(old) = old.and_then(serde_json::Value::as_object) {
+            // The same figure: the old record, less its lists, is this one's.
+            let mut rest = old.clone();
+            let listed = rest.remove("files");
+            let apart = rest.remove("not_this_figure");
+            let same = serde_json::Value::Object(rest) == self.figure;
+            let kept = |name: &str| plain_name(name) && name != own && there(name);
+            for entry in listed.as_ref().and_then(serde_json::Value::as_array).into_iter().flatten() {
+                match entry["file"].as_str().filter(|name| kept(name)) {
+                    Some(_) if same => files.push(entry.clone()),
+                    Some(name) => strangers.push(name.to_owned()),
+                    None => {}
+                }
+            }
+            for name in apart.as_ref().and_then(serde_json::Value::as_array).into_iter().flatten() {
+                strangers.extend(name.as_str().filter(|name| kept(name)).map(str::to_owned));
+            }
+        }
+        files.sort_by(|a, b| a["file"].as_str().cmp(&b["file"].as_str()));
+        strangers.sort();
+        strangers.dedup();
+        let mut record = self.figure.clone();
+        merge(&mut record, json!({ "files": files, "not_this_figure": strangers }));
+        record
     }
 
-    /// The data file's name and bytes, if the figure has data.
+    /// The text of the figure's `.json` when this picture is the only one written of it.
     #[must_use]
-    pub fn data(&self) -> Option<(String, Vec<u8>)> {
-        let table = self.table.as_ref()?;
-        let name = self.provenance["data"]["file"].as_str()?.to_owned();
-        Some((name, if table.is_long() { table.npy() } else { table.csv().into_bytes() }))
+    pub fn json(&self) -> String {
+        text_of(&self.record(None, &|_| false))
+    }
+
+    /// The data file's name, if the figure has data.
+    #[must_use]
+    pub fn data_file(&self) -> Option<&str> {
+        self.table.as_ref()?;
+        self.figure["data"]["file"].as_str()
+    }
+
+    /// Writes the figure's data to `path`, a row at a time through a buffer of [`WRITE_BUFFER`]
+    /// bytes: as `.npy` when the table is long, as CSV otherwise. Nothing when the figure has no
+    /// data.
+    ///
+    /// # Errors
+    /// When the file cannot be made or written, with its path.
+    pub fn write_data(&self, path: &Path) -> Result<(), String> {
+        let Some(table) = &self.table else { return Ok(()) };
+        let wrong = |why: std::io::Error| format!("{}: not written: {why}", path.display());
+        let file = std::fs::File::create(path).map_err(wrong)?;
+        let mut writer = std::io::BufWriter::with_capacity(WRITE_BUFFER, file);
+        let written =
+            if table.is_long() { table.write_npy(&mut writer) } else { table.write_csv(&mut writer) };
+        written.and_then(|()| writer.flush()).map_err(wrong)
     }
 }
 
@@ -471,23 +669,24 @@ fn view(
         height: pixels[1],
         rgb: std::sync::Arc::new(rgba.chunks(4).flat_map(|pixel| [pixel[0], pixel[1], pixel[2]]).collect()),
     });
-    let mut provenance = provenance(engine, figure, file, &style);
+    let (mut shared, mut provenance) = provenance(engine, figure, file, &style);
     merge(
         &mut provenance,
         json!({
             "title": drawing.title,
             "pixels": pixels,
             "dpi": figure.dpi.unwrap_or(style.dpi),
-            "camera": engine.view(figure.pane),
             "note": "the scene as the renderer draws it: a picture, also inside an SVG or a PDF; it has no data file",
         }),
     );
+    merge(&mut shared, json!({ "camera": engine.view(figure.pane), "data": null }));
     let png = cav_render::encode_png(&rgba, pixels)?;
-    Ok((Built { drawing, table: None, provenance, style, pixels: Some(pixels) }, png))
+    Ok((Built { drawing, table: None, figure: shared, provenance, style, pixels: Some(pixels) }, png))
 }
 
-/// Draws `figure` from `engine` and writes it to `path`, with its data and its `.json` beside
-/// it. Answers with the files written, the figure first.
+/// Draws `figure` from `engine` and writes it to `path`, with its data beside it, and adds it to
+/// the figure's record there (or starts the record again, if the one there is of another
+/// figure: the rule at the top of this module). Answers with the files written, the figure first.
 ///
 /// # Errors
 /// As [`build`]; when a PNG or a view needs a device and there is none; when a file cannot be
@@ -516,15 +715,23 @@ pub fn export(
         }
     };
     let directory = path.parent().unwrap_or_else(|| Path::new(""));
-    let mut files = vec![(path.to_path_buf(), bytes)];
-    if let Some((name, data)) = built.data() {
-        files.push((directory.join(name), data));
+    let write = |path: &Path, bytes: &[u8]| {
+        std::fs::write(path, bytes).map_err(|why| format!("{}: not written: {why}", path.display()))
+    };
+    let mut files = vec![path.to_path_buf()];
+    write(path, &bytes)?;
+    if let Some(name) = built.data_file() {
+        let data = directory.join(name);
+        built.write_data(&data)?;
+        files.push(data);
     }
-    files.push((directory.join(beside(&file, "json")), built.json().into_bytes()));
-    for (path, bytes) in &files {
-        std::fs::write(path, bytes).map_err(|why| format!("{}: not written: {why}", path.display()))?;
-    }
-    Ok(files.into_iter().map(|(path, _)| path).collect())
+    // The record: this picture added to the one beside it, if that is of the same figure.
+    let record = directory.join(beside(&file, "json"));
+    let old = read_record(&record);
+    let said = built.record(old.as_ref(), &|name| directory.join(name).is_file());
+    write(&record, text_of(&said).as_bytes())?;
+    files.push(record);
+    Ok(files)
 }
 
 /// Gives `engine` this crate's figure exporter: from then on a figure export

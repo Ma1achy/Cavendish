@@ -194,8 +194,10 @@ fn a_figure_is_the_stated_size() {
             // The provenance says the same.
             let json: serde_json::Value =
                 serde_json::from_slice(&std::fs::read(file.with_extension("json")).unwrap()).unwrap();
-            assert_eq!(json["size_mm"], serde_json::json!(expected));
-            assert_eq!(json["preset"], preset);
+            let name = format!("{preset}.{format}");
+            let entry = picture(&json, &name);
+            assert_eq!(entry["size_mm"], serde_json::json!(expected));
+            assert_eq!(entry["preset"], preset);
         }
     }
     // The four light presets are the widths the plan states.
@@ -214,6 +216,14 @@ fn a_figure_is_the_stated_size() {
         engine.run_line(&format!("figure periodogram as a4 to {}", word(&dir.join("x.svg")))).unwrap_err();
     assert!(why.contains("`a4` is not a figure preset"), "{why}");
     assert!(!dir.join("x.svg").exists() && !dir.join("x.json").exists());
+}
+
+/// The entry of the picture `name` in a figure's record.
+fn picture<'a>(record: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
+    record["files"]
+        .as_array()
+        .and_then(|files| files.iter().find(|entry| entry["file"] == name))
+        .unwrap_or_else(|| panic!("the record lists no {name}: {}", record["files"]))
 }
 
 /// A CSV figure's data: the header's fields and each column's values.
@@ -270,17 +280,17 @@ fn figure_data_is_the_plotted_data() {
         serde_json::from_slice(&std::fs::read(dir.join("p.json")).unwrap()).unwrap();
     assert_eq!(json["data"]["file"], "p.csv");
     assert_eq!(json["data"]["rows"], spectrum.frequencies.len());
-    assert_eq!(json["series"][0]["x"], "frequency");
-    assert_eq!(json["series"][0]["y"], "√S");
-    assert_eq!(json["axes"]["y"]["scale"], "log");
-    assert_eq!(json["axes"]["y"]["unit"], "rad/√Hz");
-    assert_eq!(json["axes"]["x"]["range"], serde_json::json!([0.0, spectrum.nyquist]));
+    assert_eq!(json["files"][0]["series"][0]["x"], "frequency");
+    assert_eq!(json["files"][0]["series"][0]["y"], "√S");
+    assert_eq!(json["files"][0]["axes"]["y"]["scale"], "log");
+    assert_eq!(json["files"][0]["axes"]["y"]["unit"], "rad/√Hz");
+    assert_eq!(json["files"][0]["axes"]["x"]["range"], serde_json::json!([0.0, spectrum.nyquist]));
     assert_eq!(json["scene"]["spec"], serde_json::to_value(engine.spec()).unwrap());
     assert_eq!(json["engine"]["revision"], cav_engine::build().revision);
     assert_eq!(json["numerics"], cav_sim::bundle::numerics(engine.spec(), cav_engine::build()));
-    assert_eq!(json["command"]["console"], "figure periodogram tower 2 as paper-column to p.pdf");
+    assert_eq!(json["files"][0]["command"]["console"], "figure periodogram tower 2 as paper-column to p.pdf");
     assert_eq!(
-        json["command"]["cli"],
+        json["files"][0]["command"]["cli"],
         "cav figure <a .ron file holding the scene in this file's `scene.spec`> periodogram --out p.pdf --preset paper-column --tower 2"
     );
     // Nothing in it is a time of day: no key or value speaks of one.
@@ -301,7 +311,144 @@ fn figure_data_is_the_plotted_data() {
     library.run_line(&format!("figure cadence as slide to {}", word(&dir.join("c.svg")))).unwrap();
     let json: serde_json::Value =
         serde_json::from_slice(&std::fs::read(dir.join("c.json")).unwrap()).unwrap();
-    assert_eq!(json["command"]["cli"], "cav figure comb cadence --out c.svg --preset slide --tower 1");
+    assert_eq!(
+        json["files"][0]["command"]["cli"],
+        "cav figure comb cadence --out c.svg --preset slide --tower 1"
+    );
+}
+
+/// The record beside the figures of stem `stem` in `dir`.
+fn record_of(dir: &Path, stem: &str) -> serde_json::Value {
+    serde_json::from_slice(&std::fs::read(dir.join(format!("{stem}.json"))).unwrap()).unwrap()
+}
+
+/// The names a record lists under `key`.
+fn names(record: &serde_json::Value, key: &str) -> Vec<String> {
+    let entries = record[key].as_array().unwrap_or_else(|| panic!("the record has no `{key}`"));
+    entries.iter().map(|entry| entry["file"].as_str().or(entry.as_str()).unwrap().to_owned()).collect()
+}
+
+#[test]
+fn a_figures_record_lists_every_format_written_of_it() {
+    // Finding 26 of S2's review: x.svg, x.pdf and x.png left one x.json, describing the last.
+    let (dir, other) = (scratch("record"), scratch("record other order"));
+    let mut engine = engine("load comb; set duration 200");
+    let line = |dir: &Path, tower: usize, preset: &str, file: &str| {
+        format!("figure periodogram tower {tower} as {preset} to {}", word(&dir.join(file)))
+    };
+    engine.run_line(&line(&dir, 2, "paper-column", "x.svg")).unwrap();
+    let alone = std::fs::read(dir.join("x.json")).unwrap();
+    assert_eq!(names(&record_of(&dir, "x"), "files"), ["x.svg"]);
+    engine.run_line(&line(&dir, 2, "slide", "x.pdf")).unwrap();
+    // One record, both pictures, in the order of their names; each entry is its own picture's.
+    let record = record_of(&dir, "x");
+    assert_eq!(record["cavendish_figure"], 2);
+    assert_eq!(names(&record, "files"), ["x.pdf", "x.svg"]);
+    assert_eq!(names(&record, "not_this_figure"), Vec::<String>::new());
+    let (pdf, svg) = (picture(&record, "x.pdf"), picture(&record, "x.svg"));
+    assert_eq!(
+        (&pdf["format"], &pdf["preset"], &pdf["size_mm"][0]),
+        (&"pdf".into(), &"slide".into(), &254.0.into())
+    );
+    assert_eq!(
+        (&svg["format"], &svg["preset"], &svg["size_mm"][0]),
+        (&"svg".into(), &"paper-column".into(), &85.0.into())
+    );
+    assert_eq!(pdf["command"]["console"], "figure periodogram tower 2 as slide to x.pdf");
+    assert!(pdf["pixels"].is_null() && pdf["dpi"].is_null(), "a vector picture has no pixels");
+    // What is the figure's, whatever the format, is said once: the data, the scene, the build.
+    assert_eq!(record["data"]["file"], "x.csv");
+    assert_eq!(record["subject"]["tower"], 2);
+    assert_eq!(record["scene"]["spec"], serde_json::to_value(engine.spec()).unwrap());
+    assert!(pdf["data"].is_null() && pdf["scene"].is_null());
+    // The same command again changes no byte of the record.
+    let both = std::fs::read(dir.join("x.json")).unwrap();
+    engine.run_line(&line(&dir, 2, "slide", "x.pdf")).unwrap();
+    assert!(std::fs::read(dir.join("x.json")).unwrap() == both);
+    // Written in the other order, somewhere else: the same record, byte for byte.
+    engine.run_line(&line(&other, 2, "slide", "x.pdf")).unwrap();
+    engine.run_line(&line(&other, 2, "paper-column", "x.svg")).unwrap();
+    assert!(std::fs::read(other.join("x.json")).unwrap() == both, "the order of writing shows in the record");
+    // Control: the record as it was written before, the last picture's alone, is not this one.
+    assert!(alone != both && alone.len() < both.len());
+    // A picture that is no longer there is not listed.
+    std::fs::remove_file(other.join("x.pdf")).unwrap();
+    engine.run_line(&line(&other, 2, "paper-column", "x.svg")).unwrap();
+    assert_eq!(names(&record_of(&other, "x"), "files"), ["x.svg"]);
+    assert!(std::fs::read(other.join("x.json")).unwrap() == alone);
+    // Another tower's figure under the same name: the record and the data become that figure's,
+    // and the picture left behind is named as not this figure, never as a file of it.
+    let before = std::fs::read(dir.join("x.csv")).unwrap();
+    engine.run_line(&line(&dir, 3, "slide", "x.pdf")).unwrap();
+    let record = record_of(&dir, "x");
+    assert_eq!(names(&record, "files"), ["x.pdf"]);
+    assert_eq!(names(&record, "not_this_figure"), ["x.svg"]);
+    assert_eq!(record["subject"]["tower"], 3);
+    assert_ne!(std::fs::read(dir.join("x.csv")).unwrap(), before, "the data is the new figure's");
+    // Written again, it is this figure's, and the list is empty: as if it had all been written afresh.
+    engine.run_line(&line(&dir, 3, "paper-column", "x.svg")).unwrap();
+    let record = record_of(&dir, "x");
+    assert_eq!(names(&record, "files"), ["x.pdf", "x.svg"]);
+    assert_eq!(names(&record, "not_this_figure"), Vec::<String>::new());
+    let afresh = scratch("record afresh");
+    engine.run_line(&line(&afresh, 3, "slide", "x.pdf")).unwrap();
+    engine.run_line(&line(&afresh, 3, "paper-column", "x.svg")).unwrap();
+    assert!(std::fs::read(afresh.join("x.json")).unwrap() == std::fs::read(dir.join("x.json")).unwrap());
+    // One bit of the scene is another figure too.
+    let mass = engine.spec().bodies[0].mass;
+    engine.run_line(&format!("set bodies[0].mass {:?}", f64::from_bits(mass.to_bits() + 1))).unwrap();
+    assert!(engine.settle(LONG));
+    engine.run_line(&line(&dir, 3, "slide", "x.pdf")).unwrap();
+    assert_eq!(names(&record_of(&dir, "x"), "not_this_figure"), ["x.svg"]);
+    // A record that is not one (an older layout, a file of something else) is replaced; and a
+    // name in it that is a path is never looked for.
+    std::fs::write(
+        dir.join("x.json"),
+        r#"{"cavendish_figure": 1, "file": "x.svg", "files": [{"file": "../x.svg"}]}"#,
+    )
+    .unwrap();
+    engine.run_line(&line(&dir, 3, "slide", "x.pdf")).unwrap();
+    let record = record_of(&dir, "x");
+    assert_eq!(
+        (names(&record, "files"), names(&record, "not_this_figure")),
+        (vec!["x.pdf".to_owned()], vec![])
+    );
+    std::fs::write(dir.join("x.json"), "not a record").unwrap();
+    engine.run_line(&line(&dir, 3, "slide", "x.pdf")).unwrap();
+    assert_eq!(names(&record_of(&dir, "x"), "files"), ["x.pdf"]);
+}
+
+#[test]
+fn gpu_a_figures_record_covers_svg_pdf_and_png() {
+    // The three formats of one stem, as the demo writes them: one record, three entries, the
+    // PNG's with its pixels and resolution; in any order the same bytes.
+    let dirs = [scratch("record three"), scratch("record three reversed")];
+    let mut engine = engine("load comb; set duration 200");
+    let mut formats = ["svg", "pdf", "png"];
+    for dir in &dirs {
+        for format in formats {
+            let file = word(&dir.join(format!("fig.{format}")));
+            engine
+                .run_line(&format!("figure periodogram tower 2 as paper-column dpi 150 to {file}"))
+                .unwrap();
+        }
+        formats.reverse();
+    }
+    let record = record_of(&dirs[0], "fig");
+    assert_eq!(names(&record, "files"), ["fig.pdf", "fig.png", "fig.svg"]);
+    let png = picture(&record, "fig.png");
+    assert_eq!((&png["pixels"], &png["dpi"]), (&serde_json::json!([502, 354]), &serde_json::json!(150.0)));
+    assert!(picture(&record, "fig.svg")["pixels"].is_null());
+    let (_, size) = cav_render::decode_png(&std::fs::read(dirs[0].join("fig.png")).unwrap()).unwrap();
+    assert_eq!(size, [502, 354], "the record says what the file is");
+    assert_eq!(files_of(&dirs[0]).len(), 5, "three pictures, one data file, one record");
+    assert_eq!(differing(&dirs[0], &dirs[1]), 0);
+    // Control: the last picture's record alone, as it was before, lists one file.
+    let figure = Figure { tower: Some(2), ..Figure::new(FigureKind::Periodogram, FigureFormat::Svg) };
+    let alone: serde_json::Value =
+        serde_json::from_str(&figure::build(&engine, &figure, "fig.svg").unwrap().json()).unwrap();
+    assert_eq!(names(&alone, "files"), ["fig.svg"]);
+    assert_ne!(alone, record);
 }
 
 #[test]
@@ -312,14 +459,8 @@ fn the_paper_periodogram_is_the_house_style() {
     let style = &built.style;
     assert_eq!(style.name, "paper-column");
     let points = [(85.0 / MM_PER_POINT) as f32, (60.0 / MM_PER_POINT) as f32];
-    let subject = plots::Subject {
-        pane: 0,
-        content: cav_engine::PaneContent::Periodogram,
-        tower: Some(2),
-        channel: ChannelName::Gradiometer,
-        span: None,
-        compared: false,
-    };
+    let subject =
+        plots::Subject { tower: Some(2), ..plots::Subject::new(0, cav_engine::PaneContent::Periodogram) };
     let plot = plots::build(&engine, &subject, style, &cav_plot::fonts::Outlines, points).unwrap();
     assert_eq!(plot.drawing, built.drawing, "the figure is the plot, in the preset's style and size");
     let (area, x, y) = (plot.drawn.area, plot.drawn.x, plot.drawn.y);
@@ -347,11 +488,11 @@ fn the_paper_periodogram_is_the_house_style() {
     }
     let texts = built.drawing.texts();
     // They are named in the key above the axes, beside a sample of their grey.
-    assert!(texts.contains(&"shot-noise floors, 1e-4 and 1e-5 rad/√Hz"), "{texts:?}");
+    assert!(texts.contains(&"shot-noise floors, 100 and 10 µrad/√Hz"), "{texts:?}");
     let (_, named) =
         plot.drawn.labels.iter().find(|(text, _)| text.starts_with("shot-noise floors")).unwrap();
     assert!(named.bottom() <= area.top(), "{named:?}");
-    assert!(texts.contains(&"rad/√Hz") && texts.iter().any(|t| t.starts_with("frequency, Hz")));
+    assert!(texts.contains(&"√S, rad/√Hz") && texts.iter().any(|t| t.starts_with("frequency, Hz")));
     // A stem for every harmonic of the comb, from the axis up: solid, or dashed if it is folded.
     let Reply::Periodogram(spectrum) = engine
         .query(&Query::Periodogram { tower: 2, channel: ChannelName::Gradiometer, compared: false })
@@ -402,9 +543,43 @@ fn the_paper_periodogram_is_the_house_style() {
             _ => None,
         })
         .collect();
-    assert_eq!(diamonds.len(), 1);
+    // Two diamonds: the mark on the axes, and its sample in the key above them, beside its name.
+    assert_eq!(diamonds.len(), 2);
     assert!((diamonds[0][0] - expected.x).abs() < 0.01 && (diamonds[0][1] - expected.y).abs() < 0.01);
+    assert!(diamonds[1][1] < area.top(), "the key's diamond is above the axes");
     assert!(area.contains(expected) && texts.contains(&"ULDM benchmark"));
+    assert_eq!(built.provenance["marks"]["reference"]["uldm_benchmark"]["named_in_the_key"], true);
+    // Review 29: no label by a mark meets a stem, a dot or a diamond but its own.
+    assert!(!plot.drawn.marked.is_empty(), "the harmonics are labelled");
+    for (text, took, own) in &plot.drawn.marked {
+        for (n, mark) in plot.drawn.marks.iter().enumerate() {
+            assert!(
+                own.contains(&n) || !took.intersects(*mark),
+                "`{text}` at {took:?} meets mark {n} at {mark:?}"
+            );
+        }
+    }
+    // Control: where the rule before put "ULDM benchmark" (to the right of its mark, a line
+    // above it), the rectangle meets the stem of the comb's second harmonic.
+    let u = style.unit();
+    let [w, h] = cav_plot::drawing::Measure::size(
+        &cav_plot::fonts::Outlines,
+        "ULDM benchmark",
+        cav_plot::drawing::Face::Sans,
+        style.label_size,
+    );
+    let before = egui::Rect::from_min_size(
+        egui::pos2(expected.x + 3.0 * u, expected.y - 3.0 * u - h),
+        egui::vec2(w, h),
+    );
+    let second = plot.drawn.stems.iter().find(|stem| stem.1 == 2).unwrap().2;
+    let stem = plot
+        .drawn
+        .marks
+        .iter()
+        .find(|mark| (mark.center().x - second).abs() < 0.5 && mark.height() > 5.0)
+        .unwrap();
+    assert!(before.intersects(*stem), "the old place {before:?} is clear of the 2f₀ stem {stem:?}");
     // The provenance says the mark is the plan's reference, not something simulated.
     let mark = &built.provenance["marks"]["reference"]["uldm_benchmark"];
     assert!(
@@ -465,7 +640,8 @@ fn a_figure_is_bounded_in_points_and_pixels() {
             _ => None,
         })
         .collect();
-    assert_eq!(series.len(), 5);
+    // Five towers of 21,000 shots, each drawn as its envelope: two lines (review 29).
+    assert_eq!(series.len(), 2 * 5);
     assert!(series.iter().all(|points| *points <= plots::MAX_POINTS + 2), "{series:?}");
     // … while the data beside it keeps every value, as .npy because it is long.
     let table = built.table.as_ref().unwrap();
@@ -641,7 +817,7 @@ fn gpu_a_png_figure_has_the_stated_pixels() {
         assert_eq!(size, expected, "{options}");
         let json: serde_json::Value =
             serde_json::from_slice(&std::fs::read(dir.join("p.json")).unwrap()).unwrap();
-        assert_eq!(json["pixels"], serde_json::json!(expected));
+        assert_eq!(json["files"][0]["pixels"], serde_json::json!(expected));
         // The picture is the figure: its corner is the style's paper, and the spectrum's grey
         // and the first comb's colour are both in it.
         let style = Style::preset(options.split(' ').nth(1).unwrap()).unwrap();
@@ -735,13 +911,13 @@ fn a_flight_figure_says_which_shots_were_taken() {
     assert!(lost > row / 2, "{lost} of {row} shots not taken");
     let json: serde_json::Value =
         serde_json::from_slice(&std::fs::read(dir.join("f.json")).unwrap()).unwrap();
-    assert_eq!(json["marks"]["not_taken"]["shots"], serde_json::json!(lost));
+    assert_eq!(json["files"][0]["marks"]["not_taken"]["shots"], serde_json::json!(lost));
     // A signal's series name the column that says which shots were taken.
     engine.run_line(&format!("figure signal as paper-full to {}", word(&dir.join("s.svg")))).unwrap();
     let json: serde_json::Value =
         serde_json::from_slice(&std::fs::read(dir.join("s.json")).unwrap()).unwrap();
-    assert_eq!(json["series"][1]["taken_column"], serde_json::json!(5));
-    assert_eq!(json["marks"]["shots_taken"].as_array().unwrap().len(), 5);
+    assert_eq!(json["files"][0]["series"][1]["taken_column"], serde_json::json!(5));
+    assert_eq!(json["files"][0]["marks"]["shots_taken"].as_array().unwrap().len(), 5);
     // Control: the plain schedule takes every shot, and the column is all ones.
     let mut plain = self::engine("load comb; set duration 60");
     plain

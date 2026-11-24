@@ -7,11 +7,13 @@
   "sign": "lower minus upper (δφ₁ − δφ₂): George's convention. v1's bundles are upper minus lower: the opposite sign",
   "settled": true,
   "warnings": [],
+  "comparison": null,
   "numerics": {
     "engine": {
       "version": "0.0.0",
-      "revision": "78af98d0491f331dbe393b02a663b6e8e15c6b1c",
-      "dirty": true
+      "revision": "ef2b22c53835a2b61090b3e09780a556217994b5",
+      "dirty": false,
+      "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
     },
     "platform": "x86_64-windows",
     "precision": "f64 on the CPU",
@@ -136,13 +138,14 @@
     "duration": 2000.0,
     "array": {
       "instrument": {
-        "tower_height": 10.0,
+        "tower_height": 10.1,
         "ifo_separation": 5.0,
         "half_sequence": 0.73,
         "launch_velocity": 3.86,
         "cycle": 2.0,
         "atom_mass": 1.4431558652473234e-25,
         "gravity": 9.81,
+        "kicks": 1000.0,
         "launch_floor": true,
         "sign": "LowerMinusUpper"
       },

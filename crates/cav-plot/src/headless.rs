@@ -218,8 +218,14 @@ impl Painter {
             self.take_textures(&mut frame);
             output = Some(frame);
         }
-        // The context goes back to a pixel a point for whatever is painted next.
+        // The context goes back to a pixel a point for whatever is painted next. A scale takes
+        // hold at the start of a frame, so an empty frame is run for it: left pending, it undid
+        // the next picture's scale whenever that was this one's again (two PNG figures of one
+        // size from one engine: the second was refused).
         self.ctx.set_pixels_per_point(1.0);
+        self.clock += FRAME_DT;
+        let mut settled = self.ctx.run_ui(input(pixels, self.clock, Vec::new()), |_| {});
+        self.take_textures(&mut settled);
         let output = output.expect("three frames");
         if (output.pixels_per_point - per_point).abs() > 1e-3 * per_point {
             return Err(format!(

@@ -11,6 +11,11 @@ import json
 import struct
 from pathlib import Path
 
+PALETTE: tuple[str, ...] = (
+    "#101010", "#202020", "#303030", "#404040", "#505050", "#606060", "#707070", "#808080",
+)
+"""Eight colours that are no palette of Cavendish's: a redraw that wears them read them here."""
+
 AWKWARD: tuple[float, ...] = (0.1 + 0.2, 5e-324, 1.7976931348623157e308, 1e-7, 123456789.12345679, 2.5e-5)
 """Numbers that only the shortest round-trip text reads back to the bit."""
 
@@ -18,6 +23,72 @@ AWKWARD: tuple[float, ...] = (0.1 + 0.2, 5e-324, 1.7976931348623157e308, 1e-7, 1
 def text(value: float) -> str:
     """A number as Cavendish writes it in a ``.csv``: the shortest text that reads back the same."""
     return repr(value)
+
+
+def axis(
+    name:   str,
+    unit:   str,
+    scale:  str,
+    ends:   tuple[float, float],
+    label:  str | None,
+    ticks:  list[tuple[float, str]],
+    minor:  list[float],
+) -> dict[str, object]:
+    """
+    One axis of a picture's entry, with its marks as Cavendish records them.
+
+    Args:
+        name   (str):                     What is along it.
+        unit   (str):                     The data's unit.
+        scale  (str):                     ``linear`` or ``log``.
+        ends   (tuple[float, float]):     The values at its two ends.
+        label  (str | None):              Its label as drawn, or ``None``.
+        ticks  (list[tuple[float, str]]): Each major mark's value and the text written by it.
+        minor  (list[float]):             The minor marks' values.
+    Returns:
+        dict[str, object]: The axis's JSON.
+    """
+    return {
+        "name":        name,
+        "unit":        unit,
+        "scale":       scale,
+        "range":       list(ends),
+        "label":       label,
+        "ticks":       [value for value, _ in ticks],
+        "tick_labels": [text for _, text in ticks],
+        "minor_ticks": minor,
+    }
+
+
+def _axes(what: str) -> dict[str, object]:
+    """The two axes of the synthetic figure of ``what``, with their marks."""
+    decades = [(10.0 ** power, f"10^{power}") for power in range(-8, 1, 2)]
+    odd     = [10.0 ** power for power in range(-9, 0, 2)]
+    if what == "periodogram":
+        return {
+            "x": axis("frequency", "Hz", "linear", (0.0, 0.25), "frequency, Hz · Nyquist 0.25 Hz",
+                      [(0.05 * k, f"{0.05 * k:.2f}") for k in range(6)], []),
+            "y": axis("√S", "rad/√Hz", "log", (1e-9, 1.0), "√S, rad/√Hz", decades, odd),
+        }
+    if what == "cadence":
+        return {
+            "x": axis("frequency offset from a tone", "Hz", "linear", (0.0, 0.25), "frequency offset from a tone, Hz",
+                      [(0.1 * k, f"{0.1 * k:.1f}") for k in range(3)], []),
+            "y": axis("|W| relative to the tone", "1", "log", (1e-9, 1.0), None, decades, odd),
+        }
+    if what == "flight":
+        return {
+            "x": axis("absolute time", "s", "linear", (-1.46, 8.0), "absolute time, s",
+                      [(2.0 * k, str(2 * k)) for k in range(5)], []),
+            "y": axis("height above each tower's base", "m", "linear", (0.0, 10.0), "height, m",
+                      [(0.0, "0"), (5.0, "5"), (10.0, "10")], []),
+        }
+    # A signal's ΔΦ is in rad, and its marks are written in mrad.
+    return {
+        "x": axis("time", "s", "linear", (0.0, 12.0), "readout time, s", [(4.0 * k, str(4 * k)) for k in range(4)], []),
+        "y": axis("ΔΦ", "rad", "linear", (-0.002, 0.002), "ΔΦ, mrad",
+                  [(-0.002, "−2"), (-0.001, "−1"), (0.0, "0"), (0.001, "1"), (0.002, "2")], []),
+    }
 
 
 def provenance(what: str, columns: list[tuple[str, str]], rows: int, layout: str = "csv") -> dict[str, object]:
@@ -32,7 +103,6 @@ def provenance(what: str, columns: list[tuple[str, str]], rows: int, layout: str
     Returns:
         dict[str, object]: The whole document, as ``json.dumps`` takes it.
     """
-    log     = what in ("periodogram", "cadence")
     series: list[dict[str, object]] = []
     if what == "signal":
         series = [
@@ -42,48 +112,61 @@ def provenance(what: str, columns: list[tuple[str, str]], rows: int, layout: str
         ]
     elif what in ("periodogram", "cadence"):
         series = [{"name": "the spectrum", "colour": "#6e6e6e", "x": columns[0][0], "y": columns[-1][0]}]
+    elif what == "flight":
+        series = [{"name": f"tower {n}", "colour": PALETTE[n - 1], "x": "launch", "y": "tower"} for n in (1, 2, 3)]
     marks: dict[str, object] = {}
     if what == "periodogram":
+        # The second harmonic's label was left out for want of room.
         marks = {
             "combs": [{
-                "body": "oscillator", "fundamental_hz": 0.05, "colour": "#0b0dff",
+                "body": "oscillator", "fundamental_hz": 0.05, "colour": "#900c60",
                 "stems": [
-                    {"n": 1, "frequency_hz": 0.05, "appears_at_hz": 0.05, "folded": False, "height": 1e-2},
-                    {"n": 2, "frequency_hz": 0.10, "appears_at_hz": 0.10, "folded": False, "height": 1e-3},
-                    {"n": 7, "frequency_hz": 0.35, "appears_at_hz": 0.15, "folded": True,  "height": 1e-6},
+                    {"n": 1, "frequency_hz": 0.05, "appears_at_hz": 0.05, "folded": False, "height": 1e-2,
+                     "label": "f₀"},
+                    {"n": 2, "frequency_hz": 0.10, "appears_at_hz": 0.10, "folded": False, "height": 1e-3,
+                     "label": None},
+                    {"n": 7, "frequency_hz": 0.35, "appears_at_hz": 0.15, "folded": True,  "height": 1e-6,
+                     "label": "7f₀ folded"},
                 ],
             }],
             "reference": {
                 "shot_noise_floors_rad_per_sqrt_hz": [1e-4, 1e-5],
-                "uldm_benchmark": {"frequency_hz": 0.04836, "height_rad_per_sqrt_hz": 1e-7, "note": "a reference mark"},
+                "uldm_benchmark": {"frequency_hz": 0.04836, "height_rad_per_sqrt_hz": 1e-7, "note": "a reference mark",
+                                   "label": "ULDM benchmark"},
             },
         }
     elif what == "cadence":
-        marks = {"predicted_lines": [{"what": "alias", "frequency_hz": 0.2, "height": 0.25}], "predicted_floor": 5e-3}
+        marks = {"predicted_lines": [{"what": "alias", "frequency_hz": 0.2, "height": 0.25, "label": "0.250"}],
+                 "predicted_floor": 5e-3}
     elif what == "signal":
         marks = {"vertical_axis_written_in": "mrad", "shots": rows}
-    return {
-        "cavendish_figure": 1,
-        "what":             what,
-        "file":             f"{what}.pdf",
-        "format":           "pdf",
-        "preset":           "paper-column",
-        "size_mm":          [85.0, 60.0],
-        "title":            f"A synthetic {what}",
-        "axes": {
-            "x": {"name": "frequency" if log else "time", "unit": "Hz" if log else "s", "scale": "linear",
-                  "range": [0.0, 0.25] if log else [0.0, 12.0]},
-            "y": {"name": "√S" if log else "ΔΦ", "unit": "rad/√Hz" if log else "rad",
-                  "scale": "log" if log else "linear", "range": [1e-9, 1.0] if log else [-0.002, 0.002]},
+    picture: dict[str, object] = {
+        "file":    f"{what}.pdf",
+        "format":  "pdf",
+        "preset":  "paper-column",
+        "size_mm": [85.0, 60.0],
+        "title":   f"A synthetic {what}",
+        "axes":    _axes(what),
+        "series":  series,
+        "marks":   marks,
+        "colours": {
+            "background": "#ffffff", "ink": "#111111", "rule": "#cfcfcf", "spectrum": "#6e6e6e",
+            "reference": "#8c8c8c", "series": list(PALETTE),
         },
-        "series": series,
-        "marks":  marks,
+    }
+    return {
+        "cavendish_figure": 2,
+        "what":             what,
         "data": {
             "file":    f"{what}.{layout}",
             "format":  layout,
             "rows":    rows,
             "columns": [{"name": name, "unit": unit} for name, unit in columns],
         },
+        # The second picture was written without a title (``untitled``).
+        "files":            [picture, {**picture, "file": f"{what}.svg", "format": "svg", "preset": "slide",
+                                       "size_mm": [254.0, 143.0], "title": None}],
+        "not_this_figure":  [],
     }
 
 
@@ -132,7 +215,7 @@ def write(directory: Path, what: str, layout: str = "csv") -> Path:
     target = directory / f"{what}.json"
     if what == "view":
         document = provenance("view", [], 0)
-        del document["data"], document["axes"], document["series"]
+        document["data"] = None
         target.write_text(json.dumps(document, ensure_ascii = False, indent = 2), encoding = "utf-8")
         return target
     columns, rows = table(what)

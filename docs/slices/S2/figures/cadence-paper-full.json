@@ -1,17 +1,6 @@
 {
-  "cavendish_figure": 1,
+  "cavendish_figure": 2,
   "what": "cadence",
-  "file": "cadence-paper-full.pdf",
-  "format": "pdf",
-  "preset": "paper-full",
-  "size_mm": [
-    178.0,
-    90.0
-  ],
-  "size_points": [
-    504.5669291338583,
-    255.1181102362205
-  ],
   "subject": {
     "tower": 1,
     "channel": "gradiometer",
@@ -19,21 +8,18 @@
     "pane": 1,
     "playhead_s": 0.0
   },
-  "command": {
-    "console": "figure cadence tower 1 as paper-full to cadence-paper-full.pdf",
-    "cli": "cav figure cadence-lab cadence --out cadence-paper-full.pdf --preset paper-full --tower 1",
-    "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's"
-  },
   "engine": {
     "version": "0.0.0",
-    "revision": "78af98d0491f331dbe393b02a663b6e8e15c6b1c",
-    "dirty": true
+    "revision": "ef2b22c53835a2b61090b3e09780a556217994b5",
+    "dirty": false,
+    "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
   },
   "numerics": {
     "engine": {
       "version": "0.0.0",
-      "revision": "78af98d0491f331dbe393b02a663b6e8e15c6b1c",
-      "dirty": true
+      "revision": "ef2b22c53835a2b61090b3e09780a556217994b5",
+      "dirty": false,
+      "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
     },
     "platform": "x86_64-windows",
     "precision": "f64 on the CPU",
@@ -51,7 +37,6 @@
     },
     "replay": "bit-identical with the same binary on the same platform (sin and cos are the platform's)"
   },
-  "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
   "scene": {
     "name": "cadence-lab",
     "spec": {
@@ -61,13 +46,14 @@
       "duration": 2000.0,
       "array": {
         "instrument": {
-          "tower_height": 10.0,
+          "tower_height": 10.1,
           "ifo_separation": 5.0,
           "half_sequence": 0.73,
           "launch_velocity": 3.86,
           "cycle": 2.0,
           "atom_mass": 1.4431558652473234e-25,
           "gravity": 9.81,
+          "kicks": 1000.0,
           "launch_floor": true,
           "sign": "LowerMinusUpper"
         },
@@ -170,69 +156,6 @@
       ]
     }
   },
-  "title": "Cadence · spectral window |W| of tower 1's shots · cadence-lab",
-  "pixels": null,
-  "dpi": null,
-  "axes": {
-    "x": {
-      "name": "frequency offset from a tone",
-      "unit": "Hz",
-      "scale": "linear",
-      "range": [
-        0.0,
-        1.1627906976744187
-      ]
-    },
-    "y": {
-      "name": "|W| relative to the tone",
-      "unit": "1",
-      "scale": "log",
-      "range": [
-        0.0001,
-        1.0
-      ]
-    }
-  },
-  "series": [
-    {
-      "name": "|W| of tower 1's shots, this seed",
-      "colour": "#6e6e6e",
-      "x": "frequency offset from a tone",
-      "y": "|W| relative to the tone",
-      "x_column": 0,
-      "y_column": 1
-    }
-  ],
-  "marks": {
-    "predicted_lines": [
-      {
-        "what": "cycle jitter (a random walk): the alias broadens and recedes as 1/√N",
-        "frequency_hz": 0.46511627906976744,
-        "height": 0.25396034163364306
-      }
-    ],
-    "predicted_floor": 0.004684470255599664,
-    "mean_cycle_s": 2.15,
-    "nyquist_hz": 0.23255813953488372,
-    "note": "stems and the dashed level are the closed forms' predictions (cav_sim::schedule), not data"
-  },
-  "colours": {
-    "background": "#ffffff",
-    "ink": "#111111",
-    "rule": "#cfcfcf",
-    "spectrum": "#6e6e6e",
-    "reference": "#8c8c8c",
-    "series": [
-      "#0b0dff",
-      "#e76f11",
-      "#c61604",
-      "#8a6aae",
-      "#28a682",
-      "#cb64fe",
-      "#910c59",
-      "#6d1ba7"
-    ]
-  },
   "data": {
     "file": "cadence-paper-full.csv",
     "format": "csv",
@@ -247,6 +170,160 @@
         "unit": "1"
       }
     ],
-    "note": "every value, to the bit; the line drawn is thinned to at most 2000 points a series (the least and the greatest of each stretch)"
-  }
+    "note": "every value of every tower, to the bit; the line drawn is thinned to at most 2000 points a series (the least and the greatest of each stretch), and a signal draws at most 12 towers"
+  },
+  "files": [
+    {
+      "file": "cadence-paper-full.pdf",
+      "format": "pdf",
+      "preset": "paper-full",
+      "size_mm": [
+        178.0,
+        90.0
+      ],
+      "size_points": [
+        504.5669291338583,
+        255.1181102362205
+      ],
+      "command": {
+        "console": "figure cadence tower 1 as paper-full to cadence-paper-full.pdf",
+        "cli": "cav figure cadence-lab cadence --out cadence-paper-full.pdf --preset paper-full --tower 1",
+        "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's"
+      },
+      "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
+      "title": "Cadence · spectral window |W| of tower 1's shots · cadence-lab",
+      "pixels": null,
+      "dpi": null,
+      "axes": {
+        "x": {
+          "name": "frequency offset from a tone",
+          "unit": "Hz",
+          "scale": "linear",
+          "range": [
+            0.0,
+            1.1627906976744187
+          ],
+          "label": "frequency offset from a tone, Hz · |W| relative to the tone",
+          "ticks": [
+            0.0,
+            0.2,
+            0.4,
+            0.6000000000000001,
+            0.8,
+            1.0
+          ],
+          "tick_labels": [
+            "0",
+            "0.2",
+            "0.4",
+            "0.6",
+            "0.8",
+            "1"
+          ],
+          "minor_ticks": []
+        },
+        "y": {
+          "name": "|W| relative to the tone",
+          "unit": "1",
+          "scale": "log",
+          "range": [
+            0.0001,
+            1.0
+          ],
+          "label": "|W|, relative to the tone",
+          "ticks": [
+            0.0001,
+            0.001,
+            0.01,
+            0.1,
+            1.0
+          ],
+          "tick_labels": [
+            "10^-4",
+            "10^-3",
+            "10^-2",
+            "10^-1",
+            "10^0"
+          ],
+          "minor_ticks": [
+            0.0002,
+            0.00030000000000000003,
+            0.0004,
+            0.0005,
+            0.0006000000000000001,
+            0.0007,
+            0.0008,
+            0.0009000000000000001,
+            0.002,
+            0.003,
+            0.004,
+            0.005,
+            0.006,
+            0.007,
+            0.008,
+            0.009000000000000001,
+            0.02,
+            0.03,
+            0.04,
+            0.05,
+            0.06,
+            0.07,
+            0.08,
+            0.09,
+            0.2,
+            0.30000000000000004,
+            0.4,
+            0.5,
+            0.6000000000000001,
+            0.7000000000000001,
+            0.8,
+            0.9
+          ]
+        }
+      },
+      "series": [
+        {
+          "name": "|W| of tower 1's shots, this seed",
+          "colour": "#6e6e6e",
+          "x": "frequency offset from a tone",
+          "y": "|W| relative to the tone",
+          "x_column": 0,
+          "y_column": 1,
+          "taken_column": null
+        }
+      ],
+      "marks": {
+        "predicted_lines": [
+          {
+            "what": "cycle jitter (a random walk): the alias broadens and recedes as 1/√N",
+            "frequency_hz": 0.46511627906976744,
+            "height": 0.25396034163364306,
+            "label": "0.254"
+          }
+        ],
+        "predicted_floor": 0.004684470255599664,
+        "mean_cycle_s": 2.15,
+        "nyquist_hz": 0.23255813953488372,
+        "note": "stems and the dashed level are the closed forms' predictions (cav_sim::schedule), not data"
+      },
+      "colours": {
+        "background": "#ffffff",
+        "ink": "#111111",
+        "rule": "#cfcfcf",
+        "spectrum": "#6e6e6e",
+        "reference": "#8c8c8c",
+        "series": [
+          "#900c60",
+          "#2c84b2",
+          "#846000",
+          "#a878fc",
+          "#3a469e",
+          "#8200f2",
+          "#ca4076",
+          "#c08400"
+        ]
+      }
+    }
+  ],
+  "not_this_figure": []
 }

@@ -77,6 +77,25 @@ impl Anchor {
     }
 }
 
+/// Where a point of a text's box goes on the page. The box, `size` wide and high, is laid out
+/// with its `anchor` at `at`; `point` is measured from the box's top left corner. A text that is
+/// `turned` is then turned a quarter turn anticlockwise about `at`, so that it reads up the page.
+#[must_use]
+pub fn text_point(at: [f32; 2], anchor: Anchor, size: [f32; 2], turned: bool, point: [f32; 2]) -> [f32; 2] {
+    let [left, top] = anchor.corner(at, size);
+    let (x, y) = (left + point[0], top + point[1]);
+    if turned { [at[0] + (y - at[1]), at[1] - (x - at[0])] } else { [x, y] }
+}
+
+/// The rectangle a text takes on the page, as its top left and bottom right corners: for a
+/// turned text, as tall as the text is long.
+#[must_use]
+pub fn text_box(at: [f32; 2], anchor: Anchor, size: [f32; 2], turned: bool) -> ([f32; 2], [f32; 2]) {
+    let (a, b) =
+        (text_point(at, anchor, size, turned, [0.0, 0.0]), text_point(at, anchor, size, turned, size));
+    ([a[0].min(b[0]), a[1].min(b[1])], [a[0].max(b[0]), a[1].max(b[1])])
+}
+
 /// One thing to draw. Lengths and positions are points; a `dash` is the lengths of the dashes
 /// and gaps in turn (`[4, 3]`: four on, three off), empty for a solid line.
 #[derive(Clone, Debug, PartialEq)]
@@ -137,6 +156,9 @@ pub enum Item {
         size: f32,
         /// The colour.
         colour: Colour,
+        /// Whether it is written up the page: turned a quarter turn anticlockwise about `at`
+        /// ([`text_point`]). A vertical axis's label is.
+        turned: bool,
     },
     /// A picture: `width × height` pixels of RGB, rows top to bottom, filling the rectangle.
     /// Written into SVG and PDF; the egui painter leaves it out (the application shows the

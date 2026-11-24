@@ -60,4 +60,4 @@ redo
 0.003503647808658551  5.7995682709575625e-3
 0.05355575936092356  5.7938304015433045e-3
 # comb of `oscillator`, f₀ = 0.050000 Hz: 1f₀ at 0.050000 Hz, 2f₀ at 0.100000 Hz, 3f₀ at 0.150000 Hz, 4f₀ at 0.200000 Hz, 5f₀ at 0.215116 Hz (folded), 6f₀ at 0.165116 Hz (folded), 7f₀ at 0.115116 Hz (folded), 8f₀ at 0.065116 Hz (folded)
-set array.instrument {"tower_height":100.0,"ifo_separation":70.0,"half_sequence":2.5,"launch_velocity":21.23604923374872,"cycle":5.0,"atom_mass":1.4431558652473234e-25,"gravity":9.81,"launch_floor":tr… [584 more characters]
+set array.instrument {"tower_height":100.0,"ifo_separation":70.0,"half_sequence":2.5,"launch_velocity":21.23604923374872,"cycle":5.0,"atom_mass":1.4431558652473234e-25,"gravity":9.81,"kicks":1000.0,"l… [599 more characters]

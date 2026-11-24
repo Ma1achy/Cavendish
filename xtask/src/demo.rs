@@ -523,6 +523,14 @@ fn s2(root: &Path) -> Result<(), String> {
             }
         }
     }
+    // The periodogram was written in three formats: its one record lists all three.
+    let record = std::fs::read_to_string(figures.join("periodogram-paper-column.json"))
+        .map_err(|e| format!("figures/periodogram-paper-column.json: {e}"))?;
+    for format in ["svg", "pdf", "png"] {
+        if !record.contains(&format!("\"file\": \"periodogram-paper-column.{format}\"")) {
+            return Err(format!("figures/periodogram-paper-column.json does not list the .{format}"));
+        }
+    }
     let python = std::env::var(crate::python::INTERPRETER).unwrap_or_else(|_| "python".to_owned());
     if let Some(lacking) = crate::python::missing(&python) {
         return Err(format!("the figure cannot be redrawn in Python: {lacking}"));
