@@ -23,18 +23,27 @@ pub fn quick(root: &Path, enforce_budget: bool) -> Result<(), String> {
     let started = Instant::now();
     // Formatting and lints at once: the formatter compiles nothing, so it runs beside clippy
     // rather than before it (S2's second review, item 8). The oracle crate is outside the
-    // workspace; checking its formatting compiles nothing, so it is checked here on every commit,
-    // and its lints and tests wait for `cargo xtask oracle`. Clippy includes `cargo check`.
+    // workspace; checking its formatting compiles nothing, so it is checked here on every commit;
+    // its lints run here when the branch touches it, and its tests wait for `cargo xtask oracle`. Clippy includes `cargo check`.
     // Cargo's fingerprints make it a no-op for unchanged crates, which is the plan's "clippy on
     // changed crates" without a second mechanism to get wrong.
-    together(vec![
+    let mut steps = vec![
         ("fmt", cargo(root, &["fmt", "--all", "--check"])),
         ("fmt (oracle)", cargo(root, &["fmt", "--manifest-path", ORACLE_MANIFEST, "--check"])),
         (
             "clippy",
             cargo(root, &["clippy", "--workspace", "--all-targets", "--quiet", "--", "-D", "warnings"]),
         ),
-    ])?;
+    ];
+    // The oracle crate's lints, when this branch touches it (S3's review: a clippy fault in
+    // `george.rs` reached main because only `cargo xtask oracle` linted it). Its own target
+    // directory, so a check here costs nothing when the oracle is unchanged.
+    if touches_oracle(root) {
+        let clippy = ["clippy", "--manifest-path", ORACLE_MANIFEST, "--target-dir", ORACLE_TARGET];
+        let lints = ["--all-targets", "--quiet", "--", "-D", "warnings"];
+        steps.push(("clippy (oracle)", cargo(root, &[&clippy[..], &lints[..]].concat())));
+    }
+    together(steps)?;
     run_tier(root, "quick", QUICK_FILTER)?;
     // Documentation examples are not built here: the one there was cost two to three seconds of
     // the ten, and is a unit test now. `cargo xtask oracle` runs any that are written later.
@@ -45,6 +54,30 @@ pub fn quick(root: &Path, enforce_budget: bool) -> Result<(), String> {
         return Err(format!("quick took {took:.1} s, over the {QUICK_BUDGET_S:.0} s warm budget"));
     }
     Ok(())
+}
+
+/// Whether the working tree differs from where this branch left `origin/main` in any file under
+/// `oracle/` (committed or not). When git cannot say, it is taken to: the lint runs.
+fn touches_oracle(root: &Path) -> bool {
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+    };
+    let Some(base) = git(&["merge-base", "HEAD", "origin/main"]) else { return true };
+    let base = String::from_utf8_lossy(&base.stdout).trim().to_owned();
+    let Some(changed) = git(&["diff", "--name-only", &base]) else { return true };
+    let untracked = git(&["ls-files", "--others", "--exclude-standard", "oracle"]);
+    names_touch_oracle(&String::from_utf8_lossy(&changed.stdout))
+        || untracked.is_some_and(|u| !u.stdout.is_empty())
+}
+
+/// Whether any of the paths, one a line, is under `oracle/`.
+fn names_touch_oracle(names: &str) -> bool {
+    names.lines().any(|line| line.trim().starts_with("oracle/"))
 }
 
 /// Starts every step at once and waits for all of them; each is reported with its time, and
@@ -205,6 +238,14 @@ mod tests {
 ------------
      Summary [   0.412s] 12 tests run: 12 passed, 2 skipped
 ";
+
+    #[test]
+    fn the_oracle_is_linted_when_a_change_touches_it() {
+        assert!(names_touch_oracle("crates/cav-core/src/lib.rs\noracle/tests/george.rs\n"));
+        // Control: a path that only mentions the oracle elsewhere does not count.
+        assert!(!names_touch_oracle("crates/cav-sim/src/oracle.rs\ndocs/oracle/x.md\n"));
+        assert!(!names_touch_oracle(""));
+    }
 
     #[test]
     fn nextest_summary_gives_the_number_of_tests_run() {

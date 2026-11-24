@@ -684,15 +684,30 @@ fn s3(root: &Path) -> Result<(), String> {
 
     // 7. A session: shapes and colours from the console; the mixed array's ragged bundle.
     let mut session = String::new();
-    let script = "load unit-cube; ls bodies[0].shape; set bodies[0].shape.pitch 0.25; colour phase 1; \
-                  overlay leaves cut 1; set bodies[0].shape.pitch 1e-4; stats";
-    // The last line is refused (a pitch too fine for one tree): what was answered before it, and
-    // the refusal, are the transcript.
-    let answer = capture(&cav, &["exec", script]).unwrap_or_else(|refused| refused);
-    if !answer.contains("pitch") {
-        return Err(format!("the session does not speak of the pitch:\n{answer}"));
+    // Each line of the brief's §4 in turn: a body made of voxels added, listed, coloured and
+    // overlaid; a pitch too fine for one tree refused (alone, so that nothing after it is lost);
+    // a tower given its own instrument, and what each tower reads.
+    let scripts = [
+        r#"load unit-cube; add bodies {"label": "ball", "mass": 50, "shape": {"kind": {"Sphere": {"radius": 0.4}}, "pitch": 0.1, "supersample": 2}, "motion": {"Static": {"position": [-2, 0, 1.5]}}}; ls bodies[1].shape; ls bodies[1].shape.kind; colour phase 1; overlay leaves cut 1; stats"#,
+        "load unit-cube; set bodies[0].shape.pitch 1e-4",
+        r#"load mixed-array; set array.towers[0].instrument {"half_sequence": 0.6, "cycle": 1.5}; get array.towers[0].instrument; reading 1"#,
+    ];
+    for (n, script) in scripts.iter().enumerate() {
+        // The second is refused by design: its refusal is the transcript.
+        let answer = if n == 1 {
+            match capture(&cav, &["exec", script]) {
+                Ok(said) => return Err(format!("a pitch of 1e-4 m was not refused:\n{said}")),
+                Err(refused) => refused,
+            }
+        } else {
+            capture(&cav, &["exec", script])?
+        };
+        let wanted = ["radius", "pitch", "T = 0.9 s"][n];
+        if !answer.contains(wanted) {
+            return Err(format!("the session's `{script}` does not say `{wanted}`:\n{answer}"));
+        }
+        session.push_str(&format!("$ cav exec '{script}'\n{}\n\n", abridged(answer.trim_end(), 3000)));
     }
-    session.push_str(&format!("$ cav exec \"{script}\"\n{}\n", abridged(answer.trim_end(), 3000)));
     let bundle = temp("mixed");
     let ran = capture(&cav, &["run", "mixed-array", "--out", &bundle])?;
     session.push_str(&format!(

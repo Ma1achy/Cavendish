@@ -83,3 +83,8 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **Lint the oracle crate in `quick`** only when its files changed (a clippy fault reached main in #102). S3.
 - **The validation report's margin for a band**: a case whose measured value must sit inside a band (`voxel.cube_to_point_order`) shows 99% where it is where it should be; report the distance to the nearer edge instead. S3.
 - **The demo's missing pictures**: a sphere, cylinder and mesh beside the solids; the scaffold's periodogram over a long run read once and kept; the cylinder sweep as a `paper-column` figure. S3.
+
+- **A mesh's file relative to its scene file** (S3's review, minor 13): today a `Mesh` body's
+  `file` is resolved against the working directory. Resolving it against the scene file's
+  directory needs the loaded scene to remember where it came from (a field the spec does not
+  serialise), kept through save, `cav run`, replay and MCP.
