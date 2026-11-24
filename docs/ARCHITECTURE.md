@@ -14,8 +14,8 @@ the gradiometer reads lower minus upper unless a scene says otherwise. British E
 
 | Crate | What it is for | May depend on (workspace) | Must not |
 |---|---|---|---|
-| `cav-core` | Pure numbers: vectors, constants with their sources, the forward model (flight, arms, the propagation integral, the audited read), spectra (FFT, Lomb–Scargle, NUFFT), cadence closed forms, `.npy` | nothing | know what a scene, an engine or a file format for scenes is; allocate with the length of a flight |
-| `cav-sim` | Scenes as data: the spec and its schema, paths, motions, presets, the dev scenes and the library, the schedule, the read of a scene (contributions, signals), bundles | `cav-core` | hold state between calls; draw; start threads that outlive a call |
+| `cav-core` | Pure numbers: vectors, constants with their sources, the forward model (flight, arms, the propagation integral, the audited read), spectra (FFT, Lomb–Scargle, NUFFT), cadence closed forms, `.npy`; the voxel tree, shapes and `cover`, the voxeliser and its raster oracle, the cube kernel | nothing | know what a scene, an engine or a file format for scenes is; allocate with the length of a flight |
+| `cav-sim` | Scenes as data: the spec and its schema, paths, motions, presets, the dev scenes and the library, the schedule, the read of a scene (contributions, signals), bundles; shapes of bodies and what a view draws of voxel bodies | `cav-core` | hold state between calls; draw; start threads that outlive a call |
 | `cav-gpu` | The wgpu device and reading a texture back | `cav-core` | know about scenes |
 | `cav-engine` | The one API: commands, queries, replies; the journal, undo, the event log; the forward workers and what they keep | `cav-core`, `cav-sim` | draw, or depend on anything that does; block a command on a computation |
 | `cav-render` | The 3-D picture of a scene: camera, geometry, the wgpu renderer, PNG | `cav-core`, `cav-sim`, `cav-gpu` | depend on the engine (it draws a `SceneView`, which the engine makes) |
@@ -25,7 +25,7 @@ the gradiometer reads lower minus upper unless a scene says otherwise. British E
 | `cav-validate` | Declaring validation cases (`case!`) and judging them | nothing | depend on anything: every crate's tests use it |
 | `cav-memtest` | A counting allocator and the tests that hold memory to a bound | dev-dependencies only | be linked by anything but its own tests (it is the one crate with `unsafe`) |
 | `xtask` | The local tiers: `quick`, `gpu`, `oracle`, `demo`, `validate`, `hooks` | nothing | gain a dependency: it must never add to the build |
-| `oracle/` | A workspace of its own: v1 at tag `v1-final` and George's scripts as fixtures, holding the engine to both | `cav-core`, `cav-validate` | be compiled by `quick` |
+| `oracle/` | A workspace of its own: v1 at tag `v1-final` and George's scripts as fixtures, holding the engine to both | `cav-core`, `cav-sim`, `cav-validate` | be compiled by `quick` |
 
 Dev-dependencies are apart from this table: any crate's tests may use `cav-validate`.
 
@@ -114,6 +114,11 @@ a journal being replayed ─┘     │          │                            
 | A panel, an editor, the timeline | `cav-app/src/panels.rs`, `editors.rs`, `timeline.rs` | — |
 | A CLI subcommand, an MCP tool | `cav/src/main.rs`, `mcp.rs` | [a command](extending/a-command.md) |
 | A validation case | beside the test of what it checks, with `cav_validate::case!` | [a validation case](extending/a-validation-case.md) |
+| A shape a body can be made of; `cover`; meshes | `cav-core/src/voxel/shape.rs`, `mesh.rs` | [a shape](extending/a-shape.md) |
+| The voxel tree, its moments and cuts; the voxeliser and the raster oracle | `cav-core/src/voxel/tree.rs`, `voxeliser.rs` | — |
+| The potential of a uniform cube (series, octants, prism); a voxel body as a source | `cav-core/src/voxel/kernel.rs` | — |
+| A body made of voxels (`BodySpec.shape`) | `cav-sim/src/shape.rs`; read in `read.rs` (`voxel_body`) | [a voxel body](extending/a-voxel-body.md) |
+| Colour by field, overlays, the cubes a view draws | `cav-sim/src/voxel_view.rs`; drawn in `cav-render/src/scene.rs` (`drawables_with`) with `colour.rs`; trees kept by `cav-engine/src/voxels.rs` | — |
 | A bound on memory | `cav-memtest/tests/` | — |
 
 ## Rules that hold everywhere

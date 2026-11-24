@@ -21,16 +21,20 @@ const GPU_FILTER: &str = "test(gpu_)";
 
 pub fn quick(root: &Path, enforce_budget: bool) -> Result<(), String> {
     let started = Instant::now();
-    step("fmt", cargo(root, &["fmt", "--all", "--check"]))?;
-    // The oracle crate is outside the workspace. Checking its formatting compiles nothing, so it
-    // is checked here on every commit; its lints and tests wait for `cargo xtask oracle`.
-    step("fmt (oracle)", cargo(root, &["fmt", "--manifest-path", ORACLE_MANIFEST, "--check"]))?;
-    // Clippy includes `cargo check`. Cargo's fingerprints make it a no-op for unchanged crates, which
-    // is the plan's "clippy on changed crates" without a second mechanism to get wrong.
-    step(
-        "clippy",
-        cargo(root, &["clippy", "--workspace", "--all-targets", "--quiet", "--", "-D", "warnings"]),
-    )?;
+    // Formatting and lints at once: the formatter compiles nothing, so it runs beside clippy
+    // rather than before it (S2's second review, item 8). The oracle crate is outside the
+    // workspace; checking its formatting compiles nothing, so it is checked here on every commit,
+    // and its lints and tests wait for `cargo xtask oracle`. Clippy includes `cargo check`.
+    // Cargo's fingerprints make it a no-op for unchanged crates, which is the plan's "clippy on
+    // changed crates" without a second mechanism to get wrong.
+    together(vec![
+        ("fmt", cargo(root, &["fmt", "--all", "--check"])),
+        ("fmt (oracle)", cargo(root, &["fmt", "--manifest-path", ORACLE_MANIFEST, "--check"])),
+        (
+            "clippy",
+            cargo(root, &["clippy", "--workspace", "--all-targets", "--quiet", "--", "-D", "warnings"]),
+        ),
+    ])?;
     run_tier(root, "quick", QUICK_FILTER)?;
     // Documentation examples are not built here: the one there was cost two to three seconds of
     // the ten, and is a unit test now. `cargo xtask oracle` runs any that are written later.
@@ -41,6 +45,30 @@ pub fn quick(root: &Path, enforce_budget: bool) -> Result<(), String> {
         return Err(format!("quick took {took:.1} s, over the {QUICK_BUDGET_S:.0} s warm budget"));
     }
     Ok(())
+}
+
+/// Starts every step at once and waits for all of them; each is reported with its time, and
+/// every one that failed is named. Nothing is left running: each child is waited for, whatever
+/// the others did.
+pub fn together(steps: Vec<(&str, std::process::Command)>) -> Result<(), String> {
+    let started = Instant::now();
+    let mut running = Vec::new();
+    let mut failed = Vec::new();
+    for (name, mut command) in steps {
+        match command.spawn() {
+            Ok(child) => running.push((name, child)),
+            Err(e) => failed.push(format!("{name}: could not start: {e}")),
+        }
+    }
+    for (name, mut child) in running {
+        match child.wait() {
+            Ok(status) if status.success() => {}
+            Ok(status) => failed.push(format!("{name} failed ({status})")),
+            Err(e) => failed.push(format!("{name}: {e}")),
+        }
+        eprintln!("xtask: {name}: done after {:.1} s", started.elapsed().as_secs_f64());
+    }
+    if failed.is_empty() { Ok(()) } else { Err(failed.join("; ")) }
 }
 
 pub fn gpu(root: &Path) -> Result<(), String> {
@@ -199,6 +227,28 @@ mod tests {
         let lost = check_floor("quick", 11, 12).unwrap_err();
         assert!(lost.contains("11 tests ran") && lost.contains("floor of 12"), "{lost}");
         assert!(check_floor("gpu", 0, 1).is_err());
+    }
+
+    #[test]
+    fn steps_run_together_and_every_failure_is_named() {
+        let cargo = |args: &[&str]| {
+            let mut command =
+                std::process::Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
+            command.args(args).stdout(Stdio::null()).stderr(Stdio::null());
+            command
+        };
+        assert_eq!(together(vec![("one", cargo(&["--version"])), ("two", cargo(&["--version"]))]), Ok(()));
+        // Control: one step that fails fails the whole, by name, and the others still ran.
+        let why = together(vec![
+            ("fine", cargo(&["--version"])),
+            ("broken", cargo(&["--no-such-flag"])),
+            ("absent", std::process::Command::new("a-program-that-is-not-installed")),
+        ])
+        .unwrap_err();
+        assert!(
+            why.contains("broken failed") && why.contains("absent: could not start") && !why.contains("fine"),
+            "{why}"
+        );
     }
 
     #[test]

@@ -367,6 +367,14 @@ fn cli_get_set_ls_edit_a_file() {
     let mut expected = scene.clone();
     expected.bodies[0].mass = 42.5;
     assert_eq!(cav_sim::load(path).unwrap(), expected);
+    // The kick number is a whole number: a fraction is refused and the file left alone.
+    let fraction = cav(&["set", path, "array.instrument.kicks", "1000.5"]);
+    assert!(
+        !fraction.status.success() && stderr(&fraction).contains("whole number"),
+        "{}",
+        stderr(&fraction)
+    );
+    assert_eq!(cav_sim::load(path).unwrap(), expected);
     // A bare word is text; JSON is JSON; --out leaves the source alone.
     let other = scratch("renamed.ron");
     let renamed = cav(&["set", path, "name", "another", "--out", other.to_str().unwrap()]);

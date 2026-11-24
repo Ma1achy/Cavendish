@@ -2288,7 +2288,7 @@ mod tests {
         let mut scene = dev::mixed_array();
         scene.duration = 40.0;
         let base = scene.array.instrument.clone();
-        let short = InstrumentSpec { ifo_separation: 4.0, kicks: 800.0, ..base.clone() };
+        let short = InstrumentSpec { ifo_separation: 4.0, kicks: 800, ..base.clone() };
         scene.array.towers[1].timing.offset = 0.3;
         scene.array.towers.push(TowerSpec {
             instrument: Some(InstrumentOverride::between(&base, &short)),

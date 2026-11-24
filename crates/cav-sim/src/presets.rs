@@ -29,16 +29,16 @@ pub fn built_in() -> Vec<(&'static str, &'static str, InstrumentSpec)> {
 /// AION-10's kick number (1000), and the launch derived from those by [`symmetric_launch`].
 #[must_use]
 pub fn aice() -> InstrumentSpec {
-    aice_with_kicks(cav_core::constants::LMT_KICKS)
+    aice_with_kicks(1000)
 }
 
-/// The AICE 100 m instrument with kick number `kicks` (a pure number: how many photon momenta a
+/// The AICE 100 m instrument with kick number `kicks` (a whole number: how many photon momenta a
 /// kick gives): [`aice`] is this at 1000. The launch velocity is derived for that kick number,
 /// so the arms still finish where they started. With ⁸⁷Sr the rule asks for a launch of zero at
 /// n ≈ 7457 and a downward one beyond: such an instrument is refused when it is set into a
 /// scene, like any other that cannot exist.
 #[must_use]
-pub fn aice_with_kicks(kicks: f64) -> InstrumentSpec {
+pub fn aice_with_kicks(kicks: u32) -> InstrumentSpec {
     let mut spec = InstrumentSpec {
         tower_height: 100.0,
         ifo_separation: 70.0,
@@ -117,12 +117,12 @@ mod tests {
         let aion = load("aion10").unwrap();
         assert_eq!(aion, InstrumentSpec::default());
         assert_eq!((aion.tower_height, aion.ifo_separation, aion.half_sequence), (10.1, 5.0, 0.73));
-        assert_eq!((aion.launch_velocity, aion.cycle, aion.kicks), (3.86, 2.0, 1000.0));
+        assert_eq!((aion.launch_velocity, aion.cycle, aion.kicks), (3.86, 2.0, 1000));
         // AICE: the plan's table, and the launch rule u₀ = gT − v_kick/2 with the engine's atom.
         let aice = load("aice").unwrap();
         assert_eq!(
             (aice.tower_height, aice.ifo_separation, aice.half_sequence, aice.cycle, aice.kicks),
-            (100.0, 70.0, 2.5, 5.0, 1000.0)
+            (100.0, 70.0, 2.5, 5.0, 1000)
         );
         let instrument = aice.instrument();
         let rule = 9.81 * 2.5 - instrument.kick_velocity() / 2.0;
@@ -196,7 +196,7 @@ mod tests {
             ("T", |spec| spec.half_sequence = 2.0),
             ("g", |spec| spec.gravity = 9.78),
             ("the atom's mass", |spec| spec.atom_mass = cav_core::constants::reference::ATOM_MASS),
-            ("the kick number", |spec| spec.kicks = 4000.0),
+            ("the kick number", |spec| spec.kicks = 4000),
         ];
         for (what, change) in changes {
             let mut changed = aice.clone();
@@ -208,10 +208,10 @@ mod tests {
         }
         // The kick number is a parameter of the preset: at another n it is the same instrument
         // with the launch derived for that n, and a valid scene.
-        let strong = aice_with_kicks(4000.0);
+        let strong = aice_with_kicks(4000);
         assert_eq!(
             strong,
-            InstrumentSpec { kicks: 4000.0, launch_velocity: strong.launch_velocity, ..aice.clone() }
+            InstrumentSpec { kicks: 4000, launch_velocity: strong.launch_velocity, ..aice.clone() }
         );
         let kick = strong.instrument().kick_velocity();
         assert_eq!(kick, 4.0 * aice.instrument().kick_velocity());
@@ -222,10 +222,10 @@ mod tests {
             ..SceneSpec::room()
         };
         assert_eq!(scene(strong).validate(), Ok(()));
-        assert_eq!(aice_with_kicks(1000.0), aice);
+        assert_eq!(aice_with_kicks(1000), aice);
         // Control: past the n at which the rule asks for a launch of zero there is no such
         // instrument, and the scene says so.
-        let why = scene(aice_with_kicks(8000.0)).validate().unwrap_err().0;
+        let why = scene(aice_with_kicks(8000)).validate().unwrap_err().0;
         assert!(why.starts_with("array.instrument.launch_velocity"), "{why}");
     }
 

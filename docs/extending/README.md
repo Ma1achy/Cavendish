@@ -12,6 +12,8 @@ beside it, lists the files to touch in order, and says which tests then hold the
 | a command, with its console, CLI and MCP faces | [a-command.md](a-command.md) | `Command::Compare` and the console's `compare` |
 | a dev scene | [a-dev-scene.md](a-dev-scene.md) | `staggered` in `crates/cav-sim/src/dev.rs` |
 | a validation case | [a-validation-case.md](a-validation-case.md) | `timing.offset_shifts_one_tower` in `crates/cav-sim/src/read.rs` |
+| a shape a body can be made of | [a-shape.md](a-shape.md) | `Ellipsoid` in `crates/cav-core/src/voxel/shape.rs` |
+| a body made of voxels | [a-voxel-body.md](a-voxel-body.md) | `platonic_row` in `crates/cav-sim/src/dev.rs` |
 
 Whatever you add: every public item documented with its unit and frame; a test with a control
 arm; and if its size can be set by a scene, a view or a command, a bound and a row in the table

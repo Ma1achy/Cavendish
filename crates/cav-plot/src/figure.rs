@@ -479,7 +479,7 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
         .series
         .iter()
         .enumerate()
-        .map(|(n, (name, colour))| {
+        .map(|(n, (name, colour, dash))| {
             let (x, y) = match figure.what {
                 FigureKind::Signal => (first[n], first[n] + 1),
                 FigureKind::Periodogram => (0, 2),
@@ -489,6 +489,9 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
             json!({
                 "name": name,
                 "colour": colour.css(),
+                // The dash in points at the figure's line width, `line_width`; empty for solid.
+                "dash": dash,
+                "line_width": style.line,
                 "x": table.columns.get(x).map(|c| &c.0),
                 "y": table.columns.get(y).map(|c| &c.0),
                 "x_column": x,

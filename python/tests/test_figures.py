@@ -28,6 +28,7 @@ import numpy as np
 from matplotlib import font_manager
 from matplotlib.axes import Axes
 from matplotlib.axis import Axis as Ruler
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.colors import to_hex
 from matplotlib.figure import Figure as Canvas
 from matplotlib.lines import Line2D
@@ -64,6 +65,7 @@ from cavendish_figures import (  # noqa: E402
     sheets,
 )
 from cavendish_figures.errors import FigureError  # noqa: E402
+from cavendish_figures.redraw import envelope  # noqa: E402
 
 # ========================================== HELPERS ==========================================
 
@@ -142,7 +144,6 @@ def disagreements(canvas: Canvas, axes: Axes, figure: Figure) -> list[str]:
     """
     found: list[str] = []
     series  = [artist for artist in axes.get_children() if artist.get_gid() == "series"]
-    palette = figure.colours.series
     if len(series) != len(figure.series):
         found.append(f"{len(series)} series drawn, the record has {len(figure.series)}")
     else:
@@ -151,7 +152,7 @@ def disagreements(canvas: Canvas, axes: Axes, figure: Figure) -> list[str]:
                 colour = to_hex(artist.get_color())
             else:
                 colour = to_hex(tuple(np.asarray(getattr(artist, "get_edgecolor")(), dtype = np.float64)[0]))
-            wanted = figure.colours.spectrum if figure.what in ("periodogram", "cadence") else palette[n % len(palette)]
+            wanted = figure.colours.spectrum if figure.what in ("periodogram", "cadence") else figure.series[n].colour
             if colour != wanted:
                 found.append(f"series {n} is drawn in {colour}, the record's colour is {wanted}")
     multiple = WRITTEN_IN.get(str(figure.marks.get("vertical_axis_written_in")), 1.0)
@@ -288,6 +289,158 @@ def test_the_palette_is_cavendishs() -> None:
     assert isinstance(refused, Err) and isinstance(refused.error, UnknownPreset)
     assert refused.error.nearest == "paper-column" and refused.error.others == tuple(PRESETS)
     assert isinstance(sheets("screen"), Err), "the dark theme has no sheet"
+
+
+# ====================================== S2'S SECOND REVIEW ======================================
+
+
+def edited(directory: Path, what: str, change: Callable[[dict[str, object]], None]) -> Figure:
+    """The synthetic figure of ``what`` with ``change`` made to the first picture's entry."""
+    source   = synthetic.write(directory, what)
+    document = json.loads(source.read_text(encoding = "utf-8"))
+    change(document["files"][0])
+    source.write_text(json.dumps(document, ensure_ascii = False), encoding = "utf-8")
+    return load(source).unwrap()
+
+
+def dashes(line: Line2D) -> tuple[float, ...]:
+    """A line's dash as matplotlib holds it before scaling by the width; empty for solid."""
+    pattern = getattr(line, "_unscaled_dash_pattern")[1]
+    return tuple(round(float(length), 9) for length in pattern) if pattern is not None else ()
+
+
+def test_the_redraw_takes_the_records_colours_and_dashes() -> None:
+    # Item 4: the redraw drew each series in the palette's colour and dash by its place in the
+    # record, not the record's own; a tower that was the sixth series looked like the first.
+    directory = scratch()
+    figure    = loaded(directory, "signal")
+    _, axes   = draw(figure).unwrap()
+    lines     = [line for line in axes.get_lines() if line.get_gid() == "series"]
+    assert [line.get_color() for line in lines] == [series.colour for series in figure.series]
+    assert dashes(lines[0]) == () and dashes(lines[1]) == (6.0, 2.5), [dashes(line) for line in lines]
+
+    # Control: the record's colours and dashes changed, the drawing follows them.
+    def recolour(picture: dict[str, object]) -> None:
+        for entry in cast(list[dict[str, object]], picture["series"]):
+            entry["colour"], entry["dash"] = "#123456", [1.6, 1.6]
+
+    _, axes = draw(edited(directory / "changed", "signal", recolour)).unwrap()
+    lines   = [line for line in axes.get_lines() if line.get_gid() == "series"]
+    assert all(line.get_color() == "#123456" and dashes(line) == (2.0, 2.0) for line in lines)
+
+
+def test_dots_are_counted_over_the_span() -> None:
+    # Item 4: dots were given by the shots in the file, not by those in the plotted span. With
+    # no word in the record of how it was drawn, a series has dots when no more than 200 of its
+    # shots are in the span; with a word, it is drawn as the record says.
+    directory = scratch()
+
+    def long(picture: dict[str, object]) -> None:
+        axes = cast(dict[str, dict[str, object]], picture["axes"])
+        axes["x"]["range"] = [0.0, 12.0]
+
+    def marked(figure: Figure) -> list[bool]:
+        _, axes = draw(figure).unwrap()
+        return [line.get_marker() == "o" for line in axes.get_lines() if line.get_gid() == "series"]
+
+    # Six shots in a 12 s span: dots.
+    assert marked(edited(directory / "a", "signal", long)) == [True, True]
+
+    def told(picture: dict[str, object]) -> None:
+        marks = cast(dict[str, object], picture["marks"])
+        marks["towers"] = {"drawn_as": [{"envelope_stretch": None, "dots": False}, {"envelope_stretch": None, "dots": True}]}
+
+    assert marked(edited(directory / "b", "signal", told)) == [False, True]
+    # Over the span, not the file: 300 shots of which 100 are shown.
+    many = 300
+    span = np.arange(many, dtype = np.float64)
+    figure = loaded(directory / "c", "signal")
+    wide   = replace(figure, series = tuple(replace(series, x = span, y = np.zeros(many), taken = np.ones(many, dtype = np.bool_))
+                                            for series in figure.series))
+    narrow = replace(wide, x = replace(wide.x, range = (0.0, 99.0)))
+    assert marked(narrow) == [True, True]
+    # Control: the whole file in the span is more than 200 shots, and has no dots.
+    assert marked(replace(wide, x = replace(wide.x, range = (0.0, float(many)), ticks = (), tick_labels = ()))) == [False, False]
+
+
+def test_a_dense_series_is_drawn_as_its_envelope() -> None:
+    # Item 4: a series Cavendish drew as its envelope is redrawn as its envelope, from the
+    # record's stretch, with the lost shots skipped as Rust skips them (`plots::envelope`).
+    x     = np.arange(16, dtype = np.float64)
+    y     = np.array([float(k % 3) for k in range(16)])
+    taken = np.ones(16, dtype = np.bool_)
+    y[5], taken[5] = 1e9, False
+    y[8:12], taken[8:12] = -1e9, False
+    runs = envelope(x, y, taken, 4)
+    assert len(runs) == 2
+    assert all(float(np.max(np.abs(np.concatenate([most, least])))) <= 2.0 for _, most, least in runs)
+    assert float(runs[0][0][1]) == (4.0 + 7.0) / 2.0
+    # Control: every shot taken, the huge values are on it and the run is whole.
+    whole = envelope(x, y, np.ones(16, dtype = np.bool_), 4)
+    assert len(whole) == 1 and 1e9 in whole[0][1] and -1e9 in whole[0][2]
+    # Drawn: one artist for the series, upper and lower lines broken by NaN, no dots.
+    directory = scratch()
+
+    def told(picture: dict[str, object]) -> None:
+        marks = cast(dict[str, object], picture["marks"])
+        marks["towers"] = {"drawn_as": [{"envelope_stretch": 2, "dots": False}, {"envelope_stretch": None, "dots": True}]}
+
+    _, axes = draw(edited(directory, "signal", told)).unwrap()
+    lines   = [line for line in axes.get_lines() if line.get_gid() == "series"]
+    assert len(lines) == 2 and lines[0].get_marker() != "o"
+    upper = np.asarray(lines[0].get_ydata(), dtype = np.float64)
+    assert bool(np.isnan(upper).any()) and len(upper) == 2 * (3 + 1), upper
+
+
+def test_every_preset_lays_out() -> None:
+    # Item 4: at `paper-column` the key ran past the figure and the harmonics' labels ran into
+    # it (the committed `redrawn.png`). Criterion: at every preset the key is within the figure,
+    # meets no label written by a mark and no title.
+    directory = scratch()
+    for preset, (width, height) in PRESETS.items():
+        for what in ("signal", "periodogram", "cadence"):
+
+            def sized(picture: dict[str, object], preset: str = preset, width: float = width, height: float = height) -> None:
+                picture["preset"], picture["size_mm"] = preset, [width, height]
+                names = [f"a tower with a long name, number {n}" for n in (1, 2)]
+                for entry, name in zip(cast(list[dict[str, object]], picture["series"]), names):
+                    if what == "signal":
+                        entry["name"] = name
+
+            canvas, axes = draw(edited(directory / preset / what, what, sized)).unwrap()
+            renderer = FigureCanvasAgg(canvas).get_renderer()
+            canvas.draw_without_rendering()
+            key = axes.get_legend()
+            assert key is not None, (preset, what)
+            box   = key.get_window_extent(renderer)
+            whole = canvas.get_window_extent(renderer)
+            assert box.x0 >= whole.x0 - 0.5 and box.x1 <= whole.x1 + 0.5, (preset, what, box, whole)
+            title = cast(Text, getattr(canvas, "_suptitle"))
+            for text in [*axes.texts, title]:
+                if text.get_text():
+                    assert not box.overlaps(text.get_window_extent(renderer)), (preset, what, text.get_text())
+    # Control: the key in as many columns as there are series, as it was drawn before, is wider
+    # than a column of a paper with long names.
+    canvas, axes = draw(edited(directory / "control", "signal", lambda picture: cast(list[dict[str, object]], picture["series"])[0].update({"name": "x" * 90}))).unwrap()
+    renderer = FigureCanvasAgg(canvas).get_renderer()
+    before   = axes.legend(loc = "lower left", bbox_to_anchor = (0.0, 1.0), ncols = 2, fontsize = "small")  # pyright: ignore[reportUnknownMemberType]
+    assert before.get_window_extent(renderer).width > canvas.get_window_extent(renderer).width
+
+
+def test_the_floors_are_named_as_the_figure_named_them() -> None:
+    # Item 4: the redraw wrote the floors as "0.0001 and 1e-05 rad/√Hz".
+    directory = scratch()
+    figure    = loaded(directory, "periodogram")
+    _, axes   = draw(figure).unwrap()
+    labels    = [str(line.get_label()) for line in axes.get_lines()]
+    assert "shot-noise floors, 100 and 10 µrad/√Hz" in labels, labels
+
+    def named(picture: dict[str, object]) -> None:
+        marks = cast(dict[str, dict[str, object]], picture["marks"])
+        marks["reference"]["shot_noise_floors_named_as"] = "the floors, as written"
+
+    _, axes = draw(edited(directory / "named", "periodogram", named)).unwrap()
+    assert "the floors, as written" in [str(line.get_label()) for line in axes.get_lines()]
 
 
 # ============================================ LOAD ============================================
