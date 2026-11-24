@@ -228,7 +228,13 @@ impl Motion {
     pub fn breaks(&self) -> Vec<f64> {
         match *self {
             Self::Pass { from, to, start, speed } => vec![start, start + distance(from, to) / speed],
-            _ => Vec::new(),
+            // Each kind is named, so that a new one is a compile error here until someone has
+            // said whether its path has kinks: these are smooth throughout.
+            Self::Static { .. }
+            | Self::Linear { .. }
+            | Self::Circular { .. }
+            | Self::Pendulum { .. }
+            | Self::Sphere { .. } => Vec::new(),
         }
     }
 
