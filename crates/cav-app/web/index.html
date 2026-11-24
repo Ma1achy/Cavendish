@@ -3,9 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Only this site's own files run here; WebAssembly may be compiled (the module), and styles may
+       be inline (eframe sizes its canvas through them). No inline script: start.js starts it all. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'">
   <!-- Stamped by `cargo xtask web`: the commit this page was built from. -->
   <meta name="revision" content="{{revision}}">
   <title>Cavendish</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #16181c; color: #c8ccd4;
                  font: 15px/1.5 system-ui, sans-serif; }
@@ -21,26 +26,6 @@
   <canvas id="cavendish"></canvas>
   <div id="message"><p>Loading Cavendish…</p></div>
   <noscript><p>Cavendish needs JavaScript and WebGPU.</p></noscript>
-  <script type="module">
-    // WebGPU only (docs/research/web-build-and-pages.md §2): without it, say so plainly instead of
-    // leaving a blank canvas, and do not download the module at all.
-    const message = document.getElementById("message");
-    if (!("gpu" in navigator)) {
-      document.getElementById("cavendish").remove();
-      message.innerHTML =
-        "<p><strong>This browser does not offer WebGPU</strong>, which Cavendish draws and computes with. " +
-        "Open this page in a current Chrome or Edge (Windows, macOS, ChromeOS, Android), Safari 26 or later, " +
-        "or Firefox 141 or later on Windows. On Linux, Chrome may need WebGPU switched on in " +
-        "<code>chrome://flags</code>. The native application is in the " +
-        "<a href=\"https://github.com/Ma1achy/Cavendish\">repository</a>.</p>";
-    } else {
-      import("./cavendish.js")
-        .then((module) => module.default())
-        .catch((error) => {
-          console.error(error);
-          message.textContent = "Cavendish could not start: " + error;
-        });
-    }
-  </script>
+  <script type="module" src="start.js"></script>
 </body>
 </html>

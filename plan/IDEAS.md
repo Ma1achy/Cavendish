@@ -95,8 +95,11 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   allowance, or fewer Chebyshev points in α with case (b) re-measured; or a slow oracle sub-tier.
 
 ## From S17 (in the browser)
-- **A resumable contribution** on the web: `read::contribution` cut at its 64-shot pieces with the tree kept between calls, so that one source never holds a frame (the voxel sphere's is about 5 s in Chrome on the build PC, one frame). Needs the spec and tree owned by the job, not borrowed. Next web task.
-- **The engine in a Web Worker** (messages, no SharedArrayBuffer): a real background for the forward model, so no frame waits on it at all; the app already only sends commands and reads replies.
+- **A resumable contribution** on the web (not needed now the jobs run in Web Workers; kept for a page without workers): `read::contribution` cut at its 64-shot pieces with the tree kept between calls, so that one source never holds a frame (the voxel sphere's is about 5 s in Chrome on the build PC, one frame). Needs the spec and tree owned by the job, not borrowed. Next web task.
+- **The engine in a Web Worker**: done for the forward stage's jobs (S17's review fixes, `forward/wire.rs`).
+- **Cancelling a worker's job** on the web: a job for a scene that has since changed runs to its end. Terminating and restarting the worker when the epoch moves past its job (the module is compiled once, so a restart is an instantiation) would free it for the current scene during a drag of a voxel body.
+- **The page's first frame after start-up** is 150–190 ms in every scene (room included): egui's first layout and WebGPU's pipelines. Warm them before the loading message goes, or spread them over frames.
+- **The voxel view's trees on the page's thread**: an edit of a voxel body's mass rebuilds its tree on the page (30–40 ms for the dev scenes); a larger body would want it in the worker too.
 - **wasm SIMD** (`-C target-feature=+simd128`, every WebGPU browser has it) for the cube kernel, measured against the scalar build.
 - **Open and save files in the page**: a scene by `<input type=file>` or a drop on the canvas (`SceneSpec::from_ron`, the engine's inline load), a bundle as a `.zip` download.
 - **`?scene=` and a "copy link" button** that writes the current view as `#exec=`, so a link shows exactly what was on screen.
