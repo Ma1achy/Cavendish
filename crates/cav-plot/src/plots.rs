@@ -1542,16 +1542,38 @@ pub fn flight_span(engine: &Engine, span: Option<[f64; 2]>) -> [f64; 2] {
 /// interferometer from its launch to its readout, at the tower's own times.
 fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measure, size: [f32; 2]) -> Plot {
     let spec = engine.spec();
-    let instrument = spec.array.instrument.instrument();
-    let flight_time = instrument.flight_time();
     let long = format!("Flight · the atoms' arms, height against absolute time · {}", spec.name);
     let titles = vec![long, format!("Flight · the atoms' arms · {}", spec.name), "Flight".to_owned()];
     let towers = spec.array.towers.len().min(MAX_FLIGHT_ROWS);
     let left: Vec<String> = spec.array.towers.iter().take(towers).map(|t| t.label.clone()).collect();
     let frame = Frame { titles: &titles, titled: subject.title, legend: 0, left: &left, y_label: None };
     let mut sheet = Sheet::new(style, measure, size, &frame);
-    // Each row's height scale stands at the right of the rows, its top named in metres.
-    let top = spec.array.instrument.tower_height.max(arm_heights(&instrument, instrument.half_sequence)[3]);
+    // Each tower flies its own instrument: its own arms and its own 2T. With no tower drawn, the
+    // array's stands for the scale.
+    let own: Vec<(cav_sim::InstrumentSpec, cav_core::forward::Instrument)> = (0..towers)
+        .map(|n| {
+            let resolved = spec.array.instrument_of(n);
+            let instrument = resolved.instrument();
+            (resolved, instrument)
+        })
+        .collect();
+    let array = (spec.array.instrument.clone(), spec.array.instrument.instrument());
+    let reach = |(resolved, instrument): &(cav_sim::InstrumentSpec, cav_core::forward::Instrument)| {
+        resolved.tower_height.max(arm_heights(instrument, instrument.half_sequence)[3])
+    };
+    // Each row's height scale stands at the right of the rows, its top named in metres: one scale
+    // for every row, the tallest tower's (or arms').
+    let top = if own.is_empty() { reach(&array) } else { own.iter().map(reach).fold(0.0, f64::max) };
+    let flights: Vec<f64> = own.iter().map(|(_, instrument)| instrument.flight_time()).collect();
+    let (shortest, longest) =
+        flights.iter().fold((f64::INFINITY, 0.0f64), |(a, b), f| (a.min(*f), b.max(*f)));
+    let flight_text = if flights.is_empty() {
+        format!("2T = {} s", plain(array.1.flight_time()))
+    } else if shortest < longest {
+        format!("2T = {} to {} s", plain(shortest), plain(longest))
+    } else {
+        format!("2T = {} s", plain(longest))
+    };
     let top_name = format!("{} m", plain(top));
     let named = measure.size(&top_name, Face::Mono, style.tick_size)[0];
     sheet.narrow_right(12.0 * sheet.u + named);
@@ -1615,6 +1637,8 @@ fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
             tower.label.clone(),
         );
         let (count, flown) = flights_drawn(shots, n, [from, to]);
+        let instrument = &own[n].1;
+        let flight_time = instrument.flight_time();
         left_out += count - flown.len();
         let (colour, _) = style.series(n);
         described.series.push((tower.label.clone(), colour));
@@ -1630,7 +1654,7 @@ fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
                 let points: Vec<[f32; 2]> = (0..=STEPS)
                     .map(|step| {
                         let tau = flight_time * step as f64 / STEPS as f64;
-                        let height = arm_heights(&instrument, tau)[arm];
+                        let height = arm_heights(instrument, tau)[arm];
                         [at(launch + tau), inner.bottom() - inner.height() * y.fraction(height) as f32]
                     })
                     .collect();
@@ -1653,7 +1677,7 @@ fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
             }
             // Where the clouds are at the playhead, if this shot is in flight.
             if !style.house && shot.taken && (launch..=launch + flight_time).contains(&time) {
-                for height in arm_heights(&instrument, time - launch) {
+                for height in arm_heights(instrument, time - launch) {
                     let point = pos2(at(time), inner.bottom() - inner.height() * y.fraction(height) as f32);
                     sheet.dot(point, style.ink);
                 }
@@ -1667,8 +1691,7 @@ fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
         drawn.playhead = Some(at);
     }
     let more = spec.array.towers.len() - towers;
-    let mut said =
-        format!("absolute time, s · each row a tower, 0 to {} m · 2T = {} s", plain(top), plain(flight_time));
+    let mut said = format!("absolute time, s · each row a tower, 0 to {} m · {flight_text}", plain(top));
     if not_taken > 0 {
         said.push_str(&format!(" · dashed: {not_taken} shot(s) not taken"));
     }
@@ -1678,7 +1701,7 @@ fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
     }
     described.marks = json!({
         "row_height_m": top,
-        "flight_time_s": flight_time,
+        "flight_times_s": flights,
         "arms": "each shot: the lower interferometer's two arms, and the upper's (fainter), as the forward model flies them",
         "not_taken": { "shots": not_taken, "drawn": "dashed and faint, where the schedule planned them" },
         "not_drawn": { "towers": more, "shots": left_out },
@@ -1722,9 +1745,12 @@ fn periodogram(
         format!("Periodogram · √S of {name} at {label_of} · {}{also}", spec.name),
         format!("Periodogram · {label_of}"),
     );
-    let instrument = engine.comparison().filter(|_| compared).unwrap_or(&spec.array.instrument);
+    // The tower's own instrument: the array's (or the compared one), with the tower's override.
+    let base = engine.comparison().filter(|_| compared).unwrap_or(&spec.array.instrument);
+    let own = spec.array.towers.get(tower.wrapping_sub(1)).and_then(|t| t.instrument.as_ref());
+    let cycle = own.map_or(base.cycle, |own| own.applied_to(base).cycle);
     // Half the mean shot rate: the schedule's, which for the plain schedule is the cycle's.
-    let nyquist = 0.5 / spec.array.schedule.mean_cycle(instrument.cycle);
+    let nyquist = 0.5 / spec.array.schedule.mean_cycle(cycle);
     let reply = engine.query(&query);
     let combs = match &reply {
         Ok(Reply::Periodogram(spectrum)) => spectrum.combs.len().min(style.combs.len()),

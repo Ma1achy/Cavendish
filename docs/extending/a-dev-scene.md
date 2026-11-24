@@ -11,7 +11,7 @@ and as a `.ron` file, which people load and edit; a test holds the two together.
    starting from an existing one (`let mut scene = comb();`). Its doc comment says what the scene
    is and what it checks. The scene's `name` is the name it is loaded by; its `description` is
    one or two sentences a person reads in the properties panel.
-2. **Register it.** Add the function to the slice's list (`S2_SCENES`; a new slice adds its own
+2. **Register it.** Add the function to the slice's list (`S3_SCENES`, `S2_SCENES`; a new slice adds its own
    and chains it in `the_s1_scene_files_are_their_builders`). The list is an array with its
    length in its type: raise the number with it.
 3. **The file.** Add a line to `LIBRARY` in `crates/cav-sim/src/library.rs`

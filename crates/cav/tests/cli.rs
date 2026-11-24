@@ -829,3 +829,38 @@ fn cli_replay_writes_the_bundle_and_the_figure_a_session_exported() {
     let done = cav(&["replay", &journal]);
     assert!(done.status.success() && stdout(&done).contains("not written (no --out)"), "{}", stdout(&done));
 }
+
+#[test]
+fn cli_runs_a_scene_with_no_towers_and_a_mixed_array() {
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli no towers");
+    let _ = std::fs::remove_dir_all(&root);
+    // No towers: a bundle of empty arrays, the tracks still there.
+    let none = root.join("none");
+    let done = cav(&["run", "no-towers", "--out", none.to_str().unwrap()]);
+    assert!(done.status.success(), "{}", stderr(&done));
+    assert!(stdout(&done).contains("0 tower(s), 0 shot(s) in all"), "{}", stdout(&done));
+    let manifest = std::fs::read_to_string(none.join("manifest.json")).unwrap();
+    assert!(manifest.contains("\"towers\": 0"), "{manifest}");
+    // A mixed array: each tower its own shots, the bundle ragged.
+    let mixed = root.join("mixed");
+    let done = cav(&["run", "mixed-array", "--out", mixed.to_str().unwrap(), "--exec", "set duration 20"]);
+    assert!(done.status.success(), "{}", stderr(&done));
+    let manifest = std::fs::read_to_string(mixed.join("manifest.json")).unwrap();
+    assert!(manifest.contains("\"shots_per_tower\": [\n    10,\n    4,\n    10\n  ]"), "{manifest}");
+    // `get`, `set` and `ls` reach a tower's own instrument.
+    let file = scratch("mixed.ron");
+    let spec = cav(&["get", "mixed-array", "array.towers[1].instrument.half_sequence"]);
+    assert_eq!(stdout(&spec).trim(), "2.5", "{}", stderr(&spec));
+    std::fs::copy(mixed.join("scene.ron"), &file).unwrap();
+    let set = cav(&["set", file.to_str().unwrap(), "array.towers[0].instrument", "{\"half_sequence\": 0.9}"]);
+    assert!(set.status.success(), "{}", stderr(&set));
+    let got = cav(&["get", file.to_str().unwrap(), "array.towers[0].instrument.half_sequence"]);
+    assert_eq!(stdout(&got).trim(), "0.9");
+    // Control: an override that cannot fly is refused, naming the tower.
+    let bad = cav(&["set", file.to_str().unwrap(), "array.towers[0].instrument.cycle", "1"]);
+    assert!(
+        !bad.status.success() && stderr(&bad).contains("array.towers[0].instrument.cycle"),
+        "{}",
+        stderr(&bad)
+    );
+}

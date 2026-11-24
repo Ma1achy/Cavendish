@@ -1340,3 +1340,32 @@ fn a_kept_window_is_the_window_of_the_scene_as_it_is() {
     engine.run_line("set bodies[0].mass 3").unwrap();
     assert_eq!(before, ask(&engine, 2, Some(0.5)));
 }
+
+#[test]
+fn a_scene_with_no_towers_answers_every_query() {
+    let mut engine = loaded(dev::no_towers());
+    assert!(engine.settle(Duration::from_secs(60)));
+    let (state, signal) = engine.signal();
+    assert_eq!(state, SignalState::Refined);
+    assert_eq!(signal.unwrap().towers, 0);
+    // A tower's query says there is none.
+    let asked = Query::Signal { tower: 1, channel: ChannelName::Gradiometer, span: None, compared: false };
+    assert!(engine.query(&asked).unwrap_err().contains("the scene has no towers"));
+    let periodogram = Query::Periodogram { tower: 1, channel: ChannelName::Gradiometer, compared: false };
+    assert!(engine.query(&periodogram).unwrap_err().contains("no towers"));
+    assert!(engine.query(&Query::Window { tower: 1, to: None }).unwrap_err().contains("no towers"));
+    assert!(engine.apply(Command::Select(Some(Target::Tower(1)))).unwrap_err().contains("no towers"));
+    // The array's answers are there, and empty where they are a tower's.
+    let Ok(Reply::Cadence(cadence)) = engine.query(&Query::Cadence) else { panic!("a cadence answer") };
+    assert!(cadence.kept.is_empty() && cadence.shots > 0);
+    assert!(engine.query(&Query::Stats).is_ok());
+    // The console's commands answer, and a comparison is made of nothing.
+    assert!(engine.run_line("signal").unwrap_err().contains("no towers"));
+    assert!(engine.run_line("ls array.towers").is_ok());
+    engine.apply(Command::Compare(Some(Box::new(cav_sim::presets::aice())))).unwrap();
+    assert!(engine.settle(Duration::from_secs(60)));
+    // Control: a tower put back is read.
+    engine.run_line("add array.towers {\"label\": \"t\", \"position\": [0.0, 3.0, 0.0]}").unwrap();
+    assert!(engine.settle(Duration::from_secs(60)));
+    assert!(engine.query(&asked).is_ok());
+}

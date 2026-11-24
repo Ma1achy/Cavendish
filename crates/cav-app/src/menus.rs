@@ -162,6 +162,16 @@ pub const MENUS: &[(&str, &[Item])] = &[
     ),
 ];
 
+/// Whether a menu's `line` can be run on a scene of `towers` towers: `select tower n` only when
+/// there is a tower n (a scene may have fewer than five, or none). Every other line can.
+#[must_use]
+pub fn possible(line: &str, towers: usize) -> bool {
+    match line.strip_prefix("select tower ").map(str::parse::<usize>) {
+        Some(Ok(n)) => n >= 1 && n <= towers,
+        _ => true,
+    }
+}
+
 /// Every line a menu can run, in menu order.
 #[must_use]
 pub fn lines() -> Vec<&'static str> {

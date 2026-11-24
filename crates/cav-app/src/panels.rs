@@ -124,7 +124,7 @@ fn menu_bar(shell: &mut Shell, ui: &mut egui::Ui) {
                     let enabled = match line {
                         "undo" => can_undo,
                         "redo" => can_redo,
-                        _ => true,
+                        _ => crate::menus::possible(line, shell.engine.spec().array.towers.len()),
                     };
                     if ui.add_enabled(enabled, Button::new(label).shortcut_text(shortcut)).clicked() {
                         let _ = shell.run(line);
