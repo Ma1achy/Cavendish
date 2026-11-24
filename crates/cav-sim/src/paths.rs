@@ -944,6 +944,88 @@ mod tests {
     }
 
     #[test]
+    fn every_number_takes_a_changed_value_and_gives_it_back() {
+        // S2's review, finding 20: the walk above sets each leaf to the value it already has,
+        // and its scene has no jitter, gaps, window or alternate cycle. Here every number of a
+        // scene that has them all is set to another value, read back, and undone.
+        let mut spec = everything();
+        spec.array.schedule.jitter = Some(crate::JitterSpec {
+            model: crate::JitterModel::Walk,
+            kind: crate::JitterKind::Positive,
+            delta: 0.2,
+        });
+        spec.array.schedule.alternate = Some(2.5);
+        spec.array.schedule.gaps = Some(crate::GapSpec { on: 4, period: 10 });
+        spec.array.schedule.window = Some(crate::WindowSpec { start: 0.0, length: 300.0, period: 600.0 });
+        spec.array.schedule.loss = 0.1;
+        spec.array.towers[1].timing.offset = 0.25;
+        assert_eq!(spec.validate(), Ok(()));
+        // Every number: a field that is one, and each component of a vector by its own path.
+        let mut numbers: Vec<Entry> = Vec::new();
+        for entry in all_paths(&spec) {
+            match (&entry.kind, &entry.value) {
+                (Kind::Number | Kind::Integer, value) if value.is_number() => numbers.push(entry),
+                (Kind::Vector(_), Value::Array(components)) => {
+                    for (i, component) in components.iter().enumerate() {
+                        numbers.push(Entry {
+                            path: format!("{}[{i}]", entry.path),
+                            name: format!("[{i}]"),
+                            kind: Kind::Number,
+                            value: component.clone(),
+                            ..entry.clone()
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+        for under in
+            ["schedule.jitter.delta", "schedule.alternate", "schedule.gaps.on", "schedule.window.length"]
+        {
+            assert!(numbers.iter().any(|entry| entry.path.ends_with(under)), "the walk has no {under}");
+        }
+        assert!(numbers.len() > 100, "{} numbers", numbers.len());
+        let (mut taken, mut refused) = (0, Vec::new());
+        for entry in &numbers {
+            let old = entry.value.as_f64().unwrap();
+            // Another value of the same kind, close by: one more for a count, a part in a
+            // thousand for a measure (a thousandth where it is zero).
+            let new = match entry.kind {
+                Kind::Integer => json!(entry.value.as_u64().unwrap() + 1),
+                _ if old == 0.0 => json!(1.0e-3),
+                _ => json!(old * 1.001),
+            };
+            match spec.edited(&entry.path, &new) {
+                Ok((changed, before)) => {
+                    assert_eq!(get(&changed.to_value(), &entry.path).unwrap(), &new, "{}", entry.path);
+                    assert_eq!(before, entry.value, "{}: what was there before", entry.path);
+                    assert_ne!(changed, spec, "{}: nothing changed", entry.path);
+                    // That field alone: put back, the scene is the scene, to the bit.
+                    let (undone, _) = changed.edited(&entry.path, &before).unwrap();
+                    assert_eq!(undone, spec, "{}: set and put back is not the same scene", entry.path);
+                    assert_eq!(
+                        serde_json::to_string(&undone).unwrap(),
+                        serde_json::to_string(&spec).unwrap(),
+                        "{}",
+                        entry.path
+                    );
+                    taken += 1;
+                }
+                // A neighbouring value that another field forbids is refused, saying where.
+                Err(why) => {
+                    assert!(why.contains('.') || why.contains(&entry.name), "{}: {why}", entry.path);
+                    refused.push(entry.path.clone());
+                }
+            }
+        }
+        assert!(refused.len() <= 4, "refused: {refused:?}");
+        assert!(taken >= numbers.len() - 4);
+        // Control: the comparison sees a field that is not put back.
+        let (changed, _) = spec.edited("array.schedule.gaps.on", &json!(5)).unwrap();
+        assert_ne!(changed, spec);
+    }
+
+    #[test]
     fn ls_lists_children_with_kind_unit_range_and_doc() {
         let spec = everything();
         let top: Vec<String> = ls(&spec, "").unwrap().into_iter().map(|e| e.name).collect();
