@@ -509,3 +509,6 @@
 - id: TASK-S17-02
   milestone: S17
   title: CI builds the web app and deploys it to GitHub Pages on each push to main; README link
+- id: TASK-S17-03
+  milestone: S17
+  title: "The live site's record (sizes, types, load time, a screenshot from Pages); the validation report regenerated"
