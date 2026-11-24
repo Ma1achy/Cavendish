@@ -77,7 +77,7 @@
                     solid: Tetrahedron,
                     edge: 0.6,
                 ),
-                pitch: 0.03,
+                pitch: 0.05,
                 supersample: 4,
             )),
             motion: Static(
@@ -95,7 +95,7 @@
                     solid: Cube,
                     edge: 0.6,
                 ),
-                pitch: 0.03,
+                pitch: 0.05,
                 supersample: 4,
             )),
             motion: Static(
@@ -113,7 +113,7 @@
                     solid: Octahedron,
                     edge: 0.6,
                 ),
-                pitch: 0.03,
+                pitch: 0.05,
                 supersample: 4,
             )),
             motion: Static(
@@ -131,7 +131,7 @@
                     solid: Dodecahedron,
                     edge: 0.6,
                 ),
-                pitch: 0.03,
+                pitch: 0.05,
                 supersample: 4,
             )),
             motion: Static(
@@ -149,7 +149,7 @@
                     solid: Icosahedron,
                     edge: 0.6,
                 ),
-                pitch: 0.03,
+                pitch: 0.05,
                 supersample: 4,
             )),
             motion: Static(

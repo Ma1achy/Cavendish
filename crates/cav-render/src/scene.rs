@@ -49,6 +49,8 @@ pub enum Part {
     Room,
     /// Body `n`, from 0.
     Body(usize),
+    /// The overlays drawn over voxel bodies: leaf bounds, a cut.
+    Overlay,
 }
 
 /// An infinite horizontal floor, drawn as a grid that fades towards the horizon.
@@ -275,6 +277,24 @@ impl Builder {
         self.quad([p(f, t, f), p(f, f, f), p(f, f, t), p(f, t, t)], colour); // west
     }
 
+    /// The twelve edges of an axis-aligned box, as lines of `width` pixels.
+    fn box_edges(&mut self, lo: Vec3, hi: Vec3, width: f32, colour: [f32; 4]) {
+        let corner = |i: u32| {
+            Vec3::new(
+                if i & 1 == 0 { lo.x } else { hi.x },
+                if i & 2 == 0 { lo.y } else { hi.y },
+                if i & 4 == 0 { lo.z } else { hi.z },
+            )
+        };
+        for i in 0..8u32 {
+            for bit in [1, 2, 4] {
+                if i & bit == 0 {
+                    self.line(corner(i), corner(i | bit), width, colour);
+                }
+            }
+        }
+    }
+
     /// A vertical column with `SIDES` faces, smooth-shaded, capped at the top.
     fn column(&mut self, base: Vec3, height: f64, radius: f64, colour: [f32; 4]) {
         const SIDES: u32 = 12;
@@ -341,6 +361,24 @@ pub fn drawables_at(
     highlight: Option<Target>,
     origin: Vec3,
     time: f64,
+) -> Drawables {
+    drawables_with(scene, style, highlight, origin, time, None)
+}
+
+/// The colours of the overlay boxes, by tree level (repeating): the dark styles' tower colours.
+const LEVEL_COLOURS: [u32; 5] = DARK.towers;
+
+/// [`drawables_at`], with the voxel bodies of `voxels` drawn as their cubes (coloured by the
+/// frame's field over the range it says) and its overlay boxes as lines. A voxel body the frame
+/// does not hold is drawn as any body is.
+#[must_use]
+pub fn drawables_with(
+    scene: &SceneSpec,
+    style: DrawStyle,
+    highlight: Option<Target>,
+    origin: Vec3,
+    time: f64,
+    voxels: Option<&cav_sim::voxel_view::VoxelFrame>,
 ) -> Drawables {
     let paper = style == DrawStyle::Paper;
     let palette = if paper { &PAPER } else { &DARK };
@@ -461,6 +499,35 @@ pub fn drawables_at(
         }
         // A body that does not exist at this moment is an outline of where it will be.
         let present = time >= from && time < until;
+        let cubes = voxels.and_then(|v| v.bodies.iter().find(|c| c.body == n).map(|c| (v, c)));
+        if let (Some((frame, cubes)), true) = (cubes, present) {
+            let dark = !paper;
+            let diverging = frame.colouring.field.diverging();
+            let range = frame.range.unwrap_or((0.0, 1.0));
+            for cube in &cubes.cubes {
+                let rgb = crate::colour::of_value(cube.value, range, diverging, dark);
+                let hex = (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]);
+                let h = 0.5 * cube.side;
+                let d = Vec3::new(h, h, h);
+                if filled {
+                    b.cuboid(cube.centre - d, cube.centre + d, linear(hex, 1.0));
+                } else {
+                    b.box_edges(cube.centre - d, cube.centre + d, 1.0, linear(hex, 1.0));
+                }
+            }
+            if selected {
+                let (lo, hi) = cubes.cubes.iter().fold((at, at), |(lo, hi), c| {
+                    let h = 0.5 * c.side;
+                    (
+                        Vec3::new(lo.x.min(c.centre.x - h), lo.y.min(c.centre.y - h), lo.z.min(c.centre.z - h)),
+                        Vec3::new(hi.x.max(c.centre.x + h), hi.y.max(c.centre.y + h), hi.z.max(c.centre.z + h)),
+                    )
+                });
+                b.box_edges(lo, hi, 2.0, linear(palette.selection, 1.0));
+            }
+            b.end_part(Part::Body(n));
+            continue;
+        }
         if filled && present {
             b.sphere(at, radius, colour);
         }
@@ -482,6 +549,15 @@ pub fn drawables_at(
             }
         }
         b.end_part(Part::Body(n));
+    }
+
+    // The overlays over voxel bodies: each box outlined in its level's colour.
+    if let Some(frame) = voxels.filter(|v| !v.boxes.is_empty()) {
+        for overlay in &frame.boxes {
+            let colour = linear(LEVEL_COLOURS[usize::from(overlay.level) % LEVEL_COLOURS.len()], 1.0);
+            b.box_edges(overlay.lo, overlay.hi, 1.0, colour);
+        }
+        b.end_part(Part::Overlay);
     }
 
     if let Some(floor) = &scene.floor {
@@ -565,6 +641,36 @@ mod tests {
         // Control: with no bodies there is no such part.
         let none = drawables(&dev::void(), DrawStyle::Shaded, None, Vec3::ZERO);
         assert!(!none.parts.iter().any(|(p, ..)| matches!(p, Part::Body(_))));
+    }
+
+    #[test]
+    fn a_voxel_body_is_drawn_as_its_leaves() {
+        use cav_sim::voxel_view::{Colouring, LeafField, Overlay, voxel_frame};
+        let scene = dev::sphere();
+        let trees: Vec<_> =
+            scene.bodies.iter().map(|b| b.shape.as_ref().map(|s| std::sync::Arc::new(s.tree(b.mass).unwrap()))).collect();
+        let leaves = trees[0].as_ref().unwrap().leaves.len();
+        let body = |d: &Drawables, n: usize| {
+            let at = d.parts.iter().position(|(p, ..)| *p == Part::Body(n)).unwrap();
+            let (start, end) = (if at == 0 { 0 } else { d.parts[at - 1].2 }, d.parts[at].2);
+            d.triangles[start..end].to_vec()
+        };
+        let frame = voxel_frame(&scene, &trees, Colouring { field: LeafField::Height, tower: 0 }, Overlay::default(), 0.0);
+        let d = drawables_with(&scene, DrawStyle::Shaded, None, Vec3::ZERO, 0.0, Some(&frame));
+        // Twelve triangles a leaf, and the analytic sphere still a sphere.
+        assert_eq!(body(&d, 0).len(), 36 * leaves);
+        assert_eq!(body(&d, 1).len(), 8 * 16 * 3);
+        // Coloured by the field: the highest leaf and the lowest are not the same colour.
+        let colours: std::collections::HashSet<[u32; 4]> =
+            body(&d, 0).iter().map(|v| v.colour.map(f32::to_bits)).collect();
+        assert!(colours.len() > 3, "{} colours", colours.len());
+        // Overlays: twelve edges a box.
+        let with = voxel_frame(&scene, &trees, Colouring::default(), Overlay { leaves: true, cut: None }, 0.0);
+        let lines = drawables_with(&scene, DrawStyle::Shaded, None, Vec3::ZERO, 0.0, Some(&with)).lines.len();
+        let without = drawables_with(&scene, DrawStyle::Shaded, None, Vec3::ZERO, 0.0, Some(&frame)).lines.len();
+        assert_eq!(lines - without, 12 * leaves);
+        // Control: without the frame the voxel body is drawn as any body, a sphere.
+        assert_eq!(body(&drawables(&scene, DrawStyle::Shaded, None, Vec3::ZERO), 0).len(), 8 * 16 * 3);
     }
 
     #[test]

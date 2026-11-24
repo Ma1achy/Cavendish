@@ -173,6 +173,8 @@ pub struct Engine {
     compare: Option<(Box<cav_sim::InstrumentSpec>, Forward)>,
     /// How long a text client waits for the signal before it asks for one (`run_line`).
     patience: std::time::Duration,
+    /// The voxel bodies' trees, made when a shape or a mass changes, for drawing.
+    voxels: crate::voxels::Voxels,
 }
 
 /// Everything a replay must reproduce, in one serialisable piece. The journal and the log are not
@@ -240,6 +242,7 @@ impl Engine {
             forward,
             compare: None,
             patience: TYPED_LINE_PATIENCE,
+            voxels: crate::voxels::Voxels::default(),
         }
     }
 
@@ -474,6 +477,9 @@ impl Engine {
         }
         self.perform(&command, prepared, overwrites);
         self.generation += 1;
+        // What the panes draw of voxel bodies follows the scene, the playhead and the views. What
+        // it could not draw is said once, for the scene that has it (a refusal of a tree).
+        let voxel_notes = self.voxels.refresh(&self.spec, self.time, &self.views[..self.panes]);
         // Whatever changed the scene or moved the playhead changes what the towers read under it.
         if !matches!(command, Command::Select(_) | Command::View(_)) {
             self.forward.request_reading(&self.spec, self.time);
@@ -482,6 +488,9 @@ impl Engine {
             self.log.amend_last(message);
         } else {
             self.log.push(level, subsystem, message);
+        }
+        for note in voxel_notes {
+            self.log.push(Level::Warn, Subsystem::Render, note);
         }
         // The journal grows with the session, so it has a size: the bytes of the file it would
         // be written as. A command that would take it past that is still applied; what stops is
@@ -1047,8 +1056,12 @@ impl Engine {
             }
             ViewCommand::Pan { pane, target } => self.views[pane].target = target,
             ViewCommand::Home { pane } => {
-                self.views[pane] = home_view(&self.spec, pane, self.views[pane].style);
+                // Home is the camera's: the style, the colouring and the overlays are kept.
+                let (colour, overlay) = (self.views[pane].colour, self.views[pane].overlay);
+                self.views[pane] = ViewSpec { colour, overlay, ..home_view(&self.spec, pane, self.views[pane].style) };
             }
+            ViewCommand::Colour { pane, colour } => self.views[pane].colour = colour,
+            ViewCommand::Overlay { pane, overlay } => self.views[pane].overlay = overlay,
         }
     }
 
@@ -1591,6 +1604,7 @@ impl Engine {
             time: self.time,
             content: self.contents[pane],
             span: self.spans[pane],
+            voxels: self.voxels.frame(pane),
         })
     }
 

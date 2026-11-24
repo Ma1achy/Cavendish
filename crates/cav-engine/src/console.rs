@@ -160,6 +160,18 @@ pub const COMMANDS: &[CommandDoc] = &[
         example: "style paper",
     },
     CommandDoc {
+        name: "colour",
+        usage: "colour <level|mass|fill|height|distance|phase [tower]> [@N]",
+        about: "what colours the leaves of voxel bodies; `phase` is each leaf's share of a tower's ΔΦ (the legend is made from what is drawn)",
+        example: "colour phase 1",
+    },
+    CommandDoc {
+        name: "overlay",
+        usage: "overlay <none | leaves | cut <level> | leaves cut <level>> [@N]",
+        about: "draw over voxel bodies: each leaf's bounds by level, and the cut a level of detail would take",
+        example: "overlay leaves cut 3",
+    },
+    CommandDoc {
         name: "show",
         usage: "show <scene|signal|periodogram|flight|cadence> [@N]",
         about: "what a pane shows: the scene, every tower's signal, the periodogram with the combs, the atoms' flights on absolute time, or the cadence's spectral window",
@@ -327,6 +339,16 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
             ViewCommand::Orbit { pane, yaw, pitch } => format!("orbit {yaw} {pitch}{}", at(pane)),
             ViewCommand::Zoom { pane, distance } => format!("zoom {distance}{}", at(pane)),
             ViewCommand::Pan { pane, target: [x, y, z] } => format!("pan {x} {y} {z}{}", at(pane)),
+            ViewCommand::Colour { pane, colour } => match colour.field {
+                cav_sim::voxel_view::LeafField::Phase => format!("colour phase {}{}", colour.tower + 1, at(pane)),
+                field => format!("colour {}{}", field.name(), at(pane)),
+            },
+            ViewCommand::Overlay { pane, overlay } => match (overlay.leaves, overlay.cut) {
+                (false, None) => format!("overlay none{}", at(pane)),
+                (true, None) => format!("overlay leaves{}", at(pane)),
+                (false, Some(level)) => format!("overlay cut {level}{}", at(pane)),
+                (true, Some(level)) => format!("overlay leaves cut {level}{}", at(pane)),
+            },
         },
     }
 }
@@ -619,6 +641,42 @@ impl Engine {
                 Some(style) => view(ViewCommand::Style { pane, style }),
                 None => Err(format!("`{word}` is not a draw style; {}", usage(name))),
             },
+            ("colour" | "color", [word, rest @ ..]) if rest.len() <= 1 => {
+                use cav_sim::voxel_view::{Colouring, LeafField};
+                let field = LeafField::parse(word).ok_or_else(|| format!("`{word}` is not a field; {}", usage(name)))?;
+                let tower = match rest {
+                    [] => 0,
+                    [n] if field == LeafField::Phase => match n.parse::<usize>() {
+                        Ok(n) if n >= 1 => n - 1,
+                        _ => return Err(format!("`{n}` is not a tower number; {}", usage(name))),
+                    },
+                    _ => return Err(format!("only `phase` takes a tower; {}", usage(name))),
+                };
+                view(ViewCommand::Colour { pane, colour: Colouring { field, tower } })
+            }
+            ("overlay", words) if !words.is_empty() => {
+                let mut overlay = cav_sim::voxel_view::Overlay::default();
+                let mut rest = words;
+                while let Some((first, after)) = rest.split_first() {
+                    match (*first, after) {
+                        ("none", []) if words.len() == 1 => {}
+                        ("leaves", _) => overlay.leaves = true,
+                        ("cut", [level, ..]) => {
+                            let level: u8 = level
+                                .parse()
+                                .ok()
+                                .filter(|l| *l <= 10)
+                                .ok_or_else(|| format!("`{level}` is not a level from 0 to 10; {}", usage(name)))?;
+                            overlay.cut = Some(level);
+                            rest = &after[1..];
+                            continue;
+                        }
+                        (other, _) => return Err(format!("`{other}` is not an overlay; {}", usage(name))),
+                    }
+                    rest = after;
+                }
+                view(ViewCommand::Overlay { pane, overlay })
+            }
             ("span", ["all"]) => view(ViewCommand::Span { pane, span: None }),
             ("span", [from, to]) => {
                 let span = [number(from, "the start", name)?, number(to, "the end", name)?];
@@ -1110,6 +1168,31 @@ mod tests {
                 Command::View(ViewCommand::Project { pane: 1, projection: Projection::Perspective }),
             ),
             ("style xray", Command::View(ViewCommand::Style { pane: 0, style: DrawStyle::XRay })),
+            (
+                "colour height",
+                Command::View(ViewCommand::Colour {
+                    pane: 0,
+                    colour: cav_sim::voxel_view::Colouring { field: cav_sim::voxel_view::LeafField::Height, tower: 0 },
+                }),
+            ),
+            (
+                "colour phase 3 @2",
+                Command::View(ViewCommand::Colour {
+                    pane: 1,
+                    colour: cav_sim::voxel_view::Colouring { field: cav_sim::voxel_view::LeafField::Phase, tower: 2 },
+                }),
+            ),
+            (
+                "overlay leaves cut 3",
+                Command::View(ViewCommand::Overlay {
+                    pane: 0,
+                    overlay: cav_sim::voxel_view::Overlay { leaves: true, cut: Some(3) },
+                }),
+            ),
+            (
+                "overlay none",
+                Command::View(ViewCommand::Overlay { pane: 0, overlay: cav_sim::voxel_view::Overlay::default() }),
+            ),
             ("panes 4", Command::View(ViewCommand::Panes(4))),
             ("pane 2", Command::View(ViewCommand::Activate(1))),
             ("orbit -60 25", Command::View(ViewCommand::Orbit { pane: 0, yaw: -60.0, pitch: 25.0 })),

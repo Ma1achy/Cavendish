@@ -28,6 +28,7 @@ pub mod schedule;
 pub mod shape;
 pub mod spec;
 pub mod view;
+pub mod voxel_view;
 
 pub use library::{LIBRARY, LibraryScene, inline, load};
 pub use motion::{ModeSpec, Motion};

@@ -63,7 +63,7 @@ fn setup() -> (Gpu, Renderer) {
 
 fn render(gpu: &Gpu, renderer: &Renderer, scene: &SceneSpec, view: &ViewSpec) -> Picture {
     let frame =
-        Frame { scene, view, highlight: None, time: 0.0, content: cav_sim::PaneContent::Scene, span: None };
+        Frame { scene, view, highlight: None, time: 0.0, content: cav_sim::PaneContent::Scene, span: None, voxels: None };
     Picture { rgba: renderer.render_rgba(gpu, frame, SIZE).expect("render") }
 }
 
@@ -420,6 +420,7 @@ fn gpu_the_largest_valid_scene_renders() {
             time: 0.0,
             content: cav_sim::PaneContent::Scene,
             span: None,
+            voxels: None,
         };
         let rgba = renderer.render_rgba(&gpu, frame, SIZE).expect("the largest valid scene must draw");
         let picture = Picture { rgba };
@@ -522,6 +523,8 @@ fn gpu_shading_follows_the_light() {
         distance: 1.0,
         projection: Projection::Perspective,
         style,
+        colour: Default::default(),
+        overlay: Default::default(),
     };
     let camera = camera(&view(DrawStyle::Shaded));
     // Two points on the sphere's face, half its radius out along each axis: up and to the west (towards the key
@@ -594,6 +597,7 @@ fn gpu_a_body_appears_at_its_projected_pixel() {
             time,
             content: cav_sim::PaneContent::Scene,
             span: None,
+            voxels: None,
         };
         Picture { rgba: renderer.render_rgba(&gpu, frame, SIZE).expect("render") }
     };

@@ -23,6 +23,7 @@ fn main() -> Result<(), String> {
         time: 0.0,
         content: cav_sim::PaneContent::Scene,
         span: None,
+        voxels: None,
     };
     let png = renderer.render_png(&gpu, frame, [1200, 800])?;
     std::fs::write(out, png).map_err(|e| e.to_string())

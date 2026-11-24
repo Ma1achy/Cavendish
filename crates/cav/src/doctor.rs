@@ -37,6 +37,7 @@ pub fn run() -> Result<(), String> {
         time: 0.0,
         content: cav_sim::PaneContent::Scene,
         span: None,
+        voxels: None,
     };
     let rgba = renderer.render_rgba(&gpu, frame, SIZE)?;
     match check_picture(&rgba, &scene, &view) {

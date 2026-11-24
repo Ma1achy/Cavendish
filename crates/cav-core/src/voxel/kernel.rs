@@ -284,6 +284,12 @@ impl<P: Fn(f64) -> Vec3 + Sync> TreeBody<P> {
         Self { cubes, position, exists: (f64::NEG_INFINITY, f64::INFINITY), breaks: Vec::new() }
     }
 
+    /// One leaf of `tree` alone, at `position`, always there: what that leaf adds.
+    pub fn single(tree: &VoxTree, leaf: &super::Leaf, position: P) -> Self {
+        let cube = (tree.block_centre(leaf.key, leaf.level), tree.leaf_mass(leaf), tree.side(leaf.level));
+        Self { cubes: vec![cube], position, exists: (f64::NEG_INFINITY, f64::INFINITY), breaks: Vec::new() }
+    }
+
     /// How many cubes are summed at each point asked about.
     #[must_use]
     pub fn cubes(&self) -> usize {

@@ -227,7 +227,14 @@ impl Renderer {
     pub fn draw(&self, gpu: &Gpu, target: &PaneTarget, frame: Frame<'_>) -> Result<(), String> {
         let [width, height] = target.size;
         let camera = Camera::new(frame.view, f64::from(width) / f64::from(height));
-        let things = drawables_at(frame.scene, frame.view.style, frame.highlight, camera.origin, frame.time);
+        let things = crate::scene::drawables_with(
+            frame.scene,
+            frame.view.style,
+            frame.highlight,
+            camera.origin,
+            frame.time,
+            frame.voxels,
+        );
         check_sizes(&things, gpu.device.limits().max_buffer_size)?;
         // A validation error inside wgpu would otherwise be a panic; here it is an answer.
         gpu.checked(|| self.draw_things(gpu, target, &camera, &things, frame.view.style))
