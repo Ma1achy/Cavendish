@@ -488,9 +488,24 @@
 - id: TASK-S14-11
   milestone: S14
   title: The read of the far planet through the bounded walk converges to the gravity-field model at the site
+- id: TASK-S5-06
+  milestone: S5
+  title: Analytic bodies - the polyhedron (Platonic solids, flat-faced meshes) with the missing low multipoles as a test
+- id: TASK-S5-07
+  milestone: S5
+  title: Analytic bodies - the ellipsoid; sheets, polygons, discs, rods and rings; torus, cylinder and cone by exact 1-D integrals
+- id: TASK-S6-06
+  milestone: S6
+  title: Shapes from 2-D profiles - extrude, revolve, sweep - with a recipe
+- id: TASK-S14-12
+  milestone: S14
+  title: The solar system - bodies of the ephemeris with their own LOD trees; a detector on any of them
+- id: TASK-S14-13
+  milestone: S14
+  title: Things in space - satellites (SGP4), asteroids and comets from the catalogues, spacecraft
 - id: TASK-S17-01
   milestone: S17
-  title: 'The app for wasm32 and WebGPU: platform seams (device, forward workers, files, figure pixels), the cav-web entry, cargo xtask web, the web/native equivalence test'
+  title: The app builds and runs in a browser - wasm32 with WebGPU, single-threaded engine, scenes and fonts embedded
 - id: TASK-S17-02
   milestone: S17
-  title: 'GitHub Pages: pages.yml (pinned, least permissions), the README link, the live site checked'
+  title: CI builds the web app and deploys it to GitHub Pages on each push to main; README link
