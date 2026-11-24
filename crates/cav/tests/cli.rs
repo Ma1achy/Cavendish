@@ -655,6 +655,32 @@ fn cli_provenance_is_the_builds_whatever_the_tree_or_the_directory() {
 }
 
 #[test]
+fn gpu_cli_figure_takes_a_picture_wider_than_mcp_does() {
+    // A16: a figure's picture is at most 8192 pixels a side at the command line, 4096 over MCP
+    // (`mcp_figure_writes_a_figure_and_says_what_it_wrote` has the refusal of 4097 there).
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli figure wide");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = dir.join("wide.png");
+    // 1041.4 mm at 100 pixels per inch is 4100 pixels.
+    let wide = |dpi: &str| {
+        let out = out.to_str().unwrap();
+        let size = "1041.4x60";
+        cav(&["figure", "comb", "signal", "--out", out, "--size", size, "--dpi", dpi, "--preset", "slide"])
+    };
+    let done = wide("100");
+    assert!(done.status.success(), "{}", stderr(&done));
+    let (_, size) = cav_render::decode_png(&std::fs::read(&out).unwrap()).unwrap();
+    assert_eq!(size, [4100, 236]);
+    // Control: past 8192 it is refused here too, with the numbers, and the file is left as it was.
+    let before = std::fs::read(&out).unwrap();
+    let done = wide("200");
+    assert!(!done.status.success());
+    assert!(stderr(&done).contains("8200 × 472 pixels; each side is 1 to 8192"), "{}", stderr(&done));
+    assert_eq!(std::fs::read(&out).unwrap(), before);
+}
+
+#[test]
 fn cli_figure_writes_a_figure_with_its_data_twice_the_same() {
     let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli figure");
     let _ = std::fs::remove_dir_all(&root);

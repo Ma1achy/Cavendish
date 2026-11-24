@@ -16,8 +16,22 @@ use serde::Deserialize;
 
 use crate::session::Session;
 
-/// The largest picture `render_view` will draw, pixels per side.
+/// The largest picture a tool of this server draws, pixels per side: `render_view`'s, and a
+/// `figure` that is made of pixels (a PNG, or a view of the scene in any format). `cav figure`
+/// and the console take `cav_plot::figure::MAX_PIXELS`; a picture handed back in a message is
+/// held to less (S2.md §3.1, A16).
 const MAX_SIDE: u32 = 4096;
+
+/// Refuses a figure whose picture would have a side over [`MAX_SIDE`], with the numbers. A plot
+/// written as SVG or PDF has no pixels and is never refused here.
+fn within_this_server(figure: &cav_engine::Figure) -> Result<(), String> {
+    match cav_plot::figure::raster(figure)? {
+        None => Ok(()),
+        Some((size_mm, dpi)) => cav_plot::figure::pixels_within(size_mm, dpi, MAX_SIDE)
+            .map(|_| ())
+            .map_err(|why| format!("{why} (over MCP; `cav figure` writes up to 8192 a side)")),
+    }
+}
 
 #[derive(Clone)]
 pub struct Cav {
@@ -95,7 +109,7 @@ pub struct FigureArgs {
     pub span: Option<[f64; 2]>,
     /// Width and height in millimetres, in place of the preset's.
     pub size_mm: Option<[f64; 2]>,
-    /// For a PNG: pixels per inch, in place of the preset's. Each side of the picture is at most 8192 pixels.
+    /// For a PNG: pixels per inch, in place of the preset's. Each side of the picture is at most 4096 pixels here (`cav figure` writes up to 8192).
     pub dpi: Option<f64>,
     /// For a view: which pane's camera, from 1 (default: the active pane).
     pub pane: Option<usize>,
@@ -273,6 +287,7 @@ impl Cav {
         figure.channel = channel;
         (figure.span, figure.size_mm, figure.dpi) = (args.span, args.size_mm, args.dpi);
         figure.pane = if what == FigureKind::View { pane } else { 0 };
+        within_this_server(&figure)?;
         let command = cav_engine::Command::Export {
             what: cav_engine::ExportKind::Figure(Box::new(figure)),
             to: args.file.clone(),
@@ -370,6 +385,36 @@ mod tests {
         assert_eq!(panicked, Err("render_view failed inside the engine: buffer of 1440002352 bytes".into()));
         let literal: Result<u32, String> = answered("command", || panic!("plain"));
         assert_eq!(literal, Err("command failed inside the engine: plain".into()));
+    }
+
+    #[test]
+    fn a_figure_over_mcp_is_at_most_4096_pixels_a_side() {
+        use cav_engine::{Figure, FigureFormat, FigureKind};
+        // 25.4 mm at N pixels per inch is N pixels: the side is the resolution.
+        let png = |dpi: f64| Figure {
+            size_mm: Some([25.4, 25.4]),
+            dpi: Some(dpi),
+            ..Figure::new(FigureKind::Signal, FigureFormat::Png)
+        };
+        assert_eq!(within_this_server(&png(4096.0)), Ok(()));
+        let why = within_this_server(&png(4097.0)).unwrap_err();
+        assert!(
+            why.contains("4097 × 4097 pixels; each side is 1 to 4096") && why.contains("over MCP"),
+            "{why}"
+        );
+        // A view is a picture whatever the file: held to the same.
+        let view = Figure { what: FigureKind::View, format: FigureFormat::Pdf, ..png(4097.0) };
+        assert!(within_this_server(&view).is_err());
+        assert_eq!(within_this_server(&Figure { dpi: Some(4096.0), ..view }), Ok(()));
+        // A plot as SVG has no pixels: its `dpi` is not looked at.
+        assert_eq!(within_this_server(&Figure { format: FigureFormat::Svg, ..png(1e6) }), Ok(()));
+        // Control: the command line's limit is another number, and takes what this refuses.
+        assert_eq!(cav_plot::figure::pixels([25.4, 25.4], 4097.0), Ok([4097, 4097]));
+        assert_eq!(cav_plot::figure::pixels([25.4, 25.4], 8192.0), Ok([8192, 8192]));
+        assert!(cav_plot::figure::pixels([25.4, 25.4], 8193.0).unwrap_err().contains("1 to 8192"));
+        // A preset that does not exist is refused by name, as the engine would.
+        let odd = Figure { preset: "a4".into(), ..png(100.0) };
+        assert!(within_this_server(&odd).unwrap_err().contains("`a4` is not a figure preset"));
     }
 
     /// The tools of `source` whose bodies do not run under `answered("<their name>", …)`.

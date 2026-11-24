@@ -465,7 +465,12 @@ fn mcp_figure_writes_a_figure_and_says_what_it_wrote() {
         (json!({ "what": "signal", "file": file("x.svg"), "preset": "a4" }), "is not a figure preset"),
         (
             json!({ "what": "signal", "file": file("x.png"), "preset": "poster", "dpi": 600 }),
-            "each side is 1 to 8192",
+            "each side is 1 to 4096",
+        ),
+        // One pixel over this server's limit, which `cav figure` would write (A16).
+        (
+            json!({ "what": "signal", "file": file("x.png"), "size_mm": [25.4, 25.4], "dpi": 4097 }),
+            "4097 × 4097 pixels; each side is 1 to 4096",
         ),
         (json!({ "what": "view", "file": file("x.png"), "pane": 0 }), "counted from 1"),
     ] {
@@ -501,6 +506,14 @@ fn gpu_mcp_figure_returns_the_png_it_wrote() {
     let (is_error, content) =
         client.call("figure", json!({ "what": "view", "file": file, "preset": "screen" }));
     assert!(!is_error && content[1]["type"] == "image", "{content:?}");
+    // A picture exactly at this server's limit is drawn: 1040.384 mm at 100 pixels per inch.
+    let file = dir.join("wide.png").display().to_string();
+    let arguments =
+        json!({ "what": "signal", "file": file, "preset": "slide", "size_mm": [1040.384, 60], "dpi": 100 });
+    let (is_error, content) = client.call("figure", arguments);
+    assert!(!is_error, "{content:?}");
+    let (_, size) = cav_render::decode_png(&std::fs::read(dir.join("wide.png")).unwrap()).unwrap();
+    assert_eq!(size, [4096, 236]);
     // Control: a vector figure returns no picture.
     let file = dir.join("p.svg").display().to_string();
     let (_, content) = client.call("figure", json!({ "what": "periodogram", "file": file }));

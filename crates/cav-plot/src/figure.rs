@@ -122,17 +122,40 @@ fn size_mm(figure: &Figure, style: &Style) -> [f64; 2] {
 /// # Errors
 /// When a side would be over [`MAX_PIXELS`] or under one pixel, with the numbers.
 pub fn pixels(size_mm: [f64; 2], dpi: f64) -> Result<[u32; 2], String> {
+    pixels_within(size_mm, dpi, MAX_PIXELS)
+}
+
+/// As [`pixels`], with no side over `most`: a caller that hands the picture on in a message (the
+/// MCP server) takes fewer than a file may hold.
+///
+/// # Errors
+/// When a side would be over `most` or under one pixel, with the numbers.
+pub fn pixels_within(size_mm: [f64; 2], dpi: f64, most: u32) -> Result<[u32; 2], String> {
     let side = |mm: f64| (mm / 25.4 * dpi).round();
     let [w, h] = [side(size_mm[0]), side(size_mm[1])];
-    let most = f64::from(MAX_PIXELS);
-    if !(w >= 1.0 && h >= 1.0 && w <= most && h <= most) {
+    let limit = f64::from(most);
+    if !(w >= 1.0 && h >= 1.0 && w <= limit && h <= limit) {
         return Err(format!(
-            "a figure of {} × {} mm at {dpi} pixels per inch is {w} × {h} pixels; each side is 1 to {MAX_PIXELS}: \
+            "a figure of {} × {} mm at {dpi} pixels per inch is {w} × {h} pixels; each side is 1 to {most}: \
              make it smaller (`size`) or coarser (`dpi`)",
             size_mm[0], size_mm[1]
         ));
     }
     Ok([w as u32, h as u32])
+}
+
+/// The size and the resolution `figure` has if it is made of pixels (a PNG, or a view of the
+/// scene in any format): millimetres and pixels per inch, its own or its preset's. `None` for a
+/// plot written as SVG or PDF, which has no pixels.
+///
+/// # Errors
+/// A preset that does not exist.
+pub fn raster(figure: &Figure) -> Result<Option<([f64; 2], f64)>, String> {
+    if figure.format != FigureFormat::Png && figure.what != FigureKind::View {
+        return Ok(None);
+    }
+    let style = Style::preset(&figure.preset)?;
+    Ok(Some((size_mm(figure, &style), figure.dpi.unwrap_or(style.dpi))))
 }
 
 fn subject(figure: &Figure, content: PaneContent) -> Subject {
