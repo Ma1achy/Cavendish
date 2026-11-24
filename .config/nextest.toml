@@ -2,3 +2,12 @@
 # never ends, a server that never answers) must not sit on the owner's PC until someone notices.
 [profile.default]
 slow-timeout = { period = "30s", terminate-after = 4 }
+
+# Tests that spread their own work over every core run one at a time, not side by side: two of
+# them together each take twice as long, and the oracle's cylinder pair then met the watchdog.
+[test-groups]
+whole-machine = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'test(validation_cylinder_vs_point_mass) | test(the_point_mass_fails_where_the_script_says)'
+test-group = 'whole-machine'

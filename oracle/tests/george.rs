@@ -196,14 +196,12 @@ fn cylinder_and_point(h: f64, h0: f64) -> (f64, f64) {
     let pitch = (radius / 16.0).min(h / 4.0).max(h / 400.0);
     let shape = Cylinder { centre: Vec3::ZERO, radius, half_length: 0.5 * h, axis: 2 };
     let tree = voxelise(&shape, &Grid::around(shape.bounds(), pitch, 2).unwrap(), 100.0, 0).unwrap();
-    let largest = |source: &dyn Source| -> f64 {
-        let series: Vec<f64> = times
-            .iter()
-            .map(|&t| {
-                let r = reader.read_to(Vec3::ZERO, source, t, PHASE_TOLERANCE).reading;
-                r.lower - r.upper
-            })
-            .collect();
+    // The shots are read side by side: a crossover's bisection is otherwise one read at a time.
+    let largest = |source: &(dyn Source + Sync)| -> f64 {
+        let series = parallel(times.len(), |k| {
+            let r = reader.read_to(Vec3::ZERO, source, times[k], PHASE_TOLERANCE).reading;
+            r.lower - r.upper
+        });
         ac(&series).iter().fold(0f64, |m, v| m.max(v.abs()))
     };
     let body = TreeBody::new(&tree, |t| Vec3::new(x0(t), 0.0, h0));
@@ -262,7 +260,8 @@ fn crossover(h0: f64, (mut lo, mut hi): (f64, f64)) -> f64 {
         let (c, p) = cylinder_and_point(h, h0);
         (c / p - 1.0).abs() > 0.1
     };
-    assert!(!leaves(lo) && leaves(hi), "h0 {h0}: the ratio does not cross 10% between {lo} and {hi} m");
+    let ends = parallel(2, |k| leaves([lo, hi][k]));
+    assert!(!ends[0] && ends[1], "h0 {h0}: the ratio does not cross 10% between {lo} and {hi} m");
     for _ in 0..5 {
         let mid = (lo * hi).sqrt();
         if leaves(mid) {
@@ -281,7 +280,7 @@ fn the_point_mass_fails_where_the_script_says() {
     // crossover between 0.5 and 2 m at every h0 (S3.md §3.3), and said that if the scripts said
     // otherwise it was a finding for George, not a test to loosen. They do: on the script's own
     // grid the ratio crosses 0.9 between H = 2.725 and 6.06 m at h0 = 2.5 m. Measured
-    // (24 Nov 2026): the engine's crossovers are 2.20, 1.83, 3.74 and 2.73 m (S3.md §7). What
+    // (24 Nov 2026): the engine's crossovers are 2.20, 1.90, 3.63 and 2.76 m (S3.md §7). What
     // is held here is the oracle's relation: the engine crosses within one step of the script's
     // grid of the bracket where the script's own ratio crosses (at h0 = 5 m the script is 0.8997
     // at 2.725 m and the engine 0.9002, within the ratio case's 5e-3, so the crossing may fall
