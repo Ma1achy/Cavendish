@@ -10,6 +10,7 @@
 
 use cav_core::Vec3;
 use cav_core::forward::{Channel, Mass, PHASE_TOLERANCE, Reader, Sign, Slab};
+use cav_core::voxel::kernel::{MAX_KERNEL_WORK, TreeBody};
 
 use crate::{FloorKind, SceneSpec};
 
@@ -538,6 +539,30 @@ pub fn contribution_on(
             let body = mass(spec, n);
             let label = &spec.bodies[n].label;
             let per_tower = readouts.len();
+            // A body made of voxels: its tree, built here and dropped with the contribution.
+            let voxels = match voxel_body(spec, n, &reader) {
+                Ok(voxels) => voxels,
+                Err(why) => {
+                    for channel in [&mut out.lower, &mut out.upper, &mut out.gradiometer] {
+                        channel.resize(count, 0.0);
+                    }
+                    out.settled = false;
+                    out.warnings.push(Warning::general(format!("`{label}` is not read: {why}")));
+                    return Some(out);
+                }
+            };
+            // What one shot of one tower reads, and whether the body crossed the atoms' path.
+            let read_one = |tower: Vec3, readout: f64| -> (cav_core::forward::Audited, bool) {
+                match &voxels {
+                    Some(voxels) => (voxels.read(&reader, tower, readout), false),
+                    None => {
+                        // The body is watched as it is read: the crossing check costs no node of its own.
+                        let watched = Watched::new(&body);
+                        let audited = reader.read_to(tower, &watched, readout, PHASE_TOLERANCE);
+                        (audited, watched.crossed())
+                    }
+                }
+            };
             // Every value has its place before any is computed: the three channels are cut into
             // pieces of one tower's consecutive shots, and each piece is filled by whichever
             // thread takes it. A shot's value depends on the scene and its own readout time and
@@ -576,9 +601,7 @@ pub fn contribution_on(
                     }
                     // The tower's own readout: the array's, and the tower's offset.
                     let readout = shots.readout(piece.at, k);
-                    // The body is watched as it is read: the crossing check costs no node of its own.
-                    let watched = Watched::new(&body);
-                    let audited = reader.read_to(base(tower.position), &watched, readout, PHASE_TOLERANCE);
+                    let (audited, crossed) = read_one(base(tower.position), readout);
                     let (lower, upper) = (audited.reading.lower, audited.reading.upper);
                     let estimate = audited.estimate.unwrap_or(0.0);
                     // Whatever stopped the audit short of its tolerance (the halvings, the work
@@ -586,7 +609,7 @@ pub fn contribution_on(
                     if !audited.settled {
                         found.unsettled.get_or_insert((k, estimate));
                     }
-                    if found.inside.is_none() && watched.crossed() {
+                    if found.inside.is_none() && crossed {
                         found.inside = Some(k);
                     }
                     found.estimate =
@@ -665,7 +688,7 @@ pub fn contribution_on(
                     ));
                 }
                 if let Some((k, estimate)) = unsettled {
-                    let point = if spec.bodies[n].radius == 0.0 {
+                    let point = if spec.bodies[n].radius == 0.0 && spec.bodies[n].shape.is_none() {
                         " (a point mass on the atoms' path has no finite phase)"
                     } else {
                         ""
@@ -684,6 +707,71 @@ pub fn contribution_on(
         }
     }
     Some(out)
+}
+
+/// A body made of voxels, ready to read: its leaves as uniform cubes where the body is, the work
+/// one read may do, and (for a body that never moves and is always there) each tower's reading
+/// once it has been made.
+struct VoxelBody<'a> {
+    source: TreeBody<Box<dyn Fn(f64) -> Vec3 + Sync + 'a>>,
+    /// The most flight nodes one read may evaluate: [`MAX_KERNEL_WORK`] over the cubes a node
+    /// costs.
+    max_nodes: u64,
+    /// For a still body: the reading at each tower (by its position's bits). It does not depend
+    /// on the readout time, so every shot has the same bits; it is made once.
+    still: Option<std::sync::Mutex<StillReadings>>,
+}
+
+/// Each tower's reading of a still body, by the bits of the tower's position.
+type StillReadings = Vec<([u64; 3], cav_core::forward::Audited)>;
+
+impl VoxelBody<'_> {
+    fn read(&self, reader: &Reader, tower: Vec3, readout: f64) -> cav_core::forward::Audited {
+        let read = || reader.read_to_within(tower, &self.source, readout, PHASE_TOLERANCE, self.max_nodes);
+        let Some(still) = &self.still else { return read() };
+        let key = tower.to_array().map(f64::to_bits);
+        if let Some((_, audited)) =
+            still.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().find(|(k, _)| *k == key)
+        {
+            return *audited;
+        }
+        // Read outside the lock: two threads may both read a tower, and get the same bits.
+        let audited = read();
+        still.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push((key, audited));
+        audited
+    }
+}
+
+/// Body `n` as voxels, if it has a shape: `Ok(None)` for a point or a sphere.
+///
+/// # Errors
+/// When the shape cannot be voxelised, or when even the first rule of one read would cost more
+/// than [`MAX_KERNEL_WORK`] cube evaluations, with the numbers.
+fn voxel_body<'a>(spec: &'a SceneSpec, n: usize, reader: &Reader) -> Result<Option<VoxelBody<'a>>, String> {
+    let body = &spec.bodies[n];
+    let Some(shape) = &body.shape else { return Ok(None) };
+    let tree = shape.tree(body.mass)?;
+    let gravity = spec.array.instrument.gravity;
+    let position: Box<dyn Fn(f64) -> Vec3 + Sync + 'a> =
+        Box::new(move |t| Vec3::from_array(body.motion.position(t, gravity)));
+    let mut source = TreeBody::new(&tree, position);
+    source.exists = body.exists();
+    source.breaks = body.motion.breaks();
+    // Each flight node evaluates every cube at two points for each of two interferometers.
+    let per_node = 4 * source.cubes() as u64;
+    let first = reader.instrument().node_count(&[]);
+    if first * per_node > MAX_KERNEL_WORK {
+        return Err(format!(
+            "{} leaves × {first} flight nodes is more than the {MAX_KERNEL_WORK} cube evaluations one read may \
+             make; use a coarser pitch",
+            source.cubes()
+        ));
+    }
+    let still = (matches!(body.motion, crate::Motion::Static { .. })
+        && body.appears.is_none()
+        && body.vanishes.is_none())
+    .then(|| std::sync::Mutex::new(Vec::new()));
+    Ok(Some(VoxelBody { source, max_nodes: MAX_KERNEL_WORK / per_node, still }))
 }
 
 /// A body watched while it is read: it is the body as a [`Source`], and it notes whether its

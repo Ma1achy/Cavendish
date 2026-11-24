@@ -725,6 +725,21 @@ impl Reader {
     /// (`settled` is false) and still returns its best reading and its estimate.
     #[must_use]
     pub fn read_to(&self, tower: Vec3, source: &dyn Source, readout: f64, tolerance: f64) -> Audited {
+        self.read_to_within(tower, source, readout, tolerance, MAX_NODES)
+    }
+
+    /// [`Self::read_to`] with a budget of `max_nodes` nodes over every rule in place of
+    /// [`MAX_NODES`]: for a source whose every node costs many evaluations (a voxel body is one
+    /// cube a leaf), so that the budget is one of work. The first rule is always run.
+    #[must_use]
+    pub fn read_to_within(
+        &self,
+        tower: Vec3,
+        source: &dyn Source,
+        readout: f64,
+        tolerance: f64,
+        max_nodes: u64,
+    ) -> Audited {
         let breaks = self.breaks(source, readout);
         let mut nodes = self.instrument.node_count(&breaks);
         let mut reading = self.sum(0, &breaks, tower, source, readout);
@@ -734,7 +749,7 @@ impl Reader {
         let (mut estimate, mut halvings, mut settled) = (f64::INFINITY, 0, false);
         while halvings < MAX_HALVINGS {
             let next = self.halved(halvings + 1).node_count(&breaks);
-            if nodes + next > MAX_NODES {
+            if nodes + next > max_nodes {
                 break;
             }
             halvings += 1;

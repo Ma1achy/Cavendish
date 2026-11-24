@@ -72,6 +72,7 @@
             label: "lift",
             mass: 10.0,
             radius: 0.0,
+            shape: None,
             motion: Pass(
                 from: (10.0, 0.0, -10.0),
                 to: (10.0, 0.0, 15.0),

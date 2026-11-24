@@ -72,6 +72,7 @@
             label: "oscillator",
             mass: 1.0,
             radius: 0.0,
+            shape: None,
             motion: Linear(
                 centre: (10005.599999999999, -7000.3, 301.1),
                 amplitude: (0.0, 0.0, 1.0),
