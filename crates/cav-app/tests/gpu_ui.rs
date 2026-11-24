@@ -120,6 +120,10 @@ fn gpu_pane_count_changes_the_figure() {
     for pane in 1..=4 {
         shell.run(&format!("style flat @{pane}")).unwrap();
     }
+    // Whatever the workers owe the scene arrives before the first picture: an arrival between
+    // two frames is a change, and redraws (this test failed twice on a busy machine with "an
+    // unchanged frame redrew a pane", when the signal landed between its two renders).
+    assert!(shell.engine.settle(std::time::Duration::from_secs(60)));
     let picture = render(&mut headless, &mut shell);
     assert_eq!(shell.layout().panes.len(), 4);
     // Tower 2 stands apart in every one of the four views; each pane shows it through its own camera.
