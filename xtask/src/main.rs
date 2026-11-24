@@ -59,7 +59,9 @@ cargo xtask <tier>
                      the build, and the engine's numbers in wasm (Node.js, wasm-bindgen-test-runner)
                      held to the native ones. Needs the wasm32 target, wasm-bindgen-cli at the lock's
                      version, binaryen's wasm-opt and Node.js. `serve` serves the built page at
-                     http://127.0.0.1:8000/ until stopped.
+                     http://127.0.0.1:8000/ until stopped; `serve --exit-after <seconds>` stops by
+                     itself (scripts always give one: on Windows, stopping cargo can leave
+                     xtask.exe serving).
   hooks              installs .git/hooks/pre-push, which runs `cargo xtask quick`.
 ";
 
@@ -84,7 +86,10 @@ fn main() -> ExitCode {
         }
         ["web"] => web::tier(&root),
         ["web", "build"] => web::build(&root),
-        ["web", "serve"] => web::serve_forever(&root),
+        ["web", "serve"] => web::serve_forever(&root, None),
+        ["web", "serve", "--exit-after", seconds] => {
+            web::exit_after(seconds).and_then(|time| web::serve_forever(&root, Some(time)))
+        }
         ["hooks"] => hooks(&root),
         [] | ["help" | "--help" | "-h"] => {
             print!("{HELP}");

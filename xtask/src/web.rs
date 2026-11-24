@@ -162,15 +162,33 @@ fn revision(root: &Path) -> String {
         )
 }
 
-/// A static server for `target/web/dist` on `127.0.0.1`, in this process: what the page needs
-/// (`index.html`, the glue, the module with `application/wasm`), nothing else. It stops when the
-/// returned [`Server`] is dropped. For the demo and `cargo xtask web serve`; not for the internet.
+/// A static server for `target/web/dist` on `127.0.0.1`, in this process: the files under that
+/// folder (`index.html`, the glue, the module with `application/wasm`), nothing else. It stops
+/// when the returned [`Server`] is dropped. For the demo and `cargo xtask web serve`; not for the
+/// internet.
+///
+/// What keeps it to its folder and keeps it answering:
+/// - a request's path is a plain relative path of letters, digits, `.`, `-` and `_` between
+///   slashes ([`resolve`]): absolute paths, drive letters, backslashes, `..` and `.`, empty parts
+///   and every encoded form (`%`) are refused, and the file found must still be under the
+///   folder once both are made canonical (a link out of it is refused too);
+/// - each connection has a thread of its own, at most [`MAX_CONNECTIONS`] at once (one more is
+///   closed at once), and a read or a write that stalls for [`IO_TIMEOUT`] ends its connection:
+///   an idle socket (a browser's speculative preconnect) holds one thread for that long, never
+///   the server.
 pub struct Server {
     /// The port it listens on.
     pub port: u16,
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
+
+/// The most connections served at once.
+pub const MAX_CONNECTIONS: usize = 16;
+/// How long a connection may wait for the client's next bytes, or the client for its answer.
+pub const IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+/// The longest request head read: a line longer than this ends the connection.
+const MAX_HEAD: u64 = 16 << 10;
 
 impl Drop for Server {
     fn drop(&mut self) {
@@ -183,56 +201,101 @@ impl Drop for Server {
 
 /// Serves `dir` on `127.0.0.1:port` (0: any free port).
 pub fn serve(dir: &Path, port: u16) -> Result<Server, String> {
-    use std::io::{BufRead, BufReader, Write};
-    use std::sync::atomic::{AtomicBool, Ordering};
+    serve_for(dir, port, IO_TIMEOUT)
+}
+
+/// [`serve`] with a stated timeout for a connection's reads and writes.
+fn serve_for(dir: &Path, port: u16, timeout: std::time::Duration) -> Result<Server, String> {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let dir = dir.canonicalize().map_err(|e| format!("{}: {e}", dir.display()))?;
     let listener = std::net::TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("serving: {e}"))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     let stop = std::sync::Arc::new(AtomicBool::new(false));
-    let (dir, stopped) = (dir.to_path_buf(), std::sync::Arc::clone(&stop));
+    let stopped = std::sync::Arc::clone(&stop);
+    let dir = std::sync::Arc::new(dir);
+    let open = std::sync::Arc::new(AtomicUsize::new(0));
     let thread = std::thread::spawn(move || {
         while !stopped.load(Ordering::Relaxed) {
             let Ok((stream, _)) = listener.accept() else {
                 std::thread::sleep(std::time::Duration::from_millis(10));
                 continue;
             };
-            let _ = stream.set_nonblocking(false);
-            let mut reader = BufReader::new(&stream);
-            let mut request = String::new();
-            if reader.read_line(&mut request).is_err() {
+            if open.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
+                open.fetch_sub(1, Ordering::SeqCst);
+                drop(stream);
                 continue;
             }
-            // The rest of the head is read and ignored.
-            let mut line = String::new();
-            while reader.read_line(&mut line).is_ok_and(|n| n > 2) {
-                line.clear();
-            }
-            let path = request.split(' ').nth(1).unwrap_or("/");
-            let path = path.split(['?', '#']).next().unwrap_or("/").trim_start_matches('/');
-            let path = if path.is_empty() { "index.html" } else { path };
-            let file = (!path.contains("..")).then(|| dir.join(path));
-            let mut stream = &stream;
-            match file.and_then(|file| std::fs::read(&file).ok()) {
-                Some(bytes) => {
-                    let _ = write!(
-                        stream,
-                        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\n\
-                         Connection: close\r\n\r\n",
-                        content_type(path),
-                        bytes.len()
-                    );
-                    let _ = stream.write_all(&bytes);
-                }
-                None => {
-                    let _ = write!(
-                        stream,
-                        "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                    );
-                }
+            let (dir, done) = (std::sync::Arc::clone(&dir), std::sync::Arc::clone(&open));
+            let spawned = std::thread::Builder::new().name("xtask-serve".into()).spawn(move || {
+                answer(&stream, &dir, timeout);
+                done.fetch_sub(1, Ordering::SeqCst);
+            });
+            if spawned.is_err() {
+                open.fetch_sub(1, Ordering::SeqCst);
             }
         }
     });
     Ok(Server { port, stop, thread: Some(thread) })
+}
+
+/// Answers one connection: one request, then closed.
+fn answer(stream: &std::net::TcpStream, dir: &Path, timeout: std::time::Duration) {
+    use std::io::{BufRead, BufReader, Read, Write};
+    if stream.set_nonblocking(false).is_err()
+        || stream.set_read_timeout(Some(timeout)).is_err()
+        || stream.set_write_timeout(Some(timeout)).is_err()
+    {
+        return;
+    }
+    let mut reader = BufReader::new(stream.take(MAX_HEAD));
+    let mut request = String::new();
+    if reader.read_line(&mut request).is_err() {
+        return;
+    }
+    // The rest of the head is read and ignored.
+    let mut line = String::new();
+    while reader.read_line(&mut line).is_ok_and(|n| n > 2) {
+        line.clear();
+    }
+    let target = request.split(' ').nth(1).unwrap_or("");
+    let mut stream = stream;
+    match resolve(dir, target).and_then(|(file, name)| Some((std::fs::read(file).ok()?, name))) {
+        Some((bytes, name)) => {
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\n\
+                 Connection: close\r\n\r\n",
+                content_type(&name),
+                bytes.len()
+            );
+            let _ = stream.write_all(&bytes);
+        }
+        None => {
+            let _ =
+                write!(stream, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        }
+    }
+}
+
+/// The file under `dir` (canonical) a request's target names, with its path as asked; `None`
+/// for anything that is not a plain relative path to a file under `dir`. `/` is `index.html`;
+/// a query (`?…`) is ignored.
+fn resolve(dir: &Path, target: &str) -> Option<(std::path::PathBuf, String)> {
+    let path = target.split('?').next()?;
+    let path = path.strip_prefix('/')?;
+    let path = if path.is_empty() { "index.html" } else { path };
+    let plain = |part: &str| {
+        !part.is_empty()
+            && part != "."
+            && part != ".."
+            && part.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
+    };
+    if !path.split('/').all(plain) {
+        return None;
+    }
+    let file = dir.join(path).canonicalize().ok()?;
+    (file.starts_with(dir) && file.is_file()).then(|| (file, path.to_owned()))
 }
 
 /// The media type a file of the page is served as.
@@ -242,20 +305,47 @@ fn content_type(path: &str) -> &'static str {
         Some("js") => "text/javascript",
         Some("wasm") => "application/wasm",
         Some("png") => "image/png",
+        Some("svg") => "image/svg+xml",
+        Some("ico") => "image/x-icon",
         _ => "application/octet-stream",
     }
 }
 
-/// `cargo xtask web serve`: serves the built page on port 8000 until the process is stopped.
-pub fn serve_forever(root: &Path) -> Result<(), String> {
+/// `cargo xtask web serve [--exit-after <seconds>]`: serves the built page on port 8000 until
+/// the process is stopped, or for `exit_after` and then stops by itself. Scripts and agents
+/// always give a time: on Windows, stopping `cargo` does not stop the `xtask.exe` it started.
+pub fn serve_forever(root: &Path, exit_after: Option<std::time::Duration>) -> Result<(), String> {
     let dist = root.join(DIST);
     if !dist.join("index.html").is_file() {
         return Err(format!("{DIST} has no page: `cargo xtask web build` first"));
     }
     let server = serve(&dist, 8000)?;
-    eprintln!("xtask: serving {DIST} at http://127.0.0.1:{}/ (Ctrl-C stops it)", server.port);
-    loop {
-        std::thread::park();
+    match exit_after {
+        Some(time) => {
+            eprintln!(
+                "xtask: serving {DIST} at http://127.0.0.1:{}/ for {} s (Ctrl-C stops it sooner)",
+                server.port,
+                time.as_secs()
+            );
+            std::thread::sleep(time);
+            drop(server);
+            eprintln!("xtask: stopped serving after {} s", time.as_secs());
+            Ok(())
+        }
+        None => {
+            eprintln!("xtask: serving {DIST} at http://127.0.0.1:{}/ (Ctrl-C stops it)", server.port);
+            loop {
+                std::thread::park();
+            }
+        }
+    }
+}
+
+/// The seconds of `--exit-after <seconds>`: a whole number from 1 to a day.
+pub fn exit_after(seconds: &str) -> Result<std::time::Duration, String> {
+    match seconds.parse::<u64>() {
+        Ok(s) if (1..=86_400).contains(&s) => Ok(std::time::Duration::from_secs(s)),
+        _ => Err(format!("--exit-after wants whole seconds from 1 to 86400, not `{seconds}`")),
     }
 }
 
@@ -289,6 +379,8 @@ mod serving {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("index.html"), "<p>hi</p>").unwrap();
         std::fs::write(dir.join("m.wasm"), [0, 97, 115, 109]).unwrap();
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("sub").join("inner.js"), "x").unwrap();
         let server = serve(&dir, 0).unwrap();
         let get = |path: &str| {
             let mut stream = std::net::TcpStream::connect(("127.0.0.1", server.port)).unwrap();
@@ -302,9 +394,76 @@ mod serving {
             page.starts_with("HTTP/1.1 200") && page.contains("text/html") && page.ends_with("<p>hi</p>")
         );
         assert!(get("/m.wasm").contains("Content-Type: application/wasm"));
-        // Control arms: a missing file and a path out of the folder are not served.
+        assert!(get("/sub/inner.js?v=1").starts_with("HTTP/1.1 200"), "a file in a folder, a query ignored");
+        // Control arms: a missing file and every way out of the folder are not served. The
+        // file outside is real and readable, so a 404 is the server refusing, not a miss.
         assert!(get("/nothing.js").starts_with("HTTP/1.1 404"));
-        assert!(get("/../Cargo.toml").starts_with("HTTP/1.1 404"));
+        let outside = dir.parent().unwrap().join(format!("cav-xtask-outside-{}.txt", std::process::id()));
+        std::fs::write(&outside, "secret").unwrap();
+        let name = outside.file_name().unwrap().to_string_lossy().into_owned();
+        let absolute = outside.to_string_lossy().replace('\\', "/");
+        let escapes = [
+            format!("/../{name}"),
+            format!("/sub/../../{name}"),
+            format!("/{absolute}"), // `/C:/…/x`: a drive letter
+            format!("//{}", absolute.trim_start_matches('/')), // `//C:/…` or `//tmp/…`
+            format!("/..\\{name}"), // a backslash
+            format!("/sub\\..\\..\\{name}"),
+            format!("/%2e%2e/{name}"),   // encoded dots
+            format!("/..%2f{name}"),     // an encoded slash
+            format!("/%2E%2E%5C{name}"), // encoded backslash
+            "/./index.html".to_owned(),  // a `.` part
+            "/sub//inner.js".to_owned(), // an empty part
+        ];
+        for escape in &escapes {
+            let said = get(escape);
+            assert!(said.starts_with("HTTP/1.1 404"), "{escape} was served: {said}");
+            assert!(!said.contains("secret"), "{escape}");
+        }
+        // The resolver alone, with the checks the server makes: a plain path inside resolves.
+        let canonical = dir.canonicalize().unwrap();
+        assert!(resolve(&canonical, "/sub/inner.js").is_some());
+        assert!(resolve(&canonical, &format!("/{absolute}")).is_none());
+        std::fs::remove_file(&outside).unwrap();
+        drop(server);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_idle_connection_does_not_stop_the_server() {
+        use std::io::{Read, Write};
+        let dir = std::env::temp_dir().join(format!("cav-xtask-idle-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("index.html"), "<p>hi</p>").unwrap();
+        // A short timeout, so that the control below can wait it out.
+        let timeout = std::time::Duration::from_millis(400);
+        let server = serve_for(&dir, 0, timeout).unwrap();
+        let get = || {
+            let mut stream = std::net::TcpStream::connect(("127.0.0.1", server.port)).unwrap();
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(3))).unwrap();
+            write!(stream, "GET / HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+            let mut said = String::new();
+            let _ = stream.read_to_string(&mut said);
+            said
+        };
+        // Speculative preconnects: sockets opened and never written to, more than one.
+        let idle: Vec<_> =
+            (0..3).map(|_| std::net::TcpStream::connect(("127.0.0.1", server.port)).unwrap()).collect();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let started = std::time::Instant::now();
+        let page = get();
+        assert!(page.starts_with("HTTP/1.1 200"), "a request behind idle sockets: {page:?}");
+        assert!(started.elapsed() < timeout, "it waited for an idle socket's timeout");
+        // Control: the cap is real. With every slot held by an idle socket a request is closed
+        // unanswered; once the idle ones time out (still open on this side) it answers again.
+        let more: Vec<_> = (0..MAX_CONNECTIONS)
+            .map(|_| std::net::TcpStream::connect(("127.0.0.1", server.port)).unwrap())
+            .collect();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert_eq!(get(), "", "a connection past the cap is closed at once");
+        std::thread::sleep(timeout * 2);
+        assert!(get().starts_with("HTTP/1.1 200"), "the idle sockets timed out");
+        drop((idle, more));
         drop(server);
         let _ = std::fs::remove_dir_all(&dir);
     }
