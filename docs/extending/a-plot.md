@@ -98,6 +98,15 @@ the steps below name each such place.
 The console's `figure <word> … to <file>`, `cav figure` and MCP's `figure` then parse the word
 from `FigureKind::ALL`, and `cav render` and MCP's `render_view` paint a pane through `paint`.
 
+**A view is not a plot.** `figure view` is the renderer's picture of a scene pane (a PNG, or an
+SVG or a PDF holding that picture), except that an SVG or a PDF of a pane showing voxel bodies is
+a vector drawing of them (`cav_plot::voxels::view`, called from `view` in `figure.rs`): an
+orthographic projection, each cube's visible faces as `Item::Polygon`, far to near, the towers
+as lines and the legend (`cav_plot::voxels::legend`, the same one the application paints in the
+pane's corner). Its record says `"vector": true` and what colours it (`voxels.field`, `unit`,
+`range`, `cut`). A new field to colour by is a `LeafField` in `crates/cav-sim/src/voxel_view.rs`
+(its value in `voxel_frame`), and its legend follows.
+
 ## Tests that then hold it
 
 - `crates/cav-plot/tests/plots.rs`: a test of what the plot shows, read from `Drawn` and the

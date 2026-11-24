@@ -107,6 +107,9 @@ a journal being replayed ─┘     │          │                            
 | The workers, the cache of contributions | `cav-engine/src/forward.rs` | — |
 | Undo and the journal's budget | `cav-engine/src/history.rs`, `journal.rs` | — |
 | A plot or a figure | `cav-plot` | [a plot](extending/a-plot.md) |
+| What colours voxel bodies, their cubes and overlays in a view | `cav-sim/src/voxel_view.rs`; trees kept by `cav-engine/src/voxels.rs` | [a plot](extending/a-plot.md) |
+| The colour maps of fields (sequential, diverging) | `cav-render/src/colour.rs` | — |
+| A legend of a field; a view of voxel bodies as a vector figure | `cav-plot/src/voxels.rs` | [a plot](extending/a-plot.md) |
 | Redrawing a figure from its data, in Python | `python/cavendish_figures` (matplotlib style sheets, `load`, `redraw`) | [a plot](extending/a-plot.md) |
 | A panel, an editor, the timeline | `cav-app/src/panels.rs`, `editors.rs`, `timeline.rs` | — |
 | A CLI subcommand, an MCP tool | `cav/src/main.rs`, `mcp.rs` | [a command](extending/a-command.md) |

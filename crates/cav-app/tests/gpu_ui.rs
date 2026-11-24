@@ -208,3 +208,26 @@ fn gpu_ui_draws_the_signal_and_the_periodogram() {
     // Control: a little to the side of the stem, at the same height, there is none.
     assert!(!picture.has_near([f64::from(x) - 8.0, low], 1, blue, 30));
 }
+
+#[test]
+fn gpu_a_scene_pane_with_voxel_bodies_has_a_legend() {
+    let mut headless = Headless::new().expect("the GPU tier needs an adapter");
+    let mut shell = Shell::new();
+    shell.run("load unit-cube").unwrap();
+    shell.run("colour height").unwrap();
+    let picture = render(&mut headless, &mut shell);
+    let legends = shell.layout().legends.clone();
+    assert_eq!(legends.len(), 1, "{legends:?}");
+    let (pane, rect) = legends[0];
+    let figure = shell.layout().panes[pane];
+    // Inside its pane, in the corner, clear of the middle of the figure.
+    assert!(figure.contains_rect(rect), "{rect:?} in {figure:?}");
+    assert!(!rect.contains(figure.center()));
+    assert!(rect.center().x > figure.center().x && rect.center().y > figure.center().y);
+    // It is painted: its bar has the map's colours, not one background colour.
+    assert!(picture.colours_in(rect) > 8, "{} colours", picture.colours_in(rect));
+    // Control: a scene with no voxel bodies has no legend.
+    shell.run("load comb").unwrap();
+    render(&mut headless, &mut shell);
+    assert!(shell.layout().legends.is_empty());
+}

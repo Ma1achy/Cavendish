@@ -57,3 +57,4 @@ pub mod plots;
 pub mod style;
 pub mod svg;
 pub mod theme;
+pub mod voxels;

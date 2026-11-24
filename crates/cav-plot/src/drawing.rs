@@ -142,6 +142,14 @@ pub enum Item {
         /// The width and colour of its outline.
         stroke: (f32, Colour),
     },
+    /// A filled polygon: its corners in order, closed back to the first. Convex for the egui
+    /// painter (a face of a cube seen in projection always is).
+    Polygon {
+        /// The corners, in order round it.
+        points: Vec<[f32; 2]>,
+        /// What it is filled with.
+        fill: Colour,
+    },
     /// One line of text.
     Text {
         /// Where the anchor point of the text's box stands.
@@ -211,7 +219,9 @@ impl Drawing {
         for item in &other.items {
             let mut item = item.clone();
             match &mut item {
-                Item::Line { points, .. } => points.iter_mut().for_each(|p| *p = moved(*p)),
+                Item::Line { points, .. } | Item::Polygon { points, .. } => {
+                    points.iter_mut().for_each(|p| *p = moved(*p));
+                }
                 Item::Rect { min, max, .. } | Item::Image { min, max, .. } | Item::Clip { min, max } => {
                     (*min, *max) = (moved(*min), moved(*max));
                 }

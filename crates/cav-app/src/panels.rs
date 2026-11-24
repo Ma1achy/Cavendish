@@ -806,6 +806,14 @@ fn header(shell: &mut Shell, ui: &mut egui::Ui) {
         for note in cav_render::decimation(shell.engine.spec()) {
             badge(ui, note, theme::WARN);
         }
+        // What the voxel view drew in place of the leaves (a coarser cut), or could not colour.
+        if let Ok(frame) = shell.engine.frame(pane)
+            && let Some(voxels) = frame.voxels
+        {
+            for note in &voxels.notes {
+                badge(ui, note.clone(), theme::WARN);
+            }
+        }
         if let Some(target) = shell.engine.selection() {
             let text = match target {
                 Target::Tower(n) => shell.engine.spec().array.towers[n - 1].label.clone(),
@@ -849,6 +857,19 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                 Some(texture) => {
                     let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
                     ui.painter().image(texture, rect, uv, Color32::WHITE);
+                    // The legend of what colours the voxel bodies, made from what is drawn, in
+                    // the pane's bottom right corner: never over the middle of the figure.
+                    if let Some(voxels) = frame.voxels {
+                        let painter = ui.painter_at(rect);
+                        let measure = cav_plot::paint::EguiMeasure(&painter);
+                        let style = cav_plot::style::Style::screen();
+                        if let Some(key) = cav_plot::voxels::legend(voxels, frame.scene, &style, &measure) {
+                            let size = vec2(key.size[0], key.size[1]);
+                            let at = rect.right_bottom() - size - vec2(8.0, 8.0);
+                            cav_plot::paint::paint(&painter, at, &key);
+                            shell.layout.legends.push((pane, Rect::from_min_size(at, size)));
+                        }
+                    }
                 }
                 None => {
                     ui.painter().text(

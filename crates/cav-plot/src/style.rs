@@ -543,6 +543,75 @@ mod tests {
         assert!((greys[0] - greys[1]).abs() < 8.0);
     }
 
+    /// L* of the colour map `map` at `samples + 1` evenly spaced points, under each vision.
+    fn lightness_along(
+        map: &dyn Fn(f64) -> [u8; 3],
+        from: f64,
+        to: f64,
+        samples: usize,
+    ) -> Vec<(&'static str, Vec<f64>)> {
+        visions()
+            .iter()
+            .map(|(name, vision)| {
+                let l = (0..=samples)
+                    .map(|k| {
+                        let t = from + (to - from) * k as f64 / samples as f64;
+                        lab(vision(linear(Colour(map(t)))))[0]
+                    })
+                    .collect();
+                (*name, l)
+            })
+            .collect()
+    }
+
+    /// Whether `values` rise strictly from first to last.
+    fn rising(values: &[f64]) -> bool {
+        values.windows(2).all(|w| w[1] > w[0])
+    }
+
+    #[test]
+    fn the_colour_maps_survive_colour_blindness_and_print() {
+        use cav_render::colour::{diverging, sequential};
+        // The criteria (S3.md R10, written before this was run): under all seven conditions of
+        // `visions`, (1) the sequential map's L* is strictly monotone from one end to the other,
+        // on paper and on the dark surface, so its order survives grey print and colour-blind
+        // sight; (2) each arm of the diverging map is strictly monotone in L* away from its
+        // middle, on paper and on the dark surface; (3) its two ends, −1 and +1, are at least 12
+        // apart in CIEDE2000, so the sign is not lost.
+        for dark in [false, true] {
+            for (vision, l) in lightness_along(&|t| sequential(t, dark), 0.0, 1.0, 48) {
+                let ok = if dark { rising(&l) } else { rising(&l.iter().rev().copied().collect::<Vec<_>>()) };
+                assert!(ok, "sequential, dark {dark}, {vision}: L* {l:?}");
+            }
+            for (from, to) in [(0.0, 1.0), (0.0, -1.0)] {
+                for (vision, l) in lightness_along(&|t| diverging(t, dark), from, to, 24) {
+                    let ok =
+                        if dark { rising(&l) } else { rising(&l.iter().rev().copied().collect::<Vec<_>>()) };
+                    assert!(ok, "diverging arm to {to}, dark {dark}, {vision}: L* {l:?}");
+                }
+            }
+            for (vision, see) in visions() {
+                let ends = [diverging(-1.0, dark), diverging(1.0, dark)].map(|c| lab(see(linear(Colour(c)))));
+                let apart = ciede2000(ends[0], ends[1]);
+                println!("diverging ends, dark {dark}, {vision}: {apart:.2}");
+                assert!(apart >= 12.0, "diverging ends, dark {dark}, {vision}: {apart:.2}");
+            }
+        }
+        // Control: a rainbow (red, green, blue) is not monotone in L*, and a map whose ends are
+        // red and green loses its sign under deuteranopia.
+        let rainbow = |t: f64| {
+            let stops = [[0xd6u8, 0x27, 0x28], [0x2c, 0xa0, 0x2c], [0x1f, 0x77, 0xb4]];
+            stops[((t * 2.0).round() as usize).min(2)]
+        };
+        assert!(
+            lightness_along(&rainbow, 0.0, 1.0, 2)
+                .iter()
+                .any(|(_, l)| !rising(l) && !rising(&l.iter().rev().copied().collect::<Vec<_>>()))
+        );
+        let red_green = least(&[Colour::hex(0xd6_2728), Colour::hex(0x2c_a02c)], lab, ciede2000);
+        assert!(red_green.iter().any(|(_, apart, _)| *apart < 12.0));
+    }
+
     #[test]
     fn presets_are_the_stated_sizes() {
         let widths = [("paper-column", 85.0), ("paper-full", 178.0), ("slide", 254.0), ("poster", 400.0)];
