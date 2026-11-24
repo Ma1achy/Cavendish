@@ -95,8 +95,13 @@ pub fn caption(shots: Result<&Shots, &str>, mean_cycle: f64, taken: Option<(usiz
             ""
         };
         // One 2T for the array, or the range of them when towers fly their own.
-        let (short, long) = shots.flights.iter().fold((f64::INFINITY, 0.0f64), |(a, b), f| (a.min(*f), b.max(*f)));
-        let flight = if short >= long { format!("2T = {long:.2} s") } else { format!("2T = {short:.2} to {long:.2} s") };
+        let (short, long) =
+            shots.flights.iter().fold((f64::INFINITY, 0.0f64), |(a, b), f| (a.min(*f), b.max(*f)));
+        let flight = if short >= long {
+            format!("2T = {long:.2} s")
+        } else {
+            format!("2T = {short:.2} to {long:.2} s")
+        };
         format!(
             "one lane per tower · each bar is a shot, launch to readout ({flight}) · {count}{hollow} · drag to scrub · Shift-drag a lane to move its clock"
         )

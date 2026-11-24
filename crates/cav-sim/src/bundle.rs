@@ -251,7 +251,11 @@ pub fn write(
     list("n_shots", &[towers], npy::F64, "1", "how many shots each tower has (a whole number, as f8)");
 
     let mut file = create(dir, "valid.npy")?;
-    let written = npy::write_bool(&mut file, &[most, towers], padded(signal, |d, k| signal.valid[signal.starts[d] + k], false));
+    let written = npy::write_bool(
+        &mut file,
+        &[most, towers],
+        padded(signal, |d, k| signal.valid[signal.starts[d] + k], false),
+    );
     finish(dir, "valid.npy", written, file)?;
     list(
         "valid",
@@ -262,7 +266,11 @@ pub fn write(
     );
 
     let mut file = create(dir, "signal.npy")?;
-    let written = npy::write_f64(&mut file, &[most, towers], padded(signal, |d, k| signal.gradiometer[signal.starts[d] + k], 0.0));
+    let written = npy::write_f64(
+        &mut file,
+        &[most, towers],
+        padded(signal, |d, k| signal.gradiometer[signal.starts[d] + k], 0.0),
+    );
     finish(dir, "signal.npy", written, file)?;
     list(
         "signal",
@@ -315,7 +323,11 @@ pub fn write(
     list("phase_flat", &[total], npy::F64, "rad", "the gradiometer's ΔΦ, tower after tower (CSR)");
 
     let mut file = create(dir, "phase_per_ifo_flat.npy")?;
-    let written = npy::write_f64(&mut file, &[total, 2], signal.lower.iter().zip(&signal.upper).flat_map(|(l, u)| [*l, *u]));
+    let written = npy::write_f64(
+        &mut file,
+        &[total, 2],
+        signal.lower.iter().zip(&signal.upper).flat_map(|(l, u)| [*l, *u]),
+    );
     finish(dir, "phase_per_ifo_flat.npy", written, file)?;
     list("phase_per_ifo_flat", &[total, 2], npy::F64, "rad", "δφ₁ and δφ₂, tower after tower (CSR)");
 
@@ -336,8 +348,10 @@ pub fn write(
 
     let gravity = spec.array.instrument.gravity;
     let mut file = create(dir, "source_position.npy")?;
-    let positions =
-        spec.bodies.iter().flat_map(|body| time.iter().flat_map(move |time| body.motion.position(*time, gravity)));
+    let positions = spec
+        .bodies
+        .iter()
+        .flat_map(|body| time.iter().flat_map(move |time| body.motion.position(*time, gravity)));
     let written = npy::write_f64(&mut file, &[bodies, nominal, 3], positions);
     finish(dir, "source_position.npy", written, file)?;
     list(
@@ -394,7 +408,11 @@ pub fn instrument_table(spec: &SceneSpec) -> (Vec<crate::InstrumentSpec>, Vec<us
     let mut column = Vec::with_capacity(spec.array.towers.len());
     for own in spec.array.instruments() {
         let key = crate::read::instrument_key(&own.instrument());
-        let row = table.iter().position(|row| crate::read::instrument_key(&row.instrument()) == key && row.tower_height.to_bits() == own.tower_height.to_bits() && row.cycle.to_bits() == own.cycle.to_bits());
+        let row = table.iter().position(|row| {
+            crate::read::instrument_key(&row.instrument()) == key
+                && row.tower_height.to_bits() == own.tower_height.to_bits()
+                && row.cycle.to_bits() == own.cycle.to_bits()
+        });
         let row = row.unwrap_or_else(|| {
             table.push(own.clone());
             table.len() - 1
@@ -703,7 +721,10 @@ mod tests {
         scene.duration = 41.0;
         let signal = read::signal(&scene).unwrap();
         let counts: Vec<usize> = (0..signal.towers).map(|d| signal.count(d)).collect();
-        assert!(counts.iter().any(|c| *c != counts[0]), "the towers have different numbers of shots: {counts:?}");
+        assert!(
+            counts.iter().any(|c| *c != counts[0]),
+            "the towers have different numbers of shots: {counts:?}"
+        );
         let (most, towers, total) = (signal.most(), signal.towers, signal.clock.len());
         let dir = scratch("ragged");
         write(&dir, &scene, &signal, &build(), None).unwrap();
@@ -735,10 +756,18 @@ mod tests {
             for k in 0..most {
                 let at = k * towers + d;
                 if k < counts[d] {
-                    wrong += usize::from(!mask[at] || padded[at].to_bits() != signal.channel(d, Channel::Gradiometer)[k].to_bits());
-                    wrong += usize::from(times[at].to_bits() != signal.readout(d, k).to_bits() || valid[at] != signal.taken(d)[k]);
+                    wrong += usize::from(
+                        !mask[at]
+                            || padded[at].to_bits() != signal.channel(d, Channel::Gradiometer)[k].to_bits(),
+                    );
+                    wrong += usize::from(
+                        times[at].to_bits() != signal.readout(d, k).to_bits()
+                            || valid[at] != signal.taken(d)[k],
+                    );
                 } else {
-                    wrong += usize::from(mask[at] || valid[at] || padded[at].to_bits() != 0 || !times[at].is_nan());
+                    wrong += usize::from(
+                        mask[at] || valid[at] || padded[at].to_bits() != 0 || !times[at].is_nan(),
+                    );
                 }
             }
         }
@@ -748,8 +777,12 @@ mod tests {
         let manifest: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join("manifest.json")).unwrap()).unwrap();
         let rows = manifest["instruments"].as_array().unwrap();
-        let column: Vec<usize> =
-            manifest["tower_instrument"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap() as usize).collect();
+        let column: Vec<usize> = manifest["tower_instrument"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_u64().unwrap() as usize)
+            .collect();
         assert_eq!(column.len(), towers);
         for (d, row) in column.iter().enumerate() {
             assert_eq!(rows[*row]["half_sequence"], scene.array.instrument_of(d).half_sequence);
@@ -777,4 +810,5 @@ mod tests {
         let (shape, _) = array(&dir, "source_position").into_f64().unwrap();
         assert_eq!(shape[0], scene.bodies.len());
         assert!(shape[1] > 0);
-    }}
+    }
+}

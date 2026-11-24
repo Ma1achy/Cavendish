@@ -1122,7 +1122,8 @@ impl Engine {
                     None => 0..signal.count(tower - 1),
                     Some([from, to]) => {
                         let times = signal.times(tower - 1);
-                        times.partition_point(|t| t + offset < *from)..times.partition_point(|t| t + offset <= *to)
+                        times.partition_point(|t| t + offset < *from)
+                            ..times.partition_point(|t| t + offset <= *to)
                     }
                 };
                 Ok(Reply::Signal(SignalReply {

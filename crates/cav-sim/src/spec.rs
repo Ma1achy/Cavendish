@@ -951,7 +951,7 @@ impl SceneSpec {
         }
         // A scene that places nothing (no towers, no room, no bodies) is a box about the origin,
         // a metre across, rather than an infinite one that no camera can frame.
-        if lo.iter().zip(&hi).any(|(l, h)| !(l <= h)) {
+        if lo.iter().zip(&hi).any(|(l, h)| l > h || l.is_nan() || h.is_nan()) {
             return ([-0.5; 3], [0.5; 3]);
         }
         (lo, hi)
@@ -993,7 +993,11 @@ fn validate_instrument(at: &str, i: &InstrumentSpec) -> Result<(), SpecError> {
         ));
     }
     if 2.0 * i.half_sequence > i.cycle {
-        return fail(format!("{at}.cycle: {} s is shorter than a shot, 2T = {} s", i.cycle, 2.0 * i.half_sequence));
+        return fail(format!(
+            "{at}.cycle: {} s is shorter than a shot, 2T = {} s",
+            i.cycle,
+            2.0 * i.half_sequence
+        ));
     }
     if i.half_sequence < limits::HALF_SEQUENCE_MIN {
         return fail(format!(
@@ -1603,7 +1607,10 @@ mod tests {
         assert!(!spec.array.is_uniform());
         // The tower's taller arms are said, not refused: AICE's reach 108.9 m in its 100 m tower.
         let warnings = spec.reach_warnings();
-        assert!(warnings.len() == 1 && warnings[0].starts_with("tower 3: the arms reach 108.8"), "{warnings:?}");
+        assert!(
+            warnings.len() == 1 && warnings[0].starts_with("tower 3: the arms reach 108.8"),
+            "{warnings:?}"
+        );
         // A field left out follows the array's: editing the default reaches the tower.
         spec.array.instrument.atom_mass *= 1.01;
         assert_eq!(spec.array.instrument_of(2).atom_mass, spec.array.instrument.atom_mass);
@@ -1625,4 +1632,5 @@ mod tests {
         assert_eq!(none.bounds(), ([-0.5; 3], [0.5; 3]));
         // Control: the default scene warns of nothing.
         assert!(SceneSpec::room().reach_warnings().is_empty());
-    }}
+    }
+}

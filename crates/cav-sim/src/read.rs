@@ -383,7 +383,8 @@ pub fn shots(spec: &SceneSpec) -> Result<Shots, String> {
         };
         valid.extend((0..launches.len()).map(|k| {
             planned(k)
-                && (schedule.loss == 0.0 || unit(schedule.seed, STREAM_LOSS, tower as u64, k as u64) >= schedule.loss)
+                && (schedule.loss == 0.0
+                    || unit(schedule.seed, STREAM_LOSS, tower as u64, k as u64) >= schedule.loss)
         }));
         clock.extend(launches.iter().map(|launch| launch + flight));
         starts.push(clock.len());
@@ -540,7 +541,9 @@ pub fn instrument_key(instrument: &cav_core::forward::Instrument) -> Vec<u64> {
     match instrument.quadrature {
         Quadrature::Gauss { order, panel } => key.extend([0, order as u64, bits(panel)]),
         Quadrature::Simpson { step } => key.extend([1, bits(step)]),
-        Quadrature::ScriptTrapezoid { step, nodes, lag } => key.extend([2, bits(step), nodes as u64, lag as u64]),
+        Quadrature::ScriptTrapezoid { step, nodes, lag } => {
+            key.extend([2, bits(step), nodes as u64, lag as u64])
+        }
     }
     key
 }
@@ -753,8 +756,12 @@ pub fn contribution_on(
                     let readout = shots.readout(piece.at, k);
                     // The body is watched as it is read: the crossing check costs no node of its own.
                     let watched = Watched::new(&body);
-                    let audited =
-                        readers.of(piece.at).read_to(base(tower.position), &watched, readout, PHASE_TOLERANCE);
+                    let audited = readers.of(piece.at).read_to(
+                        base(tower.position),
+                        &watched,
+                        readout,
+                        PHASE_TOLERANCE,
+                    );
                     let (lower, upper) = (audited.reading.lower, audited.reading.upper);
                     let estimate = audited.estimate.unwrap_or(0.0);
                     // Whatever stopped the audit short of its tolerance (the halvings, the work
@@ -2279,18 +2286,24 @@ mod tests {
         // (a) One tower's T changed by one ulp changes that tower's bits and no other's.
         let mut nudged = scene.clone();
         let t = scene.array.instrument_of(2).half_sequence;
-        nudged.array.towers[2].instrument.as_mut().unwrap().half_sequence = Some(f64::from_bits(t.to_bits() + 1));
+        nudged.array.towers[2].instrument.as_mut().unwrap().half_sequence =
+            Some(f64::from_bits(t.to_bits() + 1));
         let moved = read_on(1, &nudged);
         for d in 0..4 {
-            let changed = bits_differing(moved.channel(d, Channel::Gradiometer), whole.channel(d, Channel::Gradiometer));
+            let changed = bits_differing(
+                moved.channel(d, Channel::Gradiometer),
+                whole.channel(d, Channel::Gradiometer),
+            );
             assert_eq!(changed > 0, d == 2, "tower {}: {changed} values changed", d + 1);
         }
         // (b) An override equal to the default is no override: the same bits, one reader.
         let mut plain = dev::comb();
         plain.duration = 20.0;
         let mut same = plain.clone();
-        same.array.towers[3].instrument =
-            Some(InstrumentOverride { half_sequence: Some(plain.array.instrument.half_sequence), ..InstrumentOverride::default() });
+        same.array.towers[3].instrument = Some(InstrumentOverride {
+            half_sequence: Some(plain.array.instrument.half_sequence),
+            ..InstrumentOverride::default()
+        });
         assert_eq!(same.validate(), Ok(()));
         assert_eq!(bits_differing(&read_on(1, &same).gradiometer, &read_on(1, &plain).gradiometer), 0);
         assert_eq!(Readers::new(&same).readers.len(), 1);
@@ -2301,7 +2314,9 @@ mod tests {
         let (a, b) = (swapped.array.towers[0].instrument.clone(), swapped.array.towers[3].instrument.clone());
         (swapped.array.towers[0].instrument, swapped.array.towers[3].instrument) = (b, a);
         let read = read_on(1, &swapped);
-        assert!(bits_differing(read.channel(0, Channel::Gradiometer), whole.channel(0, Channel::Gradiometer)) > 0);
+        assert!(
+            bits_differing(read.channel(0, Channel::Gradiometer), whole.channel(0, Channel::Gradiometer)) > 0
+        );
         let singles: Vec<Signal> = (0..4).map(|d| read_on(1, &alone(&swapped, d))).collect();
         assert_eq!(against_alone(&read, &singles), [0, 0, 0, 0]);
         let mut exchanged = scene.clone();
@@ -2370,4 +2385,5 @@ mod tests {
         // Control: a timeline a thousand times shorter is made.
         scene.duration = 1.5e3;
         assert_eq!(shots(&scene).unwrap().total(), 4500);
-    }}
+    }
+}

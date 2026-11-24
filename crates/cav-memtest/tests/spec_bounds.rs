@@ -144,7 +144,11 @@ fn the_forward_store_stays_within_its_budget() {
         compared: false,
     };
     let why = engine.query(&asked).unwrap_err();
-    assert!(why.contains("100 source(s) × 5 tower(s) with 500000 shot(s) between them") && why.contains("256 MiB"), "{why}");
+    assert!(
+        why.contains("100 source(s) × 5 tower(s) with 500000 shot(s) between them")
+            && why.contains("256 MiB"),
+        "{why}"
+    );
     assert_eq!((engine.contributions_computed(), engine.forward_bytes()), (0, 0));
     assert!(peak < 8 * MIB, "{peak} bytes to refuse it");
 }

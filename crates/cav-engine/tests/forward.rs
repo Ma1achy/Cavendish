@@ -139,9 +139,10 @@ fn the_signal_is_computed_on_the_worker_and_arrives() {
     assert_eq!(reply.times, cold.times(1));
     assert!(reply.estimate <= 1e-10);
     // The log says a signal arrived.
-    let said = engine
-        .log()
-        .select(&LogFilter { text: Some("signal: 5 tower(s), 30 shot(s) in all".into()), ..LogFilter::default() });
+    let said = engine.log().select(&LogFilter {
+        text: Some("signal: 5 tower(s), 30 shot(s) in all".into()),
+        ..LogFilter::default()
+    });
     assert_eq!(said.len(), 1);
     // The void's signal is all zeros and is there at once: nothing to compute.
     let mut void = loaded(dev::void());
