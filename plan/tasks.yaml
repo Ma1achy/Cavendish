@@ -167,12 +167,15 @@
 - id: TASK-S3-02
   milestone: S3
   title: 'Shapes and cover(): primitives, convex polyhedra, Platonic solids, meshes'
+  status: done # merged with TASK-S3-01's PR: the tree, shapes, voxeliser, merge and kernel are one module
 - id: TASK-S3-03
   milestone: S3
   title: Top-down voxeliser, bit-exact against the raster oracle
+  status: done # merged with TASK-S3-01's PR: the tree, shapes, voxeliser, merge and kernel are one module
 - id: TASK-S3-04
   milestone: S3
   title: Lossless merge and the cube series
+  status: done # merged with TASK-S3-01's PR: the tree, shapes, voxeliser, merge and kernel are one module
 - id: TASK-S3-05
   milestone: S3
   title: Per-object volumes drawn as trees; colour by field with generated legends

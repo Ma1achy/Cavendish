@@ -28,5 +28,6 @@ pub mod forward;
 pub mod maths;
 pub mod npy;
 pub mod spectrum;
+pub mod voxel;
 
 pub use maths::{Mat4, Vec3};
