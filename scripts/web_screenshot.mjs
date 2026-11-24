@@ -40,7 +40,7 @@ let failed = false;
 const finish = (code) => {
   browser.kill();
   browser.once("exit", () => {
-    try { rmSync(profile, { recursive: true, force: true }); } catch { /* a locked file: left */ }
+    try { rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 }); } catch { /* a locked file: left */ }
     process.exit(code);
   });
 };
