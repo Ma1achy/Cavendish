@@ -33,9 +33,10 @@ cav <command>
   figure <scene> <signal|periodogram|cadence|flight|view> --out <file.svg|.pdf|.png>
          [--preset paper-column|paper-full|slide|poster|screen] [--tower <n>]
          [--channel gradiometer|lower|upper] [--span <from>,<to>] [--size <W>x<H>] [--dpi <n>]
-         [--exec \"<commands>\"] [--patience <seconds>]
+         [--no-title] [--exec \"<commands>\"] [--patience <seconds>]
                                  write a figure in a preset's style and size (size in mm; dpi for a PNG),
-                                 with its data (.csv or .npy) and a .json of axes, units and provenance
+                                 with its data (.csv or .npy) and a .json of axes, units and provenance;
+                                 --no-title leaves the title out
   replay <journal.json> [--out <dir>] [--patience <seconds>]
                                  run a saved session again (`journal save <file>` writes one); what it
                                  exported is written inside --out (a relative path with its folders, any
@@ -43,7 +44,9 @@ cav <command>
                                  an hour unless --patience says otherwise; nothing else is waited for
   mcp                            serve the engine to an agent: an MCP server on stdin and stdout
   licences                       the licences of what is built into the binaries (the two fonts)
-  help                           this text
+  fonts --out <dir>              write the two faces built into the binaries and their licence, for
+                                 redrawing a figure in them (python: redraw(figure, out, fonts = dir))
+  help                          this text
 
 <scene> is a library name (see `cav scenes`) or the path of a .ron file.
 ";
@@ -136,8 +139,31 @@ fn run(raw: &[String]) -> Result<(), String> {
             println!("{}", cav_plot::fonts::MONO_FONT_LICENCE);
             Ok(())
         }
+        "fonts" => fonts(rest),
         other => Err(format!("`{other}` is not a command\n\n{USAGE}")),
     }
+}
+
+/// `cav fonts`: the two faces the binaries carry, unmodified, and their licence beside them, so
+/// that a figure can be redrawn in them (`cavendish_figures.redraw(figure, out, fonts = dir)`).
+fn fonts(rest: &[String]) -> Result<(), String> {
+    use cav_plot::fonts::{Face, MONO_FONT, MONO_FONT_LICENCE, bytes};
+    let mut args = Args::parse(rest, &["out"])?;
+    let out = args.option("out").ok_or("fonts needs --out <directory> for the font files")?;
+    args.finish(0)?;
+    let dir = std::path::Path::new(&out);
+    std::fs::create_dir_all(dir).map_err(|e| format!("{out}: {e}"))?;
+    let files: [(&str, &[u8]); 3] = [
+        ("Ubuntu-Light.ttf", bytes(Face::Sans)),
+        ("UbuntuMono-Regular.ttf", MONO_FONT),
+        ("UFL.txt", MONO_FONT_LICENCE.as_bytes()),
+    ];
+    for (name, content) in files {
+        let path = dir.join(name);
+        std::fs::write(&path, content).map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("{}", path.display());
+    }
+    Ok(())
 }
 
 /// `cav run`: load, any edits asked for, wait for the signal, write the bundle. Each step is the
@@ -192,7 +218,8 @@ fn patience_of(given: Option<String>) -> Result<f64, String> {
 fn figure(rest: &[String]) -> Result<(), String> {
     use cav_engine::{ChannelName, Figure, FigureFormat, FigureKind};
     let options = ["out", "preset", "tower", "channel", "span", "size", "dpi", "exec", "patience"];
-    let mut args = Args::parse(rest, &options)?;
+    let mut args = Args::parse_with_flags(rest, &options, &["no-title"])?;
+    let titled = !args.flag("no-title");
     let out = args.option("out").ok_or("figure needs --out <file.svg|.pdf|.png>")?;
     let format = FigureFormat::of_file(&out)
         .ok_or_else(|| format!("`{out}` does not end in .svg, .pdf or .png, so it names no format"))?;
@@ -243,6 +270,7 @@ fn figure(rest: &[String]) -> Result<(), String> {
     figure.tower = tower.or(matches!(what, FigureKind::Periodogram | FigureKind::Cadence).then_some(1));
     figure.channel = channel.unwrap_or_default();
     (figure.span, figure.size_mm, figure.dpi) = (span, size_mm, dpi);
+    figure.title = titled;
     figure.pane = if what == FigureKind::View { session.engine.active_pane() } else { 0 };
     let preset = figure.preset.clone();
     session.engine.apply(cav_engine::Command::Export {

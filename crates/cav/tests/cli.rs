@@ -295,6 +295,53 @@ fn cli_prints_the_font_licence() {
 }
 
 #[test]
+fn cli_writes_the_fonts_and_their_licence() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli fonts").join("faces");
+    let _ = std::fs::remove_dir_all(&dir);
+    let out = cav(&["fonts", "--out", dir.to_str().unwrap()]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    // The folder is made, and each file is the binary's own bytes, named where it was written.
+    let files: [(&str, &[u8]); 3] = [
+        ("Ubuntu-Light.ttf", cav_plot::fonts::bytes(cav_plot::fonts::Face::Sans)),
+        ("UbuntuMono-Regular.ttf", cav_plot::fonts::MONO_FONT),
+        ("UFL.txt", cav_plot::fonts::MONO_FONT_LICENCE.as_bytes()),
+    ];
+    for (name, bytes) in files {
+        let path = dir.join(name);
+        assert!(std::fs::read(&path).unwrap() == bytes, "{name} is not the binary's own");
+        assert!(stdout(&out).contains(&path.display().to_string()), "{}", stdout(&out));
+    }
+    assert!(cav_plot::fonts::bytes(cav_plot::fonts::Face::Sans) != cav_plot::fonts::MONO_FONT, "two faces");
+    assert!(stdout(&cav(&["help"])).contains("fonts --out <dir>"));
+    // Control: without --out nothing is written, and the refusal says what is needed.
+    let refused = cav(&["fonts"]);
+    assert!(!refused.status.success());
+    assert!(stderr(&refused).contains("fonts needs --out"), "{}", stderr(&refused));
+}
+
+#[test]
+fn cli_figure_without_a_title() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli no title");
+    std::fs::create_dir_all(&dir).unwrap();
+    let title = |name: &str, extra: &[&str]| -> serde_json::Value {
+        let out = dir.join(format!("{name}.svg"));
+        let mut args = vec!["figure", "comb", "periodogram", "--out", out.to_str().unwrap()];
+        args.extend_from_slice(extra);
+        let done = cav(&args);
+        assert!(done.status.success(), "{}", stderr(&done));
+        let record: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(out.with_extension("json")).unwrap()).unwrap();
+        record["files"][0]["title"].clone()
+    };
+    assert_eq!(title("untitled", &["--no-title"]), serde_json::Value::Null);
+    // Control: without the flag the picture has its title.
+    assert!(title("titled", &[]).is_string());
+    // A flag takes no value.
+    let refused = cav(&["figure", "comb", "periodogram", "--out", "x.svg", "--no-title=yes"]);
+    assert!(!refused.status.success() && stderr(&refused).contains("takes no value"), "{}", stderr(&refused));
+}
+
+#[test]
 fn cli_get_set_ls_edit_a_file() {
     // A scene file of our own: the comb, saved by the library's own writer.
     let file = scratch("edited comb.ron");

@@ -1,11 +1,12 @@
-//! A small argument reader: positional words and `--name value` options. The CLI has six
-//! subcommands, which does not earn a parsing dependency.
+//! A small argument reader: positional words, `--name value` options and `--name` flags. The
+//! CLI has a dozen subcommands, which does not earn a parsing dependency.
 
 /// The arguments of one subcommand.
 #[derive(Debug)]
 pub struct Args {
     positional: Vec<String>,
     options: Vec<(String, String)>,
+    flags: Vec<String>,
 }
 
 impl Args {
@@ -14,7 +15,15 @@ impl Args {
     /// # Errors
     /// An option that is not known, is given twice or has no value.
     pub fn parse(raw: &[String], known: &[&str]) -> Result<Self, String> {
-        let mut args = Self { positional: Vec::new(), options: Vec::new() };
+        Self::parse_with_flags(raw, known, &[])
+    }
+
+    /// As [`Args::parse`], and also the flags named in `flags`: `--name` with no value.
+    ///
+    /// # Errors
+    /// An option or flag that is not known or is given twice, an option with no value, a flag with one.
+    pub fn parse_with_flags(raw: &[String], known: &[&str], flags: &[&str]) -> Result<Self, String> {
+        let mut args = Self { positional: Vec::new(), options: Vec::new(), flags: Vec::new() };
         let mut words = raw.iter();
         while let Some(word) = words.next() {
             let Some(name) = word.strip_prefix("--") else {
@@ -23,9 +32,19 @@ impl Args {
             };
             // Both `--out file` and `--out=file`.
             let (name, inline) = name.split_once('=').map_or((name, None), |(n, v)| (n, Some(v.to_owned())));
+            if flags.contains(&name) {
+                if inline.is_some() {
+                    return Err(format!("`--{name}` takes no value"));
+                }
+                if args.flags.iter().any(|n| n == name) {
+                    return Err(format!("`--{name}` is given twice"));
+                }
+                args.flags.push(name.to_owned());
+                continue;
+            }
             if !known.contains(&name) {
-                let list =
-                    if known.is_empty() { "none".to_owned() } else { format!("--{}", known.join(", --")) };
+                let all: Vec<&str> = known.iter().chain(flags).copied().collect();
+                let list = if all.is_empty() { "none".to_owned() } else { format!("--{}", all.join(", --")) };
                 return Err(format!("`--{name}` is not an option here (options: {list})"));
             }
             if args.options.iter().any(|(n, _)| n == name) {
@@ -44,6 +63,11 @@ impl Args {
     pub fn option(&mut self, name: &str) -> Option<String> {
         let at = self.options.iter().position(|(n, _)| n == name)?;
         Some(self.options.remove(at).1)
+    }
+
+    /// Whether a flag was given.
+    pub fn flag(&self, name: &str) -> bool {
+        self.flags.iter().any(|n| n == name)
     }
 
     /// The positional words, which must number exactly `count`.
@@ -119,6 +143,15 @@ mod tests {
                 .contains("expected 1 argument, found 2")
         );
         assert!(Args::parse(&words("--x 1"), &[]).unwrap_err().contains("options: none"));
+        // A flag takes no value and stands anywhere; a word after it is positional.
+        let flagged = |text: &str| Args::parse_with_flags(&words(text), &known, &["quiet"]);
+        let args = flagged("room --quiet --out a extra").unwrap();
+        assert!(args.flag("quiet") && !args.flag("out"));
+        assert_eq!(args.finish(2).unwrap(), ["room", "extra"]);
+        assert!(flagged("room --quiet=yes").unwrap_err().contains("takes no value"));
+        assert!(flagged("--quiet --quiet").unwrap_err().contains("given twice"));
+        assert!(flagged("--loud").unwrap_err().contains("options: --out, --view, --quiet"));
+        assert!(!flagged("room").unwrap().flag("quiet"), "a flag not given is not set");
         // Control: the same shapes, written correctly, are accepted.
         assert!(Args::parse(&words("room --out a --view top"), &known).unwrap().finish(1).is_ok());
     }
