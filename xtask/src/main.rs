@@ -6,6 +6,7 @@
 //! cargo xtask oracle             the engine against v1 at v1-final and George's scripts
 //! cargo xtask demo <slice>       the slice's demo, headless, with screenshots
 //! cargo xtask validate [--report] every validation case, tabulated; missing cases fail
+//! cargo xtask web [build|serve]  the browser build in target/web/dist; with no word, its tier
 //! cargo xtask hooks              install the pre-push hook that runs `quick`
 //! ```
 
@@ -17,6 +18,7 @@ mod python;
 mod recipes;
 mod tiers;
 mod validate;
+mod web;
 #[cfg(test)]
 mod workspace;
 
@@ -52,6 +54,12 @@ cargo xtask <tier>
                      With --report it writes docs/validation/ (report.md, report.json, plots), and
                      only when every case passed and the comparison held: a failing run leaves
                      the committed report as it was.
+  web [build|serve]  the application as a web page (wasm32, WebGPU): `build` writes target/web/dist
+                     (the GitHub Pages workflow runs it); with no word, the tier: clippy for wasm32,
+                     the build, and the engine's numbers in wasm (Node.js, wasm-bindgen-test-runner)
+                     held to the native ones. Needs the wasm32 target, wasm-bindgen-cli at the lock's
+                     version, binaryen's wasm-opt and Node.js. `serve` serves the built page at
+                     http://127.0.0.1:8000/ until stopped.
   hooks              installs .git/hooks/pre-push, which runs `cargo xtask quick`.
 ";
 
@@ -74,6 +82,9 @@ fn main() -> ExitCode {
         ["validate", "--report", "--against", revision] | ["validate", "--against", revision, "--report"] => {
             validate::run(&root, true, validate::Against::Revision(revision))
         }
+        ["web"] => web::tier(&root),
+        ["web", "build"] => web::build(&root),
+        ["web", "serve"] => web::serve_forever(&root),
         ["hooks"] => hooks(&root),
         [] | ["help" | "--help" | "-h"] => {
             print!("{HELP}");

@@ -38,6 +38,9 @@ skrifa = { version = "=0.44.0", default-features = false, features = ["std"] }
 # preserve_order: a value's keys stay in the order its struct declares them, which is the order
 # `ls`, the editors and the schema show fields in. float_roundtrip: every f64 survives JSON exactly.
 serde_json = { version = "1.0", features = ["float_roundtrip", "preserve_order"] }
+# `Instant` that works in a browser too (std's panics on wasm32-unknown-unknown); on native it is
+# std's own, re-exported. Already in the lock through egui.
+web-time = "=1.1.0"
 tokio = { version = "1.54", default-features = false, features = ["rt", "macros", "io-std"] }
 wgpu = { version = "=30.0.2", default-features = false, features = ["std", "parking_lot", "vulkan", "dx12", "wgsl"] }
 
@@ -85,3 +88,20 @@ opt-level = 3 # the hot numerical crate is optimised even in dev (REBUILD §8)
 [profile.debugging]
 inherits = "dev"
 debug = true # full debug info on demand: cargo build --profile debugging
+
+# The browser build (`cargo xtask web`, docs/slices/S17.md): its own profile, so the native ones are
+# untouched. Small where size is what matters, fast where the numbers are made.
+[profile.web]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = false # wasm-bindgen reads the features section; wasm-opt drops the names
+# usize is 32 bits on wasm32: a product that would wrap there panics instead of passing a cap.
+overflow-checks = true
+
+[profile.web.package.cav-core]
+opt-level = 3
+[profile.web.package.cav-sim]
+opt-level = 3

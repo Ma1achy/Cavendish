@@ -5,6 +5,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Instant;
 
+use cav_app::app::App;
 use cav_app::headless::Headless;
 use cav_app::{GpuPanes, Shell, theme};
 
@@ -214,30 +215,6 @@ fn timings(shell: &mut Shell, headless: &mut Headless, size: [u32; 2]) -> Result
     Ok(())
 }
 
-struct App {
-    shell: Shell,
-    panes: GpuPanes,
-    last_frame: Instant,
-    /// Minimise the window on its first frame (`--minimised`).
-    minimise: bool,
-}
-
-impl eframe::App for App {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        if std::mem::take(&mut self.minimise) {
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-        }
-        let now = Instant::now();
-        self.shell.frame_ms = Some(now.duration_since(self.last_frame).as_secs_f32() * 1e3);
-        self.last_frame = now;
-        self.shell.ui(ui, &mut self.panes);
-    }
-
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        theme::BACKGROUND.to_normalized_gamma_f32()
-    }
-}
-
 fn window(mut shell: Shell, options: &Options) -> Result<(), String> {
     // The device is ours, made by cav-gpu and handed to eframe, so the panes and the kernels share it.
     let gpu = cav_gpu::Gpu::new()?;
@@ -264,7 +241,7 @@ fn window(mut shell: Shell, options: &Options) -> Result<(), String> {
             let state =
                 creation.wgpu_render_state.as_ref().ok_or("eframe did not start its wgpu renderer")?;
             let panes = GpuPanes::new(gpu, Arc::clone(&state.renderer));
-            Ok(Box::new(App { shell, panes, last_frame: Instant::now(), minimise }))
+            Ok(Box::new(App::new(shell, panes, minimise)))
         }),
     )
     .map_err(|e| format!("the window could not be opened: {e}"))

@@ -1,0 +1,56 @@
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:59736/" web-room.png 8
+console.info: [eframe::web::web_runner] ~\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
+running 1.40 s after the address was opened
+resources (name, ms, bytes): [["cavendish.js",5,103815],["cavendish_bg.wasm",31,5666263],["favicon.ico",10,300]]
+waited 8.1 s
+web-room.png: written
+
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:59736/#exec=load%20comb;%20panes%204;%20show%20signal%20@2;%20show%20periodogram%20@3;%20show%20cadence%20@4" web-comb.png 20
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `load comb` in 26 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `panes 4` in 0 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `show signal @2` in 0 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `show periodogram @3` in 0 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `show cadence @4` in 0 ms
+console.info: [eframe::web::web_runner] ~\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
+running 0.79 s after the address was opened
+resources (name, ms, bytes): [["cavendish.js",19,103815],["favicon.ico",6,300],["cavendish_bg.wasm",23,5666263]]
+waited 20.2 s
+web-comb.png: written
+
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:59736/#exec=load%20sphere;%20pan%202%200%202.5;%20zoom%202.5;%20colour%20mass;%20overlay%20cut%202" web-sphere.png 12
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `load sphere` in 38 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `pan 2 0 2.5` in 2 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `zoom 2.5` in 1 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `colour mass` in 1 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `overlay cut 2` in 1 ms
+console.info: [eframe::web::web_runner] ~\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
+running 1.46 s after the address was opened
+resources (name, ms, bytes): [["cavendish.js",6,103815],["cavendish_bg.wasm",20,5666263],["favicon.ico",15,300]]
+waited 12.2 s
+web-sphere.png: written
+
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:59736/#exec=load%20platonic-row;%20panes%202;%20view%20iso%20@1;%20pan%200%200%202.5%20@1;%20zoom%209%20@1;%20colour%20level%20@1;%20view%20top%20@2;%20colour%20height%20@2" web-platonic.png 12
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `load platonic-row` in 50 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `panes 2` in 3 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `view iso @1` in 3 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `pan 0 0 2.5 @1` in 2 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `zoom 9 @1` in 2 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `colour level @1` in 2 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `view top @2` in 2 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `colour height @2` in 2 ms
+console.info: [eframe::web::web_runner] ~\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
+running 1.38 s after the address was opened
+resources (name, ms, bytes): [["cavendish.js",6,103815],["cavendish_bg.wasm",19,5666263],["favicon.ico",11,300]]
+waited 16.6 s
+web-platonic.png: written
+
+$ (page) http://127.0.0.1:59736/#exec=load%20comb;%20save%20comb.ron
+comb.ron downloaded: 2382 bytes, line for line the native `save`
+
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:59736/" web-no-webgpu.png 4 1440x900 no-webgpu
+the application did not start
+message: This browser does not offer WebGPU, which Cavendish draws and computes with. Open this page in a current Chrome or Edge (Windows, macOS, ChromeOS, Android), Safari 26 or later, or Firefox 141 or later on Windows. On Linux, Chrome may need WebGPU switched on in chrome://flags. The native application is in the repository.
+resources (name, ms, bytes): [["favicon.ico",4,300]]
+waited 4.2 s
+web-no-webgpu.png: written
+

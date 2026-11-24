@@ -129,7 +129,7 @@ pub struct Log {
     entries: VecDeque<LogEntry>,
     capacity: usize,
     next_seq: u64,
-    started: std::time::Instant,
+    started: web_time::Instant,
 }
 
 impl Log {
@@ -140,7 +140,7 @@ impl Log {
             entries: VecDeque::new(),
             capacity: capacity.max(1),
             next_seq: 0,
-            started: std::time::Instant::now(),
+            started: web_time::Instant::now(),
         }
     }
 

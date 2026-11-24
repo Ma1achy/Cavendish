@@ -8,6 +8,39 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S1 a point mass | done: TASK-S1-01 to 19 merged; reviewed twice, nothing important remains | `s1-point-mass` | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
 | S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
 | S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
+| S17 in the browser | built: TASK-S17-01 (the build), TASK-S17-02 (Pages) | | brief and results: `docs/slices/S17.md`; screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
+
+## S17, in the browser (24 Nov 2026) — built, not reviewed
+
+**Done.** The whole application runs as a web page (wasm32, WebGPU), from the same code: every
+pane, plot, editor, preset and the console; library and dev scenes built in; `save`, `journal
+save` and SVG/PDF figures arrive as downloads; `#exec=` in the address runs console commands
+first; the About box names the revision. A browser without WebGPU gets a message. The platform
+seams are one module each (`docs/ARCHITECTURE.md`, "The web build and its platform seams"):
+the device (`cav-gpu`), where the forward work runs (`cav-engine` forward: threads, or `poll` in
+8 ms slices with a rest after a long job), files (written, or downloads), the figure exporter's
+pixels, the entry. `cargo xtask web` (clippy for wasm32, the build, the equivalence),
+`cargo xtask web build|serve`, `cargo xtask demo S17` (headless Chrome, no window).
+`.github/workflows/pages.yml` publishes on every push to `main`.
+
+**Numbers.** Equivalence: 21,297 numbers of `point`, `sphere`, `comb`; 20,758 the same to the
+bit; the rest (comb's sines, its FFT) within 2.3e-16 relative against a tolerance of 1e-12.
+wasm 5.67 MB served, 2.21 MB gzipped; first frame 1.0–1.5 s after opening (localhost).
+`quick` 475 tests, 15.0–15.6 s warm; `gpu` 34 in 20.5 s; `oracle` 58 in 447 s; validation
+107 of 107 (no case added: a wasm-run case cannot run under `validate`; `S17.md` §7.6).
+
+**Decided.** No trunk; WebGPU only; one thread on the web; `-O2` over `-Oz` (0.3% smaller
+gzipped for a slower module); `opt-level = "s"` with `cav-core`/`cav-sim` at 3; overflow checks
+on in the web profile (usize is 32 bits there); downloads capped at 256 MiB.
+
+**Open.** A voxel body's contribution is one job of seconds in a page (the sphere's ~5 s), which
+holds one frame; `platonic-row`'s first frame comes at 9 s. The resumable contribution or a Web
+Worker (`plan/IDEAS.md`, from S17) is the cure. Bundles, files by path and PNG figures are
+refused on the web with the reason. Only Chrome was run. A python `http.server` on
+127.0.0.1:8417 that the builder started for a first test could not be stopped from the agent
+(stopping a process it had not kept a handle to was refused); it serves `target/web/dist` only.
+
+**Next.** A review of S17; then S4.
 
 ## S3 after its second review (24 Nov 2026) — fixed, tag pending
 

@@ -93,3 +93,12 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   the tier's 434 s, all in 6.0e9 leaf evaluations a case. Ways down, each a change to what the case
   measures: a far-field cut of the members' trees with its error audited against the case's 1e-3
   allowance, or fewer Chebyshev points in α with case (b) re-measured; or a slow oracle sub-tier.
+
+## From S17 (in the browser)
+- **A resumable contribution** on the web: `read::contribution` cut at its 64-shot pieces with the tree kept between calls, so that one source never holds a frame (the voxel sphere's is about 5 s in Chrome on the build PC, one frame). Needs the spec and tree owned by the job, not borrowed. Next web task.
+- **The engine in a Web Worker** (messages, no SharedArrayBuffer): a real background for the forward model, so no frame waits on it at all; the app already only sends commands and reads replies.
+- **wasm SIMD** (`-C target-feature=+simd128`, every WebGPU browser has it) for the cube kernel, measured against the scalar build.
+- **Open and save files in the page**: a scene by `<input type=file>` or a drop on the canvas (`SceneSpec::from_ron`, the engine's inline load), a bundle as a `.zip` download.
+- **`?scene=` and a "copy link" button** that writes the current view as `#exec=`, so a link shows exactly what was on screen.
+- **PNG figures on the web** by an asynchronous read-back (`map_async` and a later frame), then the PNG written as a download.
+- **A smoke test in the Pages workflow**: headless Chrome on the runner (with SwiftShader's WebGPU) loading the built page and failing on a console panic before deploying.

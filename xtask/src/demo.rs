@@ -16,7 +16,8 @@ pub fn run(root: &Path, slice: &str) -> Result<(), String> {
         "S1" | "s1" => s1(root),
         "S2" | "s2" => s2(root),
         "S3" | "s3" => s3(root),
-        other => Err(format!("no demo for slice `{other}`: the slices with demos are: S0, S1, S2")),
+        "S17" | "s17" => s17(root),
+        other => Err(format!("no demo for slice `{other}`: the slices with demos are: S0, S1, S2, S3, S17")),
     }
 }
 
@@ -903,6 +904,130 @@ fn mcp_session(cav: &Path) -> Result<(String, Vec<u8>), String> {
     let transcript = mcp.finish()?;
     let picture = picture.ok_or("render_view sent no picture")?;
     Ok((transcript, picture))
+}
+
+/// The scene `name` as `export scene` writes it natively, by `cav exec`.
+fn cav_text(root: &Path, name: &str) -> Result<String, String> {
+    step("build cav", cargo(root, &["build", "--quiet", "-p", "cav"]))?;
+    let file = root.join("target").join("demo-s17").join(format!("{name}-native.ron"));
+    let target = file.to_string_lossy().replace('\\', "/");
+    capture(&binary(root, "cav"), &["exec", &format!("load {name}; save {target}")])?;
+    std::fs::read_to_string(&file).map_err(|e| format!("{}: {e}", file.display()))
+}
+
+/// S17: the application as a web page. The page is built (`cargo xtask web build`), served from
+/// this process, and photographed in headless Chrome with WebGPU (`scripts/web_screenshot.mjs`,
+/// which starts and closes its own browser: no window opens). Each picture is taken after a wait,
+/// and fails if the page's console has an error or a panic.
+fn s17(root: &Path) -> Result<(), String> {
+    let out = root.join("docs").join("slices").join("S17");
+    std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    crate::web::build(root)?;
+    let chrome = crate::web::chrome()?;
+    let server = crate::web::serve(&root.join(crate::web::DIST), 0)?;
+    let mut made: Vec<String> = Vec::new();
+    let mut log = String::new();
+    let shots: [(&str, &str, u32); 4] = [
+        ("web-room.png", "", 8),
+        ("web-comb.png", "load comb; panes 4; show signal @2; show periodogram @3; show cadence @4", 20),
+        ("web-sphere.png", "load sphere; pan 2 0 2.5; zoom 2.5; colour mass; overlay cut 2", 12),
+        (
+            "web-platonic.png",
+            "load platonic-row; panes 2; view iso @1; pan 0 0 2.5 @1; zoom 9 @1; colour level @1; view top @2; colour height @2",
+            12,
+        ),
+    ];
+    for (file, script, seconds) in shots {
+        let fragment =
+            if script.is_empty() { String::new() } else { format!("#exec={}", script.replace(' ', "%20")) };
+        let url = format!("http://127.0.0.1:{}/{fragment}", server.port);
+        let target = out.join(file);
+        let output = Command::new("node")
+            .current_dir(root)
+            .arg("scripts/web_screenshot.mjs")
+            .arg(&chrome)
+            .arg(&url)
+            .arg(&target)
+            .arg(seconds.to_string())
+            .output()
+            .map_err(|e| format!("node: {e}"))?;
+        // The log names files under the builder's home (the registry's sources): not for the record.
+        let mut said = String::from_utf8_lossy(&output.stdout).into_owned();
+        for home in ["USERPROFILE", "HOME"].iter().filter_map(|name| std::env::var(name).ok()) {
+            said = said.replace(&home, "~");
+        }
+        log.push_str(&format!(
+            "$ node scripts/web_screenshot.mjs <chrome> \"{url}\" {file} {seconds}
+{said}
+"
+        ));
+        if !output.status.success() {
+            return Err(format!(
+                "{file}: the page failed: {said}{}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        expect_png(&out, file, [1440, 900], &mut made)?;
+    }
+    // A download: the scene exported from the page arrives as a file, the same bytes as natively.
+    let downloads = root.join("target").join("demo-s17").join("downloads");
+    let _ = std::fs::remove_dir_all(&downloads);
+    std::fs::create_dir_all(&downloads).map_err(|e| format!("{}: {e}", downloads.display()))?;
+    let url = format!("http://127.0.0.1:{}/#exec=load%20comb;%20save%20comb.ron", server.port);
+    let output = Command::new("node")
+        .current_dir(root)
+        .env("CAV_DOWNLOADS", &downloads)
+        .args(["scripts/web_screenshot.mjs"])
+        .arg(&chrome)
+        .arg(&url)
+        .arg(downloads.join("page.png"))
+        .arg("5")
+        .output()
+        .map_err(|e| format!("node: {e}"))?;
+    if !output.status.success() {
+        return Err(format!("the download page failed: {}", String::from_utf8_lossy(&output.stdout)));
+    }
+    let downloaded = std::fs::read_to_string(downloads.join("comb.ron"))
+        .map_err(|e| format!("the page's `save comb.ron` did not arrive as a download: {e}"))?;
+    let native = cav_text(root, "comb")?;
+    // ron ends lines with the platform's own ending (CRLF on Windows, LF in a page and on Linux):
+    // the same scene, compared line by line.
+    if downloaded.lines().ne(native.lines()) {
+        return Err("the downloaded comb.ron differs from the scene natively saved".into());
+    }
+    log.push_str(&format!(
+        "$ (page) {url}
+comb.ron downloaded: {} bytes, line for line the native `save`
+
+",
+        downloaded.len()
+    ));
+
+    // A browser without WebGPU: the page's message, and the module never fetched.
+    let url = format!("http://127.0.0.1:{}/", server.port);
+    let output = Command::new("node")
+        .current_dir(root)
+        .args(["scripts/web_screenshot.mjs"])
+        .arg(&chrome)
+        .arg(&url)
+        .arg(out.join("web-no-webgpu.png"))
+        .args(["4", "1440x900", "no-webgpu"])
+        .output()
+        .map_err(|e| format!("node: {e}"))?;
+    let said = String::from_utf8_lossy(&output.stdout).into_owned();
+    log.push_str(&format!(
+        "$ node scripts/web_screenshot.mjs <chrome> \"{url}\" web-no-webgpu.png 4 1440x900 no-webgpu
+{said}
+"
+    ));
+    if !output.status.success() {
+        return Err(format!("web-no-webgpu.png: the page without WebGPU did not say so: {said}"));
+    }
+    expect_png(&out, "web-no-webgpu.png", [1440, 900], &mut made)?;
+    drop(server);
+    std::fs::write(out.join("web-console.txt"), &log).map_err(|e| format!("web-console.txt: {e}"))?;
+    eprintln!("xtask: demo S17: {} in {}", made.join(", "), out.display());
+    Ok(())
 }
 
 #[cfg(test)]

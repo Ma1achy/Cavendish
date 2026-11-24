@@ -352,7 +352,8 @@ its oracle checks, a performance note, screenshots in `docs/slices/`. Main alway
 | S17 | **In the browser** | The whole app as a web page on GitHub Pages, built to WebAssembly with WebGPU by CI on each push to main; single-threaded on the web, the engine's workers run in frame-sized slices | the web build runs the S0–S3 demos' scenes and reads the same phases as the native build, bit for bit where the arithmetic is the same |
 
 Order is a default. Slices that do not depend on each other (S6 and S8, say) can run in parallel.
-S17 was added by the owner on 24 Nov 2026 and runs next, after S3.
+S17 was added by the owner on 24 Nov 2026 and runs next, after S3; its brief is
+`docs/slices/S17.md`, its research `docs/research/web-build-and-pages.md`.
 S14–S16 were added by the owner on 22 Nov 2026. What they hold is in §9.3; each starts with a
 research note that sizes every effect in radians, and what a note shows to be invisible is built as
 a null test and no further.

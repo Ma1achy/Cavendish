@@ -358,7 +358,7 @@ impl Engine {
         // replay's directory, where the session had it already.
         if matches!(self.exports, Exports::Into(_))
             && let Some(folder) = prepared.path().and_then(std::path::Path::parent)
-            && let Err(why) = std::fs::create_dir_all(folder)
+            && let Err(why) = crate::files::create_dir_all(folder)
         {
             let why = format!("{}: not made: {why}", folder.display());
             self.note(Level::Error, Subsystem::Engine, format!("refused `{described}`: {why}"));
@@ -368,7 +368,7 @@ impl Engine {
         // A file is written before anything is recorded: an export that fails is a refusal.
         let mut wrote = None;
         if let Prepared::Write(path, bytes) = &prepared {
-            if let Err(why) = std::fs::write(path, bytes) {
+            if let Err(why) = crate::files::write(path, bytes) {
                 let why = format!("{}: not written: {why}", path.display());
                 self.note(Level::Error, Subsystem::Engine, format!("refused `{described}`: {why}"));
                 self.refused = true;
@@ -731,6 +731,13 @@ impl Engine {
             Exports::Into(directory) => directory.join(self.landing(to)?.0),
         };
         let bytes = match what {
+            crate::ExportKind::Bundle if !crate::files::FOLDERS => {
+                return Err(
+                    "a bundle is a folder of files, which a browser page cannot write: export it from \
+                            the native application or with `cav run`"
+                        .into(),
+                );
+            }
             crate::ExportKind::Bundle => {
                 // Never from a stale signal: the numbers would be another scene's.
                 return match (self.forward.why(), self.forward.state(), self.forward.signal()) {
@@ -1349,21 +1356,16 @@ impl Engine {
     /// clients that print numbers (`cav exec`, MCP); the application polls instead. True when
     /// both are.
     pub fn settle(&mut self, patience: std::time::Duration) -> bool {
-        let started = std::time::Instant::now();
+        let started = web_time::Instant::now();
         let arrived = self.forward.settle(patience);
         self.took(arrived);
         // The comparison has what is left of the patience. (Its reading is never asked for:
         // only its signal is waited on.)
         let mut compared = true;
         if let Some((_, forward)) = &mut self.compare {
-            let left = patience.saturating_sub(started.elapsed());
-            let deadline = std::time::Instant::now() + left;
-            while forward.state() == SignalState::Stale && std::time::Instant::now() < deadline {
-                forward.poll();
-                if forward.state() == SignalState::Stale {
-                    std::thread::sleep(std::time::Duration::from_millis(2));
-                }
-            }
+            // Its own `settle` waits on its results as they come, with no fixed nap (and runs the
+            // work itself where there are no threads, in a browser).
+            forward.settle(patience.saturating_sub(started.elapsed()));
             compared = forward.state() != SignalState::Stale;
             self.generation += 1;
         }

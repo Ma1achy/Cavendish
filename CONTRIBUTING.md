@@ -17,8 +17,34 @@ cargo run -p cav -- exec "load comb; periodogram 1"
 ```
 
 Everything runs locally: no check runs on a server and nothing gates a merge but the tiers below,
-run by whoever merges. (The one workflow in `.github/workflows/` draws the README's progress
-picture after a push to `main`; it tests nothing.)
+run by whoever merges. (Two workflows run after a push to `main` and gate nothing:
+`progress.yml` draws the README's progress picture, `pages.yml` builds the web page and publishes
+it to https://ma1achy.github.io/Cavendish/.)
+
+### The web page
+
+The application as a web page needs, besides the above: the wasm target, wasm-bindgen's command
+line at the version in `Cargo.lock` (0.2.130 today; `cargo xtask web` checks it), binaryen's
+`wasm-opt` from release `version_133`, and Node.js for the equivalence test. Once:
+
+```
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.130 --locked   # or the release's prebuilt binary
+# wasm-opt: binaryen-version_133-<platform>.tar.gz from github.com/WebAssembly/binaryen/releases, on PATH
+```
+
+Then:
+
+```
+cargo xtask web build      # target/web/dist: index.html, cavendish.js, cavendish_bg.wasm (about 2 min, LTO)
+cargo xtask web serve      # http://127.0.0.1:8000/ until Ctrl-C (or: python -m http.server -d target/web/dist)
+cargo xtask web            # the tier: clippy for wasm32, the build, wasm numbers held to native
+cargo xtask demo S17       # the page in headless Chrome with WebGPU, screenshots to docs/slices/S17/
+```
+
+Open the page in Chrome or Edge (WebGPU). `#exec=load comb; panes 2` at the end of the address
+runs console commands first. What a page cannot do, and where that is handled, is in
+`docs/ARCHITECTURE.md` ("The web build and its platform seams") and `docs/extending/the-web-build.md`.
 
 ## The tiers
 
@@ -28,6 +54,7 @@ picture after a push to `main`; it tests nothing.)
 | `cargo xtask gpu` | the tests named `gpu_…`: they need the local adapter | before a slice is done, and after touching the renderer or a plot's painter |
 | `cargo xtask oracle` | the `oracle/` crate (v1 at `v1-final`, George's scripts), documentation examples, the Python package's types and tests | before a slice is done, and after touching the forward model or a spectrum |
 | `cargo xtask validate [--report] [--against <tag>]` | every validation case, tabulated against its tolerance | at the end of a slice: `--report --against <the last slice's tag>` |
+| `cargo xtask web` | clippy for wasm32, the web build, the engine's numbers in wasm (Node.js) held to native | before merging a change to the engine, the read, a platform seam or the app's entry; before a slice is done |
 | `cargo xtask demo <slice>` | the slice's demo, headless, with its screenshots | at the end of a slice |
 
 Each tier has a floor on how many tests it runs (`xtask/floors.txt`): fewer is a failure. Floors
