@@ -289,6 +289,7 @@ dependencies = [
  "cav-core",
  "cav-engine",
  "cav-gpu",
+ "cav-memtest",
  "cav-render",
  "cav-sim",
  "cav-validate",

@@ -161,6 +161,9 @@ pub struct Described {
     pub y: (String, String),
     /// Each series drawn: its name and its colour.
     pub series: Vec<(String, Colour)>,
+    /// For a signal: the tower (from 0) each series is, in the order of `series`. Empty for
+    /// every other plot.
+    pub towers: Vec<usize>,
     /// What else is drawn that is not a series, as JSON: comb stems, predicted lines, reference
     /// levels, the benchmark mark, each saying what it is.
     pub marks: serde_json::Value,
@@ -193,9 +196,27 @@ pub struct Subject {
     pub span: Option<[f64; 2]>,
     /// The scene as read on the instrument being compared, in place of its own.
     pub compared: bool,
+    /// The most series a signal plot draws: [`MAX_SERIES`], except in a test that measures what
+    /// the cap saves.
+    pub most_series: usize,
 }
 
 impl Subject {
+    /// Plot `content` for pane `pane` (from 0): the first tower's or every tower's, the
+    /// gradiometer channel, the whole axis, the scene's own instrument.
+    #[must_use]
+    pub const fn new(pane: usize, content: PaneContent) -> Self {
+        Self {
+            pane,
+            content,
+            tower: None,
+            channel: ChannelName::Gradiometer,
+            span: None,
+            compared: false,
+            most_series: MAX_SERIES,
+        }
+    }
+
     /// What pane `pane` of `engine` shows, as the application draws it: the selected tower's
     /// periodogram, every tower's signal, the pane's own span.
     ///
@@ -215,7 +236,50 @@ impl Subject {
             channel: ChannelName::Gradiometer,
             span: engine.frame(pane).expect("the pane exists").span,
             compared,
+            most_series: MAX_SERIES,
         }
+    }
+}
+
+/// The most series a signal plot draws. A scene may hold a thousand towers; twelve lines are
+/// already more than a reader tells apart, and the data file beside a figure holds them all.
+pub const MAX_SERIES: usize = 12;
+
+/// Which of `towers` towers (from 0) a signal plot draws when it may draw `most`: all of them
+/// if they are no more than that; otherwise the first `most`, except that the selected tower
+/// (`selected`, from 0), if it is not among those, takes the last place. In rising order.
+#[must_use]
+pub fn towers_drawn(towers: usize, selected: Option<usize>, most: usize) -> Vec<usize> {
+    let mut drawn: Vec<usize> = (0..towers.min(most)).collect();
+    if let (Some(selected), Some(last)) = (selected.filter(|n| (most..towers).contains(n)), drawn.last_mut())
+    {
+        *last = selected;
+    }
+    drawn
+}
+
+/// Towers (from 0) as a person reads them, numbered from 1, runs written as ranges:
+/// `1–11 and 250`.
+#[must_use]
+pub fn numbered(towers: &[usize]) -> String {
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    for tower in towers {
+        match runs.last_mut() {
+            Some((_, last)) if *last + 1 == *tower => *last = *tower,
+            _ => runs.push((*tower, *tower)),
+        }
+    }
+    let said: Vec<String> = runs
+        .iter()
+        .map(|(first, last)| match last - first {
+            0 => format!("{}", first + 1),
+            1 => format!("{}, {}", first + 1, last + 1),
+            _ => format!("{}–{}", first + 1, last + 1),
+        })
+        .collect();
+    match said.split_last() {
+        Some((last, rest)) if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
+        _ => said.concat(),
     }
 }
 
@@ -647,6 +711,7 @@ fn described(x: (&str, &str), y: (&str, &str)) -> Described {
         x: (x.0.to_owned(), x.1.to_owned()),
         y: (y.0.to_owned(), y.1.to_owned()),
         series: Vec::new(),
+        towers: Vec::new(),
         marks: json!({}),
     }
 }
@@ -689,8 +754,13 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
     };
     let channel = subject.channel.channel();
     let towers = signal.towers.min(spec.array.towers.len());
+    // With more towers than a plot draws, the selected one is among those drawn.
+    let selected = match engine.selection() {
+        Some(cav_engine::Target::Tower(n)) => n.checked_sub(1),
+        _ => None,
+    };
     let which: Vec<usize> = match subject.tower {
-        None => (0..towers).collect(),
+        None => towers_drawn(towers, selected, subject.most_series),
         Some(n) if n >= 1 && n <= towers => vec![n - 1],
         Some(n) => return empty(&format!("there is no tower {n}"), drawn, described),
     };
@@ -818,9 +888,12 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
             });
         }
         sheet.unclip();
-        described.series.push((spec.array.towers[tower].label.clone(), colour));
     }
-    described.series.sort_by_key(|(label, _)| spec.array.towers.iter().position(|t| &t.label == label));
+    // What is drawn is said in the towers' own order, whatever order they were drawn in.
+    for tower in &which {
+        described.series.push((spec.array.towers[*tower].label.clone(), style.series(*tower).0));
+    }
+    described.towers.clone_from(&which);
     let time = engine.time();
     if !style.house && (from..=to).contains(&time) {
         let at = place(area, &x, &y, (time, y.lo)).x;
@@ -839,10 +912,23 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
         (_, true) => format!("{most} of {shots} shots taken"),
         _ => format!("{shots} shots, {fewest} to {most} taken a tower"),
     };
+    // When not every tower is drawn the plot says so, at every size.
+    let left_out = (subject.tower.is_none() && which.len() < towers)
+        .then(|| format!("{} of {towers} towers drawn", which.len()));
     described.marks = json!({
         "vertical_axis_written_in": unit,
         "shots": shots,
         "shots_taken": taken,
+        "towers": {
+            "in_the_scene": towers,
+            "drawn": which.iter().map(|tower| tower + 1).collect::<Vec<_>>(),
+            "note": left_out.as_ref().map(|said| format!(
+                "{said}: {} (a plot draws at most {} series; the selected tower is always among them); \
+                 the data file has every tower",
+                numbered(&which),
+                subject.most_series
+            )),
+        },
         "not_taken": "a shot not taken is on no line (the line is broken there) and has no dot; with few \
                       shots shown a hollow square at the foot of the axis marks its time. Its slot in the \
                       data file holds 0 and its flag is 0: it is not a measurement",
@@ -853,6 +939,17 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
         vec![format!("readout time, s · {count}"), "readout time, s".to_owned(), "time, s".to_owned()];
     if !style.house {
         forms.insert(0, format!("readout time, s · {count} · {hint}"));
+    }
+    if let Some(said) = left_out {
+        let which = numbered(&which);
+        let file = if style.house { "; the data file has them all" } else { "" };
+        forms = vec![
+            format!("readout time, s · {count} · {said}: {which}{file}"),
+            format!("readout time, s · {said}: {which}{file}"),
+            format!("time, s · {said}: {which}"),
+            format!("time, s · {said}"),
+            said,
+        ];
     }
     sheet.caption(&forms);
     sheet.finish(drawn, described)

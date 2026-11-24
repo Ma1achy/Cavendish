@@ -312,14 +312,8 @@ fn the_paper_periodogram_is_the_house_style() {
     let style = &built.style;
     assert_eq!(style.name, "paper-column");
     let points = [(85.0 / MM_PER_POINT) as f32, (60.0 / MM_PER_POINT) as f32];
-    let subject = plots::Subject {
-        pane: 0,
-        content: cav_engine::PaneContent::Periodogram,
-        tower: Some(2),
-        channel: ChannelName::Gradiometer,
-        span: None,
-        compared: false,
-    };
+    let subject =
+        plots::Subject { tower: Some(2), ..plots::Subject::new(0, cav_engine::PaneContent::Periodogram) };
     let plot = plots::build(&engine, &subject, style, &cav_plot::fonts::Outlines, points).unwrap();
     assert_eq!(plot.drawing, built.drawing, "the figure is the plot, in the preset's style and size");
     let (area, x, y) = (plot.drawn.area, plot.drawn.x, plot.drawn.y);

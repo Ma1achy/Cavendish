@@ -15,6 +15,7 @@ publish = false
 cav-core = { path = "crates/cav-core" }
 cav-engine = { path = "crates/cav-engine" }
 cav-gpu = { path = "crates/cav-gpu" }
+cav-memtest = { path = "crates/cav-memtest" }
 cav-plot = { path = "crates/cav-plot" }
 cav-render = { path = "crates/cav-render" }
 cav-sim = { path = "crates/cav-sim" }

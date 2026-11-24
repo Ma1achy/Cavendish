@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use cav_engine::{ChannelName, Engine, PaneContent};
+use cav_engine::{Engine, PaneContent};
 use cav_plot::drawing::{Colour, Drawing, Item};
 use cav_plot::fonts::Outlines;
 use cav_plot::plots::{self, Plot, Subject};
@@ -20,7 +20,7 @@ fn engine(script: &str) -> Engine {
 }
 
 fn subject(content: PaneContent) -> Subject {
-    Subject { pane: 0, content, tower: None, channel: ChannelName::Gradiometer, span: None, compared: false }
+    Subject::new(0, content)
 }
 
 fn build(engine: &Engine, subject: &Subject, style: &Style, size: [f32; 2]) -> Plot {
@@ -132,6 +132,102 @@ fn a_dense_signal_shows_every_tower() {
         |item| matches!(item, Item::Line { points, width, .. } if points.len() > 2 && *width == style.line)
     ));
     assert!(short.drawing.items.iter().any(|item| matches!(item, Item::Circle { .. })));
+}
+
+/// The void with `towers` towers in a row and a slab under them: a scene with as many towers as
+/// asked whose signal costs one read a tower.
+fn row_of_towers(towers: usize) -> cav_sim::SceneSpec {
+    let mut scene = cav_sim::dev::void();
+    scene.array.towers =
+        (0..towers).map(|n| cav_sim::TowerSpec::at(&format!("t{}", n + 1), [n as f64, 0.0, 0.0])).collect();
+    scene.floor = Some(cav_sim::FloorSpec {
+        height: -1.0,
+        kind: cav_sim::FloorKind::Slab { thickness: 1.0 },
+        density: 2400.0,
+    });
+    scene.duration = 60.0;
+    assert_eq!(scene.validate(), Ok(()));
+    scene
+}
+
+#[test]
+fn a_signal_plot_draws_at_most_twelve_towers_and_says_so() {
+    // Finding 10 of S2's review: a figure was bounded a series, not in series.
+    assert_eq!(plots::MAX_SERIES, 12);
+    // Which towers: all of a few; of many the first twelve, the selected one among them.
+    assert_eq!(plots::towers_drawn(5, Some(3), 12), [0, 1, 2, 3, 4]);
+    assert_eq!(plots::towers_drawn(12, None, 12).len(), 12);
+    assert_eq!(plots::towers_drawn(1000, None, 12), (0..12).collect::<Vec<_>>());
+    assert_eq!(plots::towers_drawn(1000, Some(4), 12), (0..12).collect::<Vec<_>>());
+    let with = plots::towers_drawn(1000, Some(249), 12);
+    assert_eq!(with, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 249]);
+    assert_eq!(plots::towers_drawn(1000, Some(5000), 12).len(), 12, "a tower that is not there is not drawn");
+    assert_eq!(plots::numbered(&with), "1–11 and 250");
+    assert_eq!(plots::numbered(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]), "1–12");
+    assert_eq!(plots::numbered(&[0, 2, 3, 7, 8, 9]), "1, 3, 4 and 8–10");
+    assert_eq!(plots::numbered(&[6]), "7");
+    // A scene of twenty towers, the seventeenth selected, in every preset and in a small pane.
+    let mut engine = Engine::new();
+    engine.set_patience(LONG);
+    engine.apply(cav_engine::Command::load(row_of_towers(20))).unwrap();
+    engine.run_line("select tower 17").unwrap();
+    assert!(engine.settle(LONG));
+    let mut sizes: Vec<(Style, [f32; 2])> = cav_plot::style::PRESETS
+        .iter()
+        .map(|name| {
+            let style = Style::preset(name).unwrap();
+            let points = style.size_mm.map(|mm| (mm / cav_plot::style::MM_PER_POINT) as f32);
+            (style, points)
+        })
+        .collect();
+    sizes.push((Style::screen(), [320.0, 180.0]));
+    for (style, size) in &sizes {
+        let plot = build(&engine, &subject(PaneContent::Signal), style, *size);
+        assert_eq!(plot.described.towers, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16], "{}", style.name);
+        assert_eq!(plot.described.series.len(), 12);
+        assert_eq!(plot.described.series[11].0, "t17");
+        // Twelve lines of the data, and no more: each in its own tower's colour.
+        let lines = series(&plot.drawing);
+        assert_eq!(lines.len(), 12, "{}", style.name);
+        assert!(lines.iter().any(|(colour, _)| *colour == style.series(16).0));
+        // It says so under the axes, whatever the size.
+        let said: Vec<&String> = plot
+            .drawn
+            .labels
+            .iter()
+            .map(|(text, _)| text)
+            .filter(|text| text.contains("towers drawn"))
+            .collect();
+        assert_eq!(said.len(), 1, "{}: {:?}", style.name, plot.drawn.labels);
+        assert!(said[0].contains("12 of 20 towers drawn"), "{}: {}", style.name, said[0]);
+        let note = plot.described.marks["towers"]["note"].as_str().unwrap();
+        assert!(note.starts_with("12 of 20 towers drawn: 1–11 and 17 "), "{note}");
+        assert_eq!(plot.described.marks["towers"]["drawn"].as_array().unwrap().len(), 12);
+    }
+    // Where there is room the towers are named: a full-width figure has it.
+    let (full, size) = &sizes[1];
+    let plot = build(&engine, &subject(PaneContent::Signal), full, *size);
+    assert!(
+        plot.drawn.labels.iter().any(|(text, _)| text.contains("12 of 20 towers drawn: 1–11 and 17")),
+        "{:?}",
+        plot.drawn.labels.last()
+    );
+    // One tower asked for by name is drawn whichever it is, and nothing is said to be left out.
+    let one = Subject { tower: Some(20), ..subject(PaneContent::Signal) };
+    let plot = build(&engine, &one, full, *size);
+    assert_eq!((plot.described.towers.as_slice(), series(&plot.drawing).len()), (&[19][..], 1));
+    assert!(plot.described.marks["towers"]["note"].is_null());
+    // Control: with the cap lifted the same plot draws all twenty and says nothing of it …
+    let all = Subject { most_series: usize::MAX, ..subject(PaneContent::Signal) };
+    let plot = build(&engine, &all, full, *size);
+    assert_eq!(series(&plot.drawing).len(), 20);
+    assert!(!plot.drawn.labels.iter().any(|(text, _)| text.contains("towers drawn")));
+    // … and a scene of twelve towers is drawn whole.
+    engine.apply(cav_engine::Command::load(row_of_towers(12))).unwrap();
+    assert!(engine.settle(LONG));
+    let plot = build(&engine, &subject(PaneContent::Signal), full, *size);
+    assert_eq!(series(&plot.drawing).len(), 12);
+    assert!(plot.described.marks["towers"]["note"].is_null());
 }
 
 #[test]
