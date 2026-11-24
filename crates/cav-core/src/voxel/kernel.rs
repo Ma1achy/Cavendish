@@ -255,6 +255,27 @@ pub fn cube_difference(mass: f64, side: f64, across: [f64; 2], below: f64, above
     }
 }
 
+/// `(V(d − shift) − V(d))/G` (kg/m): how much the potential at offset `d` (metres, from the
+/// cube's centre) changes when a uniform cube of `mass` kg and side `side` m moves by `shift`
+/// metres. Formed without the cancellation of two nearly equal potentials, as the arms' difference
+/// is: for a cube moved by micrometres the change is a millionth of the potential, and a body of
+/// many leaves whose first-order changes cancel (a scaffold vibrating about its axis) keeps its
+/// digits only this way.
+#[must_use]
+pub fn cube_shift(mass: f64, side: f64, d: Vec3, shift: Vec3) -> f64 {
+    let moved = d - shift;
+    let (r, s) = (d.length(), moved.length());
+    match (order_needed(side, r), order_needed(side, s)) {
+        (Some(a), Some(b)) => {
+            let order = a.max(b);
+            // 1/s − 1/r = (r² − s²)/(rs(r + s)), r² − s² = shift·(2d − shift).
+            let monopole = -mass * shift.dot(d * 2.0 - shift) / (r * s * (r + s));
+            monopole - mass * (correction(order, side, moved, s) - correction(order, side, d, r))
+        }
+        _ => cube_potential(mass, side, moved) - cube_potential(mass, side, d),
+    }
+}
+
 /// A voxel body as the forward model sees it: every leaf of a tree a uniform cube, the tree's
 /// frame carried to where the body is.
 pub struct TreeBody<P: Fn(f64) -> Vec3 + Sync> {
@@ -492,6 +513,33 @@ mod tests {
                 order_needed(1.0, 1.0 / ratio)
             );
         }
+    }
+
+    #[test]
+    fn a_shifted_cube_keeps_its_digits() {
+        let (mass, side) = (3.0, 0.05);
+        let mut plain_worst = 0f64;
+        for n in directions().into_iter().take(16) {
+            let d = n * 0.6;
+            // Where the plain difference is still good (a millimetre: 1.7e-3 of the potential),
+            // the two agree.
+            let shift = Vec3::new(1e-3, -4e-4, 2e-4);
+            let plain = cube_potential(mass, side, d - shift) - cube_potential(mass, side, d);
+            let kept = cube_shift(mass, side, d, shift);
+            assert!((plain - kept).abs() <= 1e-11 * kept.abs(), "{n:?}: {plain} {kept}");
+            // Antisymmetry: moving back undoes it.
+            assert!((cube_shift(mass, side, d - shift, -shift) + kept).abs() <= 1e-14 * kept.abs());
+            // A nanometre: linear in the shift to its own second order (|shift|/R ≈ 2e-9, and a
+            // factor for the field's curvature), and to rounding: within 1e-7.
+            let tiny = shift * 1e-6;
+            let (one, two) = (cube_shift(mass, side, d, tiny), cube_shift(mass, side, d, tiny * 2.0));
+            assert!((two - 2.0 * one).abs() <= 1e-7 * one.abs(), "{n:?}: {one} {two}");
+            // Control: the plain difference of a nanometre has lost its digits (rounding of a
+            // potential 2e9 times the change).
+            let plain = cube_potential(mass, side, d - tiny) - cube_potential(mass, side, d);
+            plain_worst = plain_worst.max((two - 2.0 * plain).abs() / one.abs());
+        }
+        assert!(plain_worst > 1e-7, "the plain difference kept its digits everywhere: {plain_worst}");
     }
 
     #[test]
