@@ -20,9 +20,11 @@ console, the command line or an agent must be the same `Command`.
 3. **Doing it.** In `Engine::perform`. If it changes the scene it must go through `Prepared::Edit`
    with the step that undoes and redoes it (`history::Edit`), so that undo works; if it changes
    what the towers read, call `self.schedule(false)`.
-4. **Its place in the journal.** `history::weigh` counts its bytes; `Command::overwrites` says
-   whether a run of it collapses into its last (a scrub, a drag). If your command holds state the
-   engine must reproduce on replay, add that state to `State` (what `digest` covers).
+4. **Its place in the journal.** `history::weigh` counts it as the bytes of its JSON in a
+   journal file, so there is nothing to add there; `Command::overwrites` says whether a run of it
+   collapses into its last (a scrub, a drag). If your command holds state the engine must
+   reproduce on replay, add that state to `State` (what `digest` covers) and to
+   `Engine::standing`, the commands `journal restart` opens a new journal with.
 5. **Its level in the log**: the match at the top of `Engine::apply`.
 
 ## The console
@@ -66,6 +68,9 @@ console, the command line or an agent must be the same `Command`.
 - A command whose effect depends on the time of day, the files on disk or the order of a
   `HashMap`: the journal will not replay.
 - Writing to a path from the journal on replay. Exports go where the replayer says
-  (`Exports::Into`), never where the journal says.
+  (`Exports::Into`: inside its directory, a relative path with its folders, any other under its
+  file name, two paths never on one file), never where the journal says.
+- Asking the machine something when a file is written (git, the clock, the host's name). What a
+  file says of the build is fixed when the engine is compiled (`cav_engine::build`).
 - Waiting for the signal inside `apply`. Only an export waits, and only for as long as the
   client's patience.

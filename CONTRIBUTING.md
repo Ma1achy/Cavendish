@@ -33,6 +33,12 @@ picture after a push to `main`; it tests nothing.)
 Each tier has a floor on how many tests it runs (`xtask/floors.txt`): fewer is a failure. Floors
 only go up; raise one in the commit that adds tests.
 
+The first build after a commit compiles `cav-engine` and everything that depends on it again
+(about eight seconds more than a warm `quick`): the engine carries the revision it was built
+from, fixed by its build script, and a new commit is a new revision. The same happens after
+`git add` and anything else that rewrites git's index. Edits outside `cav-core`, `cav-sim`,
+`cav-engine` and `scenes/` do not run the script.
+
 A test's name decides its tier: put `gpu_` in the name of a test that needs the adapter. A test
 that takes more than a second or two in `quick` should say why it must.
 
