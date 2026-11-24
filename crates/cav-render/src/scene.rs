@@ -902,7 +902,7 @@ mod tests {
         let d = drawables(&mixed, DrawStyle::Shaded, None, Vec3::ZERO);
         let height = |n: usize| f64::from(baseline(&d, n).b[2] - baseline(&d, n).a[2]);
         assert!(
-            (height(0) - 10.1).abs() < 1e-4 && (height(1) - 100.0).abs() < 1e-3,
+            (height(0) - 10.1).abs() < 1e-4 && (height(1) - 140.0).abs() < 1e-3,
             "{} {}",
             height(0),
             height(1)

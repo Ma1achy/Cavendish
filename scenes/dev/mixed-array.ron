@@ -35,7 +35,7 @@
                     offset: 0.0,
                 ),
                 instrument: Some((
-                    tower_height: Some(100.0),
+                    tower_height: Some(140.0),
                     ifo_separation: Some(70.0),
                     half_sequence: Some(2.5),
                     launch_velocity: Some(21.23604923374872),

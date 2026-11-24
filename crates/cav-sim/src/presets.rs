@@ -1,4 +1,4 @@
-//! Instrument presets: AION-10, AICE 100 m, and any instrument of one's own kept in a file.
+//! Instrument presets: AION-10, AICE 140 m, and any instrument of one's own kept in a file.
 //!
 //! A preset is an [`InstrumentSpec`] and nothing more: applying one is a `set` of
 //! `array.instrument`, so it is checked, journalled and undone like any other edit.
@@ -22,17 +22,20 @@ use crate::{InstrumentSpec, SpecError};
 /// The built-in presets: the name used on the command line, what it is called, and the instrument.
 #[must_use]
 pub fn built_in() -> Vec<(&'static str, &'static str, InstrumentSpec)> {
-    vec![("aion10", "AION-10", InstrumentSpec::default()), ("aice", "AICE 100 m", aice())]
+    vec![("aion10", "AION-10", InstrumentSpec::default()), ("aice", "AICE 140 m", aice())]
 }
 
-/// The AICE 100 m instrument: a 100 m tower, interferometers 70 m apart, T = 2.5 s, a 5 s cycle,
-/// AION-10's kick number (1000), and the launch derived from those by [`symmetric_launch`].
+/// The AICE instrument: a 140 m tower (George, 24 Nov 2026: the baseline is over 140 m, as his
+/// `fig2_final.py` has it, `L_base = 140.0`), interferometers launched from its base and 70 m
+/// above it (`delta_r`), T = 2.5 s, a 5 s cycle, AION-10's kick number (1000), and the launch
+/// derived from those by [`symmetric_launch`]. Every arm stays inside the tower: the highest
+/// reaches 108.9 m. (It was a 100 m tower until 24 Nov 2026, which the arms did not fit.)
 #[must_use]
 pub fn aice() -> InstrumentSpec {
     aice_with_kicks(1000)
 }
 
-/// The AICE 100 m instrument with kick number `kicks` (a whole number: how many photon momenta a
+/// The AICE 140 m instrument with kick number `kicks` (a whole number: how many photon momenta a
 /// kick gives): [`aice`] is this at 1000. The launch velocity is derived for that kick number,
 /// so the arms still finish where they started. With ⁸⁷Sr the rule asks for a launch of zero at
 /// n ≈ 7457 and a downward one beyond: such an instrument is refused when it is set into a
@@ -40,7 +43,7 @@ pub fn aice() -> InstrumentSpec {
 #[must_use]
 pub fn aice_with_kicks(kicks: u32) -> InstrumentSpec {
     let mut spec = InstrumentSpec {
-        tower_height: 100.0,
+        tower_height: 140.0,
         ifo_separation: 70.0,
         half_sequence: 2.5,
         cycle: 5.0,
@@ -63,7 +66,7 @@ pub fn symmetric_launch(spec: &InstrumentSpec) -> f64 {
 /// The largest preset file [`load`] reads, bytes.
 pub const MAX_PRESET_FILE_BYTES: u64 = 64 << 10;
 
-/// A preset by name (`aion10`, `aice`; `aion-10` and `aice-100m` are understood too), or else an
+/// A preset by name (`aion10`, `aice`; `aion-10`, `aice-140m` and the older `aice-100m` are understood too), or else an
 /// instrument of one's own from a `.ron` file of an `InstrumentSpec`.
 ///
 /// # Errors
@@ -71,9 +74,9 @@ pub const MAX_PRESET_FILE_BYTES: u64 = 64 << 10;
 /// presets. The instrument is checked when it is set into a scene, not here.
 pub fn load(name_or_path: &str) -> Result<InstrumentSpec, SpecError> {
     let plain = name_or_path.to_lowercase().replace(['-', '_', ' '], "");
-    if let Some((_, _, spec)) =
-        built_in().into_iter().find(|(name, _, _)| *name == plain || format!("{name}100m") == plain)
-    {
+    if let Some((_, _, spec)) = built_in().into_iter().find(|(name, _, _)| {
+        *name == plain || [format!("{name}100m"), format!("{name}140m")].contains(&plain)
+    }) {
         return Ok(spec);
     }
     let unreadable = |e: std::io::Error| {
@@ -111,6 +114,25 @@ mod tests {
     use super::*;
     use crate::SceneSpec;
 
+    /// Whether both interferometers' both arms stay between the tower's base and top: at the
+    /// three pulses (0, T, 2T), at each arm's own highest point, and at 1000 instants between.
+    fn arms_inside(spec: &InstrumentSpec) -> bool {
+        let instrument = spec.instrument();
+        let (two_t, arms) = (instrument.flight_time(), instrument.arms());
+        let mut instants: Vec<f64> = vec![0.0, instrument.half_sequence, two_t];
+        instants.extend((0..=1000).map(|k| two_t * f64::from(k) / 1000.0));
+        let highest = instrument.ifo_separation + arms.iter().map(|a| a.apex()).fold(0.0, f64::max);
+        highest <= spec.tower_height
+            && [0.0, instrument.ifo_separation].iter().all(|launch| {
+                arms.iter().all(|arm| {
+                    instants.iter().all(|&tau| {
+                        let z = launch + arm.rise(tau);
+                        (0.0..=spec.tower_height).contains(&z)
+                    })
+                })
+            })
+    }
+
     #[test]
     fn presets_are_the_plans() {
         // AION-10: George's numbers, which are the spec's defaults.
@@ -122,7 +144,7 @@ mod tests {
         let aice = load("aice").unwrap();
         assert_eq!(
             (aice.tower_height, aice.ifo_separation, aice.half_sequence, aice.cycle, aice.kicks),
-            (100.0, 70.0, 2.5, 5.0, 1000)
+            (140.0, 70.0, 2.5, 5.0, 1000)
         );
         let instrument = aice.instrument();
         let rule = 9.81 * 2.5 - instrument.kick_velocity() / 2.0;
@@ -145,13 +167,16 @@ mod tests {
             (instrument.ifo_separation, instrument.half_sequence, instrument.launch_velocity),
             (core.ifo_separation, core.half_sequence, core.launch_velocity)
         );
-        // Not settled, and asserted so that it is not forgotten: AICE's own arms do not fit in
-        // the 100 m the plan gives its tower (the upper interferometer's upper arm reaches
-        // 108.9 m), as AION-10's did not fit in 10 m. A question for George; nothing that is
-        // read depends on the height.
+        // Every arm of every preset inside its tower at every pulse and between (George, 24 Nov
+        // 2026: AICE's baseline is over 140 m, as `fig2_final.py` has it): above the base, and
+        // below the top at the highest point of any arm.
+        for (name, _, spec) in built_in() {
+            assert!(arms_inside(&spec), "{name}: an arm leaves the tower");
+        }
         let reach = instrument.reach();
-        assert!(reach > aice.tower_height && (reach - 108.88).abs() < 0.01, "{reach}");
-        assert!(aion.instrument().reach() < aion.tower_height);
+        assert!((reach - 108.88).abs() < 0.01, "{reach}");
+        // Control: in the 100 m the plan once gave it, the upper arm leaves the tower.
+        assert!(!arms_inside(&InstrumentSpec { tower_height: 100.0, ..aice.clone() }));
         // Each makes a valid scene, is named, and other spellings find it.
         for (name, title, spec) in built_in() {
             let scene = SceneSpec {

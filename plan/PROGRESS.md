@@ -312,33 +312,44 @@ Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
   tag>`; for S1 that is `s0-shell`.
 
 ## For George
-- **Is the kick number a whole number?** The engine allows a fractional large-momentum-transfer
-  order (`kicks`); physically it is whole. Default: any value, as now.
-
 **Open.**
-- **The moving anchor's "~7 mrad (Fig 12)" is not half its peak to peak in the engine or in v1.**
-  You said the published sizes are amplitudes, half the peak to peak. For the oscillator that
-  holds: 2.15 mrad at the anchor's readouts, 2.03 in your `1D_oscillator`. For the pass (10 kg at
-  D = 10 m rising at 2.5 m/s from 10 m below the base) the series changes sign as the mass goes
-  by: +3.02 mrad before, −13.65 mrad at the peak (lower minus upper), so the peak to peak is
-  16.67 mrad and half of it 8.34 mrad, 19% over 7. Half the largest |ΔΦ| is 6.83 mrad, 2.5%
-  under. v1 gives the same (8.34 and 6.83). Is Fig 12's "~7" half the largest excursion from
-  zero, or is the figure of another pass (another window, speed or distance)? Default: the
-  oscillator's amplitude is a validation case (`oracle.published_anchor_oscillation_amplitude`,
-  10%); the pass is held to v1 only, and a test asserts both numbers
-  (`the_published_anchor_sizes_are_what_the_references_give`). Detail: `docs/slices/S2.md` §7.13.
-- **AICE's arms do not fit in a 100 m tower either.** With 70 m between the interferometers,
-  T = 2.5 s, the derived launch (21.236 m/s) and n = 1000, the upper interferometer's upper arm
-  reaches 108.88 m above the base at the π pulse (38.88 m above its launch point). `fig2_final.py`
-  has `L_base = 140.0`. Should the preset's tower be 140 m, or the upper interferometer start
-  lower? Default: the plan's 100 m; nothing that is read depends on the height, and the flight
-  diagram's axis already stretches to the arms.
+- **Confirm: Fig 12's ~7 mrad is half the largest |ΔΦ|?** You said (24 Nov 2026) that Fig 12 is
+  this same pass (10 kg at D = 10 m rising at 2.5 m/s). Its series changes sign as the mass goes
+  by (+3.02 mrad before, −13.65 at the peak), so half the peak to peak is 8.34 mrad (19% over 7)
+  and half the largest excursion from zero is 6.83 mrad (2.5% under). The coordinator's reading,
+  applied in TASK-S3-18: the published figure is half the largest |ΔΦ|. Case
+  `oracle.published_anchor_pass_half_largest` (10%, written before measuring; measured 0.025), with half
+  the peak to peak as its failing control. If you meant otherwise, the case is the one place to
+  change.
+- **The cylinder's crossover is at 1.8 to 3.7 m, not 0.5 to 2 m.** Where the 10% line between the
+  point mass and the finite cylinder falls, by your `cylinder` script's own grid and by the engine
+  alike: 2.18, 1.84, 3.74 and 2.73 m for the four cylinders. The engine is held to the script's
+  bracket (`oracle/tests/george.rs`). Nothing to answer unless the 0.5 to 2 m was meant of another
+  quantity.
+- **Your scaffold tables are nquad's rounding.** At the scaffold's distance the potential change
+  is below nquad's absolute tolerance: the scripts give 1.85e-6 rad (single mode) and 9.3e-7 rad
+  (multimode); your own integrand integrated tightly gives 5.1e-10 and 4.8e-8, and the engine
+  agrees with that to 2.3e-5 of the change. The fixtures keep both; the tight one is the
+  reference (`scripts/scaffold_reference.py`). Also: `scaffold_multimode` sets `A_top = 1e-4`
+  against its comment's "1 mm". Which was meant? Default: the code's 1e-4 m.
 - **Your `fig2_*` and `100m_oscillators` scripts integrate to 2T less one step**
   (`arange(N_fly)`; `fig2_final.py` does too). That is the main term of their difference from the
   converged integral: 8.1e-4 of the peak on `100m_oscillators` (the trapezoid itself is 2.6e-4),
   2.7e-4 to 3.2e-4 on `fig2_10m`. One more node (integrating to 2T) cuts the error on
   `100m_oscillators` about fourfold. `1D_oscillator` already covers the whole flight. Nothing to
   answer: for you to know.
+
+**Answered 24 Nov 2026** (through the coordinator).
+1. **The kick number is a whole number** (n ≥ 1). *Done* in TASK-S3 (PR #99): `kicks` is an
+   integer everywhere, fractional or zero values are refused with the field named, and files and
+   journals with one are refused on load, never rounded. The schema's range is `limits::KICKS`.
+2. **AICE's baseline is over 140 m**, as `fig2_final.py` has it (`L_base = 140.0`), with its
+   interferometers launched from the base and from δr = 70 m above it. *Done* in TASK-S3-18: the
+   preset's tower is 140 m ("AICE 140 m"; `aice-100m` still finds it); the launch points were
+   already the script's. A test holds every arm of every preset between the base and the top at
+   every pulse and at each arm's apex (`presets_are_the_plans`), with the 100 m tower as its
+   control. The highest arm reaches 108.88 m. Nothing that is read moved.
+3. **Fig 12 is the same pass** as the moving anchor. See the open "Confirm" above.
 
 **Answered 23 Nov 2026** (through the owner; TASK-S2-18, `docs/slices/S2.md` §7.13).
 1. **Which AICE is the preset?** Interferometers 70 m apart, a 5 s cycle, T = 2.5 s: fixed. The
