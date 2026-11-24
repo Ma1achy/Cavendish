@@ -3,6 +3,12 @@
 //!
 //! The application's screenshots, the pictures of plot panes and PNG figures are all made here.
 //! Nothing in this module opens a window or takes the focus.
+//!
+//! Not for a browser page: it reads pixels back, which a page cannot wait for. It compiles there
+//! (the figure exporter names its types) and refuses at its first read-back; egui's renderer is
+//! not `Send` on the web, hence the allowance below, harmless with one thread.
+
+#![cfg_attr(target_arch = "wasm32", allow(clippy::arc_with_non_send_sync))]
 
 use std::sync::Arc;
 

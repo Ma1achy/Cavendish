@@ -15,8 +15,20 @@ cav-render.workspace = true
 cav-sim.workspace = true
 eframe.workspace = true
 egui.workspace = true
-egui-wgpu = { workspace = true, features = ["winit"] }
+egui-wgpu.workspace = true
 serde_json.workspace = true
+web-time.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+egui-wgpu = { workspace = true, features = ["winit"] } # the native window; eframe on the web has none
+
+# The browser build (`src/web.rs`): the runner's future, the console logger, and the page's
+# downloads. All already in the lock through eframe.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3.107"
+log = "0.4.35"
+wasm-bindgen-futures = "0.4.80"
+web-sys = { version = "0.3.107", features = ["Blob", "BlobPropertyBag", "HtmlAnchorElement", "Url"] }
 
 [lints]
 workspace = true

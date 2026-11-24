@@ -1154,7 +1154,14 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
             );
             ui.label("A voxel world around an array of atom-interferometer gravity gradiometers.");
             ui.add_space(4.0);
-            ui.label(RichText::new("Slice S1: a point mass, read by every tower.").color(theme::WEAK));
+            // Where this build came from: the revision stamped when the engine was compiled.
+            let build = cav_engine::build();
+            let dirty = match build.dirty {
+                Some(true) => ", with uncommitted changes",
+                Some(false) => "",
+                None => ", changes unknown",
+            };
+            ui.label(RichText::new(format!("built from {}{dirty}", build.revision)).color(theme::WEAK));
             if let Some(adapter) = &shell.adapter {
                 ui.label(RichText::new(adapter).monospace().size(11.0).color(theme::WEAK));
             }

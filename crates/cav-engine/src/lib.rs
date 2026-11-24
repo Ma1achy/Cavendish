@@ -29,6 +29,7 @@
 pub mod command;
 pub mod console;
 pub mod engine;
+pub mod files;
 pub mod forward;
 pub mod history;
 pub mod journal;

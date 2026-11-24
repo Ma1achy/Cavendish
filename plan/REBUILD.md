@@ -349,8 +349,11 @@ its oracle checks, a performance note, screenshots in `docs/slices/`. Main alway
 | S14 | **The wider world** | Put the site at a real latitude and longitude on a rotating Earth with the Moon and the Sun: tides, weather and clouds, ground water, ocean microseisms, earthquakes from anywhere, a pressure wave from the far side of the planet. Replay a real day from open data | tides against standard tidal prediction; the same local scene reads the same phase at the origin and on the globe; each far source against its closed form or published record |
 | S15 | **Instruments anywhere** | A gradiometer on any axis, horizontal included; local g and its gradient from the Earth's gravity field at the site; the same instrument on the Moon or Mars, and in orbit; a full budget of instrument systematics | vertical case unchanged to the bit; a horizontal baseline against the closed-form gradient tensor; an orbiting gradiometer against the gravity model's tensor and published GOCE-class gradients |
 | S16 | **The science case** | Inject a gravitational wave or a dark-matter signal and try to find it through a full simulated day; two sites on one planet, correlated; choose a site anywhere on Earth and get its noise budget; run beside the real instrument as its twin | injected signals recovered at the published sensitivity in a quiet world; two-site correlation rejects local noise by the predicted factor |
+| S17 | **In the browser** | The whole application as a web page on GitHub Pages (WebAssembly, WebGPU), built and deployed by a workflow on every push to `main`; figures and scenes as downloads; a link can carry console commands | the engine's numbers in wasm equal native to the bit where the arithmetic is the same, within 1e-12 elsewhere; the page draws in headless Chrome |
 
 Order is a default. Slices that do not depend on each other (S6 and S8, say) can run in parallel.
+S17 was added by the owner on 24 Nov 2026 and runs after S3 (it needs nothing later); its brief is
+`docs/slices/S17.md`, its research `docs/research/web-build-and-pages.md`.
 S14–S16 were added by the owner on 22 Nov 2026. What they hold is in §9.3; each starts with a
 research note that sizes every effect in radians, and what a note shows to be invisible is built as
 a null test and no further.

@@ -488,3 +488,9 @@
 - id: TASK-S14-11
   milestone: S14
   title: The read of the far planet through the bounded walk converges to the gravity-field model at the site
+- id: TASK-S17-01
+  milestone: S17
+  title: 'The app for wasm32 and WebGPU: platform seams (device, forward workers, files, figure pixels), the cav-web entry, cargo xtask web, the web/native equivalence test'
+- id: TASK-S17-02
+  milestone: S17
+  title: 'GitHub Pages: pages.yml (pinned, least permissions), the README link, the live site checked'

@@ -12,9 +12,15 @@ cav-sim.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+web-time.workspace = true
 
 [dev-dependencies]
 cav-validate.workspace = true
 
 [lints]
 workspace = true
+
+# The web equivalence test (tests/web_equivalence.rs), run under wasm-bindgen's runner by
+# `cargo xtask web`; its version goes with the lock's wasm-bindgen 0.2.130.
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "=0.3.80"

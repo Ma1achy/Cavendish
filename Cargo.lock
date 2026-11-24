@@ -212,6 +212,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cast"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
+
+[[package]]
 name = "cav"
 version = "0.0.0"
 dependencies = [
@@ -242,7 +248,12 @@ dependencies = [
  "eframe",
  "egui",
  "egui-wgpu",
+ "js-sys",
+ "log",
  "serde_json",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
 ]
 
 [[package]]
@@ -262,6 +273,8 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "wasm-bindgen-test",
+ "web-time",
 ]
 
 [[package]]
@@ -370,6 +383,8 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
 dependencies = [
+ "serde",
+ "termcolor",
  "unicode-width",
 ]
 
@@ -1270,6 +1285,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "minicov"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4869b6a491569605d66d3952bcdf03df789e5b536e5f0cf7758a7f08a55ae24d"
+dependencies = [
+ "cc",
+ "walkdir",
+]
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1383,6 +1408,15 @@ name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
+
+[[package]]
+name = "nu-ansi-term"
+version = "0.50.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
+dependencies = [
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "num-traits"
@@ -1704,6 +1738,12 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "oorandom"
+version = "11.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "orbclient"
@@ -2346,6 +2386,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "termcolor"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
+dependencies = [
+ "winapi-util",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2668,6 +2717,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasm-bindgen-test"
+version = "0.3.80"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b4913c0ade07e01ab574b20d2741538f070efa12cb7a1a1e2d5df6ea41cf522"
+dependencies = [
+ "cast",
+ "js-sys",
+ "libm",
+ "minicov",
+ "nu-ansi-term",
+ "num-traits",
+ "oorandom",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test-macro",
+ "wasm-bindgen-test-shared",
+]
+
+[[package]]
+name = "wasm-bindgen-test-macro"
+version = "0.3.80"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "238071aa4c5b268e57d21018621a2e2403c29dd11c55dbdf790ed47fdb9241c0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
+]
+
+[[package]]
+name = "wasm-bindgen-test-shared"
+version = "0.2.130"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ab365ce29ba0232367502b2894556ae77a9c214d33dbf453fdba7f586905918"
+
+[[package]]
 name = "web-sys"
 version = "0.3.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2702,6 +2789,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "js-sys",
  "log",
+ "naga",
  "parking_lot",
  "portable-atomic",
  "profiling",

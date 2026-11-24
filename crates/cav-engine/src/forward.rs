@@ -12,6 +12,13 @@
 //! come back. Two workers, so that the one number under the playhead is not queued behind a long
 //! series.
 //!
+//! **Where the workers run is the platform seam** (`forward/threads.rs`, `forward/inline.rs`):
+//! natively, two threads; in a browser, where a thread cannot be started, the same two jobs are
+//! run from [`Forward::poll`] for at most [`POLL_BUDGET`] a call, the reading first. The slots,
+//! the store, the epochs and the gates are the same on both, and the signal is summed in the
+//! same order: the same bits, later. One source's contribution is not cut, so a scene whose
+//! single source takes longer than a frame makes that frame long on the web.
+//!
 //! **Nothing here grows with what is asked.** Work is handed over through a [`Slot`] that holds
 //! one item: a newer request replaces one that has not been started, so no queue of superseded
 //! scenes can build up behind a busy worker. The series worker checks the current epoch as it
@@ -23,9 +30,11 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use web_time::Instant;
 
 use cav_sim::SceneSpec;
 use cav_sim::read::{self, Contribution, ReadingAt, Shots, Signal, SourceId};
@@ -62,9 +71,22 @@ impl SignalState {
     }
 }
 
+/// The longest [`Forward::poll`] runs the workers' jobs for where they have no threads (in a
+/// browser): half a frame at 60 Hz. At least one job is run a call, whatever it takes. Natively
+/// the workers have threads and `poll` runs nothing.
+pub const POLL_BUDGET: Duration = Duration::from_millis(8);
+
+// The platform seam: where the two workers run. See the module's notes.
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "forward/threads.rs"]
+mod workers;
+#[cfg(target_arch = "wasm32")]
+#[path = "forward/inline.rs"]
+mod workers;
+
 /// A place for one item of work. Putting a second replaces the first: the latest wins, and what
-/// is waiting never grows. The worker blocks in [`Slot::take`] until there is an item or the
-/// slot is closed.
+/// is waiting never grows. A worker with a thread blocks until there is an item or the slot is
+/// closed; one without takes what is there, if anything.
 struct Slot<T> {
     held: Mutex<(Option<T>, bool)>,
     filled: Condvar,
@@ -78,20 +100,6 @@ impl<T> Slot<T> {
     fn put(&self, item: T) {
         self.held.lock().unwrap_or_else(PoisonError::into_inner).0 = Some(item);
         self.filled.notify_one();
-    }
-
-    /// The item, once there is one; `None` when the slot has been closed.
-    fn take(&self) -> Option<T> {
-        let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
-        loop {
-            if held.1 {
-                return None;
-            }
-            if let Some(item) = held.0.take() {
-                return Some(item);
-            }
-            held = self.filled.wait(held).unwrap_or_else(PoisonError::into_inner);
-        }
     }
 
     fn close(&self) {
@@ -127,8 +135,51 @@ struct ReadJob {
     time: f64,
 }
 
-/// A gate the workers pass before each job. Closed, they wait: a test can then say exactly what
-/// the workers have and have not done, with no clock in it.
+/// What both workers share with the caller: their slots, where they send results, and what tells
+/// them a job is no longer wanted.
+struct Shared {
+    batches: Arc<Slot<Batch>>,
+    outbox: Sender<Done>,
+    epoch: Arc<AtomicU64>,
+    read_jobs: Arc<Slot<ReadJob>>,
+    read_outbox: Sender<(u64, ReadingAt)>,
+    read_abandon: Arc<AtomicU64>,
+    gate: Arc<Gate>,
+    series_gate: Arc<Gate>,
+}
+
+impl Shared {
+    /// Whether a batch belongs to a scene that has since changed.
+    fn stale(&self, batch: &Batch) -> bool {
+        self.epoch.load(Ordering::Relaxed) != batch.epoch
+    }
+
+    /// One source of a batch: its contribution, sent back. False when nobody is listening any
+    /// more (the engine has gone).
+    fn contribute(&self, batch: &Batch, (source, key): (SourceId, u64)) -> bool {
+        let stale = || self.stale(batch);
+        match read::contribution(&batch.spec, source, &batch.shots, &stale) {
+            Some(contribution) => self.outbox.send(Done { key, contribution }).is_ok(),
+            None => true,
+        }
+    }
+
+    /// One reading, sent back. A reading that has been begun is finished, unless its scene has
+    /// gone. False when nobody is listening any more.
+    fn read(&self, job: &ReadJob) -> bool {
+        let gone = || self.read_abandon.load(Ordering::Relaxed) >= job.epoch;
+        if gone() {
+            return true;
+        }
+        match read::reading(&job.spec, job.time, &gone) {
+            Some(reading) => self.read_outbox.send((job.epoch, reading)).is_ok(),
+            None => true,
+        }
+    }
+}
+
+/// A gate the workers pass before each job. Closed, they wait (or, with no thread, run nothing):
+/// a test can then say exactly what the workers have and have not done, with no clock in it.
 #[derive(Default)]
 struct Gate {
     closed: Mutex<bool>,
@@ -136,13 +187,6 @@ struct Gate {
 }
 
 impl Gate {
-    fn pass(&self) {
-        let mut closed = self.closed.lock().unwrap_or_else(PoisonError::into_inner);
-        while *closed {
-            closed = self.opened.wait(closed).unwrap_or_else(PoisonError::into_inner);
-        }
-    }
-
     fn set(&self, closed: bool) {
         *self.closed.lock().unwrap_or_else(PoisonError::into_inner) = closed;
         self.opened.notify_all();
@@ -159,6 +203,8 @@ struct Kept {
 /// The forward stage's state: the workers, the kept contributions, the last whole signal and
 /// the last whole reading.
 pub struct Forward {
+    /// Where the jobs run: two threads, or `poll` itself in a browser.
+    workers: workers::Workers,
     batches: Arc<Slot<Batch>>,
     done: Receiver<Done>,
     /// The epoch of the current scene; the series worker drops any work from another.
@@ -257,7 +303,7 @@ fn size_of(contribution: &Contribution) -> usize {
 }
 
 impl Forward {
-    /// Starts the two workers. They live until this value is dropped.
+    /// Starts the two workers (natively, two threads). They live until this value is dropped.
     #[must_use]
     pub fn new() -> Self {
         let gate = Arc::new(Gate::default());
@@ -265,50 +311,22 @@ impl Forward {
         let batches = Arc::new(Slot::<Batch>::new());
         let (outbox, done) = channel::<Done>();
         let epoch = Arc::new(AtomicU64::new(0));
-        let (current, held, inbox) = (Arc::clone(&epoch), Arc::clone(&gate), Arc::clone(&batches));
-        let series_held = Arc::clone(&series_gate);
-        let series = std::thread::Builder::new().name("cav-forward".into()).spawn(move || {
-            // Ends when the engine goes: the slot is closed and `take` gives nothing.
-            'batches: while let Some(batch) = inbox.take() {
-                held.pass();
-                series_held.pass();
-                let stale = || current.load(Ordering::Relaxed) != batch.epoch;
-                for &(source, key) in &batch.work {
-                    if stale() {
-                        continue 'batches;
-                    }
-                    if let Some(contribution) = read::contribution(&batch.spec, source, &batch.shots, &stale)
-                        && outbox.send(Done { key, contribution }).is_err()
-                    {
-                        break 'batches;
-                    }
-                }
-            }
-        });
-        series.expect("the forward worker's thread");
-
         let read_jobs = Arc::new(Slot::<ReadJob>::new());
         let (read_outbox, read_done) = channel::<(u64, ReadingAt)>();
         let read_abandon = Arc::new(AtomicU64::new(0));
-        let (abandon, held, inbox) = (Arc::clone(&read_abandon), Arc::clone(&gate), Arc::clone(&read_jobs));
-        let readings = std::thread::Builder::new().name("cav-reading".into()).spawn(move || {
-            while let Some(job) = inbox.take() {
-                held.pass();
-                // A reading that has been begun is finished, unless its scene has gone.
-                let gone = || abandon.load(Ordering::Relaxed) >= job.epoch;
-                if gone() {
-                    continue;
-                }
-                if let Some(reading) = read::reading(&job.spec, job.time, &gone)
-                    && read_outbox.send((job.epoch, reading)).is_err()
-                {
-                    break;
-                }
-            }
+        let workers = workers::Workers::start(Shared {
+            batches: Arc::clone(&batches),
+            outbox,
+            epoch: Arc::clone(&epoch),
+            read_jobs: Arc::clone(&read_jobs),
+            read_outbox,
+            read_abandon: Arc::clone(&read_abandon),
+            gate: Arc::clone(&gate),
+            series_gate: Arc::clone(&series_gate),
         });
-        readings.expect("the reading worker's thread");
 
         Self {
+            workers,
             batches,
             done,
             epoch,
@@ -518,6 +536,7 @@ impl Forward {
     /// Takes what the workers have finished: `(a new whole signal has just been made, a new
     /// reading has just arrived)`.
     pub fn poll(&mut self) -> (bool, bool) {
+        self.workers.run(POLL_BUDGET);
         self.take_done();
         let mut read = false;
         while let Ok(reading) = self.read_done.try_recv() {
@@ -547,13 +566,13 @@ impl Forward {
             let nap = left.min(Duration::from_millis(5));
             // Wait on whichever is outstanding; the other is looked at on the way round.
             if for_signal && self.state == SignalState::Stale {
-                match self.done.recv_timeout(nap) {
+                match self.workers.receive(&self.done, nap) {
                     Ok(done) => self.keep(done),
                     Err(RecvTimeoutError::Timeout) => {}
                     Err(RecvTimeoutError::Disconnected) => break,
                 }
             } else {
-                match self.read_done.recv_timeout(nap) {
+                match self.workers.receive(&self.read_done, nap) {
                     Ok(reading) => read |= self.take_reading(reading),
                     Err(RecvTimeoutError::Timeout) => {}
                     Err(RecvTimeoutError::Disconnected) => break,

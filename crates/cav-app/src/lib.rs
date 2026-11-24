@@ -1,7 +1,8 @@
 //! The Cavendish application: an egui shell around the engine.
 //!
 //! [`Shell`] is the application without a window: its state, its input handling and its drawing,
-//! all against an `egui::Ui` and a [`PaneSurface`]. `main.rs` puts it in an eframe window;
+//! all against an `egui::Ui` and a [`PaneSurface`]. [`app::App`] is it inside eframe: `main.rs`
+//! puts that in a window, and `web` (on `wasm32` only) on a browser page's canvas;
 //! [`headless::Headless`] draws it into a texture for screenshots and tests.
 //!
 //! ## What this crate is for
@@ -17,6 +18,7 @@
 
 #![warn(missing_docs)]
 
+pub mod app;
 pub mod editors;
 pub mod headless;
 pub mod menus;
@@ -27,6 +29,8 @@ pub use cav_plot::plots;
 pub mod shell;
 pub mod theme;
 pub mod timeline;
+#[cfg(target_arch = "wasm32")]
+pub mod web;
 
 pub use panes::{GpuPanes, NoSurface, PaneSurface};
 pub use shell::{APP_COMMANDS, ConsoleFilter, Layout, Shell};
