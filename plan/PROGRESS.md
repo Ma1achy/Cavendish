@@ -6,9 +6,9 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 |---|---|---|---|
 | S0 the shell | done: TASK-S0-01 to 14 merged; reviewed twice, nothing important remains | `s0-shell` | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
 | S1 a point mass | done: TASK-S1-01 to 19 merged; reviewed twice, nothing important remains | `s1-point-mass` | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
-| S2 scenes as files | built and reviewed; review fixes TASK-S2-13 to 19 merged; awaiting re-review | | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
+| S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
 
-## S2, scenes as files: where it stands (24 Nov 2026) — reviewed, every finding fixed, awaiting re-review; not tagged
+## S2, scenes as files: where it stands (24 Nov 2026) — done, tagged `s2-scenes-as-files`
 
 **Done.** A scene is a file and every field has a path (`get`, `set`, `ls`, `schema`, from the
 console, `cav` and MCP, with inline specs); every f64 survives RON, JSON and `.npy` to the bit. One
@@ -108,6 +108,38 @@ validation cases, the oracle tier to the last digit as before.
   MCP resources, saved layouts.
 
 **Next.** A re-review of the fixes; then the tag `s2-scenes-as-files`, and S3.
+
+## Carried into S3 from S2's second review (24 Nov 2026)
+The second review found nothing important; S2 is tagged `s2-scenes-as-files` at `17402b2`. Its minor
+findings are S3's first task, the first one first because it is a criterion moved after measuring:
+1. **The palette.** Finding 28's criterion (CIEDE2000 ≥ 12 under every simulation) was restated to 11
+   after measuring, though a design change meets the original: the best five-hue subset of the old
+   palette (`#0b0dff,#e76f11,#28a682,#cb64fe,#910c59`) has a worst case of 17.49 under all simulated
+   conditions and passes every `dataviz` check, with `PAPER_DASHES` telling slots 6–8 apart. The
+   adopted palette also fails the `dataviz` validator's normal-vision floor (14.9 against 15), and
+   the default five-tower array itself falls below 12. Restore the criterion at 12, change the
+   design (five hues plus dashes, or the reviewer's subset), and fix M2 first so that dashes are
+   not dropped where colour alone would then carry identity.
+2. **Dense signals drop their dashes while the key shows them** (`crates/cav-plot/src/plots.rs:1225`
+   against `:1179`).
+3. **A series can vanish from the key without a word** in `paper-column` (`plots.rs:1179-1188`).
+4. **The Python redraw ignores the record's colours and dashes** (`python/cavendish_figures/redraw.py:97,100`),
+   counts dots over the whole file rather than the span (`:96,105,111-113`), has no envelope, and
+   breaks in layout at `paper-column`; the committed `redrawn.png` has a label collision and floors
+   written as 0.0001 rad/√Hz.
+5. **Untested painting**: lanes and flight shots record `filled` but the painter decides fill
+   separately (`crates/cav-app/src/timeline.rs:254` against `:260`; `plots.rs:1619` against `:1635`);
+   the envelope's skipping of lost shots (`plots.rs:1216`) has no test.
+6. **The engine recompiles after every `git add`** (`crates/cav-engine/provenance.rs:88` watches the
+   index): 5 crates, 6.4 s. Watch the sources, HEAD and the branch ref only.
+7. **The schema's range for `kicks` is not tied to `limits::KICKS`** (`crates/cav-sim/src/spec.rs:297`);
+   make the ranges test generated, not hand-listed (`spec.rs:1351`).
+8. **`quick` is over its 10 s budget**: 10.5–10.6 s warm, 20 s after an edit; the editor test
+   `focusing_and_leaving_a_number_editor_changes_nothing` takes 3.8–4.2 s on the critical path; run
+   `fmt` alongside clippy.
+9. **Smaller**: a cadence floor label hidden behind the window plot (`cadence-gaps-loss.png`); the
+   Rust key should call the ULDM line a reference, as the Python one does.
+Still unchecked after three slices: the real window, DX12, SVGs in a browser.
 
 ## S1, a point mass: where it stands (22 Nov 2026) — done, tagged `s1-point-mass`
 
@@ -280,6 +312,8 @@ Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
   tag>`; for S1 that is `s0-shell`.
 
 ## For George
+- **Is the kick number a whole number?** The engine allows a fractional large-momentum-transfer
+  order (`kicks`); physically it is whole. Default: any value, as now.
 
 **Open.**
 - **The moving anchor's "~7 mrad (Fig 12)" is not half its peak to peak in the engine or in v1.**
