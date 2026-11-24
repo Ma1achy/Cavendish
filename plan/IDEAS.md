@@ -65,7 +65,7 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **`Arm::rise` at exactly 2T** returns 0 for an arm that landed before the kick and is still in the air at 2T (seen with a launch of 0.5 m/s and n = 3000: it is 11.8 m up). No preset does that and no Gauss node sits at 2T, but Simpson's and the trapezoid's last node does. Found while testing `Arm::apex`; left alone because it would change a number. S3.
 - **The whole instrument on screen at 900 px**: with the kick number the properties panel's instrument block is one row longer than a 1440 × 900 window shows without scrolling (`launch_floor` and `sign` are below the fold). Collapse the schedule block by default, or two columns. S3.
 
-- The Python redraw's palette (`python/cavendish_figures/style.py` and its style sheet) is a copy of `PAPER_SERIES`; nothing holds the two together but the redraw taking colours from the record. A test that reads the Rust constant would (S2 review 28).
+- ~~The Python redraw's palette (`python/cavendish_figures/style.py` and its style sheet) is a copy of `PAPER_SERIES`; nothing holds the two together but the redraw taking colours from the record. A test that reads the Rust constant would (S2 review 28).~~ *Done in S3:* a Python test reads the Rust constants (`python/tests/test_figures.py`).
 
 ## From S3 (voxel bodies)
 - **The scalar trick as the engine's fast path for Motion::Modes**: one `V(α)` per flight node and tower (Chebyshev in α), then every shot is a polynomial evaluation instead of every leaf again. The oracle's table method is that, test-side; the engine reads George's scaffold leaf by leaf, minutes for 22 Hz modes. With S5's modal synthesis (VALIDATION §4).

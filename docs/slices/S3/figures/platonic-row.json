@@ -1,0 +1,391 @@
+{
+  "cavendish_figure": 2,
+  "what": "view",
+  "subject": {
+    "tower": null,
+    "channel": "gradiometer",
+    "span": null,
+    "pane": 1,
+    "playhead_s": 0.0
+  },
+  "engine": {
+    "version": "0.0.0",
+    "revision": "3e960954a6a210f854a937a59d13864d69a113e4",
+    "dirty": false,
+    "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
+  },
+  "numerics": {
+    "engine": {
+      "version": "0.0.0",
+      "revision": "3e960954a6a210f854a937a59d13864d69a113e4",
+      "dirty": false,
+      "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
+    },
+    "platform": "x86_64-windows",
+    "precision": "f64 on the CPU",
+    "quadrature": "Gauss { order: 6, panel: 0.1 }, panels halved until two rules agree",
+    "phase_tolerance_rad": 1e-10,
+    "phase_tolerance_relative": 1e-12,
+    "max_halvings": 8,
+    "max_nodes_per_read": 4000000,
+    "constants": {
+      "big_g": 6.6743e-11,
+      "hbar": 1.0545718176461565e-34,
+      "atom_mass_kg": 1.4431558652473234e-25,
+      "kick_velocity_m_per_s": 6.577901532502563,
+      "gravity_m_per_s2": 9.81
+    },
+    "replay": "bit-identical with the same binary on the same platform (sin and cos are the platform's)"
+  },
+  "scene": {
+    "name": "platonic-row",
+    "spec": {
+      "version": 1,
+      "name": "platonic-row",
+      "description": "The five Platonic solids, 100 kg and 0.6 m an edge, on a circle of 2.2 m about tower 1: each is a point mass to its fourth moment, the cube and the octahedron to their sixth.",
+      "duration": 12.0,
+      "array": {
+        "instrument": {
+          "tower_height": 10.1,
+          "ifo_separation": 5.0,
+          "half_sequence": 0.73,
+          "launch_velocity": 3.86,
+          "cycle": 2.0,
+          "atom_mass": 1.4431558652473234e-25,
+          "gravity": 9.81,
+          "kicks": 1000,
+          "launch_floor": true,
+          "sign": "LowerMinusUpper"
+        },
+        "towers": [
+          {
+            "label": "tower 1",
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            },
+            "instrument": null
+          },
+          {
+            "label": "tower 2",
+            "position": [
+              4.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            },
+            "instrument": null
+          },
+          {
+            "label": "tower 3",
+            "position": [
+              -4.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            },
+            "instrument": null
+          },
+          {
+            "label": "tower 4",
+            "position": [
+              0.0,
+              4.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            },
+            "instrument": null
+          },
+          {
+            "label": "tower 5",
+            "position": [
+              0.0,
+              -4.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            },
+            "instrument": null
+          }
+        ],
+        "schedule": {
+          "jitter": null,
+          "alternate": null,
+          "gaps": null,
+          "window": null,
+          "loss": 0.0,
+          "seed": 0
+        }
+      },
+      "room": null,
+      "floor": null,
+      "bodies": [
+        {
+          "label": "tetrahedron",
+          "mass": 100.0,
+          "radius": 0.0,
+          "shape": {
+            "kind": {
+              "Platonic": {
+                "solid": "Tetrahedron",
+                "edge": 0.6
+              }
+            },
+            "pitch": 0.05,
+            "supersample": 4
+          },
+          "motion": {
+            "Static": {
+              "position": [
+                2.0923243358493377,
+                0.6798373876248843,
+                2.5
+              ]
+            }
+          },
+          "appears": null,
+          "vanishes": null
+        },
+        {
+          "label": "cube",
+          "mass": 100.0,
+          "radius": 0.0,
+          "shape": {
+            "kind": {
+              "Platonic": {
+                "solid": "Cube",
+                "edge": 0.6
+              }
+            },
+            "pitch": 0.05,
+            "supersample": 4
+          },
+          "motion": {
+            "Static": {
+              "position": [
+                1.3471114790620887e-16,
+                2.2,
+                2.5
+              ]
+            }
+          },
+          "appears": null,
+          "vanishes": null
+        },
+        {
+          "label": "octahedron",
+          "mass": 100.0,
+          "radius": 0.0,
+          "shape": {
+            "kind": {
+              "Platonic": {
+                "solid": "Octahedron",
+                "edge": 0.6
+              }
+            },
+            "pitch": 0.05,
+            "supersample": 4
+          },
+          "motion": {
+            "Static": {
+              "position": [
+                -2.0923243358493377,
+                0.6798373876248845,
+                2.5
+              ]
+            }
+          },
+          "appears": null,
+          "vanishes": null
+        },
+        {
+          "label": "dodecahedron",
+          "mass": 100.0,
+          "radius": 0.0,
+          "shape": {
+            "kind": {
+              "Platonic": {
+                "solid": "Dodecahedron",
+                "edge": 0.6
+              }
+            },
+            "pitch": 0.05,
+            "supersample": 4
+          },
+          "motion": {
+            "Static": {
+              "position": [
+                -1.2931275550434413,
+                -1.7798373876248843,
+                2.5
+              ]
+            }
+          },
+          "appears": null,
+          "vanishes": null
+        },
+        {
+          "label": "icosahedron",
+          "mass": 100.0,
+          "radius": 0.0,
+          "shape": {
+            "kind": {
+              "Platonic": {
+                "solid": "Icosahedron",
+                "edge": 0.6
+              }
+            },
+            "pitch": 0.05,
+            "supersample": 4
+          },
+          "motion": {
+            "Static": {
+              "position": [
+                1.2931275550434405,
+                -1.7798373876248847,
+                2.5
+              ]
+            }
+          },
+          "appears": null,
+          "vanishes": null
+        }
+      ]
+    }
+  },
+  "camera": {
+    "target": [
+      0.0,
+      0.0,
+      5.05
+    ],
+    "yaw": -90.0,
+    "pitch": 90.0,
+    "distance": 14.208744714587194,
+    "projection": "Orthographic",
+    "style": "Shaded",
+    "colour": {
+      "field": "Height",
+      "tower": 0
+    },
+    "overlay": {
+      "leaves": false,
+      "cut": null
+    }
+  },
+  "data": null,
+  "files": [
+    {
+      "file": "platonic-row.pdf",
+      "format": "pdf",
+      "preset": "paper-full",
+      "size_mm": [
+        178.0,
+        90.0
+      ],
+      "size_points": [
+        504.5669291338583,
+        255.1181102362205
+      ],
+      "command": {
+        "console": "figure view as paper-full to platonic-row.pdf",
+        "cli": "cav figure platonic-row view --out platonic-row.pdf --preset paper-full",
+        "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's"
+      },
+      "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
+      "title": "View · platonic-row",
+      "vector": true,
+      "projection": "orthographic",
+      "note": "orthographic along the pane's direction, faces far to near",
+      "voxels": {
+        "field": "height",
+        "unit": "m",
+        "tower": null,
+        "range": [
+          1.725,
+          3.2750000000000004
+        ],
+        "legend": "height, m",
+        "cut": 0,
+        "cubes": 8677,
+        "faces": 8677,
+        "notes": []
+      }
+    },
+    {
+      "file": "platonic-row.png",
+      "format": "png",
+      "preset": "paper-full",
+      "size_mm": [
+        178.0,
+        90.0
+      ],
+      "size_points": [
+        504.5669291338583,
+        255.1181102362205
+      ],
+      "command": {
+        "console": "figure view as paper-full to platonic-row.png",
+        "cli": "cav figure platonic-row view --out platonic-row.png --preset paper-full",
+        "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's"
+      },
+      "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
+      "title": "View · platonic-row",
+      "pixels": [
+        2102,
+        1063
+      ],
+      "dpi": 300.0,
+      "note": "the scene as the renderer draws it: a picture, also inside an SVG or a PDF; it has no data file"
+    },
+    {
+      "file": "platonic-row.svg",
+      "format": "svg",
+      "preset": "paper-full",
+      "size_mm": [
+        178.0,
+        90.0
+      ],
+      "size_points": [
+        504.5669291338583,
+        255.1181102362205
+      ],
+      "command": {
+        "console": "figure view as paper-full to platonic-row.svg",
+        "cli": "cav figure platonic-row view --out platonic-row.svg --preset paper-full",
+        "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's"
+      },
+      "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
+      "title": "View · platonic-row",
+      "vector": true,
+      "projection": "orthographic",
+      "note": "orthographic along the pane's direction, faces far to near",
+      "voxels": {
+        "field": "height",
+        "unit": "m",
+        "tower": null,
+        "range": [
+          1.725,
+          3.2750000000000004
+        ],
+        "legend": "height, m",
+        "cut": 0,
+        "cubes": 8677,
+        "faces": 8677,
+        "notes": []
+      }
+    }
+  ],
+  "not_this_figure": []
+}

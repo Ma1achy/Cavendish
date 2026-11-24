@@ -29,12 +29,13 @@ pub fn is_dark(style: &Style) -> bool {
     r + g + b < 3 * 128
 }
 
-/// A number as a legend writes it: a whole number for a level; otherwise three figures, or a
+/// A number as a legend writes it: a level as it is (a whole number, or a half between two at
+/// the middle of an odd range, never rounded to a level it is not); otherwise three figures, or a
 /// power of ten when it is very large or very small.
 #[must_use]
 pub fn number(value: f64, field: LeafField) -> String {
     if field == LeafField::Level {
-        return format!("{}", value.round());
+        return format!("{value}");
     }
     if value == 0.0 {
         return "0".into();
@@ -65,7 +66,8 @@ pub fn heading(frame: &VoxelFrame, scene: &SceneSpec) -> String {
                 .map_or_else(|| format!("tower {}", frame.colouring.tower + 1), |t| t.label.clone());
             format!("phase at {tower}, {}", field.unit())
         }
-        LeafField::Level | LeafField::Fill => format!("{}, {}", field.name(), field.unit()),
+        // A level is its own unit: "level, level" would say it twice.
+        LeafField::Level => field.name().to_owned(),
         _ => format!("{}, {}", field.name(), field.unit()),
     }
 }

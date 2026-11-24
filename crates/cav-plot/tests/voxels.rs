@@ -78,6 +78,25 @@ fn a_legend_is_made_from_what_is_drawn() {
 }
 
 #[test]
+fn a_legend_says_each_word_once_and_each_number_as_it_is() {
+    // Found in the S3 demo's `shapes.png`: the heading read "level, level", and the middle of
+    // levels 0 to 3 read "2" where the bar's middle is 1.5.
+    let scene = cav_sim::dev::unit_cube();
+    let repeats = |text: &str| {
+        let words: Vec<&str> = text.split([',', ' ']).filter(|w| !w.is_empty()).collect();
+        words.iter().enumerate().any(|(i, w)| words[..i].contains(w))
+    };
+    for field in [LeafField::Level, LeafField::Mass, LeafField::Fill, LeafField::Height, LeafField::Distance]
+    {
+        let title = heading(&frame_of(&scene, field), &scene);
+        assert!(!repeats(&title), "{field:?}: {title}");
+    }
+    // Control: the old heading is caught.
+    assert!(repeats("level, level"));
+    assert_eq!(number(1.5, LeafField::Level), "1.5");
+    assert_eq!([number(0.0, LeafField::Level), number(3.0, LeafField::Level)], ["0", "3"]);
+}
+#[test]
 fn a_legend_s_numbers_do_not_run_into_each_other() {
     use cav_plot::drawing::{Item, Measure, text_box};
     let scene = cav_sim::dev::unit_cube();
@@ -92,7 +111,9 @@ fn a_legend_s_numbers_do_not_run_into_each_other() {
             .items
             .iter()
             .filter_map(|item| match item {
-                Item::Text { at, anchor, text, face, size, turned, .. } if text.chars().next().is_some_and(|c| c == '-' || c.is_ascii_digit()) => {
+                Item::Text { at, anchor, text, face, size, turned, .. }
+                    if text.chars().next().is_some_and(|c| c == '-' || c.is_ascii_digit()) =>
+                {
                     Some(text_box(*at, *anchor, Outlines.size(text, *face, *size), *turned))
                 }
                 _ => None,
