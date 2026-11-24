@@ -263,7 +263,7 @@ fn the_tree_legend_is_made_from_the_depths_drawn() {
     };
     let deep = swatches(
         &tree_legend(
-            &frame_with(TreeOverlay { from: 1, to: Some(4), fade: Fade::Deep, faces: false }),
+            &frame_with(TreeOverlay { from: 1, to: Some(4), fade: Fade::Deep, faces: false, alone: false }),
             &style,
             &Outlines,
         )
@@ -272,7 +272,13 @@ fn the_tree_legend_is_made_from_the_depths_drawn() {
     assert!(off(deep[0]) < off(colours[0]) && deep[3] == colours[3]);
     let shallow = swatches(
         &tree_legend(
-            &frame_with(TreeOverlay { from: 1, to: Some(4), fade: Fade::Shallow, faces: false }),
+            &frame_with(TreeOverlay {
+                from: 1,
+                to: Some(4),
+                fade: Fade::Shallow,
+                faces: false,
+                alone: false,
+            }),
             &style,
             &Outlines,
         )

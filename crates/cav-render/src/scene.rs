@@ -372,6 +372,27 @@ pub fn drawables_at(
 /// The colours of the overlay boxes, by tree level (repeating): the dark styles' tower colours.
 const LEVEL_COLOURS: [u32; 5] = DARK.towers;
 
+/// A flat section cell (`lo` and `hi` equal along one axis) drawn a little inside its square,
+/// [`SECTION_GAP`] of its side from each edge, so that neighbouring cells of one colour are told
+/// apart and the quadtree's outlines over them show on the gap; any other box as it is.
+fn inset(lo: Vec3, hi: Vec3) -> (Vec3, Vec3) {
+    let d = hi - lo;
+    let side = d.x.max(d.y).max(d.z);
+    if d.x.min(d.y).min(d.z) > 0.0 {
+        return (lo, hi);
+    }
+    let g = SECTION_GAP * side;
+    let step = Vec3::new(
+        if d.x > 0.0 { g } else { 0.0 },
+        if d.y > 0.0 { g } else { 0.0 },
+        if d.z > 0.0 { g } else { 0.0 },
+    );
+    (lo + step, hi - step)
+}
+
+/// The gap round a flat section cell, as a fraction of its side.
+const SECTION_GAP: f64 = 0.04;
+
 /// How much of a tree node's colour its faces add in the x-ray style, times its opacity: nested
 /// faces add up, so each is faint.
 const TREE_FACE: f32 = 0.08;
@@ -539,10 +560,11 @@ pub fn drawables_with(
             for cell in &cubes.cells {
                 let rgb = crate::colour::of_value(cell.value, range, diverging, dark);
                 let hex = (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]);
+                let (lo, hi) = inset(cell.lo, cell.hi);
                 if filled {
-                    b.cuboid(cell.lo, cell.hi, linear(hex, 1.0));
+                    b.cuboid(lo, hi, linear(hex, 1.0));
                 } else {
-                    b.box_edges(cell.lo, cell.hi, 1.0, linear(hex, 1.0));
+                    b.box_edges(lo, hi, 1.0, linear(hex, 1.0));
                 }
             }
             if selected {

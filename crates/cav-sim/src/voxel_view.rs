@@ -181,6 +181,10 @@ pub struct TreeOverlay {
     /// adds light); the other styles draw edges alone.
     #[serde(default)]
     pub faces: bool,
+    /// The tree alone: the bodies' cubes are not drawn, so every node can be seen. A section's
+    /// cells (the material in the plane) still are.
+    #[serde(default)]
+    pub alone: bool,
 }
 
 impl TreeOverlay {
@@ -606,6 +610,11 @@ pub fn voxel_frame_cut(
     }
     if frame.boxes.len() >= MAX_OVERLAY_BOXES {
         frame.notes.push(format!("the overlay stops at {MAX_OVERLAY_BOXES} boxes"));
+    }
+    if overlay.tree.is_some_and(|t| t.alone) {
+        for body in &mut frame.bodies {
+            body.cubes.clear();
+        }
     }
     let values = frame
         .bodies

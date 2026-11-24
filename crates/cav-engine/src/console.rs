@@ -167,8 +167,8 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "overlay",
-        usage: "overlay <none | [leaves] [cut <level>] [tree [depth <a>..<b>] [fade deep|shallow] [faces]]> [@N]",
-        about: "draw over voxel bodies: each leaf's bounds by level, the cut a level of detail would take, and the whole octree (every node from the root down, coloured by depth; `fade` makes one end faint, `faces` adds see-through faces in x-ray)",
+        usage: "overlay <none | [leaves] [cut <level>] [tree [depth <a>..<b>] [fade deep|shallow] [faces] [alone]]> [@N]",
+        about: "draw over voxel bodies: each leaf's bounds by level, the cut a level of detail would take, and the whole octree (every node from the root down, coloured by depth; `fade` makes one end faint, `faces` adds see-through faces in x-ray, `alone` hides the bodies' cubes)",
         example: "overlay tree depth 0..4 fade deep",
     },
     CommandDoc {
@@ -371,6 +371,9 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
                     }
                     if tree.faces {
                         words.push("faces".to_owned());
+                    }
+                    if tree.alone {
+                        words.push("alone".to_owned());
                     }
                 }
                 if words.is_empty() {
@@ -702,10 +705,11 @@ impl Engine {
                         ("none", []) if words.len() == 1 => {}
                         ("leaves", _) => overlay.leaves = true,
                         ("tree", _) => overlay.tree = Some(overlay.tree.unwrap_or_default()),
-                        ("depth" | "fade" | "faces", _) if overlay.tree.is_none() => {
+                        ("depth" | "fade" | "faces" | "alone", _) if overlay.tree.is_none() => {
                             return Err(format!("`{first}` follows `tree`; {}", usage(name)));
                         }
                         ("faces", _) => overlay.tree = overlay.tree.map(|t| TreeOverlay { faces: true, ..t }),
+                        ("alone", _) => overlay.tree = overlay.tree.map(|t| TreeOverlay { alone: true, ..t }),
                         ("fade", [word, ..]) => {
                             let fade = Fade::parse(word).ok_or_else(|| {
                                 format!("`{word}` is not a fade (off, deep or shallow); {}", usage(name))
@@ -1285,7 +1289,7 @@ mod tests {
                 }),
             ),
             (
-                "overlay tree depth 1..4 fade deep faces @2",
+                "overlay tree depth 1..4 fade deep faces alone @2",
                 Command::View(ViewCommand::Overlay {
                     pane: 1,
                     overlay: cav_sim::voxel_view::Overlay {
@@ -1294,6 +1298,7 @@ mod tests {
                             to: Some(4),
                             fade: cav_sim::voxel_view::Fade::Deep,
                             faces: true,
+                            alone: true,
                         }),
                         ..Default::default()
                     },
@@ -1311,6 +1316,7 @@ mod tests {
                             to: None,
                             fade: cav_sim::voxel_view::Fade::Shallow,
                             faces: false,
+                            alone: false,
                         }),
                     },
                 }),

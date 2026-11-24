@@ -109,7 +109,7 @@ a journal being replayed ─┘     │          │                            
 | A plot or a figure | `cav-plot` | [a plot](extending/a-plot.md) |
 | What colours voxel bodies, their cubes and overlays in a view | `cav-sim/src/voxel_view.rs`; trees kept by `cav-engine/src/voxels.rs` | [a plot](extending/a-plot.md) |
 | The colour maps of fields (sequential, diverging) | `cav-render/src/colour.rs` | — |
-| A legend of a field; a view of voxel bodies as a vector figure | `cav-plot/src/voxels.rs` | [a plot](extending/a-plot.md) |
+| A legend of a field or of the tree overlay's depths; a view of voxel bodies as a vector figure | `cav-plot/src/voxels.rs` (`legend`, `tree_legend`); pasted into `cav render` pictures by `cav/src/session.rs` | [a plot](extending/a-plot.md) |
 | Redrawing a figure from its data, in Python | `python/cavendish_figures` (matplotlib style sheets, `load`, `redraw`) | [a plot](extending/a-plot.md) |
 | A panel, an editor, the timeline | `cav-app/src/panels.rs`, `editors.rs`, `timeline.rs` | — |
 | A CLI subcommand, an MCP tool | `cav/src/main.rs`, `mcp.rs` | [a command](extending/a-command.md) |
@@ -118,7 +118,7 @@ a journal being replayed ─┘     │          │                            
 | The voxel tree, its moments and cuts; the voxeliser and the raster oracle | `cav-core/src/voxel/tree.rs`, `voxeliser.rs` | — |
 | The potential of a uniform cube (series, octants, prism); a voxel body as a source | `cav-core/src/voxel/kernel.rs` | — |
 | A body made of voxels (`BodySpec.shape`) | `cav-sim/src/shape.rs`; read in `read.rs` (`voxel_body`) | [a voxel body](extending/a-voxel-body.md) |
-| Colour by field, overlays, the cubes a view draws | `cav-sim/src/voxel_view.rs`; drawn in `cav-render/src/scene.rs` (`drawables_with`) with `colour.rs`; trees kept by `cav-engine/src/voxels.rs` | — |
+| Colour by field, overlays (leaves, a cut, the whole tree by depth), section planes (`Cutting`: a 2-D section square-on, a cut-away otherwise), the cubes and cells a view draws | `cav-sim/src/voxel_view.rs`; drawn in `cav-render/src/scene.rs` (`drawables_with`) with `colour.rs`; trees kept by `cav-engine/src/voxels.rs` | — |
 | A bound on memory | `cav-memtest/tests/` | — |
 
 ## Rules that hold everywhere

@@ -170,6 +170,11 @@ fn the_tree_overlay_draws_every_node_by_its_depth() {
     assert_eq!(some.tree.len(), want.iter().filter(|d| (1..=2).contains(*d)).count());
     assert_eq!(some.depths, Some((1, 2)));
     assert!(some.tree_capped_at.is_none() && some.notes.is_empty(), "{:?}", some.notes);
+    // Alone, the tree hides the cubes; control: not alone, they are drawn.
+    assert!(!frame.bodies[0].cubes.is_empty());
+    let alone =
+        tree_frame(&scene, &trees, TreeOverlay { alone: true, ..TreeOverlay::default() }, LeafField::Level);
+    assert!(alone.bodies[0].cubes.is_empty() && alone.tree.len() == frame.tree.len());
     // Control: no tree overlay, no nodes; a range with nothing in it says so.
     assert!(voxel_frame(&scene, &trees, Colouring::default(), Overlay::default(), 0.0).tree.is_empty());
     let none =

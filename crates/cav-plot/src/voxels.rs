@@ -34,7 +34,7 @@ pub fn is_dark(style: &Style) -> bool {
 /// power of ten when it is very large or very small.
 #[must_use]
 pub fn number(value: f64, field: LeafField) -> String {
-    if field == LeafField::Level {
+    if matches!(field, LeafField::Level | LeafField::Depth) {
         return format!("{value}");
     }
     if value == 0.0 {
@@ -67,7 +67,7 @@ pub fn heading(frame: &VoxelFrame, scene: &SceneSpec) -> String {
             format!("phase at {tower}, {}", field.unit())
         }
         // A level is its own unit: "level, level" would say it twice.
-        LeafField::Level => field.name().to_owned(),
+        LeafField::Level | LeafField::Depth => field.name().to_owned(),
         _ => format!("{}, {}", field.name(), field.unit()),
     }
 }

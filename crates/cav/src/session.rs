@@ -99,8 +99,8 @@ impl Session {
             if !keys.is_empty() && self.plots.is_none() {
                 self.plots = Some(cav_plot::headless::Painter::new(cav_plot::headless::context())?);
             }
-            // At the application's size on a 1280-wide pane, and larger on a larger picture.
-            let scale = (size[0] as f32 / 1280.0).max(1.0);
+            // At the application's size on a picture up to 960 wide, and larger on a larger one.
+            let scale = (size[0] as f32 / 960.0).max(1.0);
             let margin = (8.0 * scale) as u32;
             let mut bottom = size[1].saturating_sub(margin);
             for key in keys {
