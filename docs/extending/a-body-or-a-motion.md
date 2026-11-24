@@ -19,7 +19,9 @@ motion must be a function of `t` alone, cheap, and smooth between the times it s
    frame, at `t` seconds on the scene's clock.
 3. **Where it is not smooth.** In `Motion::breaks()`, the times at which the path has a kink (a
    pass starts and stops). The quadrature cuts its panels there; a kink that is not listed costs
-   accuracy silently.
+   accuracy silently. Every kind is named in that match, so the compiler asks. It is a list of
+   instants: a motion with a kink in every period (a bounce) cannot be said this way, and is not
+   a motion to add until `breaks` can answer for a span of time.
 4. **What a drag moves.** In `Motion::anchor()`, the point a drag in a pane moves and the name of
    the field that holds it.
 5. **Its frequency**, if it is periodic, in `Motion::frequency()`: the periodogram draws a comb
@@ -28,7 +30,8 @@ motion must be a function of `t` alone, cheap, and smooth between the times it s
    starts as** in `Motion::starter()` (what the editor's drop-down gives when this kind is
    chosen: valid as it stands).
 7. **What is refused** in `Motion::validate()`: each check names the field
-   (`{at}.YourKind.field: …`) so that a refusal says where.
+   (`{at}.YourKind.field: …`) so that a refusal says where. The name it prints comes from the
+   private `variant` beside it, which the compiler will ask you to extend.
 
 Nothing else needs touching: paths, `ls`, the schema, the editors, the console's `set`, MCP's
 `scene_set`, saving and loading all follow from the type.
@@ -55,6 +58,16 @@ Nothing else needs touching: paths, `ls`, the schema, the editors, the console's
   unit.
 - `paths::tests::every_path_gets_and_sets` and the app's `every_schema_field_has_a_widget` walk a
   scene with every kind in it (`everything()` in `paths.rs`): add a body of the new kind there.
+  `the_walked_scene_has_every_kind_of_motion` fails until you do.
+- `paths::tests::ls_lists_children_with_kind_unit_range_and_doc` lists the kinds a body's motion
+  can be: add yours to the list it expects.
+
+Followed end to end on 24 Nov 2026 with a made-up kind (`Bounce`, a body rising and falling as
+`|cos|`): the seven steps compiled once `validate` and `variant` had their arms, and `quick`
+failed in one place the recipe had not named (the `ls` test above). Two things the first form of
+this recipe did not say, and now does: `breaks` had a catch-all arm, so nothing asked about the
+bounce's kinks; and nothing failed for the new kind being absent from the scene the path tests
+walk.
 
 ## Things that go wrong
 

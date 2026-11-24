@@ -323,6 +323,18 @@ fn s2(root: &Path) -> Result<(), String> {
         expect_png(&out, file, [1440, 900], &mut made)?;
     }
 
+    // A screenshot is the same picture every time it is taken: nothing a run's speed decides is
+    // drawn (the footer once said how many milliseconds the signal took, and every demo run
+    // changed every picture). One of each kind of pane is taken again and compared.
+    for (file, script) in [&shots[0], &shots[2], &shots[5]] {
+        let again = temp("again.png");
+        capture(&app, &["--screenshot", &again, "--size", "1440x900", "--exec", script])?;
+        let (first, second) = (std::fs::read(out.join(file)), std::fs::read(&again));
+        if first.is_err() || first.ok() != second.ok() {
+            return Err(format!("{file} is not the same picture when it is taken again"));
+        }
+    }
+
     // 5. Scenes as files, from the command line; then what the console answers.
     let mine = temp("mine.ron");
     let mut session = String::new();

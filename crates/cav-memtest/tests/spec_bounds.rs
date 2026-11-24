@@ -395,10 +395,30 @@ fn a_periodogram_and_a_window_are_bounded_in_frequencies() {
     let (short, small) = peak_during(|| window(&scene, 0, 1.0, 1000).unwrap());
     assert_eq!(short.0.len(), 1000);
     assert!(small < MIB, "a thousand frequencies took {small} bytes");
-    // Control: the two agree where they overlap, so the cap changes how fine, not what.
-    let coarse_at = |k: usize| short.1[k];
-    let fine_at = |k: usize| answer.1[k * (MAX_FREQUENCIES - 1) / 999];
-    assert!((coarse_at(0) - 1.0).abs() < 1e-9 && (fine_at(0) - 1.0).abs() < 1e-9);
+    // Control: the capped answer is the window itself, only finer. 1024 frequencies are every
+    // 1025th of the capped set (1,048,575 = 1023 × 1025), so the two can be compared at every one
+    // of them, not only at zero where a window is 1 by definition (S2's review, finding 8).
+    let step = (MAX_FREQUENCIES - 1) / 1023;
+    assert_eq!(step * 1023, MAX_FREQUENCIES - 1);
+    let coarse = window(&scene, 0, 1.0, 1024).unwrap();
+    let mut worst = 0.0f64;
+    for (k, (frequency, height)) in coarse.0.iter().zip(&coarse.1).enumerate() {
+        assert!((answer.0[k * step] - frequency).abs() < 1e-9, "frequency {k}");
+        worst = worst.max((answer.1[k * step] - height).abs());
+    }
+    assert!(worst < 1e-9, "the capped window differs from the coarse one by {worst}");
+    // And the comparison is of a window with lines in it, and can fail: a neighbouring
+    // frequency of the fine set is another height somewhere.
+    let spread =
+        coarse.1.iter().fold(0.0f64, |m, h| m.max(*h)) - coarse.1.iter().fold(1.0f64, |m, h| m.min(*h));
+    assert!(spread > 0.9, "the window has no line in it: {spread}");
+    assert!(
+        coarse
+            .1
+            .iter()
+            .enumerate()
+            .any(|(k, h)| (answer.1[(k * step + step / 2).min(MAX_FREQUENCIES - 1)] - h).abs() > 1e-3)
+    );
 }
 
 #[test]
