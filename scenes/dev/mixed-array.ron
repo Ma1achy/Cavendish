@@ -1,0 +1,81 @@
+// Dev scene `mixed-array` (REBUILD §9.1), written from its builder in crates/cav-sim/src/dev.rs; a test
+// holds the two together. Frame: metres, x east, y north, z up; seconds; angles in degrees.
+// `cav schema` describes every field.
+(
+    version: 1,
+    name: "mixed-array",
+    description: "Three towers that do not share an instrument: AION-10, AICE (a shot every 5 s, 70 m apart) and AION-10 with T = 0.9 s. Each tower has its own shots and its own flight; an oscillating mass is read by all three.",
+    duration: 60.0,
+    array: (
+        instrument: (
+            tower_height: 10.1,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+            atom_mass: 1.4431558652473234e-25,
+            gravity: 9.81,
+            kicks: 1000.0,
+            launch_floor: true,
+            sign: LowerMinusUpper,
+        ),
+        towers: [
+            (
+                label: "aion-10",
+                position: (0.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+            ),
+            (
+                label: "aice",
+                position: (6.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: Some((
+                    tower_height: Some(100.0),
+                    ifo_separation: Some(70.0),
+                    half_sequence: Some(2.5),
+                    launch_velocity: Some(21.23604923374872),
+                    cycle: Some(5.0),
+                )),
+            ),
+            (
+                label: "aion-10, T = 0.9 s",
+                position: (0.0, 6.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: Some((
+                    half_sequence: Some(0.9),
+                )),
+            ),
+        ],
+        schedule: (
+            jitter: None,
+            alternate: None,
+            gaps: None,
+            window: None,
+            loss: 0.0,
+            seed: 0,
+        ),
+    ),
+    room: None,
+    floor: None,
+    bodies: [
+        (
+            label: "oscillator",
+            mass: 10.0,
+            radius: 0.0,
+            motion: Linear(
+                centre: (3.0, 2.0, 4.0),
+                amplitude: (0.0, 0.0, 1.0),
+                frequency: 0.05,
+                phase: 0.0,
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+    ],
+)

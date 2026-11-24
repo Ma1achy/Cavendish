@@ -1141,7 +1141,10 @@ mod tests {
         assert!(spec.inserted("bodies", None, &json!(3.0)).unwrap_err().contains("cannot be added"));
         let mut one = spec.clone();
         one.array.towers.truncate(1);
-        assert!(one.removed("array.towers[0]").unwrap_err().contains("at least one tower"));
+        // Since S3 a scene may have no towers: the last one can be taken out, and put back.
+        let (none, tower) = one.removed("array.towers[0]").unwrap();
+        assert!(none.array.towers.is_empty());
+        assert_eq!(none.inserted("array.towers", None, &tower).unwrap().0, one);
         // A component of a vector is not an item that can be taken out: the scene would not parse.
         assert!(spec.removed("array.towers[0].position[1]").is_err());
         // Control: a template of a list's item has the item's shape, and only needs a label.

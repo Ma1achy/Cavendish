@@ -1,0 +1,52 @@
+// Dev scene `no-towers` (REBUILD §9.1), written from its builder in crates/cav-sim/src/dev.rs; a test
+// holds the two together. Frame: metres, x east, y north, z up; seconds; angles in degrees.
+// `cav schema` describes every field.
+(
+    version: 1,
+    name: "no-towers",
+    description: "A room with a mass passing through it and no towers: a scene need not have an array. Nothing is read; the timeline, the panes and the bundle still work, empty.",
+    duration: 20.0,
+    array: (
+        instrument: (
+            tower_height: 10.1,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+            atom_mass: 1.4431558652473234e-25,
+            gravity: 9.81,
+            kicks: 1000.0,
+            launch_floor: true,
+            sign: LowerMinusUpper,
+        ),
+        towers: [],
+        schedule: (
+            jitter: None,
+            alternate: None,
+            gaps: None,
+            window: None,
+            loss: 0.0,
+            seed: 0,
+        ),
+    ),
+    room: Some((
+        origin: (-5.0, -5.0, 0.0),
+        size: (10.0, 10.0, 3.0),
+    )),
+    floor: None,
+    bodies: [
+        (
+            label: "mass",
+            mass: 5.0,
+            radius: 0.0,
+            motion: Pass(
+                from: (-4.0, 0.0, 1.0),
+                to: (4.0, 0.0, 1.0),
+                start: 0.0,
+                speed: 1.0,
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+    ],
+)

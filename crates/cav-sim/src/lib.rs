@@ -31,7 +31,7 @@ pub mod view;
 pub use library::{LIBRARY, LibraryScene, inline, load};
 pub use motion::Motion;
 pub use spec::{
-    ArraySpec, BodySpec, FloorKind, FloorSpec, GapSpec, InstrumentSpec, JitterKind, JitterModel, JitterSpec,
+    ArraySpec, BodySpec, FloorKind, FloorSpec, GapSpec, InstrumentOverride, InstrumentSpec, JitterKind, JitterModel, JitterSpec,
     RoomSpec, SPEC_VERSION, SceneSpec, ScheduleSpec, SignSpec, SpecError, Target, TimingSpec, TowerSpec,
     WindowSpec,
 };
