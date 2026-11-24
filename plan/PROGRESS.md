@@ -37,6 +37,20 @@ CPU must go (`plan/IDEAS.md`). `quick` does not lint the oracle crate. The demo 
 script in three pictures (§7.5). The scaffold series cases cannot fail in practice (§7.8).
 
 **Next.** A fresh review of S3; then the tag, and S4.
+
+**Added after the build, at the owner's asking (TASK-S3-19, -20).** `overlay tree [depth a..b]
+[fade deep|shallow] [faces] [alone]`: every node of every voxel body's octree, root to leaves,
+coloured by depth on the sequential map, faded by depth when asked, with a legend from the depths
+drawn; at most 20,000 nodes a view (whole depths dropped from the deepest up, said on screen and by
+`cav render`). `colour depth` puts leaves on the same map and range. `section <x|y|z> <m> | off`:
+square-on, a 2-D section (material by the colour field, empty where hollow, the tree cut to its
+quadtree); from any other side, a cut-away of the half nearer the camera. A `Shell` shape and the
+`hollow-sphere` dev scene. `cav render` now pastes the legends the app paints. Images and their
+commands: `docs/slices/S3/octree/`. Decided: the plan's `shell` dev scene (a shell round a tower) is
+not this one; it can be made from `Shell` when its slice comes. Open: the validation report was not
+regenerated in this task (the S3 review owns it); the shell joined the voxel validation cases'
+shapes, so their worst-case numbers may move when it is.
+
 ## S2, scenes as files: where it stands (24 Nov 2026) — done, tagged `s2-scenes-as-files`
 
 **Done.** A scene is a file and every field has a path (`get`, `set`, `ls`, `schema`, from the

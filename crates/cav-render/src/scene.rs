@@ -51,6 +51,8 @@ pub enum Part {
     Body(usize),
     /// The overlays drawn over voxel bodies: leaf bounds, a cut.
     Overlay,
+    /// The tree overlay: every node of the voxel bodies' trees, by depth.
+    Tree,
 }
 
 /// An infinite horizontal floor, drawn as a grid that fades towards the horizon.
@@ -370,6 +372,41 @@ pub fn drawables_at(
 /// The colours of the overlay boxes, by tree level (repeating): the dark styles' tower colours.
 const LEVEL_COLOURS: [u32; 5] = DARK.towers;
 
+/// A flat section cell (`lo` and `hi` equal along one axis) drawn a little inside its square,
+/// [`SECTION_GAP`] of its side from each edge, so that neighbouring cells of one colour are told
+/// apart and the quadtree's outlines over them show on the gap; any other box as it is.
+fn inset(lo: Vec3, hi: Vec3) -> (Vec3, Vec3) {
+    let d = hi - lo;
+    let side = d.x.max(d.y).max(d.z);
+    if d.x.min(d.y).min(d.z) > 0.0 {
+        return (lo, hi);
+    }
+    let g = SECTION_GAP * side;
+    let step = Vec3::new(
+        if d.x > 0.0 { g } else { 0.0 },
+        if d.y > 0.0 { g } else { 0.0 },
+        if d.z > 0.0 { g } else { 0.0 },
+    );
+    (lo + step, hi - step)
+}
+
+/// The gap round a flat section cell, as a fraction of its side.
+const SECTION_GAP: f64 = 0.04;
+
+/// How much of a tree node's colour its faces add in the x-ray style, times its opacity: nested
+/// faces add up, so each is faint.
+const TREE_FACE: f32 = 0.08;
+
+/// The colour of a tree node at `depth` with the depths drawn `range`, linear light, opaque: the
+/// sequential map ([`crate::colour::sequential`]) from the shallowest to the deepest, as
+/// `colour depth` colours a leaf of that depth. `dark` for a dark surface.
+#[must_use]
+pub fn tree_colour(depth: u8, range: (u8, u8), dark: bool) -> [f32; 4] {
+    let rgb =
+        crate::colour::of_value(f64::from(depth), (f64::from(range.0), f64::from(range.1)), false, dark);
+    linear((u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]), 1.0)
+}
+
 /// [`drawables_at`], with the voxel bodies of `voxels` drawn as their cubes (coloured by the
 /// frame's field over the range it says) and its overlay boxes as lines. A voxel body the frame
 /// does not hold is drawn as any body is.
@@ -518,6 +555,18 @@ pub fn drawables_with(
                     b.box_edges(cube.centre - d, cube.centre + d, 1.0, linear(hex, 1.0));
                 }
             }
+            // What a section plane cuts: clipped blocks, or flat squares on a 2-D section, in the
+            // field's colours like the cubes.
+            for cell in &cubes.cells {
+                let rgb = crate::colour::of_value(cell.value, range, diverging, dark);
+                let hex = (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]);
+                let (lo, hi) = inset(cell.lo, cell.hi);
+                if filled {
+                    b.cuboid(lo, hi, linear(hex, 1.0));
+                } else {
+                    b.box_edges(lo, hi, 1.0, linear(hex, 1.0));
+                }
+            }
             if selected {
                 let (lo, hi) = cubes.cubes.iter().fold((at, at), |(lo, hi), c| {
                     let h = 0.5 * c.side;
@@ -569,6 +618,33 @@ pub fn drawables_with(
             b.box_edges(overlay.lo, overlay.hi, 1.0, colour);
         }
         b.end_part(Part::Overlay);
+    }
+
+    // The whole tree: every node's box in the colour of its depth, on the sequential map over the
+    // depths drawn, and as opaque as its depth's fade says.
+    if let (Some(frame), Some(asked)) = (voxels, voxels.and_then(|v| v.tree_overlay)) {
+        let xray = style == DrawStyle::XRay;
+        let range = frame.depths.unwrap_or((0, 0));
+        let background = linear(palette.background, 1.0);
+        for node in &frame.tree {
+            let alpha = cav_sim::voxel_view::opacity(node.depth, range, asked.fade) as f32;
+            let colour = tree_colour(node.depth, range, !paper);
+            // X-ray adds light scaled by alpha; the opaque styles have no blending, so a faint
+            // line is drawn as that much of its colour over the background.
+            let (edge, face) = if xray {
+                (
+                    [colour[0], colour[1], colour[2], alpha],
+                    Some([colour[0], colour[1], colour[2], TREE_FACE * alpha]),
+                )
+            } else {
+                (mix(background, colour, alpha), None)
+            };
+            b.box_edges(node.lo, node.hi, 1.0, edge);
+            if let (true, Some(face)) = (asked.faces, face) {
+                b.cuboid(node.lo, node.hi, face);
+            }
+        }
+        b.end_part(Part::Tree);
     }
 
     if let Some(floor) = &scene.floor {
@@ -685,14 +761,84 @@ mod tests {
             body(&d, 0).iter().map(|v| v.colour.map(f32::to_bits)).collect();
         assert!(colours.len() > 3, "{} colours", colours.len());
         // Overlays: twelve edges a box.
-        let with =
-            voxel_frame(&scene, &trees, Colouring::default(), Overlay { leaves: true, cut: None }, 0.0);
+        let with = voxel_frame(
+            &scene,
+            &trees,
+            Colouring::default(),
+            Overlay { leaves: true, ..Overlay::default() },
+            0.0,
+        );
         let lines = drawables_with(&scene, DrawStyle::Shaded, None, Vec3::ZERO, 0.0, Some(&with)).lines.len();
         let without =
             drawables_with(&scene, DrawStyle::Shaded, None, Vec3::ZERO, 0.0, Some(&frame)).lines.len();
         assert_eq!(lines - without, 12 * leaves);
         // Control: without the frame the voxel body is drawn as any body, a sphere.
         assert_eq!(body(&drawables(&scene, DrawStyle::Shaded, None, Vec3::ZERO), 0).len(), 8 * 16 * 3);
+    }
+
+    #[test]
+    fn a_tree_node_is_drawn_in_its_depth_s_colour_and_opacity() {
+        use cav_sim::voxel_view::{Colouring, Fade, Overlay, TreeOverlay, voxel_frame};
+        let scene = dev::sphere();
+        let trees: Vec<_> = scene
+            .bodies
+            .iter()
+            .map(|b| b.shape.as_ref().map(|s| std::sync::Arc::new(s.tree(b.mass).unwrap())))
+            .collect();
+        let tree_lines = |style: DrawStyle, fade: Fade, faces: bool| {
+            let overlay = Overlay {
+                tree: Some(TreeOverlay { fade, faces, ..TreeOverlay::default() }),
+                ..Overlay::default()
+            };
+            let frame = voxel_frame(&scene, &trees, Colouring::default(), overlay, 0.0);
+            let d = drawables_with(&scene, style, None, Vec3::ZERO, 0.0, Some(&frame));
+            let at = d.parts.iter().position(|(p, ..)| *p == Part::Tree).expect("a tree part");
+            let (l0, t0) = if at == 0 { (0, 0) } else { (d.parts[at - 1].1, d.parts[at - 1].2) };
+            (
+                frame,
+                d.lines[l0..d.parts[at].1].to_vec(),
+                d.triangles.len() - t0 - (d.triangles.len() - d.parts[at].2),
+            )
+        };
+        let (frame, lines, faces) = tree_lines(DrawStyle::XRay, Fade::Off, false);
+        let range = frame.depths.unwrap();
+        assert!(range.1 >= 2, "a tree of several depths: {range:?}");
+        assert_eq!((lines.len(), faces), (12 * frame.tree.len(), 0));
+        // Each node's twelve edges are its depth's colour on the map, whole.
+        for (node, edges) in frame.tree.iter().zip(lines.chunks(12)) {
+            let want = tree_colour(node.depth, range, true);
+            assert!(
+                edges.iter().all(|e| e.colour == [want[0], want[1], want[2], 1.0]),
+                "depth {}",
+                node.depth
+            );
+        }
+        // Control: the shallowest and the deepest are not one colour.
+        assert_ne!(tree_colour(range.0, range, true), tree_colour(range.1, range, true));
+        // Fading with depth in x-ray: alpha rises with depth, the deepest whole; faces when asked.
+        let (frame, lines, faces) = tree_lines(DrawStyle::XRay, Fade::Deep, true);
+        assert_eq!(faces, 36 * frame.tree.len());
+        let alpha = |depth: u8| {
+            let n = frame.tree.iter().position(|b| b.depth == depth).unwrap();
+            lines[12 * n].colour[3]
+        };
+        for depth in range.0..range.1 {
+            assert!(alpha(depth) < alpha(depth + 1), "{depth}");
+        }
+        assert_eq!(alpha(range.1), 1.0);
+        // In an opaque style a faint line is that much of its colour over the background: the
+        // shallowest is nearer the background than the deepest is, and no faces are drawn.
+        let (frame, lines, faces) = tree_lines(DrawStyle::Shaded, Fade::Deep, true);
+        assert_eq!(faces, 0);
+        let bg = linear(DARK.background, 1.0);
+        let off = |n: usize| {
+            let c = lines[12 * n].colour;
+            (0..3).map(|i| (c[i] - bg[i]).abs()).sum::<f32>()
+        };
+        let want = tree_colour(range.0, range, true);
+        let shallow = (0..3).map(|i| (want[i] - bg[i]).abs()).sum::<f32>();
+        assert!((off(0) - cav_sim::voxel_view::FAINTEST as f32 * shallow).abs() < 1e-4, "{}", off(0));
+        assert_eq!(frame.tree[0].depth, range.0);
     }
 
     #[test]

@@ -218,3 +218,73 @@ cav_validate::case! {
         cav_validate::Measured::Error(differing(&dirs[0], &dirs[1]) as f64)
     },
 }
+
+#[test]
+fn the_tree_legend_is_made_from_the_depths_drawn() {
+    use cav_plot::voxels::{tree_colour_of, tree_legend};
+    use cav_sim::voxel_view::{Fade, TreeOverlay};
+    let scene = cav_sim::dev::sphere();
+    let trees: Vec<_> =
+        scene.bodies.iter().map(|b| b.shape.as_ref().map(|s| Arc::new(s.tree(b.mass).unwrap()))).collect();
+    let style = Style::screen();
+    let frame_with = |tree: TreeOverlay| {
+        voxel_frame(
+            &scene,
+            &trees,
+            Colouring::default(),
+            Overlay { tree: Some(tree), ..Overlay::default() },
+            0.0,
+        )
+    };
+    // The swatches: rectangles with a fill and a stroke, after the panel.
+    let swatches = |d: &cav_plot::drawing::Drawing| -> Vec<cav_plot::drawing::Colour> {
+        d.items
+            .iter()
+            .skip(1)
+            .filter_map(|item| match item {
+                Item::Rect { fill: Some(fill), stroke: Some(_), .. } => Some(*fill),
+                _ => None,
+            })
+            .collect()
+    };
+    let frame = frame_with(TreeOverlay { from: 1, to: Some(4), ..TreeOverlay::default() });
+    assert_eq!(frame.depths, Some((1, 4)));
+    let drawn = tree_legend(&frame, &style, &Outlines).unwrap();
+    // One swatch a depth drawn, labelled with it, in the map's colour for it, end to end.
+    assert_eq!(drawn.texts()[1..], ["1", "2", "3", "4"]);
+    let colours = swatches(&drawn);
+    assert_eq!(colours, (1..=4).map(|d| tree_colour_of(&frame, d, &style)).collect::<Vec<_>>());
+    let ends = |dark| cav_render::colour::of_value(1.0, (1.0, 4.0), false, dark);
+    assert_eq!(colours[0].0, ends(true));
+    // Fading: the shallowest swatch is nearer the background than with no fade; the deepest is
+    // as it was. Control: the other way round for `shallow`.
+    let off = |c: cav_plot::drawing::Colour| {
+        c.0.iter().zip(style.background.0).map(|(a, b)| a.abs_diff(b) as u32).sum::<u32>()
+    };
+    let deep = swatches(
+        &tree_legend(
+            &frame_with(TreeOverlay { from: 1, to: Some(4), fade: Fade::Deep, faces: false, alone: false }),
+            &style,
+            &Outlines,
+        )
+        .unwrap(),
+    );
+    assert!(off(deep[0]) < off(colours[0]) && deep[3] == colours[3]);
+    let shallow = swatches(
+        &tree_legend(
+            &frame_with(TreeOverlay {
+                from: 1,
+                to: Some(4),
+                fade: Fade::Shallow,
+                faces: false,
+                alone: false,
+            }),
+            &style,
+            &Outlines,
+        )
+        .unwrap(),
+    );
+    assert!(off(shallow[3]) < off(colours[3]) && shallow[0] == colours[0]);
+    // No tree overlay, no legend.
+    assert!(tree_legend(&frame_of(&scene, LeafField::Level), &style, &Outlines).is_none());
+}

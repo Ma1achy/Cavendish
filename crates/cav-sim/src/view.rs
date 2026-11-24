@@ -149,6 +149,10 @@ pub struct ViewSpec {
     /// What is drawn over voxel bodies: their leaves' bounds, a cut. The default is nothing.
     #[serde(default)]
     pub overlay: crate::voxel_view::Overlay,
+    /// A section plane through the voxel bodies: a 2-D section when the view looks square-on
+    /// along its axis, a cut-away otherwise. The default is none.
+    #[serde(default)]
+    pub section: Option<crate::voxel_view::Section>,
 }
 
 /// What a pane shows.
@@ -232,6 +236,7 @@ impl ViewSpec {
             style,
             colour: crate::voxel_view::Colouring::default(),
             overlay: crate::voxel_view::Overlay::default(),
+            section: None,
         };
         view.frame(scene);
         view

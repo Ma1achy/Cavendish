@@ -454,3 +454,10 @@
 - id: TASK-S3-18
   milestone: S3
   title: "George's answers of 24 Nov 2026: AICE's tower is 140 m (fig2_final.py's L_base), every arm inside it; the moving anchor's ~7 mrad read as half the largest |ΔΦ|"
+- id: TASK-S3-19
+  milestone: S3
+  title: 'Octree depth debug view: every node, depth by colour map and opacity, with images'
+- id: TASK-S3-20
+  milestone: S3
+  title: 'Section planes: the octree cut to a quadtree in plan views, material filled by the colour field, a cut-away elsewhere; a hollow shell dev scene'
+  status: done # merged with TASK-S3-19's PR

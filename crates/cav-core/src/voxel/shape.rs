@@ -118,6 +118,61 @@ impl Shape for Sphere {
     }
 }
 
+/// A spherical shell: the points between two concentric spheres, both surfaces inside.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shell {
+    /// Its centre, metres.
+    pub centre: Vec3,
+    /// Its outer radius, metres; positive.
+    pub outer: f64,
+    /// Its inner radius, metres; from 0 to `outer` (0 is a ball).
+    pub inner: f64,
+}
+
+impl Shape for Shell {
+    fn bounds(&self) -> Aabb {
+        Aabb::new(self.centre, self.centre).grown(self.outer)
+    }
+
+    fn contains(&self, p: Vec3) -> bool {
+        let d = p - self.centre;
+        let d2 = d.dot(d);
+        d2 <= self.outer * self.outer && d2 >= self.inner * self.inner
+    }
+
+    fn cover(&self, b: &Aabb) -> Cover {
+        let (mut near, mut far) = (0.0, 0.0);
+        for axis in 0..3 {
+            let (n, f) = extremes(component(b.lo, axis), component(b.hi, axis), component(self.centre, axis));
+            near += n * n;
+            far += f * f;
+        }
+        let (r2, i2) = (self.outer * self.outer, self.inner * self.inner);
+        let slack = MARGIN * (self.outer + reach(b)).powi(2);
+        if far < r2 - slack && near > i2 + slack {
+            Cover::Inside
+        } else if near > r2 + slack || far < i2 - slack {
+            Cover::Outside
+        } else {
+            Cover::Mixed
+        }
+    }
+
+    fn volume(&self) -> f64 {
+        4.0 / 3.0 * std::f64::consts::PI * (self.outer.powi(3) - self.inner.powi(3))
+    }
+
+    fn centroid(&self) -> Vec3 {
+        self.centre
+    }
+
+    /// `∫ x² dV = 4π (R⁵ − r⁵)/15` over the shell: the ball's `V R²/5` less the cavity's.
+    fn second_moments(&self) -> [f64; 6] {
+        let s = 4.0 * std::f64::consts::PI * (self.outer.powi(5) - self.inner.powi(5)) / 15.0;
+        [s, s, s, 0.0, 0.0, 0.0]
+    }
+}
+
 /// A box with its faces along the axes.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cuboid {

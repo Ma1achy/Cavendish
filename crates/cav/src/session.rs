@@ -81,6 +81,55 @@ impl Session {
         }
         self.gpu()?;
         let (gpu, renderer) = self.gpu.as_ref().expect("just created");
-        renderer.render_png(gpu, self.engine.frame(pane)?, size)
+        let size = [size[0].max(1), size[1].max(1)];
+        let mut rgba = renderer.render_rgba(gpu, self.engine.frame(pane)?, size)?;
+        // The legends the application paints in the pane's corner, made from what is drawn: the
+        // field's at the bottom right and the tree overlay's above it.
+        let frame = self.engine.frame(pane)?;
+        if let Some(voxels) = frame.voxels {
+            let style = cav_plot::style::Style::screen();
+            let measure = cav_plot::fonts::Outlines;
+            let keys: Vec<_> = [
+                cav_plot::voxels::legend(voxels, frame.scene, &style, &measure),
+                cav_plot::voxels::tree_legend(voxels, &style, &measure),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            if !keys.is_empty() && self.plots.is_none() {
+                self.plots = Some(cav_plot::headless::Painter::new(cav_plot::headless::context())?);
+            }
+            // At the application's size on a picture up to 960 wide, and larger on a larger one.
+            let scale = (size[0] as f32 / 960.0).max(1.0);
+            let margin = (8.0 * scale) as u32;
+            let mut bottom = size[1].saturating_sub(margin);
+            for key in keys {
+                let w = (key.size[0] * scale).ceil() as u32;
+                let h = (key.size[1] * w as f32 / key.size[0]).round() as u32;
+                let painter = self.plots.as_mut().expect("just created");
+                let pixels = painter.drawing_rgba(&key, [w, h], Default::default())?;
+                let (x0, y0) = (size[0].saturating_sub(margin + w), bottom.saturating_sub(h));
+                paste(&mut rgba, size, &pixels, [w, h], [x0, y0]);
+                bottom = y0.saturating_sub(margin);
+            }
+        }
+        cav_render::encode_png(&rgba, size)
+    }
+}
+
+/// Copies the picture `pixels` (`[w, h]`, RGBA8) into `rgba` (a picture `size`) with its top
+/// left at `at`, over what is there by its alpha; what falls outside is left out.
+fn paste(rgba: &mut [u8], size: [u32; 2], pixels: &[u8], [w, h]: [u32; 2], at: [u32; 2]) {
+    for y in 0..h.min(size[1].saturating_sub(at[1])) {
+        for x in 0..w.min(size[0].saturating_sub(at[0])) {
+            let from = ((y * w + x) * 4) as usize;
+            let to = (((at[1] + y) * size[0] + at[0] + x) * 4) as usize;
+            let a = u32::from(pixels[from + 3]);
+            for c in 0..3 {
+                let (s, d) = (u32::from(pixels[from + c]), u32::from(rgba[to + c]));
+                rgba[to + c] = ((s * a + d * (255 - a)) / 255) as u8;
+            }
+            rgba[to + 3] = 255;
+        }
     }
 }

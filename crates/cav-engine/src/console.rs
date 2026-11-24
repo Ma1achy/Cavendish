@@ -161,15 +161,21 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "colour",
-        usage: "colour <level|mass|fill|height|distance|phase [tower]> [@N]",
+        usage: "colour <level|depth|mass|fill|height|distance|phase [tower]> [@N]",
         about: "what colours the leaves of voxel bodies; `phase` is each leaf's share of a tower's ΔΦ (the legend is made from what is drawn)",
         example: "colour phase 1",
     },
     CommandDoc {
         name: "overlay",
-        usage: "overlay <none | leaves | cut <level> | leaves cut <level>> [@N]",
-        about: "draw over voxel bodies: each leaf's bounds by level, and the cut a level of detail would take",
-        example: "overlay leaves cut 3",
+        usage: "overlay <none | [leaves] [cut <level>] [tree [depth <a>..<b>] [fade deep|shallow] [faces] [alone]]> [@N]",
+        about: "draw over voxel bodies: each leaf's bounds by level, the cut a level of detail would take, and the whole octree (every node from the root down, coloured by depth; `fade` makes one end faint, `faces` adds see-through faces in x-ray, `alone` hides the bodies' cubes)",
+        example: "overlay tree depth 0..4 fade deep",
+    },
+    CommandDoc {
+        name: "section",
+        usage: "section <off | x|y|z <metres>> [@N]",
+        about: "a section plane square to an axis at a place along it (the world's frame): seen square-on (top, bottom, north, south, east, west) the bodies are cut to a 2-D section, the material filled by the colour field and empty where hollow, the tree overlay cut to its quadtree; from any other side the half nearer the camera is cut away",
+        example: "section z 2.5",
     },
     CommandDoc {
         name: "show",
@@ -345,12 +351,45 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
                 }
                 field => format!("colour {}{}", field.name(), at(pane)),
             },
-            ViewCommand::Overlay { pane, overlay } => match (overlay.leaves, overlay.cut) {
-                (false, None) => format!("overlay none{}", at(pane)),
-                (true, None) => format!("overlay leaves{}", at(pane)),
-                (false, Some(level)) => format!("overlay cut {level}{}", at(pane)),
-                (true, Some(level)) => format!("overlay leaves cut {level}{}", at(pane)),
-            },
+            ViewCommand::Overlay { pane, overlay } => {
+                let mut words = Vec::new();
+                if overlay.leaves {
+                    words.push("leaves".to_owned());
+                }
+                if let Some(level) = overlay.cut {
+                    words.push(format!("cut {level}"));
+                }
+                if let Some(tree) = overlay.tree {
+                    words.push("tree".to_owned());
+                    match (tree.from, tree.to) {
+                        (0, None) => {}
+                        (from, None) => words.push(format!("depth {from}..")),
+                        (from, Some(to)) => words.push(format!("depth {from}..{to}")),
+                    }
+                    if tree.fade != cav_sim::voxel_view::Fade::Off {
+                        words.push(format!("fade {}", tree.fade.name()));
+                    }
+                    if tree.faces {
+                        words.push("faces".to_owned());
+                    }
+                    if tree.alone {
+                        words.push("alone".to_owned());
+                    }
+                }
+                if words.is_empty() {
+                    words.push("none".to_owned());
+                }
+                format!("overlay {}{}", words.join(" "), at(pane))
+            }
+            ViewCommand::Section { pane, section: None } => format!("section off{}", at(pane)),
+            ViewCommand::Section { pane, section: Some(s) } => {
+                let axis = match s.axis {
+                    cav_sim::Axis::X => "x",
+                    cav_sim::Axis::Y => "y",
+                    cav_sim::Axis::Z => "z",
+                };
+                format!("section {axis} {}{}", s.offset, at(pane))
+            }
         },
     }
 }
@@ -658,12 +697,48 @@ impl Engine {
                 view(ViewCommand::Colour { pane, colour: Colouring { field, tower } })
             }
             ("overlay", words) if !words.is_empty() => {
+                use cav_sim::voxel_view::{Fade, TreeOverlay};
                 let mut overlay = cav_sim::voxel_view::Overlay::default();
                 let mut rest = words;
                 while let Some((first, after)) = rest.split_first() {
                     match (*first, after) {
                         ("none", []) if words.len() == 1 => {}
                         ("leaves", _) => overlay.leaves = true,
+                        ("tree", _) => overlay.tree = Some(overlay.tree.unwrap_or_default()),
+                        ("depth" | "fade" | "faces" | "alone", _) if overlay.tree.is_none() => {
+                            return Err(format!("`{first}` follows `tree`; {}", usage(name)));
+                        }
+                        ("faces", _) => overlay.tree = overlay.tree.map(|t| TreeOverlay { faces: true, ..t }),
+                        ("alone", _) => overlay.tree = overlay.tree.map(|t| TreeOverlay { alone: true, ..t }),
+                        ("fade", [word, ..]) => {
+                            let fade = Fade::parse(word).ok_or_else(|| {
+                                format!("`{word}` is not a fade (off, deep or shallow); {}", usage(name))
+                            })?;
+                            overlay.tree = overlay.tree.map(|t| TreeOverlay { fade, ..t });
+                            rest = &after[1..];
+                            continue;
+                        }
+                        ("depth", [range, ..]) => {
+                            let depth = |text: &str| {
+                                text.parse::<u8>().ok().filter(|d| *d <= 32).ok_or_else(|| {
+                                    format!(
+                                        "`{range}` is not a depth or a range of depths (0..3, 4..); {}",
+                                        usage(name)
+                                    )
+                                })
+                            };
+                            let (from, to) = match range.split_once("..") {
+                                Some((from, "")) => (depth(from)?, None),
+                                Some((from, to)) => (depth(from)?, Some(depth(to)?)),
+                                None => (depth(range)?, Some(depth(range)?)),
+                            };
+                            if to.is_some_and(|to| to < from) {
+                                return Err(format!("`{range}` runs backwards; {}", usage(name)));
+                            }
+                            overlay.tree = overlay.tree.map(|t| TreeOverlay { from, to, ..t });
+                            rest = &after[1..];
+                            continue;
+                        }
                         ("cut", [level, ..]) => {
                             let level: u8 = level.parse().ok().filter(|l| *l <= 10).ok_or_else(|| {
                                 format!("`{level}` is not a level from 0 to 10; {}", usage(name))
@@ -677,6 +752,23 @@ impl Engine {
                     rest = after;
                 }
                 view(ViewCommand::Overlay { pane, overlay })
+            }
+            ("section", ["off"]) => view(ViewCommand::Section { pane, section: None }),
+            ("section", [axis, offset]) => {
+                let axis = match *axis {
+                    "x" => cav_sim::Axis::X,
+                    "y" => cav_sim::Axis::Y,
+                    "z" => cav_sim::Axis::Z,
+                    other => return Err(format!("`{other}` is not an axis (x, y or z); {}", usage(name))),
+                };
+                let offset = number(offset, "the plane's place", name)?;
+                if !offset.is_finite() || offset.abs() > 1.0e7 {
+                    return Err(format!("{offset} m is further than 1e7 m; {}", usage(name)));
+                }
+                view(ViewCommand::Section {
+                    pane,
+                    section: Some(cav_sim::voxel_view::Section { axis, offset }),
+                })
             }
             ("span", ["all"]) => view(ViewCommand::Span { pane, span: None }),
             ("span", [from, to]) => {
@@ -1193,7 +1285,68 @@ mod tests {
                 "overlay leaves cut 3",
                 Command::View(ViewCommand::Overlay {
                     pane: 0,
-                    overlay: cav_sim::voxel_view::Overlay { leaves: true, cut: Some(3) },
+                    overlay: cav_sim::voxel_view::Overlay { leaves: true, cut: Some(3), tree: None },
+                }),
+            ),
+            (
+                "overlay tree depth 1..4 fade deep faces alone @2",
+                Command::View(ViewCommand::Overlay {
+                    pane: 1,
+                    overlay: cav_sim::voxel_view::Overlay {
+                        tree: Some(cav_sim::voxel_view::TreeOverlay {
+                            from: 1,
+                            to: Some(4),
+                            fade: cav_sim::voxel_view::Fade::Deep,
+                            faces: true,
+                            alone: true,
+                        }),
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "overlay leaves tree depth 2.. fade shallow",
+                Command::View(ViewCommand::Overlay {
+                    pane: 0,
+                    overlay: cav_sim::voxel_view::Overlay {
+                        leaves: true,
+                        cut: None,
+                        tree: Some(cav_sim::voxel_view::TreeOverlay {
+                            from: 2,
+                            to: None,
+                            fade: cav_sim::voxel_view::Fade::Shallow,
+                            faces: false,
+                            alone: false,
+                        }),
+                    },
+                }),
+            ),
+            (
+                "overlay tree",
+                Command::View(ViewCommand::Overlay {
+                    pane: 0,
+                    overlay: cav_sim::voxel_view::Overlay {
+                        tree: Some(cav_sim::voxel_view::TreeOverlay::default()),
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "section z 2.45 @2",
+                Command::View(ViewCommand::Section {
+                    pane: 1,
+                    section: Some(cav_sim::voxel_view::Section { axis: cav_sim::Axis::Z, offset: 2.45 }),
+                }),
+            ),
+            ("section off", Command::View(ViewCommand::Section { pane: 0, section: None })),
+            (
+                "colour depth",
+                Command::View(ViewCommand::Colour {
+                    pane: 0,
+                    colour: cav_sim::voxel_view::Colouring {
+                        field: cav_sim::voxel_view::LeafField::Depth,
+                        tower: 0,
+                    },
                 }),
             ),
             (
@@ -1407,6 +1560,12 @@ mod tests {
             ("select body one", "not a body number"),
             ("panes many", "usage: panes <1|2|4>"),
             ("style x-ray", "usage: style <shaded|flat|xray|wireframe|paper>"),
+            ("overlay depth 3", "`depth` follows `tree`"),
+            ("section w 2", "`w` is not an axis"),
+            ("section z", "usage: section"),
+            ("overlay tree depth 4..2", "`4..2` runs backwards"),
+            ("overlay tree depth deep", "`deep` is not a depth"),
+            ("overlay tree fade sideways", "`sideways` is not a fade"),
             ("proj fisheye", "usage: proj <persp|ortho|toggle>"),
             ("view top @0", "counted from 1"),
             ("view top @two", "addressed as @1"),

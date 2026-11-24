@@ -7,7 +7,7 @@
 //! do not turn in S3), metres.
 
 use cav_core::Vec3;
-use cav_core::voxel::shape::{Cuboid, Cylinder, Ellipsoid, Platonic, Polyhedron, Shape, Sphere};
+use cav_core::voxel::shape::{Cuboid, Cylinder, Ellipsoid, Platonic, Polyhedron, Shape, Shell, Sphere};
 use cav_core::voxel::{Grid, VoxTree, mesh::Mesh, voxelise};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -69,6 +69,17 @@ pub enum ShapeKind {
         #[schemars(range(max = 1.0e3), extend("exclusiveMinimum" = 0.0))]
         #[schemars(extend("x-unit" = "m"))]
         radius: f64,
+    },
+    /// A hollow ball: the points between two concentric spheres.
+    Shell {
+        /// Its outer radius, metres.
+        #[schemars(range(max = 1.0e3), extend("exclusiveMinimum" = 0.0))]
+        #[schemars(extend("x-unit" = "m"))]
+        outer: f64,
+        /// The radius of its cavity, metres: from 0 (a ball) to less than `outer`.
+        #[schemars(range(min = 0.0, max = 1.0e3))]
+        #[schemars(extend("x-unit" = "m"))]
+        inner: f64,
     },
     /// A box with its faces along the axes.
     Cuboid {
@@ -135,14 +146,15 @@ pub const MAX_SIZE: f64 = 1.0e3;
 
 impl ShapeKind {
     /// The names of the kinds, as the spec writes them.
-    pub const KINDS: [&'static str; 7] =
-        ["Sphere", "Cuboid", "Cylinder", "Ellipsoid", "Platonic", "Polyhedron", "Mesh"];
+    pub const KINDS: [&'static str; 8] =
+        ["Sphere", "Shell", "Cuboid", "Cylinder", "Ellipsoid", "Platonic", "Polyhedron", "Mesh"];
 
     /// The kind's name as written in a scene file.
     #[must_use]
     pub const fn name(&self) -> &'static str {
         match self {
             Self::Sphere { .. } => "Sphere",
+            Self::Shell { .. } => "Shell",
             Self::Cuboid { .. } => "Cuboid",
             Self::Cylinder { .. } => "Cylinder",
             Self::Ellipsoid { .. } => "Ellipsoid",
@@ -159,6 +171,9 @@ impl ShapeKind {
     pub fn solid(&self) -> Result<Box<dyn Shape>, String> {
         Ok(match self {
             Self::Sphere { radius } => Box::new(Sphere { centre: Vec3::ZERO, radius: *radius }),
+            Self::Shell { outer, inner } => {
+                Box::new(Shell { centre: Vec3::ZERO, outer: *outer, inner: *inner })
+            }
             Self::Cuboid { size } => {
                 Box::new(Cuboid { centre: Vec3::ZERO, half: Vec3::from_array(*size) * 0.5 })
             }
@@ -195,6 +210,11 @@ impl ShapeKind {
         };
         match self {
             Self::Sphere { radius } => size("radius", *radius),
+            Self::Shell { outer, inner } => size("outer", *outer).and(
+                (inner.is_finite() && *inner >= 0.0 && inner < outer).then_some(()).ok_or_else(|| {
+                    format!("{at}.inner: {inner} m must be from 0 to less than the outer radius")
+                }),
+            ),
             Self::Cuboid { size: s } => s.iter().try_for_each(|v| size("size", *v)),
             Self::Cylinder { radius, length, .. } => size("radius", *radius).and(size("length", *length)),
             Self::Ellipsoid { radii } => radii.iter().try_for_each(|v| size("radii", *v)),
@@ -281,6 +301,7 @@ mod tests {
     fn every_kind_voxelises_and_is_named() {
         let kinds = [
             ShapeKind::Sphere { radius: 0.3 },
+            ShapeKind::Shell { outer: 0.3, inner: 0.2 },
             ShapeKind::Cuboid { size: [0.4, 0.3, 0.2] },
             ShapeKind::Cylinder { radius: 0.2, length: 0.6, axis: Axis::Y },
             ShapeKind::Ellipsoid { radii: [0.3, 0.2, 0.1] },
