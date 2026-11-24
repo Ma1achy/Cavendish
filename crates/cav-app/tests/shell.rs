@@ -816,11 +816,16 @@ fn all_entry_points_issue_the_same_edit() {
     }
     // The editor, on screen: a click on the launch floor's tick box puts in the journal the
     // command that the line puts there (and MCP's scene_set and `cav set` put there: their
-    // tests compare their journals with the same `Command::set`).
-    let mut rig = Rig::new([1440, 900]);
+    // tests compare their journals with the same `Command::set`). The window is tall enough
+    // for the whole instrument to be on screen: since the kick number became a field, the flag
+    // is one row lower, and in a window 900 high it is reached by scrolling the panel.
+    let mut rig = Rig::new([1440, 1000]);
     rig.shell.run("select tower 1").unwrap();
     rig.frames(vec![vec![], vec![]]);
     let tick = rig.shell.layout().editor("array.instrument.launch_floor").expect("the flag has an editor");
+    let panel =
+        rig.shell.layout().panels.iter().find(|(name, _)| *name == "properties").expect("the panel").1;
+    assert!(panel.contains_rect(tick), "the tick box is on screen: {tick:?} in {panel:?}");
     rig.click(tick.left_center() + vec2(8.0, 0.0));
     let by_click = rig.last_command().cloned();
     assert_eq!(by_click, Some(Command::set("array.instrument.launch_floor", json!(false))));
