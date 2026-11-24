@@ -124,7 +124,7 @@ fn menu_bar(shell: &mut Shell, ui: &mut egui::Ui) {
                     let enabled = match line {
                         "undo" => can_undo,
                         "redo" => can_redo,
-                        _ => true,
+                        _ => crate::menus::possible(line, shell.engine.spec().array.towers.len()),
                     };
                     if ui.add_enabled(enabled, Button::new(label).shortcut_text(shortcut)).clicked() {
                         let _ = shell.run(line);
@@ -545,7 +545,8 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
         (cav_engine::SignalState::Refined, Some(signal)) => {
             // A refined signal is the scene's as it is: its shots are the schedule's, and how
             // many each tower takes is the engine's count (kept between frames, not made here).
-            let shots = signal.times.len();
+            // The most shots any tower has (towers of their own instrument may have fewer).
+            let shots = signal.most();
             let (fewest, most) = taken_a_tower(&shell.engine).unwrap_or((shots, shots));
             let count = match (fewest == shots, fewest == most) {
                 (true, _) => format!("{shots} shots"),

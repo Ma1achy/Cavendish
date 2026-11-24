@@ -987,3 +987,52 @@ fn the_flight_rows_have_a_height_scale() {
     }
     assert_eq!(named, "10.1 m");
 }
+
+#[test]
+fn every_plot_is_drawn_for_a_scene_with_no_towers() {
+    let engine = engine("load no-towers");
+    for content in [PaneContent::Signal, PaneContent::Periodogram, PaneContent::Flight, PaneContent::Cadence]
+    {
+        for style in [Style::screen(), Style::preset("paper-column").unwrap()] {
+            let plot = build(&engine, &subject(content), &style, [600.0, 400.0]);
+            assert!(!plot.drawing.items.is_empty(), "{content:?}");
+            // Nothing in it is not a number.
+            for item in &plot.drawing.items {
+                if let Item::Line { points, .. } = item {
+                    assert!(points.iter().flatten().all(|v| v.is_finite()), "{content:?}");
+                }
+            }
+        }
+    }
+    // A tower's plot says why there is nothing: there is no tower.
+    let periodogram = build(&engine, &subject(PaneContent::Periodogram), &Style::screen(), [600.0, 400.0]);
+    let note = periodogram.drawn.note.clone().unwrap_or_default();
+    assert!(note.contains("no towers"), "{note}");
+}
+
+#[test]
+fn a_mixed_array_flies_each_tower_s_own_arms() {
+    let engine = engine("load mixed-array; set duration 20");
+    let mut flight = subject(PaneContent::Flight);
+    flight.span = Some([0.0, 12.0]);
+    let plot = build(&engine, &flight, &Style::screen(), [900.0, 600.0]);
+    // Each tower's shots are its own 2T long: 1.46 s, 5 s and 1.8 s.
+    let width = |n: usize| {
+        let (_, launch, readout, _) = plot.drawn.flights.iter().find(|f| f.0 == n).copied().unwrap();
+        readout - launch
+    };
+    let per_second = width(0) / 1.46;
+    for (n, two_t) in [1.46f32, 5.0, 1.8].into_iter().enumerate() {
+        assert!((width(n) - two_t * per_second).abs() < 0.5, "tower {}: {}", n + 1, width(n));
+    }
+    // One height scale for the rows: AICE's arms, 108.9 m, the tallest thing flown.
+    assert!((plot.drawn.y.hi - 108.88).abs() < 0.01, "{}", plot.drawn.y.hi);
+    // The AICE tower's periodogram runs to its own Nyquist frequency, 0.1 Hz; AION-10's to 0.25.
+    let mut aice = subject(PaneContent::Periodogram);
+    aice.tower = Some(2);
+    let plot = build(&engine, &aice, &Style::screen(), [600.0, 400.0]);
+    assert!((plot.drawn.x.hi - 0.1).abs() < 1e-12, "{}", plot.drawn.x.hi);
+    aice.tower = Some(1);
+    let plot = build(&engine, &aice, &Style::screen(), [600.0, 400.0]);
+    assert!((plot.drawn.x.hi - 0.25).abs() < 1e-12, "the control: {}", plot.drawn.x.hi);
+}

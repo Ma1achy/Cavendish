@@ -74,7 +74,7 @@ fn a_figure_is_bounded_in_series_and_its_data_is_streamed() {
     engine.run_line("select tower 250").unwrap();
     assert!(engine.settle(LONG), "the signal did not arrive");
     let signal = std::sync::Arc::clone(engine.signal().1.unwrap());
-    assert_eq!((signal.towers, signal.times.len()), (towers, shots));
+    assert_eq!((signal.towers, signal.most()), (towers, shots));
     // The whole export of an SVG: the drawing, the file, the data and the record.
     let file = dir.join("sig.svg");
     let line = format!("figure signal to \"{}\"", file.display().to_string().replace('\\', "/"));

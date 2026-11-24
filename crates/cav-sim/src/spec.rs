@@ -106,9 +106,12 @@ pub struct SceneSpec {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ArraySpec {
-    /// The instrument every tower shares.
+    /// The array's instrument: every tower's, except where a tower overrides a part of it
+    /// (`towers[n].instrument`). Its gravity is also the site's: a falling body or a pendulum
+    /// moves under it, whatever a tower says about its own.
     pub instrument: InstrumentSpec,
-    /// The towers, in display order; tower 1 is the first. From 1 to 1000 of them.
+    /// The towers, in display order; tower 1 is the first. From 0 to 1000 of them: a scene
+    /// with none is allowed, and reads nothing.
     pub towers: Vec<TowerSpec>,
     /// When the array fires: how its shots depart from one every `cycle`, and which are not
     /// taken. The default is one shot every cycle, all taken.
@@ -380,6 +383,98 @@ pub struct TowerSpec {
     /// The tower's own clock: when it fires relative to the array's schedule.
     #[serde(default)]
     pub timing: TimingSpec,
+    /// What of the array's instrument this tower has differently, or none (the default): a
+    /// field left out is the array's. `set array.towers[n].instrument {half_sequence: 0.9}`
+    /// overrides one; setting the whole override to null takes it away.
+    #[serde(default)]
+    #[schemars(extend("x-stage" = "forward"))]
+    pub instrument: Option<InstrumentOverride>,
+}
+
+/// A tower's own instrument, as the parts in which it differs from the array's: each field is
+/// the array's ([`InstrumentSpec`]) when absent. The ranges and the rules between fields are
+/// those of [`InstrumentSpec`], held on the tower's resolved instrument
+/// ([`ArraySpec::instrument_of`]).
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct InstrumentOverride {
+    /// Height of this tower, metres; absent for the array's.
+    #[serde(default)]
+    #[schemars(range(max = 1.0e3), extend("exclusiveMinimum" = 0.0, "x-unit" = "m"))]
+    pub tower_height: Option<f64>,
+    /// Vertical separation of this tower's two interferometers (Δr), metres; absent for the array's.
+    #[serde(default)]
+    #[schemars(range(max = 1.0e3), extend("exclusiveMinimum" = 0.0, "x-unit" = "m"))]
+    pub ifo_separation: Option<f64>,
+    /// This tower's half sequence, T, seconds; absent for the array's.
+    #[serde(default)]
+    #[schemars(range(min = 1.0e-3, max = 1.0e3), extend("x-unit" = "s"))]
+    pub half_sequence: Option<f64>,
+    /// This tower's launch velocity u₀, metres per second; absent for the array's.
+    #[serde(default)]
+    #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0, "x-unit" = "m/s"))]
+    pub launch_velocity: Option<f64>,
+    /// This tower's time between shots, seconds; absent for the array's. The array's schedule
+    /// (jitter, alternation, gaps, window, loss) applies to it as to the array's own cycle.
+    #[serde(default)]
+    #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0, "x-unit" = "s"))]
+    pub cycle: Option<f64>,
+    /// This tower's atom's mass, kilograms; absent for the array's.
+    #[serde(default)]
+    #[schemars(range(min = 1.0e-27, max = 1.0e-24), extend("x-unit" = "kg"))]
+    pub atom_mass: Option<f64>,
+    /// The gravity this tower's atoms fall in, metres per second squared; absent for the
+    /// array's. It does not move the bodies: they fall in the array's.
+    #[serde(default)]
+    #[schemars(range(min = 0.1, max = 100.0), extend("x-unit" = "m/s²"))]
+    pub gravity: Option<f64>,
+    /// This tower's kick number n (a pure number); absent for the array's.
+    #[serde(default)]
+    #[schemars(range(min = 1.0, max = 1.0e5), extend("x-unit" = "1"))]
+    pub kicks: Option<f64>,
+    /// Whether this tower's arms stop at their launch height; absent for the array's.
+    #[serde(default)]
+    pub launch_floor: Option<bool>,
+    /// Which way round this tower's interferometers are differenced; absent for the array's.
+    #[serde(default)]
+    pub sign: Option<SignSpec>,
+}
+
+impl InstrumentOverride {
+    /// `base` with this override's fields in place of its own.
+    #[must_use]
+    pub fn applied_to(&self, base: &InstrumentSpec) -> InstrumentSpec {
+        InstrumentSpec {
+            tower_height: self.tower_height.unwrap_or(base.tower_height),
+            ifo_separation: self.ifo_separation.unwrap_or(base.ifo_separation),
+            half_sequence: self.half_sequence.unwrap_or(base.half_sequence),
+            launch_velocity: self.launch_velocity.unwrap_or(base.launch_velocity),
+            cycle: self.cycle.unwrap_or(base.cycle),
+            atom_mass: self.atom_mass.unwrap_or(base.atom_mass),
+            gravity: self.gravity.unwrap_or(base.gravity),
+            kicks: self.kicks.unwrap_or(base.kicks),
+            launch_floor: self.launch_floor.unwrap_or(base.launch_floor),
+            sign: self.sign.unwrap_or(base.sign),
+        }
+    }
+
+    /// The override that turns `base` into `full`: each field that differs, and only those.
+    #[must_use]
+    pub fn between(base: &InstrumentSpec, full: &InstrumentSpec) -> Self {
+        let differs = |a: f64, b: f64| (a.to_bits() != b.to_bits()).then_some(b);
+        Self {
+            tower_height: differs(base.tower_height, full.tower_height),
+            ifo_separation: differs(base.ifo_separation, full.ifo_separation),
+            half_sequence: differs(base.half_sequence, full.half_sequence),
+            launch_velocity: differs(base.launch_velocity, full.launch_velocity),
+            cycle: differs(base.cycle, full.cycle),
+            atom_mass: differs(base.atom_mass, full.atom_mass),
+            gravity: differs(base.gravity, full.gravity),
+            kicks: differs(base.kicks, full.kicks),
+            launch_floor: (base.launch_floor != full.launch_floor).then_some(full.launch_floor),
+            sign: (base.sign != full.sign).then_some(full.sign),
+        }
+    }
 }
 
 /// One tower's clock. Every tower takes the same shots as the array's schedule says; a tower's
@@ -400,7 +495,33 @@ impl TowerSpec {
     /// that fires with the array's schedule.
     #[must_use]
     pub fn at(label: &str, position: [f64; 3]) -> Self {
-        Self { label: label.to_owned(), position, timing: TimingSpec::default() }
+        Self { label: label.to_owned(), position, timing: TimingSpec::default(), instrument: None }
+    }
+}
+
+impl ArraySpec {
+    /// Tower `tower`'s instrument (from 0): the array's, with the tower's override in place.
+    ///
+    /// # Panics
+    /// When there is no such tower.
+    #[must_use]
+    pub fn instrument_of(&self, tower: usize) -> InstrumentSpec {
+        match &self.towers[tower].instrument {
+            Some(own) => own.applied_to(&self.instrument),
+            None => self.instrument.clone(),
+        }
+    }
+
+    /// Every tower's instrument, in the towers' order.
+    #[must_use]
+    pub fn instruments(&self) -> Vec<InstrumentSpec> {
+        (0..self.towers.len()).map(|tower| self.instrument_of(tower)).collect()
+    }
+
+    /// Whether every tower flies the array's instrument (no override changes anything).
+    #[must_use]
+    pub fn is_uniform(&self) -> bool {
+        (0..self.towers.len()).all(|tower| self.instrument_of(tower) == self.instrument)
     }
 }
 
@@ -661,35 +782,7 @@ impl SceneSpec {
         short("name", &self.name, limits::LABEL)?;
         short("description", &self.description, limits::DESCRIPTION)?;
         positive("duration", self.duration, limits::DURATION)?;
-        let i = &self.array.instrument;
-        positive("array.instrument.tower_height", i.tower_height, limits::TOWER_HEIGHT)?;
-        positive("array.instrument.ifo_separation", i.ifo_separation, limits::TOWER_HEIGHT)?;
-        positive("array.instrument.half_sequence", i.half_sequence, limits::HALF_SEQUENCE_MAX)?;
-        positive("array.instrument.launch_velocity", i.launch_velocity, limits::LAUNCH_VELOCITY)?;
-        positive("array.instrument.cycle", i.cycle, limits::CYCLE)?;
-        if i.ifo_separation >= i.tower_height {
-            return fail(format!(
-                "array.instrument.ifo_separation: {} m does not fit in a tower of {} m",
-                i.ifo_separation, i.tower_height
-            ));
-        }
-        if 2.0 * i.half_sequence > i.cycle {
-            return fail(format!(
-                "array.instrument.cycle: {} s is shorter than a shot, 2T = {} s",
-                i.cycle,
-                2.0 * i.half_sequence
-            ));
-        }
-        if i.half_sequence < limits::HALF_SEQUENCE_MIN {
-            return fail(format!(
-                "array.instrument.half_sequence: {} s is shorter than {} s",
-                i.half_sequence,
-                limits::HALF_SEQUENCE_MIN
-            ));
-        }
-        if self.array.towers.is_empty() {
-            return fail("array.towers: an array needs at least one tower".into());
-        }
+        validate_instrument("array.instrument", &self.array.instrument)?;
         if self.array.towers.len() > limits::TOWERS {
             return fail(format!(
                 "array.towers: {} towers is more than {}",
@@ -714,6 +807,13 @@ impl SceneSpec {
                 tower.timing.offset,
                 (-limits::CYCLE, limits::CYCLE),
             )?;
+            // A tower's own instrument is held to every rule the array's is, under its own path.
+            if tower.instrument.is_some() {
+                let at = format!("array.towers[{n}].instrument");
+                let own = self.array.instrument_of(n);
+                validate_instrument(&at, &own)?;
+                self.validate_schedule_for(&at, &own)?;
+            }
         }
         if let Some(room) = &self.room {
             finite("room.origin", &room.origin)?;
@@ -737,9 +837,6 @@ impl SceneSpec {
             }
         }
         self.validate_schedule()?;
-        within("array.instrument.atom_mass", i.atom_mass, limits::ATOM_MASS)?;
-        within("array.instrument.gravity", i.gravity, limits::GRAVITY)?;
-        within("array.instrument.kicks", i.kicks, limits::KICKS)?;
         if self.bodies.len() > limits::BODIES {
             return fail(format!("bodies: {} bodies is more than {}", self.bodies.len(), limits::BODIES));
         }
@@ -783,7 +880,7 @@ impl SceneSpec {
     /// before it has been read out.
     fn validate_schedule(&self) -> Result<(), SpecError> {
         let fail = |why: String| Err(SpecError(why));
-        let (schedule, i) = (&self.array.schedule, &self.array.instrument);
+        let schedule = &self.array.schedule;
         let at = "array.schedule";
         if let Some(other) = schedule.alternate {
             positive(&format!("{at}.alternate"), other, limits::CYCLE)?;
@@ -791,21 +888,7 @@ impl SceneSpec {
         if let Some(jitter) = schedule.jitter {
             within(&format!("{at}.jitter.delta"), jitter.delta, (0.0, limits::CYCLE))?;
         }
-        let shortest = schedule.shortest_cycle(i.cycle);
-        if shortest < 2.0 * i.half_sequence {
-            // The field at fault: the alternate cycle if it is already shorter than a shot with
-            // no jitter at all; the jitter only if it is the jitter
-            // that takes an otherwise long enough cycle below a shot.
-            let shot = 2.0 * i.half_sequence;
-            let part = match schedule.alternate {
-                Some(other) if other < shot => "alternate",
-                _ => "jitter.delta",
-            };
-            return fail(format!(
-                "{at}.{part}: the shortest time between launches would be {shortest} s, less than a shot, 2T = {} s",
-                2.0 * i.half_sequence
-            ));
-        }
+        self.validate_schedule_for(at, &self.array.instrument)?;
         if let Some(gaps) = schedule.gaps
             && !(gaps.on >= 1 && gaps.on <= gaps.period && gaps.period <= 1_000_000)
         {
@@ -832,6 +915,36 @@ impl SceneSpec {
         Ok(())
     }
 
+    /// That the array's schedule can fly an instrument `i`: no shot begun before the one before it
+    /// has been read out. `owner` is where the instrument is (`array.schedule` for the array's, a
+    /// tower's `instrument` for its own): a tower's refusal names the tower.
+    fn validate_schedule_for(&self, owner: &str, i: &InstrumentSpec) -> Result<(), SpecError> {
+        let fail = |why: String| Err(SpecError(why));
+        let schedule = &self.array.schedule;
+        let shortest = schedule.shortest_cycle(i.cycle);
+        if shortest < 2.0 * i.half_sequence {
+            // The field at fault: the alternate cycle if it is already shorter than a shot with
+            // no jitter at all; the jitter only if it is the jitter
+            // that takes an otherwise long enough cycle below a shot. For a tower of its own, the
+            // tower's instrument is named, with the part of the schedule that cuts it short.
+            let shot = 2.0 * i.half_sequence;
+            let part = match schedule.alternate {
+                Some(other) if other < shot => "alternate",
+                _ => "jitter.delta",
+            };
+            let at = if owner == "array.schedule" {
+                format!("{owner}.{part}")
+            } else {
+                format!("{owner}.cycle: with array.schedule.{part},")
+            };
+            return fail(format!(
+                "{at}: the shortest time between launches would be {shortest} s, less than a shot, 2T = {} s",
+                2.0 * i.half_sequence
+            ));
+        }
+        Ok(())
+    }
+
     /// The box that holds everything the spec places: `(minimum corner, maximum corner)`, each
     /// `[x, y, z]` (east, north, up), metres, in the world's frame.
     #[must_use]
@@ -844,10 +957,10 @@ impl SceneSpec {
                 hi[axis] = hi[axis].max(p[axis]);
             }
         };
-        for tower in &self.array.towers {
+        for (n, tower) in self.array.towers.iter().enumerate() {
             let [x, y, z] = tower.position;
             include([x, y, z]);
-            include([x, y, z + self.array.instrument.tower_height]);
+            include([x, y, z + self.array.instrument_of(n).tower_height]);
         }
         if let Some(room) = &self.room {
             include(room.origin);
@@ -864,8 +977,67 @@ impl SceneSpec {
                 include(body.motion.position(time, self.array.instrument.gravity));
             }
         }
+        // A scene that places nothing (no towers, no room, no bodies) is a box about the origin,
+        // a metre across, rather than an infinite one that no camera can frame.
+        if lo.iter().zip(&hi).any(|(l, h)| l > h || l.is_nan() || h.is_nan()) {
+            return ([-0.5; 3], [0.5; 3]);
+        }
         (lo, hi)
     }
+
+    /// The arms of each tower that rise above it, in words: a tower whose instrument flies its
+    /// atoms higher than the tower is a warning, not a refusal (AICE's arms reach 108.9 m in its
+    /// 100 m tower, a question with George).
+    #[must_use]
+    pub fn reach_warnings(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        for (n, tower) in self.array.towers.iter().enumerate() {
+            let own = self.array.instrument_of(n);
+            let reach = own.instrument().reach();
+            if reach > own.tower_height {
+                out.push(format!(
+                    "{}: the arms reach {reach:.3} m above the base, above the tower's {} m",
+                    tower.label, own.tower_height
+                ));
+            }
+        }
+        out
+    }
+}
+
+/// The checks every instrument passes, the array's and each tower's resolved one; `at` is the
+/// path refusals name (`array.instrument`, or `array.towers[n].instrument`).
+fn validate_instrument(at: &str, i: &InstrumentSpec) -> Result<(), SpecError> {
+    let fail = |why: String| Err(SpecError(why));
+    positive(&format!("{at}.tower_height"), i.tower_height, limits::TOWER_HEIGHT)?;
+    positive(&format!("{at}.ifo_separation"), i.ifo_separation, limits::TOWER_HEIGHT)?;
+    positive(&format!("{at}.half_sequence"), i.half_sequence, limits::HALF_SEQUENCE_MAX)?;
+    positive(&format!("{at}.launch_velocity"), i.launch_velocity, limits::LAUNCH_VELOCITY)?;
+    positive(&format!("{at}.cycle"), i.cycle, limits::CYCLE)?;
+    if i.ifo_separation >= i.tower_height {
+        return fail(format!(
+            "{at}.ifo_separation: {} m does not fit in a tower of {} m",
+            i.ifo_separation, i.tower_height
+        ));
+    }
+    if 2.0 * i.half_sequence > i.cycle {
+        return fail(format!(
+            "{at}.cycle: {} s is shorter than a shot, 2T = {} s",
+            i.cycle,
+            2.0 * i.half_sequence
+        ));
+    }
+    if i.half_sequence < limits::HALF_SEQUENCE_MIN {
+        return fail(format!(
+            "{at}.half_sequence: {} s is shorter than {} s",
+            i.half_sequence,
+            limits::HALF_SEQUENCE_MIN
+        ));
+    }
+    within(&format!("{at}.atom_mass"), i.atom_mass, limits::ATOM_MASS)?;
+    within(&format!("{at}.gravity"), i.gravity, limits::GRAVITY)?;
+    within(&format!("{at}.kicks"), i.kicks, limits::KICKS)?;
+    Ok(())
 }
 
 /// Text in a spec has a length: a label of a gigabyte is a valid string and not a valid label.
@@ -1066,7 +1238,10 @@ mod tests {
             ("version", |s| s.version = 2),
             ("name", |s| s.name = "  ".into()),
             ("duration", |s| s.duration = 0.0),
-            ("array.towers", |s| s.array.towers.clear()),
+            ("array.towers[1].instrument.cycle", |s| {
+                s.array.towers[1].instrument =
+                    Some(InstrumentOverride { cycle: Some(1.0), ..InstrumentOverride::default() });
+            }),
             ("array.towers[1].label", |s| s.array.towers[1].label = "tower 1".into()),
             ("array.towers[2].position", |s| s.array.towers[2].position[1] = f64::NAN),
             ("array.instrument.ifo_separation", |s| s.array.instrument.ifo_separation = 10.1),
@@ -1443,5 +1618,47 @@ mod tests {
         assert_eq!(spec.validate(), Ok(()));
         spec.array.instrument.cycle = 2.0 * spec.array.instrument.half_sequence - 0.01;
         assert!(spec.validate().is_err());
+    }
+
+    #[test]
+    fn a_tower_s_instrument_is_the_array_s_with_its_override() {
+        let mut spec = SceneSpec::room();
+        let aice = crate::presets::aice();
+        let own = InstrumentOverride::between(&spec.array.instrument, &aice);
+        // Only what differs is written, and applied it gives the whole instrument back.
+        assert!(own.atom_mass.is_none() && own.half_sequence == Some(2.5));
+        assert_eq!(own.applied_to(&spec.array.instrument), aice);
+        spec.array.towers[2].instrument = Some(own);
+        assert_eq!(spec.validate(), Ok(()));
+        assert_eq!(spec.array.instrument_of(2), aice);
+        assert_eq!(spec.array.instrument_of(1), spec.array.instrument);
+        assert!(!spec.array.is_uniform());
+        // The tower's taller arms are said, not refused: AICE's reach 108.9 m in its 100 m tower.
+        let warnings = spec.reach_warnings();
+        assert!(
+            warnings.len() == 1 && warnings[0].starts_with("tower 3: the arms reach 108.8"),
+            "{warnings:?}"
+        );
+        // A field left out follows the array's: editing the default reaches the tower.
+        spec.array.instrument.atom_mass *= 1.01;
+        assert_eq!(spec.array.instrument_of(2).atom_mass, spec.array.instrument.atom_mass);
+        // It round-trips; a file written before S3 (no `instrument` in a tower) still loads, and
+        // a tower with none writes none.
+        assert_eq!(SceneSpec::from_ron(&spec.to_ron()).unwrap(), spec);
+        assert!(!SceneSpec::room().to_ron().contains("instrument: Some"));
+        // Refusals name the tower: an override that makes a shot longer than its cycle.
+        spec.array.towers[2].instrument.as_mut().unwrap().cycle = Some(4.0);
+        let why = spec.validate().unwrap_err().0;
+        assert!(why.starts_with("array.towers[2].instrument.cycle:"), "{why}");
+        // The schema describes it with units, and the path machinery reaches into it.
+        let schema = SceneSpec::schema();
+        assert_eq!(schema["$defs"]["InstrumentOverride"]["properties"]["half_sequence"]["x-unit"], "s");
+        // A scene may have no towers, and its box is finite.
+        let mut none = SceneSpec { room: None, ..SceneSpec::room() };
+        none.array.towers.clear();
+        assert_eq!(none.validate(), Ok(()));
+        assert_eq!(none.bounds(), ([-0.5; 3], [0.5; 3]));
+        // Control: the default scene warns of nothing.
+        assert!(SceneSpec::room().reach_warnings().is_empty());
     }
 }

@@ -51,57 +51,88 @@ pub fn sources(spec: &SceneSpec) -> Vec<SourceId> {
     spec.floor.iter().map(|_| SourceId::Floor).chain((0..spec.bodies.len()).map(SourceId::Body)).collect()
 }
 
-/// The shots of a scene: when the array's clock reads each one out, how much later each tower
-/// does, and which shots each tower takes at all.
+/// The shots of a scene: when each tower reads each of its shots out, and which it takes at all.
 ///
-/// Every tower has the same number of shots, so that what is read is rectangular, shots by
-/// towers. Tower `d` launches shot `k` at `times[k] + offsets[d] − 2T` and reads it out at
-/// `times[k] + offsets[d]`. A shot a tower does not take (a planned gap, a lost shot) keeps its
-/// place and is marked not valid.
+/// **Each tower has its own shots.** A tower flies its own instrument
+/// ([`crate::ArraySpec::instrument_of`]): its own cycle and its own 2T. So the towers need not
+/// have as many shots as each other, and what is read is ragged, stored flat: tower `d`'s shots
+/// are entries `starts[d]..starts[d + 1]` of `clock` and `valid` (CSR). [`Self::count`],
+/// [`Self::times`], [`Self::readout`] and the rest take a tower and a shot of that tower, and
+/// every caller goes through them.
+///
+/// `clock` is when the array's clock reads each shot out: the launch the array's schedule gives
+/// at the tower's cycle, and the tower's 2T. Tower `d` launches its shot `k` at
+/// `clock[starts[d] + k] + offsets[d] − 2T_d` and reads it out at `clock[…] + offsets[d]`. A shot
+/// a tower does not take (a planned gap, a lost shot) keeps its place and is marked not valid.
+/// Towers that fly the array's instrument have the same clock, shot for shot and bit for bit.
 ///
 /// This is the one source of shot times and of which shots are taken: the read, the timeline's
 /// lanes, the flight diagram, the signal plot and every caption that counts shots go by it.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Shots {
-    /// When the array's clock reads each shot out, seconds: the launch plus 2T. They rise.
-    pub times: Vec<f64>,
-    /// How much later than that each tower reads out, seconds, in the towers' order.
+    /// When the array's clock reads each shot out, seconds, tower after tower (see `starts`):
+    /// the launch plus the tower's 2T. They rise within a tower.
+    pub clock: Vec<f64>,
+    /// Where each tower's shots begin in `clock` and `valid`, and, last, where the last tower's
+    /// end: one more entry than there are towers, the first 0.
+    pub starts: Vec<usize>,
+    /// How much later than its clock each tower reads out, seconds, in the towers' order.
     pub offsets: Vec<f64>,
-    /// Whether each tower takes each shot: tower by tower, `towers × shots` flags.
+    /// Whether each tower takes each of its shots, laid out as `clock`.
     pub valid: Vec<bool>,
-    /// How long a shot is in flight, seconds: 2T, from its launch to its readout.
-    pub flight: f64,
+    /// How long each tower's shot is in flight, seconds: its 2T, from launch to readout.
+    pub flights: Vec<f64>,
     /// What a person should know about the schedule: a tower whose offset puts shots outside
     /// the timeline. The signal read from these shots carries them.
     pub warnings: Vec<Warning>,
 }
 
+impl Default for Shots {
+    /// No towers and no shots.
+    fn default() -> Self {
+        Self {
+            clock: Vec::new(),
+            starts: vec![0],
+            offsets: Vec::new(),
+            valid: Vec::new(),
+            flights: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+}
+
 /// One shot of one tower, as it is drawn.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Flown {
-    /// Which shot of the schedule it is, from 0.
+    /// Which shot of the tower's schedule it is, from 0.
     pub k: usize,
     /// When the tower launches it, seconds.
     pub launch: f64,
-    /// When the tower reads it out, seconds: the launch and 2T.
+    /// When the tower reads it out, seconds: the launch and the tower's 2T.
     pub readout: f64,
     /// Whether the tower takes it.
     pub taken: bool,
 }
 
 impl Shots {
-    /// Shots that every tower reads out together at `times` (readout times, seconds on the
-    /// scene's clock, in the order given), all of them taken: the towers of `spec` with no
-    /// offsets, whatever the scene's own schedule and offsets are. For reading a scene at times
-    /// of one's choosing; not the scene's own shots, which are [`shots`].
+    /// Shots that every tower reads out at `times` (readout times, seconds on the scene's clock,
+    /// in the order given), all of them taken: the towers of `spec` with no offsets, whatever the
+    /// scene's own schedule and offsets are. For reading a scene at times of one's choosing; not
+    /// the scene's own shots, which are [`shots`].
     #[must_use]
     pub fn together(spec: &SceneSpec, times: Vec<f64>) -> Self {
         let towers = spec.array.towers.len();
+        let count = times.len();
+        let mut clock = Vec::with_capacity(towers * count);
+        for _ in 0..towers {
+            clock.extend_from_slice(&times);
+        }
         Self {
-            valid: vec![true; towers * times.len()],
+            valid: vec![true; towers * count],
+            starts: (0..=towers).map(|d| d * count).collect(),
             offsets: vec![0.0; towers],
-            times,
-            flight: 2.0 * spec.array.instrument.half_sequence,
+            clock,
+            flights: (0..towers).map(|d| 2.0 * spec.array.instrument_of(d).half_sequence).collect(),
             warnings: Vec::new(),
         }
     }
@@ -112,37 +143,67 @@ impl Shots {
         self.offsets.len()
     }
 
-    /// When tower `tower` (from 0) reads shot `k` out, seconds. With no offset this is
-    /// `times[k]` to the bit: adding 0.0 changes nothing.
+    /// How many shots tower `tower` (from 0) has, taken or not.
+    #[must_use]
+    pub fn count(&self, tower: usize) -> usize {
+        self.starts[tower + 1] - self.starts[tower]
+    }
+
+    /// How many shots there are over every tower: the length of `clock`.
+    #[must_use]
+    pub fn total(&self) -> usize {
+        self.clock.len()
+    }
+
+    /// The most shots any one tower has: the rows of the padded view of a bundle. Zero with no
+    /// towers.
+    #[must_use]
+    pub fn most(&self) -> usize {
+        (0..self.towers()).map(|d| self.count(d)).max().unwrap_or(0)
+    }
+
+    /// Tower `tower`'s shots read out on the array's clock (before its offset), seconds.
+    #[must_use]
+    pub fn times(&self, tower: usize) -> &[f64] {
+        &self.clock[self.starts[tower]..self.starts[tower + 1]]
+    }
+
+    /// Tower `tower`'s 2T, seconds.
+    #[must_use]
+    pub fn flight(&self, tower: usize) -> f64 {
+        self.flights[tower]
+    }
+
+    /// When tower `tower` (from 0) reads its shot `k` out, seconds. With no offset this is its
+    /// clock's time to the bit: adding 0.0 changes nothing.
     #[must_use]
     pub fn readout(&self, tower: usize, k: usize) -> f64 {
-        self.times[k] + self.offsets[tower]
+        self.clock[self.starts[tower] + k] + self.offsets[tower]
     }
 
-    /// Whether tower `tower` takes shot `k`.
+    /// Whether tower `tower` takes its shot `k`.
     #[must_use]
     pub fn taken(&self, tower: usize, k: usize) -> bool {
-        self.valid[tower * self.times.len() + k]
+        self.valid[self.starts[tower] + k]
     }
 
-    /// Whether tower `tower` takes each shot, in shot order.
+    /// Whether tower `tower` takes each of its shots, in shot order.
     #[must_use]
     pub fn taken_all(&self, tower: usize) -> &[bool] {
-        let shots = self.times.len();
-        &self.valid[tower * shots..(tower + 1) * shots]
+        &self.valid[self.starts[tower]..self.starts[tower + 1]]
     }
 
-    /// When tower `tower` (from 0) launches shot `k`, seconds: its readout less 2T.
+    /// When tower `tower` (from 0) launches its shot `k`, seconds: its readout less its 2T.
     #[must_use]
     pub fn launch(&self, tower: usize, k: usize) -> f64 {
-        self.readout(tower, k) - self.flight
+        self.readout(tower, k) - self.flights[tower]
     }
 
     /// Shot `k` of tower `tower` (from 0), as it is drawn.
     #[must_use]
     pub fn flown(&self, tower: usize, k: usize) -> Flown {
         let readout = self.readout(tower, k);
-        Flown { k, launch: readout - self.flight, readout, taken: self.taken(tower, k) }
+        Flown { k, launch: readout - self.flights[tower], readout, taken: self.taken(tower, k) }
     }
 
     /// The shots of tower `tower` (from 0) any part of whose flight is inside `[from, to]`
@@ -150,37 +211,32 @@ impl Shots {
     /// the times rise; found by bisection, so it costs the same for six shots and two million.
     #[must_use]
     pub fn touching(&self, tower: usize, [from, to]: [f64; 2]) -> std::ops::Range<usize> {
-        let offset = self.offsets[tower];
-        let first = self.times.partition_point(|time| time + offset < from);
-        let end = self.times.partition_point(|time| time + offset - self.flight <= to);
+        let (offset, flight) = (self.offsets[tower], self.flights[tower]);
+        let times = self.times(tower);
+        let first = times.partition_point(|time| time + offset < from);
+        let end = times.partition_point(|time| time + offset - flight <= to);
         first..end.max(first)
     }
 }
 
-/// When the array's clock launches each shot, seconds, by the scene's schedule: one every cycle
-/// from time zero, or as the alternation and the jitter have it, while the shot's place on the
-/// clock is before the end of the timeline. With the plain schedule these are `k·cycle` exactly,
-/// as S1 had them.
-///
-/// **No launch is before time zero.** The clock starts at zero and nothing is launched before
-/// it starts. Jitter that can only delay never does that; symmetric jitter about a grid would
-/// (shot 0 drawn early), so there the grid stands `delta` after zero: shot `k` is launched at
-/// `k·cycle + delta + delta·(2u − 1)`, in `[k·cycle, k·cycle + 2·delta)`. A shift of every shot
-/// alike changes no height of the spectral window. A shot's launch may be later than the end of
-/// the timeline by its jitter, and its readout by 2T more: it is the timeline's shot because its
-/// place on the grid is.
+/// When the array's clock launches each shot, seconds, by the scene's schedule at the array's
+/// own cycle: [`launches_at`] with `spec.array.instrument.cycle`.
 ///
 /// # Errors
-/// When there could be more than [`MAX_SHOTS`] of them, or more values than
-/// [`MAX_SIGNAL_VALUES`] over the scene's towers. The count is taken from the shortest time
-/// between launches the schedule allows, before anything is reserved.
+/// As [`launches_at`].
 pub fn launches(spec: &SceneSpec) -> Result<Vec<f64>, String> {
-    use crate::{JitterKind, JitterModel};
-    use cav_core::cadence::{STREAM_JITTER, unit};
-    let (instrument, schedule) = (&spec.array.instrument, &spec.array.schedule);
-    let cycle = instrument.cycle;
-    // The most shots there can be: one every shortest cycle. (For the plain schedule this is
-    // the count itself.)
+    let most = most_launches(spec, spec.array.instrument.cycle)?;
+    fits(spec.array.towers.len().max(1), most)?;
+    Ok(launches_at(spec, spec.array.instrument.cycle, most))
+}
+
+/// The most shots the schedule can launch on the timeline at a cycle of `cycle` seconds: one
+/// every shortest cycle the schedule allows. (For the plain schedule this is the count itself.)
+///
+/// # Errors
+/// When it is more than [`MAX_SHOTS`].
+pub fn most_launches(spec: &SceneSpec, cycle: f64) -> Result<usize, String> {
+    let schedule = &spec.array.schedule;
     let most = (spec.duration / schedule.shortest_cycle(cycle).max(f64::MIN_POSITIVE)).ceil();
     if !(most.is_finite() && most <= MAX_SHOTS as f64) {
         return Err(format!(
@@ -190,8 +246,28 @@ pub fn launches(spec: &SceneSpec) -> Result<Vec<f64>, String> {
             schedule.shortest_cycle(cycle)
         ));
     }
-    let most = most as usize;
-    fits(spec.array.towers.len(), most)?;
+    Ok(most as usize)
+}
+
+/// When the array's clock launches each shot of a tower whose cycle is `cycle` seconds, by the
+/// scene's schedule: one every cycle from time zero, or as the alternation and the jitter have
+/// it, while the shot's place on the clock is before the end of the timeline. With the plain
+/// schedule these are `k·cycle` exactly, as S1 had them. At most `most` of them
+/// ([`most_launches`], which the caller has counted against its budget). The jitter is keyed by
+/// the seed and the shot alone, so towers of one cycle launch together.
+///
+/// **No launch is before time zero.** The clock starts at zero and nothing is launched before
+/// it starts. Jitter that can only delay never does that; symmetric jitter about a grid would
+/// (shot 0 drawn early), so there the grid stands `delta` after zero: shot `k` is launched at
+/// `k·cycle + delta + delta·(2u − 1)`, in `[k·cycle, k·cycle + 2·delta)`. A shift of every shot
+/// alike changes no height of the spectral window. A shot's launch may be later than the end of
+/// the timeline by its jitter, and its readout by 2T more: it is the timeline's shot because its
+/// place on the grid is.
+#[must_use]
+pub fn launches_at(spec: &SceneSpec, cycle: f64, most: usize) -> Vec<f64> {
+    use crate::{JitterKind, JitterModel};
+    use cav_core::cadence::{STREAM_JITTER, unit};
+    let schedule = &spec.array.schedule;
     // The launch of shot k on a clock that keeps time: k·cycle, or the two cycle times in turn.
     // A product, not a running sum, so the thousandth shot is as exact as the first.
     let grid = |k: usize| match schedule.alternate {
@@ -235,11 +311,12 @@ pub fn launches(spec: &SceneSpec) -> Result<Vec<f64>, String> {
             }
         }
     }
-    Ok(times)
+    times
 }
 
-/// When the array's clock reads each shot out, seconds: its launch ([`launches`]) and 2T (the
-/// timeline's lanes draw the same shots).
+/// When the array's clock reads each shot of the array's own instrument out, seconds: its
+/// launch ([`launches`]) and 2T. A tower with an instrument of its own has its own
+/// ([`Shots::times`]).
 ///
 /// # Errors
 /// As [`launches`].
@@ -248,9 +325,10 @@ pub fn readouts(spec: &SceneSpec) -> Result<Vec<f64>, String> {
     Ok(launches(spec)?.into_iter().map(|launch| launch + flight).collect())
 }
 
-/// The scene's shots: the array's clock ([`readouts`]), each tower's offset from it, and which
-/// shots each tower takes: those inside the planned pattern and the daily window, less the ones
-/// lost (each tower loses its own, keyed by seed, tower and shot).
+/// The scene's shots: each tower's clock (the array's schedule at the tower's own cycle, read
+/// out at its own 2T), each tower's offset from it, and which shots each tower takes: those inside
+/// the planned pattern and the daily window, less the ones lost (each tower loses its own, keyed
+/// by seed, tower and shot).
 ///
 /// **A tower's offset moves its shots and nothing else.** Every shot stays as it was, taken or
 /// not, and is read at the tower's own time, either side of the timeline's ends (an offset may
@@ -259,64 +337,92 @@ pub fn readouts(spec: &SceneSpec) -> Result<Vec<f64>, String> {
 /// it, the shots carry a warning about that tower, and so does the signal read from them.
 ///
 /// # Errors
-/// As [`launches`].
+/// When a tower could have more than [`MAX_SHOTS`] shots, or the towers together more than
+/// [`MAX_SIGNAL_VALUES`]. Every tower's count is taken from the shortest time between launches
+/// the schedule allows at its cycle, and their sum checked, before anything is reserved.
 pub fn shots(spec: &SceneSpec) -> Result<Shots, String> {
     use cav_core::cadence::{STREAM_LOSS, unit};
     let schedule = &spec.array.schedule;
-    let launches = launches(spec)?;
-    let flight = 2.0 * spec.array.instrument.half_sequence;
+    let instruments = spec.array.instruments();
+    // Each tower's most, and their sum, before anything is made.
+    let mut most = Vec::with_capacity(instruments.len());
+    for instrument in &instruments {
+        most.push(most_launches(spec, instrument.cycle)?);
+    }
+    let budget = most.iter().try_fold(0usize, |sum, n| sum.checked_add(*n)).unwrap_or(usize::MAX);
+    if budget > MAX_SIGNAL_VALUES {
+        return Err(format!(
+            "{} tower(s) with up to {budget} shot(s) between them is more than the {MAX_SIGNAL_VALUES} values a \
+             signal holds; shorten the timeline, lengthen the cycle or use fewer towers",
+            instruments.len()
+        ));
+    }
     let offsets: Vec<f64> = spec.array.towers.iter().map(|tower| tower.timing.offset).collect();
-    // What the plan itself leaves out, the same for every tower.
-    let planned = |k: usize| {
-        let in_pattern = schedule.gaps.is_none_or(|gaps| (k % gaps.period as usize) < gaps.on as usize);
-        let in_window = schedule.window.is_none_or(|window| {
-            let phase = launches[k].rem_euclid(window.period) - window.start;
-            // The window may run past the end of the period into the next.
-            (0.0..window.length).contains(&phase) || phase + window.period < window.length
-        });
-        in_pattern && in_window
-    };
-    let mut valid = Vec::with_capacity(offsets.len() * launches.len());
-    for tower in 0..offsets.len() {
+    let (mut clock, mut valid) = (Vec::with_capacity(budget), Vec::with_capacity(budget));
+    let mut starts = Vec::with_capacity(instruments.len() + 1);
+    starts.push(0);
+    let mut flights = Vec::with_capacity(instruments.len());
+    let mut warnings = Vec::new();
+    // Towers of one cycle launch together: the launches are made once a cycle, by its bits.
+    let mut made: Vec<(u64, Vec<f64>)> = Vec::new();
+    for (tower, instrument) in instruments.iter().enumerate() {
+        let key = instrument.cycle.to_bits();
+        if !made.iter().any(|(cycle, _)| *cycle == key) {
+            made.push((key, launches_at(spec, instrument.cycle, most[tower])));
+        }
+        let launches = &made.iter().find(|(cycle, _)| *cycle == key).expect("made above").1;
+        let flight = 2.0 * instrument.half_sequence;
+        // What the plan itself leaves out, the same for every tower of this cycle.
+        let planned = |k: usize| {
+            let in_pattern = schedule.gaps.is_none_or(|gaps| (k % gaps.period as usize) < gaps.on as usize);
+            let in_window = schedule.window.is_none_or(|window| {
+                let phase = launches[k].rem_euclid(window.period) - window.start;
+                // The window may run past the end of the period into the next.
+                (0.0..window.length).contains(&phase) || phase + window.period < window.length
+            });
+            in_pattern && in_window
+        };
         valid.extend((0..launches.len()).map(|k| {
             planned(k)
                 && (schedule.loss == 0.0
                     || unit(schedule.seed, STREAM_LOSS, tower as u64, k as u64) >= schedule.loss)
         }));
-    }
-    let mut warnings = Vec::new();
-    for (tower, offset) in offsets.iter().enumerate().filter(|(_, offset)| **offset != 0.0) {
-        let label = &spec.array.towers[tower].label;
-        // The launches rise, so those an offset puts outside are a stretch at one end.
-        let early = launches.partition_point(|launch| launch + offset < 0.0);
-        if early > 0 {
-            warnings.push(Warning::about(
-                tower,
-                format!(
-                    "{label}'s clock is offset by {offset} s: {early} of its {} shot(s) are launched before the \
-                     timeline begins, the first at {} s",
-                    launches.len(),
-                    launches[0] + offset
-                ),
-            ));
+        clock.extend(launches.iter().map(|launch| launch + flight));
+        starts.push(clock.len());
+        flights.push(flight);
+        let offset = offsets[tower];
+        if offset != 0.0 {
+            let label = &spec.array.towers[tower].label;
+            // The launches rise, so those an offset puts outside are a stretch at one end.
+            let early = launches.partition_point(|launch| launch + offset < 0.0);
+            if early > 0 {
+                warnings.push(Warning::about(
+                    tower,
+                    format!(
+                        "{label}'s clock is offset by {offset} s: {early} of its {} shot(s) are launched before \
+                         the timeline begins, the first at {} s",
+                        launches.len(),
+                        launches[0] + offset
+                    ),
+                ));
+            }
+            let inside = launches.partition_point(|launch| *launch < spec.duration);
+            let late = inside - launches[..inside].partition_point(|launch| launch + offset < spec.duration);
+            if late > 0 {
+                warnings.push(Warning::about(
+                    tower,
+                    format!(
+                        "{label}'s clock is offset by {offset} s: {late} of its {} shot(s) are launched at or after \
+                         the end of the timeline ({} s), the last at {} s",
+                        launches.len(),
+                        spec.duration,
+                        launches[inside - 1] + offset
+                    ),
+                ));
+            }
         }
-        let inside = launches.partition_point(|launch| *launch < spec.duration);
-        let late = inside - launches[..inside].partition_point(|launch| launch + offset < spec.duration);
-        if late > 0 {
-            warnings.push(Warning::about(
-                tower,
-                format!(
-                    "{label}'s clock is offset by {offset} s: {late} of its {} shot(s) are launched at or after \
-                     the end of the timeline ({} s), the last at {} s",
-                    launches.len(),
-                    spec.duration,
-                    launches[inside - 1] + offset
-                ),
-            ));
-        }
     }
-    let times = launches.into_iter().map(|launch| launch + flight).collect();
-    Ok(Shots { times, offsets, valid, flight, warnings })
+    Ok(Shots { clock, starts, offsets, valid, flights, warnings })
 }
 
 /// Something a person should know about a reading, and the tower it is about.
@@ -409,6 +515,78 @@ fn mass(spec: &SceneSpec, n: usize) -> Mass<impl Fn(f64) -> Vec3 + Sync + '_> {
     }
 }
 
+/// The key an instrument's reader is shared by: every field of the forward model's
+/// [`cav_core::forward::Instrument`] by its bits (with −0 taken as +0), and its enums by
+/// variant. Two towers whose instruments give the same key read alike, bit for bit, and share one
+/// [`Reader`].
+#[must_use]
+pub fn instrument_key(instrument: &cav_core::forward::Instrument) -> Vec<u64> {
+    use cav_core::forward::Quadrature;
+    let bits = |x: f64| if x == 0.0 { 0 } else { x.to_bits() };
+    let mut key = vec![
+        bits(instrument.ifo_separation),
+        bits(instrument.half_sequence),
+        bits(instrument.launch_velocity),
+        bits(instrument.gravity),
+        bits(instrument.atom_mass),
+        bits(instrument.hbar),
+        bits(instrument.big_g),
+        bits(instrument.wavelength),
+        bits(instrument.kicks),
+        u64::from(instrument.floor),
+        match instrument.sign {
+            Sign::LowerMinusUpper => 0,
+            Sign::UpperMinusLower => 1,
+        },
+    ];
+    match instrument.quadrature {
+        Quadrature::Gauss { order, panel } => key.extend([0, order as u64, bits(panel)]),
+        Quadrature::Simpson { step } => key.extend([1, bits(step)]),
+        Quadrature::ScriptTrapezoid { step, nodes, lag } => {
+            key.extend([2, bits(step), nodes as u64, lag as u64])
+        }
+    }
+    key
+}
+
+/// A reader for each distinct instrument of an array, and which one each tower uses: towers that
+/// fly the same instrument ([`instrument_key`]) share one, by `Arc`, across threads. At most one
+/// a tower, each a few kilobytes (its Gauss rule).
+#[derive(Clone, Debug)]
+pub struct Readers {
+    /// One reader for each distinct instrument, in the order of the first tower that flies it.
+    pub readers: Vec<std::sync::Arc<Reader>>,
+    /// For each tower, in the towers' order, the index of its reader in `readers`.
+    pub of_tower: Vec<usize>,
+}
+
+impl Readers {
+    /// The readers of `spec`'s towers.
+    #[must_use]
+    pub fn new(spec: &SceneSpec) -> Self {
+        let mut keys: Vec<Vec<u64>> = Vec::new();
+        let mut readers = Vec::new();
+        let mut of_tower = Vec::with_capacity(spec.array.towers.len());
+        for tower in 0..spec.array.towers.len() {
+            let instrument = spec.array.instrument_of(tower).instrument();
+            let key = instrument_key(&instrument);
+            let index = keys.iter().position(|k| *k == key).unwrap_or_else(|| {
+                keys.push(key);
+                readers.push(std::sync::Arc::new(Reader::new(instrument)));
+                readers.len() - 1
+            });
+            of_tower.push(index);
+        }
+        Self { readers, of_tower }
+    }
+
+    /// The reader of tower `tower` (from 0).
+    #[must_use]
+    pub fn of(&self, tower: usize) -> &Reader {
+        &self.readers[self.of_tower[tower]]
+    }
+}
+
 /// The contribution of `source` to `shots`: each tower's every shot, read out at that tower's own
 /// time. A shot a tower does not take contributes exactly zero. `cancelled` is asked between
 /// shots; when it says yes the work stops and nothing is returned.
@@ -474,14 +652,13 @@ pub fn contribution_on(
     shots: &Shots,
     cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Option<Contribution> {
-    let readouts = &shots.times;
-    let instrument = spec.array.instrument.instrument();
-    let reader = Reader::new(instrument);
+    let readers = Readers::new(spec);
     let towers = &spec.array.towers;
-    if let Err(why) = fits(towers.len(), readouts.len()) {
-        panic!("a contribution was asked for a signal that is refused: {why}");
+    assert_eq!(shots.towers(), towers.len(), "shots of another array");
+    let count = shots.total();
+    if count > MAX_SIGNAL_VALUES {
+        panic!("a contribution was asked for a signal that is refused: {count} values");
     }
-    let count = towers.len() * readouts.len();
     let mut out = Contribution {
         lower: Vec::with_capacity(count),
         upper: Vec::with_capacity(count),
@@ -491,7 +668,8 @@ pub fn contribution_on(
         settled: true,
         warnings: Vec::new(),
     };
-    let signed = |lower: f64, upper: f64| match instrument.sign {
+    // Each tower's own sign: the gradiometer is differenced as its instrument says.
+    let signed = |tower: usize, lower: f64, upper: f64| match readers.of(tower).instrument().sign {
         Sign::LowerMinusUpper => lower - upper,
         Sign::UpperMinusLower => upper - lower,
     };
@@ -505,24 +683,24 @@ pub fn contribution_on(
                 let (lower, upper, difference) = match floor.kind {
                     FloorKind::Slab { thickness } => {
                         let slab = Slab { density: floor.density, thickness };
-                        let reading = reader.read(base(tower.position), &slab, 0.0);
-                        (reading.lower, reading.upper, signed(reading.lower, reading.upper))
+                        let reading = readers.of(at).read(base(tower.position), &slab, 0.0);
+                        (reading.lower, reading.upper, signed(at, reading.lower, reading.upper))
                     }
                     FloorKind::HalfSpace => {
                         // Each interferometer's own phase grows without bound with the depth of
                         // matter; their difference does not depend on the depth at all, and is
                         // read from a slab one metre thick.
-                        let unit = reader.read(
+                        let unit = readers.of(at).read(
                             base(tower.position),
                             &Slab { density: floor.density, thickness: 1.0 },
                             0.0,
                         );
-                        (f64::INFINITY, f64::INFINITY, signed(unit.lower, unit.upper))
+                        (f64::INFINITY, f64::INFINITY, signed(at, unit.lower, unit.upper))
                     }
                 };
                 // A shot that is not taken reads nothing; the others all read the same.
                 let taken = |value: f64| {
-                    (0..readouts.len()).map(move |k| if shots.taken(at, k) { value } else { 0.0 })
+                    (0..shots.count(at)).map(move |k| if shots.taken(at, k) { value } else { 0.0 })
                 };
                 out.lower.extend(taken(lower));
                 out.upper.extend(taken(upper));
@@ -538,9 +716,8 @@ pub fn contribution_on(
         SourceId::Body(n) => {
             let body = mass(spec, n);
             let label = &spec.bodies[n].label;
-            let per_tower = readouts.len();
             // A body made of voxels: its tree, built here and dropped with the contribution.
-            let voxels = match voxel_body(spec, n, &reader) {
+            let voxels = match voxel_body(spec, n, &readers) {
                 Ok(voxels) => voxels,
                 Err(why) => {
                     for channel in [&mut out.lower, &mut out.upper, &mut out.gradiometer] {
@@ -552,17 +729,18 @@ pub fn contribution_on(
                 }
             };
             // What one shot of one tower reads, and whether the body crossed the atoms' path.
-            let read_one = |tower: Vec3, readout: f64| -> (cav_core::forward::Audited, bool) {
-                match &voxels {
-                    Some(voxels) => (voxels.read(&reader, tower, readout), false),
-                    None => {
-                        // The body is watched as it is read: the crossing check costs no node of its own.
-                        let watched = Watched::new(&body);
-                        let audited = reader.read_to(tower, &watched, readout, PHASE_TOLERANCE);
-                        (audited, watched.crossed())
+            let read_one =
+                |reader: &Reader, tower: Vec3, readout: f64| -> (cav_core::forward::Audited, bool) {
+                    match &voxels {
+                        Some(voxels) => (voxels.read(reader, tower, readout), false),
+                        None => {
+                            // The body is watched as it is read: the crossing check costs no node of its own.
+                            let watched = Watched::new(&body);
+                            let audited = reader.read_to(tower, &watched, readout, PHASE_TOLERANCE);
+                            (audited, watched.crossed())
+                        }
                     }
-                }
-            };
+                };
             // Every value has its place before any is computed: the three channels are cut into
             // pieces of one tower's consecutive shots, and each piece is filled by whichever
             // thread takes it. A shot's value depends on the scene and its own readout time and
@@ -571,20 +749,21 @@ pub fn contribution_on(
                 channel.resize(count, 0.0);
             }
             let mut pieces = Vec::new();
-            if per_tower > 0 {
-                let by_tower = out
-                    .lower
-                    .chunks_mut(per_tower)
-                    .zip(out.upper.chunks_mut(per_tower))
-                    .zip(out.gradiometer.chunks_mut(per_tower));
-                for (at, ((lower, upper), gradiometer)) in by_tower.enumerate() {
-                    let cut = lower
-                        .chunks_mut(PIECE)
-                        .zip(upper.chunks_mut(PIECE))
-                        .zip(gradiometer.chunks_mut(PIECE));
-                    for (piece, ((lower, upper), gradiometer)) in cut.enumerate() {
-                        pieces.push(Piece { at, start: piece * PIECE, lower, upper, gradiometer });
-                    }
+            let (mut lower_rest, mut upper_rest, mut gradiometer_rest) =
+                (&mut out.lower[..], &mut out.upper[..], &mut out.gradiometer[..]);
+            for at in 0..towers.len() {
+                // Tower by tower, each its own number of shots (CSR, as the shots are laid out).
+                let own = shots.count(at);
+                let (lower, rest) = std::mem::take(&mut lower_rest).split_at_mut(own);
+                lower_rest = rest;
+                let (upper, rest) = std::mem::take(&mut upper_rest).split_at_mut(own);
+                upper_rest = rest;
+                let (gradiometer, rest) = std::mem::take(&mut gradiometer_rest).split_at_mut(own);
+                gradiometer_rest = rest;
+                let cut =
+                    lower.chunks_mut(PIECE).zip(upper.chunks_mut(PIECE)).zip(gradiometer.chunks_mut(PIECE));
+                for (piece, ((lower, upper), gradiometer)) in cut.enumerate() {
+                    pieces.push(Piece { at, start: piece * PIECE, lower, upper, gradiometer });
                 }
             }
             // One piece: the shots of one tower from `start`, read in order.
@@ -601,7 +780,7 @@ pub fn contribution_on(
                     }
                     // The tower's own readout: the array's, and the tower's offset.
                     let readout = shots.readout(piece.at, k);
-                    let (audited, crossed) = read_one(base(tower.position), readout);
+                    let (audited, crossed) = read_one(readers.of(piece.at), base(tower.position), readout);
                     let (lower, upper) = (audited.reading.lower, audited.reading.upper);
                     let estimate = audited.estimate.unwrap_or(0.0);
                     // Whatever stopped the audit short of its tolerance (the halvings, the work
@@ -616,7 +795,7 @@ pub fn contribution_on(
                         found.estimate.max(if estimate.is_nan() { f64::INFINITY } else { estimate });
                     piece.lower[step] = lower;
                     piece.upper[step] = upper;
-                    piece.gradiometer[step] = signed(lower, upper);
+                    piece.gradiometer[step] = signed(piece.at, lower, upper);
                 }
                 Some(found)
             };
@@ -722,14 +901,16 @@ struct VoxelBody<'a> {
     still: Option<std::sync::Mutex<StillReadings>>,
 }
 
-/// Each tower's reading of a still body, by the bits of the tower's position.
-type StillReadings = Vec<([u64; 3], cav_core::forward::Audited)>;
+/// Each tower's reading of a still body, by the bits of the tower's position and its instrument's key.
+type StillReadings = Vec<(Vec<u64>, cav_core::forward::Audited)>;
 
 impl VoxelBody<'_> {
     fn read(&self, reader: &Reader, tower: Vec3, readout: f64) -> cav_core::forward::Audited {
         let read = || reader.read_to_within(tower, &self.source, readout, PHASE_TOLERANCE, self.max_nodes);
         let Some(still) = &self.still else { return read() };
-        let key = tower.to_array().map(f64::to_bits);
+        // By the tower's place and its instrument: two towers at one place may fly two.
+        let mut key: Vec<u64> = tower.to_array().map(f64::to_bits).to_vec();
+        key.extend(instrument_key(reader.instrument()));
         if let Some((_, audited)) =
             still.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().find(|(k, _)| *k == key)
         {
@@ -747,7 +928,7 @@ impl VoxelBody<'_> {
 /// # Errors
 /// When the shape cannot be voxelised, or when even the first rule of one read would cost more
 /// than [`MAX_KERNEL_WORK`] cube evaluations, with the numbers.
-fn voxel_body<'a>(spec: &'a SceneSpec, n: usize, reader: &Reader) -> Result<Option<VoxelBody<'a>>, String> {
+fn voxel_body<'a>(spec: &'a SceneSpec, n: usize, readers: &Readers) -> Result<Option<VoxelBody<'a>>, String> {
     let body = &spec.bodies[n];
     let Some(shape) = &body.shape else { return Ok(None) };
     let tree = shape.tree(body.mass)?;
@@ -759,7 +940,8 @@ fn voxel_body<'a>(spec: &'a SceneSpec, n: usize, reader: &Reader) -> Result<Opti
     source.breaks = body.motion.breaks();
     // Each flight node evaluates every cube at two points for each of two interferometers.
     let per_node = 4 * source.cubes() as u64;
-    let first = reader.instrument().node_count(&[]);
+    // The longest flight of any tower's instrument sets the work of a read.
+    let first = readers.readers.iter().map(|reader| reader.instrument().node_count(&[])).max().unwrap_or(0);
     if first * per_node > MAX_KERNEL_WORK {
         return Err(format!(
             "{} leaves × {first} flight nodes is more than the {MAX_KERNEL_WORK} cube evaluations one read may \
@@ -822,23 +1004,32 @@ impl<P: Fn(f64) -> Vec3 + Sync> cav_core::forward::Source for Watched<'_, P> {
 }
 
 /// What every tower reads over the timeline.
+///
+/// Laid out as its [`Shots`] are: tower after tower, each its own number of shots (CSR), tower
+/// `d`'s values at `starts[d]..starts[d + 1]` of every per-shot array. [`Self::channel`],
+/// [`Self::times`], [`Self::readouts`] and [`Self::taken`] give one tower's.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Signal {
-    /// When the array's clock reads each shot out, seconds. A tower with an offset reads out
-    /// that much later: [`Self::readout`].
-    pub times: Vec<f64>,
+    /// When the array's clock reads each shot out, seconds, tower after tower. A tower with an
+    /// offset reads out that much later: [`Self::readout`].
+    pub clock: Vec<f64>,
+    /// Where each tower's shots begin in every per-shot array, and where the last tower's end:
+    /// one more entry than there are towers, the first 0.
+    pub starts: Vec<usize>,
     /// How many towers there are.
     pub towers: usize,
-    /// How much later than `times` each tower reads out, seconds, in the towers' order.
+    /// How much later than its clock each tower reads out, seconds, in the towers' order.
     pub offsets: Vec<f64>,
-    /// Whether each tower took each shot: tower by tower, `towers × shots` flags. A shot not
-    /// taken holds zeros, which are not measurements.
+    /// Each tower's 2T, seconds, in the towers' order.
+    pub flights: Vec<f64>,
+    /// Whether each tower took each of its shots, laid out as `clock`. A shot not taken holds
+    /// zeros, which are not measurements.
     pub valid: Vec<bool>,
-    /// δφ₁ of each shot of each tower, radians: tower by tower, `towers × shots` values.
+    /// δφ₁ of each shot of each tower, radians, laid out as `clock`.
     pub lower: Vec<f64>,
     /// δφ₂ likewise.
     pub upper: Vec<f64>,
-    /// ΔΦ likewise, with the instrument's sign.
+    /// ΔΦ likewise, with each tower's sign.
     pub gradiometer: Vec<f64>,
     /// The largest quadrature estimate of any source's any shot, radians.
     pub estimate: f64,
@@ -858,11 +1049,13 @@ impl Signal {
     #[must_use]
     pub fn silent(shots: &Shots) -> Self {
         let towers = shots.towers();
-        let zeros = vec![0.0; towers * shots.times.len()];
+        let zeros = vec![0.0; shots.total()];
         Self {
-            times: shots.times.clone(),
+            clock: shots.clock.clone(),
+            starts: shots.starts.clone(),
             towers,
             offsets: shots.offsets.clone(),
+            flights: shots.flights.clone(),
             valid: shots.valid.clone(),
             lower: zeros.clone(),
             upper: zeros.clone(),
@@ -895,30 +1088,47 @@ impl Signal {
         self.warnings.extend(contribution.warnings.iter().cloned());
     }
 
-    /// When tower `tower` (from 0) read shot `k` out, seconds.
+    /// How many shots tower `tower` (from 0) has, taken or not.
     #[must_use]
-    pub fn readout(&self, tower: usize, k: usize) -> f64 {
-        self.times[k] + self.offsets[tower]
+    pub fn count(&self, tower: usize) -> usize {
+        self.starts[tower + 1] - self.starts[tower]
     }
 
-    /// Tower `tower`'s own readout times, seconds, one for each shot.
+    /// The most shots any one tower has; zero with no towers.
+    #[must_use]
+    pub fn most(&self) -> usize {
+        (0..self.towers).map(|d| self.count(d)).max().unwrap_or(0)
+    }
+
+    /// Tower `tower`'s shots on the array's clock (before its offset), seconds.
+    #[must_use]
+    pub fn times(&self, tower: usize) -> &[f64] {
+        &self.clock[self.starts[tower]..self.starts[tower + 1]]
+    }
+
+    /// When tower `tower` (from 0) read its shot `k` out, seconds.
+    #[must_use]
+    pub fn readout(&self, tower: usize, k: usize) -> f64 {
+        self.clock[self.starts[tower] + k] + self.offsets[tower]
+    }
+
+    /// Tower `tower`'s own readout times, seconds, one for each of its shots.
     #[must_use]
     pub fn readouts(&self, tower: usize) -> Vec<f64> {
         let offset = self.offsets[tower];
-        self.times.iter().map(|time| time + offset).collect()
+        self.times(tower).iter().map(|time| time + offset).collect()
     }
 
-    /// Whether tower `tower` took each shot.
+    /// Whether tower `tower` took each of its shots.
     ///
     /// # Panics
     /// When there is no such tower.
     #[must_use]
     pub fn taken(&self, tower: usize) -> &[bool] {
-        let shots = self.times.len();
-        &self.valid[tower * shots..(tower + 1) * shots]
+        &self.valid[self.starts[tower]..self.starts[tower + 1]]
     }
 
-    /// One channel of one tower (from 0): a value for each shot.
+    /// One channel of one tower (from 0): a value for each of its shots.
     ///
     /// # Panics
     /// When there is no such tower.
@@ -930,11 +1140,9 @@ impl Signal {
             Channel::Lower => &self.lower,
             Channel::Upper => &self.upper,
         };
-        let shots = self.times.len();
-        &all[tower * shots..(tower + 1) * shots]
+        &all[self.starts[tower]..self.starts[tower + 1]]
     }
 }
-
 /// The scene's signal, computed here and now: every source's contribution, summed in the order
 /// of [`sources`].
 ///
@@ -948,9 +1156,9 @@ pub fn signal(spec: &SceneSpec) -> Result<Signal, String> {
 /// [`sources`].
 ///
 /// # Errors
-/// When towers × shots is more than [`MAX_SIGNAL_VALUES`].
+/// When the towers' shots together are more than [`MAX_SIGNAL_VALUES`].
 pub fn signal_of(spec: &SceneSpec, shots: &Shots) -> Result<Signal, String> {
-    fits(shots.towers(), shots.times.len())?;
+    fits(1, shots.total())?;
     let mut total = Signal::silent(shots);
     for source in sources(spec) {
         let part = contribution(spec, source, shots, &|| false).expect("not cancelled");
@@ -1062,7 +1270,7 @@ mod tests {
         measure: {
             let count = |spec: &SceneSpec| {
                 let signal = signal(spec).unwrap();
-                assert_eq!(signal.times.len() * signal.towers, 30, "five towers, six shots");
+                assert_eq!(signal.times(0).len() * signal.towers, 30, "five towers, six shots");
                 let all = signal.lower.iter().chain(&signal.upper).chain(&signal.gradiometer);
                 all.filter(|v| v.to_bits() != 0).count()
             };
@@ -1189,7 +1397,7 @@ mod tests {
                 let mean = series.iter().sum::<f64>() / series.len() as f64;
                 series.iter().fold(0.0f64, |m, v| m.max((v - mean).abs())) / mean.abs()
             };
-            assert_eq!(read.times.len(), 30);
+            assert_eq!(read.times(0).len(), 30);
             // Control: an outer tower sees the mass come and go.
             assert!(ripple(1) > 0.5, "tower 2's reading ripples by {}", ripple(1));
             Measured::Error(ripple(0))
@@ -1251,7 +1459,7 @@ mod tests {
             for tower in 0..read.towers {
                 let (ours, whole) = (read.channel(tower, Channel::Lower), full.channel(tower, Channel::Lower));
                 assert_eq!(&ours[..2], [0.0, 0.0], "launched at 0 and 2 s: over before the mass appears");
-                let partial = fine.read(base(scene.array.towers[tower].position), &mass(&scene, 0), read.times[2]).lower;
+                let partial = fine.read(base(scene.array.towers[tower].position), &mass(&scene, 0), read.times(0)[2]).lower;
                 worst = worst.max((ours[2] - partial).abs() / whole[2].abs());
                 for k in 3..6 {
                     worst = worst.max((ours[k] - whole[k]).abs() / whole[k].abs());
@@ -1385,7 +1593,7 @@ mod tests {
                 let instrument = scene.array.instrument.instrument();
                 let reader = Reader::new(instrument);
                 let (cycle, flight) = (scene.array.instrument.cycle, instrument.flight_time());
-                let shots = ours.times.len();
+                let shots = ours.times(0).len();
                 assert!(ours.offsets.iter().all(|offset| *offset == 0.0) && ours.valid.iter().all(|taken| *taken));
                 for (tower, placed) in scene.array.towers.iter().enumerate() {
                     let (mut lower, mut upper, mut gradiometer) = (vec![0.0; shots], vec![0.0; shots], vec![0.0; shots]);
@@ -1403,7 +1611,7 @@ mod tests {
                     differing += bits_differing(ours.channel(tower, Channel::Lower), &lower);
                     differing += bits_differing(ours.channel(tower, Channel::Upper), &upper);
                     differing += bits_differing(ours.channel(tower, Channel::Gradiometer), &gradiometer);
-                    assert_eq!(ours.readouts(tower), ours.times, "with no offset a tower's times are the array's");
+                    assert_eq!(ours.readouts(tower), ours.times(0), "with no offset a tower's times are the array's");
                 }
             }
             // And against what S1 itself computed, not S1's arithmetic done by today's reader
@@ -1417,13 +1625,13 @@ mod tests {
                 let tower: usize = words.next().unwrap().parse().unwrap();
                 let (time, phase): (f64, f64) =
                     (words.next().unwrap().parse().unwrap(), words.next().unwrap().parse().unwrap());
-                let k = compared % ours.times.len();
+                let k = compared % ours.times(0).len();
                 let here = ours.channel(tower - 1, Channel::Gradiometer)[k];
-                differing += usize::from(ours.times[k].to_bits() != time.to_bits());
+                differing += usize::from(ours.times(0)[k].to_bits() != time.to_bits());
                 differing += usize::from(here.to_bits() != phase.to_bits());
                 compared += 1;
             }
-            assert_eq!(compared, 5 * ours.times.len(), "the fixture has every shot of every tower");
+            assert_eq!(compared, 5 * ours.times(0).len(), "the fixture has every shot of every tower");
             // Control: the fixture is not today's numbers by construction: one bit of one of its
             // phases changed is one difference.
             let first = frozen.lines().find(|line| !line.starts_with('#')).unwrap();
@@ -1455,14 +1663,14 @@ mod tests {
             late.array.towers[2].timing.offset = delta;
             let (ours, together) = (signal(&late).unwrap(), signal(&sync).unwrap());
             // The synchronous scene read at the shifted times.
-            let shifted = signal_at(&sync, together.times.iter().map(|t| t + delta).collect()).unwrap();
+            let shifted = signal_at(&sync, together.times(0).iter().map(|t| t + delta).collect()).unwrap();
             for tower in [0, 1, 3, 4] {
                 for channel in CHANNELS {
                     assert_eq!(bits_differing(ours.channel(tower, channel), together.channel(tower, channel)), 0, "tower {}", tower + 1);
                 }
             }
-            assert_eq!(ours.readout(2, 7), together.times[7] + delta);
-            assert_eq!(ours.readout(1, 7), together.times[7]);
+            assert_eq!(ours.readout(2, 7), together.times(0)[7] + delta);
+            assert_eq!(ours.readout(1, 7), together.times(0)[7]);
             // Control: the offset matters. Read at the unshifted times the tower is far from it.
             let unshifted = worst_of_peak(ours.channel(2, Channel::Gradiometer), together.channel(2, Channel::Gradiometer));
             assert!(unshifted > 1e-3, "{unshifted:e}");
@@ -1478,7 +1686,7 @@ mod tests {
         let step = 2.0 * 0.73 / 5.0;
         for tower in 0..5 {
             assert_eq!(read.offsets[tower], tower as f64 * step);
-            assert_eq!(read.readouts(tower)[3], read.times[3] + tower as f64 * step);
+            assert_eq!(read.readouts(tower)[3], read.times(0)[3] + tower as f64 * step);
         }
         assert!(read.settled && read.warnings.is_empty());
         // The sum over sources is still exact, tower by tower.
@@ -1504,7 +1712,7 @@ mod tests {
         );
         // A shot that is not taken reads exactly nothing and says so.
         let mut shots = shots(&scene).unwrap();
-        let count = shots.times.len();
+        let count = shots.times(0).len();
         shots.valid[2 * count + 5] = false;
         let gapped = signal_of(&scene, &shots).unwrap();
         assert_eq!(gapped.channel(2, Channel::Gradiometer)[5].to_bits(), 0);
@@ -1558,7 +1766,7 @@ mod tests {
         assert_eq!(alternating, cadence::alternating_times(alternating.len(), 2.0, 2.5));
         // Planned gaps and the window say which shots are fired; the times are still all there.
         let gapped = shots(&scheduled(|s| s.gaps = Some(GapSpec { on: 3, period: 5 }))).unwrap();
-        assert_eq!(gapped.times.len(), 200);
+        assert_eq!(gapped.times(0).len(), 200);
         for tower in 0..5 {
             assert!((0..200).all(|k| gapped.taken(tower, k) == (k % 5 < 3)));
         }
@@ -1614,7 +1822,7 @@ mod tests {
         let mut longer = scene.clone();
         longer.duration = 800.0;
         let more = shots(&longer).unwrap();
-        assert_eq!(more.times[..200], whole.times[..]);
+        assert_eq!(more.times(0)[..200], whole.times(0)[..]);
         for tower in 0..5 {
             assert_eq!(more.taken_all(tower)[..200], whole.taken_all(tower)[..]);
         }
@@ -1626,7 +1834,7 @@ mod tests {
         let mut other = scene.clone();
         other.array.schedule.seed = 43;
         let reseeded = shots(&other).unwrap();
-        assert_ne!(reseeded.times, whole.times);
+        assert_ne!(reseeded.times(0), whole.times(0));
         assert_ne!(reseeded.valid, whole.valid);
     }
 
@@ -1718,7 +1926,7 @@ mod tests {
             for scene in &scenes {
                 let one = on(1, scene);
                 // More pieces than threads, and more threads than towers: the queue is shared.
-                assert!(one.times.len() > 2 * PIECE || scene.name != "staggered", "{} shots", one.times.len());
+                assert!(one.times(0).len() > 2 * PIECE || scene.name != "staggered", "{} shots", one.times(0).len());
                 for threads in [2, 3, 6] {
                     let many = on(threads, scene);
                     differing += bits_differing(&one.lower, &many.lower)
@@ -1859,14 +2067,14 @@ mod tests {
         let scene = dev::pass();
         let read = signal(&scene).unwrap();
         // The live reading at a shot's readout is that shot's value, to the bit.
-        let live = reading(&scene, read.times[3], &|| false).unwrap().towers;
+        let live = reading(&scene, read.times(0)[3], &|| false).unwrap().towers;
         for (tower, values) in live.iter().enumerate() {
             assert_eq!(values.gradiometer.to_bits(), read.channel(tower, Channel::Gradiometer)[3].to_bits());
             assert_eq!(values.lower.to_bits(), read.channel(tower, Channel::Lower)[3].to_bits());
         }
         // Control: at another time it is another value.
         assert_ne!(
-            reading(&scene, read.times[3] + 0.3, &|| false).unwrap().towers[0].gradiometer,
+            reading(&scene, read.times(0)[3] + 0.3, &|| false).unwrap().towers[0].gradiometer,
             live[0].gradiometer
         );
         // The reading carries what the audit found. A point mass on a tower's axis does not
@@ -1933,9 +2141,9 @@ mod tests {
     fn spacing_and_length(scene: &SceneSpec) -> (f64, f64) {
         let (launched, all) = (launches(scene).unwrap(), shots(scene).unwrap());
         let flight = 2.0 * scene.array.instrument.half_sequence;
-        assert_eq!((all.flight, all.times.len()), (flight, launched.len()));
+        assert_eq!((all.flight(0), all.times(0).len()), (flight, launched.len()));
         let least = launched.windows(2).fold(f64::INFINITY, |m, w| m.min(w[1] - w[0]));
-        let off = launched.iter().zip(&all.times).fold(0.0f64, |m, (l, r)| m.max((r - l - flight).abs()));
+        let off = launched.iter().zip(all.times(0)).fold(0.0f64, |m, (l, r)| m.max((r - l - flight).abs()));
         (least, off)
     }
 
@@ -1979,7 +2187,7 @@ mod tests {
                 // Every tower's shot is 2T long as well, whatever its offset would be.
                 assert!((0..all.towers()).all(|d| all.readout(d, 3) - all.launch(d, 3) == flight));
                 if ["gaps", "window", "loss"].contains(&name) {
-                    assert_eq!(all.times, plain.times, "{name} moves no shot");
+                    assert_eq!(all.times(0), plain.times(0), "{name} moves no shot");
                     assert!(all.valid.iter().any(|taken| !taken), "{name} does leave shots out");
                 }
             }
@@ -2048,7 +2256,7 @@ mod tests {
             [[10.0, 20.0], [-5.0, 3.0], [300.0, 320.0], [395.0, 500.0], [1000.0, 1100.0], [50.0, 50.0]];
         for tower in [0, 2] {
             for [from, to] in spans {
-                let found: Vec<usize> = (0..all.times.len())
+                let found: Vec<usize> = (0..all.times(0).len())
                     .filter(|&k| all.launch(tower, k) <= to && all.readout(tower, k) >= from)
                     .collect();
                 let stretch: Vec<usize> = all.touching(tower, [from, to]).collect();
@@ -2070,5 +2278,199 @@ mod tests {
         assert_ne!(all.touching(0, [300.0, 320.0]), even.touching(0, [300.0, 320.0]));
         // And the tower with the offset has its own.
         assert_ne!(all.touching(2, [50.0, 50.0]), all.touching(0, [50.0, 50.0]));
+    }
+
+    /// Four towers that do not share an instrument (AION-10; AICE, late by 0.3 s; AION-10 with
+    /// T = 0.9 s; AION-10 with Δr = 4 m and 800 kicks, whose shots are tower 1's to the bit) and
+    /// two moving bodies.
+    fn unequal() -> SceneSpec {
+        use crate::{InstrumentOverride, InstrumentSpec, TowerSpec};
+        let mut scene = dev::mixed_array();
+        scene.duration = 40.0;
+        let base = scene.array.instrument.clone();
+        let short = InstrumentSpec { ifo_separation: 4.0, kicks: 800.0, ..base.clone() };
+        scene.array.towers[1].timing.offset = 0.3;
+        scene.array.towers.push(TowerSpec {
+            instrument: Some(InstrumentOverride::between(&base, &short)),
+            ..TowerSpec::at("short", [-5.0, 0.0, 0.0])
+        });
+        scene.bodies.push(BodySpec::moving(
+            "walker",
+            70.0,
+            crate::Motion::Pass { from: [-8.0, 3.0, 1.0], to: [8.0, 3.0, 1.0], start: 2.0, speed: 0.5 },
+        ));
+        assert_eq!(scene.validate(), Ok(()));
+        scene
+    }
+
+    /// Tower `tower` of `scene` alone: a one-tower scene of that tower's resolved instrument,
+    /// position and offset.
+    fn alone(scene: &SceneSpec, tower: usize) -> SceneSpec {
+        let mut one = scene.clone();
+        one.array.instrument = scene.array.instrument_of(tower);
+        one.array.towers = vec![crate::TowerSpec { instrument: None, ..scene.array.towers[tower].clone() }];
+        one
+    }
+
+    /// The signal of `scene` read on `threads` threads.
+    fn read_on(threads: usize, scene: &SceneSpec) -> Signal {
+        let shots = shots(scene).unwrap();
+        let mut total = Signal::silent(&shots);
+        for source in sources(scene) {
+            total.add(&contribution_on(threads, scene, source, &shots, &|| false).unwrap());
+        }
+        total
+    }
+
+    /// How many values (each channel and each readout time of every shot) of each tower of
+    /// `mixed` differ in any bit from what `singles[d]` reads as its one tower.
+    fn against_alone(mixed: &Signal, singles: &[Signal]) -> Vec<usize> {
+        (0..mixed.towers)
+            .map(|d| {
+                let single = &singles[d];
+                let mut wrong = usize::from(mixed.count(d) != single.count(0));
+                if wrong == 0 {
+                    for channel in CHANNELS {
+                        wrong += bits_differing(mixed.channel(d, channel), single.channel(0, channel));
+                    }
+                    wrong += bits_differing(&mixed.readouts(d), &single.readouts(0));
+                    wrong += mixed.taken(d).iter().zip(single.taken(0)).filter(|(a, b)| a != b).count();
+                }
+                wrong
+            })
+            .collect()
+    }
+
+    cav_validate::case! {
+        test: validation_unequal_towers_read_as_each_alone,
+        name: "array.unequal_towers_read_as_each_alone",
+        subsystem: "array",
+        slice: "S3",
+        reference: Exact,
+        against: "four towers of four instruments (AION-10; AICE 0.3 s late; T = 0.9 s; Δr = 4 m and 800 kicks) and two moving bodies: each tower's every shot, every channel and readout time, against a one-tower scene of that tower's resolved instrument, position and offset, at 1 and 6 threads; values that differ in any bit",
+        unit: Count,
+        tolerance: 0.0,
+        measure: {
+            let scene = unequal();
+            let singles: Vec<Signal> = (0..scene.array.towers.len()).map(|d| read_on(1, &alone(&scene, d))).collect();
+            let counts: Vec<usize> = (0..4).map(|d| singles[d].count(0)).collect();
+            assert!(counts[1] < counts[0] && counts[2] == counts[0], "ragged: {counts:?}");
+            let mut differing = 0;
+            for threads in [1, 6] {
+                differing += against_alone(&read_on(threads, &scene), &singles).iter().sum::<usize>();
+            }
+            // One reader for each distinct instrument, shared by the towers that fly it.
+            assert_eq!(Readers::new(&scene).readers.len(), 4);
+            Measured::Error(differing as f64)
+        },
+    }
+
+    #[test]
+    fn unequal_towers_controls() {
+        use crate::InstrumentOverride;
+        let scene = unequal();
+        let whole = read_on(1, &scene);
+        // (a) One tower's T changed by one ulp changes that tower's bits and no other's.
+        let mut nudged = scene.clone();
+        let t = scene.array.instrument_of(2).half_sequence;
+        nudged.array.towers[2].instrument.as_mut().unwrap().half_sequence =
+            Some(f64::from_bits(t.to_bits() + 1));
+        let moved = read_on(1, &nudged);
+        for d in 0..4 {
+            let changed = bits_differing(
+                moved.channel(d, Channel::Gradiometer),
+                whole.channel(d, Channel::Gradiometer),
+            );
+            assert_eq!(changed > 0, d == 2, "tower {}: {changed} values changed", d + 1);
+        }
+        // (b) An override equal to the default is no override: the same bits, one reader.
+        let mut plain = dev::comb();
+        plain.duration = 20.0;
+        let mut same = plain.clone();
+        same.array.towers[3].instrument = Some(InstrumentOverride {
+            half_sequence: Some(plain.array.instrument.half_sequence),
+            ..InstrumentOverride::default()
+        });
+        assert_eq!(same.validate(), Ok(()));
+        assert_eq!(bits_differing(&read_on(1, &same).gradiometer, &read_on(1, &plain).gradiometer), 0);
+        assert_eq!(Readers::new(&same).readers.len(), 1);
+        assert!(same.array.is_uniform() && !scene.array.is_uniform());
+        // (c) Swapping two towers' instruments changes what they read, and each then reads as
+        // it would alone with its new instrument; swapping whole towers swaps their readings.
+        let mut swapped = scene.clone();
+        let (a, b) = (swapped.array.towers[0].instrument.clone(), swapped.array.towers[3].instrument.clone());
+        (swapped.array.towers[0].instrument, swapped.array.towers[3].instrument) = (b, a);
+        let read = read_on(1, &swapped);
+        assert!(
+            bits_differing(read.channel(0, Channel::Gradiometer), whole.channel(0, Channel::Gradiometer)) > 0
+        );
+        let singles: Vec<Signal> = (0..4).map(|d| read_on(1, &alone(&swapped, d))).collect();
+        assert_eq!(against_alone(&read, &singles), [0, 0, 0, 0]);
+        let mut exchanged = scene.clone();
+        exchanged.array.towers.swap(1, 2);
+        let read = read_on(1, &exchanged);
+        for channel in CHANNELS {
+            assert_eq!(bits_differing(read.channel(1, channel), whole.channel(2, channel)), 0);
+            assert_eq!(bits_differing(read.channel(2, channel), whole.channel(1, channel)), 0);
+        }
+        // (d) A cache of readings keyed on the readout time alone would give tower 4 (whose shots
+        // are tower 1's to the bit, on another instrument) tower 1's numbers: the comparison
+        // with each tower alone sees it.
+        let shots = shots(&scene).unwrap();
+        assert_eq!(bits_differing(shots.times(3), shots.times(0)), 0, "the two towers' shots coincide");
+        let mut cached = whole.clone();
+        let mut cache: std::collections::HashMap<u64, f64> = std::collections::HashMap::new();
+        for d in [0, 3] {
+            for k in 0..cached.count(d) {
+                let key = cached.readout(d, k).to_bits();
+                let at = cached.starts[d] + k;
+                let value = *cache.entry(key).or_insert(whole.gradiometer[at]);
+                cached.gradiometer[at] = value;
+            }
+        }
+        let singles: Vec<Signal> = (0..4).map(|d| read_on(1, &alone(&scene, d))).collect();
+        let wrong = against_alone(&cached, &singles);
+        assert!(wrong[3] > 0 && wrong[0] == 0, "{wrong:?}");
+    }
+
+    #[test]
+    fn a_scene_with_no_towers_is_a_scene() {
+        let scene = dev::no_towers();
+        assert_eq!(scene.validate(), Ok(()));
+        let all = shots(&scene).unwrap();
+        assert_eq!((all.towers(), all.total(), all.most(), all.starts.clone()), (0, 0, 0, vec![0]));
+        let read = signal(&scene).unwrap();
+        assert!(read.gradiometer.is_empty() && read.estimates.is_empty() && read.settled);
+        assert_eq!(read.most(), 0);
+        let live = reading(&scene, 3.0, &|| false).unwrap();
+        assert!(live.towers.is_empty());
+        assert!(Readers::new(&scene).readers.is_empty());
+        // The schedule still says what it would be, and the box of the scene is finite.
+        assert!(!readouts(&scene).unwrap().is_empty());
+        let (lo, hi) = scene.bounds();
+        assert!(lo.iter().chain(&hi).all(|v| v.is_finite()));
+        // Control: one tower put back reads the mass.
+        let mut one = scene.clone();
+        one.array.towers.push(crate::TowerSpec::at("tower 1", [0.0, 3.0, 0.0]));
+        assert!(signal(&one).unwrap().gradiometer.iter().any(|v| *v != 0.0));
+    }
+
+    #[test]
+    fn a_ragged_array_is_bounded_by_its_sum() {
+        // Three towers of 1.5 million shots each: each is within MAX_SHOTS, together they are past
+        // the signal's cap, and they are refused by count before anything is made.
+        let mut scene = dev::no_towers();
+        scene.bodies.clear();
+        scene.duration = 1.5e6;
+        scene.array.instrument.half_sequence = 0.1;
+        scene.array.instrument.cycle = 1.0;
+        for (n, label) in ["a", "b", "c"].into_iter().enumerate() {
+            scene.array.towers.push(crate::TowerSpec::at(label, [n as f64, 0.0, 0.0]));
+        }
+        let why = shots(&scene).unwrap_err();
+        assert!(why.contains("4500000 shot(s) between them") && why.contains("4000000 values"), "{why}");
+        // Control: a timeline a thousand times shorter is made.
+        scene.duration = 1.5e3;
+        assert_eq!(shots(&scene).unwrap().total(), 4500);
     }
 }

@@ -64,15 +64,26 @@ a journal being replayed ─┘     │          │                            
    recomputes that body. Until the new signal is whole the old one stays, marked stale. The
    application calls `Engine::poll` every frame; text clients call `Engine::ask`, which waits a
    stated time and says `refined`, `stale` or `computing`.
-4. **The read.** `cav_sim::read` turns a scene into `Shots` (the array's clock from the schedule,
-   each tower's offset, which shots are taken) and reads each source's contribution with
-   `cav_core::forward::Reader::read_to`, which halves its panels until two rules agree and reports
-   their difference as its error estimate. The signal is the contributions summed in the scene's
-   order: the same bits however it was arrived at, on any number of threads.
+4. **The read.** `cav_sim::read` turns a scene into `Shots` and reads each source's contribution
+   with `cav_core::forward::Reader::read_to`, which halves its panels until two rules agree and
+   reports their difference as its error estimate. The signal is the contributions summed in the
+   scene's order: the same bits however it was arrived at, on any number of threads.
+   **Each tower flies its own instrument** (S3): `ArraySpec::instrument_of(n)` is the array's
+   instrument with the tower's override (`array.towers[n].instrument`) in place; towers with
+   the same instrument share one `Reader` (`read::Readers`, keyed by every field's bits). So each
+   tower has its own shots, at its own cycle and 2T from the array's schedule, and `Shots`,
+   `Signal` and `Contribution` hold them **ragged, tower after tower** (CSR: values flat, a tower's
+   at `starts[d]..starts[d + 1]`). Go through the accessors (`count`, `times`, `readout`,
+   `taken`, `channel`), never `tower × shots` arithmetic. Bodies move in the array's gravity
+   whatever a tower's own. A scene may have no towers: it reads nothing, and every plot, pane,
+   bundle and command says so rather than failing.
 5. **To a pixel.** `Engine::frame(pane)` is the one description of what a pane shows. A scene pane
    goes to `cav_render::Renderer`; a plot pane to `cav_plot`, which builds a display list and
    paints it. The window (`cav-app`), `cav render` and MCP's `render_view` all ask the same frame.
-6. **To a file.** `Command::Export` writes a scene, a journal, a bundle (`cav_sim::bundle`) or a
+6. **To a file.** `Command::Export` writes a scene, a journal, a bundle (`cav_sim::bundle`: the
+   `(T_max, D)` arrays padded where a tower has fewer shots, with `mask` and `n_shots`, beside the
+   `_flat` arrays and `tower_offsets` that hold every tower's shots as the engine does; the
+   manifest lists each distinct instrument once and which each tower flies) or a
    figure (`cav-plot`, through an exporter the client installs, since the engine does not draw).
    Bundles and figures are written only from a refined signal. Replaying a journal never writes
    where the journal says: exports go into the replayer's own directory, or nowhere.

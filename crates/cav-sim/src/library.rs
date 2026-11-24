@@ -40,6 +40,8 @@ pub const LIBRARY: &[LibraryScene] = &[
     scene!("precision-far", "scenes/dev/precision-far.ron"),
     scene!("staggered", "scenes/dev/staggered.ron"),
     scene!("cadence-lab", "scenes/dev/cadence-lab.ron"),
+    scene!("mixed-array", "scenes/dev/mixed-array.ron"),
+    scene!("no-towers", "scenes/dev/no-towers.ron"),
     scene!("unit-cube", "scenes/dev/unit-cube.ron"),
     scene!("sphere", "scenes/dev/sphere.ron"),
     scene!("platonic-row", "scenes/dev/platonic-row.ron"),

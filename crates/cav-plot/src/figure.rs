@@ -78,7 +78,7 @@ enum Values {
     Signal { signal: Arc<cav_sim::read::Signal>, towers: Vec<usize>, channel: cav_core::forward::Channel },
 }
 
-/// The data behind a figure: columns of equal length. A signal's table is the engine's signal
+/// The data behind a figure: columns of equal length. (A signal's towers may have different numbers of shots:\n/// its table has as many rows as the tower with the most, and NaN in a tower's columns past its last shot.) A signal's table is the engine's signal
 /// itself, read as it is written out, so a thousand towers' data costs no memory here.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Table {
@@ -93,7 +93,7 @@ impl Table {
     pub fn rows(&self) -> usize {
         match &self.values {
             Values::Held(columns) => columns.first().map_or(0, Vec::len),
-            Values::Signal { signal, .. } => signal.times.len(),
+            Values::Signal { signal, .. } => signal.most(),
         }
     }
 
@@ -107,6 +107,10 @@ impl Table {
             Values::Held(columns) => columns[column][row],
             Values::Signal { signal, towers, channel } => {
                 let tower = towers[column / 3];
+                // Each tower has its own shots: a row past a tower's last is no shot of it.
+                if row >= signal.count(tower) {
+                    return f64::NAN;
+                }
                 match column % 3 {
                     0 => signal.readout(tower, row),
                     1 => signal.channel(tower, *channel)[row],

@@ -797,7 +797,7 @@ impl Engine {
         if let Some(n) = figure.tower
             && (n == 0 || n > towers)
         {
-            return Err(format!("there is no tower {n}; the scene has towers 1 to {towers}"));
+            return Err(no_tower(n, towers));
         }
         if figure.what == FigureKind::View && figure.pane >= self.panes {
             return Err(format!("there is no pane {}; the figure has {}", figure.pane + 1, self.panes));
@@ -809,13 +809,14 @@ impl Engine {
     /// instrument, the schedule, the tower and its own timing, and where the window ends. Two
     /// scenes with the same key have the same shots at that tower.
     fn window_key(&self, tower: usize, to: f64) -> String {
-        let timing = self.spec.array.towers.get(tower.wrapping_sub(1)).map(|tower| &tower.timing);
+        // The tower itself: its timing, and its own instrument if it has one.
+        let own = self.spec.array.towers.get(tower.wrapping_sub(1));
         serde_json::json!([
             self.spec.duration,
             self.spec.array.instrument,
             self.spec.array.schedule,
             tower,
-            timing,
+            own,
             to.to_bits(),
         ])
         .to_string()
@@ -830,6 +831,8 @@ impl Engine {
             self.spec.array.instrument,
             self.spec.array.schedule,
             self.spec.array.towers.len(),
+            // Towers of their own instruments have their own counts of shots.
+            self.spec.array.towers.iter().map(|tower| &tower.instrument).collect::<Vec<_>>(),
         ])
         .to_string()
     }
@@ -848,9 +851,7 @@ impl Engine {
     fn check_target(&self, target: Target) -> Result<(), String> {
         let towers = self.spec.array.towers.len();
         match target {
-            Target::Tower(n) if n == 0 || n > towers => {
-                Err(format!("there is no tower {n}; the scene has towers 1 to {towers}"))
-            }
+            Target::Tower(n) if n == 0 || n > towers => Err(no_tower(n, towers)),
             Target::Room if self.spec.room.is_none() => Err("the scene has no room".into()),
             Target::Floor if self.spec.floor.is_none() => Err("the scene has no floor".into()),
             Target::Body(_) if self.spec.bodies.is_empty() => Err("the scene has no bodies".into()),
@@ -958,7 +959,10 @@ impl Engine {
         }
     }
 
-    /// The scene as it is read on `instrument`: everything the same but the instrument.
+    /// The scene as it is read on `instrument`: everything the same but the array's instrument.
+    /// A tower's own override stays in place on top of it: `compare aice` reads every tower that
+    /// flies the array's instrument on AICE, and a tower with an instrument of its own on AICE
+    /// with its own differences.
     fn compared_spec(&self, instrument: &cav_sim::InstrumentSpec) -> SceneSpec {
         let mut spec = self.spec.clone();
         spec.array.instrument = instrument.clone();
@@ -1085,7 +1089,7 @@ impl Engine {
             Query::Signal { tower, channel, span, compared } => {
                 let towers = self.spec.array.towers.len();
                 if *tower == 0 || *tower > towers {
-                    return Err(format!("there is no tower {tower}; the scene has towers 1 to {towers}"));
+                    return Err(no_tower(*tower, towers));
                 }
                 // The scene's own reading, or the comparison's.
                 let forward = match (&self.compare, compared) {
@@ -1119,10 +1123,11 @@ impl Engine {
                 // the shots are one stretch.
                 let offset = signal.map_or(0.0, |s| s.offsets[tower - 1]);
                 let stretch = |signal: &cav_sim::read::Signal| match span {
-                    None => 0..signal.times.len(),
+                    None => 0..signal.count(tower - 1),
                     Some([from, to]) => {
-                        signal.times.partition_point(|t| t + offset < *from)
-                            ..signal.times.partition_point(|t| t + offset <= *to)
+                        let times = signal.times(tower - 1);
+                        times.partition_point(|t| t + offset < *from)
+                            ..times.partition_point(|t| t + offset <= *to)
                     }
                 };
                 Ok(Reply::Signal(SignalReply {
@@ -1145,9 +1150,13 @@ impl Engine {
                 let Reply::Signal(signal) = self.query(&asked)? else {
                     unreachable!("a signal query answers with a signal")
                 };
+                // The tower's own instrument: on the comparison's, the compared instrument with
+                // the tower's own override on top, as `compare` reads it.
                 let instrument = match (&self.compare, compared) {
-                    (Some((instrument, _)), true) => &**instrument,
-                    _ => &self.spec.array.instrument,
+                    (Some((instrument, _)), true) => {
+                        self.compared_spec(instrument).array.instrument_of(tower - 1)
+                    }
+                    _ => self.spec.array.instrument_of(tower - 1),
                 };
                 let schedule = &self.spec.array.schedule;
                 let nyquist = 0.5 / schedule.mean_cycle(instrument.cycle);
@@ -1242,11 +1251,14 @@ impl Engine {
                 Ok(Reply::Cadence(prediction))
             }
             Query::Window { tower, to } => {
-                if *tower == 0 {
-                    return Err("towers are counted from 1".into());
+                let towers = self.spec.array.towers.len();
+                if *tower == 0 || *tower > towers {
+                    return Err(no_tower(*tower, towers));
                 }
-                // The mean cycle is the schedule's own arithmetic: no prediction is made for it.
-                let mean_cycle = self.spec.array.schedule.mean_cycle(self.spec.array.instrument.cycle);
+                // The mean cycle is the schedule's own arithmetic at the tower's own cycle: no
+                // prediction is made for it.
+                let cycle = self.spec.array.instrument_of(tower - 1).cycle;
+                let mean_cycle = self.spec.array.schedule.mean_cycle(cycle);
                 let to = to.unwrap_or(2.5 / mean_cycle);
                 // A pane asks for the same window every frame: the last answer is kept, under
                 // everything it was made from (one answer, about 20 kB).
@@ -1436,9 +1448,9 @@ impl Engine {
             Level::Info,
             Subsystem::Engine,
             format!(
-                "signal: {} tower(s) × {} shot(s), quadrature {}",
+                "signal: {} tower(s), {} shot(s) in all, quadrature {}",
                 signal.towers,
-                signal.times.len(),
+                signal.clock.len(),
                 estimate_text(signal.estimate, signal.settled)
             ),
         );
@@ -1656,6 +1668,16 @@ fn summary(spec: &SceneSpec) -> String {
         n => format!("{n} bodies"),
     };
     format!("{towers} tower{}, {room}, {floor}, {bodies}", if towers == 1 { "" } else { "s" })
+}
+
+/// Why tower `n` (counted from 1) is not one of the scene's `towers`: said for a scene with none
+/// as well as for one with too few.
+fn no_tower(n: usize, towers: usize) -> String {
+    if towers == 0 {
+        format!("there is no tower {n}: the scene has no towers")
+    } else {
+        format!("there is no tower {n}; the scene has towers 1 to {towers}")
+    }
 }
 
 #[cfg(test)]
