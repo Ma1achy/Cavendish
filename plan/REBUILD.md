@@ -349,8 +349,10 @@ its oracle checks, a performance note, screenshots in `docs/slices/`. Main alway
 | S14 | **The wider world** | Put the site at a real latitude and longitude on a rotating Earth with the Moon and the Sun: tides, weather and clouds, ground water, ocean microseisms, earthquakes from anywhere, a pressure wave from the far side of the planet. Replay a real day from open data | tides against standard tidal prediction; the same local scene reads the same phase at the origin and on the globe; each far source against its closed form or published record |
 | S15 | **Instruments anywhere** | A gradiometer on any axis, horizontal included; local g and its gradient from the Earth's gravity field at the site; the same instrument on the Moon or Mars, and in orbit; a full budget of instrument systematics | vertical case unchanged to the bit; a horizontal baseline against the closed-form gradient tensor; an orbiting gradiometer against the gravity model's tensor and published GOCE-class gradients |
 | S16 | **The science case** | Inject a gravitational wave or a dark-matter signal and try to find it through a full simulated day; two sites on one planet, correlated; choose a site anywhere on Earth and get its noise budget; run beside the real instrument as its twin | injected signals recovered at the published sensitivity in a quiet world; two-site correlation rejects local noise by the predicted factor |
+| S17 | **In the browser** | The whole app as a web page on GitHub Pages, built to WebAssembly with WebGPU by CI on each push to main; single-threaded on the web, the engine's workers run in frame-sized slices | the web build runs the S0–S3 demos' scenes and reads the same phases as the native build, bit for bit where the arithmetic is the same |
 
 Order is a default. Slices that do not depend on each other (S6 and S8, say) can run in parallel.
+S17 was added by the owner on 24 Nov 2026 and runs next, after S3.
 S14–S16 were added by the owner on 22 Nov 2026. What they hold is in §9.3; each starts with a
 research note that sizes every effect in radians, and what a note shows to be invisible is built as
 a null test and no further.
@@ -477,6 +479,11 @@ away is tides and waves, not attraction.
   gravity field, ocean-tide models, weather reanalysis, earthquake catalogues, ephemerides. Each
   dataset's licence is checked before it is used and recorded in the bundle; none is committed.
 - **Replay a real day**: the Moon, the weather and the earthquakes of a chosen date at a chosen site.
+- **The solar system and things in space** (owner, 24 Nov 2026): any body of the solar system can host
+  the hierarchy below (the Moon, Mars and others, each with its own LOD tree from elevation data,
+  placed by the ephemeris; a detector's world gets the bubble). Satellites from public element sets
+  (SGP4), asteroids and comets from the orbit catalogues, debris and user-placed spacecraft, propagated
+  by Kepler, SGP4 or an n-body integrator for close approaches; mostly nulls on Earth.
 - **The whole planet as one level-of-detail hierarchy** (owner, 24 Nov 2026). Full-precision bubbles
   around each detector; outside them the world coarsens in rings until it is a cube-sphere of the
   whole Earth, then the Moon and the Sun. One hierarchy serves both readers:

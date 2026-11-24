@@ -7,7 +7,7 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S0 the shell | done: TASK-S0-01 to 14 merged; reviewed twice, nothing important remains | `s0-shell` | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
 | S1 a point mass | done: TASK-S1-01 to 19 merged; reviewed twice, nothing important remains | `s1-point-mass` | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
 | S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
-| S3 voxel bodies | built; reviewed twice; every finding fixed (TASK-S3-20 to 26, PRs #108 onwards); tag pending |  | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
+| S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
 
 ## S3 after its second review (24 Nov 2026) — fixed, tag pending
 
@@ -60,7 +60,7 @@ whole session; `quick` lints the oracle when touched; `ls` of an enum lists its 
 
 **Next.** A fresh re-review of S3; then the tag, and S4.
 
-## S3, voxel bodies: where it stands (24 Nov 2026) — built, not yet reviewed or tagged
+## S3, voxel bodies: where it stands (24 Nov 2026) — done, tagged `s3-voxel-bodies`
 
 **Done.** A body can be a solid: sphere, cuboid, cylinder, ellipsoid, the five Platonic solids, a
 convex polyhedron, a closed OBJ or STL mesh. It is voxelised into a linear octree (bit-exact
@@ -392,6 +392,19 @@ Also noted: `scene_load` reads a file of any size; DX12 was not re-run after the
 George's answers below and add the first physics rows to the validation report (the void's channels
 exactly zero, the infinite floor's null, the v1 anchors).
 
+## Carried from S3's second review (24 Nov 2026)
+S3 is tagged `s3-voxel-bodies` at `7944c38` after PR #115 closed the second review's one important
+finding (the kernel-work share now has a test that fails when the share is removed, checked by
+mutation). Left, all minor:
+- The oracle tier takes 434 s against its 5-minute budget: the two scaffold series cases build a
+  table of about 4e9 cube evaluations each. Decision: keep them as they are in the oracle tier
+  (correctness first); options to cut the time are in `plan/IDEAS.md`.
+- `quick` takes 13–25 s warm against the briefs' 10 s (CLAUDE.md allows 30 s).
+- The single-mode scaffold series measure cannot see a 1e-3 error on its own (the members' check does).
+- Criteria-before-measuring is not visible in history for TASK-S3-20 and 22 (one commit each).
+- No test places a section far from the origin; two depth legends in section pictures; duplicated
+  `surface()` in two test files; a mesh file is resolved against the working directory.
+
 ## Questions for the owner
 None open.
 
@@ -502,6 +515,20 @@ Answered 21 Nov 2026 (through the owner). The defaults below replace v1's conven
    there until the next sequence starts.
 5. **Floor:** the arms never go below launch. There is a floor, coded as the Python scripts code the
    sequence; copy that.
+
+## Owner's rulings (24 Nov 2026): the app on the web, and more shapes and worlds
+- **The whole app as a web page** on GitHub Pages, built to WebAssembly with WebGPU by CI: slice S17,
+  run next (research: `docs/research/web-build-and-pages.md`; Pages is enabled with source = Actions,
+  at https://ma1achy.github.io/Cavendish/).
+- **The octree depth debug view and section planes** (asked and built in S3, PR #107).
+- **Analytic bodies and references** (S5): the polyhedron (all Platonic solids and flat-faced meshes,
+  with their missing low multipoles as a test), the ellipsoid, sheets, polygons, discs, rods and
+  rings, and the torus, cylinder and cone by exact 1-D integrals.
+- **Shapes from 2-D profiles** (extrude, revolve, sweep) in the shapes library.
+- **Any body of the solar system can host the hierarchy** (S14/S15): the Moon, Mars and others as
+  bodies with their own LOD trees from the ephemeris; a detector's world gets the bubble.
+- **Things in space** (S14): satellites from public element sets (SGP4), asteroids and comets from the
+  orbit catalogues, debris, user-placed spacecraft; mostly nulls on Earth, the signal in orbit.
 
 ## Owner's ruling (24 Nov 2026): the whole planet, one hierarchy
 The owner wants the wider world rendered and simulated as one level-of-detail hierarchy: full
