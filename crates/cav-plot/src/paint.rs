@@ -70,6 +70,10 @@ pub fn paint(painter: &egui::Painter, origin: Pos2, drawing: &Drawing) {
             Item::Circle { centre, radius, fill } => {
                 painter.circle_filled(at(*centre), *radius, fill.egui());
             }
+            Item::Polygon { points, fill } => {
+                let corners: Vec<Pos2> = points.iter().map(|point| at(*point)).collect();
+                painter.add(egui::Shape::convex_polygon(corners, fill.egui(), Stroke::NONE));
+            }
             Item::Diamond { centre, radius, fill, stroke } => {
                 let (c, r) = (at(*centre), *radius);
                 let corners =

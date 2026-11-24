@@ -113,6 +113,11 @@ pub fn write(drawing: &Drawing) -> Result<String, String> {
                         .map_or_else(String::new, |(width, colour)| format!(" {}", stroke_of(width, colour))),
                 );
             }
+            Item::Polygon { points, fill } => {
+                let list: Vec<String> =
+                    points.iter().map(|q| format!("{},{}", number(q[0]), number(q[1]))).collect();
+                let _ = writeln!(out, "<polygon fill=\"{}\" points=\"{}\"/>", fill.css(), list.join(" "));
+            }
             Item::Circle { centre, radius, fill } => {
                 let _ = writeln!(
                     out,
