@@ -158,6 +158,7 @@
 - id: TASK-S2-19
   milestone: S2
   title: 'The plot recipe followed end to end with a made-up kind; what it got wrong fixed'
+  status: done # merged with TASK-S2-16's PR #89 (merge 1df1110)
 - id: TASK-S2-20
   milestone: S2
   title: 'The task list names TASK-S2-19 and TASK-S2-20'
