@@ -211,8 +211,8 @@ pub struct Described {
     /// The vertical axis: its name and its unit (the data's; the marks may be written in a
     /// multiple of it, which `marks` then says).
     pub y: (String, String),
-    /// Each series drawn: its name and its colour.
-    pub series: Vec<(String, Colour)>,
+    /// Each series drawn: its name, its colour and its dash (points; empty for solid).
+    pub series: Vec<(String, Colour, Vec<f32>)>,
     /// For a signal: the tower (from 0) each series is, in the order of `series`. Empty for
     /// every other plot.
     pub towers: Vec<usize>,
@@ -1247,6 +1247,10 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
             if hi >= lo { hi - lo } else { 0.0 }
         })
         .collect();
+    // How each tower is drawn (in the towers' order): as its envelope (stretches of so many
+    // shots) or shot by shot, and with a dot at each shot or not. The record carries it, so that
+    // a redraw draws what was drawn and does not decide again.
+    let mut drawn_as = vec![serde_json::Value::Null; which.len()];
     let mut order: Vec<usize> = (0..which.len()).collect();
     order.sort_by(|a, b| extents[*b].total_cmp(&extents[*a]).then(a.cmp(b)));
     for n in order {
@@ -1256,6 +1260,7 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
         // from one side of the band to the other, and the towers over it would hide it. The
         // tower is drawn as its envelope, two lines, so that what is under it shows between.
         if let Some(stretch) = envelope_stretch(times.len(), area.width()) {
+            drawn_as[n] = json!({ "envelope_stretch": stretch, "dots": false });
             let width = style.line * 0.8;
             sheet.clip(1.0);
             for (upper, lower) in envelope(times, values, taken, stretch) {
@@ -1286,6 +1291,7 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
         // six. A shot not taken has no dot: a small hollow square at the foot of the axis, at
         // the time it would have been read out, says one was planned.
         let marked = times.len() <= MAX_SHOTS_MARKED;
+        drawn_as[n] = json!({ "envelope_stretch": null, "dots": marked });
         sheet.clip(4.0 * sheet.u);
         for line in &lines {
             // A run of one shot has no line to show it, so it has a dot whatever the count.
@@ -1326,7 +1332,8 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
     }
     // What is drawn is said in the towers' own order, whatever order they were drawn in.
     for tower in &which {
-        described.series.push((spec.array.towers[*tower].label.clone(), style.series(*tower).0));
+        let (colour, dash) = style.series(*tower);
+        described.series.push((spec.array.towers[*tower].label.clone(), colour, dash.to_vec()));
     }
     described.towers.clone_from(&which);
     let time = engine.time();
@@ -1364,6 +1371,7 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
             "in_the_scene": towers,
             "drawn": which.iter().map(|tower| tower + 1).collect::<Vec<_>>(),
             "named_in_the_key": keyed.then(|| keyed_towers.iter().map(|tower| tower + 1).collect::<Vec<_>>()),
+            "drawn_as": drawn_as,
             "note": left_out.as_ref().map(|said| format!(
                 "{said}: {} (a plot draws at most {} series; the selected tower is always among them); \
                  the data file has every tower",
@@ -1444,7 +1452,7 @@ fn cadence(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Meas
     drawn.points = series.len();
     let points: Vec<Pos2> = series.iter().map(|q| place(area, &x, &y, (q.0, q.1.max(y.lo)))).collect();
     sheet.line(&points, style.line, style.spectrum, &[]);
-    described.series.push((format!("|W| of {label_of}'s shots, this seed"), style.spectrum));
+    described.series.push((format!("|W| of {label_of}'s shots, this seed"), style.spectrum, Vec::new()));
     sheet.fixed = sheet.labels.len();
     // The floor the closed forms predict, as a level across the plot.
     if let Some(floor) = predicted.floor.filter(|floor| *floor > 0.0) {
@@ -1453,13 +1461,10 @@ fn cadence(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Meas
         let dash = [5.0 * sheet.u, 4.0 * sheet.u];
         sheet.rule(pos2(area.left(), level), pos2(area.right(), level), style.reference, &dash);
         sheet.unclip();
-        // In a figure the window's own line runs through where the words would be: there the
-        // legend names the level.
-        if !style.house {
-            let at = pos2(area.right() - 4.0 * sheet.u, level - 2.0 * sheet.u);
-            sheet.small(at, Anchor::RIGHT_BOTTOM, "predicted floor");
-        }
+        // The window's own line runs through where words by the level would be (in a pane as
+        // in a figure: S2's second review, item 9), so the legend names the level.
     }
+    let floored = predicted.floor.is_some_and(|floor| floor > 0.0);
     // The predicted lines: a stem to the predicted height, and a dot there.
     let colour = style.comb(0);
     let mut lines = Vec::new();
@@ -1505,18 +1510,22 @@ fn cadence(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Meas
         format!("mean cycle {cycle} s · Nyquist {nyquist} Hz · {shots}"),
         format!("mean cycle {cycle} s · {shots}"),
     ];
-    let key = if style.house {
-        [
+    let key = match (style.house, floored) {
+        (true, true) | (false, true) => [
             "grey: this seed's window · stems: the lines the closed forms predict · dashed: the floor they predict",
             "grey: this seed's window · stems: predicted lines · dashed: predicted floor",
+            "grey: window · stems, dashed: predicted",
+        ],
+        (true, false) => [
+            "grey: this seed's window · stems: the lines the closed forms predict",
+            "grey: this seed's window · stems: predicted lines",
             "grey: window · stems: predicted",
-        ]
-    } else {
-        [
+        ],
+        (false, false) => [
             "grey: this seed's window · stems: the lines the closed forms predict, at their predicted heights",
             "grey: this seed's window · stems: the predicted lines",
             "grey: window · stems: predicted",
-        ]
+        ],
     }
     .map(str::to_owned);
     let line = sheet.fit(&said, Face::Sans, style.text_size, area.width());
@@ -1689,13 +1698,17 @@ fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
         let flight_time = instrument.flight_time();
         left_out += count - flown.len();
         let (colour, _) = style.series(n);
-        described.series.push((tower.label.clone(), colour));
+        described.series.push((tower.label.clone(), colour, Vec::new()));
         sheet.drawing.items.push(Item::Clip { min: p(area.min), max: p(area.max) });
         for shot in flown {
             let launch = shot.launch;
             not_taken += usize::from(!shot.taken);
             let at = |seconds: f64| inner.left() + inner.width() * x.fraction(seconds) as f32;
-            drawn.flights.push((n, at(launch), at(shot.readout), shot.taken));
+            // What is recorded of the shot is what is painted: the dash below reads `taken`
+            // from the record, not from the shot a second time.
+            let recorded = (n, at(launch), at(shot.readout), shot.taken);
+            drawn.flights.push(recorded);
+            let taken = recorded.3;
             // Each of the four arm paths as a line through 33 points of the flight.
             const STEPS: usize = 32;
             for arm in 0..4 {
@@ -1711,7 +1724,7 @@ fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
                 // tower does not take is where it was planned, dashed and fainter still: no
                 // atoms flew it.
                 let shade = if arm < 2 { colour } else { colour.mixed(style.background, 0.7) };
-                let (shade, dash) = if shot.taken {
+                let (shade, dash) = if taken {
                     (shade, Vec::new())
                 } else {
                     (shade.mixed(style.background, 0.55), vec![2.5 * sheet.u, 2.0 * sheet.u])
@@ -1724,7 +1737,7 @@ fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
                 });
             }
             // Where the clouds are at the playhead, if this shot is in flight.
-            if !style.house && shot.taken && (launch..=launch + flight_time).contains(&time) {
+            if !style.house && taken && (launch..=launch + flight_time).contains(&time) {
                 for height in arm_heights(instrument, time - launch) {
                     let point = pos2(at(time), inner.bottom() - inner.height() * y.fraction(height) as f32);
                     sheet.dot(point, style.ink);
@@ -1855,18 +1868,20 @@ fn periodogram(
         let level = place(area, &x, &y, (from, *floor)).y;
         sheet.rule(pos2(area.left(), level), pos2(area.right(), level), style.reference, &[]);
     }
+    let mut floors_named: Option<String> = None;
     if style.house {
         // In µrad/√Hz the floors are plain numbers (the faces have no raised minus).
         let named: Vec<String> = floors.iter().map(|floor| plain(floor * 1e6)).collect();
         let text = format!("shot-noise floors, {} µrad/√Hz", named.join(" and "));
         sheet.key(area.left(), combs, &text, style.reference, &[]);
+        floors_named = Some(text);
     }
     sheet.fixed = sheet.labels.len();
     let series = thinned(frequencies, shown);
     drawn.points = series.len();
     let points: Vec<Pos2> = series.iter().map(|q| place(area, &x, &y, (q.0, q.1.max(y.lo)))).collect();
     sheet.line(&points, style.line, style.spectrum, &[]);
-    described.series.push((format!("√S of {name} at {label_of}"), style.spectrum));
+    described.series.push((format!("√S of {name} at {label_of}"), style.spectrum, Vec::new()));
     // The combs: a stem at each harmonic, at the height the spectrum has there. A harmonic above
     // Nyquist stands where it folds to, dashed, and says so.
     let labelled = (MAX_STEM_LABELS / spectrum.combs.len().max(1) as u32).max(1);
@@ -1944,6 +1959,7 @@ fn periodogram(
         reference = json!({
             "shot_noise_floors_rad_per_sqrt_hz": SHOT_NOISE_FLOORS,
             "shot_noise_note": "the plan's two reference levels (baseline and stretch), drawn as grey lines: not computed from this scene",
+            "shot_noise_floors_named_as": floors_named,
         });
     }
     if let Some(height) = uldm {
@@ -1960,7 +1976,11 @@ fn periodogram(
         sheet.mark(Rect::from_center_size(centre, Vec2::splat(2.0 * radius)));
         // Named in the key, on a line of its own beside a diamond like its own: by the mark
         // there is seldom room, for the comb's stems stand round it (S2.md §7.14).
-        let keyed = sheet.key_mark(area.left(), combs + 1, "ULDM benchmark", style);
+        // It is called a reference, as the Python redraw calls it: the longest form that fits.
+        let forms =
+            ["ULDM benchmark (reference, not simulated)", "ULDM benchmark (reference)", "ULDM benchmark"];
+        let named = forms.into_iter().find(|form| sheet.key_mark(area.left(), combs + 1, form, style));
+        let keyed = named.is_some();
         reference["uldm_benchmark"] = json!({
             "frequency_hz": ULDM_FREQUENCY,
             "amplitude_rad": ULDM_AMPLITUDE,
@@ -1969,6 +1989,7 @@ fn periodogram(
             "note": "a reference mark from the plan, not a simulated signal: a scalar of mass 2e-16 eV (f = m c²/h) at 1e-2 µrad, drawn at the height a tone of that amplitude has in this periodogram, a·√T_obs/2, over this run's length",
             "label": null,
             "named_in_the_key": keyed,
+            "named_as": named,
         });
     }
     // The labels, in order: every body's f₀, then every 2f₀, and so on,

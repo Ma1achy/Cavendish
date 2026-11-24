@@ -46,6 +46,15 @@ pub struct Bar {
     pub filled: bool,
 }
 
+impl Bar {
+    /// What is painted for this bar, cut to `visible` (the part inside the lane): filled or
+    /// hollow as `filled` records it, at full strength while the shot is `flying` and taken. The
+    /// lanes paint each bar through this, so what is recorded is what is painted.
+    pub fn shape(&self, visible: Rect, colour: Color32, flying: bool) -> Shape {
+        bar_shape(visible, colour, self.filled, flying && self.filled)
+    }
+}
+
 /// The shape of a bar: filled with `colour` for a shot taken, its outline alone for one that is
 /// not. A shot in flight at the playhead is at full strength; the rest are dimmed.
 pub fn bar_shape(rect: Rect, colour: Color32, taken: bool, flying: bool) -> Shape {
@@ -264,13 +273,14 @@ pub fn lanes(
             if shot.k == 0 {
                 response.bars.push((n, whole));
             }
-            response.shots.push(Bar { tower: n, k: shot.k, rect: whole, filled: shot.taken });
+            let recorded = Bar { tower: n, k: shot.k, rect: whole, filled: shot.taken };
+            response.shots.push(recorded);
             let bar = whole.intersect(lane);
             if bar.width() <= 0.0 {
                 continue;
             }
             let flying = time >= shot.launch && time <= shot.readout;
-            painter.add(bar_shape(bar, colour, shot.taken, flying && shot.taken));
+            painter.add(recorded.shape(bar, colour, flying));
         }
     }
 
@@ -381,6 +391,25 @@ mod tests {
         // Control: a shot taken is filled and has no outline.
         let Shape::Rect(solid) = bar_shape(rect, colour, true, true) else { panic!("a rectangle") };
         assert_eq!((solid.fill, solid.stroke.width), (colour, 0.0));
+    }
+
+    #[test]
+    fn a_bar_is_painted_as_it_is_recorded() {
+        // S2's second review, item 5: the lanes recorded `filled` and decided the fill apart.
+        // Now a bar paints itself from what it records.
+        let rect = Rect::from_min_size(pos2(10.0, 5.0), vec2(30.0, 11.0));
+        let colour = Color32::from_rgb(200, 120, 40);
+        for filled in [false, true] {
+            let bar = Bar { tower: 0, k: 3, rect, filled };
+            let Shape::Rect(painted) = bar.shape(rect, colour, true) else { panic!("a rectangle") };
+            assert_eq!(painted.fill != Color32::TRANSPARENT, bar.filled, "recorded {filled}");
+            // Control: the same bar recorded the other way paints differently.
+            let other = Bar { filled: !filled, ..bar };
+            assert_ne!(other.shape(rect, colour, true), bar.shape(rect, colour, true));
+        }
+        // A shot not taken is never at full strength, flying or not.
+        let lost = Bar { tower: 0, k: 0, rect, filled: false };
+        assert_eq!(lost.shape(rect, colour, true), lost.shape(rect, colour, false));
     }
 
     #[test]

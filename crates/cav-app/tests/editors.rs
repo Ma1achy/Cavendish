@@ -63,6 +63,11 @@ impl Rig {
 }
 
 /// Numbers that six significant figures do not say.
+/// The visits each selection makes (the counts the one test made between them, split).
+const BODY_VISITS: usize = 48;
+const TOWER_VISITS: usize = 48;
+const SCENE_VISITS: usize = 56;
+
 const AWKWARD: [(&str, &str); 6] = [
     ("bodies[0].mass", "1.2345678901234567"),
     ("bodies[0].radius", "0.30000000000000004"),
@@ -72,76 +77,99 @@ const AWKWARD: [(&str, &str); 6] = [
     ("array.instrument.gravity", "9.810000000000002"),
 ];
 
-#[test]
-fn focusing_and_leaving_a_number_editor_changes_nothing() {
+/// Loads the point, sets the awkward numbers, selects `selection`, and focuses and leaves every
+/// field editor it shows in every way (a click elsewhere, Tab, Enter, Escape), from its middle
+/// and from near each end of a vector, asserting that nothing changes. Returns the rig and how
+/// many visits were made. One test a selection, so that the three run side by side (S2's second
+/// review, item 8: as one test it was four seconds on `quick`'s critical path).
+fn leave_every_editor(selection: &str) -> (Rig, usize) {
     let mut rig = Rig::new();
     rig.shell.run("load point").unwrap();
     for (path, value) in AWKWARD {
         rig.shell.run(&format!("set {path} {value}")).unwrap();
     }
     let mut visited = 0;
-    for selection in ["select body 1", "select tower 1", "select none"] {
-        rig.shell.run(selection).unwrap();
-        // The reading arrives before anything is clicked: its rows move the editors below them.
-        assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
-        rig.frames(vec![vec![], vec![]]);
-        let editors: Vec<(String, egui::Rect)> = rig.shell.layout().editors.clone();
-        assert!(editors.len() >= 5, "`{selection}` shows {} editors", editors.len());
-        for (path, _) in editors {
-            // Fields that hold a number, a vector or text; a tick box, a choice and an absent
-            // option's `add` are buttons, and pressing a button is an edit.
-            let whole = rig.shell.engine.spec().to_value();
-            let value = cav_sim::paths::get(&whole, &path).unwrap().clone();
-            if !(value.is_number()
-                || value.is_string()
-                || value.as_array().is_some_and(|v| v.iter().all(serde_json::Value::is_number)))
-            {
-                continue;
-            }
-            // Where a click lands in a field: its middle, and near each end (a vector has a
-            // number at each).
-            for place in 0..if value.is_array() { 3 } else { 1 } {
-                // The four ways out of a field: a click elsewhere, Tab, Enter, Escape.
-                for leave in 0..4 {
-                    // Where the field is now: Tab can scroll the panel to the widget it lands on.
-                    rig.frames(vec![vec![]]);
-                    let Some(rect) = rig.shell.layout().editor(&path) else { continue };
-                    let at = match place {
-                        0 => rect.center(),
-                        1 => rect.left_center() + vec2(8.0, 0.0),
-                        _ => rect.right_center() - vec2(8.0, 0.0),
-                    };
-                    let (before, sets) = (rig.bits(), rig.sets());
-                    rig.click(at);
-                    match leave {
-                        0 => rig.click(rect.left_center() - vec2(40.0, 0.0)),
-                        1 => rig.key(Key::Tab),
-                        2 => rig.key(Key::Enter),
-                        _ => rig.key(Key::Escape),
-                    }
-                    rig.frames(vec![vec![], vec![]]);
-                    assert_eq!(
-                        rig.sets(),
-                        sets,
-                        "`{path}`: a set was issued by focusing and leaving ({leave}): {:?}",
-                        rig.shell.engine.journal().last()
-                    );
-                    assert_eq!(
-                        rig.bits(),
-                        before,
-                        "`{path}`: the scene changed by focusing and leaving ({leave})"
-                    );
-                    visited += 1;
+    rig.shell.run(selection).unwrap();
+    // The reading arrives before anything is clicked: its rows move the editors below them.
+    assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
+    rig.frames(vec![vec![], vec![]]);
+    let editors: Vec<(String, egui::Rect)> = rig.shell.layout().editors.clone();
+    assert!(editors.len() >= 5, "`{selection}` shows {} editors", editors.len());
+    for (path, _) in editors {
+        // Fields that hold a number, a vector or text; a tick box, a choice and an absent
+        // option's `add` are buttons, and pressing a button is an edit.
+        let whole = rig.shell.engine.spec().to_value();
+        let value = cav_sim::paths::get(&whole, &path).unwrap().clone();
+        if !(value.is_number()
+            || value.is_string()
+            || value.as_array().is_some_and(|v| v.iter().all(serde_json::Value::is_number)))
+        {
+            continue;
+        }
+        // Where a click lands in a field: its middle, and near each end (a vector has a
+        // number at each).
+        for place in 0..if value.is_array() { 3 } else { 1 } {
+            // The four ways out of a field: a click elsewhere, Tab, Enter, Escape.
+            for leave in 0..4 {
+                // Where the field is now: Tab can scroll the panel to the widget it lands on.
+                rig.frames(vec![vec![]]);
+                let Some(rect) = rig.shell.layout().editor(&path) else { continue };
+                let at = match place {
+                    0 => rect.center(),
+                    1 => rect.left_center() + vec2(8.0, 0.0),
+                    _ => rect.right_center() - vec2(8.0, 0.0),
+                };
+                let (before, sets) = (rig.bits(), rig.sets());
+                rig.click(at);
+                match leave {
+                    0 => rig.click(rect.left_center() - vec2(40.0, 0.0)),
+                    1 => rig.key(Key::Tab),
+                    2 => rig.key(Key::Enter),
+                    _ => rig.key(Key::Escape),
                 }
+                rig.frames(vec![vec![], vec![]]);
+                assert_eq!(
+                    rig.sets(),
+                    sets,
+                    "`{path}`: a set was issued by focusing and leaving ({leave}): {:?}",
+                    rig.shell.engine.journal().last()
+                );
+                assert_eq!(
+                    rig.bits(),
+                    before,
+                    "`{path}`: the scene changed by focusing and leaving ({leave})"
+                );
+                visited += 1;
             }
         }
     }
-    assert!(visited >= 80, "only {visited} visits were made");
     // The awkward values are still what was set, to the bit.
     let spec = rig.shell.engine.spec();
     assert_eq!(spec.bodies[0].mass.to_bits(), 1.234_567_890_123_456_7_f64.to_bits());
     assert_eq!(spec.array.instrument.gravity.to_bits(), 9.810_000_000_000_002_f64.to_bits());
+    println!("{selection}: {visited} visits");
+    (rig, visited)
+}
 
+// The three selections together made at least 80 visits when they were one test; each is held
+// here to the visits it made when the test was split (24 Nov 2026), which sum to more than 80.
+
+#[test]
+fn focusing_and_leaving_a_tower_s_editors_changes_nothing() {
+    let (_, visited) = leave_every_editor("select tower 1");
+    assert!(visited >= TOWER_VISITS, "only {visited} visits were made");
+}
+
+#[test]
+fn focusing_and_leaving_the_scene_s_editors_changes_nothing() {
+    let (_, visited) = leave_every_editor("select none");
+    assert!(visited >= SCENE_VISITS, "only {visited} visits were made");
+}
+
+#[test]
+fn focusing_and_leaving_a_body_s_editors_changes_nothing() {
+    let (mut rig, visited) = leave_every_editor("select body 1");
+    assert!(visited >= BODY_VISITS, "only {visited} visits were made");
     // Control: the same click does put the field into editing, and typing there is an edit; so
     // the visits above were of fields that could have changed. Select all, type, Enter.
     rig.shell.run("select body 1").unwrap();

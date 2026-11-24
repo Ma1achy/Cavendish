@@ -15,7 +15,7 @@
             cycle: 2.0,
             atom_mass: 1.4431558652473234e-25,
             gravity: 9.81,
-            kicks: 1000.0,
+            kicks: 1000,
             launch_floor: true,
             sign: LowerMinusUpper,
         ),

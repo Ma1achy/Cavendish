@@ -547,7 +547,11 @@ fn the_paper_periodogram_is_the_house_style() {
     assert_eq!(diamonds.len(), 2);
     assert!((diamonds[0][0] - expected.x).abs() < 0.01 && (diamonds[0][1] - expected.y).abs() < 0.01);
     assert!(diamonds[1][1] < area.top(), "the key's diamond is above the axes");
-    assert!(area.contains(expected) && texts.contains(&"ULDM benchmark"));
+    // Named in the key as a reference, as the Python redraw names it (S2's second review, item 9).
+    let named =
+        built.provenance["marks"]["reference"]["uldm_benchmark"]["named_as"].as_str().unwrap().to_owned();
+    assert!(named.starts_with("ULDM benchmark (reference"), "{named}");
+    assert!(area.contains(expected) && texts.contains(&named.as_str()), "{texts:?}");
     assert_eq!(built.provenance["marks"]["reference"]["uldm_benchmark"]["named_in_the_key"], true);
     // Review 29: no label by a mark meets a stem, a dot or a diamond but its own.
     assert!(!plot.drawn.marked.is_empty(), "the harmonics are labelled");

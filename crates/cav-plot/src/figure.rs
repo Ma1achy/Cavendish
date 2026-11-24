@@ -479,7 +479,7 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
         .series
         .iter()
         .enumerate()
-        .map(|(n, (name, colour))| {
+        .map(|(n, (name, colour, dash))| {
             let (x, y) = match figure.what {
                 FigureKind::Signal => (first[n], first[n] + 1),
                 FigureKind::Periodogram => (0, 2),
@@ -489,6 +489,9 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
             json!({
                 "name": name,
                 "colour": colour.css(),
+                // The dash in points at the figure's line width, `line_width`; empty for solid.
+                "dash": dash,
+                "line_width": style.line,
                 "x": table.columns.get(x).map(|c| &c.0),
                 "y": table.columns.get(y).map(|c| &c.0),
                 "x_column": x,
@@ -652,15 +655,55 @@ impl Studio {
     }
 }
 
-/// A figure of a pane's view: the renderer's picture, alone (PNG) or held by a drawing.
+/// A figure of a pane's view: the renderer's picture, alone (PNG) or held by a drawing; or, for
+/// an SVG or a PDF of a pane with voxel bodies, a vector drawing of them
+/// ([`crate::voxels::view`]), which needs no device. The PNG's bytes come back beside it.
 fn view(
     engine: &Engine,
     figure: &Figure,
     file: &str,
     studio: &mut Studio,
-) -> Result<(Built, Vec<u8>), String> {
+) -> Result<(Built, Option<Vec<u8>>), String> {
     let style = Style::preset(&figure.preset)?;
     let size = size_mm(figure, &style);
+    if figure.format != FigureFormat::Png
+        && let Some(voxels) = engine.frame(figure.pane)?.voxels
+    {
+        let spec = engine.spec();
+        let points = [(size[0] / MM_PER_POINT) as f32, (size[1] / MM_PER_POINT) as f32];
+        let name = format!("View · {}", spec.name);
+        let title = figure.title.then_some(name.as_str());
+        let camera = engine.view(figure.pane);
+        let (drawing, drawn) = crate::voxels::view(spec, camera, voxels, &style, points, title, &Outlines);
+        let (mut shared, mut provenance) = provenance(engine, figure, file, &style);
+        let field = voxels.colouring.field;
+        merge(
+            &mut provenance,
+            json!({
+                "title": title,
+                "vector": true,
+                "projection": "orthographic",
+                "note": if drawn.was_perspective {
+                    "the pane is in perspective; the drawing is orthographic along its direction, faces far to near"
+                } else {
+                    "orthographic along the pane's direction, faces far to near"
+                },
+                "voxels": {
+                    "field": field.name(),
+                    "unit": field.unit(),
+                    "tower": (field == cav_sim::voxel_view::LeafField::Phase).then_some(voxels.colouring.tower + 1),
+                    "range": voxels.range.map(|(lo, hi)| [lo, hi]),
+                    "legend": crate::voxels::heading(voxels, spec),
+                    "cut": voxels.bodies.iter().map(|b| b.cut).max(),
+                    "cubes": drawn.cubes,
+                    "faces": drawn.faces,
+                    "notes": voxels.notes,
+                },
+            }),
+        );
+        merge(&mut shared, json!({ "camera": camera, "data": null }));
+        return Ok((Built { drawing, table: None, figure: shared, provenance, style, pixels: None }, None));
+    }
     let pixels = pixels(size, figure.dpi.unwrap_or(style.dpi))?;
     let rgba = studio.view(engine, figure.pane, pixels)?;
     let points = [(size[0] / MM_PER_POINT) as f32, (size[1] / MM_PER_POINT) as f32];
@@ -685,7 +728,7 @@ fn view(
     );
     merge(&mut shared, json!({ "camera": engine.view(figure.pane), "data": null }));
     let png = cav_render::encode_png(&rgba, pixels)?;
-    Ok((Built { drawing, table: None, figure: shared, provenance, style, pixels: Some(pixels) }, png))
+    Ok((Built { drawing, table: None, figure: shared, provenance, style, pixels: Some(pixels) }, Some(png)))
 }
 
 /// Draws `figure` from `engine` and writes it to `path`, with its data beside it, and adds it to
@@ -704,8 +747,7 @@ pub fn export(
     let file = path.file_name().ok_or_else(|| format!("`{}` names no file", path.display()))?;
     let file = file.to_string_lossy().into_owned();
     let (built, picture) = if figure.what == FigureKind::View {
-        let (built, png) = view(engine, figure, &file, studio)?;
-        (built, Some(png))
+        view(engine, figure, &file, studio)?
     } else {
         (build(engine, figure, &file)?, None)
     };

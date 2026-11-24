@@ -57,6 +57,15 @@ fn content(drawing: &Drawing) -> (String, Vec<Picture<'_>>) {
                     let _ = writeln!(out, "{} w\n[] 0 d\n{rect}\nS", number(*width));
                 }
             }
+            Item::Polygon { points, fill } => {
+                let Some((first, rest)) = points.split_first() else { continue };
+                out.push_str(&rgb(*fill, "rg"));
+                let _ = writeln!(out, "{} m", xy(*first));
+                for point in rest {
+                    let _ = writeln!(out, "{} l", xy(*point));
+                }
+                out.push_str("h\nf\n");
+            }
             Item::Circle { centre: [x, y], radius: r, fill } => {
                 let k = r * KAPPA;
                 out.push_str(&rgb(*fill, "rg"));
