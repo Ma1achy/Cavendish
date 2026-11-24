@@ -204,3 +204,26 @@ and writes, for `scaffold/` and `scaffold_multimode/`:
 | `tight_V.npy` | (3, 6) | the potential, J/kg |
 
 Run 24 Nov 2026, Python 3.14.3, numpy 2.5.5, scipy 1.18.1: 223 s and 239 s.
+## The scripts' pipeline, written again (`phase_exact.npy`, `phase_ac_pipeline*.npy`)
+
+Added after S3's review (`docs/slices/S3.md` §8). `scripts/script_pipeline.py` writes again the
+pipeline the `cuboid`, `scaffold` and `scaffold_multimode` scripts share (their arm tables a step
+ahead of the source, `interp1d`, `RectBivariateSpline`, `quad` over the window), and is tied to
+them before it writes anything: run with `quad` on each script's own table it gives the published
+`phase.npy` to 1.2e-16 (cuboid) and 1.7e-16 (both scaffolds) of its peak. Run 24 Nov 2026,
+Python 3.14.3, numpy 2.5.5, scipy 1.18.1, 9 minutes:
+
+    <venv>/Scripts/python -I scripts/script_pipeline.py oracle/fixtures/scripts
+
+| File | What |
+|---|---|
+| `cuboid/phase_exact.npy` (20,) | the script's own table and rule with `quad` replaced by exact integration (Gauss–Legendre, 8 points a step, between whose ends the arms are straight): its `quad` is 2.475e-5 of the phase off it, in the DC and the AC alike |
+| `<scaffold>/phase_ac_pipeline.npy` | the pipeline (exact integration) on the scripts' integrand integrated tightly, on 24 α × 480 heights (the scripts': 12 × 30): AC series, radians |
+| `<scaffold>/phase_ac_pipeline_half.npy` | the same at 240 heights: the last doubling (7.39e-4 and 8.44e-6 of the peak) |
+| `<scaffold>/phase_ac_pipeline_alpha_doubled.npy` | the same at 48 α (1.8e-5 and 5.1e-7) |
+| `<scaffold>/phase_ac_pipeline_script_grid.npy`, `..._quad.npy` | on the scripts' own grid, exactly and by their `quad`: 45% and 18% of the peak from the finest; their `quad` 800 and 1.06 times the peak off |
+
+The tight potential of a tube here is the scripts' integrand integrated along the tube in closed
+form (`asinh`) and over its section by Gauss–Legendre (24) in radius and the trapezoid rule (64)
+in angle; against `tight_V.npy` (`nquad` at `epsrel = 1e-12`) it is within 7.8e-16 of V and
+2.1e-8 of the largest change, checked by the harness before it writes.
