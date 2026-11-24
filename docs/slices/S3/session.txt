@@ -1,5 +1,58 @@
-$ cav exec "load unit-cube; ls bodies[0].shape; set bodies[0].shape.pitch 0.25; colour phase 1; overlay leaves cut 1; set bodies[0].shape.pitch 1e-4; stats"
-`C:\src\Cavendish\target\debug\cav.exe exec load unit-cube; ls bodies[0].shape; set bodies[0].shape.pitch 0.25; colour phase 1; overlay leaves cut 1; set bodies[0].shape.pitch 1e-4; stats` failed (exit code: 1): cav: `set bodies[0].shape.pitch 1e-4`: bodies[0].shape.pitch: pitch: 0.0001 m needs 10000 cells across the shape's 1 m, more than the 1024 one tree holds; use a pitch of at least 0.0009765625 m
+$ cav exec 'load unit-cube; add bodies {"label": "ball", "mass": 50, "shape": {"kind": {"Sphere": {"radius": 0.4}}, "pitch": 0.1, "supersample": 2}, "motion": {"Static": {"position": [-2, 0, 1.5]}}}; ls bodies[1].shape; ls bodies[1].shape.kind; colour phase 1; overlay leaves cut 1; stats'
+load unit-cube
+add bodies {"label":"ball","mass":50,"shape":{"kind":{"Sphere":{"radius":0.4}},"pitch":0.1,"supersample":2},"motion":{"Static":{"position":[-2,0,1.5]}}}
+kind  =  Sphere  (one of Sphere | Shell | Cuboid | Cylinder | Ellipsoid | Platonic | Polyhedron | Mesh)  What solid it is, centred on the body's position
+pitch  =  0.1 m  (number · above 0 to 1000)  The side of a finest voxel, metres
+supersample  =  2  (integer · from 1 to 6)  Sample points along each side of a finest voxel, from 1 to 6: how finely a voxel the surface cuts is weighed
+radius  =  0.4 m  (number · above 0 to 1000)  Metres
+colour phase 1
+overlay leaves cut 1
+{
+  "engine": "0.0.0",
+  "scene": "unit-cube",
+  "towers": 5,
+  "bodies": 2,
+  "room": false,
+  "floor": false,
+  "time": 0.0,
+  "duration": 12.0,
+  "selection": null,
+  "panes": 1,
+  "active_pane": 0,
+  "journal": 4,
+  "journal_whole": true,
+  "undo": 2,
+  "redo": 0,
+  "generation": 4,
+  "digest": "60aed765e84dc33c",
+  "signal": "stale",
+  "compare": null
+}
+
+$ cav exec 'load unit-cube; set bodies[0].shape.pitch 1e-4'
+`C:\src\Cavendish\target\debug\cav.exe exec load unit-cube; set bodies[0].shape.pitch 1e-4` failed (exit code: 1): cav: `set bodies[0].shape.pitch 1e-4`: bodies[0].shape.pitch: pitch: 0.0001 m needs 10000 cells across the shape's 1 m, more than the 1024 one tree holds; use a pitch of at least 0.0009765625 m
+
+$ cav exec 'load mixed-array; set array.towers[0].instrument {"half_sequence": 0.6, "cycle": 1.5}; get array.towers[0].instrument; reading 1'
+load mixed-array
+set array.towers[0].instrument {"half_sequence":0.6,"cycle":1.5}
+{
+  "tower_height": null,
+  "ifo_separation": null,
+  "half_sequence": 0.6,
+  "launch_velocity": null,
+  "cycle": 1.5,
+  "atom_mass": null,
+  "gravity": null,
+  "kicks": null,
+  "launch_floor": null,
+  "sign": null
+}
+# a shot read out at 1 s · refined · quadrature within 3e-12 rad
+# tower               ΔΦ [rad]  δφ₁ lower [rad]  δφ₂ upper [rad]
+aion-10             -1.15042029797717e-1  -5.862929604771471e-2  5.641273375000229e-2
+aice                1.1924667132505144e-1  1.2388682134722605e-1  4.640150022174601e-3
+aion-10, T = 0.9 s  -7.306252656849267e-2  -3.480473441804267e-2  3.8257792150450005e-2
+
 $ cav run mixed-array --out target/demo-s3/mixed
 target/demo-s3/mixed: scene `mixed-array`, 3 tower(s), 72 shot(s) in all, quadrature within 4e-12 rad, 0.01 s
 

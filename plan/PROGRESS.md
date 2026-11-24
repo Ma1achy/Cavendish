@@ -7,7 +7,36 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S0 the shell | done: TASK-S0-01 to 14 merged; reviewed twice, nothing important remains | `s0-shell` | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
 | S1 a point mass | done: TASK-S1-01 to 19 merged; reviewed twice, nothing important remains | `s1-point-mass` | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
 | S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
-| S3 voxel bodies | built: TASK-S3-01 to 18 merged (PRs #91 to #103 and S3-16's); awaiting review; `quick` over its budget |  | brief and results: `docs/slices/S3.md` (§7); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
+| S3 voxel bodies | built; reviewed once; every finding fixed (TASK-S3-20 to 25, PRs #108 onwards); awaiting re-review |  | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
+
+## S3 after its review (24 Nov 2026) — fixes done, awaiting re-review
+
+**Done.** All six important and thirteen minor findings (`docs/slices/S3.md` §8):
+1. The cuboid series' gap is measured: the scripts' one-step offset (6.29e-3) and their `quad`
+   (2.5e-5); the engine is held to the scripts' rule as in S1 (copy 2.0e-8 of 1.1e-7, limit
+   7.7e-9 of 1e-5, gap 2.9e-6 of 2%). The oracle had read these four scripts with the `fig2`
+   scripts' G (6.67e-11); they take 6.6743e-11.
+2. The scaffold series cases now compare with the scripts' pipeline on their integrand
+   integrated tightly, refined to convergence (`scripts/script_pipeline.py`): 2.1e-4 of 3.22e-3,
+   3.0e-5 of 1.03e-3. The published series are nquad noise, said as such.
+3. Colour by phase reads the tower's own instrument.
+4. A scene's trees share 256 MiB, counted before each is made; the kernel's work is a read of the
+   scene, shared by its voxel bodies. Memtest at the body cap.
+5. Volume and inertia per shape: derived envelopes (with a control that breaks them) and, for the
+   curved shapes, order ≥ 1.5 (measured 2.0 to 2.5).
+6. A voxel view figure is on paper with title, legend, scale and data, in every format.
+Minors: reader key destructured and tested per field; shared-edge rays; the STL cap reached;
+self-crossing meshes refused; merge tested against an independent unmerged tree; the unreachable
+guard gone; hull cap said as 100; no towers with `colour distance` said; deterministic demo; a
+whole session; `quick` lints the oracle when touched; `ls` of an enum lists its variant's fields.
+
+**Numbers.** `quick` 469 tests, 12.9 to 15.0 s warm; `gpu` 34 in 21 s; `oracle` 58 in 692 s;
+107 of 107 validation cases (2 new, 4 tolerances changed with reasons, none dropped).
+
+**Open.** A mesh's file is resolved against the working directory, not the scene file's
+(`plan/IDEAS.md`). `quick` is over the brief's 10 s. The oracle tier is over 5 minutes.
+
+**Next.** A fresh re-review of S3; then the tag, and S4.
 
 ## S3, voxel bodies: where it stands (24 Nov 2026) — built, not yet reviewed or tagged
 

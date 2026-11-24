@@ -1,9 +1,9 @@
 $ cav figure platonic-row view --preset paper-full --exec "view top; proj ortho; colour height" --out platonic-row.svg
-platonic-row.svg: view of scene `platonic-row`, preset paper-full, 0.10 s
-beside it: platonic-row.json
+platonic-row.svg: view of scene `platonic-row`, preset paper-full, 0.12 s
+beside it: platonic-row.csv, platonic-row.json
 $ cav figure platonic-row view --preset paper-full --exec "view top; proj ortho; colour height" --out platonic-row.pdf
-platonic-row.pdf: view of scene `platonic-row`, preset paper-full, 0.11 s
-beside it: platonic-row.json
+platonic-row.pdf: view of scene `platonic-row`, preset paper-full, 0.13 s
+beside it: platonic-row.csv, platonic-row.json
 $ cav figure platonic-row view --preset paper-full --exec "view top; proj ortho; colour height" --out platonic-row.png
-platonic-row.png: view of scene `platonic-row`, preset paper-full, 1.69 s
-beside it: platonic-row.json
+platonic-row.png: view of scene `platonic-row`, preset paper-full, 1.63 s
+beside it: platonic-row.csv, platonic-row.json

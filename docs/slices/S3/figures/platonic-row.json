@@ -10,14 +10,14 @@
   },
   "engine": {
     "version": "0.0.0",
-    "revision": "3e960954a6a210f854a937a59d13864d69a113e4",
+    "revision": "407baec2ee71d6858a27e0631931b47b300e3025",
     "dirty": false,
     "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
   },
   "numerics": {
     "engine": {
       "version": "0.0.0",
-      "revision": "3e960954a6a210f854a937a59d13864d69a113e4",
+      "revision": "407baec2ee71d6858a27e0631931b47b300e3025",
       "dirty": false,
       "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
     },
@@ -281,10 +281,47 @@
     },
     "overlay": {
       "leaves": false,
-      "cut": null
-    }
+      "cut": null,
+      "tree": null
+    },
+    "section": null
   },
-  "data": null,
+  "data": {
+    "file": "platonic-row.csv",
+    "format": "csv",
+    "rows": 8677,
+    "columns": [
+      {
+        "name": "body",
+        "unit": "its number from 1"
+      },
+      {
+        "name": "x",
+        "unit": "m"
+      },
+      {
+        "name": "y",
+        "unit": "m"
+      },
+      {
+        "name": "z",
+        "unit": "m"
+      },
+      {
+        "name": "side",
+        "unit": "m"
+      },
+      {
+        "name": "level",
+        "unit": "levels above the finest"
+      },
+      {
+        "name": "height",
+        "unit": "m"
+      }
+    ],
+    "note": "every cube drawn, a row each: the body it is of, its centre and side in the world's frame, its level and the value it is coloured by"
+  },
   "files": [
     {
       "file": "platonic-row.pdf",
@@ -306,8 +343,15 @@
       "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
       "title": "View · platonic-row",
       "vector": true,
+      "pixels": null,
+      "dpi": null,
       "projection": "orthographic",
       "note": "orthographic along the pane's direction, faces far to near",
+      "scale_m": 2.0,
+      "colours": {
+        "background": "#ffffff",
+        "ink": "#111111"
+      },
       "voxels": {
         "field": "height",
         "unit": "m",
@@ -342,12 +386,33 @@
       },
       "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
       "title": "View · platonic-row",
+      "vector": false,
       "pixels": [
         2102,
         1063
       ],
       "dpi": 300.0,
-      "note": "the scene as the renderer draws it: a picture, also inside an SVG or a PDF; it has no data file"
+      "projection": "orthographic",
+      "note": "orthographic along the pane's direction, faces far to near",
+      "scale_m": 2.0,
+      "colours": {
+        "background": "#ffffff",
+        "ink": "#111111"
+      },
+      "voxels": {
+        "field": "height",
+        "unit": "m",
+        "tower": null,
+        "range": [
+          1.725,
+          3.2750000000000004
+        ],
+        "legend": "height, m",
+        "cut": 0,
+        "cubes": 8677,
+        "faces": 8677,
+        "notes": []
+      }
     },
     {
       "file": "platonic-row.svg",
@@ -369,8 +434,15 @@
       "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
       "title": "View · platonic-row",
       "vector": true,
+      "pixels": null,
+      "dpi": null,
       "projection": "orthographic",
       "note": "orthographic along the pane's direction, faces far to near",
+      "scale_m": 2.0,
+      "colours": {
+        "background": "#ffffff",
+        "ink": "#111111"
+      },
       "voxels": {
         "field": "height",
         "unit": "m",
