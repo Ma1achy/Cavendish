@@ -37,6 +37,30 @@ pub fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     })
 }
 
+/// Refused: a page cannot read a file by its path.
+///
+/// # Errors
+/// Always (`Unsupported`).
+pub fn read(_path: &Path, _most: u64) -> std::io::Result<Vec<u8>> {
+    Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+}
+
+/// False: a page has no file to read.
+#[must_use]
+pub const fn is_file(_path: &Path) -> bool {
+    false
+}
+
+/// Runs `work` and answers with what it returned and the downloads it made (taken, so not
+/// handed to the browser); as natively, where `capture` is the seam's test double.
+pub fn capture<R>(work: impl FnOnce() -> R) -> (R, Vec<Download>) {
+    let before = take_downloads();
+    let result = work();
+    let made = take_downloads();
+    WAITING.with_borrow_mut(|waiting| *waiting = before);
+    (result, made)
+}
+
 /// Nothing: a download has no folder.
 ///
 /// # Errors

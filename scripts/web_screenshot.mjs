@@ -3,7 +3,9 @@
 //
 //   node scripts/web_screenshot.mjs <chrome.exe> <url> <out.png> [seconds=12] [1440x900] [no-webgpu]
 //
-// With CAV_DOWNLOADS set to a folder, files the page downloads are saved there.
+// With CAV_DOWNLOADS set to a folder, files the page downloads are saved there. With CAV_CLICK set
+// to an element's id, that element is clicked as a person would (a user gesture) each time it
+// appears: files an address's `#exec` makes wait behind such a button (`held-downloads`).
 //
 // With `no-webgpu` the page is loaded as a browser without WebGPU sees it (`navigator.gpu` removed
 // before the page's script runs): it must show its message and never fetch the module; exit 0 then
@@ -30,6 +32,10 @@ const browser = spawn(chrome, [
   "--enable-unsafe-webgpu",
   "--no-first-run",
   "--no-default-browser-check",
+  "--disable-component-update", // no component downloads (they land in CAV_DOWNLOADS) and no traffic
+  "--disable-background-networking",
+  // A fresh profile otherwise fetches Chrome's on-device model (tens of MB) into the downloads.
+  "--disable-features=OptimizationGuideModelDownloading,OptimizationHintsFetching,OptimizationTargetPrediction,OptimizationHints",
   "--remote-debugging-port=0",
   `--user-data-dir=${profile}`,
   `--window-size=${width},${height}`,
@@ -103,6 +109,8 @@ const started = Date.now();
 await send("Page.navigate", { url }, sessionId);
 // The application is running once it has removed the page's own message ("Loading Cavendish…").
 let running = null;
+let clicked = 0;
+const click = process.env.CAV_CLICK;
 while (Date.now() - started < Number(seconds) * 1000) {
   if (running === null) {
     const gone = await send("Runtime.evaluate", {
@@ -111,9 +119,25 @@ while (Date.now() - started < Number(seconds) * 1000) {
     }, sessionId);
     if (gone.result?.result?.value === true) running = (Date.now() - started) / 1000;
   }
+  if (click) {
+    const found = await send("Runtime.evaluate", {
+      expression: `(() => { const e = document.getElementById(${JSON.stringify(click)}); if (!e) return null; const said = e.textContent; e.click(); return said; })()`,
+      returnByValue: true,
+      userGesture: true,
+    }, sessionId);
+    const said = found.result?.result?.value;
+    if (typeof said === "string") {
+      clicked += 1;
+      console.log(`clicked #${click} at ${((Date.now() - started) / 1000).toFixed(2)} s: ${said}`);
+    }
+  }
   await new Promise((done) => setTimeout(done, 50));
 }
 console.log(running === null ? "the application did not start" : `running ${running.toFixed(2)} s after the address was opened`);
+if (click && clicked === 0) {
+  console.log(`#${click} never appeared`);
+  failed = true;
+}
 if (withoutGpu) {
   const said = await send("Runtime.evaluate", {
     expression: "document.getElementById('message')?.textContent ?? ''",

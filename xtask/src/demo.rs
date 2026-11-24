@@ -915,6 +915,13 @@ fn cav_text(root: &Path, name: &str) -> Result<String, String> {
     std::fs::read_to_string(&file).map_err(|e| format!("{}: {e}", file.display()))
 }
 
+/// Whether `bytes` look like a whole JSON object: `{` first and `}` last, past white space.
+fn serde_json_like(bytes: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(bytes);
+    let text = text.trim();
+    text.starts_with('{') && text.ends_with('}')
+}
+
 /// S17: the application as a web page. The page is built (`cargo xtask web build`), served from
 /// this process, and photographed in headless Chrome with WebGPU (`scripts/web_screenshot.mjs`,
 /// which starts and closes its own browser: no window opens). Each picture is taken after a wait,
@@ -969,37 +976,121 @@ fn s17(root: &Path) -> Result<(), String> {
         }
         expect_png(&out, file, [1440, 900], &mut made)?;
     }
-    // A download: the scene exported from the page arrives as a file, the same bytes as natively.
+    // Downloads. A link's commands may make files, but the page holds them behind a button until
+    // the person clicks: opened with no click, nothing arrives (the control).
     let downloads = root.join("target").join("demo-s17").join("downloads");
-    let _ = std::fs::remove_dir_all(&downloads);
-    std::fs::create_dir_all(&downloads).map_err(|e| format!("{}: {e}", downloads.display()))?;
+    let page = |url: &str, click: bool, seconds: u32| -> Result<String, String> {
+        let _ = std::fs::remove_dir_all(&downloads);
+        std::fs::create_dir_all(&downloads).map_err(|e| format!("{}: {e}", downloads.display()))?;
+        let mut node = Command::new("node");
+        node.current_dir(root).env("CAV_DOWNLOADS", &downloads).arg("scripts/web_screenshot.mjs");
+        if click {
+            node.env("CAV_CLICK", "held-downloads");
+        }
+        let output = node
+            .arg(&chrome)
+            .arg(url)
+            .arg(root.join("target").join("demo-s17").join("page.png"))
+            .arg(seconds.to_string())
+            .output()
+            .map_err(|e| format!("node: {e}"))?;
+        let said = String::from_utf8_lossy(&output.stdout).into_owned();
+        if output.status.success() { Ok(said) } else { Err(format!("the download page failed: {said}")) }
+    };
+    std::fs::create_dir_all(root.join("target").join("demo-s17")).map_err(|e| e.to_string())?;
     let url = format!("http://127.0.0.1:{}/#exec=load%20comb;%20save%20comb.ron", server.port);
-    let output = Command::new("node")
-        .current_dir(root)
-        .env("CAV_DOWNLOADS", &downloads)
-        .args(["scripts/web_screenshot.mjs"])
-        .arg(&chrome)
-        .arg(&url)
-        .arg(downloads.join("page.png"))
-        .arg("5")
-        .output()
-        .map_err(|e| format!("node: {e}"))?;
-    if !output.status.success() {
-        return Err(format!("the download page failed: {}", String::from_utf8_lossy(&output.stdout)));
+    let said = page(&url, false, 6)?;
+    if downloads.join("comb.ron").exists() {
+        return Err("a link's `save comb.ron` was downloaded without a click".into());
     }
-    let downloaded = std::fs::read_to_string(downloads.join("comb.ron"))
-        .map_err(|e| format!("the page's `save comb.ron` did not arrive as a download: {e}"))?;
-    let native = cav_text(root, "comb")?;
+    log.push_str(&format!(
+        "$ (page, no click) {url}\n{said}nothing downloaded: the file waits behind the button\n\n"
+    ));
+    // With a click: a scene and two figures (picture, data, record). `pass` moves in a straight
+    // line, so its signal is the same bits in wasm as natively and its figure's files must be the
+    // same bytes; comb's periodogram goes through `sin` (THROUGH_LIBM), so its files are only
+    // checked to have arrived whole.
+    let script =
+        "load pass; save pass.ron; figure signal to pass.svg; load comb; figure periodogram to comb.svg";
+    let url = format!("http://127.0.0.1:{}/#exec={}", server.port, script.replace(' ', "%20"));
+    let said = page(&url, true, 20)?;
+    let native_dir = root.join("target").join("demo-s17").join("native-figure");
+    let _ = std::fs::remove_dir_all(&native_dir);
+    std::fs::create_dir_all(&native_dir).map_err(|e| format!("{}: {e}", native_dir.display()))?;
+    step("build cav", cargo(root, &["build", "--quiet", "-p", "cav"]))?;
+    let target = native_dir.join("pass.svg").to_string_lossy().replace('\\', "/");
+    capture(&binary(root, "cav"), &["exec", &format!("load pass; figure signal to {target}")])?;
+    let mut compared = Vec::new();
+    let mut files = 0;
+    let natives = std::fs::read_dir(&native_dir).map_err(|e| format!("{}: {e}", native_dir.display()))?;
+    for entry in natives {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let web = std::fs::read(downloads.join(&name))
+            .map_err(|e| format!("{name}: the page's figure did not arrive as a download: {e}"))?;
+        let native = std::fs::read(&path).map_err(|e| format!("{name} (native): {e}"))?;
+        // The record names the platform that made the numbers: the one field that must differ.
+        let platform = |bytes: &[u8]| -> (String, String) {
+            let text = String::from_utf8_lossy(bytes).into_owned();
+            let named =
+                text.lines().find_map(|line| line.trim().strip_prefix("\"platform\": ")).map(str::to_owned);
+            let named = named.unwrap_or_default();
+            (text.replace(&named, "\"…\","), named)
+        };
+        let (web, native) = if name.ends_with(".json") {
+            let ((web, on_web), (native, natively)) = (platform(&web), platform(&native));
+            if on_web == natively {
+                return Err(format!("{name}: the page's record names the native platform ({natively})"));
+            }
+            let bare = |named: &str| named.trim_end_matches(',').trim_matches('"').to_owned();
+            compared.push(format!(
+                "{name}: platform {} against {}, the rest the same bytes",
+                bare(&on_web),
+                bare(&natively)
+            ));
+            (web.into_bytes(), native.into_bytes())
+        } else {
+            (web, native)
+        };
+        if web != native {
+            return Err(format!("{name}: the downloaded figure differs from the native one"));
+        }
+        compared.push(format!("{name} {} bytes", web.len()));
+        files += 1;
+    }
+    if files != 3 {
+        return Err(format!("the native figure made {files} files, not a picture, its data and its record"));
+    }
+    for name in ["comb.svg", "comb.csv", "comb.json"] {
+        let bytes =
+            std::fs::read(downloads.join(name)).map_err(|e| format!("{name}: not downloaded: {e}"))?;
+        let whole = match name {
+            "comb.svg" => {
+                (bytes.starts_with(b"<?xml") || bytes.starts_with(b"<svg"))
+                    && bytes.trim_ascii_end().ends_with(b"</svg>")
+            }
+            "comb.json" => serde_json_like(&bytes),
+            _ => !bytes.is_empty(),
+        };
+        if !whole {
+            return Err(format!("{name}: downloaded but not whole"));
+        }
+        compared.push(format!("{name} {} bytes (arrived whole)", bytes.len()));
+    }
+    let downloaded = std::fs::read_to_string(downloads.join("pass.ron"))
+        .map_err(|e| format!("the page's `save pass.ron` did not arrive as a download: {e}"))?;
+    let native = cav_text(root, "pass")?;
     // ron ends lines with the platform's own ending (CRLF on Windows, LF in a page and on Linux):
     // the same scene, compared line by line.
     if downloaded.lines().ne(native.lines()) {
-        return Err("the downloaded comb.ron differs from the scene natively saved".into());
+        return Err("the downloaded pass.ron differs from the scene natively saved".into());
     }
     log.push_str(&format!(
-        "$ (page) {url}
-comb.ron downloaded: {} bytes, line for line the native `save`
+        "$ (page, clicking the button) {url}
+{said}downloaded: {}; pass.ron {} bytes, line for line the native `save`
 
 ",
+        compared.join(", "),
         downloaded.len()
     ));
 

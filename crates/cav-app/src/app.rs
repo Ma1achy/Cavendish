@@ -1,5 +1,5 @@
 //! The application inside eframe: the [`Shell`], its panes on the GPU and the frame clock. The
-//! native window (`main.rs`) and the browser page ([`crate::web`]) run this same value.
+//! native window (`main.rs`) and the browser page ([`crate::platform`] on `wasm32`) run this same value.
 
 use web_time::Instant;
 
@@ -32,10 +32,10 @@ impl eframe::App for App {
         self.shell.frame_ms = Some(now.duration_since(self.last_frame).as_secs_f32() * 1e3);
         self.last_frame = now;
         self.shell.ui(ui, &mut self.panes);
-        // In a browser: the page's loading message goes, and the files this frame "wrote" (an
-        // export, a figure) are handed to it as downloads. Natively they are on disc already.
-        #[cfg(target_arch = "wasm32")]
-        crate::web::after_frame();
+        // In a browser: the page's loading message goes, the address's commands run, and the
+        // files this frame "wrote" (an export, a figure) are handed to it as downloads.
+        // Natively nothing: the files are on disc already.
+        crate::platform::after_frame(&mut self.shell, ui.ctx());
     }
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {

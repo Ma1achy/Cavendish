@@ -482,6 +482,85 @@ mod serving {
     }
 }
 
+/// Where a `cfg` on the target's architecture may appear (`docs/extending/the-web-build.md`):
+/// only on a module's declaration, choosing a platform seam's module, so that everything else
+/// is one path for both. Answers each place in `text` (one file's) that breaks the rule, as
+/// `line: text`.
+#[cfg(test)]
+fn stray_cfgs(text: &str) -> Vec<String> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut stray = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let code = line.split("//").next().unwrap_or_default();
+        if !code.contains("target_arch") {
+            continue;
+        }
+        let next = lines.get(index + 1).map_or("", |next| next.trim_start());
+        let declares = code.trim_start().starts_with("#[cfg(")
+            && (next.starts_with("#[path") || next.starts_with("mod ") || next.starts_with("pub mod "));
+        if !declares {
+            stray.push(format!("{}: {}", index + 1, line.trim()));
+        }
+    }
+    stray
+}
+
+#[cfg(test)]
+mod seams {
+    use super::stray_cfgs;
+
+    /// Every `.rs` file under `dir`.
+    fn sources(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                sources(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    #[test]
+    fn only_the_seams_name_the_target() {
+        // Every crate's own code (`src/`): a `cfg(target_arch …)` only where a seam chooses its
+        // module. (Tests may name the target: the web equivalence is a wasm test.)
+        let mut files = Vec::new();
+        for krate in std::fs::read_dir(crate::root().join("crates")).unwrap() {
+            let src = krate.unwrap().path().join("src");
+            if src.is_dir() {
+                sources(&src, &mut files);
+            }
+        }
+        assert!(files.len() > 50, "the crates' sources were not found");
+        let stray: Vec<String> = files
+            .iter()
+            .flat_map(|file| {
+                let text = std::fs::read_to_string(file).unwrap();
+                stray_cfgs(&text).into_iter().map(move |at| format!("{}:{at}", file.display()))
+            })
+            .collect();
+        assert!(
+            stray.is_empty(),
+            "cfg(target_arch) outside a seam's module declaration:\n{}",
+            stray.join("\n")
+        );
+        // Control arms: a cfg on a statement, on a function, a cfg_attr and a cfg! are found; a
+        // seam's declaration (with or without #[path]) and a comment are not.
+        let seam = "#[cfg(not(target_arch = \"wasm32\"))]\n#[path = \"x/native.rs\"]\nmod platform;\n\
+                    #[cfg(target_arch = \"wasm32\")]\npub mod web;\n// target_arch is chosen above\n";
+        assert!(stray_cfgs(seam).is_empty());
+        for wrong in [
+            "fn f() {\n    #[cfg(target_arch = \"wasm32\")]\n    crate::web::after_frame();\n}\n",
+            "#[cfg(target_arch = \"wasm32\")]\nfn only_on_the_web() {}\n",
+            "#![cfg_attr(target_arch = \"wasm32\", allow(clippy::x))]\n",
+            "let web = cfg!(target_arch = \"wasm32\");\n",
+        ] {
+            assert_eq!(stray_cfgs(wrong).len(), 1, "{wrong}");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

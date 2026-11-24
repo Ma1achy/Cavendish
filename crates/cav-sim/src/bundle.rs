@@ -421,13 +421,21 @@ pub fn instrument_table(spec: &SceneSpec) -> (Vec<crate::InstrumentSpec>, Vec<us
     }
     (table, column)
 }
+/// The platform the numbers were made on, `arch-os`: `x86_64-windows`, or `wasm32-unknown` in a
+/// browser page (the target has no OS of its own, and std names none).
+#[must_use]
+pub fn platform() -> String {
+    let os = if std::env::consts::OS.is_empty() { "unknown" } else { std::env::consts::OS };
+    format!("{}-{os}", std::env::consts::ARCH)
+}
+
 /// The numerics block: what made the numbers, so that they can be made again or doubted.
 #[must_use]
 pub fn numerics(spec: &SceneSpec, build: &Build) -> serde_json::Value {
     let instrument = spec.array.instrument.instrument();
     serde_json::json!({
         "engine": build.json(),
-        "platform": format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
+        "platform": platform(),
         "precision": "f64 on the CPU",
         "quadrature": format!("{DEFAULT_QUADRATURE:?}, panels halved until two rules agree"),
         "phase_tolerance_rad": PHASE_TOLERANCE,

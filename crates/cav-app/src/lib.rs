@@ -29,8 +29,17 @@ pub use cav_plot::plots;
 pub mod shell;
 pub mod theme;
 pub mod timeline;
+
+pub mod address;
+// The platform seam: the application's entry and what it does around each frame. Natively next
+// to nothing (the window is `main.rs`); in a page, eframe's web runner, the address's `#exec`,
+// downloads, the forward stage's workers.
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "platform/native.rs"]
+pub mod platform;
 #[cfg(target_arch = "wasm32")]
-pub mod web;
+#[path = "platform/web.rs"]
+pub mod platform;
 
 pub use panes::{GpuPanes, NoSurface, PaneSurface};
 pub use shell::{APP_COMMANDS, ConsoleFilter, Layout, Shell};

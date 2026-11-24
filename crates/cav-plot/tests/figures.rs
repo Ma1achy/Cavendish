@@ -986,3 +986,38 @@ fn gpu_a_lost_shot_is_a_gap_in_the_png() {
     }
     assert!(lost >= 5, "{lost} lost shots looked at");
 }
+
+#[test]
+fn a_figure_export_goes_through_the_files_seam() {
+    // Every file a figure export writes (the picture, its data and its record), and every read
+    // it makes, goes through `cav_engine::files`, which in a page makes them downloads. Natively
+    // the seam's test double (`files::capture`) holds them as a page would: a file written
+    // around the seam would land on disc here and be missing from the list.
+    let dir = scratch("through-the-seam");
+    let mut engine = engine("load comb; seek 12");
+    let made_on_disc = |name: &str| dir.join(name).exists();
+    for (format, data) in [("svg", "csv"), ("pdf", "csv")] {
+        let file = dir.join(format!("comb.{format}"));
+        let (said, downloads) = cav_engine::files::capture(|| {
+            engine.run_script(&format!("figure periodogram to {}", word(&file)))
+        });
+        said.unwrap();
+        let names: Vec<&str> = downloads.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names, [format!("comb.{format}"), format!("comb.{data}"), "comb.json".to_owned()]);
+        assert!(
+            !made_on_disc(&format!("comb.{format}"))
+                && !made_on_disc("comb.json")
+                && !made_on_disc("comb.csv"),
+            "a file was written around the seam"
+        );
+        // The bytes are the ones written natively, outside the double.
+        engine.run_script(&format!("figure periodogram to {}", word(&file))).unwrap();
+        for download in &downloads {
+            let native = std::fs::read(dir.join(&download.name)).unwrap();
+            assert_eq!(download.bytes, native, "{} differs from the file written natively", download.name);
+        }
+        for download in &downloads {
+            std::fs::remove_file(dir.join(&download.name)).unwrap();
+        }
+    }
+}
