@@ -479,3 +479,9 @@
   milestone: S3
   title: 'Section planes: the octree cut to a quadtree in plan views, material filled by the colour field, a cut-away elsewhere; a hollow shell dev scene'
   status: done # merged with TASK-S3-19's PR
+- id: TASK-S14-10
+  milestone: S14
+  title: The whole planet as one LOD hierarchy - full-precision bubbles at the detectors, rings to a cube-sphere, drawn and read
+- id: TASK-S14-11
+  milestone: S14
+  title: The read of the far planet through the bounded walk converges to the gravity-field model at the site

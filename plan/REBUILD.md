@@ -477,6 +477,23 @@ away is tides and waves, not attraction.
   gravity field, ocean-tide models, weather reanalysis, earthquake catalogues, ephemerides. Each
   dataset's licence is checked before it is used and recorded in the bundle; none is committed.
 - **Replay a real day**: the Moon, the weather and the earthquakes of a chosen date at a chosen site.
+- **The whole planet as one level-of-detail hierarchy** (owner, 24 Nov 2026). Full-precision bubbles
+  around each detector; outside them the world coarsens in rings until it is a cube-sphere of the
+  whole Earth, then the Moon and the Sun. One hierarchy serves both readers:
+  - *drawn*: S4's clipmap rings extended outwards, real terrain and bathymetry tiles streamed from a
+    cache outside the repo, logarithmic or reversed depth so a tower and a continent sort in one
+    view, the Moon and the Sun where the ephemeris puts them;
+  - *read*: every coarse node carries its mass moments, so the instrument reads the far planet
+    through S5's bounded walk with its error in radians, as it reads the scene. Static mass (terrain,
+    ocean, ice, crust and mantle from a layered Earth model) is read this way; the error budget
+    decides how coarse each ring may be, and the test is that the read converges to the
+    gravity-field model's value at the site as the rings refine.
+  - *moving far away*: tides, weather, ground water and seismic waves are not simulated cell by cell
+    across the planet. They are driven from data and models (ephemeris, tidal models, reanalysis,
+    travel-time tables) into the coarse cells, so the rings carry the right mass at the right time.
+    Simulating the planet's atmosphere and oceans at the resolution that matters is a weather model's
+    job, not this engine's; what the instrument needs from them is their mass, which the data give.
+  The view says, ring by ring, what is read, at what error, and what is only drawn.
 - **The boundary**: a far source hands over to the voxel scene at its edge without double counting;
   a test moves a mass across the boundary and demands no step.
 
