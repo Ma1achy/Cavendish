@@ -185,6 +185,7 @@
 - id: TASK-S3-07
   milestone: S3
   title: 'Debug overlays: leaf bounds, LOD cut'
+  status: done # merged with TASK-S3-05's PR: the overlays are part of the voxel frame
 - id: TASK-S3-08
   milestone: S3
   title: 'Per-tower instruments: unequal heights and sequences in one array, ragged readout times; zero towers allowed'
@@ -446,3 +447,6 @@
 - id: TASK-S16-06
   milestone: S16
   title: Speculative sources - exotic gravitational waves, dark-matter fields and transients, a fifth force, compact objects passing
+- id: TASK-S3-17
+  milestone: S3
+  title: 'ARCHITECTURE.md for the voxel modules; the task list''s statuses'

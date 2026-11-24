@@ -18,6 +18,7 @@ cav-core = { path = "../crates/cav-core" }
 # cannot). `instrument` brings `gravity`, `source`, `shape` and `math` with it.
 [dev-dependencies]
 cav-validate = { path = "../crates/cav-validate" }
+cav-sim = { path = "../crates/cav-sim" }
 instrument = { git = "https://github.com/Ma1achy/Cavendish.git", rev = "56df4ab2126dce30fa0f26cb9321885511a105cc" }
 gravity = { git = "https://github.com/Ma1achy/Cavendish.git", rev = "56df4ab2126dce30fa0f26cb9321885511a105cc" }
 source = { git = "https://github.com/Ma1achy/Cavendish.git", rev = "56df4ab2126dce30fa0f26cb9321885511a105cc" }

@@ -128,3 +128,60 @@ fn a_body_that_cannot_be_voxelised_is_said_and_read_as_nothing() {
     );
     assert!(part.gradiometer.iter().all(|v| *v == 0.0));
 }
+
+/// A uniform rectangular prism of `density` from `lo` to `hi` (metres, the world's frame), read in
+/// closed form: the planar mass's reference.
+struct Prism {
+    density: f64,
+    lo: Vec3,
+    hi: Vec3,
+}
+
+impl cav_core::forward::Source for Prism {
+    fn difference(&self, tower: Vec3, heights: [f64; 2], lower: f64, upper: f64, _: f64) -> [f64; 2] {
+        use cav_core::voxel::kernel::prism_potential;
+        heights.map(|h| {
+            let at = |rise: f64| tower + Vec3::new(0.0, 0.0, h + rise);
+            prism_potential(self.density, self.lo - at(upper), self.hi - at(upper))
+                - prism_potential(self.density, self.lo - at(lower), self.hi - at(lower))
+        })
+    }
+}
+
+/// The planar mass: a 2 m × 2 m × 0.25 m plate of 2400 kg/m³ centred 1 m below a tower's base and
+/// 0.4 m to its side, voxelised on a grid that fits its faces (0.125 m), against the closed-form
+/// prism: one shot's δφ₁, δφ₂, ΔΦ, as a fraction of the larger of |δφ₁|, |δφ₂|.
+fn plate_against_prism() -> f64 {
+    let (size, thickness, density) = (2.0, 0.25, 2400.0);
+    let centre = [0.4, 0.0, -1.0];
+    let shape =
+        ShapeSpec { kind: ShapeKind::Cuboid { size: [size, size, thickness] }, pitch: 0.125, supersample: 2 };
+    let mass = density * size * size * thickness;
+    let scene = scene_with(BodySpec::shaped("plate", mass, shape, Motion::Static { position: centre }));
+    let shots = shots(&scene).unwrap();
+    let voxels = contribution(&scene, SourceId::Body(0), &shots, &|| false).unwrap();
+    let reader = cav_core::forward::Reader::new(scene.array.instrument.instrument());
+    let half = Vec3::new(0.5 * size, 0.5 * size, 0.5 * thickness);
+    let c = Vec3::from_array(centre);
+    let prism = Prism { density, lo: c - half, hi: c + half };
+    let exact =
+        reader.read_to(Vec3::ZERO, &prism, shots.times(0)[0], cav_core::forward::PHASE_TOLERANCE).reading;
+    let scale = exact.lower.abs().max(exact.upper.abs());
+    (voxels.lower[0] - exact.lower)
+        .abs()
+        .max((voxels.upper[0] - exact.upper).abs())
+        .max((voxels.gradiometer[0] - (exact.lower - exact.upper)).abs())
+        / scale
+}
+
+cav_validate::case! {
+    test: validation_the_plate_is_the_prism,
+    name: "voxel.planar_mass_is_the_prism",
+    subsystem: "voxel",
+    slice: "S3",
+    reference: ClosedForm,
+    against: "planar_mass (no script): a 2 × 2 × 0.25 m plate voxelised on a grid that fits its faces, against the closed-form prism; one AION-10 shot, three channels over the larger single interferometer's phase",
+    unit: Relative,
+    tolerance: 1e-12,
+    measure: cav_validate::Measured::Error(plate_against_prism()),
+}
