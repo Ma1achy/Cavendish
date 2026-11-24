@@ -19,8 +19,10 @@ use crate::MAX_PANES;
 pub const TREE_CACHE_BYTES: usize = 256 << 20;
 
 /// The voxel bodies' trees and the panes' frames of them.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Voxels {
+    /// The most bytes of trees kept: [`TREE_CACHE_BYTES`], or less for a test.
+    budget: usize,
     /// Trees by what they were made from (the shape and the mass, as JSON), oldest first.
     cache: Vec<(String, Arc<VoxTree>)>,
     /// Each body's tree, in the scene's order; None for a body that is not made of voxels.
@@ -31,7 +33,27 @@ pub struct Voxels {
     said: Vec<String>,
 }
 
+impl Default for Voxels {
+    fn default() -> Self {
+        Self::with_budget(TREE_CACHE_BYTES)
+    }
+}
+
 impl Voxels {
+    /// Voxels that keep at most `budget` bytes of trees no longer in use (the engine's is
+    /// [`TREE_CACHE_BYTES`]; a smaller one is for tests of the budget). Trees in use are kept
+    /// whatever they weigh: the scene needs them.
+    #[must_use]
+    pub fn with_budget(budget: usize) -> Self {
+        Self { budget, cache: Vec::new(), trees: Vec::new(), frames: Default::default(), said: Vec::new() }
+    }
+
+    /// How many trees are kept, in use or not.
+    #[must_use]
+    pub fn kept(&self) -> usize {
+        self.cache.len()
+    }
+
     /// Brings the trees and the frames up to `spec` at `time`, for `views` (the panes in use).
     /// Returns what a person should be told: a body whose shape could not be voxelised, once.
     pub fn refresh(&mut self, spec: &SceneSpec, time: f64, views: &[ViewSpec]) -> Vec<String> {
@@ -67,7 +89,7 @@ impl Voxels {
         }
         // The cache's budget: the oldest trees go first, but never one in use now.
         let mut bytes: usize = self.cache.iter().map(|(_, t)| t.bytes()).sum();
-        while bytes > TREE_CACHE_BYTES {
+        while bytes > self.budget {
             let Some(at) =
                 self.cache.iter().position(|(_, t)| !self.trees.iter().flatten().any(|u| Arc::ptr_eq(t, u)))
             else {
@@ -101,5 +123,59 @@ impl Voxels {
     #[must_use]
     pub fn cached_bytes(&self) -> usize {
         self.cache.iter().map(|(_, t)| t.bytes()).sum()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cav_sim::{BodySpec, Motion, ShapeKind, ShapeSpec, dev};
+
+    /// The void with one voxel sphere of `radius` metres.
+    fn ball(radius: f64) -> SceneSpec {
+        let mut scene = dev::void();
+        let shape = ShapeSpec { kind: ShapeKind::Sphere { radius }, pitch: 0.05, supersample: 2 };
+        scene.bodies.push(BodySpec::shaped(
+            "ball",
+            10.0,
+            shape,
+            Motion::Static { position: [2.0, 0.0, 2.0] },
+        ));
+        scene
+    }
+
+    #[test]
+    fn the_tree_cache_stays_within_its_budget() {
+        let views = [ViewSpec::home(&dev::void())];
+        let (small, large) = (ball(0.3), ball(0.6));
+        // The budget: what the larger tree weighs, and a little: one tree no longer in use fits
+        // beside it only if it is the smaller.
+        let mut probe = Voxels::default();
+        probe.refresh(&large, 0.0, &views);
+        let large_bytes = probe.cached_bytes();
+        probe.refresh(&small, 0.0, &views);
+        let small_bytes = probe.cached_bytes() - large_bytes;
+        assert!(small_bytes > 0 && large_bytes > small_bytes);
+        let budget = large_bytes + small_bytes / 2;
+        let mut voxels = Voxels::with_budget(budget);
+        voxels.refresh(&small, 0.0, &views);
+        voxels.refresh(&large, 0.0, &views);
+        // The small tree, no longer in use, was dropped to bring the cache within its budget;
+        // the large one, in use, was kept.
+        assert_eq!(voxels.kept(), 1);
+        assert_eq!(voxels.cached_bytes(), large_bytes);
+        assert!(voxels.cached_bytes() <= budget);
+        assert!(voxels.trees()[0].is_some());
+        // A tree in use is never dropped, even over the budget.
+        let mut tight = Voxels::with_budget(1);
+        tight.refresh(&large, 0.0, &views);
+        assert_eq!((tight.kept(), tight.cached_bytes()), (1, large_bytes));
+        assert!(tight.frame(0).is_some());
+        // Control: the engine's budget keeps both.
+        let mut roomy = Voxels::default();
+        roomy.refresh(&small, 0.0, &views);
+        roomy.refresh(&large, 0.0, &views);
+        assert_eq!(roomy.kept(), 2);
+        assert_eq!(roomy.cached_bytes(), large_bytes + small_bytes);
     }
 }

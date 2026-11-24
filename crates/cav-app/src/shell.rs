@@ -82,6 +82,9 @@ pub struct Layout {
     /// The numbers on the timeline's ruler, each with the rectangle it took, and the rectangle
     /// the timeline is drawn inside.
     pub ruler: (Vec<(String, Rect)>, Rect),
+    /// Each scene pane's legend of the field that colours its voxel bodies: the pane (from 0)
+    /// and where the legend was painted.
+    pub legends: Vec<(usize, Rect)>,
 }
 
 impl Default for Layout {
@@ -100,6 +103,7 @@ impl Default for Layout {
             status: String::new(),
             outline: Vec::new(),
             ruler: (Vec::new(), Rect::NOTHING),
+            legends: Vec::new(),
         }
     }
 }
