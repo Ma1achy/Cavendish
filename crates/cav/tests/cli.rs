@@ -33,7 +33,7 @@ fn cli_lists_the_dev_scenes() {
     let names: Vec<&str> = text.lines().filter_map(|l| l.split_whitespace().next()).collect();
     assert_eq!(names[..5], ["room", "void", "infinite-floor", "point", "pass"]);
     // Every line is a name, a gap and a path: the longest name (17 letters) once ran into its path.
-    assert_eq!(names.len(), 20);
+    assert_eq!(names.len(), 24);
     assert!(names.contains(&"through-the-tower") && text.contains("through-the-tower  scenes/dev/"));
     assert!(text.contains("scenes/dev/void.ron") && text.contains("scenes/dev/infinite-floor.ron"));
 }
@@ -357,7 +357,7 @@ fn cli_get_set_ls_edit_a_file() {
     // ls: the children with their units and kinds, in the order they are declared.
     let listed = stdout(&cav(&["ls", path, "bodies[0]"]));
     let names: Vec<&str> = listed.lines().filter_map(|line| line.split_whitespace().next()).collect();
-    assert_eq!(names, ["label", "mass", "radius", "motion", "appears", "vanishes"], "{listed}");
+    assert_eq!(names, ["label", "mass", "radius", "shape", "motion", "appears", "vanishes"], "{listed}");
     assert!(listed.contains("mass  =  ") && listed.contains(" kg  (number"), "{listed}");
     assert!(stdout(&cav(&["ls", "room"])).lines().count() == 8, "a library scene lists too");
     // set: the file is the edited scene, and nothing else in it has changed.

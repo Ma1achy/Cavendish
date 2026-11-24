@@ -417,8 +417,163 @@ pub fn no_towers() -> SceneSpec {
     scene
 }
 
+/// The S3 scenes' towers: tower 1 alone at the origin when `alone`, else the default five.
+fn s3_base(name: &str, description: &str, alone: bool) -> SceneSpec {
+    let mut scene = void();
+    scene.name = name.into();
+    scene.description = description.into();
+    scene.duration = 12.0;
+    if alone {
+        scene.array.towers.truncate(1);
+    }
+    scene
+}
+
+/// `unit-cube`: a cube of one metre and a tonne, 2 m east of tower 1, voxelised on a grid that
+/// fits its faces: its tree is a handful of merged cubes, and it reads exactly as the prism.
+#[must_use]
+pub fn unit_cube() -> SceneSpec {
+    let mut scene = s3_base(
+        "unit-cube",
+        "A cube of one metre and a tonne beside tower 1, made of voxels on a grid that fits its faces: a few \
+         merged leaves that read as the closed-form prism.",
+        false,
+    );
+    let cube =
+        crate::ShapeSpec { kind: crate::ShapeKind::Cuboid { size: [1.0; 3] }, pitch: 0.125, supersample: 4 };
+    scene.bodies.push(BodySpec::shaped("cube", 1000.0, cube, Motion::Static { position: [2.0, 0.0, 2.5] }));
+    scene
+}
+
+/// `sphere`: a uniform sphere of half a metre made of voxels (r/16), and the analytic sphere of the
+/// same mass mirrored across tower 1: outside itself each is a point, so the two read alike to the
+/// voxelisation's error.
+#[must_use]
+pub fn sphere() -> SceneSpec {
+    let mut scene = s3_base(
+        "sphere",
+        "Two spheres of 500 kg either side of tower 1: one made of voxels (r/16), one the analytic sphere. Outside \
+         themselves both are a point mass; tower 1 reads them as mirror images.",
+        false,
+    );
+    let ball = crate::ShapeSpec {
+        kind: crate::ShapeKind::Sphere { radius: 0.5 },
+        pitch: 0.5 / 16.0,
+        supersample: 4,
+    };
+    scene.bodies.push(BodySpec::shaped(
+        "voxel sphere",
+        500.0,
+        ball,
+        Motion::Static { position: [2.0, 0.0, 2.5] },
+    ));
+    let mut analytic = BodySpec::point("analytic sphere", 500.0, [-2.0, 0.0, 2.5]);
+    analytic.radius = 0.5;
+    scene.bodies.push(analytic);
+    scene
+}
+
+/// `platonic-row`: the five Platonic solids, 100 kg each and 0.6 m an edge, on a circle of 2.2 m
+/// about tower 1 at 2.5 m up: their missing low multipoles (`reference/milestones/M18`).
+#[must_use]
+pub fn platonic_row() -> SceneSpec {
+    let mut scene = s3_base(
+        "platonic-row",
+        "The five Platonic solids, 100 kg and 0.6 m an edge, on a circle of 2.2 m about tower 1: each is a point mass \
+         to its fourth moment, the cube and the octahedron to their sixth.",
+        false,
+    );
+    let solids = [
+        crate::PlatonicSolid::Tetrahedron,
+        crate::PlatonicSolid::Cube,
+        crate::PlatonicSolid::Octahedron,
+        crate::PlatonicSolid::Dodecahedron,
+        crate::PlatonicSolid::Icosahedron,
+    ];
+    for (k, solid) in solids.into_iter().enumerate() {
+        let angle = (18.0 + 72.0 * k as f64).to_radians();
+        let shape = crate::ShapeSpec {
+            kind: crate::ShapeKind::Platonic { solid, edge: 0.6 },
+            pitch: 0.03,
+            supersample: 4,
+        };
+        let at = [2.2 * angle.cos(), 2.2 * angle.sin(), 2.5];
+        scene.bodies.push(BodySpec::shaped(
+            &format!("{solid:?}").to_lowercase(),
+            100.0,
+            shape,
+            Motion::Static { position: at },
+        ));
+    }
+    scene
+}
+
+/// George's steel scaffold (`scaffold` and `scaffold_multimode`): four columns of 10 m and
+/// eleven square rings of 1 m sides, tubes of 33.8 mm radius, 7850 kg/m³, centred on the tower's
+/// axis; each member moves along x as `A_i·α(t)`, with `A_i` rising linearly in height from
+/// `bottom` (at z = 0) to `top` (at z = 10 m), taken at the member's centre. Members are voxelised
+/// at `pitch`.
+#[must_use]
+pub fn scaffold_members(bottom: f64, top: f64, modes: &[crate::ModeSpec], pitch: f64) -> Vec<BodySpec> {
+    const RADIUS: f64 = 0.0338;
+    const DENSITY: f64 = 7850.0;
+    let rod = |length: f64, axis: crate::Axis| crate::ShapeSpec {
+        kind: crate::ShapeKind::Cylinder { radius: RADIUS, length, axis },
+        pitch,
+        supersample: 2,
+    };
+    let mass = |length: f64| DENSITY * std::f64::consts::PI * RADIUS * RADIUS * length;
+    let mut members = Vec::new();
+    let mut add = |label: String, length: f64, axis, at: [f64; 3]| {
+        let amplitude = bottom + (top - bottom) * at[2] / 10.0;
+        let motion = Motion::Modes { centre: at, amplitude: [amplitude, 0.0, 0.0], modes: modes.to_vec() };
+        members.push(BodySpec::shaped(&label, mass(length), rod(length, axis), motion));
+    };
+    for (n, (sx, sy)) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)].into_iter().enumerate() {
+        add(format!("column {}", n + 1), 10.0, crate::Axis::Z, [0.5 * sx, 0.5 * sy, 5.0]);
+    }
+    for k in 0..=10 {
+        let z = f64::from(k);
+        for sy in [-1.0, 1.0] {
+            add(
+                format!("ring {k} x{}", if sy < 0.0 { "s" } else { "n" }),
+                1.0,
+                crate::Axis::X,
+                [0.0, 0.5 * sy, z],
+            );
+        }
+        for sx in [-1.0, 1.0] {
+            add(
+                format!("ring {k} y{}", if sx < 0.0 { "w" } else { "e" }),
+                1.0,
+                crate::Axis::Y,
+                [0.5 * sx, 0.0, z],
+            );
+        }
+    }
+    members
+}
+
+/// `scaffold`: George's scaffold around tower 1, vibrating in its one mode at 22.4 Hz, 1 µm at the
+/// foot to 1 mm at the top (his `scaffold` script). Coarse (2 cm voxels) and short (five shots):
+/// a scene to look at; the validation reads it finer (`oracle/tests/bodies.rs`).
+#[must_use]
+pub fn scaffold() -> SceneSpec {
+    let mut scene = s3_base(
+        "scaffold",
+        "George's steel scaffold around tower 1: 48 tubes, each moving along x by its own amplitude (1 µm at the foot to \
+         1 mm at the top) times one mode at 22.4 Hz, folded far below Nyquist. Made of 2 cm voxels; five shots.",
+        true,
+    );
+    scene.duration = 10.0;
+    let mode = [crate::ModeSpec { frequency: 22.4, scale: 1.0, phase: 0.0 }];
+    scene.bodies = scaffold_members(1e-6, 1e-3, &mode, 0.02);
+    scene
+}
+
 /// Every dev scene S3 adds, by builder.
-pub const S3_SCENES: [fn() -> SceneSpec; 2] = [mixed_array, no_towers];
+pub const S3_SCENES: [fn() -> SceneSpec; 6] =
+    [unit_cube, sphere, platonic_row, scaffold, mixed_array, no_towers];
 
 /// Every dev scene S2 adds, by builder.
 pub const S2_SCENES: [fn() -> SceneSpec; 2] = [staggered, cadence_lab];

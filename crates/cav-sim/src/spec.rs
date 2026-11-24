@@ -352,6 +352,10 @@ pub struct BodySpec {
     #[schemars(range(min = 0.0, max = 1.0e3))]
     #[schemars(extend("x-unit" = "m"))]
     pub radius: f64,
+    /// The solid it is, made of voxels and centred on its position; none (the default) for a
+    /// point or a sphere. A body with a shape has a radius of zero.
+    #[serde(default)]
+    pub shape: Option<crate::shape::ShapeSpec>,
     /// How it moves.
     pub motion: Motion,
     /// When it comes into being, seconds; from the start if absent.
@@ -639,7 +643,22 @@ impl BodySpec {
     /// A point mass of `mass` kilograms on a path, there for the whole timeline.
     #[must_use]
     pub fn moving(label: &str, mass: f64, motion: Motion) -> Self {
-        Self { label: label.to_owned(), mass, radius: 0.0, motion, appears: None, vanishes: None }
+        Self {
+            label: label.to_owned(),
+            mass,
+            radius: 0.0,
+            shape: None,
+            motion,
+            appears: None,
+            vanishes: None,
+        }
+    }
+
+    /// A body of `mass` kilograms that is `shape`, voxelised, on `motion`, there for the whole
+    /// timeline.
+    #[must_use]
+    pub fn shaped(label: &str, mass: f64, shape: crate::shape::ShapeSpec, motion: Motion) -> Self {
+        Self { shape: Some(shape), ..Self::moving(label, mass, motion) }
     }
 
     /// When the body exists, `(from, until)`: from the first time up to the second, seconds on
@@ -833,6 +852,15 @@ impl SceneSpec {
             }
             positive(&format!("{at}.mass"), body.mass, limits::MASS)?;
             within(&format!("{at}.radius"), body.radius, (0.0, limits::RADIUS))?;
+            if let Some(shape) = &body.shape {
+                if body.radius != 0.0 {
+                    return fail(format!(
+                        "{at}.radius: {} m; a body with a shape is its shape, and its radius is 0",
+                        body.radius
+                    ));
+                }
+                shape.validate(&format!("{at}.shape")).map_err(SpecError)?;
+            }
             body.motion.validate(&format!("{at}.motion")).map_err(SpecError)?;
             for (name, time) in [("appears", body.appears), ("vanishes", body.vanishes)] {
                 if let Some(time) = time {

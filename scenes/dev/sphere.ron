@@ -1,0 +1,105 @@
+// Dev scene `sphere` (REBUILD §9.1), written from its builder in crates/cav-sim/src/dev.rs; a test
+// holds the two together. Frame: metres, x east, y north, z up; seconds; angles in degrees.
+// `cav schema` describes every field.
+(
+    version: 1,
+    name: "sphere",
+    description: "Two spheres of 500 kg either side of tower 1: one made of voxels (r/16), one the analytic sphere. Outside themselves both are a point mass; tower 1 reads them as mirror images.",
+    duration: 12.0,
+    array: (
+        instrument: (
+            tower_height: 10.1,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+            atom_mass: 1.4431558652473234e-25,
+            gravity: 9.81,
+            kicks: 1000.0,
+            launch_floor: true,
+            sign: LowerMinusUpper,
+        ),
+        towers: [
+            (
+                label: "tower 1",
+                position: (0.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "tower 2",
+                position: (4.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "tower 3",
+                position: (-4.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "tower 4",
+                position: (0.0, 4.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "tower 5",
+                position: (0.0, -4.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+        ],
+        schedule: (
+            jitter: None,
+            alternate: None,
+            gaps: None,
+            window: None,
+            loss: 0.0,
+            seed: 0,
+        ),
+    ),
+    room: None,
+    floor: None,
+    bodies: [
+        (
+            label: "voxel sphere",
+            mass: 500.0,
+            radius: 0.0,
+            shape: Some((
+                kind: Sphere(
+                    radius: 0.5,
+                ),
+                pitch: 0.03125,
+                supersample: 4,
+            )),
+            motion: Static(
+                position: (2.0, 0.0, 2.5),
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "analytic sphere",
+            mass: 500.0,
+            radius: 0.5,
+            shape: None,
+            motion: Static(
+                position: (-2.0, 0.0, 2.5),
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+    ],
+)

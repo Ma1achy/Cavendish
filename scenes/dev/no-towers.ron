@@ -39,6 +39,7 @@
             label: "mass",
             mass: 5.0,
             radius: 0.0,
+            shape: None,
             motion: Pass(
                 from: (-4.0, 0.0, 1.0),
                 to: (4.0, 0.0, 1.0),

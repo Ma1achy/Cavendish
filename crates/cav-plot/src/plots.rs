@@ -907,6 +907,54 @@ impl<'a> Sheet<'a> {
         Some(end + 12.0 * u)
     }
 
+    /// A row of key entries on legend line `line`, from the axes' left edge: `(name, colour,
+    /// dash)` each. All of them if they fit; otherwise as many as fit together with a note,
+    /// "and N more" (or "+N" where that is all there is room for), so that a series never
+    /// leaves the key without a word. Returns how many were named.
+    fn key_row(&mut self, line: usize, entries: &[(String, Colour, Vec<f32>)]) -> usize {
+        let (u, size) = (self.u, self.style.text_size);
+        let (left, right) = (self.area.left(), self.area.right());
+        let wide = |text: &str| self.measure.size(text, Face::Sans, size)[0];
+        // Where each entry would end, and where the next would start.
+        let mut ends = Vec::with_capacity(entries.len());
+        let mut at = left;
+        for (name, ..) in entries {
+            let end = at + 18.0 * u + wide(name);
+            ends.push(end);
+            at = end + 12.0 * u;
+        }
+        let all_fit = ends.last().is_none_or(|end| *end <= right);
+        let named = if all_fit {
+            entries.len()
+        } else {
+            // The most entries that leave room for the note of the rest.
+            let note_room = |named: usize| {
+                let start = if named == 0 { left } else { ends[named - 1] + 12.0 * u };
+                let rest = entries.len() - named;
+                [format!("and {rest} more"), format!("+{rest}")]
+                    .into_iter()
+                    .any(|note| start + wide(&note) <= right)
+            };
+            (0..entries.len())
+                .rev()
+                .find(|named| (*named == 0 || ends[named - 1] <= right) && note_room(*named))
+                .unwrap_or(0)
+        };
+        let mut x = left;
+        for (name, colour, dash) in &entries[..named] {
+            x = self.key(x, line, name, *colour, dash).unwrap_or(x);
+        }
+        if named < entries.len() {
+            let rest = entries.len() - named;
+            let forms = [format!("and {rest} more"), format!("+{rest}")];
+            let note = self.fit(&forms, Face::Sans, size, (right - x).max(0.0));
+            let top = pos2(x, self.legend(line));
+            let weak = self.style.weak;
+            self.text(top, Anchor::LEFT_TOP, note, Face::Sans, size, weak);
+        }
+        named
+    }
+
     /// One entry of a key on legend line `line`, starting at `x`: a diamond like the ULDM
     /// benchmark's, then `name`. Nothing is written, and false returned, when it would run past
     /// the axes' right edge.
@@ -1172,22 +1220,19 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
     let mut sheet = Sheet::new(style, measure, size, &frame);
     sheet.axes(&x, &y, plain, y_text);
     let area = sheet.area;
+    // The towers the key names: all of them, or as many as fit with a note of how many it
+    // leaves out, which is always written. No series leaves the key without a word.
+    let mut keyed_towers: Vec<usize> = Vec::new();
     if keyed {
-        let mut at = area.left();
-        for (n, tower) in which.iter().enumerate() {
-            let (colour, dash) = style.series(*tower);
-            match sheet.key(at, 0, &spec.array.towers[*tower].label, colour, dash) {
-                Some(next) => at = next,
-                None => {
-                    let more = format!("and {} more", which.len() - n);
-                    let top = pos2(at, sheet.legend(0));
-                    if at + measure.size(&more, Face::Sans, style.text_size)[0] <= area.right() {
-                        sheet.text(top, Anchor::LEFT_TOP, more, Face::Sans, style.text_size, style.weak);
-                    }
-                    break;
-                }
-            }
-        }
+        let entries: Vec<(String, Colour, Vec<f32>)> = which
+            .iter()
+            .map(|tower| {
+                let (colour, dash) = style.series(*tower);
+                (spec.array.towers[*tower].label.clone(), colour, dash.to_vec())
+            })
+            .collect();
+        let named = sheet.key_row(0, &entries);
+        keyed_towers.extend_from_slice(&which[..named]);
     }
     sheet.fixed = sheet.labels.len();
     // The towers that swing furthest are drawn first, so that over all of a long run, where
@@ -1222,7 +1267,9 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
                 let lines =
                     if upper.len() == 1 { vec![vec![lower[0], upper[0]]] } else { vec![upper, lower] };
                 for points in lines {
-                    sheet.drawing.items.push(Item::Line { points, width, colour, dash: Vec::new() });
+                    // The envelope keeps the series' dash: past the fifth hue a dash is all that
+                    // tells two series apart, and the key shows it.
+                    sheet.drawing.items.push(Item::Line { points, width, colour, dash: dash.to_vec() });
                 }
             }
             sheet.unclip();
@@ -1272,7 +1319,7 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
                 points: line.iter().map(|point| p(*point)).collect(),
                 width,
                 colour,
-                dash: if dense { Vec::new() } else { dash.to_vec() },
+                dash: dash.to_vec(),
             });
         }
         sheet.unclip();
@@ -1316,6 +1363,7 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
         "towers": {
             "in_the_scene": towers,
             "drawn": which.iter().map(|tower| tower + 1).collect::<Vec<_>>(),
+            "named_in_the_key": keyed.then(|| keyed_towers.iter().map(|tower| tower + 1).collect::<Vec<_>>()),
             "note": left_out.as_ref().map(|said| format!(
                 "{said}: {} (a plot draws at most {} series; the selected tower is always among them); \
                  the data file has every tower",

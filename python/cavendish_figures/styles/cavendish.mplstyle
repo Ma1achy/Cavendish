@@ -1,6 +1,7 @@
-# Cavendish's house style for matplotlib: white paper, near-black ink, grey rules, and the eight
-# series colours of crates/cav-plot/src/style.rs, each with a dash of its own (in points at a line
-# width of one) so that a figure printed in black and white still tells its series apart.
+# Cavendish's house style for matplotlib: white paper, near-black ink, grey rules, and the five
+# series colours of crates/cav-plot/src/style.rs with its eight dashes (in points at a line width
+# of one): the first eight series as Cavendish draws them, so that a figure printed in black and
+# white still tells its series apart. The sixth to eighth take the first three colours again.
 # Apply it before one of the preset sheets beside it, which give the size and the type.
 figure.facecolor: white
 axes.facecolor: white
@@ -28,4 +29,4 @@ font.family: sans-serif
 font.sans-serif: DejaVu Sans
 svg.fonttype: path
 pdf.fonttype: 42
-axes.prop_cycle: cycler('color', ['900c60', '2c84b2', '846000', 'a878fc', '3a469e', '8200f2', 'ca4076', 'c08400']) + cycler('linestyle', ['-', (0, (6.0, 2.5)), (0, (1.5, 2.0)), (0, (7.0, 2.0, 1.5, 2.0)), (0, (3.5, 3.5)), (0, (10.0, 2.5)), (0, (7.0, 2.0, 1.5, 2.0, 1.5, 2.0)), (0, (3.0, 1.5))])
+axes.prop_cycle: cycler('color', ['0b0dff', 'c01850', '1086a6', 'e76f11', '703088', '0b0dff', 'c01850', '1086a6']) + cycler('linestyle', ['-', (0, (6.0, 2.5)), (0, (1.5, 2.0)), (0, (7.0, 2.0, 1.5, 2.0)), (0, (3.5, 3.5)), (0, (10.0, 2.5)), (0, (7.0, 2.0, 1.5, 2.0, 1.5, 2.0)), (0, (3.0, 1.5))])

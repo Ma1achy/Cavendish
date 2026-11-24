@@ -80,6 +80,7 @@
             label: "mass",
             mass: 100.0,
             radius: 0.0,
+            shape: None,
             motion: Static(
                 position: (2.0, 0.0, 2.5),
             ),
