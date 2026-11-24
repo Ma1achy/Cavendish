@@ -545,7 +545,10 @@ fn cli_provenance_is_the_builds_whatever_the_tree_or_the_directory() {
     let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli provenance");
     let _ = std::fs::remove_dir_all(&root);
-    let write = |name: &str, from: Option<&std::path::Path>| {
+    // A PATH with nothing on it: a process given it has no git to ask.
+    let nowhere = root.join("a PATH with nothing on it");
+    std::fs::create_dir_all(&nowhere).unwrap();
+    let write = |name: &str, from: Option<&std::path::Path>, path: Option<&std::path::Path>| {
         let dir = root.join(name);
         std::fs::create_dir_all(&dir).unwrap();
         let (bundle, figure) = (dir.join("bundle"), dir.join("p.svg"));
@@ -566,10 +569,23 @@ fn cli_provenance_is_the_builds_whatever_the_tree_or_the_directory() {
             if let Some(directory) = from {
                 command.current_dir(directory);
             }
+            if let Some(path) = path {
+                command.env("PATH", path);
+            }
             let done = command.output().expect("cav runs");
             assert!(done.status.success(), "{args:?}: {}", stderr(&done));
         }
         files_under(&dir)
+    };
+    // Whether a process with this PATH (its own, if none is given) can run git: asked through
+    // the platform's shell, which looks a program up as any process would.
+    let can_run_git = |path: Option<&std::path::Path>| {
+        let mut shell = if cfg!(windows) { Command::new("cmd") } else { Command::new("/bin/sh") };
+        shell.args([if cfg!(windows) { "/C" } else { "-c" }, "git --version"]);
+        if let Some(path) = path {
+            shell.env("PATH", path);
+        }
+        shell.output().is_ok_and(|done| done.status.success())
     };
     // What git says of the tree, asked without letting it rewrite its index.
     let status = || {
@@ -583,19 +599,26 @@ fn cli_provenance_is_the_builds_whatever_the_tree_or_the_directory() {
     };
 
     let before = status();
-    let first = write("first", None);
+    let first = write("first", None, None);
     // A file git does not know, in the repository's root, under a name no ignore rule covers.
     let made =
         Untracked::new(repository.join(format!("untracked-by-a-test-of-cav-{}.txt", std::process::id())));
     let between = status();
-    let second = write("second", None);
-    // And from another directory, outside the repository, with the tree still changed.
-    let third = write("third", Some(&std::env::temp_dir()));
+    let second = write("second", None, None);
+    // From another directory, outside the repository, with the tree still changed.
+    let third = write("third", Some(&std::env::temp_dir()), None);
     drop(made);
+    // And with no git to ask: whatever the tree is like, a binary that asked git when it wrote
+    // would now write `unknown`.
+    let fourth = write("fourth", None, Some(&nowhere));
 
     // A bundle of eleven files and a figure of three, each time; every byte the same.
     assert_eq!(first.len(), 14, "{:?}", first.keys().collect::<Vec<_>>());
-    for (name, files) in [("after an untracked file appeared", &second), ("from another directory", &third)] {
+    for (name, files) in [
+        ("after an untracked file appeared", &second),
+        ("from another directory", &third),
+        ("with no git on the PATH", &fourth),
+    ] {
         assert_eq!(files.keys().collect::<Vec<_>>(), first.keys().collect::<Vec<_>>(), "{name}");
         for (file, bytes) in files {
             assert!(*bytes == first[file], "{file} differs {name}");
@@ -610,15 +633,23 @@ fn cli_provenance_is_the_builds_whatever_the_tree_or_the_directory() {
     assert!(engine["built_from"].as_str().unwrap().contains("fixed at compile time"), "{engine}");
     assert!(engine["revision"].is_string() && (engine["dirty"].is_boolean() || engine["dirty"] == "unknown"));
 
-    // Control: what git says of the tree did change between the first run and the second, so a
-    // binary that asked git when it wrote would have written another `dirty` or the same one
-    // for the wrong reason. Where there is no git or no repository there is nothing to compare.
+    // Controls: the things that were changed did change, so a binary that asked git when it
+    // wrote had something else to be told. What git says of the tree is not what it was (from a
+    // tree with nothing uncommitted, `dirty` went from false to true: the review's case; from
+    // one already dirty it stays true, which is why the fourth run is here as well). And a
+    // process given the empty PATH cannot run git, where one with the ordinary PATH can. Where
+    // there is no git or no repository there is nothing to compare, and that is said.
     match (before, between) {
         (Some(before), Some(between)) => {
             assert_ne!(before, between, "the untracked file did not change `git status`");
             assert!(String::from_utf8_lossy(&between).contains("untracked-by-a-test-of-cav-"));
         }
         _ => eprintln!("git or the repository is not there: the control (git status changed) was not run"),
+    }
+    if can_run_git(None) {
+        assert!(!can_run_git(Some(&nowhere)), "git was still found with nothing on the PATH");
+    } else {
+        eprintln!("git is not installed: the control (no git on an empty PATH) was not run");
     }
     assert!(!repository.join(format!("untracked-by-a-test-of-cav-{}.txt", std::process::id())).exists());
 }
