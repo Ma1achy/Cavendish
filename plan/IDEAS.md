@@ -88,3 +88,8 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   `file` is resolved against the working directory. Resolving it against the scene file's
   directory needs the loaded scene to remember where it came from (a field the spec does not
   serialise), kept through save, `cav run`, replay and MCP.
+
+- **The oracle under five minutes** (S3's second review): the two scaffold series cases are 256 s of
+  the tier's 434 s, all in 6.0e9 leaf evaluations a case. Ways down, each a change to what the case
+  measures: a far-field cut of the members' trees with its error audited against the case's 1e-3
+  allowance, or fewer Chebyshev points in α with case (b) re-measured; or a slow oracle sub-tier.
