@@ -6,7 +6,9 @@ use cav_core::voxel::shape::{Shape, Sphere};
 use cav_core::voxel::{Grid, voxelise};
 
 fn main() {
-    println!("sphere, k = 4: voxels across | cells with something in them | leaves | merge yield | nodes | seconds | cells a second");
+    println!(
+        "sphere, k = 4: voxels across | cells with something in them | leaves | merge yield | nodes | seconds | cells a second"
+    );
     for across in [32u32, 64, 128, 256] {
         let sphere = Sphere { centre: Vec3::ZERO, radius: 0.5 };
         let grid = Grid::around(sphere.bounds(), 1.0 / f64::from(across), 4).expect("a grid");

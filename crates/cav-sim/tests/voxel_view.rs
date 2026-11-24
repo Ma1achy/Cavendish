@@ -13,8 +13,13 @@ fn trees(scene: &cav_sim::SceneSpec) -> Vec<Option<Arc<cav_core::voxel::VoxTree>
 fn a_legend_is_made_from_what_is_drawn() {
     let scene = dev::platonic_row();
     let trees = trees(&scene);
+    // The phase is each leaf read on its own: the unit cube's few leaves show the same rule at a
+    // fraction of the cost of the five solids'.
+    let cube = dev::unit_cube();
+    let cube_trees = self::trees(&cube);
     for field in LeafField::ALL {
-        let frame = voxel_frame(&scene, &trees, Colouring { field, tower: 0 }, Overlay::default(), 0.0);
+        let (scene, trees) = if field == LeafField::Phase { (&cube, &cube_trees) } else { (&scene, &trees) };
+        let frame = voxel_frame(scene, trees, Colouring { field, tower: 0 }, Overlay::default(), 0.0);
         assert!(frame.notes.is_empty(), "{field:?}: {:?}", frame.notes);
         let values: Vec<f64> = frame.bodies.iter().flat_map(|b| b.cubes.iter().map(|c| c.value)).collect();
         let (least, most) =

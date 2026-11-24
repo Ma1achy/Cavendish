@@ -638,7 +638,10 @@ fn s3(root: &Path) -> Result<(), String> {
                 close(4)
             ),
         ),
-        ("overlay-leaves.png", "load sphere; pan 2 0 2.5; zoom 2.5; colour height; overlay leaves".to_owned()),
+        (
+            "overlay-leaves.png",
+            "load sphere; pan 2 0 2.5; zoom 2.5; colour height; overlay leaves".to_owned(),
+        ),
         ("overlay-cut.png", "load sphere; pan 2 0 2.5; zoom 2.5; colour mass; overlay cut 2".to_owned()),
         ("scaffold.png", "load scaffold; pan 0 0 5; zoom 16; colour height".to_owned()),
         ("mixed-array.png", "load mixed-array; panes 2; show flight @2; seek 20".to_owned()),
@@ -683,18 +686,28 @@ fn s3(root: &Path) -> Result<(), String> {
     let mut session = String::new();
     let script = "load unit-cube; ls bodies[0].shape; set bodies[0].shape.pitch 0.25; colour phase 1; \
                   overlay leaves cut 1; set bodies[0].shape.pitch 1e-4; stats";
-    let answer = capture(&cav, &["exec", script]).or_else(|refused| Ok::<_, String>(refused))?;
+    // The last line is refused (a pitch too fine for one tree): what was answered before it, and
+    // the refusal, are the transcript.
+    let answer = capture(&cav, &["exec", script]).unwrap_or_else(|refused| refused);
     if !answer.contains("pitch") {
         return Err(format!("the session does not speak of the pitch:\n{answer}"));
     }
     session.push_str(&format!("$ cav exec \"{script}\"\n{}\n", abridged(answer.trim_end(), 3000)));
     let bundle = temp("mixed");
     let ran = capture(&cav, &["run", "mixed-array", "--out", &bundle])?;
-    session.push_str(&format!("$ cav run mixed-array --out target/demo-s3/mixed\n{}\n", ran.replace(&bundle, "target/demo-s3/mixed")));
+    session.push_str(&format!(
+        "$ cav run mixed-array --out target/demo-s3/mixed\n{}\n",
+        ran.replace(&bundle, "target/demo-s3/mixed")
+    ));
     for (name, bytes) in files_of(Path::new(&bundle))? {
         session.push_str(&format!("  {name:<24} {:>9} bytes\n", bytes.len()));
     }
-    write(&out, "session.txt", &session.replace(&scratch.to_string_lossy().replace('\\', "/"), "target/demo-s3"), &mut made)?;
+    write(
+        &out,
+        "session.txt",
+        &session.replace(&scratch.to_string_lossy().replace('\\', "/"), "target/demo-s3"),
+        &mut made,
+    )?;
 
     // 8. Timings: the voxeliser on spheres, optimised as the hot crate is; frame times with leaves.
     let mut timings = String::from("This machine; recorded, not gated.\n\n");
