@@ -113,6 +113,13 @@ a journal being replayed ─┘     │          │                            
 - **Determinism.** Bundles and figures are byte-identical from the same commands with the same
   binary on the same platform. What keeps it so: no sum across threads; no iteration of a
   `HashMap` into a number or a file; random numbers keyed by `(seed, stream, tower, shot)`, never
-  drawn from a stream; no wall-clock time in any file.
+  drawn from a stream; no wall-clock time in any file; nothing asked of the machine when a file
+  is written. The revision and the dirty flag a manifest and a figure's `.json` carry are the
+  build's: `cav-engine`'s build script asks git once, when the engine is compiled, and they are
+  compiled in (`unknown` when built outside a repository). So the same binary writes the same
+  bytes whatever has happened to the source tree since and wherever it is run. `dirty` is about
+  the engine's sources (`cav-core`, `cav-sim`, `cav-engine`, the built-in scenes, the
+  workspace's manifest, lock file and toolchain); the cost is that the engine and what depends
+  on it are compiled again after every commit (`docs/slices/S2.md` §7.12).
 - **A test that guards a property has a control arm** that fails when the property is broken; a
   tolerance is written before it is measured and is never moved to pass (`CONTRIBUTING.md`).

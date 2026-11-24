@@ -28,6 +28,13 @@ struct File {
     commands: Vec<Command>,
 }
 
+/// The bytes of a journal file that holds no commands: what every journal file has around its
+/// commands. A file of `n ≥ 1` commands is this, their JSON, and `n − 1` commas.
+#[must_use]
+pub fn envelope() -> usize {
+    write(&[]).len()
+}
+
 /// The journal as the text of a file.
 #[must_use]
 pub fn write(commands: &[Command]) -> String {

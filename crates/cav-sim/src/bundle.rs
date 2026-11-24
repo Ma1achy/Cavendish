@@ -46,15 +46,39 @@ use crate::{SceneSpec, SignSpec};
 /// The version of the bundle's layout this build writes.
 pub const BUNDLE_VERSION: u32 = 1;
 
-/// Who made a bundle: the engine's version and the revision of its source.
+/// Who made a bundle: the engine's version and the revision of its source. These are the
+/// build's, fixed when the engine was compiled (`cav_engine::build`); nothing here is found out
+/// when a file is written.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Build {
     /// The engine's version, as `cav doctor` reports it.
     pub version: String,
-    /// The git revision of the source the engine was built from, or `unknown`.
+    /// The git revision that was checked out when the engine was compiled, or `unknown`.
     pub revision: String,
-    /// Whether that source had changes that were not committed; `None` when it is not known.
+    /// Whether the engine's sources then had changes that were not committed; `None` when it is
+    /// not known.
     pub dirty: Option<bool>,
+}
+
+/// What a manifest and a figure's provenance say `revision` and `dirty` are.
+pub const BUILT_FROM: &str = "revision is the commit checked out when the engine was compiled; dirty is whether \
+     the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file \
+     and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are \
+     the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when \
+     the engine was built outside a git repository";
+
+impl Build {
+    /// The build as a manifest and a figure's provenance carry it: `version`, `revision`, `dirty`
+    /// (`true`, `false` or `"unknown"`) and `built_from`, which says what the two are.
+    #[must_use]
+    pub fn json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "version": self.version,
+            "revision": self.revision,
+            "dirty": self.dirty.map_or_else(|| serde_json::json!("unknown"), serde_json::Value::Bool),
+            "built_from": BUILT_FROM,
+        })
+    }
 }
 
 /// One array of a bundle, as the manifest lists it.
@@ -106,11 +130,21 @@ fn first_nan(signal: &Signal) -> Option<String> {
 /// the files written. The signal must be the scene's own, whole: the caller (the engine) writes
 /// only from a refined one.
 ///
+/// A bundle is of the scene's own instrument and nothing else. `compared_with` names the
+/// instrument the session was also reading the scene on, if it was: the manifest then says, under
+/// `comparison`, that that reading is not in the bundle (and `null` otherwise).
+///
 /// # Errors
 /// When the signal is not this scene's (another number of towers), holds a NaN, or a file cannot
 /// be written. Files already written stay; the manifest is written last, so a directory with a
 /// manifest is a whole bundle.
-pub fn write(dir: &Path, spec: &SceneSpec, signal: &Signal, build: &Build) -> Result<Vec<PathBuf>, String> {
+pub fn write(
+    dir: &Path,
+    spec: &SceneSpec,
+    signal: &Signal,
+    build: &Build,
+    compared_with: Option<&str>,
+) -> Result<Vec<PathBuf>, String> {
     let (towers, shots, bodies) = (signal.towers, signal.times.len(), spec.bodies.len());
     if towers != spec.array.towers.len() {
         return Err(format!(
@@ -235,8 +269,14 @@ pub fn write(dir: &Path, spec: &SceneSpec, signal: &Signal, build: &Build) -> Re
     std::fs::write(&scene, spec.to_ron()).map_err(|e| format!("{}: {e}", scene.display()))?;
 
     let manifest = dir.join("manifest.json");
-    let text =
-        serde_json::to_string_pretty(&manifest_of(spec, signal, build, &listed)).expect("a manifest is JSON");
+    let comparison = compared_with.map(|name| {
+        format!(
+            "this bundle is of the scene's own instrument alone (`spec.array.instrument`). The session was \
+             also reading the scene on {name}: none of that reading is in this bundle"
+        )
+    });
+    let text = serde_json::to_string_pretty(&manifest_of(spec, signal, build, &listed, comparison))
+        .expect("a manifest is JSON");
     std::fs::write(&manifest, text + "\n").map_err(|e| format!("{}: {e}", manifest.display()))?;
 
     let mut files: Vec<PathBuf> =
@@ -250,7 +290,7 @@ pub fn write(dir: &Path, spec: &SceneSpec, signal: &Signal, build: &Build) -> Re
 pub fn numerics(spec: &SceneSpec, build: &Build) -> serde_json::Value {
     let instrument = spec.array.instrument.instrument();
     serde_json::json!({
-        "engine": { "version": build.version, "revision": build.revision, "dirty": build.dirty },
+        "engine": build.json(),
         "platform": format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
         "precision": "f64 on the CPU",
         "quadrature": format!("{DEFAULT_QUADRATURE:?}, panels halved until two rules agree"),
@@ -269,7 +309,13 @@ pub fn numerics(spec: &SceneSpec, build: &Build) -> serde_json::Value {
     })
 }
 
-fn manifest_of(spec: &SceneSpec, signal: &Signal, build: &Build, listed: &[Listed]) -> serde_json::Value {
+fn manifest_of(
+    spec: &SceneSpec,
+    signal: &Signal,
+    build: &Build,
+    listed: &[Listed],
+    comparison: Option<String>,
+) -> serde_json::Value {
     let arrays: Vec<serde_json::Value> = listed
         .iter()
         .map(|array| {
@@ -300,6 +346,7 @@ fn manifest_of(spec: &SceneSpec, signal: &Signal, build: &Build, listed: &[Liste
         "sign": sign,
         "settled": signal.settled,
         "warnings": signal.warnings.iter().map(|warning| warning.text.clone()).collect::<Vec<_>>(),
+        "comparison": comparison,
         "numerics": numerics(spec, build),
         "arrays": arrays,
         "spec": spec,
@@ -351,7 +398,7 @@ mod tests {
             let scene = scene();
             let signal = read::signal(&scene).unwrap();
             let dir = scratch("round trip");
-            let files = write(&dir, &scene, &signal, &build()).unwrap();
+            let files = write(&dir, &scene, &signal, &build(), None).unwrap();
             assert_eq!(files.len(), 11);
             let (shots, towers) = (signal.times.len(), 5);
             let mut wrong = 0usize;
@@ -413,14 +460,14 @@ mod tests {
         let dir = scratch("not a number");
         // One value that is not a number, in the upper interferometer of tower 3 at shot 5.
         signal.upper[2 * shots + 4] = f64::NAN;
-        let why = write(&dir, &scene, &signal, &build()).unwrap_err();
+        let why = write(&dir, &scene, &signal, &build(), None).unwrap_err();
         assert!(why.contains("δφ₂ of tower 3 at shot 5") && why.contains("is not a number"), "{why}");
         assert!(!dir.exists(), "nothing was written, not even the directory");
         // An infinity is exact and is allowed: the half-space's own channels.
         let floor = dev::infinite_floor();
         let infinite = read::signal(&floor).unwrap();
         let dir = scratch("half space");
-        write(&dir, &floor, &infinite, &build()).unwrap();
+        write(&dir, &floor, &infinite, &build(), None).unwrap();
         let (_, pair) = array(&dir, "signal_per_ifo").into_f64().unwrap();
         assert!(pair.iter().all(|value| *value == f64::INFINITY));
         let (_, null) = array(&dir, "signal").into_f64().unwrap();
@@ -431,9 +478,9 @@ mod tests {
         let other = read::signal(&dev::point()).unwrap();
         let mut fewer = scene.clone();
         fewer.array.towers.truncate(3);
-        assert!(write(&dir, &fewer, &other, &build()).unwrap_err().contains("not this scene's signal"));
+        assert!(write(&dir, &fewer, &other, &build(), None).unwrap_err().contains("not this scene's signal"));
         signal.upper[2 * shots + 4] = 0.0;
-        assert!(write(&scratch("whole"), &scene, &signal, &build()).is_ok());
+        assert!(write(&scratch("whole"), &scene, &signal, &build(), None).is_ok());
     }
 
     #[test]
@@ -441,7 +488,7 @@ mod tests {
         let scene = scene();
         let signal = read::signal(&scene).unwrap();
         let dir = scratch("manifest");
-        write(&dir, &scene, &signal, &build()).unwrap();
+        write(&dir, &scene, &signal, &build(), None).unwrap();
         let manifest: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join("manifest.json")).unwrap()).unwrap();
         assert_eq!(manifest["cavendish_bundle"], 1);
@@ -457,10 +504,19 @@ mod tests {
         );
         // The numerics: precision, quadrature, tolerances, the engine's revision, the platform.
         let numerics = &manifest["numerics"];
+        // With what the two are: the build's, not the tree's at the time of writing.
         assert_eq!(
             numerics["engine"],
-            serde_json::json!({"version": "0.0.0", "revision": "0123abc", "dirty": false})
+            serde_json::json!({"version": "0.0.0", "revision": "0123abc", "dirty": false, "built_from": BUILT_FROM})
         );
+        assert!(BUILT_FROM.contains("fixed at compile time") && BUILT_FROM.contains("git is not asked"));
+        // A build that does not know says so in a word, not with a null; a dirty one says true.
+        let unknown = Build { version: "0.0.0".into(), revision: "unknown".into(), dirty: None };
+        assert_eq!(
+            (&unknown.json()["revision"], &unknown.json()["dirty"]),
+            (&"unknown".into(), &"unknown".into())
+        );
+        assert_eq!(Build { dirty: Some(true), ..build() }.json()["dirty"], true);
         assert_eq!(numerics["precision"], "f64 on the CPU");
         assert_eq!(numerics["phase_tolerance_rad"], 1e-10);
         assert!(numerics["quadrature"].as_str().unwrap().contains("Gauss"));
@@ -480,11 +536,17 @@ mod tests {
         assert_eq!((&signal_entry["unit"], &signal_entry["dtype"]), (&"rad".into(), &"<f8".into()));
         // The scene, verbatim: the manifest alone regenerates the bundle.
         assert_eq!(SceneSpec::from_json(&manifest["spec"].to_string()).unwrap(), scene);
+        // No comparison was on: the manifest says so with a null. With one on it says, in
+        // words, that the bundle is of the scene's own instrument and what is not in it.
+        assert!(manifest["comparison"].is_null());
+        write(&dir, &scene, &signal, &build(), Some("AICE")).unwrap();
+        let compared = std::fs::read_to_string(dir.join("manifest.json")).unwrap();
+        assert!(compared.contains("of the scene's own instrument alone") && compared.contains("on AICE"));
         // Control: v1's sign is said as v1's when the scene asks for it.
         let mut flipped = scene.clone();
         flipped.array.instrument.sign = SignSpec::UpperMinusLower;
         let signal = read::signal(&flipped).unwrap();
-        write(&dir, &flipped, &signal, &build()).unwrap();
+        write(&dir, &flipped, &signal, &build(), None).unwrap();
         let again = std::fs::read_to_string(dir.join("manifest.json")).unwrap();
         assert!(again.contains("upper minus lower (δφ₂ − δφ₁): v1's convention"));
     }

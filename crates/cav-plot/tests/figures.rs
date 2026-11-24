@@ -84,7 +84,7 @@ cav_validate::case! {
     subsystem: "figure",
     slice: "S2",
     reference: Exact,
-    against: "six figures of the comb (periodogram, signal, one tower's lower channel over a span, cadence window, flight diagram; SVG and PDF; four presets) written by two engines from the same commands: each figure, its .csv and its .json; files that differ in any byte",
+    against: "six figures of the comb (periodogram, signal, one tower's lower channel over a span, cadence window, flight diagram; SVG and PDF; four presets) written by two engines from the same commands: each figure, its .csv and its .json; files that differ in any byte (each .json's provenance, the build's revision and dirty flag, among them)",
     unit: Count,
     tolerance: 0.0,
     measure: {
@@ -103,6 +103,18 @@ cav_validate::case! {
             assert!(files.contains_key(name), "no {name}");
         }
         assert!(files.values().all(|bytes| !bytes.is_empty()));
+        // The provenance in particular: every figure's .json is the same bytes from the second
+        // engine, and what it says of the engine is the build's. (Two engines in one process
+        // could not have caught a revision asked of git when the file is written; `cav`'s
+        // `cli_provenance_is_the_builds_whatever_the_tree_or_the_directory` runs the binary
+        // twice with the tree changed in between, and does.)
+        let again = files_of(&dirs[1]);
+        for (name, bytes) in files.iter().filter(|(name, _)| name.ends_with(".json")) {
+            assert!(again[name] == *bytes, "{name} differs between the two engines");
+            let said: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+            assert_eq!(said["engine"], cav_engine::build().json(), "{name}");
+            assert_eq!(said["numerics"]["engine"], said["engine"], "{name}");
+        }
         // Control: another tower changes the pictures and data of that tower's figures; one
         // bit of one number of the scene changes every figure of the signal.
         session(&dirs[2], 3, &format!("{mass:?}"));
@@ -528,6 +540,88 @@ fn the_documented_figure_line_writes_a_figure_and_a_replay_writes_it_elsewhere()
     bare.set_exports(cav_engine::Exports::Into(elsewhere));
     let refused = engine.journal().iter().map(|command| bare.apply(command.clone())).find_map(Result::err);
     assert!(refused.unwrap().starts_with("no figure exporter is installed"));
+}
+
+/// Every file under `dir`, folders included, by its path within it, with its bytes.
+fn files_under(dir: &Path) -> BTreeMap<String, Vec<u8>> {
+    let mut out = BTreeMap::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(at) = stack.pop() {
+        for entry in std::fs::read_dir(&at).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let name = path.strip_prefix(dir).unwrap().to_string_lossy().replace('\\', "/");
+                out.insert(name, std::fs::read(&path).unwrap());
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn a_session_with_figures_and_a_bundle_replays_to_the_same_files() {
+    // The exit test with figures in it, which `cav-engine` cannot draw: a session that edits,
+    // compares, exports figures and a bundle and saves its scene and its journal; the journal
+    // read back from disk and replayed into another directory writes the same files.
+    let (first, again, other) = (scratch("session"), scratch("session replayed"), scratch("session nudged"));
+    let at = |name: &str| word(&first.join(name));
+    let mut session = engine("load comb; set duration 300; set array.towers[1].timing.offset 0.25");
+    for line in [
+        "compare aice".to_owned(),
+        format!("figure periodogram tower 2 as paper-column to {}", at("periodogram.svg")),
+        format!("export bundle {}", at("bundle")),
+        "compare off".to_owned(),
+        "set bodies[0].mass 30".to_owned(),
+        "seek 40".to_owned(),
+        format!("figure signal from 0 to 120 as slide to {}", at("signal.pdf")),
+        format!("figure cadence tower 2 as paper-full to {}", at("cadence.svg")),
+        format!("save {}", at("scene.ron")),
+        format!("journal save {}", at("session.json")),
+    ] {
+        session.run_line(&line).unwrap_or_else(|why| panic!("`{line}`: {why}"));
+    }
+    let journal = cav_engine::journal::read(first.join("session.json").to_str().unwrap()).unwrap();
+    let replay = |journal: &[cav_engine::Command], into: &Path| {
+        let mut replayed = Engine::new();
+        replayed.set_patience(LONG);
+        figure::install(&mut replayed);
+        replayed.set_exports(cav_engine::Exports::Into(into.to_path_buf()));
+        for command in journal {
+            replayed.apply(command.clone()).unwrap();
+        }
+        files_under(into)
+    };
+    // Three figures of three files, a bundle of eleven and a scene; the journal's own file is
+    // the one thing the session wrote that its journal does not say.
+    let mut wrote = files_under(&first);
+    assert!(wrote.remove("session.json").is_some());
+    assert_eq!(wrote.len(), 21, "{:?}", wrote.keys().collect::<Vec<_>>());
+    for name in ["periodogram.json", "signal.csv", "cadence.svg", "bundle/manifest.json", "scene.ron"] {
+        assert!(wrote.contains_key(name), "no {name}");
+    }
+    let replayed = replay(&journal, &again);
+    assert_eq!(replayed.keys().collect::<Vec<_>>(), wrote.keys().collect::<Vec<_>>());
+    for (name, bytes) in &wrote {
+        assert!(replayed[name] == *bytes, "{name} differs between the session and its replay");
+    }
+    // Control: one bit of one number of the journal, and the replay's files are not the session's.
+    let mut nudged = journal.clone();
+    let mass = nudged
+        .iter()
+        .position(
+            |command| matches!(command, cav_engine::Command::Set { path, .. } if path == "bodies[0].mass"),
+        )
+        .unwrap();
+    nudged[mass] =
+        cav_engine::Command::set("bodies[0].mass", serde_json::json!(f64::from_bits(30.0f64.to_bits() + 1)));
+    let changed = replay(&nudged, &other);
+    let differing = wrote.iter().filter(|(name, bytes)| changed[*name] != **bytes).count();
+    // (What was written before the edit, and the cadence, which is of the schedule, are the same.)
+    assert!(differing >= 4, "{differing} files differ");
+    assert_eq!(changed["bundle/signal.npy"], wrote["bundle/signal.npy"]);
+    assert_ne!(changed["signal.csv"], wrote["signal.csv"]);
 }
 
 #[test]

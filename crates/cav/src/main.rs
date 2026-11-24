@@ -38,8 +38,9 @@ cav <command>
                                  with its data (.csv or .npy) and a .json of axes, units and provenance
   replay <journal.json> [--out <dir>] [--patience <seconds>]
                                  run a saved session again (`journal save <file>` writes one); what it
-                                 exported is written into --out under each file's own name, or not at all;
-                                 an export waits for its signal, an hour unless --patience says otherwise
+                                 exported is written inside --out (a relative path with its folders, any
+                                 other under its file name), or not at all; an export waits for its signal,
+                                 an hour unless --patience says otherwise; nothing else is waited for
   mcp                            serve the engine to an agent: an MCP server on stdin and stdout
   licences                       the licences of what is built into the binaries (the two fonts)
   help                           this text
@@ -265,8 +266,8 @@ fn figure(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `cav replay`: a journal run again on a fresh engine. Exports go into `--out` by file name; a
-/// journal is never allowed to write where it says.
+/// `cav replay`: a journal run again on a fresh engine. Exports go inside `--out`
+/// (`cav_engine::Exports::Into` has the rule); a journal is never allowed to write where it says.
 fn replay(rest: &[String]) -> Result<(), String> {
     let mut args = Args::parse(rest, &["out", "patience"])?;
     let out = args.option("out");
@@ -296,11 +297,19 @@ fn replay(rest: &[String]) -> Result<(), String> {
     for (n, command) in journal.iter().enumerate() {
         engine.apply(command.clone()).map_err(|why| format!("replay: command {n}: {why}"))?;
     }
-    engine.settle(std::time::Duration::from_secs(600));
+    // Nothing is waited for here. Each export waited for the signal it was written from, and
+    // the state's digest is of the scene, the playhead, the views and the history, none of
+    // which is the signal: a replay that writes nothing computes no series to say what it
+    // says. Where the signal stands as the replay ends is said, since it is what was skipped.
     let exports =
         journal.iter().filter(|command| matches!(command, cav_engine::Command::Export { .. })).count();
+    let signal = match engine.signal().0 {
+        cav_engine::SignalState::Stale => "signal stale, not waited for: nothing written needed it",
+        cav_engine::SignalState::Refined => "signal refined",
+        cav_engine::SignalState::None => "signal none",
+    };
     println!(
-        "replayed {} command(s) · scene `{}` · state {} · {exports} export(s) {}",
+        "replayed {} command(s) · scene `{}` · state {} · {exports} export(s) {} · {signal}",
         journal.len(),
         engine.spec().name,
         engine.digest(),
