@@ -6,7 +6,7 @@ writes (``crates/cav-plot/src/style.rs``).
                            -> matplotlib.style.context([...])
 
 The look is in style sheets beside this module: ``cavendish.mplstyle`` (white paper, near-black
-ink, grey rules, the eight series colours with a dash each) and one small sheet for each light
+ink, grey rules, the five series colours and the eight dashes) and one small sheet for each light
 preset (its size and its type). Use them on their own with matplotlib:
 
     import matplotlib.style
@@ -16,9 +16,10 @@ preset (its size and its type). Use them on their own with matplotlib:
         ...
 
 The series colours are safe under protanopia, deuteranopia and tritanopia (every pair at least
-12 apart in CIEDE2000 and in OKLab × 100) and each has a dash of its own for print in black and
-white; Cavendish's own tests hold the palette to that, and this package's tests hold these
-constants to the palette a figure's ``.json`` records.
+12 apart in CIEDE2000 under seven simulations) and each of the first eight series has a dash of
+its own for print in black and white (the sixth to eighth share a colour with the first to third
+and are told apart by the dash alone); Cavendish's own tests hold the palette to that, and this
+package's tests hold these constants to ``crates/cav-plot/src/style.rs``.
 """
 
 from __future__ import annotations
@@ -31,10 +32,8 @@ from .result import Err, Ok, Result
 
 # ======================================== THE PALETTE ========================================
 
-SERIES: tuple[str, ...] = (
-    "#900c60", "#2c84b2", "#846000", "#a878fc", "#3a469e", "#8200f2", "#ca4076", "#c08400",
-)
-"""The series colours, in order: wine, blue, ochre, lavender, indigo, violet, rose, gold (Cavendish's ``PAPER_SERIES``)."""
+SERIES: tuple[str, ...] = ("#0b0dff", "#c01850", "#1086a6", "#e76f11", "#703088")
+"""The series colours, in order: blue, crimson, teal, orange, purple (Cavendish's ``PAPER_SERIES``)."""
 
 DASHES: tuple[tuple[float, ...], ...] = (
     (),
@@ -91,12 +90,13 @@ def dash(series: int, width: float) -> tuple[float, tuple[float, ...]] | str:
     The line style of a series, as matplotlib takes it.
 
     Args:
-        series (int):   The series, from 0; past the last colour the dashes go on a step.
+        series (int):   The series, from 0: the colours come round every five and the dashes every
+                        eight, as Cavendish's ``Style::series`` has them.
         width  (float): The line's width, points: dashes are multiples of it.
     Returns:
         tuple[float, tuple[float, ...]] | str: ``"solid"``, or ``(0, (ink, gap, ...))`` in points.
     """
-    pattern = DASHES[(series + series // len(SERIES)) % len(DASHES)]
+    pattern = DASHES[series % len(DASHES)]
     if not pattern:
         return "solid"
     return (0.0, tuple(length * width for length in pattern))

@@ -370,6 +370,113 @@ fn a_signal_plot_draws_at_most_twelve_towers_and_says_so() {
     assert!(plot.described.marks["towers"]["note"].is_null());
 }
 
+/// A row of `towers` towers over a slab, `duration` seconds long, with labels `prefix` and a
+/// number: a dense signal of as many series as asked, cheap to read.
+fn long_row(towers: usize, duration: f64, prefix: &str) -> Engine {
+    let mut scene = row_of_towers(towers);
+    scene.duration = duration;
+    for (n, tower) in scene.array.towers.iter_mut().enumerate() {
+        tower.label = format!("{prefix}{}", n + 1);
+    }
+    let mut engine = Engine::new();
+    engine.set_patience(LONG);
+    engine.apply(cav_engine::Command::load(scene)).unwrap();
+    assert!(engine.settle(LONG));
+    engine
+}
+
+#[test]
+fn a_dense_signal_keeps_its_dashes() {
+    // S2's second review, item 2. Criterion, written before measuring: in the `paper-column`
+    // figure of eight towers × 1000 shots (drawn as envelopes), every line of tower n has the
+    // dash of series n, and the key's sample of tower n has that same dash; series 6 to 8 share
+    // a hue with 1 to 3, so their lines differ from those in dash alone.
+    let engine = long_row(8, 2000.0, "t");
+    let style = Style::preset("paper-column").unwrap();
+    let size = style.size_mm.map(|mm| (mm / cav_plot::style::MM_PER_POINT) as f32);
+    let plot = build(&engine, &subject(PaneContent::Signal), &style, size);
+    let lines: Vec<(Colour, &[f32], usize)> = plot
+        .drawing
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Line { points, colour, dash, .. } => Some((*colour, dash.as_slice(), points.len())),
+            _ => None,
+        })
+        .collect();
+    assert!(lines.iter().filter(|line| line.2 > 2).count() >= 8, "the envelopes are drawn");
+    for tower in 0..8 {
+        let (colour, dash) = style.series(tower);
+        // The tower that shares this hue (five hues: 1 and 6, 2 and 7, 3 and 8).
+        let sharer = if tower < 5 { tower + 5 } else { tower - 5 };
+        let other = if sharer < 8 { Some(style.series(sharer).1) } else { None };
+        let mine: Vec<&&[f32]> =
+            lines.iter().filter(|line| line.0 == colour && line.2 > 2).map(|line| &line.1).collect();
+        // Every line of this hue has this tower's dash or its sharer's, never another (none).
+        for line in &mine {
+            assert!(
+                **line == dash || Some(**line) == other,
+                "tower {}: a line with the dash {line:?}",
+                tower + 1
+            );
+        }
+        assert!(
+            mine.iter().any(|line| **line == dash),
+            "tower {}'s envelope has lost its dash {dash:?}",
+            tower + 1
+        );
+        // The key's sample of the tower (a two-point line of its colour) has the same dash.
+        let named = plot.described.marks["towers"]["named_in_the_key"].as_array().unwrap();
+        assert!(
+            !named.iter().any(|n| n.as_u64() == Some(tower as u64 + 1))
+                || lines.iter().any(|line| line.0 == colour && line.2 == 2 && line.1 == dash),
+            "tower {}: no key sample with its dash",
+            tower + 1
+        );
+    } // Control: two series that share a hue are told apart only by their dashes, which differ.
+    assert_eq!(style.series(0).0, style.series(5).0);
+    assert_ne!(style.series(0).1, style.series(5).1);
+}
+
+#[test]
+fn no_series_leaves_the_key_without_a_word() {
+    // S2's second review, item 3. Criterion, written before measuring: in `paper-column` with
+    // twelve towers, every tower drawn is either named in the key or counted in a note of how
+    // many are not ("and N more", or "+N" where that is all there is room for), and the record
+    // lists which are named. With names too long for any entry to fit, the note alone counts
+    // all twelve.
+    let style = Style::preset("paper-column").unwrap();
+    let size = style.size_mm.map(|mm| (mm / cav_plot::style::MM_PER_POINT) as f32);
+    for (prefix, short) in [
+        ("t", true),
+        (
+            "the gradiometer tower that stands at the far end of the long hall by the north door, number ",
+            false,
+        ),
+    ] {
+        let engine = long_row(12, 60.0, prefix);
+        let plot = build(&engine, &subject(PaneContent::Signal), &style, size);
+        let labels: Vec<&String> = plot.drawn.labels.iter().map(|(text, _)| text).collect();
+        let named: Vec<usize> =
+            (1..=12).filter(|n| labels.iter().any(|text| **text == format!("{prefix}{n}"))).collect();
+        let noted = labels.iter().find_map(|text| {
+            text.strip_prefix("and ")
+                .and_then(|rest| rest.strip_suffix(" more"))
+                .or_else(|| text.strip_prefix('+'))
+                .and_then(|count| count.parse::<usize>().ok())
+        });
+        println!("{prefix:?}: {} named, note {noted:?}", named.len());
+        assert_eq!(named.len() + noted.unwrap_or(0), 12, "{labels:?}");
+        let recorded = plot.described.marks["towers"]["named_in_the_key"].as_array().unwrap().len();
+        assert_eq!(recorded, named.len());
+        if short {
+            // Control: the key is crowded, so the note is exercised and not merely absent.
+            assert!(named.len() < 12 && !named.is_empty(), "{named:?}");
+        } else {
+            assert_eq!((named.len(), noted), (0, Some(12)), "{labels:?}");
+        }
+    }
+}
 #[test]
 fn a_signal_plot_has_a_key() {
     let engine = engine("load pass");
