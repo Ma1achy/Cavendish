@@ -7,7 +7,36 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S0 the shell | done: TASK-S0-01 to 14 merged; reviewed twice, nothing important remains | `s0-shell` | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
 | S1 a point mass | done: TASK-S1-01 to 19 merged; reviewed twice, nothing important remains | `s1-point-mass` | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
 | S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
+| S3 voxel bodies | built: TASK-S3-01 to 18 merged (PRs #91 to #103 and S3-16's); awaiting review; `quick` over its budget |  | brief and results: `docs/slices/S3.md` (§7); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
 
+## S3, voxel bodies: where it stands (24 Nov 2026) — built, not yet reviewed or tagged
+
+**Done.** A body can be a solid: sphere, cuboid, cylinder, ellipsoid, the five Platonic solids, a
+convex polyhedron, a closed OBJ or STL mesh. It is voxelised into a linear octree (bit-exact
+against a raster voxeliser, losslessly merged) and read exactly, every leaf a uniform cube by a
+kernel exact to 1.4e-14. Voxel bodies are drawn as their leaves, coloured by level, mass, fill,
+height, distance or each leaf's phase at a tower, with legends from what is drawn, overlays of
+leaf bounds and of a cut, and exported as vector figures. `Motion::Modes` moves a body by modal
+amplitudes. Towers can carry their own instruments; shots and bundles are ragged; a scene may
+have no towers. The cylinder, the shaky wall, the plate and George's scaffold are held to his
+scripts. Every S2 review finding carried in is done. George's answers of 24 Nov 2026 are applied
+(below, "For George").
+
+**Numbers** (`docs/slices/S3.md` §7): `quick` 454 tests, 12.1 s warm (over its 10 s budget);
+`gpu` 33 in 22 s; `oracle` 56 in 155 s; 105 of 105 validation cases (21 new, none dropped, no
+tolerance moved); the 84 of S2 to the last digit.
+
+**Decided.** The cube kernel splits into octants and uses the prism within 3 sides (the prism
+alone missed 1e-13). The scaffold's reference is George's integrand integrated tightly, because
+his tables are nquad's rounding. `cube_shift` for displaced cubes. AICE's tower is 140 m. Fig 12
+is read as half the largest |ΔΦ| (to be confirmed). Tests that spread over every core run one at
+a time in the oracle tier.
+
+**Open.** `quick` at 12 s: 99 s of test CPU over 12 cores, no test over 3.1 s; a third of that
+CPU must go (`plan/IDEAS.md`). `quick` does not lint the oracle crate. The demo is short of its
+script in three pictures (§7.5). The scaffold series cases cannot fail in practice (§7.8).
+
+**Next.** A fresh review of S3; then the tag, and S4.
 ## S2, scenes as files: where it stands (24 Nov 2026) — done, tagged `s2-scenes-as-files`
 
 **Done.** A scene is a file and every field has a path (`get`, `set`, `ls`, `schema`, from the

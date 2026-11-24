@@ -76,3 +76,7 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **Mesh import beyond OBJ and STL** (glTF, PLY), and meshes held in the scene file rather than a path relative to where the program runs.
 - **A crossing warning for voxel bodies**: a body made of voxels that passes through the atoms' path is finite (cube kernel) but not said; points and spheres are.
 - **Quickhull for polyhedra**: the hull is found by trying every triple (cap 100 vertices).
+- **`quick` under 10 s again**: its tests take 99 s of CPU on 12 cores, spread flat. Options: share one built scene or tree per test binary (many tests voxelise or load the same few scenes); move the counting-allocator tests' largest cases to the oracle tier and keep a small case in `quick`; a nextest profile that starts the slowest binaries first. S3.
+- **Lint the oracle crate in `quick`** only when its files changed (a clippy fault reached main in #102). S3.
+- **The validation report's margin for a band**: a case whose measured value must sit inside a band (`voxel.cube_to_point_order`) shows 99% where it is where it should be; report the distance to the nearer edge instead. S3.
+- **The demo's missing pictures**: a sphere, cylinder and mesh beside the solids; the scaffold's periodogram over a long run read once and kept; the cylinder sweep as a `paper-column` figure. S3.
