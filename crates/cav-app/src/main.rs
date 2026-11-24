@@ -178,7 +178,7 @@ fn timings(shell: &mut Shell, headless: &mut Headless, size: [u32; 2]) -> Result
     let started = Instant::now();
     shell.run("run")?;
     let whole = shell.engine.settle(std::time::Duration::from_secs(300));
-    let shots = shell.engine.signal().1.map_or(0, |signal| signal.times.len());
+    let shots = shell.engine.signal().1.map_or(0, |signal| signal.most());
     println!(
         "signal from nothing, {shots} shots × {towers} towers × {bodies} bodies, on the worker: {:.1} ms{}",
         started.elapsed().as_secs_f64() * 1e3,

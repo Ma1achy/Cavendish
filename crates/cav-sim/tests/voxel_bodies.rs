@@ -63,7 +63,7 @@ fn sphere_against_point(pitch: f64) -> f64 {
     let reader = cav_core::forward::Reader::new(scene.array.instrument.instrument());
     let point = Mass::point(100.0, |_| Vec3::from_array(at));
     let exact =
-        reader.read_to(Vec3::ZERO, &point, shots.times[0], cav_core::forward::PHASE_TOLERANCE).reading;
+        reader.read_to(Vec3::ZERO, &point, shots.times(0)[0], cav_core::forward::PHASE_TOLERANCE).reading;
     let relative = |a: f64, b: f64| (a - b).abs() / b.abs();
     relative(voxels.lower[0], exact.lower)
         .max(relative(voxels.upper[0], exact.upper))
@@ -95,7 +95,7 @@ fn a_static_body_reads_once_to_the_same_bits() {
     let mut shot_by_shot = still.clone();
     shot_by_shot.bodies[0].appears = Some(-1.0e5);
     let shots = shots(&still).unwrap();
-    assert!(shots.times.len() >= 2);
+    assert!(shots.count(0) >= 2);
     let a = contribution(&still, SourceId::Body(0), &shots, &|| false).unwrap();
     let b = contribution(&shot_by_shot, SourceId::Body(0), &shots, &|| false).unwrap();
     let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();

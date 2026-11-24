@@ -26,6 +26,7 @@
                 timing: (
                     offset: 0.0,
                 ),
+                instrument: None,
             ),
         ],
         schedule: (

@@ -215,7 +215,9 @@ pub fn decimation(scene: &SceneSpec) -> Vec<String> {
             notes.push(format!("room grid every {step} m"));
         }
     }
-    let step = mark_step(scene.array.instrument.tower_height);
+    // The tallest tower's ticks are the coarsest (towers may have heights of their own).
+    let tallest = scene.array.instruments().iter().map(|i| i.tower_height).fold(0.0, f64::max);
+    let step = mark_step(tallest);
     if step > 1.0 {
         notes.push(format!("tower ticks every {step} m"));
     }
@@ -438,8 +440,9 @@ pub fn drawables_with(
         b.end_part(Part::Room);
     }
 
-    let instrument = &scene.array.instrument;
     for (n, tower) in scene.array.towers.iter().enumerate() {
+        // Each tower at its own height, with its own interferometers' launch points.
+        let instrument = &scene.array.instrument_of(n);
         let base = Vec3::from_array(tower.position);
         let top = base + Vec3::Z * instrument.tower_height;
         let selected = highlight == Some(Target::Tower(n + 1));
@@ -866,5 +869,39 @@ mod tests {
         // It says what it thinned; the default scene thins nothing.
         assert_eq!(decimation(&scene), ["room grid every 100 m", "tower ticks every 10 m"]);
         assert!(decimation(&SceneSpec::room()).is_empty(), "the control: an ordinary scene is drawn in full");
+    }
+
+    #[test]
+    fn each_tower_is_drawn_at_its_own_height_and_none_is_drawn_for_none() {
+        // The lines of tower `n`: its baseline is the first.
+        fn baseline(d: &Drawables, n: usize) -> Line {
+            let part = d.parts.iter().position(|(p, ..)| *p == Part::Tower(n)).unwrap();
+            let first = if part == 0 { 0 } else { d.parts[part - 1].1 };
+            d.lines[first]
+        }
+        let mixed = dev::mixed_array();
+        let d = drawables(&mixed, DrawStyle::Shaded, None, Vec3::ZERO);
+        let height = |n: usize| f64::from(baseline(&d, n).b[2] - baseline(&d, n).a[2]);
+        assert!(
+            (height(0) - 10.1).abs() < 1e-4 && (height(1) - 100.0).abs() < 1e-3,
+            "{} {}",
+            height(0),
+            height(1)
+        );
+        // Its upper launch point is drawn at its own separation: 70 m up, not 5.
+        assert_eq!(towers(&d), 3);
+        // A metre a tick up the 100 m tower: a hundred ticks, under the cap, so nothing is thinned.
+        assert!(decimation(&mixed).is_empty());
+        // Control: the same towers on the array's instrument are all 10.1 m.
+        let mut plain = mixed.clone();
+        plain.array.towers.iter_mut().for_each(|t| t.instrument = None);
+        let p = drawables(&plain, DrawStyle::Shaded, None, Vec3::ZERO);
+        assert!((f64::from(baseline(&p, 1).b[2] - baseline(&p, 1).a[2]) - 10.1).abs() < 1e-4);
+        // No towers: no tower parts, nothing NaN, and the bodies and the room are still drawn.
+        let none = dev::no_towers();
+        let d = drawables(&none, DrawStyle::Shaded, Some(Target::Tower(1)), Vec3::ZERO);
+        assert_eq!(towers(&d), 0);
+        assert!(has_room(&d) && d.parts.iter().any(|(p, ..)| *p == Part::Body(0)));
+        assert!(d.lines.iter().all(|l| l.a.iter().chain(&l.b).all(|v| v.is_finite())));
     }
 }

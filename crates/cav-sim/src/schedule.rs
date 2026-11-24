@@ -74,7 +74,8 @@ fn magnitude(z: Complex) -> f64 {
 pub fn predict(spec: &SceneSpec) -> Result<Prediction, String> {
     let (schedule, cycle) = (&spec.array.schedule, spec.array.instrument.cycle);
     let shots = crate::read::shots(spec)?;
-    let n = shots.times.len();
+    // The designer's own count: shots at the array's own cycle (a tower of its own has its own).
+    let n = crate::read::launches(spec)?.len();
     let kept: Vec<usize> = (0..shots.towers())
         .map(|tower| shots.taken_all(tower).iter().filter(|taken| **taken).count())
         .collect();
@@ -180,8 +181,11 @@ pub fn predict(spec: &SceneSpec) -> Result<Prediction, String> {
         );
     }
     lines.sort_by(|a, b| a.frequency.total_cmp(&b.frequency));
+    // The worst tower's loss of sensitivity: its shots against those it kept.
     let fewest = kept.iter().copied().min().unwrap_or(0);
-    let noise_factor = (fewest > 0).then(|| (n as f64 / fewest as f64).sqrt());
+    let noise_factor = (fewest > 0).then(|| {
+        (0..shots.towers()).map(|d| (shots.count(d) as f64 / kept[d] as f64).sqrt()).fold(0.0f64, f64::max)
+    });
     let none = kept.iter().filter(|kept| **kept == 0).count();
     if none > 0 {
         notes.push(format!(
@@ -226,7 +230,7 @@ pub fn window(spec: &SceneSpec, tower: usize, to: f64, count: usize) -> Result<(
     }
     let count = count.clamp(2, MAX_FREQUENCIES);
     let times: Vec<f64> =
-        (0..shots.times.len()).filter(|&k| shots.taken(tower, k)).map(|k| shots.readout(tower, k)).collect();
+        (0..shots.count(tower)).filter(|&k| shots.taken(tower, k)).map(|k| shots.readout(tower, k)).collect();
     let df = to / (count - 1) as f64;
     let frequencies: Vec<f64> = (0..count).map(|k| k as f64 * df).collect();
     let power = if times.len().saturating_mul(count) <= cav_core::cadence::DIRECT_SUM_STEPS {
@@ -254,7 +258,7 @@ mod tests {
     fn realised(scene: &SceneSpec, frequency: f64) -> f64 {
         let shots = crate::read::shots(scene).unwrap();
         let times: Vec<f64> =
-            (0..shots.times.len()).filter(|&k| shots.taken(0, k)).map(|k| shots.times[k]).collect();
+            (0..shots.times(0).len()).filter(|&k| shots.taken(0, k)).map(|k| shots.times(0)[k]).collect();
         cadence::window(&times, &[frequency])[0].sqrt()
     }
 
@@ -411,7 +415,7 @@ mod threshold {
         let spec = dev::cadence_lab();
         let shots = crate::read::shots(&spec).unwrap();
         let times: Vec<f64> =
-            (0..shots.times.len()).filter(|&k| shots.taken(0, k)).map(|k| shots.launch(0, k)).collect();
+            (0..shots.times(0).len()).filter(|&k| shots.taken(0, k)).map(|k| shots.launch(0, k)).collect();
         let steps = |count: usize| times.len() * count;
         assert!(
             steps(2001) <= cav_core::cadence::DIRECT_SUM_STEPS

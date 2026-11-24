@@ -366,6 +366,57 @@ pub fn cadence_lab() -> SceneSpec {
     scene
 }
 
+/// `mixed-array`: towers that do not share an instrument. Tower 1 is AION-10 (the array's own),
+/// tower 2 is the AICE preset (70 m apart in a 100 m tower, T = 2.5 s, a shot every 5 s, its
+/// launch derived), tower 3 is AION-10 with T = 0.9 s. Each has its own shots and its own flight;
+/// an oscillating mass between them is read by all three.
+#[must_use]
+pub fn mixed_array() -> SceneSpec {
+    let swing =
+        Motion::Linear { centre: [3.0, 2.0, 4.0], amplitude: [0.0, 0.0, 1.0], frequency: 0.05, phase: 0.0 };
+    let mut scene = open(
+        "mixed-array",
+        "Three towers that do not share an instrument: AION-10, AICE (a shot every 5 s, 70 m apart) and AION-10 \
+         with T = 0.9 s. Each tower has its own shots and its own flight; an oscillating mass is read by all three.",
+        60.0,
+        vec![BodySpec::moving("oscillator", 10.0, swing)],
+    );
+    let aice = crate::presets::aice();
+    let base = scene.array.instrument.clone();
+    let slower = crate::InstrumentSpec { half_sequence: 0.9, ..base.clone() };
+    scene.array.towers = vec![
+        crate::TowerSpec::at("aion-10", [0.0, 0.0, 0.0]),
+        crate::TowerSpec {
+            instrument: Some(crate::InstrumentOverride::between(&base, &aice)),
+            ..crate::TowerSpec::at("aice", [6.0, 0.0, 0.0])
+        },
+        crate::TowerSpec {
+            instrument: Some(crate::InstrumentOverride::between(&base, &slower)),
+            ..crate::TowerSpec::at("aion-10, T = 0.9 s", [0.0, 6.0, 0.0])
+        },
+    ];
+    scene
+}
+
+/// `no-towers`: a body in a room and no array at all. Nothing is read; everything else works.
+#[must_use]
+pub fn no_towers() -> SceneSpec {
+    let mut scene = open(
+        "no-towers",
+        "A room with a mass passing through it and no towers: a scene need not have an array. Nothing is \
+         read; the timeline, the panes and the bundle still work, empty.",
+        20.0,
+        vec![BodySpec::moving(
+            "mass",
+            5.0,
+            Motion::Pass { from: [-4.0, 0.0, 1.0], to: [4.0, 0.0, 1.0], start: 0.0, speed: 1.0 },
+        )],
+    );
+    scene.array.towers.clear();
+    scene.room = SceneSpec::room().room;
+    scene
+}
+
 /// The S3 scenes' towers: tower 1 alone at the origin when `alone`, else the default five.
 fn s3_base(name: &str, description: &str, alone: bool) -> SceneSpec {
     let mut scene = void();
@@ -521,7 +572,8 @@ pub fn scaffold() -> SceneSpec {
 }
 
 /// Every dev scene S3 adds, by builder.
-pub const S3_SCENES: [fn() -> SceneSpec; 4] = [unit_cube, sphere, platonic_row, scaffold];
+pub const S3_SCENES: [fn() -> SceneSpec; 6] =
+    [unit_cube, sphere, platonic_row, scaffold, mixed_array, no_towers];
 
 /// Every dev scene S2 adds, by builder.
 pub const S2_SCENES: [fn() -> SceneSpec; 2] = [staggered, cadence_lab];
