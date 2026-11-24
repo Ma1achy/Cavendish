@@ -105,9 +105,22 @@ fn equivalence(root: &Path) -> Result<(), String> {
     native.env("CAV_WEB_EQUIVALENCE", &numbers);
     step("equivalence: native numbers", native)?;
     check_tool("wasm-bindgen-test-runner", &["--version"], "", "it comes with wasm-bindgen-cli")?;
+    // In the `web` profile: the optimisation, LTO and overflow checks the page is built with.
     let mut wasm = cargo(
         root,
-        &["test", "--target", TARGET, "-p", "cav-engine", "--test", "web_equivalence", "--", "--nocapture"],
+        &[
+            "test",
+            "--profile",
+            "web",
+            "--target",
+            TARGET,
+            "-p",
+            "cav-engine",
+            "--test",
+            "web_equivalence",
+            "--",
+            "--nocapture",
+        ],
     );
     wasm.env("CAV_WEB_EQUIVALENCE", &numbers)
         .env("CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER", "wasm-bindgen-test-runner");

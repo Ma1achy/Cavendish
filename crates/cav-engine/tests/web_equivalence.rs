@@ -72,18 +72,44 @@ fn as_text(numbers: &[(String, Vec<f64>)]) -> String {
     text
 }
 
-/// What a comparison found: how many numbers, how many to the bit, and the largest difference of
-/// any one relative to the largest magnitude under its label.
+/// What a comparison found: how many numbers, how many to the bit, which labels differ, and how
+/// far (relative to the largest magnitude under the label), split by whether the label's
+/// arithmetic goes through the maths library ([`THROUGH_LIBM`]).
 #[derive(Debug, Default, PartialEq)]
 struct Found {
     numbers: usize,
     same_bits: usize,
+    /// The largest difference under a label of [`THROUGH_LIBM`].
     worst: f64,
     worst_at: String,
     /// Each label with numbers that differ in their bits, and how many.
     differing: Vec<(String, usize)>,
+    /// The first number that differs under a label *not* in [`THROUGH_LIBM`]: where the
+    /// arithmetic is the same, one bit is a failure.
+    changed_bit: Option<String>,
     faults: Vec<String>,
 }
+
+impl Found {
+    /// Whether the comparison holds: no fault, no bit changed outside [`THROUGH_LIBM`], and the
+    /// labels in it within [`TOLERANCE`].
+    fn holds(&self) -> bool {
+        self.faults.is_empty() && self.changed_bit.is_none() && self.worst <= TOLERANCE
+    }
+}
+
+/// The labels whose numbers go through `sin`, `cos`, `exp` or `log`, and so may differ in their
+/// last bits (wasm takes Rust's own maths library, native the platform's): `comb`'s oscillator
+/// is placed by a sine (its three signal channels, and the reading under the playhead), and its
+/// periodogram's power goes through the FFT's twiddles. Every other label is held to the bit. A
+/// label is added here only with a line in the slice notes saying which function it goes through.
+const THROUGH_LIBM: [&str; 5] = [
+    "comb/signal.lower",
+    "comb/signal.upper",
+    "comb/signal.gradiometer",
+    "comb/reading@1s",
+    "comb/periodogram.power",
+];
 
 /// Holds `ours` to `theirs` (as [`as_text`] writes them).
 fn compare(ours: &[(String, Vec<f64>)], theirs: &str) -> Found {
@@ -91,6 +117,7 @@ fn compare(ours: &[(String, Vec<f64>)], theirs: &str) -> Found {
     let mut lines = theirs.lines();
     for (label, values) in ours {
         let scale = values.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
+        let through_libm = THROUGH_LIBM.contains(&label.as_str());
         for (index, value) in values.iter().enumerate() {
             found.numbers += 1;
             let Some(line) = lines.next() else {
@@ -119,6 +146,10 @@ fn compare(ours: &[(String, Vec<f64>)], theirs: &str) -> Found {
                 Some((last, count)) if last == label => *count += 1,
                 _ => found.differing.push((label.clone(), 1)),
             }
+            if !through_libm {
+                found.changed_bit.get_or_insert_with(|| format!("{label} {index}: {value:e} vs {theirs:e}"));
+                continue;
+            }
             let relative = if scale > 0.0 { (theirs - value).abs() / scale } else { f64::INFINITY };
             // A NaN on one side only is as far apart as numbers can be.
             let relative = if relative.is_nan() { f64::INFINITY } else { relative };
@@ -134,33 +165,45 @@ fn compare(ours: &[(String, Vec<f64>)], theirs: &str) -> Found {
     found
 }
 
-/// The tolerance where the bits differ: a difference relative to the largest number under the
-/// same label. wasm and x86-64 both round every operation as IEEE 754 says and neither fuses a
-/// multiply and an add here, so the arithmetic is the same; `sin`, `exp` and the like are not
-/// (wasm takes Rust's own maths library, native the platform's), so a last-bit difference there
-/// is allowed to grow through a sum. 1e-12 of the largest phase is far below a microradian.
+/// The tolerance under a label of [`THROUGH_LIBM`]: a difference relative to the largest number
+/// under the same label. wasm and x86-64 both round every operation as IEEE 754 says and neither
+/// fuses a multiply and an add here, so elsewhere the arithmetic is the same and is held to the
+/// bit; a last-bit difference out of `sin` may grow through a sum or an FFT. 1e-12 of the largest
+/// phase is far below a microradian.
 const TOLERANCE: f64 = 1e-12;
 
 #[test]
 fn the_comparison_finds_a_changed_bit() {
-    // Control arm for the wasm test: a list compared with itself is all the same bits; with one
-    // number moved by its last bit, the comparison says so and names it; a shorter list is a fault.
-    let ours = vec![("a/x".to_owned(), vec![1.0, -2.5, 3.25e-9]), ("b/y".to_owned(), vec![0.0, 7.0])];
+    // Control arm for the wasm test. A list compared with itself holds, every bit the same.
+    let ours = vec![
+        ("a/x".to_owned(), vec![1.0, -2.5, 3.25e-9]),
+        ("comb/periodogram.power".to_owned(), vec![0.0, 7.0]),
+    ];
     let same = compare(&ours, &as_text(&ours));
     assert_eq!((same.numbers, same.same_bits, same.worst, same.faults.len()), (5, 5, 0.0, 0));
+    assert!(same.holds());
+    // One number moved by its last bit under a label whose arithmetic is the same: found, named,
+    // and the comparison FAILS.
     let mut moved = ours.clone();
     moved[0].1[1] = f64::from_bits((-2.5_f64).to_bits() + 1);
     let found = compare(&ours, &as_text(&moved));
     assert_eq!(found.same_bits, 4);
     assert_eq!(found.differing, vec![("a/x".to_owned(), 1)]);
-    assert!(found.worst > 0.0 && found.worst < 1e-15, "{found:?}");
-    assert!(found.worst_at.starts_with("a/x 1:"), "{found:?}");
-    // A last-bit difference is within the tolerance; a difference of a part in a thousand is not.
-    assert!(found.worst <= TOLERANCE);
-    moved[0].1[1] = -2.5 * (1.0 + 1e-3);
-    assert!(compare(&ours, &as_text(&moved)).worst > TOLERANCE);
+    assert!(found.changed_bit.as_deref().is_some_and(|at| at.starts_with("a/x 1:")), "{found:?}");
+    assert!(!found.holds(), "a last-bit change outside THROUGH_LIBM must fail: {found:?}");
+    // The same last bit under a label of THROUGH_LIBM is within the tolerance and holds; a part
+    // in a thousand there does not.
+    let mut moved = ours.clone();
+    moved[1].1[1] = f64::from_bits(7.0_f64.to_bits() + 1);
+    let found = compare(&ours, &as_text(&moved));
+    assert!(found.changed_bit.is_none() && found.worst > 0.0 && found.worst < 1e-15, "{found:?}");
+    assert!(found.worst_at.starts_with("comb/periodogram.power 1:"), "{found:?}");
+    assert!(found.holds());
+    moved[1].1[1] = 7.0 * (1.0 + 1e-3);
+    assert!(!compare(&ours, &as_text(&moved)).holds());
+    // A shorter list is a fault.
     let shorter = vec![ours[0].clone()];
-    assert!(!compare(&ours, &as_text(&shorter)).faults.is_empty());
+    assert!(!compare(&ours, &as_text(&shorter)).holds());
 }
 
 /// Natively: writes the numbers for the wasm run. Ignored outside `cargo xtask web`.
@@ -178,7 +221,7 @@ fn web_equivalence_native_numbers() {
 mod wasm {
     use wasm_bindgen_test::wasm_bindgen_test;
 
-    use super::{TOLERANCE, compare, numbers};
+    use super::{compare, numbers};
 
     /// The native numbers, built in when `cargo xtask web` compiles this.
     const NATIVE: &str = include_str!(env!("CAV_WEB_EQUIVALENCE"));
@@ -188,15 +231,18 @@ mod wasm {
         let found = compare(&numbers(), NATIVE);
         // The line `cargo xtask web` records.
         wasm_bindgen_test::console_log!(
-            "web equivalence: {} numbers, {} the same to the bit; largest relative difference {:e}{}; differing: {:?}",
+            "web equivalence: {} numbers, {} the same to the bit; outside THROUGH_LIBM: {}; under it, largest relative difference {:e}{}; differing: {:?}",
             found.numbers,
             found.same_bits,
+            found
+                .changed_bit
+                .as_ref()
+                .map_or_else(|| "every bit the same".to_owned(), |at| format!("a bit CHANGED at {at}")),
             found.worst,
             if found.worst_at.is_empty() { String::new() } else { format!(" at {}", found.worst_at) },
             found.differing
         );
-        assert!(found.faults.is_empty(), "{:?}", found.faults);
         assert!(found.numbers > 1000, "too few numbers to say anything: {}", found.numbers);
-        assert!(found.worst <= TOLERANCE, "{found:?}");
+        assert!(found.holds(), "{found:?}");
     }
 }
