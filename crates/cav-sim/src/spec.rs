@@ -55,9 +55,10 @@ pub mod limits {
     pub const ATOM_MASS: (f64, f64) = (1.0e-27, 1.0e-24);
     /// Local gravity, metres per second squared, `(least, greatest)`.
     pub const GRAVITY: (f64, f64) = (0.1, 100.0);
-    /// The kick number n (photon momenta a kick gives), `(least, greatest)`: from a single
-    /// photon to a hundred times AION-10's thousand.
-    pub const KICKS: (f64, f64) = (1.0, 1.0e5);
+    /// The kick number n (photon momenta a kick gives), `(least, greatest)`: a whole number, from
+    /// a single photon to a hundred times AION-10's thousand (George, 24 Nov 2026: n is a positive
+    /// integer).
+    pub const KICKS: (u32, u32) = (1, 100_000);
     /// The longest name or label, characters.
     pub const LABEL: usize = 200;
     /// The longest description, characters.
@@ -293,13 +294,14 @@ pub struct InstrumentSpec {
     pub gravity: f64,
     /// The kick number n of the large-momentum-transfer sequence: how many photon momenta ħk of
     /// the 698 nm clock light a kick gives an arm, so that `v_kick = n·ħk/m` with `atom_mass`.
-    /// A pure number; it need not be whole. The default is 1000, AION-10's; a longer baseline
-    /// such as AICE's would support more. The launch velocity does not follow it by itself:
-    /// `launch symmetric` sets the launch that closes the arms again.
-    #[serde(default = "default_kicks")]
-    #[schemars(range(min = 1.0, max = 1.0e5))]
+    /// A whole number from 1 to 100000 (George, 24 Nov 2026); a fraction is refused, never
+    /// rounded. The default is 1000, AION-10's; a longer baseline such as AICE's would support
+    /// more. The launch velocity does not follow it by itself: `launch symmetric` sets the launch
+    /// that closes the arms again.
+    #[serde(default = "default_kicks", deserialize_with = "whole_kicks")]
+    #[schemars(range(min = limits::KICKS.0, max = limits::KICKS.1))]
     #[schemars(extend("x-unit" = "1"))]
-    pub kicks: f64,
+    pub kicks: u32,
     /// Whether an arm that falls back to its launch height stops there and waits (for the kick at
     /// T, or for the next sequence). The default is true.
     #[serde(default = "default_launch_floor")]
@@ -317,8 +319,46 @@ fn default_gravity() -> f64 {
     cav_core::constants::LOCAL_GRAVITY
 }
 
-const fn default_kicks() -> f64 {
-    cav_core::constants::LMT_KICKS
+/// AION-10's kick number, [`cav_core::constants::LMT_KICKS`] as the whole number it is.
+const fn default_kicks() -> u32 {
+    1000
+}
+
+/// Reads a kick number: a whole number, written as one (`1000`) or as a float with nothing after
+/// the point (`1000.0`, as files saved before 24 Nov 2026 have it). A fraction, a negative number
+/// or one too large for the field is refused with the reason, never rounded.
+fn whole_kicks<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u32, D::Error> {
+    struct Whole;
+    impl serde::de::Visitor<'_> for Whole {
+        type Value = u32;
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("the kick number: a whole number of photon momenta")
+        }
+        fn visit_u64<E: serde::de::Error>(self, n: u64) -> Result<u32, E> {
+            u32::try_from(n).map_err(|_| E::custom(format!("`kicks`: {n} is too large for a kick number")))
+        }
+        fn visit_i64<E: serde::de::Error>(self, n: i64) -> Result<u32, E> {
+            u32::try_from(n).map_err(|_| E::custom(format!("`kicks`: {n} is not a positive whole number")))
+        }
+        fn visit_f64<E: serde::de::Error>(self, n: f64) -> Result<u32, E> {
+            if n.fract() == 0.0 && (0.0..=f64::from(u32::MAX)).contains(&n) {
+                Ok(n as u32)
+            } else {
+                Err(E::custom(format!(
+                    "`kicks`: {n} is not a whole number; the kick number n is a count of photon momenta and is \
+                     never rounded"
+                )))
+            }
+        }
+    }
+    deserializer.deserialize_any(Whole)
+}
+
+/// An optional kick number, read as [`whole_kicks`] reads one; `null` is none.
+fn whole_kicks_or_none<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<u32>, D::Error> {
+    #[derive(Deserialize)]
+    struct Kicks(#[serde(deserialize_with = "whole_kicks")] u32);
+    Ok(Option::<Kicks>::deserialize(deserializer)?.map(|Kicks(n)| n))
 }
 
 const fn default_launch_floor() -> bool {
@@ -428,10 +468,11 @@ pub struct InstrumentOverride {
     #[serde(default)]
     #[schemars(range(min = 0.1, max = 100.0), extend("x-unit" = "m/s²"))]
     pub gravity: Option<f64>,
-    /// This tower's kick number n (a pure number); absent for the array's.
-    #[serde(default)]
-    #[schemars(range(min = 1.0, max = 1.0e5), extend("x-unit" = "1"))]
-    pub kicks: Option<f64>,
+    /// This tower's kick number n, a whole number (George, 24 Nov 2026); absent for the array's.
+    /// A fraction is refused, never rounded.
+    #[serde(default, deserialize_with = "whole_kicks_or_none")]
+    #[schemars(range(min = limits::KICKS.0, max = limits::KICKS.1), extend("x-unit" = "1"))]
+    pub kicks: Option<u32>,
     /// Whether this tower's arms stop at their launch height; absent for the array's.
     #[serde(default)]
     pub launch_floor: Option<bool>,
@@ -470,7 +511,7 @@ impl InstrumentOverride {
             cycle: differs(base.cycle, full.cycle),
             atom_mass: differs(base.atom_mass, full.atom_mass),
             gravity: differs(base.gravity, full.gravity),
-            kicks: differs(base.kicks, full.kicks),
+            kicks: (base.kicks != full.kicks).then_some(full.kicks),
             launch_floor: (base.launch_floor != full.launch_floor).then_some(full.launch_floor),
             sign: (base.sign != full.sign).then_some(full.sign),
         }
@@ -621,7 +662,7 @@ impl InstrumentSpec {
             launch_velocity: self.launch_velocity,
             gravity: self.gravity,
             atom_mass: self.atom_mass,
-            kicks: self.kicks,
+            kicks: f64::from(self.kicks),
             floor: self.launch_floor,
             sign: match self.sign {
                 SignSpec::LowerMinusUpper => cav_core::forward::Sign::LowerMinusUpper,
@@ -900,7 +941,13 @@ impl SceneSpec {
         }
         if let Some(window) = schedule.window {
             positive(&format!("{at}.window.period"), window.period, limits::DURATION)?;
-            positive(&format!("{at}.window.length"), window.length, window.period)?;
+            positive(&format!("{at}.window.length"), window.length, limits::DURATION)?;
+            if window.length > window.period {
+                return fail(format!(
+                    "{at}.window.length: {} s must be at most the period, {} s",
+                    window.length, window.period
+                ));
+            }
             if !(window.start >= 0.0 && window.start < window.period) {
                 return fail(format!(
                     "{at}.window.start: {} s must be at least 0 and less than the period, {} s",
@@ -1036,7 +1083,14 @@ fn validate_instrument(at: &str, i: &InstrumentSpec) -> Result<(), SpecError> {
     }
     within(&format!("{at}.atom_mass"), i.atom_mass, limits::ATOM_MASS)?;
     within(&format!("{at}.gravity"), i.gravity, limits::GRAVITY)?;
-    within(&format!("{at}.kicks"), i.kicks, limits::KICKS)?;
+    if !(limits::KICKS.0..=limits::KICKS.1).contains(&i.kicks) {
+        return Err(SpecError(format!(
+            "{at}.kicks: {} must be a whole number at least {} and at most {}",
+            i.kicks,
+            limits::KICKS.0,
+            limits::KICKS.1
+        )));
+    }
     Ok(())
 }
 
@@ -1142,12 +1196,12 @@ mod tests {
         let loaded = SceneSpec::from_ron(&old).unwrap();
         assert_eq!(loaded, SceneSpec::room());
         assert_eq!(loaded.array.instrument.atom_mass, cav_core::constants::SR87_MASS);
-        assert_eq!(loaded.array.instrument.kicks, 1000.0);
+        assert_eq!(loaded.array.instrument.kicks, 1000);
         assert!(loaded.array.instrument.launch_floor && loaded.bodies.is_empty());
         // Refusals name the field.
         type Break = fn(&mut SceneSpec);
         let cases: [(&str, Break); 10] = [
-            ("array.instrument.kicks", |s| s.array.instrument.kicks = 0.5),
+            ("array.instrument.kicks", |s| s.array.instrument.kicks = 0),
             ("bodies[1].label", |s| s.bodies[1].label = "linear".into()),
             ("bodies[0].label", |s| s.bodies[0].label = " ".into()),
             ("bodies[0].mass", |s| s.bodies[0].mass = 0.0),
@@ -1182,6 +1236,55 @@ mod tests {
     }
 
     #[test]
+    fn the_kick_number_is_a_whole_number() {
+        // George, 24 Nov 2026: n is a positive integer. A fraction is refused, never rounded,
+        // from a file (RON or JSON) and from an edit by path, naming the field.
+        let spec = SceneSpec::room();
+        let ron = spec.to_ron();
+        assert!(ron.contains("kicks: 1000,"), "written as a whole number");
+        for (written, accepted) in
+            [("1000", true), ("1000.0", true), ("1000.5", false), ("0.5", false), ("0", false), ("-3", false)]
+        {
+            let text = ron.replace("kicks: 1000,", &format!("kicks: {written},"));
+            let loaded = SceneSpec::from_ron(&text);
+            assert_eq!(loaded.is_ok(), accepted, "RON kicks: {written}: {loaded:?}");
+            if let Err(why) = loaded {
+                assert!(why.0.contains("kicks"), "{written}: {why}");
+            }
+            let json = spec.to_json().replace("\"kicks\": 1000,", &format!("\"kicks\": {written},"));
+            assert_eq!(SceneSpec::from_json(&json).is_ok(), accepted, "JSON kicks: {written}");
+        }
+        assert_eq!(SceneSpec::from_ron(&ron.replace("kicks: 1000,", "kicks: 1000.0,")).unwrap(), spec);
+        let why = SceneSpec::from_ron(&ron.replace("kicks: 1000,", "kicks: 1000.5,")).unwrap_err().0;
+        assert!(why.contains("not a whole number") && why.contains("never rounded"), "{why}");
+        // By path, as the console, `cav set`, MCP and the editors set it.
+        let why = spec.edited("array.instrument.kicks", &serde_json::json!(1000.5)).unwrap_err();
+        assert!(why.contains("array.instrument.kicks") && why.contains("whole number"), "{why}");
+        let why = spec.edited("array.instrument.kicks", &serde_json::json!(0)).unwrap_err();
+        assert!(why.starts_with("array.instrument.kicks:"), "{why}");
+        // A tower's own kick number is a whole number too.
+        let why =
+            spec.edited("array.towers[1].instrument", &serde_json::json!({ "kicks": 1000.5 })).unwrap_err();
+        assert!(why.contains("whole number"), "{why}");
+        let why = spec.edited("array.towers[1].instrument", &serde_json::json!({ "kicks": 0 })).unwrap_err();
+        assert!(why.starts_with("array.towers[1].instrument.kicks:"), "{why}");
+        let (towered, _) =
+            spec.edited("array.towers[1].instrument", &serde_json::json!({ "kicks": 1200 })).unwrap();
+        assert_eq!(towered.array.instrument_of(1).kicks, 1200);
+        // Control: a whole number in range is taken, as itself.
+        let (edited, before) = spec.edited("array.instrument.kicks", &serde_json::json!(4000)).unwrap();
+        assert_eq!((edited.array.instrument.kicks, before), (4000, serde_json::json!(1000)));
+        // The schema says integer, with the range `validate` holds it to.
+        let field = field_schema(&SceneSpec::schema(), &["InstrumentSpec", "kicks"]);
+        assert_eq!(field["type"], "integer", "{field}");
+        assert_eq!(
+            (field["minimum"].as_u64(), field["maximum"].as_u64()),
+            (Some(1), Some(100_000)),
+            "{field}"
+        );
+    }
+
+    #[test]
     fn the_spec_gives_the_forward_model_its_instrument() {
         use cav_core::forward::{Instrument, Sign};
         // The default spec is the engine's default instrument: George's answers.
@@ -1192,7 +1295,7 @@ mod tests {
             launch_velocity: 21.0,
             atom_mass: 1.46e-25,
             gravity: 9.8,
-            kicks: 2000.0,
+            kicks: 2000,
             launch_floor: false,
             sign: SignSpec::UpperMinusLower,
             ..InstrumentSpec::default()
@@ -1206,9 +1309,9 @@ mod tests {
         // The kick number reaches the one place the kick's velocity is made, which is linear in
         // it: twice the photons, exactly twice the velocity.
         assert_eq!(instrument.kicks, 2000.0);
-        let thousand = InstrumentSpec { kicks: 1000.0, ..spec.clone() }.instrument();
+        let thousand = InstrumentSpec { kicks: 1000, ..spec.clone() }.instrument();
         assert_eq!(instrument.kick_velocity(), 2.0 * thousand.kick_velocity());
-        assert_eq!(InstrumentSpec::default().kicks, cav_core::constants::LMT_KICKS);
+        assert_eq!(f64::from(InstrumentSpec::default().kicks), cav_core::constants::LMT_KICKS);
         assert_eq!(instrument.sign, Sign::UpperMinusLower);
         // Control: what the spec does not set is the engine's, not changed on the way.
         assert_eq!(instrument.hbar, Instrument::aion10().hbar);
@@ -1526,6 +1629,144 @@ mod tests {
         assert_eq!((free.minimum, free.maximum), (None, None));
     }
 
+    /// A scene in which every optional part is present and every kind of motion is used, so
+    /// that every field with a range has a value to set.
+    fn every_field() -> SceneSpec {
+        let mut spec = SceneSpec::room();
+        spec.floor =
+            Some(FloorSpec { height: -1.0, kind: FloorKind::Slab { thickness: 1.0 }, density: 2400.0 });
+        spec.array.schedule = ScheduleSpec {
+            jitter: Some(JitterSpec { model: JitterModel::Walk, kind: JitterKind::Positive, delta: 0.1 }),
+            alternate: Some(2.5),
+            gaps: Some(GapSpec { on: 3, period: 4 }),
+            window: Some(WindowSpec { start: 0.0, length: 100.0, period: 200.0 }),
+            loss: 0.01,
+            seed: 7,
+        };
+        for (n, kind) in Motion::KINDS.iter().enumerate() {
+            let mut body =
+                BodySpec::moving(&format!("b{n}"), 1.0, Motion::starter(kind, [3.0, 0.0, 1.0]).unwrap());
+            (body.appears, body.vanishes) = (Some(1.0), Some(2.0));
+            body.radius = 0.1;
+            spec.bodies.push(body);
+        }
+        assert_eq!(spec.validate(), Ok(()));
+        spec
+    }
+
+    /// A field's range as the schema states it: its path, whether it is whole, the least value
+    /// and whether that is excluded, and the greatest.
+    type Range = (String, bool, Option<(f64, bool)>, Option<f64>);
+
+    /// Where the schema and `validate` disagree, for each of `ranges` in `spec`: a value beyond
+    /// a stated bound that is not refused (or refused without naming the field), and a value at
+    /// a bound the schema admits that `validate` refuses as out of that field's range.
+    fn disagreements(spec: &SceneSpec, ranges: &[Range]) -> Vec<String> {
+        let mut out = Vec::new();
+        let name =
+            |path: &str| path.rsplit(['.', '[']).next().unwrap_or(path).trim_end_matches(']').to_owned();
+        let number =
+            |whole: bool, v: f64| if whole { serde_json::json!(v as i64) } else { serde_json::json!(v) };
+        for (path, whole, least, most) in ranges {
+            // One step beyond a bound: the next whole number, or a thousandth of the bound.
+            let beyond = |bound: f64, up: bool| {
+                let sign = if up { 1.0 } else { -1.0 };
+                if *whole {
+                    serde_json::json!(bound as i64 + if up { 1 } else { -1 })
+                } else {
+                    serde_json::json!(bound + sign * (bound.abs() * 1e-3).max(1e-9))
+                }
+            };
+            let mut outside = Vec::new();
+            let mut inside = Vec::new();
+            if let Some(most) = most {
+                outside.push(beyond(*most, true));
+                inside.push(number(*whole, *most));
+            }
+            if let Some((least, excluded)) = least {
+                if *excluded {
+                    outside.push(number(*whole, *least));
+                } else {
+                    outside.push(beyond(*least, false));
+                    inside.push(number(*whole, *least));
+                }
+            }
+            // The other fields beside this one: a refusal that names one of them is a rule
+            // between fields (a window no longer than its period), which no range can state.
+            let parent = path.rsplit_once('.').map_or("", |(parent, _)| parent);
+            let siblings: Vec<String> = crate::paths::ls(spec, parent)
+                .map(|entries| {
+                    entries.into_iter().map(|entry| entry.name).filter(|other| *other != name(path)).collect()
+                })
+                .unwrap_or_default();
+            for value in outside {
+                match spec.edited(path, &value) {
+                    Ok(_) => {
+                        out.push(format!("{path} = {value} is outside the schema's range and is accepted"))
+                    }
+                    Err(why) if !why.contains(&name(path)) => {
+                        out.push(format!("{path} = {value} is refused without naming the field: {why}"));
+                    }
+                    Err(_) => {}
+                }
+            }
+            for value in inside {
+                if let Err(why) = spec.edited(path, &value)
+                    && why.starts_with(path.as_str())
+                    && why.contains("must be")
+                    && !siblings.iter().any(|other| {
+                        why.contains(&format!("the {other}")) || why.contains(&format!("`{other}`"))
+                    })
+                {
+                    out.push(format!(
+                        "{path} = {value} is inside the schema's range and refused as outside: {why}"
+                    ));
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn every_range_in_the_schema_is_the_validators() {
+        // S2's second review, item 7: the ranges were held by a hand-written list, which a field
+        // could leave (the kick number's range was written into the schema by hand). Here every
+        // number of a scene with everything in it is found from the schema, and its stated range
+        // is held to what `validate` does.
+        let spec = every_field();
+        let ranges: Vec<Range> = crate::paths::leaves(&spec, "", 10_000)
+            .unwrap()
+            .into_iter()
+            .filter(|entry| matches!(entry.kind, crate::paths::Kind::Number | crate::paths::Kind::Integer))
+            .filter(|entry| entry.minimum.is_some() || entry.maximum.is_some())
+            .map(|entry| {
+                (entry.path, entry.kind == crate::paths::Kind::Integer, entry.minimum, entry.maximum)
+            })
+            .collect();
+        let paths: Vec<&str> = ranges.iter().map(|range| range.0.as_str()).collect();
+        for expected in
+            ["duration", "array.instrument.kicks", "array.schedule.loss", "array.schedule.gaps.period"]
+        {
+            assert!(paths.contains(&expected), "{expected} was not found: {paths:?}");
+        }
+        assert!(ranges.len() >= 30, "{} ranges: {paths:?}", ranges.len());
+        let found = disagreements(&spec, &ranges);
+        assert!(found.is_empty(), "{found:#?}");
+        // Control: a schema that said `duration` may be twice as long, or `kicks` may be zero,
+        // disagrees with `validate`, and is caught.
+        for (path, doctor) in [
+            (
+                "duration",
+                Box::new(|r: &mut Range| r.3 = r.3.map(|most| 2.0 * most)) as Box<dyn Fn(&mut Range)>,
+            ),
+            ("array.instrument.kicks", Box::new(|r: &mut Range| r.2 = Some((0.0, false)))),
+        ] {
+            let mut wrong: Vec<Range> = ranges.iter().filter(|range| range.0 == path).cloned().collect();
+            doctor(&mut wrong[0]);
+            assert!(!disagreements(&spec, &wrong).is_empty(), "{path}: a wrong range passes");
+        }
+    }
+
     #[test]
     fn a_cycle_too_short_names_the_field_that_makes_it_so() {
         // S2's review, finding 19: an alternate cycle below 2T was blamed on the jitter when
@@ -1552,43 +1793,11 @@ mod tests {
 
     #[test]
     fn the_schema_states_the_ranges_validate_enforces() {
-        type Set = fn(&mut SceneSpec, f64);
         let schema = SceneSpec::schema();
         let mut base = SceneSpec::room();
         base.floor =
             Some(FloorSpec { height: 0.0, kind: FloorKind::Slab { thickness: 1.0 }, density: 2400.0 });
         assert_eq!(base.validate(), Ok(()));
-        // Every number `validate` refuses at zero: the schema must exclude zero too, and agree on
-        // the largest value.
-        let positive: [(&[&str], Set, f64); 7] = [
-            (&["duration"], |s, v| s.duration = v, limits::DURATION),
-            (&["InstrumentSpec", "tower_height"], |s, v| s.array.instrument.tower_height = v, 1.0e3),
-            (&["InstrumentSpec", "ifo_separation"], |s, v| s.array.instrument.ifo_separation = v, 1.0e3),
-            (&["InstrumentSpec", "launch_velocity"], |s, v| s.array.instrument.launch_velocity = v, 1.0e4),
-            (&["InstrumentSpec", "cycle"], |s, v| s.array.instrument.cycle = v, limits::CYCLE),
-            (&["FloorSpec", "density"], |s, v| s.floor.as_mut().unwrap().density = v, limits::DENSITY),
-            (
-                &["thickness"],
-                |s, v| s.floor.as_mut().unwrap().kind = FloorKind::Slab { thickness: v },
-                limits::POSITION,
-            ),
-        ];
-        for (path, set, most) in positive {
-            let field = if path == ["thickness"] {
-                // The slab is a variant of `FloorKind`, wherever schemars puts its object.
-                let kinds = schema["$defs"]["FloorKind"]["oneOf"].as_array().expect("variants").clone();
-                let slab = kinds.iter().find(|k| !k["properties"]["Slab"].is_null()).expect("Slab");
-                slab["properties"]["Slab"]["properties"]["thickness"].clone()
-            } else {
-                field_schema(&schema, path)
-            };
-            assert_eq!(field["exclusiveMinimum"], 0.0, "{path:?}: {field}");
-            assert!(field.get("minimum").is_none(), "{path:?} must not admit 0: {field}");
-            assert_eq!(field["maximum"], most, "{path:?}");
-            let mut zero = base.clone();
-            set(&mut zero, 0.0);
-            assert!(zero.validate().is_err(), "{path:?}: validate refuses 0, as the schema says");
-        }
         // Control: a bound that is inclusive is stated as inclusive, and validate accepts it.
         let half = field_schema(&schema, &["InstrumentSpec", "half_sequence"]);
         assert_eq!(half["minimum"], limits::HALF_SEQUENCE_MIN);

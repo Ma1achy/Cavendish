@@ -42,12 +42,13 @@ import numpy as np
 from matplotlib import font_manager
 from matplotlib.axes import Axes
 from matplotlib.axis import Axis as Ruler
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure as Canvas
 from matplotlib.ticker import FixedFormatter, FixedLocator, NullFormatter
 
 from ._json import number, rows_of, table
 from .errors import FigureError, NoFonts, NotDrawable, NotWritten
-from .figure import Axis, Figure
+from .figure import Axis, Column, Figure, Flags
 from .result import Err, Ok, Result
 from .style import PRESETS, dash, sheets
 
@@ -80,37 +81,122 @@ def _label(axes: Axes, x: float, y: float, text: object, colour: str) -> None:
                       ha = "center", va = "bottom", color = colour, fontsize = "small")
 
 
+def envelope(x: Column, y: Column, taken: Flags, stretch: int) -> list[tuple[Column, Column, Column]]:
+    """
+    A series too dense to draw shot by shot, as Cavendish draws it (``plots::envelope``): for
+    each stretch of ``stretch`` shots, the least and the greatest value taken, at the middle of
+    the times of its first and last shot taken. A stretch with no shot taken breaks the run.
+
+    Args:
+        x       (Column): The times, ``[N]``.
+        y       (Column): The values, ``[N]``.
+        taken   (Flags):  Which shots were taken, ``[N]``.
+        stretch (int):    Shots a stretch.
+    Returns:
+        list[tuple[Column, Column, Column]]: Each run as its places, its greatest and its least values.
+    """
+    runs: list[tuple[Column, Column, Column]] = []
+    at: list[float] = []
+    most: list[float] = []
+    least: list[float] = []
+    for start in range(0, len(x), max(stretch, 1)):
+        kept = [k for k in range(start, min(start + max(stretch, 1), len(x))) if bool(taken[k])]
+        if not kept:
+            if at:
+                runs.append((np.array(at), np.array(most), np.array(least)))
+                at, most, least = [], [], []
+            continue
+        values = [float(y[k]) for k in kept]
+        at.append((float(x[kept[0]]) + float(x[kept[-1]])) / 2.0)
+        most.append(max(values))
+        least.append(min(values))
+    if at:
+        runs.append((np.array(at), np.array(most), np.array(least)))
+    return runs
+
+
+def _drawn_as(figure: Figure, n: int) -> tuple[int | None, bool | None]:
+    """How the record says series ``n`` was drawn: its envelope's stretch (or ``None``, shot by
+    shot) and whether each shot has a dot; ``(None, None)`` when the record does not say."""
+    rows = rows_of(table(figure.marks.get("towers")).get("drawn_as"))
+    if n >= len(rows):
+        return None, None
+    entry   = table(rows[n])
+    stretch = number(entry.get("envelope_stretch"))
+    dots    = entry.get("dots")
+    return (int(stretch) if stretch is not None else None), (dots if isinstance(dots, bool) else None)
+
+
 def _signal(axes: Axes, figure: Figure, width: float) -> None:
     """
-    Every tower's series, in the record's colours and the palette's dashes, in the unit the
-    figure's marks are written in.
+    Every tower's series, in the record's colours and dashes, in the unit the figure's marks are
+    written in, drawn as the record says it was drawn: shot by shot or as its envelope, with dots
+    or without.
 
     A shot the tower did not take is not a measurement: its value is masked, so the line is
     broken there and no marker is drawn; with few shots a small hollow square at the foot of
-    the axes marks the time it would have been read out.
+    the axes marks the time it would have been read out. Where the record does not say how a
+    series was drawn, it has dots when no more than 200 of its shots are in the plotted span.
     """
     multiple = _multiple(figure)
-    palette  = figure.colours.series
     foot     = figure.y.range[0] * multiple
+    lo, hi   = figure.x.range
     for n, series in enumerate(figure.series):
-        few    = len(series.x) <= _SHOTS_MARKED
-        colour = palette[n % len(palette)]
+        stretch, dots = _drawn_as(figure, n)
+        inside = (series.x >= lo) & (series.x <= hi)
+        few    = dots if dots is not None else int(np.count_nonzero(inside)) <= _SHOTS_MARKED
+        style  = dash(n, width) if series.dash is None else ("solid" if not series.dash else (0.0, series.dash))
+        if stretch is not None:
+            # Upper and lower lines of every run, one artist, broken by NaN between them.
+            pieces: list[Column] = []
+            places: list[Column] = []
+            for at, most, least in envelope(series.x[inside], series.y[inside] * multiple, series.taken[inside], stretch):
+                places += [at, np.array([np.nan]), at, np.array([np.nan])]
+                pieces += [most, np.array([np.nan]), least, np.array([np.nan])]
+            axes.plot(np.concatenate(places) if places else np.array([]), np.concatenate(pieces) if pieces else np.array([]),
+                      color = series.colour, linestyle = style, linewidth = width * 0.8, label = series.name, gid = _SERIES)
+            continue
         axes.plot(
             series.x, np.where(series.taken, series.y * multiple, np.nan),
-            color = colour, linestyle = dash(n, width), label = series.name,
+            color = series.colour, linestyle = style, label = series.name,
             marker = "o" if few else "", gid = _SERIES,
         )
-        lost = series.x[~series.taken]
-        lost = lost[(lost >= figure.x.range[0]) & (lost <= figure.x.range[1])]
+        lost = series.x[~series.taken & inside]
         if few and len(lost) > 0:
             axes.plot(
                 lost, np.full(len(lost), foot),
-                color = colour, linestyle = "none", marker = "s", markerfacecolor = "none",
+                color = series.colour, linestyle = "none", marker = "s", markerfacecolor = "none",
                 markeredgewidth = width * 0.6, clip_on = False,
             )
     if len(figure.series) > 1:
-        axes.legend(loc = "lower left", bbox_to_anchor = (0.0, 1.0), ncols = len(figure.series),
-                    borderaxespad = 0.2, fontsize = "small")
+        _legend(axes, len(figure.series))
+
+
+def _legend(axes: Axes, columns: int) -> None:
+    """
+    The key above the axes, in as many columns (up to ``columns``) as fit across the figure, and
+    above every label written by a mark, so that nothing it says lies on anything else.
+    """
+    canvas = axes.get_figure()
+    if not isinstance(canvas, Canvas):
+        return
+    renderer = FigureCanvasAgg(canvas).get_renderer()
+    # Placed above the axes, no wider than they are (or the layout narrows them to make room),
+    # and moved up until it is clear of the highest label by a mark: the layout moves the axes
+    # as the key is placed, so it is laid out and looked at again each time.
+    ncols, top = max(columns, 1), 1.0
+    for _ in range(12):
+        key = axes.legend(loc = "lower left", bbox_to_anchor = (0.0, top), ncols = ncols, borderaxespad = 0.2,
+                          fontsize = "small")
+        canvas.draw_without_rendering()
+        box, frame = key.get_window_extent(renderer), axes.get_window_extent(renderer)
+        if box.width > frame.width and ncols > 1:
+            ncols -= 1
+            continue
+        highest = max([float(text.get_window_extent(renderer).y1) for text in axes.texts if text.get_text()], default = 0.0)
+        if box.y0 >= highest + 1.0:
+            return
+        top += (highest + 2.0 - float(box.y0)) / max(float(frame.height), 1.0)
 
 
 def _stem(axes: Axes, x: float, top: float, floor: float, colour: str, folded: bool, width: float) -> None:
@@ -130,8 +216,11 @@ def _periodogram(axes: Axes, figure: Figure, width: float) -> None:
     reference = table(figure.marks.get("reference"))
     levels    = [level for item in rows_of(reference.get("shot_noise_floors_rad_per_sqrt_hz"))
                  if (level := number(item)) is not None]
+    named = reference.get("shot_noise_floors_named_as")
     for n, level in enumerate(levels):
-        label = "shot-noise floors, " + " and ".join(f"{value:g}" for value in levels) + " rad/√Hz"
+        # As the figure named them; else in µrad/√Hz, plain numbers as Cavendish writes them.
+        label = named if isinstance(named, str) else (
+            "shot-noise floors, " + " and ".join(f"{value * 1e6:g}" for value in levels) + " µrad/√Hz")
         axes.axhline(level, color = colours.reference, linewidth = width * 0.6, label = label if n == 0 else None)
     for series in figure.series:
         axes.plot(series.x, np.maximum(series.y, floor), color = colours.spectrum, linestyle = "solid", gid = _SERIES)
@@ -154,7 +243,7 @@ def _periodogram(axes: Axes, figure: Figure, width: float) -> None:
         axes.plot([at], [height], color = colours.ink, marker = "D", linestyle = "none",
                   label = "ULDM benchmark (reference, not simulated)")
         _label(axes, at, height, benchmark.get("label"), colours.ink)
-    axes.legend(loc = "lower left", bbox_to_anchor = (0.0, 1.0), borderaxespad = 0.2, fontsize = "small")
+    _legend(axes, 1)
 
 
 def _cadence(axes: Axes, figure: Figure, width: float) -> None:
@@ -179,7 +268,7 @@ def _cadence(axes: Axes, figure: Figure, width: float) -> None:
     if level is not None and level > 0.0:
         axes.axhline(max(level, floor), color = colours.reference, linewidth = width * 0.6,
                      linestyle = (0.0, (5.0, 4.0)), label = "the floor they predict")
-    axes.legend(loc = "lower left", bbox_to_anchor = (0.0, 1.0), ncols = 3, borderaxespad = 0.2, fontsize = "small")
+    _legend(axes, 3)
 
 
 def _flight(axes: Axes, figure: Figure, width: float) -> None:
@@ -386,6 +475,11 @@ def draw(figure: Figure, fonts: str | Path | None = None) -> Result[tuple[Canvas
         # diagram sets its own vertical ones).
         axes.set_xlim(*figure.x.range)
         axes.set_ylim(figure.y.range[0] * multiple, figure.y.range[1] * multiple)
+        # The title before the key, so that the layout places the key below it.
+        if figure.title is not None:
+            # At the left, as Cavendish writes it; matplotlib leaves a title placed by hand out of
+            # the layout, and the key would then lie on it, so the layout is told to place it.
+            setattr(canvas.suptitle(figure.title, x = 0.01, ha = "left"), "_autopos", True)
         drawer(axes, figure, width)
         _marks(axes.xaxis, figure.x, 1.0)
         axes.set_xlabel(figure.x.label or "")
@@ -394,6 +488,4 @@ def draw(figure: Figure, fonts: str | Path | None = None) -> Result[tuple[Canvas
             axes.set_ylabel(figure.y.label or "")
         if numbers is not None:
             axes.tick_params(labelfontfamily = numbers)
-        if figure.title is not None:
-            canvas.suptitle(figure.title, x = 0.01, ha = "left")
     return Ok((canvas, axes))
