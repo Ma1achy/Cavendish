@@ -182,3 +182,25 @@ point mass's, by `h0` (rows) and `H` (columns, 0.05 to 30 m):
 
 At small H the ratio is 1.007 to 1.030, not 1: the cylinder's 0.5 m radius at 3 m, as well as its
 height. It leaves 1 by 10% between H = 1.22 and 2.72 m at every h0.
+
+## The scaffolds' potential, integrated tightly (`tight_*.npy`)
+
+The scaffold scripts integrate each tube's potential with `nquad` at scipy's default tolerances,
+an absolute 1.49e-8 on values of about 1e-9 J/kg, so each value is good to about 2e-7 of the
+potential, while the change of the potential as the scaffold moves is about 1e-15 J/kg. Measured
+on 24 Nov 2026: at α = −0.636, z = 7.57 m the scaffold's table changes by −1.80e-14 J/kg from
+α = −0.091, and the same integrand integrated with `epsabs = 0`, `epsrel = 1e-12` changes by
++9.7e-16. The tables, and the phase series made from them, are mostly that error (which is why
+doubling their grids moves the series by 242% and 101% of its peak).
+
+`scripts/scaffold_reference.py` evaluates the scripts' integrand (the same arithmetic, written
+again, with the members and amplitudes of these fixtures) tightly at 3 × 6 of each table's points
+and writes, for `scaffold/` and `scaffold_multimode/`:
+
+| Array | Shape | What |
+|---|---|---|
+| `tight_alpha.npy` | (3,) | α of each row: the table's α nearest zero, then its 1st and 4th |
+| `tight_z.npy` | (6,) | heights on the tower's axis, metres: every 5th of the table's `z_grid` |
+| `tight_V.npy` | (3, 6) | the potential, J/kg |
+
+Run 24 Nov 2026, Python 3.14.3, numpy 2.5.5, scipy 1.18.1: 223 s and 239 s.
