@@ -30,6 +30,9 @@ is the difference of its potential between the upper and the lower arm of each i
 
 4. Put what describes it in the spec (`crates/cav-sim/src/spec.rs`): a new optional part like
    `floor`, or a new kind of body; doc, unit and range on every field; a check in `validate`.
+   A new field of the scene itself takes `#[serde(default)]` (files written before it must
+   still load) and its place in `SceneSpec`'s `Default`; then every dev scene file gains it:
+   rewrite them from their builders and read the diff ([a-dev-scene.md](a-dev-scene.md)).
 5. Give it an identity: a variant of `SourceId` in `read.rs`, and its place in `sources()`. The
    order of `sources()` is the order contributions are summed in, which is part of what makes a
    signal the same bits every time: add to the end unless there is a reason.
@@ -39,7 +42,8 @@ is the difference of its potential between the upper and the lower arm of each i
    know. If your source is the same for every shot (as the slab is), read it once per tower.
 7. Tell the engine what its contribution depends on: `key()` in
    `crates/cav-engine/src/forward.rs` hashes the part of the spec a source is made from. A source
-   whose key leaves something out is served stale from the cache.
+   whose key leaves something out is served stale from the cache. (The compiler asks for the
+   arm; it cannot ask whether the arm names everything.)
 
 ## Tests that then hold it
 
@@ -51,6 +55,18 @@ is the difference of its potential between the upper and the lower arm of each i
 - `engine.thread_count` (`read.rs`): add a scene with your source.
 - If its cost can be set by a field (a resolution, a count), a bound and a test in
   `crates/cav-memtest/tests/spec_bounds.rs`.
+
+- A new field of the scene shows wherever the scene's fields are listed: update
+  `paths::tests::ls_lists_children_with_kind_unit_range_and_doc`,
+  `console::tests::queries_render_as_text` and `cli_get_set_ls_edit_a_file`, and
+  `dev::tests::the_s1_scene_files_are_their_builders` fails until the files are rewritten.
+
+Followed on 24 Nov 2026 from step 4 on, with a made-up source (a second slab, `ceiling`, read
+with the existing `Slab` kernel; steps 1 to 3, a new kernel, were not exercised): the compiler
+asked for the field in `SceneSpec`'s default and for the arm in `key()`, in that order, and
+`quick` then failed in the four tests just named, which the first form of this recipe did not
+mention. Nothing fails if the new source is left out of `sources()`: it is then simply never
+read, so the null or closed form of the first bullet is what shows it is there.
 
 ## Things that go wrong
 
