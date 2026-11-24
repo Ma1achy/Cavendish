@@ -1,4 +1,7 @@
 """
+(Kept as the record of S2's search: it found no eight colours at 12, and the presets now use five
+colours with eight dashes, ``docs/slices/S3.md`` §3.2 item 1.)
+
 Search for the eight series colours of the light figure presets, and measure any palette against
 the criterion of ``docs/slices/S2.md`` §7.14 (finding 28 of the slice's review).
 

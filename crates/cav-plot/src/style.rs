@@ -2,37 +2,39 @@
 //! application's dark theme and the presets for papers, slides and posters are the same drawing
 //! code with different styles.
 //!
-//! The light presets' series colours ([`PAPER_SERIES`]) were chosen by search
-//! (`scripts/palette_search.py`) under the `dataviz` skill's method: OKLCH lightness in the band,
-//! chroma above the floor, 3:1 against white, and every pair at least 11 apart in CIEDE2000 in
-//! normal vision and under seven simulations of protanopia, deuteranopia and tritanopia (those
-//! of Machado, Oliveira and Fernandes 2009, and of Viénot, Brettel and Mollon 1999 and 1997),
-//! and in OKLab × 100 at least 14 in normal vision and 11 under Machado's. No eight colours
-//! were found at 12 under all seven (S2.md §7.14 gives the search and why 11). The first four
-//! are at least 8 L* apart, and every series has a dash of its own, so that a figure printed
-//! in black and white still tells them apart (`the_palette_survives_colour_blindness_and_print`).
-
+//! The light presets' series colours ([`PAPER_SERIES`]) are five hues, told apart in colour and
+//! by a dash of their own ([`PAPER_DASHES`]); a sixth series and after take the hues again with
+//! dashes no earlier series has. Five, not eight, because no eight colours were found that stay
+//! at least 12 apart in CIEDE2000 under every simulation of colour-blindness the test holds them
+//! to (S2.md §7.14), and five do, with room (S2's second review, S3.md §3.2 item 1): normal vision
+//! and seven simulations of protanopia, deuteranopia and tritanopia (those of Machado, Oliveira
+//! and Fernandes 2009, and of Viénot, Brettel and Mollon 1999 and 1997); the `dataviz` skill's
+//! validator passes every check on white. The first four are at least 8 L* apart, so that a
+//! figure printed in black and white still tells them apart
+//! (`the_palette_survives_colour_blindness_and_print`).
 use crate::drawing::Colour;
 
 /// Millimetres in a point (1/72 inch).
 pub const MM_PER_POINT: f64 = 25.4 / 72.0;
 
-/// The series colours of the light presets, in order: wine, blue, ochre, lavender, indigo,
-/// violet, rose, gold (found by `scripts/palette_search.py`; S2.md §7.14). Assigned in order and never cycled: a ninth series takes the eighth's dash
-/// partner (see [`Style::series`]).
-pub const PAPER_SERIES: [Colour; 8] = [
-    Colour::hex(0x90_0c60),
-    Colour::hex(0x2c_84b2),
-    Colour::hex(0x84_6000),
-    Colour::hex(0xa8_78fc),
-    Colour::hex(0x3a_469e),
-    Colour::hex(0x82_00f2),
-    Colour::hex(0xca_4076),
-    Colour::hex(0xc0_8400),
+/// The series colours of the light presets, in order: blue, crimson, teal, orange, purple. Their
+/// lightness rises 33, 42, 52, 60 L* through the first four, so that they stay apart in grey;
+/// the fifth is dark again. Searched under the test's criterion with blue and orange kept from
+/// the reviewer's five (`#0b0dff`, `#e76f11`) and every hue at least 40° from the others: the
+/// reviewer's five are 17.49 apart at worst under every simulation but three of them are within
+/// 2 L* of each other, so they fail the grey-print rule. Assigned in order and never cycled
+/// alone: past the fifth they come round with a new dash ([`Style::series`]).
+pub const PAPER_SERIES: [Colour; 5] = [
+    Colour::hex(0x0b_0dff),
+    Colour::hex(0xc0_1850),
+    Colour::hex(0x10_86a6),
+    Colour::hex(0xe7_6f11),
+    Colour::hex(0x70_3088),
 ];
-
 /// The dash of each series in the light presets, points at a line width of one (scaled by the
-/// preset's line width): solid, then seven different rhythms.
+/// preset's line width): solid, then seven different rhythms. Series 6 to 8 share a hue with
+/// series 1 to 3 and are told apart from them by these alone, so every drawing of a series keeps
+/// its dash: the line, the envelope of a dense series and the key.
 pub const PAPER_DASHES: [&[f32]; 8] = [
     &[],
     &[6.0, 2.5],
@@ -43,7 +45,6 @@ pub const PAPER_DASHES: [&[f32]; 8] = [
     &[7.0, 2.0, 1.5, 2.0, 1.5, 2.0],
     &[3.0, 1.5],
 ];
-
 /// The colours of the combs in the dark theme, in the order of the bodies: none of them a
 /// tower's colour, and none the grey of the spectrum itself.
 pub const COMB_COLOURS: [Colour; 4] =
@@ -119,12 +120,15 @@ impl Style {
         self.tick_size / 10.5
     }
 
-    /// The colour and the dash of series `n` (from 0). Past the last colour the colours come
-    /// round again with the next dash, so that no two of the first 56 series look the same.
+    /// The colour and the dash of series `n` (from 0). The colours come round every
+    /// `series.len()` and the dashes every `dashes.len()`: in the light presets (five colours,
+    /// eight dashes) the first eight series have eight different dashes and no two of the first
+    /// forty look the same.
     #[must_use]
     pub fn series(&self, n: usize) -> (Colour, &[f32]) {
         let colours = self.series.len().max(1);
-        let dash = (n + n / colours) % self.dashes.len().max(1);
+        let dashes = self.dashes.len().max(1);
+        let dash = n % dashes;
         (
             self.series.get(n % colours).copied().unwrap_or(self.ink),
             self.dashes.get(dash).map_or(&[], Vec::as_slice),
@@ -451,15 +455,15 @@ mod tests {
         let vienot = least(&old, lab, ciede2000);
         assert_eq!(vienot[4].0, "Viénot protanopia");
         assert!((vienot[4].1 - 10.37).abs() < 0.005, "{vienot:?}");
-        // The criterion (S2.md §3.3; restated in §7.14 for finding 28, with its reason): every
-        // pair of the eight at least 11 apart in CIEDE2000, in normal vision and under the seven
-        // simulated dichromacies of Machado and of Viénot and Brettel; in the skill's own measure
-        // (OKLab × 100) at least 14 in normal vision and 11 under Machado's three.
+        // The criterion (S2.md §3.3, held as first written: S3.md §3.2 item 1): every pair of the
+        // hues at least 12 apart in CIEDE2000, in normal vision and under the seven simulated
+        // dichromacies of Machado and of Viénot and Brettel; in the `dataviz` skill's own measure
+        // (OKLab × 100) at least its floors, 15 in normal vision and 8 under Machado's three.
         let floors = |measure: &str, vision: &str| match (measure, vision) {
-            ("CIEDE2000", _) => Some(11.0),
-            (_, "normal vision") => Some(14.0),
+            ("CIEDE2000", _) => Some(12.0),
+            (_, "normal vision") => Some(15.0),
             // Machado's three are named by the deficiency alone.
-            (_, "protanopia" | "deuteranopia" | "tritanopia") => Some(11.0),
+            (_, "protanopia" | "deuteranopia" | "tritanopia") => Some(8.0),
             _ => None,
         };
         let table = |colours: &[Colour]| {
@@ -480,20 +484,20 @@ mod tests {
                 assert!(apart >= floor, "{measure}, {vision}: series {pair:?} are {apart:.2} apart");
             }
         }
-        // Control: the palette this replaces fails the same rule, under Viénot's protanopia.
-        let before = [0x0b_0dff, 0xe7_6f11, 0xc6_1604, 0x8a_6aae, 0x28_a682, 0xcb_64fe, 0x91_0c59, 0x6d_1ba7]
-            .map(Colour::hex);
-        let failed: Vec<_> = table(&before)
-            .into_iter()
-            .filter(|(measure, vision, apart, _)| floors(measure, vision).is_some_and(|floor| *apart < floor))
-            .collect();
-        assert!(
-            failed
-                .iter()
-                .any(|(measure, vision, _, _)| *measure == "CIEDE2000" && *vision == "Viénot protanopia"),
-            "{failed:?}"
-        );
-        // The first four survive grey print: at least 8 L* between any two.
+        // Controls: the eight-colour palettes this replaces fail the same rule: S2's first under
+        // Viénot's protanopia (10.37), and the one S2's review left in place (11.41 at worst).
+        for before in [
+            [0x0b_0dff, 0xe7_6f11, 0xc6_1604, 0x8a_6aae, 0x28_a682, 0xcb_64fe, 0x91_0c59, 0x6d_1ba7],
+            [0x90_0c60, 0x2c_84b2, 0x84_6000, 0xa8_78fc, 0x3a_469e, 0x82_00f2, 0xca_4076, 0xc0_8400],
+        ] {
+            let failed: Vec<_> = table(&before.map(Colour::hex))
+                .into_iter()
+                .filter(|(measure, vision, apart, _)| {
+                    *measure == "CIEDE2000" && floors(measure, vision).is_some_and(|floor| *apart < floor)
+                })
+                .collect();
+            assert!(!failed.is_empty(), "{before:x?} passes, and should not");
+        } // The first four survive grey print: at least 8 L* between any two.
         let lightness: Vec<f64> = PAPER_SERIES.iter().map(|c| lab(linear(*c))[0]).collect();
         println!("L*: {:?}", lightness.iter().map(|l| (l * 10.0).round() / 10.0).collect::<Vec<_>>());
         for a in 0..4 {
@@ -502,28 +506,32 @@ mod tests {
                 assert!(apart >= 8.0, "series {} and {} are {apart:.1} L* apart", a + 1, b + 1);
             }
         }
-        // And every series has a dash of its own, for when there is no colour at all; each mark
-        // is at least 3:1 against the white it is drawn on (WCAG's relative luminance).
+        // And each of the first eight series has a dash of its own, for when there is no colour
+        // at all, and a hue and a dash together that no other of the first forty has; each
+        // mark is at least 3:1 against the white it is drawn on (WCAG's relative luminance).
         let paper = Style::preset("paper-column").unwrap();
-        for a in 0..8 {
-            for b in a + 1..8 {
-                assert_ne!(
-                    paper.series(a).1,
-                    paper.series(b).1,
-                    "series {} and {} share a dash",
-                    a + 1,
-                    b + 1
-                );
-                assert_ne!(paper.series(a), paper.series(b));
+        for a in 0..40 {
+            for b in a + 1..40 {
+                if b < 8 {
+                    assert_ne!(
+                        paper.series(a).1,
+                        paper.series(b).1,
+                        "series {} and {} share a dash",
+                        a + 1,
+                        b + 1
+                    );
+                }
+                assert_ne!(paper.series(a), paper.series(b), "series {} and {} look the same", a + 1, b + 1);
             }
-            let [r, g, b] = linear(paper.series(a).0);
-            let contrast = 1.05 / (0.2126 * r + 0.7152 * g + 0.0722 * b + 0.05);
-            assert!(contrast >= 3.0, "series {} is {contrast:.2}:1 on white", a + 1);
         }
-        // A ninth series is not the first again: the colour comes round with another dash.
-        assert_ne!(paper.series(8), paper.series(0));
-        assert_eq!(paper.series(8).0, paper.series(0).0);
-        // Control: a plain red and green (matplotlib's tab:red and tab:green) are far apart to
+        for colour in PAPER_SERIES {
+            let [r, g, b] = linear(colour);
+            let contrast = 1.05 / (0.2126 * r + 0.7152 * g + 0.0722 * b + 0.05);
+            assert!(contrast >= 3.0, "{colour:?} is {contrast:.2}:1 on white");
+        }
+        // A sixth series is not the first again: the hue comes round with another dash.
+        assert_ne!(paper.series(5), paper.series(0));
+        assert_eq!(paper.series(5).0, paper.series(0).0); // Control: a plain red and green (matplotlib's tab:red and tab:green) are far apart to
         // normal eyes and fail under deuteranopia; and two greys 5 L* apart fail the print rule.
         let naive = least(&[Colour::hex(0xd6_2728), Colour::hex(0x2c_a02c)], lab, ciede2000);
         assert!(naive[0].1 > 50.0, "{naive:?}");

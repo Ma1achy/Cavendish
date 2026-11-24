@@ -256,14 +256,33 @@ def test_the_style_sheets_load_and_are_the_house_style() -> None:
             size   = [float(side) for side in params["figure.figsize"]]
             assert abs(size[0] * 25.4 - width) < 0.01 and abs(size[1] * 25.4 - height) < 0.01, (preset, size)
             cycle  = list(params["axes.prop_cycle"])
-            assert tuple("#" + str(entry["color"]).lstrip("#") for entry in cycle) == SERIES
+            # The first eight series as Cavendish draws them: colour n mod 5, dash n mod 8.
+            colours = tuple("#" + str(entry["color"]).lstrip("#") for entry in cycle)
+            assert colours == tuple(SERIES[n % len(SERIES)] for n in range(len(DASHES))), colours
             styles = [entry["linestyle"] for entry in cycle]
             assert styles[0] == "-" and [tuple(style[1]) for style in styles[1:]] == list(DASHES[1:])
             assert params["axes.facecolor"] == "white" and params["svg.fonttype"] == "path"
-    assert len(SERIES) == 8 and len(set(SERIES)) == 8 and len(set(DASHES)) == 8
-    # The line style of a series scales with the line's width; a ninth series is not the first.
+    assert len(SERIES) == 5 and len(set(SERIES)) == 5 and len(set(DASHES)) == 8
+    # The line style of a series scales with the line's width; the sixth series shares the first's
+    # colour and not its dash, and the ninth comes round to the first's dash with another colour.
     assert dash(0, 2.0) == "solid" and dash(1, 2.0) == (0.0, (12.0, 5.0))
-    assert dash(8, 1.0) == dash(1, 1.0) != dash(0, 1.0)
+    assert dash(5, 1.0) != dash(0, 1.0) and dash(8, 1.0) == dash(0, 1.0)
+
+
+def test_the_palette_is_cavendishs() -> None:
+    # The constants are a copy of `PAPER_SERIES` and `PAPER_DASHES` in crates/cav-plot/src/style.rs;
+    # this holds the copy to the Rust (S2's review, finding 28: nothing held them together).
+    source  = (Path(__file__).resolve().parents[2] / "crates" / "cav-plot" / "src" / "style.rs").read_text(encoding = "utf-8")
+
+    def block(name: str) -> str:
+        return source.split(f"pub const {name}")[1].split("= [", 1)[1].split("];")[0]
+
+    colours = tuple("#" + hexes.replace("_", "") for hexes in re.findall(r"Colour::hex\(0x([0-9a-f_]+)\)", block("PAPER_SERIES")))
+    dashes  = tuple(tuple(float(n) for n in re.findall(r"[0-9.]+", entry)) for entry in re.findall(r"&\[([^\]]*)\]", block("PAPER_DASHES")))
+    assert colours == SERIES, colours
+    assert dashes == DASHES, dashes
+    # Control: the palette this replaced is not what the Rust holds.
+    assert colours != ("#900c60", "#2c84b2", "#846000", "#a878fc", "#3a469e", "#8200f2", "#ca4076", "#c08400")
     # Control: a name that is no preset is refused with the nearest one that is.
     refused = sheets("paper-colum")
     assert isinstance(refused, Err) and isinstance(refused.error, UnknownPreset)
