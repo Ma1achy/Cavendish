@@ -140,13 +140,65 @@ fn the_frozen_v1_fixtures_are_what_v1_computes() {
     assert_ne!(moved, fixture("v1/pass.npy"));
 }
 
+/// Half the peak to peak of a series, and the peak to peak itself, in milliradians.
+fn amplitude_mrad(series: &[f64]) -> (f64, f64) {
+    let swing =
+        series.iter().fold(f64::MIN, |m, &x| m.max(x)) - series.iter().fold(f64::MAX, |m, &x| m.min(x));
+    (0.5e3 * swing, 1e3 * swing)
+}
+
+/// One reading of a published anchor's size: the engine's amplitude (half the peak to peak,
+/// George's answer of 23 Nov 2026), its peak to peak and its largest |ΔΦ|, with v1's amplitude,
+/// all in milliradians. The engine is run with its defaults at the anchor's own readouts.
+struct Sizes {
+    amplitude: f64,
+    swing: f64,
+    largest: f64,
+    v1_amplitude: f64,
+}
+
+fn sizes(anchor: &Anchor) -> Sizes {
+    let engine = engine_series(Instrument::aion10(), anchor, Vec3::ZERO);
+    let (amplitude, swing) = amplitude_mrad(&engine);
+    let largest = 1e3 * engine.iter().fold(0.0f64, |m, x| m.max(x.abs()));
+    let (v1_amplitude, v1_swing) = amplitude_mrad(&v1_series(anchor, Vec3::ZERO));
+    eprintln!(
+        "{}: the engine: amplitude (half the peak to peak) {amplitude:.4} mrad, peak to peak {swing:.4}, \
+         largest |ΔΦ| {largest:.4}; v1: amplitude {v1_amplitude:.4}, peak to peak {v1_swing:.4}",
+        anchor.name
+    );
+    Sizes { amplitude, swing, largest, v1_amplitude }
+}
+
+cav_validate::case! {
+    test: validation_published_oscillation_amplitude,
+    name: "oracle.published_anchor_oscillation_amplitude",
+    subsystem: "oracle",
+    slice: "S2",
+    reference: Paper,
+    against: "the published size of the oscillation anchor, about 2 mrad (1 kg at D = 5 m, 0.1 Hz; reference/design/instrument.md §12, Fig 15), read as an amplitude, half the peak to peak (George, 23 Nov 2026): the engine's half peak to peak with its defaults over one period, 41 shots; difference as a fraction of 2 mrad",
+    unit: Relative,
+    tolerance: 0.1,
+    measure: {
+        let off = |value: f64| (value / 2.0 - 1.0).abs();
+        let sizes = sizes(&anchors::OSCILLATION);
+        // Controls: the peak to peak and the largest |ΔΦ| are not 2 mrad by this tolerance, so
+        // the case tells the readings apart; and v1 reads the same amplitude.
+        assert!(off(sizes.swing) > 0.1 && off(sizes.largest) > 0.1, "{} {}", sizes.swing, sizes.largest);
+        assert!(off(sizes.v1_amplitude) <= 0.1, "v1's amplitude is {} mrad", sizes.v1_amplitude);
+        cav_validate::Measured::Error(off(sizes.amplitude))
+    },
+}
+
 #[test]
 fn the_published_anchor_sizes_are_what_the_references_give() {
     // reference/design/instrument.md §12: "10 kg @ D = 10 m, 2.5 m/s → ~7 mrad; 1 kg @ 5 m osc →
     // ~2 mrad", and v1's own test comments call the second "peak-to-peak". This test first asked
     // for those two numbers within 10% and failed, for v1 as for the engine: v1 gives 13.66 mrad
-    // peak and 4.34 mrad peak to peak (docs/slices/S1.md §7.1). What can be checked without
-    // asking the engine about itself is below.
+    // peak and 4.34 mrad peak to peak (docs/slices/S1.md §7.1). George has since said (23 Nov
+    // 2026) that the published sizes are amplitudes, half the peak to peak. For the oscillator
+    // that holds and is a validation case above. For the moving anchor it does not, as measured
+    // below (docs/slices/S2.md §7.13): the question has gone back to him.
     let peak = |v: &[f64]| v.iter().fold(0.0f64, |m, x| m.max(x.abs()));
     let swing =
         |v: &[f64]| v.iter().fold(f64::MIN, |m, &x| m.max(x)) - v.iter().fold(f64::MAX, |m, &x| m.min(x));
@@ -177,9 +229,19 @@ fn the_published_anchor_sizes_are_what_the_references_give() {
     // Control: an engine a fifth too strong would fail this.
     assert!(!within(0.5 * engine_swing(1.2 * anchors::OSCILLATION.mass), 2.0, 0.10));
 
-    // The moving anchor. Nothing here is held to "~7 mrad": v1 and the engine both give about
-    // twice that, and what the figure measures is a question for George. The engine with the
-    // defaults is held to v1's peak, allowing for the conventions that differ.
+    // The moving anchor. Its series changes sign as the mass passes: +3.02 mrad before, −13.65
+    // at the peak. Read as George said, half the peak to peak, the engine's size is 8.34 mrad,
+    // which is not "~7 mrad" within the 10% that was written before it was measured; half the
+    // largest |ΔΦ| is 6.83 mrad, which is. The tolerance was not moved and no case claims the
+    // reading: both facts are asserted here so that neither is forgotten, and v1 says the same.
+    let pass = sizes(&anchors::PASS);
+    assert!(!within(pass.amplitude, 7.0, 0.10), "half the peak to peak is {} mrad", pass.amplitude);
+    assert!(!within(pass.v1_amplitude, 7.0, 0.10), "v1's is {} mrad", pass.v1_amplitude);
+    assert!(within(0.5 * pass.largest, 7.0, 0.10), "half the largest |ΔΦ| is {} mrad", 0.5 * pass.largest);
+    // Control: the two readings differ because the series changes sign, by a lobe of 3 mrad.
+    assert!(pass.swing - pass.largest > 2.5, "{} {}", pass.swing, pass.largest);
+    // The engine with the defaults is held to v1's peak, allowing for the conventions that
+    // differ.
     let v1 = peak(&v1_series(&anchors::PASS, Vec3::ZERO)) * mrad;
     let engine_peak = |mass: f64| {
         peak(&engine_series(Instrument::aion10(), &Anchor { mass, ..anchors::PASS }, Vec3::ZERO)) * mrad

@@ -1,20 +1,22 @@
-// The default scene: the five-tower array in its room.
+// The default scene: five towers in a room. The layout is a default; there is no real one:
+// this is a prospective study.
 // Frame: metres, x east, y north, z up. Times are seconds. `cav schema` describes every field.
 (
     version: 1,
     name: "room",
-    description: "The five-tower array in its room. Nothing moves yet.",
+    description: "Five towers in a room: a default layout; there is no real one: this is a prospective study. Nothing moves yet.",
     duration: 12.0,
     array: (
-        // AION-10: a 10 m tower, interferometers 5 m apart, 2T = 1.46 s, one shot every 2 s.
+        // AION-10: a 10.1 m tower, interferometers 5 m apart, 2T = 1.46 s, one shot every 2 s.
         instrument: (
-            tower_height: 10.0,
+            tower_height: 10.1,
             ifo_separation: 5.0,
             half_sequence: 0.73,
             launch_velocity: 3.86,
             cycle: 2.0,
         ),
-        // One tower at the centre and four on a cross with 4 m arms.
+        // One tower at the centre and four on a cross with 4 m arms: a default layout; there is
+        // no real one: this is a prospective study.
         towers: [
             (label: "tower 1", position: (0.0, 0.0, 0.0)),
             (label: "tower 2", position: (4.0, 0.0, 0.0)),

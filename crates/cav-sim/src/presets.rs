@@ -3,15 +3,19 @@
 //! A preset is an [`InstrumentSpec`] and nothing more: applying one is a `set` of
 //! `array.instrument`, so it is checked, journalled and undone like any other edit.
 //!
-//! | Preset | Tower | Δr | T | Launch u₀ | Cycle | From |
-//! |---|---|---|---|---|---|---|
-//! | `aion10` | 10 m | 5 m | 0.73 s | 3.86 m/s | 2 s | George (21 Nov 2026) |
-//! | `aice` | 100 m | 70 m | 2.5 s | `g·T − v_kick/2` | 5 s | `plan/VALIDATION-AND-RESEARCH.md` §1 |
+//! | Preset | Tower | Δr | T | Launch u₀ | Cycle | Kick number n | From |
+//! |---|---|---|---|---|---|---|---|
+//! | `aion10` | 10.1 m | 5 m | 0.73 s | 3.86 m/s | 2 s | 1000 | George (21 and 23 Nov 2026) |
+//! | `aice` | 100 m | 70 m | 2.5 s | derived: `g·T − v_kick/2` | 5 s | 1000, a parameter | George (23 Nov 2026) |
 //!
-//! AICE's launch is the rule, not the plan's rounded 21.27 m/s: that number is the rule with the
-//! reference scripts' constants; with ⁸⁷Sr and the exact ħ it is 21.236 m/s. AICE's separation
-//! (70 m) and its kick number (1000, as AION-10) are the plan's values and are open questions
-//! for George (`plan/PROGRESS.md`, "For George").
+//! AICE's separation, T and cycle are fixed (George, 23 Nov 2026). Its launch speed is not a
+//! number that is kept: it is derived, when the preset is built, from the instrument's own
+//! gravity, T, atom and kick number, by the rule of George's `fig2_final.py`
+//! (`u0 = g * T_fly / 2 - v_kick / 2`): the launch that brings each arm back to the height it
+//! started from exactly at 2T. With ⁸⁷Sr and the exact ħ that is 21.236 m/s; the plan's 21.27 is
+//! the same rule with the scripts' rounded constants. AICE would support a larger kick number
+//! than AION-10's thousand: [`aice_with_kicks`] builds the preset at another n, and in a scene
+//! `set array.instrument.kicks <n>` followed by `launch symmetric` does the same.
 
 use crate::{InstrumentSpec, SpecError};
 
@@ -22,22 +26,35 @@ pub fn built_in() -> Vec<(&'static str, &'static str, InstrumentSpec)> {
 }
 
 /// The AICE 100 m instrument: a 100 m tower, interferometers 70 m apart, T = 2.5 s, a 5 s cycle,
-/// and the launch that brings both arms back to the launch height at 2T, `u₀ = g·T − v_kick/2`.
+/// AION-10's kick number (1000), and the launch derived from those by [`symmetric_launch`].
 #[must_use]
 pub fn aice() -> InstrumentSpec {
+    aice_with_kicks(cav_core::constants::LMT_KICKS)
+}
+
+/// The AICE 100 m instrument with kick number `kicks` (a pure number: how many photon momenta a
+/// kick gives): [`aice`] is this at 1000. The launch velocity is derived for that kick number,
+/// so the arms still finish where they started. With ⁸⁷Sr the rule asks for a launch of zero at
+/// n ≈ 7457 and a downward one beyond: such an instrument is refused when it is set into a
+/// scene, like any other that cannot exist.
+#[must_use]
+pub fn aice_with_kicks(kicks: f64) -> InstrumentSpec {
     let mut spec = InstrumentSpec {
         tower_height: 100.0,
         ifo_separation: 70.0,
         half_sequence: 2.5,
         cycle: 5.0,
+        kicks,
         ..InstrumentSpec::default()
     };
     spec.launch_velocity = symmetric_launch(&spec);
     spec
 }
 
-/// The launch velocity that closes an instrument's arms at the launch height at 2T, metres per
-/// second: `g·T − v_kick/2`, with the instrument's own gravity, T and atom.
+/// The launch velocity that brings each arm of an instrument back to the height it was launched
+/// from exactly at 2T, metres per second: `g·T − v_kick/2`, with the instrument's own gravity,
+/// T, atom and kick number. It is the rule of George's `fig2_final.py`. Derived each time it is
+/// asked for: after a change of any of those four, ask again (`launch symmetric`).
 #[must_use]
 pub fn symmetric_launch(spec: &InstrumentSpec) -> f64 {
     spec.instrument().symmetric_launch()
@@ -99,13 +116,13 @@ mod tests {
         // AION-10: George's numbers, which are the spec's defaults.
         let aion = load("aion10").unwrap();
         assert_eq!(aion, InstrumentSpec::default());
-        assert_eq!((aion.tower_height, aion.ifo_separation, aion.half_sequence), (10.0, 5.0, 0.73));
-        assert_eq!((aion.launch_velocity, aion.cycle), (3.86, 2.0));
+        assert_eq!((aion.tower_height, aion.ifo_separation, aion.half_sequence), (10.1, 5.0, 0.73));
+        assert_eq!((aion.launch_velocity, aion.cycle, aion.kicks), (3.86, 2.0, 1000.0));
         // AICE: the plan's table, and the launch rule u₀ = gT − v_kick/2 with the engine's atom.
         let aice = load("aice").unwrap();
         assert_eq!(
-            (aice.tower_height, aice.ifo_separation, aice.half_sequence, aice.cycle),
-            (100.0, 70.0, 2.5, 5.0)
+            (aice.tower_height, aice.ifo_separation, aice.half_sequence, aice.cycle, aice.kicks),
+            (100.0, 70.0, 2.5, 5.0, 1000.0)
         );
         let instrument = aice.instrument();
         let rule = 9.81 * 2.5 - instrument.kick_velocity() / 2.0;
@@ -128,6 +145,13 @@ mod tests {
             (instrument.ifo_separation, instrument.half_sequence, instrument.launch_velocity),
             (core.ifo_separation, core.half_sequence, core.launch_velocity)
         );
+        // Not settled, and asserted so that it is not forgotten: AICE's own arms do not fit in
+        // the 100 m the plan gives its tower (the upper interferometer's upper arm reaches
+        // 108.9 m), as AION-10's did not fit in 10 m. A question for George; nothing that is
+        // read depends on the height.
+        let reach = instrument.reach();
+        assert!(reach > aice.tower_height && (reach - 108.88).abs() < 0.01, "{reach}");
+        assert!(aion.instrument().reach() < aion.tower_height);
         // Each makes a valid scene, is named, and other spellings find it.
         for (name, title, spec) in built_in() {
             let scene = SceneSpec {
@@ -143,6 +167,66 @@ mod tests {
         // that is nearly a preset is not called one.
         assert!((symmetric_launch(&aion) - 3.86).abs() > 0.01, "{}", symmetric_launch(&aion));
         assert_eq!(name_of(&InstrumentSpec { cycle: 2.5, ..aion }), None);
+    }
+
+    #[test]
+    fn the_aice_launch_is_derived_and_the_atoms_finish_where_they_started() {
+        use cav_core::forward::Instrument;
+        // Each arm's height above its launch point at 2T, metres, with the floor off so that an
+        // arm that would end below is seen to: `[lower arm, upper arm]`.
+        let ends = |spec: &InstrumentSpec| {
+            let instrument = Instrument { floor: false, ..spec.instrument() };
+            instrument.arms().map(|arm| arm.rise(instrument.flight_time()))
+        };
+        let closes = |spec: &InstrumentSpec| ends(spec).iter().all(|end| end.abs() < 1e-9);
+        // "The atoms finish at the height they started": each arm does, not only their mean.
+        let aice = aice();
+        assert_eq!(aice.launch_velocity.to_bits(), aice.instrument().symmetric_launch().to_bits());
+        assert!(closes(&aice), "{:?}", ends(&aice));
+        // Control: the plan's 21.27 m/s with ⁸⁷Sr ends both arms 17 cm above where they started,
+        // 2T·(21.27 − u₀).
+        let typed = InstrumentSpec { launch_velocity: 21.27, ..aice.clone() };
+        let over = 5.0 * (21.27 - aice.launch_velocity);
+        assert!(ends(&typed).iter().all(|end| (end - over).abs() < 1e-9), "{:?} {over}", ends(&typed));
+        assert!(over > 0.16 && over < 0.18 && !closes(&typed), "{over}");
+        // Nothing is kept: change T, g, the atom or the kick number and the rule is asked again.
+        // Each change alone leaves the old launch wrong (the control) and the new one right.
+        type Change = fn(&mut InstrumentSpec);
+        let changes: [(&str, Change); 4] = [
+            ("T", |spec| spec.half_sequence = 2.0),
+            ("g", |spec| spec.gravity = 9.78),
+            ("the atom's mass", |spec| spec.atom_mass = cav_core::constants::reference::ATOM_MASS),
+            ("the kick number", |spec| spec.kicks = 4000.0),
+        ];
+        for (what, change) in changes {
+            let mut changed = aice.clone();
+            change(&mut changed);
+            assert!(!closes(&changed), "{what}: the old launch still closes the arms");
+            changed.launch_velocity = symmetric_launch(&changed);
+            assert!(closes(&changed), "{what}: {:?}", ends(&changed));
+            assert_ne!(changed.launch_velocity, aice.launch_velocity, "{what}");
+        }
+        // The kick number is a parameter of the preset: at another n it is the same instrument
+        // with the launch derived for that n, and a valid scene.
+        let strong = aice_with_kicks(4000.0);
+        assert_eq!(
+            strong,
+            InstrumentSpec { kicks: 4000.0, launch_velocity: strong.launch_velocity, ..aice.clone() }
+        );
+        let kick = strong.instrument().kick_velocity();
+        assert_eq!(kick, 4.0 * aice.instrument().kick_velocity());
+        assert_eq!(strong.launch_velocity, 9.81 * 2.5 - 0.5 * kick);
+        assert!(closes(&strong), "{:?}", ends(&strong));
+        let scene = |instrument: InstrumentSpec| SceneSpec {
+            array: crate::ArraySpec { instrument, ..crate::ArraySpec::default() },
+            ..SceneSpec::room()
+        };
+        assert_eq!(scene(strong).validate(), Ok(()));
+        assert_eq!(aice_with_kicks(1000.0), aice);
+        // Control: past the n at which the rule asks for a launch of zero there is no such
+        // instrument, and the scene says so.
+        let why = scene(aice_with_kicks(8000.0)).validate().unwrap_err().0;
+        assert!(why.starts_with("array.instrument.launch_velocity"), "{why}");
     }
 
     #[test]

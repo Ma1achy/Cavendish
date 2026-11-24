@@ -43,7 +43,18 @@ differ; 1, 2, 3 and 6 reading threads, 0 bits differ. A 10,000-shot series: 0.4 
 6. **One schedule for the whole array**, loss drawn per tower; per-tower instruments and jitter
    wait for S15.
 7. **`cycle ≥ 2T`** (it was `>`): the AICE preset's cycle is exactly a shot.
-8. **AICE launches at 21.236 m/s**, the symmetric rule with ⁸⁷Sr, not the plan's 21.27.
+8. **AICE launches at 21.236 m/s**, the symmetric rule with ⁸⁷Sr, not the plan's 21.27. George
+   has confirmed it (23 Nov 2026): the speed is derived by his scripts' rule, which is this one.
+
+**George's answers (23 Nov 2026), TASK-S2-18** (`docs/slices/S2.md` §7.13; each answer is under
+"For George" below). The tower is 10.1 m, and a test holds the arms below it. AICE's launch is
+derived, never a typed number, and the kick number is a field of the instrument
+(`array.instrument.kicks`, default 1000). The default layout is called a default. Nothing that is
+read moved: 82 of 82 earlier validation records to the last digit, but one of the picture
+(`render.gpu_perspective_ratio`, 0.26% to 0.23% against 3%: the towers drawn are taller). Two new
+cases, 84 in all. `quick` 369 tests, `gpu` 30, `oracle` 43. **Two things for the next checkpoint:**
+the moving anchor's "~7 mrad" is not half its peak to peak (8.34 mrad; half its largest phase is
+6.83), and AICE's arms reach 108.9 m in its 100 m tower; both are back with George.
 
 **Calls worth a second look (S2).**
 1. **The palette passes by a hair**: least CIEDE2000 12.17 against 12, the first four colours 8.3 L*
@@ -124,6 +135,11 @@ looked at the real window.
 2. **The published anchor sizes** ("~7 mrad", "~2 mrad peak to peak") are not met by v1 itself: it
    gives 13.66 mrad and 4.34 mrad. George's `1D_oscillator` gives 4.06 mrad peak to peak, so "~2 mrad"
    is the oscillator's amplitude. The engine is held to v1 and the scripts, not to the round numbers.
+   *Since 23 Nov 2026:* George says the sizes are amplitudes, half the peak to peak. The
+   oscillator is now held to that (2.15 mrad against 2, within 10%:
+   `oracle.published_anchor_oscillation_amplitude`). The pass is not: its series changes sign, so
+   half its peak to peak is 8.34 mrad, 19% from 7, while half its largest phase is 6.83. The 10%
+   was written first and was not moved; the question is back with George.
 3. **The engine reads until it stops changing** (`Reader::read_to`): the fixed rule that is good to
    3e-15 on the anchors is off by 3.9e-6 rad for a pass 0.5 m from a tower.
 4. **v1 stays a git dependency of the oracle crate** (2.1 s to build from nothing), and its anchor
@@ -242,17 +258,71 @@ Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
   tag>`; for S1 that is `s0-shell`.
 
 ## For George
-- **Which AICE is the preset?** (`docs/research/s15-instruments-anywhere.md` §1, owner item 1.) The plan's
-  "AICE 100 m: 70 m separation, T = 2.5 s, 5 s cycle, 21.27 m/s" mixes two documents. The note reads
-  70 m / 2.5 s in the Technical Proposal's 140 m shaft (arXiv:2608.18743), and Δz = 50 m, T = 1.4 s,
-  n = 5494, repetition 1.5 s in the "100 m" letter of intent and feasibility study; the 5 s cycle and
-  21.27 m/s are in neither. In the second, 2T = 2.8 s exceeds the 1.5 s repetition, which the engine
-  refuses today (`2T ≥ cycle`). Which preset is canonical, and may shots overlap (each has its own
-  cloud)? Until answered the preset keeps the plan's numbers, labelled as unconfirmed.
-- **AION-10's T.** The note could not find a hardware T: 0.73 s is Carlton & McCabe's assumption, and
-  Badurina et al. Table 1 uses 1.4 s. Is 0.73 s right for the preset?
-- **AICE's geometry, for the far-field estimates** (`docs/research/s14-wider-world.md`): the note assumes
-  the 100 m instrument has interferometers 70 m apart and the same laser kick number as AION-10. Right?
+
+**Open.**
+- **The moving anchor's "~7 mrad (Fig 12)" is not half its peak to peak in the engine or in v1.**
+  You said the published sizes are amplitudes, half the peak to peak. For the oscillator that
+  holds: 2.15 mrad at the anchor's readouts, 2.03 in your `1D_oscillator`. For the pass (10 kg at
+  D = 10 m rising at 2.5 m/s from 10 m below the base) the series changes sign as the mass goes
+  by: +3.02 mrad before, −13.65 mrad at the peak (lower minus upper), so the peak to peak is
+  16.67 mrad and half of it 8.34 mrad, 19% over 7. Half the largest |ΔΦ| is 6.83 mrad, 2.5%
+  under. v1 gives the same (8.34 and 6.83). Is Fig 12's "~7" half the largest excursion from
+  zero, or is the figure of another pass (another window, speed or distance)? Default: the
+  oscillator's amplitude is a validation case (`oracle.published_anchor_oscillation_amplitude`,
+  10%); the pass is held to v1 only, and a test asserts both numbers
+  (`the_published_anchor_sizes_are_what_the_references_give`). Detail: `docs/slices/S2.md` §7.13.
+- **AICE's arms do not fit in a 100 m tower either.** With 70 m between the interferometers,
+  T = 2.5 s, the derived launch (21.236 m/s) and n = 1000, the upper interferometer's upper arm
+  reaches 108.88 m above the base at the π pulse (38.88 m above its launch point). `fig2_final.py`
+  has `L_base = 140.0`. Should the preset's tower be 140 m, or the upper interferometer start
+  lower? Default: the plan's 100 m; nothing that is read depends on the height, and the flight
+  diagram's axis already stretches to the arms.
+- **Your `fig2_*` and `100m_oscillators` scripts integrate to 2T less one step**
+  (`arange(N_fly)`; `fig2_final.py` does too). That is the main term of their difference from the
+  converged integral: 8.1e-4 of the peak on `100m_oscillators` (the trapezoid itself is 2.6e-4),
+  2.7e-4 to 3.2e-4 on `fig2_10m`. One more node (integrating to 2T) cuts the error on
+  `100m_oscillators` about fourfold. `1D_oscillator` already covers the whole flight. Nothing to
+  answer: for you to know.
+
+**Answered 23 Nov 2026** (through the owner; TASK-S2-18, `docs/slices/S2.md` §7.13).
+1. **Which AICE is the preset?** Interferometers 70 m apart, a 5 s cycle, T = 2.5 s: fixed. The
+   launch speed is not a constant: it is computed as `fig2_final.py` computes it, so that the
+   atoms finish at the height they started. *Done:* the preset keeps those three and derives the
+   launch when it is built (`presets::aice`); the "unconfirmed" label is gone.
+2. **May shots overlap?** No, for now; multiplexing may come later. *Held by*
+   `a_shot_is_two_t_long_and_shots_do_not_overlap` (`cav-sim`), and `validate` refuses a cycle
+   shorter than 2T.
+3. **AICE's launch speed** is that rule, not 21.27 as a number. *Checked:* `fig2_final.py` has
+   `u0 = g * T_fly / 2 - v_kick / 2` with `T_fly = 2 * T`, which is the engine's `g·T − v_kick/2`:
+   the same rule. With the script's constants (m = 1.46×10⁻²⁵ kg, ħ = 1.055×10⁻³⁴ J s) it is
+   21.27267 m/s, the plan's 21.27; with ⁸⁷Sr and the exact ħ it is 21.23605 m/s, the preset's.
+   Case `oracle.script_launch_rule`: 0 against 1e-12. Each arm, not only their mean, is back at
+   its launch height at 2T (to 1e-9 m); at 21.27 m/s with ⁸⁷Sr both end 17 cm above it.
+4. **AION-10's T = 0.73 s:** yes.
+5. **AICE's far-field geometry** (70 m, the same kick number as AION-10): yes, though AICE would
+   support larger LMT kick numbers, so n is a parameter. *Done:* the kick number is a field of
+   every instrument (`array.instrument.kicks`, default 1000); `presets::aice_with_kicks(n)` is
+   the preset at another n with its launch derived, and in a scene
+   `set array.instrument.kicks <n>` then `launch symmetric`.
+6. **When a shot is late, are the later ones late too?** Yes: lateness accumulates (the random
+   walk), and it is only ever in the pause between shots; the sequence itself never varies, 2T
+   for every shot. *Held by* `a_shot_is_two_t_long_and_shots_do_not_overlap` (`cav-sim`); the
+   default schedule was already the walk, late only.
+7. **Do the towers share one clock and one laser?** Yes. As built.
+8. **The ground layout.** There is no real layout: this is a prospective study. S0's cross of
+   five towers stays as the default, *labelled as a default* where it is defined, in the default
+   scene's description and in the scene files.
+9. **The tower is 10.1 m**, to hold the ⁸⁷Sr upper arm at 10.006 m. *Done:* the default and the
+   AION-10 preset; `the_default_arms_top_out_below_the_tower` holds the arms' reach (from the
+   forward model's own arms) below the tower, with 10 m as its control. Nothing that is read
+   changed: 82 of 82 validation records are as they were to the last digit but one of the
+   picture.
+10. **The published anchor sizes are amplitudes** (half the peak to peak): yes. *Done* for the
+    oscillator; for the pass see the open question above.
+11. **Forced motion on a sphere:** confirmed, the engine's parametrisation matches the upgrade
+    report's. Closed.
+12. **The site's g = 9.81 m/s²:** yes.
+
 Answered 21 Nov 2026 (through the owner). The defaults below replace v1's conventions from S1 on.
 1. **Sign:** lower minus upper (δφ₁ − δφ₂). Both conventions are in use and it should not matter.
    *Which interferometer is 1:* the lower one. The reference scripts launch IFO 1 from z = 0 and IFO 2
@@ -271,47 +341,6 @@ Answered 21 Nov 2026 (through the owner). The defaults below replace v1's conven
    there until the next sequence starts.
 5. **Floor:** the arms never go below launch. There is a floor, coded as the Python scripts code the
    sequence; copy that.
-
-Asked in S2 (defaults in use until answered):
-- **When a shot is late, are the later ones late too?** The schedule offers both: each cycle's
-  length varies, so lateness accumulates (a random walk), or each shot varies about a fixed grid.
-  They look very different in a periodogram (the first smears the alias, the second leaves it sharp
-  over a floor). Default: the random walk, only ever late (`Walk`, `Positive`), as the research note
-  took a control system that waits to behave.
-- **Do the towers of an array share one clock and one laser?** Default: yes. One schedule for the
-  array; each tower has its own fixed offset from it; a shot is lost at each tower independently.
-  Jitter is the array's, not a tower's.
-- **AICE's launch speed.** The plan has 21.27 m/s; the rule `g·T − v_kick/2` with ⁸⁷Sr and the
-  exact ħ gives 21.236 m/s, and the preset uses the rule. Is 21.27 a measured or intended number,
-  or the same rule with other constants?
-
-Asked in S1 (defaults in use until answered):
-- **What do the published anchor sizes measure?** "10 kg at 10 m passing at 2.5 m/s, ~7 mrad (Fig 12)"
-  and "1 kg at 5 m oscillating, ~2 mrad (Fig 15)". Your `1D_oscillator` gives −3.86 to +0.20 mrad,
-  4.06 mrad peak to peak; v1 and the engine give 13.7 mrad as the peak of the pass. Are the published
-  figures amplitudes (half the peak to peak)? Default: nothing is held to the two round numbers.
-- **Forced motion on a sphere** (upgrade report §2.5.1) was not available to read. The engine's
-  `Sphere` motion is its own guess: a body at a fixed distance from a centre, at an angle
-  `tilt·cos(2π f t)` from straight down, in a vertical plane turning at a second frequency. What is
-  the report's parametrisation?
-- **The site's g.** 9.81 m/s², as in the scripts, is the default.
-- **The `fig2_*` and `100m_oscillators` scripts integrate to 2T less one step** (`arange(N_fly)`).
-  That is the main term of their difference from the converged integral: 8.1e-4 of the peak on
-  `100m_oscillators` (the trapezoid itself is 2.6e-4), 2.7e-4 to 3.2e-4 on `fig2_10m`. One more node
-  (integrating to 2T) cuts the error on `100m_oscillators` about fourfold. `1D_oscillator` already
-  covers the whole flight.
-
-- **With ⁸⁷Sr the upper arm of the upper interferometer tops out at 10.006 m in the 10 m tower**
-  (the kick is 6.578 m/s with ⁸⁷Sr's mass and the exact ħ, 6.505 with the scripts' constants; the arm
-  is 5.006 m above its launch point at T). Is the launch point of the upper interferometer really at
-  5 m, or the tower taller than 10 m? Default: as it is; nothing in the engine depends on the tower's
-  height but the picture.
-
-Still open (asked in S0; defaults in use until answered):
-- The ground layout of a multi-tower array and the room around it. S0 draws v2's layout: five towers,
-  one at the centre and four on a cross with 4 m arms, standing on the floor (z = 0) of a
-  10 × 10 × 3 m room, each 10 m tall so they rise through the ceiling. Is there a real or intended
-  layout, and where is the tower base relative to the floor people walk on?
 
 ## Owner's ruling (23 Nov 2026): mixed towers come forward
 Towers of different heights and sequences in one array move from S15 to S3 (TASK-S3-08), with a

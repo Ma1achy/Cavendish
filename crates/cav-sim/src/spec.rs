@@ -55,6 +55,9 @@ pub mod limits {
     pub const ATOM_MASS: (f64, f64) = (1.0e-27, 1.0e-24);
     /// Local gravity, metres per second squared, `(least, greatest)`.
     pub const GRAVITY: (f64, f64) = (0.1, 100.0);
+    /// The kick number n (photon momenta a kick gives), `(least, greatest)`: from a single
+    /// photon to a hundred times AION-10's thousand.
+    pub const KICKS: (f64, f64) = (1.0, 1.0e5);
     /// The longest name or label, characters.
     pub const LABEL: usize = 200;
     /// The longest description, characters.
@@ -285,6 +288,15 @@ pub struct InstrumentSpec {
     #[schemars(range(min = 0.1, max = 100.0))]
     #[schemars(extend("x-unit" = "m/s²"))]
     pub gravity: f64,
+    /// The kick number n of the large-momentum-transfer sequence: how many photon momenta ħk of
+    /// the 698 nm clock light a kick gives an arm, so that `v_kick = n·ħk/m` with `atom_mass`.
+    /// A pure number; it need not be whole. The default is 1000, AION-10's; a longer baseline
+    /// such as AICE's would support more. The launch velocity does not follow it by itself:
+    /// `launch symmetric` sets the launch that closes the arms again.
+    #[serde(default = "default_kicks")]
+    #[schemars(range(min = 1.0, max = 1.0e5))]
+    #[schemars(extend("x-unit" = "1"))]
+    pub kicks: f64,
     /// Whether an arm that falls back to its launch height stops there and waits (for the kick at
     /// T, or for the next sequence). The default is true.
     #[serde(default = "default_launch_floor")]
@@ -300,6 +312,10 @@ fn default_atom_mass() -> f64 {
 
 fn default_gravity() -> f64 {
     cav_core::constants::LOCAL_GRAVITY
+}
+
+const fn default_kicks() -> f64 {
+    cav_core::constants::LMT_KICKS
 }
 
 const fn default_launch_floor() -> bool {
@@ -462,6 +478,7 @@ impl Default for InstrumentSpec {
             cycle: defaults::CYCLE,
             atom_mass: default_atom_mass(),
             gravity: default_gravity(),
+            kicks: default_kicks(),
             launch_floor: default_launch_floor(),
             sign: SignSpec::default(),
         }
@@ -469,8 +486,8 @@ impl Default for InstrumentSpec {
 }
 
 impl InstrumentSpec {
-    /// The instrument as the forward model takes it: this spec's geometry, atom, gravity, floor
-    /// and sign, with the engine's constants and quadrature.
+    /// The instrument as the forward model takes it: this spec's geometry, atom, gravity, kick
+    /// number, floor and sign, with the engine's constants and quadrature.
     #[must_use]
     pub fn instrument(&self) -> cav_core::forward::Instrument {
         cav_core::forward::Instrument {
@@ -479,6 +496,7 @@ impl InstrumentSpec {
             launch_velocity: self.launch_velocity,
             gravity: self.gravity,
             atom_mass: self.atom_mass,
+            kicks: self.kicks,
             floor: self.launch_floor,
             sign: match self.sign {
                 SignSpec::LowerMinusUpper => cav_core::forward::Sign::LowerMinusUpper,
@@ -512,7 +530,8 @@ impl BodySpec {
 }
 
 impl Default for ArraySpec {
-    /// Five AION-10 towers: one at the centre and four on a cross with 4 m arms.
+    /// Five AION-10 towers: one at the centre and four on a cross with 4 m arms. A default
+    /// layout; there is no real one: this is a prospective study (George, 23 Nov 2026).
     fn default() -> Self {
         let towers = defaults::TOWER_POSITIONS
             .iter()
@@ -524,13 +543,14 @@ impl Default for ArraySpec {
 }
 
 impl SceneSpec {
-    /// The default scene: the five towers in their room.
+    /// The default scene: the five towers of the default layout in their room.
     #[must_use]
     pub fn room() -> Self {
         Self {
             version: SPEC_VERSION,
             name: "room".into(),
-            description: "The five-tower array in its room. Nothing moves yet.".into(),
+            description: "Five towers in a room: a default layout; there is no real one: this is a prospective study. Nothing moves yet."
+                .into(),
             duration: defaults::DURATION,
             array: ArraySpec::default(),
             room: Some(RoomSpec { origin: defaults::ROOM_ORIGIN, size: defaults::ROOM_SIZE }),
@@ -700,6 +720,7 @@ impl SceneSpec {
         self.validate_schedule()?;
         within("array.instrument.atom_mass", i.atom_mass, limits::ATOM_MASS)?;
         within("array.instrument.gravity", i.gravity, limits::GRAVITY)?;
+        within("array.instrument.kicks", i.kicks, limits::KICKS)?;
         if self.bodies.len() > limits::BODIES {
             return fail(format!("bodies: {} bodies is more than {}", self.bodies.len(), limits::BODIES));
         }
@@ -911,18 +932,22 @@ mod tests {
             .to_ron()
             .lines()
             .filter(|l| {
-                !["atom_mass", "gravity", "launch_floor", "sign", "bodies"].iter().any(|f| l.contains(f))
+                !["atom_mass", "gravity", "kicks", "launch_floor", "sign", "bodies"]
+                    .iter()
+                    .any(|f| l.contains(f))
             })
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(!old.contains("bodies") && !old.contains("atom_mass"));
+        assert!(!old.contains("bodies") && !old.contains("atom_mass") && !old.contains("kicks"));
         let loaded = SceneSpec::from_ron(&old).unwrap();
         assert_eq!(loaded, SceneSpec::room());
         assert_eq!(loaded.array.instrument.atom_mass, cav_core::constants::SR87_MASS);
+        assert_eq!(loaded.array.instrument.kicks, 1000.0);
         assert!(loaded.array.instrument.launch_floor && loaded.bodies.is_empty());
         // Refusals name the field.
         type Break = fn(&mut SceneSpec);
-        let cases: [(&str, Break); 9] = [
+        let cases: [(&str, Break); 10] = [
+            ("array.instrument.kicks", |s| s.array.instrument.kicks = 0.5),
             ("bodies[1].label", |s| s.bodies[1].label = "linear".into()),
             ("bodies[0].label", |s| s.bodies[0].label = " ".into()),
             ("bodies[0].mass", |s| s.bodies[0].mass = 0.0),
@@ -947,7 +972,9 @@ mod tests {
         }
         // The schema describes a body and the atom.
         let schema = SceneSpec::schema().to_string();
-        for name in ["bodies", "BodySpec", "Motion", "Pendulum", "atom_mass", "launch_floor", "SignSpec"] {
+        for name in
+            ["bodies", "BodySpec", "Motion", "Pendulum", "atom_mass", "kicks", "launch_floor", "SignSpec"]
+        {
             assert!(schema.contains(&format!("\"{name}\"")), "the schema does not mention `{name}`");
         }
         // The bounds hold a body's path: the pass ends 15 m up, well above the towers.
@@ -965,6 +992,7 @@ mod tests {
             launch_velocity: 21.0,
             atom_mass: 1.46e-25,
             gravity: 9.8,
+            kicks: 2000.0,
             launch_floor: false,
             sign: SignSpec::UpperMinusLower,
             ..InstrumentSpec::default()
@@ -975,6 +1003,12 @@ mod tests {
             (70.0, 2.5, 21.0)
         );
         assert_eq!((instrument.atom_mass, instrument.gravity, instrument.floor), (1.46e-25, 9.8, false));
+        // The kick number reaches the one place the kick's velocity is made, which is linear in
+        // it: twice the photons, exactly twice the velocity.
+        assert_eq!(instrument.kicks, 2000.0);
+        let thousand = InstrumentSpec { kicks: 1000.0, ..spec.clone() }.instrument();
+        assert_eq!(instrument.kick_velocity(), 2.0 * thousand.kick_velocity());
+        assert_eq!(InstrumentSpec::default().kicks, cav_core::constants::LMT_KICKS);
         assert_eq!(instrument.sign, Sign::UpperMinusLower);
         // Control: what the spec does not set is the engine's, not changed on the way.
         assert_eq!(instrument.hbar, Instrument::aion10().hbar);
@@ -1007,7 +1041,7 @@ mod tests {
             ("array.towers", |s| s.array.towers.clear()),
             ("array.towers[1].label", |s| s.array.towers[1].label = "tower 1".into()),
             ("array.towers[2].position", |s| s.array.towers[2].position[1] = f64::NAN),
-            ("array.instrument.ifo_separation", |s| s.array.instrument.ifo_separation = 10.0),
+            ("array.instrument.ifo_separation", |s| s.array.instrument.ifo_separation = 10.1),
             ("array.instrument.cycle", |s| s.array.instrument.cycle = 1.45),
             ("room.size[2]", |s| s.room.as_mut().unwrap().size[2] = -3.0),
             ("floor.density", |s| s.floor.as_mut().unwrap().density = f64::INFINITY),
@@ -1067,11 +1101,11 @@ mod tests {
     fn bounds_hold_the_towers_and_the_room() {
         let (lo, hi) = SceneSpec::room().bounds();
         assert_eq!(lo, [-5.0, -5.0, 0.0]);
-        assert_eq!(hi, [5.0, 5.0, 10.0]);
+        assert_eq!(hi, [5.0, 5.0, 10.1]);
         // Control: without the room the box shrinks to the towers.
         let (lo, hi) = SceneSpec { room: None, ..SceneSpec::room() }.bounds();
         assert_eq!(lo, [-4.0, -4.0, 0.0]);
-        assert_eq!(hi, [4.0, 4.0, 10.0]);
+        assert_eq!(hi, [4.0, 4.0, 10.1]);
     }
 
     /// How many numbers of `spec` come back with different bits from `trip`.
