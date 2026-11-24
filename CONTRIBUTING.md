@@ -37,12 +37,15 @@ Then:
 
 ```
 cargo xtask web build      # target/web/dist: index.html, cavendish.js, cavendish_bg.wasm (about 2 min, LTO)
-cargo xtask web serve      # http://127.0.0.1:8000/ until Ctrl-C (or: python -m http.server -d target/web/dist)
+cargo xtask web serve      # http://127.0.0.1:8000/ until Ctrl-C
+cargo xtask web serve --exit-after 600   # the same, stopping by itself after ten minutes
 cargo xtask web            # the tier: clippy for wasm32, the build, wasm numbers held to native
 cargo xtask demo S17       # the page in headless Chrome with WebGPU, screenshots to docs/slices/S17/
 ```
 
-Open the page in Chrome or Edge (WebGPU). `#exec=load comb; panes 2` at the end of the address
+Scripts and agents always give `--exit-after`: on Windows, stopping `cargo` (or Ctrl-C in a
+terminal that does not pass it on) can leave `xtask.exe` serving. The server answers only files
+under `target/web/dist`, on `127.0.0.1`. Open the page in Chrome or Edge (WebGPU). `#exec=load comb; panes 2` at the end of the address
 runs console commands first. What a page cannot do, and where that is handled, is in
 `docs/ARCHITECTURE.md` ("The web build and its platform seams") and `docs/extending/the-web-build.md`.
 
