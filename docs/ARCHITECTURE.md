@@ -95,22 +95,25 @@ binary `cav-web`, compiled for `wasm32-unknown-unknown` with WebGPU, built by `c
 build` into `target/web/dist` and published by `.github/workflows/pages.yml` on every push to
 `main` (`docs/slices/S17.md`). Everything above holds there; what differs is gathered in **one
 module per seam**, chosen with `#[cfg(target_arch = "wasm32")]` where the module is declared, and
-nowhere else in the code:
+nowhere else in the code (`xtask`'s `only_the_seams_name_the_target` holds every crate's `src/` to
+that):
 
 | Seam | Native | Web |
 |---|---|---|
 | The device: `cav-gpu` `native.rs` / `web.rs` | made by `Gpu::new`; errors caught in scopes; pixels read back | eframe's, through `Gpu::from_parts`; a page cannot wait, so errors go to the browser's console and read-back is refused |
-| Where the forward work runs: `cav-engine` `forward/threads.rs` / `forward/inline.rs` | two threads | `Forward::poll` runs the jobs for `POLL_BUDGET` (8 ms) a frame, the reading first; a frame that ran over is followed by one with no work. Same slots, epochs, store and summing order, so the same signal |
-| Files: `cav-engine` `files/native.rs` / `files/web.rs` | written where named | kept as downloads, which the app hands to the browser after each frame; folders (bundles) refused |
+| Where the forward work runs: `cav-engine` `forward/threads.rs` / `forward/inline.rs` | two threads | two Web Workers running the same module: `poll` hands each job over as bytes (`forward/wire.rs`, bit-exact) and takes the answers, never computing; with no workers (Node.js) `poll` serves the same bytes itself for `POLL_BUDGET` (8 ms) a frame. Same slots, epochs, store and summing order, so the same signal |
+| Files: `cav-engine` `files/native.rs` / `files/web.rs` | written and read where named (`files::capture` is the test double: writes kept as a page keeps them) | kept as downloads, which the app hands to the browser after each frame (a link's behind a click); reads by path and folders (bundles) refused |
 | The figure exporter's pixels: `cav-plot` `figure/studio.rs` / `studio_web.rs` | its own device | none: PNG and the renderer's view refused, vector figures made |
-| The entry: `cav-app` `main.rs` / `web.rs` and `bin/cav-web.rs` | eframe's native window, `--exec` | eframe's `WebRunner` on the page's canvas, `#exec=` in the address |
+| Around each frame: `cav-app` `platform/native.rs` / `platform/web.rs` (`bin/cav-web.rs` calls `platform::start`) | nothing | eframe's `WebRunner` on the page's canvas, `#exec=` in the address (`address.rs`: capped, names made safe), downloads, the Web Workers, a panic's message on the page |
+| The window: `cav-app` `window/native.rs` / `window/web.rs` (`main.rs` calls `window::main`) | eframe's native window, `--exec`, `--screenshot` | none: says so |
 
 What stays the same without a seam: `web_time::Instant` is std's `Instant` natively and
 `performance.now()` in a page, so shipped code reads the clock through it (std's panics on wasm);
 `cav_sim::read::threads()` is 1 on the web (no environment, no parallelism), which takes the read's
 one-thread path. The engine's numbers in wasm are held to native by `cargo xtask web`
-(`cav-engine/tests/web_equivalence.rs`): the same bits where the arithmetic is the same, and within
-1e-12 where `sin`, `exp` and the like come from another maths library. Code that writes a file the
+(`cav-engine/tests/web_equivalence.rs`): every number the same bits, except a listed few labels
+whose arithmetic goes through `sin`, `exp` and the like from another maths library
+(`THROUGH_LIBM`), held within 1e-12. Code that writes a file the
 person asked for goes through `cav_engine::files`; code that must not run in a page (threads,
 `std::fs` by path, blocking on the GPU) belongs behind one of these seams, never behind a scattered
 `cfg`.
@@ -148,7 +151,7 @@ person asked for goes through `cav_engine::files`; code that must not run in a p
 | Colour by field, overlays (leaves, a cut, the whole tree by depth), section planes (`Cutting`: a 2-D section square-on, a cut-away otherwise), the cubes and cells a view draws | `cav-sim/src/voxel_view.rs`; drawn in `cav-render/src/scene.rs` (`drawables_with`) with `colour.rs`; trees kept by `cav-engine/src/voxels.rs` | — |
 | A bound on memory | `cav-memtest/tests/` | — |
 | Something that differs in a browser page (threads, files, the device, waiting) | one module per seam, listed under "The web build and its platform seams" | [the web build](extending/the-web-build.md) |
-| The web page itself, its build and its deployment | `crates/cav-app/web/index.html`, `cav-app/src/web.rs`, `xtask/src/web.rs`, `.github/workflows/pages.yml` | [the web build](extending/the-web-build.md) |
+| The web page itself, its build and its deployment | `crates/cav-app/web/` (`index.html`, `start.js`, `worker.js`), `cav-app/src/platform/web.rs`, `xtask/src/web.rs`, `.github/workflows/pages.yml` | [the web build](extending/the-web-build.md) |
 
 ## Rules that hold everywhere
 
