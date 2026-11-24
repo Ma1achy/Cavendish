@@ -72,6 +72,7 @@
             label: "satellite",
             mass: 10.0,
             radius: 0.0,
+            shape: None,
             motion: Circular(
                 centre: (0.0, 0.0, 2.0),
                 u: (3.0, 0.0, 0.0),

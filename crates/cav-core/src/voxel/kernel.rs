@@ -257,7 +257,7 @@ pub fn cube_difference(mass: f64, side: f64, across: [f64; 2], below: f64, above
 
 /// A voxel body as the forward model sees it: every leaf of a tree a uniform cube, the tree's
 /// frame carried to where the body is.
-pub struct TreeBody<'a, P: Fn(f64) -> Vec3 + Sync> {
+pub struct TreeBody<P: Fn(f64) -> Vec3 + Sync> {
     /// The leaves as `(centre in the body's frame, metres; mass, kg; side, metres)`, in Morton
     /// order: the order they are summed in.
     cubes: Vec<(Vec3, f64, f64)>,
@@ -268,13 +268,12 @@ pub struct TreeBody<'a, P: Fn(f64) -> Vec3 + Sync> {
     pub exists: (f64, f64),
     /// Times at which its motion is not smooth, seconds on the scene's clock.
     pub breaks: Vec<f64>,
-    /// The tree it was made from, kept for what is drawn and counted.
-    pub tree: &'a VoxTree,
 }
 
-impl<'a, P: Fn(f64) -> Vec3 + Sync> TreeBody<'a, P> {
-    /// The body of `tree`, at `position`, always there.
-    pub fn new(tree: &'a VoxTree, position: P) -> Self {
+impl<P: Fn(f64) -> Vec3 + Sync> TreeBody<P> {
+    /// The body of `tree` (its leaves are copied: the tree need not outlive it), at `position`,
+    /// always there.
+    pub fn new(tree: &VoxTree, position: P) -> Self {
         let cubes = tree
             .leaves
             .iter()
@@ -282,7 +281,7 @@ impl<'a, P: Fn(f64) -> Vec3 + Sync> TreeBody<'a, P> {
                 (tree.block_centre(leaf.key, leaf.level), tree.leaf_mass(leaf), tree.side(leaf.level))
             })
             .collect();
-        Self { cubes, position, exists: (f64::NEG_INFINITY, f64::INFINITY), breaks: Vec::new(), tree }
+        Self { cubes, position, exists: (f64::NEG_INFINITY, f64::INFINITY), breaks: Vec::new() }
     }
 
     /// How many cubes are summed at each point asked about.
@@ -292,7 +291,7 @@ impl<'a, P: Fn(f64) -> Vec3 + Sync> TreeBody<'a, P> {
     }
 }
 
-impl<P: Fn(f64) -> Vec3 + Sync> Source for TreeBody<'_, P> {
+impl<P: Fn(f64) -> Vec3 + Sync> Source for TreeBody<P> {
     fn difference(&self, tower: Vec3, heights: [f64; 2], lower: f64, upper: f64, time: f64) -> [f64; 2] {
         if !(time >= self.exists.0 && time < self.exists.1) {
             return [0.0; 2];

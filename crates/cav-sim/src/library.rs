@@ -40,6 +40,10 @@ pub const LIBRARY: &[LibraryScene] = &[
     scene!("precision-far", "scenes/dev/precision-far.ron"),
     scene!("staggered", "scenes/dev/staggered.ron"),
     scene!("cadence-lab", "scenes/dev/cadence-lab.ron"),
+    scene!("unit-cube", "scenes/dev/unit-cube.ron"),
+    scene!("sphere", "scenes/dev/sphere.ron"),
+    scene!("platonic-row", "scenes/dev/platonic-row.ron"),
+    scene!("scaffold", "scenes/dev/scaffold.ron"),
 ];
 
 /// Loads a scene by library name, or else from a `.ron` file at that path.

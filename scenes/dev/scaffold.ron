@@ -1,0 +1,1340 @@
+// Dev scene `scaffold` (REBUILD §9.1), written from its builder in crates/cav-sim/src/dev.rs; a test
+// holds the two together. Frame: metres, x east, y north, z up; seconds; angles in degrees.
+// `cav schema` describes every field.
+(
+    version: 1,
+    name: "scaffold",
+    description: "George\'s steel scaffold around tower 1: 48 tubes, each moving along x by its own amplitude (1 µm at the foot to 1 mm at the top) times one mode at 22.4 Hz, folded far below Nyquist. Made of 2 cm voxels; five shots.",
+    duration: 10.0,
+    array: (
+        instrument: (
+            tower_height: 10.1,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+            atom_mass: 1.4431558652473234e-25,
+            gravity: 9.81,
+            kicks: 1000.0,
+            launch_floor: true,
+            sign: LowerMinusUpper,
+        ),
+        towers: [
+            (
+                label: "tower 1",
+                position: (0.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+            ),
+        ],
+        schedule: (
+            jitter: None,
+            alternate: None,
+            gaps: None,
+            window: None,
+            loss: 0.0,
+            seed: 0,
+        ),
+    ),
+    room: None,
+    floor: None,
+    bodies: [
+        (
+            label: "column 1",
+            mass: 281.7428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 10.0,
+                    axis: Z,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (-0.5, -0.5, 5.0),
+                amplitude: (0.0005005000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "column 2",
+            mass: 281.7428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 10.0,
+                    axis: Z,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.5, -0.5, 5.0),
+                amplitude: (0.0005005000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "column 3",
+            mass: 281.7428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 10.0,
+                    axis: Z,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (-0.5, 0.5, 5.0),
+                amplitude: (0.0005005000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "column 4",
+            mass: 281.7428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 10.0,
+                    axis: Z,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.5, 0.5, 5.0),
+                amplitude: (0.0005005000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 0 xs",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, -0.5, 0.0),
+                amplitude: (1e-6, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 0 xn",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, 0.5, 0.0),
+                amplitude: (1e-6, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 0 yw",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (-0.5, 0.0, 0.0),
+                amplitude: (1e-6, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 0 ye",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.5, 0.0, 0.0),
+                amplitude: (1e-6, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 1 xs",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, -0.5, 1.0),
+                amplitude: (0.00010090000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 1 xn",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, 0.5, 1.0),
+                amplitude: (0.00010090000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 1 yw",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (-0.5, 0.0, 1.0),
+                amplitude: (0.00010090000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 1 ye",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.5, 0.0, 1.0),
+                amplitude: (0.00010090000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 2 xs",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, -0.5, 2.0),
+                amplitude: (0.00020080000000000003, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 2 xn",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, 0.5, 2.0),
+                amplitude: (0.00020080000000000003, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 2 yw",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (-0.5, 0.0, 2.0),
+                amplitude: (0.00020080000000000003, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 2 ye",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.5, 0.0, 2.0),
+                amplitude: (0.00020080000000000003, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 3 xs",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, -0.5, 3.0),
+                amplitude: (0.0003007000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 3 xn",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, 0.5, 3.0),
+                amplitude: (0.0003007000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 3 yw",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (-0.5, 0.0, 3.0),
+                amplitude: (0.0003007000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 3 ye",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.5, 0.0, 3.0),
+                amplitude: (0.0003007000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 4 xs",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, -0.5, 4.0),
+                amplitude: (0.0004006000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 4 xn",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, 0.5, 4.0),
+                amplitude: (0.0004006000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 4 yw",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (-0.5, 0.0, 4.0),
+                amplitude: (0.0004006000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 4 ye",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.5, 0.0, 4.0),
+                amplitude: (0.0004006000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 5 xs",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, -0.5, 5.0),
+                amplitude: (0.0005005000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 5 xn",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, 0.5, 5.0),
+                amplitude: (0.0005005000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 5 yw",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (-0.5, 0.0, 5.0),
+                amplitude: (0.0005005000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 5 ye",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.5, 0.0, 5.0),
+                amplitude: (0.0005005000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 6 xs",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, -0.5, 6.0),
+                amplitude: (0.0006004000000000002, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 6 xn",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, 0.5, 6.0),
+                amplitude: (0.0006004000000000002, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 6 yw",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (-0.5, 0.0, 6.0),
+                amplitude: (0.0006004000000000002, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 6 ye",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.5, 0.0, 6.0),
+                amplitude: (0.0006004000000000002, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 7 xs",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, -0.5, 7.0),
+                amplitude: (0.0007003000000000002, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 7 xn",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, 0.5, 7.0),
+                amplitude: (0.0007003000000000002, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 7 yw",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (-0.5, 0.0, 7.0),
+                amplitude: (0.0007003000000000002, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 7 ye",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.5, 0.0, 7.0),
+                amplitude: (0.0007003000000000002, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 8 xs",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, -0.5, 8.0),
+                amplitude: (0.0008002000000000002, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 8 xn",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, 0.5, 8.0),
+                amplitude: (0.0008002000000000002, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 8 yw",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (-0.5, 0.0, 8.0),
+                amplitude: (0.0008002000000000002, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 8 ye",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.5, 0.0, 8.0),
+                amplitude: (0.0008002000000000002, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 9 xs",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, -0.5, 9.0),
+                amplitude: (0.0009001000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 9 xn",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, 0.5, 9.0),
+                amplitude: (0.0009001000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 9 yw",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (-0.5, 0.0, 9.0),
+                amplitude: (0.0009001000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 9 ye",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.5, 0.0, 9.0),
+                amplitude: (0.0009001000000000001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 10 xs",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, -0.5, 10.0),
+                amplitude: (0.001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 10 xn",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: X,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.0, 0.5, 10.0),
+                amplitude: (0.001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 10 yw",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (-0.5, 0.0, 10.0),
+                amplitude: (0.001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "ring 10 ye",
+            mass: 28.17428672266191,
+            radius: 0.0,
+            shape: Some((
+                kind: Cylinder(
+                    radius: 0.0338,
+                    length: 1.0,
+                    axis: Y,
+                ),
+                pitch: 0.02,
+                supersample: 2,
+            )),
+            motion: Modes(
+                centre: (0.5, 0.0, 10.0),
+                amplitude: (0.001, 0.0, 0.0),
+                modes: [
+                    (
+                        frequency: 22.4,
+                        scale: 1.0,
+                        phase: 0.0,
+                    ),
+                ],
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+    ],
+)

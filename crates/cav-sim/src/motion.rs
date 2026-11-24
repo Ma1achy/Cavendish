@@ -130,7 +130,43 @@ pub enum Motion {
         #[schemars(extend("x-unit" = "Hz"))]
         spin_frequency: f64,
     },
+    /// Several modes sharing one shape: `centre + amplitude · α(t)` with the scalar
+    /// `α(t) = Σ scale · cos(2π·frequency·t + phase)` over `modes`. George's scaffold moves each
+    /// member this way (`scaffold`, `scaffold_multimode`): every member by its own amplitude,
+    /// all by the same α. At most 64 modes.
+    Modes {
+        /// The position at rest, metres.
+        #[schemars(extend("x-unit" = "m"))]
+        centre: [f64; 3],
+        /// The displacement for α = 1, metres: its direction is the line of motion.
+        #[schemars(extend("x-unit" = "m"))]
+        amplitude: [f64; 3],
+        /// The modes whose sum is α; from 1 to 64 of them.
+        #[schemars(length(min = 1, max = 64))]
+        modes: Vec<ModeSpec>,
+    },
 }
+
+/// One mode of [`Motion::Modes`]: `scale · cos(2π·frequency·t + phase)`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ModeSpec {
+    /// Hertz.
+    #[schemars(range(min = 0.0, max = 1.0e3))]
+    #[schemars(extend("x-unit" = "Hz"))]
+    pub frequency: f64,
+    /// How much of the shared amplitude this mode moves, a pure number.
+    #[schemars(range(min = -1.0e3, max = 1.0e3))]
+    #[schemars(extend("x-unit" = "1"))]
+    pub scale: f64,
+    /// Degrees.
+    #[schemars(range(min = -3.6e5, max = 3.6e5))]
+    #[schemars(extend("x-unit" = "°"))]
+    pub phase: f64,
+}
+
+/// The most modes a [`Motion::Modes`] may have.
+pub const MAX_MODES: usize = 64;
 
 fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
@@ -146,7 +182,8 @@ fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 impl Motion {
     /// The names of the kinds of motion, as the spec writes them.
-    pub const KINDS: [&'static str; 6] = ["Static", "Pass", "Linear", "Circular", "Pendulum", "Sphere"];
+    pub const KINDS: [&'static str; 7] =
+        ["Static", "Pass", "Linear", "Circular", "Pendulum", "Sphere", "Modes"];
 
     /// A motion of the named kind that passes through or about `at` (`[x, y, z]`, metres, the
     /// world's frame) and is valid as it
@@ -176,6 +213,11 @@ impl Motion {
                 tilt_frequency: 0.05,
                 spin_frequency: 0.01,
             },
+            "Modes" => Self::Modes {
+                centre: at,
+                amplitude: [1e-3, 0.0, 0.0],
+                modes: vec![ModeSpec { frequency: 2.3, scale: 1.0, phase: 0.0 }],
+            },
             _ => return None,
         })
     }
@@ -185,7 +227,11 @@ impl Motion {
     /// pendulum uses it.
     #[must_use]
     pub fn position(&self, t: f64, gravity: f64) -> [f64; 3] {
+        if let Self::Modes { centre, amplitude, modes } = self {
+            return add(*centre, scaled(*amplitude, Self::alpha(modes, t)));
+        }
         match *self {
+            Self::Modes { .. } => unreachable!("taken above"),
             Self::Static { position } => position,
             Self::Pass { from, to, start, speed } => {
                 let length = distance(from, to);
@@ -235,8 +281,16 @@ impl Motion {
             | Self::Linear { .. }
             | Self::Circular { .. }
             | Self::Pendulum { .. }
-            | Self::Sphere { .. } => Vec::new(),
+            | Self::Sphere { .. }
+            | Self::Modes { .. } => Vec::new(),
         }
+    }
+
+    /// `α(t) = Σ scale · cos(2π·frequency·t + phase)` over `modes`: the shared coordinate of
+    /// [`Motion::Modes`], summed in the order given. Dimensionless.
+    #[must_use]
+    pub fn alpha(modes: &[ModeSpec], t: f64) -> f64 {
+        modes.iter().map(|m| m.scale * (TAU * m.frequency * t + m.phase.to_radians()).cos()).sum()
     }
 
     /// `(point, field)`: the point a drag moves (`[x, y, z]`, metres, the world's frame), and the
@@ -252,6 +306,7 @@ impl Motion {
             Self::Circular { centre, .. } => (centre, "Circular.centre"),
             Self::Pendulum { pivot, .. } => (pivot, "Pendulum.pivot"),
             Self::Sphere { centre, .. } => (centre, "Sphere.centre"),
+            Self::Modes { centre, .. } => (centre, "Modes.centre"),
         }
     }
 
@@ -264,6 +319,11 @@ impl Motion {
             Self::Linear { frequency, .. } | Self::Circular { frequency, .. } => frequency,
             Self::Pendulum { length, .. } => (gravity / length).sqrt() / TAU,
             Self::Sphere { tilt_frequency, .. } => tilt_frequency,
+            // One mode has a comb; several modes have several, which one number cannot say.
+            Self::Modes { ref modes, .. } => match modes.as_slice() {
+                [one] => one.frequency,
+                _ => return None,
+            },
         };
         (frequency > 0.0).then_some(frequency)
     }
@@ -278,6 +338,7 @@ impl Motion {
             Self::Circular { .. } => "circular",
             Self::Pendulum { .. } => "pendulum",
             Self::Sphere { .. } => "sphere",
+            Self::Modes { .. } => "modes",
         }
     }
 
@@ -346,6 +407,19 @@ impl Motion {
                 number("tilt_frequency", tilt_frequency, 0.0, limits::FREQUENCY, false)?;
                 number("spin_frequency", spin_frequency, 0.0, limits::FREQUENCY, false)
             }
+            Self::Modes { centre, amplitude, ref modes } => {
+                point("centre", centre)?;
+                point("amplitude", amplitude)?;
+                if modes.is_empty() || modes.len() > MAX_MODES {
+                    return Err(format!("{at}.Modes.modes: {} modes; from 1 to {MAX_MODES}", modes.len()));
+                }
+                for (k, mode) in modes.iter().enumerate() {
+                    number(&format!("modes[{k}].frequency"), mode.frequency, 0.0, limits::FREQUENCY, false)?;
+                    number(&format!("modes[{k}].scale"), mode.scale, -1.0e3, 1.0e3, false)?;
+                    number(&format!("modes[{k}].phase"), mode.phase, -limits::ANGLE, limits::ANGLE, false)?;
+                }
+                Ok(())
+            }
         }
     }
 
@@ -358,6 +432,7 @@ impl Motion {
             Self::Circular { .. } => "Circular",
             Self::Pendulum { .. } => "Pendulum",
             Self::Sphere { .. } => "Sphere",
+            Self::Modes { .. } => "Modes",
         }
     }
 }
@@ -376,6 +451,31 @@ mod tests {
     fn motions_follow_their_formulas() {
         let still = Motion::Static { position: [5.0, 0.0, 1.0] };
         assert_eq!(still.position(-3.0, G), still.position(1e5, G));
+
+        // George's scaffold: every member at its own amplitude along x, the same α(t) for all.
+        let modes = vec![
+            ModeSpec { frequency: 2.3, scale: 1.0, phase: 0.0 },
+            ModeSpec { frequency: 12.7, scale: 0.5, phase: 90.0 },
+        ];
+        let member =
+            Motion::Modes { centre: [0.5, 0.5, 5.0], amplitude: [1e-3, 0.0, 0.0], modes: modes.clone() };
+        for t in [0.0, 0.1, 1.37] {
+            let alpha = (TAU * 2.3 * t).cos() + 0.5 * (TAU * 12.7 * t + std::f64::consts::FRAC_PI_2).cos();
+            assert!(close(member.position(t, G), [0.5 + 1e-3 * alpha, 0.5, 5.0]), "{t}");
+        }
+        assert!(close(member.position(0.0, G), [0.5 + 1e-3, 0.5, 5.0]));
+        // One mode is a comb at its frequency; several are not one comb.
+        assert_eq!(member.frequency(G), None);
+        let single =
+            Motion::Modes { centre: [0.0; 3], amplitude: [1e-3, 0.0, 0.0], modes: modes[..1].to_vec() };
+        assert_eq!(single.frequency(G), Some(2.3));
+        // Control: a different scale is a different path.
+        let other = Motion::Modes {
+            centre: [0.5, 0.5, 5.0],
+            amplitude: [1e-3, 0.0, 0.0],
+            modes: vec![modes[0], ModeSpec { scale: 0.4, ..modes[1] }],
+        };
+        assert!(!close(other.position(0.1, G), member.position(0.1, G)));
 
         // The scripts' linear oscillator: h = h0 + A cos(2π f t) at fixed D.
         let linear = Motion::Linear {
@@ -533,6 +633,11 @@ mod tests {
                 tilt_frequency: 0.1,
                 spin_frequency: 0.0,
             },
+            Motion::Modes {
+                centre: [1.0, 2.0, 3.0],
+                amplitude: [1e-3, 0.0, 0.0],
+                modes: vec![ModeSpec { frequency: 1.0, scale: 1.0, phase: 0.0 }],
+            },
         ];
         for motion in &motions {
             let (anchor, path) = motion.anchor();
@@ -543,15 +648,35 @@ mod tests {
             assert_eq!(json[variant][field], serde_json::json!([1.0, 2.0, 3.0]), "{path}");
             assert_eq!(motion.validate("bodies[0].motion"), Ok(()), "{}", motion.kind());
         }
-        // Control: the kinds are six different words.
+        // Control: the kinds are as many different words as there are kinds.
         let mut kinds: Vec<&str> = motions.iter().map(Motion::kind).collect();
         kinds.dedup();
-        assert_eq!(kinds.len(), 6);
+        assert_eq!(kinds.len(), Motion::KINDS.len());
     }
 
     #[test]
     fn motions_that_describe_no_path_are_refused_with_the_field() {
         let refused = [
+            (
+                Motion::Modes { centre: [0.0; 3], amplitude: [1e-3, 0.0, 0.0], modes: Vec::new() },
+                "Modes.modes",
+            ),
+            (
+                Motion::Modes {
+                    centre: [0.0; 3],
+                    amplitude: [1e-3, 0.0, 0.0],
+                    modes: vec![ModeSpec { frequency: 1.0, scale: 1.0, phase: 0.0 }; MAX_MODES + 1],
+                },
+                "Modes.modes",
+            ),
+            (
+                Motion::Modes {
+                    centre: [0.0; 3],
+                    amplitude: [1e-3, 0.0, 0.0],
+                    modes: vec![ModeSpec { frequency: -2.0, scale: 1.0, phase: 0.0 }],
+                },
+                "Modes.modes[0].frequency",
+            ),
             (Motion::Static { position: [f64::NAN, 0.0, 0.0] }, "Static.position"),
             (Motion::Static { position: [2e6, 0.0, 0.0] }, "Static.position"),
             (Motion::Pass { from: [0.0; 3], to: [0.0; 3], start: 0.0, speed: 1.0 }, "Pass.to"),

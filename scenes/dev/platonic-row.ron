@@ -1,0 +1,162 @@
+// Dev scene `platonic-row` (REBUILD §9.1), written from its builder in crates/cav-sim/src/dev.rs; a test
+// holds the two together. Frame: metres, x east, y north, z up; seconds; angles in degrees.
+// `cav schema` describes every field.
+(
+    version: 1,
+    name: "platonic-row",
+    description: "The five Platonic solids, 100 kg and 0.6 m an edge, on a circle of 2.2 m about tower 1: each is a point mass to its fourth moment, the cube and the octahedron to their sixth.",
+    duration: 12.0,
+    array: (
+        instrument: (
+            tower_height: 10.1,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+            atom_mass: 1.4431558652473234e-25,
+            gravity: 9.81,
+            kicks: 1000.0,
+            launch_floor: true,
+            sign: LowerMinusUpper,
+        ),
+        towers: [
+            (
+                label: "tower 1",
+                position: (0.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+            ),
+            (
+                label: "tower 2",
+                position: (4.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+            ),
+            (
+                label: "tower 3",
+                position: (-4.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+            ),
+            (
+                label: "tower 4",
+                position: (0.0, 4.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+            ),
+            (
+                label: "tower 5",
+                position: (0.0, -4.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+            ),
+        ],
+        schedule: (
+            jitter: None,
+            alternate: None,
+            gaps: None,
+            window: None,
+            loss: 0.0,
+            seed: 0,
+        ),
+    ),
+    room: None,
+    floor: None,
+    bodies: [
+        (
+            label: "tetrahedron",
+            mass: 100.0,
+            radius: 0.0,
+            shape: Some((
+                kind: Platonic(
+                    solid: Tetrahedron,
+                    edge: 0.6,
+                ),
+                pitch: 0.03,
+                supersample: 4,
+            )),
+            motion: Static(
+                position: (2.0923243358493377, 0.6798373876248843, 2.5),
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "cube",
+            mass: 100.0,
+            radius: 0.0,
+            shape: Some((
+                kind: Platonic(
+                    solid: Cube,
+                    edge: 0.6,
+                ),
+                pitch: 0.03,
+                supersample: 4,
+            )),
+            motion: Static(
+                position: (1.3471114790620887e-16, 2.2, 2.5),
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "octahedron",
+            mass: 100.0,
+            radius: 0.0,
+            shape: Some((
+                kind: Platonic(
+                    solid: Octahedron,
+                    edge: 0.6,
+                ),
+                pitch: 0.03,
+                supersample: 4,
+            )),
+            motion: Static(
+                position: (-2.0923243358493377, 0.6798373876248845, 2.5),
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "dodecahedron",
+            mass: 100.0,
+            radius: 0.0,
+            shape: Some((
+                kind: Platonic(
+                    solid: Dodecahedron,
+                    edge: 0.6,
+                ),
+                pitch: 0.03,
+                supersample: 4,
+            )),
+            motion: Static(
+                position: (-1.2931275550434413, -1.7798373876248843, 2.5),
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+        (
+            label: "icosahedron",
+            mass: 100.0,
+            radius: 0.0,
+            shape: Some((
+                kind: Platonic(
+                    solid: Icosahedron,
+                    edge: 0.6,
+                ),
+                pitch: 0.03,
+                supersample: 4,
+            )),
+            motion: Static(
+                position: (1.2931275550434405, -1.7798373876248847, 2.5),
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+    ],
+)

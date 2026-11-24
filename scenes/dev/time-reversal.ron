@@ -72,6 +72,7 @@
             label: "forward",
             mass: 20.0,
             radius: 0.0,
+            shape: None,
             motion: Pass(
                 from: (6.0, 0.0, -4.0),
                 to: (6.0, 0.0, 8.0),
@@ -85,6 +86,7 @@
             label: "backward",
             mass: 20.0,
             radius: 0.0,
+            shape: None,
             motion: Pass(
                 from: (6.0, 0.0, 8.0),
                 to: (6.0, 0.0, -4.0),
