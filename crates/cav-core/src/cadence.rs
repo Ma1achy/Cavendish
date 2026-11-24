@@ -893,7 +893,11 @@ mod tests {
     /// normalised by the planned count; the same with `|W₀|²` left in; and the standard error of
     /// the first.
     fn loss(p: f64) -> [f64; 4] {
-        let (n, t0, seeds) = (4000usize, 5.0, 400u64);
+        loss_over(p, 400)
+    }
+
+    fn loss_over(p: f64, seeds: u64) -> [f64; 4] {
+        let (n, t0) = (4000usize, 5.0);
         let (df, count) = (1.0 / (128.0 * t0), 97);
         let bins = 33..=96usize;
         let plan = uniform_times(n, t0);
@@ -932,6 +936,21 @@ mod tests {
         assert_eq!(kept_times(&plan, 0.0, 1), plan);
         assert!(kept_times(&plan, 1.0, 1).is_empty());
         worst
+    }
+
+    #[test]
+    fn the_loss_floor_has_its_one_minus_p() {
+        // S2's review, finding 5: with `p / n` in place of `p / ((1 − p) n)` every test passed,
+        // because at p = 0.01 and 0.05 the factor is within the case's 5%. Criterion, written
+        // before measuring: at p = 0.3, 4000 shots, 200 keyed seeds, the measured floor is within
+        // 5% of the closed form; without the (1 − p) the form would be 30% low, far outside.
+        let p = 0.3;
+        let [ratio, _, _, error] = loss_over(p, 200);
+        eprintln!("loss p = {p}: floor/predicted {ratio:.4} ± {error:.4}");
+        assert!((ratio - 1.0).abs() < 0.05, "floor/predicted = {ratio}");
+        // Control: the same measurement against the form without its (1 − p) is far outside.
+        let without = ratio * loss_floor(p, 4000) / (p / 4000.0);
+        assert!((without - 1.0).abs() > 0.25, "against p/N: {without}");
     }
 
     cav_validate::case! {
