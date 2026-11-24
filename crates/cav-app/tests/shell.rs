@@ -1043,7 +1043,7 @@ fn lanes_draw_the_schedule_s_shots() {
         let drawn = &rig.shell.layout().shots;
         for tower in 0..5 {
             let bars: Vec<_> = drawn.iter().filter(|bar| bar.tower == tower).collect();
-            assert_eq!(bars.len(), shots.times.len(), "{name}, tower {}: as many bars as shots", tower + 1);
+            assert_eq!(bars.len(), shots.count(tower), "{name}, tower {}: as many bars as shots", tower + 1);
             for (k, bar) in bars.iter().enumerate() {
                 let (launch, readout) = (shots.launch(tower, k), shots.readout(tower, k));
                 let expected = [zero + launch as f32 * per_second, zero + readout as f32 * per_second];
@@ -1059,13 +1059,13 @@ fn lanes_draw_the_schedule_s_shots() {
         }
         // Control: the old arithmetic (shot k launched at k·cycle, ⌈duration/cycle⌉ of them, all
         // taken) does not describe this scene: by more than a point, or in what is taken.
-        let furthest = (0..shots.times.len())
+        let furthest = (0..shots.count(0))
             .map(|k| (shots.launch(0, k) - 2.0 * k as f64).abs() as f32 * per_second)
             .fold(0.0f32, f32::max);
         let all_taken = shots.valid.iter().all(|taken| *taken);
         assert!(furthest > 1.0 || !all_taken, "{name}: the plain schedule would do");
         if name == "jittered" {
-            assert!(furthest > 20.0 && shots.times.len() != 30, "{furthest} points, {}", shots.times.len());
+            assert!(furthest > 20.0 && shots.count(0) != 30, "{furthest} points, {}", shots.count(0));
         }
     }
 }

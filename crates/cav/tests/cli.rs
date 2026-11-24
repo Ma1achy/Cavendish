@@ -33,7 +33,7 @@ fn cli_lists_the_dev_scenes() {
     let names: Vec<&str> = text.lines().filter_map(|l| l.split_whitespace().next()).collect();
     assert_eq!(names[..5], ["room", "void", "infinite-floor", "point", "pass"]);
     // Every line is a name, a gap and a path: the longest name (17 letters) once ran into its path.
-    assert_eq!(names.len(), 18);
+    assert_eq!(names.len(), 20);
     assert!(names.contains(&"through-the-tower") && text.contains("through-the-tower  scenes/dev/"));
     assert!(text.contains("scenes/dev/void.ron") && text.contains("scenes/dev/infinite-floor.ron"));
 }
@@ -509,9 +509,9 @@ fn cli_run_writes_a_bundle_twice_the_same() {
         stdout(&done)
     };
     let said = run(&a);
-    assert!(said.contains("scene `staggered`, 5 tower(s) × 30 shot(s), quadrature within"), "{said}");
+    assert!(said.contains("scene `staggered`, 5 tower(s), 150 shot(s) in all, quadrature within"), "{said}");
     run(&b);
-    // The same command twice: the same eleven files, byte for byte.
+    // The same command twice: the same eighteen files, byte for byte.
     let names = |dir: &PathBuf| {
         let mut names: Vec<String> = std::fs::read_dir(dir)
             .unwrap()
@@ -520,7 +520,7 @@ fn cli_run_writes_a_bundle_twice_the_same() {
         names.sort();
         names
     };
-    assert_eq!(names(&a).len(), 11);
+    assert_eq!(names(&a).len(), 18);
     assert_eq!(names(&a), names(&b));
     for name in names(&a) {
         assert_eq!(std::fs::read(a.join(&name)).unwrap(), std::fs::read(b.join(&name)).unwrap(), "{name}");
@@ -537,7 +537,7 @@ fn cli_run_writes_a_bundle_twice_the_same() {
     let aice =
         cav(&["run", "comb", "--preset", "aice", "--out", d.to_str().unwrap(), "--exec", "set duration 100"]);
     assert!(aice.status.success(), "{}", stderr(&aice));
-    assert!(stdout(&aice).contains("5 tower(s) × 20 shot(s)"), "{}", stdout(&aice));
+    assert!(stdout(&aice).contains("5 tower(s), 100 shot(s) in all"), "{}", stdout(&aice));
     // Control: refusals. No --out; a scene that is not one; a patience that is not a number.
     assert!(stderr(&cav(&["run", "comb"])).contains("--out"));
     assert!(!cav(&["run", "nowhere", "--out", d.to_str().unwrap()]).status.success());
@@ -659,8 +659,8 @@ fn cli_provenance_is_the_builds_whatever_the_tree_or_the_directory() {
     // would now write `unknown`.
     let fourth = write("fourth", None, Some(&nowhere));
 
-    // A bundle of eleven files and a figure of three, each time; every byte the same.
-    assert_eq!(first.len(), 14, "{:?}", first.keys().collect::<Vec<_>>());
+    // A bundle of eighteen files and a figure of three, each time; every byte the same.
+    assert_eq!(first.len(), 21, "{:?}", first.keys().collect::<Vec<_>>());
     for (name, files) in [
         ("after an untracked file appeared", &second),
         ("from another directory", &third),

@@ -26,6 +26,7 @@
                 timing: (
                     offset: 0.0,
                 ),
+                instrument: None,
             ),
             (
                 label: "aice",
@@ -39,6 +40,11 @@
                     half_sequence: Some(2.5),
                     launch_velocity: Some(21.23604923374872),
                     cycle: Some(5.0),
+                    atom_mass: None,
+                    gravity: None,
+                    kicks: None,
+                    launch_floor: None,
+                    sign: None,
                 )),
             ),
             (
@@ -48,7 +54,16 @@
                     offset: 0.0,
                 ),
                 instrument: Some((
+                    tower_height: None,
+                    ifo_separation: None,
                     half_sequence: Some(0.9),
+                    launch_velocity: None,
+                    cycle: None,
+                    atom_mass: None,
+                    gravity: None,
+                    kicks: None,
+                    launch_floor: None,
+                    sign: None,
                 )),
             ),
         ],

@@ -86,7 +86,9 @@ fn the_forward_store_stays_within_its_budget() {
         engine.settle(LONG)
     });
     assert!(whole, "the signal arrived");
-    let signal = MAX_SIGNAL_VALUES * 24 + MAX_SIGNAL_VALUES / 2 * 8;
+    // Since S3 each tower keeps its own readout times (towers may fly their own instruments):
+    // 8 bytes a value, not a shot, so the times are 32 MiB here where they were 16.
+    let signal = MAX_SIGNAL_VALUES * 24 + MAX_SIGNAL_VALUES * 8;
     eprintln!("the largest signal: peak {} MiB, kept {} MiB", peak / MIB, engine.forward_bytes() / MIB);
     assert!(engine.forward_bytes() <= FORWARD_STORE_BYTES);
     assert!(engine.forward_bytes() >= MAX_SIGNAL_VALUES * 24, "the contribution is kept, and counted");
@@ -142,7 +144,7 @@ fn the_forward_store_stays_within_its_budget() {
         compared: false,
     };
     let why = engine.query(&asked).unwrap_err();
-    assert!(why.contains("100 source(s) × 5 tower(s) × 100000 shot(s)") && why.contains("256 MiB"), "{why}");
+    assert!(why.contains("100 source(s) × 5 tower(s) with 500000 shot(s) between them") && why.contains("256 MiB"), "{why}");
     assert_eq!((engine.contributions_computed(), engine.forward_bytes()), (0, 0));
     assert!(peak < 8 * MIB, "{peak} bytes to refuse it");
 }
@@ -432,7 +434,7 @@ fn a_bundle_is_written_without_a_second_copy() {
     let _ = std::fs::remove_dir_all(&dir);
     let build = cav_sim::bundle::Build { version: "test".into(), revision: "none".into(), dirty: None };
     let (files, peak) = peak_during(|| cav_sim::bundle::write(&dir, &scene, &signal, &build, None).unwrap());
-    assert_eq!(files.len(), 11);
+    assert_eq!(files.len(), 18);
     eprintln!("a bundle of 2 × 1,000,000: {} KiB held at once while writing", peak >> 10);
     assert!(peak <= 2 * MIB, "{peak} bytes at once to write a 74 MB bundle");
     let written: u64 = files.iter().map(|file| std::fs::metadata(file).unwrap().len()).sum();

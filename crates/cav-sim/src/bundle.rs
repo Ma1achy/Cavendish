@@ -122,11 +122,21 @@ fn finish(
 /// A per-shot array of the signal (laid out tower after tower, each its own number of shots) in
 /// the padded order of a `(T_max, D)` array: shots first, then towers; a tower with fewer shots
 /// than `T_max` gives `pad` for each it lacks.
-fn padded<'a, T: Copy + 'a>(signal: &'a Signal, values: &'a [T], pad: T) -> impl Iterator<Item = T> + 'a {
+///
+/// `value` is asked for tower `d`'s shot `k` and gives what is written there; nothing is gathered
+/// first, so writing costs no second copy.
+fn padded<'a, T: Copy + 'a>(
+    signal: &'a Signal,
+    value: impl Fn(usize, usize) -> T + Copy + 'a,
+    pad: T,
+) -> impl Iterator<Item = T> + 'a {
     let (most, towers) = (signal.most(), signal.towers);
-    (0..most).flat_map(move |k| {
-        (0..towers).map(move |d| if k < signal.count(d) { values[signal.starts[d] + k] } else { pad })
-    })
+    (0..most).flat_map(move |k| (0..towers).map(move |d| if k < signal.count(d) { value(d, k) } else { pad }))
+}
+
+/// Every shot of every tower, tower after tower: `(tower, shot)`, the order of the `_flat` arrays.
+fn flat(signal: &Signal) -> impl Iterator<Item = (usize, usize)> + '_ {
+    (0..signal.towers).flat_map(move |d| (0..signal.count(d)).map(move |k| (d, k)))
 }
 
 /// The first value of the signal that is not a number, as a place a person can find.
@@ -179,8 +189,19 @@ pub fn write(
             "{place}; a bundle is never written with one (its bits would differ from run to run)"
         ));
     }
-    // The nominal clock: the array's own instrument's readouts, on which the tracks are given.
-    let time = crate::read::readouts(spec)?;
+    // The nominal clock: the array's own instrument's readouts, on which the tracks are given. A
+    // tower that flies the array's cycle and 2T has exactly those times (its clock, before its
+    // offset), so they are read from it; only an array with no such tower makes them afresh
+    // (at most MAX_SHOTS of them, 16 MB).
+    let own = (0..towers).find(|&d| {
+        let i = spec.array.instrument_of(d);
+        i.cycle.to_bits() == spec.array.instrument.cycle.to_bits()
+            && i.half_sequence.to_bits() == spec.array.instrument.half_sequence.to_bits()
+    });
+    let time: std::borrow::Cow<'_, [f64]> = match own {
+        Some(d) => std::borrow::Cow::Borrowed(signal.times(d)),
+        None => std::borrow::Cow::Owned(crate::read::readouts(spec)?),
+    };
     let nominal = time.len();
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let mut listed: Vec<Listed> = Vec::new();
@@ -202,8 +223,8 @@ pub fn write(
     );
 
     let mut file = create(dir, "detector_time.npy")?;
-    let readouts: Vec<f64> = (0..towers).flat_map(|d| signal.readouts(d)).collect();
-    let written = npy::write_f64(&mut file, &[most, towers], padded(signal, &readouts, f64::NAN));
+    let readout = |d: usize, k: usize| signal.readout(d, k);
+    let written = npy::write_f64(&mut file, &[most, towers], padded(signal, readout, f64::NAN));
     finish(dir, "detector_time.npy", written, file)?;
     list(
         "detector_time",
@@ -214,8 +235,7 @@ pub fn write(
     );
 
     let mut file = create(dir, "mask.npy")?;
-    let present = vec![true; total];
-    let written = npy::write_bool(&mut file, &[most, towers], padded(signal, &present, false));
+    let written = npy::write_bool(&mut file, &[most, towers], padded(signal, |_, _| true, false));
     finish(dir, "mask.npy", written, file)?;
     list(
         "mask",
@@ -231,7 +251,7 @@ pub fn write(
     list("n_shots", &[towers], npy::F64, "1", "how many shots each tower has (a whole number, as f8)");
 
     let mut file = create(dir, "valid.npy")?;
-    let written = npy::write_bool(&mut file, &[most, towers], padded(signal, &signal.valid, false));
+    let written = npy::write_bool(&mut file, &[most, towers], padded(signal, |d, k| signal.valid[signal.starts[d] + k], false));
     finish(dir, "valid.npy", written, file)?;
     list(
         "valid",
@@ -242,7 +262,7 @@ pub fn write(
     );
 
     let mut file = create(dir, "signal.npy")?;
-    let written = npy::write_f64(&mut file, &[most, towers], padded(signal, &signal.gradiometer, 0.0));
+    let written = npy::write_f64(&mut file, &[most, towers], padded(signal, |d, k| signal.gradiometer[signal.starts[d] + k], 0.0));
     finish(dir, "signal.npy", written, file)?;
     list(
         "signal",
@@ -253,8 +273,11 @@ pub fn write(
     );
 
     let mut file = create(dir, "signal_per_ifo.npy")?;
-    let pairs: Vec<[f64; 2]> = signal.lower.iter().zip(&signal.upper).map(|(l, u)| [*l, *u]).collect();
-    let both = padded(signal, &pairs, [0.0, 0.0]).flatten();
+    let pair = |d: usize, k: usize| {
+        let at = signal.starts[d] + k;
+        [signal.lower[at], signal.upper[at]]
+    };
+    let both = padded(signal, pair, [0.0, 0.0]).flatten();
     let written = npy::write_f64(&mut file, &[most, towers, 2], both);
     finish(dir, "signal_per_ifo.npy", written, file)?;
     list(
@@ -277,7 +300,7 @@ pub fn write(
     );
 
     let mut file = create(dir, "t_flat.npy")?;
-    let written = npy::write_f64(&mut file, &[total], readouts.iter().copied());
+    let written = npy::write_f64(&mut file, &[total], flat(signal).map(|(d, k)| signal.readout(d, k)));
     finish(dir, "t_flat.npy", written, file)?;
     list("t_flat", &[total], npy::F64, "s", "each tower's own readout times, tower after tower (CSR)");
 
@@ -292,7 +315,7 @@ pub fn write(
     list("phase_flat", &[total], npy::F64, "rad", "the gradiometer's ΔΦ, tower after tower (CSR)");
 
     let mut file = create(dir, "phase_per_ifo_flat.npy")?;
-    let written = npy::write_f64(&mut file, &[total, 2], pairs.iter().flatten().copied());
+    let written = npy::write_f64(&mut file, &[total, 2], signal.lower.iter().zip(&signal.upper).flat_map(|(l, u)| [*l, *u]));
     finish(dir, "phase_per_ifo_flat.npy", written, file)?;
     list("phase_per_ifo_flat", &[total, 2], npy::F64, "rad", "δφ₁ and δφ₂, tower after tower (CSR)");
 

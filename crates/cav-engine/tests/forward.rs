@@ -67,7 +67,7 @@ fn a_refused_set_changes_nothing() {
         ("bodies[0].weight", json!(1.0), "has no field `weight`"),
         ("array.instrument.cycle", json!(1.0), "array.instrument.cycle"),
         ("duration", json!(null), "cannot be set"),
-        ("array.towers", json!([]), "at least one tower"),
+        ("array.towers[0].instrument", json!({"cycle": 1.0}), "array.towers[0].instrument.cycle"),
     ];
     for (path, value, expected) in refused {
         let before = (engine.digest(), engine.journal().len(), engine.generation());
@@ -136,12 +136,12 @@ fn the_signal_is_computed_on_the_worker_and_arrives() {
     let Reply::Signal(reply) = engine.query(&query).unwrap() else { panic!("a signal") };
     assert_eq!((reply.state.as_str(), reply.tower), ("refined", 2));
     assert_eq!(bits(&reply.values), bits(cold.channel(1, cav_core::forward::Channel::Lower)));
-    assert_eq!(reply.times, cold.times);
+    assert_eq!(reply.times, cold.times(1));
     assert!(reply.estimate <= 1e-10);
     // The log says a signal arrived.
     let said = engine
         .log()
-        .select(&LogFilter { text: Some("signal: 5 tower(s) × 6 shot(s)".into()), ..LogFilter::default() });
+        .select(&LogFilter { text: Some("signal: 5 tower(s), 30 shot(s) in all".into()), ..LogFilter::default() });
     assert_eq!(said.len(), 1);
     // The void's signal is all zeros and is there at once: nothing to compute.
     let mut void = loaded(dev::void());
@@ -851,16 +851,16 @@ cav_validate::case! {
         let count = differing(&compared.lower, &cold.lower)
             + differing(&compared.upper, &cold.upper)
             + differing(&compared.gradiometer, &cold.gradiometer);
-        assert_eq!(compared.times, cold.times, "AICE's own shots: one every 5 s, read out 5 s after launch");
-        assert_eq!(compared.times.len(), 40);
+        assert_eq!(compared.times(0), cold.times(0), "AICE's own shots: one every 5 s, read out 5 s after launch");
+        assert_eq!(compared.times(0).len(), 40);
         // Control: the comparison is another instrument's reading, not the scene's own again:
         // the scene's own signal is still AION-10's, with its own shots.
         let own = engine.signal().1.unwrap().clone();
         assert_eq!(own.as_ref(), &read::signal(&scene).unwrap());
-        assert_eq!(own.times.len(), 100);
+        assert_eq!(own.times(0).len(), 100);
         // (Its first shot is another shot altogether: launched together, read out at 5 s, not 1.46 s.)
         assert_ne!(compared.gradiometer[0].to_bits(), own.gradiometer[0].to_bits());
-        assert_ne!(compared.times[0], own.times[0]);
+        assert_ne!(compared.times(0)[0], own.times(0)[0]);
         cav_validate::Measured::Error(count as f64)
     },
 }
@@ -1151,9 +1151,9 @@ cav_validate::case! {
         rushed.set_patience(LONG);
         exit_session(&mut rushed, &dirs[4], false);
         // The replays put their exports under file names alone, so the layouts are the same:
-        // two bundles of eleven files and a scene.
+        // two bundles of eighteen files and a scene.
         let files = files_of(&dirs[0]);
-        assert_eq!(files.len(), 23, "{:?}", files.keys().collect::<Vec<_>>());
+        assert_eq!(files.len(), 37, "{:?}", files.keys().collect::<Vec<_>>());
         assert!(files.contains_key("first/signal.npy") && files.contains_key("second/manifest.json"));
         let differing: usize = dirs[1..].iter().map(|dir| files_differing(&dirs[0], dir)).sum();
         // The provenance in particular: each manifest's bytes are the session's in every replay,
@@ -1233,7 +1233,7 @@ fn a_bundle_waits_for_a_refined_signal() {
             .collect::<Vec<_>>()
     );
     assert_eq!(engine.journal().len(), journal + 1);
-    assert!(engine.log().iter().next_back().unwrap().message.contains("(11 files)"));
+    assert!(engine.log().iter().next_back().unwrap().message.contains("(18 files)"));
     // The manifest names the engine's revision: the build's, a commit or `unknown`.
     let manifest: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(root.join("stale").join("manifest.json")).unwrap())

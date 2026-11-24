@@ -1119,10 +1119,10 @@ impl Engine {
                 // the shots are one stretch.
                 let offset = signal.map_or(0.0, |s| s.offsets[tower - 1]);
                 let stretch = |signal: &cav_sim::read::Signal| match span {
-                    None => 0..signal.times.len(),
+                    None => 0..signal.count(tower - 1),
                     Some([from, to]) => {
-                        signal.times.partition_point(|t| t + offset < *from)
-                            ..signal.times.partition_point(|t| t + offset <= *to)
+                        let times = signal.times(tower - 1);
+                        times.partition_point(|t| t + offset < *from)..times.partition_point(|t| t + offset <= *to)
                     }
                 };
                 Ok(Reply::Signal(SignalReply {
@@ -1436,9 +1436,9 @@ impl Engine {
             Level::Info,
             Subsystem::Engine,
             format!(
-                "signal: {} tower(s) × {} shot(s), quadrature {}",
+                "signal: {} tower(s), {} shot(s) in all, quadrature {}",
                 signal.towers,
-                signal.times.len(),
+                signal.clock.len(),
                 estimate_text(signal.estimate, signal.settled)
             ),
         );

@@ -1289,15 +1289,22 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
         drawn.playhead = Some(at);
     }
     // How many shots there are and how many each tower drawn took, over the whole signal.
-    let shots = signal.times.len();
+    // Each tower has its own shots (a tower of its own instrument may have another number).
+    let own: Vec<usize> = which.iter().map(|t| signal.count(*t)).collect();
+    let shots = own.iter().copied().max().unwrap_or(0);
     let taken: Vec<usize> =
         which.iter().map(|t| signal.taken(*t).iter().filter(|taken| **taken).count()).collect();
     let (fewest, most) =
         (taken.iter().min().copied().unwrap_or(shots), taken.iter().max().copied().unwrap_or(shots));
-    let count = match (fewest == shots, which.len() == 1 || fewest == most) {
-        (true, _) => format!("{shots} shots"),
-        (_, true) => format!("{most} of {shots} shots taken"),
-        _ => format!("{shots} shots, {fewest} to {most} taken a tower"),
+    let even = own.iter().all(|n| *n == shots);
+    let count = match (even, fewest == shots, which.len() == 1 || fewest == most) {
+        (true, true, _) => format!("{shots} shots"),
+        (true, _, true) => format!("{most} of {shots} shots taken"),
+        (true, ..) => format!("{shots} shots, {fewest} to {most} taken a tower"),
+        (false, ..) => format!(
+            "{} to {shots} shots a tower, {fewest} to {most} taken",
+            own.iter().copied().min().unwrap_or(0)
+        ),
     };
     // When not every tower is drawn the plot says so, at every size.
     let left_out = (subject.tower.is_none() && which.len() < towers)

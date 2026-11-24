@@ -382,7 +382,7 @@ pub struct TowerSpec {
     /// What of the array's instrument this tower has differently, or none (the default): a
     /// field left out is the array's. `set array.towers[n].instrument {half_sequence: 0.9}`
     /// overrides one; setting the whole override to null takes it away.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     #[schemars(extend("x-stage" = "forward"))]
     pub instrument: Option<InstrumentOverride>,
 }
@@ -395,44 +395,44 @@ pub struct TowerSpec {
 #[serde(deny_unknown_fields)]
 pub struct InstrumentOverride {
     /// Height of this tower, metres; absent for the array's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     #[schemars(range(max = 1.0e3), extend("exclusiveMinimum" = 0.0, "x-unit" = "m"))]
     pub tower_height: Option<f64>,
     /// Vertical separation of this tower's two interferometers (Δr), metres; absent for the array's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     #[schemars(range(max = 1.0e3), extend("exclusiveMinimum" = 0.0, "x-unit" = "m"))]
     pub ifo_separation: Option<f64>,
     /// This tower's half sequence, T, seconds; absent for the array's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     #[schemars(range(min = 1.0e-3, max = 1.0e3), extend("x-unit" = "s"))]
     pub half_sequence: Option<f64>,
     /// This tower's launch velocity u₀, metres per second; absent for the array's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0, "x-unit" = "m/s"))]
     pub launch_velocity: Option<f64>,
     /// This tower's time between shots, seconds; absent for the array's. The array's schedule
     /// (jitter, alternation, gaps, window, loss) applies to it as to the array's own cycle.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0, "x-unit" = "s"))]
     pub cycle: Option<f64>,
     /// This tower's atom's mass, kilograms; absent for the array's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     #[schemars(range(min = 1.0e-27, max = 1.0e-24), extend("x-unit" = "kg"))]
     pub atom_mass: Option<f64>,
     /// The gravity this tower's atoms fall in, metres per second squared; absent for the
     /// array's. It does not move the bodies: they fall in the array's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     #[schemars(range(min = 0.1, max = 100.0), extend("x-unit" = "m/s²"))]
     pub gravity: Option<f64>,
     /// This tower's kick number n (a pure number); absent for the array's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     #[schemars(range(min = 1.0, max = 1.0e5), extend("x-unit" = "1"))]
     pub kicks: Option<f64>,
     /// Whether this tower's arms stop at their launch height; absent for the array's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub launch_floor: Option<bool>,
     /// Which way round this tower's interferometers are differenced; absent for the array's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub sign: Option<SignSpec>,
 }
 
