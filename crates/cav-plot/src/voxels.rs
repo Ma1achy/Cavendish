@@ -104,7 +104,10 @@ pub fn legend(
     let [title_w, title_h] = measure.size(&title, Face::Sans, size);
     let labels = ticks(frame)?.map(|v| number(v, field));
     let widths: Vec<f32> = labels.iter().map(|l| measure.size(l, Face::Mono, size)[0]).collect();
-    let bar_w = (8.0 * size).max(title_w).max(widths.iter().sum::<f32>() + 2.0 * size);
+    // The ends' labels run inwards from the ends and the middle's is centred: each half of the
+    // bar holds an end's label, half the middle's, and a gap of a letter's width.
+    let half = widths[0].max(widths[2]) + 0.5 * widths[1] + size;
+    let bar_w = (8.0 * size).max(title_w).max(2.0 * half);
     let bar_h = 0.7 * size;
     let label_h = measure.size("0", Face::Mono, size)[1];
     let width = bar_w + 2.0 * pad;

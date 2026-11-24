@@ -77,6 +77,34 @@ fn a_legend_is_made_from_what_is_drawn() {
     assert!(legend(&VoxelFrame::default(), &scene, &style, &Outlines).is_none());
 }
 
+#[test]
+fn a_legend_s_numbers_do_not_run_into_each_other() {
+    use cav_plot::drawing::{Item, Measure, text_box};
+    let scene = cav_sim::dev::unit_cube();
+    let style = Style::preset("screen").unwrap();
+    // The ranges the demo's first legends wrote over each other ("2.36e-414.8"): a tiny least
+    // with a wide greatest, and three-figure decimals.
+    for range in [(2.36e-4, 29.6), (0.0312, 1.0), (-0.498, 0.498), (1.4, 2.8)] {
+        let mut frame = frame_of(&scene, LeafField::Mass);
+        frame.range = Some(range);
+        let drawn = legend(&frame, &scene, &style, &Outlines).unwrap();
+        let boxes: Vec<([f32; 2], [f32; 2])> = drawn
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Text { at, anchor, text, face, size, turned, .. } if text.chars().next().is_some_and(|c| c == '-' || c.is_ascii_digit()) => {
+                    Some(text_box(*at, *anchor, Outlines.size(text, *face, *size), *turned))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(boxes.len(), 3, "{range:?}");
+        for pair in boxes.windows(2) {
+            assert!(pair[0].1[0] < pair[1].0[0], "{range:?}: {pair:?} overlap");
+        }
+    }
+}
+
 fn engine(script: &str) -> Engine {
     let mut engine = Engine::new();
     engine.set_patience(LONG);
