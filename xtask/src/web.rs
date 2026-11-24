@@ -86,6 +86,9 @@ pub fn build(root: &Path) -> Result<(), String> {
         .map_err(|e| format!("crates/cav-app/web/index.html: {e}"))?;
     let page = page.replace("{{revision}}", &revision(root));
     std::fs::write(dist.join("index.html"), page).map_err(|e| format!("{DIST}/index.html: {e}"))?;
+    // The forward stage's Web Worker: the same module, started by this script.
+    std::fs::copy(root.join("crates/cav-app/web/worker.js"), dist.join("worker.js"))
+        .map_err(|e| format!("crates/cav-app/web/worker.js: {e}"))?;
     eprintln!(
         "xtask: web: {DIST}: cav-web.wasm {} bytes from cargo, {before} after wasm-bindgen, {} after wasm-opt; \
          cavendish.js {} bytes",

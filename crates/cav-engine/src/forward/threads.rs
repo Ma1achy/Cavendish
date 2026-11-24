@@ -6,7 +6,11 @@ use std::sync::PoisonError;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::Duration;
 
-use super::{Gate, Shared, Slot};
+use std::sync::atomic::Ordering;
+
+use cav_sim::read::{self, SourceId};
+
+use super::{Batch, Done, Gate, ReadJob, Shared, Slot};
 
 impl<T> Slot<T> {
     /// The item, once there is one; `None` when the slot has been closed.
@@ -30,6 +34,31 @@ impl Gate {
         let mut closed = self.closed.lock().unwrap_or_else(PoisonError::into_inner);
         while *closed {
             closed = self.opened.wait(closed).unwrap_or_else(PoisonError::into_inner);
+        }
+    }
+}
+
+impl Shared {
+    /// One source of a batch: its contribution, sent back. False when nobody is listening any
+    /// more (the engine has gone).
+    fn contribute(&self, batch: &Batch, (source, key): (SourceId, u64)) -> bool {
+        let stale = || self.stale(batch);
+        match read::contribution(&batch.spec, source, &batch.shots, &stale) {
+            Some(contribution) => self.outbox.send(Done { key, contribution }).is_ok(),
+            None => true,
+        }
+    }
+
+    /// One reading, sent back. A reading that has been begun is finished, unless its scene has
+    /// gone. False when nobody is listening any more.
+    fn read(&self, job: &ReadJob) -> bool {
+        let gone = || self.read_abandon.load(Ordering::Relaxed) >= job.epoch;
+        if gone() {
+            return true;
+        }
+        match read::reading(&job.spec, job.time, &gone) {
+            Some(reading) => self.read_outbox.send((job.epoch, reading)).is_ok(),
+            None => true,
         }
     }
 }

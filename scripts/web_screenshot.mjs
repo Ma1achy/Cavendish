@@ -7,6 +7,11 @@
 // to an element's id, that element is clicked as a person would (a user gesture) each time it
 // appears: files an address's `#exec` makes wait behind such a button (`held-downloads`).
 //
+// With CAV_FRAMES set, every frame the page draws is timed (requestAnimationFrame) and, at the
+// end, the frames after the application started are summarised: how many, the longest, and how
+// many took longer than CAV_FRAMES milliseconds (the budget; 50 if it is not a number). A long
+// frame is the page's thread held: by the engine's work, a tree, or the drawing.
+//
 // With `no-webgpu` the page is loaded as a browser without WebGPU sees it (`navigator.gpu` removed
 // before the page's script runs): it must show its message and never fetch the module; exit 0 then
 // means exactly that.
@@ -104,6 +109,22 @@ if (withoutGpu) {
   await send("Page.enable", {}, sessionId);
   await send("Page.addScriptToEvaluateOnNewDocument", { source: "delete Navigator.prototype.gpu;" }, sessionId);
 }
+const budget = Number(process.env.CAV_FRAMES) || 50;
+if (process.env.CAV_FRAMES) {
+  await send("Page.enable", {}, sessionId);
+  await send("Page.addScriptToEvaluateOnNewDocument", { source: `
+    window.__frames = []; window.__runningAt = null;
+    let last = performance.now();
+    const tick = (now) => {
+      if (window.__runningAt === null && document.readyState === "complete" && !document.getElementById("message")) {
+        window.__runningAt = now;
+      }
+      window.__frames.push([last, now - last]);
+      last = now;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);` }, sessionId);
+}
 await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false }, sessionId);
 const started = Date.now();
 await send("Page.navigate", { url }, sessionId);
@@ -151,6 +172,20 @@ if (withoutGpu) {
   failed = !/does not offer WebGPU/.test(said.result?.result?.value ?? "") || fetched.result?.result?.value !== false;
 } else if (running === null) {
   failed = true;
+}
+if (process.env.CAV_FRAMES) {
+  const summary = await send("Runtime.evaluate", {
+    expression: `(() => {
+      const from = window.__runningAt ?? Infinity;
+      const after = window.__frames.filter(([start]) => start >= from).map(([start, ms]) => [Math.round(start - from), Math.round(ms)]);
+      const long = after.filter(([, ms]) => ms > ${budget});
+      const worst = [...after].sort((a, b) => b[1] - a[1]).slice(0, 5);
+      return JSON.stringify({ frames: after.length, longest: worst[0]?.[1] ?? null, over: long.length, worst });
+    })()`,
+    returnByValue: true,
+  }, sessionId);
+  const frames = JSON.parse(summary.result?.result?.value ?? "{}");
+  console.log(`frames after start: ${frames.frames}, longest ${frames.longest} ms, ${frames.over} over ${budget} ms; worst (ms after start, ms): ${JSON.stringify(frames.worst)}`);
 }
 const shot = await send("Page.captureScreenshot", { format: "png" }, sessionId);
 const loaded = await send("Runtime.evaluate", {
