@@ -330,6 +330,20 @@ pub enum ViewCommand {
         /// The pane, from 0.
         pane: usize,
     },
+    /// What colours the leaves of voxel bodies in the pane.
+    Colour {
+        /// The pane, from 0.
+        pane: usize,
+        /// The field, and for `phase` the tower.
+        colour: cav_sim::voxel_view::Colouring,
+    },
+    /// What the pane draws over voxel bodies: leaf bounds, a cut.
+    Overlay {
+        /// The pane, from 0.
+        pane: usize,
+        /// The overlays.
+        overlay: cav_sim::voxel_view::Overlay,
+    },
 }
 
 impl ViewCommand {
@@ -347,7 +361,9 @@ impl ViewCommand {
             | Self::Orbit { pane, .. }
             | Self::Zoom { pane, .. }
             | Self::Pan { pane, .. }
-            | Self::Home { pane } => Some(pane),
+            | Self::Home { pane }
+            | Self::Colour { pane, .. }
+            | Self::Overlay { pane, .. } => Some(pane),
         }
     }
 }

@@ -143,6 +143,12 @@ pub struct ViewSpec {
     pub projection: Projection,
     /// How surfaces and lines are drawn.
     pub style: DrawStyle,
+    /// What colours the leaves of voxel bodies. The default is their level.
+    #[serde(default)]
+    pub colour: crate::voxel_view::Colouring,
+    /// What is drawn over voxel bodies: their leaves' bounds, a cut. The default is nothing.
+    #[serde(default)]
+    pub overlay: crate::voxel_view::Overlay,
 }
 
 /// What a pane shows.
@@ -207,6 +213,9 @@ pub struct SceneView<'a> {
     /// unit: seconds on the scene's clock for a signal or a flight diagram, hertz for a
     /// periodogram or a cadence window. `None` for all of it. A scene pane has no span.
     pub span: Option<[f64; 2]>,
+    /// The voxel bodies as this pane draws them (their cubes, overlays and legend), when the
+    /// scene has any; the renderer draws other bodies as before.
+    pub voxels: Option<&'a crate::voxel_view::VoxelFrame>,
 }
 
 impl ViewSpec {
@@ -214,7 +223,16 @@ impl ViewSpec {
     #[must_use]
     pub fn framing(scene: &SceneSpec, named: NamedView, projection: Projection, style: DrawStyle) -> Self {
         let (yaw, pitch) = named.angles();
-        let mut view = Self { target: [0.0; 3], yaw, pitch, distance: 1.0, projection, style };
+        let mut view = Self {
+            target: [0.0; 3],
+            yaw,
+            pitch,
+            distance: 1.0,
+            projection,
+            style,
+            colour: crate::voxel_view::Colouring::default(),
+            overlay: crate::voxel_view::Overlay::default(),
+        };
         view.frame(scene);
         view
     }

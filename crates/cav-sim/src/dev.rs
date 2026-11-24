@@ -494,7 +494,7 @@ pub fn platonic_row() -> SceneSpec {
         let angle = (18.0 + 72.0 * k as f64).to_radians();
         let shape = crate::ShapeSpec {
             kind: crate::ShapeKind::Platonic { solid, edge: 0.6 },
-            pitch: 0.03,
+            pitch: 0.05,
             supersample: 4,
         };
         let at = [2.2 * angle.cos(), 2.2 * angle.sin(), 2.5];
