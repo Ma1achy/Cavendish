@@ -473,6 +473,31 @@ pub fn sphere() -> SceneSpec {
     scene
 }
 
+/// `hollow-sphere`: a spherical shell of 500 kg beside tower 1, 0.5 m outside and 0.35 m inside,
+/// made of voxels at r/16: a body whose section is a ring, for looking inside a body (`section`).
+/// Outside itself it is a point mass, as the solid sphere is.
+#[must_use]
+pub fn hollow_sphere() -> SceneSpec {
+    let mut scene = s3_base(
+        "hollow-sphere",
+        "A hollow sphere of 500 kg beside tower 1, 0.5 m outside and 0.35 m inside, made of voxels (r/16). \
+         Its sections are rings: step a section plane through it to see the cavity.",
+        false,
+    );
+    let shell = crate::ShapeSpec {
+        kind: crate::ShapeKind::Shell { outer: 0.5, inner: 0.35 },
+        pitch: 0.5 / 16.0,
+        supersample: 4,
+    };
+    scene.bodies.push(BodySpec::shaped(
+        "hollow sphere",
+        500.0,
+        shell,
+        Motion::Static { position: [2.0, 0.0, 2.5] },
+    ));
+    scene
+}
+
 /// `platonic-row`: the five Platonic solids, 100 kg each and 0.6 m an edge, on a circle of 2.2 m
 /// about tower 1 at 2.5 m up: their missing low multipoles (`reference/milestones/M18`).
 #[must_use]
@@ -572,8 +597,8 @@ pub fn scaffold() -> SceneSpec {
 }
 
 /// Every dev scene S3 adds, by builder.
-pub const S3_SCENES: [fn() -> SceneSpec; 6] =
-    [unit_cube, sphere, platonic_row, scaffold, mixed_array, no_towers];
+pub const S3_SCENES: [fn() -> SceneSpec; 7] =
+    [unit_cube, sphere, platonic_row, scaffold, mixed_array, no_towers, hollow_sphere];
 
 /// Every dev scene S2 adds, by builder.
 pub const S2_SCENES: [fn() -> SceneSpec; 2] = [staggered, cadence_lab];

@@ -344,6 +344,13 @@ pub enum ViewCommand {
         /// The overlays.
         overlay: cav_sim::voxel_view::Overlay,
     },
+    /// A section plane through the pane's voxel bodies, or none.
+    Section {
+        /// The pane, from 0.
+        pane: usize,
+        /// The plane; None for no section.
+        section: Option<cav_sim::voxel_view::Section>,
+    },
 }
 
 impl ViewCommand {
@@ -363,7 +370,8 @@ impl ViewCommand {
             | Self::Pan { pane, .. }
             | Self::Home { pane }
             | Self::Colour { pane, .. }
-            | Self::Overlay { pane, .. } => Some(pane),
+            | Self::Overlay { pane, .. }
+            | Self::Section { pane, .. } => Some(pane),
         }
     }
 }

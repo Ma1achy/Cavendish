@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use cav_core::voxel::VoxTree;
-use cav_sim::voxel_view::{VoxelFrame, voxel_frame};
+use cav_sim::voxel_view::{VoxelFrame, voxel_frame_cut};
 use cav_sim::{SceneSpec, ViewSpec};
 
 use crate::MAX_PANES;
@@ -100,7 +100,13 @@ impl Voxels {
         let any = self.trees.iter().any(Option::is_some);
         for (pane, slot) in self.frames.iter_mut().enumerate() {
             *slot = match views.get(pane) {
-                Some(view) if any => Some(voxel_frame(spec, &self.trees, view.colour, view.overlay, time)),
+                Some(view) if any => {
+                    let cutting = view.section.map(|section| cav_sim::voxel_view::Cutting {
+                        section,
+                        eye: cav_sim::voxel_view::eye_direction(view.yaw, view.pitch),
+                    });
+                    Some(voxel_frame_cut(spec, &self.trees, view.colour, view.overlay, cutting, time))
+                }
                 _ => None,
             };
         }

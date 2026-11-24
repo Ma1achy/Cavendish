@@ -399,6 +399,12 @@ fn render(rest: &[String]) -> Result<(), String> {
     for note in cav_render::decimation(session.engine.spec()) {
         println!("note: {note} (the scene is too large to mark every metre)");
     }
+    // What the pane's view of the voxel bodies left out to stay within its budgets, and why.
+    if let Some(voxels) = session.engine.frame(pane)?.voxels {
+        for note in &voxels.notes {
+            println!("note: {note}");
+        }
+    }
     println!(
         "{out}: {} × {} px, {} bytes, scene `{}`, {:.2} s",
         size[0],

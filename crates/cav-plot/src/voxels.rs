@@ -174,6 +174,91 @@ pub fn legend(
     Some(drawing)
 }
 
+/// The colour of a tree node at `depth` in `frame`'s tree legend, as the renderer draws it over
+/// `style`'s background: the sequential map over the frame's depths, mixed with the background by
+/// its opacity (what x-ray's added light and the opaque styles' faded lines both come to there).
+#[must_use]
+pub fn tree_colour_of(frame: &VoxelFrame, depth: u8, style: &Style) -> Colour {
+    let (lo, hi) = frame.depths.unwrap_or((depth, depth));
+    let rgb =
+        cav_render::colour::of_value(f64::from(depth), (f64::from(lo), f64::from(hi)), false, is_dark(style));
+    let fade = frame.tree_overlay.map(|t| t.fade).unwrap_or_default();
+    let alpha = cav_sim::voxel_view::opacity(depth, (lo, hi), fade) as f32;
+    Colour(rgb).mixed(style.background, alpha)
+}
+
+/// The tree overlay's legend: a heading, one swatch for each depth drawn (shallowest on the left)
+/// in its colour and opacity ([`tree_colour_of`]), its depth under it, and, when the overlay was
+/// cut short to stay within its budget, a line saying so. `None` when no tree node is drawn.
+#[must_use]
+pub fn tree_legend(frame: &VoxelFrame, style: &Style, measure: &dyn Measure) -> Option<Drawing> {
+    let (lo, hi) = frame.depths?;
+    let asked = frame.tree_overlay?;
+    let size = style.text_size;
+    let pad = 0.5 * size;
+    let title = match asked.fade {
+        cav_sim::voxel_view::Fade::Off => "octree depth".to_owned(),
+        fade => format!("octree depth · {} solid", fade.name()),
+    };
+    let note = frame
+        .tree_capped_at
+        .map(|d| format!("to depth {d}: {} nodes at most", cav_sim::voxel_view::MAX_TREE_BOXES));
+    let [title_w, title_h] = measure.size(&title, Face::Sans, size);
+    let note_size = note.as_ref().map_or([0.0, 0.0], |n| measure.size(n, Face::Sans, 0.85 * size));
+    let count = usize::from(hi - lo) + 1;
+    let label_w = (lo..=hi).map(|d| measure.size(&d.to_string(), Face::Mono, size)[0]).fold(0.0, f32::max);
+    let swatch = (1.6 * size).max(label_w + 0.3 * size);
+    let bar_w = swatch * count as f32;
+    let label_h = measure.size("0", Face::Mono, size)[1];
+    let width = bar_w.max(title_w).max(note_size[0]) + 2.0 * pad;
+    let bar_h = 0.9 * size;
+    let mut height = title_h + bar_h + label_h + 4.0 * pad;
+    if note.is_some() {
+        height += note_size[1] + pad;
+    }
+    let mut drawing = Drawing::new([width, height], format!("legend · {title}"));
+    drawing.items.push(Item::Rect {
+        min: [0.0, 0.0],
+        max: [width, height],
+        fill: Some(style.background),
+        stroke: Some((style.rule_width, style.rule)),
+    });
+    let text = |at, anchor, text: String, face, size, colour| Item::Text {
+        at,
+        anchor,
+        text,
+        face,
+        size,
+        colour,
+        turned: false,
+    };
+    drawing.items.push(text([pad, pad], Anchor::LEFT_TOP, title, Face::Sans, size, style.text));
+    let top = 2.0 * pad + title_h;
+    for (k, depth) in (lo..=hi).enumerate() {
+        let x = pad + swatch * k as f32;
+        drawing.items.push(Item::Rect {
+            min: [x + 0.08 * swatch, top],
+            max: [x + 0.92 * swatch, top + bar_h],
+            fill: Some(tree_colour_of(frame, depth, style)),
+            stroke: Some((style.rule_width, style.rule)),
+        });
+        let label = depth.to_string();
+        drawing.items.push(text(
+            [x + 0.5 * swatch, top + bar_h + pad],
+            Anchor::CENTRE_TOP,
+            label,
+            Face::Mono,
+            size,
+            style.text,
+        ));
+    }
+    if let Some(note) = note {
+        let y = top + bar_h + label_h + 2.0 * pad;
+        drawing.items.push(text([pad, y], Anchor::LEFT_TOP, note, Face::Sans, 0.85 * size, style.text));
+    }
+    Some(drawing)
+}
+
 /// What a vector view drew, for its record.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Drawn {

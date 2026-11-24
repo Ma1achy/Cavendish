@@ -3,7 +3,7 @@
 
 use super::kernel::{TreeBody, cube_potential};
 use super::mesh::{Mesh, box_mesh, torus_mesh};
-use super::shape::{Cuboid, Cylinder, Ellipsoid, Platonic, Polyhedron, Sphere};
+use super::shape::{Cuboid, Cylinder, Ellipsoid, Platonic, Polyhedron, Shell, Sphere};
 use super::*;
 use crate::Vec3;
 use crate::forward::{Instrument, Reader};
@@ -35,6 +35,7 @@ fn mesh_of(p: &Polyhedron) -> Mesh {
 fn shapes(at: Vec3) -> Vec<(String, Box<dyn Shape>)> {
     let mut out: Vec<(String, Box<dyn Shape>)> = vec![
         ("sphere".into(), Box::new(Sphere { centre: at, radius: 0.5 })),
+        ("shell".into(), Box::new(Shell { centre: at, outer: 0.5, inner: 0.3 })),
         ("cuboid".into(), Box::new(Cuboid { centre: at, half: Vec3::new(0.5, 0.3, 0.2) })),
         ("ellipsoid".into(), Box::new(Ellipsoid { centre: at, radii: Vec3::new(0.5, 0.35, 0.25) })),
     ];

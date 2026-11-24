@@ -641,6 +641,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             .collect();
         button_row(shell, ui, if row == 0 { "show" } else { "" }, &buttons);
     }
+    voxel_rows(shell, ui, &view);
     ui.add_space(4.0);
     ui.label(
         RichText::new(
@@ -649,6 +650,64 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
         .size(11.0)
         .color(theme::WEAK),
     );
+}
+
+/// The View panel's rows for voxel bodies: what colours them, the overlays (the whole octree by
+/// depth among them) and the section plane with a slider for its place. Each is the console's
+/// command, so each is journalled.
+fn voxel_rows(shell: &mut Shell, ui: &mut egui::Ui, view: &cav_sim::ViewSpec) {
+    use cav_sim::voxel_view::{Fade, LeafField};
+    if !shell.engine.spec().bodies.iter().any(|b| b.shape.is_some()) {
+        return;
+    }
+    let field = view.colour.field;
+    let colour = |f: LeafField| (f.name(), format!("colour {}", f.name()), field == f);
+    let colours = [LeafField::Level, LeafField::Depth, LeafField::Mass, LeafField::Fill].map(colour);
+    let buttons: Vec<(&str, &str, bool)> = colours.iter().map(|(t, l, on)| (*t, l.as_str(), *on)).collect();
+    button_row(shell, ui, "colour", &buttons);
+    let tree = view.overlay.tree;
+    let fade = tree.map(|t| t.fade);
+    let plain = !view.overlay.leaves && view.overlay.cut.is_none();
+    button_row(
+        shell,
+        ui,
+        "overlay",
+        &[
+            ("none", "overlay none", plain && tree.is_none()),
+            ("leaves", "overlay leaves", view.overlay.leaves && tree.is_none()),
+            ("tree", "overlay tree", plain && fade == Some(Fade::Off)),
+            ("tree, deep solid", "overlay tree fade deep", plain && fade == Some(Fade::Deep)),
+        ],
+    );
+    let time = shell.engine.time();
+    let on = view.section.map(|s| s.axis);
+    let line = |axis: cav_sim::Axis, word: &str| {
+        let (lo, hi) =
+            cav_sim::voxel_view::section_span(shell.engine.spec(), axis, time).unwrap_or((0.0, 0.0));
+        format!("section {word} {}", 0.5 * (lo + hi))
+    };
+    let lines = [line(cav_sim::Axis::X, "x"), line(cav_sim::Axis::Y, "y"), line(cav_sim::Axis::Z, "z")];
+    button_row(
+        shell,
+        ui,
+        "section",
+        &[
+            ("off", "section off", on.is_none()),
+            ("x", &lines[0], on == Some(cav_sim::Axis::X)),
+            ("y", &lines[1], on == Some(cav_sim::Axis::Y)),
+            ("z", &lines[2], on == Some(cav_sim::Axis::Z)),
+        ],
+    );
+    if let Some(section) = view.section
+        && let Some((lo, hi)) = cav_sim::voxel_view::section_span(shell.engine.spec(), section.axis, time)
+    {
+        let mut offset = section.offset;
+        let slider = egui::Slider::new(&mut offset, lo..=hi).suffix(" m").max_decimals(3).text("place");
+        if ui.add(slider).changed() {
+            let word = ["x", "y", "z"][section.axis as usize];
+            let _ = shell.run(&format!("section {word} {offset}"));
+        }
+    }
 }
 
 /// A two-column table of names and values.
@@ -874,11 +933,18 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                         let painter = ui.painter_at(rect);
                         let measure = cav_plot::paint::EguiMeasure(&painter);
                         let style = cav_plot::style::Style::screen();
-                        if let Some(key) = cav_plot::voxels::legend(voxels, frame.scene, &style, &measure) {
+                        // The field's legend, and the tree overlay's above it.
+                        let keys = [
+                            cav_plot::voxels::legend(voxels, frame.scene, &style, &measure),
+                            cav_plot::voxels::tree_legend(voxels, &style, &measure),
+                        ];
+                        let mut bottom = rect.bottom();
+                        for key in keys.into_iter().flatten() {
                             let size = vec2(key.size[0], key.size[1]);
-                            let at = rect.right_bottom() - size - vec2(8.0, 8.0);
+                            let at = pos2(rect.right(), bottom) - size - vec2(8.0, 8.0);
                             cav_plot::paint::paint(&painter, at, &key);
                             shell.layout.legends.push((pane, Rect::from_min_size(at, size)));
+                            bottom = at.y;
                         }
                     }
                 }
