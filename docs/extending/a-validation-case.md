@@ -12,7 +12,10 @@ is a row of `docs/validation/report.md`, so a reader can see what the engine is 
    with what, the tolerance, and where the tolerance comes from (the rounding of two orders of
    the same arithmetic; a truncation error with its order; the standard error of a Monte Carlo).
    Then measure. If it misses, do not move the number: find out why and write that down.
-2. **Declare it beside the test of the thing it checks**, in that crate's test module:
+2. **Declare it beside the test of the thing it checks**, in that crate's test module. The crate
+   needs `cav-validate` as a dev-dependency (`cav-validate.workspace = true` under
+   `[dev-dependencies]`; every crate that has cases already has it), and a case is a test: raise
+   the tier's floor in `xtask/floors.txt` in the same commit.
 
    ```rust
    cav_validate::case! {

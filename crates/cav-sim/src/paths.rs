@@ -862,6 +862,20 @@ mod tests {
         spec
     }
 
+    #[test]
+    fn the_walked_scene_has_every_kind_of_motion() {
+        // The tests that walk every path walk `everything()`: a kind of motion that is not in
+        // it is a kind whose fields no test sets, lists or draws an editor for. (Found by
+        // following the motion recipe with a made-up kind: nothing failed for its absence.)
+        let spec = everything();
+        for kind in crate::Motion::KINDS {
+            let has = spec.bodies.iter().any(|body| body.motion.kind().eq_ignore_ascii_case(kind));
+            assert!(has, "no body of `everything()` moves as `{kind}`: add one");
+        }
+        // Control: the comparison can fail (a kind that is not one).
+        assert!(!spec.bodies.iter().any(|body| body.motion.kind() == "bounce"));
+    }
+
     /// Every path of a scene, groups and leaves alike, by walking `ls` from the top.
     fn all_paths(spec: &SceneSpec) -> Vec<Entry> {
         let mut out = Vec::new();

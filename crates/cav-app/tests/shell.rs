@@ -821,6 +821,10 @@ fn all_entry_points_issue_the_same_edit() {
     // is one row lower, and in a window 900 high it is reached by scrolling the panel.
     let mut rig = Rig::new([1440, 1000]);
     rig.shell.run("select tower 1").unwrap();
+    // The reading is waited for before anything is clicked: when it arrives the properties
+    // panel gains its rows and every editor below them moves. (Not waiting, the click landed
+    // where the tick box had been, once in three runs on a busy machine.)
+    assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
     rig.frames(vec![vec![], vec![]]);
     let tick = rig.shell.layout().editor("array.instrument.launch_floor").expect("the flag has an editor");
     let panel =

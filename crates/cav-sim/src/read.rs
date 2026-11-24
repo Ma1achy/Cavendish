@@ -89,8 +89,10 @@ pub struct Flown {
 }
 
 impl Shots {
-    /// Shots that every tower reads out together at `times`, all of them taken: the towers of
-    /// `spec` with no offsets. For reading a scene at times of one's choosing.
+    /// Shots that every tower reads out together at `times` (readout times, seconds on the
+    /// scene's clock, in the order given), all of them taken: the towers of `spec` with no
+    /// offsets, whatever the scene's own schedule and offsets are. For reading a scene at times
+    /// of one's choosing; not the scene's own shots, which are [`shots`].
     #[must_use]
     pub fn together(spec: &SceneSpec, times: Vec<f64>) -> Self {
         let towers = spec.array.towers.len();

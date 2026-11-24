@@ -12,7 +12,8 @@ and as a `.ron` file, which people load and edit; a test holds the two together.
    is and what it checks. The scene's `name` is the name it is loaded by; its `description` is
    one or two sentences a person reads in the properties panel.
 2. **Register it.** Add the function to the slice's list (`S2_SCENES`; a new slice adds its own
-   and chains it in `the_s1_scene_files_are_their_builders`).
+   and chains it in `the_s1_scene_files_are_their_builders`). The list is an array with its
+   length in its type: raise the number with it.
 3. **The file.** Add a line to `LIBRARY` in `crates/cav-sim/src/library.rs`
    (`scene!("my-scene", "scenes/dev/my-scene.ron")`), create the file with any content (the
    library embeds it at compile time, so it must exist), and let the test write it from the
@@ -38,6 +39,11 @@ and as a `.ron` file, which people load and edit; a test holds the two together.
 - `cav`: `cli_lists_the_dev_scenes` counts the library: update the count.
 - `console::tests::a_bad_line_says_what_was_expected_and_changes_nothing` quotes the start of
   the library's list in an error message; it changes only if you add near the start.
+
+Followed end to end on 23 Nov 2026 with a made-up scene (`late-tower`, the comb with tower 2
+half a second late): the builder, the list, the `LIBRARY` line, a file with one character in it,
+the rewrite; `quick` then failed in exactly one place, `cli_lists_the_dev_scenes` (19 scenes, not
+18), as said above. The other scene files did not change in the rewrite.
 
 ## Things that go wrong
 

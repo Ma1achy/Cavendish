@@ -82,6 +82,8 @@ fn focusing_and_leaving_a_number_editor_changes_nothing() {
     let mut visited = 0;
     for selection in ["select body 1", "select tower 1", "select none"] {
         rig.shell.run(selection).unwrap();
+        // The reading arrives before anything is clicked: its rows move the editors below them.
+        assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
         rig.frames(vec![vec![], vec![]]);
         let editors: Vec<(String, egui::Rect)> = rig.shell.layout().editors.clone();
         assert!(editors.len() >= 5, "`{selection}` shows {} editors", editors.len());
