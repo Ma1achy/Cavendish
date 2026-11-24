@@ -3,7 +3,7 @@
 
 use cav_core::Vec3;
 use cav_core::voxel::shape::{Cuboid, Cylinder, Ellipsoid, Platonic, Shape, Sphere};
-use cav_core::voxel::{Grid, voxelise};
+use cav_core::voxel::{Aabb, Grid, voxelise};
 
 /// The primitives and the Platonic solids, about a metre across, centred on the origin.
 fn solids() -> Vec<(String, Box<dyn Shape>)> {
@@ -22,48 +22,108 @@ fn solids() -> Vec<(String, Box<dyn Shape>)> {
     out
 }
 
-/// The worst volume error and inertia error (as a fraction of the largest principal moment) over
-/// the solids, at `cells` across the longest side, k = 4.
-fn errors(cells: f64) -> (f64, f64) {
-    let (mut volume, mut inertia) = (0f64, 0f64);
-    for (_name, shape) in solids() {
-        let size = shape.bounds().size();
-        let pitch = size.x.max(size.y).max(size.z) / cells;
-        let grid = Grid::around(shape.bounds(), pitch, 4).unwrap();
-        let tree = voxelise(shape.as_ref(), &grid, 1.0, 0).unwrap();
-        let voxels = tree.samples as f64 / f64::from(grid.samples_per_cell()) * pitch.powi(3);
-        volume = volume.max((voxels / shape.volume() - 1.0).abs());
-        if std::env::var_os("CAV_SHOW").is_some() {
-            eprintln!("  {cells} {}: volume {:.3e}", _name, (voxels / shape.volume() - 1.0).abs());
+/// One shape's volume and inertia errors at `cells` finest cells across its longest side, k = 4,
+/// its grid shifted by `shift` (metres): `[volume, inertia]` (relative; the inertia's largest
+/// element error over the largest principal moment), and the envelopes S3.md §8.1 derives for
+/// them, `√3·A·δ/V` and `2·M·r²_max` times that over `I_max` (A the shape's surface; δ = h/k).
+fn errors(name: &str, shape: &dyn Shape, cells: f64, shift: Vec3) -> ([f64; 2], [f64; 2]) {
+    let b = shape.bounds();
+    let size = b.size();
+    let pitch = size.x.max(size.y).max(size.z) / cells;
+    let pad = Vec3::new(pitch, pitch, pitch);
+    let grid = Grid::around(Aabb::new(b.lo - pad + shift, b.hi + pad + shift), pitch, 4).unwrap();
+    let tree = voxelise(shape, &grid, 1.0, 0).unwrap();
+    let voxels = tree.samples as f64 / f64::from(grid.samples_per_cell()) * pitch.powi(3);
+    let volume = (voxels / shape.volume() - 1.0).abs();
+    let got = tree.body().inertia();
+    let s = shape.second_moments().map(|v| v / shape.volume());
+    let want =
+        cav_core::voxel::Moments { mass: 1.0, centre: Vec3::ZERO, second: s, third: [0.0; 10] }.inertia();
+    let largest = want[0].max(want[1]).max(want[2]);
+    let inertia = (0..6).map(|i| (got[i] - want[i]).abs() / largest).fold(0f64, f64::max);
+    let shell = 3f64.sqrt() * surface(name) * (pitch / 4.0) / shape.volume();
+    let r_max = 0.5 * size.length();
+    ([volume, inertia], [shell, 2.0 * r_max * r_max * shell / largest])
+}
+
+/// The surface area of a test shape by its name, square metres: closed forms (the ellipsoid by
+/// Thomsen's formula, within 1.1% of the true area, taken 1.1% up so that it bounds it).
+fn surface(name: &str) -> f64 {
+    use std::f64::consts::PI;
+    let edge: f64 = 0.6;
+    match name {
+        "sphere" => 4.0 * PI * 0.25,
+        "shell" => 4.0 * PI * (0.25 + 0.09),
+        "cuboid" => 2.0 * (1.0 * 0.6 + 0.6 * 0.4 + 0.4 * 1.0),
+        "ellipsoid" => {
+            let (a, b, c, p) = (0.5f64, 0.35f64, 0.25f64, 1.6075);
+            let mean = ((a * b).powf(p) + (b * c).powf(p) + (c * a).powf(p)) / 3.0;
+            1.011 * 4.0 * PI * mean.powf(1.0 / p)
         }
-        let got = tree.body().inertia();
-        let s = shape.second_moments().map(|v| v / shape.volume());
-        let want =
-            cav_core::voxel::Moments { mass: 1.0, centre: Vec3::ZERO, second: s, third: [0.0; 10] }.inertia();
-        let largest = want[0].max(want[1]).max(want[2]);
-        for i in 0..6 {
-            inertia = inertia.max((got[i] - want[i]).abs() / largest);
-        }
+        "cylinder" => 2.0 * PI * 0.3 * (0.3 + 1.0),
+        "Tetrahedron" => 3f64.sqrt() * edge * edge,
+        "Cube" => 6.0 * edge * edge,
+        "Octahedron" => 2.0 * 3f64.sqrt() * edge * edge,
+        "Dodecahedron" => 3.0 * (25.0 + 10.0 * 5f64.sqrt()).sqrt() * edge * edge,
+        "Icosahedron" => 5.0 * 3f64.sqrt() * edge * edge,
+        other => panic!("no area for {other}"),
     }
-    (volume, inertia)
+}
+
+/// A small deterministic generator of sub-cell shifts (SplitMix64), in [0, 1).
+fn numbers(seed: u64) -> impl FnMut() -> f64 {
+    let mut state = seed;
+    move || {
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        ((z ^ (z >> 31)) >> 11) as f64 / (1u64 << 53) as f64
+    }
 }
 
 #[test]
 fn volume_and_inertia_converge_with_the_pitch() {
-    let points: Vec<(f64, (f64, f64))> = [32.0, 64.0, 128.0].into_iter().map(|c| (c, errors(c))).collect();
-    for (cells, (v, i)) in &points {
-        eprintln!("{cells} across: volume {v:.3e}, inertia {i:.3e}");
+    // S3.md §8.1 (finding 5 of S3's review), written before this was run. The faceted shapes
+    // (flat faces at an arbitrary lattice phase: the cuboid, the cylinder's ends, the Platonic
+    // solids) are held to their first-order envelopes at every size; the curved ones converge at
+    // order 1.5 at least, root mean square over eight random sub-cell placements.
+    for (name, shape) in solids() {
+        let curved = name == "sphere" || name == "ellipsoid";
+        let size = shape.bounds().size();
+        let mut rms = Vec::new();
+        for cells in [32.0, 64.0, 128.0] {
+            let pitch = size.x.max(size.y).max(size.z) / cells;
+            let mut next = numbers(cells as u64);
+            let (mut squares, mut worst) = ([0f64; 2], [0f64; 2]);
+            for _ in 0..8 {
+                let shift = Vec3::new(next(), next(), next()) * pitch;
+                let (e, envelope) = errors(&name, shape.as_ref(), cells, shift);
+                for i in 0..2 {
+                    squares[i] += e[i] * e[i] / 8.0;
+                    worst[i] = worst[i].max(e[i] / envelope[i]);
+                }
+            }
+            let root = squares.map(f64::sqrt);
+            eprintln!(
+                "{name:>12} {cells:>4} across: RMS volume {:.3e}, inertia {:.3e}; worst over its envelope {:.3}, {:.3}",
+                root[0], root[1], worst[0], worst[1]
+            );
+            assert!(worst[0] <= 1.0 && worst[1] <= 1.0, "{name} at {cells}: outside its envelope {worst:?}");
+            rms.push(root);
+        }
+        if curved {
+            for i in 0..2 {
+                let order = (rms[0][i] / rms[2][i]).ln() / 4f64.ln();
+                eprintln!("{name:>12}: order 32 → 128 {} {order:.2}", ["volume", "inertia"][i]);
+                assert!(
+                    rms[2][i] * 8.0 <= rms[0][i],
+                    "{name}: {} converges at order {order:.2}, under 1.5",
+                    ["volume", "inertia"][i]
+                );
+            }
+        }
     }
-    let (coarse, fine) = (points[0].1, points[2].1);
-    // The brief's criterion (S3.md §3.3, R5): at least three times smaller at 128 than at 32.
-    assert!(fine.0 * 3.0 <= coarse.0, "volume: {coarse:?} to {fine:?}");
-    assert!(fine.1 * 3.0 <= coarse.1, "inertia: {coarse:?} to {fine:?}");
-    let order = |a: f64, b: f64| (a / b).ln() / 4f64.ln();
-    eprintln!(
-        "measured order 32 → 128: volume {:.2}, inertia {:.2}",
-        order(coarse.0, fine.0),
-        order(coarse.1, fine.1)
-    );
 }
 
 /// The worst relative difference over one shot's three channels between a voxel sphere at
