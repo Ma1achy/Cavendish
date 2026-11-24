@@ -32,9 +32,9 @@ from .result import Err, Ok, Result
 # ======================================== THE PALETTE ========================================
 
 SERIES: tuple[str, ...] = (
-    "#0b0dff", "#e76f11", "#c61604", "#8a6aae", "#28a682", "#cb64fe", "#910c59", "#6d1ba7",
+    "#900c60", "#2c84b2", "#846000", "#a878fc", "#3a469e", "#8200f2", "#ca4076", "#c08400",
 )
-"""The series colours, in order: blue, orange, red, mauve, green, orchid, wine, purple."""
+"""The series colours, in order: wine, blue, ochre, lavender, indigo, violet, rose, gold (Cavendish's ``PAPER_SERIES``)."""
 
 DASHES: tuple[tuple[float, ...], ...] = (
     (),

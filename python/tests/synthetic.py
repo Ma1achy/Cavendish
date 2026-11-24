@@ -119,7 +119,7 @@ def provenance(what: str, columns: list[tuple[str, str]], rows: int, layout: str
         # The second harmonic's label was left out for want of room.
         marks = {
             "combs": [{
-                "body": "oscillator", "fundamental_hz": 0.05, "colour": "#0b0dff",
+                "body": "oscillator", "fundamental_hz": 0.05, "colour": "#900c60",
                 "stems": [
                     {"n": 1, "frequency_hz": 0.05, "appears_at_hz": 0.05, "folded": False, "height": 1e-2,
                      "label": "f₀"},
