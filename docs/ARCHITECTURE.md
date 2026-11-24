@@ -16,15 +16,15 @@ the gradiometer reads lower minus upper unless a scene says otherwise. British E
 |---|---|---|---|
 | `cav-core` | Pure numbers: vectors, constants with their sources, the forward model (flight, arms, the propagation integral, the audited read), spectra (FFT, Lomb–Scargle, NUFFT), cadence closed forms, `.npy`; the voxel tree, shapes and `cover`, the voxeliser and its raster oracle, the cube kernel | nothing | know what a scene, an engine or a file format for scenes is; allocate with the length of a flight |
 | `cav-sim` | Scenes as data: the spec and its schema, paths, motions, presets, the dev scenes and the library, the schedule, the read of a scene (contributions, signals), bundles; shapes of bodies and what a view draws of voxel bodies | `cav-core` | hold state between calls; draw; start threads that outlive a call |
-| `cav-gpu` | The wgpu device and reading a texture back | `cav-core` | know about scenes |
+| `cav-gpu` | The wgpu device and reading a texture back; on wasm it is handed the browser's device (`Gpu::from_parts`), not asked to make one | `cav-core` | know about scenes |
 | `cav-engine` | The one API: commands, queries, replies; the journal, undo, the event log; the forward workers and what they keep | `cav-core`, `cav-sim` | draw, or depend on anything that does; block a command on a computation |
 | `cav-render` | The 3-D picture of a scene: camera, geometry, the wgpu renderer, PNG | `cav-core`, `cav-sim`, `cav-gpu` | depend on the engine (it draws a `SceneView`, which the engine makes) |
 | `cav-plot` | Plots as display lists (signal, periodogram, cadence, flight), painted by egui, written as SVG and PDF, drawn to PNG with no window; figure presets, data and provenance | `cav-core`, `cav-sim`, `cav-engine`, `cav-gpu`, `cav-render` | open a window; depend on `cav-app`, eframe or winit |
-| `cav-app` | The window: panels, editors, timeline, panes; and the same application drawn headless for screenshots and tests | all of the above | hold scene state of its own: it sends commands and reads replies |
+| `cav-app` | The window: panels, editors, timeline, panes; the same application drawn headless for screenshots and tests; and as a web page (`cav-web`, wasm32) | all of the above | hold scene state of its own: it sends commands and reads replies |
 | `cav` | The command line and the MCP server | all but `cav-app` | link the window (eframe, winit) when built on its own |
 | `cav-validate` | Declaring validation cases (`case!`) and judging them | nothing | depend on anything: every crate's tests use it |
 | `cav-memtest` | A counting allocator and the tests that hold memory to a bound | dev-dependencies only | be linked by anything but its own tests (it is the one crate with `unsafe`) |
-| `xtask` | The local tiers: `quick`, `gpu`, `oracle`, `demo`, `validate`, `hooks` | nothing | gain a dependency: it must never add to the build |
+| `xtask` | The local tiers: `quick`, `gpu`, `oracle`, `web`, `demo`, `validate`, `hooks` | nothing | gain a dependency: it must never add to the build |
 | `oracle/` | A workspace of its own: v1 at tag `v1-final` and George's scripts as fixtures, holding the engine to both | `cav-core`, `cav-sim`, `cav-validate` | be compiled by `quick` |
 
 Dev-dependencies are apart from this table: any crate's tests may use `cav-validate`.
@@ -88,6 +88,33 @@ a journal being replayed ─┘     │          │                            
    Bundles and figures are written only from a refined signal. Replaying a journal never writes
    where the journal says: exports go into the replayer's own directory, or nowhere.
 
+## The web build and its platform seams (S17)
+
+The application also runs as a web page (`https://ma1achy.github.io/Cavendish/`): `cav-app`'s
+binary `cav-web`, compiled for `wasm32-unknown-unknown` with WebGPU, built by `cargo xtask web
+build` into `target/web/dist` and published by `.github/workflows/pages.yml` on every push to
+`main` (`docs/slices/S17.md`). Everything above holds there; what differs is gathered in **one
+module per seam**, chosen with `#[cfg(target_arch = "wasm32")]` where the module is declared, and
+nowhere else in the code:
+
+| Seam | Native | Web |
+|---|---|---|
+| The device: `cav-gpu` `native.rs` / `web.rs` | made by `Gpu::new`; errors caught in scopes; pixels read back | eframe's, through `Gpu::from_parts`; a page cannot wait, so errors go to the browser's console and read-back is refused |
+| Where the forward work runs: `cav-engine` `forward/threads.rs` / `forward/inline.rs` | two threads | `Forward::poll` runs the jobs for `POLL_BUDGET` (8 ms) a frame, the reading first; a frame that ran over is followed by one with no work. Same slots, epochs, store and summing order, so the same signal |
+| Files: `cav-engine` `files/native.rs` / `files/web.rs` | written where named | kept as downloads, which the app hands to the browser after each frame; folders (bundles) refused |
+| The figure exporter's pixels: `cav-plot` `figure/studio.rs` / `studio_web.rs` | its own device | none: PNG and the renderer's view refused, vector figures made |
+| The entry: `cav-app` `main.rs` / `web.rs` and `bin/cav-web.rs` | eframe's native window, `--exec` | eframe's `WebRunner` on the page's canvas, `#exec=` in the address |
+
+What stays the same without a seam: `web_time::Instant` is std's `Instant` natively and
+`performance.now()` in a page, so shipped code reads the clock through it (std's panics on wasm);
+`cav_sim::read::threads()` is 1 on the web (no environment, no parallelism), which takes the read's
+one-thread path. The engine's numbers in wasm are held to native by `cargo xtask web`
+(`cav-engine/tests/web_equivalence.rs`): the same bits where the arithmetic is the same, and within
+1e-12 where `sin`, `exp` and the like come from another maths library. Code that writes a file the
+person asked for goes through `cav_engine::files`; code that must not run in a page (threads,
+`std::fs` by path, blocking on the GPU) belongs behind one of these seams, never behind a scattered
+`cfg`.
+
 ## Where each kind of thing lives
 
 | Thing | Where | Recipe |
@@ -120,6 +147,8 @@ a journal being replayed ─┘     │          │                            
 | A body made of voxels (`BodySpec.shape`) | `cav-sim/src/shape.rs`; read in `read.rs` (`voxel_body`) | [a voxel body](extending/a-voxel-body.md) |
 | Colour by field, overlays (leaves, a cut, the whole tree by depth), section planes (`Cutting`: a 2-D section square-on, a cut-away otherwise), the cubes and cells a view draws | `cav-sim/src/voxel_view.rs`; drawn in `cav-render/src/scene.rs` (`drawables_with`) with `colour.rs`; trees kept by `cav-engine/src/voxels.rs` | — |
 | A bound on memory | `cav-memtest/tests/` | — |
+| Something that differs in a browser page (threads, files, the device, waiting) | one module per seam, listed under "The web build and its platform seams" | [the web build](extending/the-web-build.md) |
+| The web page itself, its build and its deployment | `crates/cav-app/web/index.html`, `cav-app/src/web.rs`, `xtask/src/web.rs`, `.github/workflows/pages.yml` | [the web build](extending/the-web-build.md) |
 
 ## Rules that hold everywhere
 

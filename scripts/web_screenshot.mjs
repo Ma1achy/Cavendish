@@ -9,7 +9,7 @@
 
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 const [chrome, url, out, seconds = "12", size = "1440x900"] = process.argv.slice(2);
 if (!chrome || !url || !out) {
@@ -87,7 +87,20 @@ await send("Runtime.enable", {}, sessionId);
 await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false }, sessionId);
 const started = Date.now();
 await send("Page.navigate", { url }, sessionId);
-await new Promise((done) => setTimeout(done, Number(seconds) * 1000));
+// The application is running once it has removed the page's own message ("Loading Cavendish…").
+let running = null;
+while (Date.now() - started < Number(seconds) * 1000) {
+  if (running === null) {
+    const gone = await send("Runtime.evaluate", {
+      expression: "document.readyState === 'complete' && document.getElementById('message') === null",
+      returnByValue: true,
+    }, sessionId);
+    if (gone.result?.result?.value === true) running = (Date.now() - started) / 1000;
+  }
+  await new Promise((done) => setTimeout(done, 50));
+}
+console.log(running === null ? "the application did not start" : `running ${running.toFixed(2)} s after the address was opened`);
+if (running === null) failed = true;
 const shot = await send("Page.captureScreenshot", { format: "png" }, sessionId);
 const loaded = await send("Runtime.evaluate", {
   expression: "JSON.stringify(performance.getEntriesByType('resource').map(r => [r.name.split('/').pop(), Math.round(r.duration), r.transferSize]))",
@@ -101,6 +114,6 @@ if (!shot.result?.data) {
   finish(1);
 } else {
   writeFileSync(out, Buffer.from(shot.result.data, "base64"));
-  console.log(`${out}: written`);
+  console.log(`${basename(out)}: written`);
   finish(failed ? 1 : 0);
 }

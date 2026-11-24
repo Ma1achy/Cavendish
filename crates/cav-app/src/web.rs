@@ -61,10 +61,6 @@ async fn run() -> Result<(), String> {
         )
         .await
         .map_err(|e| format!("{e:?}"))?;
-    // The page's own message ("loading") goes once the application is running.
-    if let Some(message) = document.get_element_by_id("message") {
-        message.remove();
-    }
     Ok(())
 }
 
@@ -76,8 +72,10 @@ fn exec_from_address(shell: &mut Shell) {
     let Some(script) = hash.strip_prefix("#exec=") else { return };
     let script = js_sys::decode_uri_component(script).map_or_else(|_| script.to_owned(), String::from);
     for line in cav_engine::console::statements(&script) {
-        if let Err(why) = shell.run(line) {
-            log::warn!("#exec: `{line}` was refused: {why}");
+        let started = web_time::Instant::now();
+        match shell.run(line) {
+            Ok(_) => log::info!("#exec: `{line}` in {:.0} ms", started.elapsed().as_secs_f64() * 1e3),
+            Err(why) => log::warn!("#exec: `{line}` was refused: {why}"),
         }
     }
 }
@@ -93,9 +91,24 @@ fn say(text: &str) {
     }
 }
 
+/// What the page needs after each frame the application has drawn: the page's own message
+/// ("Loading Cavendish…") goes after the first, and the files the frame "wrote" are downloaded.
+pub fn after_frame() {
+    thread_local! {
+        static DRAWN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+    if !DRAWN.replace(true)
+        && let Some(message) =
+            web_sys::window().and_then(|w| w.document()).and_then(|d| d.get_element_by_id("message"))
+    {
+        message.remove();
+    }
+    offer_downloads();
+}
+
 /// Hands every file the engine has "written" since the last frame to the browser as a download.
 /// A file the browser will not take is said in the browser's console; it is not kept.
-pub fn offer_downloads() {
+fn offer_downloads() {
     for download in cav_engine::files::take_downloads() {
         if let Err(why) = offer(&download) {
             log::error!("{}: the browser did not take the download: {why:?}", download.name);

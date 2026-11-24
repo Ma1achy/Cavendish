@@ -162,6 +162,154 @@ fn revision(root: &Path) -> String {
         )
 }
 
+/// A static server for `target/web/dist` on `127.0.0.1`, in this process: what the page needs
+/// (`index.html`, the glue, the module with `application/wasm`), nothing else. It stops when the
+/// returned [`Server`] is dropped. For the demo and `cargo xtask web serve`; not for the internet.
+pub struct Server {
+    /// The port it listens on.
+    pub port: u16,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// Serves `dir` on `127.0.0.1:port` (0: any free port).
+pub fn serve(dir: &Path, port: u16) -> Result<Server, String> {
+    use std::io::{BufRead, BufReader, Write};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let listener = std::net::TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("serving: {e}"))?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+    let stop = std::sync::Arc::new(AtomicBool::new(false));
+    let (dir, stopped) = (dir.to_path_buf(), std::sync::Arc::clone(&stop));
+    let thread = std::thread::spawn(move || {
+        while !stopped.load(Ordering::Relaxed) {
+            let Ok((stream, _)) = listener.accept() else {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                continue;
+            };
+            let _ = stream.set_nonblocking(false);
+            let mut reader = BufReader::new(&stream);
+            let mut request = String::new();
+            if reader.read_line(&mut request).is_err() {
+                continue;
+            }
+            // The rest of the head is read and ignored.
+            let mut line = String::new();
+            while reader.read_line(&mut line).is_ok_and(|n| n > 2) {
+                line.clear();
+            }
+            let path = request.split(' ').nth(1).unwrap_or("/");
+            let path = path.split(['?', '#']).next().unwrap_or("/").trim_start_matches('/');
+            let path = if path.is_empty() { "index.html" } else { path };
+            let file = (!path.contains("..")).then(|| dir.join(path));
+            let mut stream = &stream;
+            match file.and_then(|file| std::fs::read(&file).ok()) {
+                Some(bytes) => {
+                    let _ = write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\n\
+                         Connection: close\r\n\r\n",
+                        content_type(path),
+                        bytes.len()
+                    );
+                    let _ = stream.write_all(&bytes);
+                }
+                None => {
+                    let _ = write!(
+                        stream,
+                        "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    );
+                }
+            }
+        }
+    });
+    Ok(Server { port, stop, thread: Some(thread) })
+}
+
+/// The media type a file of the page is served as.
+fn content_type(path: &str) -> &'static str {
+    match path.rsplit('.').next() {
+        Some("html") => "text/html; charset=utf-8",
+        Some("js") => "text/javascript",
+        Some("wasm") => "application/wasm",
+        Some("png") => "image/png",
+        _ => "application/octet-stream",
+    }
+}
+
+/// `cargo xtask web serve`: serves the built page on port 8000 until the process is stopped.
+pub fn serve_forever(root: &Path) -> Result<(), String> {
+    let dist = root.join(DIST);
+    if !dist.join("index.html").is_file() {
+        return Err(format!("{DIST} has no page: `cargo xtask web build` first"));
+    }
+    let server = serve(&dist, 8000)?;
+    eprintln!("xtask: serving {DIST} at http://127.0.0.1:{}/ (Ctrl-C stops it)", server.port);
+    loop {
+        std::thread::park();
+    }
+}
+
+/// A browser with WebGPU to take pictures with, headless: `CAV_CHROME` if set, else Chrome or Edge
+/// where they are usually installed.
+pub fn chrome() -> Result<std::path::PathBuf, String> {
+    if let Ok(path) = std::env::var("CAV_CHROME") {
+        return Ok(path.into());
+    }
+    let candidates = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        "/usr/bin/google-chrome",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    ];
+    candidates
+        .iter()
+        .map(std::path::PathBuf::from)
+        .find(|path| path.is_file())
+        .ok_or_else(|| "no Chrome or Edge found: set CAV_CHROME to one".into())
+}
+
+#[cfg(test)]
+mod serving {
+    use super::*;
+
+    #[test]
+    fn the_server_gives_the_module_its_type_and_nothing_outside() {
+        use std::io::{Read, Write};
+        let dir = std::env::temp_dir().join(format!("cav-xtask-serve-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("index.html"), "<p>hi</p>").unwrap();
+        std::fs::write(dir.join("m.wasm"), [0, 97, 115, 109]).unwrap();
+        let server = serve(&dir, 0).unwrap();
+        let get = |path: &str| {
+            let mut stream = std::net::TcpStream::connect(("127.0.0.1", server.port)).unwrap();
+            write!(stream, "GET {path} HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+            let mut said = String::new();
+            stream.read_to_string(&mut said).unwrap();
+            said
+        };
+        let page = get("/");
+        assert!(
+            page.starts_with("HTTP/1.1 200") && page.contains("text/html") && page.ends_with("<p>hi</p>")
+        );
+        assert!(get("/m.wasm").contains("Content-Type: application/wasm"));
+        // Control arms: a missing file and a path out of the folder are not served.
+        assert!(get("/nothing.js").starts_with("HTTP/1.1 404"));
+        assert!(get("/../Cargo.toml").starts_with("HTTP/1.1 404"));
+        drop(server);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

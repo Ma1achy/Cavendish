@@ -1,0 +1,46 @@
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:59048/" web-room.png 8
+console.info: [eframe::web::web_runner] ~\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
+running 1.42 s after the address was opened
+resources (name, ms, bytes): [["cavendish.js",6,103815],["favicon.ico",12,300],["cavendish_bg.wasm",24,5666263]]
+waited 8.2 s
+web-room.png: written
+
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:59048/#exec=load%20comb;%20panes%204;%20show%20signal%20@2;%20show%20periodogram%20@3;%20show%20cadence%20@4" web-comb.png 20
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `load comb` in 32 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `panes 4` in 0 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `show signal @2` in 0 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `show periodogram @3` in 0 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `show cadence @4` in 0 ms
+console.info: [eframe::web::web_runner] ~\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
+running 1.52 s after the address was opened
+resources (name, ms, bytes): [["cavendish.js",6,103815],["cavendish_bg.wasm",24,5666263],["favicon.ico",12,300]]
+waited 20.2 s
+web-comb.png: written
+
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:59048/#exec=load%20sphere;%20pan%202%200%202.5;%20zoom%202.5;%20colour%20mass;%20overlay%20cut%202" web-sphere.png 12
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `load sphere` in 46 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `pan 2 0 2.5` in 2 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `zoom 2.5` in 1 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `colour mass` in 1 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `overlay cut 2` in 2 ms
+console.info: [eframe::web::web_runner] ~\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
+running 1.54 s after the address was opened
+resources (name, ms, bytes): [["cavendish.js",8,103815],["cavendish_bg.wasm",21,5666263],["favicon.ico",11,300]]
+waited 12.2 s
+web-sphere.png: written
+
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:59048/#exec=load%20platonic-row;%20panes%202;%20view%20iso%20@1;%20pan%200%200%202.5%20@1;%20zoom%209%20@1;%20colour%20level%20@1;%20view%20top%20@2;%20colour%20height%20@2" web-platonic.png 12
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `load platonic-row` in 49 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `panes 2` in 4 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `view iso @1` in 2 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `pan 0 0 2.5 @1` in 2 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `zoom 9 @1` in 2 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `colour level @1` in 3 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `view top @2` in 3 ms
+console.info: [cav_app::web] crates\cav-app\src\web.rs:77: #exec: `colour height @2` in 3 ms
+console.info: [eframe::web::web_runner] ~\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
+running 9.30 s after the address was opened
+resources (name, ms, bytes): [["cavendish.js",6,103815],["cavendish_bg.wasm",31,5666263],["favicon.ico",10,300]]
+waited 16.9 s
+web-platonic.png: written
+
