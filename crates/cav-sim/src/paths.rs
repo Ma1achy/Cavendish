@@ -855,6 +855,34 @@ mod tests {
         spec.bodies.extend(dev::pass().bodies);
         spec.bodies.extend(dev::flash().bodies);
         spec.bodies[5].label = "flash".into();
+        // Bodies made of voxels: a member of George's scaffold, and a polyhedron.
+        let rod = crate::ShapeSpec {
+            kind: crate::ShapeKind::Cylinder { radius: 0.0338, length: 1.0, axis: crate::Axis::X },
+            pitch: 0.01,
+            supersample: 4,
+        };
+        let modes = vec![crate::ModeSpec { frequency: 2.3, scale: 1.0, phase: 0.0 }];
+        spec.bodies.push(crate::BodySpec::shaped(
+            "member",
+            28.2,
+            rod,
+            crate::Motion::Modes { centre: [0.0, 0.5, 3.0], amplitude: [3e-4, 0.0, 0.0], modes },
+        ));
+        let hull = crate::ShapeSpec {
+            kind: crate::ShapeKind::Polyhedron {
+                vertices: [[0.0; 3], [0.3, 0.0, 0.0], [0.0, 0.3, 0.0], [0.0, 0.0, 0.3]]
+                    .map(crate::shape::Vertex)
+                    .to_vec(),
+            },
+            pitch: 0.05,
+            supersample: 2,
+        };
+        spec.bodies.push(crate::BodySpec::shaped(
+            "hull",
+            4.0,
+            hull,
+            crate::Motion::Static { position: [3.0, 3.0, 1.0] },
+        ));
         spec.room = SceneSpec::room().room;
         spec.floor =
             Some(FloorSpec { height: -1.0, kind: FloorKind::Slab { thickness: 0.5 }, density: 2400.0 });
@@ -1073,7 +1101,7 @@ mod tests {
         let motion = entry(&spec, "bodies[0].motion").unwrap();
         assert_eq!(motion.variant.as_deref(), Some("Linear"));
         let Kind::Choice(kinds) = &motion.kind else { panic!("a choice") };
-        assert_eq!(kinds, &["Static", "Pass", "Linear", "Circular", "Pendulum", "Sphere"]);
+        assert_eq!(kinds, &["Static", "Pass", "Linear", "Circular", "Pendulum", "Sphere", "Modes"]);
         let inside: Vec<String> =
             ls(&spec, "bodies[0].motion.Linear").unwrap().into_iter().map(|e| e.name).collect();
         assert_eq!(inside, ["centre", "amplitude", "frequency", "phase"]);
@@ -1096,6 +1124,7 @@ mod tests {
                 "bodies[4].label",
                 "bodies[4].mass",
                 "bodies[4].radius",
+                "bodies[4].shape",
                 "bodies[4].motion",
                 "bodies[4].motion.Pass.from",
                 "bodies[4].motion.Pass.to",
@@ -1141,7 +1170,10 @@ mod tests {
         assert!(spec.inserted("bodies", None, &json!(3.0)).unwrap_err().contains("cannot be added"));
         let mut one = spec.clone();
         one.array.towers.truncate(1);
-        assert!(one.removed("array.towers[0]").unwrap_err().contains("at least one tower"));
+        // Since S3 a scene may have no towers: the last one can be taken out, and put back.
+        let (none, tower) = one.removed("array.towers[0]").unwrap();
+        assert!(none.array.towers.is_empty());
+        assert_eq!(none.inserted("array.towers", None, &tower).unwrap().0, one);
         // A component of a vector is not an item that can be taken out: the scene would not parse.
         assert!(spec.removed("array.towers[0].position[1]").is_err());
         // Control: a template of a list's item has the item's shape, and only needs a label.

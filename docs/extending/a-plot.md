@@ -52,7 +52,8 @@ the steps below name each such place.
    says what it left out. Put the cut in one function that the figure's data table calls too
    (step 6), so the file holds the rows the picture drew.
 5. **Its shots.** A plot that draws or counts shots takes them from the engine and never works
-   a time out from `k·cycle`: `Engine::shots()` (the scene's `cav_sim::read::Shots`, made once
+   a time out from `k·cycle` (each tower has its own cycle and 2T, and its own count of shots):
+   `Engine::shots()` (the scene's `cav_sim::read::Shots`, made once
    an edit: `touching` finds those in a span, `flown` gives a shot's launch, readout and whether
    the tower takes it), or the signal's own `taken` flags for what was read. A shot not taken
    is not a measurement: it is drawn as not taken (a gap in a line, a dashed arc, an outline),

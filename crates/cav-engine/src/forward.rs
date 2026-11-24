@@ -373,15 +373,15 @@ impl Forward {
         let sources = read::sources(spec);
         let planned = read::shots(spec).and_then(|readouts| {
             // The scene's own contributions must fit in the store, or it would never be whole.
-            let values = spec.array.towers.len() * readouts.times.len();
+            let values = readouts.total();
             let need = values.saturating_mul(sources.len()).saturating_mul(BYTES_PER_VALUE);
             if need > FORWARD_STORE_BYTES {
                 return Err(format!(
-                    "{} source(s) × {} tower(s) × {} shot(s) is {} MiB of contributions, more than the {} MiB \
-                     the engine keeps; shorten the timeline or use fewer sources",
+                    "{} source(s) × {} tower(s) with {} shot(s) between them is {} MiB of contributions, more \
+                     than the {} MiB the engine keeps; shorten the timeline or use fewer sources",
                     sources.len(),
                     spec.array.towers.len(),
-                    readouts.times.len(),
+                    readouts.total(),
                     need >> 20,
                     FORWARD_STORE_BYTES >> 20
                 ));

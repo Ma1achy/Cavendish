@@ -1,0 +1,105 @@
+//! What the panes draw of voxel bodies: each body's tree, kept while its shape and mass stay the
+//! same, and each scene pane's [`VoxelFrame`] (cubes, overlays, the legend's range).
+//!
+//! Trees are made here when a body's shape or mass changes (a drag moves the body, not its
+//! tree), within the voxeliser's caps, and kept in a cache of at most [`TREE_CACHE_BYTES`]:
+//! the oldest dropped first (`docs/slices/S3.md` §3.1, V10). A tree is made on the thread that
+//! applies the command: that is milliseconds for the dev scenes and at most the voxeliser's work
+//! cap for any scene (a call worth a second look: it could move to a worker).
+
+use std::sync::Arc;
+
+use cav_core::voxel::VoxTree;
+use cav_sim::voxel_view::{VoxelFrame, voxel_frame};
+use cav_sim::{SceneSpec, ViewSpec};
+
+use crate::MAX_PANES;
+
+/// The most bytes of trees kept for drawing.
+pub const TREE_CACHE_BYTES: usize = 256 << 20;
+
+/// The voxel bodies' trees and the panes' frames of them.
+#[derive(Debug, Default)]
+pub struct Voxels {
+    /// Trees by what they were made from (the shape and the mass, as JSON), oldest first.
+    cache: Vec<(String, Arc<VoxTree>)>,
+    /// Each body's tree, in the scene's order; None for a body that is not made of voxels.
+    trees: Vec<Option<Arc<VoxTree>>>,
+    /// Each pane's frame, when the scene has voxel bodies.
+    frames: [Option<VoxelFrame>; MAX_PANES],
+    /// Shapes already said to be refused, so that a drag does not say it every step.
+    said: Vec<String>,
+}
+
+impl Voxels {
+    /// Brings the trees and the frames up to `spec` at `time`, for `views` (the panes in use).
+    /// Returns what a person should be told: a body whose shape could not be voxelised, once.
+    pub fn refresh(&mut self, spec: &SceneSpec, time: f64, views: &[ViewSpec]) -> Vec<String> {
+        let mut notes = Vec::new();
+        self.trees.clear();
+        for body in &spec.bodies {
+            let Some(shape) = &body.shape else {
+                self.trees.push(None);
+                continue;
+            };
+            let key = format!("{}|{}", serde_json::to_string(shape).unwrap_or_default(), body.mass.to_bits());
+            if let Some(at) = self.cache.iter().position(|(k, _)| *k == key) {
+                // Used again: it is the newest now.
+                let kept = self.cache.remove(at);
+                self.trees.push(Some(Arc::clone(&kept.1)));
+                self.cache.push(kept);
+                continue;
+            }
+            match shape.tree(body.mass) {
+                Ok(tree) => {
+                    let tree = Arc::new(tree);
+                    self.cache.push((key, Arc::clone(&tree)));
+                    self.trees.push(Some(tree));
+                }
+                Err(why) => {
+                    if !self.said.contains(&key) {
+                        notes.push(format!("`{}` is not drawn as voxels: {why}", body.label));
+                        self.said.push(key);
+                    }
+                    self.trees.push(None);
+                }
+            }
+        }
+        // The cache's budget: the oldest trees go first, but never one in use now.
+        let mut bytes: usize = self.cache.iter().map(|(_, t)| t.bytes()).sum();
+        while bytes > TREE_CACHE_BYTES {
+            let Some(at) =
+                self.cache.iter().position(|(_, t)| !self.trees.iter().flatten().any(|u| Arc::ptr_eq(t, u)))
+            else {
+                break;
+            };
+            bytes -= self.cache.remove(at).1.bytes();
+        }
+        let any = self.trees.iter().any(Option::is_some);
+        for (pane, slot) in self.frames.iter_mut().enumerate() {
+            *slot = match views.get(pane) {
+                Some(view) if any => Some(voxel_frame(spec, &self.trees, view.colour, view.overlay, time)),
+                _ => None,
+            };
+        }
+        notes
+    }
+
+    /// Pane `pane`'s frame of the voxel bodies, if the scene has any.
+    #[must_use]
+    pub fn frame(&self, pane: usize) -> Option<&VoxelFrame> {
+        self.frames.get(pane).and_then(Option::as_ref)
+    }
+
+    /// Each body's tree as last made, in the scene's order.
+    #[must_use]
+    pub fn trees(&self) -> &[Option<Arc<VoxTree>>] {
+        &self.trees
+    }
+
+    /// The bytes of trees kept.
+    #[must_use]
+    pub fn cached_bytes(&self) -> usize {
+        self.cache.iter().map(|(_, t)| t.bytes()).sum()
+    }
+}

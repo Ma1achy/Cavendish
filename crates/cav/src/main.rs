@@ -191,10 +191,10 @@ fn run_scene(rest: &[String]) -> Result<(), String> {
     let (_, signal) = session.engine.signal();
     let signal = signal.ok_or("the bundle was written from no signal")?;
     println!(
-        "{out}: scene `{}`, {} tower(s) × {} shot(s), quadrature {}, {:.2} s",
+        "{out}: scene `{}`, {} tower(s), {} shot(s) in all, quadrature {}, {:.2} s",
         session.engine.spec().name,
         signal.towers,
-        signal.times.len(),
+        signal.clock.len(),
         cav_engine::estimate_text(signal.estimate, signal.settled),
         started.elapsed().as_secs_f64()
     );

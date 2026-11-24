@@ -26,6 +26,7 @@
                 timing: (
                     offset: 0.0,
                 ),
+                instrument: None,
             ),
             (
                 label: "tower 2",
@@ -33,6 +34,7 @@
                 timing: (
                     offset: 0.0,
                 ),
+                instrument: None,
             ),
             (
                 label: "tower 3",
@@ -40,6 +42,7 @@
                 timing: (
                     offset: 0.0,
                 ),
+                instrument: None,
             ),
             (
                 label: "tower 4",
@@ -47,6 +50,7 @@
                 timing: (
                     offset: 0.0,
                 ),
+                instrument: None,
             ),
             (
                 label: "tower 5",
@@ -54,6 +58,7 @@
                 timing: (
                     offset: 0.0,
                 ),
+                instrument: None,
             ),
         ],
         schedule: (
@@ -75,6 +80,7 @@
             label: "mass",
             mass: 100.0,
             radius: 0.0,
+            shape: None,
             motion: Static(
                 position: (2.0, 0.0, 2.5),
             ),

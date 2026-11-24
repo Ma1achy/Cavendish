@@ -18,6 +18,7 @@
 #![warn(missing_docs)]
 
 pub mod camera;
+pub mod colour;
 pub mod renderer;
 pub mod scene;
 

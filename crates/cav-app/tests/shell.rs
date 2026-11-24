@@ -1043,7 +1043,7 @@ fn lanes_draw_the_schedule_s_shots() {
         let drawn = &rig.shell.layout().shots;
         for tower in 0..5 {
             let bars: Vec<_> = drawn.iter().filter(|bar| bar.tower == tower).collect();
-            assert_eq!(bars.len(), shots.times.len(), "{name}, tower {}: as many bars as shots", tower + 1);
+            assert_eq!(bars.len(), shots.count(tower), "{name}, tower {}: as many bars as shots", tower + 1);
             for (k, bar) in bars.iter().enumerate() {
                 let (launch, readout) = (shots.launch(tower, k), shots.readout(tower, k));
                 let expected = [zero + launch as f32 * per_second, zero + readout as f32 * per_second];
@@ -1059,13 +1059,13 @@ fn lanes_draw_the_schedule_s_shots() {
         }
         // Control: the old arithmetic (shot k launched at k·cycle, ⌈duration/cycle⌉ of them, all
         // taken) does not describe this scene: by more than a point, or in what is taken.
-        let furthest = (0..shots.times.len())
+        let furthest = (0..shots.count(0))
             .map(|k| (shots.launch(0, k) - 2.0 * k as f64).abs() as f32 * per_second)
             .fold(0.0f32, f32::max);
         let all_taken = shots.valid.iter().all(|taken| *taken);
         assert!(furthest > 1.0 || !all_taken, "{name}: the plain schedule would do");
         if name == "jittered" {
-            assert!(furthest > 20.0 && shots.times.len() != 30, "{furthest} points, {}", shots.times.len());
+            assert!(furthest > 20.0 && shots.count(0) != 30, "{furthest} points, {}", shots.count(0));
         }
     }
 }
@@ -1387,5 +1387,62 @@ fn home_does_not_cover_a_title() {
     assert!(
         (figure.right() - button.right() - 8.0).abs() < 0.5
             && (button.top() - figure.top() - 8.0).abs() < 0.5
+    );
+}
+
+#[test]
+fn a_scene_with_no_towers_draws_every_pane_and_the_timeline() {
+    let mut rig = Rig::new([1280, 720]);
+    rig.shell.run("load no-towers").unwrap();
+    rig.shell.run("panes 4").unwrap();
+    rig.shell.run("show signal @1").unwrap();
+    rig.shell.run("show periodogram @2").unwrap();
+    rig.shell.run("show cadence @3").unwrap();
+    rig.shell.run("show flight @4").unwrap();
+    assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
+    rig.frames(vec![vec![], vec![]]);
+    let layout = rig.shell.layout().clone();
+    assert_eq!(layout.plots.len(), 4, "every plot pane is drawn");
+    assert!(layout.lanes.is_empty(), "no lanes");
+    assert!(layout.timeline_caption.contains("no towers"), "{}", layout.timeline_caption);
+    // Back to the scene, with the selection and the menus: nothing to select, and the menus' tower
+    // items are not offered.
+    rig.shell.run("show scene @1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.run("select tower 1").unwrap_err().contains("the scene has no towers"));
+    let towers: Vec<&str> =
+        menus::lines().into_iter().filter(|line| line.starts_with("select tower")).collect();
+    assert!(!towers.is_empty() && towers.iter().all(|line| !menus::possible(line, 0)));
+    // Control: with five towers they are, and one past the fifth is not.
+    assert!(towers.iter().all(|line| menus::possible(line, 5)));
+    assert!(!menus::possible("select tower 3", 2) && menus::possible("undo", 0));
+    // The last tower of a scene can be taken away, and the application goes on.
+    rig.shell.run("load point").unwrap();
+    for _ in 0..5 {
+        rig.shell.run("remove array.towers[0]").unwrap();
+    }
+    assert!(rig.shell.engine.spec().array.towers.is_empty());
+    assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().lanes.is_empty());
+}
+
+#[test]
+fn a_mixed_array_has_lanes_of_each_tower_s_own_shots() {
+    let mut rig = Rig::new([1440, 900]);
+    rig.shell.run("load mixed-array").unwrap();
+    rig.shell.run("set duration 20").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let lanes = rig.shell.layout().lanes.clone();
+    assert_eq!(lanes.len(), 3);
+    // Each bar is its own tower's shot: 2T of 1.46 s, 5 s and 1.8 s, on one time axis.
+    let per_second = lanes[0].1.width() / 1.46;
+    for (n, flight) in [1.46, 5.0, 1.8].into_iter().enumerate() {
+        assert!((lanes[n].1.width() - flight * per_second).abs() <= 1.0, "tower {}: {:?}", n + 1, lanes[n].1);
+    }
+    let caption = rig.shell.layout().timeline_caption.clone();
+    assert!(
+        caption.contains("2T = 1.46 to 5.00 s") && caption.contains("4 to 10 shots a tower"),
+        "{caption}"
     );
 }

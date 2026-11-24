@@ -171,7 +171,7 @@ fn gpu_ui_draws_the_signal_and_the_periodogram() {
     for tower in [0, 1, 2] {
         for shot in [0, 3, 5] {
             let value = signal.channel(tower, channel)[shot];
-            let at = place(drawn.area, &drawn.x, &drawn.y, (signal.times[shot], value));
+            let at = place(drawn.area, &drawn.x, &drawn.y, (signal.times(0)[shot], value));
             assert!(
                 picture.has_near([f64::from(at.x), f64::from(at.y)], 1, tower_srgb(tower), 12),
                 "tower {} shot {shot}: no dot at {at:?}",

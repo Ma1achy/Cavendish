@@ -22,14 +22,14 @@ pub const MAX_RULER_MARKS: u32 = 13;
 /// Whether a lane has too many shots to draw one by one: it is then one band.
 #[must_use]
 pub fn decimated(shots: &Shots) -> bool {
-    shots.times.len() > MAX_SHOTS_DRAWN
+    shots.most() > MAX_SHOTS_DRAWN
 }
 
-/// The shots of tower `tower` (from 0) its lane draws one by one, in order: every shot of the
-/// schedule, if there are no more than [`MAX_SHOTS_DRAWN`]; none otherwise. Nothing is listed:
+/// The shots of tower `tower` (from 0) its lane draws one by one, in order: every shot of its
+/// own schedule (each tower has its own cycle and 2T), if there are no more than [`MAX_SHOTS_DRAWN`]; none otherwise. Nothing is listed:
 /// each is read from `shots` as it is drawn.
 pub fn drawn(shots: &Shots, tower: usize) -> impl Iterator<Item = Flown> + '_ {
-    let count = if decimated(shots) { 0 } else { shots.times.len() };
+    let count = if decimated(shots) || tower >= shots.towers() { 0 } else { shots.count(tower) };
     (0..count).map(move |k| shots.flown(tower, k))
 }
 
@@ -75,7 +75,12 @@ pub fn caption(shots: Result<&Shots, &str>, mean_cycle: f64, taken: Option<(usiz
         Ok(shots) => shots,
         Err(why) => return format!("one lane per tower · no shots are drawn: {why}"),
     };
-    let planned = shots.times.len();
+    if shots.towers() == 0 {
+        return "no towers: no lanes, and nothing is read · drag to scrub".into();
+    }
+    // Each tower has its own shots: the most any tower has, and the fewest when they differ.
+    let planned = shots.most();
+    let fewest_planned = (0..shots.towers()).map(|d| shots.count(d)).min().unwrap_or(0);
     let count = match taken {
         Some((fewest, most)) if most < planned => {
             if fewest == most {
@@ -84,6 +89,7 @@ pub fn caption(shots: Result<&Shots, &str>, mean_cycle: f64, taken: Option<(usiz
                 format!("{planned} shots planned, {fewest} to {most} taken a tower")
             }
         }
+        _ if fewest_planned < planned => format!("{fewest_planned} to {planned} shots a tower"),
         _ => format!("{planned} shots a tower"),
     };
     if decimated(shots) {
@@ -97,9 +103,16 @@ pub fn caption(shots: Result<&Shots, &str>, mean_cycle: f64, taken: Option<(usiz
         } else {
             ""
         };
+        // One 2T for the array, or the range of them when towers fly their own.
+        let (short, long) =
+            shots.flights.iter().fold((f64::INFINITY, 0.0f64), |(a, b), f| (a.min(*f), b.max(*f)));
+        let flight = if short >= long {
+            format!("2T = {long:.2} s")
+        } else {
+            format!("2T = {short:.2} to {long:.2} s")
+        };
         format!(
-            "one lane per tower · each bar is a shot, launch to readout (2T = {:.2} s) · {count}{hollow} · drag to scrub · Shift-drag a lane to move its clock",
-            shots.flight
+            "one lane per tower · each bar is a shot, launch to readout ({flight}) · {count}{hollow} · drag to scrub · Shift-drag a lane to move its clock"
         )
     }
 }
@@ -324,7 +337,7 @@ mod tests {
         let instrument = InstrumentSpec::default();
         let all = shots(instrument.clone(), 12.0);
         // A 2 s cycle over 12 s: launches at 0, 2, …, 10.
-        assert_eq!((all.times.len(), drawn(&all, 0).count(), decimated(&all)), (6, 6, false));
+        assert_eq!((all.count(0), drawn(&all, 0).count(), decimated(&all)), (6, 6, false));
         for (k, shot) in drawn(&all, 0).enumerate() {
             assert!((shot.launch - 2.0 * k as f64).abs() < 1e-12);
             assert_eq!(shot.readout, 2.0 * k as f64 + 1.46, "a shot lasts 2T = 1.46 s");
@@ -335,11 +348,11 @@ mod tests {
         let many = shots(slow, 100.0);
         assert_eq!(drawn(&many, 0).nth(333).unwrap().readout, 333.0 * (0.1 + 0.2) + 0.2);
         // A shot launched just before the end is listed; one that would launch at the end is not.
-        assert_eq!(shots(instrument.clone(), 10.5).times.len(), 6);
-        assert_eq!(shots(instrument.clone(), 10.0).times.len(), 5);
+        assert_eq!(shots(instrument.clone(), 10.5).count(0), 6);
+        assert_eq!(shots(instrument.clone(), 10.0).count(0), 5);
         // Control: another cycle gives other shots, so the lanes do follow the instrument.
         let faster = shots(InstrumentSpec { cycle: 1.5, ..instrument }, 12.0);
-        assert_eq!(faster.times.len(), 8);
+        assert_eq!(faster.count(0), 8);
         assert!((drawn(&faster, 0).nth(1).unwrap().launch - 1.5).abs() < 1e-12);
     }
 
@@ -359,7 +372,7 @@ mod tests {
         assert_eq!((drawn(&at_cap, 0).count(), decimated(&at_cap)), (MAX_SHOTS_DRAWN, false));
         let over = shots(unit, MAX_SHOTS_DRAWN as f64 + 1.0);
         assert_eq!(
-            (over.times.len(), drawn(&over, 0).count(), decimated(&over)),
+            (over.count(0), drawn(&over, 0).count(), decimated(&over)),
             (MAX_SHOTS_DRAWN + 1, 0, true)
         );
         assert!(caption(Ok(&over), 1.0, Some((401, 401))).contains("401 shots a tower, too many to draw"));
@@ -405,7 +418,7 @@ mod tests {
         gapped.array.schedule.gaps = Some(GapSpec { on: 4, period: 10 });
         let all = cav_sim::read::shots(&gapped).unwrap();
         let taken = all.taken_all(0).iter().filter(|taken| **taken).count();
-        assert_eq!((all.times.len(), taken), (30, 12));
+        assert_eq!((all.count(0), taken), (30, 12));
         let said = caption(Ok(&all), 2.0, Some((taken, taken)));
         assert!(said.contains("30 shots planned, 12 taken a tower (an outline: not taken)"), "{said}");
         assert!(caption(Ok(&all), 2.0, Some((9, 12))).contains("30 shots planned, 9 to 12 taken a tower"));

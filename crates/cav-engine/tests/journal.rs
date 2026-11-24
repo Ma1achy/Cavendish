@@ -370,7 +370,7 @@ fn a_bundle_under_a_comparison_is_the_scenes_own_and_says_so() {
     );
     let manifest: serde_json::Value = serde_json::from_slice(&compared["manifest.json"]).unwrap();
     let note = manifest["comparison"].as_str().expect("a note on the comparison");
-    assert!(note.contains("the scene's own instrument alone") && note.contains("on AICE 100 m"), "{note}");
+    assert!(note.contains("the scene's own instruments alone") && note.contains("on AICE 100 m"), "{note}");
     // The numbers are the scene's own instrument's: AION-10's, not AICE's.
     assert_eq!(
         manifest["spec"]["array"]["instrument"],
@@ -386,7 +386,7 @@ fn a_bundle_under_a_comparison_is_the_scenes_own_and_says_so() {
     // manifest that says `null`, and a log line that says nothing of a comparison.
     engine.run_line("compare off").unwrap();
     let (plain, said) = export(&mut engine, "plain");
-    assert!(said.ends_with("(11 files)"), "{said}");
+    assert!(said.ends_with("(18 files)"), "{said}");
     let manifest: serde_json::Value = serde_json::from_slice(&plain["manifest.json"]).unwrap();
     assert!(manifest["comparison"].is_null());
     for (name, bytes) in &plain {

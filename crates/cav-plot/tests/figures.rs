@@ -617,7 +617,7 @@ fn a_figure_is_bounded_in_points_and_pixels() {
     let dir = scratch("bounds");
     // 21,000 shots of five towers: more rows than a text file is given.
     let mut engine = engine("load comb; set duration 42000");
-    let shots = engine.signal().1.unwrap().times.len();
+    let shots = engine.signal().1.unwrap().most();
     assert_eq!(shots, 21_000);
     // A picture's pixels are its size times its resolution, and no side may pass 8192: the
     // refusal has the numbers, and comes before any device is asked for.
@@ -773,11 +773,11 @@ fn a_session_with_figures_and_a_bundle_replays_to_the_same_files() {
         }
         files_under(into)
     };
-    // Three figures of three files, a bundle of eleven and a scene; the journal's own file is
+    // Three figures of three files, a bundle of eighteen and a scene; the journal's own file is
     // the one thing the session wrote that its journal does not say.
     let mut wrote = files_under(&first);
     assert!(wrote.remove("session.json").is_some());
-    assert_eq!(wrote.len(), 21, "{:?}", wrote.keys().collect::<Vec<_>>());
+    assert_eq!(wrote.len(), 28, "{:?}", wrote.keys().collect::<Vec<_>>());
     for name in ["periodogram.json", "signal.csv", "cadence.svg", "bundle/manifest.json", "scene.ron"] {
         assert!(wrote.contains_key(name), "no {name}");
     }

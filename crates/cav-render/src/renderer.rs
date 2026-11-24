@@ -7,7 +7,7 @@ use cav_gpu::wgpu::{self, util::DeviceExt};
 use cav_sim::DrawStyle;
 
 use crate::camera::Camera;
-use crate::scene::{Drawables, Line, Vertex, drawables_at};
+use crate::scene::{Drawables, Line, Vertex};
 
 /// The colour format of every pane: sRGB, so shaders work in linear light.
 pub const COLOUR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
@@ -227,7 +227,14 @@ impl Renderer {
     pub fn draw(&self, gpu: &Gpu, target: &PaneTarget, frame: Frame<'_>) -> Result<(), String> {
         let [width, height] = target.size;
         let camera = Camera::new(frame.view, f64::from(width) / f64::from(height));
-        let things = drawables_at(frame.scene, frame.view.style, frame.highlight, camera.origin, frame.time);
+        let things = crate::scene::drawables_with(
+            frame.scene,
+            frame.view.style,
+            frame.highlight,
+            camera.origin,
+            frame.time,
+            frame.voxels,
+        );
         check_sizes(&things, gpu.device.limits().max_buffer_size)?;
         // A validation error inside wgpu would otherwise be a panic; here it is an answer.
         gpu.checked(|| self.draw_things(gpu, target, &camera, &things, frame.view.style))
