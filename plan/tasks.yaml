@@ -185,6 +185,30 @@
 - id: TASK-S3-08
   milestone: S3
   title: 'Per-tower instruments: unequal heights and sequences in one array, ragged readout times; zero towers allowed'
+- id: TASK-S3-09
+  milestone: S3
+  title: 'The S3 brief and the task list'
+- id: TASK-S3-10
+  milestone: S3
+  title: "S2's second review, items 1 to 3: the palette back at 12 with five hues and dashes; dense signals keep their dashes; no series leaves the key without a word"
+- id: TASK-S3-11
+  milestone: S3
+  title: "S2's second review, items 4 to 9: the Python redraw, painting as recorded, the build's watch list, the kicks range, quick under 10 s, labels"
+- id: TASK-S3-12
+  milestone: S3
+  title: "Reference fixtures from George's cylinder, cuboid, scaffold and scaffold_multimode scripts"
+- id: TASK-S3-13
+  milestone: S3
+  title: 'Voxel bodies in the scene and the read: shapes in BodySpec, Motion::Modes, the exact tree read, the S3 dev scenes'
+- id: TASK-S3-14
+  milestone: S3
+  title: 'A voxel view as a figure: colour maps, legends from what is drawn, SVG and PDF'
+- id: TASK-S3-15
+  milestone: S3
+  title: 'Recipes for a shape and for a body made of voxels, each followed end to end; ARCHITECTURE.md'
+- id: TASK-S3-16
+  milestone: S3
+  title: 'cargo xtask demo S3, screenshots, figures, results, progress, the validation report'
 - id: TASK-S4-01
   milestone: S4
   title: World volume in chunks with palettes and region-file cache
