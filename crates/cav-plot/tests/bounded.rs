@@ -103,11 +103,11 @@ fn a_figure_is_bounded_in_series_and_its_data_is_streamed() {
     let record: serde_json::Value =
         serde_json::from_slice(&std::fs::read(dir.join("sig.json")).unwrap()).unwrap();
     let drawn: Vec<u64> = (1..=11).chain([250]).collect();
-    assert_eq!(record["marks"]["towers"]["drawn"], serde_json::json!(drawn));
-    assert_eq!(record["marks"]["towers"]["in_the_scene"], 1000);
-    let note = record["marks"]["towers"]["note"].as_str().unwrap();
+    assert_eq!(record["files"][0]["marks"]["towers"]["drawn"], serde_json::json!(drawn));
+    assert_eq!(record["files"][0]["marks"]["towers"]["in_the_scene"], 1000);
+    let note = record["files"][0]["marks"]["towers"]["note"].as_str().unwrap();
     assert!(note.starts_with("12 of 1000 towers drawn: 1–11 and 250 "), "{note}");
-    let series = record["series"].as_array().unwrap();
+    let series = record["files"][0]["series"].as_array().unwrap();
     assert_eq!(series.len(), 12);
     assert_eq!(series[11]["name"], "t249");
     assert_eq!(

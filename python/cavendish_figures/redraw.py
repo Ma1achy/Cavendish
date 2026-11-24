@@ -32,7 +32,8 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure as Canvas
 
 from .errors import FigureError, NotDrawable, NotWritten
-from .figure import Figure, number, rows_of, table
+from ._json import number, rows_of, table
+from .figure import Figure
 from .result import Err, Ok, Result
 from .style import INK, PRESETS, REFERENCE, SERIES, SPECTRUM, dash, sheets
 
@@ -229,5 +230,6 @@ def draw(figure: Figure) -> Result[tuple[Canvas, Axes], FigureError]:
         axes.set_ylim(*figure.y.range)
         axes.set_xlabel(f"{figure.x.name}, {figure.x.unit}")
         drawer(axes, figure, width)
-        canvas.suptitle(figure.title, x = 0.01, ha = "left")
+        if figure.title is not None:
+            canvas.suptitle(figure.title, x = 0.01, ha = "left")
     return Ok((canvas, axes))

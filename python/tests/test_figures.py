@@ -53,7 +53,6 @@ from cavendish_figures import (  # noqa: E402
     sheets,
 )
 from cavendish_figures.errors import FigureError  # noqa: E402
-from cavendish_figures.figure import rows_of, table  # noqa: E402
 
 # ========================================== HELPERS ==========================================
 
@@ -187,8 +186,22 @@ def test_load_reads_every_value_to_the_bit() -> None:
     # The awkward numbers are in there: a subnormal, the largest double, a sum that is not 0.3.
     values = loaded(directory / "again", "periodogram").columns["√S"]
     assert float(values[1]) == 5e-324 and float(values[2]) == 1.7976931348623157e308 and float(values[0]) != 0.3
-    # Any file of the figure names it.
-    assert load(directory / "csv" / "periodogram.pdf").unwrap().path == directory / "csv" / "periodogram.json"
+    # Any file of the figure names it. A picture's name reads that picture's entry of the record;
+    # the record's own name or the data's reads the first picture listed.
+    by_picture = load(directory / "csv" / "periodogram.pdf").unwrap()
+    assert by_picture.path == directory / "csv" / "periodogram.json"
+    assert (by_picture.file, by_picture.files) == ("periodogram.pdf", ("periodogram.pdf", "periodogram.svg"))
+    other = load(directory / "csv" / "periodogram.svg").unwrap()
+    assert (other.file, other.preset, other.size_mm) == ("periodogram.svg", "slide", (254.0, 143.0))
+    assert other.columns["√S"].tolist() == by_picture.columns["√S"].tolist(), "one data file for both"
+    for name in ("periodogram.json", "periodogram.csv"):
+        assert load(directory / "csv" / name).unwrap().file == "periodogram.pdf"
+    # Control: a picture the record does not list is refused by name, not read as another.
+    absent = load(directory / "csv" / "periodogram.png")
+    assert isinstance(absent, Err) and isinstance(absent.error, NotAFigure)
+    assert "lists no `periodogram.png`" in absent.error.why and "periodogram.svg" in absent.error.why
+    # The colours are the record's, not a table of this package's.
+    assert by_picture.colours.series == synthetic.PALETTE and by_picture.colours.spectrum == "#6e6e6e"
     # A signal's series are each tower's own columns.
     signal = loaded(directory / "signal", "signal")
     assert [series.name for series in signal.series] == ["tower 1", "tower 2"]
@@ -215,9 +228,9 @@ def test_load_refuses_what_is_not_a_figure() -> None:
     assert isinstance(load(directory / "nothing.json").unwrap_err(), Missing)
     assert isinstance(refusal(lambda: source.write_text("not json", encoding = "utf-8")), NotAFigure)
     assert isinstance(refusal(lambda: source.write_text("{\"what\": \"signal\"}", encoding = "utf-8")), NotAFigure)
-    later = refusal(lambda: source.write_text(original.replace('"cavendish_figure": 1', '"cavendish_figure": 2'),
+    later = refusal(lambda: source.write_text(original.replace('"cavendish_figure": 2', '"cavendish_figure": 3'),
                                               encoding = "utf-8"))
-    assert isinstance(later, UnsupportedVersion) and (later.found, later.supported) == (2, 1)
+    assert isinstance(later, UnsupportedVersion) and (later.found, later.supported) == (3, 2)
     no_axis = refusal(lambda: source.write_text(original.replace('"scale": "log"', '"scale": "cubic"'),
                                                 encoding = "utf-8"))
     assert isinstance(no_axis, NotAFigure) and "axes" in no_axis.why
@@ -320,8 +333,9 @@ def test_a_shot_not_taken_is_not_plotted() -> None:
     # A figure written before the series named the column is read by the column's own name.
     source   = synthetic.write(directory / "older", "signal")
     document = json.loads(source.read_text(encoding = "utf-8"))
-    for entry in document["series"]:
-        del entry["taken_column"]
+    for picture in document["files"]:
+        for entry in picture["series"]:
+            del entry["taken_column"]
     source.write_text(json.dumps(document, ensure_ascii = False), encoding = "utf-8")
     assert [bool(flag) for flag in load(source).unwrap().series[1].taken] == [True, True, False, True, True, True]
     # Control: tower 1 takes every shot: nothing of its line is masked, and it has no hollow marker.
@@ -365,12 +379,16 @@ def test_real_figures_are_read_and_redrawn() -> None:
     assert len(found) >= 3, f"{where} holds {len(found)} figures: expected the ones xtask writes"
     kinds: set[str] = set()
     for source in found:
+        record = json.loads(source.read_text(encoding = "utf-8"))
+        if record.get("what") == "view":
+            # A view of the scene is a picture with no data: a typed refusal, not an exception.
+            refused = load(source)
+            assert isinstance(refused, Err) and isinstance(refused.error, NotDrawable), refused
+            kinds.add("view")
+            continue
         figure = load(source).unwrap()
         kinds.add(figure.what)
-        # The palette here is the palette Cavendish drew with: the mirror is held by the files.
-        colours = rows_of(table(figure.provenance.get("colours")).get("series"))
-        if figure.preset in PRESETS:
-            assert tuple(colours) == SERIES, f"{source.name}: the palettes have parted"
+        assert figure.files and figure.file == figure.files[0]
         rows = len(next(iter(figure.columns.values())))
         assert all(len(column) == rows for column in figure.columns.values())
         out = redraw(figure, source.with_name(source.stem + "-redrawn.png")).unwrap()

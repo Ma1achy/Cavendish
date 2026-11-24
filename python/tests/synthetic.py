@@ -11,6 +11,11 @@ import json
 import struct
 from pathlib import Path
 
+PALETTE: tuple[str, ...] = (
+    "#101010", "#202020", "#303030", "#404040", "#505050", "#606060", "#707070", "#808080",
+)
+"""Eight colours that are no palette of Cavendish's: a redraw that wears them read them here."""
+
 AWKWARD: tuple[float, ...] = (0.1 + 0.2, 5e-324, 1.7976931348623157e308, 1e-7, 123456789.12345679, 2.5e-5)
 """Numbers that only the shortest round-trip text reads back to the bit."""
 
@@ -62,28 +67,37 @@ def provenance(what: str, columns: list[tuple[str, str]], rows: int, layout: str
         marks = {"predicted_lines": [{"what": "alias", "frequency_hz": 0.2, "height": 0.25}], "predicted_floor": 5e-3}
     elif what == "signal":
         marks = {"vertical_axis_written_in": "mrad", "shots": rows}
-    return {
-        "cavendish_figure": 1,
-        "what":             what,
-        "file":             f"{what}.pdf",
-        "format":           "pdf",
-        "preset":           "paper-column",
-        "size_mm":          [85.0, 60.0],
-        "title":            f"A synthetic {what}",
+    picture: dict[str, object] = {
+        "file":    f"{what}.pdf",
+        "format":  "pdf",
+        "preset":  "paper-column",
+        "size_mm": [85.0, 60.0],
+        "title":   f"A synthetic {what}",
         "axes": {
             "x": {"name": "frequency" if log else "time", "unit": "Hz" if log else "s", "scale": "linear",
                   "range": [0.0, 0.25] if log else [0.0, 12.0]},
             "y": {"name": "√S" if log else "ΔΦ", "unit": "rad/√Hz" if log else "rad",
                   "scale": "log" if log else "linear", "range": [1e-9, 1.0] if log else [-0.002, 0.002]},
         },
-        "series": series,
-        "marks":  marks,
+        "series":  series,
+        "marks":   marks,
+        "colours": {
+            "background": "#ffffff", "ink": "#111111", "rule": "#cfcfcf", "spectrum": "#6e6e6e",
+            "reference": "#8c8c8c", "series": list(PALETTE),
+        },
+    }
+    return {
+        "cavendish_figure": 2,
+        "what":             what,
         "data": {
             "file":    f"{what}.{layout}",
             "format":  layout,
             "rows":    rows,
             "columns": [{"name": name, "unit": unit} for name, unit in columns],
         },
+        "files":            [picture, {**picture, "file": f"{what}.svg", "format": "svg", "preset": "slide",
+                                       "size_mm": [254.0, 143.0]}],
+        "not_this_figure":  [],
     }
 
 
@@ -132,7 +146,7 @@ def write(directory: Path, what: str, layout: str = "csv") -> Path:
     target = directory / f"{what}.json"
     if what == "view":
         document = provenance("view", [], 0)
-        del document["data"], document["axes"], document["series"]
+        document["data"] = None
         target.write_text(json.dumps(document, ensure_ascii = False, indent = 2), encoding = "utf-8")
         return target
     columns, rows = table(what)

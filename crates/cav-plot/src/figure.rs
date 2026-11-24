@@ -3,11 +3,28 @@
 //!
 //! A figure `fig.pdf` is three files: the picture; `fig.csv`, every value plotted, in plain
 //! columns under a header that names each column and its unit (`fig.npy`, a `(rows, columns)`
-//! array, when there are more than [`CSV_ROWS`] rows); and `fig.json`: what was plotted, the
-//! axes, the series and which columns they are, the marks that are not data, the preset and the
-//! size, the scene verbatim, the engine's version and revision, the numerics, and the command
-//! that makes the figure again. Nothing in any of them is the time of day or the machine's
-//! name: the same command on the same build writes the same bytes.
+//! array, when it is long); and `fig.json`, the figure's record.
+//!
+//! ## The record, and the same figure in several formats
+//! `fig.json` is the record of the figure `fig`: one set of data (what is plotted, of which
+//! tower, channel, span and pane, from which scene verbatim, engine build and numerics, in which
+//! data file) and, under `files`, every picture written of it, each with what is its own: the
+//! format, the preset and the size, a PNG's pixels and resolution, the title, the axes, the
+//! series and which columns they are, the marks that are not data, the colours, and the command
+//! that makes it again.
+//!
+//! 1. Writing `fig.pdf` when `fig.json` records the same data adds `fig.pdf` to `files`, or
+//!    replaces its entry. The entries are in the order of their names. An entry whose file is no
+//!    longer there is dropped.
+//! 2. Writing it when `fig.json` records other data (another scene, tower, span or build), or is
+//!    not a record this build reads, replaces the record and the data file with the new
+//!    figure's. Pictures the old record listed that are still there are not this figure: they
+//!    are named under `not_this_figure` until they are written again, and never under `files`.
+//! 3. So the record depends on which figures were written and what was in the directory, not on
+//!    the order they were written in, and the same command twice changes no byte.
+//!
+//! Nothing in any of the files is the time of day or the machine's name: the same commands on
+//! the same build write the same bytes.
 //!
 //! The line drawn is thinned to [`crate::plots::MAX_POINTS`] points a series, and a signal draws
 //! at most [`crate::plots::MAX_SERIES`] towers; the data file keeps every value of every tower,
@@ -44,7 +61,11 @@ pub const MAX_PIXELS: u32 = 8192;
 pub const WRITE_BUFFER: usize = 64 << 10;
 
 /// The version of the layout of a figure's `.json`.
-pub const FIGURE_VERSION: u32 = 1;
+pub const FIGURE_VERSION: u32 = 2;
+
+/// The most bytes of an existing record that are read before a figure is added to it: a record
+/// holds a scene (1 MiB at most) and a line for each column.
+const RECORD_BYTES: u64 = 16 << 20;
 
 /// Where a table's values are.
 #[derive(Clone, Debug, PartialEq)]
@@ -157,7 +178,11 @@ pub struct Built {
     pub drawing: Drawing,
     /// Its data; a view of the scene has none.
     pub table: Option<Table>,
-    /// Its `.json`: axes, series, marks, preset, scene, provenance.
+    /// What the record says of the figure whatever the format: what is plotted, of what, the
+    /// scene, the build, the numerics, the data file.
+    pub figure: serde_json::Value,
+    /// This picture's entry in the record's `files`: its file, format, preset, size, title,
+    /// axes, series, marks, colours and command.
     pub provenance: serde_json::Value,
     /// The style it was drawn in.
     pub style: Style,
@@ -335,22 +360,22 @@ fn cli_line(engine: &Engine, figure: &Figure, file: &str) -> String {
     line
 }
 
-/// What every figure's `.json` says of where it came from.
-fn provenance(engine: &Engine, figure: &Figure, file: &str, style: &Style) -> serde_json::Value {
+/// What a figure's record says of it whatever its format, and the start of this picture's entry.
+fn provenance(
+    engine: &Engine,
+    figure: &Figure,
+    file: &str,
+    style: &Style,
+) -> (serde_json::Value, serde_json::Value) {
     let spec = engine.spec();
     let command = cav_engine::Command::Export {
         what: cav_engine::ExportKind::Figure(Box::new(figure.clone())),
         to: file.to_owned(),
     };
     let size = size_mm(figure, style);
-    json!({
+    let shared = json!({
         "cavendish_figure": FIGURE_VERSION,
         "what": figure.what.name(),
-        "file": file,
-        "format": figure.format.name(),
-        "preset": style.name,
-        "size_mm": size,
-        "size_points": [size[0] / MM_PER_POINT, size[1] / MM_PER_POINT],
         "subject": {
             "tower": figure.tower,
             "channel": figure.channel.name(),
@@ -358,16 +383,24 @@ fn provenance(engine: &Engine, figure: &Figure, file: &str, style: &Style) -> se
             "pane": figure.pane + 1,
             "playhead_s": engine.time(),
         },
+        "engine": cav_engine::build().json(),
+        "numerics": cav_sim::bundle::numerics(spec, cav_engine::build()),
+        "scene": { "name": spec.name, "spec": spec },
+    });
+    let entry = json!({
+        "file": file,
+        "format": figure.format.name(),
+        "preset": style.name,
+        "size_mm": size,
+        "size_points": [size[0] / MM_PER_POINT, size[1] / MM_PER_POINT],
         "command": {
             "console": cav_engine::describe(&command, figure.pane),
             "cli": cli_line(engine, figure, file),
             "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's",
         },
-        "engine": cav_engine::build().json(),
-        "numerics": cav_sim::bundle::numerics(spec, cav_engine::build()),
         "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
-        "scene": { "name": spec.name, "spec": spec },
-    })
+    });
+    (shared, entry)
 }
 
 /// The file a figure's data or provenance goes in: the figure's own name with another extension.
@@ -452,7 +485,7 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
             })
         })
         .collect();
-    let mut provenance = provenance(engine, figure, file, &style);
+    let (mut shared, mut provenance) = provenance(engine, figure, file, &style);
     let extra = json!({
         "title": drawing.title,
         "pixels": pixels,
@@ -468,6 +501,8 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
             "reference": style.reference.css(),
             "series": style.series.iter().map(|c| c.css()).collect::<Vec<_>>(),
         },
+    });
+    let data = json!({
         "data": {
             "file": data_file,
             "format": if table.is_long() { "npy" } else { "csv" },
@@ -481,7 +516,24 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
         },
     });
     merge(&mut provenance, extra);
-    Ok(Built { drawing, table: Some(table), provenance, style, pixels })
+    merge(&mut shared, data);
+    Ok(Built { drawing, table: Some(table), figure: shared, provenance, style, pixels })
+}
+
+/// A record as the text of its file.
+fn text_of(record: &serde_json::Value) -> String {
+    let mut text = serde_json::to_string_pretty(record).expect("a figure's record is JSON");
+    text.push('\n');
+    text
+}
+
+/// The record at `path`, if there is one that is JSON and no larger than a record is.
+fn read_record(path: &Path) -> Option<serde_json::Value> {
+    let length = std::fs::metadata(path).ok()?.len();
+    if length > RECORD_BYTES {
+        return None;
+    }
+    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
 }
 
 /// Puts the fields of `more` into `into`, after its own.
@@ -491,20 +543,57 @@ fn merge(into: &mut serde_json::Value, more: serde_json::Value) {
     }
 }
 
+/// A name a record may give a picture beside it: a file's name alone, never a path.
+fn plain_name(name: &str) -> bool {
+    !name.is_empty() && !name.contains(['/', '\\', ':']) && name != "." && name != ".."
+}
+
 impl Built {
-    /// The text of the figure's `.json`.
+    /// The figure's record with this picture in it, given the record already beside it (`old`,
+    /// if one could be read) and which of the pictures that one names are still there
+    /// (`there`): the rule at the top of this module.
+    #[must_use]
+    pub fn record(&self, old: Option<&serde_json::Value>, there: &dyn Fn(&str) -> bool) -> serde_json::Value {
+        let own = self.provenance["file"].as_str().unwrap_or_default();
+        let mut files = vec![self.provenance.clone()];
+        let mut strangers: Vec<String> = Vec::new();
+        if let Some(old) = old.and_then(serde_json::Value::as_object) {
+            // The same figure: the old record, less its lists, is this one's.
+            let mut rest = old.clone();
+            let listed = rest.remove("files");
+            let apart = rest.remove("not_this_figure");
+            let same = serde_json::Value::Object(rest) == self.figure;
+            let kept = |name: &str| plain_name(name) && name != own && there(name);
+            for entry in listed.as_ref().and_then(serde_json::Value::as_array).into_iter().flatten() {
+                match entry["file"].as_str().filter(|name| kept(name)) {
+                    Some(_) if same => files.push(entry.clone()),
+                    Some(name) => strangers.push(name.to_owned()),
+                    None => {}
+                }
+            }
+            for name in apart.as_ref().and_then(serde_json::Value::as_array).into_iter().flatten() {
+                strangers.extend(name.as_str().filter(|name| kept(name)).map(str::to_owned));
+            }
+        }
+        files.sort_by(|a, b| a["file"].as_str().cmp(&b["file"].as_str()));
+        strangers.sort();
+        strangers.dedup();
+        let mut record = self.figure.clone();
+        merge(&mut record, json!({ "files": files, "not_this_figure": strangers }));
+        record
+    }
+
+    /// The text of the figure's `.json` when this picture is the only one written of it.
     #[must_use]
     pub fn json(&self) -> String {
-        let mut text = serde_json::to_string_pretty(&self.provenance).expect("a figure's provenance is JSON");
-        text.push('\n');
-        text
+        text_of(&self.record(None, &|_| false))
     }
 
     /// The data file's name, if the figure has data.
     #[must_use]
     pub fn data_file(&self) -> Option<&str> {
         self.table.as_ref()?;
-        self.provenance["data"]["file"].as_str()
+        self.figure["data"]["file"].as_str()
     }
 
     /// Writes the figure's data to `path`, a row at a time through a buffer of [`WRITE_BUFFER`]
@@ -569,23 +658,24 @@ fn view(
         height: pixels[1],
         rgb: std::sync::Arc::new(rgba.chunks(4).flat_map(|pixel| [pixel[0], pixel[1], pixel[2]]).collect()),
     });
-    let mut provenance = provenance(engine, figure, file, &style);
+    let (mut shared, mut provenance) = provenance(engine, figure, file, &style);
     merge(
         &mut provenance,
         json!({
             "title": drawing.title,
             "pixels": pixels,
             "dpi": figure.dpi.unwrap_or(style.dpi),
-            "camera": engine.view(figure.pane),
             "note": "the scene as the renderer draws it: a picture, also inside an SVG or a PDF; it has no data file",
         }),
     );
+    merge(&mut shared, json!({ "camera": engine.view(figure.pane), "data": null }));
     let png = cav_render::encode_png(&rgba, pixels)?;
-    Ok((Built { drawing, table: None, provenance, style, pixels: Some(pixels) }, png))
+    Ok((Built { drawing, table: None, figure: shared, provenance, style, pixels: Some(pixels) }, png))
 }
 
-/// Draws `figure` from `engine` and writes it to `path`, with its data and its `.json` beside
-/// it. Answers with the files written, the figure first.
+/// Draws `figure` from `engine` and writes it to `path`, with its data beside it, and adds it to
+/// the figure's record there (or starts the record again, if the one there is of another
+/// figure: the rule at the top of this module). Answers with the files written, the figure first.
 ///
 /// # Errors
 /// As [`build`]; when a PNG or a view needs a device and there is none; when a file cannot be
@@ -624,8 +714,11 @@ pub fn export(
         built.write_data(&data)?;
         files.push(data);
     }
+    // The record: this picture added to the one beside it, if that is of the same figure.
     let record = directory.join(beside(&file, "json"));
-    write(&record, built.json().as_bytes())?;
+    let old = read_record(&record);
+    let said = built.record(old.as_ref(), &|name| directory.join(name).is_file());
+    write(&record, text_of(&said).as_bytes())?;
     files.push(record);
     Ok(files)
 }

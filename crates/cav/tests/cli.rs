@@ -718,7 +718,7 @@ fn cli_figure_writes_a_figure_with_its_data_twice_the_same() {
     assert_eq!(cav_plot::pdf::check(&pdf).unwrap().media_box, [0.0, 0.0, 340.157, 198.425]);
     // The provenance carries the line that made it, with the edits a library name does not say.
     let json: serde_json::Value = serde_json::from_slice(&std::fs::read(a.join("p.json")).unwrap()).unwrap();
-    assert_eq!(json["command"]["console"], "figure periodogram tower 2 as paper-full to p.svg");
+    assert_eq!(json["files"][0]["command"]["console"], "figure periodogram tower 2 as paper-full to p.svg");
     assert_eq!(json["scene"]["spec"]["duration"], 200.0);
     // Control: refusals, each with its reason, and nothing written.
     let c = root.join("c");

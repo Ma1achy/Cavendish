@@ -2,11 +2,11 @@
 Redraw the figures Cavendish exports, from their data, with matplotlib and the same house style.
 
     cav figure comb periodogram --out fig.pdf    ->  fig.pdf, fig.csv, fig.json
-    load("fig.json") -> Ok(Figure) -> redraw(figure, "again.png") -> Ok(Path)
+    load("fig.pdf") -> Ok(Figure) -> redraw(figure, "again.png") -> Ok(Path)
 
     from cavendish_figures import load, redraw
 
-    figure = load("fig.json").unwrap()
+    figure = load("fig.pdf").unwrap()
     print(figure.what, figure.x.unit, [series.name for series in figure.series])
     redraw(figure, "again.png").unwrap()
 
@@ -29,7 +29,7 @@ from .errors import (
     UnsupportedVersion,
     error_catalog,
 )
-from .figure import FIGURE_VERSION, Axis, Figure, Series, load
+from .figure import FIGURE_VERSION, Axis, Colours, Figure, Series, load
 from .redraw import draw, redraw
 from .result import Err, Ok, Result, UnwrapError
 from .style import DASHES, PRESETS, SERIES, dash, sheets
@@ -40,6 +40,7 @@ __all__ = [
     "PRESETS",
     "SERIES",
     "Axis",
+    "Colours",
     "DataMismatch",
     "Err",
     "Error",
