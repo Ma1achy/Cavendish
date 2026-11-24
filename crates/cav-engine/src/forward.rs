@@ -76,6 +76,8 @@ impl SignalState {
 /// the workers have threads and `poll` runs nothing.
 pub const POLL_BUDGET: Duration = Duration::from_millis(8);
 
+pub mod wire;
+
 // The platform seam: where the two workers run. See the module's notes.
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "forward/threads.rs"]
@@ -152,29 +154,6 @@ impl Shared {
     /// Whether a batch belongs to a scene that has since changed.
     fn stale(&self, batch: &Batch) -> bool {
         self.epoch.load(Ordering::Relaxed) != batch.epoch
-    }
-
-    /// One source of a batch: its contribution, sent back. False when nobody is listening any
-    /// more (the engine has gone).
-    fn contribute(&self, batch: &Batch, (source, key): (SourceId, u64)) -> bool {
-        let stale = || self.stale(batch);
-        match read::contribution(&batch.spec, source, &batch.shots, &stale) {
-            Some(contribution) => self.outbox.send(Done { key, contribution }).is_ok(),
-            None => true,
-        }
-    }
-
-    /// One reading, sent back. A reading that has been begun is finished, unless its scene has
-    /// gone. False when nobody is listening any more.
-    fn read(&self, job: &ReadJob) -> bool {
-        let gone = || self.read_abandon.load(Ordering::Relaxed) >= job.epoch;
-        if gone() {
-            return true;
-        }
-        match read::reading(&job.spec, job.time, &gone) {
-            Some(reading) => self.read_outbox.send((job.epoch, reading)).is_ok(),
-            None => true,
-        }
     }
 }
 

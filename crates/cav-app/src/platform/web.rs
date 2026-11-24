@@ -52,6 +52,14 @@ thread_local! {
 /// browser's frames. If it cannot start, the reason replaces the canvas on the page.
 pub fn start() {
     eframe::WebLogger::init(log::LevelFilter::Info).ok();
+    if serve_if_worker() {
+        return;
+    }
+    match Remote::start() {
+        Ok(remote) => cav_engine::forward::wire::install(std::rc::Rc::new(remote)),
+        // Without workers the jobs run on the page's thread, a source a frame: slow, not wrong.
+        Err(why) => log::warn!("the forward stage's workers did not start ({why}); its jobs run on the page"),
+    }
     wasm_bindgen_futures::spawn_local(async {
         if let Err(why) = run().await {
             log::error!("Cavendish could not start: {why}");
@@ -186,6 +194,7 @@ pub fn after_frame(shell: &mut Shell, ctx: &egui::Context) {
     {
         message.remove();
     }
+    say_when_whole(shell);
     let from_address = run_exec(shell);
     // A command run here, after the frame was drawn, may have changed what the next one shows
     // (a load), and one left waiting must be looked at again: another frame, whatever egui
@@ -204,6 +213,30 @@ pub fn after_frame(shell: &mut Shell, ctx: &egui::Context) {
         for download in &downloads {
             offer(download);
         }
+    }
+}
+
+/// Says in the browser's console how long a signal took to be whole, from the frame it went
+/// stale to the frame it was whole: what a person waits, measured where they wait.
+fn say_when_whole(shell: &Shell) {
+    thread_local! {
+        static STALE_SINCE: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
+    }
+    let state = shell.engine.signal().0;
+    match (state, STALE_SINCE.get()) {
+        (cav_engine::SignalState::Stale, None) => STALE_SINCE.set(Some(Instant::now())),
+        (cav_engine::SignalState::Stale, Some(_)) => {}
+        (_, Some(since)) => {
+            STALE_SINCE.set(None);
+            if state == cav_engine::SignalState::Refined {
+                log::info!(
+                    "the signal of `{}` was whole {:.0} ms after it went stale",
+                    shell.engine.spec().name,
+                    since.elapsed().as_secs_f64() * 1e3
+                );
+            }
+        }
+        (_, None) => {}
     }
 }
 
@@ -290,4 +323,151 @@ fn hand_over(name: &str, bytes: &[u8]) -> Result<(), eframe::wasm_bindgen::JsVal
         .ok_or("no window")?
         .set_timeout_with_callback_and_timeout_and_arguments_0(later.unchecked_ref(), 60_000)?;
     Ok(())
+}
+
+/// The forward stage's Web Workers (`web/worker.js`, each running this same module): the
+/// [`cav_engine::forward::wire::Remote`] the page installs, so that a voxel body's seconds of
+/// work never run on the page's thread. Two, like the native stage's two threads (the series
+/// and the reading under the playhead); a job waits in a queue until one is free. A worker that
+/// fails is said in the browser's console.
+struct PageWorkers {
+    workers: Vec<PageWorker>,
+    queue: VecDeque<(u64, Vec<u8>)>,
+    answers: std::collections::HashMap<u64, Vec<u8>>,
+    next_ticket: u64,
+}
+
+struct PageWorker {
+    worker: web_sys::Worker,
+    ready: bool,
+    busy: Option<u64>,
+}
+
+/// How many Web Workers the forward stage has.
+const PAGE_WORKERS: usize = 2;
+
+/// The handle the workers' message handlers and the engine both hold.
+#[derive(Clone)]
+struct Remote(std::rc::Rc<RefCell<PageWorkers>>);
+
+impl Remote {
+    /// Starts the workers, handing each the module the page compiled (`globalThis.cavendishWasm`,
+    /// set by `index.html`) so that it is not fetched and compiled again.
+    fn start() -> Result<Self, String> {
+        let remote = Self(std::rc::Rc::new(RefCell::new(PageWorkers {
+            workers: Vec::new(),
+            queue: VecDeque::new(),
+            answers: std::collections::HashMap::new(),
+            next_ticket: 0,
+        })));
+        let module = js_sys::Reflect::get(&js_sys::global(), &"cavendishWasm".into()).unwrap_or_default();
+        for index in 0..PAGE_WORKERS {
+            let options = web_sys::WorkerOptions::new();
+            options.set_type(web_sys::WorkerType::Module);
+            let worker =
+                web_sys::Worker::new_with_options("./worker.js", &options).map_err(|e| format!("{e:?}"))?;
+            let handle = remote.clone();
+            let on_message =
+                Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
+                    handle.arrived(index, &event.data());
+                });
+            worker.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
+            on_message.forget();
+            let on_error = Closure::<dyn FnMut(web_sys::Event)>::new(move |_event: web_sys::Event| {
+                log::error!(
+                    "the forward stage's worker {index} failed: the numbers it was computing will not arrive; \
+                     reload the page"
+                );
+            });
+            worker.set_onerror(Some(on_error.as_ref().unchecked_ref()));
+            on_error.forget();
+            let start = js_sys::Object::new();
+            let _ = js_sys::Reflect::set(&start, &"module".into(), &module);
+            worker.post_message(&start).map_err(|e| format!("{e:?}"))?;
+            remote.0.borrow_mut().workers.push(PageWorker { worker, ready: false, busy: None });
+        }
+        Ok(remote)
+    }
+
+    /// A worker's message: `{ready}` once it runs, then `{ticket, answer}` for each job.
+    fn arrived(&self, index: usize, data: &eframe::wasm_bindgen::JsValue) {
+        let field = |name: &str| js_sys::Reflect::get(data, &name.into()).unwrap_or_default();
+        {
+            let mut pool = self.0.borrow_mut();
+            if field("ready").is_truthy() {
+                pool.workers[index].ready = true;
+            } else if let Some(ticket) = field("ticket").as_f64() {
+                let answer = js_sys::Uint8Array::new(&field("answer")).to_vec();
+                pool.answers.insert(ticket as u64, answer);
+                pool.workers[index].busy = None;
+            }
+        }
+        self.pump();
+    }
+
+    /// Hands waiting jobs to free workers.
+    fn pump(&self) {
+        let mut pool = self.0.borrow_mut();
+        let pool = &mut *pool;
+        for worker in &mut pool.workers {
+            if !worker.ready || worker.busy.is_some() {
+                continue;
+            }
+            let Some((ticket, request)) = pool.queue.pop_front() else { return };
+            let message = js_sys::Object::new();
+            let bytes = js_sys::Uint8Array::from(request.as_slice());
+            let _ = js_sys::Reflect::set(&message, &"ticket".into(), &(ticket as f64).into());
+            let _ = js_sys::Reflect::set(&message, &"request".into(), &bytes);
+            let transfer = js_sys::Array::of1(&bytes.buffer());
+            match worker.worker.post_message_with_transfer(&message, &transfer) {
+                Ok(()) => worker.busy = Some(ticket),
+                Err(why) => log::error!("a job could not be handed to the forward stage's worker: {why:?}"),
+            }
+        }
+    }
+}
+
+impl cav_engine::forward::wire::Remote for Remote {
+    fn send(&self, request: Vec<u8>) -> u64 {
+        let ticket = {
+            let mut pool = self.0.borrow_mut();
+            pool.next_ticket += 1;
+            let ticket = pool.next_ticket;
+            pool.queue.push_back((ticket, request));
+            ticket
+        };
+        self.pump();
+        ticket
+    }
+
+    fn take(&self, ticket: u64) -> Option<Vec<u8>> {
+        self.0.borrow_mut().answers.remove(&ticket)
+    }
+}
+
+/// In a forward stage's Web Worker (`web/worker.js` started the module): answers each job with
+/// [`cav_engine::forward::wire::serve`], after saying it is ready. True when this is such a
+/// worker, which then starts nothing else.
+fn serve_if_worker() -> bool {
+    let Ok(scope) = js_sys::global().dyn_into::<web_sys::DedicatedWorkerGlobalScope>() else { return false };
+    let replies = scope.clone();
+    let on_message = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
+        let data = event.data();
+        let field = |name: &str| js_sys::Reflect::get(&data, &name.into()).unwrap_or_default();
+        let request = js_sys::Uint8Array::new(&field("request")).to_vec();
+        let answer = js_sys::Uint8Array::from(cav_engine::forward::wire::serve(&request).as_slice());
+        let message = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&message, &"ticket".into(), &field("ticket"));
+        let _ = js_sys::Reflect::set(&message, &"answer".into(), &answer);
+        let transfer = js_sys::Array::of1(&answer.buffer());
+        if let Err(why) = replies.post_message_with_transfer(&message, &transfer) {
+            log::error!("the forward stage's worker could not answer: {why:?}");
+        }
+    });
+    scope.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
+    on_message.forget();
+    let ready = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&ready, &"ready".into(), &true.into());
+    let _ = scope.post_message(&ready);
+    true
 }
