@@ -523,23 +523,39 @@ fn mass(spec: &SceneSpec, n: usize) -> Mass<impl Fn(f64) -> Vec3 + Sync + '_> {
 pub fn instrument_key(instrument: &cav_core::forward::Instrument) -> Vec<u64> {
     use cav_core::forward::Quadrature;
     let bits = |x: f64| if x == 0.0 { 0 } else { x.to_bits() };
+    // Every field by name, with no `..`: a field added to the instrument does not compile here
+    // until it is in the key.
+    let cav_core::forward::Instrument {
+        ifo_separation,
+        half_sequence,
+        launch_velocity,
+        gravity,
+        atom_mass,
+        hbar,
+        big_g,
+        wavelength,
+        kicks,
+        floor,
+        sign,
+        quadrature,
+    } = *instrument;
     let mut key = vec![
-        bits(instrument.ifo_separation),
-        bits(instrument.half_sequence),
-        bits(instrument.launch_velocity),
-        bits(instrument.gravity),
-        bits(instrument.atom_mass),
-        bits(instrument.hbar),
-        bits(instrument.big_g),
-        bits(instrument.wavelength),
-        bits(instrument.kicks),
-        u64::from(instrument.floor),
-        match instrument.sign {
+        bits(ifo_separation),
+        bits(half_sequence),
+        bits(launch_velocity),
+        bits(gravity),
+        bits(atom_mass),
+        bits(hbar),
+        bits(big_g),
+        bits(wavelength),
+        bits(kicks),
+        u64::from(floor),
+        match sign {
             Sign::LowerMinusUpper => 0,
             Sign::UpperMinusLower => 1,
         },
     ];
-    match instrument.quadrature {
+    match quadrature {
         Quadrature::Gauss { order, panel } => key.extend([0, order as u64, bits(panel)]),
         Quadrature::Simpson { step } => key.extend([1, bits(step)]),
         Quadrature::ScriptTrapezoid { step, nodes, lag } => {
@@ -893,8 +909,8 @@ pub fn contribution_on(
 /// once it has been made.
 struct VoxelBody<'a> {
     source: TreeBody<Box<dyn Fn(f64) -> Vec3 + Sync + 'a>>,
-    /// The most flight nodes one read may evaluate: [`MAX_KERNEL_WORK`] over the cubes a node
-    /// costs.
+    /// The most flight nodes one read of this body may evaluate: its share of
+    /// [`MAX_KERNEL_WORK`] ([`kernel_share`]) over the cubes a node costs.
     max_nodes: u64,
     /// For a still body: the reading at each tower (by its position's bits). It does not depend
     /// on the readout time, so every shot has the same bits; it is made once.
@@ -923,11 +939,20 @@ impl VoxelBody<'_> {
     }
 }
 
+/// Each voxel body's share of the cube evaluations one read of a scene may make: the scene's
+/// [`MAX_KERNEL_WORK`] split evenly between its bodies made of voxels, so that one shot at one
+/// tower costs at most that however many there are (S3's review: it was that much a body, and a
+/// scene may have 1000).
+#[must_use]
+pub fn kernel_share(spec: &SceneSpec) -> u64 {
+    MAX_KERNEL_WORK / spec.bodies.iter().filter(|b| b.shape.is_some()).count().max(1) as u64
+}
+
 /// Body `n` as voxels, if it has a shape: `Ok(None)` for a point or a sphere.
 ///
 /// # Errors
 /// When the shape cannot be voxelised, or when even the first rule of one read would cost more
-/// than [`MAX_KERNEL_WORK`] cube evaluations, with the numbers.
+/// than the body's share of [`MAX_KERNEL_WORK`] ([`kernel_share`]), with the numbers.
 fn voxel_body<'a>(spec: &'a SceneSpec, n: usize, readers: &Readers) -> Result<Option<VoxelBody<'a>>, String> {
     let body = &spec.bodies[n];
     let Some(shape) = &body.shape else { return Ok(None) };
@@ -942,10 +967,11 @@ fn voxel_body<'a>(spec: &'a SceneSpec, n: usize, readers: &Readers) -> Result<Op
     let per_node = 4 * source.cubes() as u64;
     // The longest flight of any tower's instrument sets the work of a read.
     let first = readers.readers.iter().map(|reader| reader.instrument().node_count(&[])).max().unwrap_or(0);
-    if first * per_node > MAX_KERNEL_WORK {
+    let share = kernel_share(spec);
+    if first * per_node > share {
         return Err(format!(
-            "{} leaves × {first} flight nodes is more than the {MAX_KERNEL_WORK} cube evaluations one read may \
-             make; use a coarser pitch",
+            "{} leaves × {first} flight nodes is more than the {share} cube evaluations one read may make of \
+             this body ({MAX_KERNEL_WORK} a read, shared by the scene's voxel bodies); use a coarser pitch",
             source.cubes()
         ));
     }
@@ -953,7 +979,7 @@ fn voxel_body<'a>(spec: &'a SceneSpec, n: usize, readers: &Readers) -> Result<Op
         && body.appears.is_none()
         && body.vanishes.is_none())
     .then(|| std::sync::Mutex::new(Vec::new()));
-    Ok(Some(VoxelBody { source, max_nodes: MAX_KERNEL_WORK / per_node, still }))
+    Ok(Some(VoxelBody { source, max_nodes: share / per_node, still }))
 }
 
 /// A body watched while it is read: it is the body as a [`Source`], and it notes whether its
@@ -1225,6 +1251,38 @@ pub fn only(spec: &SceneSpec, bodies: &[usize]) -> SceneSpec {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn every_field_of_the_instrument_is_in_its_reader_key() {
+        use cav_core::forward::{Instrument, Quadrature};
+        let base = Instrument::aion10();
+        let key = instrument_key(&base);
+        // One field at a time: each change gives another key (and so another reader).
+        let changed: Vec<(&str, Instrument)> = vec![
+            ("ifo_separation", Instrument { ifo_separation: 4.0, ..base }),
+            ("half_sequence", Instrument { half_sequence: 0.7, ..base }),
+            ("launch_velocity", Instrument { launch_velocity: 3.9, ..base }),
+            ("gravity", Instrument { gravity: 9.8, ..base }),
+            ("atom_mass", Instrument { atom_mass: base.atom_mass * 1.01, ..base }),
+            ("hbar", Instrument { hbar: base.hbar * 1.01, ..base }),
+            ("big_g", Instrument { big_g: base.big_g * 1.01, ..base }),
+            ("wavelength", Instrument { wavelength: base.wavelength * 1.01, ..base }),
+            ("kicks", Instrument { kicks: base.kicks + 1.0, ..base }),
+            ("floor", Instrument { floor: !base.floor, ..base }),
+            ("sign", Instrument { sign: Sign::UpperMinusLower, ..base }),
+            ("quadrature", Instrument { quadrature: Quadrature::Gauss { order: 5, panel: 0.1 }, ..base }),
+            (
+                "quadrature panel",
+                Instrument { quadrature: Quadrature::Gauss { order: 6, panel: 0.05 }, ..base },
+            ),
+        ];
+        for (field, instrument) in &changed {
+            assert_ne!(instrument_key(instrument), key, "{field} is not in the key");
+        }
+        // Control: the same instrument (and −0 for +0) gives the same key.
+        assert_eq!(instrument_key(&Instrument { ..base }), key);
+    }
+
     use super::*;
     use crate::{BodySpec, FloorSpec, dev};
     use cav_core::forward::Source;

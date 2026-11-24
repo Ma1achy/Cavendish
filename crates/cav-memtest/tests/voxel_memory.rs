@@ -15,7 +15,10 @@ static ALLOCATOR: Counting = Counting;
 #[test]
 fn a_tree_is_bounded_and_refused_past_its_caps() {
     // The engine's caps are the stated ones.
-    assert_eq!(Budget::DEFAULT, Budget { leaves: MAX_LEAVES, nodes: MAX_TREE_NODES, work: MAX_VOXEL_WORK });
+    assert_eq!(
+        Budget::DEFAULT,
+        Budget { leaves: MAX_LEAVES, nodes: MAX_TREE_NODES, work: MAX_VOXEL_WORK, bytes: usize::MAX }
+    );
     // V1: a pitch finer than one tree holds is refused before anything is built.
     let sphere = Sphere { centre: Vec3::ZERO, radius: 0.5 };
     assert!(Grid::around(sphere.bounds(), 1.0 / 1025.0, 1).is_err());
@@ -29,7 +32,7 @@ fn a_tree_is_bounded_and_refused_past_its_caps() {
     assert!(why.contains("leaves"), "{why}");
     assert!(peak <= 40 << 20, "{peak} bytes");
     // V2 and V3 and V4 by their mechanism, with a small budget.
-    let small = |leaves, nodes, work| Budget { leaves, nodes, work };
+    let small = |leaves, nodes, work| Budget { leaves, nodes, work, bytes: usize::MAX };
     let grid = Grid::around(sphere.bounds(), 1.0 / 64.0, 2).unwrap();
     let full = voxelise(&sphere, &grid, 1.0, 0).unwrap();
     let (leaves, nodes) = (full.leaves.len(), full.nodes.len());
@@ -54,6 +57,61 @@ fn a_tree_is_bounded_and_refused_past_its_caps() {
     // Control: the tree that is built is all there and holds more than the refusal did.
     let (_, built) = peak_during(|| voxelise(&sphere, &grid, 1.0, 0).unwrap());
     assert!(built > peak, "{built} against {peak}");
+    // The cap on bytes: a tree is refused one byte short of what it weighs, so what is counted
+    // before it is made is never less than what it is; and it is made within exactly that.
+    let bytes = full.bytes();
+    assert!(voxelise_within(&sphere, &grid, 1.0, 0, Budget::with_bytes(bytes + (64 << 10))).is_ok());
+    let (refused, peak) =
+        peak_during(|| voxelise_within(&sphere, &grid, 1.0, 0, Budget::with_bytes(bytes - 1)));
+    assert!(refused.unwrap_err().0.contains("bytes"));
+    assert!(peak < leaves * 8 * 3 + (64 << 10), "{peak} bytes for {leaves} leaves");
+}
+
+/// A scene at the body cap, every body a distinct voxel sphere of about `bytes` bytes of tree.
+fn crowd(bodies: usize) -> cav_sim::SceneSpec {
+    let mut scene = cav_sim::dev::void();
+    for n in 0..bodies {
+        let radius = 0.1 + 1e-6 * n as f64;
+        let shape =
+            cav_sim::ShapeSpec { kind: cav_sim::ShapeKind::Sphere { radius }, pitch: 0.01, supersample: 1 };
+        let at = [(n % 40) as f64 * 0.3 - 6.0, (n / 40) as f64 * 0.3 - 4.0, 1.0];
+        scene.bodies.push(cav_sim::BodySpec::shaped(
+            &format!("ball {n}"),
+            1.0,
+            shape,
+            cav_sim::Motion::Static { position: at },
+        ));
+    }
+    scene
+}
+
+#[test]
+fn the_scene_s_trees_stay_within_their_budget_at_the_body_cap() {
+    // V10: tens of distinct fine bodies held gigabytes when only trees no longer in use counted
+    // (S3's review, finding 4). Now the scene's trees share one budget, counted before each is
+    // made. Here a small budget stands for the engine's 256 MiB, at the body cap.
+    let scene = crowd(cav_sim::spec::limits::BODIES);
+    assert_eq!(scene.validate(), Ok(()));
+    let views = [cav_sim::ViewSpec::home(&scene)];
+    let budget = 4 << 20;
+    let mut voxels = cav_engine::voxels::Voxels::with_budget(budget);
+    let (notes, peak) = peak_during(|| voxels.refresh(&scene, 0.0, &views));
+    let drawn = voxels.trees().iter().flatten().count();
+    let one = voxels.trees().iter().flatten().next().unwrap().bytes();
+    eprintln!(
+        "{drawn} of {} bodies drawn as voxels ({one} bytes a tree); {peak} bytes live at most",
+        scene.bodies.len()
+    );
+    assert!(voxels.cached_bytes() <= budget);
+    assert!(drawn > 10 && drawn < scene.bodies.len(), "{drawn}");
+    assert!(notes.len() == scene.bodies.len() - drawn && notes[0].contains("in use"), "{:?}", &notes[..1]);
+    // What was live: the trees, the frame of what is drawn (at most 20,000 cubes) and the notes.
+    assert!(peak <= budget + (12 << 20), "{peak} bytes");
+    // Control: the same bodies without the budget hold their trees' worth, far over it.
+    let few = crowd(400);
+    let mut unbounded = cav_engine::voxels::Voxels::with_budget(usize::MAX / 2);
+    let (_, held) = peak_during(|| unbounded.refresh(&few, 0.0, &[cav_sim::ViewSpec::home(&few)]));
+    assert!(held > budget + (12 << 20) && unbounded.cached_bytes() > 4 * budget, "{held}");
 }
 
 #[test]

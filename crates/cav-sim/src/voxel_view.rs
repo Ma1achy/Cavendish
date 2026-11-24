@@ -453,12 +453,15 @@ pub fn leaf_phases(
 ) -> Result<Vec<f64>, String> {
     let base =
         scene.array.towers.get(tower).ok_or_else(|| format!("there is no tower {}", tower + 1))?.position;
-    let reader = Reader::new(scene.array.instrument.instrument());
+    // The tower's own instrument: a tower may override the array's (TASK-S3-08).
+    let reader = Reader::new(scene.array.instrument_of(tower).instrument());
     let nodes = reader.instrument().node_count(&[]);
-    let work = 4 * nodes * tree.leaves.len() as u64;
-    if work > MAX_KERNEL_WORK {
+    // The body's share of one read's work: a frame colours every voxel body.
+    let (work, share) = (4 * nodes * tree.leaves.len() as u64, crate::read::kernel_share(scene));
+    if work > share {
         return Err(format!(
-            "{} leaves × {nodes} flight nodes is more than the {MAX_KERNEL_WORK} cube evaluations allowed",
+            "{} leaves × {nodes} flight nodes is more than the {share} cube evaluations allowed it ({MAX_KERNEL_WORK} \
+             shared by the scene's voxel bodies)",
             tree.leaves.len()
         ));
     }
@@ -530,6 +533,11 @@ pub fn voxel_frame_cut(
         tree_overlay(scene, &present, asked, cutting, time, &mut frame);
     }
     let towers: Vec<Vec3> = scene.array.towers.iter().map(|t| Vec3::from_array(t.position)).collect();
+    if towers.is_empty() && colouring.field == LeafField::Distance {
+        frame.notes.push(
+            "the scene has no towers: no leaf has a distance to the nearest, so the legend is empty".into(),
+        );
+    }
     for (n, tree) in present {
         let at = body_at(scene, n, time);
         let phases = if colouring.field == LeafField::Phase {

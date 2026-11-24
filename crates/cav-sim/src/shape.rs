@@ -8,9 +8,16 @@
 
 use cav_core::Vec3;
 use cav_core::voxel::shape::{Cuboid, Cylinder, Ellipsoid, Platonic, Polyhedron, Shape, Shell, Sphere};
-use cav_core::voxel::{Grid, VoxTree, mesh::Mesh, voxelise};
+use cav_core::voxel::{Budget, Grid, VoxTree, mesh::Mesh, voxelise_within};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+/// The most bytes of voxel trees one scene's bodies may hold at once, together
+/// ([`VoxTree::bytes`]): what the engine keeps for drawing a scene, and what a scene's trees are
+/// counted against before each is made (`docs/slices/S3.md` §3.1, V10). One tree at the
+/// voxeliser's own caps (about 190 MiB) fits; tens of fine bodies do not, and the ones past it
+/// are refused with the numbers.
+pub const MAX_SCENE_TREE_BYTES: usize = 256 << 20;
 
 /// A body's shape and how finely it is voxelised.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -287,9 +294,20 @@ impl ShapeSpec {
     /// When the shape cannot be made, or the voxeliser refuses it (too fine, too many leaves, no
     /// sample point inside), in words that name the number.
     pub fn tree(&self, mass: f64) -> Result<VoxTree, String> {
+        self.tree_within(mass, usize::MAX)
+    }
+
+    /// [`Self::tree`] in at most `bytes` bytes of tree ([`VoxTree::bytes`]): what is left of a
+    /// scene's [`MAX_SCENE_TREE_BYTES`] when the trees before it are made. Counted as the leaves
+    /// are emitted and from the nodes before they are reserved, so a tree that would not fit is
+    /// refused before it is whole.
+    ///
+    /// # Errors
+    /// As [`Self::tree`], and when the tree would weigh more than `bytes`, with the numbers.
+    pub fn tree_within(&self, mass: f64, bytes: usize) -> Result<VoxTree, String> {
         let solid = self.kind.solid()?;
         let grid = Grid::around(solid.bounds(), self.pitch, self.supersample).map_err(|e| e.0)?;
-        voxelise(solid.as_ref(), &grid, mass, 0).map_err(|e| e.0)
+        voxelise_within(solid.as_ref(), &grid, mass, 0, Budget::with_bytes(bytes)).map_err(|e| e.0)
     }
 }
 

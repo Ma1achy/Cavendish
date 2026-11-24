@@ -51,19 +51,52 @@ fn a_legend_is_made_from_what_is_drawn() {
 
 #[test]
 fn the_phases_of_the_leaves_add_up_to_the_body_s() {
-    let scene = dev::unit_cube();
+    // Tower 2 (index 1) carries its own instrument, T = 0.9 s against the array's 0.73: the leaves
+    // coloured for it must add up to what it reads, not to what the array's instrument would.
+    let mut scene = dev::unit_cube();
+    assert!(scene.array.towers.len() >= 2);
+    scene.array.towers[1].instrument =
+        Some(cav_sim::InstrumentOverride { half_sequence: Some(0.9), ..Default::default() });
     let trees = trees(&scene);
-    let frame =
-        voxel_frame(&scene, &trees, Colouring { field: LeafField::Phase, tower: 0 }, Overlay::default(), 3.0);
-    let sum: f64 = frame.bodies[0].cubes.iter().map(|c| c.value).sum();
     let shots = cav_sim::read::Shots::together(&scene, vec![3.0]);
     let whole =
         cav_sim::read::contribution(&scene, cav_sim::read::SourceId::Body(0), &shots, &|| false).unwrap();
-    assert!(
-        (sum - whole.gradiometer[0]).abs() <= 1e-9 * whole.gradiometer[0].abs(),
-        "{sum} against {}",
-        whole.gradiometer[0]
-    );
+    let mut sums = Vec::new();
+    for tower in [0, 1] {
+        let frame = voxel_frame(
+            &scene,
+            &trees,
+            Colouring { field: LeafField::Phase, tower },
+            Overlay::default(),
+            3.0,
+        );
+        assert!(frame.notes.is_empty(), "{:?}", frame.notes);
+        let sum: f64 = frame.bodies[0].cubes.iter().map(|c| c.value).sum();
+        let reads = whole.gradiometer[shots.starts[tower]];
+        assert!((sum - reads).abs() <= 1e-9 * reads.abs(), "tower {}: {sum} against {reads}", tower + 1);
+        sums.push(sum);
+    }
+    // Control: the override matters here; the array's instrument at tower 2 reads otherwise.
+    let mut plain = scene.clone();
+    plain.array.towers[1].instrument = None;
+    let frame =
+        voxel_frame(&plain, &trees, Colouring { field: LeafField::Phase, tower: 1 }, Overlay::default(), 3.0);
+    let other: f64 = frame.bodies[0].cubes.iter().map(|c| c.value).sum();
+    assert!((other - sums[1]).abs() > 1e-3 * sums[1].abs(), "{other} against {}", sums[1]);
+}
+
+#[test]
+fn a_scene_with_no_towers_says_why_it_has_no_distances() {
+    let mut scene = dev::unit_cube();
+    let trees = trees(&scene);
+    let colouring = Colouring { field: LeafField::Distance, tower: 0 };
+    // Control: with towers, distances are drawn and nothing is said.
+    let frame = voxel_frame(&scene, &trees, colouring, Overlay::default(), 0.0);
+    assert!(frame.notes.is_empty() && frame.range.is_some(), "{:?}", frame.notes);
+    scene.array.towers.clear();
+    let frame = voxel_frame(&scene, &trees, colouring, Overlay::default(), 0.0);
+    assert!(frame.range.is_none());
+    assert!(frame.notes.iter().any(|n| n.contains("no towers")), "{:?}", frame.notes);
 }
 
 #[test]

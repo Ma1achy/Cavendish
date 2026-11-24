@@ -58,11 +58,24 @@ pub struct Budget {
     pub nodes: usize,
     /// The most box tests and sample tests, together.
     pub work: u64,
+    /// The most bytes the finished tree may weigh ([`VoxTree::bytes`]): checked as the leaves are
+    /// emitted, and again from the counted nodes before anything is reserved for them. A scene's
+    /// trees share one such allowance (`cav_sim::shape::MAX_SCENE_TREE_BYTES`); `usize::MAX`
+    /// leaves only the other caps.
+    pub bytes: usize,
 }
 
 impl Budget {
-    /// The engine's caps: [`MAX_LEAVES`], [`MAX_TREE_NODES`], [`MAX_VOXEL_WORK`].
-    pub const DEFAULT: Self = Self { leaves: MAX_LEAVES, nodes: MAX_TREE_NODES, work: MAX_VOXEL_WORK };
+    /// The engine's caps for one tree: [`MAX_LEAVES`], [`MAX_TREE_NODES`], [`MAX_VOXEL_WORK`],
+    /// and no cap on bytes beyond what those give (about 190 MiB).
+    pub const DEFAULT: Self =
+        Self { leaves: MAX_LEAVES, nodes: MAX_TREE_NODES, work: MAX_VOXEL_WORK, bytes: usize::MAX };
+
+    /// The engine's caps, and at most `bytes` bytes of tree.
+    #[must_use]
+    pub const fn with_bytes(bytes: usize) -> Self {
+        Self { bytes, ..Self::DEFAULT }
+    }
 }
 
 /// Why a voxelisation or a mesh was refused, in words that name the number at fault.
