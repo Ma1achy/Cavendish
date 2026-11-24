@@ -76,16 +76,20 @@ pub fn decide(head: Option<&str>, status: Option<&str>) -> (String, &'static str
 /// The stamp of the workspace at `root`, asked of `program` (git).
 pub fn stamp(program: &str, root: &Path) -> Stamp {
     let head = ask(program, root, &["rev-parse", "--show-prefix", "HEAD"]);
-    // `--no-optional-locks`: asking must not rewrite the index, which is one of the files watched.
+    // `--no-optional-locks`: asking must not rewrite the index (git's own state, left alone).
     let mut status = vec!["--no-optional-locks", "status", "--porcelain", "--"];
     status.extend_from_slice(ENGINE_SOURCES);
     let (revision, dirty) = decide(head.as_deref(), ask(program, root, &status).as_deref());
 
-    // The sources, and what in git moves when the commit or the set of tracked files does: HEAD
-    // and its log (every commit, checkout, merge and reset), the branch it names, the packed
-    // refs and the index; with `.gitignore`, which decides what counts as untracked.
+    // The sources, and what in git moves when the commit does: HEAD and its log (every commit,
+    // checkout, merge and reset), the branch it names and the packed refs; with `.gitignore`,
+    // which decides what counts as untracked. Not the index: `git add` rewrites it without
+    // changing the commit or whether the sources differ from it (a staged change is as dirty as
+    // an unstaged one), and watching it compiled the engine and everything above it again after
+    // every `git add` (S2's second review, item 6). The sources themselves are watched, so an
+    // edit, a new file or a deleted one is seen without it.
     let mut watch: Vec<PathBuf> = ENGINE_SOURCES.iter().chain(&[".gitignore"]).map(|path| root.join(path)).collect();
-    let mut inside = vec!["HEAD".to_owned(), "logs/HEAD".to_owned(), "index".to_owned(), "packed-refs".to_owned()];
+    let mut inside = vec!["HEAD".to_owned(), "logs/HEAD".to_owned(), "packed-refs".to_owned()];
     inside.extend(ask(program, root, &["symbolic-ref", "-q", "HEAD"]).map(|branch| branch.trim().to_owned()));
     let mut arguments = vec!["rev-parse"];
     for name in &inside {

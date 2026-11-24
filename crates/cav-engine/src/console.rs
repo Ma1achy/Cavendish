@@ -1467,16 +1467,23 @@ mod tests {
             );
             if line.contains("kicks") {
                 // The preset at that kick number, by another road.
-                assert_eq!(derived, aice_with_kicks(4000.0));
+                assert_eq!(derived, aice_with_kicks(4000));
             }
         }
         // The kick number has a path, a unit and a range like any other field.
         let mut engine = Engine::new();
-        assert_eq!(engine.run_line("get array.instrument.kicks").unwrap(), "1000.0");
+        assert_eq!(engine.run_line("get array.instrument.kicks").unwrap(), "1000");
         let schema = engine.run_line("schema array.instrument.kicks").unwrap();
         assert!(schema.contains("\"x-unit\": \"1\"") && schema.contains("kick number"), "{schema}");
         let why = engine.run_line("set array.instrument.kicks 0").unwrap_err();
         assert!(why.contains("array.instrument.kicks"), "{why}");
+        // A whole number (George, 24 Nov 2026): a fraction is refused, never rounded.
+        let why = engine.run_line("set array.instrument.kicks 1000.5").unwrap_err();
+        assert!(why.contains("array.instrument.kicks") && why.contains("whole number"), "{why}");
+        assert_eq!(engine.spec().array.instrument.kicks, 1000);
+        // Control: a whole number is taken.
+        engine.run_line("set array.instrument.kicks 1001").unwrap();
+        assert_eq!(engine.spec().array.instrument.kicks, 1001);
     }
 
     #[test]

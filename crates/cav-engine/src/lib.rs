@@ -159,13 +159,55 @@ mod provenance {
             "{here:?}"
         );
         assert!(matches!(here.dirty, "true" | "false"), "{here:?}");
-        for name in ["HEAD", "index"] {
-            assert!(
-                here.watch.iter().any(|path| path.ends_with(name)),
-                "{name} is not watched: {:?}",
-                here.watch
-            );
+        assert!(
+            here.watch.iter().any(|path| path.ends_with("HEAD")),
+            "HEAD is not watched: {:?}",
+            here.watch
+        );
+    }
+
+    /// The paths of `watch` that are inside git's own directory, as git names them relative to it.
+    fn git_paths(watch: &[PathBuf], root: &Path) -> Vec<String> {
+        let sources: Vec<PathBuf> =
+            ENGINE_SOURCES.iter().chain(&[".gitignore"]).map(|path| root.join(path)).collect();
+        watch
+            .iter()
+            .filter(|path| !sources.contains(path))
+            .map(|path| path.to_string_lossy().replace('\\', "/"))
+            .collect()
+    }
+
+    #[test]
+    fn the_build_watches_what_it_stamps() {
+        // S2's second review, item 6: the stamp is the commit and whether the sources differ from
+        // it, so the build is made again when a source, the commit or the branch moves, and not
+        // when the index does (`git add` rewrote it and compiled five crates again).
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let made = stamp("git", &root);
+        for source in ENGINE_SOURCES {
+            let path = root.join(source);
+            assert!(!path.exists() || made.watch.contains(&path), "{source} is not watched");
         }
+        let inside = git_paths(&made.watch, &root);
+        assert!(!inside.iter().any(|path| path.ends_with("/index")), "the index is watched: {inside:?}");
+        if ask("git", &root, &["rev-parse", "HEAD"]).is_some() {
+            assert!(inside.iter().any(|path| path.ends_with("/HEAD")), "{inside:?}");
+            // On a branch, its ref is watched (unless it lives only in the packed refs).
+            if let Some(branch) = ask("git", &root, &["symbolic-ref", "-q", "HEAD"]) {
+                let loose = ask("git", &root, &["rev-parse", "--git-path", branch.trim()])
+                    .map(|p| root.join(p.trim()));
+                if loose.as_ref().is_some_and(|path| path.exists()) {
+                    assert!(
+                        inside.iter().any(|path| path.ends_with(branch.trim())),
+                        "{branch} is not watched: {inside:?}"
+                    );
+                }
+            }
+        }
+        // Control: the check sees an index when one is there.
+        let mut with_index = made.watch.clone();
+        with_index.push(root.join(".git/index"));
+        assert!(git_paths(&with_index, &root).iter().any(|path| path.ends_with("/index")));
     }
 
     #[test]

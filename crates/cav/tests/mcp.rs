@@ -384,6 +384,11 @@ fn mcp_sets_lists_and_loads_inline() {
     let said = client.text("scene_set", json!({ "path": "bodies[0].mass", "value": 42.5 }));
     assert_eq!(said, "set bodies[0].mass 42.5\ninvalidates: forward");
     assert_eq!(client.text("scene_get", json!({ "path": "bodies[0].mass" })), "42.5");
+    // The kick number is a whole number: a fraction is refused, naming the field.
+    let (is_error, content) =
+        client.call("scene_set", json!({ "path": "array.instrument.kicks", "value": 1000.5 }));
+    let said = content[0]["text"].as_str().unwrap_or_default().to_owned();
+    assert!(is_error && said.contains("array.instrument.kicks") && said.contains("whole number"), "{said}");
     let renamed = client.text("scene_set", json!({ "path": "name", "value": "mine" }));
     assert!(renamed.ends_with("invalidates: nothing"), "{renamed}");
     let journal: Value = serde_json::from_str(&client.text("command", json!({ "line": "journal" }))).unwrap();

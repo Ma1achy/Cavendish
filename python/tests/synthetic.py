@@ -106,8 +106,8 @@ def provenance(what: str, columns: list[tuple[str, str]], rows: int, layout: str
     series: list[dict[str, object]] = []
     if what == "signal":
         series = [
-            {"name": f"tower {n + 1}", "colour": "#000000", "x": columns[3 * n][0], "y": columns[3 * n + 1][0],
-             "taken_column": 3 * n + 2}
+            {"name": f"tower {n + 1}", "colour": PALETTE[n], "x": columns[3 * n][0], "y": columns[3 * n + 1][0],
+             "taken_column": 3 * n + 2, "dash": [] if n == 0 else [4.8, 2.0], "line_width": 0.8}
             for n in range(len(columns) // 3)
         ]
     elif what in ("periodogram", "cadence"):

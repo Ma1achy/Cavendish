@@ -987,3 +987,141 @@ fn the_flight_rows_have_a_height_scale() {
     }
     assert_eq!(named, "10.1 m");
 }
+
+#[test]
+fn an_envelope_skips_a_lost_shot() {
+    // S2's second review, item 5. A shot not taken holds a number that is no measurement: here
+    // a huge one, so that if the envelope took it the envelope would show it.
+    let x: Vec<f64> = (0..16).map(f64::from).collect();
+    let mut y: Vec<f64> = (0..16).map(|k| f64::from(k % 3)).collect();
+    let mut taken = vec![true; 16];
+    (y[5], taken[5]) = (1e9, false);
+    // A whole stretch lost (shots 8 to 11) breaks the run there.
+    for k in 8..12 {
+        (y[k], taken[k]) = (-1e9, false);
+    }
+    let runs = plots::envelope(&x, &y, &taken, 4);
+    assert_eq!(runs.len(), 2, "{runs:?}");
+    let all: Vec<f64> =
+        runs.iter().flat_map(|(upper, lower)| upper.iter().chain(lower).map(|q| q.1)).collect();
+    assert!(all.iter().all(|value| value.abs() <= 2.0), "a lost shot's value is on the envelope: {all:?}");
+    // Each stretch's place is the middle of its first and last shot taken.
+    assert_eq!(runs[0].0[1].0, f64::midpoint(4.0, 7.0));
+    // Control: the same series with every shot taken has the huge values on its envelope, unbroken.
+    let every = plots::envelope(&x, &y, &[true; 16], 4);
+    assert_eq!(every.len(), 1);
+    assert!(every[0].0.iter().any(|q| q.1 == 1e9) && every[0].1.iter().any(|q| q.1 == -1e9));
+}
+
+#[test]
+fn a_flight_is_painted_as_it_is_recorded() {
+    // S2's second review, item 5: each flight the diagram records as taken or not has its four
+    // arm lines solid or dashed to match.
+    let engine = engine("load staggered; set array.schedule.loss 0.4");
+    let plot = build(&engine, &subject(PaneContent::Flight), &Style::screen(), [960.0, 600.0]);
+    let arms: Vec<(f32, f32, bool)> = plot
+        .drawing
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Line { points, dash, .. } if points.len() == 33 => {
+                Some((points[0][0], points[32][0], !dash.is_empty()))
+            }
+            _ => None,
+        })
+        .collect();
+    let flights = &plot.drawn.flights;
+    assert!(flights.iter().any(|f| f.3) && flights.iter().any(|f| !f.3), "both kinds are drawn");
+    assert_eq!(arms.len(), 4 * flights.len());
+    for (n, flight) in flights.iter().enumerate() {
+        for &(start, end, dashed) in &arms[4 * n..4 * n + 4] {
+            assert!((start - flight.1).abs() < 0.5 && (end - flight.2).abs() < 0.5, "{flight:?}");
+            assert_eq!(
+                dashed, !flight.3,
+                "flight {n} is recorded taken = {} and painted dashed = {dashed}",
+                flight.3
+            );
+        }
+    }
+}
+
+#[test]
+fn the_cadence_labels_are_not_covered() {
+    // S2's second review, item 9: in `cadence-gaps-loss.png` the "predicted floor" label sat on
+    // the level at the right of the plot, where the window's own line runs over it. Criterion:
+    // no text inside the axes meets the window's line; the legend names the dashed level.
+    let engine = engine(
+        "load cadence-lab; set array.schedule.loss 0.05; set array.schedule.gaps {\"on\": 9, \"period\": 10}",
+    );
+    for style in [Style::screen(), Style::preset("paper-full").unwrap()] {
+        let plot = build(&engine, &subject(PaneContent::Cadence), &style, [960.0, 600.0]);
+        let area = plot.drawn.area;
+        let window: Vec<[f32; 2]> = plot
+            .drawing
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Line { points, colour, .. } if *colour == style.spectrum && points.len() > 10 => {
+                    Some(points.clone())
+                }
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert!(window.len() > 10, "{}: the window is drawn", style.name);
+        let crosses = |took: &egui::Rect| {
+            window.windows(2).any(|pair| {
+                let steps = 16;
+                (0..=steps).any(|s| {
+                    let t = s as f32 / steps as f32;
+                    took.contains(egui::pos2(
+                        pair[0][0] + (pair[1][0] - pair[0][0]) * t,
+                        pair[0][1] + (pair[1][1] - pair[0][1]) * t,
+                    ))
+                })
+            })
+        };
+        for (text, took) in &plot.drawn.labels {
+            if area.contains(took.center()) && !text.starts_with("0.") {
+                assert!(!crosses(took), "{}: `{text}` is under the window's line", style.name);
+            }
+        }
+        assert!(
+            plot.drawn.labels.iter().any(|(text, _)| text.contains("dashed: predicted floor")
+                || text.contains("dashed: the floor they predict")
+                || text.contains("stems, dashed: predicted")),
+            "{}: the legend names the floor: {:?}",
+            style.name,
+            plot.drawn.labels
+        );
+        // Control: where the label stood before (right of the axes, just above the level), the
+        // window's line runs through it.
+        if !style.house {
+            let level = plot
+                .drawing
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    Item::Line { points, dash, .. }
+                        if !dash.is_empty() && points.len() == 2 && points[0][1] == points[1][1] =>
+                    {
+                        Some(points[0][1])
+                    }
+                    _ => None,
+                })
+                .expect("the dashed floor");
+            let [w, h] = cav_plot::drawing::Measure::size(
+                &cav_plot::fonts::Outlines,
+                "predicted floor",
+                cav_plot::drawing::Face::Sans,
+                9.0,
+            );
+            let u = style.unit();
+            let before = egui::Rect::from_min_max(
+                egui::pos2(area.right() - 4.0 * u - w, level - 2.0 * u - h),
+                egui::pos2(area.right() - 4.0 * u, level - 2.0 * u),
+            );
+            assert!(crosses(&before), "the control does not meet the line");
+        }
+    }
+}

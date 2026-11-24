@@ -87,6 +87,9 @@ class Series:
                          that the tower did not take (a planned gap, a lost shot) keeps its slot
                          in the file, holding 0, and is ``False`` here; every other series is
                          ``True`` throughout.
+        dash   (tuple[float, ...] | None): The dash Cavendish drew it with, in multiples of the
+                         line's width (ink, gap, ...; empty for solid); ``None`` when the record is
+                         older than the dash's place in it.
     """
 
     name:   str
@@ -94,6 +97,7 @@ class Series:
     x:      Column
     y:      Column
     taken:  Flags
+    dash:   tuple[float, ...] | None = None
 
 
 @dataclass(frozen = True)
@@ -266,6 +270,18 @@ def _read_npy(path: Path, names: list[str]) -> Result[dict[str, Column], FigureE
     return Ok({name: grid[:, n] for n, name in enumerate(names)})
 
 
+
+def _dash(entry: dict[str, object]) -> tuple[float, ...] | None:
+    """A series' dash as multiples of its line's width, from the record's points and width."""
+    lengths, width = entry.get("dash"), number(entry.get("line_width"))
+    if lengths is None or width is None or width <= 0.0:
+        return None
+    pattern = [number(item) for item in rows_of(lengths)]
+    if any(length is None for length in pattern):
+        return None
+    return tuple(float(length) / width for length in pattern if length is not None)
+
+
 def load(path: str | Path) -> Result[Figure, FigureError]:
     """
     Reads one picture of a figure from the figure's record and the data file beside it.
@@ -355,7 +371,8 @@ def load(path: str | Path) -> Result[Figure, FigureError]:
         at    = entry.get("taken_column")
         flags = names[at] if isinstance(at, int) and not isinstance(at, bool) and 0 <= at < len(names) else f"shot taken by {name}"
         taken = columns.value[flags] != 0.0 if flags in columns.value else np.ones(held, dtype = np.bool_)
-        series.append(Series(name = name, colour = colour, x = columns.value[across], y = columns.value[up], taken = taken))
+        series.append(Series(name = name, colour = colour, x = columns.value[across], y = columns.value[up], taken = taken,
+                             dash = _dash(entry)))
     return Ok(Figure(
         path       = source,
         file       = wanted,
