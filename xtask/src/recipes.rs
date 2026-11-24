@@ -3,13 +3,15 @@
 //! recipe follows it.
 //!
 //! What counts as a name (anything else in backticks is prose or an example and is not checked):
-//! - a path under `crates/`, `scenes/`, `docs/`, `xtask/`, `oracle/` or `plan/`: the file exists;
+//! - a path under `crates/`, `scenes/`, `docs/`, `xtask/`, `oracle/`, `plan/` or `python/`: the file
+//!   exists;
 //! - `name()`: a function `fn name` is declared somewhere in the source;
 //! - `Type::member` (a path whose last-but-one segment starts with a capital): `member` is
 //!   written inside an `impl`, `enum`, `struct` or `trait` block of `Type`, so a method, a
 //!   constant or a variant that some other type has does not count (S2's review, finding 32:
 //!   the plot recipe named a constant that only another enum had);
-//! - `a::tests::b` (a path through modules): the last segment is a word of the source;
+//! - `a::tests::b` (a path through modules): the last segment is a word of the source (the Rust,
+//!   and the Python under `python/`);
 //! - a snake-case word with two or more underscores (a test's name), or an upper-case constant
 //!   with an underscore: a word of the source;
 //! - `subsystem.case_name`: a validation case's name, quoted in the source.
@@ -43,7 +45,7 @@ fn named(text: &str) -> Vec<(Kind, String)> {
             }
             let word =
                 |text: &str| !text.is_empty() && text.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-            let roots = ["crates/", "scenes/", "docs/", "xtask/", "oracle/", "plan/"];
+            let roots = ["crates/", "scenes/", "docs/", "xtask/", "oracle/", "plan/", "python/"];
             if roots.iter().any(|root| token.starts_with(root)) {
                 if !token.contains('*') && !token.contains(' ') {
                     out.push((Kind::File, token.trim_end_matches('/').to_owned()));
@@ -159,7 +161,8 @@ fn missing(root: &Path, source: &str, recipe: &str) -> Vec<String> {
         .collect()
 }
 
-/// Every `.rs` file under `dir`, read into one text. The tree is the repository's own source.
+/// Every `.rs` and `.py` file under `dir`, read into one text. The tree is the repository's own
+/// source.
 fn source_under(dir: &Path, into: &mut String) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
@@ -169,7 +172,7 @@ fn source_under(dir: &Path, into: &mut String) {
             if name != "target" && name != ".git" {
                 source_under(&path, into);
             }
-        } else if path.extension().is_some_and(|ext| ext == "rs")
+        } else if path.extension().is_some_and(|ext| ext == "rs" || ext == "py")
             && let Ok(text) = std::fs::read_to_string(&path)
         {
             into.push_str(&text);
@@ -186,7 +189,7 @@ mod tests {
     fn the_recipes_name_things_that_exist() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let mut source = String::new();
-        for dir in ["crates", "xtask/src", "oracle/tests", "oracle/src"] {
+        for dir in ["crates", "xtask/src", "oracle/tests", "oracle/src", "python"] {
             source_under(&root.join(dir), &mut source);
         }
         // This file's own examples must not be what satisfies a recipe.
@@ -216,11 +219,13 @@ mod tests {
 
         // Controls: each kind of name, wrong, is found; right, is not.
         let wrong = "Run `no_such_test_at_all`, call `nowhere_fn()`, read `crates/cav-core/src/absent.rs`, \
-                     see `Engine::not_a_method`, `FigureKind::starter`, case `timing.no_such_case`, and `NOT_A_CONSTANT`.";
-        assert_eq!(missing(root, &source, wrong).len(), 7, "{:?}", missing(root, &source, wrong));
+                     see `Engine::not_a_method`, `FigureKind::starter`, case `timing.no_such_case`, `NOT_A_CONSTANT`, \
+                     `python/tests/absent.py` and `test_no_such_python_test`.";
+        assert_eq!(missing(root, &source, wrong).len(), 9, "{:?}", missing(root, &source, wrong));
         let right = "Run `the_recipes_name_things_that_exist`? No: `every_documented_command_parses`, call \
                      `sources()`, read `crates/cav-core/src/forward.rs`, see `Engine::prepare`, case \
-                     `timing.offset_shifts_one_tower`, and `S2_SCENES`.";
+                     `timing.offset_shifts_one_tower`, `S2_SCENES`, `python/tests/synthetic.py` and \
+                     `test_the_redraw_is_the_same_figure`.";
         assert_eq!(missing(root, &source, right), Vec::<String>::new());
         // A member is its own type's: a constant another enum has, a variant of another enum
         // and a method of another type are each not it.
