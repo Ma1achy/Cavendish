@@ -10,7 +10,7 @@
 
 use cav_core::Vec3;
 use cav_core::forward::{Instrument, Node, PHASE_TOLERANCE, Reader, Source};
-use cav_core::voxel::kernel::{TreeBody, cube_potential, cube_shift, prism_potential};
+use cav_core::voxel::kernel::{TreeBody, cube_potential, cube_shift, cube_shifts, prism_potential};
 use cav_core::voxel::shape::{Cuboid, Cylinder, Shape};
 use cav_core::voxel::{Grid, VoxTree, voxelise};
 use oracle::fixture;
@@ -478,8 +478,10 @@ fn the_point_mass_fails_where_the_script_says() {
 
 // ======================================== THE SCAFFOLD ========================================
 
-/// One member: its tree, the centre of its tree at rest (metres), its amplitude (metres for α = 1).
-type Member = (VoxTree, Vec3, f64);
+/// One member: its tree, the centre of its tree at rest (metres), its amplitude (metres for α = 1),
+/// and its leaves as cubes `(centre in the tree's frame, metres; mass, kg; side, metres)`, in the
+/// tree's order, decoded once: the series' table reads each leaf 23,200 times.
+type Member = (VoxTree, Vec3, f64, Vec<(Vec3, f64, f64)>);
 
 /// George's scaffold as in a fixture: each member a voxel cylinder at `pitch`.
 fn scaffold(case: &str, pitch: f64) -> Vec<Member> {
@@ -496,13 +498,18 @@ fn scaffold(case: &str, pitch: f64) -> Vec<Member> {
         let axis = axes[i] as usize;
         let shape = Cylinder { centre: Vec3::ZERO, radius: radii[i], half_length: 0.5 * lengths[i], axis };
         let tree = voxelise(&shape, &Grid::around(shape.bounds(), pitch, 4).unwrap(), masses[i], 0).unwrap();
-        (tree, Vec3::new(centres[3 * i], centres[3 * i + 1], centres[3 * i + 2]), amplitudes[i])
+        let cubes = tree
+            .leaves
+            .iter()
+            .map(|l| (tree.block_centre(l.key, l.level), tree.leaf_mass(l), tree.side(l.level)))
+            .collect();
+        (tree, Vec3::new(centres[3 * i], centres[3 * i + 1], centres[3 * i + 2]), amplitudes[i], cubes)
     })
 }
 
 /// The scaffold's potential at `point` with every member moved by its amplitude × `alpha` in x, J/kg.
 fn scaffold_potential(members: &[Member], alpha: f64, point: Vec3) -> f64 {
-    members.iter().map(|(tree, centre, a)| potential(tree, *centre + Vec3::X * (a * alpha), point)).sum()
+    members.iter().map(|(tree, centre, a, _)| potential(tree, *centre + Vec3::X * (a * alpha), point)).sum()
 }
 
 /// How the scaffold's potential at `point` changes, J/kg, when every member moves by its
@@ -516,18 +523,41 @@ fn scaffold_potential(members: &[Member], alpha: f64, point: Vec3) -> f64 {
 fn scaffold_change(members: &[Member], alpha: f64, point: Vec3) -> f64 {
     members
         .iter()
-        .map(|(tree, centre, a)| {
+        .map(|(_, centre, a, cubes)| {
             let shift = Vec3::X * (a * alpha);
-            G * tree
-                .leaves
+            // `point − centre − leaf`, left to right as before the leaves were decoded once: the
+            // same bits.
+            let from = point - *centre;
+            G * cubes
                 .iter()
-                .map(|l| {
-                    let d = point - *centre - tree.block_centre(l.key, l.level);
-                    cube_shift(tree.leaf_mass(l), tree.side(l.level), d, shift)
-                })
+                .map(|&(leaf, mass, side)| cube_shift(mass, side, from - leaf, shift))
                 .sum::<f64>()
         })
         .sum()
+}
+
+/// [`scaffold_change`] at every Chebyshev point of the table in α at once, the same bits: each
+/// leaf's offset is shared by the five shifts (`cube_shifts`), and each sum is formed in the same
+/// order from the same start as `Iterator::sum` forms it. A fifth of the leaf passes, and the
+/// offset's own correction once rather than five times: the series' table is 23,200 points by
+/// 260,400 leaves.
+fn scaffold_change_table(members: &[Member], largest: f64, point: Vec3) -> [f64; CHEBYSHEV] {
+    let alphas: [f64; CHEBYSHEV] = std::array::from_fn(|k| chebyshev(largest, k));
+    let mut total = [-0.0f64; CHEBYSHEV];
+    for (_, centre, a, cubes) in members {
+        let shifts = alphas.map(|alpha| Vec3::X * (a * alpha));
+        let from = point - *centre;
+        let mut sums = [-0.0f64; CHEBYSHEV];
+        for &(leaf, mass, side) in cubes {
+            for (sum, change) in sums.iter_mut().zip(cube_shifts(mass, side, from - leaf, &shifts)) {
+                *sum += change;
+            }
+        }
+        for (t, s) in total.iter_mut().zip(sums) {
+            *t += G * s;
+        }
+    }
+    total
 }
 
 /// (a): the change of the potential with α, `V(α_i, z_j) − V(α_ref, z_j)` (`α_ref` the scripts'
@@ -730,18 +760,25 @@ fn scaffold_series(case: &str) -> ScaffoldSeries {
     let steps = (script_instrument().flight_time() / DT).round() as usize;
     let script = script_nodes(1, DT, steps, 8);
     // The change of the potential at each node's four arm heights, at the Chebyshev points in α.
+    // All five at once (`scaffold_change_table`): this table is the case's whole cost.
     let values: Vec<[Vec<f64>; 4]> = parallel(script.len(), |n| {
-        script[n].2.map(|z| {
-            (0..CHEBYSHEV)
-                .map(|k| scaffold_change(&members, chebyshev(largest, k), Vec3::new(0.0, 0.0, z)))
-                .collect()
-        })
+        script[n].2.map(|z| scaffold_change_table(&members, largest, Vec3::new(0.0, 0.0, z)).to_vec())
     });
+    // The same bits as one α at a time, at a node in the middle of the flight.
+    let middle = script.len() / 2;
+    for (arm, &z) in script[middle].2.iter().enumerate() {
+        for (k, together) in values[middle][arm].iter().enumerate() {
+            let one = scaffold_change(&members, chebyshev(largest, k), Vec3::new(0.0, 0.0, z));
+            assert_eq!(together.to_bits(), one.to_bits(), "{case}: arm {arm}, α point {k}");
+        }
+    }
     let table = Table { largest, values };
     let change = |t: f64, n: usize, arm: usize| table.at(&table.values[n][arm], alpha(&modes, t));
     let times = fixture(&format!("scripts/{case}/subsample_times.npy"));
     let two_t = script_instrument().flight_time();
-    let ours = ac(&times.iter().map(|&t| script_shot(&script, t - two_t, &change)).collect::<Vec<_>>());
+    // The shots on every core, as the cylinder pair's are. (They were thought to be the case's
+    // 170 s; measured, they are under a second and the table above is the rest.)
+    let ours = ac(&parallel(times.len(), |k| script_shot(&script, times[k] - two_t, &change)));
     let dir = format!("scripts/{case}");
     ScaffoldSeries {
         ours,

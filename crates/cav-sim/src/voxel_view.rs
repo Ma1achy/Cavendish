@@ -28,8 +28,13 @@ pub const MAX_DRAWN_CUBES: usize = 20_000;
 /// The most overlay boxes drawn in one view.
 pub const MAX_OVERLAY_BOXES: usize = 20_000;
 /// The most tree-overlay nodes drawn in one view (each twelve edges, and twelve triangles with
-/// faces on): past it, whole depths from the deepest up are left out until the rest fit.
+/// faces on): past it, whole depths from the deepest up are left out until the rest fit. A first
+/// asked depth that alone has more is not drawn at all (the frame says so and names the deepest
+/// that would fit): a part of a depth would be an arbitrary choice of its blocks.
 pub const MAX_TREE_BOXES: usize = 20_000;
+/// How many times the flight's nodes one leaf's read may refine to when leaves are coloured by
+/// phase ([`leaf_phases`]); the work counted against the kernel's share is this ceiling.
+pub const LEAF_REFINEMENT: u64 = 3;
 
 /// What colours a voxel body's leaves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
@@ -429,7 +434,8 @@ pub struct VoxelFrame {
     /// tree node is drawn.
     pub depths: Option<(u8, u8)>,
     /// The deepest depth the tree overlay stopped at to stay within [`MAX_TREE_BOXES`], when it
-    /// had to: the depths below it are not drawn.
+    /// had to: the depths below it are not drawn. None when nothing had to be left out, and when
+    /// the first asked depth alone is past the cap (then no node is drawn and a note says so).
     pub tree_capped_at: Option<u8>,
 }
 
@@ -442,8 +448,9 @@ fn body_at(scene: &SceneSpec, n: usize, time: f64) -> Vec3 {
 /// (metres, the world's frame) and read out at `time`.
 ///
 /// # Errors
-/// When there is no such tower, or the leaves × flight nodes are more than
-/// [`MAX_KERNEL_WORK`], with the numbers.
+/// When there is no such tower, or the most cube evaluations the leaves' reads may make (4 a
+/// node, up to [`LEAF_REFINEMENT`] times the flight's nodes a leaf) are more than the body's share
+/// of [`MAX_KERNEL_WORK`] ([`crate::read::kernel_share`]), with the numbers.
 pub fn leaf_phases(
     scene: &SceneSpec,
     tree: &VoxTree,
@@ -456,12 +463,15 @@ pub fn leaf_phases(
     // The tower's own instrument: a tower may override the array's (TASK-S3-08).
     let reader = Reader::new(scene.array.instrument_of(tower).instrument());
     let nodes = reader.instrument().node_count(&[]);
+    // A leaf's read may refine to this many flight nodes, each 4 cube evaluations (two points for
+    // each of two interferometers): the ceiling counted below is the work it may really do.
+    let most_nodes = LEAF_REFINEMENT * nodes;
     // The body's share of one read's work: a frame colours every voxel body.
-    let (work, share) = (4 * nodes * tree.leaves.len() as u64, crate::read::kernel_share(scene));
+    let (work, share) = (4 * most_nodes * tree.leaves.len() as u64, crate::read::kernel_share(scene));
     if work > share {
         return Err(format!(
-            "{} leaves × {nodes} flight nodes is more than the {share} cube evaluations allowed it ({MAX_KERNEL_WORK} \
-             shared by the scene's voxel bodies)",
+            "{} leaves × up to {most_nodes} flight nodes is more than the {share} cube evaluations allowed it \
+             ({MAX_KERNEL_WORK} shared by the scene's voxel bodies)",
             tree.leaves.len()
         ));
     }
@@ -470,7 +480,7 @@ pub fn leaf_phases(
         // The leaf on its own, read with the rule of the instrument: one rule, and its check.
         let body = TreeBody::single(tree, leaf, |_| at);
         reader
-            .read_to_within(Vec3::from_array(base), &body, time, PHASE_TOLERANCE, 3 * nodes)
+            .read_to_within(Vec3::from_array(base), &body, time, PHASE_TOLERANCE, most_nodes)
             .reading
             .gradiometer(sign)
     };
@@ -672,7 +682,9 @@ fn depth_of(tree: &VoxTree, level: u8) -> u8 {
 
 /// Fills `frame`'s tree overlay: every node and leaf of the `present` bodies at the depths
 /// `asked` takes, shallowest first, whole depths left out from the deepest up past
-/// [`MAX_TREE_BOXES`] (and the frame says so).
+/// [`MAX_TREE_BOXES`] (and the frame says so). Every depth's blocks are counted before any box is
+/// made, so no more than the cap is ever made; a first asked depth that alone is past it draws
+/// nothing and says so.
 fn tree_overlay(
     scene: &SceneSpec,
     present: &[(usize, &Arc<VoxTree>)],
@@ -698,27 +710,40 @@ fn tree_overlay(
             }
         }
     }
+    // Whole depths, shallowest first, while they fit; nothing is made past the budget.
     let mut deepest = None;
     let mut total = 0;
+    let mut refused = None;
     for depth in (0..=32u8).filter(|&d| asked.holds(d) && counts[usize::from(d)] > 0) {
         let more = counts[usize::from(depth)];
         if total + more > MAX_TREE_BOXES {
-            // One depth alone past the budget is drawn in part, never not at all.
-            if deepest.is_none() {
-                deepest = Some(depth);
+            match deepest {
+                Some(_) => frame.tree_capped_at = deepest,
+                // The first depth alone is past the budget: which part of it to draw would be an
+                // arbitrary choice, so none is, and the frame says which depth would fit.
+                None => refused = Some((depth, more)),
             }
-            frame.tree_capped_at = deepest;
             break;
         }
         total += more;
         deepest = Some(depth);
     }
     let Some(deepest) = deepest else {
-        frame.notes.push(format!(
-            "the tree overlay has no node at depths {}{}",
-            asked.from,
-            asked.to.map_or_else(|| " and deeper".to_owned(), |to| format!(" to {to}"))
-        ));
+        frame.notes.push(match refused {
+            Some((depth, more)) => {
+                let fits = (0..depth).rev().find(|&d| counts[usize::from(d)] <= MAX_TREE_BOXES);
+                format!(
+                    "depth {depth} alone has {more} tree nodes, more than the {MAX_TREE_BOXES} drawn at most: the \
+                     tree overlay is not drawn{}",
+                    fits.map_or_else(String::new, |d| format!("; depth {d} and shallower fit one at a time"))
+                )
+            }
+            None => format!(
+                "the tree overlay has no node at depths {}{}",
+                asked.from,
+                asked.to.map_or_else(|| " and deeper".to_owned(), |to| format!(" to {to}"))
+            ),
+        });
         return;
     };
     let wanted = |depth: u8| asked.holds(depth) && depth <= deepest;
@@ -735,7 +760,11 @@ fn tree_overlay(
         }
     }
     frame.tree.sort_by_key(|b| b.depth);
-    frame.tree.truncate(MAX_TREE_BOXES);
+    debug_assert!(
+        frame.tree.len() == total && total <= MAX_TREE_BOXES,
+        "counted {total}, made {}",
+        frame.tree.len()
+    );
     let lo = frame.tree.first().map_or(deepest, |b| b.depth);
     frame.depths = Some((lo, deepest));
     if let Some(depth) = frame.tree_capped_at {

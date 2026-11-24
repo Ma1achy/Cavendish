@@ -276,6 +276,43 @@ pub fn cube_shift(mass: f64, side: f64, d: Vec3, shift: Vec3) -> f64 {
     }
 }
 
+/// [`cube_shift`] for each of `shifts` at one offset `d`: the same bits as calling it once a
+/// shift, with the part that depends on `d` alone (its distance, its order, its series correction
+/// or its closed-form potential) worked out once rather than once a shift. Units and frames as
+/// [`cube_shift`]. For a table of one point's change at several displacements (the oracle's
+/// scaffold, five a point); it is not faster for one shift.
+#[must_use]
+pub fn cube_shifts<const N: usize>(mass: f64, side: f64, d: Vec3, shifts: &[Vec3; N]) -> [f64; N] {
+    let r = d.length();
+    let at_d = order_needed(side, r);
+    // The correction at `d` for the last order asked, and the potential at `d`, once each.
+    let mut series: Option<(usize, f64)> = None;
+    let mut whole: Option<f64> = None;
+    shifts.map(|shift| {
+        let moved = d - shift;
+        let s = moved.length();
+        match (at_d, order_needed(side, s)) {
+            (Some(a), Some(b)) => {
+                let order = a.max(b);
+                let monopole = -mass * shift.dot(d * 2.0 - shift) / (r * s * (r + s));
+                let here = match series {
+                    Some((o, c)) if o == order => c,
+                    _ => {
+                        let c = correction(order, side, d, r);
+                        series = Some((order, c));
+                        c
+                    }
+                };
+                monopole - mass * (correction(order, side, moved, s) - here)
+            }
+            _ => {
+                cube_potential(mass, side, moved)
+                    - *whole.get_or_insert_with(|| cube_potential(mass, side, d))
+            }
+        }
+    })
+}
+
 /// A voxel body as the forward model sees it: every leaf of a tree a uniform cube, the tree's
 /// frame carried to where the body is.
 pub struct TreeBody<P: Fn(f64) -> Vec3 + Sync> {
@@ -540,6 +577,50 @@ mod tests {
             plain_worst = plain_worst.max((two - 2.0 * plain).abs() / one.abs());
         }
         assert!(plain_worst > 1e-7, "the plain difference kept its digits everywhere: {plain_worst}");
+    }
+
+    #[test]
+    fn shifts_at_one_point_are_the_single_shift_s_bits() {
+        let (mass, side) = (3.0, 0.05);
+        // Shifts large and small along and across: a large one first, so that the correction at
+        // `d` is first worked out for a higher order than the small ones that follow need (a
+        // stale one is then wrong in the small shifts' digits), and large ones that take the
+        // moved point into the closed form part way through.
+        let shifts = [
+            Vec3::new(0.25, 0.0, 0.1),
+            Vec3::new(2e-6, 0.0, 0.0),
+            Vec3::new(-1e-3, 4e-4, 0.0),
+            Vec3::new(0.0, -0.45, 0.0),
+            Vec3::new(3e-6, -1e-6, 2e-6),
+        ];
+        let (mut closed, mut reused, mut changed) = (0, 0, 0);
+        for n in directions().into_iter().take(16) {
+            for distance in [0.03, 0.12, 0.3, 0.6, 2.0] {
+                let d = n * distance;
+                let together = cube_shifts(mass, side, d, &shifts);
+                let mut last = None;
+                for (shift, got) in shifts.iter().zip(together) {
+                    let one = cube_shift(mass, side, d, *shift);
+                    assert_eq!(got.to_bits(), one.to_bits(), "{d:?} {shift:?}: {got} {one}");
+                    // Which way it went, so that every way is seen.
+                    match (order_needed(side, d.length()), order_needed(side, (d - *shift).length())) {
+                        (Some(a), Some(b)) => {
+                            let order = a.max(b);
+                            if last == Some(order) {
+                                reused += 1
+                            } else if last.is_some() {
+                                changed += 1
+                            }
+                            last = Some(order);
+                        }
+                        _ => closed += 1,
+                    }
+                }
+            }
+        }
+        // Control: the cases reach the closed form, reuse the correction at `d`, and change order
+        // after one was kept (where a stale correction would be wrong).
+        assert!(closed > 0 && reused > 0 && changed > 0, "{closed} {reused} {changed}");
     }
 
     #[test]
