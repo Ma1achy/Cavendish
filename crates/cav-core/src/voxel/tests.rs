@@ -211,29 +211,82 @@ cav_validate::case! {
     measure: cav_validate::Measured::Error(mass_error()),
 }
 
-/// The voxelised volume's and inertia's errors against the closed forms, worst over the
-/// primitives and Platonic solids, at `cells` finest cells across the longest side with `k = 4`.
+/// The surface area of a test shape by its name, square metres: closed forms (the ellipsoid by
+/// Thomsen's formula, within 1.1% of the true area, taken 1.1% up so that it bounds it).
+fn surface(name: &str) -> f64 {
+    use std::f64::consts::PI;
+    let edge: f64 = 0.6;
+    match name {
+        "sphere" => 4.0 * PI * 0.25,
+        "shell" => 4.0 * PI * (0.25 + 0.09),
+        "cuboid" => 2.0 * (1.0 * 0.6 + 0.6 * 0.4 + 0.4 * 1.0),
+        "ellipsoid" => {
+            let (a, b, c, p) = (0.5f64, 0.35f64, 0.25f64, 1.6075);
+            let mean = ((a * b).powf(p) + (b * c).powf(p) + (c * a).powf(p)) / 3.0;
+            1.011 * 4.0 * PI * mean.powf(1.0 / p)
+        }
+        n if n.starts_with("cylinder") => 2.0 * PI * 0.3 * (0.3 + 1.0),
+        "Tetrahedron" => 3f64.sqrt() * edge * edge,
+        "Cube" => 6.0 * edge * edge,
+        "Octahedron" => 2.0 * 3f64.sqrt() * edge * edge,
+        "Dodecahedron" => 3.0 * (25.0 + 10.0 * 5f64.sqrt()).sqrt() * edge * edge,
+        "Icosahedron" => 5.0 * 3f64.sqrt() * edge * edge,
+        other => panic!("no area for {other}"),
+    }
+}
+
+/// One shape's voxelised volume and inertia against the closed forms at `cells` finest cells
+/// across its longest side, `k = 4`, its grid shifted by `shift` (metres) from centred: the
+/// volume's relative error and the largest inertia element's error over the largest principal
+/// moment, and the envelopes they are held to (S3.md §8.1): `√3·A·δ/V` and
+/// `2·M·r²_max·√3·A·δ/(V·I_max)`, δ = h/k. With `whole_cells`, the volume is counted by whole
+/// cells (a cell in when any of its samples is, as a voxeliser that ignored its counts would):
+/// the control.
+pub(crate) fn volume_and_inertia(
+    name: &str,
+    shape: &dyn Shape,
+    cells: f64,
+    shift: Vec3,
+    whole_cells: bool,
+) -> ([f64; 2], [f64; 2]) {
+    let size = shape.bounds().size();
+    let pitch = size.x.max(size.y).max(size.z) / cells;
+    let b = shape.bounds();
+    let pad = Vec3::new(pitch, pitch, pitch);
+    let grid = Grid::around(Aabb::new(b.lo - pad + shift, b.hi + pad + shift), pitch, 4).unwrap();
+    let mass = 3.0;
+    let tree = voxelise(shape, &grid, mass, 0).unwrap();
+    let k3 = f64::from(grid.samples_per_cell());
+    let samples = if whole_cells {
+        let cells_of = |l: &Leaf| 8f64.powi(i32::from(l.level));
+        tree.leaves.iter().map(|l| cells_of(l) * k3).sum()
+    } else {
+        tree.samples as f64
+    };
+    let voxels = samples / k3 * pitch.powi(3);
+    let volume = (voxels / shape.volume() - 1.0).abs();
+    let got = tree.body().inertia();
+    let s = shape.second_moments().map(|v| v * mass / shape.volume());
+    let want = super::Moments { mass, centre: Vec3::ZERO, second: s, third: [0.0; 10] }.inertia();
+    let largest = want[0].max(want[1]).max(want[2]);
+    let inertia = (0..6).map(|i| (got[i] - want[i]).abs() / largest).fold(0f64, f64::max);
+    let delta = pitch / 4.0;
+    let shell = 3f64.sqrt() * surface(name) * delta / shape.volume();
+    let r_max = 0.5 * size.length();
+    ([volume, inertia], [shell, 2.0 * mass * r_max * r_max * shell / largest])
+}
+
+/// The worst volume and inertia errors over the primitives and Platonic solids at `cells` across,
+/// each as a fraction of its envelope.
 pub(crate) fn volume_and_inertia_errors(cells: f64) -> (f64, f64) {
     let (mut volume, mut inertia) = (0f64, 0f64);
     for (name, shape) in shapes(Vec3::ZERO) {
         if name.contains("mesh") || name.contains("hull") {
             continue;
         }
-        let size = shape.bounds().size();
-        let pitch = size.x.max(size.y).max(size.z) / cells;
-        let grid = Grid::around(shape.bounds(), pitch, 4).unwrap();
-        let mass = 3.0;
-        let tree = voxelise(shape.as_ref(), &grid, mass, 0).unwrap();
-        let k3 = f64::from(grid.samples_per_cell());
-        let voxels = tree.samples as f64 / k3 * pitch.powi(3);
-        volume = volume.max((voxels / shape.volume() - 1.0).abs());
-        let got = tree.body().inertia();
-        let s = shape.second_moments().map(|v| v * mass / shape.volume());
-        let want = super::Moments { mass, centre: Vec3::ZERO, second: s, third: [0.0; 10] }.inertia();
-        let largest = want[0].max(want[1]).max(want[2]);
-        for i in 0..6 {
-            inertia = inertia.max((got[i] - want[i]).abs() / largest);
-        }
+        let (errors, envelopes) = volume_and_inertia(&name, shape.as_ref(), cells, Vec3::ZERO, false);
+        volume = volume.max(errors[0] / envelopes[0]);
+        inertia = inertia.max(errors[1] / envelopes[1]);
     }
     (volume, inertia)
 }
@@ -244,12 +297,22 @@ cav_validate::case! {
     subsystem: "voxel",
     slice: "S3",
     reference: ClosedForm,
-    against: "each primitive's and Platonic solid's closed-form volume (tolerance 2e-3) and inertia tensor (5e-3 of the largest principal moment, the error shown as a fraction of that tolerance), at 64 cells across, k = 4",
+    against: "each primitive's and Platonic solid's closed-form volume and inertia tensor at 64 cells across, k = 4: the worst error as a fraction of its derived envelope (volume √3·A·δ/V, A its surface, δ = h/k; inertia 2·M·r²max times that over the largest principal moment)",
     unit: Relative,
-    tolerance: 2e-3,
+    tolerance: 1.0,
     measure: {
         let (volume, inertia) = volume_and_inertia_errors(64.0);
-        cav_validate::Measured::Error(volume.max(inertia * 2e-3 / 5e-3))
+        // Control: counted by whole cells (in when any sample is), some shape breaks its envelope.
+        let whole = shapes(Vec3::ZERO)
+            .iter()
+            .filter(|(name, _)| !name.contains("mesh") && !name.contains("hull"))
+            .map(|(name, shape)| {
+                let (e, env) = volume_and_inertia(name, shape.as_ref(), 64.0, Vec3::ZERO, true);
+                e[0] / env[0]
+            })
+            .fold(0f64, f64::max);
+        assert!(whole > 1.0, "counting whole cells stays within the envelope: {whole}");
+        cav_validate::Measured::Error(volume.max(inertia))
     },
 }
 
@@ -259,8 +322,22 @@ fn merge_differences(shape: &dyn Shape, cells: f64) -> (f64, f64) {
     let size = shape.bounds().size();
     let grid = Grid::around(shape.bounds(), size.x.max(size.y).max(size.z) / cells, 2).unwrap();
     let merged = voxelise(shape, &grid, 50.0, 0).unwrap();
-    let flat = VoxTree::build(grid, super::unmerged(&merged), 50.0).unwrap();
-    assert!(merged.leaves.len() < flat.leaves.len());
+    // The unmerged body made on its own, not by splitting the merged tree: the raster oracle's
+    // count of every finest cell, a leaf each.
+    let cells = raster(shape, &grid).unwrap();
+    let mut leaves = Vec::new();
+    for z in 0..cells.cells[2] {
+        for y in 0..cells.cells[1] {
+            for x in 0..cells.cells[0] {
+                let count = cells.counts[cells.index([x, y, z])];
+                if count > 0 {
+                    leaves.push(Leaf { key: super::morton::encode([x, y, z]), level: 0, count, material: 0 });
+                }
+            }
+        }
+    }
+    let flat = VoxTree::build(grid, leaves, 50.0).unwrap();
+    assert!(merged.leaves.len() < flat.leaves.len() && flat.leaves.iter().all(|l| l.level == 0));
     let potential = |tree: &VoxTree, p: Vec3| -> f64 {
         tree.leaves
             .iter()
@@ -310,7 +387,7 @@ cav_validate::case! {
     subsystem: "voxel",
     slice: "S3",
     reference: Exact,
-    against: "the same body as unmerged finest cubes: potentials at 24 points from 0.6 to 12 m and one AION-10 shot 2 m away, each primitive and Platonic solid at 32 cells across",
+    against: "the same body voxelised unmerged (the raster's finest cells, made apart from the merged tree): potentials at 24 points from 0.6 to 12 m and one AION-10 shot 2 m away, each primitive and Platonic solid at 32 cells across",
     unit: Relative,
     tolerance: 1e-12,
     measure: cav_validate::Measured::Error(merge_error()),

@@ -11,7 +11,9 @@
 //! **Caps** (checked before anything is reserved): the file is read up to [`MAX_MESH_BYTES`];
 //! at most [`MAX_TRIANGLES`] triangles (an STL's count is in its header) and [`MAX_VERTICES`]
 //! vertices. A mesh must be closed and consistently wound: every edge in exactly two triangles,
-//! once each way. Files carry no unit: the scene gives metres per file unit.
+//! once each way, and must not cross itself (an edge through another triangle is refused; two
+//! coplanar triangles overlapping in their plane are not seen). Files carry no unit: the scene
+//! gives metres per file unit.
 
 use std::collections::HashMap;
 
@@ -58,7 +60,7 @@ impl Mesh {
     ///
     /// # Errors
     /// Past the caps; a corner index out of range or a vertex not finite; an edge not in exactly
-    /// two triangles once each way (named); no volume.
+    /// two triangles once each way (named); no volume; a mesh that crosses itself (named).
     pub fn new(vertices: Vec<Vec3>, triangles: Vec<[u32; 3]>) -> Result<Self, VoxelError> {
         if vertices.len() > MAX_VERTICES || triangles.len() > MAX_TRIANGLES {
             return Err(VoxelError(format!(
@@ -104,7 +106,55 @@ impl Mesh {
             return Err(VoxelError("the mesh encloses no volume, or is wound inside out".into()));
         }
         mesh.build_hierarchy();
+        if let Some((a, b)) = mesh.first_crossing() {
+            return Err(VoxelError(format!(
+                "the mesh crosses itself (an edge of triangle {a} passes through triangle {b}): inside would be \
+                 the parity of crossings, not the solid meant"
+            )));
+        }
         Ok(mesh)
+    }
+
+    /// The first pair of triangles of which an edge of the first passes through the inside of the
+    /// second, if any: a mesh that crosses itself. Strict, so triangles that only share a vertex
+    /// or an edge never count; a crossing that lies in one plane with both (coplanar overlap) is
+    /// not seen. Each triangle is tried against those the hierarchy says its box meets.
+    fn first_crossing(&self) -> Option<(usize, usize)> {
+        let corners = |t: usize| self.triangles[t].map(|i| self.vertices[i as usize]);
+        // Whether the edge from vertex `i` to vertex `j` passes through the inside of triangle
+        // `u`. An end that is a corner of `u` is on its plane, whatever rounding says.
+        let through = |i: u32, j: u32, u: usize| -> bool {
+            let ids = self.triangles[u];
+            let tri = corners(u);
+            let n = (tri[1] - tri[0]).cross(tri[2] - tri[0]);
+            let side =
+                |k: u32| if ids.contains(&k) { 0.0 } else { n.dot(self.vertices[k as usize] - tri[0]) };
+            let (dp, dq) = (side(i), side(j));
+            if !((dp > 0.0 && dq < 0.0) || (dp < 0.0 && dq > 0.0)) {
+                return false;
+            }
+            let (p, q) = (self.vertices[i as usize], self.vertices[j as usize]);
+            let x = p + (q - p) * (dp / (dp - dq));
+            // Strictly inside: on the same side of each edge as the third corner.
+            (0..3).all(|k| {
+                let (a, b) = (tri[k], tri[(k + 1) % 3]);
+                (b - a).cross(x - a).dot(n) > 0.0
+            })
+        };
+        for t in 0..self.triangles.len() {
+            let mine = self.triangles[t];
+            let bounds = self.triangle_bounds(t);
+            let mut found = None;
+            self.each_triangle(&|b: &Aabb| b.overlaps(&bounds), &mut |u| {
+                if found.is_none() && u != t && (0..3).any(|k| through(mine[k], mine[(k + 1) % 3], u)) {
+                    found = Some(u);
+                }
+            });
+            if let Some(u) = found {
+                return Some((t, u));
+            }
+        }
+        None
     }
 
     /// The mesh in `bytes` (an `.obj` or an `.stl`, binary or text, told apart by `name`'s
@@ -442,14 +492,24 @@ impl Joiner {
 fn parse_stl(bytes: &[u8]) -> Result<(Vec<Vec3>, Vec<[u32; 3]>), VoxelError> {
     let mut joiner = Joiner { vertices: Vec::new(), index: HashMap::new() };
     let mut triangles = Vec::new();
-    let binary = bytes.len() >= 84 && {
-        let count = u32::from_le_bytes([bytes[80], bytes[81], bytes[82], bytes[83]]) as u64;
-        bytes.len() as u64 == 84 + 50 * count
-    };
+    // Binary unless it reads as text: a text file starts `solid`, but so do some binary ones,
+    // which are told by their length.
+    let header =
+        (bytes.len() >= 84).then(|| u32::from_le_bytes([bytes[80], bytes[81], bytes[82], bytes[83]]) as u64);
+    let binary =
+        header.is_some_and(|count| bytes.len() as u64 == 84 + 50 * count || !bytes.starts_with(b"solid"));
     if binary {
-        let count = u32::from_le_bytes([bytes[80], bytes[81], bytes[82], bytes[83]]) as usize;
+        let count = header.unwrap_or(0) as usize;
+        // The header's count, checked against the cap before anything is read or reserved.
         if count > MAX_TRIANGLES {
             return Err(VoxelError(format!("the file says {count} triangles, more than {MAX_TRIANGLES}")));
+        }
+        if bytes.len() as u64 != 84 + 50 * count as u64 {
+            return Err(VoxelError(format!(
+                "a binary STL of {count} triangles is {} bytes, and this one is {}",
+                84 + 50 * count as u64,
+                bytes.len()
+            )));
         }
         triangles.reserve_exact(count);
         for t in 0..count {
@@ -587,13 +647,103 @@ mod tests {
         let mut flipped = t.clone();
         flipped[0].swap(1, 2);
         assert!(Mesh::new(v.clone(), flipped).is_err());
+        // The STL header's count is held to the cap before anything is read: a file that claims
+        // one triangle too many is refused for that, whatever follows it.
         let mut header = to_stl(&v, &t);
         header[80..84].copy_from_slice(&(MAX_TRIANGLES as u32 + 1).to_le_bytes());
         header.resize(84, 0);
-        assert!(Mesh::parse("huge.stl", &header, 1.0).is_err());
+        let why = Mesh::parse("huge.stl", &header, 1.0).unwrap_err().0;
+        assert!(
+            why.contains(&format!("{} triangles, more than {MAX_TRIANGLES}", MAX_TRIANGLES + 1)),
+            "{why}"
+        );
+        // Control: at the cap the count is let through, and the short file is refused for its length.
+        header[80..84].copy_from_slice(&(MAX_TRIANGLES as u32).to_le_bytes());
+        let why = Mesh::parse("huge.stl", &header, 1.0).unwrap_err().0;
+        assert!(why.contains("bytes"), "{why}");
+        // A text STL still reads as text.
+        let text = "solid s\n".to_owned()
+            + &t.iter()
+                .map(|tri| {
+                    let corner = |i: u32| {
+                        format!("vertex {:?} {:?} {:?}\n", v[i as usize].x, v[i as usize].y, v[i as usize].z)
+                    };
+                    format!(
+                        "facet normal 0 0 0\nouter loop\n{}{}{}endloop\nendfacet\n",
+                        corner(tri[0]),
+                        corner(tri[1]),
+                        corner(tri[2])
+                    )
+                })
+                .collect::<String>()
+            + "endsolid s\n";
+        assert!((Mesh::parse("box.stl", text.as_bytes(), 1.0).unwrap().volume() - 1.0).abs() < 1e-14);
         assert!(Mesh::parse("box.ply", b"ply", 1.0).is_err());
         assert!(Mesh::parse("box.obj", b"v 1 2\n", 1.0).unwrap_err().0.contains("line 1"));
         // Control: the closed mesh's volume is not that of a mesh missing a face.
         assert!((Mesh::new(v, t).unwrap().volume() - 1.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn a_mesh_that_crosses_itself_is_refused() {
+        // Two closed boxes, the second through the first: every edge in two triangles, wound
+        // outwards, a positive volume, and yet not one solid.
+        let (mut v, mut t) = box_mesh(Vec3::new(-1.0, -1.0, -1.0), Vec3::new(1.0, 1.0, 1.0));
+        let (v2, t2) = box_mesh(Vec3::new(0.5, -0.5, -0.5), Vec3::new(2.0, 0.5, 0.5));
+        let base = v.len() as u32;
+        v.extend(v2);
+        t.extend(t2.iter().map(|tri| tri.map(|i| i + base)));
+        let why = Mesh::new(v, t).unwrap_err().0;
+        assert!(why.contains("crosses itself"), "{why}");
+        // Control: the same two boxes apart are a mesh (of two pieces), and the torus, which is
+        // not convex, is one too.
+        let (mut v, mut t) = box_mesh(Vec3::new(-1.0, -1.0, -1.0), Vec3::new(1.0, 1.0, 1.0));
+        let (v2, t2) = box_mesh(Vec3::new(1.5, -0.5, -0.5), Vec3::new(2.0, 0.5, 0.5));
+        let base = v.len() as u32;
+        v.extend(v2);
+        t.extend(t2.iter().map(|tri| tri.map(|i| i + base)));
+        assert!(Mesh::new(v, t).is_ok());
+        let (tv, tt) = torus_mesh(1.0, 0.3, 24, 12);
+        assert!(Mesh::new(tv, tt).is_ok());
+    }
+
+    #[test]
+    fn a_ray_along_a_shared_edge_is_counted_once() {
+        // Watertightness: a ray from outside crosses a closed surface an even number of times,
+        // also when it passes exactly along an edge two triangles share. Each edge's side is
+        // computed in one order of its vertices whichever triangle asks (`side`); computed in each
+        // triangle's own order, rounding can put the ray inside both triangles or neither.
+        // Irregular vertices (an icosahedron turned by awkward angles) and rays through points on
+        // the edges, as near the edge's line as rounding allows.
+        let solid = super::super::shape::Platonic::Icosahedron.solid(0.7);
+        let (c, s1) = (0.3f64.cos(), 0.3f64.sin());
+        let (c2, s2) = (1.1f64.cos(), 1.1f64.sin());
+        let turn = |p: Vec3| {
+            let q = Vec3::new(c * p.x - s1 * p.y, s1 * p.x + c * p.y, p.z);
+            Vec3::new(q.x, c2 * q.y - s2 * q.z, s2 * q.y + c2 * q.z) + Vec3::new(0.123, -0.0457, 0.0311)
+        };
+        let vertices: Vec<Vec3> = solid.vertices.iter().map(|p| turn(*p)).collect();
+        let triangles: Vec<[u32; 3]> = solid
+            .faces
+            .iter()
+            .flat_map(|f| (1..f.len() - 1).map(move |t| [f[0] as u32, f[t] as u32, f[t + 1] as u32]))
+            .collect();
+        let mesh = Mesh::new(vertices.clone(), triangles.clone()).unwrap();
+        let mut odd = 0;
+        let mut tried = 0;
+        for tri in &triangles {
+            for k in 0..3 {
+                let (a, b) = (vertices[tri[k] as usize], vertices[tri[(k + 1) % 3] as usize]);
+                for step in 1..200 {
+                    let t = f64::from(step) / 200.0;
+                    let on = a + (b - a) * t;
+                    tried += 1;
+                    if mesh.crossings(Vec3::new(-10.0, on.y, on.z)) % 2 == 1 {
+                        odd += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(odd, 0, "{odd} of {tried} rays along shared edges crossed an odd number of times");
     }
 }
