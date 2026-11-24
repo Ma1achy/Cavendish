@@ -49,38 +49,137 @@ pub use log::{Level, Log, LogEntry, LogFilter, Subsystem};
 /// The engine's version, as `cav doctor`, `stats` and the About box report it.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Who is running: the engine's version, and the git revision of the source tree it was built
-/// from with whether that tree has uncommitted changes. The revision is asked of git, in the
-/// source tree, the first time it is wanted (a bundle's manifest, a figure's provenance); where
-/// there is no git or no tree (a binary copied elsewhere) it is `unknown`.
+/// Who is running: the engine's version, the git revision it was built from and whether its
+/// sources then had changes that were not committed. A bundle's manifest and a figure's
+/// provenance carry these.
 ///
-/// This is the tree as it stands when asked, not as it stood when the binary was compiled: a
-/// binary run through `cargo run` is always built from the tree it is asked about; one run by
-/// hand after the tree has moved on is not, and nothing here can tell.
+/// All three are fixed when the engine is compiled (`build.rs`): nothing is asked of git when a
+/// file is written, so the same binary says the same thing wherever it is run and whatever has
+/// happened to the source tree since.
+///
+/// - **revision**: the commit that was checked out when the engine was compiled.
+/// - **dirty**: whether the engine's sources then differed from that commit: a tracked file
+///   changed, staged or not, or a file git neither tracks nor ignores. The engine's sources are
+///   what makes the numbers: `cav-core`, `cav-sim` and `cav-engine` (each crate's `src` and
+///   `Cargo.toml`), the built-in `scenes`, the workspace's `Cargo.toml` and `Cargo.lock`,
+///   `rust-toolchain.toml` and `.cargo`. It says nothing of the crates that draw or of the
+///   clients (`cav-plot`, `cav-render`, `cav-gpu`, `cav-app`, `cav`), which are at the same
+///   revision.
+/// - Built where there is no git, no repository or no commit, both are unknown (`unknown` and
+///   `None`), and the build does not fail.
+///
+/// Cargo makes the stamp again whenever one of those sources changes, or git's `HEAD`, its log,
+/// the branch, the packed refs or the index do: so after every commit the engine and everything
+/// that depends on it are compiled again (`docs/slices/S2.md` §7.12 has what that costs).
 #[must_use]
 pub fn build() -> &'static cav_sim::bundle::Build {
     static BUILD: std::sync::OnceLock<cav_sim::bundle::Build> = std::sync::OnceLock::new();
-    BUILD.get_or_init(|| {
-        let git = |arguments: &[&str]| {
-            std::process::Command::new("git")
-                .args(arguments)
-                .current_dir(env!("CARGO_MANIFEST_DIR"))
-                .output()
-                .ok()
-                .filter(|output| output.status.success())
-                .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
-        };
-        let revision = git(&["rev-parse", "HEAD"]).filter(|sha| !sha.is_empty());
-        let dirty = revision
-            .as_ref()
-            .and_then(|_| git(&["status", "--porcelain"]))
-            .map(|changes| !changes.is_empty());
-        cav_sim::bundle::Build {
-            version: VERSION.to_owned(),
-            revision: revision.unwrap_or_else(|| "unknown".to_owned()),
-            dirty,
-        }
+    BUILD.get_or_init(|| cav_sim::bundle::Build {
+        version: VERSION.to_owned(),
+        revision: env!("CAVENDISH_REVISION").to_owned(),
+        dirty: match env!("CAVENDISH_DIRTY") {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        },
     })
+}
+
+/// The decision `build.rs` makes, held to what it says: the same file, included here.
+#[cfg(test)]
+mod provenance {
+    include!("../provenance.rs");
+
+    const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    #[test]
+    fn the_stamp_is_decided_from_what_git_answers() {
+        let head = format!("\n{COMMIT}\n");
+        // As committed: the revision, and not dirty.
+        assert_eq!(decide(Some(&head), Some("")), (COMMIT.to_owned(), "false"));
+        // A tracked file changed, staged or not, or a file git does not know: dirty.
+        for changes in [" M crates/cav-sim/src/read.rs\n", "M  Cargo.lock\n", "?? scenes/dev/new.ron\n"] {
+            assert_eq!(decide(Some(&head), Some(changes)), (COMMIT.to_owned(), "true"), "{changes}");
+        }
+        // The commit is known and the status is not: the flag says so; it is not `false`.
+        assert_eq!(decide(Some(&head), None), (COMMIT.to_owned(), "unknown"));
+        // No answer at all (no git, no repository, no commit): unknown, whatever the status says.
+        assert_eq!(decide(None, Some("")), ("unknown".to_owned(), "unknown"));
+        assert_eq!(decide(None, None), ("unknown".to_owned(), "unknown"));
+        // The workspace is a folder of someone else's repository: that commit is not ours.
+        let inside = format!("vendor/cavendish/\n{COMMIT}\n");
+        assert_eq!(decide(Some(&inside), Some("")), ("unknown".to_owned(), "unknown"));
+        // An answer that is not a commit is not passed on as one.
+        for answer in ["\nHEAD\n", "\n\n", "", "\n0123abc\n", &format!("\n{COMMIT}\nmore\n")] {
+            assert_eq!(decide(Some(answer), Some("")).0, "unknown", "{answer:?}");
+        }
+    }
+
+    /// A directory outside the repository, removed when the test ends however it ends.
+    struct Outside(PathBuf);
+
+    impl Drop for Outside {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn built_without_git_or_outside_a_repository_the_stamp_is_unknown() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        // No git on the PATH: a program that is not there. The stamp is made all the same, and
+        // still says which sources to watch.
+        let none = stamp("a-git-that-is-not-installed", &root);
+        assert_eq!((none.revision.as_str(), none.dirty), ("unknown", "unknown"));
+        assert!(none.watch.iter().any(|path| path.ends_with("crates/cav-engine/src")), "{:?}", none.watch);
+        assert!(none.watch.iter().all(|path| path.exists()), "cargo would run the script every time");
+
+        if ask("git", &root, &["--version"]).is_none() {
+            eprintln!("git is not installed: the arms that ask it were not run");
+            return;
+        }
+        // Git is there and the directory is no work tree of its own.
+        let outside =
+            Outside(std::env::temp_dir().join(format!("cavendish-no-repository-{}", std::process::id())));
+        std::fs::create_dir_all(&outside.0).unwrap();
+        let alone = stamp("git", &outside.0);
+        assert_eq!((alone.revision.as_str(), alone.dirty), ("unknown", "unknown"));
+
+        // Control: asked in this repository the same function does know, so `unknown` above is
+        // the absence of git or of a repository and not a function that never answers.
+        if ask("git", &root, &["rev-parse", "--show-prefix", "HEAD"])
+            .is_none_or(|answer| !answer.starts_with('\n'))
+        {
+            eprintln!("this workspace is not the top of a git work tree: the control was not run");
+            return;
+        }
+        let here = stamp("git", &root);
+        assert!(
+            here.revision.len() == 40 && here.revision.bytes().all(|b| b.is_ascii_hexdigit()),
+            "{here:?}"
+        );
+        assert!(matches!(here.dirty, "true" | "false"), "{here:?}");
+        for name in ["HEAD", "index"] {
+            assert!(
+                here.watch.iter().any(|path| path.ends_with(name)),
+                "{name} is not watched: {:?}",
+                here.watch
+            );
+        }
+    }
+
+    #[test]
+    fn the_build_carries_what_the_script_decided() {
+        // What is compiled in is one of the answers `decide` gives, and nothing asks git for it.
+        let build = crate::build();
+        let hex = build.revision.len() == 40 && build.revision.bytes().all(|b| b.is_ascii_hexdigit());
+        assert!(hex || build.revision == "unknown", "{build:?}");
+        assert_eq!(build.dirty.is_some(), hex && env!("CAVENDISH_DIRTY") != "unknown", "{build:?}");
+        assert_eq!(build.version, crate::VERSION);
+        let source = include_str!("lib.rs");
+        let body = &source[source.find("pub fn build()").unwrap()..source.find("mod provenance").unwrap()];
+        assert!(!body.contains("process::Command"), "build() runs a program");
+    }
 }
 
 #[cfg(test)]

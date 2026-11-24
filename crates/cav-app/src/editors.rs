@@ -347,3 +347,51 @@ pub fn structure(shell: &mut Shell, ui: &mut egui::Ui, prefix: &str) {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The editors shown for everything under `prefix`, drawn once with no window.
+    fn drawn(shell: &mut Shell, prefix: &str) -> usize {
+        let ctx = crate::headless::context();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(600.0, 400.0))),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| show(shell, ui, prefix));
+        });
+        // Nothing is painted here, so the font atlas has nowhere to go.
+        output.textures_delta.clear();
+        // egui may lay a frame out twice; the shell clears its record each frame, and here the
+        // fields are counted by their paths instead.
+        let paths: std::collections::BTreeSet<&str> =
+            shell.layout().editors.iter().map(|(path, _)| path.as_str()).collect();
+        let count = paths.len();
+        shell.layout.editors.clear();
+        count
+    }
+
+    #[test]
+    fn a_long_list_is_shown_to_its_cap_and_no_further() {
+        // A22 of S2's brief: a list shows at most MAX_FIELDS fields. (S2's review, finding 7:
+        // no test noticed the cap being changed, because no selection the panels make is that
+        // long. This asks for one that is: every body of a scene with a hundred of them.)
+        let mut shell = Shell::new();
+        let mut scene = cav_sim::dev::point();
+        for n in 1..100 {
+            scene.bodies.push(cav_sim::BodySpec::point(&format!("body {n}"), 1.0, [n as f64, 0.0, 1.0]));
+        }
+        shell.engine.apply(Command::load(scene)).unwrap();
+        let all = paths::leaves(shell.engine.spec(), "bodies", usize::MAX).unwrap().len();
+        assert!(all > 2 * MAX_FIELDS, "the scene has {all} fields under `bodies`");
+        assert_eq!(drawn(&mut shell, "bodies"), MAX_FIELDS, "the cap is what is drawn");
+        // The number itself is the brief's.
+        assert_eq!(MAX_FIELDS, 200);
+        // Control: one body is under the cap and is shown whole, so the cap is what cut the list.
+        let one = paths::leaves(shell.engine.spec(), "bodies[0]", usize::MAX).unwrap().len();
+        assert!(one < MAX_FIELDS);
+        assert_eq!(drawn(&mut shell, "bodies[0]"), one);
+    }
+}

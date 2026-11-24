@@ -22,6 +22,8 @@ pub enum Request {
     Help(Option<String>),
     /// List the scene library.
     Scenes,
+    /// Start the journal again from the session as it stands ([`Engine::restart_journal`]).
+    Restart,
 }
 
 /// One console command, for `help`, completion and the menus.
@@ -235,8 +237,8 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "journal",
-        usage: "journal [save <file.json>]",
-        about: "the commands applied so far, as JSON: a session that can be replayed (`cav replay <file>`); with `save`, written to a file",
+        usage: "journal [save <file.json> | restart]",
+        about: "the commands applied so far, as JSON: a session that can be replayed (`cav replay <file>`); with `save`, written to a file; `restart` starts a new journal from the session as it stands (the way on once a journal has reached its size; the undo history starts again)",
         example: "journal",
     },
 ];
@@ -684,6 +686,7 @@ impl Engine {
             ("stats", []) => Ok(Request::Ask(Query::Stats)),
             ("camera", []) => Ok(Request::Ask(Query::View(pane))),
             ("journal", []) => Ok(Request::Ask(Query::Journal)),
+            ("journal", ["restart"]) => Ok(Request::Restart),
             ("log", args) => {
                 let mut filter = LogFilter { last: Some(20), ..LogFilter::default() };
                 for &arg in args {
@@ -729,6 +732,15 @@ impl Engine {
             Request::Ask(query) => self.ask(&query).map(|reply| render(&reply)).inspect_err(|why| {
                 self.note(Level::Error, Subsystem::Engine, why.clone());
             }),
+            Request::Restart => self
+                .restart_journal()
+                .map(|commands| {
+                    format!(
+                        "the journal starts again: {commands} commands that make the session as it stands. \
+                         The undo history starts again too"
+                    )
+                })
+                .inspect_err(|why| self.note(Level::Error, Subsystem::Engine, why.clone())),
             Request::Help(None) => Ok(help()),
 
             Request::Help(Some(topic)) => COMMANDS
@@ -853,7 +865,34 @@ pub fn render(reply: &Reply) -> String {
         }
         Reply::Stats(stats) => json(stats),
         Reply::View(view) => json(view),
-        Reply::Journal(journal) => serde_json::to_string(journal).expect("commands are JSON"),
+        Reply::Journal(journal) => {
+            // The list as JSON, command by command, for as long as it fits. A journal that
+            // fits is printed whole and is a journal file (`journal::parse` reads a bare list);
+            // one that does not ends in a line that is not JSON, so it cannot pass for whole.
+            let mut text = String::from("[");
+            let mut printed = 0;
+            for command in journal {
+                let json = serde_json::to_string(command).expect("commands are JSON");
+                if text.len() + json.len() + 2 > MAX_ANSWER_BYTES {
+                    break;
+                }
+                if printed > 0 {
+                    text.push(',');
+                }
+                text.push_str(&json);
+                printed += 1;
+            }
+            text.push(']');
+            if printed < journal.len() {
+                text.push_str(&format!(
+                    "\n# … {} more commands of {} are not printed (an answer is held to {MAX_ANSWER_BYTES} bytes): \
+                     `journal save <file>` writes the whole journal",
+                    journal.len() - printed,
+                    journal.len()
+                ));
+            }
+            text
+        }
         Reply::Signal(signal) => {
             let mut lines = vec![format!(
                 "# tower {} · {} · {} · {} shots · quadrature {} · t [s], phase [rad]",
@@ -989,15 +1028,35 @@ pub fn render(reply: &Reply) -> String {
             );
             lines.join("\n")
         }
-        Reply::Log(entries) => entries
-            .iter()
-            .map(|e| {
-                format!("{:>9.3}  {:<5}  {:<6}  {}", e.at, e.level.name(), e.subsystem.name(), e.message)
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
+        Reply::Log(entries) => {
+            // The newest entries that fit: the log is asked for what has just happened.
+            let (mut lines, mut bytes) = (Vec::new(), 0);
+            for e in entries.iter().rev() {
+                let line =
+                    format!("{:>9.3}  {:<5}  {:<6}  {}", e.at, e.level.name(), e.subsystem.name(), e.message);
+                bytes += line.len() + 1;
+                if bytes > MAX_ANSWER_BYTES {
+                    break;
+                }
+                lines.push(line);
+            }
+            if lines.len() < entries.len() {
+                lines.push(format!(
+                    "# … {} earlier entries of {} are not printed (an answer is held to {MAX_ANSWER_BYTES} bytes): \
+                     ask for fewer (`log 5`), or for a level or a word",
+                    entries.len() - lines.len(),
+                    entries.len()
+                ));
+            }
+            lines.reverse();
+            lines.join("\n")
+        }
     }
 }
+
+/// The most bytes of a journal or of log entries an answer prints: 1 MiB. A journal may hold
+/// 64 MiB and the log 2000 entries of 64 KiB; `journal save` still writes the whole journal.
+pub const MAX_ANSWER_BYTES: usize = 1 << 20;
 
 /// Pretty JSON for anything serialisable, without a generic at every call site.
 mod erased {
