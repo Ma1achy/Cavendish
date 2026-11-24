@@ -1285,6 +1285,25 @@ mod tests {
     }
 
     #[test]
+    fn the_usage_lines_name_every_figure_and_every_pane_content() {
+        // `show` and `figure` parse their word from `PaneContent::ALL` and `FigureKind::ALL`, so a
+        // new plot works with no line here; their usage lines are written by hand and did not
+        // follow it (docs/extending/a-plot.md, followed end to end).
+        let choices = |usage: &str| -> Vec<String> {
+            let open = usage.find('<').expect("a list of choices") + 1;
+            let close = open + usage[open..].find('>').expect("its end");
+            usage[open..close].split('|').map(str::to_owned).collect()
+        };
+        let usage_of = |name: &str| COMMANDS.iter().find(|doc| doc.name == name).expect(name).usage;
+        let contents: Vec<String> = PaneContent::ALL.iter().map(|c| c.name().to_owned()).collect();
+        let kinds: Vec<String> = FigureKind::ALL.iter().map(|k| k.name().to_owned()).collect();
+        assert_eq!(choices(usage_of("show")), contents);
+        assert_eq!(choices(usage_of("figure")), kinds);
+        // Control: a line that lacks one of them is found.
+        assert_ne!(choices("figure <signal|periodogram|cadence|view> to <file>"), kinds);
+    }
+
+    #[test]
     fn a_bad_line_says_what_was_expected_and_changes_nothing() {
         let bad = [
             ("", "empty"),
