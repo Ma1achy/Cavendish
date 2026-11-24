@@ -27,14 +27,20 @@ marks with a `Style` and a text measurer, and returns a `Plot`.
 4. **Its bound.** Whatever a scene can make large (rows, shots, labels) is cut to a stated
    number before anything is laid out, as `flights_drawn` does, and the plot says what it left
    out.
+5. **Its shots.** A plot that draws or counts shots takes them from the engine and never works
+   a time out from `k·cycle`: `Engine::shots()` (the scene's `cav_sim::read::Shots`, made once
+   an edit: `touching` finds those in a span, `flown` gives a shot's launch, readout and whether
+   the tower takes it), or the signal's own `taken` flags for what was read. A shot not taken
+   is not a measurement: it is drawn as not taken (a gap in a line, a dashed arc, an outline),
+   never as its slot's zero, and the caption counts the shots taken.
 
 ## As a figure
 
-5. A variant of `FigureKind` in `crates/cav-engine/src/command.rs` (its word in `name`, its
+6. A variant of `FigureKind` in `crates/cav-engine/src/command.rs` (its word in `name`, its
    place in `ALL`; `needs_signal` says whether it waits for a refined signal), and in
    `crates/cav-plot/src/figure.rs` its `PaneContent` and its data table: the columns written
    beside the figure, each named with its unit, each value the engine's own to the bit.
-6. In `python/cavendish_figures/redraw.py`, a function that draws it from the data file alone,
+7. In `python/cavendish_figures/redraw.py`, a function that draws it from the data file alone,
    and its line in `draw`.
 
 Console (`figure <word> … to <file>`), `cav figure` and MCP's `figure` follow from the kind.

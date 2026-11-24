@@ -209,18 +209,22 @@ fn table(engine: &Engine, figure: &Figure) -> Result<Table, String> {
         }
         FigureKind::Flight => {
             let span = plots::flight_span(engine, figure.span);
-            let flight_time = spec.array.instrument.instrument().flight_time();
-            let (mut tower, mut launch, mut readout) = (Vec::new(), Vec::new(), Vec::new());
-            for n in 0..spec.array.towers.len().min(plots::MAX_FLIGHT_ROWS) {
-                for at in plots::flights_drawn(spec, n, span).1 {
+            // The scene's shots, as the diagram draws them: the schedule's, at each tower's times.
+            let shots = engine.shots()?;
+            let (mut tower, mut launch, mut readout, mut taken) =
+                (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+            for n in 0..shots.towers().min(plots::MAX_FLIGHT_ROWS) {
+                for shot in plots::flights_drawn(shots, n, span).1 {
                     tower.push((n + 1) as f64);
-                    launch.push(at);
-                    readout.push(at + flight_time);
+                    launch.push(shot.launch);
+                    readout.push(shot.readout);
+                    taken.push(f64::from(u8::from(shot.taken)));
                 }
             }
             column("tower".into(), "its number from 1", tower);
             column("launch".into(), "s", launch);
             column("readout".into(), "s", readout);
+            column("taken".into(), "1 if taken or 0 if not", taken);
         }
         FigureKind::View => {}
     }
@@ -360,6 +364,9 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
                 "y": table.columns.get(y).map(|c| &c.0),
                 "x_column": x,
                 "y_column": y,
+                // A signal's third column says which of its shots the tower took: a slot not
+                // taken holds 0 and is not a measurement.
+                "taken_column": (figure.what == FigureKind::Signal).then_some(per_series * n + 2),
             })
         })
         .collect();

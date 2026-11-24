@@ -337,10 +337,12 @@ pub struct BodySpec {
     pub motion: Motion,
     /// When it comes into being, seconds; from the start if absent.
     #[serde(default)]
+    #[schemars(range(min = -1.0e6, max = 1.0e6))]
     #[schemars(extend("x-unit" = "s"))]
     pub appears: Option<f64>,
     /// When it ceases to be, seconds; never if absent. Later than `appears`.
     #[serde(default)]
+    #[schemars(range(min = -1.0e6, max = 1.0e6))]
     #[schemars(extend("x-unit" = "s"))]
     pub vanishes: Option<f64>,
 }
@@ -742,7 +744,14 @@ impl SceneSpec {
         }
         let shortest = schedule.shortest_cycle(i.cycle);
         if shortest < 2.0 * i.half_sequence {
-            let part = if schedule.jitter.is_some() { "jitter.delta" } else { "alternate" };
+            // The field at fault: the alternate cycle if it is already shorter than a shot with
+            // no jitter at all; the jitter only if it is the jitter
+            // that takes an otherwise long enough cycle below a shot.
+            let shot = 2.0 * i.half_sequence;
+            let part = match schedule.alternate {
+                Some(other) if other < shot => "alternate",
+                _ => "jitter.delta",
+            };
             return fail(format!(
                 "{at}.{part}: the shortest time between launches would be {shortest} s, less than a shot, 2T = {} s",
                 2.0 * i.half_sequence
@@ -1242,6 +1251,66 @@ mod tests {
             [owner, field] => schema["$defs"][owner]["properties"][field].clone(),
             _ => panic!("{path:?}"),
         }
+    }
+
+    #[test]
+    fn angles_and_lifetimes_have_their_ranges_in_the_schema() {
+        use serde_json::json;
+        // S2's review, finding 18: `validate` held these to a range that the schema, and so
+        // `ls`, the editors and an agent reading the schema, did not state.
+        let mut spec = SceneSpec::room();
+        for (label, kind) in [("a", "Linear"), ("b", "Circular"), ("c", "Pendulum")] {
+            let motion = Motion::starter(kind, [2.0, 0.0, 1.0]).unwrap();
+            spec.bodies.push(BodySpec::moving(label, 1.0, motion));
+        }
+        spec.bodies[0].appears = Some(1.0);
+        spec.bodies[0].vanishes = Some(2.0);
+        assert_eq!(spec.validate(), Ok(()));
+        for (path, most) in [
+            ("bodies[0].motion.Linear.phase", limits::ANGLE),
+            ("bodies[1].motion.Circular.phase", limits::ANGLE),
+            ("bodies[2].motion.Pendulum.azimuth", limits::ANGLE),
+            ("bodies[0].appears", limits::DURATION),
+            ("bodies[0].vanishes", limits::DURATION),
+        ] {
+            let entry = crate::paths::entry(&spec, path).unwrap();
+            assert_eq!((entry.minimum, entry.maximum), (Some((-most, false)), Some(most)), "{path}");
+            // The schema's range is the one `validate` enforces: the bound is taken, a hair
+            // beyond it is refused, naming the field.
+            let at_bound = if path.ends_with("appears") { -most } else { most };
+            assert!(spec.edited(path, &json!(at_bound)).is_ok(), "{path} at {at_bound}");
+            let beyond = if path.ends_with("appears") { -most * 1.001 } else { most * 1.001 };
+            let why = spec.edited(path, &json!(beyond)).unwrap_err();
+            assert!(why.contains(path.rsplit('.').next().unwrap()), "{path}: {why}");
+        }
+        // Control: a field with no range in the schema says none (a position's components are
+        // held by `validate` alone, each within ±1e6, as its doc says).
+        let free = crate::paths::entry(&spec, "bodies[0].motion.Linear.centre").unwrap();
+        assert_eq!((free.minimum, free.maximum), (None, None));
+    }
+
+    #[test]
+    fn a_cycle_too_short_names_the_field_that_makes_it_so() {
+        // S2's review, finding 19: an alternate cycle below 2T was blamed on the jitter when
+        // the scene had jitter as well.
+        let mut spec = SceneSpec::room();
+        let shot = 2.0 * spec.array.instrument.half_sequence;
+        spec.array.schedule.jitter =
+            Some(JitterSpec { model: JitterModel::Walk, kind: JitterKind::Symmetric, delta: 0.1 });
+        assert_eq!(spec.validate(), Ok(()));
+        let mut short = spec.clone();
+        short.array.schedule.alternate = Some(0.5 * shot);
+        let why = short.validate().unwrap_err().0;
+        assert!(why.starts_with("array.schedule.alternate:"), "{why}");
+        // The jitter is named when it is the jitter: an alternate cycle long enough on its own
+        // that the jitter takes below a shot.
+        let mut jittered = spec.clone();
+        jittered.array.schedule.alternate = Some(shot + 0.05);
+        let why = jittered.validate().unwrap_err().0;
+        assert!(why.starts_with("array.schedule.jitter.delta:"), "{why}");
+        // Control: the same alternate with no jitter is a schedule that can fly.
+        jittered.array.schedule.jitter = None;
+        assert_eq!(jittered.validate(), Ok(()));
     }
 
     #[test]

@@ -36,7 +36,8 @@ def provenance(what: str, columns: list[tuple[str, str]], rows: int, layout: str
     series: list[dict[str, object]] = []
     if what == "signal":
         series = [
-            {"name": f"tower {n + 1}", "colour": "#000000", "x": columns[3 * n][0], "y": columns[3 * n + 1][0]}
+            {"name": f"tower {n + 1}", "colour": "#000000", "x": columns[3 * n][0], "y": columns[3 * n + 1][0],
+             "taken_column": 3 * n + 2}
             for n in range(len(columns) // 3)
         ]
     elif what in ("periodogram", "cadence"):
@@ -97,10 +98,11 @@ def table(what: str) -> tuple[list[tuple[str, str]], list[list[float]]]:
             rows, ``[N][C]``.
     """
     if what == "signal":
-        columns = [(f"{kind} of tower {n + 1}", unit) for n in range(2)
-                   for kind, unit in (("readout time", "s"), ("ΔΦ", "rad"), ("shot taken by", "1 if taken or 0 if not"))]
+        columns = [(f"{kind} tower {n + 1}", unit) for n in range(2)
+                   for kind, unit in (("readout time of", "s"), ("ΔΦ of", "rad"), ("shot taken by", "1 if taken or 0 if not"))]
+        # Tower 2 does not take its third shot: the slot holds 0, as Cavendish writes it.
         rows    = [[1.46 + 2.0 * k, 1e-3 * ((-1) ** k) * AWKWARD[k % 2 * 3], 1.0,
-                    1.75 + 2.0 * k, 4e-4 * k - 1e-3, float(k != 2)] for k in range(6)]
+                    1.75 + 2.0 * k, (4e-4 * k - 1e-3) * float(k != 2), float(k != 2)] for k in range(6)]
         return columns, rows
     if what == "periodogram":
         columns = [("frequency", "Hz"), ("S", "rad²/Hz"), ("√S", "rad/√Hz")]
@@ -109,8 +111,10 @@ def table(what: str) -> tuple[list[tuple[str, str]], list[list[float]]]:
     if what == "cadence":
         columns = [("frequency offset from a tone", "Hz"), ("|W| relative to the tone", "1")]
         return columns, [[0.025 * k, 1.0 / (1.0 + k * k)] for k in range(11)]
-    columns = [("tower", "its number from 1"), ("launch", "s"), ("readout", "s")]
-    return columns, [[float(n), 2.0 * k + 0.3 * n, 2.0 * k + 0.3 * n + 1.46] for n in (1, 2, 3) for k in range(4)]
+    # Tower 2 does not take its second shot.
+    columns = [("tower", "its number from 1"), ("launch", "s"), ("readout", "s"), ("taken", "1 if taken or 0 if not")]
+    return columns, [[float(n), 2.0 * k + 0.3 * n, 2.0 * k + 0.3 * n + 1.46, float((n, k) != (2, 1))]
+                     for n in (1, 2, 3) for k in range(4)]
 
 
 def write(directory: Path, what: str, layout: str = "csv") -> Path:

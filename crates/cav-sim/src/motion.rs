@@ -55,6 +55,7 @@ pub enum Motion {
         #[schemars(extend("x-unit" = "Hz"))]
         frequency: f64,
         /// Degrees.
+        #[schemars(range(min = -3.6e5, max = 3.6e5))]
         #[schemars(extend("x-unit" = "°"))]
         phase: f64,
     },
@@ -75,6 +76,7 @@ pub enum Motion {
         #[schemars(extend("x-unit" = "Hz"))]
         frequency: f64,
         /// Degrees.
+        #[schemars(range(min = -3.6e5, max = 3.6e5))]
         #[schemars(extend("x-unit" = "°"))]
         phase: f64,
     },
@@ -99,6 +101,7 @@ pub enum Motion {
         #[schemars(extend("x-unit" = "m"))]
         minor: f64,
         /// The compass direction of the major axis at t = 0, degrees anticlockwise from east.
+        #[schemars(range(min = -3.6e5, max = 3.6e5))]
         #[schemars(extend("x-unit" = "°"))]
         azimuth: f64,
     },

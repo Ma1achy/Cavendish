@@ -152,6 +152,9 @@
 - id: TASK-S2-17
   milestone: S2
   title: "Review, minor: built for other people (27, 31 to 36), a deterministic demo; the report, the demo and the results regenerated"
+- id: TASK-S2-18
+  milestone: S2
+  title: "George's answers of 23 Nov 2026: the baseline is 10.1 m; AICE's launch speed derived by the scripts' rule with the kick number a parameter; the anchors as amplitudes; the answers recorded"
 - id: TASK-S3-01
   milestone: S3
   title: 'VoxTree: Morton keys, build, sidecars, moments'

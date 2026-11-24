@@ -141,7 +141,14 @@ fn number(
         .range(range(entry))
         .suffix(unit)
         .custom_formatter(|value, _| shown(value))
-        .custom_parser(|text| text.trim().parse::<f64>().ok());
+        // The field shows six figures; the value has seventeen. Text that is still what the
+        // field showed is the value itself, not its six figures read back: leaving a field
+        // without typing must not round it (S2's review, finding 17: Tab into a field and Enter
+        // issued a journalled edit of the mass to 1.23457).
+        .custom_parser(move |text| {
+            let text = text.trim();
+            if text == shown(value) { Some(value) } else { text.parse::<f64>().ok() }
+        });
     if whole {
         drag = drag.max_decimals(0);
     }

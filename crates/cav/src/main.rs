@@ -337,7 +337,7 @@ fn set(rest: &[String]) -> Result<(), String> {
     let mut session = Session::new();
     session.load(&scene)?;
     // The value as the console takes it: JSON, or a bare word for text.
-    let value = serde_json::from_str(&value).unwrap_or(serde_json::Value::String(value));
+    let value = cav_engine::value_of(&value)?;
     let command = cav_engine::Command::set(&path, value);
     let described = cav_engine::describe(&command, 0);
     session.engine.apply(command)?;
