@@ -25,10 +25,12 @@ pub const SR87_MASS: f64 = SR87_RELATIVE_MASS * ATOMIC_MASS_UNIT;
 /// The clock transition's wavelength, metres (698 nm, ¹S₀–³P₀ of strontium).
 pub const CLOCK_WAVELENGTH: f64 = 698e-9;
 
-/// The number of photon momenta the large-momentum-transfer sequence gives an arm.
+/// The kick number n: how many photon momenta the large-momentum-transfer sequence gives an
+/// arm. AION-10's, and the default of a scene's `array.instrument.kicks`; AICE would support
+/// more (George, 23 Nov 2026).
 pub const LMT_KICKS: f64 = 1000.0;
 
-/// Local gravity, m s⁻². The references use 9.81; the site's own value is a question for George.
+/// Local gravity, m s⁻². The references use 9.81, and so does the site (George, 23 Nov 2026).
 pub const LOCAL_GRAVITY: f64 = 9.81;
 
 /// What v1 (tag `v1-final`) and the reference scripts use where they differ from the above.

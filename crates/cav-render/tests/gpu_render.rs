@@ -182,7 +182,7 @@ fn gpu_orthographic_and_perspective_differ_as_expected() {
     let predicted = |n: usize| {
         let (foot, head) = (
             camera.pixel(on_tower(&scene, n, 0.0), SIZE).unwrap(),
-            camera.pixel(on_tower(&scene, n, 10.0), SIZE).unwrap(),
+            camera.pixel(on_tower(&scene, n, scene.array.instrument.tower_height), SIZE).unwrap(),
         );
         foot[1] - head[1]
     };
@@ -377,7 +377,7 @@ cav_validate::case! {
         };
         let predicted = |n: usize| {
             let foot = camera.pixel(on_tower(&scene, n, 0.0), SIZE).unwrap();
-            let head = camera.pixel(on_tower(&scene, n, 10.0), SIZE).unwrap();
+            let head = camera.pixel(on_tower(&scene, n, scene.array.instrument.tower_height), SIZE).unwrap();
             foot[1] - head[1]
         };
         let (near, far) = (1, 2);
