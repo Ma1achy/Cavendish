@@ -416,9 +416,8 @@ fn scaffold_changes(case: &str) -> f64 {
         |values: &[f64], x: f64| values.iter().position(|v| *v == x).expect("a point of the scripts' grid");
     let mut script = 0f64;
     for i in 1..alphas.len() {
-        for j in 0..zs.len() {
-            let (gi, g0, gj) =
-                (at(&grid_alphas, alphas[i]), at(&grid_alphas, alphas[0]), at(&grid_zs, zs[j]));
+        for (j, &z) in zs.iter().enumerate() {
+            let (gi, g0, gj) = (at(&grid_alphas, alphas[i]), at(&grid_alphas, alphas[0]), at(&grid_zs, z));
             let theirs = grid[gi * grid_zs.len() + gj] - grid[g0 * grid_zs.len() + gj];
             script = script.max((theirs - change(&tight, i, j)).abs());
         }
