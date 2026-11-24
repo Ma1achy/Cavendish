@@ -214,6 +214,24 @@
 - id: TASK-S3-16
   milestone: S3
   title: 'cargo xtask demo S3, screenshots, figures, results, progress, the validation report'
+- id: TASK-S3-20
+  milestone: S3
+  title: "S3's review, findings 1 and 2: the cuboid series held to the script's rule (copy, limit, gap); the scaffold series against the scripts' pipeline on the tight integrand; minor 1 and the scaffold_change comment"
+- id: TASK-S3-21
+  milestone: S3
+  title: "S3's review, findings 3 and 4: colour by phase with the tower's own instrument; one byte budget for a scene's trees and one kernel budget a read; minors 2, 5, 11"
+- id: TASK-S3-22
+  milestone: S3
+  title: "S3's review, finding 5: volume and inertia held per shape (envelopes, convergence order); minors 3, 4, 6, 10, 12"
+- id: TASK-S3-23
+  milestone: S3
+  title: "S3's review, finding 6: a voxel view figure on paper with its title, legend, scale and data in every format"
+- id: TASK-S3-24
+  milestone: S3
+  title: "S3's review, minors 7 to 9 and 13: a deterministic demo, its session, quick's time and the oracle's lints"
+- id: TASK-S3-25
+  milestone: S3
+  title: "S3's review: the validation report, the demo, the results and PROGRESS regenerated"
 - id: TASK-S4-01
   milestone: S4
   title: World volume in chunks with palettes and region-file cache

@@ -11,3 +11,10 @@ whole-machine = { max-threads = 1 }
 [[profile.default.overrides]]
 filter = 'test(validation_cylinder_vs_point_mass) | test(the_point_mass_fails_where_the_script_says)'
 test-group = 'whole-machine'
+
+# The scaffold series by the scripts' sampling read every leaf of 48 members at 1 cm at 4672 arm
+# heights and five ?: about three minutes each on the build PC, over every core (S3's review).
+[[profile.default.overrides]]
+filter = 'test(validation_scaffold_series_against_script) | test(validation_scaffold_multimode_series_against_script)'
+test-group = 'whole-machine'
+slow-timeout = { period = "60s", terminate-after = 6 }
