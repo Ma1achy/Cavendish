@@ -17,7 +17,7 @@
 use crate::Vec3;
 
 use super::morton::{self, decode, span};
-use super::{Grid, MAX_LEAVES, MAX_TREE_NODES, VoxelError};
+use super::{Grid, MAX_LEAVES, VoxelError};
 
 /// One leaf: an aligned cube of `2^level` finest cells, every one holding `count` sample points of
 /// the shape and the same material.
@@ -239,18 +239,20 @@ impl VoxTree {
     /// aligned, overlaps another, lies outside the root, or has a count outside 1 to `k³`; when the
     /// mass is not a positive number.
     pub fn build(grid: Grid, leaves: Vec<Leaf>, mass: f64) -> Result<Self, VoxelError> {
-        Self::build_within(grid, leaves, mass, MAX_TREE_NODES)
+        Self::build_within(grid, leaves, mass, super::Budget::DEFAULT)
     }
 
-    /// [`Self::build`] with at most `max_nodes` internal nodes in place of [`MAX_TREE_NODES`].
+    /// [`Self::build`] within `budget`'s caps on nodes and bytes in place of the engine's (its
+    /// caps on leaves and work are the voxeliser's).
     ///
     /// # Errors
-    /// As [`Self::build`].
+    /// As [`Self::build`]; and when the nodes counted, with the leaves, would weigh more than
+    /// `budget.bytes`.
     pub fn build_within(
         grid: Grid,
         mut leaves: Vec<Leaf>,
         mass: f64,
-        max_nodes: usize,
+        budget: super::Budget,
     ) -> Result<Self, VoxelError> {
         if leaves.is_empty() {
             return Err(VoxelError(
@@ -285,14 +287,19 @@ impl VoxTree {
             samples += leaf.samples();
         }
         let unit = mass / samples as f64;
-        let (nodes, children) = Self::link(&grid, &leaves, max_nodes)?;
+        let (nodes, children) = Self::link(&grid, &leaves, budget)?;
         let mut tree = Self { grid, leaves, nodes, children, moments: Vec::new(), unit, samples };
         tree.moments = tree.bottom_up();
         Ok(tree)
     }
 
     /// The nodes and their children, breadth-first from the root.
-    fn link(grid: &Grid, leaves: &[Leaf], max_nodes: usize) -> Result<(Vec<Node>, Vec<u32>), VoxelError> {
+    fn link(
+        grid: &Grid,
+        leaves: &[Leaf],
+        budget: super::Budget,
+    ) -> Result<(Vec<Node>, Vec<u32>), VoxelError> {
+        let max_nodes = budget.nodes;
         let mut nodes = Vec::new();
         let mut children = Vec::new();
         if leaves.len() == 1 && leaves[0].level == grid.depth {
@@ -305,6 +312,16 @@ impl VoxTree {
         if count > max_nodes {
             return Err(VoxelError(format!(
                 "{count} nodes is more than a tree holds, {max_nodes}: use a coarser pitch"
+            )));
+        }
+        // What the finished tree will weigh, at most: each child entry is a node or a leaf.
+        let bytes = size_of_val(leaves)
+            + count * (size_of::<Node>() + size_of::<Moments>())
+            + (count + leaves.len()) * size_of::<u32>();
+        if bytes > budget.bytes {
+            return Err(VoxelError(format!(
+                "the tree would weigh {bytes} bytes, more than the {} allowed it: use a coarser pitch",
+                budget.bytes
             )));
         }
         nodes.reserve_exact(count);

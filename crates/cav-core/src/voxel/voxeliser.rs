@@ -125,7 +125,7 @@ pub fn voxelise_within(
 ) -> Result<VoxTree, VoxelError> {
     let mut walk = Walk { shape, grid, material, leaves: Vec::new(), work: 0, budget };
     walk.visit(0, grid.depth)?;
-    VoxTree::build_within(*grid, walk.leaves, mass, budget.nodes)
+    VoxTree::build_within(*grid, walk.leaves, mass, budget)
 }
 
 struct Walk<'a> {
@@ -157,6 +157,13 @@ impl Walk<'_> {
                 self.budget.leaves
             )));
         }
+        let bytes = (self.leaves.len() + 1) * size_of::<Leaf>();
+        if bytes > self.budget.bytes {
+            return Err(VoxelError(format!(
+                "the tree's leaves alone would pass the {} bytes allowed it: use a coarser pitch",
+                self.budget.bytes
+            )));
+        }
         self.leaves.push(leaf);
         Ok(())
     }
@@ -167,15 +174,15 @@ impl Walk<'_> {
             return Ok(());
         }
         let side = 1u32 << level;
-        // A block that reaches past the used region is never wholly inside: its cells there hold
-        // nothing by definition. So only blocks wholly inside the used region may be `Inside`.
-        let within = (0..3).all(|axis| corner[axis] + side <= self.grid.cells[axis]);
+        // A block that reaches past the used region is never `Inside`: the used region holds the
+        // shape's box, so such a block has sample points outside the shape's box, and `cover` is
+        // conservative. (S3 had a guard here for it, which no test could reach: S3's review.)
         self.spend(1)?;
         let cover = self.shape.cover(&self.grid.sample_box(corner, side));
         let full = self.grid.samples_per_cell() as u8;
         match cover {
             Cover::Outside => Ok(()),
-            Cover::Inside if within => self.emit(Leaf { key, level, count: full, material: self.material }),
+            Cover::Inside => self.emit(Leaf { key, level, count: full, material: self.material }),
             _ if level == 0 => {
                 self.spend(u64::from(self.grid.samples_per_cell()))?;
                 let inside = count(self.shape, self.grid, corner);
