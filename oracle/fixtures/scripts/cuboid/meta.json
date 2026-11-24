@@ -1,0 +1,67 @@
+{
+  "script": "cuboid",
+  "upstream": "https://github.com/Thranduil02/atom-interferometry",
+  "commit": "d7d360ad92837bec929b85091b2bdd9af81d285c",
+  "overrides": {
+    "N": "20"
+  },
+  "seed": 0,
+  "numpy": "2.5.5",
+  "matplotlib": "3.11.2",
+  "python": "3.14.3",
+  "constants": {
+    "G": 6.6743e-11,
+    "u_initial": 3.86,
+    "m_atom": 1.46e-25,
+    "hbar": 1.055e-34,
+    "wavelength": 6.98e-07,
+    "T": 0.73,
+    "g": 9.81,
+    "n": 1000.0,
+    "dt": 0.01,
+    "N": 20.0,
+    "M_cub": 38880.0,
+    "a_cub": 0.225,
+    "b_cub": 6.0,
+    "c_cub": 12.0,
+    "y_0": 0.0,
+    "z_0": 6.0,
+    "x_0_centre": 5.0,
+    "x_0_amp": 1e-06,
+    "f_osc": 0.1,
+    "n_zgrid": 50.0,
+    "n_x0grid": 50.0
+  },
+  "doubled_overrides": {
+    "n_zgrid": 100,
+    "n_x0grid": 100
+  },
+  "readout": "shot k is integrated over [t_k - 1, t_k - 1 + 2T], t_k = subsample_times[k] (the script's own window)",
+  "peak_ac_phase": 2.986146819239366e-05,
+  "table_change_over_peak_ac": 0.011573750907679665,
+  "seconds": {
+    "run": 66.53352299996186,
+    "doubled": 277.99601030000485
+  },
+  "arrays": {
+    "V_grid": [
+      50,
+      50
+    ],
+    "x0_grid": [
+      50
+    ],
+    "z_grid": [
+      50
+    ],
+    "subsample_times": [
+      20
+    ],
+    "phase": [
+      20
+    ],
+    "phase_doubled": [
+      20
+    ]
+  }
+}

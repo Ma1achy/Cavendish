@@ -1,0 +1,130 @@
+{
+  "script": "scaffold_multimode",
+  "upstream": "https://github.com/Thranduil02/atom-interferometry",
+  "commit": "d7d360ad92837bec929b85091b2bdd9af81d285c",
+  "overrides": {
+    "T_total": "200"
+  },
+  "seed": 0,
+  "numpy": "2.5.5",
+  "matplotlib": "3.11.2",
+  "python": "3.14.3",
+  "constants": {
+    "G": 6.6743e-11,
+    "u_initial": 3.86,
+    "m_atom": 1.46e-25,
+    "hbar": 1.055e-34,
+    "wavelength": 6.98e-07,
+    "T": 0.73,
+    "g": 9.81,
+    "n_kicks": 1000.0,
+    "dt": 0.01,
+    "N": 100.0,
+    "T_total": 200.0,
+    "T_cycle": 2.0,
+    "rho_steel": 7850.0,
+    "R_edge": 0.0338,
+    "L_cube": 1.0,
+    "N_cubes": 10.0,
+    "A_bottom": 1e-06,
+    "A_top": 0.0001,
+    "n_zgrid": 30.0,
+    "n_alpha": 12.0
+  },
+  "doubled_overrides": {
+    "n_zgrid": "60",
+    "n_alpha": "24"
+  },
+  "peak_ac_phase": 9.339377697870077e-07,
+  "table_change_over_peak_ac": 1.0063605648494245,
+  "seconds": {
+    "run": 1406.9794376000063,
+    "doubled": 3924.6294581999537
+  },
+  "modes": [
+    {
+      "f": 2.3,
+      "scale": 1.0,
+      "phase": 0.0
+    },
+    {
+      "f": 2.34,
+      "scale": 1,
+      "phase": 0.0
+    },
+    {
+      "f": 12.7,
+      "scale": 1,
+      "phase": 0.0
+    },
+    {
+      "f": 35.1,
+      "scale": 1,
+      "phase": 0
+    },
+    {
+      "f": 37.0,
+      "scale": 1,
+      "phase": 0
+    },
+    {
+      "f": 38.7,
+      "scale": 1,
+      "phase": 0
+    },
+    {
+      "f": 39.4,
+      "scale": 1,
+      "phase": 0
+    },
+    {
+      "f": 40.5,
+      "scale": 1,
+      "phase": 0
+    }
+  ],
+  "note_for_george": "A_top is 1e-4 m while the script's comment says 1 mm; the fixture keeps 1e-4",
+  "arrays": {
+    "V_grid": [
+      12,
+      30
+    ],
+    "alpha_grid": [
+      12
+    ],
+    "z_grid": [
+      30
+    ],
+    "subsample_times": [
+      100
+    ],
+    "phase": [
+      100
+    ],
+    "phase_ac": [
+      100
+    ],
+    "phase_ac_doubled": [
+      100
+    ],
+    "amplitudes": [
+      48
+    ],
+    "member_centre": [
+      48,
+      3
+    ],
+    "member_mass": [
+      48
+    ],
+    "member_radius": [
+      48
+    ],
+    "member_length": [
+      48
+    ],
+    "member_axis": [
+      48
+    ]
+  }
+}
