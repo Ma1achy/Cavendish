@@ -1,7 +1,13 @@
 // Takes a screenshot of the web build in headless Chrome with WebGPU, with no visible window, and
 // prints the page's console. Used by `cargo xtask demo S17` and by hand:
 //
-//   node scripts/web_screenshot.mjs <chrome.exe> <url> <out.png> [seconds=12] [1440x900]
+//   node scripts/web_screenshot.mjs <chrome.exe> <url> <out.png> [seconds=12] [1440x900] [no-webgpu]
+//
+// With CAV_DOWNLOADS set to a folder, files the page downloads are saved there.
+//
+// With `no-webgpu` the page is loaded as a browser without WebGPU sees it (`navigator.gpu` removed
+// before the page's script runs): it must show its message and never fetch the module; exit 0 then
+// means exactly that.
 //
 // Chrome is started here with a throw-away profile under the output's folder, talked to over the
 // DevTools protocol (Node's own WebSocket), and closed here: nothing is left running. Exit status 1
@@ -11,7 +17,8 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
-const [chrome, url, out, seconds = "12", size = "1440x900"] = process.argv.slice(2);
+const [chrome, url, out, seconds = "12", size = "1440x900", mode = ""] = process.argv.slice(2);
+const withoutGpu = mode === "no-webgpu";
 if (!chrome || !url || !out) {
   console.error("usage: node web_screenshot.mjs <chrome> <url> <out.png> [seconds] [WxH]");
   process.exit(2);
@@ -69,6 +76,9 @@ const send = (method, params = {}, sessionId) => new Promise((done) => {
   socket.send(JSON.stringify({ id, method, params, sessionId }));
 });
 
+if (process.env.CAV_DOWNLOADS) {
+  await send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: resolve(process.env.CAV_DOWNLOADS) });
+}
 const { result: { targetId } } = await send("Target.createTarget", { url: "about:blank" });
 const { result: { sessionId } } = await send("Target.attachToTarget", { targetId, flatten: true });
 listeners.push((message) => {
@@ -84,6 +94,10 @@ listeners.push((message) => {
   }
 });
 await send("Runtime.enable", {}, sessionId);
+if (withoutGpu) {
+  await send("Page.enable", {}, sessionId);
+  await send("Page.addScriptToEvaluateOnNewDocument", { source: "delete Navigator.prototype.gpu;" }, sessionId);
+}
 await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false }, sessionId);
 const started = Date.now();
 await send("Page.navigate", { url }, sessionId);
@@ -100,7 +114,20 @@ while (Date.now() - started < Number(seconds) * 1000) {
   await new Promise((done) => setTimeout(done, 50));
 }
 console.log(running === null ? "the application did not start" : `running ${running.toFixed(2)} s after the address was opened`);
-if (running === null) failed = true;
+if (withoutGpu) {
+  const said = await send("Runtime.evaluate", {
+    expression: "document.getElementById('message')?.textContent ?? ''",
+    returnByValue: true,
+  }, sessionId);
+  const fetched = await send("Runtime.evaluate", {
+    expression: "performance.getEntriesByType('resource').some(r => r.name.endsWith('.wasm'))",
+    returnByValue: true,
+  }, sessionId);
+  console.log(`message: ${said.result?.result?.value}`);
+  failed = !/does not offer WebGPU/.test(said.result?.result?.value ?? "") || fetched.result?.result?.value !== false;
+} else if (running === null) {
+  failed = true;
+}
 const shot = await send("Page.captureScreenshot", { format: "png" }, sessionId);
 const loaded = await send("Runtime.evaluate", {
   expression: "JSON.stringify(performance.getEntriesByType('resource').map(r => [r.name.split('/').pop(), Math.round(r.duration), r.transferSize]))",
