@@ -1285,7 +1285,7 @@ mod tests {
         subsystem: "timing",
         slice: "S2",
         reference: Exact,
-        against: "the comb and the pass with every tower's offset zero, against each shot read as S1 read it (the audited read at k·cycle + 2T, sources summed in the scene's order); values of any channel that differ in any bit",
+        against: "the comb's signal against what the engine at the tag s1-point-mass printed (a fixture: 5000 readout times and phases); and the comb and the pass with every tower's offset zero, against each shot read as S1 read it (the audited read at k·cycle + 2T, sources summed in the scene's order); values of any channel that differ in any bit",
         unit: Count,
         tolerance: 0.0,
         measure: {
@@ -1316,6 +1316,30 @@ mod tests {
                     assert_eq!(ours.readouts(tower), ours.times, "with no offset a tower's times are the array's");
                 }
             }
+            // And against what S1 itself computed, not S1's arithmetic done by today's reader
+            // (S2's review, finding 23): the comb's signal as the engine at the tag
+            // `s1-point-mass` printed it, every readout time and every phase, to the bit.
+            let frozen = include_str!("../tests/fixtures/s1-comb-signal.txt");
+            let ours = signal(&dev::comb()).unwrap();
+            let mut compared = 0;
+            for line in frozen.lines().filter(|line| !line.starts_with('#')) {
+                let mut words = line.split_whitespace();
+                let tower: usize = words.next().unwrap().parse().unwrap();
+                let (time, phase): (f64, f64) =
+                    (words.next().unwrap().parse().unwrap(), words.next().unwrap().parse().unwrap());
+                let k = compared % ours.times.len();
+                let here = ours.channel(tower - 1, Channel::Gradiometer)[k];
+                differing += usize::from(ours.times[k].to_bits() != time.to_bits());
+                differing += usize::from(here.to_bits() != phase.to_bits());
+                compared += 1;
+            }
+            assert_eq!(compared, 5 * ours.times.len(), "the fixture has every shot of every tower");
+            // Control: the fixture is not today's numbers by construction: one bit of one of its
+            // phases changed is one difference.
+            let first = frozen.lines().find(|line| !line.starts_with('#')).unwrap();
+            let phase: f64 = first.split_whitespace().nth(2).unwrap().parse().unwrap();
+            let nudged_phase = f64::from_bits(phase.to_bits() ^ 1);
+            assert_ne!(nudged_phase.to_bits(), ours.channel(0, Channel::Gradiometer)[0].to_bits());
             // Control: an offset of a millisecond on one tower changes that tower's bits.
             let mut nudged = dev::comb();
             nudged.array.towers[2].timing.offset = 1e-3;

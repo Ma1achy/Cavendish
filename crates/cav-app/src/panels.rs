@@ -384,6 +384,7 @@ fn outline_row(
 ) {
     let selected = shell.engine.selection() == Some(target);
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::click());
+    shell.layout.outline.push((target, rect));
     let painter = ui.painter();
     if selected {
         painter.rect_filled(rect, 2.0, Color32::from_rgb(0x10, 0x30, 0x3d));
@@ -432,16 +433,61 @@ fn button_row(shell: &mut Shell, ui: &mut egui::Ui, label: &str, buttons: &[(&st
     });
 }
 
+/// The most rows the outliner lays out for the bodies, and for the towers: a scene of a thousand
+/// of either is not a list to scroll, and every row is laid out every frame. The rest are said
+/// to be there; `ls bodies` lists them all. A selected item past the cap keeps its row.
+pub const MAX_OUTLINE_ROWS: usize = 100;
+
+/// Which of `count` items get a row: the first [`MAX_OUTLINE_ROWS`], and the selected one.
+fn outlined(count: usize, selected: Option<usize>) -> Vec<usize> {
+    let mut rows: Vec<usize> = (0..count.min(MAX_OUTLINE_ROWS)).collect();
+    if let Some(n) = selected.filter(|n| *n >= MAX_OUTLINE_ROWS && *n < count) {
+        rows.push(n);
+    }
+    rows
+}
+
 fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     ui.label(RichText::new("Outliner").color(theme::STRONG).strong());
-    let spec = shell.engine.spec().clone();
+    // Only what is shown is copied out of the scene: a row's words, not the scene.
+    let (selected_body, selected_tower) = match shell.engine.selection() {
+        Some(Target::Body(n)) => (Some(n - 1), None),
+        Some(Target::Tower(n)) => (None, Some(n - 1)),
+        _ => (None, None),
+    };
+    let (bodies, towers, room, floor) = {
+        let spec = shell.engine.spec();
+        let bodies: Vec<(usize, String, String)> = outlined(spec.bodies.len(), selected_body)
+            .into_iter()
+            .map(|n| {
+                let body = &spec.bodies[n];
+                (n, body.label.clone(), format!("{} kg · {}", body.mass, body.motion.kind()))
+            })
+            .collect();
+        let towers: Vec<(usize, String, [f64; 3])> = outlined(spec.array.towers.len(), selected_tower)
+            .into_iter()
+            .map(|n| (n, spec.array.towers[n].label.clone(), spec.array.towers[n].position))
+            .collect();
+        (
+            (bodies, spec.bodies.len()),
+            (towers, spec.array.towers.len()),
+            spec.room.as_ref().map(|room| room.size),
+            spec.floor.as_ref().map(|floor| floor.height),
+        )
+    };
+    let left_out = |ui: &mut egui::Ui, shown: usize, count: usize, list: &str| {
+        if shown < count {
+            let text = format!("… and {} more: `ls {list}` lists them all", count - shown);
+            ui.label(RichText::new(text).size(11.0).color(theme::WEAK));
+        }
+    };
 
     heading(ui, "Sources");
-    for (n, body) in spec.bodies.iter().enumerate() {
-        let detail = format!("{} kg · {}", body.mass, body.motion.kind());
-        outline_row(shell, ui, Target::Body(n + 1), theme::GOLD, &body.label, &detail);
+    for (n, label, detail) in &bodies.0 {
+        outline_row(shell, ui, Target::Body(n + 1), theme::GOLD, label, detail);
     }
-    if spec.bodies.is_empty() {
+    left_out(ui, bodies.0.len(), bodies.1, "bodies");
+    if bodies.1 == 0 {
         ui.label(RichText::new("none · `load point` has one").size(11.5).color(theme::WEAK));
     }
     // Adding is a command too: a point mass at rest beside the array, to be edited from there.
@@ -450,9 +496,9 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     heading(ui, "Array");
     // With something to read, each tower's row shows what it reads under the playhead.
     let reply = shell.reading().clone();
-    let silent = spec.bodies.is_empty();
-    for (n, tower) in spec.array.towers.iter().enumerate() {
-        let [x, y, _] = tower.position;
+    let silent = bodies.1 == 0;
+    for (n, label, position) in &towers.0 {
+        let (n, [x, y, _]) = (*n, *position);
         // A number the audit warns of carries a mark; the warning is in the tower's properties.
         let warned = reply.warnings.iter().any(|w| w.tower == Some(n));
         let detail = match reply.towers.get(n) {
@@ -461,16 +507,16 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             }
             _ => format!("{x:+.1} {y:+.1}"),
         };
-        outline_row(shell, ui, Target::Tower(n + 1), theme::tower(n), &tower.label, &detail);
+        outline_row(shell, ui, Target::Tower(n + 1), theme::tower(n), label, &detail);
     }
+    left_out(ui, towers.0.len(), towers.1, "array.towers");
     if !silent && !reply.warnings.is_empty() {
         let text = format!("{} reading(s) warned of: select the tower, or `reading`", reply.warnings.len());
         ui.label(RichText::new(text).size(11.0).color(theme::WARN));
     }
 
     heading(ui, "Surroundings");
-    if let Some(room) = &spec.room {
-        let [x, y, z] = room.size;
+    if let Some([x, y, z]) = room {
         outline_row(
             shell,
             ui,
@@ -480,17 +526,17 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             &format!("{x:.0} × {y:.0} × {z:.0} m"),
         );
     }
-    if let Some(floor) = &spec.floor {
+    if let Some(height) = floor {
         outline_row(
             shell,
             ui,
             Target::Floor,
             theme::WIDGET_EDGE,
             "floor",
-            &format!("z = {:.1} m · to the horizon", floor.height),
+            &format!("z = {height:.1} m · to the horizon"),
         );
     }
-    if spec.room.is_none() && spec.floor.is_none() {
+    if room.is_none() && floor.is_none() {
         ui.label(RichText::new("nothing: no room, no floor, no air").size(11.5).color(theme::WEAK));
     }
 

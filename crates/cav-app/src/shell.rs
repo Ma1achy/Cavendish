@@ -77,6 +77,8 @@ pub struct Layout {
     pub timeline_caption: String,
     /// What the outliner says about the forward stage.
     pub status: String,
+    /// Each row the outliner laid out: what a click on it selects, and where it is.
+    pub outline: Vec<(cav_engine::Target, Rect)>,
     /// The numbers on the timeline's ruler, each with the rectangle it took, and the rectangle
     /// the timeline is drawn inside.
     pub ruler: (Vec<(String, Rect)>, Rect),
@@ -96,6 +98,7 @@ impl Default for Layout {
             shots: Vec::new(),
             timeline_caption: String::new(),
             status: String::new(),
+            outline: Vec::new(),
             ruler: (Vec::new(), Rect::NOTHING),
         }
     }
