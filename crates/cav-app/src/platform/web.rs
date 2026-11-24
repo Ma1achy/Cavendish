@@ -1,0 +1,293 @@
+//! The application in a browser page: the platform seam of `cav-app` on `wasm32-unknown-unknown`
+//! (`platform/native.rs` is the native side; `bin/cav-web.rs` calls [`start`]).
+//!
+//! The page (`crates/cav-app/web/index.html`) has a canvas `#cavendish` and a `#message` element,
+//! and loads this module only when the browser has a WebGPU adapter. Here: eframe's web runner on
+//! that canvas, the engine's device taken from eframe's (a page cannot make its own without
+//! waiting), the address's `#exec=` commands, and the files the engine "writes" handed to the
+//! browser as downloads. What a page cannot do at all (threads, files by path, folders, pixels
+//! read back) is refused where it is asked for, by the crates that would do it
+//! (`cav_engine::files`, `cav_engine::forward`, `cav_gpu`).
+//!
+//! A panic after start-up would abort the module (`panic = "abort"`) and leave the last frame on
+//! the canvas, still-looking; the panic hook puts the message on the page instead.
+
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::sync::Arc;
+
+use eframe::wasm_bindgen::JsCast;
+use eframe::wasm_bindgen::prelude::Closure;
+use eframe::web_sys;
+use web_time::{Duration, Instant};
+
+use crate::address::{download_name, exec_commands};
+use crate::app::App;
+use crate::{GpuPanes, Shell, theme};
+
+/// The id of the canvas the page gives the application.
+pub const CANVAS_ID: &str = "cavendish";
+
+/// The id of the button that holds the downloads an address's commands made.
+const HELD_ID: &str = "held-downloads";
+
+/// How long an address's command that needs the whole signal (a figure of the signal or the
+/// periodogram) waits for it before it is run anyway (and refused, with the reason, if the
+/// signal is still not whole).
+const EXEC_WAIT: Duration = Duration::from_secs(120);
+
+/// The address's commands not yet run, and when the one at the front began to wait.
+struct Exec {
+    commands: VecDeque<String>,
+    waiting_since: Option<Instant>,
+}
+
+thread_local! {
+    static EXEC: RefCell<Exec> = const { RefCell::new(Exec { commands: VecDeque::new(), waiting_since: None }) };
+    /// Files an address's commands made, held until the person clicks for them.
+    static HELD: RefCell<Vec<cav_engine::files::Download>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Starts the application on the page's canvas. Returns at once; the application runs from the
+/// browser's frames. If it cannot start, the reason replaces the canvas on the page.
+pub fn start() {
+    eframe::WebLogger::init(log::LevelFilter::Info).ok();
+    wasm_bindgen_futures::spawn_local(async {
+        if let Err(why) = run().await {
+            log::error!("Cavendish could not start: {why}");
+            say(&format!("Cavendish could not start in this browser: {why}"));
+        }
+    });
+}
+
+/// Puts a panic's message on the page (the canvas would otherwise freeze on its last frame), then
+/// does what the hook before it did (eframe's: the browser's console).
+fn install_panic_hook() {
+    let before = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        say(&format!(
+            "Cavendish stopped: {info}. Reload the page to start again; the browser's console has the details."
+        ));
+        before(info);
+    }));
+}
+
+async fn run() -> Result<(), String> {
+    let document = web_sys::window().and_then(|w| w.document()).ok_or("no document")?;
+    let canvas = document
+        .get_element_by_id(CANVAS_ID)
+        .and_then(|e| e.dyn_into::<web_sys::HtmlCanvasElement>().ok())
+        .ok_or_else(|| format!("the page has no canvas `#{CANVAS_ID}`"))?;
+    let runner = eframe::WebRunner::new();
+    install_panic_hook();
+    runner
+        .start(
+            canvas,
+            eframe::WebOptions::default(),
+            Box::new(|creation| {
+                theme::apply(&creation.egui_ctx);
+                let state =
+                    creation.wgpu_render_state.as_ref().ok_or("eframe did not start its WebGPU renderer")?;
+                let gpu = cav_gpu::Gpu::from_parts(
+                    state.instance.clone(),
+                    state.adapter.clone(),
+                    state.device.clone(),
+                    state.queue.clone(),
+                );
+                let mut shell = Shell::new();
+                shell.adapter = Some(gpu.adapter_report().to_string());
+                exec_from_address();
+                let panes = GpuPanes::new(gpu, Arc::clone(&state.renderer));
+                Ok(Box::new(App::new(shell, panes, false)))
+            }),
+        )
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    Ok(())
+}
+
+/// The page's address may carry console commands, as the native `--exec` does:
+/// `…/Cavendish/#exec=load comb; panes 2` (spaces may be written `%20`), within the caps of
+/// [`crate::address`]. They are queued here and run from the first frame on ([`run_exec`]); a
+/// refused one is in the console's log, and the rest still run.
+fn exec_from_address() {
+    let Some(hash) = web_sys::window().and_then(|w| w.location().hash().ok()) else { return };
+    match exec_commands(&hash) {
+        Ok(Some(commands)) => EXEC.with_borrow_mut(|exec| exec.commands = commands.into()),
+        Ok(None) => {}
+        Err(why) => log::warn!("#exec: {why}"),
+    }
+}
+
+/// Runs the address's commands that are ready, in order, and says whether any ran. A figure of
+/// the signal or the periodogram waits (at most [`EXEC_WAIT`]) for the signal to be whole, as a
+/// person would before asking for one; everything after it waits behind it.
+fn run_exec(shell: &mut Shell) -> bool {
+    let mut ran = false;
+    loop {
+        let Some(line) = EXEC.with_borrow(|exec| exec.commands.front().cloned()) else { return ran };
+        if needs_whole_signal(shell, &line) && shell.engine.signal().0 == cav_engine::SignalState::Stale {
+            let since = EXEC.with_borrow_mut(|exec| *exec.waiting_since.get_or_insert_with(Instant::now));
+            if since.elapsed() < EXEC_WAIT {
+                return ran;
+            }
+        }
+        EXEC.with_borrow_mut(|exec| {
+            exec.commands.pop_front();
+            exec.waiting_since = None;
+        });
+        let started = Instant::now();
+        match shell.run(&line) {
+            Ok(_) => log::info!("#exec: `{line}` in {:.0} ms", started.elapsed().as_secs_f64() * 1e3),
+            Err(why) => log::warn!("#exec: `{line}` was refused: {why}"),
+        }
+        ran = true;
+    }
+}
+
+/// Whether `line` is a figure that is written only from a whole signal.
+fn needs_whole_signal(shell: &Shell, line: &str) -> bool {
+    matches!(
+        shell.engine.parse(line),
+        Ok(cav_engine::Request::Do(cav_engine::Command::Export { what: cav_engine::ExportKind::Figure(figure), .. }))
+            if figure.needs_signal()
+    )
+}
+
+/// Puts `text` on the page in place of the canvas.
+fn say(text: &str) {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else { return };
+    if let Some(canvas) = document.get_element_by_id(CANVAS_ID) {
+        canvas.remove();
+    }
+    if let Some(message) = document.get_element_by_id("message") {
+        message.set_text_content(Some(text));
+    } else if let Some(body) = document.body() {
+        // The loading message has gone after the first frame: a new one.
+        if let Ok(message) = document.create_element("div") {
+            message.set_id("message");
+            message.set_text_content(Some(text));
+            let _ = body.append_child(&message);
+        }
+    }
+}
+
+/// What the page needs after each frame the application has drawn: the page's own message
+/// ("Loading Cavendish…") goes after the first, the address's commands that are ready run, and
+/// the files the frame "wrote" are downloaded, or held behind a button if a link's commands
+/// made them.
+pub fn after_frame(shell: &mut Shell, ctx: &egui::Context) {
+    thread_local! {
+        static DRAWN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+    if !DRAWN.replace(true)
+        && let Some(message) =
+            web_sys::window().and_then(|w| w.document()).and_then(|d| d.get_element_by_id("message"))
+    {
+        message.remove();
+    }
+    let from_address = run_exec(shell);
+    // A command run here, after the frame was drawn, may have changed what the next one shows
+    // (a load), and one left waiting must be looked at again: another frame, whatever egui
+    // thought it needed.
+    if from_address || EXEC.with_borrow(|exec| !exec.commands.is_empty()) {
+        ctx.request_repaint();
+    }
+    let downloads = cav_engine::files::take_downloads();
+    if downloads.is_empty() {
+        return;
+    }
+    if from_address {
+        HELD.with_borrow_mut(|held| held.extend(downloads));
+        show_held();
+    } else {
+        for download in &downloads {
+            offer(download);
+        }
+    }
+}
+
+/// Shows (or updates) the button that downloads what a link's commands made: a page may not put
+/// files in a visitor's downloads unless they click for them.
+fn show_held() {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else { return };
+    let names: Vec<String> = HELD.with_borrow(|held| held.iter().map(|d| d.name.clone()).collect());
+    let button = match document.get_element_by_id(HELD_ID) {
+        Some(button) => button,
+        None => {
+            let Ok(button) = document.create_element("button") else { return };
+            button.set_id(HELD_ID);
+            let _ = button.set_attribute(
+                "style",
+                "position:absolute;top:36px;left:50%;transform:translateX(-50%);z-index:10;padding:6px 14px;\
+                 font:14px system-ui,sans-serif;background:#2b3a55;color:#e8ecf4;border:1px solid #8ab4f8;\
+                 border-radius:4px;cursor:pointer",
+            );
+            let clicked = Closure::<dyn FnMut()>::new(|| {
+                for download in HELD.with_borrow_mut(std::mem::take) {
+                    offer(&download);
+                }
+                if let Some(button) =
+                    web_sys::window().and_then(|w| w.document()).and_then(|d| d.get_element_by_id(HELD_ID))
+                {
+                    button.remove();
+                }
+            });
+            if let Some(element) = button.dyn_ref::<web_sys::HtmlElement>() {
+                element.set_onclick(Some(clicked.as_ref().unchecked_ref()));
+            }
+            // The button lives as long as the page: so does its handler.
+            clicked.forget();
+            if let Some(body) = document.body() {
+                let _ = body.append_child(&button);
+            }
+            button
+        }
+    };
+    let files = if names.len() == 1 { "file" } else { "files" };
+    button.set_text_content(Some(&format!(
+        "Download {} {files} this link made: {}",
+        names.len(),
+        names.join(", ")
+    )));
+}
+
+/// Hands one file to the browser as a download, under its [`download_name`]. A file of a kind a
+/// page does not hand out, or one the browser will not take, is said in the browser's console;
+/// it is not kept.
+fn offer(download: &cav_engine::files::Download) {
+    let Some(name) = download_name(&download.name) else {
+        log::error!(
+            "{}: not downloaded: a page hands out only .{} files",
+            download.name,
+            crate::address::DOWNLOAD_EXTENSIONS.join(", .")
+        );
+        return;
+    };
+    if let Err(why) = hand_over(&name, &download.bytes) {
+        log::error!("{name}: the browser did not take the download: {why:?}");
+    }
+}
+
+fn hand_over(name: &str, bytes: &[u8]) -> Result<(), eframe::wasm_bindgen::JsValue> {
+    let document = web_sys::window().and_then(|w| w.document()).ok_or("no document")?;
+    let bytes = js_sys::Uint8Array::from(bytes);
+    let parts = js_sys::Array::of1(&bytes);
+    let options = web_sys::BlobPropertyBag::new();
+    options.set_type("application/octet-stream");
+    let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(&parts, &options)?;
+    let url = web_sys::Url::create_object_url_with_blob(&blob)?;
+    let link: web_sys::HtmlAnchorElement = document.create_element("a")?.dyn_into()?;
+    link.set_href(&url);
+    link.set_download(name);
+    link.click();
+    // The browser reads the file after this returns: its address is let go a minute later, not
+    // now (let go at once, a second or third file of one click can arrive as an error page).
+    let later = Closure::once_into_js(move || {
+        let _ = web_sys::Url::revoke_object_url(&url);
+    });
+    web_sys::window()
+        .ok_or("no window")?
+        .set_timeout_with_callback_and_timeout_and_arguments_0(later.unchecked_ref(), 60_000)?;
+    Ok(())
+}

@@ -578,13 +578,10 @@ fn text_of(record: &serde_json::Value) -> String {
     text
 }
 
-/// The record at `path`, if there is one that is JSON and no larger than a record is.
+/// The record at `path`, if there is one that is JSON and no larger than a record is. Read
+/// through `cav_engine::files`: in a page there is none, and the record starts again.
 fn read_record(path: &Path) -> Option<serde_json::Value> {
-    let length = std::fs::metadata(path).ok()?.len();
-    if length > RECORD_BYTES {
-        return None;
-    }
-    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+    serde_json::from_slice(&cav_engine::files::read(path, RECORD_BYTES).ok()?).ok()
 }
 
 /// Puts the fields of `more` into `into`, after its own.
@@ -656,11 +653,10 @@ impl Built {
     pub fn write_data(&self, path: &Path) -> Result<(), String> {
         let Some(table) = &self.table else { return Ok(()) };
         let wrong = |why: std::io::Error| format!("{}: not written: {why}", path.display());
-        let file = std::fs::File::create(path).map_err(wrong)?;
-        let mut writer = std::io::BufWriter::with_capacity(WRITE_BUFFER, file);
+        let mut writer = cav_engine::files::create(path, WRITE_BUFFER).map_err(wrong)?;
         let written =
             if table.is_long() { table.write_npy(&mut writer) } else { table.write_csv(&mut writer) };
-        written.and_then(|()| writer.flush()).map_err(wrong)
+        written.and_then(|()| writer.finish()).map_err(wrong)
     }
 }
 
@@ -804,7 +800,7 @@ pub fn export(
     };
     let directory = path.parent().unwrap_or_else(|| Path::new(""));
     let write = |path: &Path, bytes: &[u8]| {
-        std::fs::write(path, bytes).map_err(|why| format!("{}: not written: {why}", path.display()))
+        cav_engine::files::write(path, bytes).map_err(|why| format!("{}: not written: {why}", path.display()))
     };
     let mut files = vec![path.to_path_buf()];
     write(path, &bytes)?;
@@ -816,7 +812,7 @@ pub fn export(
     // The record: this picture added to the one beside it, if that is of the same figure.
     let record = directory.join(beside(&file, "json"));
     let old = read_record(&record);
-    let said = built.record(old.as_ref(), &|name| directory.join(name).is_file());
+    let said = built.record(old.as_ref(), &|name| cav_engine::files::is_file(&directory.join(name)));
     write(&record, text_of(&said).as_bytes())?;
     files.push(record);
     Ok(files)
