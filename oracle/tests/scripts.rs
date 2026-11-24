@@ -314,6 +314,68 @@ cav_validate::case! {
     },
 }
 
+/// A number of a script's `meta.json` (the constants the harness read out of the script as it
+/// ran), by its key.
+fn meta_number(dir: &str, key: &str) -> f64 {
+    let path = oracle::fixtures().join("scripts").join(dir).join("meta.json");
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|why| panic!("{}: {why}", path.display()));
+    let key = format!("\"{key}\":");
+    let at = text.find(&key).unwrap_or_else(|| panic!("{dir}/meta.json has no {key}"));
+    let rest = text[at + key.len()..].trim_start();
+    let end = rest.find([',', '\n', '}']).expect("the number ends");
+    rest[..end].trim().parse().unwrap_or_else(|why| panic!("{dir}/meta.json {key} {why}"))
+}
+
+cav_validate::case! {
+    test: validation_the_launch_rule_is_the_scripts,
+    name: "oracle.script_launch_rule",
+    subsystem: "oracle",
+    slice: "S2",
+    reference: Script,
+    against: "the kick and the launch speed the AICE scripts computed as they ran (v_kick and u0 in the meta.json of 100m_oscillators and fig2_uldm_folding; fig2_final.py computes them by the same two lines) against the engine's kick n·ħk/m and its rule g·T − v_kick/2 with the scripts' constants; largest relative difference",
+    unit: Relative,
+    tolerance: 1e-12,
+    measure: {
+        let relative = |ours: f64, theirs: f64| (ours / theirs - 1.0).abs();
+        let scripts = script_instrument(true);
+        let mut worst = 0.0f64;
+        for dir in ["100m_oscillators", "fig2_uldm_folding"] {
+            let (kick, launch) = (meta_number(dir, "v_kick"), meta_number(dir, "u0"));
+            // The fixture is of the instrument this test thinks it is.
+            let constants = ["m_atom", "hbar", "g", "n", "T"].map(|key| meta_number(dir, key));
+            assert_eq!(
+                constants,
+                [scripts.atom_mass, scripts.hbar, scripts.gravity, scripts.kicks, scripts.half_sequence],
+                "{dir}"
+            );
+            // fig2_final.py's two lines, written out in its own order of operations:
+            //   v_kick = n * hbar * (2 * np.pi / 698e-9) / m_atom
+            //   u0     = g * T_fly / 2 - v_kick / 2          (T_fly = 2 * T)
+            let [m_atom, hbar, g, n, t] = constants;
+            let v_kick = n * hbar * (2.0 * std::f64::consts::PI / 698e-9) / m_atom;
+            let u0 = g * (2.0 * t) / 2.0 - v_kick / 2.0;
+            assert_eq!((v_kick.to_bits(), u0.to_bits()), (kick.to_bits(), launch.to_bits()), "{dir}");
+            worst = worst.max(relative(scripts.kick_velocity(), kick));
+            worst = worst.max(relative(scripts.symmetric_launch(), launch));
+            // The rule does what the script's comment says: the lower arm (and the upper) is back
+            // at the launch height at 2T.
+            let [lower, upper] = Instrument { floor: false, launch_velocity: launch, ..scripts }.arms();
+            assert!(lower.rise(2.0 * t).abs() < 1e-9 && upper.rise(2.0 * t).abs() < 1e-9);
+            // The plan's 21.27 m/s is this number, rounded.
+            assert!((launch - 21.27).abs() < 5e-3, "{launch}");
+            // Controls. The same rule with the engine's atom and ħ is another number, 21.236 m/s,
+            // far outside the tolerance: the constants are what differ, not the rule.
+            let engine = Instrument::aice();
+            assert!((engine.launch_velocity - 21.236).abs() < 5e-4, "{}", engine.launch_velocity);
+            assert!(relative(engine.launch_velocity, launch) > 1e-3);
+            assert!(relative(engine.kick_velocity(), kick) > 1e-2);
+            // And another rule (closing the arms on the kick alone, g·T − v_kick) is not it.
+            assert!(relative(scripts.gravity * t - kick, launch) > 0.1);
+        }
+        cav_validate::Measured::Error(worst)
+    },
+}
+
 #[test]
 fn point_oscillator_phase_matches_script() {
     // VALIDATION-AND-RESEARCH §2.1: the phase series of a 1-D vertical point-mass oscillator, on

@@ -8,13 +8,14 @@
     duration: 60.0,
     array: (
         instrument: (
-            tower_height: 10.0,
+            tower_height: 10.1,
             ifo_separation: 5.0,
             half_sequence: 0.73,
             launch_velocity: 3.86,
             cycle: 2.0,
             atom_mass: 1.4431558652473234e-25,
             gravity: 9.81,
+            kicks: 1000.0,
             launch_floor: true,
             sign: LowerMinusUpper,
         ),

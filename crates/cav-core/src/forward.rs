@@ -160,8 +160,9 @@ impl Instrument {
         }
     }
 
-    /// The AICE 100 m preset of the reference scripts: Δr = 70 m, T = 2.5 s, and the launch that
-    /// closes the arms at the launch height at 2T, u₀ = gT − v_kick/2.
+    /// The AICE 100 m preset of the reference scripts: Δr = 70 m, T = 2.5 s, and the launch
+    /// derived from this instrument's own gravity, T, atom and kick number by
+    /// [`Self::symmetric_launch`], as George's `fig2_final.py` derives it.
     #[must_use]
     pub fn aice() -> Self {
         let mut instrument = Self {
@@ -182,6 +183,12 @@ impl Instrument {
 
     /// The launch velocity, metres per second, that brings both arms back to the launch height
     /// exactly at 2T: `gT − v_kick/2`. Each arm is then its own mirror image about T.
+    ///
+    /// Why: the lower arm is at `2T·u₀ − g(2T)²/2 + v_kick·T` at 2T (launched at u₀, kicked up
+    /// at T, so it gains `v_kick·T` in the second half) and the upper at
+    /// `2T·(u₀ + v_kick) − g(2T)²/2 − v_kick·T`; both are `2T·(u₀ − gT + v_kick/2)`, which is
+    /// zero for this launch and no other. It is the rule of the reference scripts
+    /// (`u0 = g * T_fly / 2 - v_kick / 2` with `T_fly = 2T`).
     #[must_use]
     pub fn symmetric_launch(&self) -> f64 {
         self.gravity * self.half_sequence - 0.5 * self.kick_velocity()
@@ -200,6 +207,15 @@ impl Instrument {
         let kick = self.kick_velocity();
         let arm = |first: f64, kick: f64| Arm::new(first, kick, self.half_sequence, self.gravity, self.floor);
         [arm(self.launch_velocity, kick), arm(self.launch_velocity + kick, -kick)]
+    }
+
+    /// How high the highest arm gets above the tower's base, metres: the upper interferometer's
+    /// launch height (Δr above the lower one's, which is the base) and the greater of the two
+    /// arms' [`Arm::apex`]. A tower shorter than this does not hold the sequence.
+    #[must_use]
+    pub fn reach(&self) -> f64 {
+        let [lower, upper] = self.arms();
+        self.ifo_separation + lower.apex().max(upper.apex())
     }
 
     /// `G·m_A/ħ`, in m s⁻¹ kg⁻¹: what turns the flight's sum (kg s / m) into radians.
@@ -400,6 +416,20 @@ impl Arm {
                 _ => self.rise_at_half + fall(self.second, since),
             }
         }
+    }
+
+    /// The greatest height above the launch point the arm reaches between launch and 2T, metres
+    /// (never less than 0: it starts there).
+    #[must_use]
+    pub fn apex(&self) -> f64 {
+        // Each half is a parabola from a known height and velocity: its top is at its vertex if
+        // the vertex is inside the half, and otherwise at one of its ends.
+        let top = |from: f64, velocity: f64| {
+            let vertex = velocity / self.gravity;
+            let at = vertex.clamp(0.0, self.half);
+            from + velocity * at - 0.5 * self.gravity * at * at
+        };
+        top(0.0, self.first).max(top(self.rise_at_half, self.second)).max(0.0)
     }
 
     /// Whether the arm is on the floor at `tau` seconds after launch: landed, and not yet kicked
@@ -920,6 +950,45 @@ mod tests {
                 assert!((arm.rise(tau) - arm.rise(2.0 * t - tau)).abs() < 1e-12);
             }
         }
+    }
+
+    #[test]
+    fn the_default_arms_top_out_below_the_tower() {
+        // George, 23 Nov 2026: the tower is 10.1 m so that the ⁸⁷Sr arms fit. The apex is the
+        // forward model's own, checked here against its own path walked in small steps.
+        let walked = |arm: &Arm, half: f64| {
+            (0..=20_000).map(|n| arm.rise(2.0 * half * f64::from(n) / 20_000.0)).fold(0.0f64, f64::max)
+        };
+        let mut instruments = vec![Instrument::aion10(), Instrument::aice()];
+        // Arms that land before the kick, that rise after it, and that never leave the floor.
+        instruments.push(Instrument { launch_velocity: 1.0, ..Instrument::aion10() });
+        instruments.push(Instrument { launch_velocity: 0.5, kicks: 3000.0, ..Instrument::aion10() });
+        instruments.push(Instrument { launch_velocity: 30.0, floor: false, ..Instrument::aion10() });
+        for instrument in &instruments {
+            for arm in instrument.arms() {
+                let (apex, seen) = (arm.apex(), walked(&arm, instrument.half_sequence));
+                // A walk in steps of 2T/20000 is below the true top by at most one step at the
+                // arm's speed, and none of these arms is faster than 40 m/s.
+                let step = instrument.flight_time() / 20_000.0;
+                assert!(apex >= seen && apex - seen <= 40.0 * step, "{apex} {seen}");
+                // Control: a top taken at the π pulse alone is not the top of every arm.
+                assert!(arm.rise(instrument.half_sequence) <= apex);
+            }
+        }
+        let low = Instrument { launch_velocity: 1.0, ..Instrument::aion10() }.arms()[0];
+        assert!(low.apex() > low.rise(0.73) + 0.05, "it lands before the pulse: {}", low.apex());
+        let reach = Instrument::aion10().reach();
+        assert!(reach < crate::defaults::TOWER_HEIGHT, "the arms reach {reach} m");
+        assert_eq!(crate::defaults::TOWER_HEIGHT, 10.1);
+        // Control: they do not fit in the plan's 10 m, which is why the tower is not 10 m.
+        assert!(reach > 10.0, "{reach}");
+        // It is the upper arm of the upper interferometer at the π pulse: Δr + (u₀ + v)T − gT²/2.
+        let i = Instrument::aion10();
+        let at_pulse = i.ifo_separation + (i.launch_velocity + i.kick_velocity()) * i.half_sequence
+            - 0.5 * i.gravity * i.half_sequence * i.half_sequence;
+        assert!((reach - at_pulse).abs() < 1e-12 && (reach - 10.006).abs() < 5e-4, "{reach} {at_pulse}");
+        // With the reference scripts' constants the kick is smaller and the arms did fit in 10 m.
+        assert!(Instrument::aion10().with_script_constants().reach() < 10.0);
     }
 
     #[test]

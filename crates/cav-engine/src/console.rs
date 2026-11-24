@@ -99,13 +99,13 @@ pub const COMMANDS: &[CommandDoc] = &[
     CommandDoc {
         name: "preset",
         usage: "preset <aion10|aice|file.ron>",
-        about: "set the instrument to a preset, or to one of your own from a file of an instrument (an edit)",
+        about: "set the instrument to a preset (AICE's launch is derived, not kept), or to one of your own from a file of an instrument (an edit)",
         example: "preset aice",
     },
     CommandDoc {
         name: "launch",
         usage: "launch symmetric",
-        about: "set the launch velocity to the one that closes the arms at 2T, g·T − v_kick/2 (an edit)",
+        about: "set the launch velocity to the one that brings the atoms back to where they started at 2T, g·T − v_kick/2, from the instrument's gravity, T, atom and kick number as they are now (an edit)",
         example: "launch symmetric",
     },
     CommandDoc {
@@ -1405,6 +1405,45 @@ mod tests {
         let bare = "panes 2\nthe 4\" pane\nview top";
         assert_eq!(statements(bare), ["panes 2", "the 4\" pane\nview top"]);
         assert!(Engine::new().run_script(bare).is_err());
+    }
+
+    #[test]
+    fn launch_symmetric_follows_the_instrument_as_it_is_now() {
+        use cav_sim::presets::{aice, aice_with_kicks, symmetric_launch};
+        // The four things the rule reads. After each is changed the launch that was derived
+        // for the preset is stale (a set moves nothing else: the control), and `launch
+        // symmetric` derives it again from the instrument as it now is.
+        for line in [
+            "set array.instrument.kicks 4000",
+            "set array.instrument.half_sequence 2",
+            "set array.instrument.gravity 9.78",
+            "set array.instrument.atom_mass 1.46e-25",
+        ] {
+            let mut engine = Engine::new();
+            engine.run_line("preset aice").unwrap();
+            engine.run_line(line).unwrap();
+            let stale = engine.spec().array.instrument.clone();
+            assert_eq!(stale.launch_velocity, aice().launch_velocity, "{line}");
+            assert_ne!(stale.launch_velocity, symmetric_launch(&stale), "{line}");
+            engine.run_line("launch symmetric").unwrap();
+            let derived = engine.spec().array.instrument.clone();
+            assert_eq!(derived.launch_velocity.to_bits(), symmetric_launch(&stale).to_bits(), "{line}");
+            assert_eq!(
+                derived,
+                cav_sim::InstrumentSpec { launch_velocity: derived.launch_velocity, ..stale }
+            );
+            if line.contains("kicks") {
+                // The preset at that kick number, by another road.
+                assert_eq!(derived, aice_with_kicks(4000.0));
+            }
+        }
+        // The kick number has a path, a unit and a range like any other field.
+        let mut engine = Engine::new();
+        assert_eq!(engine.run_line("get array.instrument.kicks").unwrap(), "1000.0");
+        let schema = engine.run_line("schema array.instrument.kicks").unwrap();
+        assert!(schema.contains("\"x-unit\": \"1\"") && schema.contains("kick number"), "{schema}");
+        let why = engine.run_line("set array.instrument.kicks 0").unwrap_err();
+        assert!(why.contains("array.instrument.kicks"), "{why}");
     }
 
     #[test]

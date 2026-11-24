@@ -4,9 +4,10 @@
 //! instant of a flight. `Linear` and `Circular` are the reference scripts' oscillators
 //! (`traj_linear`; `traj_vertical_circle`, `traj_horizontal_circle` and `traj_inclined_circle` are
 //! `Circular` with different `u` and `v`); `Pendulum` is their spherical pendulum with its slow
-//! precession (`traj_pendulum` of `fig2_multi_directional.py`). `Sphere` is **not** from the
-//! scripts or the paper: "forced motion on a sphere" (upgrade report §2.5.1) was not available to
-//! read, and this is the slice's own parametrisation, to be checked with George.
+//! precession (`traj_pendulum` of `fig2_multi_directional.py`). `Sphere` is not from the
+//! scripts: "forced motion on a sphere" (upgrade report §2.5.1) was not available to read, and
+//! the parametrisation was written here first. George has confirmed that it matches the
+//! report's (23 Nov 2026).
 //!
 //! Frame: metres, x east, y north, z up; seconds; angles in degrees; frequencies in hertz.
 
@@ -105,7 +106,7 @@ pub enum Motion {
         #[schemars(extend("x-unit" = "°"))]
         azimuth: f64,
     },
-    /// Forced motion on a sphere (this slice's own parametrisation; see the module's note): the
+    /// Forced motion on a sphere (the upgrade report's, as George confirmed; see the module's note): the
     /// body is `radius` from `centre`, at an angle `tilt · cos(2π·tilt_frequency·t)` from straight
     /// down, in a vertical plane that turns about the vertical at `spin_frequency`.
     Sphere {
