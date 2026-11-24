@@ -139,6 +139,25 @@ mod tests {
         a.iter().zip(b).filter(|(x, y)| x.to_bits() != y.to_bits()).count() as f64
     }
 
+    /// A number in `{:e}` form read the quick way: its digits as an integer, times a power of
+    /// ten, in two multiplications when the power is out of an f64's range. Correct to within a
+    /// few units in the last place, which is not the same number.
+    fn two_step(text: &str) -> f64 {
+        let (mantissa, exponent) = text.split_once('e').expect("an exponent");
+        let exponent: i32 = exponent.parse().expect("a whole exponent");
+        let negative = mantissa.starts_with('-');
+        let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
+        let places = mantissa.split_once('.').map_or(0, |(_, after)| after.len()) as i32;
+        let whole = digits.parse::<u64>().expect("at most seventeen digits") as f64;
+        let power = exponent - places;
+        let value = if power < -300 {
+            whole * 10f64.powi(-300) * 10f64.powi(power + 300)
+        } else {
+            whole * 10f64.powi(power)
+        };
+        if negative { -value } else { value }
+    }
+
     cav_validate::case! {
         test: validation_json_round_trip_is_exact,
         name: "spec.json_f64_exact",
@@ -158,6 +177,12 @@ mod tests {
             let lossy: Vec<f64> = values[..10_000].iter().map(|x| format!("{x:.15e}").parse().unwrap()).collect();
             let lost = differing(&values[..10_000], &lossy);
             assert!(lost > 1000.0, "fifteen digits lost only {lost} of 10000");
+            // Control: the right digits read the quick way (the digits as an integer, times a
+            // power of ten in one or two multiplications, which is what serde_json does without
+            // `float_roundtrip`) do not all come back: the feature is what makes the count 0.
+            let quick: Vec<f64> = values[..10_000].iter().map(|x| two_step(&format!("{x:e}"))).collect();
+            let lost = differing(&values[..10_000], &quick);
+            assert!(lost > 100.0, "the quick reading lost only {lost} of 10000");
             Measured::Error(differing(&values, &typed) + differing(&values, &through))
         },
     }
@@ -175,6 +200,13 @@ mod tests {
             let values = patterns(1_000_000, 11);
             let text = ron::to_string(&values).unwrap();
             let back: Vec<f64> = ron::from_str(&text).unwrap();
+            // Control: the same values as RON text with fifteen digits after the point, which
+            // looks exact and is not, come back changed by the thousand (S2's review, 37: this
+            // case had no control that text can lose a value).
+            let short: Vec<String> = values[..10_000].iter().map(|x| format!("{x:.15e}")).collect();
+            let lossy: Vec<f64> = ron::from_str(&format!("[{}]", short.join(","))).unwrap();
+            let lost = differing(&values[..10_000], &lossy);
+            assert!(lost > 1000.0, "fifteen digits lost only {lost} of 10000");
             // Control: one unit in the last place of one value is seen.
             let mut nudged = back.clone();
             nudged[123_456] = f64::from_bits(nudged[123_456].to_bits() ^ 1);
