@@ -84,12 +84,17 @@ fn power_at(times: &[f64], frequency: f64) -> f64 {
     (re * re + im * im) / (n * n)
 }
 
+/// The most steps (times × frequencies) a spectral window is summed directly in: two million,
+/// a few milliseconds. Beyond it the non-uniform FFT is used, which agrees to 1e-9 of the peak.
+/// The one place this number is stated (S2's review found three that disagreed).
+pub const DIRECT_SUM_STEPS: usize = 2_000_000;
+
 /// The spectral window of one realisation: `|W(ν)|²` with `W(ν) = (1/N)·Σₙ e^{−2πiν·tₙ}`, for shot
 /// `times` in seconds (any order, need not be uniform) at each of `frequencies` in hertz. A
 /// fraction of the peak: 1 at `ν = 0`. No times give zeros.
 ///
-/// Exact, in `N·M` steps for `N` times and `M` frequencies: the caller bounds `N·M`
-/// (`docs/slices/S2.md` §3.1 row A13 allows 2e7) and uses [`window_fast`] beyond that. Not the
+/// Exact, in `N·M` steps for `N` times and `M` frequencies: the caller bounds `N·M` by
+/// [`DIRECT_SUM_STEPS`] and uses [`window_fast`] beyond that. Not the
 /// *expected* window of a random cadence: that is the closed forms below.
 #[must_use]
 pub fn window(times: &[f64], frequencies: &[f64]) -> Vec<f64> {

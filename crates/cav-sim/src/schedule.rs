@@ -211,8 +211,8 @@ pub const MAX_FREQUENCIES: usize = 1 << 20;
 /// (dimensionless, 1 at zero frequency; a height, not a power). One realisation, for the scene's
 /// seed: the closed forms of [`predict`] are what it is expected to be.
 ///
-/// The sum is direct while shots × frequencies is at most 2×10⁶, and by the non-uniform FFT
-/// beyond; `count` is held to [`MAX_FREQUENCIES`].
+/// The sum is direct while shots × frequencies is at most
+/// [`cav_core::cadence::DIRECT_SUM_STEPS`], and by the non-uniform FFT beyond; `count` is held to [`MAX_FREQUENCIES`].
 ///
 /// # Errors
 /// When the scene has too many shots, there is no such tower, or `to` is not a positive number.
@@ -229,7 +229,7 @@ pub fn window(spec: &SceneSpec, tower: usize, to: f64, count: usize) -> Result<(
         (0..shots.times.len()).filter(|&k| shots.taken(tower, k)).map(|k| shots.readout(tower, k)).collect();
     let df = to / (count - 1) as f64;
     let frequencies: Vec<f64> = (0..count).map(|k| k as f64 * df).collect();
-    let power = if times.len().saturating_mul(count) <= 2_000_000 {
+    let power = if times.len().saturating_mul(count) <= cav_core::cadence::DIRECT_SUM_STEPS {
         cadence::window(&times, &frequencies)
     } else {
         cadence::window_fast(&times, df, count)
@@ -396,5 +396,41 @@ mod tests {
         assert!(super::window(&scene, 7, 1.0, 100).unwrap_err().contains("no tower 8"));
         assert!(super::window(&scene, 0, 0.0, 100).is_err());
         assert_eq!(super::window(&scene, 0, 1.0, 1).unwrap().0.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod threshold {
+    use super::*;
+    use crate::dev;
+
+    #[test]
+    fn the_window_is_the_same_on_either_side_of_the_direct_sum_threshold() {
+        // The cadence-lab scene has about 910 shots a tower: 2001 frequencies is under the
+        // threshold (summed directly), 4001 is over it (the non-uniform FFT).
+        let spec = dev::cadence_lab();
+        let shots = crate::read::shots(&spec).unwrap();
+        let times: Vec<f64> =
+            (0..shots.times.len()).filter(|&k| shots.taken(0, k)).map(|k| shots.launch(0, k)).collect();
+        let steps = |count: usize| times.len() * count;
+        assert!(
+            steps(2001) <= cav_core::cadence::DIRECT_SUM_STEPS
+                && steps(4001) > cav_core::cadence::DIRECT_SUM_STEPS
+        );
+        let (coarse_f, coarse) = window(&spec, 0, 0.5, 2001).unwrap();
+        let (fine_f, fine) = window(&spec, 0, 0.5, 4001).unwrap();
+        // Every second frequency of the fine set is a frequency of the coarse one.
+        let mut worst = 0.0f64;
+        for (k, (frequency, height)) in coarse_f.iter().zip(&coarse).enumerate() {
+            assert!((fine_f[2 * k] - frequency).abs() < 1e-12);
+            worst = worst.max((fine[2 * k] - height).abs());
+        }
+        assert!(worst < 1e-9, "the two methods differ by {worst}");
+        // Control: the window is not flat, so agreement is not of two constants; and a
+        // neighbouring frequency does differ.
+        let spread =
+            coarse.iter().fold(0.0f64, |m, h| m.max(*h)) - coarse.iter().fold(1.0f64, |m, h| m.min(*h));
+        assert!(spread > 0.5);
+        assert!(coarse.iter().zip(&fine[1..]).any(|(a, b)| (a - b).abs() > 1e-3));
     }
 }
