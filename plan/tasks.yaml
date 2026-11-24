@@ -512,3 +512,18 @@
 - id: TASK-S17-03
   milestone: S17
   title: "The live site's record (sizes, types, load time, a screenshot from Pages); the validation report regenerated"
+- id: TASK-S17-04
+  milestone: S17
+  title: "Review fix: web serve kept to its folder, idle sockets cannot stall it, --exit-after"
+- id: TASK-S17-05
+  milestone: S17
+  title: "Review fix: the web equivalence holds exact bits except a listed set through sin/cos/exp/log"
+- id: TASK-S17-06
+  milestone: S17
+  title: "Review fix: figure export through cav_engine::files (downloads on the web); the demo checks the download"
+- id: TASK-S17-07
+  milestone: S17
+  title: "Review fix: voxel bodies never block the page (the forward jobs in a Web Worker)"
+- id: TASK-S17-08
+  milestone: S17
+  title: "Review fix: no-adapter page, #exec downloads behind a click, CSP, wasm lints, cfg only in seams, panic hook, docs"
