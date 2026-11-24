@@ -7,7 +7,29 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S0 the shell | done: TASK-S0-01 to 14 merged; reviewed twice, nothing important remains | `s0-shell` | brief and results: `docs/slices/S0.md`; screenshots: `docs/slices/S0/`; validation: `docs/validation/report.md`; research: `docs/research/s0-app-stack-and-build-speed.md` |
 | S1 a point mass | done: TASK-S1-01 to 19 merged; reviewed twice, nothing important remains | `s1-point-mass` | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
 | S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
-| S3 voxel bodies | built; reviewed once; every finding fixed (TASK-S3-20 to 25, PRs #108 onwards); awaiting re-review |  | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
+| S3 voxel bodies | built; reviewed twice; every finding fixed (TASK-S3-20 to 26, PRs #108 onwards); tag pending |  | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
+
+## S3 after its second review (24 Nov 2026) — fixed, tag pending
+
+**Done (TASK-S3-26, `docs/slices/S3.md` §8.8).** The important finding: `kernel_share` is tested
+(393 voxel bodies crowd a ball of 12,496 leaves out of its share: the read warns and the view does
+not colour it; alone it is read and coloured; the test fails with the share removed, each arm on its
+own). Minors: the tree overlay counts before it makes (a first depth past 20,000 draws nothing and
+names the depth that fits); the phase colouring counts its real ceiling (3 × the nodes a leaf);
+the scaffold series table shares each leaf's offset over its five α (`cube_shifts`, the same bits),
+167 s to 128 s a case; notes on the cuboid gap (not a separate guard) and the quick volume case (a
+0.9% bias passes it; the oracle catches it).
+
+**Decided.** An over-cap first depth is refused, not drawn in part. **Found:** the review's cause of
+the oracle's time (the shots one at a time) was not it; the table against 260,400 leaves is.
+
+**Numbers.** `quick` 471 tests, 15.6 s warm; `oracle` 58 in 434 s (was 692 s); validation unchanged (107 of 107; no case changed).
+
+**Open.** The oracle tier is still over its 5 minutes (§8.9); under it needs the scaffold series to
+measure something cheaper (coarser members, fewer α points) or a tier of its own: for the owner.
+`quick` over the brief's 10 s (unchanged). Mesh files resolved against the working directory.
+
+**Next.** The tag, if the coordinator is content; then S4.
 
 ## S3 after its review (24 Nov 2026) — fixes done, awaiting re-review
 

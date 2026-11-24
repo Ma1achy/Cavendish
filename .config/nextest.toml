@@ -13,7 +13,8 @@ filter = 'test(validation_cylinder_vs_point_mass) | test(the_point_mass_fails_wh
 test-group = 'whole-machine'
 
 # The scaffold series by the scripts' sampling read every leaf of 48 members at 1 cm at 4672 arm
-# heights and five ?: about three minutes each on the build PC, over every core (S3's review).
+# heights and five α (6.0e9 cube changes): about 130 s each on the build PC over every core, the
+# five α sharing each leaf's offset (TASK-S3-26; 170 s before). S3's review.
 [[profile.default.overrides]]
 filter = 'test(validation_scaffold_series_against_script) | test(validation_scaffold_multimode_series_against_script)'
 test-group = 'whole-machine'

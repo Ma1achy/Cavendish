@@ -27,7 +27,10 @@ Regenerate one with its command (from the repository root, after `cargo build --
 - **Bounded**: at most 20,000 tree nodes a view (`MAX_TREE_BOXES`), counted before any is made
   and only where a section keeps them; past it, whole depths are left out from the deepest up, the
   legend says "to depth d", the app lists the note and `cav render` prints it (see the scaffold
-  and `sphere-r64-capped`). Cubes and cells keep S3's 20,000-a-view budget.
+  and `sphere-r64-capped`). A first asked depth that alone has more than 20,000 is not drawn:
+  the note names its count and the deepest depth that fits (it used to be made whole and cut to
+  20,000 in Morton order on every refresh; TASK-S3-26). Cubes and cells keep S3's 20,000-a-view
+  budget.
 - The unit cube's tree is one leaf: its grid fits the cube, so the merge makes the root the whole
   body. Its pictures show that single box.
 - In the scaffold, each tube's root is a cube of 2^9 voxels of 2 cm, about 10 m on a side, set at

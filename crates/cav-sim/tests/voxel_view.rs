@@ -85,6 +85,73 @@ fn the_phases_of_the_leaves_add_up_to_the_body_s() {
     assert!((other - sums[1]).abs() > 1e-3 * sums[1].abs(), "{other} against {}", sums[1]);
 }
 
+/// The unit cube's scene with its cube made a ball of many leaves (tens of thousands, so that a
+/// few hundred voxel bodies are enough to crowd it out of the kernel's work).
+fn crowdable() -> cav_sim::SceneSpec {
+    let mut scene = dev::unit_cube();
+    scene.bodies[0].shape =
+        Some(ShapeSpec { kind: ShapeKind::Sphere { radius: 0.5 }, pitch: 1.0 / 64.0, supersample: 1 });
+    scene
+}
+
+/// [`crowdable`] with `copies` more of its ball placed far along x: every one a voxel body, so
+/// each has `1/(copies + 1)` of one read's kernel work.
+fn with_copies(copies: usize) -> cav_sim::SceneSpec {
+    let mut scene = crowdable();
+    let cube = scene.bodies[0].clone();
+    for k in 0..copies {
+        let mut copy = cube.clone();
+        copy.label = format!("copy {}", k + 1);
+        copy.motion = Motion::Static { position: [100.0 + 2.0 * k as f64, 0.0, 2.5] };
+        scene.bodies.push(copy);
+    }
+    scene
+}
+
+#[test]
+fn the_kernel_s_work_is_shared_by_the_scene_s_voxel_bodies() {
+    use cav_core::voxel::kernel::MAX_KERNEL_WORK;
+    use cav_sim::read::{SourceId, kernel_share};
+    let alone = crowdable();
+    let leaves = trees(&alone)[0].as_ref().unwrap().leaves.len() as u64;
+    let nodes = (0..alone.array.towers.len())
+        .map(|t| alone.array.instrument_of(t).instrument().node_count(&[]))
+        .max()
+        .unwrap();
+    // The read's first rule costs 4 cube evaluations a node for each leaf; colouring by phase,
+    // whose read of a leaf may refine to three times the nodes, at most 12.
+    let first = 4 * nodes * leaves;
+    assert!(3 * first <= MAX_KERNEL_WORK, "the cube alone must fit: {first}");
+    // Enough voxel bodies that the cube's share is less than its first rule.
+    let copies = usize::try_from(MAX_KERNEL_WORK / first).unwrap();
+    let crowded = with_copies(copies);
+    assert!(
+        crowded.bodies.len() <= cav_sim::spec::limits::BODIES,
+        "{} bodies, {leaves} leaves",
+        crowded.bodies.len()
+    );
+    assert!(kernel_share(&crowded) < first && kernel_share(&alone) >= 3 * first);
+    let shots = |scene| cav_sim::read::Shots::together(scene, vec![3.0]);
+    // The read refuses the cube and says why; the view does not colour it by phase and says why.
+    let read = cav_sim::read::contribution(&crowded, SourceId::Body(0), &shots(&crowded), &|| false).unwrap();
+    assert!(
+        read.warnings.iter().any(|w| w.text.contains("`cube` is not read") && w.text.contains("shared by")),
+        "{:?}",
+        read.warnings
+    );
+    assert!(!read.settled && read.gradiometer.iter().all(|&g| g == 0.0));
+    let phase = Colouring { field: LeafField::Phase, tower: 0 };
+    let mut few = trees(&alone);
+    few.resize(crowded.bodies.len(), None);
+    let frame = voxel_frame(&crowded, &few, phase, Overlay::default(), 3.0);
+    assert!(frame.notes.iter().any(|n| n.contains("`cube` is not coloured by phase")), "{:?}", frame.notes);
+    // Control: the cube alone is read and coloured, and says nothing.
+    let read = cav_sim::read::contribution(&alone, SourceId::Body(0), &shots(&alone), &|| false).unwrap();
+    assert!(read.warnings.is_empty() && read.gradiometer.iter().all(|&g| g != 0.0), "{:?}", read.warnings);
+    let frame = voxel_frame(&alone, &trees(&alone), phase, Overlay::default(), 3.0);
+    assert!(frame.notes.is_empty() && frame.range.is_some_and(|(_, hi)| hi > 0.0), "{:?}", frame.notes);
+}
+
 #[test]
 fn a_scene_with_no_towers_says_why_it_has_no_distances() {
     let mut scene = dev::unit_cube();
@@ -273,6 +340,26 @@ fn the_tree_overlay_stops_at_whole_depths_within_its_cap() {
     assert_eq!(frame.tree.len(), upto(capped));
     assert!(upto(capped + 1) > MAX_TREE_BOXES);
     assert!(frame.notes.iter().any(|n| n.contains("drawn to depth")), "{:?}", frame.notes);
+    // A range that starts at a depth past the cap on its own: nothing is drawn (no part of the
+    // depth chosen by the blocks' order), and the frame names the depth that would fit.
+    let at = |d: u8| upto(d) - d.checked_sub(1).map_or(0, upto);
+    let past = (0..=tree.grid.depth).find(|&d| at(d) > MAX_TREE_BOXES).expect("a depth past the cap");
+    assert!(at(past - 1) <= MAX_TREE_BOXES);
+    let deep =
+        tree_frame(&scene, &trees, TreeOverlay { from: past, ..TreeOverlay::default() }, LeafField::Level);
+    assert!(deep.tree.is_empty() && deep.depths.is_none() && deep.tree_capped_at.is_none());
+    let want = format!("depth {past} alone has {} tree nodes", at(past));
+    assert!(deep.notes.iter().any(|n| n.contains(&want)), "{:?}", deep.notes);
+    assert!(deep.notes.iter().any(|n| n.contains(&format!("depth {} and shallower fit", past - 1))));
+    // Control: the range starting one depth shallower draws that depth whole and stops there.
+    let one_up = tree_frame(
+        &scene,
+        &trees,
+        TreeOverlay { from: past - 1, ..TreeOverlay::default() },
+        LeafField::Level,
+    );
+    assert_eq!(one_up.tree.len(), at(past - 1));
+    assert_eq!((one_up.tree_capped_at, one_up.depths), (Some(past - 1), Some((past - 1, past - 1))));
     // Control: the small sphere is drawn whole and says nothing.
     let small = dev::sphere();
     let f = tree_frame(&small, &self::trees(&small), TreeOverlay::default(), LeafField::Level);

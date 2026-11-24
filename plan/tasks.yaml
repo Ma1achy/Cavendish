@@ -232,6 +232,9 @@
 - id: TASK-S3-25
   milestone: S3
   title: "S3's review: the validation report, the demo, the results and PROGRESS regenerated"
+- id: TASK-S3-26
+  milestone: S3
+  title: "S3's second review: kernel_share tested; the tree overlay's cap counted before boxes are made; the phase colouring's real work ceiling; the scaffold series' oracle time; notes on the cuboid gap and the quick volume case"
 - id: TASK-S4-01
   milestone: S4
   title: World volume in chunks with palettes and region-file cache
