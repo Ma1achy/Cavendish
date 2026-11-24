@@ -340,7 +340,9 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
             ViewCommand::Zoom { pane, distance } => format!("zoom {distance}{}", at(pane)),
             ViewCommand::Pan { pane, target: [x, y, z] } => format!("pan {x} {y} {z}{}", at(pane)),
             ViewCommand::Colour { pane, colour } => match colour.field {
-                cav_sim::voxel_view::LeafField::Phase => format!("colour phase {}{}", colour.tower + 1, at(pane)),
+                cav_sim::voxel_view::LeafField::Phase => {
+                    format!("colour phase {}{}", colour.tower + 1, at(pane))
+                }
                 field => format!("colour {}{}", field.name(), at(pane)),
             },
             ViewCommand::Overlay { pane, overlay } => match (overlay.leaves, overlay.cut) {
@@ -643,7 +645,8 @@ impl Engine {
             },
             ("colour" | "color", [word, rest @ ..]) if rest.len() <= 1 => {
                 use cav_sim::voxel_view::{Colouring, LeafField};
-                let field = LeafField::parse(word).ok_or_else(|| format!("`{word}` is not a field; {}", usage(name)))?;
+                let field = LeafField::parse(word)
+                    .ok_or_else(|| format!("`{word}` is not a field; {}", usage(name)))?;
                 let tower = match rest {
                     [] => 0,
                     [n] if field == LeafField::Phase => match n.parse::<usize>() {
@@ -662,11 +665,9 @@ impl Engine {
                         ("none", []) if words.len() == 1 => {}
                         ("leaves", _) => overlay.leaves = true,
                         ("cut", [level, ..]) => {
-                            let level: u8 = level
-                                .parse()
-                                .ok()
-                                .filter(|l| *l <= 10)
-                                .ok_or_else(|| format!("`{level}` is not a level from 0 to 10; {}", usage(name)))?;
+                            let level: u8 = level.parse().ok().filter(|l| *l <= 10).ok_or_else(|| {
+                                format!("`{level}` is not a level from 0 to 10; {}", usage(name))
+                            })?;
                             overlay.cut = Some(level);
                             rest = &after[1..];
                             continue;
@@ -1172,14 +1173,20 @@ mod tests {
                 "colour height",
                 Command::View(ViewCommand::Colour {
                     pane: 0,
-                    colour: cav_sim::voxel_view::Colouring { field: cav_sim::voxel_view::LeafField::Height, tower: 0 },
+                    colour: cav_sim::voxel_view::Colouring {
+                        field: cav_sim::voxel_view::LeafField::Height,
+                        tower: 0,
+                    },
                 }),
             ),
             (
                 "colour phase 3 @2",
                 Command::View(ViewCommand::Colour {
                     pane: 1,
-                    colour: cav_sim::voxel_view::Colouring { field: cav_sim::voxel_view::LeafField::Phase, tower: 2 },
+                    colour: cav_sim::voxel_view::Colouring {
+                        field: cav_sim::voxel_view::LeafField::Phase,
+                        tower: 2,
+                    },
                 }),
             ),
             (
@@ -1191,7 +1198,10 @@ mod tests {
             ),
             (
                 "overlay none",
-                Command::View(ViewCommand::Overlay { pane: 0, overlay: cav_sim::voxel_view::Overlay::default() }),
+                Command::View(ViewCommand::Overlay {
+                    pane: 0,
+                    overlay: cav_sim::voxel_view::Overlay::default(),
+                }),
             ),
             ("panes 4", Command::View(ViewCommand::Panes(4))),
             ("pane 2", Command::View(ViewCommand::Activate(1))),

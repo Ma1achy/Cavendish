@@ -1062,7 +1062,8 @@ impl Engine {
             ViewCommand::Home { pane } => {
                 // Home is the camera's: the style, the colouring and the overlays are kept.
                 let (colour, overlay) = (self.views[pane].colour, self.views[pane].overlay);
-                self.views[pane] = ViewSpec { colour, overlay, ..home_view(&self.spec, pane, self.views[pane].style) };
+                self.views[pane] =
+                    ViewSpec { colour, overlay, ..home_view(&self.spec, pane, self.views[pane].style) };
             }
             ViewCommand::Colour { pane, colour } => self.views[pane].colour = colour,
             ViewCommand::Overlay { pane, overlay } => self.views[pane].overlay = overlay,

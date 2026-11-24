@@ -7,7 +7,7 @@ use cav_gpu::wgpu::{self, util::DeviceExt};
 use cav_sim::DrawStyle;
 
 use crate::camera::Camera;
-use crate::scene::{Drawables, Line, Vertex, drawables_at};
+use crate::scene::{Drawables, Line, Vertex};
 
 /// The colour format of every pane: sRGB, so shaders work in linear light.
 pub const COLOUR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;

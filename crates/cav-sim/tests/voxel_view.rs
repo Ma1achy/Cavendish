@@ -17,7 +17,8 @@ fn a_legend_is_made_from_what_is_drawn() {
         let frame = voxel_frame(&scene, &trees, Colouring { field, tower: 0 }, Overlay::default(), 0.0);
         assert!(frame.notes.is_empty(), "{field:?}: {:?}", frame.notes);
         let values: Vec<f64> = frame.bodies.iter().flat_map(|b| b.cubes.iter().map(|c| c.value)).collect();
-        let (least, most) = values.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), v| (a.min(*v), b.max(*v)));
+        let (least, most) =
+            values.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), v| (a.min(*v), b.max(*v)));
         let range = frame.range.unwrap();
         if field.diverging() {
             let m = least.abs().max(most.abs());
@@ -35,7 +36,8 @@ fn a_legend_is_made_from_what_is_drawn() {
     assert_eq!(drawn, leaves);
     // Control: a legend fixed beforehand (0 to 1 for `fill`) is not the drawn range here: the
     // solids' interiors are full and their boundaries partly so, never empty.
-    let fill = voxel_frame(&scene, &trees, Colouring { field: LeafField::Fill, tower: 0 }, Overlay::default(), 0.0);
+    let fill =
+        voxel_frame(&scene, &trees, Colouring { field: LeafField::Fill, tower: 0 }, Overlay::default(), 0.0);
     let (low, high) = fill.range.unwrap();
     assert!(low > 0.0 && (high - 1.0).abs() < 1e-12, "{low} {high}");
 }
@@ -44,11 +46,17 @@ fn a_legend_is_made_from_what_is_drawn() {
 fn the_phases_of_the_leaves_add_up_to_the_body_s() {
     let scene = dev::unit_cube();
     let trees = trees(&scene);
-    let frame = voxel_frame(&scene, &trees, Colouring { field: LeafField::Phase, tower: 0 }, Overlay::default(), 3.0);
+    let frame =
+        voxel_frame(&scene, &trees, Colouring { field: LeafField::Phase, tower: 0 }, Overlay::default(), 3.0);
     let sum: f64 = frame.bodies[0].cubes.iter().map(|c| c.value).sum();
     let shots = cav_sim::read::Shots::together(&scene, vec![3.0]);
-    let whole = cav_sim::read::contribution(&scene, cav_sim::read::SourceId::Body(0), &shots, &|| false).unwrap();
-    assert!((sum - whole.gradiometer[0]).abs() <= 1e-9 * whole.gradiometer[0].abs(), "{sum} against {}", whole.gradiometer[0]);
+    let whole =
+        cav_sim::read::contribution(&scene, cav_sim::read::SourceId::Body(0), &shots, &|| false).unwrap();
+    assert!(
+        (sum - whole.gradiometer[0]).abs() <= 1e-9 * whole.gradiometer[0].abs(),
+        "{sum} against {}",
+        whole.gradiometer[0]
+    );
 }
 
 #[test]
@@ -65,7 +73,8 @@ fn too_many_leaves_are_drawn_a_level_up_and_said() {
     assert!(frame.notes.iter().any(|n| n.contains("cut at level")), "{:?}", frame.notes);
     // The cut drawn still holds every leaf's mass.
     let mass: f64 =
-        voxel_frame(&scene, &trees, Colouring { field: LeafField::Mass, tower: 0 }, Overlay::default(), 0.0).bodies[0]
+        voxel_frame(&scene, &trees, Colouring { field: LeafField::Mass, tower: 0 }, Overlay::default(), 0.0)
+            .bodies[0]
             .cubes
             .iter()
             .map(|c| c.value)
@@ -73,7 +82,11 @@ fn too_many_leaves_are_drawn_a_level_up_and_said() {
     assert!((mass - 100.0).abs() < 1e-10, "{mass}");
     // Control: a small body is drawn leaf by leaf and says nothing.
     let small = dev::unit_cube();
-    assert!(voxel_frame(&small, &self::trees(&small), Colouring::default(), Overlay::default(), 0.0).notes.is_empty());
+    assert!(
+        voxel_frame(&small, &self::trees(&small), Colouring::default(), Overlay::default(), 0.0)
+            .notes
+            .is_empty()
+    );
 }
 
 #[test]

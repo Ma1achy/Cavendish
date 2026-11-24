@@ -522,8 +522,16 @@ pub fn drawables_with(
                 let (lo, hi) = cubes.cubes.iter().fold((at, at), |(lo, hi), c| {
                     let h = 0.5 * c.side;
                     (
-                        Vec3::new(lo.x.min(c.centre.x - h), lo.y.min(c.centre.y - h), lo.z.min(c.centre.z - h)),
-                        Vec3::new(hi.x.max(c.centre.x + h), hi.y.max(c.centre.y + h), hi.z.max(c.centre.z + h)),
+                        Vec3::new(
+                            lo.x.min(c.centre.x - h),
+                            lo.y.min(c.centre.y - h),
+                            lo.z.min(c.centre.z - h),
+                        ),
+                        Vec3::new(
+                            hi.x.max(c.centre.x + h),
+                            hi.y.max(c.centre.y + h),
+                            hi.z.max(c.centre.z + h),
+                        ),
                     )
                 });
                 b.box_edges(lo, hi, 2.0, linear(palette.selection, 1.0));
@@ -650,15 +658,24 @@ mod tests {
     fn a_voxel_body_is_drawn_as_its_leaves() {
         use cav_sim::voxel_view::{Colouring, LeafField, Overlay, voxel_frame};
         let scene = dev::sphere();
-        let trees: Vec<_> =
-            scene.bodies.iter().map(|b| b.shape.as_ref().map(|s| std::sync::Arc::new(s.tree(b.mass).unwrap()))).collect();
+        let trees: Vec<_> = scene
+            .bodies
+            .iter()
+            .map(|b| b.shape.as_ref().map(|s| std::sync::Arc::new(s.tree(b.mass).unwrap())))
+            .collect();
         let leaves = trees[0].as_ref().unwrap().leaves.len();
         let body = |d: &Drawables, n: usize| {
             let at = d.parts.iter().position(|(p, ..)| *p == Part::Body(n)).unwrap();
             let (start, end) = (if at == 0 { 0 } else { d.parts[at - 1].2 }, d.parts[at].2);
             d.triangles[start..end].to_vec()
         };
-        let frame = voxel_frame(&scene, &trees, Colouring { field: LeafField::Height, tower: 0 }, Overlay::default(), 0.0);
+        let frame = voxel_frame(
+            &scene,
+            &trees,
+            Colouring { field: LeafField::Height, tower: 0 },
+            Overlay::default(),
+            0.0,
+        );
         let d = drawables_with(&scene, DrawStyle::Shaded, None, Vec3::ZERO, 0.0, Some(&frame));
         // Twelve triangles a leaf, and the analytic sphere still a sphere.
         assert_eq!(body(&d, 0).len(), 36 * leaves);
@@ -668,9 +685,11 @@ mod tests {
             body(&d, 0).iter().map(|v| v.colour.map(f32::to_bits)).collect();
         assert!(colours.len() > 3, "{} colours", colours.len());
         // Overlays: twelve edges a box.
-        let with = voxel_frame(&scene, &trees, Colouring::default(), Overlay { leaves: true, cut: None }, 0.0);
+        let with =
+            voxel_frame(&scene, &trees, Colouring::default(), Overlay { leaves: true, cut: None }, 0.0);
         let lines = drawables_with(&scene, DrawStyle::Shaded, None, Vec3::ZERO, 0.0, Some(&with)).lines.len();
-        let without = drawables_with(&scene, DrawStyle::Shaded, None, Vec3::ZERO, 0.0, Some(&frame)).lines.len();
+        let without =
+            drawables_with(&scene, DrawStyle::Shaded, None, Vec3::ZERO, 0.0, Some(&frame)).lines.len();
         assert_eq!(lines - without, 12 * leaves);
         // Control: without the frame the voxel body is drawn as any body, a sphere.
         assert_eq!(body(&drawables(&scene, DrawStyle::Shaded, None, Vec3::ZERO), 0).len(), 8 * 16 * 3);

@@ -62,8 +62,15 @@ fn setup() -> (Gpu, Renderer) {
 }
 
 fn render(gpu: &Gpu, renderer: &Renderer, scene: &SceneSpec, view: &ViewSpec) -> Picture {
-    let frame =
-        Frame { scene, view, highlight: None, time: 0.0, content: cav_sim::PaneContent::Scene, span: None, voxels: None };
+    let frame = Frame {
+        scene,
+        view,
+        highlight: None,
+        time: 0.0,
+        content: cav_sim::PaneContent::Scene,
+        span: None,
+        voxels: None,
+    };
     Picture { rgba: renderer.render_rgba(gpu, frame, SIZE).expect("render") }
 }
 

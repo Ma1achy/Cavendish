@@ -49,7 +49,8 @@ pub enum LeafField {
 
 impl LeafField {
     /// Every field, in the order menus list them.
-    pub const ALL: [Self; 6] = [Self::Level, Self::Mass, Self::Fill, Self::Height, Self::Distance, Self::Phase];
+    pub const ALL: [Self; 6] =
+        [Self::Level, Self::Mass, Self::Fill, Self::Height, Self::Distance, Self::Phase];
 
     /// The word commands use.
     #[must_use]
@@ -177,13 +178,15 @@ fn body_at(scene: &SceneSpec, n: usize, time: f64) -> Vec3 {
 /// # Errors
 /// When there is no such tower, or the leaves × flight nodes are more than
 /// [`MAX_KERNEL_WORK`], with the numbers.
-pub fn leaf_phases(scene: &SceneSpec, tree: &VoxTree, at: Vec3, tower: usize, time: f64) -> Result<Vec<f64>, String> {
-    let base = scene
-        .array
-        .towers
-        .get(tower)
-        .ok_or_else(|| format!("there is no tower {}", tower + 1))?
-        .position;
+pub fn leaf_phases(
+    scene: &SceneSpec,
+    tree: &VoxTree,
+    at: Vec3,
+    tower: usize,
+    time: f64,
+) -> Result<Vec<f64>, String> {
+    let base =
+        scene.array.towers.get(tower).ok_or_else(|| format!("there is no tower {}", tower + 1))?.position;
     let reader = Reader::new(scene.array.instrument.instrument());
     let nodes = reader.instrument().node_count(&[]);
     let work = 4 * nodes * tree.leaves.len() as u64;
@@ -197,7 +200,10 @@ pub fn leaf_phases(scene: &SceneSpec, tree: &VoxTree, at: Vec3, tower: usize, ti
     let one = |leaf: &cav_core::voxel::Leaf| {
         // The leaf on its own, read with the rule of the instrument: one rule, and its check.
         let body = TreeBody::single(tree, leaf, |_| at);
-        reader.read_to_within(Vec3::from_array(base), &body, time, PHASE_TOLERANCE, 3 * nodes).reading.gradiometer(sign)
+        reader
+            .read_to_within(Vec3::from_array(base), &body, time, PHASE_TOLERANCE, 3 * nodes)
+            .reading
+            .gradiometer(sign)
     };
     Ok(tree.leaves.iter().map(one).collect())
 }
@@ -252,7 +258,12 @@ pub fn voxel_frame(
                 }
                 CutEntry::Node(m) => {
                     let node = tree.nodes[m];
-                    (node.key, node.level, tree.moments[m].mass, node.first_leaf as usize..node.end_leaf as usize)
+                    (
+                        node.key,
+                        node.level,
+                        tree.moments[m].mass,
+                        node.first_leaf as usize..node.end_leaf as usize,
+                    )
                 }
             };
             let centre = at + tree.block_centre(key, lvl);
@@ -295,7 +306,8 @@ pub fn voxel_frame(
         frame.notes.push(format!("the overlay stops at {MAX_OVERLAY_BOXES} boxes"));
     }
     let values = frame.bodies.iter().flat_map(|b| b.cubes.iter().map(|c| c.value)).filter(|v| v.is_finite());
-    frame.range = values.fold(None, |r: Option<(f64, f64)>, v| Some(r.map_or((v, v), |(a, b)| (a.min(v), b.max(v)))));
+    frame.range =
+        values.fold(None, |r: Option<(f64, f64)>, v| Some(r.map_or((v, v), |(a, b)| (a.min(v), b.max(v)))));
     if colouring.field.diverging() {
         frame.range = frame.range.map(|(a, b)| {
             let m = a.abs().max(b.abs());
@@ -307,5 +319,6 @@ pub fn voxel_frame(
 
 /// How many entries the cut of `tree` at `level` has, without making it.
 fn cut_size(tree: &VoxTree, level: u8) -> usize {
-    tree.leaves.iter().filter(|l| l.level >= level).count() + tree.nodes.iter().filter(|n| n.level == level).count()
+    tree.leaves.iter().filter(|l| l.level >= level).count()
+        + tree.nodes.iter().filter(|n| n.level == level).count()
 }

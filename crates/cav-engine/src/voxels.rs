@@ -68,7 +68,9 @@ impl Voxels {
         // The cache's budget: the oldest trees go first, but never one in use now.
         let mut bytes: usize = self.cache.iter().map(|(_, t)| t.bytes()).sum();
         while bytes > TREE_CACHE_BYTES {
-            let Some(at) = self.cache.iter().position(|(_, t)| !self.trees.iter().flatten().any(|u| Arc::ptr_eq(t, u))) else {
+            let Some(at) =
+                self.cache.iter().position(|(_, t)| !self.trees.iter().flatten().any(|u| Arc::ptr_eq(t, u)))
+            else {
                 break;
             };
             bytes -= self.cache.remove(at).1.bytes();
