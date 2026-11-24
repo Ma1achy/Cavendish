@@ -565,7 +565,16 @@ fn ls_in(root: &Value, whole: &Value, path: &str) -> Result<Vec<Entry>, String> 
     let segs = parse(path)?;
     let value = get(whole, path)?;
     let own = entry_of(root, &segs, stage_at(root, &segs), value)?;
-    let below = children(&segs, &own.kind, value);
+    let mut below = children(&segs, &own.kind, value);
+    // A choice with data lists the data's own fields (under the variant's name in their paths),
+    // not the one group that holds them, which would say only "(group)" (S3's review).
+    if let (Kind::Choice(_), [variant]) = (&own.kind, below.as_slice()) {
+        let data = get(whole, &text(variant))?;
+        let inner = entry_of(root, variant, stage_at(root, variant), data)?;
+        if inner.kind == Kind::Group {
+            below = children(variant, &inner.kind, data);
+        }
+    }
     if below.is_empty() {
         return Ok(vec![own]);
     }
@@ -1105,6 +1114,11 @@ mod tests {
         let inside: Vec<String> =
             ls(&spec, "bodies[0].motion.Linear").unwrap().into_iter().map(|e| e.name).collect();
         assert_eq!(inside, ["centre", "amplitude", "frequency", "phase"]);
+        // Listing the choice itself lists its variant's fields, not one bare group.
+        let listed = ls(&spec, "bodies[0].motion").unwrap();
+        let names: Vec<&str> = listed.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["centre", "amplitude", "frequency", "phase"]);
+        assert_eq!(listed[0].path, "bodies[0].motion.Linear.centre");
         assert_eq!(entry(&spec, "bodies[0].motion.Linear.frequency").unwrap().unit.as_deref(), Some("Hz"));
         // The mixed enum: a plain variant and one with data.
         assert_eq!(entry(&spec, "floor.kind").unwrap().variant.as_deref(), Some("Slab"));

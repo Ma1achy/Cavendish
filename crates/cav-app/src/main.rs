@@ -101,13 +101,23 @@ fn run(options: &Options) -> Result<(), String> {
     }
 }
 
+/// How long a screenshot waits for the scene's numbers, seconds: the scaffold's 48 members take
+/// about 100 s on the build PC in a debug build, and 120 s was missed under load.
+const SETTLE_S: u64 = 600;
+
 fn screenshot(shell: &mut Shell, options: &Options, path: &str) -> Result<(), String> {
     let started = Instant::now();
     let mut headless = Headless::new()?;
     shell.adapter = Some(headless.adapter());
     // A picture of the application is a picture of finished numbers: wait for the signal, which the
     // window itself never does.
-    shell.engine.settle(std::time::Duration::from_secs(120));
+    // A picture of numbers still being made is not taken: it would differ from run to run (S3's
+    // review: the demo's scaffold was drawn with "signal · stale").
+    if !shell.engine.settle(std::time::Duration::from_secs(SETTLE_S)) {
+        return Err(format!(
+            "{path}: the signal was not whole after {SETTLE_S} s, so no picture was taken; shorten the scene"
+        ));
+    }
     let png = headless.screenshot(shell, options.size)?;
     std::fs::write(path, &png).map_err(|e| format!("writing {path}: {e}"))?;
     println!(
