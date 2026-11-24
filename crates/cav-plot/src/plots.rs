@@ -1061,7 +1061,7 @@ pub fn paint(engine: &Engine, painter: &egui::Painter, pane: usize, rect: Rect) 
         .collect()
 }
 
-/// What the comparison's plots say they are: `as AICE 100 m`.
+/// What the comparison's plots say they are: `as AICE 140 m`.
 fn compared_as(engine: &Engine) -> String {
     let name = engine.comparison().and_then(cav_sim::presets::name_of).unwrap_or("another instrument");
     format!(" · as {name}")

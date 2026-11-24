@@ -190,6 +190,28 @@ cav_validate::case! {
     },
 }
 
+cav_validate::case! {
+    test: validation_published_pass_size,
+    name: "oracle.published_anchor_pass_half_largest",
+    subsystem: "oracle",
+    slice: "S3",
+    reference: Paper,
+    against: "the published size of the moving anchor, about 7 mrad (10 kg at D = 10 m rising at 2.5 m/s; reference/design/instrument.md §12, Fig 12): George (24 Nov 2026) says it is the same pass; read, by the coordinator, as half the largest |ΔΦ| (to be confirmed by George); the engine with its defaults, as a fraction of 7 mrad; tolerance the published sizes' 10% (S2)",
+    unit: Relative,
+    tolerance: 0.1,
+    measure: {
+        let off = |value: f64| (value / 7.0 - 1.0).abs();
+        let pass = sizes(&anchors::PASS);
+        // Controls: read as half the peak to peak (George's first reading of the published sizes,
+        // which holds for the oscillator) the same pass is 19% over, and fails; v1 reads as the
+        // engine does.
+        assert!(off(pass.amplitude) > 0.1, "half the peak to peak is {} mrad", pass.amplitude);
+        let v1_largest = 1e3 * v1_series(&anchors::PASS, Vec3::ZERO).iter().fold(0.0f64, |m, x| m.max(x.abs()));
+        assert!(off(0.5 * v1_largest) <= 0.1, "v1's half largest is {} mrad", 0.5 * v1_largest);
+        cav_validate::Measured::Error(off(0.5 * pass.largest))
+    },
+}
+
 #[test]
 fn the_published_anchor_sizes_are_what_the_references_give() {
     // reference/design/instrument.md §12: "10 kg @ D = 10 m, 2.5 m/s → ~7 mrad; 1 kg @ 5 m osc →
@@ -232,8 +254,10 @@ fn the_published_anchor_sizes_are_what_the_references_give() {
     // The moving anchor. Its series changes sign as the mass passes: +3.02 mrad before, −13.65
     // at the peak. Read as George said, half the peak to peak, the engine's size is 8.34 mrad,
     // which is not "~7 mrad" within the 10% that was written before it was measured; half the
-    // largest |ΔΦ| is 6.83 mrad, which is. The tolerance was not moved and no case claims the
-    // reading: both facts are asserted here so that neither is forgotten, and v1 says the same.
+    // largest |ΔΦ| is 6.83 mrad, which is. The tolerance was not moved. George has since said
+    // (24 Nov 2026) that Fig 12 is this same pass, so the published figure is read as half the
+    // largest |ΔΦ| (a case above, `oracle.published_anchor_pass_half_largest`; the reading is
+    // the coordinator's, for George to confirm). Both facts stay asserted, and v1 says the same.
     let pass = sizes(&anchors::PASS);
     assert!(!within(pass.amplitude, 7.0, 0.10), "half the peak to peak is {} mrad", pass.amplitude);
     assert!(!within(pass.v1_amplitude, 7.0, 0.10), "v1's is {} mrad", pass.v1_amplitude);

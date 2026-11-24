@@ -450,3 +450,6 @@
 - id: TASK-S3-17
   milestone: S3
   title: 'ARCHITECTURE.md for the voxel modules; the task list''s statuses'
+- id: TASK-S3-18
+  milestone: S3
+  title: "George's answers of 24 Nov 2026: AICE's tower is 140 m (fig2_final.py's L_base), every arm inside it; the moving anchor's ~7 mrad read as half the largest |ΔΦ|"
