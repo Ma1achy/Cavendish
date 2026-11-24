@@ -61,6 +61,12 @@ console, the command line or an agent must be the same `Command`.
   count the tools: update the count with your tool.
 - `cav-app`: `every_menu_item_is_a_console_command`.
 
+Followed end to end by S2's reviewer with a made-up command; what it found is in the steps above
+and in the tests: `Engine::perform` names every command (a new one does not compile until it has
+its arm there), the journal's weight is the command's JSON and needs no arm, and the two engine
+tests that once counted commands by position (`session_replays_from_its_journal`,
+`a_refused_command_changes_nothing_and_logs_an_error`) no longer do.
+
 ## Things that go wrong
 
 - A command that does its work in `prepare`, or that can fail in `perform`: a refusal must leave

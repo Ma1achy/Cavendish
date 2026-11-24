@@ -942,8 +942,19 @@ impl Engine {
             (Command::Seek(t), _) => self.time = t.clamp(0.0, self.spec.duration),
             (Command::Select(target), _) => self.selection = *target,
             (Command::View(view), _) => self.perform_view(view),
-            // An export changed nothing here; the file was written before this was reached.
-            _ => {}
+            // What is left changes nothing here, and is named so that a new command is a
+            // compile error in this match until it is given its arm: an export wrote its file in
+            // `apply`; an edit, an undo or a redo that prepared nothing to do has nothing to do.
+            (
+                Command::Load(_)
+                | Command::Set { .. }
+                | Command::Insert { .. }
+                | Command::Remove { .. }
+                | Command::Export { .. }
+                | Command::Undo
+                | Command::Redo,
+                _,
+            ) => {} // An export changed nothing here; the file was written before this was reached.
         }
     }
 
@@ -1170,6 +1181,12 @@ impl Engine {
                     let df = 1.0 / span;
                     let count =
                         ((nyquist / df).floor() as usize).clamp(1, cav_sim::schedule::MAX_FREQUENCIES - 1);
+                    // The upper clamp cannot bind for a scene that is valid: the frequencies are
+                    // half the shots, and the shots are held to `MAX_SHOTS`. It is there for the
+                    // day one of the two constants moves, and this fails the build on that day
+                    // so that the bound is looked at (S2's review, finding 8: no test could see
+                    // the clamp, because no valid scene reaches it).
+                    const _: () = assert!(cav_sim::read::MAX_SHOTS / 2 < cav_sim::schedule::MAX_FREQUENCIES);
                     let power = cav_core::spectrum::lomb_scargle_fast(&times, &values, df, count + 1);
                     let frequencies = (1..=count).map(|k| k as f64 * df).collect();
                     (
@@ -1407,11 +1424,19 @@ impl Engine {
         let Some(signal) = self.forward.signal().cloned() else { return };
         self.generation += 1;
         let took = self.forward.took.map_or(0.0, |d| d.as_secs_f64() * 1e3);
+        // How long it took is this machine's business and changes from run to run: it is a
+        // debug entry of its own, written first, so that the line a person reads (and a
+        // screenshot shows in the footer) says the same thing every time.
+        self.log.push(
+            Level::Debug,
+            Subsystem::Engine,
+            format!("the signal was whole {took:.0} ms after the edit"),
+        );
         self.log.push(
             Level::Info,
             Subsystem::Engine,
             format!(
-                "signal: {} tower(s) × {} shot(s), quadrature {}, whole {took:.0} ms after the edit",
+                "signal: {} tower(s) × {} shot(s), quadrature {}",
                 signal.towers,
                 signal.times.len(),
                 estimate_text(signal.estimate, signal.settled)
@@ -1723,12 +1748,17 @@ mod tests {
             assert!(differs, "dropping command {skip} ({dropped:?}) went unnoticed");
         }
         // And one unit in the last place of one camera angle is seen.
+        // (The orbit is found in the journal, wherever a session with more commands puts it.)
         let mut nudged = original.journal().to_vec();
-        nudged[11] = Command::View(ViewCommand::Orbit {
-            pane: 0,
-            yaw: 200.0,
-            pitch: f64::from_bits(17.5f64.to_bits() + 1),
-        });
+        let mut orbits = 0;
+        for command in &mut nudged {
+            if let Command::View(ViewCommand::Orbit { pitch, .. }) = command {
+                *pitch = f64::from_bits(pitch.to_bits() + 1);
+                orbits += 1;
+                break;
+            }
+        }
+        assert_eq!(orbits, 1, "the session has an orbit to nudge");
         assert_ne!(Engine::replay(&nudged).unwrap().digest(), original.digest());
     }
 
@@ -1832,6 +1862,7 @@ mod tests {
             (Command::Redo, "nothing to redo"),
         ];
         let mut engine = run(&[Command::Seek(2.0), Command::Select(Some(Target::Room))]);
+        let count = refused.len();
         for (command, expected) in refused {
             let before = (engine.digest(), engine.journal().len(), engine.generation());
             let why = engine.apply(command.clone()).expect_err("should be refused");
@@ -1843,7 +1874,8 @@ mod tests {
         }
         let errors =
             engine.log().select(&LogFilter { min_level: Some(Level::Error), ..LogFilter::default() });
-        assert_eq!(errors.len(), 12);
+        // One error a refusal, however many refusals the list above has.
+        assert_eq!(errors.len(), count);
         // Control: the same kinds of command with acceptable values are applied.
         assert!(engine.apply(Command::Select(Some(Target::Tower(5)))).is_ok());
         assert!(engine.apply(Command::View(ViewCommand::Zoom { pane: 0, distance: 1.0 })).is_ok());
