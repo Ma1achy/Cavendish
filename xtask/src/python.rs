@@ -44,6 +44,11 @@ pub fn missing(interpreter: &str) -> Option<String> {
              it in {INTERPRETER}"
         ));
     }
+    // One interpreter for every module when all are there (the usual case; each start imports
+    // matplotlib or pyright, a second or more apiece), and one each only to say which is not.
+    if runs(interpreter, &format!("import {}", NEEDS.join(", "))) {
+        return None;
+    }
     let absent: Vec<&str> =
         NEEDS.into_iter().filter(|module| !runs(interpreter, &format!("import {module}"))).collect();
     (!absent.is_empty()).then(|| {

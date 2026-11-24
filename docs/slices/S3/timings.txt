@@ -1,0 +1,26 @@
+This machine; recorded, not gated.
+
+## The voxeliser (release build)
+sphere, k = 4: voxels across | cells with something in them | leaves | merge yield | nodes | seconds | cells a second
+  32 |      19088 |     6768 |    2.8 |    1449 |   0.004 |    8.214e6
+  64 |     144368 |    26712 |    5.4 |    5705 |   0.009 |    2.950e7
+ 128 |    1127456 |   107304 |   10.5 |   22801 |   0.065 |    3.240e7
+ 256 |    8900536 |   434904 |   20.5 |   91585 |   0.148 |    1.134e8
+
+## platonic-row: five solids drawn as their leaves
+adapter: NVIDIA GeForce GTX 1660 SUPER · Vulkan · DiscreteGpu · driver NVIDIA 581.29
+frame, nothing changed (UI only, panes reused): median 4.93 ms over 60 frames
+frame, camera moving (1 pane redraw(s) per frame): median 57.23 ms over 60 frames
+each time includes copying the 1440 × 900 picture back to the CPU, which a window does not do
+reading, 5 towers × 5 bodies, the audited read itself (the engine runs it off the caller's thread): 1799.455 ms each over 200
+signal from nothing, 6 shots × 5 towers × 5 bodies, on the worker: 2305.8 ms
+drag step (set, readings, one frame with its read-back): median 81.57 ms over 60 steps
+
+## sphere: a voxel sphere at r/16 beside the analytic one
+adapter: NVIDIA GeForce GTX 1660 SUPER · Vulkan · DiscreteGpu · driver NVIDIA 581.29
+frame, nothing changed (UI only, panes reused): median 4.37 ms over 60 frames
+frame, camera moving (1 pane redraw(s) per frame): median 43.10 ms over 60 frames
+each time includes copying the 1440 × 900 picture back to the CPU, which a window does not do
+reading, 5 towers × 2 bodies, the audited read itself (the engine runs it off the caller's thread): 1103.189 ms each over 200
+signal from nothing, 6 shots × 5 towers × 2 bodies, on the worker: 1653.6 ms
+drag step (set, readings, one frame with its read-back): median 71.00 ms over 60 steps

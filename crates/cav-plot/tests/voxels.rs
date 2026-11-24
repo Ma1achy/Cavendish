@@ -77,6 +77,55 @@ fn a_legend_is_made_from_what_is_drawn() {
     assert!(legend(&VoxelFrame::default(), &scene, &style, &Outlines).is_none());
 }
 
+#[test]
+fn a_legend_says_each_word_once_and_each_number_as_it_is() {
+    // Found in the S3 demo's `shapes.png`: the heading read "level, level", and the middle of
+    // levels 0 to 3 read "2" where the bar's middle is 1.5.
+    let scene = cav_sim::dev::unit_cube();
+    let repeats = |text: &str| {
+        let words: Vec<&str> = text.split([',', ' ']).filter(|w| !w.is_empty()).collect();
+        words.iter().enumerate().any(|(i, w)| words[..i].contains(w))
+    };
+    for field in [LeafField::Level, LeafField::Mass, LeafField::Fill, LeafField::Height, LeafField::Distance]
+    {
+        let title = heading(&frame_of(&scene, field), &scene);
+        assert!(!repeats(&title), "{field:?}: {title}");
+    }
+    // Control: the old heading is caught.
+    assert!(repeats("level, level"));
+    assert_eq!(number(1.5, LeafField::Level), "1.5");
+    assert_eq!([number(0.0, LeafField::Level), number(3.0, LeafField::Level)], ["0", "3"]);
+}
+#[test]
+fn a_legend_s_numbers_do_not_run_into_each_other() {
+    use cav_plot::drawing::{Item, Measure, text_box};
+    let scene = cav_sim::dev::unit_cube();
+    let style = Style::preset("screen").unwrap();
+    // The ranges the demo's first legends wrote over each other ("2.36e-414.8"): a tiny least
+    // with a wide greatest, and three-figure decimals.
+    for range in [(2.36e-4, 29.6), (0.0312, 1.0), (-0.498, 0.498), (1.4, 2.8)] {
+        let mut frame = frame_of(&scene, LeafField::Mass);
+        frame.range = Some(range);
+        let drawn = legend(&frame, &scene, &style, &Outlines).unwrap();
+        let boxes: Vec<([f32; 2], [f32; 2])> = drawn
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Text { at, anchor, text, face, size, turned, .. }
+                    if text.chars().next().is_some_and(|c| c == '-' || c.is_ascii_digit()) =>
+                {
+                    Some(text_box(*at, *anchor, Outlines.size(text, *face, *size), *turned))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(boxes.len(), 3, "{range:?}");
+        for pair in boxes.windows(2) {
+            assert!(pair[0].1[0] < pair[1].0[0], "{range:?}: {pair:?} overlap");
+        }
+    }
+}
+
 fn engine(script: &str) -> Engine {
     let mut engine = Engine::new();
     engine.set_patience(LONG);

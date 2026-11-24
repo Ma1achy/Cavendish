@@ -65,4 +65,18 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **`Arm::rise` at exactly 2T** returns 0 for an arm that landed before the kick and is still in the air at 2T (seen with a launch of 0.5 m/s and n = 3000: it is 11.8 m up). No preset does that and no Gauss node sits at 2T, but Simpson's and the trapezoid's last node does. Found while testing `Arm::apex`; left alone because it would change a number. S3.
 - **The whole instrument on screen at 900 px**: with the kick number the properties panel's instrument block is one row longer than a 1440 × 900 window shows without scrolling (`launch_floor` and `sign` are below the fold). Collapse the schedule block by default, or two columns. S3.
 
-- The Python redraw's palette (`python/cavendish_figures/style.py` and its style sheet) is a copy of `PAPER_SERIES`; nothing holds the two together but the redraw taking colours from the record. A test that reads the Rust constant would (S2 review 28).
+- ~~The Python redraw's palette (`python/cavendish_figures/style.py` and its style sheet) is a copy of `PAPER_SERIES`; nothing holds the two together but the redraw taking colours from the record. A test that reads the Rust constant would (S2 review 28).~~ *Done in S3:* a Python test reads the Rust constants (`python/tests/test_figures.py`).
+
+## From S3 (voxel bodies)
+- **The scalar trick as the engine's fast path for Motion::Modes**: one `V(α)` per flight node and tower (Chebyshev in α), then every shot is a polynomial evaluation instead of every leaf again. The oracle's table method is that, test-side; the engine reads George's scaffold leaf by leaf, minutes for 22 Hz modes. With S5's modal synthesis (VALIDATION §4).
+- **Voxelise on a worker**: the engine makes a body's tree on the thread that applies the command (milliseconds for the dev scenes, up to the voxeliser's work cap for any scene). The forward workers already build their own; the view's could arrive stale-not-blocked like the signal.
+- **Draw only exposed faces** of voxel bodies (greedy faces per tree): today every drawn leaf is twelve triangles, capped at 20,000 cubes a view. S4's meshing.
+- **Cache the per-leaf phase field** by body position and tower: colour phase reads every leaf again at every seek. Static bodies could keep it.
+- **Turning bodies**: a body's tree is in the world's axes; an orientation (a quaternion in the spec) is S6/S7's, with the rigid socket of eference/design/voxel.md §7.
+- **Mesh import beyond OBJ and STL** (glTF, PLY), and meshes held in the scene file rather than a path relative to where the program runs.
+- **A crossing warning for voxel bodies**: a body made of voxels that passes through the atoms' path is finite (cube kernel) but not said; points and spheres are.
+- **Quickhull for polyhedra**: the hull is found by trying every triple (cap 100 vertices).
+- **`quick` under 10 s again**: its tests take 99 s of CPU on 12 cores, spread flat. Options: share one built scene or tree per test binary (many tests voxelise or load the same few scenes); move the counting-allocator tests' largest cases to the oracle tier and keep a small case in `quick`; a nextest profile that starts the slowest binaries first. S3.
+- **Lint the oracle crate in `quick`** only when its files changed (a clippy fault reached main in #102). S3.
+- **The validation report's margin for a band**: a case whose measured value must sit inside a band (`voxel.cube_to_point_order`) shows 99% where it is where it should be; report the distance to the nearer edge instead. S3.
+- **The demo's missing pictures**: a sphere, cylinder and mesh beside the solids; the scaffold's periodogram over a long run read once and kept; the cylinder sweep as a `paper-column` figure. S3.

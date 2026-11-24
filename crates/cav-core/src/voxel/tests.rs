@@ -276,7 +276,11 @@ fn merge_differences(shape: &dyn Shape, cells: f64) -> (f64, f64) {
         let (a, b) = (potential(&merged, n * r), potential(&flat, n * r));
         worst_v = worst_v.max((a - b).abs() / a.abs().max(b.abs()));
     }
-    let reader = Reader::new(Instrument::aion10());
+    // One shot by a coarse rule (six nodes a panel, two panels a half): the merge is held to the
+    // same rule either way, and what the rule's own error is does not enter. (The engine's rule
+    // made this the slowest test of `quick`, at 5 s.)
+    let coarse = crate::forward::Quadrature::Gauss { order: 6, panel: 0.4 };
+    let reader = Reader::new(Instrument { quadrature: coarse, ..Instrument::aion10() });
     let tower = Vec3::new(-2.0, 0.5, -1.0);
     let read = |tree: &VoxTree| reader.read(tower, &TreeBody::new(tree, |_| Vec3::ZERO), 10.0);
     let (a, b) = (read(&merged), read(&flat));

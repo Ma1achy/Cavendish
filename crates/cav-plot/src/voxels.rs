@@ -29,12 +29,13 @@ pub fn is_dark(style: &Style) -> bool {
     r + g + b < 3 * 128
 }
 
-/// A number as a legend writes it: a whole number for a level; otherwise three figures, or a
+/// A number as a legend writes it: a level as it is (a whole number, or a half between two at
+/// the middle of an odd range, never rounded to a level it is not); otherwise three figures, or a
 /// power of ten when it is very large or very small.
 #[must_use]
 pub fn number(value: f64, field: LeafField) -> String {
     if field == LeafField::Level {
-        return format!("{}", value.round());
+        return format!("{value}");
     }
     if value == 0.0 {
         return "0".into();
@@ -65,7 +66,8 @@ pub fn heading(frame: &VoxelFrame, scene: &SceneSpec) -> String {
                 .map_or_else(|| format!("tower {}", frame.colouring.tower + 1), |t| t.label.clone());
             format!("phase at {tower}, {}", field.unit())
         }
-        LeafField::Level | LeafField::Fill => format!("{}, {}", field.name(), field.unit()),
+        // A level is its own unit: "level, level" would say it twice.
+        LeafField::Level => field.name().to_owned(),
         _ => format!("{}, {}", field.name(), field.unit()),
     }
 }
@@ -104,7 +106,10 @@ pub fn legend(
     let [title_w, title_h] = measure.size(&title, Face::Sans, size);
     let labels = ticks(frame)?.map(|v| number(v, field));
     let widths: Vec<f32> = labels.iter().map(|l| measure.size(l, Face::Mono, size)[0]).collect();
-    let bar_w = (8.0 * size).max(title_w).max(widths.iter().sum::<f32>() + 2.0 * size);
+    // The ends' labels run inwards from the ends and the middle's is centred: each half of the
+    // bar holds an end's label, half the middle's, and a gap of a letter's width.
+    let half = widths[0].max(widths[2]) + 0.5 * widths[1] + size;
+    let bar_w = (8.0 * size).max(title_w).max(2.0 * half);
     let bar_h = 0.7 * size;
     let label_h = measure.size("0", Face::Mono, size)[1];
     let width = bar_w + 2.0 * pad;

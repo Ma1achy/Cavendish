@@ -26,6 +26,17 @@ fn frame(fill: Color32, x: i8, y: i8) -> egui::Frame {
 }
 
 /// A section heading inside a side panel.
+/// A number for a list, to four significant figures (281.7 for 281.7428672266191): the editor
+/// shows every digit; a list needs only to tell its rows apart.
+fn short_number(value: f64) -> String {
+    if value == 0.0 || !value.is_finite() {
+        return format!("{value}");
+    }
+    let digits = (3 - value.abs().log10().floor() as i32).max(0) as usize;
+    let text = format!("{value:.digits$}");
+    if text.contains('.') { text.trim_end_matches('0').trim_end_matches('.').to_owned() } else { text }
+}
+
 fn heading(ui: &mut egui::Ui, text: &str) {
     ui.add_space(6.0);
     ui.label(RichText::new(text).color(theme::STRONG).size(12.0));
@@ -461,7 +472,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             .into_iter()
             .map(|n| {
                 let body = &spec.bodies[n];
-                (n, body.label.clone(), format!("{} kg · {}", body.mass, body.motion.kind()))
+                (n, body.label.clone(), format!("{} kg · {}", short_number(body.mass), body.motion.kind()))
             })
             .collect();
         let towers: Vec<(usize, String, [f64; 3])> = outlined(spec.array.towers.len(), selected_tower)

@@ -1,0 +1,23 @@
+$ cav exec "load unit-cube; ls bodies[0].shape; set bodies[0].shape.pitch 0.25; colour phase 1; overlay leaves cut 1; set bodies[0].shape.pitch 1e-4; stats"
+`C:\src\Cavendish\target\debug\cav.exe exec load unit-cube; ls bodies[0].shape; set bodies[0].shape.pitch 0.25; colour phase 1; overlay leaves cut 1; set bodies[0].shape.pitch 1e-4; stats` failed (exit code: 1): cav: `set bodies[0].shape.pitch 1e-4`: bodies[0].shape.pitch: pitch: 0.0001 m needs 10000 cells across the shape's 1 m, more than the 1024 one tree holds; use a pitch of at least 0.0009765625 m
+$ cav run mixed-array --out target/demo-s3/mixed
+target/demo-s3/mixed: scene `mixed-array`, 3 tower(s), 72 shot(s) in all, quadrature within 4e-12 rad, 0.01 s
+
+  detector_placement.npy         296 bytes
+  detector_time.npy              848 bytes
+  error_estimate.npy             152 bytes
+  manifest.json                 9749 bytes
+  mask.npy                       218 bytes
+  n_shots.npy                    152 bytes
+  phase_flat.npy                 704 bytes
+  phase_per_ifo_flat.npy        1280 bytes
+  scene.ron                     2901 bytes
+  signal.npy                     848 bytes
+  signal_per_ifo.npy            1568 bytes
+  source_mass.npy                136 bytes
+  source_position.npy            848 bytes
+  t_flat.npy                     704 bytes
+  time.npy                       368 bytes
+  tower_offsets.npy              160 bytes
+  valid.npy                      218 bytes
+  valid_flat.npy                 200 bytes

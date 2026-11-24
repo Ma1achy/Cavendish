@@ -4,7 +4,7 @@ Written by `cargo xtask validate --report`; do not edit by hand. Every case is d
 `cav_validate::case!` beside the code it checks, and all of them are listed here: one that did not run
 is shown as **missing**, never left out.
 
-**84 of 84 cases pass; worst margin: nulls.finite_floor_edge at 78% of its tolerance.**
+**105 of 105 cases pass; worst margin: voxel.cube_to_point_order at 99% of its tolerance.**
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="error-vs-tolerance-dark.svg"><img src="error-vs-tolerance-light.svg" alt="Each case's measured error against its tolerance, on a log scale." width="100%"></picture>
 
@@ -14,6 +14,7 @@ is shown as **missing**, never left out.
 | Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
 |---|---|---|---|---|---|---|---|
 | `array.geometry_vs_v2_recording` (S0) | reference recording: tower x, y and base z, the room and 2T of docs/viewer-mockup/replay.json (the v2 recording); largest difference | 0 | 0 | metres | 0% |  | pass |
+| `array.unequal_towers_read_as_each_alone` (S3) | exact self-consistency: four towers of four instruments (AION-10; AICE 0.3 s late; T = 0.9 s; Δr = 4 m and 800 kicks) and two moving bodies: each tower's every shot, every channel and readout time, against a one-tower scene of that tower's resolved instrument, position and offset, at 1 and 6 threads; values that differ in any bit | 0 | 0 | count | 0% |  | pass |
 
 ## bundle
 
@@ -49,6 +50,7 @@ is shown as **missing**, never left out.
 |---|---|---|---|---|---|---|---|
 | `figure.png_regenerates` (S2) | exact self-consistency: the comb's periodogram and signal as PNG figures (paper-column at 300 pixels per inch, slide), painted by two engines on the local adapter, each with a device of its own: the .png, .csv and .json files that differ in any byte | 0 | 0 | count | 0% |  | pass |
 | `figure.regenerates` (S2) | exact self-consistency: six figures of the comb (periodogram, signal, one tower's lower channel over a span, cadence window, flight diagram; SVG and PDF; four presets) written by two engines from the same commands: each figure, its .csv and its .json; files that differ in any byte (each .json's provenance, the build's revision and dirty flag, among them) | 0 | 0 | count | 0% |  | pass |
+| `figure.view_regenerates` (S3) | exact self-consistency: the unit cube's view coloured by height, as vector SVG and PDF with its record, written by two engines from the same commands: files that differ in any byte | 0 | 0 | count | 0% |  | pass |
 
 ## forward
 
@@ -84,16 +86,26 @@ is shown as **missing**, never left out.
 | `oracle.script_limit_fig2_10m_d` (S1) | George's script: fig2_10m panel d (a circle at 0.35625 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/128, against the engine's own model; largest difference as a fraction of the peak | 5.041e-9 | 1.000e-8 | relative | 50% |  | pass |
 | `oracle.script_limit_fig2_10m_c` (S1) | George's script: fig2_10m panel c (0.3275 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/128, against the engine's own model; largest difference as a fraction of the peak | 4.295e-9 | 1.000e-8 | relative | 43% |  | pass |
 | `oracle.script_limit_100m_oscillators` (S1) | George's script: 100m_oscillators: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by two Richardson steps (dt, dt/2, dt/4), against the engine's own model; largest difference as a fraction of the peak | 3.298e-10 | 1.000e-9 | relative | 33% |  | pass |
+| `oracle.script_scaffold_multimode_series` (S3) | George's script: scaffold_multimode: the engine's AC series (100 shots) against the script's; tolerance three times the script's own doubled-table change (101% of the peak) | 0.9793 | 3.03 | relative | 32% |  | pass |
+| `oracle.published_anchor_pass_half_largest` (S3) | published paper: the published size of the moving anchor, about 7 mrad (10 kg at D = 10 m rising at 2.5 m/s; reference/design/instrument.md §12, Fig 12): George (24 Nov 2026) says it is the same pass; read, by the coordinator, as half the largest /ΔΦ/ (to be confirmed by George); the engine with its defaults, as a fraction of 7 mrad; tolerance the published sizes' 10% (S2) | 0.0248 | 0.1 | relative | 25% |  | pass |
 | `oracle.script_limit_fig2_10m_b` (S1) | George's script: fig2_10m panel b: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/128, against the engine's own model; largest difference as a fraction of the peak | 2.435e-9 | 1.000e-8 | relative | 24% |  | pass |
+| `oracle.script_cuboid_series` (S3) | George's script: cuboid: the shaking wall's AC phase series, 20 shots, against the script's; tolerance three times the script's own change when its table is doubled (1.16% of the peak, measured by the harness) | 0.0062 | 0.0348 | relative | 18% |  | pass |
+| `oracle.script_cylinder_ratio` (S3) | George's script: cylinder: the ratio of the cylinder's largest AC /ΔΦ/ to the point mass's, 4 heights h0 × 9 heights H (R = 0.5 m, 100 kg, x0 = 3 + 0.1 cos 2π·0.1t), engine (voxel cylinder) against script: the ratios' largest difference | 7.303e-4 | 0.005 | relative | 15% |  | pass |
+| `oracle.script_scaffold_series` (S3) | George's script: scaffold: the engine's AC series (50 shots) against the script's; tolerance three times the script's own change when its table is doubled (242% of the peak): a check the script's table can barely make | 0.9998 | 7.25 | relative | 14% |  | pass |
 | `oracle.script_limit_1d_oscillator` (S1) | George's script: 1D_oscillator: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by a step of dt/128, against the engine's own model; largest difference as a fraction of the peak | 9.993e-10 | 1.000e-8 | relative | 10% |  | pass |
+| `oracle.scaffold_single_mode_paths` (S3) | exact self-consistency: scaffold_single_mode: the displaced-body read (every leaf of every member at α(τ)) against the table method (V(α) per node, Chebyshev in α), the same nodes, three shots, over the largest AC phase | 8.222e-8 | 1.000e-6 | relative | 8% |  | pass |
 | `oracle.engine_rule_converged_100m` (S1) | exact self-consistency: the engine's audited read on the 100m_oscillators scene (a source 1 m from the atoms) against 12 nodes on 3 ms panels, 4000 shots; largest difference as a fraction of the peak | 2.742e-11 | 1.000e-9 | relative | 3% |  | pass |
 | `oracle.script_limit_fig2_uldm_folding_d` (S1) | George's script: fig2_uldm_folding panel d (a circle at 0.1425 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by two Richardson steps (dt, dt/2, dt/4), against the engine's own model; largest difference as a fraction of the peak | 7.346e-12 | 1.000e-9 | relative | 1% |  | pass |
 | `oracle.script_limit_fig2_uldm_folding_c` (S1) | George's script: fig2_uldm_folding panel c (0.131 Hz): the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by two Richardson steps (dt, dt/2, dt/4), against the engine's own model; largest difference as a fraction of the peak | 4.827e-12 | 1.000e-9 | relative | 0% |  | pass |
 | `oracle.script_limit_fig2_uldm_folding_b` (S1) | George's script: fig2_uldm_folding panel b: the scripts' trapezoid with the offset gone, on the whole flight, taken to its limit by two Richardson steps (dt, dt/2, dt/4), against the engine's own model; largest difference as a fraction of the peak | 4.781e-12 | 1.000e-9 | relative | 0% |  | pass |
 | `oracle.script_same_time_1d_oscillator` (S1) | George's script: 1D_oscillator with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 6.597e-5 | 0.02 | relative | 0% |  | pass |
+| `oracle.script_scaffold_potential` (S3) | George's script: scaffold: V(α, z) − V(α₀, z) at 12 of the script's points, its own integrand integrated tightly (its table's nquad is far coarser than the change), against the engine's 48 voxel members (1 cm), over the largest change | 2.304e-5 | 0.01 | relative | 0% |  | pass |
+| `oracle.script_scaffold_multimode_potential` (S3) | George's script: scaffold_multimode: V(α, z) − V(α₀, z) at 12 of the script's points (α to ±8), its integrand integrated tightly, against the engine's voxel members (1 cm), over the largest change | 2.301e-5 | 0.01 | relative | 0% |  | pass |
 | `oracle.script_published_1d_oscillator` (S1) | George's script: 1D_oscillator as published (AION-10, 1 kg, D = 5 m, 0.1 Hz, 1000 shots), by the rule that copies its sampling; largest difference as a fraction of the peak | 1.599e-12 | 1.000e-9 | relative | 0% |  | pass |
 | `oracle.script_published_fig2_10m_c` (S1) | George's script: fig2_10m panel c as published (AION-10, 0.3275 Hz, above Nyquist), by the rule that copies its sampling; largest difference as a fraction of the peak | 1.037e-12 | 1.000e-9 | relative | 0% |  | pass |
+| `oracle.scaffold_multimode_paths` (S3) | exact self-consistency: scaffold_multimode_scalar_trick: the displaced-body read against the table method, the script's eight modes sharing one α, three shots, over the largest AC phase | 1.027e-9 | 1.000e-6 | relative | 0% |  | pass |
 | `oracle.script_same_time_fig2_10m_d` (S1) | George's script: fig2_10m panel d (a circle at 0.35625 Hz) with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 1.998e-5 | 0.02 | relative | 0% |  | pass |
+| `oracle.script_cuboid_potential` (S3) | George's script: cuboid: the script's potential (its nquad) on its 50 × 50 grid, against the closed-form prism and the wall's voxel tree (7.5 cm, a grid that fits its faces); the worse of the two | 8.947e-14 | 1.000e-10 | relative | 0% |  | pass |
 | `oracle.script_same_time_fig2_10m_c` (S1) | George's script: fig2_10m panel c (0.3275 Hz) with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 1.549e-5 | 0.02 | relative | 0% |  | pass |
 | `oracle.script_same_time_fig2_10m_b` (S1) | George's script: fig2_10m panel b with only the one-step offset corrected: the engine minus the fixture against what the scripts' rule predicts (its limit minus the rule at the scripts' step and window), shot by shot; largest difference as a fraction of the largest predicted gap. Two-sided: it replaced a bound on the difference itself (acknowledged.txt) | 9.934e-6 | 0.02 | relative | 0% |  | pass |
 | `oracle.script_published_fig2_10m_d` (S1) | George's script: fig2_10m panel d as published (AION-10, a circle in the D-h plane at 0.35625 Hz), by the rule that copies its sampling; largest difference as a fraction of the peak | 2.918e-13 | 1.000e-9 | relative | 0% |  | pass |
@@ -118,7 +130,7 @@ is shown as **missing**, never left out.
 
 | Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
 |---|---|---|---|---|---|---|---|
-| `presets.compare_equals_other_preset` (S2) | exact self-consistency: the comb read on AION-10 and, by `compare aice`, on AICE 100 m as well: the comparison's signal against the same scene loaded with the AICE instrument; values of any channel that differ in any bit | 0 | 0 | count | 0% |  | pass |
+| `presets.compare_equals_other_preset` (S2) | exact self-consistency: the comb read on AION-10 and, by `compare aice`, on AICE 140 m as well: the comparison's signal against the same scene loaded with the AICE instrument; values of any channel that differ in any bit | 0 | 0 | count | 0% |  | pass |
 
 ## render
 
@@ -173,12 +185,19 @@ is shown as **missing**, never left out.
 |---|---|---|---|---|---|---|---|
 | `validate.fitted_order` (S0) | closed form: the report's own order fit, not the engine: the slope of log(3h²) against log h is 2 | 0 | 1.000e-12 | relative | 0% |  | pass |
 
-## Changes against the earlier report, each with its reason
+## voxel
 
-- `oracle.script_limit_fig2_10m_c`: tolerance 5e-7 → 1e-8: as 1d_oscillator; measured 4.3e-9 (1.41e-7 at dt/32)
-- `oracle.script_limit_fig2_10m_d`: tolerance 5e-7 → 1e-8: as 1d_oscillator; measured 5.0e-9 (1.27e-7 at dt/32)
-- `oracle.script_limit_fig2_10m_b`: tolerance 5e-7 → 1e-8: as 1d_oscillator; measured 2.4e-9 (1.15e-7 at dt/32)
-- `oracle.script_limit_1d_oscillator`: tolerance 5e-7 → 1e-8: the rule at dt/128 in place of dt/32, so the bound is on the engine and not on the trapezoid's residual; measured 1.0e-9 (4.1e-8 at dt/32)
+| Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
+|---|---|---|---|---|---|---|---|
+| `voxel.cube_to_point_order` (S3) | closed form: /V_cube − V_point///V_point/ on the axis at s/R from 0.1 to 0.01: order 4 ± 0.02, and at 0.01 within 1% above the leading term 7/480·(s/R)⁴ | 1.458e-10 | 1.473e-10 | relative | 99% | 4.00 (expected 4 ± 0.02) | pass |
+| `voxel.volume_and_inertia` (S3) | closed form: each primitive's and Platonic solid's closed-form volume (tolerance 2e-3) and inertia tensor (5e-3 of the largest principal moment, the error shown as a fraction of that tolerance), at 64 cells across, k = 4 | 0.0013 | 0.002 | relative | 66% |  | pass |
+| `voxel.cube_series_within_bound` (S3) | closed form: Gauss–Legendre 24³ quadrature of the cube; s/R from 0.02 to 0.3, 64 directions; orders 0, 4, 8, 12: the worst error as a fraction of the series' own bound | 0.4163 | 1 | relative | 42% |  | pass |
+| `voxel.cube_kernel_exact` (S3) | closed form: Gauss–Legendre quadrature of the cube (24³, 48³ close) from s/R = 1e-4 to 0.8 in 64 directions: series or prism, as the kernel chooses | 1.399e-14 | 1.000e-13 | relative | 14% |  | pass |
+| `voxel.mass_is_the_spec` (S3) | exact self-consistency: the spec's mass, against the Morton-order sum of the leaves' masses, 17 shapes at 32 cells across | 3.259e-14 | 1.000e-12 | relative | 3% |  | pass |
+| `voxel.merged_equals_unmerged` (S3) | exact self-consistency: the same body as unmerged finest cubes: potentials at 24 points from 0.6 to 12 m and one AION-10 shot 2 m away, each primitive and Platonic solid at 32 cells across | 1.666e-14 | 1.000e-12 | relative | 2% |  | pass |
+| `voxel.planar_mass_is_the_prism` (S3) | closed form: planar_mass (no script): a 2 × 2 × 0.25 m plate voxelised on a grid that fits its faces, against the closed-form prism; one AION-10 shot, three channels over the larger single interferometer's phase | 5.341e-15 | 1.000e-12 | relative | 1% |  | pass |
+| `voxel.sphere_reads_as_the_sphere` (S3) | closed form: a uniform sphere (a point outside itself), r = 0.5 m, 100 kg, 1.6 m off a tower's axis: one AION-10 shot, three channels, voxelised at r/16 and k = 4 | 1.919e-7 | 0.002 | relative | 0% |  | pass |
+| `voxel.tree_equals_raster` (S3) | exact self-consistency: the raster voxeliser over every cell: 17 shapes (primitives, Platonic solids, a random hull, three meshes) at 8, 13 and 21 cells across with k = 1, 2, 4, placed at random | 0 | 0 | count | 0% |  | pass |
 
 ## Convergence
 
