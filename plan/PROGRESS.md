@@ -452,6 +452,14 @@ Answered 21 Nov 2026 (through the owner). The defaults below replace v1's conven
 5. **Floor:** the arms never go below launch. There is a floor, coded as the Python scripts code the
    sequence; copy that.
 
+## Owner's ruling (24 Nov 2026): the whole planet, one hierarchy
+The owner wants the wider world rendered and simulated as one level-of-detail hierarchy: full
+precision in bubbles around the detectors, coarser outwards to the whole Earth, the Moon and the
+Sun. In the plan (`REBUILD.md` §9.3, TASK-S14-10 and 11): the same rings are drawn and read
+(through S5's bounded walk, error in radians); static mass is read from them; tides, weather, ground
+water and seismic waves are driven into the coarse cells from data and models rather than simulated
+cell by cell across the planet.
+
 ## Owner's ruling (23 Nov 2026): mixed towers come forward
 Towers of different heights and sequences in one array move from S15 to S3 (TASK-S3-08), with a
 scene of zero towers allowed. The research is done (`docs/research/s15-instruments-anywhere.md` §3 and
