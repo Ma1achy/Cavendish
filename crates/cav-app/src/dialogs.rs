@@ -85,26 +85,176 @@ pub fn draw(shell: &mut Shell, ctx: &egui::Context) {
     save(shell, ctx);
 }
 
+/// A step of the history in a person's words (S18's review, U6: the list showed the console's
+/// derived lines, `add bodies 1 {"label":…`): "Added sphere", "Moved sphere to (2, 0, 1) m",
+/// "Set duration to 20 s", "Removed tower 3", "Opened “town”". Names are the scene's as it is
+/// now (`spec`); the line that does the step is [`cav_engine::history::Edit::line`], for a
+/// tooltip. Only the field touched is read, never a whole inserted value, so a long list costs
+/// little each frame (minor 8).
+#[must_use]
+pub fn step_words(step: &cav_engine::history::Step, spec: &SceneSpec) -> String {
+    use cav_engine::history::Edit;
+    match (&step.undo, &step.redo) {
+        (_, Edit::Replace(scene)) => format!("Opened “{}”", scene.name),
+        (_, Edit::View { .. }) => "Reset the view (Home)".to_owned(),
+        (_, Edit::Insert { list, value, .. }) => {
+            match (list.as_str(), value.get("label").and_then(|l| l.as_str())) {
+                ("bodies", Some(label)) => format!("Added {label}"),
+                ("array.towers", Some(label)) => format!("Added the tower {label}"),
+                _ => format!("Added an item to {}", place(list, spec)),
+            }
+        }
+        (Edit::Insert { value, .. }, Edit::Remove { path }) => {
+            match value.get("label").and_then(|l| l.as_str()) {
+                Some(label) => format!("Removed {label}"),
+                None => format!(
+                    "Took an item out of {}",
+                    place(path.rsplit_once('[').map_or(path.as_str(), |(list, _)| list), spec)
+                ),
+            }
+        }
+        (_, Edit::Remove { path }) => format!("Removed {}", place(path, spec)),
+        (_, Edit::Put { path, value }) => put_words(path, value, spec),
+    }
+}
+
+/// What owns the field at `path`, as a person names it: a body or a tower by its label, "the
+/// instrument", "the cadence", "the room"; `None` for the scene's own fields (`duration`).
+fn owner(path: &str, spec: &SceneSpec) -> Option<String> {
+    let index = |rest: &str| {
+        rest.strip_prefix('[').and_then(|r| r.split(']').next()).and_then(|n| n.parse::<usize>().ok())
+    };
+    if let Some(n) = path.strip_prefix("bodies").and_then(index) {
+        return Some(spec.bodies.get(n).map_or_else(|| format!("body {}", n + 1), |b| b.label.clone()));
+    }
+    if let Some(n) = path.strip_prefix("array.towers").and_then(index) {
+        return Some(
+            spec.array.towers.get(n).map_or_else(|| format!("tower {}", n + 1), |t| t.label.clone()),
+        );
+    }
+    let parts = [
+        ("array.instrument", "the instrument"),
+        ("array.schedule", "the cadence"),
+        ("room", "the room"),
+        ("floor", "the floor"),
+        ("world", "the world"),
+    ];
+    parts.iter().find(|(prefix, _)| path.starts_with(prefix)).map(|(_, name)| (*name).to_owned())
+}
+
+/// A path as a place: its owner and its field ("sphere's motion", "the room", "duration").
+fn place(path: &str, spec: &SceneSpec) -> String {
+    // The field's name from the schema alone, so that a step of a body since removed is still
+    // named (its title, else its name in words).
+    let last = path.rsplit('.').next().unwrap_or(path);
+    let field = cav_sim::paths::schema_at(path)
+        .ok()
+        .and_then(|schema| schema.get("title").and_then(serde_json::Value::as_str).map(str::to_owned))
+        .unwrap_or_else(|| cav_sim::paths::words(last));
+    let field = lower_first(&field);
+    match owner(path, spec) {
+        // The owner itself (`bodies[2]`, `room`): just its name.
+        Some(owner) if path.ends_with(']') || !path.contains('.') => owner,
+        Some(owner) => format!("{owner}'s {field}"),
+        None => field,
+    }
+}
+
+fn lower_first(text: &str) -> String {
+    let mut chars = text.chars();
+    // An initialism or a symbol keeps its case ("AION-10", "Δr").
+    match (chars.next(), chars.next()) {
+        (Some(first), Some(second)) if first.is_uppercase() && !second.is_uppercase() => {
+            first.to_lowercase().chain(text.chars().skip(1)).collect()
+        }
+        _ => text.to_owned(),
+    }
+}
+
+/// A value as a person reads it, with the field's unit from the schema.
+fn value_words(value: &serde_json::Value, unit: Option<&str>) -> String {
+    use serde_json::Value;
+    let unit = unit.filter(|u| *u != "1").map_or_else(String::new, |u| format!(" {u}"));
+    match value {
+        Value::Number(n) => format!("{}{unit}", crate::editors::shown(n.as_f64().unwrap_or_default())),
+        Value::Array(items) if items.iter().all(Value::is_number) => {
+            let numbers: Vec<String> =
+                items.iter().map(|v| crate::editors::shown(v.as_f64().unwrap_or_default())).collect();
+            format!("({}){unit}", numbers.join(", "))
+        }
+        Value::String(text) => format!("“{text}”"),
+        Value::Bool(on) => (if *on { "on" } else { "off" }).to_owned(),
+        Value::Null => "none".to_owned(),
+        // A variant with its data: its name, in words.
+        Value::Object(map) if map.len() == 1 => cav_sim::paths::words(map.keys().next().expect("one key")),
+        _ => "a new value".to_owned(),
+    }
+}
+
+/// A `set` in words.
+fn put_words(path: &str, value: &serde_json::Value, spec: &SceneSpec) -> String {
+    let schema = cav_sim::paths::schema_at(path).ok();
+    let unit = schema.as_ref().and_then(|s| s.get("x-unit")).and_then(serde_json::Value::as_str);
+    let last = path.rsplit('.').next().unwrap_or(path);
+    let who = owner(path, spec);
+    // Moving a body or a tower: its anchor or its position.
+    let moved = (path.starts_with("bodies[")
+        && path.contains(".motion.")
+        && matches!(last, "position" | "start" | "centre" | "pivot"))
+        || (path.starts_with("array.towers[") && last == "position");
+    if let (true, Some(who)) = (moved, &who) {
+        return format!("Moved {who} to {}", value_words(value, unit));
+    }
+    if last == "label"
+        && let Some(text) = value.as_str()
+    {
+        return format!("Renamed {} “{text}”", if path.starts_with("bodies") { "a body" } else { "a tower" });
+    }
+    if value.is_null() {
+        return format!("Took away {}", place(path, spec));
+    }
+    format!("Set {} to {}", place(path, spec), value_words(value, unit))
+}
+
 fn history(shell: &mut Shell, ctx: &egui::Context) {
     if !shell.history_open {
         return;
     }
     shell.building.window("history", "History");
-    let (done, undone) = shell.engine.steps();
+    let spec = shell.engine.spec().clone();
+    // The words of each step (cheap: no inserted value is written out); the console line only
+    // when a row is hovered.
+    let (done, undone): (Vec<String>, Vec<String>) = {
+        let (done, undone) = shell.engine.history_steps();
+        (
+            done.iter().map(|s| step_words(s, &spec)).collect(),
+            undone.iter().map(|s| step_words(s, &spec)).collect(),
+        )
+    };
     let mut open = true;
     let mut go: Option<(usize, &str)> = None;
+    let mut hovered: Option<(bool, usize)> = None;
+    // Over the outliner, never over the figure (S18's review, U6): the outliner and the tool strip
+    // are the first ~310 points of the window's left.
+    let left = shell.layout.panel("outliner").map_or(ctx.content_rect().left() + 8.0, |r| r.left() + 6.0);
+    let top = shell.layout.panel("outliner").map_or(60.0, |r| r.top() + 30.0);
     let window = egui::Window::new("Edit history")
         .open(&mut open)
         .collapsible(false)
-        .default_width(420.0)
+        .default_pos(egui::pos2(left, top))
+        .default_width(292.0)
+        .max_width(300.0)
         .show(ctx, |ui| {
             ui.label(
-                RichText::new("every edit, oldest first; click one to go back or forward to it")
-                    .size(11.0)
-                    .color(theme::WEAK),
+                RichText::new(
+                    "every edit, oldest first; click one to go back or forward to it (Ctrl+Z, Ctrl+Y step)",
+                )
+                .size(11.0)
+                .color(theme::WEAK),
             );
             egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-                let start = ui.selectable_label(false, RichText::new("the scene as it was").italics());
+                let start =
+                    ui.selectable_label(done.is_empty(), RichText::new("The scene as it was").italics());
                 shell.register("history", "history/start", "the start", Kind::Button, start.rect);
                 shell.layout.buttons.push(("history 0".to_owned(), start.rect));
                 if (start.clicked() || shell.take_click("history/start")) && !done.is_empty() {
@@ -112,10 +262,11 @@ fn history(shell: &mut Shell, ctx: &egui::Context) {
                 }
                 for (n, said) in done.iter().enumerate() {
                     let now = n + 1 == done.len();
-                    let text = RichText::new(format!("{}{said}", if now { "› " } else { "" }))
-                        .monospace()
-                        .size(11.5);
+                    let text = RichText::new(format!("{}{said}", if now { "› " } else { "" })).size(12.0);
                     let row = ui.selectable_label(now, text);
+                    if row.hovered() {
+                        hovered = Some((true, n));
+                    }
                     let id = format!("history/done/{n}");
                     shell.register("history", &id, said, Kind::Button, row.rect);
                     shell.layout.buttons.push((format!("history {}", n + 1), row.rect));
@@ -124,10 +275,10 @@ fn history(shell: &mut Shell, ctx: &egui::Context) {
                     }
                 }
                 for (n, said) in undone.iter().enumerate() {
-                    let row = ui.selectable_label(
-                        false,
-                        RichText::new(said).monospace().size(11.5).color(theme::WEAK),
-                    );
+                    let row = ui.selectable_label(false, RichText::new(said).size(12.0).color(theme::WEAK));
+                    if row.hovered() {
+                        hovered = Some((false, n));
+                    }
                     let id = format!("history/undone/{n}");
                     shell.register("history", &id, said, Kind::Button, row.rect);
                     shell.layout.buttons.push((format!("history {}", done.len() + n + 1), row.rect));
@@ -136,6 +287,28 @@ fn history(shell: &mut Shell, ctx: &egui::Context) {
                     }
                 }
             });
+            // The console line of the row under the pointer: what an agent or a script would type.
+            let (done_steps, undone_steps) = shell.engine.history_steps();
+            let line = match hovered {
+                Some((true, n)) => done_steps.get(n).map(|s| s.redo.line()),
+                Some((false, n)) => undone_steps.get(n).map(|s| s.redo.line()),
+                None => None,
+            };
+            ui.add_space(4.0);
+            ui.add(
+                egui::Label::new(
+                    RichText::new(
+                        line.map_or_else(
+                            || "hover a row for its console line".to_owned(),
+                            |l| format!("> {l}"),
+                        ),
+                    )
+                    .monospace()
+                    .size(10.5)
+                    .color(theme::WEAK),
+                )
+                .truncate(),
+            );
         });
     if let Some(window) = window {
         shell.building.place("history", window.response.rect);
@@ -243,9 +416,11 @@ fn wizard(shell: &mut Shell, ctx: &egui::Context) {
     }
     shell.wizard = Some(choices.clone());
     if create && let Ok(spec) = choices.scene() {
-        // One load: one undo takes the new scene away.
+        // One load: one undo takes the new scene away. It has never been saved: the title says so
+        // until it is (S18's review, minor 10).
         shell.apply(Command::load(spec));
         shell.file = None;
+        shell.untitled = true;
         cancel = true;
     }
     if cancel || !open {

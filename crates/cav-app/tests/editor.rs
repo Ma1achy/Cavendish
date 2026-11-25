@@ -1446,3 +1446,64 @@ fn the_session_s_arrows_go_the_way_they_point_on_screen() {
     rig.frames(vec![vec![]]);
     assert!(screen_x(&rig) < before - 1.0);
 }
+
+#[test]
+fn the_history_says_what_happened_in_words_beside_the_figure() {
+    // S18's review, U6: each row is what a person did, in words, not the console's derived line;
+    // the console line is still there (on hover); the window opens over the outliner, not the
+    // figure; the footer's toast says the same words with the way back.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.add_starter("sphere").unwrap();
+    rig.shell.run("set bodies[1].motion.Static.position [2.0, 0.0, 1.0]").unwrap();
+    rig.shell.run("set duration 20").unwrap();
+    rig.shell.run("set bodies[0].mass 5").unwrap();
+    rig.shell.run("remove bodies[1]").unwrap();
+    let spec = rig.shell.engine.spec().clone();
+    let (done, _) = rig.shell.engine.history_steps();
+    let words: Vec<String> = done.iter().map(|s| cav_app::dialogs::step_words(s, &spec)).collect();
+    assert_eq!(
+        words,
+        [
+            "Opened “point”",
+            "Added sphere",
+            "Moved body 2 to (2, 0, 1) m",
+            "Set duration to 20 s",
+            "Set mass's mass to 5 kg",
+            "Removed sphere",
+        ],
+        "{words:?}"
+    );
+    // Control: the lines the console would type are another thing, and still the steps' own.
+    let (lines, _) = rig.shell.engine.steps();
+    assert!(lines[1].starts_with("add bodies 1 {"), "{}", lines[1]);
+    // The window, over the outliner: it covers none of the figure.
+    rig.key(Key::H, Modifiers::COMMAND);
+    rig.frames(vec![vec![], vec![]]);
+    let window = rig.shell.focus_tree().node("history").and_then(|n| n.rect).expect("drawn");
+    let figure = rig.shell.layout().figure;
+    assert!(overlap(window, figure) < 1.0, "{window:?} covers the figure {figure:?}");
+    assert_eq!(rig.shell.focus_tree().node("history/done/1").unwrap().name, "Added sphere");
+    // The toast says the last edit in words, with Undo; after an undo, what was undone and Redo.
+    assert!(rig.shell.layout().button("toast undo").is_some());
+    rig.click_button("toast undo");
+    rig.frames(vec![vec![]]);
+    assert_eq!(rig.shell.engine.spec().bodies.len(), 2, "the toast's Undo put the sphere back");
+    assert!(rig.shell.layout().button("toast redo").is_some());
+}
+
+#[test]
+fn a_scene_from_the_wizard_is_unsaved_until_saved() {
+    // S18's review, minor 10: a new scene has never been saved, so the title says `*`.
+    let mut rig = Rig::new();
+    rig.key(Key::N, Modifiers::COMMAND);
+    rig.frames(vec![vec![], vec![]]);
+    rig.click_button("wizard create");
+    assert!(rig.shell.title().ends_with(" *"), "{}", rig.shell.title());
+    let file = Scratch::new("new.ron");
+    rig.shell.run(&format!("save {}", file.path())).unwrap();
+    assert!(!rig.shell.title().contains('*'), "saved: {}", rig.shell.title());
+    // Control: a library scene opened is as it was saved, no `*`.
+    rig.shell.run("load room").unwrap();
+    assert!(!rig.shell.title().contains('*'));
+}

@@ -265,6 +265,13 @@ impl History {
         )
     }
 
+    /// The steps that can be undone, oldest first, and those that can be redone, the next to
+    /// redo first: what the editor's history list words for a person (`said` gives the lines).
+    #[must_use]
+    pub fn steps(&self) -> (Vec<&Step>, Vec<&Step>) {
+        (self.undo.iter().collect(), self.redo.iter().rev().collect())
+    }
+
     /// How many edits can be undone, and how many redone.
     #[must_use]
     pub fn depth(&self) -> (usize, usize) {

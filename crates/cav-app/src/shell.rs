@@ -275,6 +275,9 @@ pub struct Shell {
     pub save_window: Option<String>,
     /// The file the scene came from or was last saved to, which `Ctrl+S` saves to again.
     pub file: Option<String>,
+    /// Whether the scene was made in the window (the wizard) and has not been saved since: it
+    /// is unsaved even though nothing has been edited since it was made.
+    pub untitled: bool,
     /// A `focus` asked for before the first frame, applied once a frame has drawn its element.
     pending_focus: Option<String>,
     title_said: String,
@@ -377,6 +380,7 @@ impl Shell {
             open_window: None,
             save_window: None,
             file: None,
+            untitled: false,
             pending_focus: None,
             title_said: String::new(),
         }
@@ -385,7 +389,14 @@ impl Shell {
     /// The window's title: the scene's name, with `*` while it has unsaved edits.
     #[must_use]
     pub fn title(&self) -> String {
-        format!("Cavendish · {}{}", self.engine.spec().name, if self.engine.unsaved() { " *" } else { "" })
+        format!("Cavendish · {}{}", self.engine.spec().name, if self.unsaved() { " *" } else { "" })
+    }
+
+    /// Whether the scene has something not saved: an edit since it was opened or saved, or a
+    /// scene made here (the wizard) that has never been saved.
+    #[must_use]
+    pub fn unsaved(&self) -> bool {
+        self.engine.unsaved() || self.untitled
     }
 
     /// What the tool in hand does.
@@ -812,6 +823,10 @@ impl Shell {
         }
         let is_command = matches!(self.engine.parse(line), Ok(Request::Do(_)));
         let outcome = self.engine.run_line(line);
+        // A scene saved, or another opened, is no longer the wizard's unsaved one.
+        if outcome.is_ok() && matches!(line.split_whitespace().next(), Some("save" | "load")) {
+            self.untitled = false;
+        }
         match &outcome {
             // An answer to a question is shown where it was asked: in the console.
             Ok(answer) if !is_command => {

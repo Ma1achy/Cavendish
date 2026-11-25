@@ -1789,6 +1789,13 @@ impl Engine {
         self.history.depth()
     }
 
+    /// The steps of the history themselves (what undoing and redoing each does), as
+    /// [`Self::steps`] orders them: for a client that says them in its own words.
+    #[must_use]
+    pub fn history_steps(&self) -> (Vec<&crate::history::Step>, Vec<&crate::history::Step>) {
+        self.history.steps()
+    }
+
     /// The lines that made the edits that can be undone, oldest first, and those that can be
     /// redone, the next first: the editor's history list.
     #[must_use]

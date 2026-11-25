@@ -639,6 +639,9 @@
 - id: TASK-S18-16
   milestone: S18
   title: "Review fixes, seeing what you move (U5, minor 11): a gizmo of bright arrows on a dark halo, the same size on screen; F frames the silhouette with a margin, in the pane's own aspect; a session's arrows go the way they point on screen"
+- id: TASK-S18-17
+  milestone: S18
+  title: "Review fixes, what happened (U6, minors 8, 10): the history and the toast in words with the console line on hover, the history window over the outliner; a scene from the wizard unsaved until saved"
 - id: TASK-S19-01
   milestone: S19
   title: "Docking: panels as tabs in dock areas, drag to dock, saved layouts of the dock tree (a crate spike first, egui 0.37 and wasm)"
