@@ -49,6 +49,12 @@ and it is a tool a person or an agent can explore interactively, at scales up to
     and one existing example. Every public item is documented; every crate says what it is for and
     what it must not depend on; `docs/ARCHITECTURE.md` is kept true. A slice that adds a kind of
     thing adds or updates its recipe.
+11. **Everything is data** (owner, 25 Nov 2026). What a scene contains, how the simulation is
+    configured, and how the GUI is laid out — panels, layouts, toolbars, tools, shortcuts — are
+    described by data with a schema, loaded and saved like scenes, and driven through the one
+    engine API. **Detail tiers** (preview, standard, reference, and user-defined) are data too: a
+    tier names the quadrature, tree tolerance, LOD, pitches and solver settings, and every bundle
+    records the tier it was made at. Code holds the mechanisms; data holds the choices.
 
 ## 3. Architecture
 
@@ -350,8 +356,10 @@ its oracle checks, a performance note, screenshots in `docs/slices/`. Main alway
 | S15 | **Instruments anywhere** | A gradiometer on any axis, horizontal included; local g and its gradient from the Earth's gravity field at the site; the same instrument on the Moon or Mars, and in orbit; a full budget of instrument systematics | vertical case unchanged to the bit; a horizontal baseline against the closed-form gradient tensor; an orbiting gradiometer against the gravity model's tensor and published GOCE-class gradients |
 | S16 | **The science case** | Inject a gravitational wave or a dark-matter signal and try to find it through a full simulated day; two sites on one planet, correlated; choose a site anywhere on Earth and get its noise budget; run beside the real instrument as its twin | injected signals recovered at the published sensitivity in a quiet world; two-site correlation rejects local noise by the predicted factor |
 | S17 | **In the browser** | The whole app as a web page on GitHub Pages, built to WebAssembly with WebGPU by CI on each push to main; single-threaded on the web, the engine's workers run in frame-sized slices | the web build runs the S0–S3 demos' scenes and reads the same phases as the native build, bit for bit where the arithmetic is the same |
+| S18 | **The editor** | A toolbar of tools, an interactive viewport, a schema-driven inspector, docking panels with tabs and pop-out windows, the keyboard model of `docs/design/keyboard.md`, materials and mesh import from the editor, GUI layouts and detail tiers as data | scripted tasks run end to end through the UI tests ("add a sphere, move it 2 m, read tower 1's phase"); the keyboard state machine tested with control arms; every edit by viewport or panel is one undoable command |
 
 Order is a default. Slices that do not depend on each other (S6 and S8, say) can run in parallel.
+S18 was added by the owner on 25 Nov 2026 and runs straight after S4 (research: `docs/research/editor-ux.md`).
 S17 was added by the owner on 24 Nov 2026 and runs next, after S3; its brief is
 `docs/slices/S17.md`, its research `docs/research/web-build-and-pages.md`.
 S14–S16 were added by the owner on 22 Nov 2026. What they hold is in §9.3; each starts with a
