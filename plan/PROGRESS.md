@@ -912,6 +912,15 @@ Notes in `docs/research/`: `voxel-engines.md`, `rigid-bodies.md` (S7), `fluids.m
 - **S14 note correction**: the Rayleigh-wave factor γ is 0.71–0.83 by Poisson's ratio (Harms 2019 Eq. 99), not 0.7.
 - **S5**: measure node deduplication (content hashes) before any DAG; one summary per distinct content.
 
+## Owner's ruling (25 Nov 2026): the workspace, and density
+After using S19: the tool palette must float inside the viewport (Photoshop, Blender); the viewport's row of
+text chips goes (a proper header: view type, camera, shading, overlays; status to the status bar); real
+transport buttons; the top bar tidied; fields that fill their width and buttons that make sense; folders in
+the scene tree; viewports as a resizable mosaic (as matplotlib's `subplot_mosaic`), more than four, each able
+to pop out. **A dense GUI is wanted**: a professional scientific desktop app, small is fine, everything
+functional, no prose in the chrome — this withdraws `panels.md`'s 24 pt minimum on desktop. Requirement:
+`docs/design/workspace.md`. Tasks TASK-S20-03 to TASK-S20-07, first in S20.
+
 ## Owner's ruling (25 Nov 2026): draw modes for bodies
 Bodies get draw modes: plain voxels; the partial fill made visible (each boundary cell shaded by its
 exact fill fraction — the "mass anti-aliasing" of `docs/research/exact-skin-and-partial-fill.md`); the
