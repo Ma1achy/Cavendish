@@ -59,9 +59,49 @@ an f32 V-cycle; the memory budget is withdrawn pending a measurement), and **the
 - **Harms Eq. 39** (the Rayleigh displacement field): the first version said the PDF extraction had lost a minus
   sign on the horizontal component. The rendered page prints no such sign, and the field as printed is not
   traction-free; with the minus it is (§5.2). The closed forms are unaffected.
-- Lamb 1904: the fetched file is the three-page *abstract* in Proc. R. Soc. 72 (the DOI in the list below is
-  that abstract's). The full paper is Phil. Trans. A 203, 1–42 (Pekeris cites it so). §5.1, §7.
+- Lamb 1904: the first file fetched was the three-page *abstract* in Proc. R. Soc. 72; the full Phil. Trans.
+  A 203, 1–42 paper was fetched afterwards and is read (second fetch, below).
 - Hughes 1980: B-bar and selective integration coincide for the undistorted cubes used here (his text; §1.1).
+
+**Second fetch (Simo & Armero 1992; Lamb 1904, full; Kozar et al. 2018).**
+- **My 9-mode brick is theirs.** Simo & Armero (§3.4, Eqs. 66–69) define Q1/E4 as Q1 with "4 extra modes (9
+  modes in 3-D)", equal for linear isotropic elasticity to the QM6 element of Taylor et al.; for the brick
+  `E(ξ) = diag[ξ₁ ξ₂ ξ₃]` (Eq. 69, from Wilson's functions `ξᵢ² − 1`), scaled by `det J₀/det J` with the
+  Jacobian at the centroid. For cubes that scaling is 1, so `cantilever.py`'s element (modes `1 − ξᵢ²`, one
+  per direction and displacement component, condensed) is this element. Their conditions, which my patch test
+  checks: the enhanced and compatible gradient spaces intersect only in zero (Eq. 41, "precludes ... rank-
+  deficient methods; for example, the one-point uniformly reduced integration" element), and the stress
+  interpolation is L2-orthogonal to the enhanced strain (Eq. 44) with piecewise-constant stress admitted
+  (Eq. 45; "classical patch test").
+- **No better cure for ν → 0.5 in the source; my numbers stand.** Simo & Armero do not give a different
+  volumetric-locking remedy: their cure *is* Q1/E4, which they call "excellent" in the three-dimensional nearly
+  incompressible problem (Introduction, p. 1414) and show on a finite-strain necking bar (960 bricks, K/µ ≈ 10⁴,
+  §4.2.2, Figs. 11–12), where the mean-dilatation brick Q1/P0 develops an hourglass mode and Q1/E4 does not.
+  That is a qualitative comparison against Q1/P0, on a many-element, finite-deformation problem; it does not
+  contradict the 4 % (ν = 0.49) and 13 % (ν = 0.4999) stiffness of a one-cell-thick *linear* beam in §1.1, which
+  is still far better than plain Q1 (+60 %, +297 %). They also report that Q1/P0 is unstable in 3-D at very high
+  aspect ratios (conclusions) and say mean dilatation "behave[s] poorly in the three dimensional problem" —
+  at finite strain. My linear selective-integration beam showed no such problem, so that warning is about
+  nonlinear use. A further caveat for us: they note "Q1/E4 may exhibit undesirable modes in the presence of
+  fairly high strains, specially in the compressive regime" (conclusions); our strains are 10⁻⁹–10⁻⁴.
+  **Recommendation unchanged: incompatible modes for ν ≤ 0.35, selective integration with ≥ 2 cells above.**
+- **Wilson 1973 is not fetched, but its DOI and pages are now known** (from Kozar et al.'s reference list):
+  pp. 43–57, doi:10.1016/B978-0-12-253250-4.50008-7.
+- **Kozar, Rukavina & Ibrahimbegović 2018** (the third file; *Građevinar* 70(1), 19–29, "Method of
+  incompatible modes — overview and application", doi:10.14256/JCE.2078.2017) is a subject review, not a
+  source of new results. It restates the conditions (§2: incompatible strain independent of the compatible
+  one, Eq. 17; stress orthogonal to the incompatible parameters, Eq. 18; patch test, Eq. 19), builds Q4 and Q8
+  elements with `B_m = [B G]` and static condensation (§3), and shows on a thin cantilever (E = 3×10⁷, ν = 0.33,
+  L = 3, h = 0.2) tip displacements of about 0.54 (2-D and 3-D with modes) for the force load against exact
+  0.562, and 0.112 for the moment load (exact 0.112), against 0.169 and 0.167 without modes (Tables 1–2; the
+  extracted columns are jumbled, so read these to two figures only). This
+  is the same behaviour as in §1.1 (a few per cent for the force case from shear, exact for pure bending). One
+  inconsistency: they quote the Q8 + modes stiffness as 32×32, whereas 24 dof + 9 modes is 33, and the mode
+  matrix of their Eq. 68 does not survive text extraction; I cannot say which is right.
+- **Lamb 1904 (full)**: the scanned paper (43 pages) was read on the rendered pages 1–4, 40–43 (Eq. 165's
+  impulse, Fig. 10, the Summary); the detailed integrals of §§ 2–39 were not. Its doi is confirmed on the file
+  as 10.1098/rsta.1904.0013 (the from-memory DOI was right; the earlier list's rspl DOI is the abstract).
+  What it provides for the validation case is in §5.1 and §7 below.
 
 **Sharpened (no change of direction).**
 - **Q1 + incompatible modes stays the default, but not for near-incompressible materials.** Measured here
@@ -142,9 +182,8 @@ Harms, Badurina et al. and Junca et al. agree on it once read correctly.
 
 **What could not be verified:** the GPU cost figures are from Dick et al., Wu et al. and extrapolation, on 2010–11
 Fermi hardware, not measured on the 1660 SUPER; the slab estimate idealises the slab as simply supported;
-the three-dimensional incompatible-mode element (9 modes) is described by Wilson, Taylor and Simo–Armero, of
-which I could read only Taylor et al. (two-dimensional development) and Simo & Rifai (2-D, axisymmetric,
-plates); and the full Harms 2019 Living Review was not among the fetched files (I used the copy already
+the three-dimensional incompatible-mode element (9 modes) is now read in Simo & Armero and agrees with mine,
+but Wilson et al. 1973 itself was not fetched; and the full Harms 2019 Living Review was not among the fetched files (I used the copy already
 read, whose equation numbers the note cites). See §9.
 
 ---
@@ -163,7 +202,7 @@ shear strain. Remedies in the literature:
 
 | Remedy | What it fixes | Source |
 |---|---|---|
-| Incompatible modes (Q1 + 3 bubble modes per component, condensed) | bending (shear) locking; exact for pure bending on a rectangular element; weak near ν = 0.5 (measured below) | Wilson et al. 1973 [U, not fetched]; Taylor, Beresford & Wilson 1976 [R]: the original Q6 fails the patch test unless the element is a parallelogram, QM6 repairs it (pp. 1211–1216, Table I: both exact in pure bending on the rectangular mesh); Ibrahimbegovic & Wilson 1991 [R]: the same repair by Lagrange multipliers for any choice of modes; Simo & Rifai 1990 [R]: embeds it in a three-field enhanced-strain form, the patch test holds if the stress interpolation contains constants and is L2-orthogonal to the enhanced strain (§2) |
+| Incompatible modes (Q1 + 3 bubble modes per component, condensed) | bending (shear) locking; exact for pure bending on a rectangular element; weak near ν = 0.5 (measured below) | Wilson et al. 1973 [A, not fetched; pp. 43–57, doi:10.1016/B978-0-12-253250-4.50008-7 per Kozar et al.]; Simo & Armero 1992 [R]: the 3-D brick Q1/E4 with 9 modes, equal to QM6 for linear isotropic elasticity (Eqs. 66–69); Kozar et al. 2018 [R, review]; Taylor, Beresford & Wilson 1976 [R]: the original Q6 fails the patch test unless the element is a parallelogram, QM6 repairs it (pp. 1211–1216, Table I: both exact in pure bending on the rectangular mesh); Ibrahimbegovic & Wilson 1991 [R]: the same repair by Lagrange multipliers for any choice of modes; Simo & Rifai 1990 [R]: embeds it in a three-field enhanced-strain form, the patch test holds if the stress interpolation contains constants and is L2-orthogonal to the enhanced strain (§2) |
 | Selective reduced integration / B-bar | volumetric locking as ν → 0.5 | Hughes 1980 [R]: generalises selective integration and mean dilatation; "in rectilinear situations it is identical to a selective integration approach" (Introduction), i.e. for cubes |
 | One-point integration + hourglass control | both, at the cost of hourglass modes to stabilise | Flanagan & Belytschko 1981 [R, summary and introduction]: they present it for explicit transient analysis and note that selective schemes entail "severe computational penalties for transient analysis"; not our case (linear, implicit) |
 | Several cells through every member | everything, at cost | Guldberg et al. 1998 [R]: 3-D digital (voxel) cantilever, "a minimum discretization of three to four digital finite elements through the beam cross section to avoid high numerical stiffening errors under bending" |
@@ -198,7 +237,9 @@ cells ever appear.
   mesh).
 - Simo & Rifai 1990 (§6.1, §6.1.2) report the *two-dimensional* Taylor element as excellent in bending and,
   "not widely appreciated", good in the incompressible limit (driven-cavity pressures oscillate but converge).
-  They do not treat the three-dimensional 9-mode brick. I therefore measured it.
+  They do not treat the three-dimensional brick; Simo & Armero 1992 do (second fetch, above) and call the 3-D
+  Q1/E4 brick excellent for nearly incompressible *finite-strain* problems against the mean-dilatation brick,
+  without a linear bending-beam number. I therefore measured it.
 
 **Near-incompressible materials [M]** (`nu_locking.py`, same beam, error in f₁ against the n = 8 result of a
 selective-plus-incompatible-modes element built for this test; its own n = 1 result is unusable, −90 %, so it
@@ -449,7 +490,31 @@ has λ = 25 m, so five points per wavelength is a 5 m node spacing and a 100 m c
 reasons to defer remain the ones that follow: the closed forms exist for the flat homogeneous ground the
 instrument first needs, a kinematic voxel sum can be validated against them to 0.06–0.16 % (§5.2), and a
 dynamic solver adds a second element, absorbing boundaries and a source model, none of which has a known-answer
-test at the µrad level except Lamb's problem (Pekeris 1955, §7).
+test at the µrad level except Lamb's problem (Lamb 1904 and Pekeris 1955, below and §7).
+
+**Lamb's problem, as the reference for a dynamic solver [R, Lamb 1904 pp. 1–3, 40–43; Pekeris 1955].** Lamb
+treats a half-space with a plane free surface, gravity ignored, forced at a point, chiefly by an *impulse
+applied vertically to the surface* (his Eq. 165 is the type of impulse), after first doing the two-dimensional
+problem of a pressure along a *line* of the surface, whose analysis "can be utilized afterwards for the
+three-dimensional cases" (§1); he also gives simple-harmonic sources and new solutions for a periodic force
+transverse to a line or at a point in an unlimited solid. His results for a surface impulse (Introduction and
+Summary, pp. 2, 41): the disturbance divides into a **minor tremor**, which "sets in ... with some abruptness, after an interval
+equal to the time which a wave of longitudinal displacement would take to traverse the distance from the
+source", with a further marked feature at the arrival of transversal waves, and the **main shock**,
+"propagated as a solitary wave (with one maximum and one minimum, in both the horizontal and vertical
+displacements); its time-scale is constant; and its amplitude diminishes only in accordance with the usual law
+of annular divergence", i.e. as r^{−1/2}, at the velocity of free Rayleigh waves. The horizontal displacement
+shows first a single oscillation, then quiescence, then another at the transverse-wave epoch; the vertical
+displacement leads up more gradually, with a jerk at the transverse-wave epoch, and at the Rayleigh arrival
+"the vertical amplitude is distinctly the greater" (p. 42), consistent with the anisotropy ratio 2.2 of Hughes &
+Thorne at ν = 0.33. The minor tremor depends on the time-integral of the impulse, the main shock on the impulse
+itself (p. 41). Lamb gives the answer as integrals (Fig. 10 sketches the horizontal and vertical displacement
+histories); it is Pekeris 1955 who reduced it to closed form for a Heaviside surface load (`w(t) = (1/r)f(τ)`,
+his Eqs. 45–48, 66, singular at the Rayleigh arrival) and notes that Lamb's "method is, however, very
+intricate" (§1). So: the *qualitative* test (a P-arrival precursor, a transverse-arrival feature, then a
+solitary Rayleigh pulse of constant shape and r^{−1/2} amplitude, vertical larger than horizontal, speed c_R)
+can be taken from Lamb; the *quantitative* test from Pekeris. I did not extract Lamb's own formulas, and a
+test must not rely on the extracted text of the scan.
 
 For Cavendish this means: **the voxel ground near the towers is moved by a superposition of analytic plane
 waves** (Rayleigh, P, SV; S12's microseism spectrum and S14's teleseismic trains), read by the displaced-body
@@ -677,7 +742,7 @@ kinematic Rayleigh path takes over.
 | `surface_jump` | vertical acceleration across the surface | jump `4πGρ ξ_z` between Eqs. 96 and 97, 12 figures (measured) | omit the surface mass sheet |
 | `rayleigh_shaft_cavity` | the same observer inside a vertical shaft cut out of the voxel ground | the uncut result plus the cavity correction O((ka)²) (Harms §3.3); a *new* result, no published number | — |
 | `hughes_thorne_beta` | the Rayleigh read's reduced transfer function, ν = 0.33 | β′ = 0.86, subsurface term alone 0.17, anisotropy ratio 2.2 (Hughes & Thorne Eqs. 2.6–2.7); measured 0.853, 0.178, 2.21 | drop the surface source: 0.17 instead of 0.86 |
-| `lamb_problem` | surface response to a point load | Pekeris 1955 [R]: closed forms for the vertical and horizontal surface displacement under a Heaviside point load, `w(t) = (1/r) f(τ)`, `τ = c_S t/r` (his Eqs. 45–48 and 66), singular at the Rayleigh arrival; Lamb 1904 (Phil. Trans. A 203) and Richards 1979 [A, not fetched] | only if a dynamic solver is built |
+| `lamb_problem` | surface response to a point load | Pekeris 1955 [R]: closed forms for the vertical and horizontal surface displacement under a Heaviside point load, `w(t) = (1/r) f(τ)`, `τ = c_S t/r` (his Eqs. 45–48 and 66), singular at the Rayleigh arrival; Lamb 1904 [R, pp. 1–3, 40–43]: qualitative reference (minor tremor from the P arrival, transverse-arrival feature, solitary Rayleigh main shock of constant shape and r^(−1/2) amplitude, vertical larger than horizontal); Richards 1979 [A, not fetched] | only if a dynamic solver is built |
 | S13's expansion rows | free bar, clamped bar, bimetal, gradient beam, sphere | S13 note §3.6 | as there |
 | `macneal_harder` (optional) | straight (L = 6, 0.2 × 0.1, E = 10⁷, ν = 0.3), curved and twisted cantilevers, unit tip load | MacNeal & Harder 1985 Table 3 [R]: straight beam in-plane shear 0.1081, out-of-plane shear 0.4321, twist 0.03208, extension 3.0×10⁻⁵; curved 0.08734 / 0.5022; twisted 0.005424 / 0.001754; a patch test for solids (Fig. 3, Table 7) | HEX20 fully integrated is the failing element on thin plates (0.02 of exact) |
 | `guldberg_circular_cantilever` (optional) | a voxelised *circular* cantilever, the staircase-boundary case | theory; free-end displacement within 1 % and averaged stress under 4 % as the diameter grows (Guldberg et al. 1998 [R]) | a coarse staircase (diameter 2 cells) |
@@ -731,11 +796,10 @@ measurement for S7-05b.
 
 ## 9. What I could not verify
 
-- **The 3-D incompatible-mode element itself** (9 modes per brick): Wilson et al. 1973 was not among the
-  fetched files, Taylor et al. 1976 and Simo & Rifai 1990 develop the 2-D quadrilateral, plates and the
-  axisymmetric case, and Simo & Armero 1992 (the 3-D enhanced-strain brick and its volumetric-locking remedies)
-  was never on the list. What I have for the brick is my own implementation passing the patch test and the
-  cantilever measurements, not a source. The near-incompressible numbers (§1.1) are mine.
+- **The 3-D incompatible-mode element**: now read in Simo & Armero 1992 (§3.4) and consistent with my
+  implementation; Wilson et al. 1973 itself is not fetched. The linear near-incompressible *bending-beam*
+  numbers (§1.1) are still mine: no fetched source gives one for the 3-D brick, and Simo & Armero's evidence
+  is finite-strain and qualitative.
 - The GPU timings are Dick et al.'s and Wu et al.'s, on 2010–11 Fermi hardware, and Kronbichler & Ljungkvist's
   on a P100 for *scalar* Poisson problems; nothing was timed on the 1660 SUPER (no builds, as instructed), and
   no source shows a *vector-valued elastic* matrix-free multigrid with local smoothing on a graded octree. That
@@ -798,10 +862,10 @@ first version of the note; the rest after the owner fetched them (25 Nov 2026).
 - Beker et al. 2012, [doi:10.1088/1742-6596/363/1/012004](https://doi.org/10.1088/1742-6596/363/1/012004): §4.
 - Harms et al. 2015, [doi:10.1093/gji/ggv090](https://doi.org/10.1093/gji/ggv090): abstract, §1–3.
 - Carlton & McCabe 2023, [arXiv:2308.10731](https://arxiv.org/abs/2308.10731): §II (Eqs. 10–13, Fig. 3). Carlton et al. 2024, [arXiv:2412.05379](https://arxiv.org/abs/2412.05379): abstract and keyword search only.
-- Komatitsch & Tromp 1999 (abstract, §6.1–6.2), Komatitsch & Martin 2007 (abstract), Virieux 1986 (Rayleigh-wave discussion), Bérenger 1994 (abstract), Komatitsch et al. 2009 and Michéa & Komatitsch 2010 (abstracts), Pekeris 1955 (§1, §6), Vinh & Ogden 2004 (§1–2, Eq. 1), Lamb 1903/4 (the three-page Proc. R. Soc. abstract only), Biot 1956 (§2).
+- Komatitsch & Tromp 1999 (abstract, §6.1–6.2), Komatitsch & Martin 2007 (abstract), Virieux 1986 (Rayleigh-wave discussion), Bérenger 1994 (abstract), Komatitsch et al. 2009 and Michéa & Komatitsch 2010 (abstracts), Pekeris 1955 (§1, §6), Vinh & Ogden 2004 (§1–2, Eq. 1), Lamb 1904 (the three-page Proc. R. Soc. abstract, and the full paper, pp. 1–3 and 40–43), Biot 1956 (§2).
 
 *Finite elements, multigrid, GPUs*
-- Taylor, Beresford & Wilson 1976; Ibrahimbegovic & Wilson 1991 (introduction); Simo & Rifai 1990 (summary, §1, §4 remarks, §6.1); Hughes 1980 (summary, introduction, start of the theory); Flanagan & Belytschko 1981 (summary, introduction); MacNeal & Harder 1985 (Tables 3, 6–13, Figs. 3–4); Guldberg et al. 1998 (abstract, results).
+- Simo & Armero 1992 (summary, §1, §3.4, §4.2.2, conclusions; [doi:10.1002/nme.1620330705](https://doi.org/10.1002/nme.1620330705), DOI from memory [U]: the file carries none); Kozar, Rukavina & Ibrahimbegović 2018, [doi:10.14256/JCE.2078.2017](https://doi.org/10.14256/JCE.2078.2017) (§2–§3, Tables 1–2); Taylor, Beresford & Wilson 1976; Ibrahimbegovic & Wilson 1991 (introduction); Simo & Rifai 1990 (summary, §1, §4 remarks, §6.1); Hughes 1980 (summary, introduction, start of the theory); Flanagan & Belytschko 1981 (summary, introduction); MacNeal & Harder 1985 (Tables 3, 6–13, Figs. 3–4); Guldberg et al. 1998 (abstract, results).
 - Dick, Georgii, Westermann 2011, [doi:10.1016/j.simpat.2010.11.005](https://doi.org/10.1016/j.simpat.2010.11.005) ([TUM PDF](https://www.cs.cit.tum.de/fileadmin/w00cfj/cg/Research/Publications/2011/Real-Time_Multigrid_Finite_Hexahedra_Method/SIMPAT11.pdf)): abstract, §1–3 (first pass), results.
 - Wu, Dick, Westermann 2016 (§5, §7, Figs. 7–8, 12, Table 1); Kronbichler & Kormann 2012 (abstract, §3.1, §5.1); Kronbichler & Ljungkvist 2019 (abstract, §1, §4.2); Ljungkvist 2017 (abstract, results); Adams et al. 2004 (abstract, §5); Arbenz et al. 2008 (abstract); Aage et al. 2017 (abstract, Methods); Knyazev 2001 (abstract, §5); Burstedde et al. 2011 (abstract); Parvizian et al. 2007 (§2.3–2.4); Schillinger & Ruess (abstract, §2.2); de Prenter et al. 2019 (abstract).
 - Müller & Gross 2004 ([PDF](https://matthias-research.github.io/pages/publications/GI2004.pdf)): Fig. 1, §1–3 (first pass). Georgii & Westermann 2008 (abstract, §1); Pentland & Williams 1989, James & Pai 2002, Barbič & James 2005 (abstracts); Macklin et al. 2016 (§1–4); Smith et al. 2018 (abstract, Fig. 1); MPM: Sulsky et al. 1993 (abstract), Stomakhin et al. 2013 (abstract), Hu et al. 2018 (§7, Fig. 17), Wolper et al. 2019 (abstract).
@@ -810,11 +874,9 @@ first version of the note; the rest after the owner fetched them (25 Nov 2026).
 ## Papers still unread, or read only in part
 
 Not fetched, so not read:
-- Wilson, Taylor, Doherty & Ghaboussi 1973, *Incompatible displacement models* (book chapter in *Numerical and Computer Methods in Structural Mechanics*, Academic Press; no DOI found)
+- Wilson, Taylor, Doherty & Ghaboussi 1973, *Incompatible displacement models* (book chapter in *Numerical and Computer Methods in Structural Mechanics*, Academic Press, pp. 43–57; [doi:10.1016/B978-0-12-253250-4.50008-7](https://doi.org/10.1016/B978-0-12-253250-4.50008-7) as given in Kozar et al.'s reference list)
 - [https://doi.org/10.1785/bssa0880020368](https://doi.org/10.1785/bssa0880020368) Komatitsch & Vilotte 1998, the spectral-element method (SPECFEM's origin)
 - [https://doi.org/10.1785/bssa0690040947](https://doi.org/10.1785/bssa0690040947) Richards 1979, Lamb's problem for a point source
-- [https://doi.org/10.1098/rsta.1904.0013](https://doi.org/10.1098/rsta.1904.0013) Lamb 1904, the full *Phil. Trans.* paper (DOI from memory [U]; the DOI on the first version's list, 10.1098/rspl.1903.0029, is the abstract that was fetched)
-- [https://doi.org/10.1002/nme.1620330705](https://doi.org/10.1002/nme.1620330705) Simo & Armero 1992, geometrically non-linear enhanced strain mixed methods and the method of incompatible modes (the 3-D brick; DOI from memory [U]; not on the original list)
 - Hassan & Nagy 1998 (cited by Harms for Eq. 39; not on the list)
 
 Fetched, opened only in part (the part is named in the Sources):
@@ -827,7 +889,7 @@ Fetched, opened only in part (the part is named in the Sources):
 
 ## Fetched files not opened, and why
 
-The fetched folder holds 82 PDFs, `fluids.zip` and a `__MACOSX` folder of resource forks.
+The first fetched folder holds 82 PDFs, `fluids.zip` and a `__MACOSX` folder of resource forks; a second folder of three PDFs (Simo & Armero, Lamb full, Kozar et al.) was read as described above.
 - **Not relevant to this note (they belong to the fluids and free-surface research):** `harlow1965`, `chorin1968`,
   `hirt1981`, `bell1989`, `ghia1982`, `hortmann1990`, `fusegi1991`, `devahldavis1983`, `gray1976`,
   `martin1952`, `prosperetti1981`, `botella1998`, `francois2006`, `popinet2003/2009/2015/2018`,
