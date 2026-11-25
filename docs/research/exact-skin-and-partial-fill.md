@@ -5,6 +5,34 @@ give") and for S5 (the bounded walk, instrument LOD, analytic bodies) and any la
 voxeliser. Method and numbers: [`exact-skin-and-partial-fill/`](exact-skin-and-partial-fill/)
 (`skin_bench.py`, `tables.py`, `results/*.json`, `results/tables.md`).
 
+## Changed after reading the primary sources (25 Nov 2026)
+
+The owner supplied the full texts of Okabe 1979, Tsoulis & Petrović 2001, Tsoulis 2012, Holstein &
+Ketteridge 1996 and Werner & Scheeres 1997 (read as PDFs, not stored in the repo; links in §1.1).
+- **The benchmark's face form is Werner & Scheeres' eqs. (10), (15), (16), split face by face.** Checked
+  term by term against the paper (§1.1); signs and the solid-angle formula (their eq. 27) agree. The
+  "could not check against the text" caveat is gone.
+- **Far-field rounding was mis-measured.** The self-test put a dyadic cube at the origin and the point
+  at integer coordinates, so most products were exact. At general positions the triple product
+  r₁·(r₂×r₃) of the solid angle loses ε(R/s)³, not ε(R/s)²: at R/s = 3000, 4×10⁻⁸ in U and 1×10⁻⁷ in g,
+  not 1×10⁻⁹ and 6×10⁻⁹. Writing the numerator as h_f·|(v₂−v₁)×(v₃−v₁)| restores ε(R/s)², which is
+  Holstein & Ketteridge's "line method" class. New measurement in §1.1, and a new rule for the kernel.
+- **Holstein & Ketteridge's error analysis is now quoted from the text** (orders of error in γ = s/R,
+  breakdown distances, their composite surface/line/vertex algorithm), not from the abstract.
+- **Singular cases restated from Tsoulis & Petrović.** Their correction terms belong to the
+  Petrović/Tsoulis line-integral form, where the *projection* of the point onto a face's plane falling
+  inside the face, on an edge or on a vertex is singular. That happens for some face at almost every
+  point. The solid-angle form used here does not need them; it has only three degenerate places (point
+  on a face, on an edge, at a vertex). U and g are continuous everywhere; the tensor jumps across faces
+  and is log-singular on edges.
+- **The ESA polyhedral-gravity-model is named as the external oracle** (Tsoulis 2012 formulation, its
+  1e-14 tolerance read from the source, GPL-3.0, so used as a tool to make fixtures, never linked).
+- **Okabe's prism special case and Tsoulis 2012's boundary-point test table** replace "(abstracts)" in
+  §6. Okabe's own log-cancellation fix (his eq. 45) is recorded.
+- **The precision floor in §3 is higher than stated** for the D = 10 m column: the frac_cen_q numbers
+  there are floor-dominated, as the note already suspected; the 1.5 m table and every recommendation
+  stand.
+
 ## Summary (one page)
 
 **What Cavendish does today.** A leaf stores `count`, how many of the `k³` sample points of its cell
@@ -57,9 +85,12 @@ m s⁻². It is taken at 1.5 m and 10 m from the body's centre, in three directi
    it to rounding, so the exact piece is a *near* kernel, like the prism in S3's kernel. The
    whole body as one polyhedron (option a) costs F × 55 ns per point. That is cheap for meshes of
    10²–10⁴ faces, and it is exact: it is **the oracle** for every voxelised body made from a mesh.
+   In f64 it is good to ~ε(R/s)² relative (10⁻¹⁰ at R/s = 1000) only if the solid angle's numerator
+   is formed from the face's own edge vectors (§1.1); the textbook triple product gives ε(R/s)³.
 
-**Recommendation** (§5): (1) make the polyhedral closed form the oracle for mesh-made and analytic
-polyhedral bodies now; (2) replace the sampled `count` by **exact piece moments**: the
+**Recommendation** (§5): (1) make the polyhedral closed form (Werner & Scheeres' form, with the
+robustness rules of §1.1) the oracle for mesh-made and analytic polyhedral bodies now, and check it
+once against ESA's independent implementation; (2) replace the sampled `count` by **exact piece moments**: the
 voxeliser clips each boundary cell exactly, and the tree's leaves and nodes hold the pieces' mass,
 centroid and second (and third) moments, so the walk's node multipoles are the true body's;
 (3) use the exact piece as a near-field leaf kernel only within a few cells of an arm, and for analytic
@@ -96,35 +127,74 @@ much as (b) and is harder to build. It is not pursued.
 
 For a uniform polyhedron of density ρ, the potential U = Gρ∫dV/r and attraction g = ∇U at a point are
 finite sums over faces and edges. Each edge carries a logarithm and each face a solid angle (an
-arctangent). The sources:
-- [Okabe 1979](https://doi.org/10.1190/1.1440973): closed forms for a homogeneous polyhedron by the
-  divergence theorem.
-- [Werner & Scheeres 1997](https://doi.org/10.1007/BF00053511): the edge-dyad and face-dyad form used
-  for asteroids, compared there with harmonic and mascon models.
-- [Tsoulis & Petrović 2001](https://doi.org/10.1190/1.1444944): the singular cases, where the point
-  projects onto a face or an edge.
-- [Tsoulis 2012](https://doi.org/10.1190/geo2010-0334.1): the full tensor by line integrals.
+arctangent). The sources, all read in full (PDFs supplied by the owner, not kept in the repo):
+- **Okabe, M. (1979).** "Analytical expressions for gravity anomalies due to homogeneous polyhedral
+  bodies and translations into magnetic anomalies." *Geophysics* 44(4), 730–741.
+  [doi:10.1190/1.1440973](https://doi.org/10.1190/1.1440973),
+  [SEG page](https://pubs.geoscienceworld.org/seg/geophysics/article-abstract/44/4/730/68303/Analytical-expressions-for-gravity-anomalies-due).
+  First and second derivatives by the divergence theorem applied twice, in a rotated frame per facet
+  and per edge (eqs. 15–36, 37–45); one arctangent per facet *vertex* (eq. 30); valid for internal
+  and external points, with "essential singularities" for points on a facet (p. 734, p. 736); the
+  rectangular prism as a special case (eqs. 46–56; eq. 48 "is identical to … Nagy (1966)", p. 737).
+  Note his frame has z downward and facet vertices numbered clockwise in the facet frame (p. 733).
+- **Werner, R. A. & Scheeres, D. J. (1997).** "Exterior gravitation of a polyhedron derived and
+  compared with harmonic and mascon gravitation representations of asteroid 4769 Castalia."
+  *Celestial Mechanics and Dynamical Astronomy* 65, 313–344 (received 1996, published 1997).
+  [doi:10.1007/BF00053511](https://doi.org/10.1007/BF00053511),
+  [ADS PDF](https://adsabs.harvard.edu/pdf/1997cemda..65..313w). The edge-dyad and face-dyad form,
+  one logarithm per edge and one arctangent per face (summary §2.6, p. 333–334).
+- **Tsoulis, D. & Petrović, S. (2001).** "On the singularities of the gravity field of a homogeneous
+  polyhedral body." *Geophysics* 66(2), 535–539.
+  [doi:10.1190/1.1444944](https://doi.org/10.1190/1.1444944),
+  [open copy](https://gfzpublic.gfz.de/pubman/faces/ViewItemFullPage.jsp?itemId=item_238635_1).
+- **Tsoulis, D. (2012).** "Analytical computation of the full gravity tensor of a homogeneous
+  arbitrarily shaped polyhedral source using line integrals." *Geophysics* 77(2), F1–F11.
+  [doi:10.1190/geo2010-0334.1](https://doi.org/10.1190/geo2010-0334.1),
+  [SEG page](https://pubs.geoscienceworld.org/seg/geophysics/article-abstract/77/2/F1/275123/Analytical-computation-of-the-full-gravity-tensor).
+  The Petrović line-integral form with the 2001 singular terms, and the FORTRAN program
+  `polyhedron.f` that ESA's library descends from.
+- **Holstein, H. & Ketteridge, B. (1996).** "Gravimetric analysis of uniform polyhedra."
+  *Geophysics* 61(2), 357–364. [doi:10.1190/1.1443964](https://doi.org/10.1190/1.1443964),
+  [SEG page](https://pubs.geoscienceworld.org/seg/geophysics/article-abstract/61/2/357/72863/Gravimetric-analysis-of-uniform-polyhedra).
+  The rounding-error analysis used below.
 - [D'Urso 2013](https://doi.org/10.1007/s00190-012-0592-1) and
-  [D'Urso 2014](https://doi.org/10.1007/s00190-013-0664-x): treatments of the singularities. I did
-  not read these; see §7.
+  [D'Urso 2014](https://doi.org/10.1007/s00190-013-0664-x): treatments of the singularities. Still not
+  read; see §7.
 
-The benchmark writes the Werner–Scheeres sums face by face, splitting each edge's dyad between its two
-faces, so a triangle soup with weights can be summed directly:
+**Werner & Scheeres' result** (r points from the field point to the body, Fig. 1, p. 316; U positive;
+g = ∇U points at the mass):
+
+```text
+U    = ½Gρ Σ_edges r_e·E_e·r_e L_e − ½Gρ Σ_faces r_f·F_f·r_f ω_f                   (10)
+∇U   = −Gρ Σ_edges E_e·r_e L_e   + Gρ Σ_faces F_f·r_f ω_f                          (15)
+∇∇U  =  Gρ Σ_edges E_e L_e       − Gρ Σ_faces F_f ω_f                              (16)
+∇²U  = −Gρ Σ_faces ω_f   (0 outside, −4πGρ inside)                                  (17)
+E_e = n_A n_e^A + n_B n_e^B (the two faces' normals times their in-plane edge normals), F_f = n_f n_f
+L_e = ln((a+b+ℓ)/(a+b−ℓ))                                                          (7)
+ω_f = 2 atan2(r₁·r₂×r₃, r₁r₂r₃ + r₁(r₂·r₃) + r₂(r₃·r₁) + r₃(r₁·r₂))                  (27)
+```
+
+Splitting each edge dyad between its two faces gives r_e·E_e·r_e L_e = Σ over the two faces of
+h_f (n_e^f·r_e) L_e, and r_f·F_f·r_f = h_f². So the benchmark's face-by-face form is exactly (10) and
+(15), and the face's tensor contribution is Gρ[n_f (Σ_e n_e^f L_e)ᵀ − n_f n_fᵀ ω_f], symmetric once
+summed over faces:
 
 ```text
 for each face f (unit outward normal n, any vertex offset r = v − p from the point p):
   h_f   = n·r
-  S_f   = Σ_edges e of f  (n_e·r_e) · L_e,   L_e = ln((a+b+ℓ)/(a+b−ℓ)) = log1p(2ℓ/(a+b−ℓ))
-  ω_f   = 2·atan2(r₁·(r₂×r₃), |r₁||r₂||r₃| + |r₁| r₂·r₃ + |r₂| r₃·r₁ + |r₃| r₁·r₂)   (Van Oosterom & Strackee)
+  S_f   = Σ_edges e of f  (n_e·r_e) · L_e,   L_e = log1p(2ℓ/(a+b−ℓ))
+  ω_f   = 2·atan2(h_f·|(v₂−v₁)×(v₃−v₁)|, r₁r₂r₃ + r₁ r₂·r₃ + r₂ r₃·r₁ + r₃ r₁·r₂)
   U    += ½ ρ h_f (S_f − h_f ω_f)
   g    += −ρ n (S_f − h_f ω_f)
 ```
 
 Here n_e is the edge's outward normal in the face's plane, a and b are the distances to the edge's
-ends, and ℓ is its length.
+ends, and ℓ is its length. The numerator h_f·|(v₂−v₁)×(v₃−v₁)| equals r₁·(r₂×r₃) for an anticlockwise
+triangle (W&S derive the same identity for the sign, eq. 26, p. 332) but is computed from the face's
+own edge vectors, which is what keeps far-field rounding at ε(R/s)² (below). `skin_bench.py` still uses
+the triple product; that does not change any result in §3 at 1.5 m (R/s ≲ 130 there).
 
-I could not check the face/edge decomposition against the Werner–Scheeres text (§7). It is checked
-numerically instead (`skin_bench.py selftest`):
+Checked numerically (`skin_bench.py selftest`):
 - **Against Nagy's prism.** A cube matches the prism to 1×10⁻¹⁵ relative near and 1×10⁻¹² at
   10 sides ([Nagy 1966](https://doi.org/10.1190/1.1439779); the repo's `kernel.rs` form).
 - **Against the cube's series.** It matches the monopole + l = 4 series to 8×10⁻¹² at 157 sides.
@@ -133,25 +203,88 @@ numerically instead (`skin_bench.py selftest`):
 - **Interior cubes + clipped pieces = the whole body:** to 2–8×10⁻¹⁵ in U and 1×10⁻¹⁴–4×10⁻¹⁴ in
   g, for all four bodies at h = 1/8 m. The volumes agree to 10⁻¹⁵.
 
-**Numerical issues.**
-- *Cancellation far away.* The face terms are of size R²·ω ~ (face area) while U ~ V/R, so the
-  closed form loses about (R/s)² in relative precision, s being the facet size. Measured: a cube of
-  side 1/64 m at 47 m (R/s = 3000) is good to 1.2×10⁻⁹ in U and 6×10⁻⁹ in g; at side 1/128 m, to
-  5×10⁻⁹ and 1.3×10⁻⁸. That is about ε(R/s)²/10. [Holstein & Ketteridge
-  1996](https://doi.org/10.1190/1.1443964) report the same limit, from the abstract only: rounding
-  dominates beyond some distance. They propose a hybrid numerical and analytical treatment for it.
-  For Cavendish this means the closed form belongs near and the moments far, the same rule as S3's
-  prism and series (`PRISM_WITHIN = 3`). In f32 on the GPU the closed form is unusable beyond a few
-  facet sizes. Float-float, or f64 on the CPU, is needed for any far use.
-- *Points near a face or an edge.* L_e diverges on an edge's line and ω_f jumps by 4π across a face.
-  The robust forms handle these cases ([Tsoulis & Petrović 2001](https://doi.org/10.1190/1.1444944)).
-  The [polyhedral-gravity-model](https://doi.org/10.21105/joss.06384) library uses a fixed tolerance,
-  1e-14, for its singular-case decisions, and plain double sums with no compensated summation. Arm
-  points sit in vacuum tubes, away from any body's face, so the singular cases matter only for the
-  oracle's own tests. They should still be handled, and tested on a point placed on a face and on an
-  edge.
-- *log1p.* Writing L_e = log1p(2ℓ/(a+b−ℓ)) keeps its digits when a + b ≫ ℓ (far). The naive ratio
-  loses them.
+**Numerical issues, from the sources and measured.**
+- *Cancellation far away: what Holstein & Ketteridge show.* With γ = s/R (body or facet size over
+  distance), the anomaly is O(sγ²), each face integral O(sγ), each edge term O(s), and each vertex
+  primitive O(sγ⁻¹) (p. 357, Table 2 p. 360). The sum is computed to ε times its largest term, so the
+  absolute error is O(sγᵏε) with κ = 1, 0, −1 for their surface, line and vertex methods, and the
+  relative error is O(γ^(κ−2)ε) for a component along the line of sight ("inclined track", Table 4)
+  and O(γ^(κ−3)ε) for a foreshortened one ("horizontal track", Table 3). Their measured breakdown in
+  f64 for the vertex method (the classic closed form, Okabe's included) is at γ = 10^−3.5 with an
+  error slope of exactly 4 (Table 5, p. 363; effective ε 10⁻¹⁴). Their remedy (p. 361, Fig. 3) is a
+  decision tree that falls back to numerical quadrature of the edge integrals (four-point
+  Gauss–Lobatto) and to a facet-area form (eqs. 20–23) as γ falls, which runs in f32 with errors that
+  shrink with distance.
+- *Where the Werner–Scheeres form sits.* Its edge terms (n_e·r_e)L_e are O(R)·O(ℓ/R) = O(s): the
+  line-method class, κ = 0, **provided** L_e = log1p(2ℓ/(a+b−ℓ)) (no subtraction of near-equal
+  numbers far away) and the solid angle's numerator is h_f·2A_f. Formed as r₁·(r₂×r₃) from vectors of
+  length R, that numerator carries an absolute error εR³ and the face term becomes vertex-class.
+  Measured on a 1/64 m cube with its centre at a non-dyadic point, points along a skew direction,
+  reference the monopole + l = 4 series (pure Python, f64,
+  [`exact-skin-and-partial-fill/farfield.py`](exact-skin-and-partial-fill/farfield.py)):
+
+  | R/s | triple product (as `skin_bench.py`): U, g | h_f·2A_f numerator: U, g | h_f·2A_f, naive ln ratio: U, g |
+  |---|---|---|---|
+  | 10² | 7×10⁻¹³, 2×10⁻¹¹ | 3×10⁻¹⁴, 2×10⁻¹² | 1×10⁻¹⁰, 2×10⁻¹⁰ |
+  | 10³ | 4×10⁻⁹, 9×10⁻⁹ | 1×10⁻¹⁰, 3×10⁻¹⁰ | 6×10⁻⁸, 1×10⁻⁷ |
+  | 3×10³ | 4×10⁻⁸, 1×10⁻⁷ | 2×10⁻⁹, 4×10⁻⁹ | 3×10⁻⁶, 7×10⁻⁶ |
+  | 10⁴ | 6×10⁻⁷, 2×10⁻⁵ | 1×10⁻⁸, 2×10⁻⁸ | 4×10⁻⁵, 8×10⁻⁵ |
+  | 10⁵ | 5×10⁻³, 1×10⁻² | 1×10⁻⁶, 4×10⁻⁶ | 3×10⁻², 1×10⁻¹ |
+
+  The middle column follows ε(R/s)² (Table 4's line method); the left one steepens to ε(R/s)³ and
+  worse. The earlier "ε(R/s)²/10" came from the self-test's dyadic cube at the origin and integer
+  field points, where most products are exact; the same script with that set-up reproduces it
+  (2×10⁻¹⁰ and 7×10⁻⁹ at R/s = 3000). For Cavendish this means the closed form belongs near and the
+  moments far, the same rule as S3's prism and series (`PRISM_WITHIN = 3`). In f32 (ε = 6×10⁻⁸) even
+  the line-class form is near 10⁻⁵ relative by R/s = 10, so on the GPU it is a near kernel only, and
+  any far use needs f64 or float-float (derived from the scaling, not measured in f32).
+- *Points near an edge.* L_e is infinite only on the edge segment itself (a + b = ℓ); on the edge's
+  extension a + b − ℓ = 2 min(a, b). Close to the segment, a + b − ℓ is a difference of near-equal
+  numbers. Holstein & Ketteridge replace r − |ℓ| by r₀²/(r + |ℓ|) (r₀ the distance to the edge's line,
+  p. 362, eqs. 27–28); Okabe makes the same move for negative ξ (eq. 45, p. 736). Applied here: when
+  the point projects onto the segment (ℓ₁ ≤ 0 ≤ ℓ₂ along the edge), a + b − ℓ = r₀²/(a − ℓ₁) + r₀²/(b +
+  ℓ₂) with r₀ = |r₁ × ê|. Measured on a 1/64 m edge at distance d from its middle: the direct form is
+  wrong by 5×10⁻¹² at d = 10⁻⁶ m, 3×10⁻⁶ at 10⁻⁸ m and divides by zero at 10⁻¹⁰ m; the r₀² form stays
+  below 6×10⁻¹¹ ([`exact-skin-and-partial-fill/nearedge.py`](exact-skin-and-partial-fill/nearedge.py)). In U and g the log is multiplied by (n_e·r_e) → 0, so
+  the product tends to 0; H&K omit the term once r₀/L is too small for r₀² to register (eq. 30).
+- *Points on a face, an edge or a vertex.* Tsoulis & Petrović (p. 539) prove that U and g are defined
+  and continuous everywhere, on the surface included; the second derivatives jump across a face (the
+  "Poisson jump", Laplacian −4πGρ inside, 0 outside) and are log-singular on edges. Their correction
+  terms (−2πh_p, −πh_p, −ϑh_p for the potential's surface integral, eqs. 24–25; −2π, −π, −ϑ times
+  cos(N_p, e_j)σ_p for the derivatives, eqs. 28–29) are needed in the Petrović/Tsoulis form, where the
+  per-edge arctangents AN_pq are singular whenever the point's *projection* onto a face's plane falls
+  inside the face, on an edge or on a vertex. Tsoulis 2012 stresses that for any point "there is
+  bound to exist at least one polyhedral face" whose projection falls inside (p. F7), so those terms
+  are routine there, not edge cases. The solid-angle form does not need them: atan2 of eq. (27) is
+  continuous wherever the point is off the face's plane, and Holstein & Ketteridge's form likewise
+  avoids "discriminat[ing] between projected observation points that lie inside, on, or outside a
+  target facet boundary" (abstract, p. 357; p. 359). What remains degenerate in the solid-angle form:
+  a point *in* a face's plane (ω_f = 0 outside the face, ±2π inside, but always multiplied by h_f = 0
+  in U and g; in the tensor it is the Poisson jump, so return the one-sided limit or flag it), on an
+  edge (above), or at a vertex (r_i = 0: drop that face's and edges' terms, all of which carry a
+  vanishing factor in U and g). Werner & Scheeres do not treat surface points at all ("We suspect the
+  violation is benign", p. 317).
+- *Tolerances in practice.* ESA's [polyhedral-gravity-model](https://github.com/esa/polyhedral-gravity-model)
+  makes its singular-case decisions with one absolute constant, `EPSILON_ZERO_OFFSET = 1e-14` in mesh
+  units (`src/polyhedralGravity/util/UtilityFloatArithmetic.h`, read via the GitHub API), and its
+  repository mentions no compensated summation. Tsoulis 2012 notes that for points on the
+  *extensions* of edges some mixed second derivatives come out "finite but not reliable" (p. F8).
+- Arm points sit in vacuum tubes, away from any body's face, so the singular cases matter only for the
+  oracle's own tests. They should still be handled, and tested on a point on a face, on an edge and
+  at a vertex, and on an edge's extension.
+
+**What Cavendish's S5 kernel should follow** (for an analytic polyhedral body read directly, and for
+exact pieces as near leaf kernels):
+1. Werner & Scheeres' face-by-face form above, f64, faces stored as (n_f, 2A_f, vertices) so the
+   solid angle's numerator is h_f·2A_f; L_e by log1p, with the r₀² form of a + b − ℓ when the point
+   projects onto the edge; degenerate cases as listed, each with a test.
+2. Use it only within R/s ≲ 10³ of the facet size (relative error ≲ 3×10⁻¹⁰); beyond, the body's or
+   piece's exact moments, as now. The switch distance is the same kind of rule as `PRISM_WITHIN`.
+3. The Laplacian −Gρ Σω_f (eq. 17) comes free: 0 outside, −4πGρ inside. Assert it as an
+   inside/outside check on every oracle point (a point inside a body is a bug in the scene).
+4. Do not adopt Holstein & Ketteridge's quadrature hybrid: its point is to stretch the closed form to
+   large R/s, and Cavendish already has exact moments there. Adopt their error analysis as the
+   reason for the switch distance.
 
 ## 2. Mass anti-aliasing: what the orders are, and why
 
@@ -250,9 +383,15 @@ Boundary cells at h = 1/64 m: 15,761 (aligned cube), 24,442 (cube), 21,163 (icos
 (plate), 19,196 (sphere).
 
 Reading the numbers:
-- **Precision floor.** The frac_cen_q errors at 10 m (about 10⁻¹¹ rad) are within a factor of
-  about 10 of the closed form's own rounding for pieces of 1/64 m at that range (§1.1). Their orders
-  are not to be trusted. Everything else is at least 100× above it.
+- **Precision floor (corrected after reading Holstein & Ketteridge).** Pieces of 1/64 m seen from
+  10 m are at R/s ≈ 600, where the benchmark's triple-product solid angle is good to only ~10⁻⁹
+  relative per piece (§1.1; the earlier, lower floor came from a dyadic self-test). The boundary
+  pieces carry roughly 0.1–0.2 rad of the 10 m signal, so the reference itself may be off by up to
+  ~10⁻¹⁰ rad if those errors add. The 10 m frac_cen_q row (about 10⁻¹¹ rad) is therefore below the
+  floor and means nothing beyond "small"; the 10 m frac_cen entries of 2–5×10⁻¹⁰ rad (sphere,
+  icosahedron) are within a few times of it. Everything else at 10 m is at least 30× above it, and
+  the 1.5 m table (R/s ≲ 130, rounding ≲ 10⁻¹¹ relative per piece) is unaffected. Rerunning
+  `skin_bench.py` with the h_f·2A_f numerator would settle the 10 m rows.
 - **Cube or point for a partial cell.** frac_cen and frac_pt agree to 3 digits: at 1.5 m and beyond
   it makes no difference whether a partial cell is drawn as a cube or as a point at its centroid.
 - **Renormalisation.** It helps 0/1 by 2–4× near; it does not change the order.
@@ -304,13 +443,26 @@ numbers are upper bounds:
 ## 5. Recommendation for Cavendish
 
 1. **Now: the polyhedral closed form as the oracle for mesh-made bodies** (in `oracle/`, f64,
-   singular cases handled). This is the validation case with a known answer that S3's voxelised
-   meshes lack today: a voxelised mesh's phase converges to the polyhedron's at the measured order.
-   - **Pass criteria:** the self-test's checks (prism, series, gradient, pieces sum to the body), and
-     a point on a face and on an edge (Tsoulis & Petrović's cases).
+   Werner & Scheeres' form with the rules at the end of §1.1). This is the validation case with a
+   known answer that S3's voxelised meshes lack today: a voxelised mesh's phase converges to the
+   polyhedron's at the measured order.
+   - **Pass criteria:** the self-test's checks (prism, series, gradient, pieces sum to the body);
+     points at general (non-dyadic) positions out to R/s = 10³ within 10⁻⁹ of the series; a point
+     on a face, on an edge, at a vertex and on an edge's extension, finite and continuous with
+     points 10⁻⁶ s away (Tsoulis & Petrović; Tsoulis 2012's test set); Σω_f = 0 outside, 4π
+     inside.
+   - **An independent implementation as a second oracle.** ESA's
+     [polyhedral-gravity-model](https://github.com/esa/polyhedral-gravity-model) (C++17 with Python
+     bindings, `pip install polyhedral-gravity`) implements Tsoulis 2012's line-integral form with
+     the singular terms, returns V, ∇V and the six tensor components with V positive and g = +∇V,
+     and checks or repairs face orientation. It is a different formulation from ours, so agreement
+     tests the algebra, not just the code. Its licence is GPL-3.0: use it in a script that writes
+     fixture files (numbers are not a derived work) and never link or vendor it; if fixtures from it
+     are committed, note the tool and version beside them. Pass criterion: agreement to 10⁻¹²
+     relative on U and g at R/s ≤ 10², for the four benchmark bodies and a non-convex mesh.
    - **For S5's analytic bodies:** a turned box, a prism or a convex hull can be read *directly* by
-     the closed form when F is small (≲ 10³ faces) and the point is within R/s ≲ 10³. Beyond that,
-     use its exact moments. The two should match where they overlap.
+     the closed form when F is small (≲ 10³ faces) and the point is within R/s ≲ 10³ of the facet
+     size. Beyond that, use its exact moments. The two should match where they overlap.
 2. **Next voxeliser revision: exact piece moments instead of sampled counts.**
    - **What it changes.** Clip each boundary cell against the shape. For convex shapes, the cell is
      cut by the shape's planes, as in the benchmark. For meshes, take the cell ∩ the signed tetrahedra
@@ -357,30 +509,49 @@ cells clipped again. That is a per-edit cost proportional to the cells edited.
 ## 6. Validation cases the literature uses
 
 - **Prism against polyhedron.** A rectangular prism has two independent closed forms, Nagy's and the
-  polyhedron's. Both [Okabe 1979](https://doi.org/10.1190/1.1440973) and [Tsoulis
-  2012](https://doi.org/10.1190/geo2010-0334.1) treat the prism as a special case (abstracts). Used
-  here; 10⁻¹⁵.
+  polyhedron's. [Okabe 1979](https://doi.org/10.1190/1.1440973) derives the prism from his general
+  form (eqs. 46–56) and notes that his U_z (eq. 48) is Nagy's; he also checks the second derivative
+  against a finite difference of the first (eq. 68) and the symmetry of a pyramid's anomaly (p. 739).
+  [Tsoulis 2012](https://doi.org/10.1190/geo2010-0334.1) tests `polyhedron.f` against Mader's (1951)
+  prism formulas (Appendix B) at 28 points in three groups: outside at any distance, *on* the
+  boundary (a vertex, two edges, a face), and on the extensions of edges and faces. Table 1 (p. F8)
+  shows agreement to 10⁻²⁰–10⁻²¹ m s⁻² on values of 10⁻⁶ (about 10⁻¹⁵ relative), and Laplace's
+  equation summing to zero outside. Used here (prism, 10⁻¹⁵); the on-boundary and extension points
+  are to be added (§5).
 - **Asteroid shape models against harmonics and mascons.** [Werner & Scheeres
-  1997](https://doi.org/10.1007/BF00053511) compare the polyhedron with harmonic and mascon
-  representations of Castalia. They find that harmonic and mascon expressions err badly near the body
-  (from the abstract, via snippets). The [polyhedral-gravity-model
-  paper](https://doi.org/10.21105/joss.06384) cites Wittick & Russell (2017): mascon models need very
-  many mascons to model the surface. I could not read Wittick & Russell.
+  1997](https://doi.org/10.1007/BF00053511), §3: Castalia as 3300 faces at 2.1 g/cm³. A degree-20
+  harmonic expansion diverges inside the circumscribing sphere, with potential errors above 100%
+  near the surface (Figs. 13–14). A 3300-mascon model on a 59 m grid has attraction errors of 1–10%
+  over most of the surface, above 10% in pockets, and 0.1–1% well away from the body; tripling the
+  mascons (41 m grid) still leaves appreciable errors (Figs. 16–17, pp. 339–341). Their reasoning
+  is this note's first-order argument: the mascon error is proportional to the mascon size, so a
+  tenfold gain needs a thousandfold more mascons (p. 339). A single cube against a sphere of the
+  same mass errs by up to ~50% at the face centres and is below 0.1% only beyond 2.5 sides (Fig.
+  15). The [polyhedral-gravity-model paper](https://doi.org/10.21105/joss.06384) cites Wittick &
+  Russell (2017) to the same effect; I could not read Wittick & Russell.
 - **Singular points.** A point on a face, on an edge and at a vertex, against the limit ([Tsoulis &
-  Petrović 2001](https://doi.org/10.1190/1.1444944)).
-- **Far-field rounding.** Error against distance over size ([Holstein & Ketteridge
-  1996](https://doi.org/10.1190/1.1443964)). Measured here as about ε(R/s)²/10.
+  Petrović 2001](https://doi.org/10.1190/1.1444944), Fig. 2 and eqs. 24–29), and Tsoulis 2012's
+  boundary and edge-extension points.
+- **Far-field rounding.** Anomaly relative to an equivalent point mass against log(1/γ) for each
+  method, with the breakdown distance and error slope compared to theory ([Holstein & Ketteridge
+  1996](https://doi.org/10.1190/1.1443964), Figs. 4–6, Table 5). Measured here (§1.1): ε(R/s)² for
+  the line-class form, ε(R/s)³ and worse with the triple-product solid angle.
 - **Exact voxelisation.** Pieces sum to the whole: mass, momentum and moments conserved to rounding
   ([Powell & Abel 2015](https://doi.org/10.1016/j.jcp.2015.05.022)). Used here; 10⁻¹⁵.
 
 ## 7. What I could not verify
 
-- **Werner & Scheeres.** Springer blocked access to the text. The face and edge form above is
-  verified numerically (§1.1), not against the paper's equations. The year is 1997 in Crossref and
-  1996 on Springer's page (vol. 65, 313–344).
-- **Abstracts only.** Okabe 1979, Tsoulis & Petrović 2001, Tsoulis 2012 and Holstein & Ketteridge
-  1996 were read in abstract only (SEG blocks automated fetches). There is no published
-  digits-against-distance figure; the ε(R/s)²/10 is my measurement.
+- **Now read in full (25 Nov 2026):** Okabe 1979, Werner & Scheeres 1997 (published 1997, vol. 65,
+  313–344; the 1996 on Springer's page is the receipt year), Tsoulis & Petrović 2001, Tsoulis 2012,
+  Holstein & Ketteridge 1996. The earlier caveats about them are withdrawn; Holstein &
+  Ketteridge's Figs. 4–5 are the digits-against-distance figure the note said did not exist.
+- **Not run: ESA's library against ours.** The cross-check of §5 is specified, not done (it needs
+  `pip install polyhedral-gravity` and a fixture script). Its internals were read only as far as the
+  tolerance constant; how it treats edge-extension points was not checked.
+- **Not rerun: `skin_bench.py` with the h_f·2A_f numerator.** The far-field table in §1.1 comes from
+  a separate pure-Python script on single cubes; the 10 m rows of §3 have not been regenerated.
+- **Not measured: the f32 error of the closed form.** The "near 10⁻⁵ at R/s = 10" is ε(R/s)² with
+  f32's ε.
 - **D'Urso 2013 and 2014.** Bibliographic details only; what they claim was not read.
 - **Dyadechko & Shashkov 2008.** The moment-of-fluid order claim is from memory, not checked.
 - **Wittick & Russell 2017; Park, Werner & Bhaskaran 2010.** Not accessible; their convergence
@@ -404,6 +575,8 @@ cells clipped again. That is a per-edit cost proportional to the cells edited.
 - Quantisation: how many bits of fill and centroid keep the error under PHASE_TOLERANCE = 10⁻¹⁰
   rad (`forward.rs`) for a 10⁹-cell body?
 - On the GPU, should the near exact-piece kernel be f64, or float-float, given the (R/s)²
-  cancellation?
+  cancellation? Holstein & Ketteridge's surface method (facet area over a constant distance plus a
+  small quadrature remainder, eqs. 20–23) runs in f32 with errors that fall with distance; is it a
+  better GPU near kernel than float-float?
 - For terrain from height fields: exact pieces of a bilinear surface, or of two triangles per
   height-field quad. The latter is polyhedral, so this method applies directly.
