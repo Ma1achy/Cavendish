@@ -270,16 +270,29 @@ mod tests {
 
     #[test]
     fn a_job_through_the_wire_is_the_same_bits() {
+        // A point, an oscillator and a floor (the dev scenes with each kind). The voxel sphere is
+        // the same code path at 8 to 9 s, so it runs in the web tier
+        // (`a_voxel_job_through_the_wire_is_the_same_bits`); the point alone catches a broken
+        // encoding in milliseconds (S17's second review, item 1).
+        same_bits(&[cav_sim::dev::point(), cav_sim::dev::comb(), cav_sim::dev::pass()]);
+    }
+
+    /// The voxel sphere through the wire: run by `cargo xtask web`, not `quick`.
+    #[test]
+    #[ignore = "8 to 9 s: run by `cargo xtask web`"]
+    fn a_voxel_job_through_the_wire_is_the_same_bits() {
+        same_bits(&[cav_sim::dev::sphere()]);
+    }
+
+    /// Every source of every scene, and the reading at 1 s, sent through the wire and read back:
+    /// the same bits as made directly.
+    fn same_bits(specs: &[SceneSpec]) {
         let never = || false;
-        // A point, a voxel sphere, an oscillator and a floor (the dev scenes with each kind).
-        for spec in
-            [cav_sim::dev::point(), cav_sim::dev::sphere(), cav_sim::dev::comb(), cav_sim::dev::pass()]
-        {
-            let shots = read::shots(&spec).unwrap();
-            for source in read::sources(&spec) {
-                let direct = read::contribution(&spec, source, &shots, &never).unwrap();
-                let Answer::Contribution(sent) =
-                    answer(&serve(&contribution_request(&spec, source))).unwrap()
+        for spec in specs {
+            let shots = read::shots(spec).unwrap();
+            for source in read::sources(spec) {
+                let direct = read::contribution(spec, source, &shots, &never).unwrap();
+                let Answer::Contribution(sent) = answer(&serve(&contribution_request(spec, source))).unwrap()
                 else {
                     panic!("{}: {source:?}: no contribution came back", spec.name)
                 };
@@ -294,8 +307,8 @@ mod tests {
                 assert_eq!(direct.estimate.to_bits(), sent.estimate.to_bits());
                 assert_eq!((direct.settled, &direct.warnings), (sent.settled, &sent.warnings));
             }
-            let direct = read::reading(&spec, 1.0, &never).unwrap();
-            let Answer::Reading(sent) = answer(&serve(&reading_request(&spec, 1.0))).unwrap() else {
+            let direct = read::reading(spec, 1.0, &never).unwrap();
+            let Answer::Reading(sent) = answer(&serve(&reading_request(spec, 1.0))).unwrap() else {
                 panic!("{}: no reading came back", spec.name)
             };
             let phases = |r: &ReadingAt| -> Vec<u64> {

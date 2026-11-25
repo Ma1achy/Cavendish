@@ -12,8 +12,11 @@ use std::time::Instant;
 
 use crate::{cargo, step};
 
-/// The warm budget for `quick`, seconds (S0's gate; REBUILD §8 allows 30 s in later slices).
-const QUICK_BUDGET_S: f64 = 10.0;
+/// The warm budget for `quick`, seconds. S0's gate was 10 s; REBUILD §8 and CLAUDE.md allow 30 s.
+/// Set at the start of S4 from the measured 13.8 to 13.9 s warm (three runs, with the voxel
+/// sphere's wire test moved to `cargo xtask web`), with room for S4's tests: 20 s
+/// (S17's second review, item 1; `docs/slices/S4.md` §6).
+const QUICK_BUDGET_S: f64 = 20.0;
 
 /// Tests that need a GPU carry `gpu_` in their names; everything else is the quick tier.
 const QUICK_FILTER: &str = "not test(gpu_)";
