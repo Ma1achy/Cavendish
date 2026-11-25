@@ -526,6 +526,10 @@ impl Shell {
             ctx.request_repaint_after(std::time::Duration::from_millis(30));
         }
         crate::panels::draw(self, ui, surface);
+        // The world still streaming, or its meshes still being made: another frame soon.
+        if self.engine.streaming().pending() > 0 || surface.busy() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+        }
     }
 
     /// A drag in a pane: the primary button orbits, the secondary or middle button pans.

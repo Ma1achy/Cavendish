@@ -55,7 +55,9 @@ impl Headless {
     /// When there is no adapter or no device.
     pub fn new() -> Result<Self, String> {
         let painter = Painter::new(context())?;
-        let panes = GpuPanes::new(painter.gpu.clone(), Arc::clone(&painter.egui));
+        let mut panes = GpuPanes::new(painter.gpu.clone(), Arc::clone(&painter.egui));
+        // A headless picture is taken once: the world's meshes are made whole in it.
+        panes.complete = true;
         Ok(Self { painter, panes })
     }
 

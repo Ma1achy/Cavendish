@@ -394,6 +394,16 @@ impl World {
         brick_of_pieces(&self.pieces(), &self.grid, level, key)
     }
 
+    /// Whether any piece may have matter in `boxed`: some piece's `cover` of it is not `Outside`
+    /// (conservative: `true` may be wrong, `false` never is). What streaming asks before it queues
+    /// a chunk or a brick, so that the air above the ground is never made.
+    #[must_use]
+    pub fn reaches(&self, boxed: &Aabb) -> bool {
+        self.solids
+            .iter()
+            .any(|(s, _)| s.bounds().overlaps(boxed) && s.cover(boxed) != cav_core::voxel::Cover::Outside)
+    }
+
     /// The box holding every piece, or `None` for a world with none.
     #[must_use]
     pub fn extent(&self) -> Option<Aabb> {
@@ -764,6 +774,8 @@ pub fn read_tower(
 pub fn work_share(spec: &crate::SceneSpec) -> u64 {
     crate::read::kernel_share(spec).min(MAX_KERNEL_WORK)
 }
+
+pub mod clipmap;
 
 #[cfg(test)]
 mod tests;

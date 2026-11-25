@@ -103,4 +103,36 @@ impl Gpu {
         }
         Ok(rgba)
     }
+
+    /// Copies the whole of `buffer` back to the CPU, waiting for the GPU: for tests of kernels
+    /// against their CPU twins, never for a frame. The buffer must have been created with
+    /// `COPY_SRC`.
+    ///
+    /// # Errors
+    /// When the device is lost or the copy cannot be mapped.
+    pub fn read_buffer(&self, buffer: &wgpu::Buffer) -> Result<Vec<u8>, String> {
+        let copy = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("read-back"),
+            size: buffer.size(),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        encoder.copy_buffer_to_buffer(buffer, 0, &copy, 0, buffer.size());
+        self.queue.submit([encoder.finish()]);
+        let slice = copy.slice(..);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map_err(|e| format!("waiting for the GPU: {e}"))?;
+        receiver
+            .recv()
+            .map_err(|e| format!("the read-back never completed: {e}"))?
+            .map_err(|e| format!("mapping the read-back buffer: {e}"))?;
+        let data = slice.get_mapped_range().map_err(|e| format!("reading the mapped buffer: {e}"))?;
+        Ok(data.to_vec())
+    }
 }

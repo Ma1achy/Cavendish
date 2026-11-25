@@ -277,6 +277,52 @@ impl Chunk {
     }
 }
 
+/// What the picture needs of a chunk: its leaves and palette, without the tree's nodes and
+/// moments (which weigh twenty times as much and only the read needs). What streaming keeps
+/// resident and the region files hold.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChunkCells {
+    /// Where it is.
+    pub key: ChunkKey,
+    /// Its leaves, in Morton order, materials indexing `palette`.
+    pub leaves: Vec<Leaf>,
+    /// The world materials it holds, ascending.
+    pub palette: Vec<u8>,
+}
+
+impl ChunkCells {
+    /// A chunk's leaves and palette.
+    #[must_use]
+    pub fn of(chunk: &Chunk) -> Self {
+        Self { key: chunk.key, leaves: chunk.tree.leaves.clone(), palette: chunk.palette.clone() }
+    }
+
+    /// Every finest cell's world material plus one (0 where empty), x fastest ([`cell_index`]).
+    #[must_use]
+    pub fn materials(&self) -> Vec<u8> {
+        let mut out = vec![0u8; CHUNK_CELLS];
+        for leaf in &self.leaves {
+            let [cx, cy, cz] = decode(leaf.key);
+            let side = 1u32 << leaf.level;
+            let m = self.palette[usize::from(leaf.material)].saturating_add(1);
+            for z in cz..cz + side {
+                for y in cy..cy + side {
+                    for x in cx..cx + side {
+                        out[cell_index([x, y, z])] = m;
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// The bytes it holds.
+    #[must_use]
+    pub fn bytes(&self) -> usize {
+        self.leaves.len() * size_of::<Leaf>() + self.palette.len() + size_of::<Self>()
+    }
+}
+
 /// The index of chunk cell `[x, y, z]` in an expanded chunk: x fastest, then y, then z.
 #[must_use]
 pub const fn cell_index(cell: [u32; 3]) -> usize {
@@ -558,10 +604,13 @@ pub const fn sub_index(cell: [u32; 3]) -> usize {
     ((cell[0] / SUB_SIDE) + 4 * (cell[1] / SUB_SIDE) + 16 * (cell[2] / SUB_SIDE)) as usize
 }
 
-/// Brick `key` of level `level` straight from the pieces: a cell is occupied when some piece's
-/// `cover` of the cell's box is not `Outside` (conservative: it holds every finer brick's cells
-/// and may add some at a surface), its material the first such piece's. For level 1 and up; level
-/// 0 is [`Brick::of_chunk`]. `None` when empty.
+/// Brick `key` of level `level` straight from the pieces, top-down as a chunk is made: a block
+/// no piece reaches is skipped, a block the first piece that reaches it covers wholly is filled
+/// with its material, a mixed block is split; a cell is occupied when some piece's `cover` of it
+/// (and of every block above it) is not `Outside`, its material the first such piece's. So it is
+/// conservative (it holds every finer brick's cells, and may add some at a surface), and its work
+/// goes as the surface, not the volume. For level 1 and up; level 0 is [`Brick::of_chunk`].
+/// `None` when empty.
 #[must_use]
 pub fn brick_of_pieces(pieces: &[Piece<'_>], grid: &WorldGrid, level: u8, key: ChunkKey) -> Option<Brick> {
     let boxed = grid.brick_box(level, key);
@@ -570,39 +619,63 @@ pub fn brick_of_pieces(pieces: &[Piece<'_>], grid: &WorldGrid, level: u8, key: C
         return None;
     }
     let cell = boxed.size().x / f64::from(BRICK_SIDE);
-    let cell_box = |c: [u32; 3], side: u32| {
-        let lo = boxed.lo + Vec3::new(f64::from(c[0]), f64::from(c[1]), f64::from(c[2])) * cell;
-        let s = f64::from(side) * cell;
-        Aabb::new(lo, lo + Vec3::new(s, s, s))
-    };
     let mut brick = Brick::empty(level, key);
     let mut tally = vec![[0u32; MAX_MATERIALS + 1]; 64];
-    let mut active: Vec<Piece<'_>> = Vec::with_capacity(near.len());
-    for s in 0..64u32 {
-        let corner = [(s % 4) * SUB_SIDE, (s / 4 % 4) * SUB_SIDE, (s / 16) * SUB_SIDE];
-        let sub = cell_box(corner, SUB_SIDE);
-        active.clear();
-        active.extend(near.iter().copied().filter(|p| p.solid.cover(&sub) != Cover::Outside));
-        if active.is_empty() {
-            continue;
-        }
-        for z in corner[2]..corner[2] + SUB_SIDE {
-            for y in corner[1]..corner[1] + SUB_SIDE {
-                for x in corner[0]..corner[0] + SUB_SIDE {
-                    let b = cell_box([x, y, z], 1);
-                    if let Some(p) = active.iter().find(|p| p.solid.cover(&b) != Cover::Outside) {
-                        brick.set([x, y, z]);
-                        tally[s as usize][usize::from(p.material)] += 1;
-                    }
-                }
-            }
-        }
-    }
+    fill(&near, boxed.lo, cell, [0; 3], BRICK_SIDE, &mut brick, &mut tally);
     if brick.mask == 0 {
         return None;
     }
     brick.take_materials(&tally);
     Some(brick)
+}
+
+/// Fills the block of `side` cells at `corner` of a brick whose first cell's corner is `lo` and
+/// whose cells are `cell` metres, from the pieces that may reach it (in their order).
+fn fill(
+    pieces: &[Piece<'_>],
+    lo: Vec3,
+    cell: f64,
+    corner: [u32; 3],
+    side: u32,
+    brick: &mut Brick,
+    tally: &mut [[u32; MAX_MATERIALS + 1]],
+) {
+    let at = lo + Vec3::new(f64::from(corner[0]), f64::from(corner[1]), f64::from(corner[2])) * cell;
+    let s = f64::from(side) * cell;
+    let block = Aabb::new(at, at + Vec3::new(s, s, s));
+    let mut active: Vec<Piece<'_>> = Vec::with_capacity(pieces.len());
+    let mut whole = None;
+    for piece in pieces {
+        match piece.solid.cover(&block) {
+            Cover::Outside => {}
+            Cover::Inside if active.is_empty() => {
+                whole = Some(piece.material);
+                break;
+            }
+            _ => active.push(*piece),
+        }
+    }
+    let material = match (whole, active.first()) {
+        (Some(m), _) => m,
+        (None, Some(first)) if side == 1 => first.material,
+        (None, Some(_)) => {
+            let half = side / 2;
+            for octant in 0..8u32 {
+                let c = [0, 1, 2].map(|a| corner[a] + if octant >> a & 1 == 1 { half } else { 0 });
+                fill(&active, lo, cell, c, half, brick, tally);
+            }
+            return;
+        }
+        (None, None) => return,
+    };
+    for z in corner[2]..corner[2] + side {
+        for y in corner[1]..corner[1] + side {
+            for x in corner[0]..corner[0] + side {
+                brick.set([x, y, z]);
+                tally[sub_index([x, y, z])][usize::from(material)] += 1;
+            }
+        }
+    }
 }
 
 /// Rolling terrain over a rectangle: matter from `bottom` up to a surface `level + relief·f(x, y)`

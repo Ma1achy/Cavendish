@@ -11,6 +11,8 @@ use cav_render::Renderer;
 /// scenes' signals take well under a second; a picture drawn before the signal is whole says
 /// "computing the signal" (or "stale" in its title) rather than showing nothing.
 const PLOT_PATIENCE: std::time::Duration = std::time::Duration::from_secs(10);
+/// How long a picture of a scene waits for its world's chunks and bricks to be made.
+const WORLD_PATIENCE: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// One engine and, once something has been drawn, its device and pipelines.
 pub struct Session {
@@ -79,6 +81,8 @@ impl Session {
             }
             return self.plots.as_mut().expect("just created").plot_png(&self.engine, pane, size);
         }
+        // The world's chunks and bricks this pane and the towers want, made before the picture.
+        self.engine.settle_world(WORLD_PATIENCE);
         self.gpu()?;
         let (gpu, renderer) = self.gpu.as_ref().expect("just created");
         let size = [size[0].max(1), size[1].max(1)];

@@ -35,6 +35,7 @@ pub mod history;
 pub mod journal;
 pub mod log;
 pub mod voxels;
+pub mod world;
 
 pub use cav_sim::{PaneContent, Target};
 pub use command::{

@@ -1,0 +1,258 @@
+//! The clipmap: which bricks of the world a camera draws, at which level of detail, and the
+//! resident part of the world a renderer is handed ([`WorldFrame`]).
+//!
+//! **Levels.** Level `k` is made of bricks of 32 cells of `2^k · pitch` (level 0 is the world's
+//! chunks). Around a camera, level `k` covers a cube of `2n` bricks a side, `Box_k`; the boxes nest
+//! exactly, because each is centred on a snapped point: `c_0 = 2⌊cam/2⌋` (in level-0 bricks) and
+//! `c_k = 2⌊c_{k−1}/4⌋`. Then `Box_{k−1}`'s footprint in level-`k` bricks,
+//! `[c_{k−1}/2 − n/2, c_{k−1}/2 + n/2)`, is whole bricks and lies inside `Box_k`, and level `k`
+//! draws `Box_k` without it ([`Level::contains`]). So every point within the coarsest box is drawn
+//! by exactly one level (`clipmap_levels_nest_and_cover_once`). Level 0 is drawn as meshes, the
+//! others ray-marched.
+//!
+//! **How many.** `n` comes from the screen-space error (`plan/REBUILD.md` §5): a cell at the inner
+//! edge of its level, about `16 n` cells away, subtends `1/(16 n θ)` pixels for a pixel of `θ`
+//! radians; so `n = ⌈1/(16 θ ε)⌉` for `ε` pixels, rounded up to even and held to `2..=MAX_RING`.
+//! `θ` is the nominal pixel ([`NOMINAL_PIXEL`]: the field of view over 1080 rows), the same for the
+//! engine that streams and the renderer that draws, so the two agree on what is wanted. Levels are
+//! added until the coarsest box holds the world, at most [`MAX_LEVELS`]: S14 extends the same
+//! rings outwards to the planet.
+
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use cav_core::Vec3;
+use cav_core::voxel::Aabb;
+use cav_core::voxel::world::{Brick, ChunkCells, ChunkKey, WorldGrid};
+
+/// The most levels a clipmap has: level 11's bricks are 2048 chunks across.
+pub const MAX_LEVELS: u8 = 12;
+/// The widest a level may be, in bricks either side of its centre.
+pub const MAX_RING: i64 = 16;
+/// The nominal pixel, radians: the vertical field of view over 1080 rows.
+pub const NOMINAL_PIXEL: f64 = crate::FOV_Y_DEGREES * std::f64::consts::PI / 180.0 / 1080.0;
+
+/// The half-width `n` of every level, in bricks, for a screen-space error of `error_px` pixels.
+#[must_use]
+pub fn ring(error_px: f64) -> i64 {
+    let n = (1.0 / (16.0 * NOMINAL_PIXEL * error_px.max(1e-3))).ceil();
+    let n = n.clamp(2.0, MAX_RING as f64) as i64;
+    n + n % 2
+}
+
+/// One level of a clipmap around a camera.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Level {
+    /// Its level: bricks of `2^level` chunks.
+    pub level: u8,
+    /// Its box, in its own bricks: `lo` inclusive, `hi` exclusive.
+    pub lo: [i64; 3],
+    /// See `lo`.
+    pub hi: [i64; 3],
+    /// The next finer level's box in this level's bricks, which this level does not draw; none at
+    /// level 0.
+    pub hole: Option<([i64; 3], [i64; 3])>,
+}
+
+impl Level {
+    /// Whether this level draws brick `key` (of its own level).
+    #[must_use]
+    pub fn contains(&self, key: ChunkKey) -> bool {
+        let k = [i64::from(key.x), i64::from(key.y), i64::from(key.z)];
+        let inside = |lo: [i64; 3], hi: [i64; 3]| (0..3).all(|a| k[a] >= lo[a] && k[a] < hi[a]);
+        inside(self.lo, self.hi) && !self.hole.is_some_and(|(lo, hi)| inside(lo, hi))
+    }
+
+    /// The keys of `range` (inclusive, as [`WorldGrid::bricks_of`] gives) that this level draws.
+    pub fn keys(&self, range: (ChunkKey, ChunkKey)) -> impl Iterator<Item = ChunkKey> + '_ {
+        let (a, b) = range;
+        let lo = [self.lo[0].max(a.x.into()), self.lo[1].max(a.y.into()), self.lo[2].max(a.z.into())];
+        let hi = [
+            self.hi[0].min(i64::from(b.x) + 1),
+            self.hi[1].min(i64::from(b.y) + 1),
+            self.hi[2].min(i64::from(b.z) + 1),
+        ];
+        (lo[2]..hi[2]).flat_map(move |z| {
+            (lo[1]..hi[1]).flat_map(move |y| {
+                (lo[0]..hi[0])
+                    .map(move |x| ChunkKey::new(x as i32, y as i32, z as i32))
+                    .filter(move |key| self.contains(*key))
+            })
+        })
+    }
+}
+
+/// Where a view's camera is, for its clipmap: the eye in perspective, the target in an
+/// orthographic view (whose scale does not change with depth). Metres, the world's frame. The
+/// engine streams around it and the renderer draws around it: the same point for both.
+#[must_use]
+pub fn lod_centre(view: &crate::ViewSpec) -> Vec3 {
+    let target = Vec3::from_array(view.target);
+    match view.projection {
+        crate::Projection::Perspective => target + Vec3::from_array(view.basis().0) * view.distance,
+        crate::Projection::Orthographic => target,
+    }
+}
+
+/// The levels around `centre` (metres, the world's frame), `count` of them, each `n` bricks either
+/// side (`n` even, from [`ring`]).
+#[must_use]
+pub fn levels(grid: &WorldGrid, centre: Vec3, n: i64, count: u8) -> Vec<Level> {
+    let side = grid.chunk_side();
+    let at = |v: f64, o: f64| ((v - o) / side).floor().clamp(-1e15, 1e15) as i64;
+    let cam = [at(centre.x, grid.origin.x), at(centre.y, grid.origin.y), at(centre.z, grid.origin.z)];
+    let mut c = cam.map(|v| 2 * v.div_euclid(2));
+    let mut out = Vec::with_capacity(usize::from(count));
+    for level in 0..count.min(MAX_LEVELS) {
+        let hole = (level > 0).then(|| {
+            let previous = out.last().map_or(c, |l: &Level| l.lo.map(|v| v + n)).map(|v| v / 2);
+            (previous.map(|v| v - n / 2), previous.map(|v| v + n / 2))
+        });
+        if level > 0 {
+            c = c.map(|v| 2 * v.div_euclid(4));
+        }
+        out.push(Level { level, lo: c.map(|v| v - n), hi: c.map(|v| v + n), hole });
+    }
+    out
+}
+
+/// How many levels reach from `centre` over the whole of `extent`, at least 1, at most
+/// [`MAX_LEVELS`].
+#[must_use]
+pub fn level_count(grid: &WorldGrid, extent: &Aabb, centre: Vec3, n: i64) -> u8 {
+    for count in 1..=MAX_LEVELS {
+        let last = levels(grid, centre, n, count)[usize::from(count - 1)];
+        let (lo, hi) = grid.bricks_of(last.level, extent);
+        let covers = [lo.x, lo.y, lo.z].iter().zip(last.lo).all(|(a, b)| i64::from(*a) >= b)
+            && [hi.x, hi.y, hi.z].iter().zip(last.hi).all(|(a, b)| i64::from(*a) < b);
+        if covers {
+            return count;
+        }
+    }
+    MAX_LEVELS
+}
+
+/// What a renderer is handed of the world: the resident chunks and bricks with matter, and what
+/// it needs to draw them. Made and kept by the engine's streaming; the renderer draws what of it
+/// its camera's clipmap wants and holds its own GPU copies keyed by `(level, key)`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct WorldFrame {
+    /// The world's grid.
+    pub grid: Option<WorldGrid>,
+    /// Each material's colour, sRGB, by world index.
+    pub colours: Vec<[u8; 3]>,
+    /// The half-width of every level, in bricks ([`ring`]).
+    pub ring: i64,
+    /// The levels a camera uses: enough to reach over the world from anywhere in it.
+    pub levels: u8,
+    /// The world's box, for drawing it and for streaming.
+    pub extent: Option<Aabb>,
+    /// Resident level-0 chunks with matter.
+    pub chunks: BTreeMap<ChunkKey, Arc<ChunkCells>>,
+    /// Resident bricks of levels 1 and up with matter, by `(level, key)`.
+    pub bricks: BTreeMap<(u8, ChunkKey), Arc<Brick>>,
+    /// The world's hash ([`super::WorldSpec::hash`]): a renderer's copies of another world are stale.
+    pub world: u64,
+    /// How many chunks and bricks are still to be made for what the cameras want.
+    pub pending: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unit(seed: u64, n: u64) -> f64 {
+        let mut z = seed.wrapping_add(n.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        ((z ^ (z >> 31)) >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    /// How many of `levels` draw the level-0 brick `cell` (each level asked about the brick of its
+    /// own level that holds it).
+    fn drawn_by(levels: &[Level], cell: [i64; 3]) -> usize {
+        levels
+            .iter()
+            .filter(|l| {
+                let k = cell.map(|v| v.div_euclid(1 << l.level));
+                l.contains(ChunkKey::new(k[0] as i32, k[1] as i32, k[2] as i32))
+            })
+            .count()
+    }
+
+    #[test]
+    fn clipmap_levels_nest_and_cover_once() {
+        let grid = WorldGrid { origin: Vec3::new(3.0, -7.0, 0.5), pitch: 0.05, supersample: 2 };
+        let side = grid.chunk_side();
+        for n in [2, 4, 8, 16] {
+            for i in 0..250u64 {
+                let centre = Vec3::new(
+                    2000.0 * (unit(i, 0) - 0.5),
+                    2000.0 * (unit(i, 1) - 0.5),
+                    100.0 * (unit(i, 2) - 0.5),
+                );
+                let levels = levels(&grid, centre, n, 6);
+                let last = levels[5];
+                // Every level-0 brick in the coarsest box, sampled, is drawn by exactly one level.
+                for s in 0..200u64 {
+                    let span = |a: usize| (last.hi[a] - last.lo[a]) << 5;
+                    let cell = [0, 1, 2].map(|a| {
+                        (last.lo[a] << 5) + (unit(i * 1000 + s, 3 + a as u64) * span(a) as f64) as i64
+                    });
+                    assert_eq!(drawn_by(&levels, cell), 1, "n {n}, camera {i}, cell {cell:?}");
+                }
+                // The camera's own brick is level 0's.
+                let own = [centre.x - grid.origin.x, centre.y - grid.origin.y, centre.z - grid.origin.z]
+                    .map(|v| (v / side).floor() as i64);
+                assert!(levels[0].contains(ChunkKey::new(own[0] as i32, own[1] as i32, own[2] as i32)));
+            }
+        }
+        // Control: levels centred each on its own camera brick, not snapped, leave cells drawn by
+        // none or by two.
+        let centre = Vec3::new(37.3 * side, -11.6 * side, 2.2 * side);
+        let n = 4;
+        let unsnapped: Vec<Level> = (0..4u8)
+            .map(|level| {
+                let c = [centre.x - grid.origin.x, centre.y - grid.origin.y, centre.z - grid.origin.z]
+                    .map(|v| (v / (side * f64::from(1u32 << level))).floor() as i64);
+                let hole = (level > 0).then(|| {
+                    let f = [centre.x - grid.origin.x, centre.y - grid.origin.y, centre.z - grid.origin.z]
+                        .map(|v| (v / (side * f64::from(1u32 << (level - 1)))).floor() as i64);
+                    (f.map(|v| (v - n).div_euclid(2)), f.map(|v| (v + n).div_euclid(2)))
+                });
+                Level { level, lo: c.map(|v| v - n), hi: c.map(|v| v + n), hole }
+            })
+            .collect();
+        let last = unsnapped[3];
+        let mut wrong = 0;
+        for x in (last.lo[0] << 3)..(last.hi[0] << 3) {
+            for y in (last.lo[1] << 3)..(last.hi[1] << 3) {
+                if drawn_by(&unsnapped, [x, y, last.lo[2] * 8 + 30]) != 1 {
+                    wrong += 1;
+                }
+            }
+        }
+        assert!(wrong > 0, "unsnapped levels happened to nest");
+    }
+
+    #[test]
+    fn the_ring_follows_the_screen_space_error() {
+        // n = ⌈1/(16 θ ε)⌉, even, from 2 to 16.
+        assert_eq!(ring(64.0), 2);
+        assert_eq!(ring(0.5), MAX_RING);
+        let n = ring(8.0);
+        let expected = (1.0 / (16.0 * NOMINAL_PIXEL * 8.0)).ceil() as i64;
+        assert_eq!(n, expected + expected % 2);
+        // A finer error needs at least as wide a ring.
+        assert!(ring(4.0) >= ring(8.0) && ring(8.0) >= ring(16.0));
+        // The levels reach over a kilometre from its middle, and not with fewer.
+        let grid = WorldGrid { origin: Vec3::ZERO, pitch: 0.05, supersample: 2 };
+        let extent = Aabb::new(Vec3::new(-500.0, -500.0, -2.0), Vec3::new(500.0, 500.0, 25.0));
+        let count = level_count(&grid, &extent, Vec3::new(0.0, 0.0, 5.0), 16);
+        let last = levels(&grid, Vec3::new(0.0, 0.0, 5.0), 16, count)[usize::from(count) - 1];
+        let reach = grid.brick_side(last.level) * 16.0;
+        assert!(reach >= 500.0, "{count} levels reach {reach}");
+        // Control: one level fewer does not reach.
+        assert!(grid.brick_side(last.level - 1) * 16.0 < 500.0, "{count} levels: one fewer would do");
+    }
+}

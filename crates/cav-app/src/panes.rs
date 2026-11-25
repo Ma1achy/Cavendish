@@ -26,6 +26,12 @@ pub trait PaneSurface {
     fn problem(&self, _pane: usize) -> Option<String> {
         None
     }
+
+    /// Whether a pane's last picture left work for later frames (the world's meshes are made a
+    /// few a frame): the shell asks for another frame while it does.
+    fn busy(&self) -> bool {
+        false
+    }
 }
 
 /// No GPU: the shell draws an empty pane. For tests of layout and input.
@@ -53,6 +59,9 @@ pub struct GpuPanes {
     /// How many times a pane has been drawn: tells a test or the profiler that an unchanged scene
     /// costs nothing.
     pub draws: u64,
+    /// Whether each picture is made whole at once (a picture taken once, headless) rather than
+    /// a few of the world's meshes a frame (a window).
+    pub complete: bool,
     /// Why each pane's last draw failed, if it did.
     problems: [Option<String>; cav_engine::MAX_PANES],
 }
@@ -68,6 +77,7 @@ impl GpuPanes {
             egui,
             slots: [const { None }; cav_engine::MAX_PANES],
             draws: 0,
+            complete: false,
             problems: [const { None }; cav_engine::MAX_PANES],
         }
     }
@@ -108,13 +118,25 @@ impl PaneSurface for GpuPanes {
             // Whether it worked or not, this generation has been tried: no retry every frame.
             slot.generation = generation;
             self.draws += 1;
-            self.problems[pane] = self.renderer.draw(&self.gpu, &slot.target, frame).err();
+            self.problems[pane] = if self.complete {
+                self.renderer.draw_complete(&self.gpu, &slot.target, frame).err()
+            } else {
+                self.renderer.draw(&self.gpu, &slot.target, frame).err()
+            };
+            // Meshes left for later frames: draw this pane again next frame.
+            if self.renderer.world_incomplete() {
+                slot.generation = generation.wrapping_sub(1);
+            }
         }
         if self.problems[pane].is_some() { None } else { Some(slot.id) }
     }
 
     fn problem(&self, pane: usize) -> Option<String> {
         self.problems.get(pane).cloned().flatten()
+    }
+
+    fn busy(&self) -> bool {
+        self.renderer.world_incomplete()
     }
 }
 
