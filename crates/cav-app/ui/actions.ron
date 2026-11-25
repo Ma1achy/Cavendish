@@ -24,7 +24,7 @@
 (
     scopes: [
         (id: "top-bar", name: "Top bar"),
-        (id: "toolbar", name: "Tools"),
+        (id: "toolbar", name: "Tool strip"),
         (id: "tree", name: "Scene tree"),
         (id: "viewport", name: "Viewport"),
         (id: "inspector", name: "Inspector"),

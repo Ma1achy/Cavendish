@@ -1403,10 +1403,14 @@ fn the_tool_strip_has_one_name_a_tool_and_snap_apart() {
         .fold(0.0_f32, f32::max);
     let snap = rig.shell.layout().button("snap").unwrap();
     assert!(snap.top() >= lowest_tool + 8.0, "apart from the tools: {} after {lowest_tool}", snap.top());
-    assert!(
-        !cav_app::sheet::rows(table).iter().any(|r| r.label.starts_with("Tool: Snap")),
-        "snap is no tool on the sheet"
-    );
+    // On the sheet snap is the tool strip's, and no tool (S18's second review, minor 6: it was
+    // listed under "Tools"); its menu is Edit, not Edit › Tool.
+    let rows = cav_app::sheet::rows(table);
+    let snap = rows.iter().find(|r| r.actions == ["snap"]).expect("snap is on the sheet");
+    assert_eq!((snap.scope.as_str(), snap.label.as_str()), ("Tool strip", "Snap to the step"));
+    let place = rows.iter().find(|r| r.actions == ["tool-place"]).unwrap();
+    assert_eq!(place.label, "Tool: Place", "the control: a tool says it is one");
+    assert!(!table.action("snap").unwrap().menu.contains("Tool"));
 }
 
 #[test]
@@ -1480,11 +1484,16 @@ fn the_history_says_what_happened_in_words_beside_the_figure() {
             "Added sphere",
             "Moved body 2 to (2, 0, 1) m",
             "Set duration to 20 s",
-            "Set mass's mass to 5 kg",
+            "Set mass to 5 kg on “mass”",
             "Removed sphere",
         ],
-        "{words:?}"
+        "{words:?}: each named from today's scene (the control)"
     );
+    // Each step named from its own scene (S18's second review, minor 1): the move was of the
+    // sphere, removed since, not of whatever body is second now.
+    let (own, _) = cav_app::dialogs::history_words(&rig.shell.engine);
+    assert_eq!(own[2], "Moved sphere to (2, 0, 1) m");
+    assert_eq!(own[4], "Set mass to 5 kg on “mass”", "UX 4's wording");
     // Control: the lines the console would type are another thing, and still the steps' own.
     let (lines, _) = rig.shell.engine.steps();
     assert!(lines[1].starts_with("add bodies 1 {"), "{}", lines[1]);
@@ -1494,7 +1503,12 @@ fn the_history_says_what_happened_in_words_beside_the_figure() {
     let window = rig.shell.focus_tree().node("history").and_then(|n| n.rect).expect("drawn");
     let figure = rig.shell.layout().figure;
     assert!(overlap(window, figure) < 1.0, "{window:?} covers the figure {figure:?}");
+    // Inside the outliner: not over the tool strip either (UX 4).
+    let strip = rig.shell.layout().panel("toolbar").unwrap();
+    assert!(overlap(window, strip) < 1.0, "{window:?} covers the tool strip {strip:?}");
     assert_eq!(rig.shell.focus_tree().node("history/done/1").unwrap().name, "Added sphere");
+    // The first row says what it goes back to, not something like the load below it.
+    assert_eq!(rig.shell.focus_tree().node("history/start").map(|n| n.name.as_str()), Some("the start"));
     // The toast says the last edit in words, with Undo; after an undo, what was undone and Redo.
     assert!(rig.shell.layout().button("toast undo").is_some());
     rig.click_button("toast undo");
@@ -1651,4 +1665,68 @@ fn a_gizmo_drag_ends_a_transform_session_first() {
     assert!((after[0] - nudged[0] - 1.0).abs() < 1e-9 && after[2] == nudged[2], "{nudged:?} -> {after:?}");
     rig.key(Key::ArrowRight, Modifiers::NONE);
     assert_eq!(anchor(&rig, 0), after, "a later arrow is no session's: it moves nothing");
+}
+
+#[test]
+fn opening_a_scene_raises_no_undo_toast() {
+    // S18's second review, UX 9: "Opened “void” · Undo" invited undoing an open. Control: an
+    // edit person made raises it.
+    let mut rig = Rig::new();
+    rig.shell.run("load void").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().button("toast undo").is_none());
+    rig.shell.run("set duration 20").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().button("toast undo").is_some());
+}
+
+#[test]
+fn a_framed_voxel_body_keeps_its_cage_in_the_pane() {
+    // S18's second review, UX 3: F framed the sphere at 0.6 of the pane and its selection box ran
+    // off it. Now the box spans at most CAGE_FILL, and the body still fills C3's band.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.add_starter("sphere").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    rig.shell.keyboard.focus = vec!["viewport".into()];
+    rig.key(Key::F, Modifiers::NONE);
+    let spec = rig.shell.engine.spec().clone();
+    let selection = rig.shell.engine.selection();
+    let (centre, radius) = cav_app::camera::bounds_of(&spec, selection, 0.0);
+    let half = cav_app::camera::cage_of(&spec, selection).expect("a voxel body has a cage");
+    let rect = rig.shell.layout().panes[0];
+    let aspect = f64::from(rect.width() / rect.height());
+    let view = rig.shell.engine.view(0).clone();
+    let cage = cav_app::camera::cage_span(&view, centre, half, aspect);
+    assert!(cage <= cav_app::camera::CAGE_FILL + 1e-6, "the cage spans {cage}");
+    let body = spans(&rig, 0, centre, radius);
+    assert!((0.4..=0.8).contains(&body), "the body spans {body} (C3)");
+    // Control: framing the body alone (no cage) puts the cage's corners off the pane's margin.
+    let plain = cav_app::camera::frame(&view, 0, centre, radius, aspect);
+    let cav_engine::ViewCommand::Camera { distance, .. } = plain else { panic!() };
+    let alone = cav_sim::ViewSpec { target: centre, distance, ..view };
+    assert!(cav_app::camera::cage_span(&alone, centre, half, aspect) > cav_app::camera::CAGE_FILL);
+}
+
+#[test]
+fn the_inspector_says_when_it_scrolls_and_names_a_point_s_radius() {
+    // S18's second review, UX 8 and UX 1. The Instrument layout's inspector runs past the panel's
+    // foot (in a window 700 points high): it says so. A body's own radius is the "Point radius",
+    // apart from its shape's.
+    let mut rig = Rig::new();
+    rig.size = [1440, 700];
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("layout instrument").unwrap();
+    rig.frames(vec![vec![], vec![], vec![]]);
+    assert!(rig.shell.layout().button("more below").is_some(), "the cut inspector says it scrolls");
+    // Control: a short inspector (a point mass selected) says nothing of the kind.
+    rig.shell.run("select body 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().button("more below").is_none());
+    assert_eq!(rig.shell.focus_tree().node("field/bodies[0].radius").unwrap().name, "Point radius");
+    // The reset is drawn only on a changed field (minor 2): none now, one after an edit.
+    assert!(rig.shell.layout().button("reset bodies[0].mass").is_none());
+    rig.shell.run("set bodies[0].mass 7").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().button("reset bodies[0].mass").is_some());
 }

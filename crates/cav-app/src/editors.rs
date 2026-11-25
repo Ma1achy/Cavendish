@@ -135,20 +135,29 @@ fn number(
     width: f32,
 ) -> (Option<f64>, egui::Response) {
     let mut edited = value;
-    let unit = entry.unit.as_deref().filter(|unit| *unit != "1" && width >= NUMBER_WIDTH);
+    // An atom's mass is shown and typed in unified atomic mass units (86.9092 u for ⁸⁷Sr, not
+    // 1.44316e-25 kg: S18's second review, UX 8); the value stays in kilograms.
+    let atomic = entry.unit.as_deref() == Some("kg") && value.abs() < 1e-20;
+    let scale = if atomic { cav_core::constants::ATOMIC_MASS_UNIT } else { 1.0 };
+    let unit = if atomic { Some("u") } else { entry.unit.as_deref() };
+    let unit = unit.filter(|unit| *unit != "1" && width >= NUMBER_WIDTH);
     let unit = unit.map_or_else(String::new, |unit| format!(" {unit}"));
     let mut drag = egui::DragValue::new(&mut edited)
         .speed(speed(value))
         .range(range(entry))
         .suffix(unit)
-        .custom_formatter(|value, _| shown(value))
+        .custom_formatter(move |value, _| shown(value / scale))
         // The field shows six figures; the value has seventeen. Text that is still what the
         // field showed is the value itself, not its six figures read back: leaving a field
         // without typing must not round it (S2's review, finding 17: Tab into a field and Enter
         // issued a journalled edit of the mass to 1.23457).
         .custom_parser(move |text| {
             let text = text.trim();
-            if text == shown(value) { Some(value) } else { text.parse::<f64>().ok() }
+            if text == shown(value / scale) {
+                Some(value)
+            } else {
+                text.parse::<f64>().ok().map(|v| v * scale)
+            }
         });
     if whole {
         drag = drag.max_decimals(0);
@@ -324,6 +333,10 @@ fn row(
             )
             .on_hover_text("put back the value the scene was opened or saved with (Backspace)");
         shell.register(scope, &reset_id, &format!("{name}: reset"), Focus::Button, reset.rect);
+        if differs {
+            // Only a reset that is drawn is in the layout's buttons (what a test can see).
+            shell.layout.buttons.push((format!("reset {}", entry.path), reset.rect));
+        }
         if !differs {
             shell.building.disable(&reset_id);
         }
