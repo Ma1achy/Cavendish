@@ -367,9 +367,10 @@ fn task_keyboard_only() {
     assert_eq!(rig.shell.breadcrumb().as_deref(), Some("Inspector › mass › mass"));
 }
 
-/// The input events the T1 task takes: counted at its first pass and held, so the task does not
-/// get longer unnoticed.
-const TASK_EVENTS: usize = 20;
+/// The input events the T1 task takes: 12, counted at its first pass (docs/slices/S18.md §7.2)
+/// and held, so the task does not get longer unnoticed. (It was 20, a looser budget than the
+/// count §7.2 recorded: S18's review, R5.)
+const TASK_EVENTS: usize = 12;
 
 /// A file in the system's temporary folder for one test, removed when dropped.
 struct Scratch(std::path::PathBuf);
@@ -486,18 +487,27 @@ fn task_save_and_reopen_gives_the_same_scene() {
     rig.shell.run("set bodies[0].mass 3.5").unwrap();
     let saved = rig.shell.engine.spec().clone();
     let file = Scratch::new("reopen.ron");
+    // By input events only (S18's review, R5): Ctrl+S, the path typed over what is offered,
+    // Enter; Ctrl+O, the path typed, Enter.
     rig.key(Key::S, Modifiers::COMMAND);
     assert!(rig.shell.save_window.is_some(), "no file yet: Ctrl+S asks for one");
-    rig.shell.save_window = Some(file.path());
     rig.frames(vec![vec![]]);
-    rig.click_button("save go");
+    assert_eq!(rig.shell.keyboard.focused(), "save/path", "the window lands on its path");
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+    rig.key(Key::A, Modifiers::COMMAND);
+    rig.typed(&file.path());
+    rig.key(Key::Enter, Modifiers::NONE);
     assert!(rig.shell.save_window.is_none() && !rig.shell.engine.unsaved());
     assert_eq!(rig.shell.file.as_deref(), Some(file.path().as_str()));
     rig.shell.run("load room").unwrap();
     rig.key(Key::O, Modifiers::COMMAND);
-    rig.shell.open_window = Some(file.path());
     rig.frames(vec![vec![]]);
-    rig.click_button("open go");
+    assert_eq!(rig.shell.keyboard.focused(), "open/path");
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+    rig.typed(&file.path());
+    rig.key(Key::Enter, Modifiers::NONE);
     assert_eq!(rig.shell.engine.spec(), &saved, "the same scene, to the bit");
     // Control: Ctrl+S now saves to the file without asking.
     rig.shell.run("set bodies[0].mass 4").unwrap();
@@ -579,15 +589,27 @@ fn every_layout_keeps_every_scope_and_the_figure_uncovered() {
                 let node = rig.shell.focus_tree().node(scope).unwrap();
                 assert!(node.rect.is_some(), "{state}: {scope} is on screen");
             }
+        }
+        // Tab walks the seven in order, twice round, whatever is selected and maximised (K4; S18's
+        // review, R5: the walk was skipped maximised and never made with a selection).
+        for selection in ["select none", "select body 1"] {
+            if state == "maximised" {
+                rig.shell.maximised = true;
+            }
+            rig.shell.run(selection).unwrap();
+            rig.frames(vec![vec![], vec![]]);
             let mut seen = Vec::new();
             rig.shell.keyboard.focus = vec!["footer".into()];
-            for _ in 0..7 {
+            for _ in 0..14 {
                 rig.key(Key::Tab, Modifiers::NONE);
                 seen.push(rig.shell.keyboard.focused().to_owned());
             }
-            assert_eq!(seen, BIG, "{state}: Tab's order");
+            assert_eq!(seen, [BIG, BIG].concat(), "{state}, `{selection}`: Tab's order");
         }
     }
+    // Control: a walk that skipped what is hidden would not be the seven (the maximised window
+    // hides five of them, and Tab showed each as it landed).
+    assert!(!rig.shell.maximised, "Tab onto a hidden scope restored the window");
     // The layouts arranged the figure as their lines say.
     rig.shell.run("layout analysis").unwrap();
     assert_eq!(rig.shell.engine.panes(), 4);
@@ -1048,4 +1070,178 @@ fn a_held_session_while_playing_is_one_undo() {
     assert_eq!(rig.shell.engine.depth().0, depth.0 + 1);
     rig.shell.run("undo").unwrap();
     assert_eq!(anchor(&rig, 0), start);
+}
+
+#[test]
+fn a_canvas_click_does_not_move_the_keyboard_focus() {
+    // S18 K3 in the application: the keys on an inspector field; a click on the canvas that selects
+    // a body hides the ring and leaves the focus where it was. Control: a click on a window's
+    // control moves the focus onto it (the spec's §8).
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("select tower 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    rig.shell.run("focus inspector").unwrap();
+    rig.key(Key::Enter, Modifiers::NONE);
+    let focus = rig.shell.keyboard.focus.clone();
+    assert!(rig.shell.keyboard.nav_on && focus.len() > 1, "{focus:?}");
+    let pane = rig.shell.layout().panes[0];
+    let at = rig.shell.body_point(0, 0, pane.size()).expect("the mass is in view");
+    rig.click(pane.min + at.to_vec2());
+    assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)), "the click did its canvas action");
+    assert!(!rig.shell.keyboard.nav_on, "and hid the ring");
+    assert_eq!(rig.shell.keyboard.focus[0], focus[0], "the focus stayed in the inspector");
+    // Control: a click on the wizard's radio moves the focus there.
+    rig.key(Key::N, Modifiers::COMMAND);
+    rig.frames(vec![vec![], vec![]]);
+    rig.click_button("wizard surroundings 1");
+    assert_eq!(rig.shell.keyboard.focus, ["wizard", "wizard/surroundings", "wizard/surroundings/1"]);
+    assert!(!rig.shell.keyboard.nav_on, "in navigation mode, the ring hidden");
+}
+
+#[test]
+fn typing_q_in_a_field_does_not_change_the_tool() {
+    // S18 K9 in the application: Q typed into a text field is a letter, not the Select tool.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("tool move").unwrap();
+    rig.key(Key::Backtick, Modifiers::NONE);
+    rig.frames(vec![vec![], vec![]]);
+    let q = |pressed| Event::Key {
+        key: Key::Q,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    rig.frames(vec![vec![q(true), Event::Text("q".into())], vec![q(false)]]);
+    assert_eq!(rig.shell.tool, "move", "Q was typed, not taken as the Select tool");
+    assert!(rig.shell.console_line.contains('q'), "{:?}", rig.shell.console_line);
+    // Control: out of the field, in the viewport, Q is the Select tool.
+    rig.key(Key::Escape, Modifiers::NONE);
+    rig.key(Key::Escape, Modifiers::NONE);
+    rig.frames(vec![vec![], vec![]]);
+    rig.shell.keyboard.focus = vec!["viewport".into()];
+    rig.key(Key::Q, Modifiers::NONE);
+    assert_eq!(rig.shell.tool, "select");
+}
+
+#[test]
+fn every_starter_has_an_editor_for_every_field() {
+    // S18 E6's second half: each starter, added and selected, has an editor for each of its
+    // fields in the inspector, and each number among them has a unit from the schema.
+    for starter in cav_sim::starters::starters() {
+        let mut rig = Rig::new();
+        rig.shell.run("load void").unwrap();
+        rig.shell.add_starter(&starter.name).unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        let prefix = Shell::resolve("{selection}", rig.shell.engine.selection());
+        assert!(!prefix.is_empty(), "{}: selected", starter.name);
+        let leaves =
+            cav_sim::paths::leaves(rig.shell.engine.spec(), &prefix, cav_app::editors::MAX_FIELDS).unwrap();
+        assert!(!leaves.is_empty());
+        for leaf in &leaves {
+            assert!(
+                rig.shell.layout().editor(&leaf.path).is_some(),
+                "{}: no editor for {}",
+                starter.name,
+                leaf.path
+            );
+            if matches!(leaf.kind, cav_sim::paths::Kind::Number | cav_sim::paths::Kind::Vector(_)) {
+                assert!(leaf.unit.is_some(), "{}: {} has no unit in the schema", starter.name, leaf.path);
+            }
+        }
+    }
+    // Control: with nothing selected the body's fields have no editors.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().editor("bodies[0].mass").is_none());
+}
+
+#[test]
+fn fly_speed_takes_shift_and_alt_through_the_frame() {
+    // S18 C5 through the window: the same frames of W held move the camera 10 times as far with
+    // Shift and a tenth as far with Alt (the frame's own use of the modifiers).
+    let flown = |modifiers: Modifiers| {
+        let mut rig = Rig::new();
+        rig.shell.run("load point").unwrap();
+        rig.frames(vec![vec![]]);
+        rig.shell.keyboard.focus = vec!["viewport".into()];
+        rig.key(Key::F, Modifiers::SHIFT);
+        assert!(rig.shell.flying());
+        let start = rig.shell.engine.view(0).target;
+        let w = |pressed, repeat| Event::Key { key: Key::W, physical_key: None, pressed, repeat, modifiers };
+        let mut frames = vec![vec![w(true, false)]];
+        // A held key repeats in the window's events, carrying the modifiers held with it.
+        frames.extend((0..6).map(|_| vec![w(true, true)]));
+        frames.push(vec![w(false, false)]);
+        rig.frames(frames);
+        let end = rig.shell.engine.view(0).target;
+        (end[0] - start[0]).hypot(end[1] - start[1]).hypot(end[2] - start[2])
+    };
+    let (plain, fast, slow) = (flown(Modifiers::NONE), flown(Modifiers::SHIFT), flown(Modifiers::ALT));
+    assert!(plain > 0.0);
+    assert!((fast / plain - 10.0).abs() < 1e-9, "Shift: {}", fast / plain);
+    assert!((slow / plain - 0.1).abs() < 1e-9, "Alt: {}", slow / plain);
+}
+
+#[test]
+fn every_sub_scope_is_registered() {
+    // The sub-scopes data may name (`actions::SUB_SCOPES`, S18's review, minor 6) are each drawn,
+    // with a selection and without.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    for selection in ["select none", "select body 1"] {
+        rig.shell.run(selection).unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        for id in cav_app::actions::SUB_SCOPES {
+            assert!(rig.shell.focus_tree().node(id).is_some(), "`{id}` is not drawn ({selection})");
+        }
+    }
+}
+
+#[test]
+fn the_sheet_fits_the_window_and_scrolls_from_the_keyboard() {
+    // S18's review, R6: the `?` sheet is inside the window (at 1440 × 900 and at a small 1024 × 640),
+    // and its list is a stop that Enter, then Page Down and the arrows, scroll.
+    for size in [[1440, 900], [1024, 640]] {
+        let mut rig = Rig::new();
+        rig.size = size;
+        rig.shell.run("load point").unwrap();
+        rig.frames(vec![vec![]]);
+        rig.key(Key::Questionmark, Modifiers::NONE);
+        assert!(rig.shell.keys_open);
+        rig.frames(vec![vec![], vec![]]);
+        let screen = rig.shell.layout().screen;
+        let sheet = rig.shell.focus_tree().node("sheet").and_then(|n| n.rect).expect("the sheet is drawn");
+        assert!(screen.contains_rect(sheet), "{size:?}: {sheet:?} in {screen:?}");
+        assert_eq!(rig.shell.keyboard.focus, ["sheet", "sheet/list"], "the window lands on its list");
+    }
+    // At the small size the list is longer than the window: the keys scroll it.
+    let mut rig = Rig::new();
+    rig.size = [1024, 640];
+    rig.shell.run("load point").unwrap();
+    rig.key(Key::Questionmark, Modifiers::NONE);
+    rig.frames(vec![vec![], vec![]]);
+    // Control first: in navigation mode Page Down does not scroll (it is not the list's yet).
+    rig.key(Key::PageDown, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+    assert_eq!(rig.shell.sheet_scroll, 0.0);
+    rig.key(Key::Enter, Modifiers::NONE);
+    assert_eq!(rig.shell.keyboard.mode, cav_app::keyboard::Mode::Interaction);
+    rig.key(Key::PageDown, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+    let paged = rig.shell.sheet_scroll;
+    assert!(paged > 100.0, "a page down scrolled {paged} points");
+    rig.key(Key::ArrowUp, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+    assert!(
+        (paged - rig.shell.sheet_scroll - 18.0).abs() < 0.5,
+        "↑ is a row: {paged} → {}",
+        rig.shell.sheet_scroll
+    );
+    rig.key(Key::Escape, Modifiers::NONE);
+    rig.key(Key::Escape, Modifiers::NONE);
+    assert!(!rig.shell.keys_open, "Esc, Esc: out of the list, then the window closes");
 }

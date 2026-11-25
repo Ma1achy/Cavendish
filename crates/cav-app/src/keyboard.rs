@@ -152,10 +152,46 @@ impl FocusTree {
         }
     }
 
+    /// How many scopes and elements are registered.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Whether nothing is registered (never: the big scopes always are).
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
     /// The node called `id`, if it was registered.
     #[must_use]
     pub fn node(&self, id: &str) -> Option<&Node> {
         self.index.get(id).map(|&at| &self.nodes[at])
+    }
+
+    /// The innermost node of an open window drawn under `pos` (points), if there is one: where a
+    /// click on a window's control moves the keyboard's focus (the spec's §8). Nodes outside
+    /// windows are never answered: a click on a panel or the canvas leaves the focus alone.
+    #[must_use]
+    pub fn window_node_at(&self, pos: egui::Pos2) -> Option<&str> {
+        let root = |mut at: usize| {
+            while let Some(parent) = self.nodes[at].parent {
+                at = parent;
+            }
+            at
+        };
+        self.nodes
+            .iter()
+            .enumerate()
+            .filter(|(at, node)| {
+                node.rect.is_some_and(|r| r.contains(pos)) && self.windows.contains(&root(*at))
+            })
+            .min_by(|(_, a), (_, b)| {
+                let area = |n: &Node| n.rect.map_or(f32::INFINITY, |r| r.area());
+                area(a).total_cmp(&area(b))
+            })
+            .map(|(_, node)| node.id.as_str())
     }
 
     /// The ids of `id`'s children, in order.

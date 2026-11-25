@@ -183,7 +183,8 @@ pub struct Shell {
     pub console_open: bool,
     /// Which log entries the console shows.
     pub console_filter: ConsoleFilter,
-    pub(crate) console_line: String,
+    /// What is typed on the console's line, not yet run.
+    pub console_line: String,
     pub(crate) history: Vec<String>,
     pub(crate) history_at: Option<usize>,
     pub(crate) focus_console: bool,
@@ -193,6 +194,8 @@ pub struct Shell {
     pub playing: bool,
     /// Whether the list of keys is shown.
     pub keys_open: bool,
+    /// How far the `?` sheet's list is scrolled, points (kept so the keys can scroll it).
+    pub sheet_scroll: f32,
     /// Whether the About box is shown.
     pub about_open: bool,
     /// Set by `quit`; the window closes at the end of the frame.
@@ -331,6 +334,7 @@ impl Shell {
             gui_hidden: false,
             playing: false,
             keys_open: false,
+            sheet_scroll: 0.0,
             about_open: false,
             quit: false,
             adapter: None,
@@ -1147,22 +1151,29 @@ impl Shell {
         let (presses, released, clicked) = ctx.input(|i| {
             let mut presses = Vec::new();
             let mut released = Vec::new();
-            let mut clicked = false;
+            let mut clicked = None;
             for event in &i.events {
                 match event {
                     Event::Key { key, pressed: true, repeat: false, modifiers, .. } => {
                         presses.push(Press::with(*key, *modifiers));
                     }
                     Event::Key { key, pressed: false, .. } => released.push(*key),
-                    Event::PointerButton { pressed: true, .. } => clicked = true,
+                    Event::PointerButton { pressed: true, pos, .. } => clicked = Some(*pos),
                     _ => {}
                 }
             }
             (presses, released, clicked)
         });
-        if clicked {
+        if let Some(pos) = clicked {
             self.keyboard.pointer();
             self.repeat.clear();
+            // A click on a control in a window moves the keyboard's focus onto it, in navigation
+            // mode, the ring hidden (the spec's §8); anywhere else (a panel, the canvas) the focus
+            // stays where it was.
+            if let Some(id) = self.tree.window_node_at(pos).map(str::to_owned) {
+                let tree = self.tree.clone();
+                self.keyboard.focus_on(&tree, &id);
+            }
         }
         for key in released {
             self.repeat.release(key);

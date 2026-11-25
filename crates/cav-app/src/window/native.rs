@@ -154,6 +154,52 @@ fn timings(shell: &mut Shell, headless: &mut Headless, size: [u32; 2]) -> Result
         headless.render(shell, size, vec![Vec::new()])?;
         still.push(started.elapsed().as_secs_f64() * 1e3);
     }
+    // The editor's budgets (docs/slices/S18.md §6): a key routed over the tree the frame
+    // registered, the palette's filter over every entry, a frame with the palette open.
+    let tree = shell.focus_tree().clone();
+    let shortcuts = crate::actions::table().shortcuts();
+    let mut routes = Vec::new();
+    for n in 0..2000 {
+        let key = if n % 2 == 0 { egui::Key::Tab } else { egui::Key::ArrowDown };
+        let started = Instant::now();
+        let routed = shell.keyboard.route(&tree, &shortcuts, crate::keyboard::Press::plain(key));
+        routes.push(started.elapsed().as_secs_f64() * 1e6);
+        std::hint::black_box(routed);
+    }
+    shell.keyboard = crate::keyboard::Keyboard::default();
+    let entries = crate::palette::entries(crate::actions::table(), shell);
+    let mut filters = Vec::new();
+    for query in ["sph", "add", "tower 3", "x", "zzz"].iter().cycle().take(200) {
+        let started = Instant::now();
+        std::hint::black_box(crate::palette::filter(&entries, query, usize::MAX));
+        filters.push(started.elapsed().as_secs_f64() * 1e3);
+    }
+    shell.run("palette")?;
+    let mut with_palette = Vec::new();
+    for _ in 0..FRAMES {
+        let started = Instant::now();
+        headless.render(shell, size, vec![Vec::new()])?;
+        with_palette.push(started.elapsed().as_secs_f64() * 1e3);
+    }
+    shell.palette.open = false;
+    shell.keyboard = crate::keyboard::Keyboard::default();
+    println!(
+        "a key routed (Tab, ↓) over the frame's {} scopes and elements: median {:.2} µs over {} (budget 50 µs)",
+        tree.len(),
+        median(routes.clone()),
+        routes.len()
+    );
+    println!(
+        "the palette's filter over all {} entries: median {:.3} ms over {} queries (budget 1 ms)",
+        entries.len(),
+        median(filters.clone()),
+        filters.len()
+    );
+    println!(
+        "frame with the palette open: median {:.2} ms (without: {:.2} ms; budget within 2 ms of it)",
+        median(with_palette),
+        median(still.clone())
+    );
     let draws_before = headless.pane_draws();
     let mut moving = Vec::new();
     for step in 0..FRAMES {
