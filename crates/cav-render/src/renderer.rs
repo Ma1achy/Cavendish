@@ -297,6 +297,12 @@ impl Renderer {
         (world.counts(), world.notes.clone())
     }
 
+    /// Whether the last picture left chunk meshes to be made in later frames.
+    #[must_use]
+    pub fn world_incomplete(&self) -> bool {
+        self.world_gpu.lock().unwrap_or_else(std::sync::PoisonError::into_inner).incomplete
+    }
+
     /// The world's pipelines and GPU copies, for tests of the culling against its CPU twin.
     pub fn world_parts(&self) -> (&crate::world::WorldPipelines, &std::sync::Mutex<crate::world::WorldGpu>) {
         (&self.world, &self.world_gpu)

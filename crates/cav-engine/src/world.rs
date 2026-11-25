@@ -43,8 +43,9 @@ pub use cache::Cache;
 pub const MAX_RESIDENT: usize = 24_576;
 /// The most bytes of resident chunks and bricks.
 pub const MAX_RESIDENT_BYTES: usize = 512 << 20;
-/// The most chunks and bricks made in one step.
-pub const MAX_BUILDS_PER_POLL: usize = 64;
+/// The most chunks and bricks made in one step (in batches as wide as the machine's threads;
+/// one at a time in a page).
+pub const MAX_BUILDS_PER_POLL: usize = 256;
 /// The longest one step spends making chunks and bricks, milliseconds (it stops after the one
 /// that passes it).
 pub const STEP_MILLISECONDS: f64 = 6.0;
@@ -54,6 +55,18 @@ pub const MAX_KNOWN_EMPTY: usize = 1 << 20;
 
 /// One thing to make: a chunk (level 0) or a brick of a level above.
 type Want = (u8, ChunkKey);
+
+/// What making one thing gave.
+enum Made {
+    /// A chunk read from the cache (`None`: made empty before).
+    Cached(Option<ChunkCells>),
+    /// A chunk made now.
+    Chunk(Option<ChunkCells>),
+    /// A brick made now.
+    Brick(Option<cav_core::voxel::world::Brick>),
+    /// A chunk that could not be made, and why.
+    Refused(String),
+}
 
 /// The world's resident part and its queue.
 #[derive(Default)]
@@ -67,6 +80,9 @@ pub struct Streaming {
     cache: Option<Cache>,
     /// What streaming has to say once: a cut, a refusal.
     notes: Vec<String>,
+    /// What the last refresh was asked for (the world, the cameras' snapped level boxes, the
+    /// towers): a refresh asked the same again changes nothing and is skipped.
+    asked: Vec<u64>,
     /// How many chunks and bricks have been made, and how many read from the cache.
     pub made: u64,
     /// See `made`.
@@ -142,17 +158,40 @@ impl Streaming {
             .map(|(v, _)| lod_centre(v))
             .collect();
         let count = centres.iter().map(|c| level_count(&grid, &extent, *c, n)).max().unwrap_or(1);
+        // The same boxes and towers as last time: nothing to do (a camera moving inside its
+        // chunk, or a command that is not about the world).
+        let mut asked = vec![hash, n as u64, u64::from(count)];
+        for centre in &centres {
+            for level in levels(&grid, *centre, n, count) {
+                asked.extend(level.lo.iter().map(|v| *v as u64));
+            }
+        }
+        for (n, tower) in spec.array.towers.iter().enumerate() {
+            asked.extend(tower.position.map(f64::to_bits));
+            asked.push(spec.array.instrument_of(n).tower_height.to_bits());
+        }
+        asked.push(world_spec.stream.tower_radius.to_bits());
+        if asked == self.asked {
+            return;
+        }
+        self.asked = asked;
         let mut wanted: BTreeMap<Want, f64> = BTreeMap::new();
         let mut want = |what: Want, distance: f64| {
             let entry = wanted.entry(what).or_insert(distance);
             *entry = entry.min(distance);
         };
+        // Each in the order it matters to the picture: its distance in its own level's bricks
+        // (a coarse brick far away is as urgent as a chunk near by), and only where some piece
+        // may have matter.
         for centre in &centres {
             for level in levels(&grid, *centre, n, count) {
                 let range = grid.bricks_of(level.level, &extent);
+                let side = grid.brick_side(level.level);
                 for key in level.keys(range) {
-                    let distance = (grid.brick_box(level.level, key).centre() - *centre).length();
-                    want((level.level, key), distance);
+                    let boxed = grid.brick_box(level.level, key);
+                    if world.reaches(&boxed) {
+                        want((level.level, key), (boxed.centre() - *centre).length() / side);
+                    }
                 }
             }
         }
@@ -170,8 +209,7 @@ impl Streaming {
                 for y in lo.y..=hi.y {
                     for z in lo.z..=hi.z {
                         let key = ChunkKey::new(x, y, z);
-                        let b = grid.chunk_box(key);
-                        if b.overlaps(&extent) {
+                        if world.reaches(&grid.chunk_box(key)) {
                             // Wanted first of all: the instrument's neighbourhood.
                             want((0, key), 0.0);
                         }
@@ -183,7 +221,7 @@ impl Streaming {
         wanted.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
         if wanted.len() > MAX_RESIDENT {
             self.notes.push(format!(
-                "the world's cameras and towers want {} chunks and bricks; the nearest {MAX_RESIDENT} are kept",
+                "the world's cameras and towers want {} chunks and bricks; the {MAX_RESIDENT} that matter most are kept",
                 wanted.len()
             ));
             wanted.truncate(MAX_RESIDENT);
@@ -236,11 +274,12 @@ impl Streaming {
     fn make(&mut self, hash: u64, world: &World, most: usize, milliseconds: f64) -> bool {
         let started = web_time::Instant::now();
         let mut changed = false;
-        for _ in 0..most.min(MAX_BUILDS_PER_POLL) {
-            if started.elapsed().as_secs_f64() * 1e3 > milliseconds {
-                break;
-            }
-            let Some(next) = self.queue.pop_front() else { break };
+        let mut left = most.min(MAX_BUILDS_PER_POLL);
+        // Batches as wide as the read's threads (one in a page): each thread makes its share of
+        // a batch, and the batch is put in the queue's order, so what is resident does not depend
+        // on the thread count.
+        let threads = cav_sim::read::threads();
+        while left > 0 && started.elapsed().as_secs_f64() * 1e3 <= milliseconds && !self.queue.is_empty() {
             if self.bytes > MAX_RESIDENT_BYTES {
                 self.notes.push(format!(
                     "the world's resident chunks and bricks reached {MAX_RESIDENT_BYTES} bytes; no more are made"
@@ -248,47 +287,76 @@ impl Streaming {
                 self.queue.clear();
                 break;
             }
-            let (level, key) = next;
-            if level == 0 {
-                let cached = self.cache.as_mut().and_then(|c| c.load(hash, &world.grid, key));
-                let cells = match cached {
-                    Some(cells) => {
-                        self.cached += 1;
-                        cells
+            let width = threads.min(left);
+            let batch: Vec<Want> = (0..width).map_while(|_| self.queue.pop_front()).collect();
+            left -= batch.len();
+            // The cache first, on this thread (it holds open files); what it has not, made below.
+            let mut found: Vec<Option<Made>> = batch
+                .iter()
+                .map(|&(level, key)| {
+                    (level == 0)
+                        .then(|| self.cache.as_mut().and_then(|c| c.load(hash, &world.grid, key)))
+                        .flatten()
+                        .map(Made::Cached)
+                })
+                .collect();
+            let make_one = |&(level, key): &Want| -> Made {
+                if level == 0 {
+                    match world.chunk(key) {
+                        Ok(chunk) => Made::Chunk(chunk.as_ref().map(ChunkCells::of)),
+                        Err(why) => Made::Refused(format!("chunk {:?} is not drawn: {why}", key.to_array())),
                     }
-                    None => match world.chunk(key) {
-                        Ok(chunk) => {
-                            self.made += 1;
-                            let cells = chunk.as_ref().map(ChunkCells::of);
-                            if let Some(cache) = self.cache.as_mut() {
-                                cache.store(hash, &world.grid, key, cells.as_ref());
-                                self.notes.extend(cache.note());
-                            }
-                            cells
-                        }
-                        Err(why) => {
-                            self.notes.push(format!("chunk {:?} is not drawn: {why}", key.to_array()));
-                            None
-                        }
-                    },
-                };
-                match cells {
-                    Some(cells) => {
-                        self.bytes += cells.bytes();
-                        self.frame.chunks.insert(key, Arc::new(cells));
-                        changed = true;
-                    }
-                    None => self.forget_empty(next),
+                } else {
+                    Made::Brick(world.brick(level, key))
                 }
-            } else {
-                self.made += 1;
-                match world.brick(level, key) {
-                    Some(brick) => {
-                        self.bytes += BRICK_BYTES;
-                        self.frame.bricks.insert(next, Arc::new(brick));
-                        changed = true;
+            };
+            let missing: Vec<usize> = (0..batch.len()).filter(|&i| found[i].is_none()).collect();
+            if missing.len() > 1 {
+                let results: Vec<(usize, Made)> = std::thread::scope(|scope| {
+                    let handles: Vec<_> = missing
+                        .iter()
+                        .map(|&i| {
+                            let want = batch[i];
+                            let make_one = &make_one;
+                            scope.spawn(move || (i, make_one(&want)))
+                        })
+                        .collect();
+                    handles.into_iter().filter_map(|h| h.join().ok()).collect()
+                });
+                for (i, made) in results {
+                    found[i] = Some(made);
+                }
+            } else if let Some(&i) = missing.first() {
+                found[i] = Some(make_one(&batch[i]));
+            }
+            for (want, made) in batch.into_iter().zip(found) {
+                let (level, key) = want;
+                match made {
+                    Some(Made::Cached(cells)) => {
+                        self.cached += 1;
+                        changed |= self.keep_chunk(want, cells);
                     }
-                    None => self.forget_empty(next),
+                    Some(Made::Chunk(cells)) => {
+                        self.made += 1;
+                        if let Some(cache) = self.cache.as_mut() {
+                            cache.store(hash, &world.grid, key, cells.as_ref());
+                            self.notes.extend(cache.note());
+                        }
+                        changed |= self.keep_chunk(want, cells);
+                    }
+                    Some(Made::Brick(brick)) => {
+                        self.made += 1;
+                        match brick {
+                            Some(brick) => {
+                                self.bytes += BRICK_BYTES;
+                                self.frame.bricks.insert((level, key), Arc::new(brick));
+                                changed = true;
+                            }
+                            None => self.forget_empty(want),
+                        }
+                    }
+                    Some(Made::Refused(why)) => self.notes.push(why),
+                    None => {}
                 }
             }
         }
@@ -296,16 +364,26 @@ impl Streaming {
         changed
     }
 
+    /// Keeps a chunk made or read (or remembers it empty). True when it became resident.
+    fn keep_chunk(&mut self, want: Want, cells: Option<ChunkCells>) -> bool {
+        match cells {
+            Some(cells) => {
+                self.bytes += cells.bytes();
+                self.frame.chunks.insert(want.1, Arc::new(cells));
+                true
+            }
+            None => {
+                self.forget_empty(want);
+                false
+            }
+        }
+    }
+
     fn forget_empty(&mut self, what: Want) {
         if self.known_empty.len() >= MAX_KNOWN_EMPTY {
             self.known_empty.clear();
         }
         self.known_empty.insert(what);
-    }
-
-    /// Sets whether the picture colours the clipmap's levels (the LOD bands) in place of materials.
-    pub fn set_bands(&mut self, on: bool) {
-        self.frame.bands = on;
     }
 }
 

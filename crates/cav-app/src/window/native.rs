@@ -121,6 +121,10 @@ fn screenshot(shell: &mut Shell, options: &Options, path: &str) -> Result<(), St
             "{path}: the signal was not whole after {SETTLE_S} s, so no picture was taken; shorten the scene"
         ));
     }
+    // And the world's chunks and bricks the panes and towers want, made (natively a minute at most).
+    if !shell.engine.settle_world(std::time::Duration::from_secs(60)) {
+        return Err(format!("{path}: the world was not resident after 60 s, so no picture was taken"));
+    }
     let png = headless.screenshot(shell, options.size)?;
     std::fs::write(path, &png).map_err(|e| format!("writing {path}: {e}"))?;
     println!(
