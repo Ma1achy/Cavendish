@@ -26,6 +26,11 @@ in three directions; the quantity is Δg_z = g_z(upper) − g_z(lower), and the 
 
     python -I skin_bench.py selftest
     python -I skin_bench.py run sphere 8,16,32,64 4 > results/sphere.json
+    python -I skin_bench.py run sphere 8,16,32,64 4 edges > sphere-edges.json
+
+The optional last argument `edges` forms the solid angle's numerator as h_f·|(v₂−v₁)×(v₃−v₁)| (the
+face's own edge vectors, rounding ε(R/s)²) instead of the triple product r₁·(r₂×r₃) (ε(R/s)³); see
+the note's §1.1. The committed results/ use the triple product.
 
 Bounded: at most 64 cells across a 1 m body (≈ 2×10⁴ boundary cells), a few minutes a body.
 """
@@ -50,6 +55,7 @@ BASELINE = 5.0  # IFO_SEPARATION, m
 DISTANCES = (1.0, 1.5, 3.0, 5.0, 10.0, 20.0)
 DIRECTIONS = np.array([[1.0, 0.2, -0.3], [-0.4, 1.0, 0.1], [0.3, -0.5, -1.0]])
 DIRECTIONS /= np.linalg.norm(DIRECTIONS, axis=1)[:, None]
+edge_numerator = False  # set by the `edges` argument: solid-angle numerator h_f·2A_f
 
 
 # ================================ POLYHEDRAL FIELD ================================
@@ -80,7 +86,10 @@ def polyhedron_field(tris: F64, weights: F64, pts: F64, chunk: int = 2048) -> tu
         r = [x[:, None, :] - pts[None, :, :] for x in (a, b, c)]  # (n, m, 3) each
         ln = [np.linalg.norm(x, axis=2) for x in r]
         h = np.einsum("nk,nmk->nm", n, r[0])
-        triple = np.einsum("nmk,nmk->nm", r[0], np.cross(r[1], r[2]))
+        if edge_numerator:
+            triple = h * np.linalg.norm(np.cross(b - a, c - a), axis=1)[:, None]
+        else:
+            triple = np.einsum("nmk,nmk->nm", r[0], np.cross(r[1], r[2]))
         den = (
             ln[0] * ln[1] * ln[2]
             + ln[0] * np.einsum("nmk,nmk->nm", r[1], r[2])
@@ -484,6 +493,7 @@ if __name__ == "__main__":
     if sys.argv[1] == "selftest":
         selftest()
     else:
-        _, _, name, ns, seeds = sys.argv
+        _, _, name, ns, seeds, *variant = sys.argv
+        edge_numerator = variant == ["edges"]
         runs = [errors(name, int(n), s) for n in ns.split(",") for s in range(int(seeds))]
         json.dump(runs, sys.stdout)
