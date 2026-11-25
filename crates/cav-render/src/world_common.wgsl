@@ -62,10 +62,21 @@ fn least(v: vec3<f32>) -> u32 {
     return 2u;
 }
 
-// Marches the brick at `base` from `start` (cells, inside [0, 32]³) along `dir` (cells per unit
-// t, not zero), entering through `entry_face`: sub-block by sub-block over the 4³ mask, cell by
-// cell inside an occupied sub-block. The CPU twin is `world::march`, the same steps in f32.
-fn march(base: u32, start: vec3<f32>, dir: vec3<f32>, entry_face: u32) -> Hit {
+// `v` with each component at least `MIN_DIR` from zero, its sign kept (a zero taken as positive).
+// A ray along an axis (an orthographic named view) has components that are exactly zero, and
+// `1 / 0` is not something WGSL promises: an implementation may assume no infinities, and
+// `(s·8 − start)·inf` is NaN when `start` is on a plane. With this, `1/dir` is at most 1e6.
+const MIN_DIR: f32 = 1e-6;
+fn nonzero(v: vec3<f32>) -> vec3<f32> {
+    return select(vec3<f32>(-1.0), vec3<f32>(1.0), v >= vec3<f32>(0.0)) * max(abs(v), vec3<f32>(MIN_DIR));
+}
+
+// Marches the brick at `base` from `start` (cells, inside [0, 32]³) along `toward` (cells per
+// unit t; a zero component is taken as `MIN_DIR`, see `nonzero`), entering through `entry_face`:
+// sub-block by sub-block over the 4³ mask, cell by cell inside an occupied sub-block. The CPU
+// twin is `world::march`, the same steps in f32.
+fn march(base: u32, start: vec3<f32>, toward: vec3<f32>, entry_face: u32) -> Hit {
+    let dir = nonzero(toward);
     var out = Hit(0u, 0.0, vec3<i32>(0), entry_face, 0u);
     let step = vec3<i32>(select(vec3<i32>(-1), vec3<i32>(1), dir > vec3<f32>(0.0)));
     let inv = vec3<f32>(1.0) / dir;

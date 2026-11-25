@@ -167,6 +167,10 @@ pub struct Shell {
     /// The text field being typed in: its path and what has been typed so far. The scene is
     /// not edited until the field is left.
     pub(crate) typing: Option<(String, String)>,
+    /// What the renderer could not draw in the last picture of the scene (the world's caps:
+    /// a far field cut to its budget, meshes or bricks past their caps), shown as badges in the
+    /// header (`docs/slices/S4.md` §7.6, the review's I5) and said once in the log.
+    pub render_notes: Vec<String>,
 }
 
 /// How near a body's picture the pointer must be to take hold of it, points.
@@ -225,6 +229,7 @@ impl Shell {
             readings: None,
             editing: None,
             typing: None,
+            render_notes: Vec::new(),
         }
     }
 
