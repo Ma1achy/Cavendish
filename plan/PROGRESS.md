@@ -9,7 +9,8 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
 | S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
 | S4 big scenes | done: TASK-S4-01 to 25 merged; reviewed three times (`docs/slices/S4-review.md`, `-2`, `-3`), nothing important remains; oracle 58/58, validation 113/113 | `s4-big-scenes` | brief and results: `docs/slices/S4.md` (§7.7–§7.8: the fixes); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
-| S18 the editor | built: TASK-S18-01 to 04 and 07 to 11 merged; both reviews' fixes merged (TASK-S18-12 to 22); awaiting a third look or the tag | | brief: `docs/slices/S18.md` (§7.7, §7.8: the fixes); reviews: `docs/slices/S18-review.md`, `-2`; research: `docs/research/editor-ux.md`; requirement: `docs/design/keyboard.md` |
+| S18 the editor | done: TASK-S18-01 to 04, 07 to 22 merged; reviewed three times (`docs/slices/S18-review.md`, `-2`, `-3`), nothing important remains | `s18-the-editor` | brief and results: `docs/slices/S18.md` (§7.7–§7.8: the fixes); screenshots: `docs/slices/S18/`; recipe: `docs/extending/a-tool-or-panel.md` |
+| S19 the editor, part two | next: docking, tabs, pop-out; rotate, scale; probe, measure, slice, paint; follow, pointer lock; detail tiers; materials; mesh import; multi-select | | |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
 
 ## S18 after its second review (25 Nov 2026) — fixes done
@@ -89,6 +90,21 @@ keys the page cannot take (Ctrl+N, Ctrl+K and others) need alternatives on the w
 used the editor in the real window (every picture is headless).
 
 **Next.** A review of S18; then S5 (or S19 if the owner prefers the editor's second half first).
+
+## S18 done (25 Nov 2026) — tagged `s18-the-editor`
+Three reviews; the third found nothing important. All tiers pass (quick 628, gpu 40, oracle 58, web);
+validation 113/113 against `s4-big-scenes`, unchanged. Carried into S19 as its first task (third review's
+minors): (1) a transform session outlives outliner clicks, canvas selects and menu items — any primary press
+outside the viewport's options row should end it, keeping the move; (2) reword `keyboard.md` §8 ("Esc is the
+only cancel" — a global key also cancels); (3) right-button fly ends on pointer-leave while the button is still
+held on native Windows — end on pointer-gone only with the button up; (4) a Home that changes nothing still
+splits a run; (5) a sequential legend field checked over a non-flat range; (6) the history's first row's focus
+name; (8) distinct wizard tile icons; (9) hints for "Loss 0" / "Seed 0", contrast of "more below".
+
+Calls for the owner's second look (S18): middle-drag pans (right button flies); Ctrl+Z in a move cancels it; a
+click elsewhere during a keyboard move keeps it (Blender); "Point radius"; Home after an undo drops the redo
+stack (follows "Home is undoable"); tools on Q select, W move, A place, S snap (E, R kept for rotate, scale).
+Nobody has used the real window yet; every picture is headless.
 
 ## S4 done (25 Nov 2026) — tagged `s4-big-scenes`
 The third review's two important findings (K1 the page fallback, K2 the outliner test) are fixed in #158
