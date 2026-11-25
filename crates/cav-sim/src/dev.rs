@@ -669,7 +669,7 @@ pub fn world_box() -> SceneSpec {
 
 /// The buildings of `stress-1e10`: forty blocks on a jittered grid, none within 30 m of the
 /// array, of heights from 4 to 22 m, alternately concrete and brick; deterministic.
-fn town() -> Vec<crate::world::PieceSpec> {
+fn town_buildings() -> Vec<crate::world::PieceSpec> {
     let mut out = Vec::new();
     let mut n = 0u32;
     for row in 0..8 {
@@ -702,7 +702,7 @@ fn town() -> Vec<crate::world::PieceSpec> {
 #[must_use]
 pub fn stress_1e10() -> SceneSpec {
     let mut pieces = vec![block("road", 2, [-500.0, 52.0, -0.9], [500.0, 59.0, -0.05])];
-    pieces.extend(town());
+    pieces.extend(town_buildings());
     pieces.push(crate::world::PieceSpec {
         label: "ground".into(),
         material: 0,
@@ -745,8 +745,59 @@ pub fn stress_1e10() -> SceneSpec {
     }
 }
 
+/// `town`: `stress-1e10` scaled down for pictures on a modest GPU: 200 m square at 10 cm, eight
+/// buildings and the road, about 5×10⁷ finest cells. The screenshots are of this; the full scene
+/// is measured only in short, bounded runs (`cav bench flythrough`).
+#[must_use]
+pub fn town() -> SceneSpec {
+    let mut scene = stress_1e10();
+    let world = scene.world.as_mut().expect("stress-1e10 has a world");
+    world.pitch = 0.1;
+    world.pieces.retain(|p| match &p.kind {
+        crate::world::PieceKind::Box { .. } => p.label == "road",
+        crate::world::PieceKind::Terrain { .. } => true,
+    });
+    for piece in &mut world.pieces {
+        match &mut piece.kind {
+            crate::world::PieceKind::Terrain { lo, hi, wavelength, .. } => {
+                *lo = [-100.0, -100.0];
+                *hi = [100.0, 100.0];
+                *wavelength = 60.0;
+            }
+            crate::world::PieceKind::Box { centre, size } if piece.label == "road" => {
+                size[0] = 200.0;
+                centre[0] = 0.0;
+            }
+            crate::world::PieceKind::Box { .. } => {}
+        }
+    }
+    // Eight buildings round the array, none within 25 m of it, alternately concrete and brick.
+    let spots = [
+        (-70.0, -60.0),
+        (-30.0, -75.0),
+        (35.0, -55.0),
+        (70.0, -20.0),
+        (60.0, 30.0),
+        (20.0, 70.0),
+        (-45.0, 75.0),
+        (-80.0, 20.0),
+    ];
+    for (n, (x, y)) in spots.into_iter().enumerate() {
+        let (w, d, h) = (10.0 + 2.0 * n as f64, 9.0 + (n % 3) as f64 * 3.0, 5.0 + 2.5 * n as f64);
+        let piece = block(&format!("building {}", n + 1), 1 + (n % 2) * 2, [x, y, -1.0], [x + w, y + d, h]);
+        world.pieces.insert(0, piece);
+    }
+    let n = world.pieces.len();
+    scene.name = "town".into();
+    scene.description = format!(
+        "stress-1e10 scaled down: 200 m of rolling ground at 10 cm, {} buildings and the road, around the array: about          5x10^7 finest cells. For pictures on a modest GPU.",
+        n - 2
+    );
+    scene
+}
+
 /// The scenes S4 added, in the order the library lists them.
-pub const S4_SCENES: [fn() -> SceneSpec; 2] = [world_box, stress_1e10];
+pub const S4_SCENES: [fn() -> SceneSpec; 3] = [world_box, stress_1e10, town];
 
 /// The text of a dev scene's file: a comment that says where it comes from, then the builder's RON.
 #[must_use]

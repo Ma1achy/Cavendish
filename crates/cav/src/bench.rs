@@ -45,7 +45,7 @@ fn summary(times: &[f64]) -> [f64; 4] {
     [times.iter().sum::<f64>() / times.len() as f64, at(0.5), at(0.99), sorted[sorted.len() - 1]]
 }
 
-/// Flies `frames` frames at `size` pixels and `speed` metres a second (taking a frame as a
+/// Flies `frames` frames (stopping at the first that takes over `max_frame_ms`) at `size` pixels and `speed` metres a second (taking a frame as a
 /// sixtieth of a second), the world cached under `cache` when given, and returns the trace as
 /// CSV with the summary in its last lines.
 ///
@@ -56,6 +56,7 @@ pub fn flythrough(
     size: [u32; 2],
     speed: f64,
     cache: Option<std::path::PathBuf>,
+    max_frame_ms: f64,
 ) -> Result<String, String> {
     let mut engine = Engine::new();
     engine.set_world_cache(cache);
@@ -86,7 +87,7 @@ pub fn flythrough(
     let load = started.elapsed().as_secs_f64();
     let made = (engine.streaming().made, engine.streaming().cached);
     let mut out = String::from(
-        "frame,ms,poll_ms,draw_ms,chunks,bricks,pending,meshes,bricks_on_gpu,vertices,resident_mb\n",
+        "frame,ms,poll_ms,draw_ms,chunks,bricks,pending,meshes,bricks_on_gpu,vertices,resident_mb,marched\n",
     );
     let mut times = Vec::with_capacity(frames);
     for frame in 0..frames {
@@ -103,14 +104,24 @@ pub fn flythrough(
         let ([meshes, bricks_on_gpu, vertices], _) = renderer.world_counts();
         let _ = writeln!(
             out,
-            "{frame},{ms:.3},{polled:.3},{:.3},{},{},{},{meshes},{bricks_on_gpu},{vertices},{:.1}",
+            "{frame},{ms:.3},{polled:.3},{:.3},{},{},{},{meshes},{bricks_on_gpu},{vertices},{:.1},{:.2}",
             ms - polled,
             world.chunks.len(),
             world.bricks.len(),
             world.pending,
-            engine.streaming().bytes() as f64 / 1048576.0
+            engine.streaming().bytes() as f64 / 1048576.0,
+            renderer.world_marched()
         );
         times.push(ms);
+        // A frame this long would hold the owner's desktop (Windows stops answering a busy GPU
+        // long before its 2 s reset): stop here, cleanly, and say so.
+        if ms > max_frame_ms {
+            let _ = writeln!(
+                out,
+                "# stopped at frame {frame}: {ms:.0} ms is over the {max_frame_ms} ms a frame may take"
+            );
+            break;
+        }
     }
     let [mean, median, p99, worst] = summary(&times);
     let _ = writeln!(

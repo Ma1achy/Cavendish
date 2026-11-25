@@ -44,6 +44,44 @@ pub const MAX_MARCH_STEPS: u32 = 256;
 /// sub-block materials four to a word.
 pub const BRICK_WORDS: usize = 1042;
 
+/// The most pixels of bricks' boxes one frame marches, over the pane's own pixels. Every pixel of
+/// a box runs the march (it writes its own depth, so the GPU cannot skip hidden ones), so this is
+/// what bounds one submission's far-field work: a frame that would march more draws its nearest
+/// bricks and leaves the farthest out, saying so. Chosen from the flythrough over `stress-1e10`
+/// (`docs/slices/S4.md` §7.7) so that a frame stays far under the ~50 ms after which Windows'
+/// desktop stops answering a busy GPU.
+pub const MAX_BRICK_OVERDRAW: f64 = 12.0;
+
+/// About how many pixels a brick of side `side` metres at `distance` metres from the eye covers
+/// in a pane `height` pixels high: its side over the pane's height at that distance, squared, and
+/// twice that for the box's visible faces. In an orthographic view the distance does not matter.
+#[must_use]
+pub fn brick_pixels(side: f64, distance: f64, camera: &Camera, view: &ViewSpec, height: u32) -> f64 {
+    let across = match view.projection {
+        cav_sim::Projection::Perspective => {
+            let slope = camera.half_height / camera.eye.length().max(1e-9);
+            2.0 * slope * distance.max(side)
+        }
+        cav_sim::Projection::Orthographic => 2.0 * camera.half_height,
+    };
+    let span = side / across.max(1e-9) * f64::from(height);
+    2.0 * span * span
+}
+
+/// How many of `areas` (pixels, nearest first) fit `budget` pixels together: the longest prefix
+/// whose sum is within it (none when the first alone is over).
+#[must_use]
+pub fn within_budget(areas: &[f64], budget: f64) -> usize {
+    let mut sum = 0.0;
+    areas
+        .iter()
+        .take_while(|a| {
+            sum += **a;
+            sum <= budget
+        })
+        .count()
+}
+
 /// One vertex of a chunk's mesh: its corner in cells from the chunk's origin and the chunk's
 /// slot (for its origin), then the face it is on and its world material.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Pod, Zeroable)]
@@ -530,6 +568,9 @@ pub struct WorldGpu {
     pub notes: Vec<String>,
     /// Whether meshes wanted this frame were left for later frames ([`MAX_MESHES_PER_DRAW`]).
     pub incomplete: bool,
+    /// The bricks' boxes marched last frame, in pixels over the pane's pixels (at most
+    /// [`MAX_BRICK_OVERDRAW`]).
+    pub marched: f64,
 }
 
 impl std::fmt::Debug for WorldGpu {
@@ -566,6 +607,7 @@ impl WorldGpu {
         [self.meshes.len(), self.bricks.len(), self.vertices]
     }
 
+    #[allow(clippy::too_many_arguments)] // each is one thing the frame is made from
     /// Brings the GPU copies up to `frame` for the camera of `view` (`camera` is its renderer
     /// camera) and makes this frame's buffers. `complete`: make every mesh wanted now (a picture
     /// taken once), else at most [`MAX_MESHES_PER_DRAW`].
@@ -576,6 +618,7 @@ impl WorldGpu {
         frame: &WorldFrame,
         view: &ViewSpec,
         camera: &Camera,
+        pixels: [u32; 2],
         complete: bool,
     ) -> Option<WorldDraw> {
         let grid = frame.grid?;
@@ -752,17 +795,42 @@ impl WorldGpu {
                 chunks.push(*key);
             }
         }
-        let mut instances: Vec<BrickInstance> = Vec::new();
-        for (key, _) in &far {
-            if let Some((slot, _)) = self.bricks.get(*key) {
+        // The bricks to march, nearest first, as many as the frame's budget of pixels allows
+        // (MAX_BRICK_OVERDRAW times the pane): what bounds one submission's far-field work.
+        let eye_world = camera.origin + camera.eye;
+        let mut order: Vec<(f64, (u8, ChunkKey), u32)> = far
+            .iter()
+            .filter_map(|(key, _)| {
+                let (slot, _) = self.bricks.get(*key)?;
                 let b = grid.brick_box(key.0, key.1);
-                let lo = b.lo - origin;
-                let cell = b.size().x / f64::from(BRICK_SIDE);
-                instances.push(BrickInstance {
-                    origin: [lo.x as f32, lo.y as f32, lo.z as f32, cell as f32],
-                    info: [*slot, u32::from(key.0), 0, 0],
-                });
-            }
+                Some(((b.centre() - eye_world).length(), **key, *slot))
+            })
+            .collect();
+        order.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let areas: Vec<f64> = order
+            .iter()
+            .map(|(distance, key, _)| {
+                brick_pixels(grid.brick_side(key.0), *distance, camera, view, pixels[1])
+            })
+            .collect();
+        let pane = (f64::from(pixels[0]) * f64::from(pixels[1])).max(1.0);
+        let keep = within_budget(&areas, MAX_BRICK_OVERDRAW * pane);
+        if keep < order.len() {
+            self.notes.push(format!(
+                "the far field's {} farthest bricks are not drawn this frame: a frame marches at most {MAX_BRICK_OVERDRAW} times the pane's pixels",
+                order.len() - keep
+            ));
+        }
+        self.marched = areas[..keep].iter().sum::<f64>() / pane;
+        let mut instances: Vec<BrickInstance> = Vec::new();
+        for (_, key, slot) in &order[..keep] {
+            let b = grid.brick_box(key.0, key.1);
+            let lo = b.lo - origin;
+            let cell = b.size().x / f64::from(BRICK_SIDE);
+            instances.push(BrickInstance {
+                origin: [lo.x as f32, lo.y as f32, lo.z as f32, cell as f32],
+                info: [*slot, u32::from(key.0), 0, 0],
+            });
         }
         let eye = camera.eye.to_f32();
         let forward = camera.forward.to_f32();
@@ -1017,6 +1085,30 @@ mod tests {
             }
         }
         assert!(agree > 40, "{agree}");
+    }
+
+    #[test]
+    fn the_far_field_work_a_frame_is_capped() {
+        let view = ViewSpec::framing(
+            &cav_sim::SceneSpec::room(),
+            cav_sim::NamedView::Iso,
+            cav_sim::Projection::Perspective,
+            cav_sim::DrawStyle::Shaded,
+        );
+        let camera = Camera::new(&view, 1.6);
+        // A brick filling the view, and one under a pixel, by the estimate.
+        let near = brick_pixels(10.0, 1.0, &camera, &view, 900);
+        let tiny = brick_pixels(0.01, 1000.0, &camera, &view, 900);
+        assert!(near > 900.0 * 900.0 && tiny < 1.0, "{near} {tiny}");
+        // Many large bricks: only as many as the budget holds, nearest first; the sum within it.
+        let budget = MAX_BRICK_OVERDRAW * 1440.0 * 900.0;
+        let areas = vec![near; 1000];
+        let keep = within_budget(&areas, budget);
+        assert!(keep < 1000 && areas[..keep].iter().sum::<f64>() <= budget);
+        assert!(areas[..=keep].iter().sum::<f64>() > budget, "one more would pass it");
+        // Control: small bricks all fit.
+        assert_eq!(within_budget(&vec![tiny; 1000], budget), 1000);
+        assert_eq!(within_budget(&[budget * 2.0, 1.0], budget), 0);
     }
 
     #[test]

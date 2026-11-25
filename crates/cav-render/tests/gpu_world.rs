@@ -74,7 +74,8 @@ fn gpu_world_culling_matches_the_cpu() {
             frame.chunks.insert(key, Arc::new(ChunkCells { key, ..(*cells).clone() }));
         }
         let mut world = store.lock().unwrap();
-        let draw = world.prepare(&gpu, pipelines, &frame, &v, &camera, true).expect("a frame to draw");
+        let draw =
+            world.prepare(&gpu, pipelines, &frame, &v, &camera, [1600, 1000], true).expect("a frame to draw");
         let mut encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         world.cull(pipelines, &mut encoder, &draw);
         gpu.queue.submit([encoder.finish()]);
