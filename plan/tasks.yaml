@@ -313,6 +313,9 @@
 - id: TASK-S4-26
   milestone: S4
   title: "The owner's bug on the live page: chunks go black and come back as the camera moves; what was drawn stands in until what replaces it is ready (the handover between clipmap levels)"
+- id: TASK-S4-27
+  milestone: S4
+  title: "Streaming made cheaper, measured: the mesher finds exposed faces as bits (22x), a neighbour's layer only, meshing within 4 ms a frame, the step starts no batch past its time; the bench's trace says where a frame goes"
 - id: TASK-S5-01
   milestone: S5
   title: GPU tree walk with float-float accumulation and parity tests
