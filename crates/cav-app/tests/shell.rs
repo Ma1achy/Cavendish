@@ -301,6 +301,11 @@ fn keys_issue_engine_commands() {
     rig.key(Key::Escape, Modifiers::NONE);
     assert_eq!(rig.shell.keyboard.focus, ["timeline"]);
 
+    // Home is the one camera move undo takes back (the owner's rule, S18): Ctrl+Z puts the top
+    // view back.
+    rig.key(Key::Z, Modifiers::COMMAND);
+    assert_eq!(rig.shell.engine.view(0).named(), Some(NamedView::Top), "undo after Home");
+    assert!(!rig.shell.console_open);
     // Undo with nothing to undo is refused, logged, and opens the console.
     let before = rig.shell.engine.digest();
     rig.key(Key::Z, Modifiers::COMMAND);
@@ -403,8 +408,9 @@ fn buttons_and_the_pointer_issue_engine_commands() {
         vec![],
         vec![],
     ]);
+    // (Since S18 the wheel zooms toward the pointer: one camera command, target and distance.)
     assert!(
-        matches!(rig.last_command(), Some(Command::View(ViewCommand::Zoom { pane: 0, .. }))),
+        matches!(rig.last_command(), Some(Command::View(ViewCommand::Camera { pane: 0, .. }))),
         "{:?}",
         rig.last_command()
     );
@@ -469,7 +475,17 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
         let outcome = shell.run(name);
         // `rename` needs a selection, which a fresh shell has not: it says so and changes nothing.
         assert!(outcome.is_ok() || (*name == "rename" && outcome.unwrap_err().contains("select")), "{name}");
-        assert!(shell.engine.journal().is_empty(), "{name} reached the engine");
+        // `frame` works out a camera and issues it: the journal holds that one camera command
+        // (so the session replays), never the window's own word.
+        let journal = shell.engine.journal();
+        if *name == "frame" {
+            assert!(
+                matches!(journal, [Command::View(ViewCommand::Camera { .. })]),
+                "frame issues one camera command: {journal:?}"
+            );
+        } else {
+            assert!(journal.is_empty(), "{name} reached the engine");
+        }
         // `palette` takes a menu's name (`palette add`); the others take nothing.
         let wrong = shell.run(&format!("{name} now")).unwrap_err();
         assert!(

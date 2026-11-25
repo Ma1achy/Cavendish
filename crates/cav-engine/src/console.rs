@@ -257,7 +257,12 @@ pub const COMMANDS: &[CommandDoc] = &[
         example: "schema bodies",
     },
     CommandDoc { name: "stats", usage: "stats", about: "the engine's state at a glance", example: "stats" },
-    CommandDoc { name: "camera", usage: "camera [@N]", about: "a pane's view as data", example: "camera" },
+    CommandDoc {
+        name: "camera",
+        usage: "camera [<x> <y> <z> <yaw> <pitch> <distance>] [@N]",
+        about: "a pane's view as data; with numbers, put the camera there in one step: the target (metres), yaw and pitch (degrees) and distance (metres)",
+        example: "camera 0 0 2 -60 25 18",
+    },
     CommandDoc {
         name: "log",
         usage: "log [count] [debug|info|warn|error] [text]",
@@ -360,6 +365,9 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
             ViewCommand::Orbit { pane, yaw, pitch } => format!("orbit {yaw} {pitch}{}", at(pane)),
             ViewCommand::Zoom { pane, distance } => format!("zoom {distance}{}", at(pane)),
             ViewCommand::Pan { pane, target: [x, y, z] } => format!("pan {x} {y} {z}{}", at(pane)),
+            ViewCommand::Camera { pane, target: [x, y, z], yaw, pitch, distance } => {
+                format!("camera {x} {y} {z} {yaw} {pitch} {distance}{}", at(pane))
+            }
             ViewCommand::Colour { pane, colour } => match colour.field {
                 cav_sim::voxel_view::LeafField::Phase => {
                     format!("colour phase {}{}", colour.tower + 1, at(pane))
@@ -878,6 +886,13 @@ impl Engine {
             ("ls", [path]) => Ok(Request::Ask(Query::Ls(Some((*path).to_owned())))),
             ("stats", []) => Ok(Request::Ask(Query::Stats)),
             ("camera", []) => Ok(Request::Ask(Query::View(pane))),
+            ("camera", [x, y, z, yaw, pitch, distance]) => view(ViewCommand::Camera {
+                pane,
+                target: [number(x, "metres", name)?, number(y, "metres", name)?, number(z, "metres", name)?],
+                yaw: number(yaw, "degrees", name)?,
+                pitch: number(pitch, "degrees", name)?,
+                distance: number(distance, "metres", name)?,
+            }),
             ("journal", []) => Ok(Request::Ask(Query::Journal)),
             ("journal", ["restart"]) => Ok(Request::Restart),
             ("log", args) => {
@@ -1424,6 +1439,16 @@ mod tests {
             ("orbit -60 25", Command::View(ViewCommand::Orbit { pane: 0, yaw: -60.0, pitch: 25.0 })),
             ("zoom 0.30000000000000004", Command::View(ViewCommand::Zoom { pane: 0, distance: 0.1 + 0.2 })),
             ("pan 1 -2 0.5 @4", Command::View(ViewCommand::Pan { pane: 3, target: [1.0, -2.0, 0.5] })),
+            (
+                "camera 1 -2 0.5 -30 15 9.5 @2",
+                Command::View(ViewCommand::Camera {
+                    pane: 1,
+                    target: [1.0, -2.0, 0.5],
+                    yaw: -30.0,
+                    pitch: 15.0,
+                    distance: 9.5,
+                }),
+            ),
             (
                 "figure periodogram tower 2 as paper-column to fig.pdf",
                 figure(FigureKind::Periodogram, FigureFormat::Pdf, "fig.pdf", |f| f.tower = Some(2)),

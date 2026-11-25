@@ -94,6 +94,33 @@ pub fn lift(body: &BodySpec) -> f64 {
     }
 }
 
+/// The radius of a sphere about a body's anchor that holds all of it, metres: what framing the
+/// body fits into the view. A point mass is given a quarter of a metre, so that framing one does
+/// not put the camera on top of it; a mesh, whose size is in its file, a metre.
+#[must_use]
+pub fn reach(body: &BodySpec) -> f64 {
+    use crate::ShapeKind;
+    let solid = match &body.shape {
+        Some(shape) => match &shape.kind {
+            ShapeKind::Sphere { radius } => *radius,
+            ShapeKind::Shell { outer, .. } => *outer,
+            ShapeKind::Cuboid { size } => {
+                0.5 * (size[0] * size[0] + size[1] * size[1] + size[2] * size[2]).sqrt()
+            }
+            ShapeKind::Cylinder { radius, length, .. } => radius.hypot(0.5 * length),
+            ShapeKind::Ellipsoid { radii } => radii.iter().copied().fold(0.0, f64::max),
+            ShapeKind::Platonic { solid, edge } => edge * circumradius(*solid),
+            ShapeKind::Polyhedron { vertices } => vertices
+                .iter()
+                .map(|v| (v.0[0] * v.0[0] + v.0[1] * v.0[1] + v.0[2] * v.0[2]).sqrt())
+                .fold(0.0, f64::max),
+            ShapeKind::Mesh { .. } => 1.0,
+        },
+        None => body.radius,
+    };
+    solid.max(0.25)
+}
+
 /// A Platonic solid's circumradius for a unit edge.
 fn circumradius(solid: crate::PlatonicSolid) -> f64 {
     use crate::PlatonicSolid as P;

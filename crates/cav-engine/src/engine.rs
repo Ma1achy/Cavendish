@@ -938,6 +938,15 @@ impl Engine {
             ViewCommand::Pan { target, .. } if target.iter().any(|c| !c.is_finite()) => {
                 Err(format!("a target must be finite, not {target:?}"))
             }
+            ViewCommand::Camera { target, yaw, pitch, distance, .. }
+                if target.iter().any(|c| !c.is_finite())
+                    || !(yaw.is_finite() && pitch.is_finite())
+                    || !(distance.is_finite() && distance > 0.0) =>
+            {
+                Err(format!(
+                    "a camera needs a finite target, finite angles and a positive distance, not {target:?}, {yaw}, {pitch}, {distance}"
+                ))
+            }
             _ => Ok(()),
         }
     }
@@ -972,12 +981,19 @@ impl Engine {
                 self.schedule(false);
             }
             (Command::Undo, Prepared::Restore(spec)) => {
+                // A step of the view (Home) puts a camera back; any other, the scene.
+                if let Some(Edit::View { pane, view }) = self.history.last().map(|s| s.undo.clone()) {
+                    self.views[pane] = *view;
+                }
                 self.spec = *spec;
                 self.history.undone();
                 self.settle_after_history();
                 self.schedule(false);
             }
             (Command::Redo, Prepared::Restore(spec)) => {
+                if let Some(Edit::View { pane, view }) = self.history.next().map(|s| s.redo.clone()) {
+                    self.views[pane] = *view;
+                }
                 self.spec = *spec;
                 self.history.redone();
                 self.settle_after_history();
@@ -1099,17 +1115,27 @@ impl Engine {
                 self.views[pane].distance = distance.clamp(DISTANCE_RANGE.0, DISTANCE_RANGE.1);
             }
             ViewCommand::Pan { pane, target } => self.views[pane].target = target,
+            ViewCommand::Camera { pane, target, yaw, pitch, distance } => {
+                let view = &mut self.views[pane];
+                view.target = target;
+                view.yaw = 180.0 - (180.0 - yaw).rem_euclid(360.0);
+                view.pitch = pitch.clamp(-90.0, 90.0);
+                view.distance = distance.clamp(DISTANCE_RANGE.0, DISTANCE_RANGE.1);
+            }
             ViewCommand::Home { pane } => {
                 // Home is the camera's: the style, the colouring, the overlays and the section
                 // are kept.
-                let view = &self.views[pane];
-                let (colour, overlay, section) = (view.colour, view.overlay, view.section);
-                self.views[pane] = ViewSpec {
-                    colour,
-                    overlay,
-                    section,
-                    ..home_view(&self.spec, pane, self.views[pane].style)
-                };
+                let before = self.views[pane].clone();
+                let (colour, overlay, section) = (before.colour, before.overlay, before.section);
+                self.views[pane] =
+                    ViewSpec { colour, overlay, section, ..home_view(&self.spec, pane, before.style) };
+                // The one camera move that is an edit: undo puts the camera back where it was.
+                if before != self.views[pane] {
+                    self.history.edited(Step {
+                        undo: Edit::View { pane, view: Box::new(before) },
+                        redo: Edit::View { pane, view: Box::new(self.views[pane].clone()) },
+                    });
+                }
             }
             ViewCommand::Colour { pane, colour } => self.views[pane].colour = colour,
             ViewCommand::Overlay { pane, overlay } => self.views[pane].overlay = overlay,
@@ -1782,6 +1808,54 @@ mod tests {
     use super::*;
     use crate::log::LogFilter;
     use cav_sim::dev;
+
+    #[test]
+    fn home_is_the_one_camera_move_that_undo_takes_back() {
+        // S18 C2 (the owner's rule): Home is undoable; no other camera move is.
+        let mut engine = Engine::new();
+        engine.run_line("set duration 30").unwrap();
+        engine.run_line("orbit 10 20").unwrap();
+        engine.run_line("zoom 7").unwrap();
+        let moved = engine.view(0).clone();
+        engine.run_line("view home").unwrap();
+        assert_ne!(engine.view(0), &moved, "Home moved the camera");
+        engine.run_line("undo").unwrap();
+        assert_eq!(engine.view(0), &moved, "undo after Home puts the camera back");
+        assert_eq!(engine.spec().duration, 30.0, "and leaves the scene as it was");
+        engine.run_line("redo").unwrap();
+        assert_ne!(engine.view(0), &moved, "redo is Home again");
+        engine.run_line("undo").unwrap();
+        // Control: undo after an orbit undoes the last scene edit, not the orbit.
+        engine.run_line("orbit 40 30").unwrap();
+        let orbited = engine.view(0).clone();
+        engine.run_line("undo").unwrap();
+        assert_eq!(engine.view(0), &orbited, "an orbit is not undone");
+        assert_eq!(engine.spec().duration, SceneSpec::room().duration, "the edit before it is");
+        // Home on a camera already home is no step.
+        let mut fresh = Engine::new();
+        fresh.run_line("view home").unwrap();
+        assert_eq!(fresh.history(), (false, false));
+    }
+
+    #[test]
+    fn a_camera_command_is_one_step_and_replays() {
+        // S18 C1: the target, angles and distance in one command, one journal line for a run.
+        let mut engine = Engine::new();
+        for step in 0..5 {
+            let x = f64::from(step) * 0.25;
+            engine.run_line(&format!("camera {x} 1 2 -30 15 9")).unwrap();
+        }
+        assert_eq!(engine.journal().len(), 1, "a run of camera moves is one journal entry");
+        let view = engine.view(0);
+        assert_eq!((view.target, view.yaw, view.pitch, view.distance), ([1.0, 1.0, 2.0], -30.0, 15.0, 9.0));
+        let replayed = Engine::replay(engine.journal()).unwrap();
+        assert_eq!(replayed.view(0), engine.view(0), "the replay has the identical camera");
+        // Angles wrap and clamp as an orbit's; a bad one is refused.
+        engine.run_line("camera 0 0 0 270 120 5").unwrap();
+        assert_eq!((engine.view(0).yaw, engine.view(0).pitch), (-90.0, 90.0));
+        assert!(engine.run_line("camera 0 0 0 0 0 -1").is_err());
+        assert!(engine.run_line("camera 0 0 nan 0 0 1").is_err());
+    }
 
     /// A session in which every command matters to the final state, so that dropping any one of
     /// them must change the digest. (`Home` is left out because it overwrites what came before it;
