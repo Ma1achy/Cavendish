@@ -8,6 +8,7 @@
 //! cargo xtask validate [--report] every validation case, tabulated; missing cases fail
 //! cargo xtask web [build|serve]  the browser build in target/web/dist; with no word, its tier
 //! cargo xtask hooks              install the pre-push hook that runs `quick`
+//! cargo xtask strays [--stop]     agents' leftover processes on this PC: list, or stop by signature
 //! ```
 
 mod demo;
@@ -16,6 +17,7 @@ mod json;
 mod python;
 #[cfg(test)]
 mod recipes;
+mod strays;
 mod tiers;
 mod validate;
 mod web;
@@ -63,6 +65,11 @@ cargo xtask <tier>
                      itself (scripts always give one: on Windows, stopping cargo can leave
                      xtask.exe serving).
   hooks              installs .git/hooks/pre-push, which runs `cargo xtask quick`.
+  strays [--stop | --self-test]
+                     lists processes an agent may have left running (scripts/strays.ps1: by command
+                     line, e.g. `python -`, `python -m http.server`, `xtask web serve`, headless
+                     Chrome on a temp profile); fails when one is over 30 min old or 600 CPU s. With
+                     --stop it stops those, and only those. --self-test checks the script. Windows.
 ";
 
 fn main() -> ExitCode {
@@ -91,6 +98,7 @@ fn main() -> ExitCode {
             web::exit_after(seconds).and_then(|time| web::serve_forever(&root, Some(time)))
         }
         ["hooks"] => hooks(&root),
+        ["strays", rest @ ..] => strays::run(&root, rest),
         [] | ["help" | "--help" | "-h"] => {
             print!("{HELP}");
             return ExitCode::SUCCESS;

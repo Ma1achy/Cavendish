@@ -126,6 +126,22 @@ Recipe: `docs/extending/a-validation-case.md`.
 - British English. Simplicity over cleverness. A dependency must earn its place, and say how in
   the commit that adds it. `unsafe` is forbidden outside `cav-memtest`.
 
+## Processes
+
+This PC is the owner's, and one agent's leftover process once ran for six hours. So:
+
+- Start a server, a browser or a background script in the same command that stops it, holding its
+  handle, or give it a lifetime (`cargo xtask web serve --exit-after 600`). Never leave one running
+  for a later tool call to stop: the handle is gone by then, and stopping by id is refused.
+- Run `cargo xtask strays` before finishing. It lists what looks like an agent's leftover by command
+  line (`python -`, `python -m http.server`, `xtask web serve`, the app built in `target`, headless
+  Chrome or Edge on a temp profile, node running the wasm tests or the screenshot script, `wasm-opt`,
+  `cargo-nextest`) and fails when one is over 30 minutes old or 600 CPU seconds.
+  `cargo xtask strays --stop` stops those, and only those (the owner's ruling of 24 Nov 2026).
+  `cargo xtask strays --self-test` checks the script with processes it starts and stops itself.
+- The project's Claude Code hooks (`.claude/settings.json`) run the same report after every subagent
+  and at the end of every turn, and tell the session what they find.
+
 ## Documentation
 
 Every public item of a library crate is documented (`#![warn(missing_docs)]`, which `quick`'s
