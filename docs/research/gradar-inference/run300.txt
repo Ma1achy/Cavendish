@@ -1,0 +1,85 @@
+shots per tower 31, towers 5, data 155
+  10 kg at 10 m horizontal, height 0.0 m: phase on the centre tower +7.72 mrad
+  10 kg at 10 m horizontal, height 1.0 m: phase on the centre tower +9.85 mrad
+  10 kg at 10 m horizontal, height 2.5 m: phase on the centre tower +12.28 mrad
+  10 kg at 10 m horizontal, height 5.0 m: phase on the centre tower +12.67 mrad
+
+## Q1 finite-difference Jacobian accuracy
+  mass step 1e-02 rel: max rel error of dphi/dm = 9.4e-15
+  mass step 1e-04 rel: max rel error of dphi/dm = 3.5e-12
+  mass step 1e-06 rel: max rel error of dphi/dm = 1.2e-10
+  mass step 1e-08 rel: max rel error of dphi/dm = 3.3e-08
+  f64 phases, step 1e-01 m: max rel error of dphi/dx0 = 3.8e-04
+  f64 phases, step 1e-02 m: max rel error of dphi/dx0 = 3.8e-06
+  f64 phases, step 1e-03 m: max rel error of dphi/dx0 = 3.8e-08
+  f64 phases, step 1e-04 m: max rel error of dphi/dx0 = 3.7e-10
+  f32 phases, step 1e-01 m: max rel error of dphi/dx0 = 3.8e-04
+  f32 phases, step 1e-02 m: max rel error of dphi/dx0 = 7.8e-06
+  f32 phases, step 1e-03 m: max rel error of dphi/dx0 = 1.6e-04
+  f32 phases, step 1e-04 m: max rel error of dphi/dx0 = 2.1e-03
+  64- vs 128-node quadrature: max |dphi| = 4.4e-05 rad (peak 3.02e-01 rad)
+
+## Q2/Q3 CRB and the matched-filter + Gauss-Newton baseline
+
+  [Vallisneri max |log r| on the Fisher 1-sigma surface: 0.004]
+  y0 = 8 m, M = 75 kg: optimal SNR 814.0, Fisher condition (normalised) 4.1e+02
+    CRB sigma  : M 0.89 kg, x0 0.0185 m, y0 0.0547 m, vx 0.00396 m/s, vy 0.0027 m/s
+    MF+GN RMSE : M 0.949, x0 0.0179, y0 0.0581, vx 0.00409, vy 0.00259
+    RMSE/CRB   : [1.07 0.97 1.06 1.03 0.96]  bias/CRB [ 0.04 -0.01  0.05  0.02  0.05]
+    bank misses (GN from bank worse than GN from truth): 0/300; bank 2925 templates in 0.8 s
+    Fisher-ellipsoid 68% coverage of the ML estimates: 0.65
+    grid inversion (10 s window, 60 trials) RMSE: M 46, x 0.0284, y 3.37
+
+  [Vallisneri max |log r| on the Fisher 1-sigma surface: 0.0119]
+  y0 = 15 m, M = 75 kg: optimal SNR 226.2, Fisher condition (normalised) 4.0e+02
+    CRB sigma  : M 3.18 kg, x0 0.172 m, y0 0.224 m, vx 0.0156 m/s, vy 0.0127 m/s
+    MF+GN RMSE : M 3.22, x0 0.177, y0 0.227, vx 0.0151, vy 0.0131
+    RMSE/CRB   : [1.01 1.03 1.01 0.96 1.03]  bias/CRB [ 0.07 -0.04  0.06  0.06  0.06]
+    bank misses (GN from bank worse than GN from truth): 0/300; bank 2925 templates in 0.8 s
+    Fisher-ellipsoid 68% coverage of the ML estimates: 0.68
+    grid inversion (10 s window, 60 trials) RMSE: M 65.9, x 0.0117, y 10.5
+
+  [Vallisneri max |log r| on the Fisher 1-sigma surface: 2.47]
+  y0 = 30 m, M = 75 kg: optimal SNR 40.1, Fisher condition (normalised) 8.7e+02
+    CRB sigma  : M 25.8 kg, x0 3.37 m, y0 3.45 m, vx 0.126 m/s, vy 0.116 m/s
+    MF+GN RMSE : M 30, x0 3.28, y0 3.45, vx 0.126, vy 0.112
+    RMSE/CRB   : [1.16 0.97 1.   1.   0.97]  bias/CRB [0.26 0.01 0.09 0.07 0.01]
+    bank misses (GN from bank worse than GN from truth): 0/300; bank 2925 templates in 0.8 s
+    Fisher-ellipsoid 68% coverage of the ML estimates: 0.45
+    grid inversion (10 s window, 60 trials) RMSE: M 73.6, x 0.0556, y 25.6
+
+  [Vallisneri max |log r| on the Fisher 1-sigma surface: 1.27e+03]
+  y0 = 45 m, M = 75 kg: optimal SNR 13.7, Fisher condition (normalised) 1.8e+03
+    CRB sigma  : M 106 kg, x0 21.2 m, y0 21.1 m, vx 0.528 m/s, vy 0.479 m/s
+    MF+GN RMSE : M 731, x0 30.1, y0 26.4, vx 0.748, vy 0.713
+    RMSE/CRB   : [6.92 1.42 1.25 1.41 1.49]  bias/CRB [ 1.82 -0.05 -0.16 -0.1   0.05]
+    bank misses (GN from bank worse than GN from truth): 6/300; bank 2925 templates in 0.8 s
+    Fisher-ellipsoid 68% coverage of the ML estimates: 0.12
+    grid inversion (10 s window, 60 trials) RMSE: M 74.7, x 0.973, y 40.6
+
+  [Vallisneri max |log r| on the Fisher 1-sigma surface: 1.11e+05]
+  y0 = 60 m, M = 75 kg: optimal SNR 6.2, Fisher condition (normalised) 3.0e+03
+    CRB sigma  : M 302 kg, x0 81.3 m, y0 80.6 m, vx 1.57 m/s, vy 1.37 m/s
+    MF+GN RMSE : M 990, x0 51.4, y0 57.2, vx 1.4, vy 1.34
+    RMSE/CRB   : [3.28 0.63 0.71 0.89 0.98]  bias/CRB [ 1.05 -0.03 -0.33 -0.23  0.04]
+    bank misses (GN from bank worse than GN from truth): 48/300; bank 2925 templates in 1.0 s
+    Fisher-ellipsoid 68% coverage of the ML estimates: 0.02
+    grid inversion (10 s window, 60 trials) RMSE: M 74.9, x 1.48, y 56.7
+
+  [Vallisneri max |log r| on the Fisher 1-sigma surface: 12.1]
+  y0 = 60 m, M = 750 kg: optimal SNR 61.7, Fisher condition (normalised) 3.0e+03
+    CRB sigma  : M 302 kg, x0 8.13 m, y0 8.06 m, vx 0.157 m/s, vy 0.137 m/s
+    MF+GN RMSE : M 372, x0 8.66, y0 8.62, vx 0.164, vy 0.145
+    RMSE/CRB   : [1.23 1.07 1.07 1.04 1.06]  bias/CRB [ 0.11 -0.04 -0.14 -0.1   0.05]
+    bank misses (GN from bank worse than GN from truth): 0/300; bank 2925 templates in 1.0 s
+    Fisher-ellipsoid 68% coverage of the ML estimates: 0.24
+    grid inversion (10 s window, 60 trials) RMSE: M 748, x 0.129, y 55.7
+
+  total 225 s
+
+## Control: a Fisher matrix with a wrong noise level must fail the efficiency check
+  RMSE / wrong-CRB = [2.13 1.94 2.12 2.07 1.92]  (should be ~2, outside [0.8, 1.25])
+
+## Single tower: degeneracy
+  one tower, y0 8.0: normalised condition -5.5e+15; weakest direction (M,x0,y0,vx,vy) [ 2.04e-08 -7.07e-01  1.74e-08  5.09e-09  7.07e-01]
+  one tower, y0 15.0: normalised condition 7.4e+15; weakest direction (M,x0,y0,vx,vy) [ 1.04e-07 -7.07e-01  8.91e-08  2.49e-08  7.07e-01]

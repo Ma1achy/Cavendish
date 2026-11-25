@@ -1,0 +1,28 @@
+(a) AION-10 response to a differential acceleration at f (T = 0.730 s)
+   f =   0.01 Hz   |H|/T^2 = 1.00e+00   envelope 1/(pi f T)^2 = 1.00e+00
+   f =   0.10 Hz   |H|/T^2 = 9.83e-01   envelope 1/(pi f T)^2 = 1.00e+00
+   f =   0.25 Hz   |H|/T^2 = 8.95e-01   envelope 1/(pi f T)^2 = 1.00e+00
+   f =   0.50 Hz   |H|/T^2 = 6.32e-01   envelope 1/(pi f T)^2 = 7.61e-01
+   f =   1.00 Hz   |H|/T^2 = 1.07e-01   envelope 1/(pi f T)^2 = 1.90e-01
+   f =   1.37 Hz   |H|/T^2 = 1.00e-08   envelope 1/(pi f T)^2 = 1.01e-01
+   f =   2.00 Hz   |H|/T^2 = 4.68e-02   envelope 1/(pi f T)^2 = 4.75e-02
+   f =   5.00 Hz   |H|/T^2 = 6.04e-03   envelope 1/(pi f T)^2 = 7.61e-03
+   f =  10.00 Hz   |H|/T^2 = 1.24e-03   envelope 1/(pi f T)^2 = 1.90e-03
+   f =  20.00 Hz   |H|/T^2 = 4.30e-04   envelope 1/(pi f T)^2 = 4.75e-04
+   f =  50.00 Hz   |H|/T^2 = 7.61e-05   envelope 1/(pi f T)^2 = 7.61e-05
+
+(b) a slab sagging under a person, against the person (point estimates)
+   slab 6.0x6.0x0.2 m concrete, simply supported, 687 N at the centre: w_max = 13.8 um, mass dipole 0.083 kg m
+   slab edge 0.5 m from the tower (person 3.5 m away, CoM 1 m up), arms at 1.0, 6.0 m: person -4.93e-01 rad, slab sag +4.51e-04 rad (ratio -9.1e-04)
+   slab edge 2.0 m from the tower (person 5.0 m away, CoM 1 m up), arms at 1.0, 6.0 m: person -3.17e-01 rad, slab sag +2.62e-04 rad (ratio -8.3e-04)
+
+(c) thermoelastic coupling number delta = E^2 alpha^2 T0 / ((1-2nu)^2 rho c (lambda+2mu))
+   steel     delta = 1.1e-02
+   aluminium delta = 2.6e-02
+   concrete  delta = 1.0e-03
+   granite   delta = 1.5e-03
+
+(d) modal read cost: one weight per mode and tower, then a dot product per shot
+   1e+06 leaves x 64 modes x 5 towers: weights = 3.2e+08 kernel evaluations once; per shot 320 multiply-adds
+   1e+08 leaves x 64 modes x 5 towers: weights = 3.2e+10 kernel evaluations once; per shot 320 multiply-adds
+   1e+09 leaves x 256 modes x 5 towers: weights = 1.3e+12 kernel evaluations once; per shot 1280 multiply-adds

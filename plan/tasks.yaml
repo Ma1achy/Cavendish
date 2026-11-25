@@ -772,3 +772,9 @@
 - id: TASK-S19-25
   milestone: S19
   title: "S19 after its review: the record (pictures before and after, validation against s18-the-editor, minors 10, 12, 13, 22, ARCHITECTURE, PROGRESS)"
+- id: TASK-S5-16
+  milestone: S5
+  title: Body draw modes as data: voxels (today); partial fill made visible (edge cells shaded by their exact fill fraction, with the clipped piece's outline and centroid on demand, and a legend); the original mesh as triangles; mesh over voxels for comparison
+- id: TASK-S5-17
+  milestone: S5
+  title: Clipped-piece view: each boundary cell drawn as its exact clipped polyhedron (the solid side of the mesh's planes), the view the exact-skin near kernel reads, capped per frame

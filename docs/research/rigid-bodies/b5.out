@@ -1,0 +1,6 @@
+semi-implicit              h=1/60   stop time err +6.81e-03 s  distance err -1.65e-02 m (closed form 0.509858 m); final v exactly 0: True
+semi-implicit              h=1/240  stop time err +2.64e-03 s  distance err -4.16e-03 m (closed form 0.509858 m); final v exactly 0: True
+semi-implicit              h=1/960  stop time err +5.59e-04 s  distance err -1.04e-03 m (closed form 0.509858 m); final v exactly 0: True
+trapezoid (mean velocity)  h=1/60   stop time err +6.81e-03 s  distance err +1.32e-04 m (closed form 0.509858 m); final v exactly 0: True
+trapezoid (mean velocity)  h=1/240  stop time err +2.64e-03 s  distance err +7.90e-06 m (closed form 0.509858 m); final v exactly 0: True
+trapezoid (mean velocity)  h=1/960  stop time err +5.59e-04 s  distance err +5.29e-07 m (closed form 0.509858 m); final v exactly 0: True
