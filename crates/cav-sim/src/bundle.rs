@@ -209,6 +209,8 @@ pub fn write(
         None => std::borrow::Cow::Owned(crate::read::readouts(spec)?),
     };
     let nominal = time.len();
+    // What each body weighs (a body of materials is voxelised for it), before any file is written.
+    let masses = spec.bodies.iter().map(|body| body.mass_in(spec)).collect::<Result<Vec<f64>, String>>()?;
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let mut listed: Vec<Listed> = Vec::new();
     let mut list = |name, shape: &[usize], dtype, unit, about| {
@@ -369,9 +371,15 @@ pub fn write(
     );
 
     let mut file = create(dir, "source_mass.npy")?;
-    let written = npy::write_f64(&mut file, &[bodies], spec.bodies.iter().map(|body| body.mass));
+    let written = npy::write_f64(&mut file, &[bodies], masses.iter().copied());
     finish(dir, "source_mass.npy", written, file)?;
-    list("source_mass", &[bodies], npy::F64, "kg", "each body's mass, in the scene's order");
+    list(
+        "source_mass",
+        &[bodies],
+        npy::F64,
+        "kg",
+        "what each body weighs, in the scene's order: its `mass`, or for a voxel body of materials its densities times its volumes as voxelised",
+    );
 
     let mut file = create(dir, "error_estimate.npy")?;
     let written = npy::write_f64(&mut file, &[towers], signal.estimates.iter().copied());
@@ -631,6 +639,51 @@ mod tests {
             assert_eq!(nudged.iter().zip(&signal_values).filter(|(a, b)| a.to_bits() != b.to_bits()).count(), 1);
             Measured::Error(wrong as f64)
         },
+    }
+
+    #[test]
+    fn source_mass_is_what_each_body_weighs() {
+        // S19 review I1: a voxel body of steel weighs ρ·V (a 0.4 m box whose faces lie on cell
+        // faces, so its voxelised volume is its volume), not the placeholder in its `mass` field.
+        // Control: the uniform bodies write their `mass` to the bit, and the placeholder is far
+        // from ρ·V, so writing the field would fail the first check.
+        let mut scene = dev::staggered();
+        scene.duration = 10.0;
+        let mut shape =
+            crate::shape::ShapeSpec::new(crate::shape::ShapeKind::Cuboid { size: [0.4; 3] }, 0.1, 2);
+        shape.material = Some("steel".into());
+        let placeholder = 1.0;
+        scene.bodies.push(crate::BodySpec::shaped(
+            "steel box",
+            placeholder,
+            shape,
+            crate::Motion::Static { position: [3.0, 3.0, 1.0] },
+        ));
+        assert_eq!(scene.validate(), Ok(()));
+        let signal = read::signal(&scene).unwrap();
+        let dir = scratch("source mass");
+        write(&dir, &scene, &signal, &build(), None).unwrap();
+        let (shape, masses) = array(&dir, "source_mass").into_f64().unwrap();
+        assert_eq!(shape, [scene.bodies.len()]);
+        let rho = crate::materials::find(&[], "steel").unwrap().density;
+        let expected = rho * 0.4 * 0.4 * 0.4;
+        let steel = masses[scene.bodies.len() - 1];
+        assert!((steel - expected).abs() <= 1e-12 * expected, "{steel} kg against ρV = {expected} kg");
+        for (n, body) in scene.bodies.iter().enumerate().take(scene.bodies.len() - 1) {
+            assert_eq!(masses[n].to_bits(), body.mass.to_bits(), "a uniform body writes its mass");
+        }
+        assert!((placeholder - expected).abs() > 1e-3 * expected, "the control: the field is not ρV");
+        // The one rule: `mass_in` is what the bundle wrote, and a body of materials needs no
+        // positive `mass` to be valid.
+        assert_eq!(scene.bodies.last().unwrap().mass_in(&scene).unwrap().to_bits(), steel.to_bits());
+        scene.bodies.last_mut().unwrap().mass = 0.0;
+        assert_eq!(scene.validate(), Ok(()));
+        scene.bodies.last_mut().unwrap().shape.as_mut().unwrap().material = None;
+        let why = scene.validate().unwrap_err().0;
+        assert!(
+            why.starts_with(&format!("bodies[{}].mass", scene.bodies.len() - 1)),
+            "a uniform body must weigh: {why}"
+        );
     }
 
     #[test]

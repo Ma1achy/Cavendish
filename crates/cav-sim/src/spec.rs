@@ -395,7 +395,10 @@ pub struct BodySpec {
     /// Name shown in the outliner; no two bodies share one. At most 200 characters.
     #[schemars(length(min = 1, max = 200))]
     pub label: String,
-    /// Kilograms.
+    /// Kilograms, above 0, for a point, a sphere or a uniform voxel body. A voxel body with a
+    /// material weighs its materials and this is not read (validation then asks only that it be
+    /// a number from 0 to 1e12): what any body weighs is [`BodySpec::mass_in`], never this field
+    /// alone.
     #[schemars(range(max = 1.0e12), extend("exclusiveMinimum" = 0.0))]
     #[schemars(extend("x-unit" = "kg"))]
     pub mass: f64,
@@ -729,6 +732,41 @@ impl BodySpec {
     pub fn exists(&self) -> (f64, f64) {
         (self.appears.unwrap_or(f64::NEG_INFINITY), self.vanishes.unwrap_or(f64::INFINITY))
     }
+
+    /// Whether the body weighs its materials (a voxel body with a `material`) rather than its
+    /// `mass` field.
+    #[must_use]
+    pub fn weighs_its_materials(&self) -> bool {
+        self.shape.as_ref().is_some_and(|s| s.material.is_some())
+    }
+
+    /// What the body weighs in `scene`, kilograms: the one rule every consumer of a body's mass
+    /// uses (the bundle's `source_mass`, the inspector, the console). A body of materials weighs
+    /// its densities times its volumes as voxelised (the tree's mass, which is what the forward
+    /// model reads); any other body weighs its `mass` field, exactly.
+    ///
+    /// This voxelises a body of materials, so where the tree is already made use
+    /// [`Self::mass_with`].
+    ///
+    /// # Errors
+    /// When a body of materials cannot be voxelised (a material not found, a mesh's file not
+    /// there, too fine), in the voxeliser's words.
+    pub fn mass_in(&self, scene: &SceneSpec) -> Result<f64, String> {
+        match &self.shape {
+            Some(shape) if shape.material.is_some() => {
+                Ok(shape.tree(self.mass, &scene.materials)?.body().mass)
+            }
+            _ => Ok(self.mass),
+        }
+    }
+
+    /// [`Self::mass_in`] given the body's tree when it is already made (`None` for a point or a
+    /// sphere, or a tree not made): the tree's mass for a body of materials, else the `mass`
+    /// field. `None` when the body weighs its materials and no tree is given.
+    #[must_use]
+    pub fn mass_with(&self, tree: Option<&cav_core::voxel::VoxTree>) -> Option<f64> {
+        if self.weighs_its_materials() { tree.map(|t| t.body().mass) } else { Some(self.mass) }
+    }
 }
 
 impl Default for ArraySpec {
@@ -918,7 +956,13 @@ impl SceneSpec {
             if !seen.insert(body.label.as_str()) {
                 return fail(format!("{at}.label: `{}` is used twice", body.label));
             }
-            positive(&format!("{at}.mass"), body.mass, limits::MASS)?;
+            if body.weighs_its_materials() {
+                // Not read: the body weighs its materials. Any number in range is kept (an
+                // import writes a placeholder), but not a NaN, which would not round-trip.
+                within(&format!("{at}.mass"), body.mass, (0.0, limits::MASS))?;
+            } else {
+                positive(&format!("{at}.mass"), body.mass, limits::MASS)?;
+            }
             within(&format!("{at}.radius"), body.radius, (0.0, limits::RADIUS))?;
             if let Some(shape) = &body.shape {
                 if body.radius != 0.0 {

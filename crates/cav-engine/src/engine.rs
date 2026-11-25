@@ -1761,8 +1761,10 @@ impl Engine {
     }
 
     /// What the Probe tool reads at `point` (metres, the world's frame) at the playhead: the
-    /// bodies' gravity, the voxel cell there and its share of each tower's phase, the distance to
-    /// each tower ([`cav_sim::probe`]). A question: nothing changes, nothing is journalled.
+    /// gravity of every body and a slab floor (what it leaves out it names), the finest voxel
+    /// cell there and its share of each tower's phase, the distance to each tower
+    /// ([`cav_sim::probe`]). The view's trees are lent; a body the view's byte budget left out is
+    /// voxelised for the probe. A question: nothing changes, nothing is journalled.
     #[must_use]
     pub fn probe(&self, point: [f64; 3]) -> cav_sim::probe::Probe {
         cav_sim::probe::probe(&self.spec, self.voxels.trees(), self.time, point)
