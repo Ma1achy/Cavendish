@@ -6,7 +6,7 @@ output in [`results.txt`](s5-world-octree/results.txt)). Tags: **[R]** read in a
 session; **[S]** read only as a search-result summary; **[M]** measured here; **[D]** derived by me,
 to be checked; **[U]** not verified (listed again in section 8).* Extended the same day with the owner's Barnes–Hut frame (2.1 to 2.5), view modes (7a) and seams (7b).
 
-**Changed after reading the primary sources (25 Nov 2026).** The owner supplied the PDFs of Lengyel 2010,
+**Changed after the first batch of primary sources (25 Nov 2026, earlier).** The owner supplied the PDFs of Lengyel 2010,
 Strugar 2010, Losasso & Hoppe 2004 and Laine & Karras 2010 (read with their figures; not copied into the
 repository). What changed:
 * **Seam blend: driven by continuous camera position, not by time** (§7b). All three primary sources make the
@@ -36,6 +36,88 @@ repository). What changed:
   brick march (a coarse depth pre-pass, and filter radii clamped across level boundaries).
 * **Skirts** are now sourced (Lengyel §2.1.1–2.1.2, pp. 6–8, which also says Ulrich's chunked LOD uses them).
 
+**Changed after reading the primary sources (25 Nov 2026).** A second batch of the owner's PDFs (not copied into
+the repository): Barnes & Hut 1986 (4 pages, a scan; read as page images), Salmon & Warren 1994 (20 pages, a scan;
+read page by page, App. B's equations followed to Eq. 62), Ulrich 2002 (the SIGGRAPH course notes, 14 pages,
+read in full), and a fourth file that is **not Ulrich**: Çetin Koca's 2012 Bilkent MSc thesis on hybrid
+heightmap and octree-voxel terrain (174 pages; only its contents and its §2 account of Ulrich were looked at,
+nothing is cited from it). Two benchmarks were written ([`mac_bound.py`](s5-world-octree/mac_bound.py),
+[`cut_cancellation.py`](s5-world-octree/cut_cancellation.py)). What changed, in order of weight:
+* **Cavendish's bound is the Salmon & Warren bound in kind, and theirs is not tighter.** Their rigorous error bound
+  (Eq. 9 / 62, App. B) is built from the same ingredients as the S4 bound this note carries: absolute moments
+  `B_(n) = Σ m |x − r₀|ⁿ` about the expansion centre, a node radius `b_max`, and powers of `b_max/d`. Their
+  closed form for the whole tail adds a factor `1/(1 − b_max/d)²` and subtracts `(p+1)B_(p+2)/d^(p+2)` (using a
+  lower bound on `B_(p+2)` from Hölder, Eq. 65–66); on a unit cube at `d/s` = 2 to 10 that subtraction is worth
+  at most about 1.3×. **Measured on a uniform cube** (the shape of a voxel node; `mac_bound.out`): with *exact*
+  absolute moments Eq. 62 is **109–4,800× the true remainder at p = 1, 38–350× at p = 2 and 6–65× at p = 3**
+  (three target directions, `d/s` = 2 to 10; along the cube's axis, where the error is largest, 109–1,200×, 39–87× and
+  6–9×).
+  The reason is symmetry: a cube's dipole, quadrupole and octupole vanish, the first non-zero error is the
+  hexadecapole, and an absolute-moment bound cannot know that. Their reported tightness (mean actual/bound 0.22, rms
+  0.28, p. 143, Fig. 7) is for *clumpy particle sets* with a monopole-only expansion, where the first omitted term
+  is not zero. **Cavendish's 27–457× is in the range these two effects predict** (my reading, not a proof):
+  per node 6–9× at p = 3 along the axis and up to 65× along a face diagonal (this benchmark), times the loss from adding bounds by the triangle inequality: on the
+  town cut `Σ|eᵢ| / |Σeᵢ|` is **3–27** (`cut_cancellation.out`, quadrupole cuts). So the looseness is mostly
+  *intrinsic to a rigorous, absolute, per-node bound*, not a defect of S4's. The §6 C remark "a bound a hundred
+  times tighter would cut this by a large factor" should be read as: not available rigorously. (The benchmark's "crude bound", all of a node's mass at distance `a`,
+  is S&W's Eq. 70, the "weak bound" for treecodes that store no absolute moments, App. B.3, p. 155; they also note that
+  a bound on the potential understates the acceleration's by up to a factor of about `p`, "an order of magnitude or
+  more in practice".)
+* **What can be tightened, and what it buys.** Spend the signed moments on the leading remainder term, which
+  S&W's own Eq. 46–47 give exactly from the traceless moment tensor `Q_(n)`, and bound only the tail beyond it
+  with Eq. 62. Measured on the cube (`mac_bound.out`, Part 2, target on the axis): at p = 3 the bound falls to
+  **1.4–3.2× the true remainder (acceleration) and 1.5–3.1× (the gradient `∂g_z/∂z`)**, from 6–9×; at p = 2, 6–9×
+  from 27–87×; at p = 1 it stays at 27–87× because the next two terms vanish too. It needs the signed **fourth**
+  moments at every node (15 raw components, about 120 B at `f64`: the owner's further question 3 below, answered in
+  the affirmative if a tight ledger is wanted). **But it buys little distance:** the error falls like `d^−(l+3)` with
+  `l = 4` for a cube, so a bound 3.5× tighter lets a node be accepted about 3.5^(1/7) ≈ 1.2× closer: a modest
+  saving, not the orders of magnitude µrad needs. The bound is not what makes µrad expensive; the expansion's
+  order and the cached local expansion of §2.2–2.3 are. (The cube is the best case for this: real nodes of mixed
+  material and partial fill do not have vanishing odd moments.)
+* **The sum-of-squares ledger is not rigorous here.** S&W Eq. 16–17 add per-node bounds *in quadrature*, on the
+  assumption that node errors are uncorrelated. On the town cut `√Σeᵢ² / |Σeᵢ|` is 0.05–0.94: it **under-reports the
+  true error by up to 20×**, because node errors are correlated (the same ground slab, the same sign). S&W
+  themselves write that the errors in the forces from the particles of one box "are not just correlated; they are
+  nearly identical" (p. 143); the data here say the correlation reaches across boxes. Use the triangle sum for the rigorous ledger; report the quadrature
+  sum, if at all, as an estimate.
+* **The walk should be a priority queue on a global ledger, not a per-level threshold** (S&W §4.3, p. 145,
+  Eq. 14–18). Open the node with the largest bound first, push its children, stop when `Σ bound ≤ Δ_tot`: this
+  "Sum MAC" finds a near-minimal cut for a given total and needs no per-level share. The note's
+  `ε_level = share × tolerance` (§2.1, §5) is the *absolute MAC*, which S&W argue wastes effort on small partials
+  (partials span five orders of magnitude, Fig. 8, p. 144), so it is demoted: the per-level radii `r_L` become an
+  *output* of the queue, and the cached table for the GPU fast path. S&W's numbers (Table I, p. 143): the
+  monopole-only Sum Squares MAC at `f = 0.01` reaches maximum errors of 0.0046–0.0057 against 0.0135–0.0701 for the BH
+  MAC at `θ = 0.65` with quadrupoles, at 0.64–1.02× the work. They also found quadrupole terms save at most ~7 % of
+  the work for the Sum Squares MAC (§4.6, p. 148), a statement about *their* tolerance (a fraction of the total
+  acceleration); Cavendish's µrad needs higher orders (§2.2), so I do not carry it over.
+* **The opening distance must be the least distance, and a node may never be accepted near the target.** Barnes &
+  Hut's test is `l/D < θ` with `D` the distance to the cell's *centre of mass* (p. 447). S&W (§2.1, App. A, Fig. 12)
+  show this accepts, for `θ > 1/√3`, a cell whose far corner holds the mass while the target sits just outside its
+  boundary: errors of 20 % and more on a satellite galaxy, which "detonates" (Figs. 13–14, pp. 149–150). Their
+  fix is the minimum-distance MAC (`s/r` with `r` the distance to the cell *face*, §2.2), the best of the simple
+  MACs "in the sense of best worst-case behavior for a given amount of CPU resources" (§5, p. 148). The note's "least
+  distance" is that MAC; the bound itself needs `d > b_max` (Eq. 9 carries `1/(1 − b_max/d)²`) and S&W's footnote 3
+  (p. 145) says the bound is infinite when the target is closer than `b_max`: such a node is **opened, never
+  accepted**, whatever the tolerance.
+* **Barnes & Hut's own claims, as they read** (Nature 324, 446–449): a rigorous worst-case error analysis is
+  "possible" (two lumps in opposite corners maximise the quadrupole, p. 448) but is promised for "a more detailed
+  paper", not given; `θ ~ 1` is accurate "to ~1 %" empirically, "with little dependence on N"; force error scales as
+  the computing time to the −1.5; 4,096 bodies at `θ = 1` needed under 0.1 of the `½N(N−1)` direct interactions
+  (Fig. 3 caption); about 10² interactions per particle at 10⁴–10⁵ bodies; the tree is rebuilt "ab initio at every
+  time step" (p. 447). Quadrupole moments are listed as a future improvement (p. 448). "No bounded error" (Dehnen's
+  footnote) is therefore true of the *criterion as used*, and is not something B&H claimed.
+* **Ulrich 2002 confirms the draw-side design and its limits.** A chunk tree of static meshes; per-chunk error `δ`,
+  halved per level (Eq. 1); screen error `ρ = δK/D`, `D` the distance to the *closest point of the bounding volume*
+  (Eq. 2–3, pp. 6–7): the same test shape as the read's, with the same least-distance choice. Skirts are his
+  preferred crack fill (§11, Fig. 4, pp. 8–9: the note's "Ulrich uses skirts" is now first-hand). His morph weight
+  `t = clamp(2ρ/τ − 1, 0, 1)` (Eq. 4, p. 10) is a function of viewpoint distance only: another primary source that
+  agrees with §7b. Paging (§15, p. 12): draw a node if its children are not all resident *or* `ρ ≤ τ`, and request
+  the children: the note's "draw the nearest resident ancestor". **Limits he states (§9, p. 5): the data set must be
+  static, preprocessing is non-trivial, and it uses more triangles than a primitive-level algorithm for the same
+  screen error.** Nothing in Ulrich supports edits; the dirty-ancestor recompute of §3 stays our own design.
+* **Not changed:** one tree with two cuts, equal-size nodes, error-driven opening with a ledger, shared cut and
+  cached local expansion, analytic slab and sphere, dithered position-driven cross-fade.
+
 ## 0. One-page summary
 
 **Recommendation.** Keep S4's chunk (32³ cells, palette, `VoxTree` below it) as the level-0 node of a
@@ -64,6 +146,8 @@ level  0     S S S S S S S S S S S S S S        Brick                   Body (pa
   and then the leaf cube kernel. The *radius of each level* is a measured table (data, per detail tier),
   the *bound* is what the ledger reports. Error-based opening is what the FMM literature uses to
   avoid the long error tails of a fixed opening angle ([Dehnen 2014](https://arxiv.org/abs/1405.2255) [R]).
+  (After reading Salmon & Warren §4.3: the primary walk is a priority queue on one global ledger, worst bound
+  first, and the per-level shares are its cached output; a node nearer than its radius is always opened.)
 * **Edits** add and subtract raw moments up the ancestor path (about 5 + log₂(world/32) records per
   edited leaf), then recompute dirty summaries from their children in Morton order at commit, so the
   bytes are the same whatever order the edits came in (S3's R1 property).
@@ -145,10 +229,15 @@ magnitude smaller" than the geometric criterion's ([Dehnen 2014, §5](https://ar
 read from the PDF text; footnote 3 on the original Barnes–Hut definition). His own rigorous bound is
 "typically 10–100 times larger than the actual largest error" (his eq. 10) [R], so a loose bound is
 normal: S4's 175–457× is looser than that, the crude bound in my benchmark far looser (10⁴–10⁵ ×).
-[Salmon & Warren 1994](https://doi.org/10.1006/jcph.1994.1050) [S: abstract only] derived worst-case
-bounds from "additional, easily computed moments of the mass distribution" and four criteria that bound
-the error per evaluation. The Cavendish bound has the same character: S4 uses `Σ m s^l` per order,
-summed from the leaves.
+[Salmon & Warren 1994](https://doi.org/10.1006/jcph.1994.1050) [R], *J. Comput. Phys.* 111, 136–155,
+derived worst-case bounds from absolute moments `B_(n) = Σ m |x − r₀|ⁿ` (Eq. 9, 61, 62; App. B) and, on top of
+them, four criteria that bound the error per evaluation: the *Absolute* MAC (each partial's bound under a fixed
+`Δ_partial`, Eq. 10), the *Relative* MAC (Eq. 11), the *Sum* MAC (the bounds add to at most `Δ_tot`, Eq. 15) and the
+*Sum Squares* MAC (they add in quadrature, Eq. 17, which assumes uncorrelated errors). The Cavendish bound has the
+same character: S4 uses `Σ m s^l` per order, summed from the leaves. They show the BH criterion has unbounded
+error for `θ > 1/√3` (their Appendix A) and that the minimum-distance MAC does not; the Sum MAC is walked with a
+priority queue, worst partial first (§4.3). See the first block above for what that changes, and for how loose
+this family of bounds is on a cube.
 
 **One hierarchy, shared parts.** Shared: the topology (keys, parent and child), the `Summary` per node,
 the cache files, the dirty flags. Separate: the *resident sets* (a camera cut and a cut per tower, each
@@ -178,7 +267,8 @@ makes an edit land once.
 
 ### 2.1 The frame: Barnes–Hut per target point, opened by phase error
 
-The owner's suggestion is the frame. The read is a **Barnes–Hut walk** ([Barnes & Hut 1986](https://doi.org/10.1038/324446a0) [U: not opened]):
+The owner's suggestion is the frame. The read is a **Barnes–Hut walk** ([Barnes & Hut 1986](https://doi.org/10.1038/324446a0) [R], *Nature* 324,
+446–449: monopole pseudo-particle at the cell's centre of mass, open if `l/D ≥ θ`, tree rebuilt every step):
 for each target point, descend the tree from the root; a node whose moments are good enough
 stands for all its mass, otherwise its eight children are tried. What Cavendish changes is the
 *test*. Barnes–Hut's fixed opening angle θ has no bounded error (Dehnen's footnote 3, [R]); the
@@ -191,7 +281,10 @@ B(n, x) = G * k_eff T^2 * L_base * sum_{l > p} (l+1)(l+2) S_l(n) / R^(l+3)      
 
 with `S_l = Σ m s^l` from the node's `Summary` (§2 table), `R` the least distance from the node's
 centre to the target (S4 uses the least distance to the atom path), and `eps_level` the level's
-share of the tolerance (§5 measures the radii this implies). The ledger is `Σ B` over the cut.
+share of the tolerance (§5 measures the radii this implies). The ledger is `Σ B` over the cut. **After reading
+S&W §4.3 this is demoted to the fast path:** the primary walk is a priority queue on one global ledger (open the
+largest `B` first until `Σ B ≤ τ`), and `eps_level` falls out of it as a table; a node within `b_max` of the
+target is opened whatever `B` says.
 Section 6 C and F are this test, and A is the fixed-θ test it replaces.
 
 ### 2.2 Shared cut and local expansions (the dual-tree step)
@@ -473,7 +566,10 @@ between buildings, beside a wall, in a tube; **worst over positions, never the m
 * **Within tolerance:** the composed error ≤ τ at all positions, at four tolerances spanning 10⁻² to
   10⁻⁶ rad.
 * **Not vacuous:** bound ≤ 1000 × measured error (S4's R7 criterion). The benchmark's crude bound would
-  fail this at 10⁴–10⁵; S4's tightened one passes (175–457×).
+  fail this at 10⁴–10⁵; S4's tightened one passes (175–457×). (After S&W: on a cube at p = 3 the best per-node
+  absolute-moment bound is 6–65× the true remainder and the triangle sum over a cut adds 3–27×, so ~100× is about
+  the floor for a rigorous ledger of this family, 10× would need the signed fourth moments. Record the ratio per
+  scene; do not tighten the gate on this evidence alone.)
 * **Monotone:** `r_L` non-increasing in τ; cut nodes non-decreasing as τ falls.
 * **Self-similar or tabled:** report `r_L / side_L`. If it is within ±30 % across levels 2…top, store one
   `ρ(τ)`; otherwise store the table. (The benchmark's radii, in sides: 5.7, 3.3, 2.6, 2.8 at levels
@@ -549,7 +645,10 @@ bounds is a rigorous ceiling and the cut stops at the ceiling asked for. **The f
 at 5×10⁻⁵ rad this 2-million-cell world needs 171,629 nodes (46 % of its 375,156 leaf cells); a
 *bound* a hundred times tighter would cut this by a large factor. µrad reads at 10⁹–10¹¹ cells live or
 die on the bound's looseness and on the order of the expansion, not on how the tree is laid out. This
-is why §5 tests soundness *and* non-vacuity.
+is why §5 tests soundness *and* non-vacuity. **(Revised after S&W: the second half stands; the first does not
+survive: a rigorous bound this much tighter is not available. Per node the floor is ~6× at p = 3 (3× with the
+signed fourth moment), and bound ∝ d^−7 turns a 3.5× gain into 1.2× in distance. The order of the expansion, the
+cached local expansion and a world big enough for the cut to be small are what matter. See the top block.)**
 
 **D. Slab**: see §4.1. The 128 m × 128 m square patch alone (no buildings) has a leaf-exact phase of
 2.04×10³ rad and the walk reads 2.03×10³ with 394 nodes: the cut is cheap, but the *physical* answer is
@@ -658,7 +757,8 @@ choice of drawn bits (row "Matching coarse cells" below). The survey, with sourc
 | Technique | Source | What it does | Fit here |
 |---|---|---|---|
 | **Transvoxel** | [Lengyel 2010](https://transvoxel.org/Lengyel-VoxelTerrain.pdf) [R] | A cell of the half-resolution block on the seam is split in two (Fig. 4.7): a thin *transition cell* triangulated from the 9 samples of the full-resolution face (its 4 corners duplicated on the half-resolution face), 2⁹ = 512 cases in 73 classes (§4.3, pp. 35–42), and an ordinary cell from the 8 half-resolution samples. The half-resolution block's boundary vertices move inward by eq. 4.2 to make room, width `w(k) = 2^(k−2)`, half the adjacent full-resolution cell (p. 46, Fig. 4.11); transition meshes are drawn only where neighbours differ (p. 46) | **No.** Both sides must be Marching Cubes isosurface meshes of one scalar field; ours are a greedy blocky mesh beside a ray-marched brick, with no isosurface on either side, so there is nothing to triangulate between. Only 2:1 (§4.1, p. 28). Even if levels ≥ 1 were meshed blockily, transition cells solve cracks, which superset bricks do not have. Its §4.2.1 surface-shifting rule is the part that transfers (above) |
-| **Skirts** | Lengyel 2010 §2.1.1, Fig. 2.1(e)–(f), pp. 6–7 [R]: skirts and "flanges" hang extra triangles from the higher-detail mesh's edge downward; skirts "exhibit the same shading problems" as a vertical crack fill, flanges penetrate the surface and cause depth artefacts in additive lighting passes. Ulrich's chunked LOD (2002) uses skirts (Lengyel §2.1.2, p. 8 [R]; Ulrich's notes themselves not opened [U]) | Extend each tile's edge downward so a crack shows skirt, not sky | **Low value.** We have no cracks (superset bricks); a skirt only adds walls under the near mesh's outer edge |
+| **Skirts** | Lengyel 2010 §2.1.1, Fig. 2.1(e)–(f), pp. 6–7 [R]: skirts and "flanges" hang extra triangles from the higher-detail mesh's edge downward; skirts "exhibit the same shading problems" as a vertical crack fill, flanges penetrate the surface and cause depth artefacts in additive lighting passes. Ulrich's chunked LOD (2002) uses skirts (Lengyel §2.1.2, p. 8 [R]; Ulrich's notes §11, Fig. 4, pp. 8–9 [R]: a vertical
+skirt round each chunk's perimeter, "as short as possible to conserve fill rate", preferred to flanges and ribbons) | Extend each tile's edge downward so a crack shows skirt, not sky | **Low value.** We have no cracks (superset bricks); a skirt only adds walls under the near mesh's outer edge |
 | **Geomorphing** (CDLOD) | [Strugar 2010, "Continuous Distance-Dependent Level of Detail for Rendering Heightmaps"](https://raw.githubusercontent.com/fstrugar/CDLOD/master/cdlod_paper_latest.pdf) [R]; Lengyel 2010 §6.1, p. 86 [R] | Each vertex morphs toward its coarse neighbour by `morphK` ∈ [0, 1], computed per vertex from the 3-D distance to the observer, over the **last 15–30 % of each LOD range**; ranges double per level (p. 4, Fig. 2), so a node at full morph "exactly matches the one from the lower LOD layer" and swaps without seams or T-junctions (pp. 7–8, Fig. 6). The distance function must be identical on both sides of a node edge or seams return (p. 8); a node can transition between **only two** adjacent layers, so ranges too short for the morph area produce seams, which the demo's debug build detects (p. 9). Lengyel lists geomorphing as future work for Transvoxel: it costs a secondary position (and normal) per vertex, ~12 B (p. 86) | **Meshes only.** A blocky mesh's vertices sit on the lattice, so a snap toward the coarse lattice is possible, but occupancy is binary: a morphing face collapses a thin wall, which is not conservative. The ray-marched far field has no vertices. Skip the morph; **keep its two rules**: a blend weight from continuous distance, and a ring wide enough that one band never overlaps the next |
 | **Dithered (screen-door) cross-fade** | Unity's LOD Group cross-fade ([manual](https://docs.unity.com/en-us/engine/6000.0/manual/analysis/graphics-performance-profiling/simplifying-distant-meshes-with-level-of-detail-lod/level-of-detail); the page I could read does not describe cross-fade, so my account of dithering and "animate cross-fading" is from memory of Unity, not read here [U]). No primary paper read for the dither itself | During a fade both levels are drawn and each pixel keeps one by a dither threshold, so opaque rendering and depth still work | **The best fit.** In the brick ray-march, over an overlap band the finer level also draws its outer cells and each pixel takes one of the two by a Bayer or blue-noise threshold on the distance fraction. The cost is the band drawn twice (bounded by `MAX_BRICK_OVERDRAW`). Opaque, no sorting. It is the opaque, per-pixel form of the clipmap's `α` (next row) |
 | **Overlapping rings with a blend weight** | The clipmap's transition region, [Losasso & Hoppe 2004, "Geometry Clipmaps: Terrain Rendering Using Nested Regular Grids"](https://hhoppe.com/geomclipmap.pdf) §6.2–6.3, Fig. 4–5 [R] | Near each level's outer boundary the geometry morphs toward the coarser level, `z' = (1 − α) z + α z_c`, with `α = max(α_x, α_y)`, `α_x = clamp((|x − v_x| − ((x_max − x_min)/2 − w − 1)) / w, 0, 1)`, `v` the **continuous** viewer position and `w = n/10` grid units (capped by the room to the finer region); "the transition is not time-based but instead tracks the continuous viewer position" (§6.2). Textures (normal maps) of levels `l` and `l−1` are blended in the pixel shader with the same `α` (§6.3). T-junctions are closed with zero-area triangles. The regions themselves move in whole even-grid steps (constraints 1–4, §5), yet `α` is continuous because it is measured from the viewer, not from the region | **Not as alpha** (opaque voxels, no order-independent transparency); the dither is its opaque form. **Its weight is the one to copy:** measured from the camera, inset from the snapped edge, so a snap happens where the coarse level is already fully shown |
@@ -726,8 +826,11 @@ below a threshold stated before measuring; controls: the blend switched off must
   earlier forum claim of "16³ at finest, 32³, 64³ coarser" (growing cell count) is **wrong** about Lengyel.
 * **The dithered cross-fade itself** has no primary source read here (Unity's page did not describe it); the
   position-driven weight it uses is sourced (L&H §6.2, CDLOD), the dither is my design [D].
-* **Salmon & Warren 1994 and Barnes & Hut 1986**: only abstracts and Dehnen's account. Dehnen's PDF
-  was read as text; its figures were not seen.
+* **Salmon & Warren 1994 and Barnes & Hut 1986: now read** (owner's scans, 25 Nov 2026; see the top block). Not
+  followed: S&W's Appendix B derivation of Eq. 52–57 (the kernel and Legendre-derivative bounds) beyond checking that
+  Eq. 60/62 is what `mac_bound.py` evaluates and that it is never below the true remainder in any comparison made (36 acceleration and 12 gradient cases);
+  their §4.5 test models (the 8.8-million-body simulation) are described, not reproduced. Dehnen's PDF was read
+  as text; its figures were not seen.
 * **Cesium, "camera-relative" patents, Voxel Farm, Outerra**: not opened; the floating-origin claims
   here rest on S4's own `f64`-on-the-CPU rule and the arithmetic of `f32`.
 * **Sources I could not read, with their exact URLs** (to fetch by hand):
@@ -737,9 +840,17 @@ below a threshold stated before measuring; controls: the blend switched off must
     `https://research.nvidia.com/labs/prl/nanovdb/nanovdb2021.pdf` was not opened.
   * `https://docs.unity3d.com/Manual/lod/lod-cross-fade.html` (404). The replacement page returned only the LOD
     basics. To try: `https://docs.unity.com/en-us/engine/6000.0/manual/analysis/graphics-performance-profiling/simplifying-distant-meshes-with-level-of-detail-lod/class-lodgroup` (not fetched).
-  * Barnes & Hut 1986, `https://doi.org/10.1038/324446a0`; Salmon & Warren 1994, `https://doi.org/10.1006/jcph.1994.1050`
-    (abstract through search only); Ulrich 2002, "Rendering massive terrains using chunked level of detail
-    control" (SIGGRAPH course notes; no URL found; its use of skirts is now sourced through Lengyel §2.1.2).
+  * **Read in the second batch (25 Nov 2026):** Barnes & Hut 1986, `https://doi.org/10.1038/324446a0`; Salmon & Warren
+    1994, `https://doi.org/10.1006/jcph.1994.1050`; Ulrich 2002, "Rendering massive terrains using chunked level of
+    detail control" (draft of 14 April 2002, *Super-size It! Scaling up to Massive Virtual Worlds*, SIGGRAPH '02 course
+    notes no. 35; the owner's copy, `sig-notes.pdf`; no URL found). Also supplied: Koca 2012, *Representation, editing
+    and real-time visualization of complex 3D terrains* (Bilkent MSc thesis, 174 pp.), **not read** beyond its
+    contents and §2; its §5.2 (editing the terrain) and §4.4 (level of detail, pp. 105–123) are the parts that
+    might bear on S5's edits and seams.
+  * **Still unread from this note's topic:** Salmon's 1990 Caltech PhD thesis (S&W's Ref. 11, "unpublished" in their
+    list; the source of the `θ⁻³` interaction-count argument, p. 137, Eq. 4); Hernquist 1987, *Ap. J. Suppl.* 64, 715
+    (Ref. 13; the extra test for bodies inside the cell they interact with, which S&W say does nothing for targets
+    just outside it); Dehnen's figures. No DOIs verified for these.
   * Read in full with figures (owner's copies, 25 Nov 2026): Strugar's CDLOD paper
     (`https://raw.githubusercontent.com/fstrugar/CDLOD/master/cdlod_paper_latest.pdf`), Losasso & Hoppe
     (`https://hhoppe.com/geomclipmap.pdf`), Laine & Karras
@@ -764,8 +875,10 @@ walk timing with the S4 stress scene; the planet-offset parity test settles the 
    (a colour/appearance question for S19's materials).
 2. Time-varying coarse cells (tides, groundwater, weather) written into the tree by S14: they change
    `Summary` records of existing nodes without any leaf; does the dirty-path rule hold (it should)?
-3. Whether `Summary` should carry a 4th raw moment so the bound's `Σ m s^4` is exact at every node (a few
-   bytes) rather than carried by inequality.
+3. Whether `Summary` should carry the **signed fourth moments** (15 raw components, ~120 B at `f64`) so that the
+   leading remainder term of a cube-like node is exact and only the tail is bounded: measured to tighten the
+   per-node bound from 6–9× to 1.4–3.2× at p = 3 on a cube, for about 1.2× in accepted distance (top block). Worth it only if a
+   tight ledger is itself wanted; the gate (§5) does not require it.
 4. Whether error-driven opening should be *per tower* or *per arm point*: the S4 read uses the least
    distance to the arm path; a differential evaluation (S5-02) may justify a per-pair bound.
 5. A hole-aware tile bound for the plane when the departures are not zero-mean (a quarry, a lake).
@@ -776,3 +889,5 @@ walk timing with the S4 stress scene; the planet-offset parity test settles the 
 * [`s5-world-octree/lod_walk.py`](s5-world-octree/lod_walk.py): the benchmark (`python lod_walk.py`, numpy only, ~3 s).
 * [`s5-world-octree/results.txt`](s5-world-octree/results.txt): its output, as quoted in §2 and §6.
 * [`s5-world-octree/poly_degree.py`](s5-world-octree/poly_degree.py) and [`poly_results.txt`](s5-world-octree/poly_results.txt): the local-expansion degree sweep (§2.2).
+* [`s5-world-octree/mac_bound.py`](s5-world-octree/mac_bound.py) and [`mac_bound.out`](s5-world-octree/mac_bound.out) (numpy, ~4 s): Salmon & Warren's bound against the true remainder on a uniform cube, with and without the exact leading term (top block).
+* [`s5-world-octree/cut_cancellation.py`](s5-world-octree/cut_cancellation.py) and [`cut_cancellation.out`](s5-world-octree/cut_cancellation.out) (numpy, imports `lod_walk.py`, ~6 s): per-node errors of the town cuts, the triangle sum against the true error and the quadrature sum.

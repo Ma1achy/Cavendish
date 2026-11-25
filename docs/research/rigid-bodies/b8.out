@@ -1,0 +1,65 @@
+
+10 equal boxes
+   K solver                  max pen mm  max|v| last 1s  top pose err mm
+   4 A PGS+Baum                   7.923        2.27e-07          -20.825
+   4 E mass-split Jacobi         47.252        3.58e+00         -135.981
+  20 A PGS+Baum                   1.141        3.33e-16           -4.855
+  20 E mass-split Jacobi          6.429        5.19e-09          -23.096
+ 100 A PGS+Baum                   0.053        2.22e-16           -0.286
+ 100 E mass-split Jacobi          0.813        6.94e-16           -4.023
+1000 A PGS+Baum                   0.000        2.22e-16           -0.000
+1000 E mass-split Jacobi          0.001        5.27e-16           -0.007
+   4 D exact solve, K sub         0.000        2.78e-17            0.000
+   8 D exact solve, K sub         0.000        1.39e-17            0.000
+  20 D exact solve, K sub         0.000        6.94e-18            0.000
+
+1000 kg on five 1 kg boxes
+   K solver                  max pen mm  max|v| last 1s  top pose err mm
+   4 A PGS+Baum                1285.017        4.89e+01        35722.057
+   4 E mass-split Jacobi       1043.854        1.90e+01        31075.210
+  20 A PGS+Baum                 319.067        1.58e+01        11061.797
+  20 E mass-split Jacobi       1066.525        4.24e+01        46907.304
+ 100 A PGS+Baum                 205.957        1.93e+01        12710.142
+ 100 E mass-split Jacobi        370.080        1.71e+01        -1852.425
+1000 A PGS+Baum                   3.696        9.95e-14          -12.336
+1000 E mass-split Jacobi         74.290        6.30e+00         3131.354
+   4 D exact solve, K sub         0.000        4.50e-15            0.000
+   8 D exact solve, K sub         0.000        2.25e-15            0.000
+  20 D exact solve, K sub         0.000        9.00e-16            0.000
+
+5 x 1000 kg under 1 kg
+   K solver                  max pen mm  max|v| last 1s  top pose err mm
+   4 A PGS+Baum                   3.030        1.12e-16           -5.843
+   4 E mass-split Jacobi         13.519        9.00e-01          -37.484
+  20 A PGS+Baum                   0.186        5.68e-17           -0.448
+  20 E mass-split Jacobi          2.166        3.89e-16           -5.489
+ 100 A PGS+Baum                   0.000        5.68e-17           -0.000
+ 100 E mass-split Jacobi          0.102        2.78e-16           -0.324
+1000 A PGS+Baum                   0.000        5.68e-17            0.000
+1000 E mass-split Jacobi          0.000        5.00e-16           -0.000
+   4 D exact solve, K sub         0.000        1.39e-17            0.000
+   8 D exact solve, K sub         0.000        6.94e-18            0.000
+  20 D exact solve, K sub         0.000        3.47e-18            0.000
+
+geometric 8..32768 kg (Macklin Fig. 14, 4096:1), 5 boxes
+   K solver                  max pen mm  max|v| last 1s  top pose err mm
+   4 A PGS+Baum                5820.441        4.98e+01        31786.786
+   4 E mass-split Jacobi       2672.335        1.25e+01        34035.269
+  20 A PGS+Baum                1409.133        1.52e+01        11692.857
+  20 E mass-split Jacobi       2721.205        4.42e+01        44930.015
+ 100 A PGS+Baum                 939.163        2.01e+01        12069.541
+ 100 E mass-split Jacobi        651.146        1.76e+01         -997.892
+1000 A PGS+Baum                  15.100        1.41e-10           -4.854
+1000 E mass-split Jacobi        209.161        9.88e+00         4297.120
+   4 D exact solve, K sub         0.000        0.00e+00            0.000
+   8 D exact solve, K sub         0.000        0.00e+00            0.000
+  20 D exact solve, K sub         0.000        0.00e+00            0.000
+
+1000 kg on five 1 kg boxes, dropped from 2 mm gaps (rest = zero penetration, |v| -> 0)
+   K solver                  max pen mm  max|v| last 1s  top pose err mm
+  20 A PGS+Baum                 323.946        1.61e+01        12440.358
+ 100 A PGS+Baum                 214.476        2.02e+01        10627.144
+1000 A PGS+Baum                   4.615        1.14e-13          -12.318
+   4 D exact solve, K sub         0.000        4.50e-15            0.000
+   8 D exact solve, K sub         0.000        2.25e-15            0.000
+  20 D exact solve, K sub         0.000        9.00e-16            0.000
