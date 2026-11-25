@@ -861,6 +861,12 @@ mod tests {
     /// variant and every optional part present.
     fn everything() -> SceneSpec {
         let mut spec = dev::oscillator_zoo();
+        // A world with both kinds of piece, each of the first of its two materials.
+        let mut world = dev::world_box().world.unwrap();
+        world.materials.push(dev::stress_1e10().world.unwrap().materials[0].clone());
+        world.pieces.extend(dev::stress_1e10().world.unwrap().pieces.pop());
+        world.pieces[1].material = 0;
+        spec.world = Some(world);
         spec.bodies.extend(dev::pass().bodies);
         spec.bodies.extend(dev::flash().bodies);
         spec.bodies[5].label = "flash".into();
@@ -1080,7 +1086,10 @@ mod tests {
     fn ls_lists_children_with_kind_unit_range_and_doc() {
         let spec = everything();
         let top: Vec<String> = ls(&spec, "").unwrap().into_iter().map(|e| e.name).collect();
-        assert_eq!(top, ["version", "name", "description", "duration", "array", "room", "floor", "bodies"]);
+        assert_eq!(
+            top,
+            ["version", "name", "description", "duration", "array", "room", "floor", "bodies", "world"]
+        );
         let instrument = ls(&spec, "array.instrument").unwrap();
         let cycle = instrument.iter().find(|e| e.name == "cycle").unwrap();
         assert_eq!(cycle.kind, Kind::Number);

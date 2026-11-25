@@ -1,7 +1,8 @@
 //! Cavendish simulation: scenes as data, and what the instrument reads from them. The scene spec
 //! with its schema and paths, motions, presets, the schedule and its predicted spectral window,
 //! the read of a scene into a signal, bundles, the view spec and the built-in scene library.
-//! Voxel bodies, dynamics and fluids arrive with their slices.
+//! Voxel bodies (S3) and the world volume of static matter (S4, [`world`]); dynamics and fluids
+//! arrive with their slices.
 //!
 //! ## What this crate is for
 //! What a scene *is* and what the instrument reads from it: the scene spec, its validation and its
@@ -29,6 +30,7 @@ pub mod shape;
 pub mod spec;
 pub mod view;
 pub mod voxel_view;
+pub mod world;
 
 pub use library::{LIBRARY, LibraryScene, inline, load};
 pub use motion::{ModeSpec, Motion};

@@ -101,6 +101,11 @@ pub struct SceneSpec {
     #[serde(default)]
     #[schemars(extend("x-stage" = "forward"))]
     pub bodies: Vec<BodySpec>,
+    /// Static matter (terrain, buildings, slabs) in one world volume of chunks, or none (S4,
+    /// `crate::world`). Moving bodies keep their own trees.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("x-stage" = "forward"))]
+    pub world: Option<crate::world::WorldSpec>,
 }
 
 /// The array of gradiometer towers.
@@ -737,6 +742,7 @@ impl SceneSpec {
             room: Some(RoomSpec { origin: defaults::ROOM_ORIGIN, size: defaults::ROOM_SIZE }),
             floor: None,
             bodies: Vec::new(),
+            world: None,
         }
     }
 
@@ -876,6 +882,9 @@ impl SceneSpec {
                     floor.height, tower.label, tower.position[2]
                 ));
             }
+        }
+        if let Some(world) = &self.world {
+            world.validate()?;
         }
         self.validate_schedule()?;
         if self.bodies.len() > limits::BODIES {
@@ -1095,7 +1104,7 @@ fn validate_instrument(at: &str, i: &InstrumentSpec) -> Result<(), SpecError> {
 }
 
 /// Text in a spec has a length: a label of a gigabyte is a valid string and not a valid label.
-fn short(path: &str, text: &str, most: usize) -> Result<(), SpecError> {
+pub(crate) fn short(path: &str, text: &str, most: usize) -> Result<(), SpecError> {
     let length = text.chars().count();
     if length <= most {
         Ok(())
@@ -1104,7 +1113,7 @@ fn short(path: &str, text: &str, most: usize) -> Result<(), SpecError> {
     }
 }
 
-fn positive(path: &str, value: f64, most: f64) -> Result<(), SpecError> {
+pub(crate) fn positive(path: &str, value: f64, most: f64) -> Result<(), SpecError> {
     if value.is_finite() && value > 0.0 && value <= most {
         Ok(())
     } else {
@@ -1112,7 +1121,7 @@ fn positive(path: &str, value: f64, most: f64) -> Result<(), SpecError> {
     }
 }
 
-fn within(path: &str, value: f64, (least, most): (f64, f64)) -> Result<(), SpecError> {
+pub(crate) fn within(path: &str, value: f64, (least, most): (f64, f64)) -> Result<(), SpecError> {
     if value.is_finite() && value >= least && value <= most {
         Ok(())
     } else {
@@ -1120,7 +1129,7 @@ fn within(path: &str, value: f64, (least, most): (f64, f64)) -> Result<(), SpecE
     }
 }
 
-fn finite(path: &str, values: &[f64]) -> Result<(), SpecError> {
+pub(crate) fn finite(path: &str, values: &[f64]) -> Result<(), SpecError> {
     match values.iter().find(|v| !(v.is_finite() && v.abs() <= limits::POSITION)) {
         None => Ok(()),
         Some(v) => Err(SpecError(format!("{path}: {v} must be within ±{} m", limits::POSITION))),

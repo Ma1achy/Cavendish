@@ -14,7 +14,7 @@ the gradiometer reads lower minus upper unless a scene says otherwise. British E
 
 | Crate | What it is for | May depend on (workspace) | Must not |
 |---|---|---|---|
-| `cav-core` | Pure numbers: vectors, constants with their sources, the forward model (flight, arms, the propagation integral, the audited read), spectra (FFT, Lomb–Scargle, NUFFT), cadence closed forms, `.npy`; the voxel tree, shapes and `cover`, the voxeliser and its raster oracle, the cube kernel | nothing | know what a scene, an engine or a file format for scenes is; allocate with the length of a flight |
+| `cav-core` | Pure numbers: vectors, constants with their sources, the forward model (flight, arms, the propagation integral, the audited read), spectra (FFT, Lomb–Scargle, NUFFT), cadence closed forms, `.npy`; the voxel tree, shapes and `cover`, the voxeliser and its raster oracle, the cube kernel; the world volume's chunks, bricks and region-file bytes | nothing | know what a scene, an engine or a file format for scenes is; allocate with the length of a flight |
 | `cav-sim` | Scenes as data: the spec and its schema, paths, motions, presets, the dev scenes and the library, the schedule, the read of a scene (contributions, signals), bundles; shapes of bodies and what a view draws of voxel bodies | `cav-core` | hold state between calls; draw; start threads that outlive a call |
 | `cav-gpu` | The wgpu device and reading a texture back; on wasm it is handed the browser's device (`Gpu::from_parts`), not asked to make one | `cav-core` | know about scenes |
 | `cav-engine` | The one API: commands, queries, replies; the journal, undo, the event log; the forward workers and what they keep | `cav-core`, `cav-sim` | draw, or depend on anything that does; block a command on a computation |
@@ -149,6 +149,8 @@ person asked for goes through `cav_engine::files`; code that must not run in a p
 | The potential of a uniform cube (series, octants, prism); a voxel body as a source | `cav-core/src/voxel/kernel.rs` | — |
 | A body made of voxels (`BodySpec.shape`) | `cav-sim/src/shape.rs`; read in `read.rs` (`voxel_body`) | [a voxel body](extending/a-voxel-body.md) |
 | Colour by field, overlays (leaves, a cut, the whole tree by depth), section planes (`Cutting`: a 2-D section square-on, a cut-away otherwise), the cubes and cells a view draws | `cav-sim/src/voxel_view.rs`; drawn in `cav-render/src/scene.rs` (`drawables_with`) with `colour.rs`; trees kept by `cav-engine/src/voxels.rs` | — |
+| The world volume: chunks of 32³ cells with palettes, the far field's bricks, terrain; region files (bytes) | `cav-core/src/voxel/world.rs`, `region.rs` | [a world piece](extending/a-world-piece.md) |
+| A scene's world: its spec, its pieces made solids, its read (leaves near, moments far, the bound) | `cav-sim/src/world.rs`; source `SourceId::World` in `read.rs` | [a world piece](extending/a-world-piece.md) |
 | A bound on memory | `cav-memtest/tests/` | — |
 | Something that differs in a browser page (threads, files, the device, waiting) | one module per seam, listed under "The web build and its platform seams" | [the web build](extending/the-web-build.md) |
 | The web page itself, its build and its deployment | `crates/cav-app/web/` (`index.html`, `start.js`, `worker.js`), `cav-app/src/platform/web.rs`, `xtask/src/web.rs`, `.github/workflows/pages.yml` | [the web build](extending/the-web-build.md) |

@@ -50,6 +50,8 @@ pub fn remote() -> Option<Rc<dyn Remote>> {
 const CONTRIBUTION: u8 = 1;
 const READING: u8 = 2;
 const NOTHING: u8 = 0;
+/// The world's index in a request (the floor's is `u64::MAX`, a body's its number).
+const WORLD: u64 = u64::MAX - 1;
 
 /// The request for `source`'s contribution to the signal of `spec`, at the shots
 /// `cav_sim::read::shots(spec)` gives (the ones the engine schedules).
@@ -58,6 +60,7 @@ pub fn contribution_request(spec: &SceneSpec, source: SourceId) -> Vec<u8> {
     let mut out = vec![CONTRIBUTION];
     let index = match source {
         SourceId::Floor => u64::MAX,
+        SourceId::World => WORLD,
         SourceId::Body(n) => n as u64,
     };
     out.extend(index.to_le_bytes());
@@ -87,9 +90,14 @@ pub fn serve(request: &[u8]) -> Vec<u8> {
     let mut out = Writer::default();
     match kind {
         CONTRIBUTION => {
-            let source = if head == u64::MAX { SourceId::Floor } else { SourceId::Body(head as usize) };
+            let source = match head {
+                u64::MAX => SourceId::Floor,
+                WORLD => SourceId::World,
+                n => SourceId::Body(n as usize),
+            };
             let valid = match source {
                 SourceId::Floor => spec.floor.is_some(),
+                SourceId::World => spec.world.is_some(),
                 SourceId::Body(n) => n < spec.bodies.len(),
             };
             let made = read::shots(&spec).ok().filter(|_| valid);

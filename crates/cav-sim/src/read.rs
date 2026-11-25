@@ -41,6 +41,8 @@ pub fn fits(towers: usize, shots: usize) -> Result<(), String> {
 pub enum SourceId {
     /// The floor.
     Floor,
+    /// The world volume's static matter (`crate::world`).
+    World,
     /// Body `n` of the scene, from 0.
     Body(usize),
 }
@@ -48,7 +50,12 @@ pub enum SourceId {
 /// The sources of a scene, in the order their contributions are summed.
 #[must_use]
 pub fn sources(spec: &SceneSpec) -> Vec<SourceId> {
-    spec.floor.iter().map(|_| SourceId::Floor).chain((0..spec.bodies.len()).map(SourceId::Body)).collect()
+    spec.floor
+        .iter()
+        .map(|_| SourceId::Floor)
+        .chain(spec.world.iter().map(|_| SourceId::World))
+        .chain((0..spec.bodies.len()).map(SourceId::Body))
+        .collect()
 }
 
 /// The shots of a scene: when each tower reads each of its shots out, and which it takes at all.
@@ -729,6 +736,9 @@ pub fn contribution_on(
                 ));
             }
         }
+        SourceId::World => {
+            world_contribution(spec, shots, &readers, &mut out, &signed, cancelled)?;
+        }
         SourceId::Body(n) => {
             let body = mass(spec, n);
             let label = &spec.bodies[n].label;
@@ -904,6 +914,95 @@ pub fn contribution_on(
     Some(out)
 }
 
+/// The world's contribution (S4): each tower reads the world once, since it does not move, and
+/// that reading holds for every shot it takes. What the read leaves out (matter past its radius
+/// or its cap) and the bound on reading far chunks through their moments are said; the bound is
+/// added to each tower's estimate. `None` when cancelled.
+fn world_contribution(
+    spec: &SceneSpec,
+    shots: &Shots,
+    readers: &Readers,
+    out: &mut Contribution,
+    signed: &dyn Fn(usize, f64, f64) -> f64,
+    cancelled: &(dyn Fn() -> bool + Sync),
+) -> Option<()> {
+    let world_spec = spec.world.as_ref()?;
+    let world = crate::world::World::new(world_spec);
+    let refuse = |out: &mut Contribution, why: String| {
+        for channel in [&mut out.lower, &mut out.upper, &mut out.gradiometer] {
+            channel.clear();
+            channel.resize(shots.total(), 0.0);
+        }
+        out.settled = false;
+        out.warnings.push(Warning::general(format!("the world is not read: {why}")));
+    };
+    let (keys, said) = match crate::world::read_keys(spec, &world) {
+        Ok(found) => found,
+        Err(why) => {
+            refuse(out, why);
+            return Some(());
+        }
+    };
+    out.warnings.extend(said.into_iter().map(Warning::general));
+    let made = match crate::world::make(&world, &keys, cancelled) {
+        Ok(Some(made)) => made,
+        Ok(None) => return None,
+        Err(why) => {
+            refuse(out, why);
+            return Some(());
+        }
+    };
+    let share = crate::world::work_share(spec);
+    let mut bounds = 0.0f64;
+    for (at, tower) in spec.array.towers.iter().enumerate() {
+        if cancelled() {
+            return None;
+        }
+        let count = shots.count(at);
+        let readout = if count > 0 { shots.readout(at, 0) } else { 0.0 };
+        let height = spec.array.instrument_of(at).tower_height;
+        let read = crate::world::read_tower(
+            &made,
+            readers.of(at),
+            base(tower.position),
+            height,
+            readout,
+            world_spec.read.tolerance,
+            share,
+        );
+        let read = match read {
+            Ok(read) => read,
+            Err(why) => {
+                refuse(out, why);
+                return Some(());
+            }
+        };
+        let (lower, upper) = (read.audited.reading.lower, read.audited.reading.upper);
+        let bound = read.bound[0] + read.bound[1];
+        bounds = bounds.max(bound);
+        let estimate = read.audited.estimate.unwrap_or(0.0) + bound;
+        out.estimates[at] = estimate;
+        out.estimate = out.estimate.max(estimate);
+        if !read.audited.settled {
+            out.settled = false;
+            out.warnings.push(Warning::about(
+                at,
+                format!("the world at {} did not settle; its estimate is {estimate:.1e} rad", tower.label),
+            ));
+        }
+        let value = |v: f64| (0..count).map(move |k| if shots.taken(at, k) { v } else { 0.0 });
+        out.lower.extend(value(lower));
+        out.upper.extend(value(upper));
+        out.gradiometer.extend(value(signed(at, lower, upper)));
+    }
+    if bounds > PHASE_TOLERANCE {
+        out.warnings.push(Warning::general(format!(
+            "the world's far chunks are read through their moments, within {bounds:.1e} rad (world.read.tolerance)"
+        )));
+    }
+    Some(())
+}
+
 /// A body made of voxels, ready to read: its leaves as uniform cubes where the body is, the work
 /// one read may do, and (for a body that never moves and is always there) each tower's reading
 /// once it has been made.
@@ -945,7 +1044,9 @@ impl VoxelBody<'_> {
 /// scene may have 1000).
 #[must_use]
 pub fn kernel_share(spec: &SceneSpec) -> u64 {
-    MAX_KERNEL_WORK / spec.bodies.iter().filter(|b| b.shape.is_some()).count().max(1) as u64
+    // The world volume counts as one more voxel body (S4).
+    let voxel = spec.bodies.iter().filter(|b| b.shape.is_some()).count() + usize::from(spec.world.is_some());
+    MAX_KERNEL_WORK / voxel.max(1) as u64
 }
 
 /// Body `n` as voxels, if it has a shape: `Ok(None)` for a point or a sphere.
