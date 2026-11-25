@@ -1,0 +1,116 @@
+// Paper scene `icosahedron-1.5m` (docs/papers/polyhedral-gravity), written by scripts/make_scenes.py from
+// the research benchmark's body `icosahedron` (docs/research/exact-skin-and-partial-fill/skin_bench.py).
+// Frame: metres, x east, y north, z up; seconds. Body at the origin; tower k's base at 1.5 m
+// along the benchmark's direction k. Regenerate rather than edit.
+(
+    version: 1,
+    name: "icosahedron-1.5m",
+    description: "Benchmark body icosahedron (rho 2700 kg/m^3, 20 triangles) seen by three towers 1.5 m from its centre, for the polyhedral-gravity paper.",
+    duration: 4.0,
+    array: (
+        instrument: (
+            tower_height: 10.1,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+            atom_mass: 1.4431558652473234e-25,
+            gravity: 9.81,
+            kicks: 1000,
+            launch_floor: true,
+            sign: LowerMinusUpper,
+        ),
+        towers: [
+            (
+                label: "tower 1",
+                position: (1.4110813025753959, 0.2822162605150792, -0.42332439077261874),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "tower 2",
+                position: (-0.5547001962252291, 1.3867504905630725, 0.1386750490563073),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "tower 3",
+                position: (0.3887407915116121, -0.6479013191860201, -1.2958026383720402),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+        ],
+        schedule: (
+            jitter: None,
+            alternate: None,
+            gaps: None,
+            window: None,
+            loss: 0.0,
+            seed: 0,
+        ),
+    ),
+    room: None,
+    floor: None,
+    bodies: [
+        (
+            label: "icosahedron",
+            mass: 1479.0830941422234,
+            radius: 0.0,
+            shape: Some((
+                kind: Triangles(
+                    vertices: [
+                        (-0.3193247281528563, 0.2343680113745865, 0.45066989386293177),
+                        (-0.2952569755317386, 0.5091146353834732, -0.11672877296623725),
+                        (-0.5969685844528977, -0.04025270632871367, -0.04481326599923399),
+                        (-0.2710434353228498, -0.3891447791285699, 0.3675619635454202),
+                        (0.2321009935490571, -0.055404596812096765, 0.5505083645555529),
+                        (0.2171362027120015, 0.49975025207092644, 0.2512002289546289),
+                        (-0.2171362027120015, -0.49975025207092644, -0.2512002289546289),
+                        (-0.2321009935490571, 0.055404596812096765, -0.5505083645555529),
+                        (0.2710434353228498, 0.3891447791285699, -0.3675619635454202),
+                        (0.5969685844528977, 0.04025270632871367, 0.04481326599923399),
+                        (0.2952569755317386, -0.5091146353834732, 0.11672877296623725),
+                        (0.3193247281528563, -0.2343680113745865, -0.45066989386293177),
+                    ],
+                    triangles: [
+                        (0, 1, 2),
+                        (0, 2, 3),
+                        (0, 3, 4),
+                        (0, 4, 5),
+                        (0, 5, 1),
+                        (3, 2, 6),
+                        (2, 1, 7),
+                        (1, 5, 8),
+                        (5, 4, 9),
+                        (4, 3, 10),
+                        (11, 6, 7),
+                        (11, 7, 8),
+                        (11, 8, 9),
+                        (11, 9, 10),
+                        (11, 10, 6),
+                        (7, 6, 2),
+                        (8, 7, 1),
+                        (9, 8, 5),
+                        (10, 9, 4),
+                        (6, 10, 3),
+                    ],
+                ),
+                pitch: 0.015625,
+                supersample: 4,
+                material: None,
+                parts: [],
+            )),
+            motion: Static(
+                position: (0.0, 0.0, 0.0),
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+    ],
+)
