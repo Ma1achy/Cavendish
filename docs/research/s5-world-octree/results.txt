@@ -1,0 +1,83 @@
+cells occupied 162,259; leaf-exact phase 746.670765 rad; leaf nodes visited 375,156
+
+A. theta-driven opening (accept when a/R <= theta)
+theta  order  nodes   |phase error| rad   crude bound rad
+ 0.90  1       104       2.103e+02        1.974e+06
+ 0.90  2       104       1.393e+02        1.704e+06
+ 0.70  1       140       5.468e+02        8.640e+05
+ 0.70  2       140       1.560e+02        6.528e+05
+ 0.50  1       470       6.424e+01        1.521e+05
+ 0.50  2       470       2.168e+01        7.490e+04
+ 0.35  1       971       1.806e+00        6.625e+04
+ 0.35  2       971       8.303e+00        2.345e+04
+ 0.25  1      2020       2.049e-01        2.837e+04
+ 0.25  2      2020       4.471e-01        7.172e+03
+ 0.15  1      6166       5.405e-01        9.701e+03
+ 0.15  2      6166       4.672e-02        1.498e+03
+ 0.10  1     17542       1.887e-01        3.893e+03
+ 0.10  2     17542       8.849e-03        4.039e+02
+
+B. LOD radius per level at theta = 0.35, quadrupole: nearest accepted R in node sides
+  level 1 (node side   2 m): R_min = 5.73 sides = 11.5 m
+  level 2 (node side   4 m): R_min = 3.27 sides = 13.1 m
+  level 3 (node side   8 m): R_min = 2.57 sides = 20.6 m
+  level 4 (node side  16 m): R_min = 2.82 sides = 45.1 m
+
+C. error-driven opening: accept when the node's bound on g <= eps (m s^-2)
+eps        nodes   |phase error| rad   sum of bounds (phase) rad
+   1e-09     3110       1.843e-01        3.428e+03
+   1e-10     8972       4.353e-02        8.833e+02
+   1e-11    24519       2.789e-03        2.568e+02
+   1e-12    75010       2.540e-03        5.195e+01
+   1e-13   171629       5.444e-05        8.838e+00
+
+D. slab
+  disc radius      64 m: phase over 5 m = -2.321e+03 rad (closed form; infinite slab: 0)
+  disc radius     640 m: phase over 5 m = -2.514e+02 rad (closed form; infinite slab: 0)
+  disc radius    6400 m: phase over 5 m = -2.516e+01 rad (closed form; infinite slab: 0)
+  128 m x 128 m square patch, leaf-exact 2.035e+03 rad; walk (theta 0.35) 2.030e+03 rad (394 nodes)
+
+E. one shared cut and a local expansion (reference phase 746.6708 rad; 162,259 cells; 40 points)
+theta_c   far  near | cut err  poly err (rad) | far-poly: max |dg|  spread (rad) | node-point interactions: shared cut / local exp / exact
+  0.50    232     0 |  1.34e+01  1.34e+01 |  1.87e-02  2.19e-02 |     9,280     1,664 6,490,360
+  0.35    423     0 |  4.87e+00  4.94e+00 |  3.75e-02  6.36e-02 |    16,920     3,001 6,490,360
+  0.25    942     0 |  5.03e-01  4.44e-01 |  5.21e-02  6.00e-02 |    37,680     6,634 6,490,360
+
+F. shared cut: g-based bound vs differential bound (same epsilon, in rad of phase)
+eps rad    crit   cut nodes  |phase err|
+  1e+01   g          1608    4.83e-02
+  1e+01   diff       1160    7.91e-02
+  3e+00   g          2689    2.96e-03
+  3e+00   diff       2030    3.65e-02
+  1e+00   g          4416    3.02e-02
+  1e+00   diff       3072    3.49e-02
+  3e-01   g          7543    6.17e-03
+  3e-01   diff       5209    1.93e-02
+  1e-01   g         12851    1.09e-03
+  1e-01   diff       9110    5.16e-03
+  3e-02   g         23333    1.86e-03
+  3e-02   diff      15904    3.12e-03
+  1e-02   g         36802    1.34e-03
+  1e-02   diff      24542    2.48e-03
+  3e-03   g         56428    4.27e-04
+  3e-03   diff      38488    1.17e-03
+  1e-03   g         80295    9.44e-05
+  1e-03   diff      55776    4.28e-04
+  3e-04   g        120085    1.19e-05
+  3e-04   diff      78098    1.09e-04
+  1e-04   g        153887    4.88e-07
+  1e-04   diff     106421    2.53e-05
+
+F2. independent cuts per point vs one shared cut, theta = 0.35, quadrupole
+  independent: nodes 971, phase error 8.303e+00;  shared: nodes 423, error 4.871e+00
+  shared cut: error of g at point 1 +5.301e+00, point 2 +4.292e-01 (times k_eff T^2), difference -4.871e+00
+
+G. the difference only helps far nodes: matter beyond 30 m of the tower only, theta = 0.5, quadrupole
+  error of g at p1 +2.590e+00, p2 -9.719e+00, of the difference -1.231e+01: |diff|/|g| = 1.266
+  mean distance of that matter 55 m; (l+2) L / R at l = 3, L = 5 m: 0.453
+
+H. an edit: a new 6x6x10 block 40 m from the tower; the cached far field, updated where the edit lands
+  leaf-exact phase 746.6708 -> 732.2517 rad (the edit moves it by -14.4191)
+  cached cut 741.7994 -> re-cut 727.3801: moves it by -14.4193; same cut topology: False
+  nodes in the cut whose moments the edit changed: -1 of 423
+  one edited leaf's path to the root: 8 records (levels 0..7)
