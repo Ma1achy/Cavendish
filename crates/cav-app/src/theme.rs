@@ -11,6 +11,48 @@ pub use cav_plot::theme::{BACKGROUND, LINK, PLAYHEAD, RULE, STRONG, TEXT, tower}
 /// on a card and 5.1:1 on a panel ([`contrast`]).
 pub const WEAK: Color32 = Color32::from_rgb(0x8c, 0x8c, 0x8c);
 
+/// Secondary text on a button's or a field's ground ([`WIDGET`], [`HOVER`]): the tool strip's key
+/// letters, a field's hint, a material's density in its drop-down. [`WEAK`] there read at 3.3:1
+/// (S19's review, I6); this is at least 4.5:1 on both ([`text_pairs`]).
+pub const WEAK_ON_WIDGET: Color32 = Color32::from_rgb(0xbd, 0xbd, 0xbd);
+
+/// The least side of anything a pointer aims at in the side panels, points: a row, a box, a
+/// tick, an eye (`docs/design/panels.md`: rows and targets at least 24 pt).
+pub const HIT: f32 = 24.0;
+
+/// Every (text, ground) pair the window's panels draw, by name: what the contrast test holds to
+/// 4.5:1 (`docs/design/panels.md`). A new colour of text, or a text on a new ground, is added
+/// here where it is first drawn.
+#[must_use]
+pub fn text_pairs() -> Vec<(&'static str, Color32, &'static str, Color32)> {
+    let card = crate::inspector::CARD;
+    let mut pairs = Vec::new();
+    for (ground_name, ground) in [("panel", PANEL), ("card", card), ("status line", FOOTER)] {
+        for (text_name, text) in [
+            ("text", TEXT),
+            ("weak", WEAK),
+            ("strong", STRONG),
+            ("gold", GOLD),
+            ("warn", WARN),
+            ("error", ERROR),
+        ] {
+            pairs.push((text_name, text, ground_name, ground));
+        }
+    }
+    for (ground_name, ground) in [("button", WIDGET), ("button under the pointer", HOVER)] {
+        // A button's own text is [`STRONG`] (white under the pointer): egui's widget colours.
+        for (text_name, text) in [("strong", STRONG), ("weak on a button", WEAK_ON_WIDGET)] {
+            pairs.push((text_name, text, ground_name, ground));
+        }
+    }
+    // A selected row's name, and a field's text and hint on the field's own ground.
+    pairs.push(("strong", STRONG, "selection", SELECTION));
+    for (text_name, text) in [("text", TEXT), ("strong", STRONG), ("hint", WEAK_ON_WIDGET)] {
+        pairs.push((text_name, text, "field", BACKGROUND));
+    }
+    pairs
+}
+
 /// The contrast ratio of two sRGB colours, WCAG 2's (1 to 21): `(L₁ + 0.05) / (L₂ + 0.05)` of
 /// their relative luminances, the lighter over the darker.
 #[must_use]
@@ -74,6 +116,8 @@ pub fn apply(ctx: &egui::Context) {
         visuals.selection.bg_fill = SELECTION;
         visuals.selection.stroke = Stroke::new(1.0, STRONG);
         visuals.hyperlink_color = LINK;
+        // egui's own weak text (a field's hint) is drawn on a field's or a button's ground.
+        visuals.weak_text_color = Some(WEAK_ON_WIDGET);
         visuals.warn_fg_color = WARN;
         visuals.error_fg_color = ERROR;
         let radius = CornerRadius::same(2);

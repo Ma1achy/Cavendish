@@ -64,7 +64,7 @@ pub fn command_for(path: &str, value: Value, continues: bool) -> Command {
 
 /// What an absent part starts as when it is added, or a variant when it is chosen: something
 /// valid to edit from. `at` is where a body is now, for motions.
-fn starter(spec: &cav_sim::SceneSpec, path: &str, variant: Option<&str>) -> Option<Value> {
+pub(crate) fn starter(spec: &cav_sim::SceneSpec, path: &str, variant: Option<&str>) -> Option<Value> {
     if let (Some(kind), Some(body)) = (variant, path.strip_suffix(".motion")) {
         let whole = spec.to_value();
         let at = paths::get(&whole, body)
@@ -126,6 +126,27 @@ pub fn shown(value: f64) -> String {
     } else {
         format!("{value:.5e}")
     }
+}
+
+/// A drop-down's width in a row: what the row has left after the drop-down's own arrow and
+/// padding and the reset after it, so that a row never runs past the panel's edge (S19's
+/// review: the inspector no longer widens to hold it), at most 180 points.
+fn combo_width(ui: &egui::Ui) -> f32 {
+    (ui.available_width() - theme::HIT - 34.0).clamp(48.0, 180.0)
+}
+
+/// Lays `add` out (a drop-down) in a box `width` points wide and a target high, so that what
+/// it shows is cut to the box rather than to the rest of the row.
+fn bounded<R>(ui: &mut egui::Ui, width: f32, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    ui.allocate_ui_with_layout(
+        egui::vec2(width + 34.0, theme::HIT),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.set_max_width(width + 34.0);
+            add(ui)
+        },
+    )
+    .inner
 }
 
 /// The width of one number, and of a vector's component, points.
@@ -263,6 +284,9 @@ pub fn show_in_cards(
             match own {
                 Some(title) => {
                     let parent = scope.rsplit_once('/').map_or("inspector", |(p, _)| p).to_owned();
+                    // A ⋮ on every card (S19's review, I5): the selection's own, over all of it.
+                    let menu =
+                        |shell: &mut Shell, ui: &mut egui::Ui| crate::inspector::part_menu(shell, ui, prefix);
                     crate::inspector::card(
                         shell,
                         ui,
@@ -271,7 +295,7 @@ pub fn show_in_cards(
                         title,
                         title,
                         true,
-                        None,
+                        Some(&menu),
                         |shell, ui| {
                             draw(shell, ui, scope, &mut commands);
                         },
@@ -303,6 +327,87 @@ pub fn show_in_cards(
             shell.editing = None;
         }
     }
+}
+
+/// Draws `entries` (fields of the scene under `prefix`, each named by what lies below it) as
+/// rows of the keyboard's scope `scope`, each with the checkbox of an optional part it lies in,
+/// on the panel's one grid; and applies what they change. What a card of chosen fields is drawn
+/// with (a body's Transform, Shape, Material, Motion and Lifetime: S19's review, I5).
+pub fn draw_rows(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, prefix: &str, entries: &[Entry]) {
+    let spec = shell.engine.spec().clone();
+    let baseline = shell.engine.baseline().to_value();
+    let mut commands = Vec::new();
+    let mut gates = Vec::new();
+    for entry in entries {
+        gate(shell, ui, &spec, scope, prefix, entry, &mut gates, &mut commands);
+        row(shell, ui, &spec, &baseline, scope, prefix, entry, &mut commands);
+    }
+    for command in commands {
+        if !shell.apply(command) {
+            shell.editing = None;
+        }
+    }
+}
+
+/// A row of the panel's grid with a drop-down of `choices` (in words) under the name `name`,
+/// `current` chosen: registered in the keyboard's `scope` as `id` (a choice the arrows walk and
+/// Enter opens). Returns the index chosen this frame, by the pointer or the keys, when it is not
+/// `current`. `item` draws a choice's words (a material's with its swatch and density).
+#[allow(clippy::too_many_arguments)]
+pub fn choice_row(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    scope: &str,
+    id: &str,
+    name: &str,
+    hover: &str,
+    choices: &[String],
+    current: usize,
+    item: &dyn Fn(usize) -> egui::WidgetText,
+) -> Option<usize> {
+    let mut chosen = None;
+    let width = shell.label_width;
+    ui.horizontal(|ui| {
+        theme::fixed_left(
+            ui,
+            egui::vec2(width, theme::HIT),
+            egui::Label::new(RichText::new(name).size(12.0).color(theme::WEAK)).truncate(),
+        )
+        .on_hover_text(hover);
+        let width = combo_width(ui);
+        let combo = bounded(ui, width, |ui| {
+            egui::ComboBox::from_id_salt(("choice row", id.to_owned()))
+                .width(width)
+                .truncate()
+                .selected_text(item(current))
+                .show_ui(ui, |ui| {
+                    for n in 0..choices.len() {
+                        if ui.selectable_label(n == current, item(n)).clicked() && n != current {
+                            chosen = Some(n);
+                        }
+                    }
+                })
+        });
+        shell.register(scope, id, name, Focus::Choice { count: choices.len(), current }, combo.response.rect);
+        shell.layout.editors.push((id.trim_start_matches("field/").to_owned(), combo.response.rect));
+        if let Some(popup) = shell.keyboard.popup.as_ref().filter(|p| p.id == id) {
+            let at = popup.at;
+            egui::Area::new(egui::Id::unique(("keyboard choice row", id.to_owned())))
+                .order(egui::Order::Foreground)
+                .fixed_pos(combo.response.rect.left_bottom())
+                .show(ui.ctx(), |ui| {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        for n in 0..choices.len() {
+                            let _ = ui.selectable_label(n == at, item(n));
+                        }
+                    });
+                });
+        }
+    });
+    if let Some(index) = shell.take_pick(id).filter(|&i| i < choices.len() && i != current) {
+        chosen = Some(index);
+    }
+    chosen
 }
 
 /// Before `entry`'s row: for each optional part it lies in (a schedule's jitter, gaps, window)
@@ -337,7 +442,7 @@ fn gate(
         let response = ui.horizontal(|ui| {
             theme::fixed_left(
                 ui,
-                egui::vec2(shell.label_width, 20.0),
+                egui::vec2(shell.label_width, theme::HIT),
                 egui::Label::new(RichText::new(&name).size(12.0).color(theme::WEAK)).truncate(),
             );
             ui.checkbox(&mut on, "")
@@ -397,7 +502,7 @@ fn row(
         egui::Label::new(RichText::new(format!("{indent}{name}{unit}")).color(colour).size(12.0)).truncate();
     let width = shell.label_width;
     let line = ui.horizontal(|ui| {
-        let named = theme::fixed_left(ui, egui::vec2(width, 20.0), text).on_hover_text(&hover);
+        let named = theme::fixed_left(ui, egui::vec2(width, theme::HIT), text).on_hover_text(&hover);
         if differs {
             // Unity's mark for an overridden field: a bar at the edge, beside the gold name.
             let x = ui.max_rect().left() - 6.0;
@@ -432,7 +537,9 @@ fn row(
             let reset = ui
                 .add_visible(
                     differs,
-                    egui::Button::new(RichText::new("‹").size(12.0).color(theme::GOLD)).small().frame(false),
+                    egui::Button::new(RichText::new("‹").size(12.0).color(theme::GOLD))
+                        .frame(false)
+                        .min_size(egui::vec2(theme::HIT, theme::HIT)),
                 )
                 .on_hover_text("put back the value the scene was opened or saved with (Backspace)");
             shell.register(scope, &reset_id, &format!("{name}: reset"), Focus::Button, reset.rect);
@@ -466,7 +573,9 @@ fn list_buttons(
 ) {
     let items = entry.value.as_array().map_or(0, Vec::len);
     let id = field_id(&entry.path);
-    let add = ui.small_button("+").on_hover_text("add an item: a copy of the last");
+    let add = ui
+        .add(egui::Button::new("+").min_size(egui::vec2(theme::HIT, theme::HIT)))
+        .on_hover_text("add an item: a copy of the last");
     shell.register(scope, &format!("{id}/add"), &format!("{name}: add"), Focus::Button, add.rect);
     // A copy of the last; for an empty list, its first item's starter where it has one (a
     // body's first part: a small ball of its own material, S19).
@@ -476,7 +585,9 @@ fn list_buttons(
     {
         commands.push(Command::Insert { path: entry.path.clone(), index: None, value });
     }
-    let remove = ui.small_button("-").on_hover_text("take the last item away");
+    let remove = ui
+        .add(egui::Button::new("-").min_size(egui::vec2(theme::HIT, theme::HIT)))
+        .on_hover_text("take the last item away");
     shell.register(scope, &format!("{id}/remove"), &format!("{name}: remove"), Focus::Button, remove.rect);
     if (remove.clicked() || shell.take_click(&format!("{id}/remove"))) && items > 0 {
         commands.push(Command::Remove { path: format!("{}[{}]", entry.path, items - 1) });
@@ -563,7 +674,9 @@ fn edit(
             }
             keyed(shell, &id, path, now, whole, commands);
             if entry.optional {
-                let none = ui.small_button("×").on_hover_text("none");
+                let none = ui
+                    .add(egui::Button::new("×").min_size(egui::vec2(theme::HIT, theme::HIT)))
+                    .on_hover_text("none");
                 let none_id = format!("{id}/none");
                 shell.register(scope, &none_id, &format!("{name}: none"), Focus::Button, none.rect);
                 if none.clicked() || shell.take_click(&none_id) {
@@ -607,10 +720,20 @@ fn edit(
                 Some((typing, buffer)) if typing == path => buffer.clone(),
                 _ => current.clone(),
             };
-            let response = ui.add(
+            // A scene's description is prose: a field of lines that wraps (S19's review, UX); the
+            // rest are one line. Each at least a target's height.
+            let field = if path == "description" {
+                // Enter ends the edit as in every other field (the keyboard's rule); Shift+Enter
+                // starts a new line.
+                egui::TextEdit::multiline(&mut text)
+                    .desired_rows(3)
+                    .desired_width(ui.available_width() - theme::HIT - 20.0)
+                    .return_key(Some(egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Enter)))
+            } else {
                 egui::TextEdit::singleline(&mut text)
-                    .desired_width((ui.available_width() - 24.0).clamp(72.0, 160.0)),
-            );
+                    .desired_width((ui.available_width() - theme::HIT - 20.0).clamp(48.0, 160.0))
+            };
+            let response = ui.add(field.min_size(egui::vec2(0.0, theme::HIT)));
             shell.register(scope, &id, name, Focus::Text, response.rect);
             if shell.take_type(&id) {
                 response.request_focus();
@@ -646,16 +769,21 @@ fn edit(
                 commands.push(command_for(path, value, false));
             };
             // The variants in words ("Lower minus upper"); what is set is the variant's name.
-            let combo = egui::ComboBox::from_id_salt(("choice", path))
-                .width((ui.available_width() - 24.0).clamp(72.0, 160.0))
-                .selected_text(paths::words(&now))
-                .show_ui(ui, |ui| {
-                    for name in names {
-                        if ui.selectable_label(*name == now, paths::words(name)).clicked() && *name != now {
-                            choose(name, commands);
+            let width = combo_width(ui);
+            let combo = bounded(ui, width, |ui| {
+                egui::ComboBox::from_id_salt(("choice", path))
+                    .width(width)
+                    .truncate()
+                    .selected_text(paths::words(&now))
+                    .show_ui(ui, |ui| {
+                        for name in names {
+                            if ui.selectable_label(*name == now, paths::words(name)).clicked() && *name != now
+                            {
+                                choose(name, commands);
+                            }
                         }
-                    }
-                });
+                    })
+            });
             let current = names.iter().position(|n| *n == now).unwrap_or(0);
             shell.register(
                 scope,
@@ -744,22 +872,60 @@ fn material_choice(
     let path = entry.path.as_str();
     let id = field_id(path);
     let now = entry.value.as_str().map(str::to_owned);
+    let every: Vec<cav_sim::MaterialSpec> =
+        cav_sim::materials::every(&spec.materials).into_iter().cloned().collect();
     let mut choices: Vec<Option<String>> = vec![None];
-    choices.extend(cav_sim::materials::every(&spec.materials).into_iter().map(|m| Some(m.label.clone())));
-    let words = |choice: &Option<String>| choice.clone().unwrap_or_else(|| none.to_owned());
-    let mut chosen: Option<Option<String>> = None;
-    let combo = egui::ComboBox::from_id_salt(("material", path))
-        .width((ui.available_width() - 24.0).clamp(72.0, 160.0))
-        .selected_text(words(&now))
-        .show_ui(ui, |ui| {
-            for choice in &choices {
-                if ui.selectable_label(*choice == now, words(choice)).clicked() && *choice != now {
-                    chosen = Some(choice.clone());
-                }
-            }
-        });
+    choices.extend(every.iter().map(|m| Some(m.label.clone())));
+    // Each material as the design draws it (S19's review, UX): its colour's swatch, its name,
+    // and its density muted after it ("■ aluminium  2700 kg/m³").
+    // `fit`: cut to that width with an ellipsis, one line (the closed drop-down's words: a
+    // layout job is not cut by the drop-down itself).
+    let words = |n: usize, fit: Option<f32>| -> egui::WidgetText {
+        let mut job = egui::text::LayoutJob::default();
+        if let Some(width) = fit {
+            job.wrap = egui::text::TextWrapping::truncate_at_width(width);
+        }
+        let Some(material) = n.checked_sub(1).and_then(|m| every.get(m)) else {
+            let format = egui::TextFormat {
+                font_id: egui::FontId::proportional(12.5),
+                color: theme::STRONG,
+                ..Default::default()
+            };
+            job.append(none, 0.0, format);
+            return job.into();
+        };
+        let [r, g, b] = material.rgb();
+        let format = |colour| egui::TextFormat {
+            font_id: egui::FontId::proportional(12.5),
+            color: colour,
+            ..Default::default()
+        };
+        job.append("■ ", 0.0, format(Color32::from_rgb(r, g, b)));
+        // On a button's ground when chosen: its own text colours ([`theme::text_pairs`]).
+        job.append(&material.label, 0.0, format(theme::STRONG));
+        job.append(&format!("  {} kg/m³", shown(material.density)), 0.0, format(theme::WEAK_ON_WIDGET));
+        job.into()
+    };
+    let names: Vec<String> = choices.iter().map(|c| c.clone().unwrap_or_else(|| none.to_owned())).collect();
     let current = choices.iter().position(|c| *c == now).unwrap_or(0);
-    shell.register(scope, &id, name, Focus::Choice { count: choices.len(), current }, combo.response.rect);
+    // The name column is drawn by the row; the drop-down alone here, its words cut to its width
+    // so that a long one never widens the panel.
+    let mut chosen: Option<usize> = None;
+    let width = combo_width(ui);
+    let combo = bounded(ui, width, |ui| {
+        egui::ComboBox::from_id_salt(("material", path))
+            .width(width)
+            .truncate()
+            .selected_text(words(current, Some(width)))
+            .show_ui(ui, |ui| {
+                for n in 0..choices.len() {
+                    if ui.selectable_label(n == current, words(n, None)).clicked() && n != current {
+                        chosen = Some(n);
+                    }
+                }
+            })
+    });
+    shell.register(scope, &id, name, Focus::Choice { count: names.len(), current }, combo.response.rect);
     if let Some(popup) = shell.keyboard.popup.as_ref().filter(|p| p.id == id) {
         let at = popup.at;
         egui::Area::new(egui::Id::unique(("keyboard material", path)))
@@ -767,23 +933,19 @@ fn material_choice(
             .fixed_pos(combo.response.rect.left_bottom())
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    for (n, choice) in choices.iter().enumerate() {
-                        let _ = ui.selectable_label(n == at, words(choice));
+                    for n in 0..choices.len() {
+                        let _ = ui.selectable_label(n == at, words(n, None));
                     }
                 });
             });
     }
-    if let Some(index) = shell.take_pick(&id)
-        && let Some(choice) = choices.get(index)
-        && *choice != now
-    {
-        chosen = Some(choice.clone());
+    if let Some(index) = shell.take_pick(&id).filter(|&i| i < choices.len() && i != current) {
+        chosen = Some(index);
     }
-    if let Some(choice) = chosen {
-        commands.push(command_for(path, choice.map_or(Value::Null, Value::String), false));
+    if let Some(n) = chosen {
+        commands.push(command_for(path, choices[n].clone().map_or(Value::Null, Value::String), false));
     }
 }
-
 /// The buttons under a selection that change a list or take an optional part away: remove this
 /// body, remove this tower, remove the room. Each is a command like any other.
 pub fn structure(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, prefix: &str) {

@@ -767,7 +767,8 @@
   title: "S19 review I5 and UX: the inspector as panels.md draws it (Transform first, Shape, Material with densities, Motion with its kind, parts as a list, a menu on every card), a fixed width, the Probe card, selection as Unity/Godot/Blender (minors 7, 15-21)"
 - id: TASK-S19-24
   milestone: S19
-  title: "S19 review I6: the design's tests that were missing or could not fail (Readings bit for bit, hit targets, contrast of every pair, folding, no numbers) and controls made big enough"
+  status: done
+  title: "S19 review I6: the design's tests that were missing or could not fail (Readings bit for bit, hit targets, contrast of every pair, folding, no numbers) and controls made big enough (merged with TASK-S19-23: the tests and the controls they hold were built together)"
 - id: TASK-S19-25
   milestone: S19
   title: "S19 after its review: the record (pictures before and after, validation against s18-the-editor, minors 10, 12, 13, 22, ARCHITECTURE, PROGRESS)"

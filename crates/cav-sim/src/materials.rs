@@ -185,6 +185,46 @@ mod tests {
         assert!(why.starts_with(&format!("materials[{}].label", all.len())), "{why}");
     }
 
+    /// An sRGB colour in CIE L*a*b* (D65).
+    fn lab([r, g, b]: [u8; 3]) -> [f64; 3] {
+        let lin = |v: u8| {
+            let v = f64::from(v) / 255.0;
+            if v <= 0.040_45 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+        };
+        let (r, g, b) = (lin(r), lin(g), lin(b));
+        let x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.950_47;
+        let y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        let z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.088_83;
+        let d: f64 = 6.0 / 29.0;
+        let f = |t: f64| if t > d.powi(3) { t.cbrt() } else { t / (3.0 * d * d) + 4.0 / 29.0 };
+        [116.0 * f(y) - 16.0, 500.0 * (f(x) - f(y)), 200.0 * (f(y) - f(z))]
+    }
+
+    /// How far apart two colours look: the CIE 1976 ΔE*ab.
+    fn apart(a: [u8; 3], b: [u8; 3]) -> f64 {
+        let (a, b) = (lab(a), lab(b));
+        ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+    }
+
+    #[test]
+    fn every_two_materials_look_apart() {
+        // S19's review, UX and minor 20: steel, tungsten and lead were three greys a few units of
+        // ΔE apart. Every two library materials are now at least 15 apart (2.3 is the least a
+        // person sees; 15 is plain at a glance). Control: the colours steel and tungsten had are
+        // under it.
+        let all = library();
+        for (i, a) in all.iter().enumerate() {
+            for b in &all[i + 1..] {
+                let d = apart(a.rgb(), b.rgb());
+                assert!(d >= 15.0, "{} and {} are {d:.1} apart", a.label, b.label);
+            }
+        }
+        assert!(
+            apart([0x8a, 0x8f, 0x96], [0x7d, 0x83, 0x8a]) < 15.0,
+            "the control: the old steel and tungsten"
+        );
+    }
+
     #[test]
     fn a_scene_s_material_comes_before_the_library_s() {
         // A scene that says lead is lighter (a hollow brick of it) has its own way; the library's

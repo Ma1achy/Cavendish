@@ -1,7 +1,7 @@
 // The tool strip, as data (docs/slices/S18.md §2). Each tool is a behaviour the code knows
 // (Select, Translate, Place, Probe); its key is the action `tool <id>` in ui/actions.ron, so the keys,
-// the ? sheet and the palette have it from one place. Rotate, Scale, Paint, Measure, Slice and
-// Probe come in S19 (E and R are kept for Rotate and Scale).
+// the ? sheet and the palette have it from one place. Probe came in S19; Scale, Paint, Measure and
+// Slice come in S20 and Rotate after it (E and R are kept for Rotate and Scale).
 //
 //   snap_step  the Move tool's snap and the transform session's step, metres
 //   tools      in the strip's order, top to bottom:

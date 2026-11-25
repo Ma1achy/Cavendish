@@ -51,7 +51,18 @@ fn badge(ui: &mut egui::Ui, text: impl Into<String>, colour: Color32) {
 /// Where more lies below what is shown, the panel's foot fades and says so (S18's second review,
 /// UX 8: a clipped inspector gave no sign that it scrolls). Returns whether it did.
 fn scrolling(ui: &mut egui::Ui, id: &str, contents: impl FnOnce(&mut egui::Ui)) -> bool {
-    let shown = egui::ScrollArea::vertical().id_salt(id).auto_shrink([false, false]).show(ui, contents);
+    // A solid scroll bar, seen whenever there is more than fits (S19's review, minor 16: egui's
+    // floating one showed only under the pointer), and room after the last row so that the
+    // "more below" badge never covers it once scrolled to the end.
+    ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
+    let shown = egui::ScrollArea::vertical()
+        .id_salt(id)
+        .auto_shrink([false, false])
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+        .show(ui, |ui| {
+            contents(ui);
+            ui.add_space(28.0);
+        });
     let rect = shown.inner_rect;
     let below = shown.content_size.y - shown.state.clamped_offset().y - rect.height();
     if below > 4.0 {
@@ -136,30 +147,16 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
             .resizable(true)
             .frame(frame(theme::PANEL, 10, 6))
             .show(ui, |ui| {
-                // The panel's tabs: the selection's properties, or the towers' readings.
-                ui.horizontal(|ui| {
-                    for (tab, name) in [
-                        (crate::outliner::RightTab::Inspector, "Inspector"),
-                        (crate::outliner::RightTab::Readings, "Readings"),
-                    ] {
-                        let response = tab_title(ui, name, shell.right_tab == tab);
-                        let id = format!("inspector/tab/{name}");
-                        shell.register("inspector", &id, name, Kind::Button, response.rect);
-                        shell.layout.buttons.push((format!("tab {name}"), response.rect));
-                        if response.clicked() || shell.take_click(&id) {
-                            shell.right_tab = tab;
-                        }
-                    }
-                });
-                ui.add_space(4.0);
-                match shell.right_tab {
-                    crate::outliner::RightTab::Inspector => {
-                        scrolling(ui, "properties", |ui| properties(shell, ui))
-                    }
-                    crate::outliner::RightTab::Readings => {
-                        scrolling(ui, "readings", |ui| crate::outliner::readings(shell, ui))
-                    }
-                }
+                // The panel keeps its width whatever it shows (S19's review, UX: egui widened it to
+                // its widest row, so it jumped with the selection): drawn into a child of exactly
+                // the room there is, which tells the panel nothing of its contents' size, and
+                // clipped to it.
+                let room = ui.available_rect_before_wrap();
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(room));
+                child.set_clip_rect(room.intersect(ui.clip_rect()));
+                let below = inspector_panel(shell, &mut child);
+                ui.allocate_rect(room, Sense::hover());
+                below
             });
         if panel.inner {
             shell.layout.buttons.push(("more below".to_owned(), panel.response.rect));
@@ -185,6 +182,32 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
     windows(shell, &ctx);
     if shell.quit {
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+}
+
+/// The inspector's panel: its tabs (the selection's properties, or the towers' readings) and the
+/// tab shown, scrolling. Returns whether more lies below what is shown.
+fn inspector_panel(shell: &mut Shell, ui: &mut egui::Ui) -> bool {
+    ui.horizontal(|ui| {
+        for (tab, name) in [
+            (crate::outliner::RightTab::Inspector, "Inspector"),
+            (crate::outliner::RightTab::Readings, "Readings"),
+        ] {
+            let response = tab_title(ui, name, shell.right_tab == tab);
+            let id = format!("inspector/tab/{name}");
+            shell.register("inspector", &id, name, Kind::Button, response.rect);
+            shell.layout.buttons.push((format!("tab {name}"), response.rect));
+            if response.clicked() || shell.take_click(&id) {
+                shell.right_tab = tab;
+            }
+        }
+    });
+    ui.add_space(4.0);
+    match shell.right_tab {
+        crate::outliner::RightTab::Inspector => scrolling(ui, "properties", |ui| properties(shell, ui)),
+        crate::outliner::RightTab::Readings => {
+            scrolling(ui, "readings", |ui| crate::outliner::readings(shell, ui))
+        }
     }
 }
 
@@ -943,10 +966,12 @@ fn rows(ui: &mut egui::Ui, id: &str, rows: &[(&str, String)]) {
     });
 }
 
-/// The inspector's width at first and its least, points: room for the cards' one grid. The label
-/// column is 40 % of this, not of the panel as dragged: egui widens a panel to what it holds, so a
-/// column that followed the panel's width would push it wider every frame.
-const INSPECTOR_WIDTH: f32 = 316.0;
+/// The inspector's width at first and its least, points: room for the cards' one grid with
+/// 24-point targets and a solid scroll bar (S19's review: 316 grew to 352 with a body's rows, so
+/// this is what a body needs). The label column is 40 % of this, not of the panel as dragged. The
+/// panel no longer grows with what it holds (its contents are drawn in a child of fixed width),
+/// so a dragged width is kept whatever is selected.
+const INSPECTOR_WIDTH: f32 = 352.0;
 
 fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
     let spec = shell.engine.spec().clone();
@@ -963,9 +988,15 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
         Some(Target::World) => ("World", "world".to_owned()),
         Some(Target::Body(n)) => ("Body", format!("bodies[{}]", n - 1)),
     };
+    // Every target in the panel at least 24 points a side (docs/design/panels.md; S19's review,
+    // I6): boxes, ticks and drop-downs take their height from this.
+    ui.spacing_mut().interact_size.y = theme::HIT;
     crate::inspector::header(shell, ui);
     match selection {
         None => {
+            let menu = |shell: &mut Shell, ui: &mut egui::Ui| {
+                crate::inspector::fields_menu(shell, ui, "", &["description", "duration"]);
+            };
             crate::inspector::card(
                 shell,
                 ui,
@@ -974,7 +1005,7 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
                 "Scene",
                 "scene",
                 true,
-                None,
+                Some(&menu),
                 |shell, ui| {
                     for path in ["description", "duration"] {
                         crate::editors::show(shell, ui, "inspector/selection", path);
@@ -988,6 +1019,7 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
                 let resident = streaming.frame().map_or([0, 0], |f| [f.chunks.len(), f.bricks.len()]);
                 world_rows(world, resident, streaming.pending())
             });
+            let menu = |shell: &mut Shell, ui: &mut egui::Ui| crate::inspector::part_menu(shell, ui, "world");
             crate::inspector::card(
                 shell,
                 ui,
@@ -996,7 +1028,7 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
                 "World",
                 "world",
                 true,
-                None,
+                Some(&menu),
                 |shell, ui| {
                     if let Some(rows) = &rows {
                         let rows: Vec<(&str, String)> = rows.iter().map(|(n, v)| (*n, v.clone())).collect();
@@ -1008,18 +1040,23 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
                 },
             );
         }
+        // A body's cards in the design's order (S19's review, I5).
+        Some(Target::Body(n)) => crate::inspector::body(shell, ui, n - 1),
         Some(_) => {
             // The selection's own fields in a card named by what it is; its parts in cards of
             // their own (`editors::show`). Its name is the header's, so not repeated here.
             crate::editors::show_in_cards(shell, ui, "inspector/selection", &path, &["label"], Some(kind));
         }
     }
-    crate::inspector::info(shell, ui);
-    // The array's own settings belong to the scene and to its towers, not to a body (S18).
+    // The array's own settings belong to the scene and to its towers, not to a body (S18). Info,
+    // what is worked out, comes last whatever is selected (S19's review, minor 17).
     if !matches!(selection, None | Some(Target::Tower(_))) {
+        crate::inspector::info(shell, ui);
         return;
     }
     let (salt, open) = if selection.is_none() { ("scene", false) } else { ("tower", true) };
+    // The Array's ⋮ is over its towers (their layout): reset, copy, paste.
+    let menu = |shell: &mut Shell, ui: &mut egui::Ui| crate::inspector::part_menu(shell, ui, "array.towers");
     crate::inspector::card(
         shell,
         ui,
@@ -1028,7 +1065,7 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
         "Array",
         salt,
         true,
-        None,
+        Some(&menu),
         |shell, ui| {
             let instrument = shell.engine.spec().array.instrument.clone();
             let other = shell.engine.comparison().cloned();
@@ -1038,6 +1075,8 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
             preset_choice(shell, ui, "inspector/array", "Compare with", "compare", compared, true);
         },
     );
+    let menu =
+        |shell: &mut Shell, ui: &mut egui::Ui| crate::inspector::part_menu(shell, ui, "array.schedule");
     crate::inspector::card(
         shell,
         ui,
@@ -1046,11 +1085,13 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
         "Cadence",
         salt,
         open,
-        None,
+        Some(&menu),
         |shell, ui| {
             crate::editors::show(shell, ui, "inspector/cadence", "array.schedule");
         },
     );
+    let menu =
+        |shell: &mut Shell, ui: &mut egui::Ui| crate::inspector::part_menu(shell, ui, "array.instrument");
     crate::inspector::card(
         shell,
         ui,
@@ -1059,11 +1100,12 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
         "Instrument",
         salt,
         open,
-        None,
+        Some(&menu),
         |shell, ui| {
             crate::editors::show(shell, ui, "inspector/instrument", "array.instrument");
         },
     );
+    crate::inspector::info(shell, ui);
 }
 
 /// The preset an instrument is, by the word `preset` takes, or "custom".
@@ -1093,7 +1135,7 @@ fn preset_choice(
     ui.horizontal(|ui| {
         theme::fixed_left(
             ui,
-            vec2(shell.label_width, 20.0),
+            vec2(shell.label_width, theme::HIT),
             egui::Label::new(RichText::new(name).size(12.0).color(theme::WEAK)),
         );
         let mut chosen = None;
@@ -1332,7 +1374,9 @@ fn icon_button(
         Align2::RIGHT_BOTTOM,
         key,
         FontId::monospace(9.5),
-        if selected { theme::STRONG } else { theme::WEAK },
+        // On the button's ground, not the panel's: the lighter grey (S19's review, I6: the weak
+        // grey there read at 3.3:1).
+        if selected { theme::STRONG } else { theme::WEAK_ON_WIDGET },
     );
     response
 }
@@ -1413,7 +1457,7 @@ fn tool_options_row(shell: &mut Shell, ui: &mut egui::Ui) {
                 ui.label(weak(format!("click the ground (z = {} m) to add one there", shell.ground())));
             }
             Some(Behaviour::Probe) => {
-                ui.label(weak("click a point of a body or the ground: the bodies' gravity there, the cell's share of each tower's phase".into()));
+                ui.label(weak("click a point: the gravity there of the bodies (and a slab floor), the cell under it and its share of each tower's phase".into()));
             }
             _ => {
                 ui.label(weak("click selects · drag a body to move it in the view's plane · middle-drag pans · hold the right button and W A S D to fly".into()));
@@ -1424,7 +1468,7 @@ fn tool_options_row(shell: &mut Shell, ui: &mut egui::Ui) {
 
 /// The Probe tool's reading as a card in the pane's top left corner, and its point marked in the
 /// view: what is there, in words, a line a fact.
-fn probe_card(shell: &mut Shell, ui: &egui::Ui, pane: usize, rect: Rect) {
+fn probe_card(shell: &mut Shell, ui: &mut egui::Ui, pane: usize, rect: Rect) {
     let Some(probed) = shell.probed.clone() else { return };
     let painter = ui.painter_at(rect);
     if let Some(p) = shell.point_on_screen(pane, probed.point, rect.size()) {
@@ -1433,15 +1477,125 @@ fn probe_card(shell: &mut Shell, ui: &egui::Ui, pane: usize, rect: Rect) {
         painter.circle_stroke(p, 6.0, Stroke::new(1.5, theme::GOLD));
         painter.circle_filled(p, 1.5, theme::GOLD);
     }
-    let text = probed.words(shell.engine.spec());
-    let galley = painter.layout_no_wrap(text, FontId::monospace(11.0), theme::TEXT);
-    // Right of the floating tool strip, below the pane's top edge.
+    // A card as the inspector's are (S19's review, UX: it was a block of monospace): the reading
+    // in rows with units, then each tower's distance and the cell's share of its phase as a
+    // table. Right of the floating tool strip, below the pane's top edge.
+    let spec = shell.engine.spec().clone();
     let at = rect.left_top() + vec2(72.0, 14.0);
-    let card = Rect::from_min_size(at, galley.size()).expand(6.0);
-    painter.rect_filled(card, 4.0, theme::PANEL.gamma_multiply(0.92));
-    painter.rect_stroke(card, 4.0, Stroke::new(1.0, theme::WIDGET_EDGE), StrokeKind::Inside);
-    painter.galley(at, galley, theme::TEXT);
-    shell.layout.buttons.push(("probe card".to_owned(), card));
+    let room = Rect::from_min_max(at, pos2(rect.right() - 8.0, rect.bottom() - 8.0));
+    if room.width() < 120.0 || room.height() < 60.0 {
+        return;
+    }
+    let mut child =
+        ui.new_child(egui::UiBuilder::new().max_rect(room).layout(egui::Layout::top_down(egui::Align::Min)));
+    let card = egui::Frame::new()
+        .fill(crate::inspector::CARD.gamma_multiply(0.96))
+        .stroke(Stroke::new(1.0, theme::WIDGET_EDGE))
+        .corner_radius(5.0)
+        .inner_margin(Margin::same(8))
+        .show(&mut child, |ui| {
+            ui.set_max_width(330.0f32.min(room.width() - 16.0));
+            let [x, y, z] = probed.point;
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Probe").size(13.0).color(theme::STRONG));
+                ui.label(
+                    RichText::new(format!(
+                        "at {}, {}, {} m",
+                        short_number(x),
+                        short_number(y),
+                        short_number(z)
+                    ))
+                    .size(12.0)
+                    .color(theme::WEAK),
+                );
+            });
+            let g = cav_core::Vec3::from_array(probed.g);
+            let size = g.length();
+            let mut rows: Vec<(&str, String)> = vec![("Gravity", si(size, "m/s²"))];
+            if size > 0.0 {
+                let d = g * (1.0 / size);
+                rows.push(("Towards", format!("{:+.2}, {:+.2}, {:+.2}", d.x, d.y, d.z)));
+            }
+            rows.push(("Of", probed.counted().to_owned()));
+            match &probed.cell {
+                Some(c) => {
+                    let body = spec.bodies.get(c.body).map_or("", |b| b.label.as_str());
+                    rows.push(("Cell of", body.to_owned()));
+                    rows.push((
+                        "Cell",
+                        format!(
+                            "{} · {} kg · {} m a side",
+                            c.material.as_deref().unwrap_or("uniform"),
+                            crate::editors::shown(c.mass),
+                            crate::editors::shown(c.side)
+                        ),
+                    ));
+                    if c.block.1 > c.side {
+                        rows.push((
+                            "In",
+                            format!("a block of {}³ cells alike", (c.block.1 / c.side).round()),
+                        ));
+                    }
+                }
+                None => rows.push(("Cell", "no body here".to_owned())),
+            }
+            egui::Grid::new(("probe rows", pane)).num_columns(2).spacing([10.0, 2.0]).show(ui, |ui| {
+                for (name, value) in &rows {
+                    ui.label(RichText::new(*name).size(12.0).color(theme::WEAK));
+                    ui.label(RichText::new(value).size(12.0).color(theme::TEXT));
+                    ui.end_row();
+                }
+            });
+            if !probed.not_counted.is_empty() {
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(format!("not counted: {}", probed.not_counted.join("; ")))
+                            .size(11.0)
+                            .color(theme::WEAK),
+                    )
+                    .wrap(),
+                );
+            }
+            ui.add_space(4.0);
+            egui::Grid::new(("probe towers", pane)).num_columns(3).spacing([12.0, 2.0]).striped(true).show(
+                ui,
+                |ui| {
+                    for heading in ["tower", "distance", "cell's share of ΔΦ"] {
+                        ui.label(RichText::new(heading).size(11.5).color(theme::WEAK));
+                    }
+                    ui.end_row();
+                    for t in probed.towers.iter().take(MAX_OUTLINE_ROWS) {
+                        ui.label(RichText::new(&t.label).size(12.0).color(theme::TEXT));
+                        ui.label(RichText::new(format!("{:.2} m", t.distance)).size(12.0).color(theme::TEXT));
+                        let share = match (&t.phase, &t.why) {
+                            (Some(phase), _) => crate::shell::phase_text(*phase),
+                            (None, Some(_)) => "not read".to_owned(),
+                            (None, None) => "—".to_owned(),
+                        };
+                        let label = ui.label(RichText::new(share).size(12.0).color(theme::STRONG));
+                        if let Some(why) = &t.why {
+                            label.on_hover_text(why);
+                        }
+                        ui.end_row();
+                    }
+                },
+            );
+        });
+    shell.layout.buttons.push(("probe card".to_owned(), card.response.rect));
+}
+
+/// A positive quantity in `unit` with the SI prefix that keeps it between 1 and 1000: `si(1.2e-7,
+/// "m/s²")` is "120 nm/s²". Three significant figures.
+fn si(value: f64, unit: &str) -> String {
+    if value == 0.0 || !value.is_finite() {
+        return format!("{value} {unit}");
+    }
+    let prefixes = [(1e-15, "f"), (1e-12, "p"), (1e-9, "n"), (1e-6, "µ"), (1e-3, "m"), (1.0, ""), (1e3, "k")];
+    let (scale, prefix) =
+        prefixes.iter().rev().find(|(s, _)| value.abs() >= *s).copied().unwrap_or(prefixes[0]);
+    let scaled = value / scale;
+    let digits = (2 - scaled.abs().log10().floor() as i32).clamp(0, 2) as usize;
+    format!("{scaled:.digits$} {prefix}{unit}")
 }
 
 /// The Move tool's gizmo on body `body` in a pane at `rect`: three arrows (x red, y green, z blue,
@@ -1615,7 +1769,16 @@ fn canvas_keys(shell: &mut Shell, area: Rect) {
 }
 
 fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
-    let area = ui.max_rect();
+    // A whole number of pixels across and down, as the panes are made: the side panels' widths
+    // may leave a fraction of a point (the inspector's is fixed since S19's review), and the one
+    // pane must be the figure to the point.
+    let ppp = ui.ctx().pixels_per_point();
+    let raw = ui.max_rect();
+    let area = Rect::from_min_size(
+        raw.min,
+        // Down, so that it never runs under a panel.
+        vec2((raw.width() * ppp + 1e-3).floor() / ppp, (raw.height() * ppp + 1e-3).floor() / ppp),
+    );
     ui.painter().rect_filled(area, 0.0, theme::BACKGROUND);
     shell.layout.figure = area;
     shell.building.place("viewport", area);
@@ -1702,8 +1865,11 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
             if content == cav_engine::PaneContent::Scene {
                 let view = shell.engine.view(pane);
                 let name = view.named().map_or("free", NamedView::name);
+                // Clear of the floating tool strip on the figure's left edge (S19's review,
+                // minor 15: it covered the left pane's "iso").
+                let x = if rect.left() - area.left() < 60.0 { 64.0 } else { 6.0 };
                 ui.painter().text(
-                    rect.left_top() + vec2(6.0, 4.0),
+                    rect.left_top() + vec2(x, 4.0),
                     Align2::LEFT_TOP,
                     name,
                     FontId::proportional(11.0),

@@ -352,8 +352,9 @@ fn task_keyboard_only() {
         key(&mut rig, Key::Tab, Modifiers::NONE);
     }
     key(&mut rig, Key::Enter, Modifiers::NONE);
-    // Past the panel's tabs (S19's panels: Inspector, Readings) to the selection's section.
-    while rig.shell.keyboard.focused() != "inspector/selection" {
+    // Past the panel's tabs (S19's panels: Inspector, Readings) and the Transform and Shape cards
+    // to the card that holds the mass (S19's review, I5: a point's is the Mass card).
+    while rig.shell.keyboard.focused() != "inspector/material" {
         key(&mut rig, Key::ArrowDown, Modifiers::NONE);
     }
     key(&mut rig, Key::Enter, Modifiers::NONE);
@@ -366,10 +367,10 @@ fn task_keyboard_only() {
     key(&mut rig, Key::Escape, Modifiers::NONE);
     assert!(rig.shell.engine.spec().bodies[0].mass > mass, "the mass went up a step");
     assert!(!pointer(&sent), "no pointer event was sent");
-    // The breadcrumb said where the keys were: the inspector, the section by what it is (the
-    // body), the field by its name in words (S18's review, U4: it was "Inspector › mass › mass",
-    // the section named after the body's label).
-    assert_eq!(rig.shell.breadcrumb().as_deref(), Some("Inspector › Body › Mass"));
+    // The breadcrumb said where the keys were: the inspector, the card by what it holds (a
+    // point's Mass card), the field by its name in words (S18's review, U4: it was "Inspector ›
+    // mass › mass", the section named after the body's label).
+    assert_eq!(rig.shell.breadcrumb().as_deref(), Some("Inspector › Mass › Mass"));
 }
 
 /// The input events the T1 task takes: 12, counted at its first pass (docs/slices/S18.md §7.2)
@@ -1170,7 +1171,17 @@ fn every_starter_has_an_editor_for_every_field() {
         let leaves =
             cav_sim::paths::leaves(rig.shell.engine.spec(), &prefix, cav_app::editors::MAX_FIELDS).unwrap();
         assert!(!leaves.is_empty());
+        let body = rig.shell.engine.spec().bodies.first().cloned();
         for leaf in &leaves {
+            // A voxel body's point radius (validation holds it at 0: S19's review, minor 21) and a
+            // uniform body's parts (only a body of materials has any) are not offered.
+            let shaped = body.as_ref().and_then(|b| b.shape.as_ref());
+            if shaped.is_some() && leaf.path.ends_with("].radius") && !leaf.path.contains(".shape") {
+                continue;
+            }
+            if shaped.is_some_and(|s| s.material.is_none()) && leaf.path.ends_with(".shape.parts") {
+                continue;
+            }
             assert!(
                 rig.shell.layout().editor(&leaf.path).is_some(),
                 "{}: no editor for {}",
@@ -1726,7 +1737,9 @@ fn the_inspector_says_when_it_scrolls_and_names_a_point_s_radius() {
     rig.shell.run("layout instrument").unwrap();
     rig.frames(vec![vec![], vec![], vec![]]);
     assert!(rig.shell.layout().button("more below").is_some(), "the cut inspector says it scrolls");
-    // Control: a short inspector (a point mass selected) says nothing of the kind.
+    // Control: an inspector that fits (a point mass selected, in a window tall enough for its six
+    // cards since S19's review) says nothing of the kind.
+    rig.size = [1440, 1100];
     rig.shell.run("select body 1").unwrap();
     rig.frames(vec![vec![], vec![]]);
     assert!(rig.shell.layout().button("more below").is_none());

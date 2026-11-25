@@ -4,7 +4,8 @@
 //
 // Units: density kg/m³; Young's modulus Pa; Poisson's ratio 1; thermal conductivity W/(m K);
 // specific heat J/(kg K); linear thermal expansion 1/K. Colours sRGB `#rrggbb`, chosen to tell
-// the materials apart in the view, not measured.
+// the materials apart in the view (every two at least 15 apart in CIE L*a*b*, held by the test
+// `every_two_materials_look_apart`), not measured.
 //
 // The numbers are typical values near 20 °C and 1 atm, to three figures, from the sources named.
 // Real samples differ: a rock or a concrete by ±10 % in density and much more in its elastic and
@@ -18,34 +19,34 @@
 //   Typ.: typical engineering values, as tabulated in many textbooks (e.g. Callister,
 //         Materials Science and Engineering, 10th ed., appendix B); a range in nature
 [
-    (label: "tungsten", density: 19300.0, colour: "#8a8f96", young: Some(411.0e9), poisson: Some(0.28),
+    (label: "tungsten", density: 19300.0, colour: "#3f4a5c", young: Some(411.0e9), poisson: Some(0.28),
      conductivity: Some(173.0), heat_capacity: Some(132.0), expansion: Some(4.5e-6), source: Some("CRC")),
-    (label: "lead", density: 11340.0, colour: "#5b6572", young: Some(16.0e9), poisson: Some(0.44),
+    (label: "lead", density: 11340.0, colour: "#6e6a8e", young: Some(16.0e9), poisson: Some(0.44),
      conductivity: Some(35.3), heat_capacity: Some(129.0), expansion: Some(28.9e-6), source: Some("CRC")),
     (label: "copper", density: 8960.0, colour: "#b87333", young: Some(120.0e9), poisson: Some(0.34),
      conductivity: Some(401.0), heat_capacity: Some(385.0), expansion: Some(16.5e-6), source: Some("CRC")),
-    (label: "steel", density: 7850.0, colour: "#7d838a", young: Some(200.0e9), poisson: Some(0.29),
+    (label: "steel", density: 7850.0, colour: "#7b93ab", young: Some(200.0e9), poisson: Some(0.29),
      conductivity: Some(50.0), heat_capacity: Some(490.0), expansion: Some(12.0e-6), source: Some("ASM; plain carbon steel")),
-    (label: "stainless steel", density: 8000.0, colour: "#a9aeb4", young: Some(193.0e9), poisson: Some(0.29),
+    (label: "stainless steel", density: 8000.0, colour: "#b9c0c8", young: Some(193.0e9), poisson: Some(0.29),
      conductivity: Some(16.2), heat_capacity: Some(500.0), expansion: Some(17.3e-6), source: Some("ASM; type 304")),
-    (label: "titanium", density: 4506.0, colour: "#9c9a92", young: Some(116.0e9), poisson: Some(0.32),
+    (label: "titanium", density: 4506.0, colour: "#8d8a6b", young: Some(116.0e9), poisson: Some(0.32),
      conductivity: Some(21.9), heat_capacity: Some(523.0), expansion: Some(8.6e-6), source: Some("CRC")),
-    (label: "aluminium", density: 2700.0, colour: "#c9ced3", young: Some(69.0e9), poisson: Some(0.33),
+    (label: "aluminium", density: 2700.0, colour: "#eceae4", young: Some(69.0e9), poisson: Some(0.33),
      conductivity: Some(237.0), heat_capacity: Some(897.0), expansion: Some(23.1e-6), source: Some("CRC")),
-    (label: "granite", density: 2700.0, colour: "#a0948c", young: Some(50.0e9), poisson: Some(0.25),
+    (label: "granite", density: 2700.0, colour: "#9b7f7a", young: Some(50.0e9), poisson: Some(0.25),
      conductivity: Some(2.9), heat_capacity: Some(790.0), expansion: Some(8.0e-6), source: Some("Typ.; a range in nature")),
-    (label: "concrete", density: 2400.0, colour: "#a6a39b", young: Some(30.0e9), poisson: Some(0.2),
+    (label: "concrete", density: 2400.0, colour: "#b5ae9e", young: Some(30.0e9), poisson: Some(0.2),
      conductivity: Some(1.7), heat_capacity: Some(880.0), expansion: Some(12.0e-6), source: Some("Typ.; normal-weight concrete")),
     (label: "brick", density: 1920.0, colour: "#a5533c", young: None, poisson: None,
      conductivity: Some(0.72), heat_capacity: Some(840.0), expansion: Some(6.0e-6), source: Some("Typ.; common clay brick")),
-    (label: "glass", density: 2500.0, colour: "#b5d6d3", young: Some(70.0e9), poisson: Some(0.22),
+    (label: "glass", density: 2500.0, colour: "#8fd6c6", young: Some(70.0e9), poisson: Some(0.22),
      conductivity: Some(1.0), heat_capacity: Some(840.0), expansion: Some(9.0e-6), source: Some("Typ.; soda-lime glass")),
-    (label: "oak", density: 750.0, colour: "#8b6a43", young: Some(11.0e9), poisson: None,
+    (label: "oak", density: 750.0, colour: "#a07a4a", young: Some(11.0e9), poisson: None,
      conductivity: Some(0.17), heat_capacity: Some(2380.0), expansion: None, source: Some("Typ.; dry, modulus along the grain")),
     (label: "water", density: 998.0, colour: "#2f6fa8", young: None, poisson: None,
      conductivity: Some(0.598), heat_capacity: Some(4182.0), expansion: None, source: Some("CRC; held still, as a solid body")),
-    (label: "ice", density: 917.0, colour: "#d7ebf4", young: Some(9.0e9), poisson: Some(0.33),
+    (label: "ice", density: 917.0, colour: "#bfe3ff", young: Some(9.0e9), poisson: Some(0.33),
      conductivity: Some(2.2), heat_capacity: Some(2050.0), expansion: Some(51.0e-6), source: Some("CRC; near 0 °C")),
-    (label: "dry soil", density: 1600.0, colour: "#7a5c3e", young: None, poisson: None,
+    (label: "dry soil", density: 1600.0, colour: "#5e4a32", young: None, poisson: None,
      conductivity: Some(0.3), heat_capacity: Some(800.0), expansion: None, source: Some("Typ.; dry sandy soil, a range in nature")),
 ]
