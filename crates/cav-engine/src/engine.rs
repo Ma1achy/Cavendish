@@ -211,6 +211,8 @@ pub struct Engine {
     /// Files dropped on the window, by name, newest last: what `import <name>` reads first (in a
     /// page, the only files it can read). At most [`MAX_DROPPED_BYTES`] together.
     dropped: Vec<(String, Vec<u8>)>,
+    /// How many scenes have been loaded ([`Self::loads`]).
+    loads: u64,
 }
 
 /// The most bytes of dropped files the engine keeps at once: older ones are let go first.
@@ -286,6 +288,7 @@ impl Engine {
             voxels: crate::voxels::Voxels::default(),
             world: crate::world::Streaming::default(),
             dropped: Vec::new(),
+            loads: 0,
         }
     }
 
@@ -1023,10 +1026,18 @@ impl Engine {
     /// Carries out a command that [`Self::prepare`] has accepted. `continues` says that it
     /// overwrites the command before it: a drag in progress.
     fn perform(&mut self, command: &Command, prepared: Prepared, continues: bool) {
+        // The bodies' names before, so that a view's hidden bodies follow a rename.
+        let labels: Vec<String> = self.spec.bodies.iter().map(|b| b.label.clone()).collect();
         match (command, prepared) {
             (Command::Load(_), Prepared::Edit(spec, step)) => {
                 self.spec = *spec;
                 self.baseline = self.spec.clone();
+                self.loads += 1;
+                // A new scene's bodies are all shown: a name hidden in the last scene is not
+                // hidden in this one (S19's review, minor 7).
+                for view in &mut self.views {
+                    view.hidden.clear();
+                }
                 self.history.edited(step);
                 self.time = 0.0;
                 self.selection = None;
@@ -1042,6 +1053,7 @@ impl Engine {
             }
             (_, Prepared::Edit(spec, step)) => {
                 self.spec = *spec;
+                self.follow_renames(&labels);
                 if continues {
                     self.history.continued(step.redo);
                 } else {
@@ -1056,6 +1068,7 @@ impl Engine {
                     self.views[pane] = *view;
                 }
                 self.spec = *spec;
+                self.follow_renames(&labels);
                 self.history.undone();
                 self.settle_after_history();
                 self.schedule(false);
@@ -1065,6 +1078,7 @@ impl Engine {
                     self.views[pane] = *view;
                 }
                 self.spec = *spec;
+                self.follow_renames(&labels);
                 self.history.redone();
                 self.settle_after_history();
                 self.schedule(false);
@@ -1128,6 +1142,31 @@ impl Engine {
         self.compare
             .as_ref()
             .map_or((SignalState::None, None), |(_, forward)| (forward.state(), forward.signal()))
+    }
+
+    /// A body renamed (the same number of bodies, one's label changed: `before` the labels as they
+    /// were) keeps its place in every view's hidden list under its new name (S19's review,
+    /// minor 7: a rename showed a hidden body again).
+    fn follow_renames(&mut self, before: &[String]) {
+        if before.len() != self.spec.bodies.len() {
+            return;
+        }
+        for (old, body) in before.iter().zip(&self.spec.bodies) {
+            if *old != body.label {
+                for view in &mut self.views {
+                    for hidden in view.hidden.iter_mut().filter(|h| *h == old) {
+                        hidden.clone_from(&body.label);
+                    }
+                }
+            }
+        }
+    }
+
+    /// How many scenes have been loaded into this engine: what a shell keys the state it keeps
+    /// for one scene's bodies by (a lock is not carried to another scene's body of that name).
+    #[must_use]
+    pub const fn loads(&self) -> u64 {
+        self.loads
     }
 
     /// After undo or redo the cameras stay where they are; the playhead and the selection are kept

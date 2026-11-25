@@ -82,8 +82,9 @@ pub struct PartSpec {
     #[serde(default)]
     pub mode: PartMode,
     /// Its material's label, for adding and painting; none for the body's own material. An
-    /// erasing part has none.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// erasing part has none. (Written even when none, as the body's own `material` is, so that
+    /// the inspector and `set` reach it: S19's review found a part's material could not be set.)
+    #[serde(default)]
     #[schemars(length(min = 1, max = 200))]
     pub material: Option<String>,
     /// Where it is: its centre (a stroke's origin), `[x, y, z]` metres from the body's position.

@@ -18,17 +18,19 @@ struct Rig {
     ctx: egui::Context,
     shell: Shell,
     clock: f64,
+    /// The window, points.
+    size: [u32; 2],
 }
 
 impl Rig {
     fn new() -> Self {
-        let mut rig = Self { ctx: context(), shell: Shell::new(), clock: 0.0 };
+        let mut rig = Self { ctx: context(), shell: Shell::new(), clock: 0.0, size: [1440, 900] };
         rig.frames(vec![vec![], vec![]]);
         rig
     }
 
     fn frames(&mut self, frames: Vec<Vec<Event>>) {
-        run_frames(&self.ctx, &mut self.shell, &mut NoSurface, [1440, 900], &mut self.clock, frames);
+        run_frames(&self.ctx, &mut self.shell, &mut NoSurface, self.size, &mut self.clock, frames);
     }
 
     fn key(&mut self, key: Key) {
@@ -88,6 +90,10 @@ const AWKWARD: [(&str, &str); 6] = [
 /// review, item 8: as one test it was four seconds on `quick`'s critical path).
 fn leave_every_editor(selection: &str) -> (Rig, usize) {
     let mut rig = Rig::new();
+    // A window tall enough that every field is in sight, so that each click lands on its field
+    // (S19's review made the rows 24 points: in 900 the instrument's last ran under the
+    // timeline, where a click seeks or selects).
+    rig.size = [1440, 1400];
     rig.shell.run("load point").unwrap();
     for (path, value) in AWKWARD {
         rig.shell.run(&format!("set {path} {value}")).unwrap();

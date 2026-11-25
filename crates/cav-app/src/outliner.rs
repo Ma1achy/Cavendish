@@ -98,7 +98,7 @@ pub fn dot_of(reply: &cav_engine::ReadingReply, n: usize, silent: bool) -> Dot {
 }
 
 /// A row's icon, in a square `rect`.
-fn icon(painter: &egui::Painter, rect: Rect, kind: RowKind, colour: Color32) {
+pub(crate) fn icon(painter: &egui::Painter, rect: Rect, kind: RowKind, colour: Color32) {
     let c = rect.center();
     let r = rect.width() * 0.32;
     let stroke = Stroke::new(1.4, colour);
@@ -160,7 +160,7 @@ fn icon(painter: &egui::Painter, rect: Rect, kind: RowKind, colour: Color32) {
 }
 
 /// The kind of body `body` is, for its icon and its row's words.
-fn body_kind(body: &cav_sim::BodySpec) -> (RowKind, String) {
+pub(crate) fn body_kind(body: &cav_sim::BodySpec) -> (RowKind, String) {
     match &body.shape {
         None => (RowKind::Point, if body.radius > 0.0 { "sphere" } else { "point mass" }.to_owned()),
         Some(shape) => match shape.kind {
@@ -211,9 +211,10 @@ fn row(
     let colour = if selected { theme::STRONG } else { theme::TEXT };
     icon(painter, Rect::from_center_size(pos2(left + 18.0, rect.center().y), vec2(14.0, 14.0)), kind, colour);
     let name_at = pos2(left + 30.0, rect.center().y);
-    let trailing = Rect::from_min_max(pos2(rect.right() - 52.0, rect.top()), rect.max);
+    let trailing = Rect::from_min_max(pos2(rect.right() - 64.0, rect.top()), rect.max);
     if !shell.renaming.as_ref().is_some_and(|(t, _)| row_target(id) == Some(*t)) {
         painter.text(name_at, Align2::LEFT_CENTER, label, FontId::proportional(13.0), colour);
+        shell.layout.row_texts.push((id.to_owned(), label.to_owned()));
     }
     (response, trailing)
 }
@@ -234,10 +235,13 @@ fn row_target(id: &str) -> Option<Target> {
 /// whether it is open. Its fold is remembered for each scene (egui's memory: UI state).
 fn group(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, name: &str, add: Option<&str>) -> bool {
     let mut open = shell.tree_open(scope);
-    let (response, trailing) = row(shell, ui, "tree", scope, 0, RowKind::Group, name, false);
+    // Under the scene, one level in (S19's review, minor 19: the groups sat beside the root).
+    let (response, trailing) = row(shell, ui, "tree", scope, 1, RowKind::Group, name, false);
     let painter = ui.painter();
-    let tri =
-        Rect::from_center_size(pos2(response.rect.left() + 9.0, response.rect.center().y), vec2(8.0, 8.0));
+    let tri = Rect::from_center_size(
+        pos2(response.rect.left() + 9.0 + INDENT, response.rect.center().y),
+        vec2(8.0, 8.0),
+    );
     let points = if open {
         vec![tri.left_top(), tri.right_top(), tri.center_bottom()]
     } else {
@@ -246,8 +250,10 @@ fn group(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, name: &str, add: Opt
     painter.add(egui::Shape::convex_polygon(points, theme::WEAK, Stroke::NONE));
     let mut add_rect = None;
     if let Some(line) = add {
-        let plus =
-            Rect::from_center_size(pos2(trailing.right() - 12.0, trailing.center().y), vec2(20.0, 20.0));
+        let plus = Rect::from_center_size(
+            pos2(trailing.right() - 12.0, trailing.center().y),
+            vec2(theme::HIT, theme::HIT),
+        );
         let hit = ui.interact(plus, egui::Id::unique(("group add", scope)), Sense::click());
         if hit.hovered() || response.hovered() {
             painter.text(plus.center(), Align2::CENTER_CENTER, "+", FontId::proportional(15.0), theme::TEXT);
@@ -290,14 +296,24 @@ fn item(
 ) {
     let selected = shell.engine.selection() == Some(target);
     let id = crate::panels::row_id(target);
-    let (response, trailing) = row(shell, ui, scope, &id, 1, kind, label, selected);
+    let (response, trailing) = row(shell, ui, scope, &id, 2, kind, label, selected);
+    // What it is ("point mass", "tower") is the row's tooltip, not painted on it.
+    let response = response.on_hover_text(words);
     shell.layout.outline.push((target, response.rect));
-    shell.layout.outline_words.push((target, label.to_owned(), words.to_owned()));
+    // (The last text painted for this row: a frame may be laid out twice.)
+    let painted = shell
+        .layout
+        .row_texts
+        .iter()
+        .rev()
+        .find(|(row, _)| *row == id)
+        .map_or(String::new(), |(_, t)| t.clone());
+    shell.layout.outline_words.push((target, label.to_owned(), painted));
     let keyed = shell.take_click(&id);
     let renaming = shell.renaming.as_ref().is_some_and(|(t, _)| *t == target);
     if renaming {
         let at = Rect::from_min_max(
-            pos2(response.rect.left() + 4.0 + INDENT + 30.0, response.rect.top()),
+            pos2(response.rect.left() + 4.0 + 2.0 * INDENT + 30.0, response.rect.top()),
             response.rect.max,
         );
         crate::panels::rename_field_at(shell, ui, target, at);
@@ -321,10 +337,15 @@ fn item(
         // The eye (the view's `hide`) and the lock (UI state): shown on hover, or when set.
         let hidden = shell.engine.view(0).hidden.iter().any(|l| l == label);
         let locked = shell.locked.contains(label);
-        let eye =
-            Rect::from_center_size(pos2(trailing.right() - 34.0, trailing.center().y), vec2(20.0, 20.0));
-        let lock =
-            Rect::from_center_size(pos2(trailing.right() - 12.0, trailing.center().y), vec2(20.0, 20.0));
+        // Each a full target (24 pt: S19's review, I6), side by side at the row's right.
+        let eye = Rect::from_center_size(
+            pos2(trailing.right() - 14.0 - theme::HIT, trailing.center().y),
+            vec2(theme::HIT, theme::HIT),
+        );
+        let lock = Rect::from_center_size(
+            pos2(trailing.right() - 12.0, trailing.center().y),
+            vec2(theme::HIT, theme::HIT),
+        );
         let eye_hit = ui.interact(eye, egui::Id::unique(("eye", n)), Sense::click());
         let lock_hit = ui.interact(lock, egui::Id::unique(("lock", n)), Sense::click());
         let show = response.hovered() || eye_hit.hovered() || lock_hit.hovered();
@@ -353,8 +374,14 @@ fn item(
         }
         on_control = eye_hit.clicked() || lock_hit.clicked() || eye_hit.hovered() || lock_hit.hovered();
     }
+    // A click selects, and a click on what is selected keeps it so (Unity, Godot, Blender: S19's
+    // review, UX); Ctrl+click toggles it.
+    let toggle = ui.input(|i| i.modifiers.command);
     if response.clicked() && !on_control {
-        shell.apply(Command::Select(if selected { None } else { Some(target) }));
+        let target = if selected && toggle { None } else { Some(target) };
+        if shell.engine.selection() != target {
+            shell.apply(Command::Select(target));
+        }
     } else if keyed && !selected {
         shell.apply(Command::Select(Some(target)));
     }
@@ -377,12 +404,15 @@ fn shown(count: usize, selected: Option<usize>) -> Vec<usize> {
 
 /// The outliner: a header (the scene's name, `+` to add, a filter), then the tree.
 pub fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
+    // Every target at least 24 points a side (S19's review, I6).
+    ui.spacing_mut().interact_size = vec2(theme::HIT, theme::HIT);
     // The header: the panel's title as a tab, `+`, and the filter.
     ui.horizontal(|ui| {
         crate::panels::tab_title(ui, "Scene", true);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let add = ui
-                .menu_button(RichText::new("+").size(15.0), |ui| crate::menus::add_menu(shell, ui))
+                // Spaced so that the button is a full target (S19's review, I6).
+                .menu_button(RichText::new(" + ").size(15.0), |ui| crate::menus::add_menu(shell, ui))
                 .response;
             let add = add.on_hover_text("add a body, a shape or a tower");
             shell.register("tree", "tree/add", "Add", Kind::Button, add.rect);
@@ -497,9 +527,13 @@ pub fn readings(shell: &mut Shell, ui: &mut egui::Ui) {
                     let mark = if reply.truncated.is_some() { " ◐" } else { "" };
                     let text = format!("{}{mark}", crate::shell::phase_text(r.gradiometer));
                     shell.layout.readings.push((n, text.clone()));
-                    ui.label(RichText::new(text).monospace().size(12.0).color(theme::STRONG));
-                    ui.label(number(r.lower));
-                    ui.label(number(r.upper));
+                    shell.layout.reading_values.push((n, [r.gradiometer, r.lower, r.upper]));
+                    // Each number's every digit under the pointer: the value the engine gave.
+                    let exact = |v: f64| format!("{v:.17e} rad");
+                    ui.label(RichText::new(text).monospace().size(12.0).color(theme::STRONG))
+                        .on_hover_text(exact(r.gradiometer));
+                    ui.label(number(r.lower)).on_hover_text(exact(r.lower));
+                    ui.label(number(r.upper)).on_hover_text(exact(r.upper));
                 }
                 None => {
                     shell.layout.readings.push((n, String::new()));

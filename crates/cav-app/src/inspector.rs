@@ -1,11 +1,14 @@
 //! The inspector as component cards (S19, `docs/design/panels.md`): a header for the selection
-//! (its icon, its editable name, its type, an eye, a ⋮ menu with duplicate, delete, reset all,
-//! copy and paste), then a card a part of it (Body, Shape, Motion; Scene, Array, Cadence,
-//! Instrument), every card on one grid whose value column starts at the same x, and an Info card
-//! of what is worked out and not edited. No help paragraphs: what a field is lives on its name's
-//! hover. Each control is a console line or a `Command`, through the same path as before.
+//! (the tree's icon for what it is, its editable name, its type, an eye, a ⋮ menu with
+//! duplicate, delete, reset all, copy and paste), then its cards, every one with a ⋮ and on one
+//! grid whose value column starts at the same x: a body's in the design's order ([`body`]:
+//! Transform, Shape, Material, Parts, Motion, Lifetime), the scene's (Scene, Array, Cadence,
+//! Instrument), a tower's; and last an Info card of what is worked out and not edited. No help
+//! paragraphs: what a field is lives on its name's hover. Each control is a console line or a
+//! `Command`, through the same path as before. Every target is [`crate::theme::HIT`] a side.
 
 use cav_engine::{Command, Target};
+use cav_sim::paths::Entry;
 use egui::{Align2, Color32, FontId, Rect, RichText, Sense, Stroke, pos2, vec2};
 use serde_json::Value;
 
@@ -124,7 +127,10 @@ pub fn card(
             );
             let mut on_menu = false;
             if let Some(menu) = menu {
-                let at = Rect::from_center_size(pos2(rect.right() - 10.0, rect.center().y), vec2(22.0, 22.0));
+                let at = Rect::from_center_size(
+                    pos2(rect.right() - 12.0, rect.center().y),
+                    vec2(theme::HIT, theme::HIT),
+                );
                 let button = ui.interact(at, egui::Id::unique(("card menu", id.to_owned())), Sense::click());
                 dots(ui.painter(), at, if button.hovered() { theme::STRONG } else { theme::WEAK });
                 let menu_id = format!("{id}/menu");
@@ -160,7 +166,7 @@ pub fn info_rows(shell: &Shell, ui: &mut egui::Ui, rows: &[(&str, String)]) {
         ui.horizontal(|ui| {
             theme::fixed_left(
                 ui,
-                vec2(width, 20.0),
+                vec2(width, theme::HIT),
                 egui::Label::new(RichText::new(*name).size(12.0).color(theme::WEAK)).truncate(),
             );
             ui.add(egui::Label::new(RichText::new(value).size(12.0).color(theme::TEXT)).wrap());
@@ -214,8 +220,18 @@ pub fn header(shell: &mut Shell, ui: &mut egui::Ui) {
     let top = ui.cursor().min;
     ui.horizontal(|ui| {
         ui.set_min_height(30.0);
+        // The tree's own icon for what it is (S19's review, minor 18: a gold dot for everything).
         let (icon, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
-        ui.painter().circle_filled(icon.center(), 5.0, theme::GOLD);
+        let kind = match target {
+            None => crate::outliner::RowKind::Scene,
+            Some(Target::Tower(_)) => crate::outliner::RowKind::Tower,
+            Some(Target::Body(n)) => spec
+                .bodies
+                .get(n - 1)
+                .map_or(crate::outliner::RowKind::Point, |b| crate::outliner::body_kind(b).0),
+            Some(Target::Room | Target::Floor | Target::World) => crate::outliner::RowKind::Surroundings,
+        };
+        crate::outliner::icon(ui.painter(), icon, kind, theme::GOLD);
         let mut text = match &shell.typing {
             Some((typing, buffer)) if Some(typing) == label_path.as_ref() => buffer.clone(),
             _ => name.clone(),
@@ -224,6 +240,7 @@ pub fn header(shell: &mut Shell, ui: &mut egui::Ui) {
             label_path.is_some(),
             egui::TextEdit::singleline(&mut text)
                 .font(FontId::proportional(14.0))
+                .min_size(vec2(0.0, theme::HIT))
                 .desired_width(ui.available_width() * 0.5),
         );
         // The name's field is the label's editor (its id and its place in the layout are the
@@ -250,7 +267,7 @@ pub fn header(shell: &mut Shell, ui: &mut egui::Ui) {
         }
         ui.label(RichText::new(kind_words(&spec, target)).size(12.0).color(theme::WEAK));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let (at, menu) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+            let (at, menu) = ui.allocate_exact_size(vec2(theme::HIT, theme::HIT), Sense::click());
             dots(ui.painter(), at, if menu.hovered() { theme::STRONG } else { theme::TEXT });
             let menu = menu.on_hover_text("what can be done to it");
             shell.register("inspector/header", "inspector/menu", "Menu", Kind::Button, menu.rect);
@@ -261,7 +278,7 @@ pub fn header(shell: &mut Shell, ui: &mut egui::Ui) {
             if let Some(Target::Body(n)) = target {
                 let label = spec.bodies[n - 1].label.clone();
                 let hidden = shell.engine.view(0).hidden.contains(&label);
-                let (eye, eye_hit) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+                let (eye, eye_hit) = ui.allocate_exact_size(vec2(theme::HIT, theme::HIT), Sense::click());
                 crate::icons::eye(ui.painter(), eye, !hidden, if hidden { theme::WEAK } else { theme::TEXT });
                 shell.register("inspector/header", "inspector/eye", "Show or hide", Kind::Button, eye);
                 if eye_hit.clicked() || shell.take_click("inspector/eye") {
@@ -367,7 +384,353 @@ pub fn info(shell: &mut Shell, ui: &mut egui::Ui) {
     if rows.is_empty() {
         return;
     }
-    card(shell, ui, "inspector", "inspector/info", "Info", "info", false, None, |shell, ui| {
+    // Its menu copies what it says, as text (a ⋮ on every card: S19's review, I5).
+    let text: String = rows.iter().map(|(name, value)| format!("{name}: {value}\n")).collect();
+    let menu = |_: &mut Shell, ui: &mut egui::Ui| {
+        if ui.button("Copy as text").clicked() {
+            ui.ctx().copy_text(text.clone());
+            ui.close();
+        }
+    };
+    card(shell, ui, "inspector", "inspector/info", "Info", "info", false, Some(&menu), |shell, ui| {
         info_rows(shell, ui, &rows)
     });
+}
+
+/// A card's ⋮ menu over several fields of one part of the scene (`parent`, and the `fields`
+/// below it, by their paths from it): Reset puts them back as the scene was opened or saved,
+/// Copy takes them, Paste puts what was copied of the same fields; each one edit (one `Set` of
+/// `parent`). What the Lifetime card and the Scene card use.
+pub fn fields_menu(shell: &mut Shell, ui: &mut egui::Ui, parent: &str, fields: &[&str]) {
+    let get = |root: &Value, at: &str| cav_sim::paths::get(root, &join(parent, at)).ok().cloned();
+    let (now, saved) = (shell.engine.spec().to_value(), shell.engine.baseline().to_value());
+    let parent_now = cav_sim::paths::get(&now, parent).ok().cloned();
+    let with = |values: &[(String, Value)]| -> Option<Value> {
+        let mut whole = parent_now.clone()?;
+        for (field, value) in values {
+            cav_sim::paths::set(&mut whole, field, value.clone()).ok()?;
+        }
+        Some(whole)
+    };
+    let saved_values: Option<Vec<(String, Value)>> =
+        fields.iter().map(|f| get(&saved, f).map(|v| ((*f).to_owned(), v))).collect();
+    let differs = fields.iter().any(|f| get(&saved, f) != get(&now, f));
+    let reset = saved_values.filter(|_| differs).and_then(|v| with(&v));
+    let button = ui.add_enabled(reset.is_some(), egui::Button::new("Reset"));
+    shell.layout.buttons.push((format!("reset card {parent}"), button.rect));
+    if button.clicked()
+        && let Some(value) = reset
+    {
+        shell.apply(Command::set(parent, value));
+        ui.close();
+    }
+    let copied: serde_json::Map<String, Value> =
+        fields.iter().filter_map(|f| get(&now, f).map(|v| ((*f).to_owned(), v))).collect();
+    if ui.button("Copy").clicked() {
+        shell.clipboard = Some(Value::Object(copied));
+        ui.close();
+    }
+    let paste = shell.clipboard.clone().and_then(|c| {
+        let map = c.as_object()?.clone();
+        (map.len() == fields.len() && fields.iter().all(|f| map.contains_key(*f)))
+            .then(|| with(&map.into_iter().collect::<Vec<_>>()))
+            .flatten()
+    });
+    if ui.add_enabled(paste.is_some(), egui::Button::new("Paste")).clicked()
+        && let Some(value) = paste
+    {
+        shell.apply(Command::set(parent, value));
+        ui.close();
+    }
+}
+
+/// `parent.field`, or `field` at the top.
+fn join(parent: &str, field: &str) -> String {
+    if parent.is_empty() { field.to_owned() } else { format!("{parent}.{field}") }
+}
+
+/// The entries of `entries` at `path` or below it.
+fn under(entries: &[Entry], path: &str) -> Vec<Entry> {
+    entries
+        .iter()
+        .filter(|e| {
+            e.path == path
+                || e.path.starts_with(&format!("{path}."))
+                || e.path.starts_with(&format!("{path}["))
+        })
+        .cloned()
+        .collect()
+}
+
+/// A body's cards, in the order `docs/design/panels.md` draws them (S19's review, I5): Transform
+/// (where it is), Shape (its kind: a point mass or a shape, and the shape), Material (what it is
+/// made of and what that makes it weigh; Mass for a point), Parts (a body of materials: each part
+/// under a header of its own), Motion (its kind and its numbers), Lifetime (when it is there).
+/// Info comes after, from [`info`]. Every card has a ⋮.
+pub fn body(shell: &mut Shell, ui: &mut egui::Ui, n: usize) {
+    let spec = shell.engine.spec().clone();
+    let Some(body) = spec.bodies.get(n) else { return };
+    let at = format!("bodies[{n}]");
+    let entries = match cav_sim::paths::leaves(&spec, &at, crate::editors::MAX_FIELDS) {
+        Ok(entries) => entries,
+        Err(why) => {
+            ui.label(RichText::new(why).size(11.0).color(theme::WARN));
+            return;
+        }
+    };
+    let single = |path: &str| entries.iter().filter(|e| e.path == path).cloned().collect::<Vec<_>>();
+
+    // Transform: the place its motion is anchored at (a static body's position).
+    let anchor = format!("{at}.motion.{}", body.motion.anchor().1);
+    let anchor_parent = anchor.rsplit_once('.').map_or(at.clone(), |(p, _)| p.to_owned());
+    let transform = single(&anchor);
+    let menu = |shell: &mut Shell, ui: &mut egui::Ui| part_menu(shell, ui, &anchor);
+    card(
+        shell,
+        ui,
+        "inspector",
+        "inspector/transform",
+        "Transform",
+        "body",
+        true,
+        Some(&menu),
+        |shell, ui| {
+            crate::editors::draw_rows(shell, ui, "inspector/transform", &anchor_parent, &transform);
+        },
+    );
+
+    // Shape: its kind, then the shape's fields (a point's radius).
+    let shape_path = format!("{at}.shape");
+    let shape_fields: Vec<Entry> = under(&entries, &shape_path)
+        .into_iter()
+        .filter(|e| {
+            e.path != shape_path
+                && !e.path.starts_with(&format!("{shape_path}.material"))
+                && !e.path.starts_with(&format!("{shape_path}.parts"))
+        })
+        .map(|mut e| {
+            // The card's first row is the body's Kind; the shape's own is the solid it is.
+            if e.path == format!("{shape_path}.kind") {
+                e.title = Some("Solid".to_owned());
+            }
+            e
+        })
+        .collect();
+    let radius = single(&format!("{at}.radius"));
+    let menu_path = if body.shape.is_some() { shape_path.clone() } else { format!("{at}.radius") };
+    let menu = |shell: &mut Shell, ui: &mut egui::Ui| part_menu(shell, ui, &menu_path);
+    card(shell, ui, "inspector", "inspector/shape", "Shape", "body", true, Some(&menu), |shell, ui| {
+        kind_row(shell, ui, n);
+        if body.shape.is_some() {
+            crate::editors::draw_rows(shell, ui, "inspector/shape", &shape_path, &shape_fields);
+        } else {
+            // A point's radius (a sphere's), which a voxel body has no use for (minor 21).
+            crate::editors::draw_rows(shell, ui, "inspector/shape", &at, &radius);
+        }
+    });
+
+    // Material: what it is made of, and what it weighs.
+    let mut material = single(&format!("{shape_path}.material"));
+    material.extend(single(&format!("{at}.mass")));
+    let voxels = body.shape.is_some();
+    let title = if voxels { "Material" } else { "Mass" };
+    let fields: &[&str] = if voxels { &["shape.material", "mass"] } else { &["mass"] };
+    let menu = |shell: &mut Shell, ui: &mut egui::Ui| fields_menu(shell, ui, &at, fields);
+    card(shell, ui, "inspector", "inspector/material", title, "body", true, Some(&menu), |shell, ui| {
+        crate::editors::draw_rows(shell, ui, "inspector/material", &at, &material);
+    });
+
+    // Parts: a body of materials only.
+    if body.shape.as_ref().is_some_and(|s| s.material.is_some()) {
+        let parts_path = format!("{shape_path}.parts");
+        let menu = |shell: &mut Shell, ui: &mut egui::Ui| part_menu(shell, ui, &parts_path);
+        let count = body.shape.as_ref().map_or(0, |s| s.parts.len());
+        let title = if count == 0 { "Parts".to_owned() } else { format!("Parts · {count}") };
+        card(shell, ui, "inspector", "inspector/parts", &title, "body", true, Some(&menu), |shell, ui| {
+            parts(shell, ui, n, &entries);
+        });
+    }
+
+    // Motion: its kind, then its numbers (its anchor is the Transform's).
+    let motion_path = format!("{at}.motion");
+    let motion: Vec<Entry> = under(&entries, &motion_path)
+        .into_iter()
+        .filter(|e| e.path != anchor)
+        .map(|mut e| {
+            if e.path == motion_path {
+                e.title = Some("Kind".to_owned());
+            }
+            e
+        })
+        .collect();
+    let menu = |shell: &mut Shell, ui: &mut egui::Ui| part_menu(shell, ui, &motion_path);
+    card(shell, ui, "inspector", "inspector/motion", "Motion", "body", true, Some(&menu), |shell, ui| {
+        crate::editors::draw_rows(shell, ui, "inspector/motion", &motion_path, &motion);
+    });
+
+    // Lifetime: when it comes and goes, each behind its box.
+    let mut lifetime = single(&format!("{at}.appears"));
+    lifetime.extend(single(&format!("{at}.vanishes")));
+    let always = body.appears.is_none() && body.vanishes.is_none();
+    let title = if always { "Lifetime · always there" } else { "Lifetime" };
+    let menu = |shell: &mut Shell, ui: &mut egui::Ui| fields_menu(shell, ui, &at, &["appears", "vanishes"]);
+    // Open at first, as every card is, so that each field is one look away (the design drew it
+    // folded; S18's E6 asks every field to have its editor in sight).
+    card(shell, ui, "inspector", "inspector/lifetime", title, "body", true, Some(&menu), |shell, ui| {
+        crate::editors::draw_rows(shell, ui, "inspector/lifetime", &at, &lifetime);
+    });
+}
+
+/// The Shape card's first row: whether the body is a point mass (a sphere, with a radius) or a
+/// shape made of voxels, as an explicit choice (S19's review, UX: the "Shape" box that made a
+/// point mass when unticked). Choosing is one edit of the whole body: a point keeps what the body
+/// weighs ([`cav_sim::BodySpec::mass_in`]); a shape starts as the sphere starter's.
+fn kind_row(shell: &mut Shell, ui: &mut egui::Ui, n: usize) {
+    let spec = shell.engine.spec().clone();
+    let Some(body) = spec.bodies.get(n) else { return };
+    let choices = ["Point mass".to_owned(), "Shape (voxels)".to_owned()];
+    let current = usize::from(body.shape.is_some());
+    let item = |i: usize| egui::WidgetText::from(choices[i].clone());
+    // The editor of whether it has a shape: `bodies[n].shape`'s own.
+    let id = crate::editors::field_id(&format!("bodies[{n}].shape"));
+    let hover = "a point mass (a uniform sphere when it has a radius), or a solid made of voxels";
+    let Some(chosen) = crate::editors::choice_row(
+        shell,
+        ui,
+        "inspector/shape",
+        &id,
+        "Kind",
+        hover,
+        &choices,
+        current,
+        &item,
+    ) else {
+        return;
+    };
+    let mut changed = body.clone();
+    if chosen == 0 {
+        changed.mass = body.mass_in(&spec).unwrap_or(body.mass);
+        changed.shape = None;
+        changed.radius = 0.0;
+    } else {
+        let shape =
+            cav_sim::starters::find("sphere").and_then(|s| s.body.as_ref()).and_then(|b| b.shape.clone());
+        changed.shape = shape;
+        changed.radius = 0.0;
+    }
+    if let Ok(value) = serde_json::to_value(&changed) {
+        shell.apply(Command::set(&format!("bodies[{n}]"), value));
+    }
+}
+
+/// The Parts card's contents: each part under a header that says what it is ("Part 1 · Add lead
+/// · Sphere") with a ⋮ to move it up or down or remove it (one edit each), its fields below; and
+/// Add part at the foot.
+fn parts(shell: &mut Shell, ui: &mut egui::Ui, n: usize, entries: &[Entry]) {
+    let spec = shell.engine.spec().clone();
+    let Some(shape) = spec.bodies.get(n).and_then(|b| b.shape.as_ref()) else { return };
+    let list = format!("bodies[{n}].shape.parts");
+    let own = shape.material.clone().unwrap_or_default();
+    for (i, part) in shape.parts.iter().enumerate() {
+        let path = format!("{list}[{i}]");
+        let mode = format!("{:?}", part.mode);
+        let what = part.material.clone().unwrap_or_else(|| own.clone());
+        let solid = match &part.kind {
+            cav_sim::shape::PartKind::Solid { shape } => cav_sim::paths::words(shape.name()),
+            cav_sim::shape::PartKind::Stroke { .. } => "Stroke".to_owned(),
+        };
+        let title = if part.mode == cav_sim::shape::PartMode::Erase {
+            format!("Part {} · Erase · {solid}", i + 1)
+        } else {
+            format!("Part {} · {mode} {what} · {solid}", i + 1)
+        };
+        let scope = format!("inspector/parts/{i}");
+        shell.building.add("inspector/parts", &scope, &title, Kind::Scope);
+        let header = ui.horizontal(|ui| {
+            ui.set_min_height(theme::HIT);
+            ui.label(RichText::new(&title).size(12.5).color(theme::STRONG));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // An id of its own, as the cards' ⋮ have, so that its menu stays open from frame to
+                // frame whatever is laid out before it.
+                let (at, _) = ui.allocate_exact_size(vec2(theme::HIT, theme::HIT), Sense::hover());
+                let menu = ui.interact(at, egui::Id::unique(("part menu", n, i)), Sense::click());
+                dots(ui.painter(), at, if menu.hovered() { theme::STRONG } else { theme::WEAK });
+                let menu_id = format!("{scope}/menu");
+                shell.register(&scope, &menu_id, &format!("{title}: menu"), Kind::Button, menu.rect);
+                shell.layout.buttons.push((format!("menu {path}"), menu.rect));
+                let open =
+                    (menu.clicked() || shell.take_click(&menu_id)).then_some(egui::SetOpenCommand::Toggle);
+                egui::Popup::menu(&menu).open_memory(open).show(|ui| part_item_menu(shell, ui, n, i));
+            });
+        });
+        ui.painter().hline(
+            header.response.rect.x_range(),
+            header.response.rect.bottom(),
+            Stroke::new(1.0, theme::RULE),
+        );
+        let fields = under(entries, &path);
+        crate::editors::draw_rows(shell, ui, &scope, &path, &fields);
+        let rect = Rect::from_min_max(
+            header.response.rect.min,
+            pos2(header.response.rect.right(), ui.cursor().top()),
+        );
+        shell.building.place(&scope, rect);
+        ui.add_space(4.0);
+    }
+    let add = ui.add_sized(vec2(ui.available_width(), theme::HIT), egui::Button::new("+ Add part"));
+    shell.register("inspector/parts", "inspector/parts/add", "Add part", Kind::Button, add.rect);
+    shell.layout.buttons.push((format!("add part {list}"), add.rect));
+    // The list's own editor is this button (each part's fields are theirs).
+    shell.layout.editors.push((list.clone(), add.rect));
+    // A copy of the last part (as a list's + adds), or for the first a small ball of the body's
+    // own material.
+    let next = || {
+        shape
+            .parts
+            .last()
+            .and_then(|p| serde_json::to_value(p).ok())
+            .or_else(|| crate::editors::starter(&spec, &format!("{list}[]"), None))
+    };
+    if (add.clicked() || shell.take_click("inspector/parts/add"))
+        && let Some(value) = next()
+    {
+        shell.apply(Command::Insert { path: list, index: None, value });
+    }
+}
+
+/// A part's ⋮: move it up, move it down, remove it; each one edit of the list.
+fn part_item_menu(shell: &mut Shell, ui: &mut egui::Ui, n: usize, i: usize) {
+    let spec = shell.engine.spec().clone();
+    let Some(parts) = spec.bodies.get(n).and_then(|b| b.shape.as_ref()).map(|s| s.parts.clone()) else {
+        return;
+    };
+    let list = format!("bodies[{n}].shape.parts");
+    let moved = |to: usize| -> Option<Value> {
+        let mut order = parts.clone();
+        let part = order.remove(i);
+        order.insert(to, part);
+        serde_json::to_value(order).ok()
+    };
+    let up = ui.add_enabled(i > 0, egui::Button::new("Move up"));
+    shell.layout.buttons.push((format!("move up {list}[{i}]"), up.rect));
+    if up.clicked()
+        && let Some(value) = moved(i - 1)
+    {
+        shell.apply(Command::set(&list, value));
+        ui.close();
+    }
+    let down = ui.add_enabled(i + 1 < parts.len(), egui::Button::new("Move down"));
+    shell.layout.buttons.push((format!("move down {list}[{i}]"), down.rect));
+    if down.clicked()
+        && let Some(value) = moved(i + 1)
+    {
+        shell.apply(Command::set(&list, value));
+        ui.close();
+    }
+    let remove = ui.button("Remove");
+    shell.layout.buttons.push((format!("remove {list}[{i}]"), remove.rect));
+    if remove.clicked() {
+        shell.apply(Command::Remove { path: format!("{list}[{i}]") });
+        ui.close();
+    }
 }

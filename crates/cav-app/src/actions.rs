@@ -247,7 +247,6 @@ pub const SUB_SCOPES: &[&str] = &[
     "tree/surroundings",
     "viewport/canvas",
     "viewport/selection",
-    "inspector/selection",
     "timeline/scrubber",
 ];
 

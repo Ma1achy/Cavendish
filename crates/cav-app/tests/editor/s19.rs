@@ -314,49 +314,297 @@ fn optional_properties_are_behind_checkboxes() {
 }
 
 #[test]
-fn text_reads_and_rows_are_big_enough() {
-    // docs/design/panels.md: text at least 4.5:1 against its ground, rows at least 24 pt.
-    // Control: the figures' own weak grey, used in the panels before, fails on a card.
-    use cav_app::theme::{TEXT, WEAK, contrast};
-    for ground in [cav_app::theme::PANEL, cav_app::inspector::CARD] {
-        for text in [TEXT, WEAK] {
-            assert!(contrast(text, ground) >= 4.5, "{text:?} on {ground:?}: {}", contrast(text, ground));
-        }
+fn every_text_reads_on_its_ground() {
+    // docs/design/panels.md and S19's review, I6: every (text, ground) pair the panels draw is at
+    // least 4.5:1, the tool strip's key letters and a field's hint among them. Control: the weak
+    // grey on a button's ground, as the key letters were drawn, fails (3.3:1).
+    use cav_app::theme::{WEAK, WIDGET, contrast, text_pairs};
+    let pairs = text_pairs();
+    assert!(pairs.len() >= 20, "{} pairs", pairs.len());
+    for (text, colour, ground, behind) in &pairs {
+        let ratio = contrast(*colour, *behind);
+        assert!(ratio >= 4.5, "{text} on {ground}: {ratio:.2}:1");
     }
-    assert!(contrast(cav_plot::theme::WEAK, cav_app::inspector::CARD) < 4.5, "control");
-    let rig = Rig::new();
-    let rows = &rig.shell.layout().outline;
-    assert!(!rows.is_empty() && rows.iter().all(|(_, r)| r.height() >= 24.0), "the tree's rows as drawn");
+    assert!(contrast(WEAK, WIDGET) < 4.5, "control: {:.2}", contrast(WEAK, WIDGET));
+}
+
+/// Every element of the keyboard's tree under `scope` that was drawn, with its rect.
+fn drawn_targets(rig: &Rig, scope: &str) -> Vec<(String, egui::Rect)> {
+    let tree = rig.shell.focus_tree();
+    let mut out = Vec::new();
+    let mut stack = vec![scope.to_owned()];
+    while let Some(id) = stack.pop() {
+        let Some(node) = tree.node(&id) else { continue };
+        let children = tree.children(&id);
+        if children.is_empty()
+            && node.kind != cav_app::keyboard::Kind::Scope
+            && node.kind != cav_app::keyboard::Kind::ReadOnly
+            && let Some(rect) = node.rect.filter(|r| r.is_positive())
+        {
+            out.push((id.clone(), rect));
+        }
+        stack.extend(children.into_iter().map(str::to_owned));
+    }
+    out
 }
 
 #[test]
-fn folding_a_card_leaves_the_tab_order() {
-    // The keyboard's rule (keyboard.md §9): Tab walks the big scopes in their order whatever is
-    // folded. Control: the walk with nothing folded is the same.
+fn every_target_in_the_side_panels_is_big_enough() {
+    // docs/design/panels.md and S19's review, I6: every control in the tree and the inspector
+    // (rows, boxes, ticks, drop-downs, eye, lock, +, ⋮) is at least 24 pt a side, for a body, the
+    // scene and a tower, the body's eye and lock among them. Control: the same measure finds
+    // smaller targets where the rule is not asked of them (the menu bar's).
+    for selection in ["select body 1", "select none", "select tower 1"] {
+        let mut rig = Rig::new();
+        rig.shell.run("load point").unwrap();
+        rig.shell.run(selection).unwrap();
+        rig.frames(vec![vec![], vec![], vec![]]);
+        let mut targets = drawn_targets(&rig, "tree");
+        targets.extend(drawn_targets(&rig, "inspector"));
+        assert!(targets.len() >= 12, "{selection}: {} targets", targets.len());
+        assert!(targets.iter().any(|(id, _)| id.ends_with("/eye")), "the eye is measured");
+        for (id, rect) in &targets {
+            assert!(
+                rect.width() >= 23.5 && rect.height() >= 23.5,
+                "{selection}: `{id}` is {:.1} × {:.1}",
+                rect.width(),
+                rect.height()
+            );
+        }
+        let small = drawn_targets(&rig, "top-bar").into_iter().filter(|(_, r)| r.height() < 23.5).count();
+        assert!(small > 0, "control: the menu bar's are smaller");
+    }
+}
+
+/// The ids the keyboard walks inside the inspector, in order, depth first.
+fn inspector_stops(rig: &Rig) -> Vec<String> {
+    let tree = rig.shell.focus_tree();
+    let mut out = Vec::new();
+    let mut stack = vec!["inspector".to_owned()];
+    while let Some(id) = stack.pop() {
+        let children = tree.children(&id);
+        if id != "inspector" {
+            out.push(id.clone());
+        }
+        stack.extend(children.into_iter().rev().map(str::to_owned));
+    }
+    out
+}
+
+#[test]
+fn folding_a_card_keeps_it_a_stop_in_its_place() {
+    // keyboard.md §9 and S19's review, I6: a folded card is still a stop, where it was, and the
+    // stops inside the inspector keep their order: folded, the walk is the open walk without the
+    // card's own rows. Control: a walk with the folded card's stop taken out is not it.
     let walk = |fold: bool| {
         let mut rig = Rig::new();
         rig.shell.run("load point").unwrap();
         rig.shell.run("select body 1").unwrap();
         rig.frames(vec![vec![], vec![]]);
         if fold {
-            let header =
-                rig.shell.layout().button("fold inspector/selection/bodies[0]/motion").expect("the card");
+            let header = rig.shell.layout().button("fold inspector/motion").expect("the Motion card");
             rig.click(header.center());
             rig.frames(vec![vec![]]);
         }
-        rig.shell.keyboard.focus = vec!["top-bar".into()];
-        rig.shell.keyboard.nav_on = true;
-        let mut seen = Vec::new();
-        for _ in 0..7 {
-            rig.key(Key::Tab, Modifiers::NONE);
-            seen.push(rig.shell.keyboard.focus.first().cloned().unwrap_or_default());
-        }
-        seen
+        inspector_stops(&rig)
     };
-    assert_eq!(walk(true), walk(false));
-    assert_eq!(walk(false).len(), 7);
+    let (open, folded) = (walk(false), walk(true));
+    assert!(open.iter().any(|id| id == "inspector/motion") && open.len() > folded.len());
+    let inside = |id: &String| {
+        id.starts_with("field/bodies[0].motion") && !id.starts_with("field/bodies[0].motion.Static.position")
+            || (id.starts_with("inspector/motion/") && *id != "inspector/motion/menu")
+    };
+    let expected: Vec<String> = open.iter().filter(|id| !inside(id)).cloned().collect();
+    assert_eq!(folded, expected, "the folded card in its place, the rest in order");
+    let without: Vec<String> = folded.iter().filter(|id| *id != "inspector/motion").cloned().collect();
+    assert_ne!(without, expected, "control: a folded card that is no stop");
 }
 
+#[test]
+fn a_body_s_cards_come_in_the_design_s_order_each_with_a_menu() {
+    // docs/design/panels.md and S19's review, I5: Transform first (Position), then Shape (its
+    // kind), Material, Motion (its kind), Lifetime, Info; each card with a ⋮. A body of materials
+    // has Parts after Material. Control: a point mass has no Parts card, and its Mass card is
+    // titled for what it holds.
+    let order = |rig: &Rig| -> Vec<String> {
+        rig.shell
+            .focus_tree()
+            .children("inspector")
+            .into_iter()
+            .filter(|id| !id.starts_with("inspector/tab") && *id != "inspector/header")
+            .map(str::to_owned)
+            .collect()
+    };
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("select body 1").unwrap();
+    rig.frames(vec![vec![], vec![], vec![]]);
+    let cards = order(&rig);
+    let expected =
+        ["transform", "shape", "material", "motion", "lifetime", "info"].map(|c| format!("inspector/{c}"));
+    assert_eq!(cards, expected);
+    for card in &expected {
+        assert!(rig.shell.layout().button(&format!("menu {card}")).is_some(), "{card} has a ⋮");
+    }
+    assert!(rig.shell.focus_tree().node("field/bodies[0].motion.Static.position[0]").is_some(), "Position");
+    assert_eq!(rig.shell.focus_tree().node("inspector/material").map(|n| n.name.as_str()), Some("Mass"));
+    let mut rig = Rig::new();
+    rig.shell.run("load void").unwrap();
+    rig.shell.add_starter("cube").unwrap();
+    rig.shell.run("set bodies[0].shape.material steel").unwrap();
+    rig.frames(vec![vec![], vec![], vec![]]);
+    let cards = order(&rig);
+    let parts = cards.iter().position(|c| c == "inspector/parts").expect("a Parts card");
+    assert_eq!(cards[parts - 1], "inspector/material");
+    assert_eq!(cards[parts + 1], "inspector/motion");
+    assert_eq!(rig.shell.focus_tree().node("inspector/material").map(|n| n.name.as_str()), Some("Material"));
+}
+
+#[test]
+fn a_body_s_parts_are_a_list_each_under_its_own_header() {
+    // S19's review, I5: each part under a header that says what it is, with a ⋮ that moves it
+    // or removes it, one edit each; "+ Add part" adds one. Control: before the move the order is
+    // the one added in. (A tall window: the cards of a part need the room.)
+    let mut rig = Rig::new();
+    rig.size = [1440, 1600];
+    rig.shell.run("load void").unwrap();
+    rig.shell.add_starter("cube").unwrap();
+    rig.shell.run("set bodies[0].shape.material steel").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    rig.click_button("add part bodies[0].shape.parts");
+    rig.frames(vec![vec![]]);
+    rig.shell.run("set bodies[0].shape.parts[0].material lead").unwrap();
+    rig.click_button("add part bodies[0].shape.parts");
+    rig.frames(vec![vec![], vec![]]);
+    let materials = |rig: &Rig| -> Vec<Option<String>> {
+        rig.shell.engine.spec().bodies[0]
+            .shape
+            .as_ref()
+            .unwrap()
+            .parts
+            .iter()
+            .map(|p| p.material.clone())
+            .collect()
+    };
+    assert_eq!(materials(&rig), [Some("lead".to_owned()), Some("lead".to_owned())], "a copy of the last");
+    rig.shell.run("set bodies[0].shape.parts[1].material copper").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let header = rig.shell.focus_tree().node("inspector/parts/0").map(|n| n.name.clone()).unwrap();
+    assert_eq!(header, "Part 1 · Add lead · Sphere");
+    assert_eq!(materials(&rig), [Some("lead".to_owned()), Some("copper".to_owned())], "control: as added");
+    let depth = rig.shell.engine.depth().0;
+    rig.click_button("menu bodies[0].shape.parts[0]");
+    rig.click_button("move down bodies[0].shape.parts[0]");
+    assert_eq!(materials(&rig), [Some("copper".to_owned()), Some("lead".to_owned())]);
+    assert_eq!(rig.shell.engine.depth().0, depth + 1, "one edit");
+    rig.frames(vec![vec![]]);
+    rig.click_button("menu bodies[0].shape.parts[1]");
+    rig.click_button("remove bodies[0].shape.parts[1]");
+    assert_eq!(materials(&rig), [Some("copper".to_owned())]);
+}
+
+#[test]
+fn the_kind_is_a_choice_of_a_point_or_a_shape_and_keeps_the_weight() {
+    // S19's review, UX: the "Shape" box that made a point mass when unticked is a Kind drop-down.
+    // A steel cube made a point mass keeps what it weighed (ρV), one edit; made a shape again it
+    // is the sphere starter's shape. Control: nothing chosen, nothing changes.
+    let mut rig = Rig::new();
+    rig.shell.run("load void").unwrap();
+    rig.shell.add_starter("cube").unwrap();
+    rig.shell.run("set bodies[0].shape.material steel").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let spec = rig.shell.engine.spec().clone();
+    let weighs = spec.bodies[0].mass_in(&spec).unwrap();
+    let id = "field/bodies[0].shape";
+    assert!(rig.shell.focus_tree().node(id).is_some(), "the Kind row");
+    let pick = |rig: &mut Rig, down: bool| {
+        rig.shell.keyboard.focus = vec!["inspector".into(), "inspector/shape".into(), id.into()];
+        rig.shell.keyboard.nav_on = true;
+        rig.key(Key::Enter, Modifiers::NONE);
+        rig.key(if down { Key::ArrowDown } else { Key::ArrowUp }, Modifiers::NONE);
+        rig.key(Key::Enter, Modifiers::NONE);
+        rig.frames(vec![vec![], vec![]]);
+    };
+    let depth = rig.shell.engine.depth().0;
+    pick(&mut rig, false);
+    let body = rig.shell.engine.spec().bodies[0].clone();
+    assert!(body.shape.is_none() && body.radius == 0.0, "a point mass");
+    assert_eq!(body.mass.to_bits(), weighs.to_bits(), "it weighs what it weighed");
+    assert_eq!(rig.shell.engine.depth().0, depth + 1, "one edit");
+    pick(&mut rig, true);
+    assert!(rig.shell.engine.spec().bodies[0].shape.is_some(), "a shape again");
+    let before = rig.shell.engine.spec().clone();
+    rig.frames(vec![vec![], vec![]]);
+    assert_eq!(rig.shell.engine.spec(), &before, "control: nothing chosen, nothing changes");
+}
+
+#[test]
+fn the_inspector_keeps_its_width_whatever_is_shown() {
+    // S19's review, UX: the inspector was 352 pt for a body, 317 for the scene, 325 for a tower
+    // and 390 for the Readings, so the view re-centred at each click in the tree. Now one width;
+    // and a body with the longest material name and a long label does not widen it.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.add_starter("cube").unwrap();
+    rig.shell.run("set bodies[1].shape.material \"stainless steel\"").unwrap();
+    rig.shell.run("set bodies[1].label \"a body with a long name that goes on and on and on\"").unwrap();
+    let mut widths = Vec::new();
+    for selection in ["select body 1", "select body 2", "select none", "select tower 1", "readings"] {
+        if selection == "readings" {
+            rig.shell.right_tab = cav_app::outliner::RightTab::Readings;
+        } else {
+            rig.shell.run(selection).unwrap();
+        }
+        rig.frames(vec![vec![], vec![], vec![]]);
+        let panel = rig.shell.layout().panel("properties").unwrap();
+        widths.push((selection, panel.width()));
+        // Nothing in it is cut off at its right edge: what it holds fits the width it keeps.
+        let layout = rig.shell.layout();
+        let over: Vec<String> = layout
+            .editors
+            .iter()
+            .chain(&layout.buttons)
+            .filter(|(_, r)| panel.intersects(*r) && r.right() > panel.right() + 0.5)
+            .map(|(what, r)| format!("{what} to {}", r.right()))
+            .collect();
+        assert!(over.is_empty(), "{selection}: past the panel's edge at {}: {over:?}", panel.right());
+    }
+    let first = widths[0].1;
+    for (selection, width) in &widths {
+        assert!((width - first).abs() < 0.5, "{selection}: {width} against {first}: {widths:?}");
+    }
+}
+
+#[test]
+fn selecting_brings_the_inspector_forward_and_a_click_keeps_the_selection() {
+    // S19's review, UX, as in Unity, Godot and Blender: with Readings shown, selecting a row shows
+    // the Inspector; a click on the selected row keeps it selected; Ctrl+click toggles it off.
+    // Control: selecting nothing leaves the Readings tab shown.
+    let mut rig = two_masses();
+    rig.shell.run("select none").unwrap();
+    rig.shell.right_tab = cav_app::outliner::RightTab::Readings;
+    rig.frames(vec![vec![], vec![]]);
+    rig.shell.run("select none").unwrap();
+    rig.frames(vec![vec![]]);
+    assert_eq!(rig.shell.right_tab, cav_app::outliner::RightTab::Readings, "control: nothing selected");
+    let row = rig.row(Target::Body(1));
+    rig.click(row.center());
+    assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)));
+    assert_eq!(rig.shell.right_tab, cav_app::outliner::RightTab::Inspector, "the Inspector forward");
+    // (Time enough between clicks that none is a double click, which renames.)
+    rig.frames(vec![vec![]; 40]);
+    rig.click(row.center());
+    assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)), "a click keeps it");
+    rig.frames(vec![vec![]; 40]);
+    let ctrl = |pressed| Event::PointerButton {
+        pos: row.center(),
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::COMMAND,
+    };
+    rig.frames(vec![vec![Event::PointerMoved(row.center())], vec![ctrl(true)], vec![ctrl(false)], vec![]]);
+    assert_eq!(rig.shell.engine.selection(), None, "Ctrl+click toggles it off");
+}
 #[test]
 fn a_locked_body_is_not_moved_by_the_gizmo_and_a_hidden_one_is_not_drawn() {
     // docs/design/panels.md: the tree's lock and eye. Locked, the Move tool has no gizmo on the

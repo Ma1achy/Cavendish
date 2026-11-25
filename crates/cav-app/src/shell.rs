@@ -136,9 +136,14 @@ pub struct Layout {
     pub status: String,
     /// Each row the outliner laid out: what a click on it selects, and where it is.
     pub outline: Vec<(cav_engine::Target, Rect)>,
-    /// The words each of those rows showed, in the same order: its label and its detail (a
-    /// tower's reading, a body's mass), as drawn.
+    /// The words each of those rows showed, in the same order: its label, and every text the row
+    /// painted (S19's review, I6: recorded where it is painted, not from what was passed in).
     pub outline_words: Vec<(cav_engine::Target, String, String)>,
+    /// Every text a tree row painted, by the row's keyboard id, in the order painted.
+    pub row_texts: Vec<(String, String)>,
+    /// The values the Readings tab's rows were drawn from: the tower (from 0) and its ΔΦ, δφ₁
+    /// and δφ₂, radians, as the engine gave them.
+    pub reading_values: Vec<(usize, [f64; 3])>,
     /// The numbers on the timeline's ruler, each with the rectangle it took, and the rectangle
     /// the timeline is drawn inside.
     pub ruler: (Vec<(String, Rect)>, Rect),
@@ -169,6 +174,8 @@ impl Default for Layout {
             status: String::new(),
             outline: Vec::new(),
             outline_words: Vec::new(),
+            row_texts: Vec::new(),
+            reading_values: Vec::new(),
             ruler: (Vec::new(), Rect::NOTHING),
             legends: Vec::new(),
             tree_groups: Vec::new(),
@@ -289,6 +296,11 @@ pub struct Shell {
     /// The bodies the scene tree's lock holds still, by label: the view's pointer moves none of
     /// them (S19, `docs/design/panels.md`). UI state, never journalled.
     pub locked: std::collections::BTreeSet<String>,
+    /// The engine's count of loads and the bodies' names when the locks were last kept
+    /// ([`Self::keep_locks`]).
+    lock_labels: (u64, Vec<String>),
+    /// The selection at the last frame: a new one shows the Inspector tab.
+    seen_selection: Option<Target>,
     /// What the scene tree's filter keeps: rows whose names hold it.
     pub tree_filter: String,
     /// The scene tree's folded groups, by scene name and group: UI state, kept per scene.
@@ -432,6 +444,8 @@ impl Shell {
             probed: None,
             probe_at: None,
             locked: std::collections::BTreeSet::new(),
+            lock_labels: (0, Vec::new()),
+            seen_selection: None,
             tree_filter: String::new(),
             tree_folded: std::collections::BTreeSet::new(),
             right_tab: crate::outliner::RightTab::Inspector,
@@ -1616,6 +1630,26 @@ impl Shell {
         counts
     }
 
+    /// The tree's locks kept with their bodies (S19's review, minor 7): a lock follows its body
+    /// through a rename, and a newly loaded scene starts with none, so no lock passes to another
+    /// scene's body of the same name. Run at the start of every frame, against the bodies' names
+    /// at the last.
+    pub fn keep_locks(&mut self) {
+        let loads = self.engine.loads();
+        let labels: Vec<String> = self.engine.spec().bodies.iter().map(|b| b.label.clone()).collect();
+        let (seen_loads, seen) = std::mem::take(&mut self.lock_labels);
+        if seen_loads != loads {
+            self.locked.clear();
+        } else if seen.len() == labels.len() {
+            for (old, new) in seen.iter().zip(&labels) {
+                if old != new && self.locked.remove(old) {
+                    self.locked.insert(new.clone());
+                }
+            }
+        }
+        self.lock_labels = (loads, labels);
+    }
+
     /// Draws one frame of the application into `ui` and handles its input.
     pub fn ui(&mut self, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         let ctx = ui.ctx().clone();
@@ -1637,6 +1671,15 @@ impl Shell {
         }
         for (name, bytes) in crate::platform::dropped(&ctx) {
             self.dropped_file(&name, bytes);
+        }
+        self.keep_locks();
+        // A new selection brings the Inspector forward (Unity, Godot: S19's review, UX).
+        let selection = self.engine.selection();
+        if selection != self.seen_selection {
+            if selection.is_some() {
+                self.right_tab = crate::outliner::RightTab::Inspector;
+            }
+            self.seen_selection = selection;
         }
         self.session_keys();
         self.orphaned_session();

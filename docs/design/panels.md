@@ -96,3 +96,24 @@ the tool-options header beside the tool's hint. Frees a column of width.
 - Readings panel shows each tower's phase equal to the engine's reading, bit for bit.
 - Hit targets ≥ 24 pt and text contrast ≥ 4.5:1 checked from the theme (control: a dimmed token fails).
 - Keyboard: Tab order unchanged by folding (a folded card is still a stop); all the above reachable by keys.
+
+## As built after S19's review (25 Nov 2026)
+
+The inspector follows the drawing above, card for card, with these calls (each worth a second
+look):
+- **A body's cards** are Transform (its motion's anchor: a static body's Position), Shape (Kind:
+  point mass or shape (voxels), an explicit choice; then the shape's Solid, size, pitch and
+  samples, or a point's radius), Material (with its colour and density in the drop-down, and the
+  mass the materials give), Parts (a body of materials: each part under a header "Part 1 · Add
+  lead · Sphere" with a ⋮ to move it up or down or remove it, and "+ Add part"), Motion (Kind,
+  then its numbers), Lifetime (appears and vanishes behind their boxes), Info. Every card has a ⋮.
+- **A point mass's Material card is called Mass**: it has no material, only its mass.
+- **Lifetime is open at first**, not folded as drawn: S18's E6 asks every field's editor to be in
+  sight, and a card folded at first hides two.
+- **The inspector's width is fixed** (352 pt at first, still draggable): its contents are drawn
+  in a child of the panel's width and cut to it, so it does not jump with the selection; rows fit
+  that width (drop-downs cut their words).
+- **Targets are 24 pt a side** in both panels (rows, boxes, ticks, drop-downs, eye, lock, +, ⋮),
+  and every text colour is held to 4.5:1 on every ground it is drawn on (`theme::text_pairs`).
+- **Readings** is a tab in every layout (not docked in two): a tab is one click from the Inspector
+  wherever you are.

@@ -76,3 +76,25 @@ fn import_adds_a_mesh_body_in_one_step() {
     assert!(why.contains("not a positive number"), "{why}");
     assert!(engine.spec().bodies.is_empty() && engine.depth().0 == depth, "nothing changed");
 }
+
+#[test]
+fn a_hidden_body_stays_hidden_when_renamed_and_a_new_scene_shows_all() {
+    // S19's review, minor 7: the eye is keyed by the body's name, so a rename moves it with the
+    // body (and an undo moves it back), and loading a scene clears it, so a body of the same name
+    // in another scene is not hidden. Control: renaming another body leaves it as it was.
+    let mut engine = Engine::new();
+    engine.run_line("load point").unwrap();
+    engine.run_line("mass 1 at 3 3 1").unwrap();
+    engine.run_line("hide mass").unwrap();
+    assert_eq!(engine.view(0).hidden, ["mass".to_owned()]);
+    engine.run_line("set bodies[1].label other").unwrap();
+    assert_eq!(engine.view(0).hidden, ["mass".to_owned()], "control: another body renamed");
+    engine.run_line("set bodies[0].label renamed").unwrap();
+    assert_eq!(engine.view(0).hidden, ["renamed".to_owned()], "the rename keeps it hidden");
+    engine.run_line("undo").unwrap();
+    assert_eq!(engine.view(0).hidden, ["mass".to_owned()], "and its undo");
+    let loads = engine.loads();
+    engine.run_line("load point").unwrap();
+    assert!(engine.view(0).hidden.is_empty(), "a new scene shows every body");
+    assert_eq!(engine.loads(), loads + 1);
+}

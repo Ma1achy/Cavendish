@@ -72,6 +72,39 @@ fn the_world_is_in_the_outliner_and_can_be_selected() {
     assert!(room.run("select world").unwrap_err().contains("no world"));
 }
 
+/// Whether `painted` has more digits than `label` has: a number besides the name.
+fn more_digits(label: &str, painted: &str) -> bool {
+    let digits = |t: &str| t.chars().filter(char::is_ascii_digit).count();
+    digits(painted) > digits(label)
+}
+
+#[test]
+fn the_readings_tab_shows_the_engine_s_reading_bit_for_bit() {
+    // docs/design/panels.md: each tower's phase in the Readings tab is the engine's reading, bit
+    // for bit (the row is drawn from the values recorded, its full value under the pointer), and
+    // its text is that value's. Control: another tower's value is another number, so a row drawn
+    // from the wrong tower would fail.
+    let mut shell = Shell::new();
+    shell.run("load point").unwrap();
+    assert!(shell.engine.settle(std::time::Duration::from_secs(60)));
+    shell.right_tab = cav_app::outliner::RightTab::Readings;
+    rows(&mut shell);
+    let reply = shell.reading().clone();
+    let drawn = shell.layout().reading_values.clone();
+    assert_eq!(drawn.len(), reply.towers.len(), "a row a tower");
+    let bits = |v: [f64; 3]| v.map(f64::to_bits);
+    for (n, values) in &drawn {
+        let r = &reply.towers[*n];
+        assert_eq!(bits(*values), bits([r.gradiometer, r.lower, r.upper]), "tower {}", n + 1);
+        let text = &shell.layout().readings.iter().find(|(t, _)| t == n).unwrap().1;
+        assert_eq!(*text, cav_app::shell::phase_text(r.gradiometer), "tower {}", n + 1);
+    }
+    // Control: some tower reads another number than the first, so rows drawn from the wrong
+    // tower would not match.
+    let first = reply.towers[0].gradiometer.to_bits();
+    assert!(reply.towers.iter().any(|t| t.gradiometer.to_bits() != first), "control: the towers differ");
+}
+
 /// What the Readings tab wrote for tower `n` (from 0) after a couple of frames: the numbers moved
 /// there from the tree's rows (S19, `docs/design/panels.md`).
 fn reading_words(shell: &mut Shell, n: usize) -> String {
@@ -120,16 +153,20 @@ fn the_outliner_is_one_tree_of_named_rows() {
         rows(&mut shell);
         let groups: Vec<String> = shell.layout().tree_groups.iter().map(|(g, _)| g.clone()).collect();
         assert_eq!(groups, ["tree/array", "tree/sources", "tree/surroundings"], "{scene}");
-        for (_, label, words) in &shell.layout().outline_words {
-            let numbered =
-                |t: &str| t.chars().any(|c| c.is_ascii_digit()) && !label.chars().any(|c| c.is_ascii_digit());
-            assert!(!numbered(words), "{scene}: `{label}` says `{words}`");
+        // What each row painted (recorded where it paints: S19's review, I6) carries no digit
+        // beyond its label's own.
+        let rows = &shell.layout().outline_words;
+        assert!(!rows.is_empty());
+        for (_, label, painted) in rows {
+            assert!(!more_digits(label, painted), "{scene}: `{label}` painted `{painted}`");
+            assert_eq!(painted, label, "{scene}: a row paints its name");
         }
         assert_eq!(shell.layout().dots.len(), shell.engine.spec().array.towers.len(), "a dot a tower");
     }
+    // Control: the measure finds a number where a row paints one, as S18's tower rows did.
     let reply = Shell::new().reading().clone();
     let old = cav_app::panels_for_tests::tower_detail(&reply, 0, [1.0, 2.0, 0.0], true);
-    assert!(old.chars().any(|c| c.is_ascii_digit()), "control: S18's row words had numbers: {old}");
+    assert!(more_digits("tower 1", &format!("tower 1 {old}")), "control: S18's rows: {old}");
     // A group folds by a click on its row, and its rows go; the fold is kept for the scene.
     let mut shell = Shell::new();
     shell.run("load point").unwrap();
