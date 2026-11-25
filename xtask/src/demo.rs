@@ -1009,7 +1009,11 @@ fn s19(root: &Path) -> Result<(), String> {
         ("panels-tower.png", "load town; select tower 2".to_owned()),
         ("panels-readings.png", "load point; tab readings".to_owned()),
         ("materials.png", format!("load point; {materials}; select body 2; colour material; frame")),
-        ("probe.png", "load point; add sphere at 2 2 0.25; tool probe; probe-at 0.5 0.5".to_owned()),
+        (
+            "probe.png",
+            "load point; add sphere at 2 2 0.25; select body 2; frame; tool probe; probe-at 0.5 0.5"
+                .to_owned(),
+        ),
     ];
     for (file, script) in &shots {
         capture_within(

@@ -10,8 +10,47 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
 | S4 big scenes | done: TASK-S4-01 to 25 merged; reviewed three times (`docs/slices/S4-review.md`, `-2`, `-3`), nothing important remains; oracle 58/58, validation 113/113 | `s4-big-scenes` | brief and results: `docs/slices/S4.md` (§7.7–§7.8: the fixes); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
 | S18 the editor | done: TASK-S18-01 to 04, 07 to 22 merged; reviewed three times (`docs/slices/S18-review.md`, `-2`, `-3`), nothing important remains | `s18-the-editor` | brief and results: `docs/slices/S18.md` (§7.7–§7.8: the fixes); screenshots: `docs/slices/S18/`; recipe: `docs/extending/a-tool-or-panel.md` |
-| S19 the editor, part two | next: docking, tabs, pop-out; rotate, scale; probe, measure, slice, paint; follow, pointer lock; detail tiers; materials; mesh import; multi-select | | |
+| S19 the editor, part two | built in part: TASK-S19-09, TASK-S18-05, -06, TASK-S19-04, -13 merged, the record (TASK-S19-12); the rest moved to S20; not reviewed | | brief and results: `docs/slices/S19.md` (§7.1 the panels before and after); requirement: `docs/design/panels.md`; pictures: `docs/slices/S19/`; recipes: `docs/extending/a-material.md`, `a-shape.md` (import), `a-tool-or-panel.md` (cards, tree) |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
+
+## S19, the editor's second half (25 Nov 2026) — built in part, not reviewed
+
+**Done** (PRs #185–#188, #190, #195 and the record; `docs/slices/S19.md`). S18's third review's
+nine minors (TASK-S19-09). **Materials** (TASK-S18-05): a library as data (`scenes/materials.ron`,
+fifteen materials with density, colour, elastic and thermal properties and their sources), a
+scene's own `materials` first; a voxel body's `shape.material` (it weighs density × voxelised
+volume) and `shape.parts` (solids and brush strokes that add, paint or erase, in order), voxelised
+by `cav_core::voxel::layers` and its raster oracle bit for bit; a cell two materials share keeps
+both masses (`VoxTree::mixed`); colour by material; the inspector's drop-down. **Mesh import**
+(TASK-S18-06): `import`, File › Import mesh…, files dropped on the window (a page's bytes through
+the platform seam); meshes of up to 10,000 triangles held in the scene. **The Probe tool**
+(TASK-S19-04): the bodies' gravity at a point, the voxel cell there and its share of each tower's
+phase; `probe x y z`. **The side panels redesigned** (TASK-S19-13, `docs/design/panels.md`, the
+owner's ruling mid-slice): the scene tree as one tree (groups, icons, eye and lock, status dots,
+no numbers), a Readings tab, the tool strip over the view, the inspector as a header and cards on
+one grid; before and after side by side in the brief's §7.1.
+
+**Moved to S20** (the panels came first, as asked): docking (TASK-S19-01), Scale (-03), detail
+tiers (-06), units typed (-08), bookmarks (-10), browser keys (-11), Measure, Slice and Paint
+(-20), and phones and tablets (-14, the owner's ruling after the panels). REBUILD §9's S19 and S20
+rows say so.
+
+**Numbers.** `quick` 657 (628 at S18's end), 28–30 s warm idle, 80–150 s while the machine was loaded; `gpu` 40 in 16 s (one failure found and fixed: the floating tool strip faded in, so two unchanged frames differed); `oracle` 58 in 503 s; `web` green in 420 s; validation 115 of 115 against `s18-the-editor`, two cases added (a two-material body 7.1e-15 rad against 1e-9; an imported box 0, bit for bit), none dropped, no tolerance moved.
+
+**Decided (worth a second look).** A body with a material weighs its materials (its `mass` field
+not used, shown as worked out); `material` and `parts` are written even when empty (the dev scene
+files gained `material: None, parts: []`, rewritten by `CAV_REWRITE_SCENES`); an imported mesh is
+centred on the middle of its box, not its centroid (a box's centroid is a rounding off zero and
+cost a cell); the log's message cap is 128 KiB (the schema passed 64 KiB); the eye is a view's
+`hide` (journalled, not undone); the inspector's label column follows its first width (egui grows
+a panel to its content); the window's secondary text is #8c8c8c (4.7:1). Each is in the brief.
+
+**Open.** Nobody has used the editor in the real window yet; the web build's dropped files are
+read asynchronously and untested in a real browser; `quick` ran 28–150 s warm on a busy machine
+(over budget when the machine was loaded).
+
+**Next.** A review of S19; then S20 (the workspace: docking, the rest of the tools, tiers, phones
+and tablets) or S5.
 
 ## S18 after its second review (25 Nov 2026) — fixes done
 

@@ -1435,7 +1435,8 @@ fn probe_card(shell: &mut Shell, ui: &egui::Ui, pane: usize, rect: Rect) {
     }
     let text = probed.words(shell.engine.spec());
     let galley = painter.layout_no_wrap(text, FontId::monospace(11.0), theme::TEXT);
-    let at = rect.left_top() + vec2(10.0, 34.0);
+    // Right of the floating tool strip, below the pane's top edge.
+    let at = rect.left_top() + vec2(72.0, 14.0);
     let card = Rect::from_min_size(at, galley.size()).expand(6.0);
     painter.rect_filled(card, 4.0, theme::PANEL.gamma_multiply(0.92));
     painter.rect_stroke(card, 4.0, Stroke::new(1.0, theme::WIDGET_EDGE), StrokeKind::Inside);
@@ -1920,7 +1921,9 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     // The tool strip: a floating bar over the view's left edge, not a column of its own
     // (S19, `docs/design/panels.md`: Blender's and Unity's scene toolbars).
     if !shell.gui_hidden && !shell.maximised {
+        // No fade-in: an unchanged frame must be the same picture (the GPU tests hold it).
         let strip = egui::Area::new(egui::Id::unique("tool strip"))
+            .fade_in(false)
             .order(egui::Order::Foreground)
             .fixed_pos(area.min + vec2(8.0, 8.0))
             .show(ui.ctx(), |ui| {
