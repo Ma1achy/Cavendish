@@ -130,6 +130,12 @@ Recipe: `docs/extending/a-validation-case.md`.
 
 This PC is the owner's, and one agent's leftover process once ran for six hours. So:
 
+- Builds and tests run below normal priority with two cores to spare: every process `cargo xtask`
+  starts is made below normal (`gentle` in `xtask/src/main.rs`; what it starts inherits it), and
+  cargo and nextest get at most the logical cores less two jobs (`CAV_JOBS` overrides). Running
+  cargo yourself from PowerShell, start it the same way:
+  `$p = Start-Process cargo -ArgumentList 'build' -NoNewWindow -PassThru; $p.PriorityClass = 'BelowNormal'; $p.WaitForExit()`.
+
 - Start a server, a browser or a background script in the same command that stops it, holding its
   handle, or give it a lifetime (`cargo xtask web serve --exit-after 600`). Never leave one running
   for a later tool call to stop: the handle is gone by then, and stopping by id is refused.

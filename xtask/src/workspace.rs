@@ -398,8 +398,7 @@ cav-app = { path = "crates/cav-app" }
 
     fn cargo(args: &[&str]) -> String {
         let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
-        let output =
-            std::process::Command::new(cargo).args(args).current_dir(root()).output().expect("cargo runs");
+        let output = crate::gentle(cargo).args(args).current_dir(root()).output().expect("cargo runs");
         assert!(output.status.success(), "cargo {args:?}: {}", String::from_utf8_lossy(&output.stderr));
         String::from_utf8(output.stdout).expect("cargo writes UTF-8")
     }

@@ -5,7 +5,7 @@
 //! step, saying what is missing.
 
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use crate::{cargo, step};
 
@@ -28,7 +28,7 @@ const FIGURES: [(&str, &str, &str, &str); 4] = [
 
 /// Whether `interpreter` runs `code` to a clean exit, saying nothing.
 fn runs(interpreter: &str, code: &str) -> bool {
-    Command::new(interpreter)
+    crate::gentle(interpreter)
         .args(["-c", code])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -80,10 +80,10 @@ pub fn run(root: &Path) -> Result<(), String> {
         step(&format!("{STEP}: cav figure {scene} {what}"), command)?;
     }
     let python = root.join("python");
-    let mut pyright = Command::new(&interpreter);
+    let mut pyright = crate::gentle(&interpreter);
     pyright.current_dir(&python).args(["-m", "pyright"]);
     step(&format!("{STEP}: pyright"), pyright)?;
-    let mut tests = Command::new(&interpreter);
+    let mut tests = crate::gentle(&interpreter);
     tests.current_dir(&python).arg("tests/test_figures.py").env("CAVENDISH_FIGURES", &figures);
     step(&format!("{STEP}: tests"), tests)
 }

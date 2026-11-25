@@ -127,8 +127,45 @@ fn root() -> PathBuf {
 
 /// `cargo` with the given arguments, run in the workspace root.
 fn cargo(root: &Path, args: &[&str]) -> Command {
-    let mut command = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
+    let mut command = crate::gentle(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
+    // At most the cores less two, so the owner's desktop keeps two (CONTRIBUTING.md, "Processes").
+    let jobs = jobs(
+        std::thread::available_parallelism().map_or(1, std::num::NonZero::get),
+        std::env::var("CAV_JOBS").ok().as_deref(),
+    );
+    if std::env::var_os("CARGO_BUILD_JOBS").is_none() {
+        command.env("CARGO_BUILD_JOBS", jobs.to_string());
+    }
+    if std::env::var_os("NEXTEST_TEST_THREADS").is_none() {
+        command.env("NEXTEST_TEST_THREADS", jobs.to_string());
+    }
     command.current_dir(root).args(args);
+    command
+}
+
+/// How many jobs cargo and nextest may run at once: `CAV_JOBS` when it is a number from 1 up,
+/// else the machine's `cores` less two, at least one.
+fn jobs(cores: usize, asked: Option<&str>) -> usize {
+    asked
+        .and_then(|a| a.trim().parse::<usize>().ok())
+        .filter(|n| *n >= 1)
+        .unwrap_or(cores.saturating_sub(2).max(1))
+}
+
+/// A command for `program` that runs below normal priority on Windows, so that the owner's
+/// desktop stays responsive while it builds and tests; whatever it starts (rustc, nextest's test
+/// binaries, wasm-opt, a headless browser) inherits the priority. Every process xtask starts is
+/// made here.
+pub fn gentle(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    #[allow(unused_mut)]
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        /// `BELOW_NORMAL_PRIORITY_CLASS`, from the Windows SDK.
+        const BELOW_NORMAL: u32 = 0x0000_4000;
+        command.creation_flags(BELOW_NORMAL);
+    }
     command
 }
 
@@ -216,5 +253,47 @@ mod tests {
         // Control: the same decision still writes where there is nothing, and rests where it is ours.
         assert_eq!(may_write_hook(None, ours), Ok(true));
         assert_eq!(may_write_hook(Some(ours.as_bytes()), ours), Ok(false));
+    }
+
+    #[test]
+    fn what_xtask_starts_runs_below_normal_with_jobs_to_spare() {
+        // The job cap: cores less two, at least one, and CAV_JOBS when it is a count.
+        assert_eq!(super::jobs(12, None), 10);
+        assert_eq!(super::jobs(2, None), 1);
+        assert_eq!(super::jobs(1, None), 1);
+        assert_eq!(super::jobs(12, Some("3")), 3);
+        assert_eq!(super::jobs(12, Some("0")), 10, "zero is not a count of jobs");
+        assert_eq!(super::jobs(12, Some("many")), 10);
+        let cargo = super::cargo(std::path::Path::new("."), &["--version"]);
+        let set: Vec<_> =
+            cargo.get_envs().filter_map(|(k, v)| v.map(|v| (k.to_owned(), v.to_owned()))).collect();
+        if std::env::var_os("CARGO_BUILD_JOBS").is_none() {
+            assert!(set.iter().any(|(k, _)| k == "CARGO_BUILD_JOBS"), "{set:?}");
+        }
+        // The priority, asked of Windows by the child itself; control: a plain command runs at normal.
+        if cfg!(windows) {
+            let ask = |mut command: std::process::Command| {
+                let output = command
+                    .args([
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        "(Get-Process -Id $PID).PriorityClass",
+                    ])
+                    .output()
+                    .expect("powershell runs");
+                String::from_utf8_lossy(&output.stdout).trim().to_owned()
+            };
+            assert_eq!(ask(super::gentle("powershell.exe")), "BelowNormal");
+            // Control: one made at normal priority says so (the test itself may run below normal,
+            // under `quick`, so a command with no flag would inherit that).
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                let mut normal = std::process::Command::new("powershell.exe");
+                normal.creation_flags(0x0000_0020);
+                assert_eq!(ask(normal), "Normal");
+            }
+        }
     }
 }

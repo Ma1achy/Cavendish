@@ -63,12 +63,7 @@ pub fn quick(root: &Path, enforce_budget: bool) -> Result<(), String> {
 /// `oracle/` (committed or not). When git cannot say, it is taken to: the lint runs.
 fn touches_oracle(root: &Path) -> bool {
     let git = |args: &[&str]| {
-        std::process::Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
+        crate::gentle("git").args(args).current_dir(root).output().ok().filter(|o| o.status.success())
     };
     let Some(base) = git(&["merge-base", "HEAD", "origin/main"]) else { return true };
     let base = String::from_utf8_lossy(&base.stdout).trim().to_owned();
@@ -276,8 +271,7 @@ mod tests {
     #[test]
     fn steps_run_together_and_every_failure_is_named() {
         let cargo = |args: &[&str]| {
-            let mut command =
-                std::process::Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
+            let mut command = crate::gentle(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
             command.args(args).stdout(Stdio::null()).stderr(Stdio::null());
             command
         };
@@ -286,7 +280,7 @@ mod tests {
         let why = together(vec![
             ("fine", cargo(&["--version"])),
             ("broken", cargo(&["--no-such-flag"])),
-            ("absent", std::process::Command::new("a-program-that-is-not-installed")),
+            ("absent", crate::gentle("a-program-that-is-not-installed")),
         ])
         .unwrap_err();
         assert!(

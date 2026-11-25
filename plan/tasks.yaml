@@ -262,6 +262,12 @@
 - id: TASK-S4-09
   milestone: S4
   title: "cargo xtask demo S4, the validation report, results and PROGRESS"
+- id: TASK-S4-10
+  milestone: S4
+  title: "xtask's processes below normal priority with two cores to spare (the owner's desktop starved)"
+- id: TASK-S4-11
+  milestone: S4
+  title: "GPU work bounded a submission (the owner's desktop froze under a full stress-1e10 render): a cap on the far field's pixel work a frame, a scaled-down town for screenshots, bounded measurement runs"
 - id: TASK-S5-01
   milestone: S5
   title: GPU tree walk with float-float accumulation and parity tests
