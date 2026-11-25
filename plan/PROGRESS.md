@@ -10,8 +10,36 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
 | S4 big scenes | done: TASK-S4-01 to 25 merged; reviewed three times (`docs/slices/S4-review.md`, `-2`, `-3`), nothing important remains; oracle 58/58, validation 113/113 | `s4-big-scenes` | brief and results: `docs/slices/S4.md` (§7.7–§7.8: the fixes); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
 | S18 the editor | done: TASK-S18-01 to 04, 07 to 22 merged; reviewed three times (`docs/slices/S18-review.md`, `-2`, `-3`), nothing important remains | `s18-the-editor` | brief and results: `docs/slices/S18.md` (§7.7–§7.8: the fixes); screenshots: `docs/slices/S18/`; recipe: `docs/extending/a-tool-or-panel.md` |
-| S19 the editor, part two | built in part: TASK-S19-09, TASK-S18-05, -06, TASK-S19-04, -13 merged, the record (TASK-S19-12); the rest moved to S20; not reviewed | | brief and results: `docs/slices/S19.md` (§7.1 the panels before and after); requirement: `docs/design/panels.md`; pictures: `docs/slices/S19/`; recipes: `docs/extending/a-material.md`, `a-shape.md` (import), `a-tool-or-panel.md` (cards, tree) |
+| S19 the editor, part two | built in part: TASK-S19-09, TASK-S18-05, -06, TASK-S19-04, -13 merged, the record (TASK-S19-12); the rest moved to S20; reviewed once (`docs/slices/S19-review.md`), its findings fixed (TASK-S19-21 to 25) | | brief and results: `docs/slices/S19.md` (§7.1 the panels before and after; §7.9 the review's fixes, before and after); requirement: `docs/design/panels.md`; pictures: `docs/slices/S19/`; recipes: `docs/extending/a-material.md`, `a-shape.md` (import), `a-tool-or-panel.md` (cards, tree) |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
+
+## S19 after its review (25 Nov 2026) — fixes done
+
+**Done** (TASK-S19-21 to 25, PRs #201, #202, #204 and the record; `docs/slices/S19.md` §7.9, a row
+a finding). I1: one rule for what a body weighs (`BodySpec::mass_in`): the bundle's `source_mass`
+of a body of materials is ρ·V, not its unused `mass`; the inspector and the console use the same
+rule. I2: the Probe reports the finest cell at the point, read as a one-cell body. I3: it counts
+every body whatever the view kept, a slab floor in closed form, and names what it does not count
+(a half-space floor, the world). I4: one centring rule (the box's middle); a mesh past 10,000
+triangles is kept by the session by the hash of its bytes, in a page too, sent to each worker
+once. I5: the inspector's cards in the design's order with a ⋮ each; parts as a list. I6: the
+design's tests that could not fail now can (Readings bit for bit, 24-pt targets, every
+text/ground pair 4.5:1, folding, painted rows). The UX judgements and minors 1–22 done; a case
+with a genuinely shared cell (`materials.shared_cells_are_within_their_dipole_bound`).
+
+**Numbers.** `quick` 681 (657 at S19's record), 54 s warm on a quiet machine; `gpu` 42 in 15 s; `oracle` 58 in 509 s (on a loaded machine two of its long cases met the watchdog; on a quiet one all passed, the slowest 151 s); `web` green in 327 s; validation **116 of 116** against `s18-the-editor` (113 there; 115 at S19's record), one case added (`materials.shared_cells_are_within_their_dipole_bound`, 0.99994 of its first-order bound, which the body attains: the error is the dipole term to 6e-5), none dropped, no tolerance moved.
+
+**Decided (worth a second look).** A point mass's Material card is "Mass"; Lifetime opens at first;
+the inspector keeps its width (352 pt at first); `cav_sim::assets` is the one piece of state in
+`cav-sim` (input bytes, not a cache); a saved scene names a large mesh by file and hash (a later
+session needs the file read or dropped again; a scene folder with its assets is in IDEAS); hidden
+and locked stay keyed by label, following renames and cleared by a new scene; library colours
+changed (steel blue-grey, tungsten slate, lead lavender: every two 15 apart in L*a*b*).
+
+**Open.** Nobody has used the editor in the real window yet; a large mesh dropped on the live page
+is untested in a real browser (the wire and the lane are tested natively).
+
+**Next.** A second look at S19 if wanted, then the tag; then S20 (the workspace) or S5.
 
 ## Streaming made cheaper (25 Nov 2026) — TASK-S4-27
 

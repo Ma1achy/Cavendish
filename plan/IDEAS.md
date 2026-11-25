@@ -177,8 +177,19 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   chunk moments would give it the world's too, cheaply, once S5's octree is there.
 - **Lead and steel look alike** in the material library's colours (two greys); a palette chosen
   for telling materials apart (and colour-blind-safe) would read better than "looks like the metal".
+  (Done after S19's review: every two at least 15 apart in L*a*b*; colour-blind safety below.)
 - **The label column follows the inspector's first width**, not the width it is dragged to (egui
   widens a panel to its content, and a column that followed it pushed it wider every frame): with
-  docking (S20), take the dock area's own width, which egui_dock does not grow to content.
+  docking (S20), take the dock area's own width, which egui_dock does not grow to content. (Since
+  S19's review the panel no longer grows to its content, so the column could follow it now.)
 - **A material's elastic and thermal numbers are read by nothing yet**: rigid dynamics (S7) and
   heat (S13) will; until then the inspector could fold them under "Advanced".
+- **The Probe reads the world** (after S19's review it names it as not counted): S5's world
+  octree gives its field at a point cheaply (moments far, leaves near), and its finest cell.
+- **A body's identity apart from its label** (S19's review, minor 7): the eye and the lock follow a
+  rename and a new scene clears them, but they are still keyed by name; an engine-assigned id kept
+  through inserts, removals and reorders would let a lock survive a delete-and-undo too.
+- **Colour-blind-safe library colours**: every two are now at least 15 apart in CIE76 L*a*b*;
+  CIEDE2000 and a deuteranopia simulation would hold them to what more people see.
+- **A large mesh in a saved scene**: today a later session needs the file read or dropped again;
+  a scene folder with an `assets/` beside the RON (the bytes by hash) would make it whole.

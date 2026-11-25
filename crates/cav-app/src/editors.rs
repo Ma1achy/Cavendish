@@ -132,7 +132,7 @@ pub fn shown(value: f64) -> String {
 /// padding and the reset after it, so that a row never runs past the panel's edge (S19's
 /// review: the inspector no longer widens to hold it), at most 180 points.
 fn combo_width(ui: &egui::Ui) -> f32 {
-    (ui.available_width() - theme::HIT - 34.0).clamp(48.0, 180.0)
+    (ui.available_width() - theme::HIT - 40.0).clamp(48.0, 180.0)
 }
 
 /// Lays `add` out (a drop-down) in a box `width` points wide and a target high, so that what
@@ -655,7 +655,19 @@ fn edit(
             || "from its materials".to_owned(),
             |kg| format!("{} kg, from its materials", shown(kg)),
         );
-        let label = ui.label(RichText::new(text).size(12.0).color(theme::TEXT));
+        // Cut to the row (the panel keeps its width), the whole of it under the pointer.
+        let room = (ui.available_width() - theme::HIT - 8.0).max(48.0);
+        let label = ui
+            .allocate_ui_with_layout(
+                egui::vec2(room, theme::HIT),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.set_max_width(room);
+                    ui.add(egui::Label::new(RichText::new(&text).size(12.0).color(theme::TEXT)).truncate())
+                },
+            )
+            .inner
+            .on_hover_text(&text);
         shell.register(scope, &id, name, Focus::ReadOnly, label.rect);
         return;
     }
@@ -687,8 +699,9 @@ fn edit(
         Widget::Vector(n) => {
             // The components share what the row has left (a letter each, the unit and the reset
             // after them), so a vector never widens the panel.
-            let room = ui.available_width() - 18.0 - if n == 3 { 3.0 * 13.0 } else { 0.0 };
-            let width = (room / n.max(1) as f32 - 4.0).clamp(22.0, 2.0 * COMPONENT_WIDTH);
+            // (The reset after them is a full target since S19's review: its room is kept.)
+            let room = ui.available_width() - (theme::HIT + 8.0) - if n == 3 { 3.0 * 16.0 } else { 0.0 };
+            let width = (room / n.max(1) as f32 - 4.0).clamp(theme::HIT, 2.0 * COMPONENT_WIDTH);
             for axis in 0..n {
                 // The axis's letter, in the gizmo's colours (x red, y green, z blue).
                 if n == 3 {
@@ -856,6 +869,25 @@ fn materials_set_the_mass(spec: &cav_sim::SceneSpec, path: &str) -> Option<usize
     spec.bodies.get(n)?.shape.as_ref()?.material.as_ref().map(|_| n)
 }
 
+/// The room a material's swatch takes before its name, points.
+const SWATCH_ROOM: f32 = 14.0;
+
+/// A material's swatch, painted in the room left for it at the left of `rect` (a drop-down or one
+/// of its items): a filled square of `colour` with a thin edge, so that a dark one shows on the
+/// dark ground. Nothing for none.
+fn swatch(ui: &egui::Ui, rect: egui::Rect, colour: Option<Color32>) {
+    let Some(colour) = colour else { return };
+    let x = rect.left() + ui.spacing().button_padding.x + 0.5 * (SWATCH_ROOM - 4.0);
+    let square = egui::Rect::from_center_size(egui::pos2(x, rect.center().y), egui::vec2(9.0, 9.0));
+    ui.painter().rect_filled(square, 1.5, colour);
+    ui.painter().rect_stroke(
+        square,
+        1.5,
+        egui::Stroke::new(1.0, theme::WIDGET_EDGE),
+        egui::StrokeKind::Outside,
+    );
+}
+
 /// A drop-down of the materials a scene can name (its own, then the library's), and none: what a
 /// choice sets is the material's label, or nothing.
 #[allow(clippy::too_many_arguments)]
@@ -894,20 +926,26 @@ fn material_choice(
             job.append(none, 0.0, format);
             return job.into();
         };
-        let [r, g, b] = material.rgb();
         let format = |colour| egui::TextFormat {
             font_id: egui::FontId::proportional(12.5),
             color: colour,
             ..Default::default()
         };
-        job.append("■ ", 0.0, format(Color32::from_rgb(r, g, b)));
-        // On a button's ground when chosen: its own text colours ([`theme::text_pairs`]).
-        job.append(&material.label, 0.0, format(theme::STRONG));
+        // Room before the name for its swatch, painted over it ([`swatch`]: the fonts have no
+        // filled square). On a button's ground when chosen: its own text colours
+        // ([`theme::text_pairs`]).
+        job.append(&material.label, SWATCH_ROOM, format(theme::STRONG));
         job.append(&format!("  {} kg/m³", shown(material.density)), 0.0, format(theme::WEAK_ON_WIDGET));
         job.into()
     };
     let names: Vec<String> = choices.iter().map(|c| c.clone().unwrap_or_else(|| none.to_owned())).collect();
     let current = choices.iter().position(|c| *c == now).unwrap_or(0);
+    let colour = |n: usize| {
+        n.checked_sub(1).and_then(|m| every.get(m)).map(|m| {
+            let [r, g, b] = m.rgb();
+            Color32::from_rgb(r, g, b)
+        })
+    };
     // The name column is drawn by the row; the drop-down alone here, its words cut to its width
     // so that a long one never widens the panel.
     let mut chosen: Option<usize> = None;
@@ -919,12 +957,15 @@ fn material_choice(
             .selected_text(words(current, Some(width)))
             .show_ui(ui, |ui| {
                 for n in 0..choices.len() {
-                    if ui.selectable_label(n == current, words(n, None)).clicked() && n != current {
+                    let item = ui.selectable_label(n == current, words(n, None));
+                    swatch(ui, item.rect, colour(n));
+                    if item.clicked() && n != current {
                         chosen = Some(n);
                     }
                 }
             })
     });
+    swatch(ui, combo.response.rect, colour(current));
     shell.register(scope, &id, name, Focus::Choice { count: names.len(), current }, combo.response.rect);
     if let Some(popup) = shell.keyboard.popup.as_ref().filter(|p| p.id == id) {
         let at = popup.at;
@@ -934,7 +975,8 @@ fn material_choice(
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     for n in 0..choices.len() {
-                        let _ = ui.selectable_label(n == at, words(n, None));
+                        let item = ui.selectable_label(n == at, words(n, None));
+                        swatch(ui, item.rect, colour(n));
                     }
                 });
             });

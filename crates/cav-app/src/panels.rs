@@ -990,7 +990,9 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
     };
     // Every target in the panel at least 24 points a side (docs/design/panels.md; S19's review,
     // I6): boxes, ticks and drop-downs take their height from this.
-    ui.spacing_mut().interact_size.y = theme::HIT;
+    // The least width of a box is a target's too, not egui's 40: a vector's three boxes share
+    // what the row has (the panel keeps its width).
+    ui.spacing_mut().interact_size = egui::vec2(theme::HIT, theme::HIT);
     crate::inspector::header(shell, ui);
     match selection {
         None => {

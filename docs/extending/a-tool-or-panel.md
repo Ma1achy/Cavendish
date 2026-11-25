@@ -83,7 +83,15 @@ never an edit, Home or a selection) and its action;
    rows on the one grid whose label column is `Shell::label_width`; a value worked out and not
    edited goes in the Info card (`inspector::info`), never among the fields; an optional field is
    a checkbox (`gate`), never "none add"; no help paragraphs (the doc string is the name's hover).
-   `every_value_in_the_inspector_starts_at_one_x` holds the grid.
+   Every card has a ⋮ (`part_menu` for one part of the scene, `fields_menu` for several fields of
+   one); a card of chosen fields draws them with `editors::draw_rows` under the path they are
+   named from (draw a field under its own parent, or the boxes of the optional parts between
+   appear before it); a drop-down that is not a field's is `editors::choice_row`. A body's cards
+   are `inspector::body`, in the design's order. Every target is at least `theme::HIT` (24 pt) a
+   side, every text colour on every ground is in `theme::text_pairs` (4.5:1), and the panel keeps
+   its width, so a row must fit it (`editors::combo_width`, `bounded`).
+   `every_value_in_the_inspector_starts_at_one_x`, `every_target_in_the_side_panels_is_big_enough`,
+   `every_text_reads_on_its_ground` and `the_inspector_keeps_its_width_whatever_is_shown` hold it.
 6. **In the scene tree** (`crates/cav-app/src/outliner.rs`): rows name things (an icon a kind of
    thing, no numbers: those are the Readings tab's); a group folds; `the_outliner_is_one_tree_of_named_rows`.
 

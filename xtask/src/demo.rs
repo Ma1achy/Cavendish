@@ -1014,6 +1014,9 @@ fn s19(root: &Path) -> Result<(), String> {
             "load point; add sphere at 2 2 0.25; select body 2; frame; tool probe; probe-at 0.5 0.5"
                 .to_owned(),
         ),
+        // After the review: the Probe on a world scene names what it does not count (I3), and a
+        // body of materials' parts as the inspector lists them (I5).
+        ("probe-town.png", "load town; tool probe; probe-at 0.5 0.6".to_owned()),
     ];
     for (file, script) in &shots {
         capture_within(
@@ -1024,6 +1027,16 @@ fn s19(root: &Path) -> Result<(), String> {
         )?;
         expect_png(&out, file, [1440, 900], &mut made)?;
     }
+    // The whole of a body of materials' inspector, its parts listed: a taller window.
+    let file = "inspector-parts.png";
+    let script = format!("load point; {materials}; select body 2; colour material; frame");
+    capture_within(
+        &app,
+        &["--screenshot", &path(file), "--size", "1440x1500", "--exec", &script],
+        180,
+        None,
+    )?;
+    expect_png(&out, file, [1440, 1500], &mut made)?;
     eprintln!("xtask: demo S19 wrote {} files to {}:", made.len(), out.display());
     for file in &made {
         eprintln!("  {file}");
