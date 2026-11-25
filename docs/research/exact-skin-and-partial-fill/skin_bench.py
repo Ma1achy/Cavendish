@@ -55,7 +55,9 @@ DIRECTIONS /= np.linalg.norm(DIRECTIONS, axis=1)[:, None]
 # ================================ POLYHEDRAL FIELD ================================
 
 
-def polyhedron_field(tris: F64, weights: F64, pts: F64, chunk: int = 2048) -> tuple[F64, F64]:
+def polyhedron_field(
+    tris: F64, weights: F64, pts: F64, chunk: int = 2048, stable: bool = False
+) -> tuple[F64, F64]:
     """Potential and attraction over G of a weighted triangle soup, at `pts`.
 
     `tris` (N, 3, 3): triangles wound anticlockwise seen from outside their solid. `weights`
@@ -66,6 +68,10 @@ def polyhedron_field(tris: F64, weights: F64, pts: F64, chunk: int = 2048) -> tu
     U_f = ½ h_f [Σ_e (n_e·r_e) L_e − h_f ω_f], g_f = −n_f [Σ_e (n_e·r_e) L_e − h_f ω_f], with
     r the offset from the point to the face, h_f = n_f·r, L_e = ln((a+b+e)/(a+b−e)) and ω_f the
     signed solid angle (Van Oosterom & Strackee 1983).
+
+    `stable = True` forms the solid angle's numerator as h_f·2A_f from the face's own edge vectors
+    instead of the triple product r₁·(r₂×r₃): ε(R/s)² far-field rounding instead of ε(R/s)³ (§1.1 of
+    the note). The default keeps the numbers in `results/` reproducible.
     """
     m = len(pts)
     v = weights.shape[1]
@@ -76,11 +82,15 @@ def polyhedron_field(tris: F64, weights: F64, pts: F64, chunk: int = 2048) -> tu
         w = weights[s : s + chunk]
         a, b, c = t[:, 0], t[:, 1], t[:, 2]
         n = np.cross(b - a, c - a)
-        n /= np.linalg.norm(n, axis=1)[:, None]
+        twice_area = np.linalg.norm(n, axis=1)
+        n /= twice_area[:, None]
         r = [x[:, None, :] - pts[None, :, :] for x in (a, b, c)]  # (n, m, 3) each
         ln = [np.linalg.norm(x, axis=2) for x in r]
         h = np.einsum("nk,nmk->nm", n, r[0])
-        triple = np.einsum("nmk,nmk->nm", r[0], np.cross(r[1], r[2]))
+        if stable:
+            triple = h * twice_area[:, None]
+        else:
+            triple = np.einsum("nmk,nmk->nm", r[0], np.cross(r[1], r[2]))
         den = (
             ln[0] * ln[1] * ln[2]
             + ln[0] * np.einsum("nmk,nmk->nm", r[1], r[2])

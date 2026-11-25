@@ -1,0 +1,194 @@
+"""Pictures: each shape exact | as cube voxels | as clipped polyhedra, whole and cut away.
+
+    python -I figures.py                 # all four shapes
+    python -I figures.py sphere torus    # some
+
+Writes `<shape>.png` and `<shape>-cutaway.png` here. Same lattice, camera and light in every panel.
+Colours: exact mesh blue; cube voxels grey (interior) and yellow (boundary cells whose centre is
+inside); clipped polyhedra grey (interior cubes) and orange (boundary pieces). Cell edges are drawn
+faintly. The cutaway removes every cell whose centre lies beyond the lattice wall nearest the body's
+centre plane y = const, and cuts the exact mesh at the same wall.
+"""
+
+from __future__ import annotations
+
+import sys
+import textwrap
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+import shapes_lib as L  # noqa: E402
+
+# The teapot and Suzanne are ~1 m across: at 0.2 m they have no interior cell, so they are drawn at 0.1 m.
+PITCH = {"sphere": 0.25, "torus": 0.2, "teapot": 0.1, "suzanne": 0.1}
+BLUE = np.array([0x2A, 0x78, 0xD6]) / 255
+ORANGE = np.array([0xEB, 0x68, 0x34]) / 255
+YELLOW = np.array([0xED, 0xA1, 0x00]) / 255
+GREY = np.array([0xC3, 0xC2, 0xB7]) / 255
+INK = np.array([0x0B, 0x0B, 0x0B]) / 255
+SIZE = 560
+AZIMUTH, ELEVATION = 58.0, 24.0
+
+
+def _canvas(mesh: L.Mesh) -> L.Canvas:
+    v = mesh.verts
+    c = 0.5 * (v.min(axis=0) + v.max(axis=0))
+    probe = L.Canvas(10, AZIMUTH, ELEVATION, c, 1.0)
+    corners = np.array([[x, y, z] for x in (v.min(0)[0], v.max(0)[0]) for y in (v.min(0)[1], v.max(0)[1])
+                        for z in (v.min(0)[2], v.max(0)[2])])
+    q = corners - c
+    half = 1.12 * max(np.abs(q @ probe.right).max(), np.abs(q @ probe.up).max())
+    return L.Canvas(SIZE, AZIMUTH, ELEVATION, c, half)
+
+
+def _cube_faces(centres: np.ndarray, h: float, keep: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Triangles and edge segments of the cube faces flagged in `keep` (N, 6)."""
+    quads = L.sb.cube_quads(centres, h).reshape(len(centres), 6, 4, 3)[keep]
+    tris = np.concatenate([quads[:, [0, 1, 2]], quads[:, [0, 2, 3]]])
+    segs = np.concatenate([quads[:, [i, (i + 1) % 4]] for i in range(4)])
+    return tris, segs
+
+
+def _exposed(ijk: np.ndarray, solid: np.ndarray) -> np.ndarray:
+    """(N, 6) faces of cells `ijk` whose neighbour (−x, +x, −y, +y, −z, +z) is not solid."""
+    out = np.zeros((len(ijk), 6), dtype=bool)
+    shape = np.array(solid.shape)
+    for f in range(6):
+        d = np.zeros(3, dtype=np.int64)
+        d[f // 2] = 1 if f % 2 else -1
+        nb = ijk + d
+        ok = np.all((nb >= 0) & (nb < shape), axis=1)
+        nbs = np.zeros(len(ijk), dtype=bool)
+        nbs[ok] = solid[nb[ok, 0], nb[ok, 1], nb[ok, 2]]
+        out[:, f] = ~nbs
+    return out
+
+
+def _exact(cv: L.Canvas, mesh: L.Mesh, y_cut: float | None) -> None:
+    if y_cut is None:
+        cv.triangles(mesh.tris, BLUE)
+        return
+    walls = [(1, -np.inf, y_cut)]
+    polys, segs = [], []
+    for t in mesh.tris:
+        p = L._clip_to_box(t.tolist(), walls)
+        if len(p) < 3:
+            continue
+        arr = np.array(p)
+        polys.append(arr)
+        q = np.roll(arr, -1, axis=0)
+        for e in np.nonzero((arr[:, 1] == y_cut) & (q[:, 1] == y_cut))[0]:
+            segs.append((q[e], arr[e]))
+    cv.triangles(L.sb.fan(polys, 1.0), BLUE)
+    centre = np.mean([s[0] for s in segs], axis=0)
+    cap = np.array([[centre, a, b] for a, b in segs])
+    cv.signed_region(cap, np.array([0.0, 1.0, 0.0]), BLUE)
+
+
+def _cubes(cv: L.Canvas, vox: L.Voxels, removed: np.ndarray) -> None:
+    solid = np.zeros(tuple(int(x) for x in vox.n), dtype=bool)
+    b_on = vox.ijk[vox.ctr_in > 0.5]
+    for ijk in (vox.interior, b_on):
+        solid[ijk[:, 0], ijk[:, 1], ijk[:, 2]] = True
+    solid &= ~removed
+    segs_all = []
+    for ijk, colour in ((vox.interior, GREY), (b_on, YELLOW)):
+        ijk = ijk[solid[ijk[:, 0], ijk[:, 1], ijk[:, 2]]]
+        tris, segs = _cube_faces(vox.centres(ijk), vox.h, _exposed(ijk, solid))
+        cv.triangles(tris, colour)
+        segs_all.append(segs)
+    cv.lines(np.concatenate(segs_all), INK, 0.22)
+
+
+def _clipped(cv: L.Canvas, vox: L.Voxels, removed: np.ndarray) -> None:
+    solid = np.zeros(tuple(int(x) for x in vox.n), dtype=bool)
+    for ijk in (vox.interior, vox.ijk):
+        solid[ijk[:, 0], ijk[:, 1], ijk[:, 2]] = True
+    solid &= ~removed
+    inner = vox.interior[solid[vox.interior[:, 0], vox.interior[:, 1], vox.interior[:, 2]]]
+    tris, segs = _cube_faces(vox.centres(inner), vox.h, _exposed(inner, solid))
+    cv.triangles(tris, GREY)
+    lines = [segs]
+    keep = solid[vox.ijk[:, 0], vox.ijk[:, 1], vox.ijk[:, 2]]
+    exposed = _exposed(vox.ijk, solid)
+    for b in np.nonzero(keep)[0]:
+        cv.triangles(L.sb.fan(vox.polys[b], vox.h), ORANGE)
+        c_lo = vox.base + vox.ijk[b] * vox.h
+        for f in range(6):
+            segs_f = [(p0, p1) for f_i, p0, p1 in vox.caps[b] if f_i == f]
+            if not segs_f:
+                continue
+            lines.append(np.array(segs_f))
+            if not exposed[b, f]:
+                continue
+            a = f // 2
+            ctr = c_lo + 0.5 * vox.h
+            ctr[a] = c_lo[a] + (vox.h if f % 2 else 0.0)
+            nrm = np.zeros(3)
+            nrm[a] = 1.0 if f % 2 else -1.0
+            cv.signed_region(np.array([[ctr, p0, p1] for p0, p1 in segs_f]), nrm, ORANGE)
+    cv.lines(np.concatenate(lines), INK, 0.22)
+
+
+def figure(name: str) -> None:
+    mesh = L.mesh_by_name(name)
+    h = PITCH[name]
+    vox = L.voxelise(mesh, h, keep_drawing=True)
+    centre_y = 0.5 * (mesh.verts[:, 1].min() + mesh.verts[:, 1].max())
+    k_cut = int(round((centre_y - vox.base[1]) / h))
+    y_cut = float(vox.base[1] + k_cut * h)
+    n_on = int((vox.ctr_in > 0.5).sum())
+    for cut in (False, True):
+        removed = np.zeros(tuple(int(x) for x in vox.n), dtype=bool)
+        if cut:
+            removed[:, k_cut:, :] = True
+        panels = []
+        for kind in ("exact", "cubes", "clipped"):
+            cv = _canvas(mesh)
+            if kind == "exact":
+                _exact(cv, mesh, y_cut if cut else None)
+            elif kind == "cubes":
+                _cubes(cv, vox, removed)
+            else:
+                _clipped(cv, vox, removed)
+            panels.append(cv.image())
+        # Crop empty rows (the same rows in every panel, so the panels stay aligned).
+        busy = np.any([np.abs(p - p[0, 0]).sum(axis=2).max(axis=1) > 0.02 for p in panels], axis=0)
+        rows = np.nonzero(busy)[0]
+        top, bottom = max(rows[0] - 12, 0), min(rows[-1] + 12, SIZE)
+        panels = [p[top:bottom] for p in panels]
+        aspect = (bottom - top) / SIZE
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5.0 * aspect + 1.6), facecolor="#fcfcfb")
+        titles = ["exact (the mesh)",
+                  f"cube voxels: {len(vox.interior)} interior + {n_on} boundary",
+                  f"clipped polyhedra: {len(vox.interior)} cubes + {len(vox.frac)} pieces"]
+        for ax, img, title in zip(axes, panels, titles):
+            ax.imshow(img, interpolation="lanczos")
+            ax.set_axis_off()
+            ax.set_title(title, fontsize=12, color="#0b0b0b")
+        what = {"sphere": "Sphere, radius 1 m", "torus": "Torus, R = 1 m, r = 0.4 m",
+                "teapot": "Utah teapot, 1 m long", "suzanne": "Suzanne, 1 m wide"}[name]
+        caption = (f"{what}, pitch {h} m{', cut away at the wall y = ' + format(y_cut, '.3f') + ' m' if cut else ''}. "
+                   f"Mesh: {mesh.source}. The 'exact' shape is exact to this mesh, and the pieces are "
+                   f"clipped by it. Cube voxels: a cell is solid if its centre is inside (grey: cells "
+                   f"wholly inside; yellow: cells the surface crosses whose centre is inside). Clipped "
+                   f"polyhedra: the same grey interior cubes, and every cell the surface crosses cut to "
+                   f"its inside piece (orange).")
+        height = 5.0 * aspect + 1.6
+        fig.text(0.02, 0.08 / height, "\n".join(textwrap.wrap(caption, 190)), fontsize=9, color="#52514e",
+                 va="bottom", ha="left")
+        fig.subplots_adjust(left=0.01, right=0.99, top=1 - 0.42 / height, bottom=0.72 / height, wspace=0.02)
+        out = L.HERE / f"{name}{'-cutaway' if cut else ''}.png"
+        fig.savefig(out, dpi=110, facecolor=fig.get_facecolor())
+        plt.close(fig)
+        print(f"wrote {out}", flush=True)
+
+
+if __name__ == "__main__":
+    for shape in sys.argv[1:] or ["sphere", "torus", "teapot", "suzanne"]:
+        figure(shape)
