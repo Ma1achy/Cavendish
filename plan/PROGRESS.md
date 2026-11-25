@@ -10,15 +10,42 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
 | S4 big scenes | done: TASK-S4-01 to 25 merged; reviewed three times (`docs/slices/S4-review.md`, `-2`, `-3`), nothing important remains; oracle 58/58, validation 113/113 | `s4-big-scenes` | brief and results: `docs/slices/S4.md` (§7.7–§7.8: the fixes); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
 | S18 the editor | done: TASK-S18-01 to 04, 07 to 22 merged; reviewed three times (`docs/slices/S18-review.md`, `-2`, `-3`), nothing important remains | `s18-the-editor` | brief and results: `docs/slices/S18.md` (§7.7–§7.8: the fixes); screenshots: `docs/slices/S18/`; recipe: `docs/extending/a-tool-or-panel.md` |
-| S19 the editor, part two | built in part: TASK-S19-09, TASK-S18-05, -06, TASK-S19-04, -13 merged, the record (TASK-S19-12); the rest moved to S20; reviewed once (`docs/slices/S19-review.md`), its findings fixed (TASK-S19-21 to 25) | | brief and results: `docs/slices/S19.md` (§7.1 the panels before and after; §7.9 the review's fixes, before and after); requirement: `docs/design/panels.md`; pictures: `docs/slices/S19/`; recipes: `docs/extending/a-material.md`, `a-shape.md` (import), `a-tool-or-panel.md` (cards, tree) |
+| S19 the editor, part two | built in part: TASK-S19-09, TASK-S18-05, -06, TASK-S19-04, -13 merged, the record (TASK-S19-12); the rest moved to S20; reviewed twice (`docs/slices/S19-review.md`, `S19-review-2.md`), the findings of both fixed (TASK-S19-21 to 26) | | brief and results: `docs/slices/S19.md` (§7.1 the panels before and after; §7.9 the review's fixes, before and after; §7.10 the second review's); requirement: `docs/design/panels.md`; pictures: `docs/slices/S19/`; recipes: `docs/extending/a-material.md`, `a-shape.md` (import), `a-tool-or-panel.md` (cards, tree) |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
+
+## S19 after its second review (25 Nov 2026) — fixes done (TASK-S19-26)
+
+**Done** (`docs/slices/S19.md` §7.10, a row a finding). J1: the wire's held-mesh test no longer
+holds the mesh first (the plain request leaves the body unread: the control), and the page's lane
+records a mesh as sent to a worker only when the page had it to send, so a mesh imported after a
+first failed job is sent (`a_mesh_the_page_lacks_is_not_recorded_as_sent`). Minors 1 to 9, 12, 14,
+18 to 20. `quick` is back within its 30 s: 45 tests of 1.42 s or more took `slow_` into their
+names and run with `cargo xtask slow`, which `cargo xtask oracle` runs (their own floor; nothing
+deleted, the budget not raised).
+
+**Numbers.** `quick` 639 in 14 to 17 s warm at 70 to 80 % load (52 s before); `slow` 45 in 19 s;
+`gpu` 42 in 15 s; `oracle` 58 in 429 s (508 s the tier); `web` green in 356 s; `strays` clean;
+validation 116 of 116 against `s18-the-editor`, the report unchanged.
+
+**Decided (worth a second look).** The slow tests run only with the oracle tier, not at each
+commit (what a commit no longer runs: the world read, streaming, figures' and memory bounds;
+`cargo xtask slow` is 20 s). Minor 9 by words in `docs/validation/README.md`, the case and its
+tolerance left alone. `bundle::write_with` trusts the engine's trees to be of the scene as it is.
+
+**Open.** `plan/tasks.yaml` has one id twice from long ago (`TASK-S3-20`: the review's findings 1
+and 2, and the section planes; both merged, both cited by that id in `docs/slices/S3.md`): the
+owner's call whether to rename one. Minors 10, 11, 13 are TASK-S20-12; 15, 16, 17 in
+`plan/IDEAS.md`. A large mesh dropped on the live page is still untested in a real browser.
+
+**Next.** The tag for S19 if the owner is content; then S20 (the workspace; the fly camera first
+among its camera work: TASK-S20-10, -11) or S5.
 
 ## S19 after its review (25 Nov 2026) — fixes done
 
 **Done** (TASK-S19-21 to 25, PRs #201, #202, #204 and the record; `docs/slices/S19.md` §7.9, a row
 a finding). I1: one rule for what a body weighs (`BodySpec::mass_in`): the bundle's `source_mass`
-of a body of materials is ρ·V, not its unused `mass`; the inspector and the console use the same
-rule. I2: the Probe reports the finest cell at the point, read as a one-cell body. I3: it counts
+of a body of materials is ρ·V, not its unused `mass`; the inspector uses the same rule (the
+console answers the field: the second review's minor 5). I2: the Probe reports the finest cell at the point, read as a one-cell body. I3: it counts
 every body whatever the view kept, a slab floor in closed form, and names what it does not count
 (a half-space floor, the world). I4: one centring rule (the box's middle); a mesh past 10,000
 triangles is kept by the session by the hash of its bytes, in a page too, sent to each worker
@@ -974,6 +1001,8 @@ headless screenshots at phone and tablet sizes. Part of S19 (with the side-panel
 slice if S19 is full.
 
 ## Owner's rulings (25 Nov 2026): the editor
+25 Nov 2026: The fly camera is janky: make it work like an FPS game camera (TASK-S20-10), first among S20's camera work, and a walk mode with collision, like a creative-mode game: the camera is physical unless noclip is on (TASK-S20-11). While flying, Space goes up and Shift down; sprint is Ctrl or a double-tap of W.
+
 Also: resizable side panels, windows that pop out and dock back, minimise and full screen, tabs;
 importing 3-D models (OBJ and STL already load as shapes since S3; the editor adds dropping them in,
 scaling and placing); voxels of different materials and densities (a per-voxel material palette,

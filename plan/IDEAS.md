@@ -191,3 +191,21 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   CIEDE2000 and a deuteranopia simulation would hold them to what more people see.
 - **A large mesh in a saved scene**: today a later session needs the file read or dropped again;
   a scene folder with an `assets/` beside the RON (the bytes by hash) would make it whole.
+- **The probe makes a left-out tree on every click** (S19's second review, minor 15): a body the
+  view's byte budget left out is voxelised on the frame's thread each time `Engine::probe` is
+  asked, with no byte limit. Keep the tree made for the scene (the engine's cache, a second
+  budget), or name the body as not counted past a size.
+- **A page's worker keeps each mesh file's bytes** (minor 16): `assets::hold` keeps the bytes for
+  sending, but only the page ever sends; a worker needs the parsed mesh alone (up to 256 MiB a
+  worker saved in wasm32). A `hold` that drops the bytes, used by `wire::serve`.
+- **Locks across the undo of a load** (minor 17): locks are cleared when the engine's count of
+  loads changes, and undoing a load brings the old scene back without changing it, so a lock set
+  in the new scene passes to the old one's body of the same name. Count the undo of a load too,
+  or key locks by the engine-assigned id above.
+- **`cav_sim::assets` belongs to the engine** (the second review's note on crate boundaries): it is
+  process-wide state in a crate whose rule is to hold none. When S5 or S20 next touches it, move
+  the store to `cav-engine` and pass a lookup into `ShapeKind::solid`.
+- **A fast arm in `quick` for each slow test** (TASK-S19-26): the 45 tests named `slow_` run only
+  with the oracle tier. Where one guards a property a small scene would also show (the probe's
+  field on a coarse ball, the wire's world job on one chunk), a cheap twin in `quick` would catch
+  a break at the commit and not at the slice's end.
