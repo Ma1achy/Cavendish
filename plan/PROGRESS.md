@@ -8,9 +8,20 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S1 a point mass | done: TASK-S1-01 to 19 merged; reviewed twice, nothing important remains | `s1-point-mass` | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
 | S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
 | S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
-| S4 big scenes | built: TASK-S4-01 to 11 merged; reviewed twice (`docs/slices/S4-review.md`, `S4-review-2.md`); every important finding fixed (TASK-S4-12 to 24, #143–#151, #153–#155 and this); awaiting a third look or the tag | | brief and results: `docs/slices/S4.md` (§7, §7.7 after the review); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
-| S18 the editor | in progress: the brief is `docs/slices/S18.md`; the S4 tag `s4-big-scenes` was not found locally or on the remote when S18 began, so S18 compares against `fb91b31` (main at S4's end) | | brief: `docs/slices/S18.md`; research: `docs/research/editor-ux.md`; requirement: `docs/design/keyboard.md` |
+| S4 big scenes | done: TASK-S4-01 to 25 merged; reviewed three times (`docs/slices/S4-review.md`, `-2`, `-3`), nothing important remains; oracle 58/58, validation 113/113 | `s4-big-scenes` | brief and results: `docs/slices/S4.md` (§7.7–§7.8: the fixes); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
+| S18 the editor | in progress: the brief is `docs/slices/S18.md` | | brief: `docs/slices/S18.md`; research: `docs/research/editor-ux.md`; requirement: `docs/design/keyboard.md` |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
+
+## S4 done (25 Nov 2026) — tagged `s4-big-scenes`
+The third review's two important findings (K1 the page fallback, K2 the outliner test) are fixed in #158
+(TASK-S4-25); nothing important remains. Oracle 58/58 on main at fb91b31; validation 113/113 against
+`s17-in-the-browser`. Still open, in `plan/IDEAS.md`: the far field's 99th percentile (59–64 ms; measure the
+draw with bricks off first), the web screenshots predate the fixes, minor 6 (a see-through face at the mesh cap).
+
+Calls of mine for a second look (S18): tools on Q/W/E/R (Unity), Esc cancels a transform session and Enter
+keeps it (Blender; an exception written into `docs/design/keyboard.md`), F3 hides the GUI and Ctrl+K opens the
+palette, camera moves are not undoable except Home. The owner was asked and did not answer; these are the
+research note's recommendations.
 
 ## S4 after its second review (25 Nov 2026) — fixes done
 
