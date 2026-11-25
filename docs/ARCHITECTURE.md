@@ -165,6 +165,8 @@ field's reset and the window's unsaved mark.
 | An instrument preset | `cav-sim/src/presets.rs` | — |
 | A dev scene | `cav-sim/src/dev.rs` and `scenes/dev/*.ron` | [a dev scene](extending/a-dev-scene.md) |
 | The bundle's arrays and manifest | `cav-sim/src/bundle.rs` | — |
+| What a body weighs (its materials' or its `mass`: one rule for the bundle, the inspector, the console) | `cav-sim/src/spec.rs` (`BodySpec::mass_in`, `mass_with`) | — |
+| The Probe's reading of a point (the field of every body and a slab floor, the finest cell, its share of each tower's phase, what is not counted) | `cav-sim/src/probe.rs`; `probe x y z` in `cav-engine/src/console.rs`, `Engine::probe`; the card in `cav-app/src/panels.rs` (`probe_card`) | — |
 | A command, a query, a reply | `cav-engine/src/command.rs`; applied in `engine.rs`; its words in `console.rs` | [a command](extending/a-command.md) |
 | The workers, the cache of contributions | `cav-engine/src/forward.rs` | — |
 | Undo and the journal's budget | `cav-engine/src/history.rs`, `journal.rs` | — |
@@ -178,7 +180,7 @@ field's reset and the window's unsaved mark.
 | The scene tree (groups, icons, eye and lock, status dots) and the Readings tab; the inspector's header, cards and Info card (`docs/design/panels.md`) | `cav-app/src/outliner.rs`, `cav-app/src/inspector.rs` | [the window](extending/a-tool-or-panel.md) |
 | An action: a menu item, a key, a palette entry; the big scopes' order | `cav-app/ui/actions.ron`, read by `cav-app/src/actions.rs`; drawn by `menus.rs`, `palette.rs`, `sheet.rs` | [the window](extending/a-tool-or-panel.md) |
 | The keyboard model: scopes, modes, the ring, the router, held keys | `cav-app/src/keyboard.rs` (pure logic, tested as a state machine); the frame registers into it from `panels.rs` and `editors.rs` | [the window](extending/a-tool-or-panel.md) |
-| A tool (Select, Move, Place), the gizmo, the transform session | `cav-app/ui/tools.ron`, `cav-app/src/tools.rs`; its pointer handling in `panels.rs` `figure` | [the window](extending/a-tool-or-panel.md) |
+| A tool (Select, Move, Place, Probe), the gizmo, the transform session | `cav-app/ui/tools.ron`, `cav-app/src/tools.rs`; its pointer handling in `panels.rs` `figure` | [the window](extending/a-tool-or-panel.md) |
 | A layout of the window | `cav-app/ui/layouts.ron`, `cav-app/src/layouts.rs` | [the window](extending/a-tool-or-panel.md) |
 | The camera's arithmetic: frame, zoom toward the pointer, fly, look | `cav-app/src/camera.rs`; `ViewCommand::Camera` in `cav-engine/src/command.rs` | — |
 | The editor's windows: history, new-scene wizard, Open, Save | `cav-app/src/dialogs.rs` | [the window](extending/a-tool-or-panel.md) |
@@ -190,7 +192,7 @@ field's reset and the window's unsaved mark.
 | The potential of a uniform cube (series, octants, prism); a voxel body as a source | `cav-core/src/voxel/kernel.rs` | — |
 | A body made of voxels (`BodySpec.shape`) | `cav-sim/src/shape.rs`; read in `read.rs` (`voxel_body`) | [a voxel body](extending/a-voxel-body.md) |
 | A material (density, colour, elastic and thermal properties); the library; a scene's own | `scenes/materials.ron`, `cav-sim/src/materials.rs` | [a material](extending/a-material.md) |
-| Importing a mesh file as a body (OBJ, STL; held in the scene as `Triangles`); files dropped on the window | `cav-sim/src/import.rs`; `import` in `cav-engine/src/console.rs`, `Engine::keep_dropped`; the window in `cav-app/src/dialogs.rs` (`ImportForm`); a page's dropped bytes through `platform::dropped` | [a shape](extending/a-shape.md) |
+| Importing a mesh file as a body (OBJ, STL; held in the scene as `Triangles` up to 10,000 triangles, larger ones kept by the session by the hash of their bytes as `Mesh { hash }`, sent to a page's workers once); files dropped on the window | `cav-sim/src/import.rs`, `cav-sim/src/assets.rs`, `cav-engine/src/forward/wire.rs` (`with_assets`), `cav-app/src/lane.rs` (`holds`); `import` in `cav-engine/src/console.rs`, `Engine::keep_dropped`; the window in `cav-app/src/dialogs.rs` (`ImportForm`); a page's dropped bytes through `platform::dropped` | [a shape](extending/a-shape.md) |
 | A body of several materials: parts added, painted and erased in order; a cell two materials share | `cav-core/src/voxel/layers.rs` (`voxelise_layers`), `VoxTree::mixed`; the parts in `cav-sim/src/shape.rs` (`PartSpec`) | [a material](extending/a-material.md) |
 | Colour by field, overlays (leaves, a cut, the whole tree by depth), section planes (`Cutting`: a 2-D section square-on, a cut-away otherwise), the cubes and cells a view draws | `cav-sim/src/voxel_view.rs`; drawn in `cav-render/src/scene.rs` (`drawables_with`) with `colour.rs`; trees kept by `cav-engine/src/voxels.rs` | — |
 | The world volume: chunks of 32³ cells with palettes, the far field's bricks, terrain; region files (bytes) | `cav-core/src/voxel/world.rs`, `region.rs` | [a world piece](extending/a-world-piece.md) |
