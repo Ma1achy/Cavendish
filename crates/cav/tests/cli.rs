@@ -793,7 +793,9 @@ fn cli_figure_writes_a_figure_with_its_data_twice_the_same() {
         assert!(!done.status.success() && stderr(&done).contains(why), "{args:?}: {}", stderr(&done));
     }
     assert_eq!(std::fs::read_dir(&c).unwrap().count(), 0);
-    assert!(stdout(&cav(&["help"])).contains("figure <scene> <signal|periodogram|cadence|flight|view>"));
+    assert!(
+        stdout(&cav(&["help"])).contains("figure <scene> <signal|periodogram|cadence|flight|view|paper>")
+    );
 }
 
 #[test]

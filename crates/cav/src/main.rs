@@ -34,13 +34,14 @@ cav <command>
   run <scene> --out <dir> [--preset aion10|aice|file.ron] [--exec \"<commands>\"] [--patience <seconds>]
                                  compute the scene's signal and write its bundle: .npy arrays, each tower's
                                  readout times, the numerics and the error estimate (see the manifest)
-  figure <scene> <signal|periodogram|cadence|flight|view> --out <file.svg|.pdf|.png>
+  figure <scene> <signal|periodogram|cadence|flight|view|paper> --out <file.svg|.pdf|.png>
          [--preset paper-column|paper-full|slide|poster|screen] [--tower <n>]
          [--channel gradiometer|lower|upper] [--span <from>,<to>] [--size <W>x<H>] [--dpi <n>]
-         [--no-title] [--exec \"<commands>\"] [--patience <seconds>]
+         [--section <x|y>,<m>] [--no-title] [--exec \"<commands>\"] [--patience <seconds>]
                                  write a figure in a preset's style and size (size in mm; dpi for a PNG),
                                  with its data (.csv or .npy) and a .json of axes, units and provenance;
-                                 --no-title leaves the title out
+                                 --no-title leaves the title out; paper is a technical drawing of
+                                 the scene, a plan or (--section) a vertical cut at x or y = m metres
   replay <journal.json> [--out <dir>] [--patience <seconds>]
                                  run a saved session again (`journal save <file>` writes one); what it
                                  exported is written inside --out (a relative path with its folders, any
@@ -222,7 +223,7 @@ fn patience_of(given: Option<String>) -> Result<f64, String> {
 /// console's `figure` line issues.
 fn figure(rest: &[String]) -> Result<(), String> {
     use cav_engine::{ChannelName, Figure, FigureFormat, FigureKind};
-    let options = ["out", "preset", "tower", "channel", "span", "size", "dpi", "exec", "patience"];
+    let options = ["out", "preset", "tower", "channel", "span", "size", "dpi", "section", "exec", "patience"];
     let mut args = Args::parse_with_flags(rest, &options, &["no-title"])?;
     let titled = !args.flag("no-title");
     let out = args.option("out").ok_or("figure needs --out <file.svg|.pdf|.png>")?;
@@ -255,12 +256,22 @@ fn figure(rest: &[String]) -> Result<(), String> {
         .option("dpi")
         .map(|text| text.parse::<f64>().map_err(|_| format!("`{text}` is not a resolution: pixels per inch")))
         .transpose()?;
+    let section = args
+        .option("section")
+        .map(|text| {
+            cav_engine::PaperView::parse(&text)
+                .filter(|view| *view != cav_engine::PaperView::Plan)
+                .ok_or_else(|| format!("`{text}` is not a section; write it as x,12 or y,-40 (metres)"))
+        })
+        .transpose()?;
     let exec = args.option("exec");
     let patience = patience_of(args.option("patience"))?;
     let [scene, what]: [String; 2] =
         args.finish(2)?.try_into().map_err(|_| "figure takes a scene and what to draw")?;
     let what = FigureKind::parse(&what).ok_or_else(|| {
-        format!("`{what}` is not something a figure shows: signal, periodogram, cadence, flight or view")
+        format!(
+            "`{what}` is not something a figure shows: signal, periodogram, cadence, flight, view or paper"
+        )
     })?;
     let started = std::time::Instant::now();
     let mut session = Session::new();
@@ -277,6 +288,11 @@ fn figure(rest: &[String]) -> Result<(), String> {
     (figure.span, figure.size_mm, figure.dpi) = (span, size_mm, dpi);
     figure.title = titled;
     figure.pane = if what == FigureKind::View { session.engine.active_pane() } else { 0 };
+    if what == FigureKind::Paper {
+        figure.paper = Some(section.unwrap_or_default());
+    } else if section.is_some() {
+        return Err("--section is for a paper drawing".into());
+    }
     let preset = figure.preset.clone();
     session.engine.apply(cav_engine::Command::Export {
         what: cav_engine::ExportKind::Figure(Box::new(figure)),

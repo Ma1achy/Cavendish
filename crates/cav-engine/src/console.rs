@@ -86,8 +86,8 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "figure",
-        usage: "figure <signal|periodogram|cadence|flight|view> [tower <N>] [gradiometer|lower|upper] [from <a> to <b>] [as <paper-column|paper-full|slide|poster|screen>] [size <W>x<H>] [dpi <N>] [untitled] to <file.svg|.pdf|.png> [@N]",
-        about: "write a figure: a plot or a pane's view as SVG, PDF or PNG in a preset's style and size (size in mm, dpi for a PNG; untitled: no title, the axes take the room), with its data (.csv or .npy) and a .json of axes, units and provenance beside it",
+        usage: "figure <signal|periodogram|cadence|flight|view|paper> [plan|section <x|y> <m>] [tower <N>] [gradiometer|lower|upper] [from <a> to <b>] [as <paper-column|paper-full|slide|poster|screen>] [size <W>x<H>] [dpi <N>] [untitled] to <file.svg|.pdf|.png> [@N]",
+        about: "write a figure: a plot or a pane's view as SVG, PDF or PNG in a preset's style and size (size in mm, dpi for a PNG; untitled: no title, the axes take the room), with its data (.csv or .npy) and a .json of axes, units and provenance beside it; `paper` is a technical drawing of the scene, a plan or a vertical section at x or y = m metres",
         example: "figure periodogram tower 2 as paper-column to fig.pdf",
     },
     CommandDoc {
@@ -288,6 +288,9 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
         Command::Export { what: ExportKind::Bundle, to } => format!("export bundle {}", quoted(to)),
         Command::Export { what: ExportKind::Figure(figure), to } => {
             let mut line = format!("figure {}", figure.what.name());
+            if let Some(view) = figure.paper {
+                line.push_str(&format!(" {}", view.words()));
+            }
             if let Some(tower) = figure.tower {
                 line.push_str(&format!(" tower {tower}"));
             }
@@ -928,6 +931,10 @@ impl Engine {
         let wrong = |why: String| format!("{why}; {}", usage("figure"));
         let mut figure = crate::Figure::new(what, crate::FigureFormat::Svg);
         figure.pane = if what == FigureKind::View { pane } else { 0 };
+        // A paper drawing is a plan unless a section is asked for.
+        if what == FigureKind::Paper {
+            figure.paper = Some(crate::PaperView::Plan);
+        }
         // A periodogram and a window are one tower's: the selected one, or the first.
         if matches!(what, FigureKind::Periodogram | FigureKind::Cadence) {
             figure.tower = Some(self.selected_tower().unwrap_or(1));
@@ -970,6 +977,19 @@ impl Engine {
                 }
                 ["untitled", rest @ ..] => {
                     figure.title = false;
+                    words = rest;
+                }
+                ["plan", rest @ ..] if what == FigureKind::Paper => {
+                    figure.paper = Some(crate::PaperView::Plan);
+                    words = rest;
+                }
+                ["section", axis, at, rest @ ..] if what == FigureKind::Paper => {
+                    let at = number(at, "the place of the cut, metres", "figure")?;
+                    figure.paper = Some(match *axis {
+                        "x" => crate::PaperView::SectionX(at),
+                        "y" => crate::PaperView::SectionY(at),
+                        _ => return Err(wrong(format!("a section is cut at x or y, not `{axis}`"))),
+                    });
                     words = rest;
                 }
                 [channel, rest @ ..] if ChannelName::parse(channel).is_some() => {
@@ -1400,6 +1420,19 @@ mod tests {
                     f.pane = 2;
                 }),
             ),
+            (
+                "figure paper plan as paper-full to plan.svg",
+                figure(FigureKind::Paper, FigureFormat::Svg, "plan.svg", |f| {
+                    f.preset = "paper-full".into();
+                    f.paper = Some(crate::PaperView::Plan);
+                }),
+            ),
+            (
+                "figure paper section y -12.5 as paper-column to cut.pdf",
+                figure(FigureKind::Paper, FigureFormat::Pdf, "cut.pdf", |f| {
+                    f.paper = Some(crate::PaperView::SectionY(-12.5));
+                }),
+            ),
         ];
         let engine = Engine::new();
         for (line, command) in &rows {
@@ -1437,6 +1470,9 @@ mod tests {
             ("figure signal size big to a.svg", "`big` is not a size; write it as 85x60"),
             ("figure signal sideways to a.svg", "`sideways` is not an option of a figure"),
             ("figure signal to a.svg b.svg", "is not an option of a figure"),
+            ("figure paper section z 3 to a.svg", "a section is cut at x or y, not `z`"),
+            ("figure paper section x north to a.svg", "`north` is not a number"),
+            ("figure signal plan to a.svg", "`plan` is not an option of a figure"),
         ] {
             let why = engine.run_line(line).unwrap_err();
             assert!(why.contains(expected) && why.contains("usage: figure <signal|"), "`{line}`: {why}");
@@ -1451,6 +1487,7 @@ mod tests {
             ("figure signal dpi 1e9 to a.png", "from 10 to 2400"),
             ("figure signal from 6 to 2 to a.svg", "not from 6 to 2"),
             ("figure view to a.png @3", "there is no pane 3; the figure has 1"),
+            ("figure paper section x inf to a.svg", "a section is cut at a place in metres"),
         ] {
             let why = engine.run_line(line).unwrap_err();
             assert!(why.contains(expected), "`{line}`: {why}");

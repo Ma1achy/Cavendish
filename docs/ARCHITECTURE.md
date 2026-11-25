@@ -19,7 +19,7 @@ the gradiometer reads lower minus upper unless a scene says otherwise. British E
 | `cav-gpu` | The wgpu device and reading a texture back; on wasm it is handed the browser's device (`Gpu::from_parts`), not asked to make one | `cav-core` | know about scenes |
 | `cav-engine` | The one API: commands, queries, replies; the journal, undo, the event log; the forward workers and what they keep; the world's streaming | `cav-core`, `cav-sim` | draw, or depend on anything that does; block a command on a computation |
 | `cav-render` | The 3-D picture of a scene: camera, geometry, the wgpu renderer, PNG | `cav-core`, `cav-sim`, `cav-gpu` | depend on the engine (it draws a `SceneView`, which the engine makes) |
-| `cav-plot` | Plots as display lists (signal, periodogram, cadence, flight), painted by egui, written as SVG and PDF, drawn to PNG with no window; figure presets, data and provenance | `cav-core`, `cav-sim`, `cav-engine`, `cav-gpu`, `cav-render` | open a window; depend on `cav-app`, eframe or winit |
+| `cav-plot` | Plots as display lists (signal, periodogram, cadence, flight), painted by egui, written as SVG and PDF, drawn to PNG with no window; figure presets, data and provenance; the paper drawing (a plan or a section of the scene) | `cav-core`, `cav-sim`, `cav-engine`, `cav-gpu`, `cav-render` | open a window; depend on `cav-app`, eframe or winit |
 | `cav-app` | The window: panels, editors, timeline, panes; the same application drawn headless for screenshots and tests; and as a web page (`cav-web`, wasm32) | all of the above | hold scene state of its own: it sends commands and reads replies |
 | `cav` | The command line and the MCP server | all but `cav-app` | link the window (eframe, winit) when built on its own |
 | `cav-validate` | Declaring validation cases (`case!`) and judging them | nothing | depend on anything: every crate's tests use it |
@@ -141,6 +141,7 @@ person asked for goes through `cav_engine::files`; code that must not run in a p
 | What colours voxel bodies, their cubes and overlays in a view | `cav-sim/src/voxel_view.rs`; trees kept by `cav-engine/src/voxels.rs` | [a plot](extending/a-plot.md) |
 | The colour maps of fields (sequential, diverging) | `cav-render/src/colour.rs` | — |
 | A legend of a field or of the tree overlay's depths; a view of voxel bodies as a vector figure | `cav-plot/src/voxels.rs` (`legend`, `tree_legend`); pasted into `cav render` pictures by `cav/src/session.rs` | [a plot](extending/a-plot.md) |
+| The scene as a technical drawing on paper (`figure paper`: a plan or a section, ink on cream at a scale 1:N, outlines of the world from coarse bricks, hatching, scale bar, north arrow, dimensions, title block; at most `MAX_PAPER_BRICKS` bricks, `MAX_PAPER_ITEMS` items, `MAX_PAPER_POINTS` points) | `cav-plot/src/paper.rs`; `PaperView` in `cav-engine/src/command.rs`; written by `paper` in `cav-plot/src/figure.rs` | [a plot](extending/a-plot.md) |
 | Redrawing a figure from its data, in Python | `python/cavendish_figures` (matplotlib style sheets, `load`, `redraw`) | [a plot](extending/a-plot.md) |
 | A panel, an editor, the timeline | `cav-app/src/panels.rs`, `editors.rs`, `timeline.rs` | — |
 | A CLI subcommand, an MCP tool | `cav/src/main.rs`, `mcp.rs` | [a command](extending/a-command.md) |

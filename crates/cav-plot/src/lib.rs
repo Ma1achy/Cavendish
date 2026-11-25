@@ -7,7 +7,8 @@
 //! painted by egui in the application ([`paint`]), written as SVG ([`svg`]) or PDF ([`pdf`]),
 //! or painted to a PNG with no window ([`headless`]). The application's dark theme and the
 //! presets for papers, slides and posters are the same drawing code with different styles.
-//! [`figure`] is the export: a figure at a stated size, the data behind it and a JSON of its
+//! [`paper`] draws the scene itself as a technical drawing (a plan or a section, ink on cream,
+//! at a scale 1:N), for the figure `figure paper`. [`figure`] is the export: a figure at a stated size, the data behind it and a JSON of its
 //! axes, units and provenance, installed into an engine as its figure exporter so that the
 //! console, `cav figure` and the MCP server all issue one command. The application (`cav-app`)
 //! and the command line (`cav`) both draw through this crate, so the command line does not link
@@ -52,6 +53,7 @@ pub mod figure;
 pub mod fonts;
 pub mod headless;
 pub mod paint;
+pub mod paper;
 pub mod pdf;
 pub mod plots;
 pub mod style;

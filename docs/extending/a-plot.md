@@ -109,6 +109,17 @@ centre, side, level, value). Its record says what colours it (`voxels.field`, `u
 `cut`) and the scale (`scale_m`). A new field to colour by is a `LeafField` in
 `crates/cav-sim/src/voxel_view.rs` (its value in `voxel_frame`), and its legend follows.
 
+**Nor is a paper drawing.** `figure paper [plan | section <x|y> <m>]` (`FigureKind::Paper`, its
+view a `PaperView` on `Figure::paper`) is the scene as a technical drawing: `cav_plot::paper::drawing`,
+called from `paper` in `figure.rs` (through `build`, so it needs no device), ink on cream whatever
+the preset (the preset gives the size and the text), at a round scale 1:N. It has no pane and no
+data file (`"data": null`; the record holds the scene verbatim, and under the picture's `paper`
+the scale, the brick level drawn, the counts and the notes). Its world is read as bricks of the
+level whose cells are a millimetre on paper, coarser while past `MAX_PAPER_BRICKS`,
+`MAX_PAPER_ITEMS` or `MAX_PAPER_POINTS`; something new to draw in it goes in the frame (`chrome`),
+which is counted before the level is chosen. The Python redraw does not draw it (it is not in
+`drawers`), as it does not draw a view. Its tests are `crates/cav-plot/tests/paper.rs`.
+
 ## Tests that then hold it
 
 - `crates/cav-plot/tests/plots.rs`: a test of what the plot shows, read from `Drawn` and the
