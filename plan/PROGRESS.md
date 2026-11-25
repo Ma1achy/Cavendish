@@ -27,7 +27,7 @@ design's tests that could not fail now can (Readings bit for bit, 24-pt targets,
 text/ground pair 4.5:1, folding, painted rows). The UX judgements and minors 1–22 done; a case
 with a genuinely shared cell (`materials.shared_cells_are_within_their_dipole_bound`).
 
-**Numbers.** `quick` 681 (657 at S19's record), 54 s warm on a quiet machine; `gpu` 42 in 15 s; `oracle` 58 in 509 s (on a loaded machine two of its long cases met the watchdog; on a quiet one all passed, the slowest 151 s); `web` green in 327 s; validation **116 of 116** against `s18-the-editor` (113 there; 115 at S19's record), one case added (`materials.shared_cells_are_within_their_dipole_bound`, 0.99994 of its first-order bound, which the body attains: the error is the dipole term to 6e-5), none dropped, no tolerance moved.
+**Numbers.** `quick` 681 (657 at S19's record), 52 s warm (over the 30 s budget, which is not a gate here); `gpu` 42 in 14 s; `oracle` 58 in 534 s (an earlier run, with the CPU at 100 % from other builds, lost two of its long cases to the watchdog; rerun after merging main at about 40 % load all passed, the slowest 159 s); `web` green in 321 s; `strays` clean; validation **116 of 116** against `s18-the-editor` (113 there; 115 at S19's record), one case added (`materials.shared_cells_are_within_their_dipole_bound`, 0.99994 of its first-order bound, which the body attains: the error is the dipole term to 6e-5), none dropped, no tolerance moved.
 
 **Decided (worth a second look).** A point mass's Material card is "Mass"; Lifetime opens at first;
 the inspector keeps its width (352 pt at first); `cav_sim::assets` is the one piece of state in
