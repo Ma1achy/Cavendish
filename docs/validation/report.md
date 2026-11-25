@@ -205,10 +205,10 @@ is shown as **missing**, never left out.
 
 | Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
 |---|---|---|---|---|---|---|---|
-| `world.moments_bound_is_not_vacuous` (S4) | exact self-consistency: the same: the bound over the error, the loosest where the error is above rounding | 656.409 | 1000 | relative | 66% |  | pass |
+| `world.moments_bound_is_not_vacuous` (S4) | exact self-consistency: the same: the bound over the error, the loosest over every q tried (0.45 to 0.001) where the error is above rounding | 457.0544 | 1000 | relative | 46% |  | pass |
 | `world.slab_converges_to_the_null` (S4) | closed form: the same slab: its gradiometer halves as its width doubles (a finite floor's edge term falls as 1/L, to the infinite floor's null); the worst ratio's relative distance from 2 | 0.0197 | 0.05 | relative | 39% |  | pass |
 | `world.slab_equals_the_prism` (S4) | closed form: a square slab of the world, 320 m to 2560 m across and 32 m thick, read at the centre tower: its gradiometer against the prism's closed form, the worst relative difference | 2.835e-11 | 1.000e-9 | relative | 3% |  | pass |
-| `world.moments_within_their_bound` (S4) | exact self-consistency: a chunk of terrain and a house (two materials) read through its moments to the octupole, against its leaves: the worst error over the stated bound, q = a/R from 0.45 to 0.002 (the octupole left out breaks the bound at q = 0.002: the control) | 0.0106 | 1 | relative | 1% |  | pass |
+| `world.moments_within_their_bound` (S4) | exact self-consistency: a chunk of terrain and a house (two materials) read through its moments to the octupole, against its leaves: the worst error over the stated bound, q = a/R from 0.45 to 0.001 (controls: the quadrupole left out breaks the bound from q = 0.1 in, the octupole flipped from 0.05, the octupole left out from 0.02) | 0.0228 | 1 | relative | 2% |  | pass |
 | `world.box_reads_as_a_voxel_body` (S4) | exact self-consistency: a box of concrete over four chunks of the world against the same box made a voxel body: the worst relative difference of any channel of any tower | 4.565e-16 | 1.000e-12 | relative | 0% |  | pass |
 | `world.box_reads_as_the_prism` (S4) | closed form: a box of concrete on the world's cells: each tower's gradiometer against the closed form of the prism, the worst relative difference | 1.739e-13 | 1.000e-9 | relative | 0% |  | pass |
 

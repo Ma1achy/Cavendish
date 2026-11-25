@@ -10,15 +10,15 @@
   },
   "engine": {
     "version": "0.0.0",
-    "revision": "770b2a3e0397643a6ff5ee1c6b27d23662f2fd83",
-    "dirty": true,
+    "revision": "bb8bcc817415a86f60bfc5105bb2b3e77428b78d",
+    "dirty": false,
     "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
   },
   "numerics": {
     "engine": {
       "version": "0.0.0",
-      "revision": "770b2a3e0397643a6ff5ee1c6b27d23662f2fd83",
-      "dirty": true,
+      "revision": "bb8bcc817415a86f60bfc5105bb2b3e77428b78d",
+      "dirty": false,
       "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
     },
     "platform": "x86_64-windows",
@@ -206,17 +206,25 @@
       "projection": "orthographic",
       "paper": {
         "view": "plan",
-        "scale": "1:750",
-        "points_per_metre": 3.7795275590551185,
+        "scale": "1:600",
+        "points_per_metre": 4.724409448818898,
         "level": 2,
         "cell_m": 1.0,
         "finest_level": 2,
         "bricks": 1,
-        "items": 41,
+        "items": 53,
         "max_items": 20000,
         "outlines": 1,
         "hatching": 0,
         "dimensions": [
+          {
+            "label": "4 m",
+            "m": 4.0
+          },
+          {
+            "label": "4 m",
+            "m": 4.0
+          },
           {
             "label": "8 m",
             "m": 8.0
@@ -227,13 +235,11 @@
         "title_block": [
           "world-box",
           "Plan, from above",
-          "Scale 1:750 on 85 × 60 mm",
+          "Scale 1:600 on 85 × 60 mm",
           "Matter in cells of 1 m",
-          "Cavendish 0.0.0 · 770b2a3e0397 (modified)"
+          "Cavendish 0.0.0 · bb8bcc817415"
         ],
         "notes": [
-          "the world's extent (4 m) is too short to dimension at 1:750",
-          "the world's extent (4 m) is too short to dimension at 1:750",
           "2 towers are drawn without their labels, which would overlap or are past 64"
         ]
       },

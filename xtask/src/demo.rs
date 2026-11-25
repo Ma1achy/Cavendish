@@ -10,13 +10,15 @@ use std::process::Stdio;
 
 use crate::{cargo, step};
 
-pub fn run(root: &Path, slice: &str) -> Result<(), String> {
+/// Runs `slice`'s demo; `web`: with its page in headless Chrome, where it has one (S4: without,
+/// the page's screenshots already there are kept, and no local server is started).
+pub fn run(root: &Path, slice: &str, web: bool) -> Result<(), String> {
     match slice {
         "S0" | "s0" => s0(root),
         "S1" | "s1" => s1(root),
         "S2" | "s2" => s2(root),
         "S3" | "s3" => s3(root),
-        "S4" | "s4" => s4(root),
+        "S4" | "s4" => s4(root, web),
         "S17" | "s17" => s17(root),
         other => {
             Err(format!("no demo for slice `{other}`: the slices with demos are: S0, S1, S2, S3, S4, S17"))
@@ -761,7 +763,7 @@ fn s3(root: &Path) -> Result<(), String> {
 
 /// S4, big scenes (`docs/slices/S4.md` §4): the world near and far, its LOD bands, the box read
 /// as a body, the flythrough measured, the paper drawings, and the world in a page.
-fn s4(root: &Path) -> Result<(), String> {
+fn s4(root: &Path, web: bool) -> Result<(), String> {
     let out = root.join("docs").join("slices").join("S4");
     std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
     step("build cav and cav-app", cargo(root, &["build", "--quiet", "-p", "cav", "-p", "cav-app"]))?;
@@ -844,10 +846,12 @@ fn s4(root: &Path) -> Result<(), String> {
     }
     write(&out, "flythrough.txt", &bench, &mut made)?;
 
-    // 4. The paper drawings, as SVG.
+    // 4. The paper drawings, as SVG: of `town` since the review (the full stress-1e10 is read
+    // only by the bounded bench, the owner's rule after the freeze), cut at y = 74 m through its
+    // building at x = 20 m.
     for (scene, file, extra) in [
-        ("stress-1e10", "paper-plan.svg", None),
-        ("stress-1e10", "paper-section.svg", Some("y,64")),
+        ("town", "paper-plan.svg", None),
+        ("town", "paper-section.svg", Some("y,74")),
         ("world-box", "paper-world-box.svg", None),
     ] {
         let mut args = vec!["figure", scene, "paper", "--out", file];
@@ -859,6 +863,14 @@ fn s4(root: &Path) -> Result<(), String> {
     }
 
     // 5. The world in a page: the box, and the town (which streams on the page's one thread).
+    if !web {
+        eprintln!("xtask: demo S4: the page left out (--no-web); web-*.png and web.txt are as they were");
+        eprintln!("xtask: demo S4 wrote {} files to {}:", made.len(), out.display());
+        for file in &made {
+            eprintln!("  {file}");
+        }
+        return Ok(());
+    }
     crate::web::build(root)?;
     let chrome = crate::web::chrome()?;
     let server = crate::web::serve(&root.join(crate::web::DIST), 0)?;

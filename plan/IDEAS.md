@@ -117,3 +117,11 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **A tighter moment bound**: after TASK-S4-12 (each order's `Σ m s^l`, the fourth exact, the factor `l+1`) the bound on the octupole's remainder is 44–457 times the error. The hexadecapole in the expansion (fourth central moments, 15 numbers a chunk), with the bound from l = 5, would bring it within ten near and let the octupole left out break it at q = 0.1, R7's first control (`docs/slices/S4.md` §7.6); the arms' line rather than its nearest point would gain a little more.
 - **DAG compression of static chunks** (the note §4.1) for the region files and the far field, measured against streaming bandwidth.
 - **Smooth-surface draw style** for terrain (dual contouring of the chunk cells), visual only.
+
+## From S4's review (minors left, `docs/slices/S4-review.md`)
+- **A legend for `overlay bands`** (minor 11): `world-lod.png` has two flat colours and no key; the bands' legend should be made from what is drawn (level, cell size, metres from the camera), as the voxel view's is, in the pane's corner.
+- **The world box beside its voxel body in one picture, and the far field in the near picture** (minor 12): the demo's `world-box.png` shows the world box alone, `world-near.png` no far rings; a scene with both (a voxel body beside the box) and a higher view of `town` would show what §4 promised.
+- **Meshes freed when a chunk leaves level 0** (minor 14): a chunk that stays resident (a tower's, say) keeps its mesh on the GPU after the camera moves away; free meshes not drawn for some frames, under a cap on held but undrawn vertices.
+- **The entry face with the eye inside a brick** (minor 15): the march starts at the eye, but its first cell's face comes from the negative `tmin`; shade the first cell by the ray's dominant axis instead (visual only, one cell).
+- **`WorldGpu` per pane** (minor 16): one is shared by every pane, so its notes, `incomplete` and `marched` describe the last pane prepared, and two panes of different cameras evict each other's meshes. A copy per pane (sharing the brick store) would make the badges per pane.
+- **Concurrent writers of one region file**: two processes caching the same region at once are not coordinated (a record a reader cannot decode is passed over); a lock file or one writer per cache folder would make it safe.
