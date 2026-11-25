@@ -1079,7 +1079,7 @@ pub fn kernel_share(spec: &SceneSpec) -> u64 {
 fn voxel_body<'a>(spec: &'a SceneSpec, n: usize, readers: &Readers) -> Result<Option<VoxelBody<'a>>, String> {
     let body = &spec.bodies[n];
     let Some(shape) = &body.shape else { return Ok(None) };
-    let tree = shape.tree(body.mass)?;
+    let tree = shape.tree(body.mass, &spec.materials)?;
     let gravity = spec.array.instrument.gravity;
     let position: Box<dyn Fn(f64) -> Vec3 + Sync + 'a> =
         Box::new(move |t| Vec3::from_array(body.motion.position(t, gravity)));

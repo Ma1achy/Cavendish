@@ -262,7 +262,14 @@ fn key(common: u64, spec: &SceneSpec, source: SourceId) -> u64 {
             json(&spec.world),
             spec.bodies.iter().filter(|b| b.shape.is_some()).count()
         ),
-        SourceId::Body(n) => format!("body {}", json(&spec.bodies[n])),
+        // A body of materials depends on what they are too (a scene's own lead may change);
+        // a uniform body names none, so its key is what it was before materials (S19).
+        SourceId::Body(n) => match spec.bodies[n].shape.as_ref().map(|s| s.materials(&spec.materials, "")) {
+            Some(Ok(materials)) if !materials.is_empty() => {
+                format!("body {} {}", json(&spec.bodies[n]), json(&materials))
+            }
+            _ => format!("body {}", json(&spec.bodies[n])),
+        },
     };
     hash(&format!("{common:016x} {this}"))
 }

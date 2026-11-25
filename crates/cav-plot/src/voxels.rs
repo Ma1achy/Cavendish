@@ -66,10 +66,59 @@ pub fn heading(frame: &VoxelFrame, scene: &SceneSpec) -> String {
                 .map_or_else(|| format!("tower {}", frame.colouring.tower + 1), |t| t.label.clone());
             format!("phase at {tower}, {}", field.unit())
         }
-        // A level is its own unit: "level, level" would say it twice.
-        LeafField::Level | LeafField::Depth => field.name().to_owned(),
+        // A level is its own unit: "level, level" would say it twice; so is a material.
+        LeafField::Level | LeafField::Depth | LeafField::Material => field.name().to_owned(),
         _ => format!("{}, {}", field.name(), field.unit()),
     }
+}
+
+/// The legend of a view coloured by material: its heading, then a swatch of each material drawn
+/// in its own colour, beside its label, one a row (S19).
+fn material_legend(frame: &VoxelFrame, title: &str, style: &Style, measure: &dyn Measure) -> Drawing {
+    let size = style.text_size;
+    let pad = 0.5 * size;
+    let swatch = 0.9 * size;
+    let [title_w, title_h] = measure.size(title, Face::Sans, size);
+    let sizes: Vec<[f32; 2]> = frame.materials.iter().map(|m| measure.size(&m.0, Face::Sans, size)).collect();
+    let row_h = sizes.iter().fold(swatch, |h, s| h.max(s[1]));
+    let widest = sizes.iter().fold(0.0_f32, |w, s| w.max(s[0]));
+    let width = title_w.max(swatch + pad + widest) + 2.0 * pad;
+    let height = title_h + 2.0 * pad + frame.materials.len() as f32 * (row_h + 0.5 * pad) + pad;
+    let mut drawing = Drawing::new([width, height], format!("legend · {title}"));
+    drawing.items.push(Item::Rect {
+        min: [0.0, 0.0],
+        max: [width, height],
+        fill: Some(style.background),
+        stroke: Some((style.rule_width, style.rule)),
+    });
+    drawing.items.push(Item::Text {
+        at: [pad, pad],
+        anchor: Anchor::LEFT_TOP,
+        text: title.to_owned(),
+        face: Face::Sans,
+        size,
+        colour: style.text,
+        turned: false,
+    });
+    for (k, (label, rgb)) in frame.materials.iter().enumerate() {
+        let top = 2.0 * pad + title_h + k as f32 * (row_h + 0.5 * pad);
+        drawing.items.push(Item::Rect {
+            min: [pad, top],
+            max: [pad + swatch, top + swatch],
+            fill: Some(Colour(*rgb)),
+            stroke: Some((style.rule_width, style.rule)),
+        });
+        drawing.items.push(Item::Text {
+            at: [2.0 * pad + swatch, top],
+            anchor: Anchor::LEFT_TOP,
+            text: label.clone(),
+            face: Face::Sans,
+            size,
+            colour: style.text,
+            turned: false,
+        });
+    }
+    drawing
 }
 
 /// The values a legend writes under its bar: the range's two ends and its middle (zero, for a
@@ -103,6 +152,9 @@ pub fn legend(
     let size = style.text_size;
     let pad = 0.5 * size;
     let title = heading(frame, scene);
+    if field == LeafField::Material {
+        return Some(material_legend(frame, &title, style, measure));
+    }
     // Every leaf of one value (one level, say): one swatch and its number, not a bar labelled
     // "3 3 3" (S18's second review, UX 5).
     if hi - lo <= 1e-12 * lo.abs().max(1.0) {
@@ -351,7 +403,7 @@ pub fn view(
     let mut faces: Vec<(f64, usize, [Vec3; 4], Colour)> = Vec::new();
     for body in &frame.bodies {
         for cube in &body.cubes {
-            let base = colour_of(frame, cube.value, dark);
+            let base = cube.colour.map_or_else(|| colour_of(frame, cube.value, dark), Colour);
             let h = 0.5 * cube.side;
             for normal in normals {
                 if normal.dot(to_eye) <= 1e-12 {

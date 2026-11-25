@@ -103,8 +103,10 @@ impl LogFilter {
 
 /// The most bytes one message holds. A longer one is cut there and says how much was left out:
 /// the ring bounds how many entries there are, and this bounds each, so the log has a size
-/// whatever is written to it (an answer of two million lines was once noted whole).
-pub const MAX_MESSAGE_BYTES: usize = 64 << 10;
+/// whatever is written to it (an answer of two million lines was once noted whole). 128 KiB
+/// since S19: the scene's schema, the console's longest answer of its own, passed 64 KiB with
+/// materials and keeps growing with the spec.
+pub const MAX_MESSAGE_BYTES: usize = 128 << 10;
 
 /// `message`, cut to [`MAX_MESSAGE_BYTES`] at a character's edge if it is longer.
 fn capped(mut message: String) -> String {

@@ -53,6 +53,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (-0.5, -0.5, 5.0),
@@ -80,6 +82,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.5, -0.5, 5.0),
@@ -107,6 +111,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (-0.5, 0.5, 5.0),
@@ -134,6 +140,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.5, 0.5, 5.0),
@@ -161,6 +169,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, -0.5, 0.0),
@@ -188,6 +198,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, 0.5, 0.0),
@@ -215,6 +227,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (-0.5, 0.0, 0.0),
@@ -242,6 +256,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.5, 0.0, 0.0),
@@ -269,6 +285,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, -0.5, 1.0),
@@ -296,6 +314,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, 0.5, 1.0),
@@ -323,6 +343,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (-0.5, 0.0, 1.0),
@@ -350,6 +372,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.5, 0.0, 1.0),
@@ -377,6 +401,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, -0.5, 2.0),
@@ -404,6 +430,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, 0.5, 2.0),
@@ -431,6 +459,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (-0.5, 0.0, 2.0),
@@ -458,6 +488,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.5, 0.0, 2.0),
@@ -485,6 +517,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, -0.5, 3.0),
@@ -512,6 +546,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, 0.5, 3.0),
@@ -539,6 +575,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (-0.5, 0.0, 3.0),
@@ -566,6 +604,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.5, 0.0, 3.0),
@@ -593,6 +633,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, -0.5, 4.0),
@@ -620,6 +662,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, 0.5, 4.0),
@@ -647,6 +691,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (-0.5, 0.0, 4.0),
@@ -674,6 +720,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.5, 0.0, 4.0),
@@ -701,6 +749,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, -0.5, 5.0),
@@ -728,6 +778,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, 0.5, 5.0),
@@ -755,6 +807,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (-0.5, 0.0, 5.0),
@@ -782,6 +836,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.5, 0.0, 5.0),
@@ -809,6 +865,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, -0.5, 6.0),
@@ -836,6 +894,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, 0.5, 6.0),
@@ -863,6 +923,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (-0.5, 0.0, 6.0),
@@ -890,6 +952,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.5, 0.0, 6.0),
@@ -917,6 +981,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, -0.5, 7.0),
@@ -944,6 +1010,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, 0.5, 7.0),
@@ -971,6 +1039,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (-0.5, 0.0, 7.0),
@@ -998,6 +1068,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.5, 0.0, 7.0),
@@ -1025,6 +1097,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, -0.5, 8.0),
@@ -1052,6 +1126,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, 0.5, 8.0),
@@ -1079,6 +1155,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (-0.5, 0.0, 8.0),
@@ -1106,6 +1184,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.5, 0.0, 8.0),
@@ -1133,6 +1213,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, -0.5, 9.0),
@@ -1160,6 +1242,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, 0.5, 9.0),
@@ -1187,6 +1271,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (-0.5, 0.0, 9.0),
@@ -1214,6 +1300,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.5, 0.0, 9.0),
@@ -1241,6 +1329,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, -0.5, 10.0),
@@ -1268,6 +1358,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.0, 0.5, 10.0),
@@ -1295,6 +1387,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (-0.5, 0.0, 10.0),
@@ -1322,6 +1416,8 @@
                 ),
                 pitch: 0.02,
                 supersample: 2,
+                material: None,
+                parts: [],
             )),
             motion: Modes(
                 centre: (0.5, 0.0, 10.0),

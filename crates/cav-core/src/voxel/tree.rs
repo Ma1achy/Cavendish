@@ -54,6 +54,16 @@ impl Leaf {
     }
 }
 
+/// A finest cell more than one material shares (a body of several materials,
+/// [`super::layers`]): its mass, which is not its count's at one material's unit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MixedCell {
+    /// The cell's Morton key (a leaf of level 0 has the same).
+    pub key: u32,
+    /// Its mass, kilograms: `Σ_m n_m · u_m` over the materials of its sample points.
+    pub mass: f64,
+}
+
 /// An entry of `children`: a leaf or a node, by index. The top bit says which.
 const NODE_FLAG: u32 = 1 << 31;
 
@@ -222,10 +232,17 @@ pub struct VoxTree {
     pub children: Vec<u32>,
     /// The moments of each node, in the order of `nodes`.
     pub moments: Vec<Moments>,
-    /// Kilograms a sample point: the body's mass over the tree's samples.
+    /// Kilograms a sample point: the body's mass over the tree's samples. For a tree of several
+    /// materials ([`Self::units`] not empty), the mean: the body's mass over its samples.
     pub unit: f64,
     /// Every leaf's sample points: `Σ count × 8^level`, exactly.
     pub samples: u64,
+    /// Kilograms a sample point of each material, by a leaf's `material`: `ρ_m (h/k)³`. Empty
+    /// for a uniform body, whose every point weighs [`Self::unit`] (S19).
+    pub units: Vec<f64>,
+    /// The cells more than one material shares, by key, with their masses ([`MixedCell`]);
+    /// empty for a uniform body. Each is a leaf of level 0 of the same key.
+    pub mixed: Vec<MixedCell>,
 }
 
 impl VoxTree {
@@ -288,8 +305,58 @@ impl VoxTree {
         }
         let unit = mass / samples as f64;
         let (nodes, children) = Self::link(&grid, &leaves, budget)?;
-        let mut tree = Self { grid, leaves, nodes, children, moments: Vec::new(), unit, samples };
+        let mut tree = Self {
+            grid,
+            leaves,
+            nodes,
+            children,
+            moments: Vec::new(),
+            unit,
+            samples,
+            units: Vec::new(),
+            mixed: Vec::new(),
+        };
         tree.moments = tree.bottom_up();
+        Ok(tree)
+    }
+
+    /// The tree of a body of several materials ([`super::layers::voxelise_layers`]): each leaf's
+    /// sample points weigh `units[material]` kilograms, but for the cells of `mixed`, which weigh
+    /// what they say. The body's mass is what its leaves weigh together.
+    ///
+    /// # Errors
+    /// As [`Self::build`] for the leaves and the caps; when a leaf's material has no unit, a
+    /// unit is not a number of 0 or more, a shared cell is not a leaf of level 0, or the body
+    /// weighs nothing.
+    pub fn build_layered(
+        grid: Grid,
+        leaves: Vec<Leaf>,
+        units: Vec<f64>,
+        mut mixed: Vec<MixedCell>,
+        budget: super::Budget,
+    ) -> Result<Self, VoxelError> {
+        if let Some(u) = units.iter().find(|u| !(u.is_finite() && **u >= 0.0)) {
+            return Err(VoxelError(format!("a unit of {u} kg a sample point: each is 0 or more")));
+        }
+        if let Some(leaf) = leaves.iter().find(|l| usize::from(l.material) >= units.len()) {
+            return Err(VoxelError(format!("leaf {leaf:?} names a material with no density")));
+        }
+        mixed.sort_unstable_by_key(|m| m.key);
+        // The leaves checked and linked as any tree's, with a mass of one for now.
+        let mut tree = Self::build_within(grid, leaves, 1.0, budget)?;
+        if let Some(m) = mixed.iter().find(|m| {
+            tree.leaves.binary_search_by_key(&m.key, |l| l.key).map_or(true, |i| tree.leaves[i].level != 0)
+        }) {
+            return Err(VoxelError(format!("a shared cell {m:?} is not a finest leaf of the tree")));
+        }
+        tree.units = units;
+        tree.mixed = mixed;
+        tree.moments = tree.bottom_up();
+        let mass = tree.body().mass;
+        if !(mass.is_finite() && mass > 0.0) {
+            return Err(VoxelError(format!("the body's materials weigh {mass} kg: it must weigh something")));
+        }
+        tree.unit = mass / tree.samples as f64;
         Ok(tree)
     }
 
@@ -424,10 +491,20 @@ impl VoxTree {
         )
     }
 
-    /// A leaf's mass, kilograms: `count × 8^level × unit`.
+    /// A leaf's mass, kilograms: `count × 8^level × unit`, the unit its material's when the body
+    /// has several ([`Self::units`]); a cell several materials share weighs what
+    /// [`Self::mixed`] says.
     #[must_use]
     pub fn leaf_mass(&self, leaf: &Leaf) -> f64 {
-        leaf.samples() as f64 * self.unit
+        if self.units.is_empty() {
+            return leaf.samples() as f64 * self.unit;
+        }
+        if leaf.level == 0
+            && let Ok(i) = self.mixed.binary_search_by_key(&leaf.key, |m| m.key)
+        {
+            return self.mixed[i].mass;
+        }
+        leaf.samples() as f64 * self.units[usize::from(leaf.material)]
     }
 
     /// A leaf's moments: a uniform cube.
@@ -527,6 +604,8 @@ impl VoxTree {
         self.leaves.len() * size_of::<Leaf>()
             + self.nodes.len() * (size_of::<Node>() + size_of::<Moments>())
             + self.children.len() * size_of::<u32>()
+            + self.units.len() * size_of::<f64>()
+            + self.mixed.len() * size_of::<MixedCell>()
     }
 }
 

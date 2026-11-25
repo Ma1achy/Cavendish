@@ -439,8 +439,7 @@ pub fn unit_cube() -> SceneSpec {
          merged leaves that read as the closed-form prism.",
         false,
     );
-    let cube =
-        crate::ShapeSpec { kind: crate::ShapeKind::Cuboid { size: [1.0; 3] }, pitch: 0.125, supersample: 4 };
+    let cube = crate::ShapeSpec::new(crate::ShapeKind::Cuboid { size: [1.0; 3] }, 0.125, 4);
     scene.bodies.push(BodySpec::shaped("cube", 1000.0, cube, Motion::Static { position: [2.0, 0.0, 2.5] }));
     scene
 }
@@ -456,11 +455,7 @@ pub fn sphere() -> SceneSpec {
          themselves both are a point mass; tower 1 reads them as mirror images.",
         false,
     );
-    let ball = crate::ShapeSpec {
-        kind: crate::ShapeKind::Sphere { radius: 0.5 },
-        pitch: 0.5 / 16.0,
-        supersample: 4,
-    };
+    let ball = crate::ShapeSpec::new(crate::ShapeKind::Sphere { radius: 0.5 }, 0.5 / 16.0, 4);
     scene.bodies.push(BodySpec::shaped(
         "voxel sphere",
         500.0,
@@ -484,11 +479,7 @@ pub fn hollow_sphere() -> SceneSpec {
          Its sections are rings: step a section plane through it to see the cavity.",
         false,
     );
-    let shell = crate::ShapeSpec {
-        kind: crate::ShapeKind::Shell { outer: 0.5, inner: 0.35 },
-        pitch: 0.5 / 16.0,
-        supersample: 4,
-    };
+    let shell = crate::ShapeSpec::new(crate::ShapeKind::Shell { outer: 0.5, inner: 0.35 }, 0.5 / 16.0, 4);
     scene.bodies.push(BodySpec::shaped(
         "hollow sphere",
         500.0,
@@ -517,11 +508,7 @@ pub fn platonic_row() -> SceneSpec {
     ];
     for (k, solid) in solids.into_iter().enumerate() {
         let angle = (18.0 + 72.0 * k as f64).to_radians();
-        let shape = crate::ShapeSpec {
-            kind: crate::ShapeKind::Platonic { solid, edge: 0.6 },
-            pitch: 0.05,
-            supersample: 4,
-        };
+        let shape = crate::ShapeSpec::new(crate::ShapeKind::Platonic { solid, edge: 0.6 }, 0.05, 4);
         let at = [2.2 * angle.cos(), 2.2 * angle.sin(), 2.5];
         scene.bodies.push(BodySpec::shaped(
             &format!("{solid:?}").to_lowercase(),
@@ -542,10 +529,8 @@ pub fn platonic_row() -> SceneSpec {
 pub fn scaffold_members(bottom: f64, top: f64, modes: &[crate::ModeSpec], pitch: f64) -> Vec<BodySpec> {
     const RADIUS: f64 = 0.0338;
     const DENSITY: f64 = 7850.0;
-    let rod = |length: f64, axis: crate::Axis| crate::ShapeSpec {
-        kind: crate::ShapeKind::Cylinder { radius: RADIUS, length, axis },
-        pitch,
-        supersample: 2,
+    let rod = |length: f64, axis: crate::Axis| {
+        crate::ShapeSpec::new(crate::ShapeKind::Cylinder { radius: RADIUS, length, axis }, pitch, 2)
     };
     let mass = |length: f64| DENSITY * std::f64::consts::PI * RADIUS * RADIUS * length;
     let mut members = Vec::new();
@@ -624,7 +609,7 @@ pub const S1_SCENES: [fn() -> SceneSpec; 13] = [
 
 /// A material of the S4 scenes.
 fn material(label: &str, density: f64, colour: &str) -> crate::world::MaterialSpec {
-    crate::world::MaterialSpec { label: label.into(), density, colour: colour.into() }
+    crate::world::MaterialSpec::plain(label, density, colour)
 }
 
 /// A box piece of the S4 scenes, from its corners.

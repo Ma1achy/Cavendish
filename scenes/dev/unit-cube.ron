@@ -83,6 +83,8 @@
                 ),
                 pitch: 0.125,
                 supersample: 4,
+                material: None,
+                parts: [],
             )),
             motion: Static(
                 position: (2.0, 0.0, 2.5),

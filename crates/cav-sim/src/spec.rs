@@ -106,6 +106,12 @@ pub struct SceneSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(extend("x-stage" = "forward"))]
     pub world: Option<crate::world::WorldSpec>,
+    /// The scene's own materials, 0 to 255, looked in before the library's
+    /// (`scenes/materials.ron`) when a voxel body names one (S19, `crate::materials`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 255))]
+    #[schemars(extend("x-stage" = "forward"))]
+    pub materials: Vec<crate::materials::MaterialSpec>,
 }
 
 /// The array of gradiometer towers.
@@ -753,6 +759,7 @@ impl SceneSpec {
             floor: None,
             bodies: Vec::new(),
             world: None,
+            materials: Vec::new(),
         }
     }
 
@@ -896,6 +903,7 @@ impl SceneSpec {
         if let Some(world) = &self.world {
             world.validate()?;
         }
+        crate::materials::validate(&self.materials)?;
         self.validate_schedule()?;
         if self.bodies.len() > limits::BODIES {
             return fail(format!("bodies: {} bodies is more than {}", self.bodies.len(), limits::BODIES));
@@ -920,6 +928,7 @@ impl SceneSpec {
                     ));
                 }
                 shape.validate(&format!("{at}.shape")).map_err(SpecError)?;
+                shape.materials(&self.materials, &format!("{at}.shape.material")).map_err(SpecError)?;
             }
             body.motion.validate(&format!("{at}.motion")).map_err(SpecError)?;
             for (name, time) in [("appears", body.appears), ("vanishes", body.vanishes)] {

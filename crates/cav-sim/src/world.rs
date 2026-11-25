@@ -91,19 +91,9 @@ const fn default_supersample() -> u8 {
     2
 }
 
-/// One material of a world.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct MaterialSpec {
-    /// Its name, as legends and the paper drawing show it. At most 200 characters.
-    pub label: String,
-    /// Kilograms per cubic metre, 0 to 1e5 (0 for matter that is drawn but weighs nothing).
-    #[schemars(range(min = 0.0, max = 1.0e5))]
-    #[schemars(extend("x-unit" = "kg/m^3"))]
-    pub density: f64,
-    /// Its colour in the picture, sRGB, as `#rrggbb`.
-    pub colour: String,
-}
+/// One material of a world: the scenes' one kind of material ([`crate::materials`]), indexed by
+/// the world's pieces.
+pub use crate::materials::MaterialSpec;
 
 /// One piece of a world.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -237,14 +227,7 @@ impl WorldSpec {
             ));
         }
         for (n, m) in self.materials.iter().enumerate() {
-            crate::spec::short(&format!("world.materials[{n}].label"), &m.label, limits::LABEL)?;
-            crate::spec::within(&format!("world.materials[{n}].density"), m.density, (0.0, limits::DENSITY))?;
-            if parse_colour(&m.colour).is_none() {
-                return fail(format!(
-                    "world.materials[{n}].colour: `{}` is not a colour `#rrggbb`",
-                    m.colour
-                ));
-            }
+            m.validate(&format!("world.materials[{n}]"))?;
         }
         if self.pieces.len() > MAX_PIECES {
             return fail(format!("world.pieces: {} pieces is more than {MAX_PIECES}", self.pieces.len()));

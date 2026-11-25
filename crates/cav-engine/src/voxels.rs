@@ -80,7 +80,14 @@ impl Voxels {
                 self.trees.push(None);
                 continue;
             };
-            let key = format!("{}|{}", serde_json::to_string(shape).unwrap_or_default(), body.mass.to_bits());
+            // A body of materials is also what its materials are: a scene's own lead may change.
+            let materials = shape.materials(&spec.materials, "").unwrap_or_default();
+            let key = format!(
+                "{}|{}|{}",
+                serde_json::to_string(shape).unwrap_or_default(),
+                body.mass.to_bits(),
+                serde_json::to_string(&materials).unwrap_or_default()
+            );
             let left = self.budget - in_use;
             let refuse = |why: String, notes: &mut Vec<String>, said: &mut Vec<String>| {
                 if !said.contains(&key) {
@@ -107,7 +114,7 @@ impl Voxels {
                 self.trees.push(None);
                 continue;
             }
-            match shape.tree_within(body.mass, left) {
+            match shape.tree_within(body.mass, &spec.materials, left) {
                 Ok(tree) => {
                     in_use += tree.bytes();
                     let tree = Arc::new(tree);
@@ -192,7 +199,7 @@ mod tests {
     /// The void with one voxel sphere of `radius` metres.
     fn ball(radius: f64) -> SceneSpec {
         let mut scene = dev::void();
-        let shape = ShapeSpec { kind: ShapeKind::Sphere { radius }, pitch: 0.05, supersample: 2 };
+        let shape = ShapeSpec::new(ShapeKind::Sphere { radius }, 0.05, 2);
         scene.bodies.push(BodySpec::shaped(
             "ball",
             10.0,

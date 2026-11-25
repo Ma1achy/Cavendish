@@ -21,6 +21,7 @@ pub mod bundle;
 pub mod dev;
 pub mod json_f64;
 pub mod library;
+pub mod materials;
 pub mod motion;
 pub mod paths;
 pub mod presets;
@@ -34,6 +35,7 @@ pub mod voxel_view;
 pub mod world;
 
 pub use library::{LIBRARY, LibraryScene, inline, load};
+pub use materials::MaterialSpec;
 pub use motion::{ModeSpec, Motion};
 pub use shape::{Axis, PlatonicSolid, ShapeKind, ShapeSpec};
 pub use spec::{

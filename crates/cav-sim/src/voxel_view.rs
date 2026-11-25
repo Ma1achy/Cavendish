@@ -57,12 +57,27 @@ pub enum LeafField {
     /// (`level` counted from the other end). On the same map and range as the tree overlay
     /// ([`TreeOverlay`]), so that a leaf and a node of one depth are one colour.
     Depth,
+    /// What the leaf is made of: each in its material's own colour (S19); a uniform body in
+    /// [`UNIFORM_COLOUR`]. Its value is the material's place in the body's palette.
+    Material,
 }
+
+/// The colour of a body with no material when the view colours by material: a neutral grey,
+/// sRGB.
+pub const UNIFORM_COLOUR: [u8; 3] = [0x9a, 0x9a, 0x9a];
 
 impl LeafField {
     /// Every field, in the order menus list them.
-    pub const ALL: [Self; 7] =
-        [Self::Level, Self::Depth, Self::Mass, Self::Fill, Self::Height, Self::Distance, Self::Phase];
+    pub const ALL: [Self; 8] = [
+        Self::Level,
+        Self::Depth,
+        Self::Mass,
+        Self::Fill,
+        Self::Height,
+        Self::Distance,
+        Self::Phase,
+        Self::Material,
+    ];
 
     /// The word commands use.
     #[must_use]
@@ -75,6 +90,7 @@ impl LeafField {
             Self::Distance => "distance",
             Self::Phase => "phase",
             Self::Depth => "depth",
+            Self::Material => "material",
         }
     }
 
@@ -94,6 +110,7 @@ impl LeafField {
             Self::Fill => "fraction",
             Self::Height | Self::Distance => "m",
             Self::Phase => "rad",
+            Self::Material => "material",
         }
     }
 
@@ -243,6 +260,9 @@ pub struct Cube {
     pub value: f64,
     /// Its level in the tree.
     pub level: u8,
+    /// Its own colour, sRGB, when the field names one (a material's, [`LeafField::Material`]);
+    /// otherwise none, and the field's map colours it by its value.
+    pub colour: Option<[u8; 3]>,
 }
 
 /// One box of an overlay: an axis-aligned box in the world's frame and the level it is of.
@@ -268,6 +288,8 @@ pub struct Cell {
     pub value: f64,
     /// Its level in the tree.
     pub level: u8,
+    /// Its own colour, as a [`Cube`]'s.
+    pub colour: Option<[u8; 3]>,
 }
 
 /// A section plane through the voxel bodies: square to an axis, at an offset along it. Part of a
@@ -441,6 +463,9 @@ pub struct VoxelFrame {
     /// had to: the depths below it are not drawn. None when nothing had to be left out, and when
     /// the first asked depth alone is past the cap (then no node is drawn and a note says so).
     pub tree_capped_at: Option<u8>,
+    /// With [`LeafField::Material`]: each material drawn, its label and colour, in the order
+    /// first met (a uniform body as "uniform"), for the legend. Empty for the other fields.
+    pub materials: Vec<(String, [u8; 3])>,
 }
 
 /// The world position of body `n` at `time` (its tree's origin), metres.
@@ -566,6 +591,21 @@ pub fn voxel_frame_cut(
             None
         };
         let k3 = f64::from(tree.grid.samples_per_cell());
+        // The body's materials' colours, by a leaf's material, for colour by material.
+        let palette: Vec<(String, [u8; 3])> = if colouring.field == LeafField::Material {
+            let found = scene.bodies[n].shape.as_ref().map(|s| s.materials(&scene.materials, "")).transpose();
+            match found {
+                Ok(Some(m)) if !m.is_empty() => m.iter().map(|m| (m.label.clone(), m.rgb())).collect(),
+                _ => vec![("uniform".to_owned(), UNIFORM_COLOUR)],
+            }
+        } else {
+            Vec::new()
+        };
+        for entry in &palette {
+            if !frame.materials.iter().any(|(label, _)| *label == entry.0) {
+                frame.materials.push(entry.clone());
+            }
+        }
         let mut cubes = Vec::new();
         let mut cells = Vec::new();
         for entry in tree.cut(level) {
@@ -592,11 +632,20 @@ pub fn voxel_frame_cut(
             let centre = at + tree.block_centre(key, lvl);
             let side = tree.side(lvl);
             let full = tree.unit * k3 * f64::from(1u32 << (3 * u32::from(lvl)));
+            // A block's material: its first leaf's (a node's leaves are a run in Morton order).
+            let material = tree.leaves[leaves.start].material;
             let value = match colouring.field {
                 LeafField::Level => f64::from(lvl),
                 LeafField::Depth => f64::from(tree.grid.depth.saturating_sub(lvl)),
                 LeafField::Mass => mass,
+                // A body of materials weighs its points by their densities: its fill is counted
+                // in sample points (a uniform body's is the same number, kept as it was made).
+                LeafField::Fill if !tree.units.is_empty() => {
+                    tree.leaves[leaves.clone()].iter().map(|l| l.samples() as f64).sum::<f64>()
+                        / (k3 * f64::from(1u32 << (3 * u32::from(lvl))))
+                }
                 LeafField::Fill => mass / full,
+                LeafField::Material => f64::from(material),
                 LeafField::Height => centre.z,
                 LeafField::Distance => towers
                     .iter()
@@ -604,11 +653,12 @@ pub fn voxel_frame_cut(
                     .fold(f64::INFINITY, f64::min),
                 LeafField::Phase => phases.as_ref().map_or(0.0, |p| p[leaves].iter().sum()),
             };
+            let colour = palette.get(usize::from(material)).or(palette.first()).map(|(_, rgb)| *rgb);
             match placed {
                 Some(Some(cell)) if cell != whole => {
-                    cells.push(Cell { lo: cell.0, hi: cell.1, value, level: lvl });
+                    cells.push(Cell { lo: cell.0, hi: cell.1, value, level: lvl, colour });
                 }
-                _ => cubes.push(Cube { centre, side, value, level: lvl }),
+                _ => cubes.push(Cube { centre, side, value, level: lvl, colour }),
             }
         }
         if overlay.leaves || overlay.cut.is_some() {

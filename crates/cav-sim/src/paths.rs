@@ -677,7 +677,13 @@ pub fn leaves(spec: &SceneSpec, path: &str, limit: usize) -> Result<Vec<Entry>, 
         if matches!(own.kind, Kind::Choice(_)) {
             out.push(own);
         }
-        let inside = ls_in(root, &whole, &at)?;
+        let mut inside = ls_in(root, &whole, &at)?;
+        // An empty list (a body's parts before it has any) holds nothing but itself: it is shown
+        // as itself, once (walked again it would never end).
+        if inside.len() == 1 && inside[0].path == at {
+            out.append(&mut inside);
+            continue;
+        }
         stack.extend(inside.into_iter().rev().map(|child| child.path));
     }
     Ok(out)
@@ -919,11 +925,11 @@ mod tests {
         spec.bodies.extend(dev::flash().bodies);
         spec.bodies[5].label = "flash".into();
         // Bodies made of voxels: a member of George's scaffold, and a polyhedron.
-        let rod = crate::ShapeSpec {
-            kind: crate::ShapeKind::Cylinder { radius: 0.0338, length: 1.0, axis: crate::Axis::X },
-            pitch: 0.01,
-            supersample: 4,
-        };
+        let rod = crate::ShapeSpec::new(
+            crate::ShapeKind::Cylinder { radius: 0.0338, length: 1.0, axis: crate::Axis::X },
+            0.01,
+            4,
+        );
         let modes = vec![crate::ModeSpec { frequency: 2.3, scale: 1.0, phase: 0.0 }];
         spec.bodies.push(crate::BodySpec::shaped(
             "member",
@@ -931,15 +937,15 @@ mod tests {
             rod,
             crate::Motion::Modes { centre: [0.0, 0.5, 3.0], amplitude: [3e-4, 0.0, 0.0], modes },
         ));
-        let hull = crate::ShapeSpec {
-            kind: crate::ShapeKind::Polyhedron {
+        let hull = crate::ShapeSpec::new(
+            crate::ShapeKind::Polyhedron {
                 vertices: [[0.0; 3], [0.3, 0.0, 0.0], [0.0, 0.3, 0.0], [0.0, 0.0, 0.3]]
                     .map(crate::shape::Vertex)
                     .to_vec(),
             },
-            pitch: 0.05,
-            supersample: 2,
-        };
+            0.05,
+            2,
+        );
         spec.bodies.push(crate::BodySpec::shaped(
             "hull",
             4.0,

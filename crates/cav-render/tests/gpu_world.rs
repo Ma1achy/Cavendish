@@ -269,7 +269,7 @@ fn hills_frame(v: &ViewSpec) -> WorldFrame {
         pitch: 0.5,
         supersample: 1,
         origin: [0.0; 3],
-        materials: vec![MaterialSpec { label: "grass".into(), density: 1800.0, colour: "#40c040".into() }],
+        materials: vec![MaterialSpec::plain("grass", 1800.0, "#40c040")],
         pieces: vec![PieceSpec {
             label: "hills".into(),
             material: 0,

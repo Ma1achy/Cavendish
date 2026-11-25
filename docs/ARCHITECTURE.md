@@ -188,6 +188,8 @@ field's reset and the window's unsaved mark.
 | The voxel tree, its moments and cuts; the voxeliser and the raster oracle | `cav-core/src/voxel/tree.rs`, `voxeliser.rs` | — |
 | The potential of a uniform cube (series, octants, prism); a voxel body as a source | `cav-core/src/voxel/kernel.rs` | — |
 | A body made of voxels (`BodySpec.shape`) | `cav-sim/src/shape.rs`; read in `read.rs` (`voxel_body`) | [a voxel body](extending/a-voxel-body.md) |
+| A material (density, colour, elastic and thermal properties); the library; a scene's own | `scenes/materials.ron`, `cav-sim/src/materials.rs` | [a material](extending/a-material.md) |
+| A body of several materials: parts added, painted and erased in order; a cell two materials share | `cav-core/src/voxel/layers.rs` (`voxelise_layers`), `VoxTree::mixed`; the parts in `cav-sim/src/shape.rs` (`PartSpec`) | [a material](extending/a-material.md) |
 | Colour by field, overlays (leaves, a cut, the whole tree by depth), section planes (`Cutting`: a 2-D section square-on, a cut-away otherwise), the cubes and cells a view draws | `cav-sim/src/voxel_view.rs`; drawn in `cav-render/src/scene.rs` (`drawables_with`) with `colour.rs`; trees kept by `cav-engine/src/voxels.rs` | — |
 | The world volume: chunks of 32³ cells with palettes, the far field's bricks, terrain; region files (bytes) | `cav-core/src/voxel/world.rs`, `region.rs` | [a world piece](extending/a-world-piece.md) |
 | A scene's world: its spec, its pieces made solids, its read (leaves near, moments far, the bound) | `cav-sim/src/world.rs`; source `SourceId::World` in `read.rs` | [a world piece](extending/a-world-piece.md) |

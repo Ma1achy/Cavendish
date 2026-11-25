@@ -8,7 +8,11 @@ use cav_sim::voxel_view::{
 use cav_sim::{BodySpec, Motion, ShapeKind, ShapeSpec, dev};
 
 fn trees(scene: &cav_sim::SceneSpec) -> Vec<Option<Arc<cav_core::voxel::VoxTree>>> {
-    scene.bodies.iter().map(|b| b.shape.as_ref().map(|s| Arc::new(s.tree(b.mass).unwrap()))).collect()
+    scene
+        .bodies
+        .iter()
+        .map(|b| b.shape.as_ref().map(|s| Arc::new(s.tree(b.mass, &scene.materials).unwrap())))
+        .collect()
 }
 
 #[test]
@@ -89,8 +93,7 @@ fn the_phases_of_the_leaves_add_up_to_the_body_s() {
 /// few hundred voxel bodies are enough to crowd it out of the kernel's work).
 fn crowdable() -> cav_sim::SceneSpec {
     let mut scene = dev::unit_cube();
-    scene.bodies[0].shape =
-        Some(ShapeSpec { kind: ShapeKind::Sphere { radius: 0.5 }, pitch: 1.0 / 64.0, supersample: 1 });
+    scene.bodies[0].shape = Some(ShapeSpec::new(ShapeKind::Sphere { radius: 0.5 }, 1.0 / 64.0, 1));
     scene
 }
 
@@ -169,7 +172,7 @@ fn a_scene_with_no_towers_says_why_it_has_no_distances() {
 #[test]
 fn too_many_leaves_are_drawn_a_level_up_and_said() {
     let mut scene = dev::void();
-    let fine = ShapeSpec { kind: ShapeKind::Sphere { radius: 1.0 }, pitch: 1.0 / 64.0, supersample: 1 };
+    let fine = ShapeSpec::new(ShapeKind::Sphere { radius: 1.0 }, 1.0 / 64.0, 1);
     scene.bodies.push(BodySpec::shaped("ball", 100.0, fine, Motion::Static { position: [2.0, 0.0, 2.0] }));
     let trees = trees(&scene);
     let leaves = trees[0].as_ref().unwrap().leaves.len();
@@ -322,7 +325,7 @@ fn opacity_is_monotone_in_depth() {
 #[test]
 fn the_tree_overlay_stops_at_whole_depths_within_its_cap() {
     let mut scene = dev::void();
-    let fine = ShapeSpec { kind: ShapeKind::Sphere { radius: 1.0 }, pitch: 1.0 / 64.0, supersample: 1 };
+    let fine = ShapeSpec::new(ShapeKind::Sphere { radius: 1.0 }, 1.0 / 64.0, 1);
     scene.bodies.push(BodySpec::shaped("ball", 100.0, fine, Motion::Static { position: [2.0, 0.0, 2.0] }));
     let trees = trees(&scene);
     let tree = trees[0].as_ref().unwrap();
@@ -451,4 +454,45 @@ fn a_cut_away_keeps_the_half_away_from_the_camera() {
     assert!(whole.bodies[0].cubes.iter().any(|c| c.centre.z > 2.5) && whole.bodies[0].cells.is_empty());
     // The span a section slider runs over: the body's box along z.
     assert_eq!(cav_sim::voxel_view::section_span(&scene, cav_sim::Axis::Z, 0.0), Some((2.0, 3.0)));
+}
+
+#[test]
+fn colour_by_material_uses_each_material_s_colour() {
+    // S19 M6: a lead box with a copper box added, coloured by material: every cube is drawn in its
+    // material's own colour from the library, and the legend lists both. Control: by level, no
+    // cube carries a colour of its own (the map colours them).
+    use cav_sim::shape::{PartKind, PartMode, PartSpec};
+    let mut scene = dev::void();
+    let mut shape = ShapeSpec::new(ShapeKind::Cuboid { size: [0.4; 3] }, 0.1, 2);
+    shape.material = Some("lead".into());
+    shape.parts.push(PartSpec {
+        mode: PartMode::Add,
+        material: Some("copper".into()),
+        at: [0.4, 0.0, 0.0],
+        kind: PartKind::Solid { shape: ShapeKind::Cuboid { size: [0.4; 3] } },
+    });
+    scene.bodies = vec![BodySpec::shaped("two", 1.0, shape, Motion::Static { position: [2.0, 2.0, 1.0] })];
+    assert_eq!(scene.validate(), Ok(()));
+    let trees = trees(&scene);
+    let colour = |label: &str| cav_sim::materials::find(&[], label).unwrap().rgb();
+    let frame = voxel_frame(
+        &scene,
+        &trees,
+        Colouring { field: LeafField::Material, tower: 0 },
+        Overlay::default(),
+        0.0,
+    );
+    let cubes = &frame.bodies[0].cubes;
+    assert!(!cubes.is_empty());
+    for cube in cubes {
+        let expected = if cube.centre.x < 2.2 { colour("lead") } else { colour("copper") };
+        assert_eq!(cube.colour, Some(expected), "{cube:?}");
+    }
+    assert_eq!(
+        frame.materials,
+        vec![("lead".to_owned(), colour("lead")), ("copper".to_owned(), colour("copper"))]
+    );
+    let by_level = voxel_frame(&scene, &trees, Colouring::default(), Overlay::default(), 0.0);
+    assert!(by_level.bodies[0].cubes.iter().all(|c| c.colour.is_none()));
+    assert!(by_level.materials.is_empty());
 }

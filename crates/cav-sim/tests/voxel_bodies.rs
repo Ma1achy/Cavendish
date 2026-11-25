@@ -16,7 +16,7 @@ fn scene_with(body: BodySpec) -> SceneSpec {
 }
 
 fn sphere(pitch: f64) -> ShapeSpec {
-    ShapeSpec { kind: ShapeKind::Sphere { radius: 0.5 }, pitch, supersample: 4 }
+    ShapeSpec::new(ShapeKind::Sphere { radius: 0.5 }, pitch, 4)
 }
 
 #[test]
@@ -87,7 +87,7 @@ fn a_static_body_reads_once_to_the_same_bits() {
     let still = scene_with(BodySpec::shaped(
         "cube",
         50.0,
-        ShapeSpec { kind: ShapeKind::Cuboid { size: [0.4, 0.3, 0.2] }, pitch: 0.05, supersample: 2 },
+        ShapeSpec::new(ShapeKind::Cuboid { size: [0.4, 0.3, 0.2] }, 0.05, 2),
         Motion::Static { position: [1.5, -0.5, 4.0] },
     ));
     // The same body, there "from" long before the timeline: not still in the read's eyes, so
@@ -112,11 +112,7 @@ fn a_static_body_reads_once_to_the_same_bits() {
 
 #[test]
 fn a_body_that_cannot_be_voxelised_is_said_and_read_as_nothing() {
-    let missing = ShapeSpec {
-        kind: ShapeKind::Mesh { file: "no/such/mesh.obj".into(), scale: 1.0 },
-        pitch: 0.05,
-        supersample: 2,
-    };
+    let missing = ShapeSpec::new(ShapeKind::Mesh { file: "no/such/mesh.obj".into(), scale: 1.0 }, 0.05, 2);
     let scene =
         scene_with(BodySpec::shaped("ghost", 5.0, missing, Motion::Static { position: [2.0, 0.0, 1.0] }));
     let part = contribution(&scene, SourceId::Body(0), &shots(&scene).unwrap(), &|| false).unwrap();
@@ -154,8 +150,7 @@ impl cav_core::forward::Source for Prism {
 fn plate_against_prism() -> f64 {
     let (size, thickness, density) = (2.0, 0.25, 2400.0);
     let centre = [0.4, 0.0, -1.0];
-    let shape =
-        ShapeSpec { kind: ShapeKind::Cuboid { size: [size, size, thickness] }, pitch: 0.125, supersample: 2 };
+    let shape = ShapeSpec::new(ShapeKind::Cuboid { size: [size, size, thickness] }, 0.125, 2);
     let mass = density * size * size * thickness;
     let scene = scene_with(BodySpec::shaped("plate", mass, shape, Motion::Static { position: centre }));
     let shots = shots(&scene).unwrap();
@@ -184,4 +179,82 @@ cav_validate::case! {
     unit: Relative,
     tolerance: 1e-12,
     measure: cav_validate::Measured::Error(plate_against_prism()),
+}
+
+/// A box of `size` metres a side made of `material` (a library label), or uniform of `mass`.
+fn box_of(side: f64, material: Option<&str>) -> ShapeSpec {
+    ShapeSpec {
+        material: material.map(str::to_owned),
+        ..ShapeSpec::new(ShapeKind::Cuboid { size: [side; 3] }, 0.05, 2)
+    }
+}
+
+/// The largest difference over every shot, radians, between the gradiometer reading of a body of
+/// two materials (a steel box with a lead box added beside it, sharing a face, as one body) and
+/// the sum of the two boxes read as two uniform bodies of ρV each; and the two masses' relative
+/// difference. `second` is the material of the box added (lead; steel for the control).
+fn two_materials_against_parts(second: &str) -> (f64, f64, f64) {
+    use cav_sim::shape::{PartKind, PartMode, PartSpec};
+    let at = [1.5, 0.0, 3.0];
+    let side = 0.4;
+    let mut one = box_of(side, Some("steel"));
+    one.parts.push(PartSpec {
+        mode: PartMode::Add,
+        material: Some(second.into()),
+        at: [side, 0.0, 0.0],
+        kind: PartKind::Solid { shape: ShapeKind::Cuboid { size: [side; 3] } },
+    });
+    let whole = scene_with(BodySpec::shaped("two", 1.0, one.clone(), Motion::Static { position: at }));
+    let density = |label: &str| cav_sim::materials::find(&[], label).unwrap().density;
+    let volume = side * side * side;
+    let mut apart = whole.clone();
+    apart.bodies = vec![
+        BodySpec::shaped(
+            "steel",
+            density("steel") * volume,
+            box_of(side, None),
+            Motion::Static { position: at },
+        ),
+        BodySpec::shaped(
+            "lead",
+            density("lead") * volume,
+            box_of(side, None),
+            Motion::Static { position: [at[0] + side, at[1], at[2]] },
+        ),
+    ];
+    assert_eq!(apart.validate(), Ok(()));
+    let shots = shots(&whole).unwrap();
+    let read = |scene: &SceneSpec, n| {
+        let c = contribution(scene, SourceId::Body(n), &shots, &|| false).unwrap();
+        assert!(c.settled, "{:?}", c.warnings);
+        c.gradiometer
+    };
+    let joined = read(&whole, 0);
+    let (a, b) = (read(&apart, 0), read(&apart, 1));
+    let worst =
+        joined.iter().zip(a.iter().zip(&b)).map(|(j, (a, b))| (j - (a + b)).abs()).fold(0.0, f64::max);
+    let size = joined.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
+    let tree = one.tree(1.0, &[]).unwrap();
+    let mass = (density("steel") + density("lead")) * volume;
+    (worst, size, (tree.body().mass - mass).abs() / mass)
+}
+
+cav_validate::case! {
+    test: validation_two_material_body_is_the_sum_of_its_parts,
+    name: "materials.two_material_body_is_the_sum_of_its_parts",
+    subsystem: "materials",
+    slice: "S19",
+    reference: Exact,
+    against: "a steel box and a lead box (0.4 m, sharing a face) as one body of two materials, against the two read as separate uniform bodies of density × volume: tower 1's gradiometer phase over every shot, beside it on a 6 s timeline",
+    unit: Radians,
+    tolerance: 1e-9,
+    measure: {
+        let (worst, size, mass) = two_materials_against_parts("lead");
+        assert!(size > 1e-3, "the body is heard: {size:e} rad");
+        assert!(mass < 1e-12, "and weighs ρV + ρV: {mass:e}");
+        // Control: the box added as steel is another body, by far more than the tolerance.
+        let (broken, _, broken_mass) = two_materials_against_parts("steel");
+        assert!(broken > 1e-3 * size && broken_mass > 0.1, "{broken:e} {broken_mass:e}");
+        cav_validate::Measured::Error(worst)
+    },
 }
