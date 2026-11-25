@@ -142,9 +142,10 @@ Every edit, from the viewport, a panel, a key or the palette, ends in one `Comma
 `Engine::apply`: the gizmo, the transform session and the inspector's field all issue the same
 `Set` of a body's anchor; a run of them (a drag, a held key, a typed distance) is one undo whatever
 comes between its steps (seeks while the scene plays, camera moves: the engine keeps the run's
-path until another edit: the engine's private `run`), and a run that ends where it began leaves no step
+path until another edit, Home included: the engine's private `run`), and a run that ends where it began leaves no step
 (`History::continued`). A transform session holds every key that is not a global; a global ends it
-cancelled first. Camera
+cancelled first, and anything that takes the keyboard out of it (a click in a window, a drag in
+the view) ends it with its move kept. Camera
 moves are `ViewCommand`s, journalled and never undone, but for `Home`, whose `Edit::View` step
 undo takes back. The engine keeps the scene as last opened or saved (`Engine::baseline`) for a
 field's reset and the window's unsaved mark.
