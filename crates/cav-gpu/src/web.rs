@@ -40,4 +40,12 @@ impl Gpu {
              are made by the native application or `cav`"
             .into())
     }
+
+    /// A page cannot wait for the GPU, so buffers are not read back either.
+    ///
+    /// # Errors
+    /// Always, with that explanation.
+    pub fn read_buffer(&self, _buffer: &wgpu::Buffer) -> Result<Vec<u8>, String> {
+        Err("reading a buffer back waits for the GPU, which a browser page cannot do".into())
+    }
 }

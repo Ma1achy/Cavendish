@@ -21,6 +21,7 @@ pub mod camera;
 pub mod colour;
 pub mod renderer;
 pub mod scene;
+pub mod world;
 
 pub use camera::{Camera, PaneRect, pane_rects};
 pub use renderer::{COLOUR_FORMAT, Frame, PaneTarget, Renderer, decode_png, encode_png};

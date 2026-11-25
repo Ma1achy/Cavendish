@@ -22,7 +22,7 @@
 
 use super::morton;
 use super::tree::{Leaf, VoxTree};
-use super::world::{CHUNK_CELLS, Chunk, ChunkKey, MAX_MATERIALS, WorldGrid};
+use super::world::{CHUNK_CELLS, Chunk, ChunkCells, ChunkKey, MAX_MATERIALS, WorldGrid};
 use super::{Budget, VoxelError};
 
 /// Chunks along each side of a region.
@@ -63,8 +63,22 @@ pub const fn slot_position(slot: usize) -> u64 {
 /// holding nothing).
 #[must_use]
 pub fn encode_chunk(key: ChunkKey, supersample: u8, chunk: Option<&Chunk>) -> Vec<u8> {
-    let leaves = chunk.map_or(&[][..], |c| &c.tree.leaves[..]);
-    let palette = chunk.map_or(&[][..], |c| &c.palette[..]);
+    match chunk {
+        Some(c) => encode(key, supersample, &c.tree.leaves, &c.palette),
+        None => encode(key, supersample, &[], &[]),
+    }
+}
+
+/// [`encode_chunk`] from what the picture keeps of a chunk: the same bytes.
+#[must_use]
+pub fn encode_cells(key: ChunkKey, supersample: u8, cells: Option<&ChunkCells>) -> Vec<u8> {
+    match cells {
+        Some(c) => encode(key, supersample, &c.leaves, &c.palette),
+        None => encode(key, supersample, &[], &[]),
+    }
+}
+
+fn encode(key: ChunkKey, supersample: u8, leaves: &[Leaf], palette: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(12 + 2 + palette.len() + 4 + leaves.len() * LEAF_BYTES);
     for c in key.to_array() {
         out.extend(c.to_le_bytes());

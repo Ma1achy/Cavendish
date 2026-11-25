@@ -81,6 +81,10 @@ opt-level = 1
 opt-level = 1
 [profile.dev.package.cav-plot]
 opt-level = 1
+# The renderer at 1 (S4): greedy meshing a chunk is 200,000 cell visits, 25 ms a chunk
+# unoptimised; the near field of a window has hundreds of chunks.
+[profile.dev.package.cav-render]
+opt-level = 1
 
 [profile.dev.package.cav-core]
 opt-level = 3 # the hot numerical crate is optimised even in dev (REBUILD §8)
