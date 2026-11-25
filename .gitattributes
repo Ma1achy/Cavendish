@@ -12,3 +12,7 @@
 *.ico binary
 *.gif binary
 *.jpg binary
+*.otf binary
+*.npz binary
+*.pkl binary
+*.webp binary
