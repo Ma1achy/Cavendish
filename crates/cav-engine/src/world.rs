@@ -17,7 +17,7 @@
 //!
 //! **The cache** (`world/cache_native.rs`): natively, when a folder is set
 //! ([`Streaming::set_cache`]), a chunk made is written to its region file
-//! (`<folder>/<world hash>/r.<x>.<y>.<z>.cavr`, the format of `cav_core::voxel::region`) and a
+//! (`<folder>/v<format>-x<voxeliser>/<world hash>/r.<x>.<y>.<z>.cavr`, the format of `cav_core::voxel::region`) and a
 //! chunk wanted is read from there first. In a page there is no cache (`world/cache_web.rs`):
 //! chunks are made again when wanted again.
 

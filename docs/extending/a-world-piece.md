@@ -34,6 +34,10 @@ changes. A world holds at most 255 (`MAX_MATERIALS`).
 5. **The paper drawing** draws pieces from their chunks and bricks, so a new kind needs nothing
    there; the far field draws it from `cover` (`brick_of_pieces`), which is why `cover` must be
    cheap as well as conservative.
+6. **The cache.** A new kind makes no old chunk differ, so the region cache needs nothing. But a
+   change to how an existing kind (or the voxeliser, or the precedence of pieces) makes its
+   chunks must bump `VOXELISER_VERSION` in `crates/cav-core/src/voxel/world.rs`: cached chunks
+   are keyed by it, and a warm cache would otherwise serve the old ones with no warning.
 
 ## Tests that then hold it
 

@@ -35,6 +35,13 @@ pub const CHUNK_SIDE: u32 = 1 << CHUNK_DEPTH;
 pub const CHUNK_CELLS: usize = (CHUNK_SIDE * CHUNK_SIDE * CHUNK_SIDE) as usize;
 /// The most materials a world may have: a leaf's palette index is a byte.
 pub const MAX_MATERIALS: usize = 255;
+/// The version of how a world's chunks are made from its pieces: the voxeliser (`cover`, the
+/// sample points, a cell's material by majority), the solids' tests (terrain's height field and
+/// its classification) and the precedence of overlapping pieces. A chunk cached on disk is keyed
+/// by it as well as by the world's spec and the file format, so **bump it with any change that
+/// makes a chunk come out differently**: a warm cache would otherwise serve the old chunks with
+/// no warning (S4's review, I8).
+pub const VOXELISER_VERSION: u32 = 1;
 /// The most box tests and sample tests the voxelising of one chunk may make. A chunk's leaves are
 /// bounded by its cells; this bounds its time (32³ cells × 64 samples × 4 pieces is about 8.4e6,
 /// so a chunk cut by a few pieces at the finest sampling fits; one cut by hundreds is refused).
