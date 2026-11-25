@@ -1,17 +1,20 @@
 //! Importing a mesh file as a body (S19, `docs/slices/S19.md` §2): an OBJ or STL file's bytes,
 //! scaled, made of a material, voxelised at a pitch, placed.
 //!
-//! The mesh is centred on the middle of its box and **held in the scene** as a
-//! [`ShapeKind::Triangles`] when it has at most [`MAX_INLINE_TRIANGLES`] triangles, so the scene
-//! needs no file beside it (in a page, where nothing is read by path, as natively). A larger mesh
-//! read from a path natively is named by that path ([`ShapeKind::Mesh`]); in a page it is refused.
+//! The mesh is centred on the middle of its box, whatever its size, and **held in the scene** as
+//! a [`ShapeKind::Triangles`] when it has at most [`MAX_INLINE_TRIANGLES`] triangles, so the scene
+//! needs no file beside it (in a page, where nothing is read by path, as natively). A larger mesh,
+//! up to 32 MiB and 500,000 triangles, is kept by the session ([`crate::assets`]) and named by
+//! its path (natively) or its name (a dropped file) and the hash of its bytes
+//! ([`ShapeKind::Mesh`]), in a page as natively; past those caps it is refused with the numbers.
 //! What [`body`] makes is an ordinary body, added by an ordinary `Insert`: one undo takes it out,
-//! and a journal replays it without the file.
+//! and a journal replays it in the session without the file (a held mesh: in a later session
+//! once the file is read or dropped again).
 //!
 //! Frame and units: the file's units times the scale are metres; the body's position is the
 //! middle of the mesh's box, the world's frame.
 
-use cav_core::voxel::mesh::Mesh;
+use cav_core::voxel::mesh::{MAX_MESH_BYTES, Mesh};
 
 use crate::shape::{
     Corners, MAX_INLINE_TRIANGLES, MAX_INLINE_VERTICES, MAX_SIZE, ShapeKind, ShapeSpec, Vertex,
@@ -66,15 +69,19 @@ pub fn body(
     path: Option<&str>,
     options: &Options,
 ) -> Result<BodySpec, String> {
-    let parsed = Mesh::parse(name, bytes, 1.0).map_err(|e| e.0)?;
-    // Centred on its box, not its centroid: the box's middle of a mesh symmetric in its numbers
-    // is exactly the origin, where a centroid summed from its triangles is a rounding off it, and
-    // a grid one cell larger for it (S19: an imported box was a sliver taller than the cuboid).
-    let bounds = cav_core::voxel::Shape::bounds(&parsed);
-    let middle = bounds.centre();
-    let mesh = Mesh::new(parsed.vertices.iter().map(|v| *v - middle).collect(), parsed.triangles.clone())
-        .map_err(|e| e.0)?;
-    let size = bounds.size();
+    if bytes.len() as u64 > MAX_MESH_BYTES {
+        return Err(format!(
+            "{name}: {} MiB is more than the {} MiB a mesh file may be; simplify the mesh",
+            bytes.len() >> 20,
+            MAX_MESH_BYTES >> 20
+        ));
+    }
+    // Centred on its box, not its centroid, whatever its size and wherever it is kept: the box's
+    // middle of a mesh symmetric in its numbers is exactly the origin, where a centroid summed
+    // from its triangles is a rounding off it, and a grid one cell larger for it (S19: an imported
+    // box was a sliver taller than the cuboid).
+    let mesh = Mesh::parse(name, bytes, 1.0).map_err(|e| e.0)?.centred_on_box();
+    let size = cav_core::voxel::Shape::bounds(&mesh).size();
     let widest = size.x.max(size.y).max(size.z);
     let scale = match options.size {
         Size::Scale(s) => s,
@@ -100,16 +107,12 @@ pub fn body(
             vertices: mesh.vertices.iter().map(|v| Vertex((*v * scale).to_array())).collect(),
             triangles: mesh.triangles.iter().copied().map(Corners).collect(),
         }
-    } else if let Some(path) = path {
-        // Too large to hold: named by its path (a file's mesh is centred on its centroid when
-        // it is read).
-        ShapeKind::Mesh { file: path.to_owned(), scale }
     } else {
-        return Err(format!(
-            "{name}: {} triangles is more than a scene holds ({MAX_INLINE_TRIANGLES}); a page cannot name a file \
-             by its path, so open it in the application, or simplify the mesh",
-            mesh.triangles.len()
-        ));
+        // Too large to hold in the scene: kept by the session under the hash of its bytes, and
+        // named by its path (natively) or its name (a dropped file) and that hash. The same mesh,
+        // centred the same way, scaled the same way when it is voxelised.
+        let (hash, _) = crate::assets::hold(name, bytes)?;
+        ShapeKind::Mesh { file: path.unwrap_or(name).to_owned(), scale, hash: Some(hash) }
     };
     let mut shape = ShapeSpec::new(kind, pitch, 2);
     shape.material = Some(material.label.clone());
@@ -166,6 +169,73 @@ mod tests {
         let again = super::body(&with, "crate.stl", &bytes, None, &Options::default()).unwrap();
         assert_eq!(again.label, "crate 2");
         assert!((again.shape.unwrap().kind.bounds().unwrap().size().x - 1.0).abs() < 1e-12, "scale 1");
+    }
+
+    /// A torus of `around × across × 2` triangles with its +x half stretched twice as long and its top half three times as tall: closed,
+    /// not crossing itself, and lopsided, so that the middle of its box is not its centroid.
+    fn lopsided(around: u32, across: u32) -> Vec<u8> {
+        let (v, t) = cav_core::voxel::mesh::torus_mesh(1.0, 0.3, around, across);
+        let v: Vec<Vec3> = v
+            .into_iter()
+            .map(|p| {
+                Vec3::new(
+                    if p.x > 0.0 { 2.0 * p.x } else { p.x },
+                    p.y,
+                    if p.z > 0.0 { 3.0 * p.z } else { p.z },
+                )
+            })
+            .collect();
+        to_stl(&v, &t)
+    }
+
+    #[test]
+    fn one_centring_rule_whatever_the_size_or_where_it_is_kept() {
+        // S19's review, I4: a mesh of more than 10,000 triangles, imported with a path (natively)
+        // or without (a page), is kept by the session and named by its hash, and is placed by the
+        // middle of its box as a held one is. Control: centred on its centroid (as a path's mesh
+        // was) the box's middle is off `at` by centimetres. And a small mesh made through the
+        // session's store gives the tree its held form gives, bit for bit.
+        let scene = crate::dev::void();
+        let bytes = lopsided(100, 51);
+        let options = Options { at: [1.0, 2.0, 3.0], pitch: Some(0.1), ..Options::default() };
+        for path in [Some("meshes/ring.stl"), None] {
+            let body = body(&scene, "ring.stl", &bytes, path, &options).unwrap();
+            let shape = body.shape.as_ref().unwrap();
+            let ShapeKind::Mesh { file, hash, .. } = &shape.kind else { panic!("{:?}", shape.kind.name()) };
+            assert_eq!(
+                (file.as_str(), hash.as_deref()),
+                (path.unwrap_or("ring.stl"), Some(crate::assets::hash(&bytes).as_str()))
+            );
+            let middle = shape.kind.bounds().expect("a held mesh's box is known").centre();
+            assert!(middle.length() < 1e-12, "the box's middle is the body's position: {middle:?}");
+            let solid = shape.kind.solid().unwrap();
+            assert!(solid.bounds().centre().length() < 1e-12);
+            let mut with = scene.clone();
+            with.bodies.push(body);
+            assert_eq!(with.validate(), Ok(()));
+        }
+        let centroid = Mesh::parse("ring.stl", &bytes, 1.0).unwrap().centred();
+        let off = cav_core::voxel::Shape::bounds(&centroid).centre();
+        assert!(off.length() > 1e-2, "the control: a centroid is not the box's middle ({off:?})");
+        // A small lopsided mesh: held in the scene, and the same bytes through the store.
+        let small = lopsided(24, 12);
+        let held = body(&scene, "small.stl", &small, None, &options).unwrap().shape.unwrap();
+        assert!(matches!(held.kind, ShapeKind::Triangles { .. }));
+        let (hash, _) = crate::assets::hold("small.stl", &small).unwrap();
+        let kept = ShapeSpec {
+            kind: ShapeKind::Mesh { file: "small.stl".into(), scale: 1.0, hash: Some(hash) },
+            ..held.clone()
+        };
+        let (a, b) = (held.tree(1.0, &[]).unwrap(), kept.tree(1.0, &[]).unwrap());
+        assert!(a.leaves == b.leaves && a.grid == b.grid, "the same leaves on the same grid");
+    }
+
+    #[test]
+    fn a_mesh_past_the_caps_is_refused_with_the_numbers() {
+        let scene = crate::dev::void();
+        let big = vec![0u8; (MAX_MESH_BYTES + 1) as usize];
+        let why = body(&scene, "huge.stl", &big, None, &Options::default()).unwrap_err();
+        assert!(why.contains("more than the 32 MiB a mesh file may be"), "{why}");
     }
 
     #[test]

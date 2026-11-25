@@ -112,7 +112,8 @@ fn a_static_body_reads_once_to_the_same_bits() {
 
 #[test]
 fn a_body_that_cannot_be_voxelised_is_said_and_read_as_nothing() {
-    let missing = ShapeSpec::new(ShapeKind::Mesh { file: "no/such/mesh.obj".into(), scale: 1.0 }, 0.05, 2);
+    let missing =
+        ShapeSpec::new(ShapeKind::Mesh { file: "no/such/mesh.obj".into(), scale: 1.0, hash: None }, 0.05, 2);
     let scene =
         scene_with(BodySpec::shaped("ghost", 5.0, missing, Motion::Static { position: [2.0, 0.0, 1.0] }));
     let part = contribution(&scene, SourceId::Body(0), &shots(&scene).unwrap(), &|| false).unwrap();

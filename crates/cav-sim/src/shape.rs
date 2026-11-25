@@ -282,7 +282,8 @@ pub enum ShapeKind {
         #[schemars(length(min = 4, max = 100))]
         vertices: Vec<Vertex>,
     },
-    /// A closed triangle mesh from a file (`.obj` or `.stl`), centred on its centroid.
+    /// A closed triangle mesh from a file (`.obj` or `.stl`), centred on the middle of its box
+    /// (as a held mesh is): what an import of more than 10,000 triangles makes.
     Mesh {
         /// The file, relative to the directory the program runs in. At most 32 MiB and 500,000
         /// triangles; every edge in two triangles.
@@ -292,6 +293,13 @@ pub enum ShapeKind {
         #[schemars(range(max = 1.0e6), extend("exclusiveMinimum" = 0.0))]
         #[schemars(extend("x-unit" = "m"))]
         scale: f64,
+        /// The hash of the file's bytes, 16 hexadecimal digits ([`crate::assets::hash`]), as an
+        /// import writes it: the mesh is then the one this session holds under it (a dropped
+        /// file's, in a page), and a file read by its path must have it. None for a file read
+        /// as it is whenever it is voxelised.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(length(min = 16, max = 16))]
+        hash: Option<String>,
     },
     /// A closed triangle mesh held in the scene itself, as an imported file becomes one (S19,
     /// `import`): so the scene needs no file beside it, in a page as natively. Corners from the
@@ -380,8 +388,8 @@ impl ShapeKind {
                 let points: Vec<Vec3> = vertices.iter().map(|v| Vec3::from_array(v.0)).collect();
                 Box::new(Polyhedron::hull(&points).map_err(|e| e.0)?)
             }
-            Self::Mesh { file, scale } => {
-                Box::new(Mesh::read(std::path::Path::new(file), *scale).map_err(|e| e.0)?.centred())
+            Self::Mesh { file, scale, hash } => {
+                Box::new(crate::assets::mesh(file, hash.as_deref())?.scaled(*scale))
             }
             Self::Triangles { vertices, triangles } => Box::new(
                 Mesh::new(
@@ -398,7 +406,12 @@ impl ShapeKind {
     #[must_use]
     pub fn bounds(&self) -> Option<Aabb> {
         match self {
-            Self::Mesh { .. } => None,
+            // A held mesh's box is known; a file's is not until it is read.
+            Self::Mesh { hash, scale, .. } => {
+                let mesh = crate::assets::held(hash.as_deref()?)?;
+                let b = cav_core::voxel::Shape::bounds(mesh.as_ref());
+                Some(Aabb::new(b.lo * *scale, b.hi * *scale))
+            }
             Self::Triangles { vertices, .. } => {
                 let first = Vec3::from_array(vertices.first()?.0);
                 Some(vertices.iter().fold(Aabb::new(first, first), |b, v| {
@@ -442,9 +455,14 @@ impl ShapeKind {
                 let points: Vec<Vec3> = vertices.iter().map(|v| Vec3::from_array(v.0)).collect();
                 Polyhedron::hull(&points).map(|_| ()).map_err(|e| format!("{at}.vertices: {e}"))
             }
-            Self::Mesh { file, scale } => {
+            Self::Mesh { file, scale, hash } => {
                 if file.trim().is_empty() || file.chars().count() > 4000 {
                     return Err(format!("{at}.file: a file name of 1 to 4000 characters"));
+                }
+                if let Some(h) = hash
+                    && !crate::assets::is_hash(h)
+                {
+                    return Err(format!("{at}.hash: `{h}` is not 16 lower-case hexadecimal digits"));
                 }
                 (scale.is_finite() && *scale > 0.0 && *scale <= 1.0e6)
                     .then_some(())
@@ -687,7 +705,11 @@ mod tests {
         assert!(flat.validate("s").unwrap_err().starts_with("s.kind.Cuboid.size"));
         let seven = ShapeSpec::new(ShapeKind::Sphere { radius: 1.0 }, 0.1, 7);
         assert!(seven.validate("s").unwrap_err().starts_with("s.supersample"));
-        let missing = ShapeSpec::new(ShapeKind::Mesh { file: "no/such/file.obj".into(), scale: 1.0 }, 0.1, 2);
+        let missing = ShapeSpec::new(
+            ShapeKind::Mesh { file: "no/such/file.obj".into(), scale: 1.0, hash: None },
+            0.1,
+            2,
+        );
         assert_eq!(missing.validate("s"), Ok(()), "a file is read when the body is voxelised");
         assert!(missing.tree(1.0, &[]).is_err());
     }

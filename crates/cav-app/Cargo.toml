@@ -31,7 +31,7 @@ js-sys = "0.3.107"
 log = "0.4.35"
 wasm-bindgen-futures = "0.4.80"
 web-sys = { version = "0.3.107", features = [
-  "Blob", "BlobPropertyBag", "DedicatedWorkerGlobalScope", "Event", "HtmlAnchorElement", "HtmlElement", "MessageEvent",
+  "Blob", "BlobPropertyBag", "DedicatedWorkerGlobalScope", "Event", "File", "HtmlAnchorElement", "HtmlElement", "MessageEvent",
   "Url", "Worker", "WorkerOptions", "WorkerType",
 ] }
 

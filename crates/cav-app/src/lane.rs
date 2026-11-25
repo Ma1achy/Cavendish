@@ -54,6 +54,9 @@ pub enum Action {
         ticket: u64,
         /// Its request (`cav_engine::forward::wire`).
         request: Vec<u8>,
+        /// The held meshes (by hash) the job needs that this worker has not been sent: the page
+        /// sends them before the job (`wire::with_assets`), each to each worker once.
+        assets: Vec<String>,
     },
     /// Run job `ticket` on the page's own thread now, and report it with [`Lane::ran_here`].
     RunHere {
@@ -80,6 +83,8 @@ struct Slot {
     dead: bool,
     /// The panic message the worker sent before it trapped, for its failure's words.
     panic: Option<String>,
+    /// The held meshes (by hash) the worker now in the slot has been sent: none for a new one.
+    holds: std::collections::HashSet<String>,
 }
 
 /// The lane's state.
@@ -172,6 +177,7 @@ impl Lane {
         let Some(s) = self.slots.get_mut(slot) else { return Vec::new() };
         let mut actions = vec![Action::Terminate(slot)];
         s.ready = false;
+        s.holds.clear();
         let lost = s.busy.take();
         let why = s.panic.take().unwrap_or_else(|| message.to_owned());
         if let Some((ticket, request)) = lost {
@@ -227,7 +233,11 @@ impl Lane {
             }
             let Some((ticket, _, request)) = self.queue.pop_front() else { break };
             slot.busy = Some((ticket, fingerprint(&request)));
-            actions.push(Action::Post { slot: index, ticket, request });
+            let assets: Vec<String> = cav_engine::forward::wire::needs(&request)
+                .into_iter()
+                .filter(|hash| slot.holds.insert(hash.clone()))
+                .collect();
+            actions.push(Action::Post { slot: index, ticket, request, assets });
         }
         // Every slot empty for good after a worker died in a job: no worker will come and the
         // page may not run jobs itself, so every waiting job is answered with nothing. (Workers
@@ -333,6 +343,58 @@ mod tests {
     /// Whether `actions` run anything on the page.
     fn runs_here(actions: &[Action]) -> bool {
         actions.iter().any(|x| matches!(x, Action::RunHere { .. }))
+    }
+
+    /// The held meshes a pump's posts send first, by slot.
+    fn sent(actions: &[Action]) -> Vec<(usize, Vec<String>)> {
+        actions
+            .iter()
+            .filter_map(|a| {
+                if let Action::Post { slot, assets, .. } = a { Some((*slot, assets.clone())) } else { None }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_held_mesh_goes_to_each_worker_once() {
+        // S19's review, I4: a job whose scene names a held mesh is posted with it to a worker that
+        // has not been sent it; the next such job to the same worker without it; a worker started
+        // again after a failure gets it again. Control: a job naming no mesh sends none.
+        use cav_core::voxel::mesh::{box_mesh, to_stl};
+        use cav_engine::forward::wire;
+        let (v, t) = box_mesh(cav_core::Vec3::ZERO, cav_core::Vec3::new(0.5, 0.5, 1.0));
+        let (hash, _) = cav_sim::assets::hold("lane.stl", &to_stl(&v, &t)).unwrap();
+        let mut spec = cav_sim::dev::point();
+        let mut shape = cav_sim::ShapeSpec::new(
+            cav_sim::ShapeKind::Mesh { file: "lane.stl".into(), scale: 1.0, hash: Some(hash.clone()) },
+            0.25,
+            1,
+        );
+        shape.material = Some("steel".into());
+        spec.bodies.push(cav_sim::BodySpec::shaped(
+            "lane",
+            1.0,
+            shape,
+            cav_sim::Motion::Static { position: [2.0; 3] },
+        ));
+        let job = || wire::reading_request(&spec, 1.0);
+        let (mut lane, _) = Lane::new();
+        lane.ready(0);
+        let first = lane.send(job(), 0.0);
+        assert_eq!(sent(&lane.pump(0.0)), [(0, vec![hash.clone()])]);
+        lane.answered(0, first, vec![]);
+        let second = lane.send(job(), 1.0);
+        assert_eq!(sent(&lane.pump(1.0)), [(0, vec![])], "worker 0 holds it already");
+        lane.answered(0, second, vec![]);
+        let plain = lane.send(wire::reading_request(&cav_sim::dev::point(), 1.0), 2.0);
+        assert_eq!(sent(&lane.pump(2.0)), [(0, vec![])], "the control: nothing named, nothing sent");
+        lane.answered(0, plain, vec![]);
+        // Worker 0 fails and is started again: the new one has nothing.
+        lane.failed(0, "RuntimeError: unreachable", 3.0);
+        let _ = lane.pump(3.0 + FIRST_BACKOFF_MS);
+        lane.ready(0);
+        lane.send(job(), 5000.0);
+        assert_eq!(sent(&lane.pump(5000.0)), [(0, vec![hash])]);
     }
 
     #[test]
