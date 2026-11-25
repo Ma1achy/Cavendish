@@ -714,3 +714,9 @@
 - id: TASK-S19-
   milestone: S19
   title: The side panels redesigned - outliner as a tree, inspector as component cards, a readings panel, tool strip in the viewport (docs/design/panels.md)
+- id: TASK-S5-
+  milestone: S5
+  title: Measured LOD radii - for each tree level, the distance from each tower past which reading it by moments changes the phase by less than the tolerance, measured against the leaf-exact read (town, world-box, voxel bodies); a table in the brief and the bubble-and-rings default set from it
+- id: TASK-S5-
+  milestone: S5
+  title: World octree and read-LOD debug view - overlay tree for the world's chunks, and a per-tower overlay colouring what is read leaf-exact, by moments at which level, or not at all
