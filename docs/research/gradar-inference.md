@@ -10,6 +10,28 @@
 > Inversion Facility's site. What could not be opened is listed at the end. The numbers marked
 > *measured here* come from a small NumPy benchmark (`bench/crb_bench.py`, beside this note, with its
 > full output in `bench/run300.txt`; §8), run on the build PC with `python crb_bench.py 300`. Nothing in the repository was changed.
+>
+> **Second pass (25 Nov 2026).** Eight papers the first pass could not open were then supplied as PDFs
+> by the owner and read as text (`pdftotext`; the two Extended Data tables of Stray et al., which are
+> images, were read from rendered pages). They are cited below with page, section or equation numbers
+> and marked **[read, 2nd pass]**. How much of each was read is in §9.
+
+## Changed after reading the primary sources (25 Nov 2026)
+
+No recommendation for the S11 build order moved. Five claims in the first pass were recalled or
+secondhand and are corrected, one is sharpened, and one source turned out to be unusable.
+
+| Topic | First pass said | The source says | Effect |
+|---|---|---|---|
+| **Euler deconvolution** (§2.3) | "Needs dense gridded gradient data"; unsuitable by my reasoning from inputs | Not so: Zhang et al. run it on profiles and ungridded data too (p. 513, 516). The real obstacle is the **inputs per station**: conventional Euler needs the field T_z **and** its three gradients (Zhang eq. 1–2); tensor Euler needs the gravity vector and all six tensor components (eq. 3–4, "3n equations containing six unknowns"). Cavendish's tower measures **one** differenced component and no field. Reid et al. also say the method "should be directly applicable to gravity gradiometer measurements" (Conclusion, p. 88) and want profile spacing no larger than the source depth (Discussion, p. 87). | Verdict stands (still not recommended), now on checkable reasons, and the "dense grid" reason is dropped. §2.3. |
+| **Depth weighting for gradients** (§2.2) | "β nearer 3 would be the analogue"; Li 2001 "not read" | Li 2001 uses `w(z) = (z + z₀)^(−3/2)` (the paper's second eq. numbered (5)), i.e. β = 3 in Li & Oldenburg's `(z + z₀)^(−β/2)`; `z₀` is fitted so `w²` matches the decay of the sensitivities ("inverse distance cubed"). | Guess confirmed. Li 2001 offers little else beyond the five-component data vector, cell-wise bounds and wavelet compression: it is a four-page abstract (§2.2). |
+| **CRB conditions, efficiency** (§3.1) | Cited via Vallisneri only; Kay "not read" | **The supplied Kay PDF is front matter only** (5 pages: cover, title, contents). It cannot support a theorem citation. The contents locate the relevant sections (§3.4 p. 30, §3.9 p. 47 "CRLB for the General Gaussian Case", §7.5 p. 164, §7.9 p. 190). | Nothing changed; the conditions are given in §3.1 as *from memory, unverified*, with the pages to fetch. |
+| **Joint score ("mining gold")** (§4) | "A route to better sample efficiency later" for NPE | Brehmer et al.'s losses (eq. 7, 9, 12–14) train **likelihood-ratio and likelihood** surrogates (ROLR, RASCAL, CASCAL, SCANDAL) and a locally sufficient statistic (SALLY, eq. 15); none trains a posterior. Gains are for **small parameter differences**; "less powerful for deciding between model parameter points that are far apart". | The idea does not help the first model (amortised NPE over a wide prior). Moved to "later, and only for a likelihood or ratio surrogate" (§4). |
+| **Seismic noise** (§6) | Harms 2015 only | Hughes & Thorne is about the *force* on a test mass (their footnote 1: "not gradients of the local gravitational field ... but simply the direct fluctuation of the gravitational force"); Rayleigh modes only, Love modes give none; reduced transfer function β′ 0.35–0.6 quiet, 0.15–1.4 noisy (abstract, eq. 1.28, 1.30). | Adds a magnitude scale and a mode picture; the Fisher matrix still needs the full Σ (§6). |
+| **Noise model** (§1, §3) | "Instrument noise is additive (shot noise)" | True that it is additive and Gaussian-like, but Stray et al.'s field budget is **not shot-noise-limited**: detection (background light 344 E/√Hz, photodiode 144 E/√Hz) exceeds atom shot noise (184 E/√Hz) (Extended Data Table 1). | σ per tower is an input to `fisher()`, not a constant; test with and without a detection floor (§2.6, §7.3). |
+
+New in this pass: §2.6 (what Stray et al. report, with numbers a Cavendish validation scene can
+use), a field-anchored test row in §7.3, and §9's list of what was and was not read.
 
 ---
 
@@ -21,8 +43,9 @@ and velocity (`reference/milestones/M17-site-and-baseline.md` §3), and the inst
 models is additive (shot noise, 10⁻⁴ rad/√Hz baseline, `plan/VALIDATION-AND-RESEARCH.md` l. 20). For
 a scene of a few point-like bodies in shot noise, the likelihood is therefore *known in closed
 form*: a Gaussian around the forward model. That gives three things learning problems rarely have:
-an exact Fisher matrix, a maximum-likelihood estimator that provably reaches the Cramér–Rao bound at
-high SNR ([Vallisneri 2008](https://arxiv.org/abs/gr-qc/0703086), §II D), and an exact posterior
+an exact Fisher matrix, a maximum-likelihood estimator that reaches the Cramér–Rao bound at
+high SNR ([Vallisneri 2008](https://arxiv.org/abs/gr-qc/0703086), §II D; the textbook theorems are
+Kay's, which could not be cited from the supplied file, §3.1), and an exact posterior
 against which a learned posterior can be checked. Learning earns its place only where the
 likelihood stops being tractable: unknown numbers of bodies, ambient populations, seismic Newtonian
 noise, masks and gaps, instrument nuisances. That is the territory simulation-based inference was
@@ -30,7 +53,7 @@ built for ([Cranmer, Brehmer & Louppe 2020](https://arxiv.org/abs/1911.01429)).
 
 | Question | Answer |
 |---|---|
-| 1. Inversion and localisation | **Matched-filter bank + Gauss–Newton (profiled maximum likelihood)** is the baseline; it is what GW searches do ([Owen & Sathyaprakash 1998](https://arxiv.org/abs/gr-qc/9808076); [Allen et al. FINDCHIRP](https://arxiv.org/abs/gr-qc/0509116)). Regularised grid inversion (Li & Oldenburg) is non-unique by construction and was measured here at 47–62× the CRB in range at high SNR; keep it as a second, labelled-weak baseline. Euler deconvolution does not fit five towers with a 5 m baseline. |
+| 1. Inversion and localisation | **Matched-filter bank + Gauss–Newton (profiled maximum likelihood)** is the baseline; it is what GW searches do ([Owen & Sathyaprakash 1998](https://arxiv.org/abs/gr-qc/9808076); [Allen et al. FINDCHIRP](https://arxiv.org/abs/gr-qc/0509116)). Regularised grid inversion (Li & Oldenburg) is non-unique by construction and was measured here at 47–62× the CRB in range at high SNR; keep it as a second, labelled-weak baseline, with Li's gradiometer depth weighting `(r + r₀)^(−3/2)` ([Li 2001](https://doi.org/10.1190/1.1816383), eq. (5)) in distance from the array. Euler deconvolution ([Reid et al. 1990](https://doi.org/10.1190/1.1442774); [Zhang et al. 2000](https://doi.org/10.1190/1.1444745)) needs the field and its gradients, or the full tensor, at every station; five single-component towers supply neither, so it is not used (§2.3). The field precedent for atom-gradiometer inversion is a parametric-model Bayesian fit sampled with NUTS ([Stray et al. 2022](https://doi.org/10.1038/s41586-021-04315-3), Methods), the "exact posterior" reference this note already proposes (§2.6). |
 | 2. Fisher and CRB | `F = JᵀΣ⁻¹J` from **central finite differences of the f64 CPU forward model**: mass derivative is exact (linearity), position steps of 10⁻³–10⁻⁴ m give 4×10⁻⁸–4×10⁻¹⁰ relative error; **f32 phases make it useless** (2×10⁻³ error at the same step), so never from the GPU path (*measured here*). Parameters: mass, position and velocity at a reference time (5 per body for straight tracks). Check each test scene with Vallisneri's \|log r\| ≤ 0.1 criterion before quoting a bound. |
 | 3. SBI | Neural posterior estimation (NPE) with a normalising flow and an embedding network, **amortised**, trained on simulations with noise drawn at batch time, exactly as DINGO does for LIGO ([Dax et al. 2021](https://arxiv.org/abs/2106.12594)). Validate with simulation-based calibration ([Talts et al. 2018](https://arxiv.org/abs/1804.06788)) and expected coverage ([Hermans et al. 2022](https://arxiv.org/abs/2110.06581)), and on the tractable scenes against the exact posterior. Ensembles for conservativeness. |
 | 4. Architecture | A **set network over towers** (Deep Sets / Set Transformer) with a **per-shot time embedding** (mTAN, SeFT) and the mask as input: tower order must not matter, cadence is ragged. No imputation. Domain randomisation for sim-to-real. |
@@ -77,9 +100,25 @@ five towers, a centre and four at 4 m on a cross, firing every 2 s (`crates/cav-
   minimum-norm model "will generate a density distribution that is concentrated near the surface",
   they weight by `w(z) = (z + z₀)^(−β/2)` to counter the kernels' decay; β between 1.5 and 2.0 gave
   satisfactory results for gravity (same paper, "Depth weighting"). Positivity is imposed as a bound.
-- **For Cavendish:** the analogue of depth is distance from the towers, and gradiometer kernels decay
-  faster (r⁻³, so β nearer 3 would be the analogue; Li's 2001 gradiometer paper treats this but was
-  not read, see the end). The array sees a moving body, so the grid must be per time window and the
+- **What Li 2001 adds for gradiometer data** **[read, 2nd pass]**
+  ([Li 2001, SEG expanded abstract, 4 pp.](https://doi.org/10.1190/1.1816383)). (1) Data are the five
+  independent components of the symmetric, traceless tensor (eq. 2, 3), stacked: "if five independent
+  components are measured at p locations, then N = 5p". (2) The same Tikhonov objective (eq. 5, 8) with
+  a depth weight matched to the gradient kernel: "the sensitivity of the gradiometer data decays as
+  inverse distance cubed", so `w(z) = (z + z₀)^(−3/2)` (the second equation numbered (5)), with `z₀`
+  chosen "to allow the best match between the decay of the sensitivity and the square of the weighting
+  function". In Li & Oldenburg's `(z + z₀)^(−β/2)` that is β = 3, against the β ≈ 1.5–2 quoted above
+  for gravity. (3) Cell-wise lower and upper bounds enforced by an interior-point log barrier (eq. 8),
+  which also lets known cells be frozen. (4) Wavelet compression of the sensitivity matrix, from
+  Li & Oldenburg 2000, *Geophys. J. Int.* (cited there as "accepted"; not read), for
+  large grids. (5) The observation that gradiometer data are mathematically a magnetic problem with a
+  known magnetisation direction, so "much of the insight ... from magnetic data is applicable". Its one
+  example is a synthetic salt body, 200 m stations, 1 E Gaussian noise, five components, "the bottom
+  of the salt is well imaged"; there is no resolution analysis, no single-component case and no
+  comparison with other methods. So it supports the weight, not a claim about accuracy.
+- **For Cavendish:** the analogue of depth is distance from the towers, and the kernel decays as r⁻³,
+  so the weight is `(r + r₀)^(−3/2)` in distance from the array (Li weights in z only because his data
+  lie on one surface; that is an adaptation, not something Li 2001 does). The array sees a moving body, so the grid must be per time window and the
   window short enough that the body barely moves — which leaves 5 towers × 5 shots = 25 numbers for
   hundreds of cells. *Measured here* (§8): a positivity-constrained Tikhonov inversion with a
   discrepancy-principle λ recovers the along-track position but the range and the mass badly
@@ -90,12 +129,43 @@ five towers, a centre and four at 4 m on a cross, firing every 2 s (`crates/cav-
 
 ### 2.3 Euler deconvolution
 
-Euler's homogeneity relation turns field values and their spatial gradients at many stations into
-source positions with an assumed structural index (Reid et al. 1990, Thompson 1982; not read, see the
-end; [Zhang et al. 2000](https://doi.org/10.1190/1.1444745) extends it to tensor gradients). It needs
-dense gridded gradient data around the source. Cavendish has five stations, measures one differenced
-component over a 5 m baseline that is not small against source distances of 4–60 m, and its sources
-move. **Not recommended** (my reasoning from the method's inputs, not a published comparison).
+**[read, 2nd pass: Thompson 1982 §"Euler's equation", "Implementation"; Reid et al. 1990 Theory, Solution
+strategy, Discussion, Conclusion; Zhang et al. 2000 in full text]**
+
+- **The method.** A field homogeneous of degree −N satisfies `(x−x₀)∂T/∂x + (y−y₀)∂T/∂y + (z−z₀)∂T/∂z
+  = −N(T−B)`, with `B` a regional value ([Thompson 1982](https://doi.org/10.1190/1.1441278), eq. 5;
+  [Reid et al. 1990](https://doi.org/10.1190/1.1442774), eq. 1). Within a moving window of stations it
+  is solved by least squares for `(x₀, y₀, z₀, B)` at a chosen structural index N; solutions are kept
+  only if the fitted depth's standard deviation is small (Reid: "less than, say, 15 %", step 3a;
+  Thompson: an acceptance tolerance, eq. 9) and are judged by how they cluster over several indices.
+  Thompson uses a seven-point window and five indices; Reid a 10×10 window (100 equations, four
+  unknowns), 3×3 at the very least, with minimum returned depth "about the same as the grid interval"
+  and maximum "about twice the window size" (p. 88). Reid p. 81: a wrong index gives "scattered
+  solutions and biased depths".
+- **Zhang's tensor form** ([Zhang et al. 2000](https://doi.org/10.1190/1.1444745), p. 513). Conventional
+  Euler on gravity takes the vertical field `T_z` and its three gradients (eq. 1: `(x−x₀)T_zx +
+  (y−y₀)T_zy + (z−z₀)T_zz = N(B_z − T_z)`, four unknowns). Tensor Euler adds the two horizontal
+  components (eq. 3, 4): "n data points give rise to 3n equations containing six unknowns", solvable
+  for n > 2. A point mass satisfies it exactly with structural index 2 for the field (eq. 15–17) and
+  the tensor falls as degree −3 (eq. 9–14). They find it clusters better than conventional Euler on
+  Bell Geospace survey data (0.5 E resolution at 2 km wavelength, 250 m grid, p. 515–516), on profiles,
+  grids and ungridded data alike. Their prism and cylinder tests need an empirical index of 0.4–0.5,
+  not the point-source value, because finite bodies are not homogeneous (p. 514–515).
+- **Why it still does not fit Cavendish.** (1) **Inputs.** Every Euler form needs, at each station, the
+  field *and* its spatial derivatives (conventional) or the gravity vector and six tensor components
+  (tensor). A tower gives one differenced vertical component, integrated over a 1.46 s flight. Applying
+  Euler to that single component alone would need its gradients in x, y and z; x and y could be
+  differenced between towers 4 m apart, z cannot. (2) **Window.** Reid's smallest window is nine
+  stations and real data want 36–100; the array has five, on a cross, with a baseline that is not small
+  against source distances of 4–60 m, and Reid asks that spacing "should not exceed the depth to
+  sources of interest" (p. 87). (3) **Static field.** The relation holds for a fixed source; Cavendish's
+  sources move. (4) **Sources.** The index must be guessed per feature; for a lone moving body the
+  forward model already supplies the exact one. The first-pass phrase "needs dense gridded data" was
+  wrong: Zhang runs it on profiles and ungridded data, and Reid's conclusion says the method "should be
+  directly applicable to gravity gradiometer measurements" (p. 88), for surveys that measure those
+  components on a grid. **Verdict: still not recommended**; this is reasoning from the papers' stated
+  inputs, not a test. If a future array measured the full tensor and field at many stations, it is the
+  cheap seeding step to revisit.
 
 ### 2.4 Matched filters and template banks (gravitational-wave practice)
 
@@ -131,6 +201,57 @@ gradiometers on moving platforms ([Phillips et al. 2022](https://arxiv.org/abs/2
 unknown numbers of bodies, nothing in the gradiometry literature I found does better than
 detect-then-fit, which is why the count belongs to the learned model.
 
+### 2.6 A field atom gradiometer: Stray et al. 2022 **[read, 2nd pass, incl. Extended Data Tables 1–2]**
+
+[Stray et al., *Nature* 602, 590 (2022)](https://doi.org/10.1038/s41586-021-04315-3): a University of
+Birmingham hourglass cold-atom gradiometer, ⁸⁷Rb, vertical baseline 1 m, one component (G_zz), used
+outdoors to find a known multi-utility tunnel.
+
+| Quantity | Value | Where |
+|---|---|---|
+| Interrogation | π/2–π–π/2, T = 85 ms; ~0.7 Hz; 2.7×10⁵ and 1.7×10⁵ atoms in the two interferometers | Methods |
+| Lab check | moving a test mass: measured ΔG_zz (205.0 ± 13.1) E against modelled 202 E | p. 591, Fig. 1c |
+| Short-term sensitivity | (466 ± 8) E/√Hz; statistical uncertainty 20 E within 10 min (Allan deviation, 8.6 h outdoors) | p. 591, Fig. 2 |
+| Noise budget | Johnson 144, background light 344, atom shot 184 E/√Hz; the quadrature sum, 416 E/√Hz, is close to the measured 466; quantum projection noise by atom number alone ≈ 44 E/√Hz | Ext. Data Table 1; Methods |
+| Systematics | Coriolis < 26 E (5.9 E/degree of yaw), tilt < 1 E, baseline change < 0.1 E, magnetic < 43 E | Ext. Data Table 1 |
+| Phase scale | 150 E ↔ 17.5 mrad; 100 E ↔ 11.6 mrad (≈ 0.116 mrad per E) | p. 592; Methods |
+| Data yield | 98.4 % of ellipse fits usable (fits with ε > 0.05 discarded) | Methods |
+| Survey | 8.5 m line, 0.5 m spacing, 17 stations; 600 runs per station (twelve 25-point ellipses per direction), typically 3 visits; base-station line subtracted for drift | Methods; Ext. Data Fig. 3 |
+| Target | tunnel of 2 m internal cross-section, 0.2 m concrete wall, under a road between two multistorey buildings; modelled peak 150 E | p. 592 |
+| Result | detection SNR 8 (150 E / mean 17.9 E error); centre (0.19 ± 0.19) m along the line; centre depth (1.89 −0.59/+2.3) m; top about 0.89 m deep; soil density anomaly −1.80 ± 0.15 g/cm³ | p. 592; Methods |
+| Projection | 10-point line scan at SNR 3 in 15 min of measurement | p. 593 |
+
+- **Cross-check, my arithmetic:** `φ = k_eff T² Γ L` with k_eff = 4π/780 nm = 1.61×10⁷ m⁻¹ gives
+  0.116 mrad per E at T = 85 ms, L = 1 m, matching the paper's 11.6 mrad per 100 E. Their ~466 E/√Hz
+  is therefore about 54 mrad/√Hz, some 500 times the plan's baseline of 10⁻⁴ rad/√Hz
+  (`plan/VALIDATION-AND-RESEARCH.md`): the prototype is a different instrument from AION-10, so these
+  are field numbers for realism, not Cavendish's.
+- **How they inferred the tunnel**: not an unconstrained inversion. A **parametric Bayesian model** of a
+  buried cuboid with the analytic polyhedron gravity formulas of Okabe (1979), likelihood a normal
+  around the model, **informative priors** (Ext. Data Table 2: x centroid N(0, 4 m); depth and sizes
+  Gamma(2, 0.5); density contrast N(−1.8, 0.1) g/cm³; site gradient and offset N(0, 10) with units E/m
+  and E; a log-normal multiplier on the uncertainty for model misfit), sampled with the No-U-Turn
+  sampler in PyMC3, and summarised as a probability-of-excavation map. The posterior in depth and size
+  is non-Gaussian and skewed, "due to the known depth ambiguity for gravity sensing" (Ext. Data Fig. 4),
+  and "ambiguity exists between model parameters specifying depth, area and density". Total
+  per-point uncertainty is the Pythagorean sum of the standard error and a model-error term.
+- **Back-of-envelope, not a validation** (script in the session scratchpad, not kept): an infinite
+  2 m × 2 m void of density contrast −1.8 g/cm³ gives |G_zz| at the point above it of about 245 E,
+  162 E and 113 E for a centre 1.89, 2.39 and 2.89 m below the observation point. The paper's
+  modelled 150 E (which also includes buildings and drain, and a 1 m-baseline measurement) is inside
+  that range; it cannot tell the geometries apart.
+- **Use for Cavendish.** (1) A **field-anchored validation scene**: build the site (cuboid void,
+  soil density, tower at the reported heights) and require the predicted profile to match the paper's
+  modelled peak within a stated band (§7.3). (2) The **inference pattern** of §2.5 and §7.2 (parametric
+  model, informative priors, NUTS or a grid for a few parameters, posterior summarised spatially) is
+  what a field group did and published; it is the reference posterior, not a substitute for it.
+  (3) Because the posterior in depth/size/density is skewed even at SNR 8, report a coverage and a
+  posterior width, not a single estimate. (4) σ per tower must allow a **detection floor** above atom
+  shot noise (detection supplied 373 of 416 E/√Hz in quadrature here). (5) Drift removal by a base
+  station is part of their practice; Cavendish's equivalent is a witness or a rolling baseline.
+  What the paper does not give: a comparison of inversion methods, any moving source, any multi-tower
+  array, or a noise spectrum beyond the Allan deviation.
+
 ## 3. Fisher information and the Cramér–Rao bound (question 2)
 
 ### 3.1 Definition and what it does and does not mean
@@ -149,6 +270,21 @@ reduces to the high-SNR/LSA result for the ML estimator" (§II C). Two consequen
   `|log r| = ½‖Δφ − JΔθ‖²_Σ` (the non-linear part of the signal change); if it exceeds ~0.1, the
   Fisher result is not self-consistent. One sinusoid needs SNR > 1.09 by this test (Fig. 1). It
   costs 2·(number of parameters) forward runs: cheap enough to run on every benchmark scene.
+- **Kay's conditions: not verified from the source.** The Kay PDF supplied for this pass
+  (*Fundamentals of Statistical Signal Processing: Estimation Theory*, 1993) is five pages: cover,
+  title page and the table of contents. So no theorem can be cited from it. What the contents do
+  establish is where to look: Ch. 3 "Cramer-Rao Lower Bound" (§3.4 CRLB p. 30; §3.5 signals in white
+  Gaussian noise p. 35; §3.7 vector parameter p. 39; **§3.9 "CRLB for the General Gaussian Case"
+  p. 47**, the case here: mean `φ(θ)`, covariance Σ), and Ch. 7 (§7.5 "Properties of the MLE" p. 164;
+  §7.8 vector MLE p. 182; §7.9 asymptotic MLE p. 190). From memory only, and to be checked against
+  those pages: the bound needs the regularity condition `E[∂ln p(x;θ)/∂θ] = 0` for all θ; an
+  unbiased estimator attains it iff `∂ln p/∂θ = I(θ)(g(x) − θ)` for some functions g and I, and then
+  it is the MVU estimator; for a Gaussian with θ-dependent mean and covariance the information has the
+  extra trace term `½ tr[Σ⁻¹ ∂Σ/∂θ Σ⁻¹ ∂Σ/∂θ]`, which vanishes when Σ does not depend on θ (as
+  assumed here); the MLE is asymptotically efficient, *as the number of independent data grows*, again
+  under regularity. The practical reading is Vallisneri's (above), which was read from source: for
+  `d = φ(θ) + n` with θ-independent Σ the estimator is efficient only in the linear-signal limit,
+  which the |log r| test checks. Nothing in the S11 plan depends on the exact theorem number.
 - **Singular Fisher matrices** signal a parameter combination the data do not constrain (§IV):
   "a singular Fisher matrix is almost always a symptom" of a degeneracy, handled by priors or by
   reparametrising. *Measured here*: a **single tower** gives an exactly singular Fisher matrix
@@ -200,9 +336,29 @@ picture (§5) and the bound meet.
   Cavendish can sample but no one can integrate out by hand.
 - **Use what the simulator offers.** "If any of the quantities discussed in Sec. 2 are available, they
   should be leveraged" — differentiable simulators, the joint score and joint likelihood ratio
-  (the "mining gold" approach of Brehmer et al., [doi](https://doi.org/10.1073/pnas.1915980117), not
-  read) (§3 D). Cavendish can supply the exact joint score for the target parameters (it has the
-  noise-free signal), which is a route to better sample efficiency later; not needed first.
+  (the "mining gold" approach of Brehmer et al.) (§3 D).
+- **What "mining gold" is, from the source** **[read, 2nd pass]**
+  ([Brehmer et al. 2020, PNAS](https://doi.org/10.1073/pnas.1915980117)). If the simulator exposes its
+  latent variables z, it can return, per run, the **joint score** `t(x,z|θ₀) = ∇θ log p(x,z|θ)` (eq. 3)
+  and **joint likelihood ratio** `r(x,z|θ₀,θ₁)` (eq. 4). Regressing on them recovers the intractable
+  marginals, because the minimiser of the squared error is the conditional expectation (eq. 6–10:
+  `r*(x) = E[r(x,z)|x,θ₁] = r(x|θ₀,θ₁)`). The losses train a **likelihood ratio** (ROLR eq. 11, RASCAL
+  eq. 12, CASCAL eq. 13) or a **likelihood** (SCANDAL eq. 14), or give a locally sufficient statistic:
+  near θ_ref the model is exponential-family with the score as sufficient statistic (eq. 15; SALLY,
+  SALLINO). Reported effect: RASCAL needed two orders of magnitude fewer samples than CARL on a Higgs
+  simulator (Fig. 4); SCANDAL and RASCAL were "dramatically more sample efficient" on a toy (Fig. 2).
+  **Limits stated by the authors:** the augmented data are "less powerful for deciding between model
+  parameter points that are far apart" because the joint distributions barely overlap; the local
+  methods "plateau" away from θ_ref; and in the Lotka–Volterra test they trade density-estimation
+  quality for ratio quality (p. 5–6). **None of them trains a posterior.**
+- **For Cavendish.** (a) This does *not* help the first model (amortised NPE over a wide prior), so
+  the first-pass remark that it was a route to better NPE sample efficiency is withdrawn. (b) It would
+  matter for a likelihood or ratio surrogate in a narrow parameter region, e.g. refining around a
+  matched-filter peak. (c) For additive Gaussian noise at fixed latents the joint score is
+  `∂φᵀΣ⁻¹(x − φ)` (derived here from eq. 3, not taken from the paper), the matched-filter output
+  weighted by the Jacobian: the baseline's Gauss–Newton step is already SALLY's statistic, so the
+  baseline needs no learning to have it. (d) It needs the Jacobian at fixed latents, which §3.2's
+  central differences supply. Not needed first; revisit only if a likelihood surrogate is built.
 - **Cautions.** None of the diagnostics "address the issues encountered if the model is misspecified"
   (§3 C) — the sim-to-real gap (§5.3 below) is outside what SBI can check.
 - **Which method.** The benchmark of [Lueckmann et al. 2021](https://arxiv.org/abs/2101.04653) (REJ-ABC,
@@ -289,6 +445,35 @@ Fig. 2). The benchmark null set (`plan/ML-AND-API.md` §4) fixes the false-alarm
   estimations of the NN, whose effect can thus be reduced via statistical averaging": a factor 2 with
   existing geometries and 10 or more with a dedicated layout exploiting the noise correlation length
   ([Chaibi et al. 2016](https://arxiv.org/abs/1601.00417), abstract).
+- **What Hughes & Thorne 1998 give** **[read, 2nd pass: abstract, §I A–D, §II start, §V]**
+  ([Hughes & Thorne 1998](https://doi.org/10.1103/PhysRevD.58.122002)). They model ambient seismic
+  waves as Love and Rayleigh modes in layered ground and compute the Newtonian force on a test mass.
+  (1) It is a *force* noise, not a gradient: footnote 1, "it is not gradients of the local
+  gravitational field which cause this noise, but simply the direct fluctuation of the gravitational
+  force"; an atom gradiometer's response needs the same density field differenced over its baseline,
+  which this paper does not do. (2) **Love modes contribute nothing** (eq. 1.11, "no compression and no
+  density variations"); Rayleigh modes do. (3) Transfer function `x̃/W̃ = 4πGρ β(f)/(2πf)²` (eq. 1.8),
+  ρ ≈ 1.8 g/cm³, β = γ·G·β′; Saulson's crude β = 1/√3 = 0.58 (eq. 1.9) was "remarkably good". β′
+  = 0.35–0.6 at quiet times and 0.15–1.4 at noisy times (eq. 1.28, 1.30; Table I: fundamental mode
+  0.4–0.9, overtones 0–1.4, P-like overtones 0–0.15 because surface and subsurface sources cancel).
+  Arithmetic here from eq. 1.6, 1.8, 1.27: the acceleration spectrum is `4πGρ β W̃`, about
+  7×10⁻¹⁶ m s⁻²/√Hz at 10 Hz for β = 0.5 and the "standard LIGO seismic spectrum"
+  (10⁻⁹ m/√Hz) at the LIGO site; not a gradient, and not Cavendish's site. (4) The gravity comes from
+  shallow ground: the e-folding depth is `c_H/2πf ≈ 16 m (c_H/1000 m s⁻¹)(10 Hz/f)` (eq. 1.25), and
+  for the fundamental mode in a half space c_H = 0.93 c_S = 205 m/s, reduced wavelength 3.3 m at 10 Hz
+  (eq. 2.2, 2.3). (5) **Correlation across a few metres:** the factor γ that accounts for the correlation
+  between the two LIGO corner masses 5 m apart is "within about 10 per cent of unity for all
+  frequencies" (Fig. 1, eq. 1.19; the abstract calls it "a weak correlation" effect). I could not
+  turn that into a statement about tower-to-tower correlation without the appendix. At
+  Cavendish's shot rate (one per 2 s, so signal band below 0.25 Hz) the reduced wavelength is of order
+  100 m against a 4 m tower spacing, so the ambient field should be strongly correlated across the
+  towers; this is my extrapolation of eq. 2.3, not a result of the paper. (6) Mitigation they
+  propose is the one §6 already has: monitor the density field and subtract it (3-D arrays of
+  surface seismometers plus borehole dilatometers), or moats against the fundamental mode (§V D);
+  they also note jerky human activity can exceed seismic noise unless kept away (§I, citing Spero).
+  (7) The authors say their mode mixture is a rough estimate "plagued by a large number of
+  uncertainties" and ask for measured sound speeds and Poisson ratios versus depth (§V C): the numbers
+  above are LIGO-site numbers.
 - **The trap.** "A device able to subtract gravity noise can also cancel GW signals"
   ([Harms](https://arxiv.org/abs/1507.05850) §7.1.7). For Gradar: if other towers are used as witnesses
   of the ambient field, they also see the target; a denoiser can remove the target. Every denoising
@@ -364,6 +549,8 @@ Fig. 2). The benchmark null set (`plan/ML-AND-API.md` §4) fixes the false-alarm
 | `npe_coverage_and_information` | coverage ≥ nominal − 0.02 at 50/90 % **and** RMSE ≤ 1.5× the exact-posterior RMSE on tractable scenes | a model that returns the prior passes coverage and fails the RMSE arm |
 | `npe_matches_exact_posterior` | C2ST accuracy ≤ 0.6 against MCMC on 20 tractable scenes | a deliberately shifted posterior gives > 0.6 |
 | `null_set_has_no_detections` | false-alarm rate on null scenes at the chosen threshold | a model trained without null scenes exceeds it |
+| `stray_tunnel_profile_matches_paper` (forward model, **not** inference) | a 2 m × 2 m void of −1.8 g/cm³ with its centre ~2.4–2.9 m below a 1 m-baseline gradiometer, as an infinite prism, gives a peak \|G_zz\| in 100–250 E, bracketing the paper's modelled 150 E (§2.6); with the buildings of the site added the band should tighten, and the band is to be set from the paper's Fig. 3b geometry before running | the same void 6 m deep falls outside the band |
+| `fisher_with_detection_floor` | CRB scales with the per-tower σ; adding a 373 E/√Hz-equivalent detection term to a 184 E/√Hz shot term raises σ by 2.3× and the CRB by the same | σ taken as shot noise only fails the ratio |
 | `denoiser_keeps_injected_target` | injected target recovered within the CRB after denoising | a denoiser that uses the target tower as witness of itself removes it |
 
 ## 8. Measured here: the toy CRB benchmark
@@ -429,7 +616,12 @@ Other measurements from the same run:
   f64 reader in the slice (one test, §7.3).
 - The pass band [0.8, 1.25] for RMSE/√CRB is from Monte-Carlo error at 300–500 draws (standard error
   of an RMSE ≈ 1/√(2n) ≈ 4 %) plus margin; not from a source.
-- Euler deconvolution's unsuitability is reasoned from its inputs, not tested.
+- Euler deconvolution's unsuitability is reasoned from the inputs the papers require (§2.3), not tested.
+- Kay's CRB and efficiency conditions (§3.1) are from memory; the supplied file has no theorem text.
+- Hughes & Thorne's numbers are for a LIGO test mass's force, not a gradiometer's gradient; nothing
+  here converts them to Cavendish's response or site (§6).
+- Stray et al.'s tunnel check (§2.6) is a one-line infinite-prism estimate; the paper's own site model
+  (buildings, drain, finite length) was not reproduced.
 - Whether the seismic Newtonian-noise field makes the likelihood intractable in practice depends on
   the site spectrum, which does not exist yet (M17 §3).
 - No paper was found on tracking moving masses with arrays of atom gradiometers; RATs to riches
@@ -445,15 +637,21 @@ Other measurements from the same run:
 4. A CRB with correlated seismic noise (full Σ) and how much array averaging buys (Chaibi) for
    tracking rather than ULDM.
 
-## Papers I could not read
+## Source status after the second pass
 
-- Reid et al. 1990, Euler deconvolution: https://doi.org/10.1190/1.1442774
-- Thompson 1982, EULDPH: https://doi.org/10.1190/1.1441278
-- Zhang et al. 2000, Euler deconvolution of gravity tensor gradient data: https://doi.org/10.1190/1.1444745
-- Li 2001, 3-D inversion of gravity gradiometer data: https://doi.org/10.1190/1.1816383
-- Brehmer et al. 2020, Mining gold from implicit models: https://doi.org/10.1073/pnas.1915980117
-- Hughes & Thorne 1998, Seismic gravity-gradient noise: https://doi.org/10.1103/PhysRevD.58.122002
-- Stray et al. 2022, Quantum sensing for gravity cartography (a field validation of an atom
-  gradiometer against a known tunnel): https://doi.org/10.1038/s41586-021-04315-3
-- Kay, *Fundamentals of Statistical Signal Processing: Estimation Theory* (1993), the textbook CRB
-  reference: no DOI; not read.
+Read from the supplied PDFs (copies are not in the repository):
+
+| Paper | How much was read |
+|---|---|
+| Thompson 1982 | Euler's equation, structural index, implementation, acceptance test; the model and field examples only skimmed |
+| Reid et al. 1990 | Abstract, theory, solution strategy, discussion, conclusion; the field example and appendix derivations not read |
+| Zhang et al. 2000 | All text; the figures (solution maps) were not examined |
+| Li 2001 | All of it (four pages) |
+| Brehmer et al. 2020 | Main text through the conclusions; the supporting information is not in the PDF |
+| Stray et al. 2022 | Main text, Methods, Extended Data Tables 1 and 2 (as images); Extended Data Figs 3–4 not examined beyond captions |
+| Hughes & Thorne 1998 | Abstract, §I (A–D), start of §II, §V; the layered-medium derivations (§II–IV) and appendices not read |
+| Kay 1993 | **Front matter and contents only (5 pages); no theorem text** |
+
+Still to fetch: **Kay, Ch. 3 (pp. 27–47, with the proofs in Appendices 3A–3C, pp. 67–77) and Ch. 7
+(pp. 164–173, 190)**, to replace the from-memory conditions in §3.1; and Li & Oldenburg 2000
+(*Geophys. J. Int.*) only if the wavelet compression is ever wanted.
