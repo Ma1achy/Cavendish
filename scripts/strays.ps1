@@ -14,15 +14,25 @@
     wasm-opt.exe and cargo-nextest.exe (build tools, by name alone).
   A candidate is a stray when it is older than -AgeMinutes or has used more than -CpuSeconds of CPU.
 
-  Who may be stopped (S17's second review, item 3: the owner runs some of these too):
-    agent-shaped: `python -` and a headless browser whose profile is in a scratchpad folder; only
-      agents make these, so a stray one is stopped;
-    by ancestry: `xtask web serve`, the repository's cav binaries, a headless browser with a temp
-      profile, node running the web test runner or the screenshot script; stopped only when Claude
-      Code (claude.exe, or node running Claude Code) is among the process's living ancestors;
-    report only, never stopped: `python -m http.server`, wasm-opt, cargo-nextest and
-      wasm-bindgen-test-runner.exe, which match by name or by a command line anyone types.
+  Who may be stopped (S17's second review, item 3, and S4's review, I10: the owner runs some of
+  these too, and the owner's own Claude Code session is a claude.exe like an agent's): only a
+  process that xtask started. Every `cargo xtask` writes a record of itself (its id and when it
+  started) under `target/strays/` of its checkout or worktree, and removes it when it ends
+  normally; one killed part-way leaves its record. A candidate is xtask's when it is a recorded
+  xtask, or a recorded xtask is among its ancestors: its parent, or its parent's parent while each
+  is still running, each started no later than its child. A recorded id counts only for a process
+  that started within the record's window, so a reused id is not taken for xtask's.
+    stoppable when xtask's and older than -AgeMinutes (wall-clock age only: CPU time alone never
+      makes a stop): `xtask web serve`, the repository's cav binaries, `python -`, headless
+      browsers, node running the web test runner or the screenshot script;
+    report only, whoever started them: `python -m http.server`, wasm-opt, cargo-nextest and
+      wasm-bindgen-test-runner.exe, which match by name or by a command line anyone types;
+    report only: every candidate that is not xtask's (an agent's own `python -`, a process whose
+      xtask ended normally, one whose parent has ended and was not recorded).
   A stray that may not be stopped is listed as such and does not fail the report.
+
+  -Records names the folders of records to use instead of every checkout's `target/strays` (the
+  self-test uses it); a folder that does not exist holds no records.
 
   Report mode (the default) changes nothing: exit 0 when there is no stray that may be stopped,
   1 when there is.
@@ -42,7 +52,9 @@ param(
     [double] $AgeMinutes = 30,
     [double] $CpuSeconds = 600,
     # Comma-separated ids (a string, so that `powershell -File` can pass it).
-    [string] $ProcessId
+    [string] $ProcessId,
+    # Semicolon-separated folders of xtask's records; by default every checkout's target\strays.
+    [string] $Records
 )
 
 $ErrorActionPreference = 'Stop'
@@ -97,38 +109,81 @@ function Test-BuiltHere([string] $exe) {
         ($exe -match '\\target\\')
 }
 
-# Who may stop a process of each signature: 'agent' (always, when stray), 'ancestry' (when Claude
-# Code is a living ancestor) or 'report' (never). A signature missing here is 'report'.
+# Who may stop a process of each signature: 'xtask' (when xtask started it and it is old) or
+# 'report' (never). A signature missing here is 'report'.
 $stopRules = @{
-    'python - (script on stdin)'     = 'agent'
-    'headless browser, scratchpad'   = 'agent'
-    'xtask web serve'                = 'ancestry'
-    'headless browser, temp profile' = 'ancestry'
-    'node wasm-bindgen-test-runner'  = 'ancestry'
-    'node web_screenshot.mjs'        = 'ancestry'
+    'python - (script on stdin)'     = 'xtask'
+    'headless browser, scratchpad'   = 'xtask'
+    'xtask web serve'                = 'xtask'
+    'headless browser, temp profile' = 'xtask'
+    'node wasm-bindgen-test-runner'  = 'xtask'
+    'node web_screenshot.mjs'        = 'xtask'
     'python -m http.server'          = 'report'
     'wasm-bindgen-test-runner'       = 'report'
     'wasm-opt'                       = 'report'
     'cargo-nextest'                  = 'report'
 }
-foreach ($name in @('cav.exe', 'cav-app.exe', 'cav-web.exe')) { $stopRules["$name from target"] = 'ancestry' }
+foreach ($name in @('cav.exe', 'cav-app.exe', 'cav-web.exe')) { $stopRules["$name from target"] = 'xtask' }
 
-# Whether Claude Code is among the living ancestors of $process: claude.exe, or node.exe whose
-# command line names claude. Each parent must have started before its child (an id can be reused).
-function Test-AgentAncestor($process) {
+# The folders of xtask's records: -Records, else target\strays of the main checkout and of each
+# worktree under it.
+$recordFolders = if ($Records) {
+    @($Records -split ';' | Where-Object { $_.Trim() } | ForEach-Object { $_.Trim() })
+} else {
+    @(Join-Path $repo 'target\strays') + @(Get-ChildItem -Directory -ErrorAction SilentlyContinue `
+            (Join-Path $repo '.claude\worktrees') | ForEach-Object { Join-Path $_.FullName 'target\strays' })
+}
+
+# xtask's records: each file holds `<id> <earliest start, Unix ms> <latest start, Unix ms>`.
+$recorded = @{}
+foreach ($folder in $recordFolders) {
+    if (-not (Test-Path -LiteralPath $folder -PathType Container)) { continue }
+    foreach ($file in @(Get-ChildItem -LiteralPath $folder -File -Filter '*.txt' -ErrorAction SilentlyContinue)) {
+        $words = @(([string] (Get-Content -LiteralPath $file.FullName -TotalCount 1 -ErrorAction SilentlyContinue)) -split '\s+' |
+                Where-Object { $_ })
+        if ($words.Count -lt 3) { continue }
+        $id = 0; $from = [long] 0; $to = [long] 0
+        if ([int]::TryParse($words[0], [ref] $id) -and [long]::TryParse($words[1], [ref] $from) -and
+            [long]::TryParse($words[2], [ref] $to)) {
+            $recorded[$id] = @($from, $to)
+        }
+    }
+}
+
+# A CIM date as Unix milliseconds.
+function ConvertTo-UnixMs($date) {
+    return ([DateTimeOffset] $date).ToUnixTimeMilliseconds()
+}
+
+# Whether $process is a recorded xtask: its id recorded, and it started within the record's window.
+function Test-Recorded($process) {
+    $window = $recorded[[int] $process.ProcessId]
+    if (-not $window -or -not $process.CreationDate) { return $false }
+    $at = ConvertTo-UnixMs $process.CreationDate
+    return $at -ge $window[0] -and $at -le $window[1]
+}
+
+# Whether xtask started $process: it is a recorded xtask, or one is among its ancestors. The walk
+# goes up through parents that are still running, each started no later than its child (an id can
+# be reused); a parent that has ended counts only when its id is recorded and the child started
+# after the record's window opened. Anything else (claude.exe included) is not xtask's.
+function Test-XtaskStarted($process) {
+    if (Test-Recorded $process) { return $true }
     $child = $process
     for ($depth = 0; $depth -lt 32; $depth++) {
         $parentId = [int] $child.ParentProcessId
         if ($parentId -le 0) { return $false }
         $parent = @(Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$parentId")
-        if ($parent.Count -ne 1) { return $false }
+        if ($parent.Count -ne 1) {
+            # The parent has ended: xtask's only when its id is recorded and the child came after.
+            $window = $recorded[$parentId]
+            return [bool] ($window -and $child.CreationDate -and (ConvertTo-UnixMs $child.CreationDate) -ge $window[0])
+        }
         $parent = $parent[0]
         if ($parent.CreationDate -and $child.CreationDate -and $parent.CreationDate -gt $child.CreationDate) {
             return $false
         }
-        $name = ([string] $parent.Name).ToLowerInvariant()
-        if ($name -eq 'claude.exe') { return $true }
-        if ($name -eq 'node.exe' -and ([string] $parent.CommandLine) -match 'claude') { return $true }
+        if (Test-Recorded $parent) { return $true }
         $child = $parent
     }
     return $false
@@ -187,7 +242,7 @@ function Get-StrayCandidates([int[]] $only) {
         $cpu = ([double] $p.KernelModeTime + [double] $p.UserModeTime) / 1e7
         $rule = $stopRules[$signature]
         if (-not $rule) { $rule = 'report' }
-        $stoppable = ($rule -eq 'agent') -or ($rule -eq 'ancestry' -and (Test-AgentAncestor $p))
+        $xtasks = ($rule -eq 'xtask') -and (Test-XtaskStarted $p)
         [pscustomobject] @{
             Id         = [int] $p.ProcessId
             Signature  = $signature
@@ -195,7 +250,9 @@ function Get-StrayCandidates([int[]] $only) {
             CpuSeconds = [math]::Round($cpu, 1)
             WorkingMB  = [math]::Round([double] $p.WorkingSetSize / 1MB, 1)
             Stray      = ($age -gt $AgeMinutes) -or ($cpu -gt $CpuSeconds)
-            Stoppable  = $stoppable
+            # Stopped only when xtask started it and it is old: CPU time alone never stops one.
+            Stoppable  = $xtasks -and ($age -gt $AgeMinutes)
+            Xtasks     = $xtasks
             Started    = $p.CreationDate
             Command    = $p.CommandLine
         }
@@ -216,10 +273,11 @@ Write-Output ("strays: {0} matching process(es); {1} stray that may be stopped, 
     $found.Count, $strays.Count, $kept.Count, $AgeMinutes, $CpuSeconds)
 foreach ($c in $found) {
     $mark = if (-not $c.Stray) { 'young' } elseif ($c.Stoppable) { 'STRAY' } else { 'stray (report only)' }
+    $who = if ($c.Xtasks) { 'xtask started it' } else { 'not started by xtask' }
     $command = [string] $c.Command
     if ($command.Length -gt 160) { $command = $command.Substring(0, 157) + '...' }
-    Write-Output ("  {0} pid {1,-6} {2,-30} age {3} min, cpu {4} s, {5} MB" -f
-        $mark, $c.Id, $c.Signature, $c.AgeMinutes, $c.CpuSeconds, $c.WorkingMB)
+    Write-Output ("  {0} pid {1,-6} {2,-30} age {3} min, cpu {4} s, {5} MB; {6}" -f
+        $mark, $c.Id, $c.Signature, $c.AgeMinutes, $c.CpuSeconds, $c.WorkingMB, $who)
     Write-Output ("        $command")
 }
 
@@ -235,7 +293,7 @@ $left = 0
 foreach ($c in $strays) {
     # Read it again: the id may have been reused, or the process may have changed or ended.
     $again = @(Get-StrayCandidates @($c.Id) | Where-Object {
-            $_.Signature -eq $c.Signature -and $_.Started -eq $c.Started -and $_.Stray })
+            $_.Signature -eq $c.Signature -and $_.Started -eq $c.Started -and $_.Stoppable })
     if ($again.Count -ne 1) {
         Write-Output ("strays: pid {0} no longer matches; left alone." -f $c.Id)
         continue

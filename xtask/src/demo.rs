@@ -779,22 +779,31 @@ fn s4(root: &Path) -> Result<(), String> {
     // 1. The application, headless: the world near and far, the bands, the box.
     // Pictures of `town` (stress-1e10 scaled down): a full stress-1e10 picture on this card held
     // the owner's desktop (TASK-S4-11); the full scene is measured below in bounded runs.
-    let shots: [(&str, &str); 5] = [
+    let shots: [(&str, &str); 6] = [
         ("world-near.png", "load town; view iso; pan 0 0 0; zoom 45"),
         ("world-lod.png", "load town; view iso; pan 0 0 0; zoom 45; overlay bands"),
         ("world-far.png", "load town; pan 10 -10 2; orbit 225 7; zoom 14"),
         ("world-far-lod.png", "load town; pan 10 -10 2; orbit 225 7; zoom 14; overlay bands"),
         ("world-box.png", "load world-box; view iso; pan 6 5 1; zoom 26"),
+        // Looking west along an axis, orthographic: the far field's rays have components that
+        // are exactly zero (S4's review, I9).
+        ("world-east-ortho.png", "load town; view east; proj ortho; pan 0 0 2; zoom 30"),
     ];
     for (file, script) in &shots {
-        capture_within(&app, &["--screenshot", &path(file), "--size", "1440x900", "--exec", script], 120)?;
+        capture_within(
+            &app,
+            &["--screenshot", &path(file), "--size", "1440x900", "--exec", script],
+            120,
+            None,
+        )?;
         expect_png(&out, file, [1440, 900], &mut made)?;
     }
 
-    // 2. What the towers read of the box, and of the town's ground.
+    // 2. What the towers read of the box, and of the town's ground (each step within a limit,
+    // as every step here is: S4's review, minor 6).
     let mut session = String::new();
     for script in ["load world-box; reading 1", "load town; reading 1; log"] {
-        let answer = capture(&cav, &["exec", script])?;
+        let answer = capture_within(&cav, &["exec", script], 300, None)?;
         session.push_str(&format!("$ cav exec \"{script}\"\n{answer}\n"));
     }
     write(&out, "readings.txt", &session, &mut made)?;
@@ -826,7 +835,8 @@ fn s4(root: &Path) -> Result<(), String> {
             "--out",
             &target,
         ];
-        let said = capture(&fast, &args)?;
+        // Each run stops itself at a slow frame; this stops one that hangs.
+        let said = capture_within(&fast, &args, 600, None)?;
         bench.push_str(&format!(
             "$ cav bench flythrough --frames {frames} --size {size} --cache <cache> --max-frame-ms 250 --out {file}\n{said}\n"
         ));
@@ -844,14 +854,7 @@ fn s4(root: &Path) -> Result<(), String> {
         if let Some(cut) = extra {
             args.extend(["--section", cut]);
         }
-        let output = crate::gentle(&cav)
-            .args(&args)
-            .current_dir(&out)
-            .output()
-            .map_err(|e| format!("cav figure: {e}"))?;
-        if !output.status.success() {
-            return Err(format!("cav figure paper: {}", String::from_utf8_lossy(&output.stderr)));
-        }
+        capture_within(&cav, &args, 300, Some(&out))?;
         made.push(file.to_owned());
     }
 
@@ -865,28 +868,23 @@ fn s4(root: &Path) -> Result<(), String> {
         ("web-town.png", "load town; view iso; pan 0 0 0; zoom 45", 60),
     ] {
         let url = format!("http://127.0.0.1:{}/#exec={}", server.port, script.replace(' ', "%20"));
-        let output = crate::gentle("node")
-            .current_dir(root)
-            .arg("scripts/web_screenshot.mjs")
-            .arg(&chrome)
-            .arg(&url)
-            .arg(out.join(file))
-            .arg(seconds.to_string())
-            .output()
-            .map_err(|e| format!("node: {e}"))?;
-        let mut said = String::from_utf8_lossy(&output.stdout).into_owned();
+        let target = out.join(file).to_string_lossy().into_owned();
+        let chrome = chrome.to_string_lossy().into_owned();
+        let seconds_text = seconds.to_string();
+        // The page's own limit is `seconds`; this one stops a browser that hangs past it.
+        let mut said = capture_within(
+            Path::new("node"),
+            &["scripts/web_screenshot.mjs", &chrome, &url, &target, &seconds_text],
+            u64::from(seconds) + 90,
+            Some(root),
+        )
+        .map_err(|why| format!("{file}: the page failed: {why}"))?;
         for home in ["USERPROFILE", "HOME"].iter().filter_map(|name| std::env::var(name).ok()) {
             said = said.replace(&home, "~");
         }
         log.push_str(&format!(
             "$ node scripts/web_screenshot.mjs <chrome> \"{url}\" {file} {seconds}\n{said}\n"
         ));
-        if !output.status.success() {
-            return Err(format!(
-                "{file}: the page failed: {said}{}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
         expect_png(&out, file, [1440, 900], &mut made)?;
     }
     drop(server);
@@ -899,28 +897,44 @@ fn s4(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// [`capture`] with a wall-clock limit: past `seconds` the child is stopped by its own handle and
-/// the step fails, so a picture that would hold the machine cannot (TASK-S4-11).
-fn capture_within(program: &Path, args: &[&str], seconds: u64) -> Result<String, String> {
-    let mut child = crate::gentle(program)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("{}: {e}", program.display()))?;
+/// [`capture`] with a wall-clock limit, in `dir` when given: past `seconds` the child is stopped
+/// by its own handle and the step fails, so a picture that would hold the machine cannot
+/// (TASK-S4-11).
+fn capture_within(program: &Path, args: &[&str], seconds: u64, dir: Option<&Path>) -> Result<String, String> {
+    let mut command = crate::gentle(program);
+    command.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    if let Some(dir) = dir {
+        command.current_dir(dir);
+    }
+    let mut child = command.spawn().map_err(|e| format!("{}: {e}", program.display()))?;
     let started = std::time::Instant::now();
+    // Both pipes drained on threads of their own while the child runs: a child that writes more
+    // than a pipe holds would otherwise block, and be stopped at the limit for that alone (S4's
+    // review, minor 5). Each thread ends when its pipe closes, at the child's end or its kill.
+    let drain = |pipe: Option<Box<dyn std::io::Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut bytes);
+            }
+            bytes
+        })
+    };
+    let out = drain(child.stdout.take().map(|p| Box::new(p) as Box<dyn std::io::Read + Send>));
+    let err = drain(child.stderr.take().map(|p| Box::new(p) as Box<dyn std::io::Read + Send>));
     loop {
         if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
-            let output = child.wait_with_output().map_err(|e| e.to_string())?;
+            let stdout = out.join().unwrap_or_default();
+            let stderr = err.join().unwrap_or_default();
             if !status.success() {
                 return Err(format!(
                     "`{} {}` failed ({status}): {}",
                     program.display(),
                     args.join(" "),
-                    String::from_utf8_lossy(&output.stderr)
+                    String::from_utf8_lossy(&stderr)
                 ));
             }
-            return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+            return Ok(String::from_utf8_lossy(&stdout).replace("\r\n", "\n"));
         }
         if started.elapsed().as_secs() >= seconds {
             let _ = child.kill();
