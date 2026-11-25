@@ -40,6 +40,8 @@ pub fn input(size: [u32; 2], time: f64, mut events: Vec<egui::Event>) -> egui::R
         .next_back()
         .unwrap_or_default();
     events.insert(0, egui::Event::ModifiersChanged(modifiers));
+    // Focused, as a window in front is, but for a frame that says the window lost its focus.
+    let focused = !events.iter().any(|event| matches!(event, egui::Event::WindowFocused(false)));
     egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(
             egui::Pos2::ZERO,
@@ -47,7 +49,7 @@ pub fn input(size: [u32; 2], time: f64, mut events: Vec<egui::Event>) -> egui::R
         )),
         time: Some(time),
         predicted_dt: FRAME_DT as f32,
-        focused: true,
+        focused,
         events,
         ..Default::default()
     }

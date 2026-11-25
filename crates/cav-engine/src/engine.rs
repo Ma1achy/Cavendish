@@ -522,10 +522,14 @@ impl Engine {
         let continues = overwrites
             || matches!(&command, Command::Set { path, continues: true, .. } if self.run.as_deref() == Some(path));
         // Any edit ends the run, Home included: it prepares nothing but pushes a step of its own,
-        // which the run's next set would otherwise rewrite (S18's second review, I1).
-        let edit = matches!(prepared, Prepared::Edit(..) | Prepared::Restore(_))
-            || matches!(&command, Command::View(view) if view.is_edit());
+        // which the run's next set would otherwise rewrite (S18's second review, I1). A Home that
+        // leaves the camera where it was pushes no step, so it does not end the run either (S18's
+        // third review, minor 4: a drag with such a Home in it was two steps with nothing between).
+        let views_before =
+            matches!(&command, Command::View(view) if view.is_edit()).then(|| self.views.clone());
+        let edited_scene = matches!(prepared, Prepared::Edit(..) | Prepared::Restore(_));
         self.perform(&command, prepared, continues);
+        let edit = edited_scene || views_before.is_some_and(|before| before != self.views);
         if edit {
             self.run = match &command {
                 Command::Set { path, .. } => Some(path.clone()),
@@ -1974,6 +1978,32 @@ mod tests {
         // Control: an orbit between is no edit, and the run goes on as one step.
         let orbited = homing(Command::View(ViewCommand::Orbit { pane: 0, yaw: 10.0, pitch: 10.0 }));
         assert_eq!(orbited.depth().0, 2);
+    }
+
+    #[test]
+    fn a_home_that_changes_nothing_keeps_the_run() {
+        // S18's third review, minor 4: a Home with the camera already at home pushes no step, so
+        // it must not end the run either; a drag with one in it is still one step. Control: a
+        // Home that moves the camera ends the run (the load, a set, Home, a set: four).
+        let [x0, y0, z0] = dev::point().bodies[0].motion.anchor().0;
+        let set = |x: f64, continues: bool| Command::Set {
+            path: "bodies[0].motion.Static.position".into(),
+            value: serde_json::json!([x, y0, z0]),
+            continues,
+        };
+        let homing = |moved_first: bool| {
+            let mut engine = Engine::new();
+            engine.apply(Command::load(dev::point())).unwrap();
+            if moved_first {
+                engine.run_line("orbit 33 20").unwrap();
+            }
+            engine.apply(set(x0 + 1.0, false)).unwrap();
+            engine.apply(Command::View(ViewCommand::Home { pane: 0 })).unwrap();
+            engine.apply(set(x0 + 2.0, true)).unwrap();
+            engine.depth().0
+        };
+        assert_eq!(homing(false), 2, "the load and one step for the run");
+        assert_eq!(homing(true), 4, "control: a Home that moved is a step of its own");
     }
 
     #[test]

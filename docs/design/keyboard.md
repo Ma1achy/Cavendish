@@ -152,10 +152,13 @@ already Lock).
 - Opening a window or menu with the mouse gives it focus at its normal landing, with NO ring and
   keyboard navigation off. Opening it from the keyboard turns navigation on and shows the ring.
 - **Cavendish:** anything that moves the focus out of a viewport transform session (a click on a
-  window's control, a window opened with the mouse) or a drag in the view **ends the session,
-  keeping its move**, as a click outside a move keeps it in Blender; Esc is the only cancel. A
+  window's control, a window opened with the mouse), a drag in the view, and any primary click
+  outside the tool's options row (a row of the scene tree, the canvas, a menu) **ends the
+  session, keeping its move**, as a click outside a move keeps it in Blender. Of the mouse,
+  nothing cancels; of the keys, Esc and any global key do (Ctrl+Z being that cancel, §7). A
   click on a window's bare ground lands on its first section, and where windows overlap the one
-  on top takes the click. (S18's second review, I2 and minors 5, 7.)
+  on top takes the click. (S18's second review, I2 and minors 5, 7; its third review, minors 1
+  and 2.)
 
 ## 9. Windows, dialogs and overlays
 

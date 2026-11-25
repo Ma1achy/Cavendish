@@ -118,8 +118,24 @@ impl Headless {
     /// # Errors
     /// When the read-back or the encoding fails.
     pub fn screenshot(&mut self, shell: &mut Shell, size: [u32; 2]) -> Result<Vec<u8>, String> {
-        // Enough frames for panels to settle and for a window's fade-in to finish.
-        let rgba = self.render(shell, size, vec![Vec::new(); 12])?;
+        // Enough frames for panels to settle and for a window's fade-in to finish. A pointer asked
+        // for (`pointer x y`) is moved to its point of the active pane once that pane is laid out.
+        let rgba = match shell.pointer_at {
+            Some([x, y]) => {
+                self.render(shell, size, vec![Vec::new(); 2])?;
+                let pane = shell
+                    .layout()
+                    .panes
+                    .get(shell.engine.active_pane())
+                    .copied()
+                    .unwrap_or(egui::Rect::NOTHING);
+                let at = pane.min + egui::vec2(x * pane.width(), y * pane.height());
+                let mut frames = vec![Vec::new(); 10];
+                frames[0].push(egui::Event::PointerMoved(at));
+                self.render(shell, size, frames)?
+            }
+            None => self.render(shell, size, vec![Vec::new(); 12])?,
+        };
         cav_render::encode_png(&rgba, [size[0].max(1), size[1].max(1)])
     }
 }

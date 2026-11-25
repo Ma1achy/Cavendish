@@ -488,7 +488,8 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
                 || (*name == "tool" && outcome.as_ref().unwrap_err().contains("tool <"))
                 || (*name == "layout" && outcome.as_ref().unwrap_err().contains("layout <"))
                 || (*name == "reset" && outcome.as_ref().unwrap_err().contains("reset <"))
-                || (*name == "focus" && outcome.as_ref().unwrap_err().contains("focus <")),
+                || (*name == "focus" && outcome.as_ref().unwrap_err().contains("focus <"))
+                || (*name == "pointer" && outcome.as_ref().unwrap_err().contains("pointer <")),
             "{name}: {outcome:?}"
         );
         // `frame` works out a camera and issues it: the journal holds that one camera command

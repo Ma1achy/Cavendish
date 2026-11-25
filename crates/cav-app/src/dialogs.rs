@@ -301,7 +301,9 @@ fn history(shell: &mut Shell, ctx: &egui::Context) {
             );
             egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
                 let start = ui.selectable_label(done.is_empty(), RichText::new(&start_label).italics());
-                shell.register("history", "history/start", "the start", Kind::Button, start.rect);
+                // Named as it is drawn, so a screen reader says what the eye reads (S18's third
+                // review, minor 6).
+                shell.register("history", "history/start", &start_label, Kind::Button, start.rect);
                 shell.layout.buttons.push(("history 0".to_owned(), start.rect));
                 if (start.clicked() || shell.take_click("history/start")) && !done.is_empty() {
                     go = Some((done.len(), "undo"));
