@@ -72,26 +72,38 @@ fn the_world_is_in_the_outliner_and_can_be_selected() {
     assert!(room.run("select world").unwrap_err().contains("no world"));
 }
 
+/// What the rendered outliner's row for `target` said (its detail), after a couple of frames.
+fn row_words(shell: &mut Shell, target: Target) -> String {
+    rows(shell);
+    let found = shell.layout().outline_words.iter().find(|(t, _, _)| *t == target);
+    found.unwrap_or_else(|| panic!("no row for {target:?}")).2.clone()
+}
+
 #[test]
 fn a_world_scene_s_towers_show_what_they_read() {
-    // S4's second review, J5: with no bodies, a world scene still reads something, and the
-    // towers' rows say what, marked when it is of part of the matter only.
+    // S4's second review J5, third review K2: with no bodies, a world scene still reads
+    // something, and the rendered outliner's tower rows say what, marked ◐ when it is of part of
+    // the matter only.
     let mut shell = Shell::new();
     shell.engine.set_patience(std::time::Duration::from_secs(60));
     shell.run("load world-box").unwrap();
     shell.run("set world.read.radius 1").unwrap();
     assert!(shell.engine.settle(std::time::Duration::from_secs(60)));
+    let words = row_words(&mut shell, Target::Tower(1));
+    assert!(words.contains("rad") && words.contains('◐'), "{words}");
+    // The helpers say the same.
     let reply = shell.reading().clone();
     assert_eq!(reply.truncated, Some(1.0));
-    let position = shell.engine.spec().array.towers[0].position;
-    let detail = cav_app::panels_for_tests::tower_detail(&reply, 0, position, false);
-    assert!(detail.contains("rad") && detail.contains('◐'), "{detail}");
     assert!(!cav_app::panels_for_tests::silent(shell.engine.spec()));
     // Control: `point` with its body taken away reads nothing: the row shows where the tower is.
     let mut empty = cav_sim::dev::point();
     empty.bodies.clear();
-    assert!(cav_app::panels_for_tests::silent(&empty));
-    assert_eq!(cav_app::panels_for_tests::tower_detail(&reply, 0, [1.0, -2.0, 0.0], true), "+1.0 -2.0");
+    let (x, y) = (empty.array.towers[0].position[0], empty.array.towers[0].position[1]);
+    let mut nothing = Shell::new();
+    nothing.engine.apply(Command::load(empty)).unwrap();
+    assert!(nothing.engine.settle(std::time::Duration::from_secs(60)));
+    let words = row_words(&mut nothing, Target::Tower(1));
+    assert_eq!(words, format!("{x:+.1} {y:+.1}"));
 }
 
 /// A surface that draws nothing and says what it was told to.

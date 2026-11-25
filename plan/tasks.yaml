@@ -307,6 +307,9 @@
 - id: TASK-S4-24
   milestone: S4
   title: "S4's second review: the validation report, quick on an idle machine, the brief and PROGRESS"
+- id: TASK-S4-25
+  milestone: S4
+  title: "S4's third review K1, K2, minors 1-5, 7, 8: the page keeps computing when its workers never load; J5's test through the rendered outliner; a failed request not handed on; the cap notes kept; the docs"
 - id: TASK-S5-01
   milestone: S5
   title: GPU tree walk with float-float accumulation and parity tests

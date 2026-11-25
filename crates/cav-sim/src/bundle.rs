@@ -23,11 +23,15 @@
 //! | `t_flat.npy`, `valid_flat.npy`, `phase_flat.npy` | `(N,)` | each tower's own readout times, taken flags and ΔΦ, tower after tower |
 //! | `phase_per_ifo_flat.npy` | `(N, 2)` | δφ₁, δφ₂, tower after tower |
 //! | `detector_placement.npy` | `(D, 7)` | each tower's base x, y, z (metres), then the quaternion w, x, y, z of its axis (upright: 1, 0, 0, 0) |
-//! | `source_position.npy` | `(S, T, 3)` | each body's position at `time`, metres |
-//! | `source_mass.npy` | `(S,)` | kilograms |
+//! | `source_position.npy` | `(S, T, 3)` | each body's position at `time`, metres; `S` is the manifest's `bodies` (the floor and the world have no position) |
+//! | `source_mass.npy` | `(S,)` | each body's mass, kilograms |
 //! | `error_estimate.npy` | `(D,)` | the largest quadrature estimate of any shot of the tower, radians |
 //! | `scene.ron` | | the scene, as `load` reads it |
-//! | `manifest.json` | | the arrays' names, shapes, dtypes and units; the numerics; the scene; the sign |
+//! | `manifest.json` | | the arrays' names, shapes, dtypes and units; the numerics; the scene; the sign; `settled` and `truncated` |
+//!
+//! **Versions.** `cavendish_bundle` 1 counted the bodies as `sources` and had no `truncated`;
+//! 2 (S4) counts every source (floor, world, bodies) as `sources`, the bodies as `bodies`, and says
+//! `truncated` (null, or the metres within which the world was read).
 //!
 //! **Sign.** ΔΦ is lower minus upper (δφ₁ − δφ₂) unless the scene's instrument says otherwise;
 //! v1's bundles were upper minus lower. The manifest says which this one is.

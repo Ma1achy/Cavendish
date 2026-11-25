@@ -335,9 +335,10 @@ fn gpu_meshes_past_the_vertex_cap_are_not_drawn() {
     prepare(&gpu, &renderer, &mut whole, &frame, &v);
     let [meshes, bricks, vertices] = whole.counts();
     assert!(whole.notes.iter().all(|n| !n.contains("not drawn (the nearest are)")), "{:?}", whole.notes);
-    // More of each than the small caps below, so each binds. (Bricks: only those in the frustum
-    // are uploaded since S4's second review, minor 15; this view holds 16.)
-    assert!(meshes > 20 && vertices > 10_000 && bricks > 7 + 4, "{meshes} {vertices} {bricks}");
+    // More of each than the small caps below, so each binds: the brick cap below is 7, and more
+    // than 7 bricks are wanted (only those in the frustum are uploaded since S4's second review,
+    // minor 15; this view holds 16).
+    assert!(meshes > 20 && vertices > 10_000 && bricks > 7, "{meshes} {vertices} {bricks}");
     // The vertex cap: a third of what this view wants.
     let cap = vertices / 3;
     let mut capped = WorldGpu::with_caps(GpuCaps { vertices: cap, ..GpuCaps::default() });
@@ -355,6 +356,15 @@ fn gpu_meshes_past_the_vertex_cap_are_not_drawn() {
     let mut nudged = v.clone();
     nudged.yaw += 7.0;
     nudged.distance += 0.3;
+    let camera = |view: &ViewSpec| Camera::new(view, 480.0 / 270.0);
+    let before = capped.waiting(&frame, &v, &camera(&v));
+    let after = capped.waiting(&frame, &nudged, &camera(&nudged));
+    let sorted = |mut keys: Vec<ChunkKey>| {
+        keys.sort_unstable();
+        keys
+    };
+    // (The third review's minor 5: the nudge does reorder the same waiting chunks.)
+    assert!(before != after && sorted(before.clone()) == sorted(after.clone()), "{} waiting", before.len());
     prepare(&gpu, &renderer, &mut capped, &frame, &nudged);
     assert_eq!(capped.meshed, made, "a camera moving at the cap makes no meshes");
     // Control: the capped frame made more meshes than it kept (which the next frame would make

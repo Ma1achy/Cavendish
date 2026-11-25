@@ -10,14 +10,16 @@
 //!   said, with the panic's own message when the worker sent one before it trapped. It is started
 //!   again after [`FIRST_BACKOFF_MS`], then four times longer each time, at most [`MAX_RESPAWNS`]
 //!   times in a row; a worker in the slot that answers a job starts the count again. Past it the
-//!   slot stays empty, and that is said; with every slot empty the jobs are answered with nothing.
+//!   slot stays empty, and that is said; with every slot empty after a worker died in a job, the
+//!   jobs are answered with nothing (with workers that never loaded, the page runs them).
 //! - When no worker is ready **now**, the oldest waiting job has waited [`READY_WITHIN_MS`] and
 //!   no worker has ever failed while holding a job (the workers did not load: offline, a refused
 //!   script), the page runs waiting jobs itself, at most one a frame ([`LOCAL_GAP_MS`] apart):
 //!   slow, not wrong. Workers that come back (ready again) take the jobs again.
 //! - A request that a worker failed on is never run on the page (S4's second review, J2): in a
-//!   page a panic aborts the module, so the page would trap where the worker did. It is answered
-//!   with nothing instead.
+//!   page a panic aborts the module, so the page would trap where the worker did. Nor is it
+//!   handed to another worker: it is answered with nothing (as is a request that could not be
+//!   posted).
 //!
 //! Times are milliseconds on the page's clock, as the caller reads it.
 
@@ -208,6 +210,17 @@ impl Lane {
                 actions.push(Action::Spawn(index));
             }
         }
+        // A request a worker failed on is answered with nothing, not handed to the next worker
+        // to fail on too (S4's third review, minor 1).
+        let poisoned = &self.poisoned;
+        let answers = &mut self.answers;
+        self.queue.retain(|(ticket, _, request)| {
+            let keep = !poisoned.contains(&fingerprint(request));
+            if !keep {
+                answers.insert(*ticket, Vec::new());
+            }
+            keep
+        });
         for (index, slot) in self.slots.iter_mut().enumerate() {
             if !slot.ready || slot.busy.is_some() {
                 continue;
@@ -216,8 +229,10 @@ impl Lane {
             slot.busy = Some((ticket, fingerprint(&request)));
             actions.push(Action::Post { slot: index, ticket, request });
         }
-        if self.slots.iter().all(|s| s.dead) {
-            // No worker will come: every waiting job is answered with nothing.
+        // Every slot empty for good after a worker died in a job: no worker will come and the
+        // page may not run jobs itself, so every waiting job is answered with nothing. (Workers
+        // that never loaded leave the page's own fallback below: S4's third review, K1.)
+        if self.died_in_job && self.slots.iter().all(|s| s.dead) {
             if !self.queue.is_empty() && !self.said_empty {
                 self.said_empty = true;
                 actions.push(Action::Say(
@@ -262,6 +277,9 @@ impl Lane {
         {
             s.busy = None;
         }
+        // Not tried again: a request that cannot be posted is answered with nothing next pump
+        // (S4's third review, minor 2).
+        self.poisoned.insert(fingerprint(&request));
         self.queue.push_front((ticket, now, request));
         self.failed(slot, "a job could not be posted to it", now)
     }
@@ -330,10 +348,12 @@ mod tests {
         assert!(matches!(lane.pump(0.0)[..], [Action::Post { slot: 0, .. }]));
         lane.failed(0, "RuntimeError: unreachable", 1.0);
         assert_eq!(lane.take(first), Some(Vec::new()));
+        // Asked again, it is not handed to worker 1 either (the third review's minor 1): it is
+        // answered with nothing. Worker 1 then fails on its own (holding no job).
         let again = lane.send(poison.clone(), 2.0);
-        assert!(matches!(lane.pump(2.0)[..], [Action::Post { slot: 1, .. }]));
-        lane.failed(1, "RuntimeError: unreachable", 3.0);
+        assert!(!lane.pump(2.0).iter().any(|a| matches!(a, Action::Post { .. })));
         assert_eq!(lane.take(again), Some(Vec::new()));
+        lane.failed(1, "RuntimeError: unreachable", 3.0);
         let third = lane.send(poison, 4.0);
         let other = lane.send(vec![1], 4.0);
         // A minute of frames, the workers started again but never ready: nothing runs here.
@@ -342,7 +362,8 @@ mod tests {
             now += 1000.0 / 60.0;
             assert!(!runs_here(&lane.pump(now)), "at {now} ms");
         }
-        assert_eq!((lane.take(third), lane.take(other)), (None, None), "they wait for a worker");
+        assert_eq!(lane.take(third), Some(Vec::new()), "the poisoned request is answered with nothing");
+        assert_eq!(lane.take(other), None, "the other waits for a worker");
         // Control: in a page whose workers never loaded, a request is run here once it has waited.
         let (mut fresh, _) = Lane::new();
         fresh.failed(0, "Script error", 0.0);
@@ -373,18 +394,83 @@ mod tests {
             lane.pump(now);
         }
         assert!(lane.slots[1].dead && !lane.slots[0].dead);
-        // With every slot empty for good, a waiting job is answered with nothing, and that is said.
+        // With every slot empty for good after a worker died holding a job, a waiting job is
+        // answered with nothing, and that is said.
+        lane.ready(0);
+        let held = lane.send(vec![9], now);
+        lane.pump(now);
         for _ in 0..=MAX_RESPAWNS {
-            lane.failed(0, "Script error", now);
+            lane.failed(0, "RuntimeError: unreachable", now);
             now += 20_000.0;
             lane.pump(now);
         }
+        assert_eq!(lane.take(held), Some(Vec::new()));
         let job = lane.send(vec![5], now);
         let said = lane.pump(now);
         assert_eq!(lane.take(job), Some(Vec::new()));
         assert!(
             said.iter().any(|a| matches!(a, Action::Say(t) if t.contains("Every forward worker has failed")))
         );
+    }
+
+    #[test]
+    fn workers_that_never_load_leave_the_page_computing() {
+        // S4's third review, K1: both slots fail MAX_RESPAWNS + 1 times holding no job (the
+        // worker's script never loads): every slot is empty for good, and the page still runs the
+        // jobs itself.
+        let run = |held_a_job: bool| {
+            let (mut lane, _) = Lane::new();
+            let mut now = 0.0;
+            if held_a_job {
+                lane.ready(1);
+                lane.send(vec![1], now);
+                lane.pump(now);
+            }
+            for _ in 0..=MAX_RESPAWNS {
+                for slot in 0..WORKERS {
+                    lane.failed(slot, "Script error", now);
+                }
+                now += 20_000.0;
+                lane.pump(now);
+            }
+            assert!(lane.slots.iter().all(|s| s.dead));
+            let job = lane.send(vec![2], now);
+            let ran = runs_here(&lane.pump(now + READY_WITHIN_MS));
+            (ran, lane.take(job))
+        };
+        assert_eq!(run(false), (true, None), "the page runs it (its answer comes from `ran_here`)");
+        // Control: one failure holding a job, and nothing is run here: the job is answered with
+        // nothing.
+        assert_eq!(run(true), (false, Some(Vec::new())));
+    }
+
+    #[test]
+    fn a_failed_request_is_not_handed_to_the_next_worker() {
+        // S4's third review, minors 1 and 2: asked again, a request that killed worker 0 is
+        // answered with nothing, not posted to worker 1; nor is one that could not be posted.
+        let (mut lane, _) = Lane::new();
+        lane.ready(0);
+        lane.ready(1);
+        let first = lane.send(vec![7], 0.0);
+        lane.pump(0.0);
+        lane.failed(0, "RuntimeError: unreachable", 1.0);
+        assert_eq!(lane.take(first), Some(Vec::new()));
+        let again = lane.send(vec![7], 2.0);
+        let other = lane.send(vec![8], 2.0);
+        let posted = lane.pump(2.0);
+        assert!(
+            matches!(posted[..], [Action::Post { slot: 1, ticket, .. }] if ticket == other),
+            "{posted:?}"
+        );
+        assert_eq!(lane.take(again), Some(Vec::new()));
+        // A post that fails: the request is not tried again.
+        let lost = lane.send(vec![6], 3.0);
+        lane.ready(0);
+        let posted = lane.pump(3.0);
+        assert!(matches!(posted[..], [Action::Post { slot: 0, ticket, .. }] if ticket == lost));
+        lane.not_posted(0, lost, vec![6], 3.0);
+        lane.pump(4.0);
+        assert_eq!(lane.take(lost), Some(Vec::new()));
     }
 
     #[test]
