@@ -22,8 +22,9 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("keys", "the keyboard reference"),
     (
         "palette",
-        "the command palette: search every action, starter, scene, command and field (Ctrl+K); `palette add` lists what can be added, `palette <menu>` one menu",
+        "the command palette: search every action, starter, scene, command and field (Ctrl+K); `palette add` lists what can be added, `palette <menu>` one menu, `palette <words>` opens it with them typed",
     ),
+    ("context", "open the right-click menu of the selection's row in the scene tree"),
     ("rename", "type a new name for the selected body or tower in the scene tree (F2)"),
     ("frame", "fit the selection (or the whole scene) into the active pane (F)"),
     ("tool", "take a tool in hand: `tool select` (Q), `tool move` (W), `tool place` (A)"),
@@ -237,6 +238,12 @@ pub struct Shell {
     /// Whether what is being done now came from the keyboard (a window opened from it shows
     /// the ring at once).
     pub(crate) by_keyboard: bool,
+    /// Whether the selection's row in the scene tree is to open its right-click menu when it is
+    /// next drawn (`context`).
+    pub(crate) open_context: bool,
+    /// Whether the open right-click menu was opened by `context` (under its row) rather than by
+    /// a right-click (at the pointer).
+    pub(crate) context_at_row: bool,
     /// The item being renamed in the scene tree (`F2`), and the name typed so far.
     pub renaming: Option<(Target, String)>,
     /// How fast a fly session moves, metres per second, before Shift and Alt.
@@ -362,6 +369,8 @@ impl Shell {
             pending: Vec::new(),
             palette: Palette::default(),
             by_keyboard: false,
+            open_context: false,
+            context_at_row: false,
             renaming: None,
             fly_speed: crate::camera::FLY_SPEED,
             mouse_fly: None,
@@ -929,18 +938,26 @@ impl Shell {
             };
         }
         // `palette <menu>` opens the palette filtered to a menu (`palette add`: the starters).
+        // `palette <menu>` opens the palette filtered to a menu (`palette add`: the starters);
+        // `palette <words>` opens it with the words typed, as a search.
         if name == "palette"
-            && let Some(menu) = words.next()
+            && let Some(first) = words.next()
         {
             let titles = crate::menus::titles();
-            let Some(title) = titles.iter().find(|t| t.eq_ignore_ascii_case(menu)) else {
-                let why = format!("`{menu}` is not a menu: {}", titles.join(", "));
-                self.engine.note(Level::Error, Subsystem::App, why.clone());
-                self.console_open = true;
-                return Err(why);
+            let rest: Vec<&str> = words.collect();
+            self.palette = match titles
+                .iter()
+                .find(|t| t.eq_ignore_ascii_case(first))
+                .filter(|_| rest.is_empty())
+            {
+                Some(title) => {
+                    Palette { open: true, focus_query: true, menu: Some(title.clone()), ..Palette::default() }
+                }
+                None => {
+                    let query = std::iter::once(first).chain(rest).collect::<Vec<_>>().join(" ");
+                    Palette { open: true, focus_query: true, query, ..Palette::default() }
+                }
             };
-            self.palette =
-                Palette { open: true, focus_query: true, menu: Some(title.clone()), ..Palette::default() };
             self.window_opened("palette", "palette/query", true);
             return Ok(line.to_owned());
         }
@@ -999,6 +1016,14 @@ impl Shell {
                 }
             },
             "snap" => self.snap = !self.snap,
+            "context" => match self.engine.selection() {
+                Some(_) => self.open_context = true,
+                None => {
+                    let why = "select something first: `context` opens its row's right-click menu".to_owned();
+                    self.engine.note(Level::Error, Subsystem::App, why.clone());
+                    return Err(why);
+                }
+            },
             "maximise" => self.maximised = !self.maximised,
             "fullscreen" => self.fullscreen = !self.fullscreen,
             "frame" => {

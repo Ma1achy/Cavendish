@@ -1,0 +1,10 @@
+a key routed (Tab, ↓) over the frame's 51 scopes and elements: median 1.10 µs over 2000 (budget 50 µs)
+the palette's filter over all 170 entries: median 0.175 ms over 200 queries (budget 1 ms)
+frame with the palette open: median 3.62 ms (without: 3.37 ms; budget within 2 ms of it)
+adapter: NVIDIA GeForce GTX 1660 SUPER · Vulkan · DiscreteGpu · driver NVIDIA 581.29
+frame, nothing changed (UI only, panes reused): median 3.37 ms over 60 frames
+frame, camera moving (1 pane redraw(s) per frame): median 3.94 ms over 60 frames
+each time includes copying the 1440 × 900 picture back to the CPU, which a window does not do
+reading, 5 towers × 1 bodies, the audited read itself (the engine runs it off the caller's thread): 0.439 ms each over 200
+signal from nothing, 6 shots × 5 towers × 1 bodies, on the worker: 0.8 ms
+drag step (set, readings, one frame with its read-back): median 4.30 ms over 60 steps

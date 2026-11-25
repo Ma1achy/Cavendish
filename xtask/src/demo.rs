@@ -927,17 +927,19 @@ fn s18(root: &Path) -> Result<(), String> {
     let (cav, app) = (release("cav"), release("cav-app"));
     let path = |name: &str| out.join(name).to_string_lossy().into_owned();
     let mut made: Vec<String> = Vec::new();
-    let shots: [(&str, &str); 12] = [
+    let shots: [(&str, &str); 13] = [
         ("editor-empty.png", "load void"),
-        ("editor-add.png", "load void; palette add"),
-        ("editor-palette.png", "load point; palette"),
+        ("editor-add-menu.png", "load void; palette add"),
+        ("editor-palette.png", "load point; palette sph"),
         ("editor-gizmo.png", "load point; add sphere at 2 2 0.25; select body 2; tool move; frame"),
         ("editor-keyboard.png", "load point; select body 1; focus field/bodies[0].mass"),
         ("editor-sheet.png", "load point; keys"),
         (
             "editor-history.png",
-            "load point; set bodies[0].mass 5; set duration 20; add cube at 2 -2 0.25; history",
+            "load point; set bodies[0].mass 5; set duration 20; add cube at 2 -2 0.25; \
+             set bodies[1].motion.Static.position [2.5, -2, 0.25]; history",
         ),
+        ("editor-context.png", "load point; select body 1; context"),
         ("editor-wizard.png", "load room; wizard"),
         ("editor-instrument.png", "load point; layout instrument"),
         ("editor-analysis.png", "load comb; layout analysis"),
@@ -961,6 +963,17 @@ fn s18(root: &Path) -> Result<(), String> {
         None,
     )?;
     let _ = std::fs::remove_file(out.join("timings.png"));
+    // The first line names the throwaway picture's path on this machine: not kept.
+    let timings: String = timings
+        .lines()
+        .filter(|l| !l.contains("timings.png"))
+        .map(|l| {
+            format!(
+                "{l}
+"
+            )
+        })
+        .collect();
     write(&out, "timings.txt", &timings, &mut made)?;
     // The end-to-end task as console lines (what the editor's clicks issue), with tower 1's phase.
     let script = "load room; add sphere at 2 0 0.25; set bodies[0].motion.Static.position [2, 2, 0.25]; \

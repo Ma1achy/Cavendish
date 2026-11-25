@@ -133,12 +133,18 @@ Each frame the panels draw and *register* every control in a `FocusTree` (`keybo
 drop-down, global keys, the scope shortcuts from the innermost scope out, then Tab, Enter, Esc and
 the arrows), into `Effect`s: an action runs its console line at once; a click, an adjustment or a
 start of typing waits for its widget, which takes it as it is drawn (`take_click`, `take_adjust`).
-The keyboard's state is UI only: never journalled, never undone.
+The keyboard's state is UI only: never journalled, never undone. The inspector names fields from
+the schema (`paths::Entry::label`: a `title` where one is given, else the name in words) and the
+history list says each step in words (`dialogs::step_words`); the console's paths and lines stay
+one hover away.
 
 Every edit, from the viewport, a panel, a key or the palette, ends in one `Command` through
 `Engine::apply`: the gizmo, the transform session and the inspector's field all issue the same
-`Set` of a body's anchor; a run of them (a drag, a held key, a typed distance) is one journal entry
-and one undo, and a run that ends where it began leaves no step (`History::continued`). Camera
+`Set` of a body's anchor; a run of them (a drag, a held key, a typed distance) is one undo whatever
+comes between its steps (seeks while the scene plays, camera moves: the engine keeps the run's
+path until another edit: the engine's private `run`), and a run that ends where it began leaves no step
+(`History::continued`). A transform session holds every key that is not a global; a global ends it
+cancelled first. Camera
 moves are `ViewCommand`s, journalled and never undone, but for `Home`, whose `Edit::View` step
 undo takes back. The engine keeps the scene as last opened or saved (`Engine::baseline`) for a
 field's reset and the window's unsaved mark.

@@ -271,7 +271,7 @@ pub struct InstrumentSpec {
     pub tower_height: f64,
     /// Vertical separation of the two interferometers (Δr), metres. Less than `tower_height`.
     #[schemars(range(max = 1.0e3), extend("exclusiveMinimum" = 0.0))]
-    #[schemars(extend("x-unit" = "m"), title = "Interferometer separation Δr")]
+    #[schemars(extend("x-unit" = "m"), title = "Separation Δr")]
     pub ifo_separation: f64,
     /// Half the interrogation sequence, T, seconds; a shot lasts 2T from launch to readout.
     /// 2T is at most `cycle`. At most 1000 s.
@@ -280,7 +280,7 @@ pub struct InstrumentSpec {
     pub half_sequence: f64,
     /// Launch velocity u₀, metres per second.
     #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0))]
-    #[schemars(extend("x-unit" = "m/s"), title = "Launch velocity u₀")]
+    #[schemars(extend("x-unit" = "m/s"), title = "Launch speed u₀")]
     pub launch_velocity: f64,
     /// Time between shots of one tower, seconds. At least a shot: `cycle` ≥ 2 × `half_sequence`
     /// (AICE's 5 s cycle is exactly its 2T: each shot is launched as the last is read out).
@@ -305,16 +305,16 @@ pub struct InstrumentSpec {
     /// that closes the arms again.
     #[serde(default = "default_kicks", deserialize_with = "whole_kicks")]
     #[schemars(range(min = limits::KICKS.0, max = limits::KICKS.1))]
-    #[schemars(extend("x-unit" = "1"), title = "Kicks n (photon momenta)")]
+    #[schemars(extend("x-unit" = "1"), title = "Kicks n")]
     pub kicks: u32,
     /// Whether an arm that falls back to its launch height stops there and waits (for the kick at
     /// T, or for the next sequence). The default is true.
     #[serde(default = "default_launch_floor")]
-    #[schemars(title = "Arms wait at the launch height")]
+    #[schemars(title = "Wait at launch")]
     pub launch_floor: bool,
     /// Which way round the two interferometers are differenced. The default is lower minus upper.
     #[serde(default)]
-    #[schemars(title = "Gradiometer sign")]
+    #[schemars(title = "Sign of ΔΦ")]
     pub sign: SignSpec,
 }
 
@@ -452,7 +452,7 @@ pub struct InstrumentOverride {
     /// Vertical separation of this tower's two interferometers (Δr), metres; absent for the array's.
     #[serde(default)]
     #[schemars(range(max = 1.0e3), extend("exclusiveMinimum" = 0.0, "x-unit" = "m"))]
-    #[schemars(title = "Interferometer separation Δr")]
+    #[schemars(title = "Separation Δr")]
     pub ifo_separation: Option<f64>,
     /// This tower's half sequence, T, seconds; absent for the array's.
     #[serde(default)]
@@ -461,7 +461,7 @@ pub struct InstrumentOverride {
     /// This tower's launch velocity u₀, metres per second; absent for the array's.
     #[serde(default)]
     #[schemars(range(max = 1.0e4), extend("exclusiveMinimum" = 0.0, "x-unit" = "m/s"))]
-    #[schemars(title = "Launch velocity u₀")]
+    #[schemars(title = "Launch speed u₀")]
     pub launch_velocity: Option<f64>,
     /// This tower's time between shots, seconds; absent for the array's. The array's schedule
     /// (jitter, alternation, gaps, window, loss) applies to it as to the array's own cycle.
@@ -481,15 +481,15 @@ pub struct InstrumentOverride {
     /// A fraction is refused, never rounded.
     #[serde(default, deserialize_with = "whole_kicks_or_none")]
     #[schemars(range(min = limits::KICKS.0, max = limits::KICKS.1), extend("x-unit" = "1"))]
-    #[schemars(title = "Kicks n (photon momenta)")]
+    #[schemars(title = "Kicks n")]
     pub kicks: Option<u32>,
     /// Whether this tower's arms stop at their launch height; absent for the array's.
     #[serde(default)]
-    #[schemars(title = "Arms wait at the launch height")]
+    #[schemars(title = "Wait at launch")]
     pub launch_floor: Option<bool>,
     /// Which way round this tower's interferometers are differenced; absent for the array's.
     #[serde(default)]
-    #[schemars(title = "Gradiometer sign")]
+    #[schemars(title = "Sign of ΔΦ")]
     pub sign: Option<SignSpec>,
 }
 

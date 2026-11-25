@@ -122,9 +122,9 @@ pub fn shown(value: f64) -> String {
 }
 
 /// The width of the column of names, and of one number, points: together they fit the panel.
-const NAME_WIDTH: f32 = 84.0;
-const NUMBER_WIDTH: f32 = 96.0;
-const COMPONENT_WIDTH: f32 = 47.0;
+const NAME_WIDTH: f32 = 92.0;
+const NUMBER_WIDTH: f32 = 88.0;
+const COMPONENT_WIDTH: f32 = 44.0;
 
 /// One number: dragged or typed, `width` points wide. Returns the new value when it changed.
 fn number(
@@ -450,7 +450,7 @@ fn edit(
                 Some((typing, buffer)) if typing == path => buffer.clone(),
                 _ => current.clone(),
             };
-            let response = ui.add(egui::TextEdit::singleline(&mut text).desired_width(140.0));
+            let response = ui.add(egui::TextEdit::singleline(&mut text).desired_width(132.0));
             shell.register(scope, &id, name, Focus::Text, response.rect);
             if shell.take_type(&id) {
                 response.request_focus();
