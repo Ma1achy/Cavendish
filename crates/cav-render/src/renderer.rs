@@ -232,13 +232,14 @@ impl Renderer {
     pub fn draw(&self, gpu: &Gpu, target: &PaneTarget, frame: Frame<'_>) -> Result<(), String> {
         let [width, height] = target.size;
         let camera = Camera::new(frame.view, f64::from(width) / f64::from(height));
-        let things = crate::scene::drawables_with(
+        let things = crate::scene::drawables_hiding(
             frame.scene,
             frame.view.style,
             frame.highlight,
             camera.origin,
             frame.time,
             frame.voxels,
+            &frame.view.hidden,
         );
         check_sizes(&things, gpu.device.limits().max_buffer_size)?;
         self.draw_with_world(gpu, target, &camera, &things, &frame, false)
@@ -252,13 +253,14 @@ impl Renderer {
     pub fn draw_complete(&self, gpu: &Gpu, target: &PaneTarget, frame: Frame<'_>) -> Result<(), String> {
         let [width, height] = target.size;
         let camera = Camera::new(frame.view, f64::from(width) / f64::from(height));
-        let things = crate::scene::drawables_with(
+        let things = crate::scene::drawables_hiding(
             frame.scene,
             frame.view.style,
             frame.highlight,
             camera.origin,
             frame.time,
             frame.voxels,
+            &frame.view.hidden,
         );
         check_sizes(&things, gpu.device.limits().max_buffer_size)?;
         self.draw_with_world(gpu, target, &camera, &things, &frame, true)

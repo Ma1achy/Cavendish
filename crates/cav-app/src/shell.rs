@@ -59,6 +59,11 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
         "fly",
         "fly the camera: W A S D, E up, Q down, arrows or a drag to look; again, Enter or Esc to stop (Shift+F)",
     ),
+    ("tab", "the right-hand panel's tab: `tab inspector` or `tab readings`"),
+    (
+        "probe-at",
+        "the Probe tool's click at a point of the active pane, as fractions from its top left (`probe-at 0.5 0.5`): for scripts and pictures",
+    ),
     (
         "pointer",
         "for a picture with no window: rest the pointer at a point of the active pane, as fractions from its top left (`pointer 0.5 0.7`)",
@@ -140,6 +145,12 @@ pub struct Layout {
     /// Each scene pane's legend of the field that colours its voxel bodies: the pane (from 0)
     /// and where the legend was painted.
     pub legends: Vec<(usize, Rect)>,
+    /// The scene tree's groups as drawn: each group's scope id and whether it is open.
+    pub tree_groups: Vec<(String, bool)>,
+    /// Each tower's status dot as drawn in the tree: the tower (from 0) and what it says.
+    pub dots: Vec<(usize, crate::outliner::Dot)>,
+    /// The Readings tab's rows as drawn: the tower (from 0) and its ΔΦ as written.
+    pub readings: Vec<(usize, String)>,
 }
 
 impl Default for Layout {
@@ -160,6 +171,9 @@ impl Default for Layout {
             outline_words: Vec::new(),
             ruler: (Vec::new(), Rect::NOTHING),
             legends: Vec::new(),
+            tree_groups: Vec::new(),
+            dots: Vec::new(),
+            readings: Vec::new(),
         }
     }
 }
@@ -269,6 +283,18 @@ pub struct Shell {
     /// What the Probe tool last read, and where (S19): shown as a card in the active pane until
     /// another probe, another tool, or a new scene. UI state; `probe x y z` is the same reading.
     pub probed: Option<cav_sim::probe::Probe>,
+    /// A probe asked for by `probe-at`, as fractions of the active pane: taken by the next frame
+    /// that has the Probe tool in hand.
+    pub probe_at: Option<[f32; 2]>,
+    /// The bodies the scene tree's lock holds still, by label: the view's pointer moves none of
+    /// them (S19, `docs/design/panels.md`). UI state, never journalled.
+    pub locked: std::collections::BTreeSet<String>,
+    /// What the scene tree's filter keeps: rows whose names hold it.
+    pub tree_filter: String,
+    /// The scene tree's folded groups, by scene name and group: UI state, kept per scene.
+    pub tree_folded: std::collections::BTreeSet<(String, String)>,
+    /// The right-hand panel's tab.
+    pub right_tab: crate::outliner::RightTab,
     /// The tool in hand: an id of `ui/tools.ron`. UI state, never journalled.
     pub tool: String,
     /// Whether the Move tool snaps to the step.
@@ -399,6 +425,11 @@ impl Shell {
             mouse_fly: None,
             pointer_at: None,
             probed: None,
+            probe_at: None,
+            locked: std::collections::BTreeSet::new(),
+            tree_filter: String::new(),
+            tree_folded: std::collections::BTreeSet::new(),
+            right_tab: crate::outliner::RightTab::Inspector,
             tool: "select".to_owned(),
             snap: true,
             place_starter: "sphere".to_owned(),
@@ -601,6 +632,12 @@ impl Shell {
         }
         self.import_window = Some(crate::dialogs::ImportForm::new(name));
         self.window_opened("import", "import/go", false);
+    }
+
+    /// Whether the scene tree's group `scope` is open for the scene now shown.
+    #[must_use]
+    pub fn tree_open(&self, scope: &str) -> bool {
+        !self.tree_folded.contains(&(self.engine.spec().name.clone(), scope.to_owned()))
     }
 
     /// Whether a fly session is on: the viewport's canvas holds the keys W A S D E Q.
@@ -1023,7 +1060,9 @@ impl Shell {
             self.window_opened("palette", "palette/query", true);
             return Ok(line.to_owned());
         }
-        if words.next().is_some() {
+        // These take their words below; every other takes none.
+        let takes_words = matches!(name, "pointer" | "tab" | "probe-at" | "import-mesh");
+        if !takes_words && words.clone().next().is_some() {
             let why = format!("`{name}` takes no arguments");
             self.engine.note(Level::Error, Subsystem::App, why.clone());
             self.console_open = true;
@@ -1091,6 +1130,28 @@ impl Shell {
                     return Err(why);
                 }
             },
+            "tab" => match words.next() {
+                Some("inspector") => self.right_tab = crate::outliner::RightTab::Inspector,
+                Some("readings") => self.right_tab = crate::outliner::RightTab::Readings,
+                _ => {
+                    let why = "`tab <inspector|readings>`".to_owned();
+                    self.engine.note(Level::Error, Subsystem::App, why.clone());
+                    return Err(why);
+                }
+            },
+            "probe-at" => {
+                let numbers: Vec<f32> = words.by_ref().filter_map(|w| w.parse().ok()).collect();
+                match numbers[..] {
+                    [x, y] if (0.0..=1.0).contains(&x) && (0.0..=1.0).contains(&y) => {
+                        self.probe_at = Some([x, y]);
+                    }
+                    _ => {
+                        let why = "`probe-at <x> <y>`: two fractions of the pane, from 0 to 1".to_owned();
+                        self.engine.note(Level::Error, Subsystem::App, why.clone());
+                        return Err(why);
+                    }
+                }
+            }
             "pointer" => {
                 let numbers: Vec<f32> = words.by_ref().filter_map(|w| w.parse().ok()).collect();
                 match numbers[..] {

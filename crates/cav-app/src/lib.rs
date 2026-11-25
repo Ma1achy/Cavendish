@@ -33,6 +33,7 @@ pub mod keyboard;
 pub mod lane;
 pub mod layouts;
 pub mod menus;
+pub mod outliner;
 pub mod palette;
 mod panels;
 pub mod sheet;

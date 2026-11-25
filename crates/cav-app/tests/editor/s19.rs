@@ -217,3 +217,18 @@ fn the_probe_tool_reads_where_it_is_clicked() {
     assert!(rig.shell.layout().button("probe card").is_some());
     assert!(click_body("select").shell.probed.is_none(), "control: Select reads nothing");
 }
+
+#[test]
+fn the_tool_strip_floats_over_the_view_s_edge() {
+    // S19's panels (docs/design/panels.md): the tool strip is a bar over the view's left edge,
+    // not a column beside the tree, so the figure is as wide as the panels leave it. Control: the
+    // tree's panel ends where the figure begins (no column between).
+    let rig = Rig::new();
+    let layout = rig.shell.layout();
+    let strip = layout.button("tool strip").expect("drawn");
+    assert!(layout.figure.contains_rect(strip), "{strip:?} over the figure {:?}", layout.figure);
+    assert!(strip.left() - layout.figure.left() < 16.0, "at its left edge");
+    assert!(strip.width() < 64.0);
+    let tree = layout.panel("outliner").unwrap();
+    assert!((layout.figure.left() - tree.right()).abs() < 2.0, "{tree:?} against {:?}", layout.figure);
+}

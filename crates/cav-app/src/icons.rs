@@ -148,3 +148,50 @@ pub fn starter(painter: &Painter, rect: Rect, body: Option<&cav_sim::BodySpec>, 
         painter.line_segment([at(rect, 17.0, 18.0), at(rect, 15.0, 16.5)], Stroke::new(1.0, colour));
     }
 }
+
+/// An eye, open (shown) or struck through (hidden): the scene tree's visibility.
+pub fn eye(painter: &Painter, rect: Rect, open: bool, colour: Color32) {
+    let stroke = Stroke::new(1.4, colour);
+    let left = at(rect, 3.0, 10.0);
+    let right = at(rect, 17.0, 10.0);
+    let top: Vec<Pos2> = (0..=8)
+        .map(|k| {
+            let t = k as f32 / 8.0;
+            let x = 3.0 + 14.0 * t;
+            at(rect, x, 10.0 - 5.0 * (std::f32::consts::PI * t).sin())
+        })
+        .collect();
+    let bottom: Vec<Pos2> = (0..=8)
+        .map(|k| {
+            let t = k as f32 / 8.0;
+            let x = 3.0 + 14.0 * t;
+            at(rect, x, 10.0 + 5.0 * (std::f32::consts::PI * t).sin())
+        })
+        .collect();
+    painter.add(Shape::line(top, stroke));
+    painter.add(Shape::line(bottom, stroke));
+    painter.circle_filled(at(rect, 10.0, 10.0), rect.width() * 0.1, colour);
+    let _ = (left, right);
+    if !open {
+        painter.line_segment([at(rect, 3.0, 17.0), at(rect, 17.0, 3.0)], stroke);
+    }
+}
+
+/// A padlock, shut (locked) or open.
+pub fn lock(painter: &Painter, rect: Rect, shut: bool, colour: Color32) {
+    let stroke = Stroke::new(1.4, colour);
+    let body = Rect::from_min_max(at(rect, 5.0, 9.0), at(rect, 15.0, 17.0));
+    if shut {
+        painter.rect_filled(body, 1.0, colour);
+    } else {
+        painter.rect_stroke(body, 1.0, stroke, egui::StrokeKind::Middle);
+    }
+    let lift = if shut { 0.0 } else { 3.0 };
+    let shackle: Vec<Pos2> = (0..=8)
+        .map(|k| {
+            let a = std::f32::consts::PI * k as f32 / 8.0;
+            at(rect, 10.0 - 3.5 * a.cos(), 9.0 - lift - 4.0 * a.sin())
+        })
+        .collect();
+    painter.add(Shape::line(shackle, stroke));
+}

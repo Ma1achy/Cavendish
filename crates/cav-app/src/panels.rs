@@ -221,22 +221,40 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
             .size_range(180.0..=520.0)
             .resizable(true)
             .frame(frame(theme::PANEL, 10, 6))
-            .show(ui, |ui| scrolling(ui, "outliner", |ui| outliner(shell, ui)));
+            .show(ui, |ui| scrolling(ui, "outliner", |ui| crate::outliner::outliner(shell, ui)));
         shell.layout.panels.push(("outliner", panel.response.rect));
         shell.building.place("tree", panel.response.rect);
-        let panel = Panel::left("toolbar")
-            .exact_size(52.0)
-            .resizable(false)
-            .frame(frame(theme::FOOTER, 4, 6))
-            .show(ui, |ui| tool_strip(shell, ui));
-        shell.layout.panels.push(("toolbar", panel.response.rect));
-        shell.building.place("toolbar", panel.response.rect);
         let panel = Panel::right("properties")
             .default_size(264.0)
             .size_range(264.0..=560.0)
             .resizable(true)
             .frame(frame(theme::PANEL, 10, 6))
-            .show(ui, |ui| scrolling(ui, "properties", |ui| properties(shell, ui)));
+            .show(ui, |ui| {
+                // The panel's tabs: the selection's properties, or the towers' readings.
+                ui.horizontal(|ui| {
+                    for (tab, name) in [
+                        (crate::outliner::RightTab::Inspector, "Inspector"),
+                        (crate::outliner::RightTab::Readings, "Readings"),
+                    ] {
+                        let response = tab_title(ui, name, shell.right_tab == tab);
+                        let id = format!("inspector/tab/{name}");
+                        shell.register("inspector", &id, name, Kind::Button, response.rect);
+                        shell.layout.buttons.push((format!("tab {name}"), response.rect));
+                        if response.clicked() || shell.take_click(&id) {
+                            shell.right_tab = tab;
+                        }
+                    }
+                });
+                ui.add_space(4.0);
+                match shell.right_tab {
+                    crate::outliner::RightTab::Inspector => {
+                        scrolling(ui, "properties", |ui| properties(shell, ui))
+                    }
+                    crate::outliner::RightTab::Readings => {
+                        scrolling(ui, "readings", |ui| crate::outliner::readings(shell, ui))
+                    }
+                }
+            });
         if panel.inner {
             shell.layout.buttons.push(("more below".to_owned(), panel.response.rect));
         }
@@ -346,6 +364,8 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
             (entry.message, colour)
         });
         let (warnings, errors) = shell.problem_counts();
+        let forward = forward_status(&shell.engine);
+        shell.layout.status.clone_from(&forward);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let label = if shell.console_open { "close console" } else { "console" };
             let console =
@@ -359,6 +379,7 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
                     .size(11.5)
                     .color(theme::WEAK),
             );
+            ui.label(RichText::new(&forward).size(11.5).color(theme::WEAK));
             if let Some(ms) = shell.frame_ms {
                 ui.label(RichText::new(format!("{ms:.1} ms")).monospace().size(11.0).color(theme::WEAK));
             }
@@ -430,6 +451,28 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
             });
         });
     });
+}
+
+/// The forward stage's state in a line: how many shots, refined or computing, and the
+/// quadrature's error. The status bar's (it was the outliner's foot before S19's panels).
+fn forward_status(engine: &cav_engine::Engine) -> String {
+    match engine.signal() {
+        (cav_engine::SignalState::Refined, Some(signal)) => {
+            let shots = signal.most();
+            let (fewest, most) = taken_a_tower(engine).unwrap_or((shots, shots));
+            let count = match (fewest == shots, fewest == most) {
+                (true, _) => format!("{shots} shots"),
+                (_, true) => format!("{shots} shots, {most} taken a tower"),
+                _ => format!("{shots} shots, {fewest} to {most} taken a tower"),
+            };
+            format!(
+                "forward · {count} · refined · {}",
+                cav_engine::estimate_text(signal.estimate, signal.settled, signal.truncated)
+            )
+        }
+        (cav_engine::SignalState::Stale, _) => "forward · computing".to_owned(),
+        _ => "forward · no signal".to_owned(),
+    }
 }
 
 fn console(shell: &mut Shell, ui: &mut egui::Ui) {
@@ -631,69 +674,13 @@ pub fn row_id(target: Target) -> String {
     format!("tree/row/{}", words.trim_start_matches("select "))
 }
 
-/// A row of the outliner that selects something when clicked (or on Enter from the keyboard),
-/// registered under the tree's section `section`.
-fn outline_row(
-    shell: &mut Shell,
-    ui: &mut egui::Ui,
-    section: &str,
-    target: Target,
-    swatch: Color32,
-    label: &str,
-    detail: &str,
-) {
-    let selected = shell.engine.selection() == Some(target);
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::click());
-    let id = row_id(target);
-    shell.register(section, &id, label, Kind::Button, rect);
-    let keyed = shell.take_click(&id);
-    shell.layout.outline.push((target, rect));
-    shell.layout.outline_words.push((target, label.to_owned(), detail.to_owned()));
-    let painter = ui.painter();
-    if selected {
-        painter.rect_filled(rect, 2.0, Color32::from_rgb(0x10, 0x30, 0x3d));
-    } else if response.hovered() {
-        painter.rect_filled(rect, 2.0, Color32::from_rgb(0x24, 0x24, 0x24));
-    }
-    let swatch_rect = Rect::from_center_size(pos2(rect.left() + 14.0, rect.center().y), vec2(9.0, 9.0));
-    painter.rect_filled(swatch_rect, 1.0, swatch);
-    let text = if selected { theme::STRONG } else { theme::TEXT };
-    let renaming = shell.renaming.as_ref().is_some_and(|(t, _)| *t == target);
-    if renaming {
-        rename_field(shell, ui, target, Rect::from_min_max(pos2(rect.left() + 22.0, rect.top()), rect.max));
-    } else {
-        painter.text(
-            pos2(rect.left() + 26.0, rect.center().y),
-            Align2::LEFT_CENTER,
-            label,
-            FontId::proportional(13.0),
-            text,
-        );
-        painter.text(
-            pos2(rect.right() - 4.0, rect.center().y),
-            Align2::RIGHT_CENTER,
-            detail,
-            FontId::monospace(11.0),
-            theme::WEAK,
-        );
-    }
-    if response.clicked() {
-        shell.apply(Command::Select(if selected { None } else { Some(target) }));
-    } else if keyed && !selected {
-        // From the keyboard Enter selects the row (it does not toggle: nothing unseen).
-        shell.apply(Command::Select(Some(target)));
-    }
-    if response.double_clicked() && matches!(target, Target::Body(_) | Target::Tower(_)) {
-        shell.apply(Command::Select(Some(target)));
-        let _ = shell.run("rename");
-    }
-    // Right-click: the row is selected and its menu is the actions that act on an item, as the
-    // Edit menu has them (data: `context` in ui/actions.ron), and what can be added.
+/// The right-click menu of a row of the tree: the row is selected by the right-click, and the
+/// menu opens at the pointer (egui's context menu), or under the row when `context` asks for the
+/// selection's (for scripts and the demo's picture of it).
+pub(crate) fn row_menu(shell: &mut Shell, response: &egui::Response, target: Target, selected: bool) {
     if response.secondary_clicked() && !selected {
         shell.apply(Command::Select(Some(target)));
     }
-    // The menu opens at the pointer on a right-click (egui's context menu), or under the row when
-    // `context` asks for the selection's (for scripts and the demo's picture of it).
     let by_command = selected && std::mem::take(&mut shell.open_context);
     if by_command {
         shell.context_at_row = true;
@@ -707,9 +694,54 @@ fn outline_row(
     } else {
         None
     };
-    let popup = egui::Popup::menu(&response).open_memory(open);
+    let popup = egui::Popup::menu(response).open_memory(open);
     let popup = if shell.context_at_row { popup } else { popup.at_pointer_fixed() };
     popup.show(|ui| context_menu(shell, ui));
+}
+
+/// A panel's title drawn as a tab (the design's chrome, ready for docking): the active one bright
+/// on a lifted ground, the others muted. Returns its response.
+pub(crate) fn tab_title(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
+    let colour = if active { theme::STRONG } else { theme::WEAK };
+    let galley = ui.painter().layout_no_wrap(text.to_owned(), FontId::proportional(13.0), colour);
+    let (rect, response) = ui.allocate_exact_size(galley.size() + vec2(16.0, 10.0), Sense::click());
+    if active {
+        ui.painter().rect_filled(rect, egui::CornerRadius { nw: 4, ne: 4, sw: 0, se: 0 }, theme::WIDGET);
+        ui.painter().hline(rect.x_range(), rect.bottom(), Stroke::new(2.0, theme::SELECTION_EDGE));
+    } else if response.hovered() {
+        ui.painter().rect_filled(rect, 4.0, theme::HOVER);
+    }
+    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, colour);
+    response
+}
+
+/// What an empty scene says, and the ways to begin, in the tree under its Bodies.
+pub(crate) fn empty_guidance(shell: &mut Shell, ui: &mut egui::Ui, spec: &cav_sim::SceneSpec) {
+    let text = match (spec.world.is_some(), spec.floor.is_some()) {
+        (false, false) => "Nothing for the towers to read yet.",
+        _ => "No bodies: the surroundings are read.",
+    };
+    ui.horizontal_wrapped(|ui| {
+        ui.add_space(30.0);
+        ui.label(RichText::new(text).size(12.0).color(theme::WEAK));
+    });
+    ui.horizontal_wrapped(|ui| {
+        ui.add_space(30.0);
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let mass = ui.button("Add a mass").on_hover_text("a 1 kg point mass where the view looks");
+        shell.register("tree/sources", "tree/sources/add-mass", "Add a mass", Kind::Button, mass.rect);
+        shell.layout.buttons.push(("add point-mass".to_owned(), mass.rect));
+        if mass.clicked() || shell.take_click("tree/sources/add-mass") {
+            let _ = shell.add_starter("point-mass");
+        }
+        let templates = ui
+            .menu_button("Template ›", |ui| crate::menus::draw_items(shell, ui, "File/New from template"))
+            .response;
+        shell.register("tree/sources", "tree/sources/templates", "Templates", Kind::Button, templates.rect);
+        if shell.take_click("tree/sources/templates") {
+            let _ = shell.run("palette file");
+        }
+    });
 }
 
 /// The right-click menu of the scene tree and the view: the table's `context` actions for the
@@ -732,7 +764,8 @@ fn context_menu(shell: &mut Shell, ui: &mut egui::Ui) {
 
 /// The text field that renames an item in place (`F2`, a double click): Enter keeps the name
 /// (a `set` of its label: one edit, undone as one), Esc leaves it as it was.
-fn rename_field(shell: &mut Shell, ui: &mut egui::Ui, target: Target, rect: Rect) {
+/// The name of a row being renamed (F2), typed in place.
+pub(crate) fn rename_field_at(shell: &mut Shell, ui: &mut egui::Ui, target: Target, rect: Rect) {
     let Some((_, mut text)) = shell.renaming.clone() else { return };
     let response = ui.put(rect, egui::TextEdit::singleline(&mut text).font(FontId::proportional(13.0)));
     shell.layout.editors.push(("rename".to_owned(), response.rect));
@@ -789,15 +822,6 @@ fn button_row(
 /// to be there; `ls bodies` lists them all. A selected item past the cap keeps its row.
 pub const MAX_OUTLINE_ROWS: usize = 100;
 
-/// Which of `count` items get a row: the first [`MAX_OUTLINE_ROWS`], and the selected one.
-fn outlined(count: usize, selected: Option<usize>) -> Vec<usize> {
-    let mut rows: Vec<usize> = (0..count.min(MAX_OUTLINE_ROWS)).collect();
-    if let Some(n) = selected.filter(|n| *n >= MAX_OUTLINE_ROWS && *n < count) {
-        rows.push(n);
-    }
-    rows
-}
-
 /// Whether a scene has nothing its towers could read: no bodies, no world, no floor.
 #[must_use]
 pub fn silent(spec: &cav_sim::SceneSpec) -> bool {
@@ -822,18 +846,6 @@ pub fn tower_detail(reply: &cav_engine::ReadingReply, n: usize, position: [f64; 
     }
 }
 
-/// The world's row in the outliner: its pitch, pieces and how far round each tower it is read.
-#[must_use]
-pub(crate) fn world_outline(world: &cav_sim::world::WorldSpec) -> String {
-    let pieces = world.pieces.len();
-    format!(
-        "{} cm · {pieces} piece{} · read {} m",
-        short_number(world.pitch * 100.0),
-        if pieces == 1 { "" } else { "s" },
-        short_number(world.read.radius)
-    )
-}
-
 /// The world's properties as rows: what it is (pitch, pieces, materials, finest cells), how it is
 /// read (radius, tolerance) and what is resident now (`resident` chunks and bricks, `pending`
 /// queued).
@@ -854,176 +866,6 @@ pub(crate) fn world_rows(
         ("resident", format!("{} chunks, {} bricks", resident[0], resident[1])),
         ("queued", pending.to_string()),
     ]
-}
-
-fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
-    ui.label(RichText::new("Outliner").color(theme::STRONG).strong());
-    // Only what is shown is copied out of the scene: a row's words, not the scene.
-    let (selected_body, selected_tower) = match shell.engine.selection() {
-        Some(Target::Body(n)) => (Some(n - 1), None),
-        Some(Target::Tower(n)) => (None, Some(n - 1)),
-        _ => (None, None),
-    };
-    let (bodies, towers, room, floor, world) = {
-        let spec = shell.engine.spec();
-        let world = spec.world.as_ref().map(world_outline);
-        let bodies: Vec<(usize, String, String)> = outlined(spec.bodies.len(), selected_body)
-            .into_iter()
-            .map(|n| {
-                let body = &spec.bodies[n];
-                (n, body.label.clone(), format!("{} kg · {}", short_number(body.mass), body.motion.kind()))
-            })
-            .collect();
-        let towers: Vec<(usize, String, [f64; 3])> = outlined(spec.array.towers.len(), selected_tower)
-            .into_iter()
-            .map(|n| (n, spec.array.towers[n].label.clone(), spec.array.towers[n].position))
-            .collect();
-        (
-            (bodies, spec.bodies.len()),
-            (towers, spec.array.towers.len()),
-            spec.room.as_ref().map(|room| room.size),
-            spec.floor.as_ref().map(|floor| floor.height),
-            world,
-        )
-    };
-    let left_out = |ui: &mut egui::Ui, shown: usize, count: usize, list: &str| {
-        if shown < count {
-            let text = format!("… and {} more: `ls {list}` lists them all", count - shown);
-            ui.label(RichText::new(text).size(11.0).color(theme::WEAK));
-        }
-    };
-
-    section(shell, ui, "tree", "tree/sources", "Sources");
-    for (n, label, detail) in &bodies.0 {
-        outline_row(shell, ui, "tree/sources", Target::Body(n + 1), theme::GOLD, label, detail);
-    }
-    left_out(ui, bodies.0.len(), bodies.1, "bodies");
-    if bodies.1 == 0 {
-        // The world and the floor are sources too: listed under Surroundings, with what they are.
-        // An empty scene says how to begin, here and not in the console (the brief's §1).
-        let text = match (world.is_some(), floor.is_some()) {
-            (false, false) => {
-                "Nothing for the towers to read yet. Add a mass or a shape, or start from a template:"
-            }
-            (true, false) => "No bodies: the world below is read. Add one:",
-            (false, true) => "No bodies: the floor below is read. Add one:",
-            (true, true) => "No bodies: the world and the floor below are read. Add one:",
-        };
-        ui.add(egui::Label::new(RichText::new(text).size(11.5).color(theme::WEAK)).wrap());
-    }
-    // Adding is a command too: each starter is an `add` where the camera looks, selected after.
-    // (The row wraps on a narrow panel rather than widen it.)
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
-        if bodies.1 == 0 {
-            let mass = ui.button("Add a mass").on_hover_text("a 1 kg point mass where the view looks");
-            shell.register("tree/sources", "tree/sources/add-mass", "Add a mass", Kind::Button, mass.rect);
-            shell.layout.buttons.push(("add point-mass".to_owned(), mass.rect));
-            if mass.clicked() || shell.take_click("tree/sources/add-mass") {
-                let _ = shell.add_starter("point-mass");
-            }
-        }
-        let add = ui.menu_button("Add ›", |ui| crate::menus::add_menu(shell, ui)).response;
-        shell.register("tree/sources", "tree/sources/add", "Add", Kind::Button, add.rect);
-        shell.layout.buttons.push(("add".to_owned(), add.rect));
-        if shell.take_click("tree/sources/add") {
-            let _ = shell.run("palette add");
-        }
-        if bodies.1 == 0 {
-            let templates = ui
-                .menu_button("Template ›", |ui| {
-                    crate::menus::draw_items(shell, ui, "File/New from template")
-                })
-                .response;
-            shell.register(
-                "tree/sources",
-                "tree/sources/templates",
-                "Templates",
-                Kind::Button,
-                templates.rect,
-            );
-            if shell.take_click("tree/sources/templates") {
-                let _ = shell.run("palette file");
-            }
-        }
-    });
-
-    section(shell, ui, "tree", "tree/array", "Array");
-    // With something to read, each tower's row shows what it reads under the playhead.
-    let reply = shell.reading().clone();
-    // Silent only when nothing is there to read: no bodies, no world, no floor (S4's second
-    // review, J5: a world scene's towers read the world).
-    let silent = silent(shell.engine.spec());
-    for (n, label, position) in &towers.0 {
-        let detail = tower_detail(&reply, *n, *position, silent);
-        outline_row(shell, ui, "tree/array", Target::Tower(n + 1), theme::tower(*n), label, &detail);
-    }
-    left_out(ui, towers.0.len(), towers.1, "array.towers");
-    if !silent && !reply.warnings.is_empty() {
-        let text = format!("{} reading(s) warned of: select the tower, or `reading`", reply.warnings.len());
-        ui.label(RichText::new(text).size(11.0).color(theme::WARN));
-    }
-
-    section(shell, ui, "tree", "tree/surroundings", "Surroundings");
-    if let Some([x, y, z]) = room {
-        outline_row(
-            shell,
-            ui,
-            "tree/surroundings",
-            Target::Room,
-            theme::WIDGET_EDGE,
-            "room",
-            &format!("{x:.0} × {y:.0} × {z:.0} m"),
-        );
-    }
-    if let Some(height) = floor {
-        outline_row(
-            shell,
-            ui,
-            "tree/surroundings",
-            Target::Floor,
-            theme::WIDGET_EDGE,
-            "floor",
-            &format!("z = {height:.1} m · to the horizon"),
-        );
-    }
-    // The world volume: a source as a body is, and the scene's surroundings.
-    if let Some(detail) = &world {
-        outline_row(shell, ui, "tree/surroundings", Target::World, theme::WIDGET_EDGE, "world", detail);
-    }
-    if room.is_none() && floor.is_none() && world.is_none() {
-        ui.label(RichText::new("nothing: no room, no floor, no world, no air").size(11.5).color(theme::WEAK));
-    }
-
-    heading(ui, "Run");
-    let forward = match shell.engine.signal() {
-        (cav_engine::SignalState::Refined, Some(signal)) => {
-            // A refined signal is the scene's as it is: its shots are the schedule's, and how
-            // many each tower takes is the engine's count (kept between frames, not made here).
-            // The most shots any tower has (towers of their own instrument may have fewer).
-            let shots = signal.most();
-            let (fewest, most) = taken_a_tower(&shell.engine).unwrap_or((shots, shots));
-            let count = match (fewest == shots, fewest == most) {
-                (true, _) => format!("{shots} shots"),
-                (_, true) => format!("{shots} shots, {most} taken a tower"),
-                _ => format!("{shots} shots, {fewest} to {most} taken a tower"),
-            };
-            format!(
-                "forward · {count} · refined · {}",
-                cav_engine::estimate_text(signal.estimate, signal.settled, signal.truncated)
-            )
-        }
-        (cav_engine::SignalState::Stale, _) => "forward · computing".to_owned(),
-        _ => "forward · no signal".to_owned(),
-    };
-    shell.layout.status.clone_from(&forward);
-    ui.label(RichText::new(forward).size(11.5).color(theme::WEAK));
-    ui.add_space(6.0);
-    ui.label(
-        RichText::new("right-click a row for what it can do · A adds · F2 renames · Delete takes away")
-            .size(11.0)
-            .color(theme::WEAK),
-    );
 }
 
 /// How the active pane looks: its direction, projection, panes, draw style, what it shows, the
@@ -1514,39 +1356,6 @@ fn tool_strip(shell: &mut Shell, ui: &mut egui::Ui) {
             let _ = shell.run(&line);
         }
     }
-    // Snap: a setting of the Move tool and the transform session, not a tool.
-    ui.add_space(6.0);
-    let y = ui.cursor().top();
-    ui.painter().hline(ui.max_rect().x_range(), y, Stroke::new(1.0, theme::RULE));
-    ui.add_space(6.0);
-    let step = crate::tools::strip().snap_step;
-    let on = shell.snap;
-    let (rect, snap) = ui.allocate_exact_size(vec2(ui.available_width(), 46.0), Sense::click());
-    let visuals = ui.style().interact(&snap);
-    let painter = ui.painter_at(rect);
-    let grid = Rect::from_center_size(rect.center_top() + vec2(0.0, 14.0), vec2(20.0, 20.0));
-    crate::icons::snap(&painter, grid, if on { theme::GOLD } else { theme::WEAK });
-    // The switch under it: a pill with its knob right and gold when on, left and grey when off.
-    let pill = Rect::from_center_size(rect.center_top() + vec2(0.0, 36.0), vec2(26.0, 12.0));
-    painter.rect(
-        pill,
-        6.0,
-        if on { Color32::from_rgb(0x4a, 0x3c, 0x14) } else { theme::WIDGET },
-        visuals.bg_stroke,
-        StrokeKind::Inside,
-    );
-    let knob = if on { pill.right_center() - vec2(6.0, 0.0) } else { pill.left_center() + vec2(6.0, 0.0) };
-    painter.circle_filled(knob, 4.5, if on { theme::GOLD } else { theme::WEAK });
-    let snap = snap.on_hover_text(if on {
-        format!("Snap is on (S): moves go in steps of {step} m. Click or S to turn it off.")
-    } else {
-        "Snap is off (S): moves are free. Click or S to snap to the step.".to_owned()
-    });
-    shell.register("toolbar", "toolbar/snap", "Snap", Kind::Button, snap.rect);
-    shell.layout.buttons.push(("snap".to_owned(), snap.rect));
-    if snap.clicked() || shell.take_click("toolbar/snap") {
-        let _ = shell.run("snap");
-    }
 }
 
 /// A square button of the tool strip: an icon drawn by `icon` (in the colour the button's state
@@ -1583,9 +1392,27 @@ fn tool_options(shell: &mut Shell, ui: &mut egui::Ui) {
         .show(ui, |ui| tool_options_row(shell, ui));
 }
 
+/// The snap switch, in the tool's options row (S19's panels: beside the hint, not in the strip):
+/// a setting of the Move tool and the transform session, not a tool.
+fn snap_switch(shell: &mut Shell, ui: &mut egui::Ui) {
+    let step = crate::tools::strip().snap_step;
+    let on = shell.snap;
+    let text = if on { format!("Snap {step} m") } else { "Snap off".to_owned() };
+    let colour = if on { theme::GOLD } else { theme::WEAK };
+    let snap = ui
+        .add(Button::new(RichText::new(text).size(11.5).color(colour)).selected(on))
+        .on_hover_text("snap moves to the step, or not (S)");
+    shell.register("toolbar", "toolbar/snap", "Snap", Kind::Button, snap.rect);
+    shell.layout.buttons.push(("snap".to_owned(), snap.rect));
+    if snap.clicked() || shell.take_click("toolbar/snap") {
+        let _ = shell.run("snap");
+    }
+}
+
 fn tool_options_row(shell: &mut Shell, ui: &mut egui::Ui) {
     use crate::tools::Behaviour;
     ui.horizontal_centered(|ui| {
+        snap_switch(shell, ui);
         let tool = crate::tools::strip().tool(&shell.tool).cloned();
         if let Some(tool) = &tool {
             ui.label(RichText::new(&tool.label).color(theme::GOLD).size(12.0));
@@ -1609,11 +1436,9 @@ fn tool_options_row(shell: &mut Shell, ui: &mut egui::Ui) {
         }
         match tool.map(|t| t.behaviour) {
             Some(Behaviour::Translate) => {
-                let step = crate::tools::strip().snap_step;
-                let snap = if shell.snap { format!("snap {step} m (S)") } else { "snap off (S)".to_owned() };
-                ui.label(weak(format!(
-                    "{snap} · drag an arrow to move along it, the square to move freely · Enter on the selection moves it by keys"
-                )));
+                ui.label(weak(
+                    "drag an arrow to move along it, the square to move freely · Enter on the selection moves it by keys".into(),
+                ));
             }
             Some(Behaviour::Place) => {
                 let starters = cav_sim::starters::starters();
@@ -2013,9 +1838,10 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
             place_preview(shell, ui, pane, rect, response.hover_pos().map(within));
         }
         if behaviour == crate::tools::Behaviour::Probe && pane == active {
-            if response.clicked()
-                && let Some(point) = response.interact_pointer_pos()
-            {
+            let asked =
+                shell.probe_at.take().map(|[x, y]| rect.min + vec2(x * rect.width(), y * rect.height()));
+            let clicked = response.clicked().then(|| response.interact_pointer_pos()).flatten();
+            if let Some(point) = clicked.or(asked) {
                 let at = within(point);
                 let size = [f64::from(rect.width()), f64::from(rect.height())];
                 let picked = crate::tools::pick(
@@ -2134,6 +1960,26 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                 zooms.push((pane, scroll, [f64::from(at.x), f64::from(at.y)], size));
             }
         }
+    }
+    // The tool strip: a floating bar over the view's left edge, not a column of its own
+    // (S19, `docs/design/panels.md`: Blender's and Unity's scene toolbars).
+    if !shell.gui_hidden && !shell.maximised {
+        let strip = egui::Area::new(egui::Id::unique("tool strip"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(area.min + vec2(8.0, 8.0))
+            .show(ui.ctx(), |ui| {
+                egui::Frame::new()
+                    .fill(theme::FOOTER.gamma_multiply(0.94))
+                    .stroke(Stroke::new(1.0, theme::WIDGET_EDGE))
+                    .corner_radius(6.0)
+                    .inner_margin(egui::Margin::same(4))
+                    .show(ui, |ui| {
+                        ui.set_width(40.0);
+                        tool_strip(shell, ui);
+                    });
+            });
+        shell.building.place("toolbar", strip.response.rect);
+        shell.layout.buttons.push(("tool strip".to_owned(), strip.response.rect));
     }
     // The selection's keyboard handle (Enter starts a transform session): a stop of the
     // viewport whatever is selected and whatever the panes show (order never depends on state:

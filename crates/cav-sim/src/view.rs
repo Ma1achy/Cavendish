@@ -153,6 +153,10 @@ pub struct ViewSpec {
     /// along its axis, a cut-away otherwise. The default is none.
     #[serde(default)]
     pub section: Option<crate::voxel_view::Section>,
+    /// The labels of the bodies this view does not draw (the scene tree's eye, S19). A hidden
+    /// body is still read by the towers: hiding is a view's, not the scene's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden: Vec<String>,
 }
 
 /// What a pane shows.
@@ -239,6 +243,7 @@ impl ViewSpec {
             colour: crate::voxel_view::Colouring::default(),
             overlay: crate::voxel_view::Overlay::default(),
             section: None,
+            hidden: Vec::new(),
         };
         view.frame(scene);
         view

@@ -711,6 +711,9 @@
 - id: TASK-S5-10
   milestone: S5
   title: Exact clipped pieces as a near kernel within ~3 cells of an arm point, behind a distance switch
-- id: TASK-S19-
+- id: TASK-S19-13
   milestone: S19
   title: The side panels redesigned - outliner as a tree, inspector as component cards, a readings panel, tool strip in the viewport (docs/design/panels.md)
+- id: TASK-S19-14
+  milestone: S20
+  title: "Phones and tablets in the web build (owner, 25 Nov 2026): touch (tap, one-finger orbit, two-finger pan and pinch, long-press menu, finger-sized handles), drawers and a bottom tool bar on narrow screens, 44 pt targets, nothing hover-only, Safari's WebGPU and memory; screenshots at 390x844, 1024x1366, 1366x1024 (moved to S20 by the S19 brief: S19 is full)"

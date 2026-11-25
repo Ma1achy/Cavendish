@@ -438,6 +438,14 @@ pub enum ViewCommand {
         /// The plane; None for no section.
         section: Option<cav_sim::voxel_view::Section>,
     },
+    /// Hide the body of this label from every pane, or show it again (the scene tree's eye, S19).
+    /// A view's: the towers still read it, and it is never undone.
+    Hide {
+        /// The body's label.
+        label: String,
+        /// True to hide, false to show.
+        hidden: bool,
+    },
 }
 
 impl ViewCommand {
@@ -452,7 +460,7 @@ impl ViewCommand {
     #[must_use]
     pub const fn pane(&self) -> Option<usize> {
         match *self {
-            Self::Panes(_) => None,
+            Self::Panes(_) | Self::Hide { .. } => None,
             Self::Activate(pane)
             | Self::Look { pane, .. }
             | Self::Project { pane, .. }

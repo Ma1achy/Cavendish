@@ -78,8 +78,8 @@ fn overlap(a: Rect, b: Rect) -> f32 {
     if i.is_positive() { i.area() } else { 0.0 }
 }
 
-const PANELS: [&str; 8] =
-    ["menu", "footer", "timeline", "outliner", "toolbar", "properties", "header", "options"];
+/// The panels; the tool strip is not one since S19's panels (it floats over the view's edge).
+const PANELS: [&str; 7] = ["menu", "footer", "timeline", "outliner", "properties", "header", "options"];
 
 #[test]
 fn every_panel_is_laid_out_and_none_covers_the_figure() {
@@ -113,8 +113,7 @@ fn every_panel_is_laid_out_and_none_covers_the_figure() {
                 let rect = layout
                     .panel(name)
                     .unwrap_or_else(|| panic!("the {name} panel was not shown at {size:?}"));
-                // The tool strip is the one narrow panel (S18): a column of tool buttons.
-                let least = if *name == "toolbar" { 40.0 } else { 100.0 };
+                let least = 100.0;
                 assert!(rect.width() >= least && rect.height() >= 20.0, "{name} is {rect:?}");
                 assert!(screen.contains_rect(rect), "{name} {rect:?} leaves the window {screen:?}");
                 // The rule: the figure is never covered.
@@ -489,7 +488,9 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
                 || (*name == "layout" && outcome.as_ref().unwrap_err().contains("layout <"))
                 || (*name == "reset" && outcome.as_ref().unwrap_err().contains("reset <"))
                 || (*name == "focus" && outcome.as_ref().unwrap_err().contains("focus <"))
-                || (*name == "pointer" && outcome.as_ref().unwrap_err().contains("pointer <")),
+                || (*name == "pointer" && outcome.as_ref().unwrap_err().contains("pointer <"))
+                || (*name == "probe-at" && outcome.as_ref().unwrap_err().contains("probe-at <"))
+                || (*name == "tab" && outcome.as_ref().unwrap_err().contains("tab <")),
             "{name}: {outcome:?}"
         );
         // `frame` works out a camera and issues it: the journal holds that one camera command
@@ -506,7 +507,8 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
         // The others take nothing. (`focus` takes an id, which before the first frame it waits
         // for; `palette` takes a menu's name, `palette add`, or words to search for, `palette
         // sph`, since the review fixes of S18: any word is one.)
-        if matches!(*name, "focus" | "palette") {
+        // `import-mesh` takes the file to import (S19): any word is one.
+        if matches!(*name, "focus" | "palette" | "import-mesh") {
             continue;
         }
         let wrong = shell.run(&format!("{name} now")).unwrap_err();
@@ -515,6 +517,9 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
                 || (*name == "palette" && wrong.contains("not a menu"))
                 || (*name == "tool" && wrong.contains("tool <"))
                 || (*name == "layout" && wrong.contains("layout <"))
+                || (*name == "tab" && wrong.contains("tab <"))
+                || (*name == "pointer" && wrong.contains("pointer <"))
+                || (*name == "probe-at" && wrong.contains("probe-at <"))
                 || *name == "reset"
                 || *name == "focus",
             "{name}: {wrong}"
@@ -590,7 +595,8 @@ fn dragging_a_body_moves_it_under_the_pointer() {
         assert_eq!(rig.shell.engine.spec().bodies[0], before);
 
         // Control: a drag that starts on empty picture orbits the camera and moves no body.
-        let empty = pane.left_top() + vec2(40.0, 40.0);
+        // (Clear of the tool strip, which floats over the view's left edge since S19.)
+        let empty = pane.left_top() + vec2(120.0, 40.0);
         assert!(rig.shell.body_under(0, (empty - pane.min).to_pos2(), pane.size()).is_none());
         rig.drag(empty, empty + vec2(60.0, 20.0), PointerButton::Primary);
         assert!(matches!(rig.last_command(), Some(Command::View(ViewCommand::Orbit { .. }))));
