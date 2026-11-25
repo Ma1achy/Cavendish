@@ -1355,14 +1355,28 @@ fn the_right_button_flies_and_holds_the_letters() {
     assert_ne!(looked.yaw, flown.yaw, "the mouse turned the view");
     let eye = |v: &cav_sim::ViewSpec| cav_app::camera::eye(v);
     assert!(eye(&looked).iter().zip(eye(&flown)).all(|(a, b)| (a - b).abs() < 1e-6), "from the eye");
+    // Every key but a global is the flight's (S18's second review, minor 3): 2 selects no tower,
+    // Delete deletes nothing.
+    rig.shell.run("select body 1").unwrap();
+    rig.key(Key::Num2, Modifiers::NONE);
+    rig.key(Key::Delete, Modifiers::NONE);
+    assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)));
+    assert_eq!(rig.shell.engine.spec().bodies.len(), 1);
     // Let go: no longer flying, and W is the Move tool again.
     rig.frames(vec![vec![Rig::press(at + egui::vec2(60.0, 0.0), PointerButton::Secondary, false)], vec![]]);
     assert!(rig.shell.mouse_fly.is_none());
     rig.shell.keyboard.focus = vec!["viewport".into()];
     rig.key(Key::W, Modifiers::NONE);
     assert_eq!(rig.shell.tool, "move");
+    rig.key(Key::Num2, Modifiers::NONE);
+    assert_eq!(rig.shell.engine.selection(), Some(Target::Tower(2)), "the control: 2 selects again");
     // None of it was an edit.
     assert_eq!(rig.shell.engine.depth(), (1, 0));
+    // The pointer gone from the window ends the fly too (a release outside it is never seen).
+    rig.frames(vec![vec![Event::PointerMoved(at)], vec![Rig::press(at, PointerButton::Secondary, true)]]);
+    assert!(rig.shell.mouse_fly.is_some());
+    rig.frames(vec![vec![Event::PointerGone], vec![]]);
+    assert!(rig.shell.mouse_fly.is_none(), "minor 4: the pointer left, the fly ended");
 }
 
 #[test]
@@ -1526,4 +1540,115 @@ fn context_opens_the_selection_s_menu_and_palette_takes_words() {
     rig.shell.palette.open = false;
     rig.shell.run("palette add").unwrap();
     assert_eq!((rig.shell.palette.query.as_str(), rig.shell.palette.menu.as_deref()), ("", Some("Add")));
+}
+
+#[test]
+fn home_in_the_middle_of_a_drag_keeps_its_own_step() {
+    // S18's second review, I1 in the window: Home pressed while the x arrow is dragged. One Ctrl+Z
+    // then takes back the drag's part after Home and leaves the camera homed. Control: the same
+    // drag without Home is one step, one Ctrl+Z back to the start.
+    let run = |home: bool| {
+        let mut rig = Rig::new();
+        rig.shell.run("load point").unwrap();
+        rig.shell.run("select body 1").unwrap();
+        rig.shell.run("tool move").unwrap();
+        rig.shell.run("orbit 33 20").unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        let start = anchor(&rig, 0);
+        let rect = rig.shell.layout().panes[0];
+        let spec = rig.shell.engine.spec();
+        let at = spec.bodies[0].motion.position(0.0, spec.array.instrument.gravity);
+        let g = cav_app::tools::gizmo(rig.shell.engine.view(0), rect.size(), at).unwrap();
+        let tip = g.tips[0].unwrap();
+        let from = rect.min + g.centre.to_vec2() + (tip - g.centre) * 0.6;
+        let metre = (tip - g.centre).normalized() * ((tip - g.centre).length() / g.metres as f32);
+        let key = |pressed| Event::Key {
+            key: Key::Home,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        };
+        let mut frames = vec![
+            vec![Event::PointerMoved(from)],
+            vec![Rig::press(from, PointerButton::Primary, true)],
+            vec![Event::PointerMoved(from + metre)],
+        ];
+        if home {
+            frames.push(vec![key(true)]);
+            frames.push(vec![key(false)]);
+        }
+        frames.push(vec![Event::PointerMoved(from + metre * 2.0)]);
+        frames.push(vec![Rig::press(from + metre * 2.0, PointerButton::Primary, false)]);
+        frames.push(vec![]);
+        rig.frames(frames);
+        let moved = anchor(&rig, 0);
+        assert!(moved[0] > start[0] + 1.5, "{start:?} -> {moved:?}");
+        let camera = rig.shell.engine.view(0).clone();
+        rig.key(Key::Z, Modifiers::COMMAND);
+        (start, anchor(&rig, 0), camera == *rig.shell.engine.view(0))
+    };
+    let (start, after_undo, camera_kept) = run(true);
+    assert_ne!(after_undo, start, "the part before Home is a step of its own");
+    assert!(camera_kept, "one Ctrl+Z took back the drag's set, not Home");
+    let (start, after_undo, _) = run(false);
+    assert_eq!(after_undo, start, "the control: without Home the whole drag is one undo");
+}
+
+#[test]
+fn a_click_in_a_window_ends_a_transform_session_keeping_its_move() {
+    // S18's second review, I2: the keyboard's focus moved into a window ends the session (the
+    // move kept, as a click does in Blender), so that no later key takes it back unasked. Control:
+    // the same click with no session moves nothing.
+    let session_then_click = |session: bool| {
+        let mut rig = two_masses();
+        rig.key(Key::H, Modifiers::COMMAND);
+        rig.frames(vec![vec![], vec![]]);
+        rig.shell.keyboard.focus = vec!["viewport".into(), "viewport/selection".into()];
+        rig.shell.keyboard.nav_on = true;
+        let (start, depth) = (anchor(&rig, 0), rig.shell.engine.depth());
+        if session {
+            rig.key(Key::Enter, Modifiers::NONE);
+            rig.key(Key::ArrowRight, Modifiers::NONE);
+        }
+        rig.frames(vec![vec![]]);
+        let last = format!("history {}", rig.shell.engine.depth().0);
+        rig.click_button(&last);
+        rig.frames(vec![vec![]]);
+        assert!(rig.shell.session.is_none(), "no session is left open");
+        let moved = anchor(&rig, 0);
+        // The keys that used to take it back now do not: F (a shortcut), Esc.
+        rig.shell.keyboard.focus = vec!["viewport".into()];
+        rig.key(Key::F, Modifiers::NONE);
+        rig.key(Key::Escape, Modifiers::NONE);
+        (start, moved, anchor(&rig, 0), depth, rig.shell.engine.depth())
+    };
+    let (start, moved, later, depth, after) = session_then_click(true);
+    assert_ne!(moved, start, "the move was kept");
+    assert_eq!(later, moved, "and nothing later took it back");
+    assert_eq!(after.0, depth.0 + 1, "one step");
+    let (start, moved, _, depth, after) = session_then_click(false);
+    assert_eq!((moved, after.0), (start, depth.0));
+}
+
+#[test]
+fn a_gizmo_drag_ends_a_transform_session_first() {
+    // I2's third way in: a drag of the arrow while a session is open starts from where the
+    // session left the body, and the session is over.
+    let mut rig = two_masses();
+    rig.shell.run("tool move").unwrap();
+    rig.frames(vec![vec![]]);
+    rig.shell.keyboard.focus = vec!["viewport".into(), "viewport/selection".into()];
+    rig.shell.keyboard.nav_on = true;
+    let start = anchor(&rig, 0);
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.key(Key::PageUp, Modifiers::NONE);
+    let nudged = anchor(&rig, 0);
+    assert_ne!(nudged, start);
+    rig.drag_arrow(0, 0, 1.0);
+    assert!(rig.shell.session.is_none());
+    let after = anchor(&rig, 0);
+    assert!((after[0] - nudged[0] - 1.0).abs() < 1e-9 && after[2] == nudged[2], "{nudged:?} -> {after:?}");
+    rig.key(Key::ArrowRight, Modifiers::NONE);
+    assert_eq!(anchor(&rig, 0), after, "a later arrow is no session's: it moves nothing");
 }

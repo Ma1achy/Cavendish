@@ -533,6 +533,17 @@ impl Shell {
         session.edited
     }
 
+    /// A transform session the keyboard has left (a click on a window's control, a window opened
+    /// with the mouse, anything that moved the focus) ends, its move kept, as a click outside a
+    /// move keeps it in Blender: the keyboard is the one owner of "a session is open" (S18's
+    /// second review, I2: the shell's session outlived the keyboard's, and a later key took the
+    /// move back unasked).
+    fn orphaned_session(&mut self) {
+        if self.session.is_some() && self.keyboard.session != Some(crate::keyboard::Session::Transform) {
+            self.end_session(true);
+        }
+    }
+
     /// The keyboard leaves a transform session it is in: back to navigation on the same element.
     fn end_keyboard_session(&mut self) {
         if self.keyboard.session == Some(crate::keyboard::Session::Transform) {
@@ -1227,8 +1238,11 @@ impl Shell {
             }
             (presses, released, clicked)
         });
-        // The right button let go: the mouse's fly ends.
-        if self.mouse_fly.is_some() && !ctx.input(|i| i.pointer.secondary_down()) {
+        // The right button let go, the window's focus lost or the pointer gone from it (a release
+        // outside the page is never seen): the mouse's fly ends (S18's second review, minor 4).
+        if self.mouse_fly.is_some()
+            && ctx.input(|i| !i.pointer.secondary_down() || !i.focused || i.pointer.hover_pos().is_none())
+        {
             self.mouse_fly = None;
         }
         if let Some(pos) = clicked {
@@ -1237,7 +1251,8 @@ impl Shell {
             // A click on a control in a window moves the keyboard's focus onto it, in navigation
             // mode, the ring hidden (the spec's §8); anywhere else (a panel, the canvas) the focus
             // stays where it was.
-            if let Some(id) = self.tree.window_node_at(pos).map(str::to_owned) {
+            let top = ctx.layer_id_at(pos);
+            if let Some(id) = self.tree.window_node_at(pos, top).map(str::to_owned) {
                 let tree = self.tree.clone();
                 self.keyboard.focus_on(&tree, &id);
             }
@@ -1251,18 +1266,16 @@ impl Shell {
             routed.push((press, false));
         }
         routed.extend(self.repeat.due(now).into_iter().map(|press| (press, true)));
-        // While the right button flies the camera, letters are the flight's (W A S D E Q, read
-        // as held keys by `fly_frame`) and no letter is a shortcut: W is not the Move tool, A not
-        // Place (S18's review, U3).
+        // While the right button flies the camera, every key but a global is the flight's (W A S D
+        // E Q, read as held keys by `fly_frame`), as in a fly session: W is not the Move tool, A
+        // not Place, 2 selects no tower, Delete deletes nothing (S18's reviews, U3 and minor 3).
+        let shortcuts = crate::actions::table().shortcuts();
         if self.mouse_fly.is_some() {
-            let letter =
-                |key: egui::Key| key.name().len() == 1 && key.name().chars().all(|c| c.is_ascii_alphabetic());
-            routed.retain(|(press, _)| !(letter(press.key) && !press.modifiers.command));
+            routed.retain(|(press, _)| crate::keyboard::is_global(&shortcuts, *press));
         }
         if self.repeat.any() {
             ctx.request_repaint();
         }
-        let shortcuts = crate::actions::table().shortcuts();
         let mut used = Vec::new();
         for (press, repeat) in routed {
             let (effects, took) = self.keyboard.route(&self.tree, &shortcuts, press);
@@ -1452,6 +1465,7 @@ impl Shell {
             self.fullscreen_sent = self.fullscreen;
         }
         self.session_keys();
+        self.orphaned_session();
         self.fly_frame(&ctx);
         self.advance(&ctx);
         // Take whatever the forward worker has finished; while it is still at work, keep drawing so
@@ -1465,6 +1479,7 @@ impl Shell {
         crate::panels::draw(self, ui, surface);
         crate::palette::draw(self, &ctx);
         crate::dialogs::draw(self, &ctx);
+        self.orphaned_session();
         self.paint_ring(&ctx);
         // What no widget took this frame (a click of something no longer drawn) is dropped; so is
         // a layout's unfolding, once a frame has drawn what it opens.

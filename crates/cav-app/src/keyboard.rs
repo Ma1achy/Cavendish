@@ -83,6 +83,8 @@ pub struct FocusTree {
     index: HashMap<Id, usize>,
     big: Vec<usize>,
     windows: Vec<usize>,
+    /// The egui layer each window was drawn in, for which of two overlapping windows is on top.
+    layers: HashMap<Id, egui::LayerId>,
 }
 
 impl FocusTree {
@@ -145,6 +147,12 @@ impl FocusTree {
         }
     }
 
+    /// Says where a window was drawn and in which egui layer (its response's).
+    pub fn place_window(&mut self, id: &str, rect: Rect, layer: egui::LayerId) {
+        self.place(id, rect);
+        self.layers.insert(id.to_owned(), layer);
+    }
+
     /// Marks `id` as disabled: it keeps its place and does nothing.
     pub fn disable(&mut self, id: &str) {
         if let Some(&at) = self.index.get(id) {
@@ -173,25 +181,38 @@ impl FocusTree {
     /// The innermost node of an open window drawn under `pos` (points), if there is one: where a
     /// click on a window's control moves the keyboard's focus (the spec's §8). Nodes outside
     /// windows are never answered: a click on a panel or the canvas leaves the focus alone.
+    /// `top` is the layer egui has on top at `pos`: where two windows overlap, only the one in it
+    /// is looked in (S18's second review, minor 5). A click on a window's own ground (no control
+    /// under it) answers the window's first section, never the bare window (minor 7).
     #[must_use]
-    pub fn window_node_at(&self, pos: egui::Pos2) -> Option<&str> {
+    pub fn window_node_at(&self, pos: egui::Pos2, top: Option<egui::LayerId>) -> Option<&str> {
         let root = |mut at: usize| {
             while let Some(parent) = self.nodes[at].parent {
                 at = parent;
             }
             at
         };
-        self.nodes
+        let on_top = |window: usize| match (top, self.layers.get(&self.nodes[window].id)) {
+            (Some(top), Some(layer)) => *layer == top,
+            _ => true,
+        };
+        let found = self
+            .nodes
             .iter()
             .enumerate()
             .filter(|(at, node)| {
-                node.rect.is_some_and(|r| r.contains(pos)) && self.windows.contains(&root(*at))
+                let window = root(*at);
+                node.rect.is_some_and(|r| r.contains(pos)) && self.windows.contains(&window) && on_top(window)
             })
             .min_by(|(_, a), (_, b)| {
                 let area = |n: &Node| n.rect.map_or(f32::INFINITY, |r| r.area());
                 area(a).total_cmp(&area(b))
             })
-            .map(|(_, node)| node.id.as_str())
+            .map(|(at, _)| at)?;
+        match self.nodes[found].children.first() {
+            Some(&first) if self.windows.contains(&found) => Some(self.nodes[first].id.as_str()),
+            _ => Some(self.nodes[found].id.as_str()),
+        }
     }
 
     /// The ids of `id`'s children, in order.
@@ -935,6 +956,12 @@ fn find(shortcuts: &[Shortcut], scope: &str, press: Press) -> Option<String> {
         .map(|s| s.action.clone())
 }
 
+/// Whether `press` is a global key of `shortcuts` (one that works wherever the focus is).
+#[must_use]
+pub fn is_global(shortcuts: &[Shortcut], press: Press) -> bool {
+    find(shortcuts, GLOBAL, press).is_some()
+}
+
 /// Keys that repeat when held (the spec's DAS/ARR): the arrows, Page Up/Down, `+`, `-` and
 /// Backspace. A reset key (Home) and the shortcuts fire once.
 #[must_use]
@@ -1521,6 +1548,32 @@ mod tests {
         kb.route(&t, &s, key(Key::ArrowDown));
         assert_eq!(kb.focus, ["tree", "tree/bodies"], "a deleted row gives way to its section");
         assert_eq!(t.breadcrumb(&kb.focus), "Scene tree › Bodies");
+    }
+
+    #[test]
+    fn a_click_in_overlapping_windows_finds_the_top_one_and_a_section() {
+        // S18's second review, minors 5 and 7.
+        let mut t = tree();
+        let layer = |name: &str| egui::LayerId::new(egui::Order::Middle, egui::Id::NULL.with(name));
+        let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
+        let small = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(20.0, 20.0));
+        t.window("under", "Under");
+        t.add("under", "under/list", "List", Kind::Scope);
+        t.add("under/list", "under/button", "Button", Kind::Button);
+        t.place_window("under", rect, layer("under"));
+        t.place("under/list", rect);
+        t.place("under/button", small);
+        t.window("over", "Over");
+        t.add("over", "over/first", "First", Kind::Scope);
+        t.place_window("over", rect, layer("over"));
+        t.place("over/first", Rect::from_min_size(egui::pos2(0.0, 100.0), egui::vec2(200.0, 50.0)));
+        let at = egui::pos2(15.0, 15.0);
+        // Control: with no layer said, the smallest node anywhere under the pointer: the button
+        // of the window underneath.
+        assert_eq!(t.window_node_at(at, None), Some("under/button"));
+        // With the window on top said, its own: its ground, which lands on its first section.
+        assert_eq!(t.window_node_at(at, Some(layer("over"))), Some("over/first"));
+        assert_eq!(t.window_node_at(egui::pos2(500.0, 500.0), None), None);
     }
 
     #[test]

@@ -521,7 +521,10 @@ impl Engine {
         // same one step of undo.)
         let continues = overwrites
             || matches!(&command, Command::Set { path, continues: true, .. } if self.run.as_deref() == Some(path));
-        let edit = matches!(prepared, Prepared::Edit(..) | Prepared::Restore(_));
+        // Any edit ends the run, Home included: it prepares nothing but pushes a step of its own,
+        // which the run's next set would otherwise rewrite (S18's second review, I1).
+        let edit = matches!(prepared, Prepared::Edit(..) | Prepared::Restore(_))
+            || matches!(&command, Command::View(view) if view.is_edit());
         self.perform(&command, prepared, continues);
         if edit {
             self.run = match &command {
@@ -1948,6 +1951,29 @@ mod tests {
             .apply(Command::Set { path: "duration".into(), value: serde_json::json!(21.0), continues: true })
             .unwrap();
         assert_eq!(other.depth().0, start + 2);
+        // Home between two steps of a run is an edit of its own: it ends the run, and keeps its
+        // step whole (S18's second review, I1: the set after it rewrote Home's step).
+        let homing = |middle: Command| {
+            let mut engine = Engine::new();
+            engine.apply(Command::load(dev::point())).unwrap();
+            engine.run_line("orbit 33 20").unwrap();
+            engine.apply(set(x0 + 1.0, false)).unwrap();
+            engine.apply(middle).unwrap();
+            engine.apply(set(x0 + 2.0, true)).unwrap();
+            engine
+        };
+        let homed = homing(Command::View(ViewCommand::Home { pane: 0 }));
+        let (done, _) = homed.history_steps();
+        assert_eq!(homed.depth().0, 4, "the load, a set, Home, a set");
+        let last = done.last().unwrap();
+        assert!(matches!((&last.undo, &last.redo), (Edit::Put { .. }, Edit::Put { .. })), "{last:?}");
+        assert!(matches!(&done[2].redo, Edit::View { .. }), "Home's step is Home's");
+        let mut undone = homed;
+        undone.apply(Command::Undo).unwrap();
+        assert_eq!(undone.spec().bodies[0].motion.anchor().0[0], x0 + 1.0, "one undo, one set");
+        // Control: an orbit between is no edit, and the run goes on as one step.
+        let orbited = homing(Command::View(ViewCommand::Orbit { pane: 0, yaw: 10.0, pitch: 10.0 }));
+        assert_eq!(orbited.depth().0, 2);
     }
 
     #[test]

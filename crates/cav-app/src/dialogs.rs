@@ -311,7 +311,7 @@ fn history(shell: &mut Shell, ctx: &egui::Context) {
             );
         });
     if let Some(window) = window {
-        shell.building.place("history", window.response.rect);
+        shell.building.place_window("history", window.response.rect, window.response.layer_id);
     }
     if let Some((times, line)) = go {
         for _ in 0..times {
@@ -412,7 +412,7 @@ fn wizard(shell: &mut Shell, ctx: &egui::Context) {
         },
     );
     if let Some(window) = window {
-        shell.building.place("wizard", window.response.rect);
+        shell.building.place_window("wizard", window.response.rect, window.response.layer_id);
     }
     shell.wizard = Some(choices.clone());
     if create && let Ok(spec) = choices.scene() {
@@ -477,7 +477,7 @@ fn open(shell: &mut Shell, ctx: &egui::Context) {
             }
         });
     if let Some(window) = window {
-        shell.building.place("open", window.response.rect);
+        shell.building.place_window("open", window.response.rect, window.response.layer_id);
     }
     shell.open_window = Some(path);
     if let Some(what) = load {
@@ -519,7 +519,7 @@ fn save(shell: &mut Shell, ctx: &egui::Context) {
                 || (field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
         });
     if let Some(window) = window {
-        shell.building.place("save", window.response.rect);
+        shell.building.place_window("save", window.response.rect, window.response.layer_id);
     }
     shell.save_window = Some(path.clone());
     if write && !path.trim().is_empty() {
