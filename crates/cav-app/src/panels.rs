@@ -458,6 +458,39 @@ fn outlined(count: usize, selected: Option<usize>) -> Vec<usize> {
     rows
 }
 
+/// The world's row in the outliner: its pitch, pieces and how far round each tower it is read.
+#[must_use]
+pub(crate) fn world_outline(world: &cav_sim::world::WorldSpec) -> String {
+    format!(
+        "{} cm · {} pieces · read {} m",
+        short_number(world.pitch * 100.0),
+        world.pieces.len(),
+        short_number(world.read.radius)
+    )
+}
+
+/// The world's properties as rows: what it is (pitch, pieces, materials, finest cells), how it is
+/// read (radius, tolerance) and what is resident now (`resident` chunks and bricks, `pending`
+/// queued).
+#[must_use]
+pub(crate) fn world_rows(
+    world: &cav_sim::world::WorldSpec,
+    resident: [usize; 2],
+    pending: usize,
+) -> Vec<(&'static str, String)> {
+    let cells = cav_sim::world::World::new(world).cells(world);
+    vec![
+        ("pitch", format!("{} cm", short_number(world.pitch * 100.0))),
+        ("pieces", world.pieces.len().to_string()),
+        ("materials", world.materials.iter().map(|m| m.label.as_str()).collect::<Vec<_>>().join(", ")),
+        ("finest cells", format!("{cells:.1e}")),
+        ("read within", format!("{} m of each tower", short_number(world.read.radius))),
+        ("read tolerance", format!("{:.0e} rad", world.read.tolerance)),
+        ("resident", format!("{} chunks, {} bricks", resident[0], resident[1])),
+        ("queued", pending.to_string()),
+    ]
+}
+
 fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     ui.label(RichText::new("Outliner").color(theme::STRONG).strong());
     // Only what is shown is copied out of the scene: a row's words, not the scene.
@@ -466,8 +499,9 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
         Some(Target::Tower(n)) => (None, Some(n - 1)),
         _ => (None, None),
     };
-    let (bodies, towers, room, floor) = {
+    let (bodies, towers, room, floor, world) = {
         let spec = shell.engine.spec();
+        let world = spec.world.as_ref().map(world_outline);
         let bodies: Vec<(usize, String, String)> = outlined(spec.bodies.len(), selected_body)
             .into_iter()
             .map(|n| {
@@ -484,6 +518,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             (towers, spec.array.towers.len()),
             spec.room.as_ref().map(|room| room.size),
             spec.floor.as_ref().map(|floor| floor.height),
+            world,
         )
     };
     let left_out = |ui: &mut egui::Ui, shown: usize, count: usize, list: &str| {
@@ -498,8 +533,11 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
         outline_row(shell, ui, Target::Body(n + 1), theme::GOLD, label, detail);
     }
     left_out(ui, bodies.0.len(), bodies.1, "bodies");
-    if bodies.1 == 0 {
+    if bodies.1 == 0 && world.is_none() {
         ui.label(RichText::new("none · `load point` has one").size(11.5).color(theme::WEAK));
+    } else if bodies.1 == 0 {
+        // The world is the scene's source: it is listed under Surroundings, with what it is.
+        ui.label(RichText::new("no bodies · the world below is read").size(11.5).color(theme::WEAK));
     }
     // Adding is a command too: a point mass at rest beside the array, to be edited from there.
     button_row(shell, ui, "", &[("+ mass", "mass 1 at 2 2 1", false)]);
@@ -547,8 +585,12 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             &format!("z = {height:.1} m · to the horizon"),
         );
     }
-    if room.is_none() && floor.is_none() {
-        ui.label(RichText::new("nothing: no room, no floor, no air").size(11.5).color(theme::WEAK));
+    // The world volume: a source as a body is, and the scene's surroundings.
+    if let Some(detail) = &world {
+        outline_row(shell, ui, Target::World, theme::WIDGET_EDGE, "world", detail);
+    }
+    if room.is_none() && floor.is_none() && world.is_none() {
+        ui.label(RichText::new("nothing: no room, no floor, no world, no air").size(11.5).color(theme::WEAK));
     }
 
     heading(ui, "Run");
@@ -730,6 +772,7 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
         }
         Some(Target::Room) => ("Room".to_owned(), "room".to_owned()),
         Some(Target::Floor) => ("Floor".to_owned(), "floor".to_owned()),
+        Some(Target::World) => ("World".to_owned(), "world".to_owned()),
         Some(Target::Body(n)) => (spec.bodies[n - 1].label.clone(), format!("bodies[{}]", n - 1)),
     };
     ui.horizontal(|ui| {
@@ -778,6 +821,27 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
         Some(Target::Room | Target::Floor) => {
             crate::editors::show(shell, ui, &path);
             crate::editors::structure(shell, ui, &path);
+        }
+        Some(Target::World) => {
+            // What the world is and what is resident, then its settings: how it is read, kept
+            // resident and coarsened (its pieces and materials are lists: `ls world.pieces`).
+            if let Some(world) = &spec.world {
+                let streaming = shell.engine.streaming();
+                let resident = streaming.frame().map_or([0, 0], |f| [f.chunks.len(), f.bricks.len()]);
+                let world_rows = world_rows(world, resident, streaming.pending());
+                rows(ui, "world", &world_rows);
+                let signal = shell.engine.signal().1;
+                if let Some(within) = signal.and_then(|s| s.truncated) {
+                    let text = format!(
+                        "The towers read only the world's matter within {within} m of their atoms: the signal is of \
+                         that matter alone (S5 reads the rest)."
+                    );
+                    ui.label(RichText::new(text).size(11.0).color(theme::WARN));
+                }
+            }
+            for part in ["world.read", "world.stream", "world.lod"] {
+                crate::editors::show(shell, ui, part);
+            }
         }
         Some(Target::Body(n)) => {
             crate::editors::show(shell, ui, &path);
@@ -899,6 +963,7 @@ fn header(shell: &mut Shell, ui: &mut egui::Ui) {
                 Target::Tower(n) => shell.engine.spec().array.towers[n - 1].label.clone(),
                 Target::Room => "room".into(),
                 Target::Floor => "floor".into(),
+                Target::World => "world".into(),
                 Target::Body(n) => shell.engine.spec().bodies[n - 1].label.clone(),
             };
             badge(ui, format!("selected: {text}"), theme::STRONG);

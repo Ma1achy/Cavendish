@@ -136,7 +136,7 @@ pub const COMMANDS: &[CommandDoc] = &[
     CommandDoc { name: "redo", usage: "redo", about: "reapply the edit last taken back", example: "redo" },
     CommandDoc {
         name: "select",
-        usage: "select <tower N|body N|room|floor|none>",
+        usage: "select <tower N|body N|room|floor|world|none>",
         about: "select something, or nothing",
         example: "select tower 3",
     },
@@ -329,6 +329,7 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
         Command::Select(Some(Target::Tower(n))) => format!("select tower {n}"),
         Command::Select(Some(Target::Room)) => "select room".into(),
         Command::Select(Some(Target::Floor)) => "select floor".into(),
+        Command::Select(Some(Target::World)) => "select world".into(),
         Command::Select(Some(Target::Body(n))) => format!("select body {n}"),
         Command::Undo => "undo".into(),
         Command::Redo => "redo".into(),
@@ -655,6 +656,7 @@ impl Engine {
             ("select", ["none"]) => Ok(Request::Do(Command::Select(None))),
             ("select", ["room"]) => Ok(Request::Do(Command::Select(Some(Target::Room)))),
             ("select", ["floor"]) => Ok(Request::Do(Command::Select(Some(Target::Floor)))),
+            ("select", ["world"]) => Ok(Request::Do(Command::Select(Some(Target::World)))),
             ("select", ["body", n]) => {
                 let n = n.parse().map_err(|_| format!("`{n}` is not a body number; {}", usage(name)))?;
                 Ok(Request::Do(Command::Select(Some(Target::Body(n)))))
@@ -1267,6 +1269,7 @@ mod tests {
             ("select tower 3", Command::Select(Some(Target::Tower(3)))),
             ("select room", Command::Select(Some(Target::Room))),
             ("select floor", Command::Select(Some(Target::Floor))),
+            ("select world", Command::Select(Some(Target::World))),
             ("select body 2", Command::Select(Some(Target::Body(2)))),
             ("select none", Command::Select(None)),
             ("seek 4.2", Command::Seek(4.2)),

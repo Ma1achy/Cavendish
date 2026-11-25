@@ -892,6 +892,7 @@ impl Engine {
             Target::Tower(n) if n == 0 || n > towers => Err(no_tower(n, towers)),
             Target::Room if self.spec.room.is_none() => Err("the scene has no room".into()),
             Target::Floor if self.spec.floor.is_none() => Err("the scene has no floor".into()),
+            Target::World if self.spec.world.is_none() => Err("the scene has no world".into()),
             Target::Body(_) if self.spec.bodies.is_empty() => Err("the scene has no bodies".into()),
             Target::Body(n) if n == 0 || n > self.spec.bodies.len() => {
                 Err(format!("there is no body {n}; the scene has bodies 1 to {}", self.spec.bodies.len()))
