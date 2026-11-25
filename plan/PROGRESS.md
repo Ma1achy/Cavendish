@@ -8,11 +8,11 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S1 a point mass | done: TASK-S1-01 to 19 merged; reviewed twice, nothing important remains | `s1-point-mass` | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
 | S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
 | S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
-| S17 in the browser | built (TASK-S17-01 to 03, #117–#119); review fixes done (TASK-S17-04 to 08, #120–#124); live; awaiting re-review | | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
+| S17 in the browser | built (TASK-S17-01 to 03, #117–#119); review fixes done (TASK-S17-04 to 08, #120–#124; the live record TASK-S17-10); live; awaiting re-review | | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
 
 ## S17 after its review (25 Nov 2026) — fixes done, awaiting re-review
 
-**Done** (TASK-S17-04 to 08, PRs #120–#124; `docs/slices/S17.md` §7.8). Figures download in the
+**Done** (TASK-S17-04 to 08, PRs #120–#124, and the live record TASK-S17-10; `docs/slices/S17.md` §7.8). Figures download in the
 page (the export goes through `cav_engine::files`; a test double proves it; the demo clicks a
 link's download button and holds `pass`'s figure to the native bytes). R2 is held to the bit
 except the listed `THROUGH_LIBM` labels, in the shipped `web` profile; both review mutations fail.
@@ -31,6 +31,10 @@ bits); no inline script, so the CSP needs no hash; the equivalence in the `web` 
 not started by this work and left running on the owner's PC: `xtask.exe web serve` (PID 38736,
 the owner's, on port 8000) and two `python` processes from earlier sessions (PIDs 528, 36392);
 none was touched.
+
+**Live.** After the merge (`pages.yml` green for `c20460b`), checked headlessly: a link's figure
+downloads behind its button (comb.svg, .csv, .json), sphere's frames none over 50 ms but the
+start-up one, no CSP or other error in the browser's log, the no-adapter page.
 
 **Next.** A re-review of S17; then S4.
 

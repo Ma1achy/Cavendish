@@ -530,3 +530,6 @@
 - id: TASK-S17-09
   milestone: S17
   title: "Stray-process guards: report and stop agent leftovers by signature; hooks after every subagent and turn"
+- id: TASK-S17-10
+  milestone: S17
+  title: "The live site's record after the review fixes"
