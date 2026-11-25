@@ -10,8 +10,16 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
 | S4 big scenes | done: TASK-S4-01 to 25 merged; reviewed three times (`docs/slices/S4-review.md`, `-2`, `-3`), nothing important remains; oracle 58/58, validation 113/113 | `s4-big-scenes` | brief and results: `docs/slices/S4.md` (§7.7–§7.8: the fixes); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
 | S18 the editor | done: TASK-S18-01 to 04, 07 to 22 merged; reviewed three times (`docs/slices/S18-review.md`, `-2`, `-3`), nothing important remains | `s18-the-editor` | brief and results: `docs/slices/S18.md` (§7.7–§7.8: the fixes); screenshots: `docs/slices/S18/`; recipe: `docs/extending/a-tool-or-panel.md` |
-| S19 the editor, part two | built in part: TASK-S19-09, TASK-S18-05, -06, TASK-S19-04, -13 merged, the record (TASK-S19-12); the rest moved to S20; reviewed twice (`docs/slices/S19-review.md`, `S19-review-2.md`), the findings of both fixed (TASK-S19-21 to 26) | | brief and results: `docs/slices/S19.md` (§7.1 the panels before and after; §7.9 the review's fixes, before and after; §7.10 the second review's); requirement: `docs/design/panels.md`; pictures: `docs/slices/S19/`; recipes: `docs/extending/a-material.md`, `a-shape.md` (import), `a-tool-or-panel.md` (cards, tree) |
+| S19 the editor's second half | done: materials, mesh import, the Probe, the side panels redesigned; reviewed twice (`docs/slices/S19-review.md`, `-2`), every important finding fixed (TASK-S19-21 to 26); validation 116/116 | `s19-editor-second-half` | brief and results: `docs/slices/S19.md` (§7.9–§7.10); pictures: `docs/slices/S19/` |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
+
+## S19 done (25 Nov 2026) — tagged `s19-editor-second-half`
+The second review's one important finding (a held mesh's hand-off to a web worker) is fixed in #212 with both
+tests seen to fail without the fix. `quick` is back inside its budget (16 s; 45 slow tests moved to a `slow`
+tier that `oracle` runs). Next: S20, the workspace (`docs/design/workspace.md`): mosaic viewports, the viewport
+header, the floating tool palette, the transport, a dense layout, the first-person and physical cameras, then
+docking and the rest. Also merged here: the polyhedral-gravity Lean proofs (`proofs/polyhedral-gravity/`) and
+the draft paper (`docs/papers/polyhedral-gravity/`), provisional until S5 regenerates its figures with Cavendish.
 
 ## S19 after its second review (25 Nov 2026) — fixes done (TASK-S19-26)
 

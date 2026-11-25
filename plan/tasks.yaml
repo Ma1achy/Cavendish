@@ -811,3 +811,6 @@
 - id: TASK-S20-12
   milestone: S20
   title: "Carried from S19's second review into the dense panels (docs/design/workspace.md 0; docs/slices/S19-review-2.md): the scroll bar's width reserved so a row is as wide with it as without (minor 10: material densities cut), a uniform body's Material reading Uniform (11), the Probe's reading out of the figure and into the right panel or status line (13), one unit a column in Readings, and the review's list What S20 will have to shrink (theme::HIT and the tests that encode 24 pt)"
+- id: TASK-S5-18
+  milestone: S5
+  title: The polyhedral-gravity paper's figures and tables regenerated with Cavendish (docs/papers/polyhedral-gravity/README.md lists the command for each), the shapes study folded in
