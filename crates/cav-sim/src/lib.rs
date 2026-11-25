@@ -13,10 +13,13 @@
 //! ## What it may depend on
 //! Of the workspace, `cav-core` only (`cav-validate` in its tests).
 //! It must not hold commands, queries, history or caching (those are the engine's), nor anything
-//! that draws or touches a GPU.
+//! that draws or touches a GPU. Its one piece of state is [`assets`]: the large mesh files this
+//! session was given, by the hash of their bytes (input, not a cache of anything computed). Its one piece of state is [ssets]: the bytes of the large mesh
+//! files this session was given, by hash (input, not a cache).
 
 #![warn(missing_docs)]
 
+pub mod assets;
 pub mod bundle;
 pub mod dev;
 pub mod import;

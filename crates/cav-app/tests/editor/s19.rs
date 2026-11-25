@@ -157,7 +157,7 @@ fn stl_box(half: [f64; 3]) -> Vec<u8> {
 #[test]
 fn a_dropped_file_adds_a_body() {
     // S19 I1 through the window: a file dropped on it (its bytes, as a page hands them over)
-    // opens the Import window on it; Import adds the body, fitted to 1 m, where the camera looks,
+    // opens the Import window on it; Import adds the body, at its own size, where the camera looks,
     // selected; its corners are one row, not one each; one undo takes it out. Control: a dropped
     // file that is not a mesh adds nothing, and the console says why.
     let mut rig = Rig::new();
@@ -174,7 +174,12 @@ fn a_dropped_file_adds_a_body() {
     assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)));
     assert!(rig.shell.import_window.is_none(), "the window closed");
     let shape = spec.bodies[0].shape.as_ref().unwrap();
-    assert!((shape.kind.bounds().unwrap().size().x - 1.0).abs() < 1e-12, "fitted to 1 m");
+    assert!((shape.kind.bounds().unwrap().size().x - 1.0).abs() < 1e-12, "its own size, 1 m");
+    // It stands on the ground, lifted by half its own height (S19's review, minor 8); the
+    // cube starter's lift, which it had, is another height.
+    let z = spec.bodies[0].motion.anchor().0[2];
+    assert!((z - (rig.shell.ground() + 0.125)).abs() < 1e-12, "{z} m");
+    assert!((rig.shell.place_for("cube")[2] - z).abs() > 0.1, "the control: the cube's lift differs");
     let corners =
         rig.shell.focus_tree().node("field/bodies[0].shape.kind.Triangles.vertices").expect("one row");
     assert_eq!(corners.kind, cav_app::keyboard::Kind::ReadOnly);

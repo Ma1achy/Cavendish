@@ -44,7 +44,9 @@ pub use command::{
     ReadingReply, Reply, SignalReply, Stage, Standing, Stats, TowerReading, ViewCommand, WindowReply,
 };
 pub use console::{COMMANDS, CommandDoc, Request, describe, help, render, value_of};
-pub use engine::{Engine, Exports, FigureExporter, REPLAY_PATIENCE, TYPED_LINE_PATIENCE, estimate_text};
+pub use engine::{
+    Engine, Exports, FigureExporter, MAX_DROPPED_BYTES, REPLAY_PATIENCE, TYPED_LINE_PATIENCE, estimate_text,
+};
 pub use forward::{FORWARD_STORE_BYTES, SignalState};
 pub use history::{HISTORY_BYTES, JOURNAL_BYTES};
 pub use log::{Level, Log, LogEntry, LogFilter, Subsystem};

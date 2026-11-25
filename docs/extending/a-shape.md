@@ -59,8 +59,13 @@ recipe covers putting a shape in a scene.
 Often a new kind is not needed: an OBJ or STL file is imported as a body (`import <file> fit
 <metres> material <label>`, File › Import mesh…, or a file dropped on the window;
 `cav_sim::import::body`). A mesh of at most `MAX_INLINE_TRIANGLES` triangles is held in the scene
-as `ShapeKind::Triangles`, centred on the middle of its box, so the scene needs no file beside it
-(in a page as natively); a larger one read from a path is named by it (`ShapeKind::Mesh`). An STL
+as `ShapeKind::Triangles`, so the scene needs no file beside it (in a page as natively). A larger
+one (up to 32 MiB and 500,000 triangles) is kept by the session in `cav_sim::assets`, by the hash of
+its bytes, and named by its path or dropped name and that hash (`ShapeKind::Mesh { hash }`); a
+page sends it to each forward worker once (`forward::wire::with_assets`, the lane's `holds`).
+Either way it is centred on the middle of its box (`Mesh::centred_on_box`), so `at` is the box's
+middle whatever the triangle count. A saved scene names the file and hash: a later session holds
+the mesh again when the file is read or dropped again. An STL
 holds single-precision numbers: a side of 0.2 m comes back as 0.2000000030 m, which can take one
 more cell of the grid. The case `materials.imported_box_mesh_is_the_cuboid` holds an imported box
 to the `Cuboid` of the same size, leaf for leaf.
