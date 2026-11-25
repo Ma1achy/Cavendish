@@ -22,7 +22,8 @@ worded "Set mass to 5 kg on “mass”", inside the outliner; one swatch for one
 word matches alone; the wizard's bodies as tiles; the inspector says it scrolls, atom mass in u;
 no toast for opening. Minors 1–7 done.
 
-**Numbers.** `quick` 628; gpu, oracle, web and validation: see the line below once run on main.
+**Numbers.** `quick` 628; `gpu` 40; `oracle` 58 in 424 s; `web` green in 252 s (oracle and web on
+main at 3a1be22); validation 113 of 113 against `s4-big-scenes`, the report unchanged.
 
 **Next.** A third look, or the tag `s18-the-editor`; then S5 or S19.
 
