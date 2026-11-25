@@ -793,3 +793,6 @@
 - id: TASK-S20-07
   milestone: S20
   title: Scene tree folders - user folders inside the groups, nest, drag, eye and lock for children, saved with the scene (workspace.md 6)
+- id: TASK-S20-08
+  milestone: S20
+  title: A body's drawn path follows its motion - a periodic path is drawn over one period with enough pieces per loop (today 96 straight pieces span the whole timeline, so a fast circle is drawn as a square), a path with breaks piece by piece; the plots' sampling checked the same way
