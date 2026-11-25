@@ -1,0 +1,26 @@
+$ cav exec "load world-box; reading 1"
+load world-box
+# a shot read out at 1 s · refined · quadrature within 7e-14 rad
+# tower    ΔΦ [rad]  δφ₁ lower [rad]  δφ₂ upper [rad]
+tower 1  -6.22604490510103e1  1.829500107447454e1  8.055545012548484e1
+tower 2  -1.0417154201076542e2  4.100278748741659e1  1.45174329498182e2
+tower 3  -3.384030703109697e1  8.29036254106046e0  4.213066957215743e1
+tower 4  -9.464149356123934e1  3.458094428662039e1  1.2922243784785974e2
+tower 5  -3.562219269972549e1  8.8288667275163e0  4.445105942724179e1
+
+$ cav exec "load town; reading 1; log"
+load town
+# a shot read out at 1 s · refined · quadrature within 1e-8 rad
+# warning: world matter farther than 2 m from a tower's atoms is not read (S5 reads the rest)
+# tower    ΔΦ [rad]  δφ₁ lower [rad]  δφ₂ upper [rad]
+tower 1  1.6108059305974693e3  2.5789485529565513e3  9.681426223590819e2
+tower 2  1.3757097686244813e3  2.2006143115910218e3  8.249045429665405e2
+tower 3  1.335879728758157e3  2.1541614592400074e3  8.182817304818504e2
+tower 4  1.2145250756240412e3  2.013605392602607e3  7.99080316978566e2
+tower 5  1.4834455070173265e3  2.3264992384779925e3  8.430537314606661e2
+    0.000  info   engine  cavendish 0.0.0 · scene `room`
+    0.003  info   edit    load town · 5 towers, no room, no floor, no bodies
+   22.918  debug  engine  the signal was whole 12010 ms after the edit
+   22.918  info   engine  signal: 5 tower(s), 25 shot(s) in all, quadrature within 1e-8 rad
+   22.918  warn   engine  world matter farther than 2 m from a tower's atoms is not read (S5 reads the rest)
+

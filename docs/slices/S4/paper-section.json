@@ -10,15 +10,15 @@
   },
   "engine": {
     "version": "0.0.0",
-    "revision": "73c18fbc61405628f019c88eec5a66a8f2ed4fc0",
-    "dirty": false,
+    "revision": "770b2a3e0397643a6ff5ee1c6b27d23662f2fd83",
+    "dirty": true,
     "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
   },
   "numerics": {
     "engine": {
       "version": "0.0.0",
-      "revision": "73c18fbc61405628f019c88eec5a66a8f2ed4fc0",
-      "dirty": false,
+      "revision": "770b2a3e0397643a6ff5ee1c6b27d23662f2fd83",
+      "dirty": true,
       "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
     },
     "platform": "x86_64-windows",
@@ -42,7 +42,7 @@
     "spec": {
       "version": 1,
       "name": "stress-1e10",
-      "description": "A square kilometre of rolling ground at a 5 cm pitch, forty buildings and a road, around the array: about 10^10 finest cells. Fly over it; the instrument reads the 20 m around each tower.",
+      "description": "A square kilometre of rolling ground at a 5 cm pitch, forty buildings and a road, around the array: about 10^10 finest cells. Fly over it; the instrument reads the 2 m around each tower.",
       "duration": 10.0,
       "array": {
         "instrument": {
@@ -133,7 +133,7 @@
       "bodies": [],
       "world": {
         "pitch": 0.05,
-        "supersample": 2,
+        "supersample": 1,
         "origin": [
           0.0,
           0.0,
@@ -926,7 +926,7 @@
           "tower_radius": 8.0
         },
         "read": {
-          "radius": 20.0,
+          "radius": 2.0,
           "tolerance": 0.001
         },
         "lod": {
@@ -943,18 +943,18 @@
     {
       "file": "paper-section.svg",
       "format": "svg",
-      "preset": "paper-full",
+      "preset": "paper-column",
       "size_mm": [
-        400.0,
-        90.0
+        85.0,
+        60.0
       ],
       "size_points": [
-        1133.8582677165355,
-        255.1181102362205
+        240.9448818897638,
+        170.07874015748033
       ],
       "command": {
-        "console": "figure paper section y 64 as paper-full size 400x90 to paper-section.svg",
-        "cli": "cav figure stress-1e10 paper --out paper-section.svg --preset paper-full --size 400x90 --section y,64",
+        "console": "figure paper section y 64 as paper-column to paper-section.svg",
+        "cli": "cav figure stress-1e10 paper --out paper-section.svg --preset paper-column --section y,64",
         "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's"
       },
       "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
@@ -964,16 +964,16 @@
       "projection": "orthographic",
       "paper": {
         "view": "section y 64",
-        "scale": "1:3000",
-        "points_per_metre": 0.9448818897637796,
-        "level": 6,
-        "cell_m": 3.2,
-        "finest_level": 6,
-        "bricks": 20,
-        "items": 253,
+        "scale": "1:20000",
+        "points_per_metre": 0.14173228346456695,
+        "level": 9,
+        "cell_m": 25.6,
+        "finest_level": 9,
+        "bricks": 4,
+        "items": 81,
         "max_items": 20000,
         "outlines": 1,
-        "hatching": 212,
+        "hatching": 40,
         "dimensions": [
           {
             "label": "1000 m",
@@ -985,12 +985,12 @@
         "title_block": [
           "stress-1e10",
           "Section at y = 64 m, looking north",
-          "Scale 1:3000 on 400 × 90 mm",
-          "Matter in cells of 3.2 m",
-          "Cavendish 0.0.0 · 73c18fbc6140"
+          "Scale 1:20000 on 85 × 60 mm",
+          "Matter in cells of 25.6 m",
+          "Cavendish 0.0.0 · 770b2a3e0397 (modified)"
         ],
         "notes": [
-          "the towers' spacing (8 m) is too short to dimension at 1:3000",
+          "the towers' spacing (8 m) is too short to dimension at 1:20000",
           "4 towers are drawn without their labels, which would overlap or are past 64"
         ]
       },

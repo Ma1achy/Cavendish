@@ -151,6 +151,30 @@ fn correction(order: usize, side: f64, d: Vec3, distance: f64) -> f64 {
     sum
 }
 
+#[cfg(test)]
+mod edge_tests {
+    use super::*;
+
+    #[test]
+    fn a_point_beside_an_edge_past_its_end_is_finite() {
+        // The point on the planes of two faces, below the cube (S4's town: a tower's base on a
+        // cell's corner line): the corner terms' `z + r` rounds to zero there.
+        let side = 0.4;
+        let d = Vec3::new(0.2 + 1.8e-16, 0.2 + 1.8e-16, 1.0);
+        let at = cube_potential(115.2, side, d);
+        assert!(at.is_finite(), "{at}");
+        // Continuous with points a hair away, on either side.
+        for e in [1e-9, -1e-9] {
+            let near = cube_potential(115.2, side, Vec3::new(0.2 + e, 0.2 + e, 1.0));
+            assert!((near - at).abs() <= 1e-7 * at.abs(), "{near} {at}");
+        }
+        // And with the quadrature far enough out to trust it.
+        let far = Vec3::new(0.2, 0.2, 3.0);
+        let q = cube_by_quadrature(115.2, side, far, 40);
+        assert!((cube_potential(115.2, side, far) - q).abs() <= 1e-10 * q.abs());
+    }
+}
+
 /// The series to order `order` for a cube of `mass` kg and side `side` m at offset `d` (metres,
 /// from its centre): `V/G`, kg/m. For tests; the kernel chooses its own order.
 #[must_use]
@@ -163,9 +187,24 @@ pub fn cube_series(order: usize, mass: f64, side: f64, d: Vec3) -> f64 {
 fn corner(x: f64, y: f64, z: f64) -> f64 {
     let r = (x * x + y * y + z * z).sqrt();
     // A term whose coefficient is zero is zero, whatever its logarithm or angle would be.
-    let log = |c: f64, u: f64| if c == 0.0 { 0.0 } else { c * (u + r).ln() };
+    // `u + r` cancels when `u` is negative and nearly `−r` (the point beside an edge, past its
+    // end: S4 found NaN there, the sum rounding to zero or below). Then it is formed as
+    // `(r² − u²)/(r − u)`, the other two squares over a sum, which never cancels. Elsewhere the
+    // plain sum, so that every other value is the same bits as before.
+    let log = |c: f64, u: f64, others: f64| {
+        if c == 0.0 {
+            return 0.0;
+        }
+        let sum = u + r;
+        let sum = if u < 0.0 && sum < 1e-6 * r { others / (r - u) } else { sum };
+        c * sum.ln()
+    };
     let angle = |p: f64, q: f64, w: f64| if p == 0.0 { 0.0 } else { 0.5 * p * p * (q * w / (p * r)).atan() };
-    log(x * y, z) + log(y * z, x) + log(z * x, y) - angle(x, y, z) - angle(y, z, x) - angle(z, x, y)
+    let (xx, yy, zz) = (x * x, y * y, z * z);
+    log(x * y, z, xx + yy) + log(y * z, x, yy + zz) + log(z * x, y, zz + xx)
+        - angle(x, y, z)
+        - angle(y, z, x)
+        - angle(z, x, y)
 }
 
 /// The potential of a uniform rectangular prism of `density` kg/m³ spanning `lo` to `hi` (its
