@@ -13,3 +13,12 @@ pub fn start() {
 
 /// Natively nothing: what a page needs after each frame.
 pub const fn after_frame(_shell: &mut Shell, _ctx: &egui::Context) {}
+
+/// The files dropped on the window this frame, each as its name and (in a page) its bytes:
+/// natively each is its path, and its bytes are read where it is imported.
+#[must_use]
+pub fn dropped(ctx: &egui::Context) -> Vec<(String, Option<Vec<u8>>)> {
+    ctx.input(|i| {
+        i.raw.dropped_files.iter().map(|f| (f.path().to_string_lossy().into_owned(), None)).collect()
+    })
+}

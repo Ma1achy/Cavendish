@@ -54,6 +54,17 @@ the first run, its closed-form second moments included (the hemispheres' `r²/5 
 The steps of section 2 were not needed to test it and were not followed then; the voxel-body
 recipe covers putting a shape in a scene.
 
+## A mesh rather than a new kind
+
+Often a new kind is not needed: an OBJ or STL file is imported as a body (`import <file> fit
+<metres> material <label>`, File › Import mesh…, or a file dropped on the window;
+`cav_sim::import::body`). A mesh of at most `MAX_INLINE_TRIANGLES` triangles is held in the scene
+as `ShapeKind::Triangles`, centred on the middle of its box, so the scene needs no file beside it
+(in a page as natively); a larger one read from a path is named by it (`ShapeKind::Mesh`). An STL
+holds single-precision numbers: a side of 0.2 m comes back as 0.2000000030 m, which can take one
+more cell of the grid. The case `materials.imported_box_mesh_is_the_cuboid` holds an imported box
+to the `Cuboid` of the same size, leaf for leaf.
+
 ## Things that go wrong
 
 - A `cover` that says `Inside` for a box that pokes out: `cover_is_conservative_for_every_shape`

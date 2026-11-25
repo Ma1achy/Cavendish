@@ -83,6 +83,149 @@ pub fn draw(shell: &mut Shell, ctx: &egui::Context) {
     wizard(shell, ctx);
     open(shell, ctx);
     save(shell, ctx);
+    import(shell, ctx);
+}
+
+/// What the Import mesh window will import (S19): each field as typed.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImportForm {
+    /// The file: a name dropped on the window, or a path (natively).
+    pub file: String,
+    /// How long its widest side is made, metres; empty for the file's own units as metres.
+    pub fit: String,
+    /// The material's label.
+    pub material: String,
+    /// The voxel pitch, metres; empty for the widest side over 32.
+    pub pitch: String,
+}
+
+impl ImportForm {
+    /// A form for `file`: fitted to 1 m, of the default material, the pitch worked out.
+    #[must_use]
+    pub fn new(file: &str) -> Self {
+        Self {
+            file: file.to_owned(),
+            fit: "1".to_owned(),
+            material: cav_sim::import::DEFAULT_MATERIAL.to_owned(),
+            pitch: String::new(),
+        }
+    }
+
+    /// The console line it runs, the body placed at `at` (metres): `import <file> fit … material
+    /// … [pitch …] at x y z`.
+    #[must_use]
+    pub fn line(&self, at: [f64; 3]) -> String {
+        let quote = |s: &str| if s.contains(char::is_whitespace) { format!("\"{s}\"") } else { s.to_owned() };
+        let mut line = format!("import {}", quote(self.file.trim()));
+        if !self.fit.trim().is_empty() {
+            line.push_str(&format!(" fit {}", self.fit.trim()));
+        }
+        line.push_str(&format!(" material {}", quote(&self.material)));
+        if !self.pitch.trim().is_empty() {
+            line.push_str(&format!(" pitch {}", self.pitch.trim()));
+        }
+        line.push_str(&format!(" at {} {} {}", at[0], at[1], at[2]));
+        line
+    }
+}
+
+/// The Import mesh window (File › Import mesh…, or a file dropped on the window): the file, its
+/// size, its material, its pitch; Import adds the body where the camera looks, one undo.
+fn import(shell: &mut Shell, ctx: &egui::Context) {
+    let Some(mut form) = shell.import_window.clone() else { return };
+    shell.building.window("import", "Import mesh");
+    let mut open = true;
+    let mut go = false;
+    let window = egui::Window::new("Import a mesh")
+        .open(&mut open)
+        .collapsible(false)
+        .default_width(380.0)
+        .show(ctx, |ui| {
+            ui.label(
+                RichText::new("an OBJ or STL file: drop one on the window, or (natively) type its path")
+                    .size(11.0)
+                    .color(theme::WEAK),
+            );
+            let text_row = |ui: &mut egui::Ui,
+                            shell: &mut Shell,
+                            id: &str,
+                            name: &str,
+                            value: &mut String,
+                            hint: &str| {
+                ui.horizontal(|ui| {
+                    ui.add_sized([96.0, 18.0], egui::Label::new(RichText::new(name).color(theme::WEAK)));
+                    let field =
+                        ui.add(egui::TextEdit::singleline(value).hint_text(hint).desired_width(220.0));
+                    shell.register("import", id, name, Kind::Text, field.rect);
+                    if shell.take_type(id) {
+                        field.request_focus();
+                    }
+                    field
+                })
+                .inner
+            };
+            text_row(ui, shell, "import/file", "File", &mut form.file, "bracket.stl");
+            text_row(
+                ui,
+                shell,
+                "import/fit",
+                "Widest side, m",
+                &mut form.fit,
+                "empty: the file's units are metres",
+            );
+            ui.horizontal(|ui| {
+                ui.add_sized([96.0, 18.0], egui::Label::new(RichText::new("Material").color(theme::WEAK)));
+                let all: Vec<cav_sim::MaterialSpec> =
+                    cav_sim::materials::every(&shell.engine.spec().materials).into_iter().cloned().collect();
+                let combo = egui::ComboBox::from_id_salt("import material")
+                    .width(132.0)
+                    .selected_text(form.material.clone())
+                    .show_ui(ui, |ui| {
+                        for m in &all {
+                            if ui.selectable_label(m.label == form.material, &m.label).clicked() {
+                                form.material.clone_from(&m.label);
+                            }
+                        }
+                    });
+                let current = all.iter().position(|m| m.label == form.material).unwrap_or(0);
+                shell.register(
+                    "import",
+                    "import/material",
+                    "Material",
+                    Kind::Choice { count: all.len(), current },
+                    combo.response.rect,
+                );
+                if let Some(index) = shell.take_pick("import/material")
+                    && let Some(m) = all.get(index)
+                {
+                    form.material.clone_from(&m.label);
+                }
+            });
+            text_row(ui, shell, "import/pitch", "Pitch, m", &mut form.pitch, "empty: the widest side / 32");
+            let button = ui.button("Import");
+            shell.register("import", "import/go", "Import", Kind::Button, button.rect);
+            shell.layout.buttons.push(("import go".to_owned(), button.rect));
+            go = button.clicked() || shell.take_click("import/go");
+        });
+    if let Some(window) = window {
+        shell.building.place_window("import", window.response.rect, window.response.layer_id);
+    }
+    shell.import_window = Some(form.clone());
+    if go && !form.file.trim().is_empty() {
+        // Where the camera looks, on the ground, as the Add menu puts a starter.
+        let at = shell.place_for("cube");
+        if shell.run(&form.line(at)).is_ok() {
+            let n = shell.engine.spec().bodies.len();
+            let _ = shell.run(&format!("select body {n}"));
+            open = false;
+        }
+    }
+    if !open {
+        shell.import_window = None;
+        if shell.keyboard.focus.first().map(String::as_str) == Some("import") {
+            shell.keyboard.close_window();
+        }
+    }
 }
 
 /// A step of the history in a person's words (S18's review, U6: the list showed the console's

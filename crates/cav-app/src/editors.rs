@@ -327,7 +327,7 @@ fn row(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 3.0;
         edit(shell, ui, spec, scope, name, entry, commands);
-        if matches!(entry.kind, Kind::List) {
+        if matches!(entry.kind, Kind::List) && !entry.whole {
             list_buttons(shell, ui, spec, scope, name, entry, commands);
         }
         let reset_id = format!("{}/reset", field_id(&entry.path));
@@ -432,6 +432,13 @@ fn edit(
     // (S19); a body of materials weighs what they make it, which is shown, not edited.
     if let Some(none) = material_field(path) {
         material_choice(shell, ui, spec, scope, name, entry, none, commands);
+        return;
+    }
+    // A list shown whole (a held mesh's corners, its triangles): how many, not each.
+    if entry.whole {
+        let count = entry.value.as_array().map_or(0, Vec::len);
+        let label = ui.label(RichText::new(format!("{count} items")).size(12.0).color(theme::TEXT));
+        shell.register(scope, &id, name, Focus::ReadOnly, label.rect);
         return;
     }
     if let Some(n) = materials_set_the_mass(spec, path) {
