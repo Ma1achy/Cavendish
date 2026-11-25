@@ -32,21 +32,25 @@ small engine additions are needed (multi-selection and a grouped edit; [section 
 [docs/design/keyboard.md](../design/keyboard.md), read from the unmerged branch `design-keyboard`); full table in
 [section 3.9](#39-ranking-and-slice-scope).
 
-1. **Principia's keyboard model in full**: scope tree as data, navigation and interaction modes, orange and blue rings, breadcrumb, a fixed key router, the `?` sheet, state-machine tests. Applied to Cavendish's layout in [section 3.10](#310-the-keyboard-model-applied). It is the spine the other nine register into.
-2. Command palette (Ctrl+K) over every command, menu item and spec path, with shortcuts, generated from the same data as the `?` sheet.
-3. An **Add** menu and searchable palette of bodies and shapes, with sensible starters; the greyed-out menu items that work fixed.
+1. **Principia's keyboard model in full**: scope tree as data, navigation and interaction modes, orange and blue rings, breadcrumb, a fixed key router, the `?` sheet, state-machine tests. Applied to Cavendish's layout in [section 3.10](#310-the-keyboard-model-applied). It is the spine the others register into.
+2. **The GUI as data** ([3.12](#312-the-gui-as-data-and-detail-tiers-chosen-by-data)): one action table (id, label, console line, scope, shortcut) feeding menus, context menus, toolbar, `?` sheet and the **command palette (Ctrl+K)**; keymap, tools, starters and layouts as validated RON files; code keeps the router, widgets and tool behaviours.
+3. An **Add** menu and searchable palette of bodies and shapes (starters as scene data), with the greyed-out menu items that work fixed.
 4. A scene tree that works like a tree: right-click add/duplicate/delete/rename, Delete, Ctrl+D, F2, F; View settings moved out of it.
-5. Toolbar with one active tool (Select, Move, Rotate, Scale, Place, Paint, Measure, Slice, Probe), a tool-options strip, and gizmos with snapping and typed numbers in the 3-D area; click-to-place on floor or surface.
-6. Inspector improvements: sections, list add/remove/reorder, reset-to-default, units, field search.
-7. A visible undo history and toasts for what was done or refused.
-8. Empty-state guidance, a "New scene" wizard with templates, Save/Open enabled.
-9. Docked workspaces (Scene, Instrument, Analysis) with saved layouts.
-10. The second half of the tools: Probe, Measure, section handle, voxel brushes, box-select, multi-edit.
+5. **Toolbar and tools** (Select, Move, Rotate, Scale, Place, Paint, Measure, Slice, Probe), a tool-options strip, gizmos with snapping and typed numbers (the keyboard "transform session"), click-to-place on floor or surface.
+6. **Camera modes** ([3.13](#313-camera-modes)): turntable orbit default, pan and zoom-to-cursor, F frame, fly (Shift+F or hold right mouse; WASD as a session so tool letters do not clash), follow, named views, bookmarks in the scene; two small engine additions (`Camera`, `Follow`).
+7. Inspector improvements: sections, list add/remove/reorder, reset-to-default, units, field search.
+8. Visible undo history, toasts, empty-state guidance, a "New scene" wizard with templates, Save/Open enabled.
+9. **Window management** ([3.11](#311-window-management-resize-tabs-maximise-pop-out-saved-layouts)): resizable panels and maximise now; named layouts (Scene, Instrument, Analysis) as data; tabs and docking next; pop-out native only. Big-scope order stays fixed because scopes are identities, not places.
+10. **Detail tiers** preview / standard / reference as a numerics block filled from data files, with progressive refinement and a footer switch (needs a `numerics` field in the scene spec first, and measurement of each tier).
 
+Beyond the ten, later: probe, measure, slice handle, voxel brushes, box-select, multi-select editing, trackball, themes.
 UX tests ([section 4](#4-validation-how-to-test-ux-claims-here)) belong to every item, not a separate one.
 
-**Fits one slice (A):** 1 to 8, with the first half of 5 (Select, Move, Place; translate gizmo; snapping; typed
-distance). **Later (B):** 9, 10, rotate and scale.
+**Slices.** **A1** (about 4 weeks): items 1, 2, 3, 4, the camera's cheap half of 6 (frame, zoom-to-cursor, bookmarks,
+mode switcher, fly), and resizable panels and maximise from 9. **A2** (about 3 weeks): 5 (Select, Move, Place,
+translate gizmo, transform session), 7, 8, and the three built-in layouts as data. **B**: docking and tabs, pop-out,
+follow, rotate and scale, the rest of the tools. **Tiers (10)** are their own engine-first task (spec field, measurement),
+which the GUI switch then follows; it does not block A1/A2.
 
 ---
 
@@ -360,33 +364,42 @@ Value = how many of the owner's complaints it removes; effort in builder-days (r
 
 | # | Recommendation | Complaint it answers | Effort | Slice |
 |---|---|---|---|---|
-| 1 | **Keyboard model in full (required)**: scope tree as data, two modes, rings, breadcrumb, key router, `?` sheet, state-machine tests (3.10) | owner's ruling; discoverability and speed | 6 d (router and tree are new; widgets register into them) | **A, first** |
-| 2 | Command palette, Ctrl+K: commands, Add, fields; shortcuts shown; menu bar, context menus, `?` sheet and palette from one action table | discovering commands, where things are | 2 d | **A** |
-| 3 | Add menu + searchable body/shape palette with starters; un-grey (or hide) menu items that work (Save, Open, Add tower, Edit history) | adding things; stale labels | 3 d | **A** |
-| 4 | Tree actions: context menu, Delete, Ctrl+D, F2, F; View controls out of the tree into a header popover; Cadence/Instrument out of body properties | adding/removing, layout, outliner/properties relation | 3 d | **A** |
-| 5 | Tool strip (Select, Move, Place first) with options strip; translate gizmo with snapping and typed distance; click-to-place; drop from the palette; the transform session from the keyboard | tools, placing and moving | 6 d (dependency spike +1 d) | **A** (first half); rotate, scale, box-select, surface placement later |
-| 6 | Inspector: sections, list add/remove/reorder, reset, units, field search | the editor | 4 d | **A** (sections, lists, reset); units and multi-edit later |
-| 7 | Undo history list and toasts | undo visibility, console-only feedback | 2 d | **A** |
-| 8 | Empty-state guidance, New scene wizard, three templates, Save/Open | setting up from scratch, saving | 3 d | **A** |
-| 9 | Docked workspaces (Scene, Instrument, Analysis), saved layouts, Analysis as tabs | layout, cadence/plots coherence | 5 d (spike +1 d) | **B** |
-| 10 | Probe, Measure, Slice handle in view, Paint (voxel brushes), box-select, multi-select edits | octree/section tools, analysis | 6 d+ | **B / C** |
+| 1 | **Keyboard model in full (required)**: scope tree as data, two modes, rings, breadcrumb, key router, `?` sheet, state-machine tests (3.10) | owner's ruling; discoverability and speed | 6 d (router and tree are new; widgets register into them) | **A1, first** |
+| 2 | GUI as data: action table, keymap, scopes, tools, starters, layouts as validated files; the **command palette** (Ctrl+K) and `?` sheet generated from it (3.12, 3.10.6) | discovering commands, where things are; owner's data-driven ruling | 4 d | **A1** |
+| 3 | Add menu + searchable body/shape palette with starters as scene data; un-grey (or hide) menu items that work (Save, Open, Add tower, Edit history) | adding things; stale labels | 3 d | **A1** |
+| 4 | Tree actions: context menu, Delete, Ctrl+D, F2, F; View controls out of the tree into a header popover; Cadence/Instrument out of body properties | adding/removing, layout, outliner/properties relation | 3 d | **A1** |
+| 5 | Tool strip (Select, Move, Place first) with options strip; translate gizmo with snapping and typed distance; click-to-place; drop from the palette; the transform session from the keyboard | tools, placing and moving | 6 d (dependency spike +1 d) | **A2** (first half); rotate, scale, box-select, surface placement later |
+| 6 | Camera modes (3.13): frame, zoom-to-cursor, mode switcher, fly, bookmarks; `Camera` and `Follow` view commands; follow and trackball later | navigating the 3-D view | 5 d (+2 d for web pointer lock, later) | **A1** (frame, zoom-to-cursor, bookmarks, switcher, fly), **B** (follow, lock, trackball) |
+| 7 | Inspector: sections, list add/remove/reorder, reset, units, field search | the editor | 4 d | **A2** (sections, lists, reset); units and multi-edit later |
+| 8 | Undo history list, toasts, empty-state guidance, New scene wizard, three templates, Save/Open | undo visibility, console-only feedback, setting up from scratch, saving | 5 d | **A2** |
+| 9 | Window management (3.11): resizable panels and maximise (1 d, **A1**); three built-in layouts as data and Save/Load layout (2 d, **A2**); tabs and docking via a crate, pop-out native only (5 d + 1 d spike, **B**) | layout; owner's window-management ruling | 9 d in all | **A1 / A2 / B** |
+| 10 | Detail tiers (3.12): `numerics` block in the spec, tier files, progressive refinement, footer switch | owner's tier ruling; responsiveness at scale | engine-first: 4 d + a measurement pass | **own task**, GUI switch after |
+| – | Probe, Measure, Slice handle in view, Paint (voxel brushes), box-select, multi-select edits | octree/section tools, analysis | 6 d+ | **B / C** |
 
-**Proposed Slice A ("the editor")**, about 5 working weeks of a builder's time at the estimates above, ordered so each
-step ends with a working app: (0) the keyboard state machine and the scope tree as data, with the *existing* panels
-registered into it and the existing keys moved onto it (no new features yet; the old `keys_issue_engine_commands` test
-passes through the new router); (1) the action table, `?` sheet and palette, generated from the scope data;
-(2) Add menu and starters, tree context menu and keys; (3) tool strip, translate gizmo, place tool and the transform
-session (spike: `transform-gizmo-egui` against egui 0.37; else a hand-written translate gizmo); (4) engine: `Select`
-set and grouped edit; (5) inspector sections, lists, reset; (6) history list, toasts, empty state, wizard, templates,
-Save/Open. Slice B: workspaces and docking, probe, measure, slice handle, paint, units, multi-edit. Slice A touches
-`cav-engine` only for (4); everything else is in `cav-app` and `menus.rs`, so the engine's oracle and bundle tests are
-not at risk. The keyboard is step 0 because every later widget must register its id under a scope as it is written;
-retrofitting registration is the expensive way.
+**Proposed slices.** About 7 working weeks of a builder's time at these estimates, so two slices rather than one:
 
-*Calls worth the owner's second look:* the palette key and F3 (3.10.6); Q/W/E/R tool letters (Unity) vs Blender's
-G/R/S; the palette's arrow-key exception (3.10.6); Esc inside a transform session (3.10.3); the number-field typing
-rule (3.10.5); whether `Add tower` should be allowed and what the real instrument's layout rules are (a question for
-George under "For George": array layout).
+- **A1, "the spine"** (about 4 weeks), in this order, each step ending with a working app: (0) the keyboard state machine
+  and the scope tree as data, with the *existing* panels registered into it and the existing keys moved onto it (no new
+  features; `keys_issue_engine_commands` passes through the new router); (1) the action table, `?` sheet and palette;
+  (2) Add menu and starters, tree context menu and keys; (3) camera: frame, zoom-to-cursor, switcher, fly, bookmarks
+  (engine: `Camera`); (4) resizable panels and maximise.
+- **A2, "the tools"** (about 3 weeks): tool strip, translate gizmo, place tool and the transform session (spike:
+  `transform-gizmo-egui` against egui 0.37; else a hand-written translate gizmo); engine: `Select` as a set and a grouped
+  edit; inspector sections, lists, reset; history list, toasts, empty state, wizard, templates, Save/Open; three
+  built-in layouts and layout files.
+- **B:** docking and tabs, pop-out, follow, pointer lock, rotate and scale, probe, measure, slice handle, paint, units,
+  multi-edit. **Tiers** are scheduled as an engine task alongside.
+
+The engine is touched only for `Select` as a set, the grouped edit, `Camera`/`Follow`, and (tiers) `numerics`; everything
+else is in `cav-app`, `menus.rs` and data files, so the oracle and bundle tests are not at risk. The keyboard is step 0
+because every later widget must register its id under a scope as it is written; retrofitting registration is the
+expensive way.
+
+*Calls worth the owner's second look:* the palette key and F3 (3.10.6); Q/W/E/R tool letters (Unity) vs Blender's G/R/S;
+the palette's arrow-key exception (3.10.6); Esc inside a transform or fly session keeping the edit, where Blender
+cancels (3.10.3, 3.13); fly movement continuous rather than DAS/ARR and canvas arrows orbiting (3.13); the number-field
+typing rule (3.10.5); Ctrl+Space for maximise (3.11); whether view commands are undoable (3.13); whether `Add tower`
+should be allowed and what the real instrument's layout rules are (a question for George under "For George": array layout).
 
 ### 3.10 The keyboard model applied
 
@@ -584,6 +597,253 @@ Follows spec §11 and adds the Cavendish specifics:
 
 ---
 
+### 3.11 Window management: resize, tabs, maximise, pop-out, saved layouts
+
+**Today:** the side panels are fixed (`resizable(false)` in `crates/cav-app/src/panels.rs`, lines 93 and 99, and on the
+Keyboard and About windows); there are no tabs, no maximise, no pop-out, no saved layouts. The `egui_dock` presets of
+M13 §9.2 (Explore, Configure, Dataset) were not built.
+
+**What the others do** (primary sources where I could read them):
+
+| System | Resize / split | Tabs | Maximise / focus | Pop-out | Saved layouts |
+|---|---|---|---|---|---|
+| Blender | drag area borders; split or join by dragging from an area corner; right-click a border for Area Options ([Areas](https://docs.blender.org/manual/en/3.6/interface/window_system/areas.html), via search summary) | an area holds one editor, switched by its editor-type menu | **Ctrl+Space** toggles Maximize Area (top bar and status bar stay); a separate Focus mode hides them too (same page) | new window from the View menu (not read) | Workspaces: task-named sets of areas (same page) |
+| Unity | drag the tab to a dock zone, outline shown | every window is a tab; right-click a tab: Maximise, Close, Add tabs | per-tab Maximise | "break the Editor into floating windows; each floating window can have multiple tabs" | Layout menu: Save, Save to file, Load from file, Delete, Reset all ([Customize your workspace layout](https://docs.unity.com/en-us/engine/6000.3/manual/unity-editor/editor-customize/customizing-your-workspace.md)) |
+| Godot | "click and drag on the edge of any dock or panel to resize" | docks hold tabs | main-screen buttons (2D, 3D, Script) as workspaces | dock's three-dot menu, **Make Floating**; closing the floating window re-docks it | Editor > Editor Layouts: Save, Load, Delete; saved: dock position, size, floating state and window geometry, in `editor_layouts.cfg` ([Customizing the interface](https://docs.godotengine.org/en/stable/tutorials/editor/customizing_editor.html)) |
+| VS Code | panel can sit on any edge (View > Appearance > Panel Position); drag editor groups | tabs move between groups | **Zen Mode** hides everything but the editor (`zenMode.*` settings) | drag a tab out: a floating window (since 1.84) ([UI](https://code.visualstudio.com/docs/getstarted/userinterface), [custom layout](https://code.visualstudio.com/docs/configure/custom-layout); via search summary) | workspaces/profiles (not read) |
+| Unreal | not verified (search returned nothing on docking) | | | | |
+
+**egui options.** `egui_dock` and `egui_tiles` give resize, split, tabs and drag-to-dock, `egui_dock` with serde
+for its `DockState` (summaries cited in 2.6; versions against egui 0.37 unchecked). egui's `Context` supports
+**multiple viewports** (real OS windows), but the egui viewport docs say eframe supports them natively **not on web**,
+and a viewport on an integration that lacks them is *embedded*: drawn as an `egui::Window` inside the parent
+([viewport docs, via search summary](https://docs.rs/egui/0.34.3/src/egui/viewport.rs.html)). The web page has one
+canvas, so on the web "pop out" can only mean a floating panel inside the canvas, or maximise. A second browser window
+with its own canvas and a shared GPU device would be a different piece of work and I did not examine it.
+
+**Recommendation.**
+
+1. **Resizable side panels now** (a one-line change per panel plus remembered widths): the cheapest visible win.
+2. **Maximise a pane** (`Ctrl+Space`, Blender's key; **F11** for window fullscreen; both also in the palette and
+   the pane's header menu), restoring on the same key. The figure maximised is the "figure never covered" ideal; Zen
+   (hide all panels) is F3 already. (Ctrl+Space is the Windows input-method switch on some setups: *unverified*;
+   the palette entry is the fallback.)
+3. **Named layouts as data** (3.12): three built-ins (Scene, Instrument, Analysis), *Save layout…*, *Load*, *Reset*,
+   stored as files; `layout save <name>` and friends are app commands in the palette.
+4. **Tabs** (several panels in one dock area) and drag-to-dock via `egui_dock`/`egui_tiles` after the spike: slice B.
+5. **Pop-out**: native only, through egui viewports, in slice B; on the web it is hidden, with maximise as the substitute.
+   Any floating embedded window may cover the figure only because the user put it there; never by default.
+
+**Composition with the keyboard model: the big-scope order does not depend on layout.** The spec's rule (§9: "ORDER NEVER
+DEPENDS ON STATE") is met by making a big scope an *identity*, not a place:
+
+- The eight big scopes of 3.10.1 are fixed ids (`top-bar`, `toolbar`, `tree`, `viewport`, `inspector`, `timeline`,
+  `analysis`, `footer`), and Tab order is that list, whatever the layout. Moving a panel, stacking it in a tab group,
+  maximising another, or popping it out changes where it is drawn, never its position in the Tab sequence. (Visual order
+  = tree order, "declared once", spec §11: the declaration is the id list, not the screen.)
+- **A panel behind another tab is still a stop.** Tab lands on it and *brings its tab to the front* (nothing happens
+  unseen: it was revealed before the ring appears). A tab group is a scope-with-siblings only for arrow keys on the tab
+  strip.
+- **A maximised pane**: Tab to a scope that is not visible *restores* the layout and lands on it; the breadcrumb says so.
+  The alternative, skipping hidden scopes, is what the spec forbids.
+- **A closed panel** is not allowed for the eight: they can be *collapsed* to a thin strip (a stop that expands on
+  Enter), as a disabled button stays in order. Optional extras (Console, History, Profiler) are windows, not big
+  scopes, and may close.
+- **A popped-out panel** (native only) keeps its scope id and place in the order; Tab lands on it and the OS window is
+  raised and focused. The spec's focus path is one path across windows.
+- **Resizing by keyboard**: each panel's edge is a leaf *inside* the panel's scope (reached with arrows from the
+  scope, Enter to start; arrows move the edge, Shift ×10, Alt ×0.1), as for a slider, in a fixed sibling order.
+- Layout commands (`layout save`, `maximise`, `float`) live in the action table and the palette, so the keyboard has the
+  same reach as the mouse.
+- **Test**: for each built-in layout and for random rearrangements, Tab ×8 produces the same scope sequence; Tab onto a
+  tabbed-away scope raises it; Tab onto a hidden one under maximise restores. The control arm skips hidden scopes and must
+  fail.
+
+### 3.12 The GUI as data, and detail tiers chosen by data
+
+**Principle.** The scene is data; the simulation's configuration is data; the GUI's *what and where* should be too, so
+that a layout, a keymap, a toolbar or an Add menu changes by editing a file, with the same validation habit as scenes
+(`SceneSpec::validate`, the schema, `every_menu_item_is_a_console_command`). The line is: **data says what exists and
+where; code says how it draws and behaves.** I recommend against a general UI description language (a cleverness the
+project's rules argue against): the data names a closed vocabulary that code implements.
+
+**How far egui allows it.** egui is immediate-mode: layout is code run every frame. That does not prevent
+data-driven structure; code can walk a data tree each frame. The docking crates are built this way: a serialisable
+layout state plus a viewer that maps a tab id to a draw function (`egui_dock`'s `TabViewer`; `egui_tiles`'s `Behavior`;
+summaries in 2.6). What egui does not give is a declarative layout language or style sheets; per-frame walking of a
+tree of a few dozen nodes costs little (not measured). What is already data in the repository: the scene schema and the
+inspector built from it (`paths::Entry`, `editors.rs`), the menus (`menus.rs`: `const` tables of label, console line and
+shortcut, with a test that each line parses), the dev scenes (`scenes/dev/*.ron`), the instrument presets.
+
+| Thing | As data | File (proposed) | Stays in code |
+|---|---|---|---|
+| **Actions** | id, label, category, console line, scope, enabling rule (`needs: selection \| tower \| voxel body`) | `ui/actions.ron` | the console line's meaning (the `Command` parser, `console.rs`); enabling predicates as a closed set of names |
+| **Keymap** | scope → key chord → action id; user overrides merged on top | `ui/keymap.ron`, user `keymap.ron` in the prefs folder | the router (priority, modes, DAS/ARR, text-field rule): it is the state machine the spec describes and must stay code |
+| **Scope tree** | the eight big scopes and their order, sub-scopes by panel kind | `ui/scopes.ron` | landing rules, ring painting |
+| **Layouts** | a tree of splits and tab groups with panel ids and fractions; named; built-in plus user | `ui/layouts/*.ron` (built-ins embedded with `include_str!`, so the web has them) | the dock widget (crate) |
+| **Panels** | an id, a title, a *kind*: `schema` (a form over a spec path and section list: the Instrument and Cadence panels, the wizard), `tree`, `viewport`, `timeline`, `plot` (a pane content), `table` | `ui/panels.ron` | bespoke kinds (viewport, timeline, plots, tree) are code, registered by kind; form-like panels are *entirely* data over the schema |
+| **Tools and toolbar** | id, label, icon name, key, order, the *behaviour* it uses (`select`, `translate-gizmo`, `place`, `measure`, …), its options as schema fields (snap step, local/global), the command template it issues | `ui/tools.ron` | each behaviour's maths: picking rays, gizmo handles, snapping |
+| **Add menu, starters and templates** | category, label, the path (`bodies`) and a `BodySpec` value in RON; templates as grouped inserts | `scenes/starters/*.ron`, beside `scenes/dev` | nothing: it is scene data, so it validates by the same spec, and `cav` and MCP can list and use it |
+| **Camera bookmarks** | named `ViewSpec`s | in the scene (3.13) | |
+| **Theme** (colours, ring colours) | later | `ui/theme.ron` | spacing and widget metrics |
+| **Detail tiers** | named numerics presets | `scenes/tiers/*.ron` | what a tolerance does (the audited read) |
+
+**Loading and checking.** Built-ins are embedded (works on the web, where there is no file system to read by path:
+[ARCHITECTURE.md](../ARCHITECTURE.md) seams table); user files come from the prefs folder natively and from the browser's
+storage or a download/upload on the web, through `cav_engine::files`. A bad file is *refused with the line and reason*
+and the built-in stays (the same posture as an edit the validator refuses). Tests: every data file parses; every action
+id, panel id and tool behaviour named exists; every console line of every action parses and is handled; the keymap has no
+clash in any scope chain (3.10.4); every built-in layout contains all eight big scopes. A *hot reload* (`ui reload`,
+native) is a few lines once loading is a function; a quality-of-life item, not a requirement.
+
+**How it sits on the engine API.** UI data lives in `cav-app` (and the scene-like data in `cav-sim`'s library); **none of
+it is in `SceneSpec`, the journal or the history**, except what is the scene's own (starters become scene edits when
+used; bookmarks are part of the scene). Every action resolves to a console line, hence to a `Command`: data cannot do
+anything the commands cannot, so a keymap file cannot corrupt a scene, and the palette, menus, toolbar and keys remain one
+path. Layout and keymap are UI preferences, saved apart from scenes, and are not recorded in bundles. An MCP tool that
+lists the actions (`ui_actions`) is a possible later addition: it makes the GUI scriptable by the same names.
+
+**Detail tiers (preview / standard / reference).** *Finding:* today the read's tolerance is a constant,
+`PHASE_TOLERANCE`, passed in `cav-sim/src/read.rs` (lines 765 and 1024) to `Reader::read_to`; the plan's
+`numerics` block (REBUILD §3.3: precision, quadrature, tree tolerance, LOD mode, pitches, fluid settings) is described
+but I found no `numerics` field in `cav-sim/src/spec.rs`. So tiers need that field first. Proposal:
+
+- A **numerics block** in the scene (or a sibling of it in the bundle's manifest), holding the *expanded values* plus the
+  tier's name: `numerics: { tier: "standard", tolerance: …, max_nodes: …, tree_tolerance: …, lod: …, pitch_cap: …, … }`.
+  The expanded values are what the forward model reads; the name is provenance and the GUI's label. Tier files
+  (`scenes/tiers/{preview,standard,reference}.ron`) are the presets that fill it. A hand-edited block shows as `custom`.
+- **Preview**: a tolerance loose enough for a drag to follow, LOD on, coarse pitches, and it still reports its estimate
+  (the rule "a read that did not settle says so and is never shown as within" holds). **Standard**: today's behaviour.
+  **Reference**: tightest tolerance, exact where an exact path exists (no LOD), for oracles, datasets and figures.
+- **Progressive refinement fits stale-not-blocked exactly:** while an edit continues (a drag, a held key), compute at
+  *preview* and show it badged `preview ±…`; on idle, refine to the chosen tier and say `refined`. The engine states are
+  `computing / stale / refined` today (ARCHITECTURE.md); `preview` is a fourth label of the same kind.
+- **Exports and figures** are written only from a signal at or above the tier the export asks for (default *standard*):
+  the existing rule "bundles and figures are written only from a refined signal" extends to "and not from preview".
+- **In the GUI**: a three-way control in the footer next to the status (`detail: preview | standard | reference`), the
+  palette (`detail reference`), and an *Advanced* inspector section generated from the schema showing the expanded values.
+  The choice is `Command::Set numerics.tier`, so it is journalled, undoable and recorded in every bundle.
+  Contributions are cached by a hash of what they depend on, so changing the tier recomputes only what depends on it.
+- **What I could not settle, and how to**: the tolerances, pitches and node caps for each tier, and the time and error each
+  costs on the dev scenes. These are measurements, not decisions: run each dev scene at candidate tiers, compare the phase
+  with the reference tier (the project's own oracles), write the pass criterion first (for example: preview within 1e-5 rad
+  of reference during a drag, standard within the audited tolerance), and take the cheapest settings that meet it.
+
+### 3.13 Camera modes
+
+**Today:** one orbit camera per pane (`ViewSpec`: `target`, `yaw`, `pitch`, `distance`, projection, style; in
+`cav-sim/src/view.rs`); drag orbits, right-drag pans, scroll zooms, `O` swaps the projection, `Home` resets, named
+looks (`view iso|top|bottom|north|south|east|west`) and `ViewCommand::{Look, Project, Orbit, Zoom, Pan, Home, Activate, …}`
+each carrying a `pane`. There is no frame-selection, fly, follow, bookmark or zoom-to-cursor.
+
+**What the others do:**
+
+| System | Orbit / pan / zoom | Fly | Frame | Views |
+|---|---|---|---|---|
+| Blender | MMB orbit, Shift+MMB pan, wheel or Ctrl+MMB zoom; Alt constrains; numpad steps; Shift+Ctrl+MMB dolly ([Navigation](https://docs.blender.org/manual/en/3.4/editors/3dview/navigate/navigation.html), via search summary) | **Shift+F** walk/fly: W/S forward and back, A/D strafe, mouse looks, **Q/E down/up** in free mode, wheel or numpad +/− sets speed, **Shift faster, Alt slower**, LMB confirms, **Esc or RMB cancels** ([Walk/Fly, 2.79](https://docs.blender.org/manual/en/2.79/editors/3dview/navigate/walk_fly.html)) | Home all; numpad . selected | numpad snaps; zoom-to-mouse is a preference (not verified) |
+| Unity | Alt+LMB orbit, MMB or View tool (Q) pan, wheel zoom | hold **RMB**: flythrough, **wheel sets speed, Shift faster**; in orthographic RMB orbits instead ([Scene view navigation](https://docs.unity.com/en-us/engine/6000.5/manual/unity-editor/editor-windows-views-reference/using-the-scene-view/scene-view-navigation), via search summary; WASD not in the summary) | **F** with the pointer over the view | gizmo in the corner |
+| Unreal | Alt+LMB orbit, Alt+MMB track, Alt+RMB dolly | hold **RMB**: **WASD**, **E up, Q down**, R/F local up/down; **RMB+wheel sets camera speed**; speed and sensitivity in preferences ([Viewport controls](https://dev.epicgames.com/documentation/en-us/unreal-engine/viewport-controls-in-unreal-engine)) | **F** | |
+| Godot | MMB orbit, Shift+MMB pan, wheel zoom; a Maya/Modo navigation scheme setting | hold **RMB** or **Shift+F**: **WASD, E up, Q down** (per search summary; one 4.7 forum report says it failed, unverified) | F | |
+| MagicaVoxel | not verified | | | |
+
+The systems converge on four things: an orbit camera as the default, **RMB-hold or a key for fly**, **wheel for speed in
+fly**, **F to frame**. Blender and Godot add a toggle key (Shift+F), which suits the keyboard model.
+
+**Recommended modes and defaults.**
+
+| Mode | What it is | Default? | Notes |
+|---|---|---|---|
+| **Turntable orbit** | yaw about world up, pitch clamped to ±90°; the existing `ViewSpec` | **default** | the world has a real vertical (gravity, floors, towers); the horizon stays level. This is what the app already does. |
+| **Trackball** | free rotation, no fixed up | optional, later | needs a roll or a quaternion in `ViewSpec`; not needed for a world with gravity |
+| **Fly** | first person: eye moves, look turns | on demand (Shift+F, or hold RMB) | all four engines have it; useful inside the room and for 10¹¹-cell worlds seen from within |
+| **Follow** | the target tracks a chosen body (or a tower) | toggle (**T**) | a new `ViewSpec` field `follow: Option<Target>`; leaving it (a pan, Esc) clears it |
+| **Orthographic** | toggle, already `O` | | in ortho, fly is unavailable and RMB orbits (as Unity) |
+
+**Mouse defaults** (the app's present ones kept where sensible): left-drag orbit, right-drag pan (existing), middle-drag
+pan too (Blender, Godot habit), wheel **zooms toward the cursor** (new; the point under the cursor from a ray against
+bodies, the floor or the target plane), **F** frames the selection (or everything), **double-click** a body frames it.
+**Alt+left-drag** orbits for trackpad users (Unity, Unreal). A **mode switcher** is a badge in the header strip
+(`orbit ▾` beside `iso · perspective`): a drop-down with Orbit, Fly, Follow selected; the strip is the mock-up's home for
+such badges, and "Home the one control on the figure" stays true (no view cube on the figure; the named-view badge
+`iso ▾` lists the seven looks).
+
+**Camera bookmarks.** Named `ViewSpec`s stored **in the scene** (an optional `views` list), so a scene opens at its good
+angles, a figure is reproducible from a command (REBUILD §6: "every view reproducible from a command"), and `Insert`/`Remove`
+on the list are undoable edits. Commands: `view save <name>`, `view goto <name>`; **`,` and `.`** step to the previous
+and next bookmark in the viewport; the palette lists them; saving is also in the header badge menu.
+
+**Engine path.** Camera state stays per pane inside the engine and every change is a `ViewCommand` through
+`Engine::apply`, so it is journalled and replayable (ARCHITECTURE.md: every applied command is journalled; `View` is one
+of the command kinds). Existing commands cover orbit, pan, zoom and the looks. Two additions are recommended, small and in
+the engine so `cav exec` and MCP get them: (a) an atomic **`ViewCommand::Camera { pane, target, yaw, pitch, distance }`**,
+used by fly, zoom-to-cursor, bookmark recall and follow release, because those change several fields at once and two
+commands per frame is wasteful; (b) **`ViewCommand::Follow { pane, target: Option<Target> }`**. A fly session is a run of
+`Camera` commands with `continues`-style coalescing. *I did not check whether the journal coalesces the present
+orbit-drag commands*; if it does not, the journal's byte budget (`journal.rs`) bounds a long session and coalescing is the
+fix. *Whether view commands enter the undo history was also not checked*; I recommend they do not (camera moves should not
+bury edits in undo), with **Home**, which the keyboard spec calls "one undoable command", the one exception to decide. A fly
+camera needs no new camera type: keep `distance` fixed and move `target` and the angles together so the eye is where the user
+flew it (the eye is `target` minus `distance` along the look vector); the session logic is app-side.
+
+**Keys, reconciled with the keyboard spec.** WASD must not clash with the tool letters (Q W E R A B M C I) or the scope
+shortcuts. The resolution is that **fly is a session**, like the transform session of 3.10.3: it is the Canvas leaf in
+*interaction mode* (blue ring), and while it runs the Canvas's keys shadow the Viewport scope's (router priority 4,
+innermost first). Outside a session WASD does nothing in the viewport, so `W` still gives the Move tool. Entering:
+**Shift+F** (Blender, Godot), or Enter on the Canvas with fly chosen in the switcher, or by mouse **hold the right mouse
+button** over the canvas (Unreal, Unity, Godot): a transient session that ends on release and, as a canvas mouse action,
+does not steal keyboard focus (spec §8).
+
+| Where | Key | Action |
+|---|---|---|
+| Viewport, navigation mode | tool letters, **F** frame, **O** projection, **P** plan, **T** follow, **,** **.** bookmarks, **Shift+F** enter fly, Space play, **1–9** select tower, Delete, Ctrl+D | as 3.10.2 |
+| Canvas, interaction mode, **orbit** | ← → ↑ ↓ | orbit 1° (Shift ×10, Alt ×0.1), the spec's rule for spherical views |
+| | Ctrl + arrows | pan by a base step (the spec's canvas pan, under Ctrl because plain arrows orbit here) |
+| | `+` `−` | zoom by a fixed log2 step |
+| Canvas, **fly session** | **W / S** | forward / back |
+| | **A / D** | strafe left / right |
+| | **E / Q** | up / down in world z (Unreal, Godot) |
+| | ← → ↑ ↓ | look: yaw and pitch 1° (keyboard mouse-look; Shift ×10) |
+| | **Shift / Alt** | speed ×10 / ×0.1 (the spec's multipliers; Blender's faster/slower) |
+| | wheel, `+` `−` | set the base speed in log steps (Blender, Unity, Unreal) |
+| | mouse move (pointer lock) or RMB-drag | look |
+| | F | frame selection and keep flying; Space still plays |
+| | **Esc** or **Enter** | end the session, **keeping** the camera (the spec's Esc rule; Blender cancels; here **Home** or Ctrl+Z restores) |
+| Anywhere | **Home** | reset the active pane's view (spec global) |
+
+Two deviations from the spec to approve: (i) **fly movement is continuous while a key is held**, not DAS/ARR (a 500 ms
+delay would make flying unusable; one `Camera` command per frame, coalesced); (ii) **the Canvas's arrows orbit** (the spec
+says canvas arrows pan and spherical views orbit by 1°; Cavendish's 3-D view is an orbit camera, so it takes the
+spherical rule, with pan on Ctrl+arrows).
+
+**Named views and numpad snaps.** The seven looks exist (`view top` …). Blender's numpad layout is the convention (7 top,
+1 front, 3 right, Ctrl for the opposite, 5 toggles orthographic). I could not establish whether egui distinguishes the
+numpad's digits from the main row's (they would collide with `1–9` select-tower): *unverified; check `egui::Key` and
+`egui-winit`'s mapping in the slice*. If it cannot, the snaps live on the header badge `iso ▾` (reachable by keyboard: top
+bar scope, ← → to the badge, Enter, ↑↓, Enter) and in the palette (`view top`); Alt chords are avoided because Alt is the
+×0.1 multiplier.
+
+**On the web.** Fly with the keyboard (WASD plus arrow-look) works anywhere. **Mouse-look wants pointer lock**: the
+browser's [Pointer Lock API](https://developer.mozilla.org/en-US/docs/Web/API/Pointer_Lock_API) hands the page
+`movementX/Y` deltas with the cursor hidden; `requestPointerLock()` must be called from a user gesture (transient
+activation), Esc is the default way out, a request straight after that Esc gesture must fail in recent drafts
+([Pointer Lock 2.0](https://www.w3.org/TR/pointerlock-2/), via search summary), and MDN marks the feature "limited
+availability". egui has `ViewportCommand::CursorGrab(Locked)`
+([egui](https://docs.rs/egui/latest/egui/viewport/enum.CursorGrab.html)), but **I found no evidence that eframe's web
+backend maps it to the browser API** (the code I saw only sets the CSS cursor). Plan: (1) ship fly on the web with keys
+and RMB-drag look, no lock; (2) add lock behind the web platform seam (`platform/web.rs`, the one place allowed to name the
+target; `xtask`'s `only_the_seams_name_the_target`), requested on entering a session by click or key, with the session
+ending when the browser reports the lock lost (Esc), consistent with the Esc rule; (3) test it in a real browser (a slice
+task; I could not run one). Plain WASD are safe on a focused canvas; the page must prevent the default for Space and the
+arrows (scrolling) while the canvas has focus.
+
+**Tests.** Camera `ViewCommand`s for each mode are journal lines (replaying a journal gives the identical camera); a fly
+session of N frames at fixed key state gives an eye path equal to the integrated speed (closed form, to 1e-9 m); Shift
+and Alt scale it by exactly ×10 and ×0.1; WASD outside a session do nothing, and inside it the tool letters do nothing
+(both control arms); zoom-to-cursor keeps the world point under the cursor fixed to within one pixel; frame-selected makes
+the body's bounds fit the pane; `Home` works after a session; per-pane: a command to pane 2 does not move pane 1.
+
+---
+
 ## 4. Validation: how to test UX claims here
 
 **What already exists** (read, not run): `crates/cav-app/tests/shell.rs` drives the real `Shell` through
@@ -622,6 +882,12 @@ separate decision.
 | No shortcut collides within a scope chain, and every shortcut is on the `?` sheet and in the palette | enumerate the action table | add a duplicate letter: fails |
 | The transform session by keyboard equals the mouse drag and the inspector edit | arrows and typed `2` give the same spec and journal as dragging 2 m and typing 2 in the field | |
 | Empty state guides | in `void`, the figure margin has the three buttons; clicking `Add a mass` selects a new body | existing behaviour as control |
+| Tab order does not depend on layout (3.11) | Tab ×8 in every built-in layout, tabbed-away, maximised and collapsed states: the same eight ids; Tab onto a hidden scope reveals it | skip hidden scopes: fails |
+| Panels can be resized and maximised and restore exactly | drag an edge by 40 px: width changes by 40 px and is remembered; Ctrl+Space twice restores the layout | |
+| Every data file is valid (3.12) | parse each `ui/*.ron` and `scenes/starters/*.ron`; every action id, panel id, tool behaviour exists; every console line parses; every starter validates as a `SceneSpec` edit | corrupt one id: fails with its line number |
+| A user keymap cannot break the scene or the keyboard | load a keymap that binds a letter twice in one scope chain: refused with the reason, built-in kept | |
+| Tiers (3.12) | each dev scene at preview and standard against reference: phase error within the tier's stated bound, and the signal says `preview` until refined; an export from preview is refused | loosen a tier past its bound: fails |
+| Camera (3.13) | see the camera tests at the end of 3.13 | |
 
 **Task-based tests, scripted end to end.** Each is a list of input events (clicks at laid-out rects, keys, drags)
 through `run_frames`, then an assertion on engine state and, where it matters, the number. Example for "add a
@@ -673,6 +939,9 @@ each slice (the reviewer agent's UX pass).
 - **`BodySpec` rotation and size fields**, whether `shape` has starter constructors, whether `Engine` tracks "unsaved edits", and what a grouped edit would cost in `history.rs`: not examined. The Rotate/Scale rows of 3.5 and the title-bar asterisk of 3.7 depend on them.
 - **The app was not run.** All behaviour is from code and the committed screenshots (main at `987d411`; the S4 work in the other checkout was not looked at and may have changed panels).
 - **Effort figures are my estimates**, not measurements; the slice's own first task (the palette) will calibrate them.
+- **Window management and camera sources:** the Blender areas and navigation pages, the VS Code pages, Unity's scene-view page, the Godot freelook behaviour and egui's viewport behaviour on the web are search summaries. Read directly: Unity's workspace-layout page, Godot's "Customizing the interface", Blender's Walk/Fly page (2.79 version) and Unreal's viewport-controls page. Unreal docking, MagicaVoxel's camera and Blender's zoom-to-mouse default were not found.
+- **Not verified in the repository:** whether the journal coalesces camera commands, whether camera commands enter the undo history, whether egui distinguishes numpad digits from the main row, whether eframe's web backend implements `CursorGrab::Locked`, whether `Ctrl+Space` reaches the app on Windows with an input method installed, and whether a `numerics` field exists in the scene (I found none in `cav-sim/src/spec.rs`).
+- **Tier values** (tolerances, pitches, node caps) and their cost: not measured; the method is in 3.12.
 - **`egui_kittest`:** the brief said it exists; I did not find it (section 4).
 - **The keyboard spec** was read from the local branch `design-keyboard` (not on `main` when I wrote this); the link in this note works once it merges. Which browser-reserved keys a page can intercept (Ctrl+K, Ctrl+S, Ctrl+D, Ctrl+1–3, F3) was not tested.
 
