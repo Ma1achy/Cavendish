@@ -1,0 +1,17 @@
+DOI re-check, 25 Nov 2026 (Crossref and DataCite APIs; only the DOI was sent).
+10.1145/2461912.2462024 | Crossref | High resolution sparse voxel DAGs | ACM Transactions on Graphics | [[2013, 7, 21]] | vol 32 no 4 pp 1-13
+10.1145/2856400.2856420 | Crossref | SSVDAGs | Proceedings of the 20th ACM SIGGRAPH Symposium on Inter | [[2016, 2, 27]] | vol None no None pp 7-14
+10.1111/cgf.13916 | Crossref | Interactively Modifying Compressed Sparse Voxel Representations | Computer Graphics Forum | [[2020, 5]] | vol 39 no 2 pp 111-119
+10.1145/3728301 | Crossref | Transform-Aware Sparse Voxel Directed Acyclic Graphs | Proceedings of the ACM on Computer Graphics and Interac | [[2025, 5, 22]] | vol 8 no 1 pp 1-16
+10.1145/3728299 | Crossref | Aokana: A GPU-Driven Voxel Rendering Framework for Open World Games | Proceedings of the ACM on Computer Graphics and Interac | [[2025, 5, 22]] | vol 8 no 1 pp 1-17
+10.1145/2487228.2487235 | Crossref | VDB | ACM Transactions on Graphics | [[2013, 6]] | vol 32 no 3 pp 1-22
+10.1145/3450623.3464653 | Crossref | NanoVDB: A GPU-Friendly and Portable VDB Data Structure For Real-Time Rendering And Simula | ACM SIGGRAPH 2021 Talks | [[2021, 7, 31]] | vol None no None pp 1-2
+10.1145/3842564 | Crossref | Dynamic GPU Voxel Grids and Voxel-sequential Processing in NanoVDB | ACM Transactions on Graphics | [[2026, 11, 9]] | vol 45 no 6 pp 1-21
+10.1145/1507149.1507152 | Crossref | GigaVoxels | Proceedings of the 2009 symposium on Interactive 3D gra | [[2009, 2, 27]] | vol None no None pp 15-22
+10.1145/1730804.1730814 | Crossref | Efficient sparse voxel octrees | Proceedings of the 2010 ACM SIGGRAPH symposium on Inter | [[2010, 2, 19]] | vol None no None pp 55-63
+10.1109/TVCG.2014.2346458 | Crossref | Fixed-Rate Compressed Floating-Point Arrays | IEEE Transactions on Visualization and Computer Graphic | [[2014, 12, 31]] | vol 20 no 12 pp 2674-2683
+10.1109/IPDPS.2016.11 | Crossref | Fast Error-Bounded Lossy HPC Data Compression with SZ | 2016 IEEE International Parallel and Distributed Proces | [[2016, 5]] | vol None no None pp 730-739
+10.1109/TPDS.2019.2894404 | Crossref | Optimizing Lossy Compression Rate-Distortion from Automatic Online Selection between SZ an | IEEE Transactions on Parallel and Distributed Systems | [[2019, 8, 1]] | vol 30 no 8 pp 1857-1871
+10.48550/arXiv.1806.08901 | DataCite | Optimizing Lossy Compression Rate-Distortion from Automatic Online Selection between SZ an | 2018
+10.48550/arXiv.2505.02017 | DataCite | Aokana: A GPU-Driven Voxel Rendering Framework for Open World Games | 2025
+10.1145/1073204.1073277 | Crossref | Far voxels | ACM Transactions on Graphics | [[2005, 7]] | vol 24 no 3 pp 878-885
