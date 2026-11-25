@@ -295,6 +295,18 @@
 - id: TASK-S4-20
   milestone: S4
   title: "S4's review: the validation report, the demo and the flythrough again, the brief's results, PROGRESS"
+- id: TASK-S4-21
+  milestone: S4
+  title: "S4's second review J1, minor 4: strays --stop never stops the owner's processes (records only for agents' runs, a heartbeat window, the ended-parent rule held to it, self-test arms); ARCHITECTURE rows for the lane and the records"
+- id: TASK-S4-22
+  milestone: S4
+  title: "S4's second review J2, J5, minors 5, 6, 11: never run on the page a request that failed a worker, respawns reset on an answer; the outliner counts the world and the floor, towers show their readings and truncation; the render notes' kinds and a shell test"
+- id: TASK-S4-23
+  milestone: S4
+  title: "S4's second review J3, J4, minors 1, 2, 3, 6, 8, 15: an order-free mesh fingerprint, old meshes kept at a cap; truncation tested at the engine's replies and in figure records; BUNDLE_VERSION 2; bricks uploaded in the frustum"
+- id: TASK-S4-24
+  milestone: S4
+  title: "S4's second review: the validation report, quick on an idle machine, the brief and PROGRESS"
 - id: TASK-S5-01
   milestone: S5
   title: GPU tree walk with float-float accumulation and parity tests

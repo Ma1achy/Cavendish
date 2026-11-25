@@ -9,7 +9,7 @@
 //! cargo xtask validate [--report] every validation case, tabulated; missing cases fail
 //! cargo xtask web [build|serve]  the browser build in target/web/dist; with no word, its tier
 //! cargo xtask hooks              install the pre-push hook that runs `quick`
-//! cargo xtask strays [--stop]     leftover processes on this PC: list, or stop those xtask started
+//! cargo xtask strays [--stop]     leftover processes on this PC: list, or stop those an agent's xtask started
 //! ```
 
 mod demo;
@@ -77,8 +77,9 @@ cargo xtask <tier>
                      lists processes an agent may have left running (scripts/strays.ps1: by command
                      line, e.g. `python -`, `python -m http.server`, `xtask web serve`, headless
                      Chrome on a temp profile); fails when one that may be stopped is over 30 min
-                     old. With --stop it stops those, and only those: processes xtask started (each
-                     run records itself under target/strays and removes the record when it ends),
+                     old. With --stop it stops those, and only those: processes an agent's xtask
+                     started (a run under Claude Code records itself under target/strays, renews
+                     the record every 30 s and removes it when it ends; the owner's runs write none),
                      over 30 min old by the clock (CPU time alone never stops one). Everything
                      else is reported, never stopped. --self-test checks the script. Windows.
 ";
@@ -89,7 +90,8 @@ fn main() -> ExitCode {
     let root = root();
     let started = Instant::now();
     // This run's record, so that `strays --stop` knows what it started (removed at the end).
-    let _record = strays::Record::start(&root, &args);
+    // Only an agent's run is recorded (Claude Code sets CLAUDECODE): the owner's never are.
+    let _record = strays::Record::start(&root, &args, std::env::var_os("CLAUDECODE").is_some());
     let outcome = match args.as_slice() {
         ["quick"] => tiers::quick(&root, false),
         ["quick", "--budget"] => tiers::quick(&root, true),

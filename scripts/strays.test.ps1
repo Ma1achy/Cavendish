@@ -14,7 +14,11 @@
     recorded: this PowerShell recorded with its real start: `python -` is xtask's, a stray at
       zero thresholds, and -Stop stops it and nothing else;
     CPU only: recorded, but young by the clock and over the CPU threshold: report only;
-    reused id: this PowerShell's id recorded with a window an hour before it started: not xtask's.
+    reused id: this PowerShell's id recorded with a window an hour before it started: not xtask's;
+    an orphan (its parent ended): not xtask's when it started after the parent's record was last
+      alive, xtask's (and stopped) when it started while the parent was alive.
+  The owner's own runs write no record (`a_run_records_itself_and_removes_the_record`), so they
+  are the unrecorded case.
   Every process it started is stopped in `finally`, and the test fails if one is left. -ProcessId
   keeps the script to these four: it never touches anything else on the PC.
 #>
@@ -116,6 +120,40 @@ try {
     Assert-That ((-not $pythonControl.HasExited) -and (-not $ping.HasExited)) `
         'control: python -c and ping are still running after -Stop' ''
     Assert-That (-not $server.HasExited) 'the report-only server is still running after -Stop' ''
+
+    # An orphan (S4's second review, J1): `python -` started by a PowerShell that then ends, so
+    # its parent is gone. It is xtask's only when it started while the recorded run was alive.
+    $sleeper = Join-Path $scratch 'sleep.py'
+    Set-Content -LiteralPath $sleeper -Value "import time`ntime.sleep(600)"
+    # The orphan's id comes back in a file: it inherits the parent's output, which would not end
+    # while it runs.
+    $idFile = Join-Path $scratch 'orphan.txt'
+    $command = "(Start-Process -FilePath '$python' -ArgumentList '-' -RedirectStandardInput '$sleeper' " +
+        "-NoNewWindow -PassThru).Id | Set-Content -LiteralPath '$idFile'"
+    $parent = Start-Hidden 'powershell.exe' "-NoProfile -NonInteractive -Command `"$command`"" $null
+    $parentStart = ([DateTimeOffset] $parent.StartTime).ToUnixTimeMilliseconds()
+    [void] $parent.WaitForExit(20000)
+    $orphanId = [int] ((Get-Content -LiteralPath $idFile -TotalCount 1).Trim())
+    $orphan = [System.Diagnostics.Process]::GetProcessById($orphanId)
+    $started += $orphan
+    $orphanStart = ([DateTimeOffset] $orphan.StartTime).ToUnixTimeMilliseconds()
+    Assert-That ($parent.HasExited -and $orphanStart -gt $parentStart + 1) 'the orphan''s parent has ended' ''
+    $ended = Join-Path $scratch 'ended'
+    $alive = Join-Path $scratch 'alive'
+    foreach ($dir in @($ended, $alive)) { [void] (New-Item -ItemType Directory -Force -Path $dir) }
+    # The parent recorded, alive until just before the orphan started: a later process with the
+    # parent's id could not be told from this, so it must not count.
+    Set-Content -LiteralPath (Join-Path $ended "xtask-$($parent.Id).txt") `
+        -Value "$($parent.Id) $($parentStart - 2000) $($parentStart + 1) $($orphanStart - 1) self-test"
+    Set-Content -LiteralPath (Join-Path $alive "xtask-$($parent.Id).txt") `
+        -Value "$($parent.Id) $($parentStart - 2000) $($parentStart + 1) $($orphanStart + 60000) self-test"
+    $gone = Invoke-Strays @('-Stop', '-AgeMinutes', '0', '-CpuSeconds', '0', '-ProcessId', "$orphanId", '-Records', $ended)
+    Assert-That ($gone.Text -match "stray \(report only\) pid $orphanId\b.*not started by xtask" -and
+        $gone.Text -notmatch 'stopped pid' -and -not $orphan.HasExited) `
+        'an orphan started after its recorded parent''s last heartbeat is not xtask''s, and is not stopped' $gone.Text
+    $owned = Invoke-Strays @('-Stop', '-AgeMinutes', '0', '-CpuSeconds', '0', '-ProcessId', "$orphanId", '-Records', $alive)
+    Assert-That ($owned.Text -match "stopped pid $orphanId\b" -and $orphan.WaitForExit(5000)) `
+        'control: an orphan started while its recorded parent was alive is xtask''s, and is stopped' $owned.Text
     Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
 } finally {
     foreach ($p in $started) {

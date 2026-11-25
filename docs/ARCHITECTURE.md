@@ -159,6 +159,8 @@ person asked for goes through `cav_engine::files`; code that must not run in a p
 | A bound on memory | `cav-memtest/tests/` | — |
 | Something that differs in a browser page (threads, files, the device, waiting) | one module per seam, listed under "The web build and its platform seams" | [the web build](extending/the-web-build.md) |
 | The web page itself, its build and its deployment | `crates/cav-app/web/` (`index.html`, `start.js`, `worker.js`), `cav-app/src/platform/web.rs`, `xtask/src/web.rs`, `.github/workflows/pages.yml` | [the web build](extending/the-web-build.md) |
+| The page's worker lane: which Web Worker holds which job, when a failed one is started again, when the page runs a job itself (never one a worker failed on) | `cav-app/src/lane.rs` (a state machine with native tests; `platform/web.rs` turns its actions into `Worker` calls) | — |
+| Leftover processes: an agent's `cargo xtask` records itself (id, start, heartbeat) under `target/strays/`; `strays --stop` stops only what such a run started | `xtask/src/strays.rs`, `scripts/strays.ps1`, `scripts/strays.test.ps1` | — |
 
 ## Rules that hold everywhere
 

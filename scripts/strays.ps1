@@ -16,12 +16,15 @@
 
   Who may be stopped (S17's second review, item 3, and S4's review, I10: the owner runs some of
   these too, and the owner's own Claude Code session is a claude.exe like an agent's): only a
-  process that xtask started. Every `cargo xtask` writes a record of itself (its id and when it
-  started) under `target/strays/` of its checkout or worktree, and removes it when it ends
-  normally; one killed part-way leaves its record. A candidate is xtask's when it is a recorded
-  xtask, or a recorded xtask is among its ancestors: its parent, or its parent's parent while each
-  is still running, each started no later than its child. A recorded id counts only for a process
-  that started within the record's window, so a reused id is not taken for xtask's.
+  process an agent's `cargo xtask` started. A `cargo xtask` run by an agent (Claude Code sets
+  CLAUDECODE in its shells; the owner's own runs write nothing) writes a record of itself under
+  `target/strays/` of its checkout or worktree: its id, when it started, and how long it has been
+  alive, renewed every 30 s; it removes the record when it ends normally, and one killed part-way
+  leaves it. A candidate is xtask's when it is a recorded xtask, or a recorded xtask is among its
+  ancestors: its parent, or its parent's parent while each is still running, each started no
+  later than its child; or a parent that has ended, when the candidate started while that run was
+  alive. A recorded id counts only for a process that started within the record's window, so a
+  reused id is not taken for xtask's.
     stoppable when xtask's and older than -AgeMinutes (wall-clock age only: CPU time alone never
       makes a stop): `xtask web serve`, the repository's cav binaries, `python -`, headless
       browsers, node running the web test runner or the screenshot script;
@@ -134,7 +137,10 @@ $recordFolders = if ($Records) {
             (Join-Path $repo '.claude\worktrees') | ForEach-Object { Join-Path $_.FullName 'target\strays' })
 }
 
-# xtask's records: each file holds `<id> <earliest start, Unix ms> <latest start, Unix ms>`.
+# xtask's records: each file holds `<id> <earliest start> <latest start> <alive until> ...`, Unix
+# ms. `alive until` is moved on every 30 s while the run lives (a heartbeat), so a run killed
+# part-way leaves a record whose window has an end; a record of three numbers is taken as alive
+# until its latest start.
 $recorded = @{}
 foreach ($folder in $recordFolders) {
     if (-not (Test-Path -LiteralPath $folder -PathType Container)) { continue }
@@ -142,10 +148,11 @@ foreach ($folder in $recordFolders) {
         $words = @(([string] (Get-Content -LiteralPath $file.FullName -TotalCount 1 -ErrorAction SilentlyContinue)) -split '\s+' |
                 Where-Object { $_ })
         if ($words.Count -lt 3) { continue }
-        $id = 0; $from = [long] 0; $to = [long] 0
+        $id = 0; $from = [long] 0; $to = [long] 0; $alive = [long] 0
         if ([int]::TryParse($words[0], [ref] $id) -and [long]::TryParse($words[1], [ref] $from) -and
             [long]::TryParse($words[2], [ref] $to)) {
-            $recorded[$id] = @($from, $to)
+            if ($words.Count -lt 4 -or -not [long]::TryParse($words[3], [ref] $alive)) { $alive = $to }
+            $recorded[$id] = @($from, $to, [math]::Max($alive, $to))
         }
     }
 }
@@ -166,7 +173,8 @@ function Test-Recorded($process) {
 # Whether xtask started $process: it is a recorded xtask, or one is among its ancestors. The walk
 # goes up through parents that are still running, each started no later than its child (an id can
 # be reused); a parent that has ended counts only when its id is recorded and the child started
-# after the record's window opened. Anything else (claude.exe included) is not xtask's.
+# while that run was alive (from its start to the record's last heartbeat): a later process that
+# took the id cannot pass for it. Anything else (claude.exe included) is not xtask's.
 function Test-XtaskStarted($process) {
     if (Test-Recorded $process) { return $true }
     $child = $process
@@ -175,9 +183,12 @@ function Test-XtaskStarted($process) {
         if ($parentId -le 0) { return $false }
         $parent = @(Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$parentId")
         if ($parent.Count -ne 1) {
-            # The parent has ended: xtask's only when its id is recorded and the child came after.
+            # The parent has ended: xtask's only when its id is recorded and the child was
+            # started while that run was alive.
             $window = $recorded[$parentId]
-            return [bool] ($window -and $child.CreationDate -and (ConvertTo-UnixMs $child.CreationDate) -ge $window[0])
+            if (-not $window -or -not $child.CreationDate) { return $false }
+            $at = ConvertTo-UnixMs $child.CreationDate
+            return [bool] ($at -ge $window[0] -and $at -le $window[2])
         }
         $parent = $parent[0]
         if ($parent.CreationDate -and $child.CreationDate -and $parent.CreationDate -gt $child.CreationDate) {
