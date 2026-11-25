@@ -180,6 +180,22 @@ fn say(text: &str) {
     }
 }
 
+/// Puts `text` on the page above the canvas, which keeps running: for a fault the application
+/// survives (a forward worker that failed).
+fn note(text: &str) {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else { return };
+    let note = document.get_element_by_id("note").or_else(|| {
+        let note = document.create_element("div").ok()?;
+        note.set_id("note");
+        let _ = note.set_attribute("role", "alert");
+        let _ = document.body()?.prepend_with_node_1(&note);
+        Some(note)
+    });
+    if let Some(note) = note {
+        note.set_text_content(Some(text));
+    }
+}
+
 /// What the page needs after each frame the application has drawn: the page's own message
 /// ("Loading Cavendish…") goes after the first, the address's commands that are ready run, and
 /// the files the frame "wrote" are downloaded, or held behind a button if a link's commands
@@ -328,13 +344,22 @@ fn hand_over(name: &str, bytes: &[u8]) -> Result<(), eframe::wasm_bindgen::JsVal
 /// The forward stage's Web Workers (`web/worker.js`, each running this same module): the
 /// [`cav_engine::forward::wire::Remote`] the page installs, so that a voxel body's seconds of
 /// work never run on the page's thread. Two, like the native stage's two threads (the series
-/// and the reading under the playhead); a job waits in a queue until one is free. A worker that
-/// fails is said in the browser's console.
+/// and the reading under the playhead); a job waits in a queue until one is free.
+///
+/// A worker that fails (a panic or a trap in its job) is said on the page; the job it held is
+/// answered with nothing, which frees the engine's lane (that scene's series stays stale rather
+/// than blocking every later one), and a new worker takes its place. When no worker has said it
+/// is ready [`READY_WITHIN_MS`] after the start, the page runs the waiting jobs itself, one a
+/// frame: slow, not wrong (S17's second review, item 2).
 struct PageWorkers {
     workers: Vec<PageWorker>,
     queue: VecDeque<(u64, Vec<u8>)>,
     answers: std::collections::HashMap<u64, Vec<u8>>,
     next_ticket: u64,
+    /// When the workers were started, milliseconds on the page's clock.
+    started: f64,
+    /// Whether any worker has ever said it is ready.
+    any_ready: bool,
 }
 
 struct PageWorker {
@@ -345,6 +370,14 @@ struct PageWorker {
 
 /// How many Web Workers the forward stage has.
 const PAGE_WORKERS: usize = 2;
+
+/// How long the page waits for a worker's `ready` before it runs the jobs itself, milliseconds.
+const READY_WITHIN_MS: f64 = 15_000.0;
+
+/// The page's clock, milliseconds.
+fn now_ms() -> f64 {
+    web_sys::window().and_then(|w| w.performance()).map_or(0.0, |p| p.now())
+}
 
 /// The handle the workers' message handlers and the engine both hold.
 #[derive(Clone)]
@@ -359,34 +392,72 @@ impl Remote {
             queue: VecDeque::new(),
             answers: std::collections::HashMap::new(),
             next_ticket: 0,
+            started: now_ms(),
+            any_ready: false,
         })));
-        let module = js_sys::Reflect::get(&js_sys::global(), &"cavendishWasm".into()).unwrap_or_default();
         for index in 0..PAGE_WORKERS {
-            let options = web_sys::WorkerOptions::new();
-            options.set_type(web_sys::WorkerType::Module);
-            let worker =
-                web_sys::Worker::new_with_options("./worker.js", &options).map_err(|e| format!("{e:?}"))?;
-            let handle = remote.clone();
-            let on_message =
-                Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
-                    handle.arrived(index, &event.data());
-                });
-            worker.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-            on_message.forget();
-            let on_error = Closure::<dyn FnMut(web_sys::Event)>::new(move |_event: web_sys::Event| {
-                log::error!(
-                    "the forward stage's worker {index} failed: the numbers it was computing will not arrive; \
-                     reload the page"
-                );
-            });
-            worker.set_onerror(Some(on_error.as_ref().unchecked_ref()));
-            on_error.forget();
-            let start = js_sys::Object::new();
-            let _ = js_sys::Reflect::set(&start, &"module".into(), &module);
-            worker.post_message(&start).map_err(|e| format!("{e:?}"))?;
+            let worker = remote.spawn(index)?;
             remote.0.borrow_mut().workers.push(PageWorker { worker, ready: false, busy: None });
         }
         Ok(remote)
+    }
+
+    /// A new worker for slot `index`, sent the module; it says `ready` when it runs.
+    fn spawn(&self, index: usize) -> Result<web_sys::Worker, String> {
+        let module = js_sys::Reflect::get(&js_sys::global(), &"cavendishWasm".into()).unwrap_or_default();
+        let options = web_sys::WorkerOptions::new();
+        options.set_type(web_sys::WorkerType::Module);
+        let worker =
+            web_sys::Worker::new_with_options("./worker.js", &options).map_err(|e| format!("{e:?}"))?;
+        let handle = self.clone();
+        let on_message =
+            Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
+                handle.arrived(index, &event.data());
+            });
+        worker.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
+        on_message.forget();
+        let handle = self.clone();
+        let on_error = Closure::<dyn FnMut(web_sys::Event)>::new(move |event: web_sys::Event| {
+            let message = js_sys::Reflect::get(&event, &"message".into())
+                .ok()
+                .and_then(|m| m.as_string())
+                .unwrap_or_else(|| "no message".to_owned());
+            handle.failed(index, &message);
+        });
+        worker.set_onerror(Some(on_error.as_ref().unchecked_ref()));
+        on_error.forget();
+        let start = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&start, &"module".into(), &module);
+        worker.post_message(&start).map_err(|e| format!("{e:?}"))?;
+        Ok(worker)
+    }
+
+    /// Worker `index` failed: its job is answered with nothing (the lane is free again), the
+    /// failure is said on the page and in the console, and a new worker takes the slot.
+    fn failed(&self, index: usize, message: &str) {
+        let lost = {
+            let mut pool = self.0.borrow_mut();
+            let pool = &mut *pool;
+            let worker = &mut pool.workers[index];
+            worker.worker.terminate();
+            worker.ready = false;
+            let lost = worker.busy.take();
+            if let Some(ticket) = lost {
+                pool.answers.insert(ticket, Vec::new());
+            }
+            lost
+        };
+        let what = if lost.is_some() { "the job it was computing is dropped" } else { "it held no job" };
+        let text = format!(
+            "The forward stage's worker {index} failed ({message}): {what}, and a new worker takes its \
+             place. That scene's numbers stay stale; an edit asks for them again."
+        );
+        log::error!("{text}");
+        note(&text);
+        match self.spawn(index) {
+            Ok(worker) => self.0.borrow_mut().workers[index].worker = worker,
+            Err(why) => log::error!("the forward stage's worker {index} could not be started again: {why}"),
+        }
     }
 
     /// A worker's message: `{ready}` once it runs, then `{ticket, answer}` for each job.
@@ -396,6 +467,7 @@ impl Remote {
             let mut pool = self.0.borrow_mut();
             if field("ready").is_truthy() {
                 pool.workers[index].ready = true;
+                pool.any_ready = true;
             } else if let Some(ticket) = field("ticket").as_f64() {
                 let answer = js_sys::Uint8Array::new(&field("answer")).to_vec();
                 pool.answers.insert(ticket as u64, answer);
@@ -405,10 +477,17 @@ impl Remote {
         self.pump();
     }
 
-    /// Hands waiting jobs to free workers.
+    /// Hands waiting jobs to free workers; when no worker has been ready within
+    /// [`READY_WITHIN_MS`] of the start, runs the first waiting job here instead.
     fn pump(&self) {
         let mut pool = self.0.borrow_mut();
         let pool = &mut *pool;
+        if !pool.any_ready && now_ms() - pool.started > READY_WITHIN_MS {
+            if let Some((ticket, request)) = pool.queue.pop_front() {
+                pool.answers.insert(ticket, cav_engine::forward::wire::serve(&request));
+            }
+            return;
+        }
         for worker in &mut pool.workers {
             if !worker.ready || worker.busy.is_some() {
                 continue;
@@ -441,6 +520,8 @@ impl cav_engine::forward::wire::Remote for Remote {
     }
 
     fn take(&self, ticket: u64) -> Option<Vec<u8>> {
+        // Asked every frame: the page's own run of a job, when no worker ever came, starts here.
+        self.pump();
         self.0.borrow_mut().answers.remove(&ticket)
     }
 }

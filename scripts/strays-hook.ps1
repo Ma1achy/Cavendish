@@ -24,7 +24,7 @@ try {
     $report = & (Join-Path $PSScriptRoot 'strays.ps1')
     if ($LASTEXITCODE -ne 1) { exit 0 }
     $text = ($report -join "`n") + "`nStop what you started (by its handle, or with " +
-        '`cargo xtask strays --stop`, which stops only these signatures), then carry on.'
+        '`cargo xtask strays --stop`, which stops only the STRAY ones an agent started), then carry on.'
     $out = @{ systemMessage = "Leftover processes:`n$text" }
     if (-not $again) {
         $out.hookSpecificOutput = @{ hookEventName = $hookEvent; additionalContext = $text }

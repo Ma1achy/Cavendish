@@ -3,7 +3,7 @@
   Lists (and with -Stop, stops) processes that look like an agent's leftovers on this PC.
 
 .DESCRIPTION
-  A process is a candidate only by its command line or its path, never by its name alone:
+  A process is a candidate by its command line or its path, and three build tools by name alone:
     python/python3 running a script from stdin (`python -`) or `python -m http.server`;
     `xtask.exe ... web serve`;
     cav.exe, cav-app.exe or cav-web.exe built in this repository's target folder (or a worktree's);
@@ -11,10 +11,21 @@
       scratchpad folder;
     node.exe running wasm-bindgen-test-runner or scripts/web_screenshot.mjs, and
       wasm-bindgen-test-runner.exe itself;
-    wasm-opt.exe and cargo-nextest.exe (build tools only agents and the tiers run).
+    wasm-opt.exe and cargo-nextest.exe (build tools, by name alone).
   A candidate is a stray when it is older than -AgeMinutes or has used more than -CpuSeconds of CPU.
 
-  Report mode (the default) changes nothing: exit 0 when there is no stray, 1 when there is.
+  Who may be stopped (S17's second review, item 3: the owner runs some of these too):
+    agent-shaped: `python -` and a headless browser whose profile is in a scratchpad folder; only
+      agents make these, so a stray one is stopped;
+    by ancestry: `xtask web serve`, the repository's cav binaries, a headless browser with a temp
+      profile, node running the web test runner or the screenshot script; stopped only when Claude
+      Code (claude.exe, or node running Claude Code) is among the process's living ancestors;
+    report only, never stopped: `python -m http.server`, wasm-opt, cargo-nextest and
+      wasm-bindgen-test-runner.exe, which match by name or by a command line anyone types.
+  A stray that may not be stopped is listed as such and does not fail the report.
+
+  Report mode (the default) changes nothing: exit 0 when there is no stray that may be stopped,
+  1 when there is.
   -Stop stops the strays, and only them: each one's command line is read again just before it is
   stopped, and it is stopped only if it still matches the same signature, is the same process (same
   start time) and is still a stray. Exit 0 when none is left, 1 when one could not be stopped.
@@ -86,7 +97,44 @@ function Test-BuiltHere([string] $exe) {
         ($exe -match '\\target\\')
 }
 
-# The signature a process matches, or $null. Never by name alone.
+# Who may stop a process of each signature: 'agent' (always, when stray), 'ancestry' (when Claude
+# Code is a living ancestor) or 'report' (never). A signature missing here is 'report'.
+$stopRules = @{
+    'python - (script on stdin)'     = 'agent'
+    'headless browser, scratchpad'   = 'agent'
+    'xtask web serve'                = 'ancestry'
+    'headless browser, temp profile' = 'ancestry'
+    'node wasm-bindgen-test-runner'  = 'ancestry'
+    'node web_screenshot.mjs'        = 'ancestry'
+    'python -m http.server'          = 'report'
+    'wasm-bindgen-test-runner'       = 'report'
+    'wasm-opt'                       = 'report'
+    'cargo-nextest'                  = 'report'
+}
+foreach ($name in @('cav.exe', 'cav-app.exe', 'cav-web.exe')) { $stopRules["$name from target"] = 'ancestry' }
+
+# Whether Claude Code is among the living ancestors of $process: claude.exe, or node.exe whose
+# command line names claude. Each parent must have started before its child (an id can be reused).
+function Test-AgentAncestor($process) {
+    $child = $process
+    for ($depth = 0; $depth -lt 32; $depth++) {
+        $parentId = [int] $child.ParentProcessId
+        if ($parentId -le 0) { return $false }
+        $parent = @(Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$parentId")
+        if ($parent.Count -ne 1) { return $false }
+        $parent = $parent[0]
+        if ($parent.CreationDate -and $child.CreationDate -and $parent.CreationDate -gt $child.CreationDate) {
+            return $false
+        }
+        $name = ([string] $parent.Name).ToLowerInvariant()
+        if ($name -eq 'claude.exe') { return $true }
+        if ($name -eq 'node.exe' -and ([string] $parent.CommandLine) -match 'claude') { return $true }
+        $child = $parent
+    }
+    return $false
+}
+
+# The signature a process matches, or $null.
 function Get-StraySignature($process) {
     $name = $process.Name.ToLowerInvariant()
     $line = [string] $process.CommandLine
@@ -111,6 +159,7 @@ function Get-StraySignature($process) {
             if ($name -ne 'chrome-headless-shell.exe' -and $arguments -notmatch '(^|\s)--headless') { return $null }
             if ($arguments -match '--user-data-dir=("([^"]*)"|(\S+))') {
                 $dir = if ($Matches[2]) { $Matches[2] } else { $Matches[3] }
+                if ($dir -match '\\scratchpad(\\|$|")') { return 'headless browser, scratchpad' }
                 if (Test-UnderTemp $dir) { return 'headless browser, temp profile' }
             }
             return $null
@@ -136,6 +185,9 @@ function Get-StrayCandidates([int[]] $only) {
         if (-not $signature) { continue }
         $age = if ($p.CreationDate) { ($now - $p.CreationDate).TotalMinutes } else { 0 }
         $cpu = ([double] $p.KernelModeTime + [double] $p.UserModeTime) / 1e7
+        $rule = $stopRules[$signature]
+        if (-not $rule) { $rule = 'report' }
+        $stoppable = ($rule -eq 'agent') -or ($rule -eq 'ancestry' -and (Test-AgentAncestor $p))
         [pscustomobject] @{
             Id         = [int] $p.ProcessId
             Signature  = $signature
@@ -143,6 +195,7 @@ function Get-StrayCandidates([int[]] $only) {
             CpuSeconds = [math]::Round($cpu, 1)
             WorkingMB  = [math]::Round([double] $p.WorkingSetSize / 1MB, 1)
             Stray      = ($age -gt $AgeMinutes) -or ($cpu -gt $CpuSeconds)
+            Stoppable  = $stoppable
             Started    = $p.CreationDate
             Command    = $p.CommandLine
         }
@@ -151,17 +204,18 @@ function Get-StrayCandidates([int[]] $only) {
 
 $only = @($ProcessId -split ',' | Where-Object { $_.Trim() } | ForEach-Object { [int] $_.Trim() })
 $found = @(Get-StrayCandidates $only | Sort-Object -Property Stray, CpuSeconds -Descending)
-$strays = @($found | Where-Object Stray)
+$strays = @($found | Where-Object { $_.Stray -and $_.Stoppable })
+$kept = @($found | Where-Object { $_.Stray -and -not $_.Stoppable })
 
 if ($found.Count -eq 0) {
     Write-Output 'strays: no process matches an agent-leftover signature.'
     exit 0
 }
 
-Write-Output ("strays: {0} matching process(es), {1} stray (older than {2} min or over {3} CPU s):" -f
-    $found.Count, $strays.Count, $AgeMinutes, $CpuSeconds)
+Write-Output ("strays: {0} matching process(es); {1} stray that may be stopped, {2} stray to report only (older than {3} min or over {4} CPU s):" -f
+    $found.Count, $strays.Count, $kept.Count, $AgeMinutes, $CpuSeconds)
 foreach ($c in $found) {
-    $mark = if ($c.Stray) { 'STRAY' } else { 'young' }
+    $mark = if (-not $c.Stray) { 'young' } elseif ($c.Stoppable) { 'STRAY' } else { 'stray (report only)' }
     $command = [string] $c.Command
     if ($command.Length -gt 160) { $command = $command.Substring(0, 157) + '...' }
     Write-Output ("  {0} pid {1,-6} {2,-30} age {3} min, cpu {4} s, {5} MB" -f
