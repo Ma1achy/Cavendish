@@ -3,11 +3,12 @@
   Self-test of scripts/strays.ps1, run by `cargo xtask strays --self-test`.
 
 .DESCRIPTION
-  Starts three hidden processes and holds their objects: `python -` with a sleeping script on
-  stdin (matches a signature), and as controls `python -c "...sleep..."` (python by name, no
-  signature) and `ping -n 600 127.0.0.1` (nothing). Checks that the report finds exactly the first,
-  as young at the default thresholds and as a stray at zero thresholds, and that -Stop stops it and
-  neither control. Every process it started is stopped in `finally`, and the test fails if one is
+  Starts four hidden processes and holds their objects: `python -` with a sleeping script on
+  stdin (a signature only an agent makes), `python -m http.server 0 --bind 127.0.0.1` (a
+  report-only signature: the owner may run one), and as controls `python -c "...sleep..."` (python
+  by name, no signature) and `ping -n 600 127.0.0.1` (nothing). Checks that the report finds the
+  first, young at the default thresholds and a stray at zero thresholds, lists the server as a
+  stray to report only, and that -Stop stops the first and nothing else. Every process it started is stopped in `finally`, and the test fails if one is
   left. -ProcessId keeps the script to these three: it never touches anything else on the PC.
 #>
 $ErrorActionPreference = 'Stop'
@@ -49,8 +50,10 @@ try {
     $started += $pythonControl
     $ping = Start-Hidden "$env:SystemRoot\System32\PING.EXE" '-n 600 127.0.0.1' $null
     $started += $ping
+    $server = Start-Hidden $python '-m http.server 0 --bind 127.0.0.1' $null
+    $started += $server
     Start-Sleep -Milliseconds 500
-    $ids = @($stdinScript.Id, $pythonControl.Id, $ping.Id) -join ','
+    $ids = @($stdinScript.Id, $pythonControl.Id, $ping.Id, $server.Id) -join ','
     Write-Output "strays self-test: python - is pid $($stdinScript.Id); controls pid $($pythonControl.Id) (python -c), $($ping.Id) (ping)"
 
     $young = Invoke-Strays @('-ProcessId', $ids)
@@ -63,6 +66,8 @@ try {
     Assert-That ($report.Text -notmatch "pid $($pythonControl.Id)\b" -and $report.Text -notmatch "pid $($ping.Id)\b") `
         'control: python -c and ping are not reported' $report.Text
     Assert-That (-not $stdinScript.HasExited) 'report mode stopped nothing' ''
+    Assert-That ($report.Text -match "stray \(report only\) pid $($server.Id)\b") `
+        'python -m http.server is listed as a stray to report only' $report.Text
 
     $stop = Invoke-Strays @('-Stop', '-AgeMinutes', '0', '-CpuSeconds', '0', '-ProcessId', $ids)
     $stopped = @([regex]::Matches($stop.Text, 'stopped pid (\d+)') | ForEach-Object { $_.Groups[1].Value })
@@ -71,6 +76,7 @@ try {
     Assert-That ($stdinScript.WaitForExit(5000)) '`python -` has ended' ''
     Assert-That ((-not $pythonControl.HasExited) -and (-not $ping.HasExited)) `
         'control: python -c and ping are still running after -Stop' ''
+    Assert-That (-not $server.HasExited) 'the report-only server is still running after -Stop' ''
 } finally {
     foreach ($p in $started) {
         if (-not $p.HasExited) { $p.Kill(); [void] $p.WaitForExit(5000) }
