@@ -1893,6 +1893,11 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
             let _ = shell.place_at(ground);
             continue;
         }
+        // A drag in the view ends a transform session first, its move kept, so the drag starts
+        // from where the body is (S18's second review, I2).
+        if response.drag_started_by(egui::PointerButton::Primary) && shell.session.is_some() {
+            shell.end_session(true);
+        }
         if response.drag_started_by(egui::PointerButton::Primary)
             && let Some((body, g)) = gizmo
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
@@ -2152,7 +2157,7 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
     if let Some(window) = sheet {
         // The list is a stop that scrolls (the spec's §6 for lists: the whole list is reachable).
         let list = window.inner.unwrap_or(window.response.rect);
-        shell.building.place("sheet", window.response.rect);
+        shell.building.place_window("sheet", window.response.rect, window.response.layer_id);
         shell.register("sheet", "sheet/list", "Keys", Kind::Adjust, list);
     }
     shell.keys_open = keys_open;
@@ -2202,6 +2207,7 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
             }
         });
     if let Some(window) = about {
+        shell.building.place_window("about", window.response.rect, window.response.layer_id);
         shell.register("about", "about/text", "About", Kind::ReadOnly, window.response.rect);
     }
     shell.about_open = about_open;

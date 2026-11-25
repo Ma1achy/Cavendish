@@ -645,6 +645,9 @@
 - id: TASK-S18-18
   milestone: S18
   title: "Review fixes, the record: the pictures section 5 promised (context menu, palette with words, history with its toast, add-menu), the budgets measured, the brief, ARCHITECTURE, the recipe, REBUILD's row, IDEAS, PROGRESS and the validation report"
+- id: TASK-S18-19
+  milestone: S18
+  title: "Second review, I1 and I2: Home ends a run of sets; a transform session ends (kept) when the keyboard leaves it or a drag starts; the right-button fly holds every non-global key and ends when the pointer leaves; a click picks the top window and lands on a section (minors 3, 4, 5, 7)"
 - id: TASK-S19-01
   milestone: S19
   title: "Docking: panels as tabs in dock areas, drag to dock, saved layouts of the dock tree (a crate spike first, egui 0.37 and wasm)"
