@@ -158,13 +158,30 @@ pub fn score(query: &str, text: &str) -> Option<i32> {
     Some(score - i32::try_from(text.len()).unwrap_or(i32::MAX) / 8)
 }
 
+/// Whether every word of `query` begins a word of `text` (case aside): "add sph" in "Add ›
+/// Sphere", not in "View › Show in the pane › the scene", where its letters are only scattered.
+#[must_use]
+pub fn word_match(query: &str, text: &str) -> bool {
+    let text = text.to_lowercase();
+    let words: Vec<&str> = text.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let query = query.to_lowercase();
+    let mut wanted = query.split_whitespace().peekable();
+    wanted.peek().is_some() && wanted.all(|q| words.iter().any(|w| w.starts_with(q)))
+}
+
 /// The results for `query`, best first: each entry's index in `entries` and its score. Entries
-/// of an earlier group win ties. At most `limit`.
+/// of an earlier group win ties. At most `limit`. When some entries match by the starts of
+/// their words, only those are given: letters merely scattered through a long label are noise
+/// beside them (S18's second review, UX 6: "sph" was padded with "Show in the pane" rows);
+/// otherwise the scattered matches are what there is.
 #[must_use]
 pub fn filter(entries: &[Entry], query: &str, limit: usize) -> Vec<(usize, i32)> {
+    let strong = |e: &Entry| word_match(query, &e.label) || word_match(query, &e.detail);
+    let any_strong = !query.trim().is_empty() && entries.iter().any(strong);
     let mut scored: Vec<(usize, i32)> = entries
         .iter()
         .enumerate()
+        .filter(|(_, e)| !any_strong || strong(e))
         .filter_map(|(n, e)| {
             let best = score(query, &e.label).max(score(query, &e.detail).map(|s| s / 3));
             best.map(|s| (n, s))
@@ -363,6 +380,23 @@ mod tests {
         // Fuzzy: "sph" finds the sphere first among the things to add.
         let found = filter(&all, "add sph", 3);
         assert_eq!(all[found[0].0].line.as_deref(), Some("add sphere"), "{:?}", all[found[0].0]);
+        // Only matches by the starts of words when there are any (S18's second review, UX 6):
+        // "sph" gives no "Show in the pane" rows; control: a query that begins no word
+        // ("shwpn") still finds them by their scattered letters.
+        let sph = filter(&all, "sph", all.len());
+        assert!(
+            !sph.is_empty()
+                && sph
+                    .iter()
+                    .all(|(n, _)| word_match("sph", &all[*n].label) || word_match("sph", &all[*n].detail))
+        );
+        assert!(
+            !sph.iter().any(|(n, _)| all[*n].label.contains("Show in the pane")),
+            "{:?}",
+            sph.iter().map(|(n, _)| &all[*n].label).collect::<Vec<_>>()
+        );
+        let scattered = filter(&all, "shwpn", all.len());
+        assert!(scattered.iter().any(|(n, _)| all[*n].label.contains("Show in the pane")));
         // Control: letters out of order do not match.
         assert!(score("hps", "sphere").is_none());
         assert!(score("sph", "sphere").unwrap() > score("sph", "a shape here").unwrap());

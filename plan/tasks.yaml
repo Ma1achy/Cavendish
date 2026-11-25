@@ -651,6 +651,9 @@
 - id: TASK-S18-20
   milestone: S18
   title: "Second review, UX 1, 3, 4, 5, 8, 9 and minors 1, 2, 6: Point radius; F keeps a voxel body's cage in the pane; the history named from each step's own scene, worded \"Set mass to 5 kg on ball\", inside the outliner; one swatch for one value; the inspector says it scrolls, atom mass in u; no toast for opening; snap on the tool strip"
+- id: TASK-S18-21
+  milestone: S18
+  title: "Second review, UX 2, 6, 7: the Place tool's ground grid and ghost; the palette gives word matches alone when there are any; the wizard's first body as a grid of tiles with pictures"
 - id: TASK-S19-01
   milestone: S19
   title: "Docking: panels as tabs in dock areas, drag to dock, saved layouts of the dock tree (a crate spike first, egui 0.37 and wasm)"
