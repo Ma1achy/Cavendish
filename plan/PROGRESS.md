@@ -8,10 +8,29 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S1 a point mass | done: TASK-S1-01 to 19 merged; reviewed twice, nothing important remains | `s1-point-mass` | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
 | S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
 | S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
-| S4 big scenes | built: TASK-S4-01 to 11 merged; reviewed once (`docs/slices/S4-review.md`), all twelve important findings fixed (TASK-S4-12 to 20, #143–#150 and this); awaiting re-review | | brief and results: `docs/slices/S4.md` (§7, §7.7 after the review); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
+| S4 big scenes | built: TASK-S4-01 to 11 merged; reviewed twice (`docs/slices/S4-review.md`, `S4-review-2.md`); every important finding fixed (TASK-S4-12 to 24, #143–#151, #153–#155 and this); awaiting a third look or the tag | | brief and results: `docs/slices/S4.md` (§7, §7.7 after the review); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
 
-## S4 after its review (25 Nov 2026) — fixes done, awaiting re-review
+## S4 after its second review (25 Nov 2026) — fixes done
+
+**Done** (TASK-S4-21 to 24, PRs #153–#155 and the last; `docs/slices/S4.md` §7.8). J1: only
+agents' `cargo xtask` runs are recorded, each record has a heartbeat, and an orphan counts as
+xtask's only if it started while its parent was alive. J2: the page never runs a request a worker
+failed on, and falls back only while no worker has died holding a job; respawn counts reset on an
+answer. J3: the mesh fingerprint is order-free; a drawn chunk keeps its mesh at a cap. J4: the
+truncation is tested at the engine's replies, the wire and figure records (which now carry it).
+J5: a world scene's towers show their readings. Minors 1–6, 8, 11, 13, 15 done; 7, 9, 10, 12, 14
+in IDEAS.
+
+**Numbers.** quick 542, 22.4–25.3 s on the idle machine; gpu 40; web green; validation 113 of 113
+against `s17-in-the-browser`, unchanged values.
+
+**Open.** The far field's 99th percentile (59–64 ms) and where its draw time goes (it does not
+follow the marched pixels); the page's pictures predate the reviews' fixes.
+
+**Next.** The tag, or a third look at the fixes; then S5.
+
+## S4 after its review (25 Nov 2026) — fixes done, re-reviewed
 
 **Done** (TASK-S4-12 to 20, PRs #143–#150 and the last; `docs/slices/S4.md` §7.7, a row a
 finding). I1: the moment bound keeps each order's `Σ m s^l` (the fourth exact) and the factor
