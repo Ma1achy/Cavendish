@@ -98,6 +98,7 @@ pub fn build(root: &Path) -> Result<(), String> {
         "icon-192.png",
         "icon-512.png",
         "site.webmanifest",
+        "social-preview.jpg",
     ] {
         std::fs::copy(root.join("crates/cav-app/web").join(file), dist.join(file))
             .map_err(|e| format!("crates/cav-app/web/{file}: {e}"))?;
@@ -369,6 +370,7 @@ fn content_type(path: &str) -> &'static str {
         Some("png") => "image/png",
         Some("svg") => "image/svg+xml",
         Some("ico") => "image/x-icon",
+        Some("jpg") => "image/jpeg",
         Some("webmanifest") => "application/manifest+json",
         _ => "application/octet-stream",
     }
