@@ -55,6 +55,34 @@ impl Rig {
         self.click_with(pos, PointerButton::Primary);
     }
 
+    fn drag(&mut self, from: Pos2, to: Pos2) {
+        let middle = from + (to - from) * 0.5;
+        self.frames(vec![
+            vec![Event::PointerMoved(from)],
+            vec![Self::press(from, PointerButton::Primary, true)],
+            vec![Event::PointerMoved(middle)],
+            vec![Event::PointerMoved(to)],
+            vec![Self::press(to, PointerButton::Primary, false)],
+            vec![],
+        ]);
+    }
+
+    /// Drags the Move tool's gizmo on body `body` along `axis` by `metres`, from a point on the
+    /// arrow, as a person would (the pointer moves `metres` worth of the arrow on screen).
+    fn drag_arrow(&mut self, body: usize, axis: usize, metres: f64) {
+        let rect = self.shell.layout().panes[0];
+        let spec = self.shell.engine.spec();
+        let at = spec.bodies[body].motion.position(self.shell.engine.time(), spec.array.instrument.gravity);
+        let g =
+            cav_app::tools::gizmo(self.shell.engine.view(0), rect.size(), at).expect("the gizmo is in view");
+        let tip = g.tips[axis].expect("the arrow lies across the view");
+        let arrow = tip - g.centre;
+        let per_metre = arrow.length() / g.metres as f32;
+        let from = rect.min + g.centre.to_vec2() + arrow * 0.6;
+        let to = from + arrow.normalized() * (metres as f32 * per_metre);
+        self.drag(from, to);
+    }
+
     fn click_button(&mut self, line: &str) {
         let rect = self.shell.layout().button(line).unwrap_or_else(|| panic!("no button `{line}`"));
         self.click(rect.center());
@@ -70,6 +98,215 @@ impl Rig {
             .expect("the row is laid out")
     }
 }
+
+fn anchor(rig: &Rig, body: usize) -> [f64; 3] {
+    rig.shell.engine.spec().bodies[body].motion.anchor().0
+}
+
+#[test]
+fn a_gizmo_drag_is_one_edit() {
+    // S18 E2: a drag of an arrow is one journal entry and one undo; snapped to the step.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("select body 1").unwrap();
+    rig.shell.run("tool move").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let (start, journal) = (anchor(&rig, 0), rig.shell.engine.journal().len());
+    rig.drag_arrow(0, 0, 2.0);
+    let moved = anchor(&rig, 0);
+    assert!((moved[0] - start[0] - 2.0).abs() <= 1e-12, "{start:?} → {moved:?}");
+    assert_eq!((moved[1], moved[2]), (start[1], start[2]), "only along x");
+    assert_eq!(rig.shell.engine.journal().len(), journal + 1, "one journal entry");
+    rig.shell.run("undo").unwrap();
+    assert_eq!(anchor(&rig, 0), start, "one undo takes the whole drag back");
+    // Control: with snap off the same drag is not a whole number of steps in general, and is still
+    // one edit; a drag along z moves z.
+    rig.shell.run("snap").unwrap();
+    rig.drag_arrow(0, 2, 0.6);
+    let up = anchor(&rig, 0);
+    assert!((up[2] - start[2] - 0.6).abs() < 0.02 && up[0] == start[0], "{up:?}");
+}
+
+#[test]
+fn the_gizmo_the_session_and_the_field_issue_the_same_edit() {
+    // S18 E1: dragging the x arrow 2 m, typing 2 in a transform session, and typing x + 2 in the
+    // inspector's field give the same scene; the gizmo and the session the same journal line.
+    let fresh = || {
+        let mut rig = Rig::new();
+        rig.shell.run("load point").unwrap();
+        rig.shell.run("select body 1").unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        rig
+    };
+    let mut by_gizmo = fresh();
+    by_gizmo.shell.run("tool move").unwrap();
+    by_gizmo.frames(vec![vec![]]);
+    by_gizmo.drag_arrow(0, 0, 2.0);
+    let mut by_keys = fresh();
+    by_keys.shell.keyboard.focus = vec!["viewport".into(), "viewport/selection".into()];
+    by_keys.shell.keyboard.nav_on = true;
+    by_keys.key(Key::Enter, Modifiers::NONE);
+    assert!(by_keys.shell.session.is_some(), "Enter on the selection starts a session");
+    by_keys.key(Key::Num2, Modifiers::NONE);
+    by_keys.key(Key::Enter, Modifiers::NONE);
+    assert!(by_keys.shell.session.is_none());
+    let mut by_field = fresh();
+    let x = anchor(&by_field, 0)[0];
+    by_field.shell.run(&format!("set bodies[0].motion.Static.position[0] {}", x + 2.0)).unwrap();
+    let specs = [&by_gizmo, &by_keys, &by_field].map(|rig| rig.shell.engine.spec().clone());
+    assert_eq!(specs[0], specs[1], "gizmo and session");
+    assert_eq!(specs[0], specs[2], "gizmo and field");
+    assert_eq!(
+        by_gizmo.shell.engine.journal().last(),
+        by_keys.shell.engine.journal().last(),
+        "the same line"
+    );
+    // Control: a drag of the y arrow gives another scene.
+    let mut other = fresh();
+    other.shell.run("tool move").unwrap();
+    other.frames(vec![vec![]]);
+    other.drag_arrow(0, 1, 2.0);
+    assert_ne!(other.shell.engine.spec(), &specs[0]);
+}
+
+#[test]
+fn a_held_nudge_is_one_undo_and_esc_cancels_it() {
+    // S18 K10: in a transform session a held arrow repeats (500 ms, then every 40 ms), the whole
+    // session is one undo; Esc takes it back; Enter keeps it.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("select body 1").unwrap();
+    rig.frames(vec![vec![]]);
+    let (start, history) = (anchor(&rig, 0), rig.shell.engine.history());
+    let session = |rig: &mut Rig| {
+        rig.shell.keyboard.focus = vec!["viewport".into(), "viewport/selection".into()];
+        rig.shell.keyboard.nav_on = true;
+        rig.key(Key::Enter, Modifiers::NONE);
+        // Hold → for a second: 1 + 1 + 12 steps of 0.25 m.
+        let down = Event::Key {
+            key: Key::ArrowRight,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        };
+        let up = Event::Key {
+            key: Key::ArrowRight,
+            physical_key: None,
+            pressed: false,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        };
+        let mut frames = vec![vec![down]];
+        frames.extend(std::iter::repeat_with(Vec::new).take(59));
+        frames.push(vec![up]);
+        rig.frames(frames);
+    };
+    session(&mut rig);
+    let held = anchor(&rig, 0);
+    assert!((held[0] - start[0] - 14.0 * 0.25).abs() < 1e-9, "{} steps", (held[0] - start[0]) / 0.25);
+    rig.key(Key::Escape, Modifiers::NONE);
+    assert_eq!(anchor(&rig, 0), start, "Esc cancels: the body is where it began");
+    assert_eq!(rig.shell.engine.history(), history, "and nothing new can be undone");
+    // Control: Enter keeps it, and one undo takes the whole held run back.
+    session(&mut rig);
+    rig.key(Key::Enter, Modifiers::NONE);
+    assert!((anchor(&rig, 0)[0] - start[0] - 3.5).abs() < 1e-9);
+    rig.shell.run("undo").unwrap();
+    assert_eq!(anchor(&rig, 0), start, "one undo for the whole session");
+}
+
+#[test]
+fn the_place_tool_drops_a_starter_where_the_pointer_is() {
+    // S18 E3: a click with the Place tool inserts a valid body at the ground under the pointer.
+    let mut rig = Rig::new();
+    rig.shell.run("load void").unwrap();
+    rig.shell.run("tool place").unwrap();
+    rig.shell.place_starter = "cube".into();
+    rig.frames(vec![vec![], vec![]]);
+    let rect = rig.shell.layout().panes[0];
+    let pointer = rect.min + egui::vec2(0.62 * rect.width(), 0.7 * rect.height());
+    let size = [f64::from(rect.width()), f64::from(rect.height())];
+    let within = [f64::from(pointer.x - rect.min.x), f64::from(pointer.y - rect.min.y)];
+    let expected = cav_app::tools::on_ground(rig.shell.engine.view(0), size, within, rig.shell.ground());
+    rig.click(pointer);
+    let spec = rig.shell.engine.spec();
+    assert_eq!(spec.bodies.len(), 1, "one click, one body");
+    let [x, y, z] = spec.bodies[0].motion.anchor().0;
+    assert!((x - expected[0]).hypot(y - expected[1]) < 1e-3, "({x}, {y}) against {expected:?}");
+    assert_eq!(z, rig.shell.ground() + 0.25, "the cube rests on the ground");
+    assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)));
+    rig.shell.run("undo").unwrap();
+    assert!(rig.shell.engine.spec().bodies.is_empty(), "one undo takes it away");
+    // Control: with the Select tool the same click adds nothing.
+    rig.shell.run("load void").unwrap();
+    rig.shell.run("tool select").unwrap();
+    rig.frames(vec![vec![]]);
+    rig.click(pointer);
+    assert!(rig.shell.engine.spec().bodies.is_empty());
+}
+
+#[test]
+fn choosing_a_tool_changes_no_scene() {
+    // S18 E5: tools are UI state.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    let (digest, journal) = (rig.shell.engine.digest(), rig.shell.engine.journal().len());
+    rig.shell.keyboard.focus = vec!["toolbar".into()];
+    for key in [Key::W, Key::A, Key::Q, Key::S, Key::S] {
+        rig.key(key, Modifiers::NONE);
+    }
+    rig.click_button("tool move");
+    assert_eq!(rig.shell.tool, "move");
+    assert_eq!((rig.shell.engine.digest(), rig.shell.engine.journal().len()), (digest.clone(), journal));
+    // Control: a tool's action does change the scene (Place), and is journalled.
+    rig.shell.run("tool place").unwrap();
+    rig.frames(vec![vec![]]);
+    let rect = rig.shell.layout().panes[0];
+    rig.click(rect.center() + egui::vec2(0.0, 0.3 * rect.height()));
+    assert_ne!(rig.shell.engine.digest(), digest);
+}
+
+#[test]
+fn task_add_a_sphere_move_it_two_metres_read_tower_one() {
+    // S18 T1, end to end through the UI: the palette adds a sphere, the Move tool's arrow takes it
+    // 2 m east, and tower 1 reads what the forward model reads of the scene as edited.
+    let mut rig = Rig::new();
+    rig.shell.run("load room").unwrap();
+    rig.frames(vec![vec![]]);
+    rig.events = 0;
+    rig.key(Key::K, Modifiers::COMMAND);
+    rig.frames(vec![vec![]]);
+    rig.typed("add sph");
+    rig.key(Key::Enter, Modifiers::NONE);
+    let spec = rig.shell.engine.spec();
+    assert_eq!(spec.bodies.len(), 1);
+    assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)), "the new sphere is selected");
+    rig.key(Key::W, Modifiers::NONE);
+    assert_eq!(rig.shell.tool, "move", "W: the Move tool");
+    rig.frames(vec![vec![]]);
+    let start = anchor(&rig, 0);
+    let undo_depth = rig.shell.engine.history();
+    // North (y): east would take it onto tower 2's axis at (4, 0), where the read is the
+    // through-the-tower case (S5's bounded walk; docs/slices/S18.md §7).
+    rig.drag_arrow(0, 1, 2.0);
+    let moved = anchor(&rig, 0);
+    assert!((moved[1] - start[1] - 2.0).abs() <= 1e-12, "moved by {}", moved[1] - start[1]);
+    assert_eq!((moved[0], moved[2]), (start[0], start[2]));
+    assert_eq!(undo_depth, (true, false));
+    // The reading the window shows is the forward model's of the edited scene, bit for bit.
+    assert!(rig.shell.engine.settle_reading(std::time::Duration::from_secs(120)));
+    let shown = rig.shell.reading().clone();
+    let direct = cav_sim::read::reading(rig.shell.engine.spec(), shown.time, &|| false).expect("read");
+    assert_eq!(shown.towers[0].gradiometer.to_bits(), direct.towers[0].gradiometer.to_bits(), "tower 1's ΔΦ");
+    assert!(shown.towers[0].gradiometer != 0.0);
+    // The event budget: recorded at the first pass (docs/slices/S18.md §7) and held.
+    assert!(rig.events <= TASK_EVENTS, "{} input events", rig.events);
+}
+
+/// The input events the T1 task takes: counted at its first pass and held, so the task does not
+/// get longer unnoticed.
+const TASK_EVENTS: usize = 20;
 
 /// What share of the pane's shorter side a sphere (`centre`, `radius` metres) spans on screen,
 /// measured by projecting its edge, in pane `pane` of the last frame.
@@ -152,9 +389,10 @@ fn the_wheel_zooms_toward_the_pointer() {
 #[test]
 fn fly_is_a_session() {
     let mut rig = Rig::new();
-    rig.shell.run("load room").unwrap();
+    rig.shell.run("load point").unwrap();
     rig.frames(vec![vec![]]);
     let start = rig.shell.engine.view(0).clone();
+    let history = rig.shell.engine.history();
     // Outside a session W does not move the camera.
     rig.shell.keyboard.focus = vec!["viewport".into()];
     rig.key(Key::W, Modifiers::NONE);
@@ -197,7 +435,7 @@ fn fly_is_a_session() {
     rig.key(Key::O, Modifiers::NONE);
     assert_ne!(rig.shell.engine.view(0).projection, start.projection);
     // None of it was an edit.
-    assert_eq!(rig.shell.engine.history(), (true, false));
+    assert_eq!(rig.shell.engine.history(), history);
 }
 
 #[test]
