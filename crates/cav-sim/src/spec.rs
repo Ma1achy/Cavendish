@@ -624,6 +624,8 @@ pub enum Target {
     Floor,
     /// A body, counted from 1 as on screen.
     Body(usize),
+    /// The world volume (`world`): its terrain, buildings and slabs, as one source.
+    World,
 }
 
 /// Why a spec was refused.
