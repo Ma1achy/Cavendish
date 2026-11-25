@@ -1483,6 +1483,8 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     let mut drags: Vec<(usize, egui::Vec2, bool, egui::Vec2)> = Vec::new();
     let mut body_drags: Vec<(usize, usize, egui::Vec2, egui::Vec2)> = Vec::new();
     let mut zooms: Vec<(usize, f32, [f64; 2], [f64; 2])> = Vec::new();
+    // Where the selection's keyboard handle is drawn, if the active pane shows the scene.
+    let mut handle_rect = Rect::NOTHING;
 
     // Maximised, the active pane is the whole figure and the others are not drawn (their
     // cameras and contents are kept: it is the window's state, not the engine's).
@@ -1620,19 +1622,15 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
             }
             _ => None,
         };
-        // The selection's keyboard handle (Enter starts a transform session): a stop of the
-        // viewport whether or not a body is selected (order never depends on state).
-        let handle_rect = match gizmo {
-            Some((_, g)) => Rect::from_center_size(g.centre + rect.min.to_vec2(), vec2(24.0, 24.0)),
-            None => selected_body
-                .and_then(|n| shell.body_point(pane, n, rect.size()))
-                .map_or(Rect::NOTHING, |p| Rect::from_center_size(p + rect.min.to_vec2(), vec2(24.0, 24.0))),
-        };
         if pane == active {
-            shell.register("viewport", "viewport/selection", "Selection", Kind::Session, handle_rect);
-            if selected_body.is_none() {
-                shell.building.disable("viewport/selection");
-            }
+            handle_rect = match gizmo {
+                Some((_, g)) => Rect::from_center_size(g.centre + rect.min.to_vec2(), vec2(24.0, 24.0)),
+                None => selected_body
+                    .and_then(|n| shell.body_point(pane, n, rect.size()))
+                    .map_or(Rect::NOTHING, |p| {
+                        Rect::from_center_size(p + rect.min.to_vec2(), vec2(24.0, 24.0))
+                    }),
+            };
         }
         if behaviour == crate::tools::Behaviour::Place
             && response.clicked()
@@ -1733,6 +1731,15 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                 zooms.push((pane, scroll, [f64::from(at.x), f64::from(at.y)], size));
             }
         }
+    }
+    // The selection's keyboard handle (Enter starts a transform session): a stop of the
+    // viewport whatever is selected and whatever the panes show (order never depends on state:
+    // S18's review, minor 5), disabled when there is no body in a scene pane to move.
+    shell.register("viewport", "viewport/selection", "Selection", Kind::Session, handle_rect);
+    let movable = matches!(shell.engine.selection(), Some(Target::Body(_)))
+        && shell.engine.content(active) == cav_engine::PaneContent::Scene;
+    if !movable {
+        shell.building.disable("viewport/selection");
     }
     // What the renderer left out of the last picture: badges in the header, and each kind said
     // once in the log when it first appears (the counts in it change from frame to frame).

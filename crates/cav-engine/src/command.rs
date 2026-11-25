@@ -441,6 +441,13 @@ pub enum ViewCommand {
 }
 
 impl ViewCommand {
+    /// Whether this view command is an edit (a step of undo): only [`Self::Home`], by the
+    /// owner's rule. Every other is journalled and never undone.
+    #[must_use]
+    pub const fn is_edit(&self) -> bool {
+        matches!(self, Self::Home { .. })
+    }
+
     /// The pane the command addresses, if it addresses one.
     #[must_use]
     pub const fn pane(&self) -> Option<usize> {

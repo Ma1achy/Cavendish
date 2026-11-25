@@ -47,11 +47,23 @@ impl Layouts {
                 return Err(format!("ui/layouts.ron: the layout `{}` is listed twice", layout.id));
             }
             for line in &layout.lines {
-                if !(crate::Shell::is_app_command(line) || engine.parse(line).is_ok()) {
-                    return Err(format!(
-                        "ui/layouts.ron: `{}` runs `{line}`, which is not a command",
-                        layout.id
-                    ));
+                // Only what arranges the figure: a view command (journalled, never an edit, never
+                // the selection). S18's review, minor 7: an edit, a load or a `select` was let
+                // through, and switching layout lost the selection.
+                match engine.parse(line) {
+                    Ok(cav_engine::Request::Do(cav_engine::Command::View(view))) if !view.is_edit() => {}
+                    Ok(_) => {
+                        return Err(format!(
+                            "ui/layouts.ron: `{}` runs `{line}`, which is not a view command",
+                            layout.id
+                        ));
+                    }
+                    Err(_) => {
+                        return Err(format!(
+                            "ui/layouts.ron: `{}` runs `{line}`, which is not a command",
+                            layout.id
+                        ));
+                    }
                 }
             }
             let line = format!("layout {}", layout.id);
@@ -98,6 +110,11 @@ mod tests {
                 .unwrap_err()
                 .contains("panes many")
         );
+        // An edit, a selection or Home (an undoable step) is not a layout's to run.
+        for line in ["set duration 5", "select none", "load void", "view home", "tool move"] {
+            let with = LAYOUTS_RON.replace("\"pane 1\"]", &format!("\"pane 1\", \"{line}\"]"));
+            assert!(Layouts::parse(&with).unwrap_err().contains(line), "{line}");
+        }
         assert!(Layouts::parse(&LAYOUTS_RON.replace("id: \"analysis\"", "id: \"other\"")).is_err());
         assert!(Layouts::parse(&LAYOUTS_RON.replace("id: \"analysis\"", "id: \"scene\"")).is_err());
     }

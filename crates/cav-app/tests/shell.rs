@@ -222,10 +222,11 @@ fn every_menu_item_is_an_action_that_runs() {
             shell.run("undo").unwrap();
         }
         let line = Shell::resolve(line, shell.engine.selection());
+        // It is either the window's own or one the engine's console parses (S18's review, R4:
+        // this parsed a fixed line, so it could not fail).
+        assert!(Shell::is_app_command(&line) || shell.engine.parse(&line).is_ok(), "`{line}`");
         let outcome = shell.run(&line);
         assert!(outcome.is_ok(), "the menu item `{line}` is not a command that runs: {outcome:?}");
-        // And it is either the window's own or one the engine's console parses.
-        assert!(Shell::is_app_command(&line) || shell.engine.parse("select none").is_ok(), "`{line}`");
     }
     // Every menu is reachable and none is empty.
     let titles = menus::titles();

@@ -166,13 +166,15 @@ impl History {
     /// changed nothing (its undo and its redo the same: a `set` to the value already there) is
     /// no step to undo (S18: a cancelled transform session leaves none, live or replayed).
     pub fn edited(&mut self, step: Step) {
-        self.forget_redo();
         self.parked = None;
         if step.undo == step.redo {
             // Parked, not dropped: if it is the first step of a drag, the drag's later steps
-            // renew it, never the edit before it.
+            // renew it, never the edit before it. Nothing was changed, so what can be redone
+            // still can (S18's review, minor 1): a drag that goes on calls `continued`, which
+            // forgets the redo once something has changed.
             self.parked = Some(step);
         } else {
+            self.forget_redo();
             self.push_undo(step);
         }
     }
@@ -183,10 +185,18 @@ impl History {
     /// go on, so that a drag passing through its start keeps its own step and never renews
     /// the edit before it.)
     pub fn continued(&mut self, redo: Edit) {
-        self.forget_redo();
-        if let Some(step) = self.parked.take() {
-            self.push_undo(step);
+        if let Some(mut step) = self.parked.take() {
+            step.redo = redo;
+            if step.undo == step.redo {
+                // Still back where it began: still nothing to undo, and the redo kept.
+                self.parked = Some(step);
+            } else {
+                self.forget_redo();
+                self.push_undo(step);
+            }
+            return;
         }
+        self.forget_redo();
         if let Some(last) = self.undo.back_mut() {
             self.bytes -= last.weight();
             last.redo = redo;
@@ -374,6 +384,28 @@ mod tests {
         assert_eq!(history.last(), Some(&Step { undo: put(4.0), redo: put(5.0) }));
         history.undone();
         assert_eq!(history.last(), Some(&Step { undo: put(2.0), redo: put(4.0) }));
+    }
+
+    #[test]
+    fn a_change_to_nothing_keeps_what_can_be_redone() {
+        // S18's review, minor 1: set 13, undo, set it back to the value it has: the redo stays.
+        let put = |v: f64| Edit::Put { path: "duration".into(), value: json!(v) };
+        let mut history = History::default();
+        history.edited(Step { undo: put(12.0), redo: put(13.0) });
+        history.undone();
+        history.edited(Step { undo: put(12.0), redo: put(12.0) });
+        assert_eq!(history.depth(), (0, 1), "the no-op left the redo");
+        // A drag that starts and ends where the value is keeps it too.
+        history.continued(put(12.0));
+        assert_eq!(history.depth(), (0, 1));
+        // Control: once something changes, the redo is gone, as after any edit.
+        history.continued(put(14.0));
+        assert_eq!(history.depth(), (1, 0));
+        let mut edited = History::default();
+        edited.edited(Step { undo: put(12.0), redo: put(13.0) });
+        edited.undone();
+        edited.edited(Step { undo: put(12.0), redo: put(15.0) });
+        assert_eq!(edited.depth(), (1, 0));
     }
 
     #[test]
