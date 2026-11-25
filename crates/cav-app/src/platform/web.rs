@@ -343,36 +343,15 @@ fn hand_over(name: &str, bytes: &[u8]) -> Result<(), eframe::wasm_bindgen::JsVal
 
 /// The forward stage's Web Workers (`web/worker.js`, each running this same module): the
 /// [`cav_engine::forward::wire::Remote`] the page installs, so that a voxel body's seconds of
-/// work never run on the page's thread. Two, like the native stage's two threads (the series
-/// and the reading under the playhead); a job waits in a queue until one is free.
-///
-/// A worker that fails (a panic or a trap in its job) is said on the page; the job it held is
-/// answered with nothing, which frees the engine's lane (that scene's series stays stale rather
-/// than blocking every later one), and a new worker takes its place. When no worker has said it
-/// is ready [`READY_WITHIN_MS`] after the start, the page runs the waiting jobs itself, one a
-/// frame: slow, not wrong (S17's second review, item 2).
+/// work never run on the page's thread. What happens when is [`crate::lane::Lane`]'s (its rules
+/// and tests are there): a failed worker is said with its panic's message and started again a
+/// bounded number of times, and the page runs waiting jobs itself, one a frame, while no worker
+/// is ready (S17's second review, item 2; S4's review, I11). Here each of its actions becomes a
+/// call on a `Worker`.
 struct PageWorkers {
-    workers: Vec<PageWorker>,
-    queue: VecDeque<(u64, Vec<u8>)>,
-    answers: std::collections::HashMap<u64, Vec<u8>>,
-    next_ticket: u64,
-    /// When the workers were started, milliseconds on the page's clock.
-    started: f64,
-    /// Whether any worker has ever said it is ready.
-    any_ready: bool,
+    lane: crate::lane::Lane,
+    workers: Vec<Option<web_sys::Worker>>,
 }
-
-struct PageWorker {
-    worker: web_sys::Worker,
-    ready: bool,
-    busy: Option<u64>,
-}
-
-/// How many Web Workers the forward stage has.
-const PAGE_WORKERS: usize = 2;
-
-/// How long the page waits for a worker's `ready` before it runs the jobs itself, milliseconds.
-const READY_WITHIN_MS: f64 = 15_000.0;
 
 /// The page's clock, milliseconds.
 fn now_ms() -> f64 {
@@ -387,19 +366,61 @@ impl Remote {
     /// Starts the workers, handing each the module the page compiled (`globalThis.cavendishWasm`,
     /// set by `index.html`) so that it is not fetched and compiled again.
     fn start() -> Result<Self, String> {
+        let (lane, first) = crate::lane::Lane::new();
         let remote = Self(std::rc::Rc::new(RefCell::new(PageWorkers {
-            workers: Vec::new(),
-            queue: VecDeque::new(),
-            answers: std::collections::HashMap::new(),
-            next_ticket: 0,
-            started: now_ms(),
-            any_ready: false,
+            lane,
+            workers: vec![None; crate::lane::WORKERS],
         })));
-        for index in 0..PAGE_WORKERS {
-            let worker = remote.spawn(index)?;
-            remote.0.borrow_mut().workers.push(PageWorker { worker, ready: false, busy: None });
+        // The first workers must start, or there is no lane: the page then runs the jobs itself.
+        for action in first {
+            if let crate::lane::Action::Spawn(index) = action {
+                let worker = remote.spawn(index)?;
+                remote.0.borrow_mut().workers[index] = Some(worker);
+            }
         }
         Ok(remote)
+    }
+
+    /// Does what the lane asks, in order. Never called with the pool borrowed.
+    fn apply(&self, actions: Vec<crate::lane::Action>) {
+        use crate::lane::Action;
+        for action in actions {
+            match action {
+                Action::Spawn(index) => match self.spawn(index) {
+                    Ok(worker) => self.0.borrow_mut().workers[index] = Some(worker),
+                    Err(why) => {
+                        log::error!("the forward stage's worker {index} could not be started again: {why}")
+                    }
+                },
+                Action::Terminate(index) => {
+                    if let Some(worker) = self.0.borrow_mut().workers[index].take() {
+                        worker.terminate();
+                    }
+                }
+                Action::Post { slot, ticket, request } => {
+                    let message = js_sys::Object::new();
+                    let bytes = js_sys::Uint8Array::from(request.as_slice());
+                    let _ = js_sys::Reflect::set(&message, &"ticket".into(), &(ticket as f64).into());
+                    let _ = js_sys::Reflect::set(&message, &"request".into(), &bytes);
+                    let transfer = js_sys::Array::of1(&bytes.buffer());
+                    let posted = self.0.borrow().workers[slot]
+                        .as_ref()
+                        .map(|w| w.post_message_with_transfer(&message, &transfer));
+                    if !matches!(posted, Some(Ok(()))) {
+                        log::error!("a job could not be handed to the forward stage's worker {slot}");
+                        self.0.borrow_mut().lane.not_posted(slot, ticket, request, now_ms());
+                    }
+                }
+                Action::RunHere { ticket, request } => {
+                    let answer = cav_engine::forward::wire::serve(&request);
+                    self.0.borrow_mut().lane.ran_here(ticket, answer, now_ms());
+                }
+                Action::Say(text) => {
+                    log::error!("{text}");
+                    note(&text);
+                }
+            }
+        }
     }
 
     /// A new worker for slot `index`, sent the module; it says `ready` when it runs.
@@ -409,6 +430,8 @@ impl Remote {
         options.set_type(web_sys::WorkerType::Module);
         let worker =
             web_sys::Worker::new_with_options("./worker.js", &options).map_err(|e| format!("{e:?}"))?;
+        // Two closures a worker, kept for its life: bounded, as the lane starts a slot again at
+        // most `MAX_RESPAWNS` times.
         let handle = self.clone();
         let on_message =
             Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
@@ -422,7 +445,8 @@ impl Remote {
                 .ok()
                 .and_then(|m| m.as_string())
                 .unwrap_or_else(|| "no message".to_owned());
-            handle.failed(index, &message);
+            let actions = handle.0.borrow_mut().lane.failed(index, &message, now_ms());
+            handle.apply(actions);
         });
         worker.set_onerror(Some(on_error.as_ref().unchecked_ref()));
         on_error.forget();
@@ -432,97 +456,42 @@ impl Remote {
         Ok(worker)
     }
 
-    /// Worker `index` failed: its job is answered with nothing (the lane is free again), the
-    /// failure is said on the page and in the console, and a new worker takes the slot.
-    fn failed(&self, index: usize, message: &str) {
-        let lost = {
-            let mut pool = self.0.borrow_mut();
-            let pool = &mut *pool;
-            let worker = &mut pool.workers[index];
-            worker.worker.terminate();
-            worker.ready = false;
-            let lost = worker.busy.take();
-            if let Some(ticket) = lost {
-                pool.answers.insert(ticket, Vec::new());
-            }
-            lost
-        };
-        let what = if lost.is_some() { "the job it was computing is dropped" } else { "it held no job" };
-        let text = format!(
-            "The forward stage's worker {index} failed ({message}): {what}, and a new worker takes its \
-             place. That scene's numbers stay stale; an edit asks for them again."
-        );
-        log::error!("{text}");
-        note(&text);
-        match self.spawn(index) {
-            Ok(worker) => self.0.borrow_mut().workers[index].worker = worker,
-            Err(why) => log::error!("the forward stage's worker {index} could not be started again: {why}"),
-        }
-    }
-
-    /// A worker's message: `{ready}` once it runs, then `{ticket, answer}` for each job.
+    /// A worker's message: `{ready}` once it runs, `{panic}` just before it traps, and
+    /// `{ticket, answer}` for each job.
     fn arrived(&self, index: usize, data: &eframe::wasm_bindgen::JsValue) {
         let field = |name: &str| js_sys::Reflect::get(data, &name.into()).unwrap_or_default();
         {
             let mut pool = self.0.borrow_mut();
             if field("ready").is_truthy() {
-                pool.workers[index].ready = true;
-                pool.any_ready = true;
+                pool.lane.ready(index);
+            } else if let Some(message) = field("panic").as_string() {
+                pool.lane.panicked(index, message);
             } else if let Some(ticket) = field("ticket").as_f64() {
                 let answer = js_sys::Uint8Array::new(&field("answer")).to_vec();
-                pool.answers.insert(ticket as u64, answer);
-                pool.workers[index].busy = None;
+                pool.lane.answered(index, ticket as u64, answer);
             }
         }
         self.pump();
     }
 
-    /// Hands waiting jobs to free workers; when no worker has been ready within
-    /// [`READY_WITHIN_MS`] of the start, runs the first waiting job here instead.
+    /// Asks the lane what to do now, and does it.
     fn pump(&self) {
-        let mut pool = self.0.borrow_mut();
-        let pool = &mut *pool;
-        if !pool.any_ready && now_ms() - pool.started > READY_WITHIN_MS {
-            if let Some((ticket, request)) = pool.queue.pop_front() {
-                pool.answers.insert(ticket, cav_engine::forward::wire::serve(&request));
-            }
-            return;
-        }
-        for worker in &mut pool.workers {
-            if !worker.ready || worker.busy.is_some() {
-                continue;
-            }
-            let Some((ticket, request)) = pool.queue.pop_front() else { return };
-            let message = js_sys::Object::new();
-            let bytes = js_sys::Uint8Array::from(request.as_slice());
-            let _ = js_sys::Reflect::set(&message, &"ticket".into(), &(ticket as f64).into());
-            let _ = js_sys::Reflect::set(&message, &"request".into(), &bytes);
-            let transfer = js_sys::Array::of1(&bytes.buffer());
-            match worker.worker.post_message_with_transfer(&message, &transfer) {
-                Ok(()) => worker.busy = Some(ticket),
-                Err(why) => log::error!("a job could not be handed to the forward stage's worker: {why:?}"),
-            }
-        }
+        let actions = self.0.borrow_mut().lane.pump(now_ms());
+        self.apply(actions);
     }
 }
 
 impl cav_engine::forward::wire::Remote for Remote {
     fn send(&self, request: Vec<u8>) -> u64 {
-        let ticket = {
-            let mut pool = self.0.borrow_mut();
-            pool.next_ticket += 1;
-            let ticket = pool.next_ticket;
-            pool.queue.push_back((ticket, request));
-            ticket
-        };
+        let ticket = self.0.borrow_mut().lane.send(request, now_ms());
         self.pump();
         ticket
     }
 
     fn take(&self, ticket: u64) -> Option<Vec<u8>> {
-        // Asked every frame: the page's own run of a job, when no worker ever came, starts here.
+        // Asked every frame: workers started again, and the page's own run of a job, start here.
         self.pump();
-        self.0.borrow_mut().answers.remove(&ticket)
+        self.0.borrow_mut().lane.take(ticket)
     }
 }
 
@@ -547,6 +516,15 @@ fn serve_if_worker() -> bool {
     });
     scope.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
     on_message.forget();
+    // A panic in a job traps the module (`panic = "abort"`), and the page would see only
+    // "unreachable": the message is posted first, so that the page can say what went wrong.
+    let panics = scope.clone();
+    std::panic::set_hook(Box::new(move |info| {
+        let message = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&message, &"panic".into(), &info.to_string().into());
+        let _ = panics.post_message(&message);
+        log::error!("the forward stage's worker panicked: {info}");
+    }));
     let ready = js_sys::Object::new();
     let _ = js_sys::Reflect::set(&ready, &"ready".into(), &true.into());
     let _ = scope.post_message(&ready);
