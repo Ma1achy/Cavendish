@@ -50,6 +50,14 @@ pub enum Edit {
     },
     /// Replace the whole scene: what undoes and redoes a load.
     Replace(Box<SceneSpec>),
+    /// Put a pane's camera back as it was: what undoes and redoes `Home`, the one camera move
+    /// that is an edit (`docs/slices/S18.md` §2). The scene is unchanged.
+    View {
+        /// The pane, from 0.
+        pane: usize,
+        /// Its whole view.
+        view: Box<cav_sim::ViewSpec>,
+    },
 }
 
 impl Edit {
@@ -67,6 +75,7 @@ impl Edit {
             }
             Self::Remove { path } => spec.removed(path).map(|(spec, _)| spec),
             Self::Replace(scene) => Ok((**scene).clone()),
+            Self::View { .. } => Ok(spec.clone()),
         }
     }
 
@@ -80,6 +89,7 @@ impl Edit {
             }
             Self::Remove { path } => own + path.len(),
             Self::Replace(scene) => own + weigh_spec(scene),
+            Self::View { .. } => own + std::mem::size_of::<cav_sim::ViewSpec>(),
         }
     }
 }

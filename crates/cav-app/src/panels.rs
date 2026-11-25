@@ -1132,6 +1132,37 @@ fn header(shell: &mut Shell, ui: &mut egui::Ui) {
         if shell.take_click("viewport/view-menu") {
             let _ = shell.run("palette view");
         }
+        // The camera's mode: orbit about the target (the default), or fly from the eye.
+        let flying = shell.flying();
+        let mode = ui
+            .menu_button(
+                RichText::new(if flying { "fly ▾" } else { "orbit ▾" }).color(theme::STRONG),
+                |ui| {
+                    if ui.selectable_label(!flying, "Orbit: drag turns about the target").clicked() && flying
+                    {
+                        let _ = shell.run("fly");
+                        ui.close();
+                    }
+                    if ui.selectable_label(flying, "Fly: W A S D, E Q, drag to look (Shift+F)").clicked()
+                        && !flying
+                    {
+                        let _ = shell.run("fly");
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.button("Frame the selection (F)").clicked() {
+                        let _ = shell.run("frame");
+                        ui.close();
+                    }
+                },
+            )
+            .response
+            .on_hover_text("the camera's mode");
+        shell.layout.buttons.push(("camera mode".to_owned(), mode.rect));
+        shell.register("viewport", "viewport/camera-mode", "Camera mode", Kind::Button, mode.rect);
+        if shell.take_click("viewport/camera-mode") {
+            let _ = shell.run("fly");
+        }
         let pane = shell.engine.active_pane();
         let view = shell.engine.view(pane);
         badge(ui, shell.engine.spec().name.clone(), theme::GOLD);
@@ -1215,7 +1246,11 @@ fn canvas_keys(shell: &mut Shell, area: Rect) {
     let pane = shell.engine.active_pane();
     for (axis, steps, ctrl, _) in shell.take_adjust("viewport/canvas") {
         let view = shell.engine.view(pane).clone();
-        let command = if ctrl {
+        let command = if shell.flying() {
+            // Flying, the arrows look round from the eye.
+            let (yaw, pitch) = if axis == 0 { (-steps * ORBIT_STEP, 0.0) } else { (0.0, steps * ORBIT_STEP) };
+            crate::camera::look(&view, pane, yaw, pitch)
+        } else if ctrl {
             let camera = cav_render::Camera::new(&view, 1.0);
             let along = if axis == 0 { camera.right } else { camera.up };
             let moved = camera.origin + along * (steps * PAN_STEP * view.distance);
@@ -1250,7 +1285,7 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     let mut commands: Vec<Command> = Vec::new();
     let mut drags: Vec<(usize, egui::Vec2, bool, egui::Vec2)> = Vec::new();
     let mut body_drags: Vec<(usize, usize, egui::Vec2, egui::Vec2)> = Vec::new();
-    let mut zooms: Vec<(usize, f32)> = Vec::new();
+    let mut zooms: Vec<(usize, f32, [f64; 2], [f64; 2])> = Vec::new();
 
     for (pane, pixels) in pane_rects(count, size, PANE_GAP).into_iter().enumerate() {
         let rect = Rect::from_min_size(
@@ -1400,7 +1435,10 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         if response.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
             if scroll != 0.0 {
-                zooms.push((pane, scroll));
+                // Toward the point under the pointer (the pane's middle if there is none).
+                let at = ui.input(|i| i.pointer.hover_pos()).unwrap_or(rect.center()) - rect.min;
+                let size = [f64::from(rect.width()), f64::from(rect.height())];
+                zooms.push((pane, scroll, [f64::from(at.x), f64::from(at.y)], size));
             }
         }
     }
@@ -1444,7 +1482,20 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     }
     for (pane, delta, panning, size) in drags {
         if delta != egui::Vec2::ZERO {
-            if panning { shell.pan_by(pane, delta, size) } else { shell.orbit_by(pane, delta) }
+            if panning {
+                shell.pan_by(pane, delta, size);
+            } else if shell.flying() {
+                // In a fly session a drag looks round from the eye, as the arrows do.
+                let command = crate::camera::look(
+                    shell.engine.view(pane),
+                    pane,
+                    -f64::from(delta.x) * 0.2,
+                    -f64::from(delta.y) * 0.2,
+                );
+                shell.apply(Command::View(command));
+            } else {
+                shell.orbit_by(pane, delta);
+            }
         }
     }
     for (pane, n, delta, size) in body_drags {
@@ -1452,8 +1503,8 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
             shell.drag_body_by(pane, n, delta, size);
         }
     }
-    for (pane, scroll) in zooms {
-        shell.zoom_by(pane, scroll);
+    for (pane, scroll, pointer, size) in zooms {
+        shell.zoom_by(pane, scroll, pointer, size);
     }
 }
 

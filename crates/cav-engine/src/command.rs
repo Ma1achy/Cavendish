@@ -394,7 +394,25 @@ pub enum ViewCommand {
         /// The point looked at: `[x, y, z]` in the world's frame (x east, y north, z up), metres.
         target: [f64; 3],
     },
-    /// Back to the pane's home camera for the current scene; the style is kept.
+    /// Put the camera exactly here in one step: the target, the angles and the distance
+    /// together (fly, frame the selection, zoom toward the pointer). Angles in degrees (pitch
+    /// clamped to ±90, yaw wrapped into (−180, 180]); the target in metres in the world's frame
+    /// (x east, y north, z up); the distance in metres, clamped as `Zoom`'s. Never an edit.
+    Camera {
+        /// The pane, from 0.
+        pane: usize,
+        /// The point looked at, metres.
+        target: [f64; 3],
+        /// The angle about the world's z axis (up), degrees.
+        yaw: f64,
+        /// The angle above the horizontal, degrees.
+        pitch: f64,
+        /// From the target to the camera, metres.
+        distance: f64,
+    },
+    /// Back to the pane's home camera for the current scene; the style is kept. The one camera
+    /// move that undo takes back (the owner's rule, `docs/slices/S18.md` §2): an edit of the
+    /// view, not of the scene.
     Home {
         /// The pane, from 0.
         pane: usize,
@@ -437,6 +455,7 @@ impl ViewCommand {
             | Self::Orbit { pane, .. }
             | Self::Zoom { pane, .. }
             | Self::Pan { pane, .. }
+            | Self::Camera { pane, .. }
             | Self::Home { pane }
             | Self::Colour { pane, .. }
             | Self::Overlay { pane, .. }
@@ -462,11 +481,12 @@ impl Command {
     /// set. Such runs (a scrub, a drag) are kept as one journal entry: the last.
     #[must_use]
     pub fn overwrites(&self, previous: &Self) -> bool {
-        use ViewCommand::{Orbit, Pan, Zoom};
+        use ViewCommand::{Camera, Orbit, Pan, Zoom};
         match (self, previous) {
             (Self::Seek(_), Self::Seek(_)) => true,
             (Self::Set { path: a, continues: true, .. }, Self::Set { path: b, .. }) => a == b,
-            (Self::View(Orbit { pane: a, .. }), Self::View(Orbit { pane: b, .. }))
+            (Self::View(Camera { pane: a, .. }), Self::View(Camera { pane: b, .. }))
+            | (Self::View(Orbit { pane: a, .. }), Self::View(Orbit { pane: b, .. }))
             | (Self::View(Zoom { pane: a, .. }), Self::View(Zoom { pane: b, .. }))
             | (Self::View(Pan { pane: a, .. }), Self::View(Pan { pane: b, .. }))
             | (

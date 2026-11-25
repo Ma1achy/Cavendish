@@ -25,6 +25,11 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
         "the command palette: search every action, starter, scene, command and field (Ctrl+K); `palette add` lists what can be added, `palette <menu>` one menu",
     ),
     ("rename", "type a new name for the selected body or tower in the scene tree (F2)"),
+    ("frame", "fit the selection (or the whole scene) into the active pane (F)"),
+    (
+        "fly",
+        "fly the camera: W A S D, E up, Q down, arrows or a drag to look; again, Enter or Esc to stop (Shift+F)",
+    ),
     ("about", "version and credits"),
     ("clear", "empty the console's log"),
     ("quit", "close the application"),
@@ -207,6 +212,8 @@ pub struct Shell {
     pub(crate) by_keyboard: bool,
     /// The item being renamed in the scene tree (`F2`), and the name typed so far.
     pub renaming: Option<(Target, String)>,
+    /// How fast a fly session moves, metres per second, before Shift and Alt.
+    pub fly_speed: f64,
 }
 
 /// How near a body's picture the pointer must be to take hold of it, points.
@@ -274,7 +281,50 @@ impl Shell {
             palette: Palette::default(),
             by_keyboard: false,
             renaming: None,
+            fly_speed: crate::camera::FLY_SPEED,
         }
+    }
+
+    /// Whether a fly session is on: the viewport's canvas holds the keys W A S D E Q.
+    #[must_use]
+    pub fn flying(&self) -> bool {
+        self.keyboard.session == Some(crate::keyboard::Session::Fly)
+    }
+
+    /// The active pane's width over its height, from the last frame (1.6 before there is one).
+    fn active_aspect(&self) -> f64 {
+        self.layout
+            .panes
+            .get(self.engine.active_pane())
+            .filter(|r| r.height() > 0.0)
+            .map_or(1.6, |r| f64::from(r.width() / r.height()))
+    }
+
+    /// One frame of a fly session: the held keys push the camera ([`crate::camera::fly`]) at
+    /// [`Self::fly_speed`], Shift ×10 and Alt ×0.1, for the frame's time.
+    pub(crate) fn fly_frame(&mut self, ctx: &egui::Context) {
+        if !self.flying() || self.keyboard.typing {
+            return;
+        }
+        let (push, modifiers, dt) = ctx.input(|i| {
+            let axis = |plus: egui::Key, minus: egui::Key| {
+                f64::from(u8::from(i.key_down(plus))) - f64::from(u8::from(i.key_down(minus)))
+            };
+            let push = crate::camera::Push {
+                forward: axis(egui::Key::W, egui::Key::S),
+                right: axis(egui::Key::D, egui::Key::A),
+                up: axis(egui::Key::E, egui::Key::Q),
+            };
+            (push, i.modifiers, f64::from(i.stable_dt).min(0.1))
+        });
+        if push == crate::camera::Push::default() {
+            return;
+        }
+        let speed = self.fly_speed * Press::with(egui::Key::W, modifiers).multiplier();
+        let pane = self.engine.active_pane();
+        let command = crate::camera::fly(self.engine.view(pane), pane, push, speed, dt);
+        self.apply(Command::View(command));
+        ctx.request_repaint();
     }
 
     /// The height of the ground under the scene, metres: the floor's top, else the room's floor,
@@ -572,6 +622,29 @@ impl Shell {
             "palette" => {
                 self.palette = Palette { open: true, focus_query: true, ..Palette::default() };
                 self.window_opened("palette", "palette/query", true);
+            }
+            "frame" => {
+                // The selection (or, with nothing selected, the whole scene) fills the active
+                // pane from the present direction: one camera command.
+                let pane = self.engine.active_pane();
+                let (centre, radius) =
+                    crate::camera::bounds_of(self.engine.spec(), self.engine.selection(), self.engine.time());
+                let command =
+                    crate::camera::frame(self.engine.view(pane), pane, centre, radius, self.active_aspect());
+                self.apply(Command::View(command));
+            }
+            "fly" => {
+                if self.flying() {
+                    self.keyboard.session = None;
+                    self.keyboard.mode = crate::keyboard::Mode::Navigation;
+                } else {
+                    // The canvas takes the keys, in interaction mode: W A S D E Q fly, the
+                    // arrows look, Enter or Esc stop (the camera kept where it was flown).
+                    self.keyboard.focus = vec!["viewport".into(), "viewport/canvas".into()];
+                    self.keyboard.mode = crate::keyboard::Mode::Interaction;
+                    self.keyboard.session = Some(crate::keyboard::Session::Fly);
+                    self.keyboard.nav_on |= self.by_keyboard;
+                }
             }
             "rename" => match self.engine.selection() {
                 Some(target @ (Target::Body(n) | Target::Tower(n))) => {
@@ -919,6 +992,7 @@ impl Shell {
         // The keys walk what the last frame registered; this frame registers anew as it draws.
         self.building = FocusTree::new(&crate::actions::table().big_scopes());
         self.keys(&ctx);
+        self.fly_frame(&ctx);
         self.advance(&ctx);
         // Take whatever the forward worker has finished; while it is still at work, keep drawing so
         // that its result is shown when it comes. Nothing here waits.
@@ -961,8 +1035,17 @@ impl Shell {
         self.apply(Command::View(ViewCommand::Pan { pane, target: moved.to_array() }));
     }
 
-    pub(crate) fn zoom_by(&mut self, pane: usize, scroll: f32) {
-        let distance = self.engine.view(pane).distance * f64::from(-scroll * 0.002).exp();
-        self.apply(Command::View(ViewCommand::Zoom { pane, distance }));
+    /// The wheel over a pane: zoom toward the point under the pointer (`pointer`, points from the
+    /// pane's corner, in a pane of `size` points), which stays where it is on screen; in a fly
+    /// session the wheel sets the flying speed instead.
+    pub(crate) fn zoom_by(&mut self, pane: usize, scroll: f32, pointer: [f64; 2], size: [f64; 2]) {
+        let factor = f64::from(-scroll * 0.002).exp();
+        if self.flying() {
+            self.fly_speed = (self.fly_speed / factor).clamp(0.01, 1000.0);
+            return;
+        }
+        let view = self.engine.view(pane).clone();
+        let factor = factor.clamp(0.05 / view.distance, 1.0e5 / view.distance);
+        self.apply(Command::View(crate::camera::zoom_about(&view, pane, size, pointer, factor)));
     }
 }

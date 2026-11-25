@@ -71,6 +71,135 @@ impl Rig {
     }
 }
 
+/// What share of the pane's shorter side a sphere (`centre`, `radius` metres) spans on screen,
+/// measured by projecting its edge, in pane `pane` of the last frame.
+fn spans(rig: &Rig, pane: usize, centre: [f64; 3], radius: f64) -> f64 {
+    let rect = rig.shell.layout().panes[pane];
+    let view = rig.shell.engine.view(pane).clone();
+    let camera = cav_render::Camera::new(&view, f64::from(rect.width() / rect.height()));
+    let whole = [rect.width().round() as u32, rect.height().round() as u32];
+    let at = |p: cav_core::Vec3| camera.pixel(p, whole).expect("in front of the camera");
+    let c = cav_core::Vec3::from_array(centre);
+    let [x0, y0] = at(c);
+    let [x1, y1] = at(c + camera.right * radius);
+    2.0 * (x1 - x0).hypot(y1 - y0) / f64::from(rect.width().min(rect.height()))
+}
+
+#[test]
+fn f_frames_the_selection() {
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("select body 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let (centre, radius) =
+        cav_app::camera::bounds_of(rig.shell.engine.spec(), Some(Target::Body(1)), rig.shell.engine.time());
+    // Control: before framing, the small mass is a speck in the room's view.
+    let before = spans(&rig, 0, centre, radius);
+    assert!(before < 0.4, "{before}");
+    rig.shell.keyboard.focus = vec!["viewport".into()];
+    rig.key(Key::F, Modifiers::NONE);
+    let after = spans(&rig, 0, centre, radius);
+    assert!((0.4..=0.8).contains(&after), "the framed body spans {after} of the pane (C3: 0.4 to 0.8)");
+    assert!(matches!(
+        rig.shell.engine.journal().last(),
+        Some(Command::View(cav_engine::ViewCommand::Camera { .. }))
+    ));
+    assert_eq!(rig.shell.engine.history(), (true, false), "framing is no edit: only the load can be undone");
+    // A tower frames too, from the tree.
+    rig.shell.run("select tower 3").unwrap();
+    rig.shell.keyboard.focus = vec!["tree".into()];
+    rig.key(Key::F, Modifiers::NONE);
+    let (centre, radius) = cav_app::camera::bounds_of(rig.shell.engine.spec(), Some(Target::Tower(3)), 0.0);
+    let tower = spans(&rig, 0, centre, radius);
+    assert!((0.4..=0.8).contains(&tower), "{tower}");
+}
+
+#[test]
+fn the_wheel_zooms_toward_the_pointer() {
+    let mut rig = Rig::new();
+    rig.shell.run("load room").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let pane = rig.shell.layout().panes[0];
+    let pointer = pane.min + egui::vec2(0.8 * pane.width(), 0.25 * pane.height());
+    let size = [f64::from(pane.width()), f64::from(pane.height())];
+    let within = [f64::from(pointer.x - pane.min.x), f64::from(pointer.y - pane.min.y)];
+    let start = rig.shell.engine.view(0).clone();
+    let point = cav_app::camera::under_pointer(&start, size, within);
+    let wheel = Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, 120.0),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+        modifiers: Modifiers::NONE,
+    };
+    rig.frames(vec![vec![Event::PointerMoved(pointer)], vec![wheel], vec![], vec![], vec![], vec![]]);
+    let after = rig.shell.engine.view(0).clone();
+    assert!(after.distance < start.distance, "the wheel zoomed in");
+    let pixel = |view: &cav_sim::ViewSpec| {
+        let camera = cav_render::Camera::new(view, size[0] / size[1]);
+        camera.pixel(cav_core::Vec3::from_array(point), [pane.width() as u32, pane.height() as u32]).unwrap()
+    };
+    let [x0, y0] = pixel(&start);
+    let [x1, y1] = pixel(&after);
+    let moved = (x1 - x0).hypot(y1 - y0);
+    assert!(moved < 1.0, "the point under the pointer moved {moved} px (C4: under 1)");
+    // Control: the old zoom about the target, to the same distance, moves it a long way.
+    let about_target = cav_sim::ViewSpec { distance: after.distance, ..start.clone() };
+    let [x2, y2] = pixel(&about_target);
+    assert!((x2 - x0).hypot(y2 - y0) > 20.0, "the control moved it {} px", (x2 - x0).hypot(y2 - y0));
+}
+
+#[test]
+fn fly_is_a_session() {
+    let mut rig = Rig::new();
+    rig.shell.run("load room").unwrap();
+    rig.frames(vec![vec![]]);
+    let start = rig.shell.engine.view(0).clone();
+    // Outside a session W does not move the camera.
+    rig.shell.keyboard.focus = vec!["viewport".into()];
+    rig.key(Key::W, Modifiers::NONE);
+    assert_eq!(rig.shell.engine.view(0).target, start.target);
+    rig.key(Key::F, Modifiers::SHIFT);
+    assert!(rig.shell.flying());
+    // Held, W flies forward along the view.
+    let down = Event::Key {
+        key: Key::W,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    let up = Event::Key {
+        key: Key::W,
+        physical_key: None,
+        pressed: false,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    rig.frames(vec![vec![down], vec![], vec![], vec![], vec![up]]);
+    let flown = rig.shell.engine.view(0).clone();
+    let (to_eye, _, _) = start.basis();
+    let moved = [
+        flown.target[0] - start.target[0],
+        flown.target[1] - start.target[1],
+        flown.target[2] - start.target[2],
+    ];
+    let along = -(moved[0] * to_eye[0] + moved[1] * to_eye[1] + moved[2] * to_eye[2]);
+    assert!(along > 0.05, "flew {along} m forward");
+    assert_eq!((flown.yaw, flown.pitch, flown.distance), (start.yaw, start.pitch, start.distance));
+    // A viewport letter does nothing mid-flight (O would swap the projection).
+    rig.key(Key::O, Modifiers::NONE);
+    assert_eq!(rig.shell.engine.view(0).projection, start.projection);
+    // Esc stops, the camera kept where it was flown; then O is the projection's again.
+    rig.key(Key::Escape, Modifiers::NONE);
+    assert!(!rig.shell.flying());
+    assert_eq!(rig.shell.engine.view(0).target, flown.target);
+    rig.key(Key::O, Modifiers::NONE);
+    assert_ne!(rig.shell.engine.view(0).projection, start.projection);
+    // None of it was an edit.
+    assert_eq!(rig.shell.engine.history(), (true, false));
+}
+
 #[test]
 fn the_empty_scene_says_how_to_begin() {
     let mut rig = Rig::new();

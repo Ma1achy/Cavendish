@@ -267,6 +267,13 @@ mod tests {
             Command::View(ViewCommand::Orbit { pane: 0, yaw: 1.0 / 3.0, pitch: -1e-9 }),
             Command::View(ViewCommand::Zoom { pane: 3, distance: 28.7 }),
             Command::View(ViewCommand::Pan { pane: 2, target: [0.1, 0.2, 0.3] }),
+            Command::View(ViewCommand::Camera {
+                pane: 1,
+                target: [0.1, 0.2, 0.3],
+                yaw: 1.0 / 3.0,
+                pitch: -7.5,
+                distance: 2.0,
+            }),
             Command::View(ViewCommand::Home { pane: 0 }),
             Command::Export { what: ExportKind::Bundle, to: "a bundle".into() },
             Command::Export {
