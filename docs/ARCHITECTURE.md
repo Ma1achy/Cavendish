@@ -20,7 +20,7 @@ the gradiometer reads lower minus upper unless a scene says otherwise. British E
 | `cav-engine` | The one API: commands, queries, replies; the journal, undo, the event log; the forward workers and what they keep; the world's streaming | `cav-core`, `cav-sim` | draw, or depend on anything that does; block a command on a computation |
 | `cav-render` | The 3-D picture of a scene: camera, geometry, the wgpu renderer, PNG | `cav-core`, `cav-sim`, `cav-gpu` | depend on the engine (it draws a `SceneView`, which the engine makes) |
 | `cav-plot` | Plots as display lists (signal, periodogram, cadence, flight), painted by egui, written as SVG and PDF, drawn to PNG with no window; figure presets, data and provenance; the paper drawing (a plan or a section of the scene) | `cav-core`, `cav-sim`, `cav-engine`, `cav-gpu`, `cav-render` | open a window; depend on `cav-app`, eframe or winit |
-| `cav-app` | The window: panels, editors, timeline, panes; the same application drawn headless for screenshots and tests; and as a web page (`cav-web`, wasm32) | all of the above | hold scene state of its own: it sends commands and reads replies |
+| `cav-app` | The window: panels, editors, timeline, panes; the editor (the keyboard model, actions, tools, layouts and windows, as data in `ui/*.ron`); the same application drawn headless for screenshots and tests; and as a web page (`cav-web`, wasm32) | all of the above | hold scene state of its own: it sends commands and reads replies |
 | `cav` | The command line and the MCP server | all but `cav-app` | link the window (eframe, winit) when built on its own |
 | `cav-validate` | Declaring validation cases (`case!`) and judging them | nothing | depend on anything: every crate's tests use it |
 | `cav-memtest` | A counting allocator and the tests that hold memory to a bound | dev-dependencies only | be linked by anything but its own tests (it is the one crate with `unsafe`) |
@@ -119,6 +119,30 @@ person asked for goes through `cav_engine::files`; code that must not run in a p
 `std::fs` by path, blocking on the GPU) belongs behind one of these seams, never behind a scattered
 `cfg`.
 
+## The editor: data, the keyboard, one path (S18)
+
+The window's *what and where* is data, loaded and checked like scenes: `cav-app/ui/actions.ron`
+(the seven big scopes in Tab order, the menus, every action with its console line, keys, scope and
+when it can run), `ui/tools.ron` (the tool strip), `ui/layouts.ron` (the layouts), and
+`scenes/starters.ron` (what Add adds, in `cav-sim` so the CLI and MCP add the same). Code holds the
+mechanisms: the router, the widgets, the gizmo's geometry.
+
+Each frame the panels draw and *register* every control in a `FocusTree` (`keyboard.rs`):
+`Shell::register(scope, id, name, kind, rect)`. The next frame's keys are routed over that tree by
+`Keyboard::route`, in the fixed priority of `docs/design/keyboard.md` (a text field, an open
+drop-down, global keys, the scope shortcuts from the innermost scope out, then Tab, Enter, Esc and
+the arrows), into `Effect`s: an action runs its console line at once; a click, an adjustment or a
+start of typing waits for its widget, which takes it as it is drawn (`take_click`, `take_adjust`).
+The keyboard's state is UI only: never journalled, never undone.
+
+Every edit, from the viewport, a panel, a key or the palette, ends in one `Command` through
+`Engine::apply`: the gizmo, the transform session and the inspector's field all issue the same
+`Set` of a body's anchor; a run of them (a drag, a held key, a typed distance) is one journal entry
+and one undo, and a run that ends where it began leaves no step (`History::continued`). Camera
+moves are `ViewCommand`s, journalled and never undone, but for `Home`, whose `Edit::View` step
+undo takes back. The engine keeps the scene as last opened or saved (`Engine::baseline`) for a
+field's reset and the window's unsaved mark.
+
 ## Where each kind of thing lives
 
 | Thing | Where | Recipe |
@@ -143,7 +167,14 @@ person asked for goes through `cav_engine::files`; code that must not run in a p
 | A legend of a field or of the tree overlay's depths; a view of voxel bodies as a vector figure | `cav-plot/src/voxels.rs` (`legend`, `tree_legend`); pasted into `cav render` pictures by `cav/src/session.rs` | [a plot](extending/a-plot.md) |
 | The scene as a technical drawing on paper (`figure paper`: a plan or a section, ink on cream at a scale 1:N, outlines of the world from coarse bricks, hatching, scale bar, north arrow, dimensions, title block; at most `MAX_PAPER_BRICKS` bricks, `MAX_PAPER_ITEMS` items, `MAX_PAPER_POINTS` points) | `cav-plot/src/paper.rs`; `PaperView` in `cav-engine/src/command.rs`; written by `paper` in `cav-plot/src/figure.rs` | [a plot](extending/a-plot.md) |
 | Redrawing a figure from its data, in Python | `python/cavendish_figures` (matplotlib style sheets, `load`, `redraw`) | [a plot](extending/a-plot.md) |
-| A panel, an editor, the timeline | `cav-app/src/panels.rs`, `editors.rs`, `timeline.rs` | — |
+| A panel, an editor (the inspector's sections, resets, lists), the timeline | `cav-app/src/panels.rs`, `editors.rs`, `timeline.rs` | [the window](extending/a-tool-or-panel.md) |
+| An action: a menu item, a key, a palette entry; the big scopes' order | `cav-app/ui/actions.ron`, read by `cav-app/src/actions.rs`; drawn by `menus.rs`, `palette.rs`, `sheet.rs` | [the window](extending/a-tool-or-panel.md) |
+| The keyboard model: scopes, modes, the ring, the router, held keys | `cav-app/src/keyboard.rs` (pure logic, tested as a state machine); the frame registers into it from `panels.rs` and `editors.rs` | [the window](extending/a-tool-or-panel.md) |
+| A tool (Select, Move, Place), the gizmo, the transform session | `cav-app/ui/tools.ron`, `cav-app/src/tools.rs`; its pointer handling in `panels.rs` `figure` | [the window](extending/a-tool-or-panel.md) |
+| A layout of the window | `cav-app/ui/layouts.ron`, `cav-app/src/layouts.rs` | [the window](extending/a-tool-or-panel.md) |
+| The camera's arithmetic: frame, zoom toward the pointer, fly, look | `cav-app/src/camera.rs`; `ViewCommand::Camera` in `cav-engine/src/command.rs` | — |
+| The editor's windows: history, new-scene wizard, Open, Save | `cav-app/src/dialogs.rs` | [the window](extending/a-tool-or-panel.md) |
+| What Add adds (starters) | `scenes/starters.ron`, `cav-sim/src/starters.rs` (`add <name> [at x y z]`, `duplicate <path>`) | [the window](extending/a-tool-or-panel.md) |
 | A CLI subcommand, an MCP tool | `cav/src/main.rs`, `mcp.rs` | [a command](extending/a-command.md) |
 | A validation case | beside the test of what it checks, with `cav_validate::case!` | [a validation case](extending/a-validation-case.md) |
 | A shape a body can be made of; `cover`; meshes | `cav-core/src/voxel/shape.rs`, `mesh.rs` | [a shape](extending/a-shape.md) |

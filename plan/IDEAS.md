@@ -131,3 +131,14 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **The axis rays' GPU arm** (S4's second review, minor 7): it checks only that the CPU and GPU agree; assert that each axis ray meets its row's first occupied cell, as the CPU test does.
 - **The page's pictures after the review** (S4's second review, minor 12): `web-town.png` and `web-world-box.png` predate the badges and the world row; retake them with `cargo xtask demo S4` (its own server) when a local server is allowed.
 - **A chunk meshed against a neighbour that is not drawn** (S4's third review, minor 6): at a mesh cap, a chunk re-meshed because a neighbour arrived buries its face toward that neighbour even when the neighbour itself did not fit and is not drawn, so the chunk is see-through on that side. Mesh against the chunks that are drawn, or keep the old mesh while the burying neighbour is undrawn.
+
+## From S18
+- **The read near a tower's atom path is slow**: a voxel body moved onto a tower's axis (a sphere dragged 2 m east of the default place lands on tower 2) made one reading take over two minutes in a debug build. Say so in the badge while it refines, and let S5's bounded walk cap it. S5.
+- **Camera bookmarks in the scene** (`views`, `view save|goto`, `,` and `.`): every full `SceneSpec` builder gains a field. S19 (TASK-S19-05).
+- **The Move tool's square moves in the view's plane without snapping**; snap it to the step in the plane. S19.
+- **A Pass motion moves only its start** under the gizmo (the anchor); moving both ends needs a grouped edit. S19 (TASK-S19-07).
+- **Reorder in lists and in the scene tree** (Ctrl+↑/↓) as one grouped edit. S19 (TASK-S19-07).
+- **The palette learns**: recently used results first, and the ranking weights measured on what people type. S19.
+- **Browser keys**: Ctrl+N, Ctrl+K, Ctrl+S, Ctrl+D, Ctrl+1–3 and F3 are the browser's own on the web; the page must `preventDefault` those it can and the sheet show the others' alternatives. The web check of S19.
+- **A user keymap file** merged over `ui/actions.ron`'s keys, refused with the line and the reason when it clashes. S19.
+- **The context menu in the view** (right-click a body): the tree's, for the body under the pointer; right-drag pans today. S19.

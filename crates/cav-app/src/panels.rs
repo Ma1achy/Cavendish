@@ -118,7 +118,7 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
         shell.layout.panels.push(("outliner", panel.response.rect));
         shell.building.place("tree", panel.response.rect);
         let panel = Panel::left("toolbar")
-            .exact_size(48.0)
+            .exact_size(52.0)
             .resizable(false)
             .frame(frame(theme::FOOTER, 4, 6))
             .show(ui, |ui| tool_strip(shell, ui));
@@ -749,7 +749,8 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
         ui.add(egui::Label::new(RichText::new(text).size(11.5).color(theme::WEAK)).wrap());
     }
     // Adding is a command too: each starter is an `add` where the camera looks, selected after.
-    ui.horizontal(|ui| {
+    // (The row wraps on a narrow panel rather than widen it.)
+    ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         if bodies.1 == 0 {
             let mass = ui.button("Add a mass").on_hover_text("a 1 kg point mass where the view looks");
@@ -759,7 +760,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
                 let _ = shell.add_starter("point-mass");
             }
         }
-        let add = ui.menu_button("Add ▾", |ui| crate::menus::add_menu(shell, ui)).response;
+        let add = ui.menu_button("Add ›", |ui| crate::menus::add_menu(shell, ui)).response;
         shell.register("tree/sources", "tree/sources/add", "Add", Kind::Button, add.rect);
         shell.layout.buttons.push(("add".to_owned(), add.rect));
         if shell.take_click("tree/sources/add") {
@@ -767,7 +768,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
         }
         if bodies.1 == 0 {
             let templates = ui
-                .menu_button("Template ▾", |ui| {
+                .menu_button("Template ›", |ui| {
                     crate::menus::draw_items(shell, ui, "File/New from template")
                 })
                 .response;
@@ -1185,7 +1186,7 @@ fn header_badges(shell: &mut Shell, ui: &mut egui::Ui) {
     ui.horizontal_centered(|ui| {
         // How the pane looks, in a popover: the header strip is the mock-up's home for it.
         let popover = ui
-            .menu_button(RichText::new("View ▾").color(theme::STRONG), |ui| view_controls(shell, ui))
+            .menu_button(RichText::new("View ›").color(theme::STRONG), |ui| view_controls(shell, ui))
             .response
             .on_hover_text(
                 "look, projection, panes, draw style, what the pane shows, voxel colouring, overlays",
@@ -1199,7 +1200,7 @@ fn header_badges(shell: &mut Shell, ui: &mut egui::Ui) {
         let flying = shell.flying();
         let mode = ui
             .menu_button(
-                RichText::new(if flying { "fly ▾" } else { "orbit ▾" }).color(theme::STRONG),
+                RichText::new(if flying { "fly ›" } else { "orbit ›" }).color(theme::STRONG),
                 |ui| {
                     if ui.selectable_label(!flying, "Orbit: drag turns about the target").clicked() && flying
                     {
@@ -1305,9 +1306,9 @@ fn tool_strip(shell: &mut Shell, ui: &mut egui::Ui) {
             .find(|a| a.line == line)
             .map(crate::actions::Action::shortcut_text)
             .unwrap_or_default();
-        let text = RichText::new(format!("{}\n{key}", tool.short)).size(11.0);
+        let text = RichText::new(format!("{}\n{key}", tool.short)).size(10.0);
         let response = ui
-            .add_sized([38.0, 36.0], Button::new(text).selected(shell.tool == tool.id))
+            .add_sized([42.0, 36.0], Button::new(text).selected(shell.tool == tool.id))
             .on_hover_text(format!("{} ({key}): {}", tool.label, tool.about));
         let id = format!("toolbar/{}", tool.id);
         shell.register("toolbar", &id, &tool.label, Kind::Button, response.rect);
@@ -1318,7 +1319,7 @@ fn tool_strip(shell: &mut Shell, ui: &mut egui::Ui) {
     }
     ui.add_space(8.0);
     let snap = ui
-        .add_sized([38.0, 30.0], Button::new(RichText::new("Snap\nS").size(11.0)).selected(shell.snap))
+        .add_sized([42.0, 30.0], Button::new(RichText::new("Snap\nS").size(10.0)).selected(shell.snap))
         .on_hover_text(format!("snap moves to {} m (S)", crate::tools::strip().snap_step));
     shell.register("toolbar", "toolbar/snap", "Snap", Kind::Button, snap.rect);
     shell.layout.buttons.push(("snap".to_owned(), snap.rect));

@@ -316,7 +316,7 @@ pub fn draw(shell: &mut Shell, ctx: &egui::Context) {
                 shell.building.place("palette/results", results);
                 ui.add_space(4.0);
                 ui.label(
-                    egui::RichText::new("↑ ↓ choose · Enter runs · Esc closes · what runs is a console line, echoed in the log")
+                    egui::RichText::new("Up, Down choose · Enter runs · Esc closes · what runs is a console line, echoed in the log")
                         .size(11.0)
                         .color(theme::WEAK),
                 );

@@ -9,8 +9,40 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
 | S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
 | S4 big scenes | done: TASK-S4-01 to 25 merged; reviewed three times (`docs/slices/S4-review.md`, `-2`, `-3`), nothing important remains; oracle 58/58, validation 113/113 | `s4-big-scenes` | brief and results: `docs/slices/S4.md` (§7.7–§7.8: the fixes); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
-| S18 the editor | in progress: the brief is `docs/slices/S18.md` | | brief: `docs/slices/S18.md`; research: `docs/research/editor-ux.md`; requirement: `docs/design/keyboard.md` |
+| S18 the editor | built: TASK-S18-01 to 04 and 07 to 11 merged; not yet reviewed | | brief: `docs/slices/S18.md`; research: `docs/research/editor-ux.md`; requirement: `docs/design/keyboard.md` |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
+
+## S18, the editor (25 Nov 2026) — built, not reviewed
+
+**Done** (PRs #160–#166 and TASK-S18-11's; `docs/slices/S18.md` §7). The research note's A1 and A2:
+the keyboard model of `docs/design/keyboard.md` in full (seven big scopes in a fixed Tab order,
+two modes with an orange or blue ring, a breadcrumb, a router with the spec's priority, held keys
+on the 500/40 ms clock, windows that give the focus back), tested as logic with control arms;
+the GUI as data (`crates/cav-app/ui/actions.ron`, `tools.ron`, `layouts.ron`; starters in
+`scenes/starters.ron`) with the menus, the command palette (Ctrl+K) and the `?` sheet made from
+it; an Add menu, the scene tree's right-click menu, Delete, Ctrl+D, F2, empty-state guidance; the
+camera's one `Camera` command, F to frame, zoom toward the pointer, fly (Shift+F), Home undoable;
+resizable panels, maximise (Ctrl+Space), full screen, three layouts; a tool strip (Select, Move,
+Place, snap), a translate gizmo, the keyboard's transform session (Esc cancels, Enter keeps);
+inspector sections, resets and list buttons, the unsaved mark; the history list, the new-scene
+wizard, Open and Save. Every edit is one `Command` through `Engine::apply`; the end-to-end task
+"add a sphere, move it 2 m, read tower 1's phase" runs through the UI in 12 input events, and the
+same with the keyboard alone.
+
+**Moved to S19** (a new row in `REBUILD.md` §9; TASK-S19-01 to 08): docking and tabs, pop-out,
+Rotate and Scale, Probe, Measure, Slice, Paint, follow, pointer lock, detail tiers,
+multi-selection and grouped edits, units typed with values, camera bookmarks; and the owner's
+materials (TASK-S18-05) and mesh import (TASK-S18-06).
+
+**Calls for a second look**: `docs/slices/S18.md` §7.3 (twelve, among them: a menu opened from the
+keyboard is the palette filtered to it; the history drops steps that change nothing; the body's
+inspector no longer shows the array's instrument and cadence).
+
+**Open.** The read near a tower's atom path is slow (a body dragged onto a tower's axis); browser
+keys the page cannot take (Ctrl+N, Ctrl+K and others) need alternatives on the web; nobody has
+used the editor in the real window (every picture is headless).
+
+**Next.** A review of S18; then S5 (or S19 if the owner prefers the editor's second half first).
 
 ## S4 done (25 Nov 2026) — tagged `s4-big-scenes`
 The third review's two important findings (K1 the page fallback, K2 the outliner test) are fixed in #158

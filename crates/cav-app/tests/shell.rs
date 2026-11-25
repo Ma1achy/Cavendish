@@ -483,7 +483,8 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
                 || (*name == "rename" && outcome.as_ref().unwrap_err().contains("select"))
                 || (*name == "tool" && outcome.as_ref().unwrap_err().contains("tool <"))
                 || (*name == "layout" && outcome.as_ref().unwrap_err().contains("layout <"))
-                || (*name == "reset" && outcome.as_ref().unwrap_err().contains("reset <")),
+                || (*name == "reset" && outcome.as_ref().unwrap_err().contains("reset <"))
+                || (*name == "focus" && outcome.as_ref().unwrap_err().contains("focus <")),
             "{name}: {outcome:?}"
         );
         // `frame` works out a camera and issues it: the journal holds that one camera command
@@ -497,14 +498,19 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
         } else {
             assert!(journal.is_empty(), "{name} reached the engine");
         }
-        // `palette` takes a menu's name (`palette add`); the others take nothing.
+        // `palette` takes a menu's name (`palette add`); the others take nothing. (`focus` takes
+        // an id, which before the first frame it waits for.)
+        if *name == "focus" {
+            continue;
+        }
         let wrong = shell.run(&format!("{name} now")).unwrap_err();
         assert!(
             wrong.contains("takes no arguments")
                 || (*name == "palette" && wrong.contains("not a menu"))
                 || (*name == "tool" && wrong.contains("tool <"))
                 || (*name == "layout" && wrong.contains("layout <"))
-                || *name == "reset",
+                || *name == "reset"
+                || *name == "focus",
             "{name}: {wrong}"
         );
     }

@@ -112,7 +112,7 @@ fn history(shell: &mut Shell, ctx: &egui::Context) {
                 }
                 for (n, said) in done.iter().enumerate() {
                     let now = n + 1 == done.len();
-                    let text = RichText::new(format!("{}{said}", if now { "▸ " } else { "" }))
+                    let text = RichText::new(format!("{}{said}", if now { "› " } else { "" }))
                         .monospace()
                         .size(11.5);
                     let row = ui.selectable_label(now, text);
