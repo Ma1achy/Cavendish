@@ -323,6 +323,35 @@ impl ChunkCells {
         out
     }
 
+    /// [`Self::materials`] in one layer only: the cells whose coordinate along `axis` (0 x, 1 y,
+    /// 2 z) is `index` (0 to 31), every other cell 0. What a neighbour's mesher reads of this
+    /// chunk, a thirty-second of the work of all of it (TASK-S4-27). Not for anything that reads
+    /// outside that layer.
+    #[must_use]
+    pub fn materials_layer(&self, axis: usize, index: u32) -> Vec<u8> {
+        let mut out = vec![0u8; CHUNK_CELLS];
+        for leaf in &self.leaves {
+            let lo = decode(leaf.key);
+            let side = 1u32 << leaf.level;
+            if index < lo[axis] || index >= lo[axis] + side {
+                continue;
+            }
+            let m = self.palette[usize::from(leaf.material)].saturating_add(1);
+            let mut from = lo;
+            let mut to = lo.map(|v| v + side);
+            from[axis] = index;
+            to[axis] = index + 1;
+            for z in from[2]..to[2] {
+                for y in from[1]..to[1] {
+                    for x in from[0]..to[0] {
+                        out[cell_index([x, y, z])] = m;
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// The bytes it holds.
     #[must_use]
     pub fn bytes(&self) -> usize {
@@ -848,6 +877,31 @@ mod tests {
         ];
         let chunk = voxelise_chunk(&pieces, &g, ChunkKey::new(0, 0, 0)).unwrap().unwrap();
         assert_ne!(chunk.expand(), raster_chunk(&swapped, &g, ChunkKey::new(0, 0, 0)));
+    }
+
+    #[test]
+    fn a_layer_of_a_chunk_is_that_layer_of_its_cells() {
+        // Terrain and a house: leaves of every size, cut by layers at both faces and inside.
+        let terrain = hills();
+        let house = cuboid([0.3, 0.1, 0.2], [2.05, 1.6, 2.4]);
+        let pieces = [Piece { solid: &house, material: 2 }, Piece { solid: &terrain, material: 0 }];
+        let g = grid(0.1, 2);
+        let cells = ChunkCells::of(&voxelise_chunk(&pieces, &g, ChunkKey::new(0, 0, 0)).unwrap().unwrap());
+        let all = cells.materials();
+        let mut filled = 0;
+        for axis in 0..3 {
+            for index in [0, 7, 31] {
+                let layer = cells.materials_layer(axis, index);
+                for i in 0..CHUNK_CELLS {
+                    let c = [i % 32, (i / 32) % 32, i / 1024].map(|v| v as u32);
+                    let want = if c[axis] == index { all[i] } else { 0 };
+                    assert_eq!(layer[i], want, "axis {axis}, layer {index}, cell {c:?}");
+                    filled += usize::from(want != 0);
+                }
+            }
+        }
+        // Control: the layers hold matter, so the test could see a wrong one.
+        assert!(filled > 1000, "{filled}");
     }
 
     #[test]

@@ -307,6 +307,14 @@ impl Renderer {
         (world.counts(), world.notes.clone())
     }
 
+    /// The last frame's meshing: how many chunk meshes have been made in all, and the milliseconds
+    /// the last prepare spent making them ([`crate::world::WorldGpu::mesh_ms`]).
+    #[must_use]
+    pub fn world_meshing(&self) -> (u64, f64) {
+        let world = self.world_gpu.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        (world.meshed, world.mesh_ms)
+    }
+
     /// What the last frame drew of the world, by `(level, key)` ([`crate::world::WorldGpu::drawn`]).
     #[must_use]
     pub fn world_drawn(&self) -> Vec<(u8, cav_core::voxel::world::ChunkKey)> {

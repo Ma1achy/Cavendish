@@ -324,6 +324,7 @@ dependencies = [
  "cav-sim",
  "cav-validate",
  "png",
+ "web-time",
  "wgpu",
 ]
 

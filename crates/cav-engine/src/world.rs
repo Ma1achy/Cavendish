@@ -46,8 +46,9 @@ pub const MAX_RESIDENT_BYTES: usize = 512 << 20;
 /// The most chunks and bricks made in one step (in batches as wide as the machine's threads;
 /// one at a time in a page).
 pub const MAX_BUILDS_PER_POLL: usize = 256;
-/// The longest one step spends making chunks and bricks, milliseconds (it stops after the one
-/// that passes it).
+/// The longest one step means to spend making chunks and bricks, milliseconds: it starts no
+/// batch once they have gone, nor one that the longest batch so far says would pass them (at
+/// least one batch a step, so a batch longer than this still passes it).
 pub const STEP_MILLISECONDS: f64 = 6.0;
 /// The most keys known to be empty that are remembered (past it they are forgotten and made
 /// again if wanted).
@@ -301,8 +302,10 @@ impl Streaming {
         self.frame.waiting = self.queue.iter().copied().collect();
     }
 
-    /// Makes what is queued, nearest first: at most `most` of them, stopping after the one that
-    /// takes the step past `milliseconds`. True when something new became resident.
+    /// Makes what is queued, nearest first: at most `most` of them, in batches as wide as the
+    /// read's threads, starting no batch once `milliseconds` have gone or the longest batch so far
+    /// would take the step past them (at least one batch). True when something new became
+    /// resident.
     pub fn step(&mut self, most: usize, milliseconds: f64) -> bool {
         // Taken out while it is used, so that the rest of `self` can change; put back below.
         let Some((hash, world)) = self.world.take() else { return false };
@@ -319,7 +322,15 @@ impl Streaming {
         // a batch, and the batch is put in the queue's order, so what is resident does not depend
         // on the thread count.
         let threads = cav_sim::read::threads();
-        while left > 0 && started.elapsed().as_secs_f64() * 1e3 <= milliseconds && !self.queue.is_empty() {
+        // The longest batch so far this step: a batch that would likely pass the step's time is
+        // not started (TASK-S4-27: the step had run a whole batch, 3 to 6 ms natively, past it).
+        let mut longest = 0.0f64;
+        while left > 0 && !self.queue.is_empty() {
+            let spent = started.elapsed().as_secs_f64() * 1e3;
+            if spent > milliseconds || (longest > 0.0 && spent + longest > milliseconds) {
+                break;
+            }
+            let batch_started = web_time::Instant::now();
             let width = threads.min(left);
             let batch: Vec<Want> = (0..width).map_while(|_| self.queue.pop_front()).collect();
             for want in &batch {
@@ -397,6 +408,7 @@ impl Streaming {
                     None => {}
                 }
             }
+            longest = longest.max(batch_started.elapsed().as_secs_f64() * 1e3);
         }
         self.frame.pending = self.queue.len();
         changed
