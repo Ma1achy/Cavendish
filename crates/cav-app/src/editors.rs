@@ -299,10 +299,9 @@ fn row(
     };
     let indent = " ".repeat(2 * depth);
     let colour = if differs { theme::GOLD } else { theme::WEAK };
-    let text = egui::Label::new(RichText::new(format!("{indent}{name}{unit}")).color(colour).size(12.0))
-        .truncate()
-        .halign(Align::Min);
-    let named = ui.add_sized([NAME_WIDTH, 18.0], text).on_hover_text(&hover);
+    let text =
+        egui::Label::new(RichText::new(format!("{indent}{name}{unit}")).color(colour).size(12.0)).truncate();
+    let named = theme::fixed_left(ui, egui::vec2(NAME_WIDTH, 18.0), text).on_hover_text(&hover);
     if differs {
         // Unity's mark for an overridden field: a bar at the edge, beside the gold name.
         let x = ui.max_rect().left() - 6.0;

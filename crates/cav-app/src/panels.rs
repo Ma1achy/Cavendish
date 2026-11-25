@@ -683,9 +683,10 @@ fn button_row(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 3.0;
         ui.spacing_mut().button_padding.x = 5.0;
-        ui.add_sized(
-            [42.0, 18.0],
-            egui::Label::new(RichText::new(label).color(theme::WEAK).size(12.0)).halign(Align::Min),
+        theme::fixed_left(
+            ui,
+            vec2(52.0, 18.0),
+            egui::Label::new(RichText::new(label).color(theme::WEAK).size(12.0)),
         );
         for &(text, line, on) in buttons {
             let response =
@@ -1930,7 +1931,9 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
         .open(&mut keys_open)
         .collapsible(false)
         .resizable(false)
-        .fixed_size([width, (room.height() - 120.0).max(200.0)])
+        .min_width(width)
+        .max_width(width)
+        .max_height((room.height() - 120.0).max(200.0))
         .pivot(Align2::CENTER_TOP)
         .default_pos(pos2(room.center().x, room.top() + 40.0))
         .show(ctx, |ui| {
@@ -1939,13 +1942,13 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
             let rows = crate::sheet::rows(crate::actions::table());
             // Each step of the keys is a row's height; a page is ten.
             let step = 18.0;
-            let mut area = egui::ScrollArea::vertical().id_salt("sheet list").auto_shrink([false, false]);
+            let mut area = egui::ScrollArea::vertical().id_salt("sheet list").auto_shrink([false, true]);
             let scrolled: f32 =
                 shell.take_adjust("sheet/list").iter().filter(|(axis, ..)| *axis >= 1).map(|(_, steps, ..)| *steps as f32).sum();
             if scrolled != 0.0 {
                 area = area.vertical_scroll_offset((shell.sheet_scroll - scrolled * step).max(0.0));
             }
-            let shown = area.max_height(ui.available_height() - 24.0).show(ui, |ui| {
+            let shown = area.max_height((room.height() - 190.0).max(120.0)).show(ui, |ui| {
                 ui.columns(columns, |cols| {
                     // Whole groups to a column, as evenly as their rows allow.
                     let per = rows.len().div_ceil(columns);
@@ -1964,13 +1967,13 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
                             ui.label(RichText::new(&row.scope).color(theme::GOLD).size(12.0));
                         }
                         ui.horizontal_top(|ui| {
-                            ui.add_sized(
-                                [118.0, 16.0],
+                            theme::fixed_left(
+                                ui,
+                                vec2(136.0, 16.0),
                                 egui::Label::new(
                                     RichText::new(row.keys_text()).monospace().size(11.5).color(theme::STRONG),
                                 )
-                                .halign(Align::Min)
-                                .truncate(),
+                                .wrap(),
                             );
                             let label = ui.add(egui::Label::new(RichText::new(&row.label).size(12.0)).wrap());
                             if !row.about.is_empty() {
