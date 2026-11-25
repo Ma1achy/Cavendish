@@ -16,8 +16,11 @@ pub fn run(root: &Path, slice: &str) -> Result<(), String> {
         "S1" | "s1" => s1(root),
         "S2" | "s2" => s2(root),
         "S3" | "s3" => s3(root),
+        "S4" | "s4" => s4(root),
         "S17" | "s17" => s17(root),
-        other => Err(format!("no demo for slice `{other}`: the slices with demos are: S0, S1, S2, S3, S17")),
+        other => {
+            Err(format!("no demo for slice `{other}`: the slices with demos are: S0, S1, S2, S3, S4, S17"))
+        }
     }
 }
 
@@ -754,6 +757,182 @@ fn s3(root: &Path) -> Result<(), String> {
         eprintln!("  {file}");
     }
     Ok(())
+}
+
+/// S4, big scenes (`docs/slices/S4.md` §4): the world near and far, its LOD bands, the box read
+/// as a body, the flythrough measured, the paper drawings, and the world in a page.
+fn s4(root: &Path) -> Result<(), String> {
+    let out = root.join("docs").join("slices").join("S4");
+    std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    step("build cav and cav-app", cargo(root, &["build", "--quiet", "-p", "cav", "-p", "cav-app"]))?;
+    step(
+        "build cav and cav-app (release, for the pictures and the measurements)",
+        cargo(root, &["build", "--quiet", "--release", "-p", "cav", "-p", "cav-app"]),
+    )?;
+    let release = |name: &str| {
+        root.join("target").join("release").join(format!("{name}{}", std::env::consts::EXE_SUFFIX))
+    };
+    let (cav, app, fast) = (binary(root, "cav"), release("cav-app"), release("cav"));
+    let path = |name: &str| out.join(name).to_string_lossy().into_owned();
+    let mut made: Vec<String> = Vec::new();
+
+    // 1. The application, headless: the world near and far, the bands, the box.
+    // Pictures of `town` (stress-1e10 scaled down): a full stress-1e10 picture on this card held
+    // the owner's desktop (TASK-S4-11); the full scene is measured below in bounded runs.
+    let shots: [(&str, &str); 5] = [
+        ("world-near.png", "load town; view iso; pan 0 0 0; zoom 45"),
+        ("world-lod.png", "load town; view iso; pan 0 0 0; zoom 45; overlay bands"),
+        ("world-far.png", "load town; pan 10 -10 2; orbit 225 7; zoom 14"),
+        ("world-far-lod.png", "load town; pan 10 -10 2; orbit 225 7; zoom 14; overlay bands"),
+        ("world-box.png", "load world-box; view iso; pan 6 5 1; zoom 26"),
+    ];
+    for (file, script) in &shots {
+        capture_within(&app, &["--screenshot", &path(file), "--size", "1440x900", "--exec", script], 120)?;
+        expect_png(&out, file, [1440, 900], &mut made)?;
+    }
+
+    // 2. What the towers read of the box, and of the town's ground.
+    let mut session = String::new();
+    for script in ["load world-box; reading 1", "load town; reading 1; log"] {
+        let answer = capture(&cav, &["exec", script])?;
+        session.push_str(&format!("$ cav exec \"{script}\"\n{answer}\n"));
+    }
+    write(&out, "readings.txt", &session, &mut made)?;
+
+    // 3. The flythrough, measured: cold, from the region cache, and at 1440p.
+    let cache = root.join("target").join("demo-s4-cache");
+    let _ = std::fs::remove_dir_all(&cache);
+    let cache = cache.to_string_lossy().into_owned();
+    let mut bench = String::new();
+    // Bounded: 300 frames at most, stopping at any frame over 250 ms; below normal priority.
+    let runs = [
+        ("fly-cold.csv", "1280x720", "300"),
+        ("fly-warm.csv", "1280x720", "300"),
+        ("fly-1440.csv", "2560x1440", "150"),
+    ];
+    for (file, size, frames) in runs {
+        let target = path(file);
+        let args = [
+            "bench",
+            "flythrough",
+            "--frames",
+            frames,
+            "--size",
+            size,
+            "--cache",
+            &cache,
+            "--max-frame-ms",
+            "250",
+            "--out",
+            &target,
+        ];
+        let said = capture(&fast, &args)?;
+        bench.push_str(&format!(
+            "$ cav bench flythrough --frames {frames} --size {size} --cache <cache> --max-frame-ms 250 --out {file}\n{said}\n"
+        ));
+        made.push(file.to_owned());
+    }
+    write(&out, "flythrough.txt", &bench, &mut made)?;
+
+    // 4. The paper drawings, as SVG.
+    for (scene, file, extra) in [
+        ("stress-1e10", "paper-plan.svg", None),
+        ("stress-1e10", "paper-section.svg", Some("y,64")),
+        ("world-box", "paper-world-box.svg", None),
+    ] {
+        let mut args = vec!["figure", scene, "paper", "--out", file];
+        if let Some(cut) = extra {
+            args.extend(["--section", cut]);
+        }
+        let output = crate::gentle(&cav)
+            .args(&args)
+            .current_dir(&out)
+            .output()
+            .map_err(|e| format!("cav figure: {e}"))?;
+        if !output.status.success() {
+            return Err(format!("cav figure paper: {}", String::from_utf8_lossy(&output.stderr)));
+        }
+        made.push(file.to_owned());
+    }
+
+    // 5. The world in a page: the box, and the town (which streams on the page's one thread).
+    crate::web::build(root)?;
+    let chrome = crate::web::chrome()?;
+    let server = crate::web::serve(&root.join(crate::web::DIST), 0)?;
+    let mut log = String::new();
+    for (file, script, seconds) in [
+        ("web-world-box.png", "load world-box; view iso; pan 6 5 1; zoom 26", 15u32),
+        ("web-town.png", "load town; view iso; pan 0 0 0; zoom 45", 60),
+    ] {
+        let url = format!("http://127.0.0.1:{}/#exec={}", server.port, script.replace(' ', "%20"));
+        let output = crate::gentle("node")
+            .current_dir(root)
+            .arg("scripts/web_screenshot.mjs")
+            .arg(&chrome)
+            .arg(&url)
+            .arg(out.join(file))
+            .arg(seconds.to_string())
+            .output()
+            .map_err(|e| format!("node: {e}"))?;
+        let mut said = String::from_utf8_lossy(&output.stdout).into_owned();
+        for home in ["USERPROFILE", "HOME"].iter().filter_map(|name| std::env::var(name).ok()) {
+            said = said.replace(&home, "~");
+        }
+        log.push_str(&format!(
+            "$ node scripts/web_screenshot.mjs <chrome> \"{url}\" {file} {seconds}\n{said}\n"
+        ));
+        if !output.status.success() {
+            return Err(format!(
+                "{file}: the page failed: {said}{}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        expect_png(&out, file, [1440, 900], &mut made)?;
+    }
+    drop(server);
+    write(&out, "web.txt", &log, &mut made)?;
+
+    eprintln!("xtask: demo S4 wrote {} files to {}:", made.len(), out.display());
+    for file in &made {
+        eprintln!("  {file}");
+    }
+    Ok(())
+}
+
+/// [`capture`] with a wall-clock limit: past `seconds` the child is stopped by its own handle and
+/// the step fails, so a picture that would hold the machine cannot (TASK-S4-11).
+fn capture_within(program: &Path, args: &[&str], seconds: u64) -> Result<String, String> {
+    let mut child = crate::gentle(program)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("{}: {e}", program.display()))?;
+    let started = std::time::Instant::now();
+    loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            let output = child.wait_with_output().map_err(|e| e.to_string())?;
+            if !status.success() {
+                return Err(format!(
+                    "`{} {}` failed ({status}): {}",
+                    program.display(),
+                    args.join(" "),
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+            return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+        }
+        if started.elapsed().as_secs() >= seconds {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "`{} {}` took over {seconds} s and was stopped",
+                program.display(),
+                args.join(" ")
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
 }
 
 fn write(dir: &Path, name: &str, text: &str, made: &mut Vec<String>) -> Result<(), String> {

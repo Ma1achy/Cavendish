@@ -179,10 +179,10 @@ pub struct WorldReadSpec {
     #[schemars(range(min = 0.0, max = 1.0e4))]
     #[schemars(extend("x-unit" = "m"))]
     pub radius: f64,
-    /// The most the reading through chunks' moments may be off, in all, radians: a chunk is
-    /// read through its moments only when its bound fits its share. Default 1e-10 (the phase
-    /// tolerance); larger lets more chunks go by their moments, for a read that is cheaper and
-    /// as far off as said.
+    /// The world's error budget, radians: the reading through chunks' moments may be off by this
+    /// in all (a chunk goes by its moments only when its bound fits its share), and the
+    /// quadrature is audited to it when it is looser than the phase tolerance. Default 1e-10
+    /// (the phase tolerance); larger is a cheaper read, as far off as said.
     #[schemars(range(min = 0.0, max = 1.0))]
     #[schemars(extend("x-unit" = "rad"))]
     pub tolerance: f64,
@@ -758,7 +758,9 @@ pub fn read_tower(
         ));
     }
     let max_nodes = max_work.checked_div(per_node).unwrap_or(u64::MAX);
-    let audited = reader.read_to_within(base, &source, readout, PHASE_TOLERANCE, max_nodes);
+    // The quadrature is audited to the world's own budget when it is looser than the phase
+    // tolerance: a scene that asks for its world within 1e-3 rad does not pay for 1e-10.
+    let audited = reader.read_to_within(base, &source, readout, PHASE_TOLERANCE.max(tolerance), max_nodes);
     let bound = if source.far.is_empty() {
         [0.0; 2]
     } else {

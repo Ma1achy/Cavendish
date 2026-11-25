@@ -108,3 +108,12 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **The paper drawing's materials**: in plan the road is the ground's height and is not drawn; outlines where the top cell's material changes (from a chunk's palette at the finer levels) would draw it, and each material could take its own hatch in a section (the usual concrete, brick and earth patterns).
 - **A section's vertical exaggeration** (stated in the title block, `section y 64 exaggerated 10`): a kilometre of ground 25 m deep is a strip a few millimetres high at any honest scale.
 - **A paper drawing cropped to a box** (`figure paper plan within <x0,y0,x1,y1>`), so a part of a big world is drawn at a scale that shows its buildings, and a section's cut line drawn on the plan.
+
+## From S4 (big scenes)
+- **Hierarchical-Z occlusion** for the near field (a depth pyramid from the last frame, a second cull pass): only frustum culling is on the GPU now.
+- **Early depth for the ray-marched bricks**: the march writes `frag_depth`, which turns off early depth rejection, so the far field costs every brick's box in pixels (the flythrough's 99th percentile, 50–57 ms, is these frames). Draw bricks near to far into a depth pre-pass of their boxes, or march in one full-screen pass over a brick table, or use conservative depth where the platform has it.
+- **Streaming on worker threads that outlive a poll** natively (now: scoped threads within each step's 6 ms), and the world's chunks in the page's Web Workers.
+- **The read through the chunk pyramid**: a coarse-to-fine walk over level-k bricks with mass moments (S5's bounded walk), so a whole 10¹⁰-cell world is read within its error budget, not a radius around each tower.
+- **A tighter moment bound**: the bound on the octupole's remainder is 94–500 times the error; using the actual fourth moment's tensor (not `Σ m s⁴`) and the arms' line rather than its nearest point would bring it within ten.
+- **DAG compression of static chunks** (the note §4.1) for the region files and the far field, measured against streaming bandwidth.
+- **Smooth-surface draw style** for terrain (dual contouring of the chunk cells), visual only.

@@ -697,7 +697,7 @@ fn town_buildings() -> Vec<crate::world::PieceSpec> {
 
 /// `stress-1e10`: a kilometre square of rolling ground at 5 cm, a town of forty buildings and a
 /// road through it, around the array: about 10¹⁰ finest cells (REBUILD §9.1). For the big-scene
-/// budgets of §5, measured (`docs/slices/S4.md` §7); the instrument reads the 20 m around each
+/// budgets of §5, measured (`docs/slices/S4.md` §7); the instrument reads the 2 m around each
 /// tower, the far chunks by their moments within 1e-3 rad.
 #[must_use]
 pub fn stress_1e10() -> SceneSpec {
@@ -720,7 +720,7 @@ pub fn stress_1e10() -> SceneSpec {
         name: "stress-1e10".into(),
         description:
             "A square kilometre of rolling ground at a 5 cm pitch, forty buildings and a road, around \
-                      the array: about 10^10 finest cells. Fly over it; the instrument reads the 20 m around \
+                      the array: about 10^10 finest cells. Fly over it; the instrument reads the 2 m around \
                       each tower."
                 .into(),
         room: None,
@@ -728,7 +728,7 @@ pub fn stress_1e10() -> SceneSpec {
         duration: 10.0,
         world: Some(crate::world::WorldSpec {
             pitch: 0.05,
-            supersample: 2,
+            supersample: 1,
             origin: [0.0; 3],
             materials: vec![
                 material("ground", 1800.0, "#708054"),
@@ -738,7 +738,7 @@ pub fn stress_1e10() -> SceneSpec {
             ],
             pieces,
             stream: crate::world::StreamSpec::default(),
-            read: crate::world::WorldReadSpec { radius: 20.0, tolerance: 1e-3 },
+            read: crate::world::WorldReadSpec { radius: 2.0, tolerance: 1e-3 },
             lod: crate::world::LodSpec::default(),
         }),
         ..SceneSpec::room()

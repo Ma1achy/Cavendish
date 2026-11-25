@@ -4,7 +4,7 @@
 (
     version: 1,
     name: "stress-1e10",
-    description: "A square kilometre of rolling ground at a 5 cm pitch, forty buildings and a road, around the array: about 10^10 finest cells. Fly over it; the instrument reads the 20 m around each tower.",
+    description: "A square kilometre of rolling ground at a 5 cm pitch, forty buildings and a road, around the array: about 10^10 finest cells. Fly over it; the instrument reads the 2 m around each tower.",
     duration: 10.0,
     array: (
         instrument: (
@@ -75,7 +75,7 @@
     bodies: [],
     world: Some((
         pitch: 0.05,
-        supersample: 2,
+        supersample: 1,
         origin: (0.0, 0.0, 0.0),
         materials: [
             (
@@ -446,7 +446,7 @@
             tower_radius: 8.0,
         ),
         read: (
-            radius: 20.0,
+            radius: 2.0,
             tolerance: 0.001,
         ),
         lod: (

@@ -10,15 +10,15 @@
   },
   "engine": {
     "version": "0.0.0",
-    "revision": "73c18fbc61405628f019c88eec5a66a8f2ed4fc0",
-    "dirty": false,
+    "revision": "770b2a3e0397643a6ff5ee1c6b27d23662f2fd83",
+    "dirty": true,
     "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
   },
   "numerics": {
     "engine": {
       "version": "0.0.0",
-      "revision": "73c18fbc61405628f019c88eec5a66a8f2ed4fc0",
-      "dirty": false,
+      "revision": "770b2a3e0397643a6ff5ee1c6b27d23662f2fd83",
+      "dirty": true,
       "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
     },
     "platform": "x86_64-windows",
@@ -185,18 +185,18 @@
     {
       "file": "paper-world-box.svg",
       "format": "svg",
-      "preset": "paper-full",
+      "preset": "paper-column",
       "size_mm": [
-        178.0,
-        90.0
+        85.0,
+        60.0
       ],
       "size_points": [
-        504.5669291338583,
-        255.1181102362205
+        240.9448818897638,
+        170.07874015748033
       ],
       "command": {
-        "console": "figure paper plan as paper-full to paper-world-box.svg",
-        "cli": "cav figure world-box paper --out paper-world-box.svg --preset paper-full",
+        "console": "figure paper plan as paper-column to paper-world-box.svg",
+        "cli": "cav figure world-box paper --out paper-world-box.svg --preset paper-column",
         "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's"
       },
       "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
@@ -206,44 +206,36 @@
       "projection": "orthographic",
       "paper": {
         "view": "plan",
-        "scale": "1:300",
-        "points_per_metre": 9.448818897637796,
-        "level": 1,
-        "cell_m": 0.5,
-        "finest_level": 1,
+        "scale": "1:750",
+        "points_per_metre": 3.7795275590551185,
+        "level": 2,
+        "cell_m": 1.0,
+        "finest_level": 2,
         "bricks": 1,
-        "items": 61,
+        "items": 41,
         "max_items": 20000,
         "outlines": 1,
         "hatching": 0,
         "dimensions": [
           {
-            "label": "4 m",
-            "m": 4.0
-          },
-          {
-            "label": "4 m",
-            "m": 4.0
-          },
-          {
-            "label": "4 m",
-            "m": 4.0
-          },
-          {
-            "label": "4 m",
-            "m": 4.0
+            "label": "8 m",
+            "m": 8.0
           }
         ],
-        "scale_bar_m": 10.0,
+        "scale_bar_m": 5.0,
         "north": "arrow up",
         "title_block": [
           "world-box",
           "Plan, from above",
-          "Scale 1:300 on 178 × 90 mm",
-          "Matter in cells of 0.5 m",
-          "Cavendish 0.0.0 · 73c18fbc6140"
+          "Scale 1:750 on 85 × 60 mm",
+          "Matter in cells of 1 m",
+          "Cavendish 0.0.0 · 770b2a3e0397 (modified)"
         ],
-        "notes": []
+        "notes": [
+          "the world's extent (4 m) is too short to dimension at 1:750",
+          "the world's extent (4 m) is too short to dimension at 1:750",
+          "2 towers are drawn without their labels, which would overlap or are past 64"
+        ]
       },
       "colours": {
         "background": "#f1ede4",

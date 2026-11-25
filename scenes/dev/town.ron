@@ -75,7 +75,7 @@
     bodies: [],
     world: Some((
         pitch: 0.1,
-        supersample: 2,
+        supersample: 1,
         origin: (0.0, 0.0, 0.0),
         materials: [
             (
@@ -190,7 +190,7 @@
             tower_radius: 8.0,
         ),
         read: (
-            radius: 20.0,
+            radius: 2.0,
             tolerance: 0.001,
         ),
         lod: (

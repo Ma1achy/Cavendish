@@ -1,0 +1,26 @@
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:55357/#exec=load%20world-box;%20view%20iso;%20pan%206%205%201;%20zoom%2026" web-world-box.png 15
+log.warning (rendering): The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127 http://127.0.0.1:55357/cavendish.js
+console.info: [eframe::web::web_runner] ~\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `load world-box` in 14 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `view iso` in 0 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `pan 6 5 1` in 0 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `zoom 26` in 0 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:248: the signal of `world-box` was whole 860 ms after it went stale
+running 1.48 s after the address was opened
+resources (name, ms, bytes): [["start.js",6,2203],["favicon.svg",2,558],["cavendish_bg.wasm",45,6261566],["cavendish.js",7,109645],["worker.js",-8,862],["cavendish.js",3,109645],["worker.js",-2,862],["cavendish.js",8,109645]]
+waited 15.2 s
+web-world-box.png: written
+
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:55357/#exec=load%20town;%20view%20iso;%20pan%200%200%200;%20zoom%2045" web-town.png 60
+log.warning (rendering): The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127 http://127.0.0.1:55357/cavendish.js
+console.info: [eframe::web::web_runner] ~\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `load town` in 19 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `view iso` in 0 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `pan 0 0 0` in 4 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `zoom 45` in 3 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:248: the signal of `town` was whole 16760 ms after it went stale
+running 0.72 s after the address was opened
+resources (name, ms, bytes): [["start.js",9,2203],["favicon.svg",7,558],["cavendish_bg.wasm",39,6261566],["cavendish.js",10,109645],["worker.js",-5,862],["cavendish.js",6,109645],["worker.js",-3,862],["cavendish.js",7,109645]]
+waited 60.2 s
+web-town.png: written
+

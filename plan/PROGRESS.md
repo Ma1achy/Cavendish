@@ -8,7 +8,48 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S1 a point mass | done: TASK-S1-01 to 19 merged; reviewed twice, nothing important remains | `s1-point-mass` | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
 | S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
 | S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
+| S4 big scenes | built: TASK-S4-01 to 11 merged (#128–#133, #137, #138 and the demo's); awaiting review | | brief and results: `docs/slices/S4.md` (§7); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
+
+## S4, big scenes (25 Nov 2026) — built, not reviewed
+
+**Done.** A scene can have a `world`: terrain, buildings, roads and slabs as pieces of one world
+volume, voxelised into chunks of 32³ cells with their own palettes (several materials,
+precedence by order), held bit for bit to a raster; region files on disk (natively) so a world
+made once is read back. The world is a source: each tower reads the chunks within a radius,
+near ones leaf by leaf, far ones through their moments when a rigorous bound (read through the
+flight, added to the estimate) fits `world.read.tolerance`. It is drawn as greedy-meshed chunks
+culled on the GPU near the camera and ray-marched bricks of a clipmap farther out (levels nest
+exactly, `n` from the screen-space error, up to 12 levels for S14), streamed around every camera
+and every tower. `overlay bands` shows the levels. `cav bench flythrough` measures a scripted
+camera over `stress-1e10` (1.09×10¹⁰ cells). `figure paper [plan | section x|y <m>]` writes a
+technical drawing (outlines, hatching, scale bar, north arrow, dimensions, title block) as SVG or
+PDF. All four of S17's second-review items (`docs/slices/S4.md` §3.2).
+
+**Numbers** (`docs/slices/S4.md` §7). `quick` 521 tests, 18.6–21.9 s warm (budget now 20 s);
+`gpu` 37 in 26 s; `oracle` 58 in 590 s; `web` green. This card (bounded runs, far field capped): 51–53 fps mean at 720p, 43 fps
+at 1440p, 99th percentile 42–59 ms; first view resident in about 2 s (cold or from the cache).
+Validation: 6 new cases (world box = body ≤1e-12, = prism ≤1e-9, slab = prism 2.8e-11, slab →
+null ratios within 2% of 2, moments within their bound, bound 656× the error at its loosest, against 1000).
+
+**After the owner's desktop froze** (25 Nov 2026): every process xtask starts runs below normal
+priority with two cores to spare (TASK-S4-10); the far field marches at most 12× the pane's pixels
+a frame, pictures are of `town` (stress-1e10 scaled down) from release builds stopped past 120 s,
+and the full scene is measured only in bounded flythroughs (TASK-S4-11). The big scenes' read is
+2 m around each tower at one sample a cell and 1e-3 rad. A NaN in the cube kernel's prism beside
+an edge was found by `town` and fixed (no validation value moved).
+
+**Decided.** One PR for S4-02/03/04 (one data path). The read is bounded by a radius around each
+tower (S5 reads the rest). `flythrough` is a bench, not a scene. Resident chunks are leaves, not
+trees. Bricks come from `cover` (conservative, visual only). `cav-render` at opt-level 1 in dev.
+The paper drawing (TASK-S4-06) was built by a helper agent and merged by the builder.
+
+**Open.** Hi-Z occlusion and early depth for the bricks (the 99th percentile pays for
+`frag_depth`); the moment bound is up to 656× loose (1054× at q = 0.002); no browser test forces a
+worker failure; the road is not drawn in the paper plan (same height as the ground). All in
+`plan/IDEAS.md`.
+
+**Next.** A review of S4; then S5.
 
 ## S17 after its review (25 Nov 2026) — fixes done, awaiting re-review
 
