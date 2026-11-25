@@ -796,3 +796,6 @@
 - id: TASK-S20-08
   milestone: S20
   title: A body's drawn path follows its motion - a periodic path is drawn over one period with enough pieces per loop (today 96 straight pieces span the whole timeline, so a fast circle is drawn as a square), a path with breaks piece by piece; the plots' sampling checked the same way
+- id: TASK-S20-09
+  milestone: S20
+  title: Time without an end - the scene's duration editable from the transport (not only the Scene card), end behaviour chosen there (loop, stop at the end, or run on), and a live mode where time keeps running and the signal, periodogram and timeline show a rolling window, bounded in memory
