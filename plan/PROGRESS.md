@@ -594,6 +594,10 @@ Answered 21 Nov 2026 (through the owner). The defaults below replace v1's conven
   bodies with their own LOD trees from the ephemeris; a detector's world gets the bubble.
 - **Things in space** (S14): satellites from public element sets (SGP4), asteroids and comets from the
   orbit catalogues, debris, user-placed spacecraft; mostly nulls on Earth, the signal in orbit.
+- **No agent's process outlives its work** (after a `python -` ran six hours and two servers were
+  left serving): `scripts/strays.ps1` lists leftovers by command-line signature, Stop and SubagentStop
+  hooks report them every turn, and stopping by those exact signatures (`cargo xtask strays --stop`)
+  is allowed (TASK-S17-09).
 
 ## Owner's ruling (24 Nov 2026): the whole planet, one hierarchy
 The owner wants the wider world rendered and simulated as one level-of-detail hierarchy: full
