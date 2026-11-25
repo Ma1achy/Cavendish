@@ -73,6 +73,13 @@ fn starter(spec: &cav_sim::SceneSpec, path: &str, variant: Option<&str>) -> Opti
             .map_or([0.0, 0.0, 1.0], |body| body.motion.anchor().0);
         return cav_sim::Motion::starter(kind, at).and_then(|motion| serde_json::to_value(motion).ok());
     }
+    // A body's first part: a ball of its own material on its surface, two cells across.
+    if let Some(shape) = path.strip_suffix(".parts[]") {
+        let pitch = paths::get(&spec.to_value(), &format!("{shape}.pitch")).ok()?.as_f64()?;
+        return Some(
+            json!({"mode": "Add", "at": [0.0, 0.0, 0.0], "kind": {"Solid": {"shape": {"Sphere": {"radius": 2.0 * pitch}}}}}),
+        );
+    }
     match (path, variant) {
         ("room", None) => serde_json::to_value(cav_sim::SceneSpec::room().room).ok(),
         ("floor", None) => Some(json!({"height": 0.0, "kind": "HalfSpace", "density": 2400.0})),
@@ -321,7 +328,7 @@ fn row(
         ui.spacing_mut().item_spacing.x = 3.0;
         edit(shell, ui, spec, scope, name, entry, commands);
         if matches!(entry.kind, Kind::List) {
-            list_buttons(shell, ui, scope, name, entry, commands);
+            list_buttons(shell, ui, spec, scope, name, entry, commands);
         }
         let reset_id = format!("{}/reset", field_id(&entry.path));
         // Drawn only where there is something to put back; where there is not, its place is
@@ -354,6 +361,7 @@ fn row(
 fn list_buttons(
     shell: &mut Shell,
     ui: &mut egui::Ui,
+    spec: &cav_sim::SceneSpec,
     scope: &str,
     name: &str,
     entry: &Entry,
@@ -363,10 +371,13 @@ fn list_buttons(
     let id = field_id(&entry.path);
     let add = ui.small_button("+").on_hover_text("add an item: a copy of the last");
     shell.register(scope, &format!("{id}/add"), &format!("{name}: add"), Focus::Button, add.rect);
+    // A copy of the last; for an empty list, its first item's starter where it has one (a
+    // body's first part: a small ball of its own material, S19).
+    let first = || starter(spec, &format!("{}[]", entry.path), None);
     if (add.clicked() || shell.take_click(&format!("{id}/add")))
-        && let Some(last) = entry.value.as_array().and_then(|a| a.last())
+        && let Some(value) = entry.value.as_array().and_then(|a| a.last()).cloned().or_else(first)
     {
-        commands.push(Command::Insert { path: entry.path.clone(), index: None, value: last.clone() });
+        commands.push(Command::Insert { path: entry.path.clone(), index: None, value });
     }
     let remove = ui.small_button("-").on_hover_text("take the last item away");
     shell.register(scope, &format!("{id}/remove"), &format!("{name}: remove"), Focus::Button, remove.rect);
@@ -417,6 +428,22 @@ fn edit(
         }
         commands.push(command_for(path, value, continues));
     };
+    // A voxel body's material and its parts' are chosen from the materials there are, not typed
+    // (S19); a body of materials weighs what they make it, which is shown, not edited.
+    if let Some(none) = material_field(path) {
+        material_choice(shell, ui, spec, scope, name, entry, none, commands);
+        return;
+    }
+    if let Some(n) = materials_set_the_mass(spec, path) {
+        let mass = shell.engine.body_tree(n).map(|tree| tree.body().mass);
+        let text = mass.map_or_else(
+            || "from its materials".to_owned(),
+            |kg| format!("{} kg, from its materials", shown(kg)),
+        );
+        let label = ui.label(RichText::new(text).size(12.0).color(theme::TEXT));
+        shell.register(scope, &id, name, Focus::ReadOnly, label.rect);
+        return;
+    }
     match widget_for(entry) {
         Widget::Number | Widget::Integer => {
             let whole = entry.kind == Kind::Integer;
@@ -554,6 +581,83 @@ fn edit(
                 commands.push(command_for(path, value, false));
             }
         }
+    }
+}
+
+/// Whether `path` is a voxel body's material or a part's, and if so what choosing none means:
+/// a body with none is uniform; a part with none is of its body's own material.
+#[must_use]
+pub fn material_field(path: &str) -> Option<&'static str> {
+    let before = path.strip_suffix(".material")?;
+    if before.ends_with(".shape") {
+        Some("none: uniform, of its mass")
+    } else if before.rsplit_once(".parts[").is_some_and(|(owner, _)| owner.ends_with(".shape")) {
+        Some("the body's own")
+    } else {
+        None
+    }
+}
+
+/// The body whose `mass` field `path` is, when its materials set its mass (so the field is not
+/// used).
+fn materials_set_the_mass(spec: &cav_sim::SceneSpec, path: &str) -> Option<usize> {
+    let n: usize = path.strip_prefix("bodies[")?.strip_suffix("].mass")?.parse().ok()?;
+    spec.bodies.get(n)?.shape.as_ref()?.material.as_ref().map(|_| n)
+}
+
+/// A drop-down of the materials a scene can name (its own, then the library's), and none: what a
+/// choice sets is the material's label, or nothing.
+#[allow(clippy::too_many_arguments)]
+fn material_choice(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    spec: &cav_sim::SceneSpec,
+    scope: &str,
+    name: &str,
+    entry: &Entry,
+    none: &str,
+    commands: &mut Vec<Command>,
+) {
+    let path = entry.path.as_str();
+    let id = field_id(path);
+    let now = entry.value.as_str().map(str::to_owned);
+    let mut choices: Vec<Option<String>> = vec![None];
+    choices.extend(cav_sim::materials::every(&spec.materials).into_iter().map(|m| Some(m.label.clone())));
+    let words = |choice: &Option<String>| choice.clone().unwrap_or_else(|| none.to_owned());
+    let mut chosen: Option<Option<String>> = None;
+    let combo = egui::ComboBox::from_id_salt(("material", path))
+        .width(132.0)
+        .selected_text(words(&now))
+        .show_ui(ui, |ui| {
+            for choice in &choices {
+                if ui.selectable_label(*choice == now, words(choice)).clicked() && *choice != now {
+                    chosen = Some(choice.clone());
+                }
+            }
+        });
+    let current = choices.iter().position(|c| *c == now).unwrap_or(0);
+    shell.register(scope, &id, name, Focus::Choice { count: choices.len(), current }, combo.response.rect);
+    if let Some(popup) = shell.keyboard.popup.as_ref().filter(|p| p.id == id) {
+        let at = popup.at;
+        egui::Area::new(egui::Id::unique(("keyboard material", path)))
+            .order(egui::Order::Foreground)
+            .fixed_pos(combo.response.rect.left_bottom())
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    for (n, choice) in choices.iter().enumerate() {
+                        let _ = ui.selectable_label(n == at, words(choice));
+                    }
+                });
+            });
+    }
+    if let Some(index) = shell.take_pick(&id)
+        && let Some(choice) = choices.get(index)
+        && *choice != now
+    {
+        chosen = Some(choice.clone());
+    }
+    if let Some(choice) = chosen {
+        commands.push(command_for(path, choice.map_or(Value::Null, Value::String), false));
     }
 }
 

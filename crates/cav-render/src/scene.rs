@@ -545,7 +545,9 @@ pub fn drawables_with(
             let diverging = frame.colouring.field.diverging();
             let range = frame.range.unwrap_or((0.0, 1.0));
             for cube in &cubes.cubes {
-                let rgb = crate::colour::of_value(cube.value, range, diverging, dark);
+                let rgb = cube
+                    .colour
+                    .unwrap_or_else(|| crate::colour::of_value(cube.value, range, diverging, dark));
                 let hex = (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]);
                 let h = 0.5 * cube.side;
                 let d = Vec3::new(h, h, h);
@@ -558,7 +560,9 @@ pub fn drawables_with(
             // What a section plane cuts: clipped blocks, or flat squares on a 2-D section, in the
             // field's colours like the cubes.
             for cell in &cubes.cells {
-                let rgb = crate::colour::of_value(cell.value, range, diverging, dark);
+                let rgb = cell
+                    .colour
+                    .unwrap_or_else(|| crate::colour::of_value(cell.value, range, diverging, dark));
                 let hex = (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]);
                 let (lo, hi) = inset(cell.lo, cell.hi);
                 if filled {
@@ -737,7 +741,7 @@ mod tests {
         let trees: Vec<_> = scene
             .bodies
             .iter()
-            .map(|b| b.shape.as_ref().map(|s| std::sync::Arc::new(s.tree(b.mass).unwrap())))
+            .map(|b| b.shape.as_ref().map(|s| std::sync::Arc::new(s.tree(b.mass, &scene.materials).unwrap())))
             .collect();
         let leaves = trees[0].as_ref().unwrap().leaves.len();
         let body = |d: &Drawables, n: usize| {
@@ -783,7 +787,7 @@ mod tests {
         let trees: Vec<_> = scene
             .bodies
             .iter()
-            .map(|b| b.shape.as_ref().map(|s| std::sync::Arc::new(s.tree(b.mass).unwrap())))
+            .map(|b| b.shape.as_ref().map(|s| std::sync::Arc::new(s.tree(b.mass, &scene.materials).unwrap())))
             .collect();
         let tree_lines = |style: DrawStyle, fade: Fade, faces: bool| {
             let overlay = Overlay {

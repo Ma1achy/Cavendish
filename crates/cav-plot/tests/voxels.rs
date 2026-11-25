@@ -28,8 +28,11 @@ fn word(path: &Path) -> String {
 }
 
 fn frame_of(scene: &cav_sim::SceneSpec, field: LeafField) -> VoxelFrame {
-    let trees: Vec<_> =
-        scene.bodies.iter().map(|b| b.shape.as_ref().map(|s| Arc::new(s.tree(b.mass).unwrap()))).collect();
+    let trees: Vec<_> = scene
+        .bodies
+        .iter()
+        .map(|b| b.shape.as_ref().map(|s| Arc::new(s.tree(b.mass, &scene.materials).unwrap())))
+        .collect();
     voxel_frame(scene, &trees, Colouring { field, tower: 0 }, Overlay::default(), 0.0)
 }
 
@@ -309,8 +312,11 @@ fn the_tree_legend_is_made_from_the_depths_drawn() {
     use cav_plot::voxels::{tree_colour_of, tree_legend};
     use cav_sim::voxel_view::{Fade, TreeOverlay};
     let scene = cav_sim::dev::sphere();
-    let trees: Vec<_> =
-        scene.bodies.iter().map(|b| b.shape.as_ref().map(|s| Arc::new(s.tree(b.mass).unwrap()))).collect();
+    let trees: Vec<_> = scene
+        .bodies
+        .iter()
+        .map(|b| b.shape.as_ref().map(|s| Arc::new(s.tree(b.mass, &scene.materials).unwrap())))
+        .collect();
     let style = Style::screen();
     let frame_with = |tree: TreeOverlay| {
         voxel_frame(

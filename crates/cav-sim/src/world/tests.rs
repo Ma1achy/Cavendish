@@ -13,7 +13,7 @@ fn scene(world: WorldSpec) -> SceneSpec {
 }
 
 fn concrete() -> MaterialSpec {
-    MaterialSpec { label: "concrete".into(), density: 2400.0, colour: "#b4b4aa".into() }
+    MaterialSpec::plain("concrete", 2400.0, "#b4b4aa")
 }
 
 fn boxed(lo: [f64; 3], hi: [f64; 3]) -> PieceSpec {
@@ -93,7 +93,7 @@ cav_validate::case! {
         let size = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
         let centre = [0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]), 0.5 * (lo[2] + hi[2])];
         let mut body = BodySpec::point("box", 2400.0 * size[0] * size[1] * size[2], centre);
-        body.shape = Some(ShapeSpec { kind: ShapeKind::Cuboid { size }, pitch: 0.25, supersample: 2 });
+        body.shape = Some(ShapeSpec::new(ShapeKind::Cuboid { size }, 0.25, 2));
         let as_body_spec = SceneSpec { world: None, bodies: vec![body], ..spec.clone() };
         let as_body = first_shots(&as_body_spec, SourceId::Body(0));
         assert!(as_world.iter().all(|t| t[2] != 0.0));
@@ -247,11 +247,7 @@ fn moments_against_bound() -> &'static (f64, f64) {
         // One chunk of hilly terrain and a house (two materials), read through its moments against
         // its leaves, from near to far, on the centre tower.
         let mut world = world_of(0.25, Vec::new());
-        world.materials.push(MaterialSpec {
-            label: "brick".into(),
-            density: 1900.0,
-            colour: "#a0503c".into(),
-        });
+        world.materials.push(MaterialSpec::plain("brick", 1900.0, "#a0503c"));
         world.pieces = vec![
             PieceSpec {
                 label: "house".into(),

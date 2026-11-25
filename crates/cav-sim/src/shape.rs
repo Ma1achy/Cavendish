@@ -1,14 +1,21 @@
-//! A body's shape, as plain data: what is voxelised, at what pitch, and the tree it becomes.
+//! A body's shape, as plain data: what is voxelised, at what pitch, of what, and the tree it
+//! becomes.
 //!
-//! A body with a shape is a solid of uniform density made of voxels ([`cav_core::voxel`]): its
-//! shape is centred on the body's position, voxelised at `pitch` with `supersample³` sample points
-//! a finest cell, and read leaf by leaf, each leaf a uniform cube. Its mass is the body's `mass`,
-//! to rounding, however the shape voxelises. Frame: the shape's own axes are the world's (bodies
-//! do not turn in S3), metres.
+//! A body with a shape is made of voxels ([`cav_core::voxel`]): its shape is centred on the
+//! body's position, voxelised at `pitch` with `supersample³` sample points a finest cell, and read
+//! leaf by leaf, each leaf a uniform cube. With no `material` it is uniform and its mass is the
+//! body's `mass`, to rounding, however the shape voxelises. With a `material` (S19) its mass is
+//! its materials' densities times their volumes as voxelised, and it may have `parts`: further
+//! solids and brush strokes that add matter of another material, paint one into it, or erase,
+//! in order ([`cav_core::voxel::layers`]). Frame: the shape's own axes are the world's (bodies do
+//! not turn), metres.
 
 use cav_core::Vec3;
+use cav_core::voxel::layers::{self, Layer, Mode, Moved, Region, Stroke, Whole};
 use cav_core::voxel::shape::{Cuboid, Cylinder, Ellipsoid, Platonic, Polyhedron, Shape, Shell, Sphere};
-use cav_core::voxel::{Budget, Grid, VoxTree, mesh::Mesh, voxelise_within};
+use cav_core::voxel::{Aabb, Budget, Grid, VoxTree, mesh::Mesh, voxelise_within};
+
+use crate::materials::MaterialSpec;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -35,10 +42,152 @@ pub struct ShapeSpec {
     #[schemars(range(min = 1, max = 6))]
     #[schemars(extend("x-unit" = "1"))]
     pub supersample: u8,
+    /// What it is made of: a material's label, the scene's own `materials` first, then the
+    /// library's (`scenes/materials.ron`). With one, the body weighs its density times its volume
+    /// as voxelised, and the body's `mass` is not used; with none, it is uniform and weighs its
+    /// `mass`. (Written even when none, so that a scene's file and the inspector show the
+    /// choice.)
+    #[serde(default)]
+    #[schemars(length(min = 1, max = 200))]
+    pub material: Option<String>,
+    /// Further solids laid in order after the shape, for a body with a material: matter of a
+    /// material added, a material painted into what is there, or matter erased. At most 255.
+    /// (Written even when empty, so that the inspector and the console can add to it.)
+    #[serde(default)]
+    #[schemars(length(max = 255))]
+    pub parts: Vec<PartSpec>,
 }
 
 const fn default_supersample() -> u8 {
     4
+}
+
+/// What a part does where it lies.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum PartMode {
+    /// Adds matter of its material at every point it holds.
+    #[default]
+    Add,
+    /// Turns the matter already at its points to its material; adds none.
+    Paint,
+    /// Takes away the matter at its points.
+    Erase,
+}
+
+/// One part of a body of several materials.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PartSpec {
+    /// What it does: add, paint or erase.
+    #[serde(default)]
+    pub mode: PartMode,
+    /// Its material's label, for adding and painting; none for the body's own material. An
+    /// erasing part has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1, max = 200))]
+    pub material: Option<String>,
+    /// Where it is: its centre (a stroke's origin), `[x, y, z]` metres from the body's position.
+    #[serde(default)]
+    #[schemars(extend("x-unit" = "m"))]
+    pub at: [f64; 3],
+    /// What solid it is.
+    pub kind: PartKind,
+}
+
+/// The solids a part can be.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub enum PartKind {
+    /// One of the shapes a body can be, centred on the part's `at`.
+    Solid {
+        /// Which, and its size.
+        shape: ShapeKind,
+    },
+    /// A brush stroke: balls of `radius` along the path through `points` (from the part's
+    /// `at`), as the Paint tool lays them.
+    Stroke {
+        /// Metres.
+        #[schemars(range(max = 1.0e3), extend("exclusiveMinimum" = 0.0))]
+        #[schemars(extend("x-unit" = "m"))]
+        radius: f64,
+        /// The path, 1 to 1024 points, each within ±1e3 m of `at`.
+        #[schemars(length(min = 1, max = 1024))]
+        points: Vec<Vertex>,
+    },
+}
+
+impl PartSpec {
+    /// Checks the part's numbers and that its mode and material go together, under `at`.
+    ///
+    /// # Errors
+    /// The first field that fails, by its path.
+    pub fn validate(&self, at: &str) -> Result<(), String> {
+        if self.at.iter().any(|c| !(c.is_finite() && c.abs() <= MAX_SIZE)) {
+            return Err(format!("{at}.at: every coordinate within ±{MAX_SIZE} m"));
+        }
+        if self.mode == PartMode::Erase && self.material.is_some() {
+            return Err(format!("{at}.material: an erasing part has no material"));
+        }
+        if let Some(m) = &self.material
+            && (m.trim().is_empty() || m.chars().count() > 200)
+        {
+            return Err(format!("{at}.material: a label of 1 to 200 characters"));
+        }
+        match &self.kind {
+            PartKind::Solid { shape } => shape.validate(&format!("{at}.kind.Solid.shape")),
+            PartKind::Stroke { radius, points } => {
+                let at = format!("{at}.kind.Stroke");
+                if !(radius.is_finite() && *radius > 0.0 && *radius <= MAX_SIZE) {
+                    return Err(format!("{at}.radius: {radius} m must be above 0 and at most {MAX_SIZE}"));
+                }
+                if !(1..=layers::MAX_STROKE_POINTS).contains(&points.len()) {
+                    return Err(format!(
+                        "{at}.points: {} points; from 1 to {}",
+                        points.len(),
+                        layers::MAX_STROKE_POINTS
+                    ));
+                }
+                if points.iter().flat_map(|v| v.0).any(|c| !(c.is_finite() && c.abs() <= MAX_SIZE)) {
+                    return Err(format!("{at}.points: every coordinate within ±{MAX_SIZE} m"));
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Where it lies, the body's frame; a mesh is read from its file here.
+    fn region(&self) -> Result<Box<dyn Region>, String> {
+        let by = Vec3::from_array(self.at);
+        Ok(match &self.kind {
+            PartKind::Solid { shape } => Box::new(Moved { inner: Owned(shape.solid()?), by }),
+            PartKind::Stroke { radius, points } => Box::new(Stroke {
+                points: points.iter().map(|v| Vec3::from_array(v.0) + by).collect(),
+                radius: *radius,
+            }),
+        })
+    }
+
+    /// Its box, the body's frame, when it is known without reading a file.
+    fn bounds(&self) -> Option<Aabb> {
+        match &self.kind {
+            PartKind::Solid { shape: ShapeKind::Mesh { .. } } => None,
+            _ => self.region().ok().map(|r| r.bounds()),
+        }
+    }
+}
+
+/// A shape owned as a region.
+struct Owned(Box<dyn Shape>);
+
+impl Region for Owned {
+    fn bounds(&self) -> Aabb {
+        self.0.bounds()
+    }
+    fn contains(&self, point: Vec3) -> bool {
+        self.0.contains(point)
+    }
+    fn cover(&self, boxed: &Aabb) -> cav_core::voxel::Cover {
+        self.0.cover(boxed)
+    }
 }
 
 /// Which axis something lies along.
@@ -259,7 +408,16 @@ fn platonic(solid: PlatonicSolid) -> Platonic {
 }
 
 impl ShapeSpec {
-    /// Checks the shape and that its pitch fits one tree (at most 1024 voxels across).
+    /// A uniform shape of `kind` at `pitch` metres, `supersample` points a side of a cell: no
+    /// material, no parts.
+    #[must_use]
+    pub const fn new(kind: ShapeKind, pitch: f64, supersample: u8) -> Self {
+        Self { kind, pitch, supersample, material: None, parts: Vec::new() }
+    }
+
+    /// Checks the shape, its parts, and that its pitch fits one tree (at most 1024 voxels
+    /// across, the parts that add matter included). Whether its materials exist is the scene's
+    /// check ([`Self::materials`]).
     ///
     /// # Errors
     /// The first field that fails, by its path under `at` (such as `bodies[0].shape`).
@@ -271,30 +429,90 @@ impl ShapeSpec {
         if !(self.pitch.is_finite() && self.pitch > 0.0 && self.pitch <= MAX_SIZE) {
             return Err(format!("{at}.pitch: {} m must be above 0 and at most {MAX_SIZE}", self.pitch));
         }
-        // The grid needs only the shape's box, which a mesh does not give without its file.
+        if let Some(m) = &self.material
+            && (m.trim().is_empty() || m.chars().count() > 200)
+        {
+            return Err(format!("{at}.material: a label of 1 to 200 characters"));
+        }
+        if !self.parts.is_empty() && self.material.is_none() {
+            return Err(format!("{at}.parts: a body with parts has a material of its own"));
+        }
+        if self.parts.len() > layers::MAX_LAYERS - 1 {
+            return Err(format!(
+                "{at}.parts: {} parts; at most {}",
+                self.parts.len(),
+                layers::MAX_LAYERS - 1
+            ));
+        }
+        for (n, part) in self.parts.iter().enumerate() {
+            part.validate(&format!("{at}.parts[{n}]"))?;
+        }
+        // The grid needs only the boxes, which a mesh does not give without its file.
         if let Some(bounds) = self.bounds() {
             Grid::around(bounds, self.pitch, self.supersample).map_err(|e| format!("{at}.pitch: {e}"))?;
         }
         Ok(())
     }
 
-    /// The shape's box centred on the origin, when it is known without reading a file.
-    fn bounds(&self) -> Option<cav_core::voxel::Aabb> {
-        match self.kind {
+    /// The box of the shape and of the parts that add matter, the shape centred on the origin,
+    /// when it is known without reading a file.
+    fn bounds(&self) -> Option<Aabb> {
+        let own = match self.kind {
             ShapeKind::Mesh { .. } => None,
-            ShapeKind::Polyhedron { .. } => self.kind.solid().ok().map(|s| s.bounds()),
             _ => self.kind.solid().ok().map(|s| s.bounds()),
-        }
+        }?;
+        self.parts
+            .iter()
+            .filter(|p| p.mode == PartMode::Add)
+            .try_fold(own, |b, p| Some(b.union(&p.bounds()?)))
     }
 
-    /// The body's voxel tree: the shape voxelised at its pitch, `mass` kilograms in all, in the
-    /// body's own frame (the shape's centre at its origin).
+    /// The labels of the materials the body is made of, in the order its leaves index them: its
+    /// own, then each part's that is not already there. Empty for a uniform body.
+    #[must_use]
+    pub fn palette(&self) -> Vec<&str> {
+        let Some(own) = self.material.as_deref() else { return Vec::new() };
+        let mut out = vec![own];
+        for part in &self.parts {
+            if let Some(m) = part.material.as_deref()
+                && !out.contains(&m)
+            {
+                out.push(m);
+            }
+        }
+        out
+    }
+
+    /// The materials of [`Self::palette`], found among `materials` (a scene's own) and the
+    /// library.
     ///
     /// # Errors
-    /// When the shape cannot be made, or the voxeliser refuses it (too fine, too many leaves, no
-    /// sample point inside), in words that name the number.
-    pub fn tree(&self, mass: f64) -> Result<VoxTree, String> {
-        self.tree_within(mass, usize::MAX)
+    /// The first label neither has, by its path under `at`.
+    pub fn materials<'a>(
+        &self,
+        materials: &'a [MaterialSpec],
+        at: &str,
+    ) -> Result<Vec<&'a MaterialSpec>, String> {
+        self.palette()
+            .into_iter()
+            .map(|label| {
+                crate::materials::find(materials, label).ok_or_else(|| {
+                    format!("{at}: `{label}` is not a material of the scene's or of the library's")
+                })
+            })
+            .collect()
+    }
+
+    /// The body's voxel tree: the shape voxelised at its pitch, in the body's own frame (the
+    /// shape's centre at its origin): `mass` kilograms in all for a uniform body; its materials'
+    /// densities (found among `materials`, a scene's own, then the library) for a body with a
+    /// material, whose `mass` is not used.
+    ///
+    /// # Errors
+    /// When the shape cannot be made, a material is not found, or the voxeliser refuses it (too
+    /// fine, too many leaves, no sample point inside), in words that name the number.
+    pub fn tree(&self, mass: f64, materials: &[MaterialSpec]) -> Result<VoxTree, String> {
+        self.tree_within(mass, materials, usize::MAX)
     }
 
     /// [`Self::tree`] in at most `bytes` bytes of tree ([`VoxTree::bytes`]): what is left of a
@@ -304,10 +522,42 @@ impl ShapeSpec {
     ///
     /// # Errors
     /// As [`Self::tree`], and when the tree would weigh more than `bytes`, with the numbers.
-    pub fn tree_within(&self, mass: f64, bytes: usize) -> Result<VoxTree, String> {
+    pub fn tree_within(
+        &self,
+        mass: f64,
+        materials: &[MaterialSpec],
+        bytes: usize,
+    ) -> Result<VoxTree, String> {
         let solid = self.kind.solid()?;
-        let grid = Grid::around(solid.bounds(), self.pitch, self.supersample).map_err(|e| e.0)?;
-        voxelise_within(solid.as_ref(), &grid, mass, 0, Budget::with_bytes(bytes)).map_err(|e| e.0)
+        let budget = Budget::with_bytes(bytes);
+        if self.material.is_none() {
+            let grid = Grid::around(solid.bounds(), self.pitch, self.supersample).map_err(|e| e.0)?;
+            return voxelise_within(solid.as_ref(), &grid, mass, 0, budget).map_err(|e| e.0);
+        }
+        let palette = self.palette();
+        let densities: Vec<f64> = self.materials(materials, "material")?.iter().map(|m| m.density).collect();
+        let index = |label: Option<&str>| {
+            let label = label.unwrap_or(palette[0]);
+            palette.iter().position(|p| *p == label).unwrap_or(0) as u8
+        };
+        let parts: Vec<Box<dyn Region>> =
+            self.parts.iter().map(PartSpec::region).collect::<Result<_, _>>()?;
+        let own = Whole(solid.as_ref());
+        let mut stack = vec![Layer { region: &own, material: 0, mode: Mode::Add }];
+        let mut bounds = solid.bounds();
+        for (part, region) in self.parts.iter().zip(&parts) {
+            let mode = match part.mode {
+                PartMode::Add => Mode::Add,
+                PartMode::Paint => Mode::Paint,
+                PartMode::Erase => Mode::Erase,
+            };
+            if mode == Mode::Add {
+                bounds = bounds.union(&region.bounds());
+            }
+            stack.push(Layer { region: region.as_ref(), material: index(part.material.as_deref()), mode });
+        }
+        let grid = Grid::around(bounds, self.pitch, self.supersample).map_err(|e| e.0)?;
+        layers::voxelise_layers(&stack, &grid, &densities, budget).map_err(|e| e.0)
     }
 }
 
@@ -330,26 +580,21 @@ mod tests {
         ];
         assert_eq!(kinds.len() + 1, ShapeKind::KINDS.len(), "every kind but the mesh, which needs a file");
         for kind in kinds {
-            let spec = ShapeSpec { kind, pitch: 0.05, supersample: 2 };
+            let spec = ShapeSpec::new(kind, 0.05, 2);
             assert_eq!(spec.validate("shape"), Ok(()));
-            let tree = spec.tree(12.0).unwrap();
+            let tree = spec.tree(12.0, &[]).unwrap();
             assert!((tree.body().mass - 12.0).abs() < 1e-12, "{:?}", spec.kind);
             assert!(ShapeKind::KINDS.contains(&spec.kind.name()));
         }
         // Refusals name the field: a pitch too fine for one tree, a size of zero, k of 7.
-        let fine = ShapeSpec { kind: ShapeKind::Sphere { radius: 1.0 }, pitch: 1e-3, supersample: 2 };
+        let fine = ShapeSpec::new(ShapeKind::Sphere { radius: 1.0 }, 1e-3, 2);
         assert!(fine.validate("bodies[0].shape").unwrap_err().starts_with("bodies[0].shape.pitch"));
-        let flat =
-            ShapeSpec { kind: ShapeKind::Cuboid { size: [1.0, 0.0, 1.0] }, pitch: 0.1, supersample: 2 };
+        let flat = ShapeSpec::new(ShapeKind::Cuboid { size: [1.0, 0.0, 1.0] }, 0.1, 2);
         assert!(flat.validate("s").unwrap_err().starts_with("s.kind.Cuboid.size"));
-        let seven = ShapeSpec { kind: ShapeKind::Sphere { radius: 1.0 }, pitch: 0.1, supersample: 7 };
+        let seven = ShapeSpec::new(ShapeKind::Sphere { radius: 1.0 }, 0.1, 7);
         assert!(seven.validate("s").unwrap_err().starts_with("s.supersample"));
-        let missing = ShapeSpec {
-            kind: ShapeKind::Mesh { file: "no/such/file.obj".into(), scale: 1.0 },
-            pitch: 0.1,
-            supersample: 2,
-        };
+        let missing = ShapeSpec::new(ShapeKind::Mesh { file: "no/such/file.obj".into(), scale: 1.0 }, 0.1, 2);
         assert_eq!(missing.validate("s"), Ok(()), "a file is read when the body is voxelised");
-        assert!(missing.tree(1.0).is_err());
+        assert!(missing.tree(1.0, &[]).is_err());
     }
 }

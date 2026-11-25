@@ -1133,7 +1133,8 @@ fn voxel_rows(shell: &mut Shell, ui: &mut egui::Ui, view: &cav_sim::ViewSpec) {
     }
     let field = view.colour.field;
     let colour = |f: LeafField| (f.name(), format!("colour {}", f.name()), field == f);
-    let colours = [LeafField::Level, LeafField::Depth, LeafField::Mass, LeafField::Fill].map(colour);
+    let colours = [LeafField::Level, LeafField::Depth, LeafField::Mass, LeafField::Fill, LeafField::Material]
+        .map(colour);
     let buttons: Vec<(&str, &str, bool)> = colours.iter().map(|(t, l, on)| (*t, l.as_str(), *on)).collect();
     button_row(shell, ui, "top-bar/view", "colour", &buttons);
     let tree = view.overlay.tree;

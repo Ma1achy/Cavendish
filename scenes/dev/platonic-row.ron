@@ -84,6 +84,8 @@
                 ),
                 pitch: 0.05,
                 supersample: 4,
+                material: None,
+                parts: [],
             )),
             motion: Static(
                 position: (2.0923243358493377, 0.6798373876248843, 2.5),
@@ -102,6 +104,8 @@
                 ),
                 pitch: 0.05,
                 supersample: 4,
+                material: None,
+                parts: [],
             )),
             motion: Static(
                 position: (1.3471114790620887e-16, 2.2, 2.5),
@@ -120,6 +124,8 @@
                 ),
                 pitch: 0.05,
                 supersample: 4,
+                material: None,
+                parts: [],
             )),
             motion: Static(
                 position: (-2.0923243358493377, 0.6798373876248845, 2.5),
@@ -138,6 +144,8 @@
                 ),
                 pitch: 0.05,
                 supersample: 4,
+                material: None,
+                parts: [],
             )),
             motion: Static(
                 position: (-1.2931275550434413, -1.7798373876248843, 2.5),
@@ -156,6 +164,8 @@
                 ),
                 pitch: 0.05,
                 supersample: 4,
+                material: None,
+                parts: [],
             )),
             motion: Static(
                 position: (1.2931275550434405, -1.7798373876248847, 2.5),

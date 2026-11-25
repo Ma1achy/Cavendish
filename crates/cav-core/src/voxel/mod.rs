@@ -12,6 +12,8 @@
 //! - [`shape`]: what can be voxelised, and the conservative `cover` of a box.
 //! - [`mesh`]: closed triangle meshes, read from OBJ and STL.
 //! - [`voxelise`](voxelise()): the top-down voxeliser, and [`raster`], the oracle it must equal.
+//! - [`layers`]: bodies of several materials: solids added, painted and erased in order, each
+//!   material at its density, a cell two share keeping both masses (S19).
 //! - [`tree`]: the tree, its moments, its cuts.
 //! - [`kernel`]: the potential of a uniform cube, exact to rounding (series or prism).
 //! - [`world`]: the world volume: static matter in chunks of 32³ cells with their palettes, and
@@ -23,6 +25,7 @@
 //! cap here, checked before anything is reserved.
 
 pub mod kernel;
+pub mod layers;
 pub mod mesh;
 pub mod morton;
 pub mod region;
@@ -37,7 +40,7 @@ mod tests;
 use crate::Vec3;
 
 pub use shape::{Cover, Shape};
-pub use tree::{Leaf, Moments, Node, VoxTree};
+pub use tree::{Leaf, MixedCell, Moments, Node, VoxTree};
 pub use voxeliser::{Raster, raster, unmerged, voxelise, voxelise_within};
 
 /// The most leaves one tree may have. Leaves are eight bytes, so 16 MiB.

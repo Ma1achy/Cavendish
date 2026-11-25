@@ -72,8 +72,7 @@ fn crowd(bodies: usize) -> cav_sim::SceneSpec {
     let mut scene = cav_sim::dev::void();
     for n in 0..bodies {
         let radius = 0.1 + 1e-6 * n as f64;
-        let shape =
-            cav_sim::ShapeSpec { kind: cav_sim::ShapeKind::Sphere { radius }, pitch: 0.01, supersample: 1 };
+        let shape = cav_sim::ShapeSpec::new(cav_sim::ShapeKind::Sphere { radius }, 0.01, 1);
         let at = [(n % 40) as f64 * 0.3 - 6.0, (n / 40) as f64 * 0.3 - 4.0, 1.0];
         scene.bodies.push(cav_sim::BodySpec::shaped(
             &format!("ball {n}"),

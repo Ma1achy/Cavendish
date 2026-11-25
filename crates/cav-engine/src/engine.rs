@@ -1711,6 +1711,15 @@ impl Engine {
         self.selection
     }
 
+    /// Body `n`'s voxel tree (from 0) as the panes draw it, in its own frame: what the inspector
+    /// reads a body's mass from when its materials set it, the probe's cell, the paint brush's
+    /// target. None for a body not made of voxels, or one the scene's tree budget left out
+    /// (the log says which). Kept up to date with the scene by every command.
+    #[must_use]
+    pub fn body_tree(&self, n: usize) -> Option<&std::sync::Arc<cav_core::voxel::VoxTree>> {
+        self.voxels.trees().get(n).and_then(Option::as_ref)
+    }
+
     /// How many panes the figure shows.
     #[must_use]
     pub const fn panes(&self) -> usize {
