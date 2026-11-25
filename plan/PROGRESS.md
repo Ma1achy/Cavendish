@@ -8,7 +8,7 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S1 a point mass | done: TASK-S1-01 to 19 merged; reviewed twice, nothing important remains | `s1-point-mass` | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
 | S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
 | S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
-| S17 in the browser | built (TASK-S17-01 to 03, #117–#119); review fixes done (TASK-S17-04 to 08, #120–#124; the live record TASK-S17-10); live; awaiting re-review | | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
+| S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
 
 ## S17 after its review (25 Nov 2026) — fixes done, awaiting re-review
 
@@ -456,6 +456,29 @@ Also noted: `scene_load` reads a file of any size; DX12 was not re-run after the
 **Next.** S1: the forward model, the oracle crate, a point mass you can drag. S1's brief should start from
 George's answers below and add the first physics rows to the validation report (the void's channels
 exactly zero, the infinite floor's null, the v1 anchors).
+
+## Carried into S4 from S17's second review (25 Nov 2026)
+S17 is tagged `s17-in-the-browser` at `ab05eef`; the app is live at https://ma1achy.github.io/Cavendish/.
+Its second review found nothing important. Carried as S4's first task:
+1. **`quick` timing and its budget disagree.** Warm runs 16.3–17.6 s; `QUICK_BUDGET_S` is still 10.0
+   (`xtask/src/tiers.rs:16`), so `--budget` fails, while CLAUDE.md allows 30 s. The slowest quick test is
+   `forward::wire::tests::a_job_through_the_wire_is_the_same_bits` (8–9 s, nearly all `dev::sphere()`
+   twice); its `point` arm alone catches an encoding mutation in 11 ms. Move the sphere arm to the web
+   or oracle tier, then set the budget to the measured figure with headroom and say so.
+2. **A panic or trap in a Web Worker blocks the series lane for the session**
+   (`crates/cav-engine/src/forward/inline.rs:779-799`, `crates/cav-app/src/platform/web.rs:382-389`):
+   show the message on the page and reset the lane; fall back to running on the page if workers never
+   send `ready`.
+3. **The stray guard can name the owner's own processes.** `wasm-opt`, `cargo-nextest`,
+   `wasm-bindgen-test-runner` and `python -m http.server` match by name or a common command line, so an
+   owner's long nextest run or own server would be flagged, and the hook would suggest `--stop`. Make
+   `-Stop` touch only processes started by an agent (e.g. a marker environment variable or a parent
+   chain that leads to Claude Code), keep name-only matches report-only, and correct the header's
+   "never by its name alone".
+4. `THROUGH_LIBM`'s comment says the FFT's twiddles are the reason; it is comb's `sin` input
+   (`crates/cav-engine/tests/web_equivalence.rs:102-106`).
+Still open from S17: a Web Worker job cannot be cancelled; `figure` before a signal is ready says "try
+again" on the web; the 150–190 ms start-up frame; only Chrome tested.
 
 ## Carried from S3's second review (24 Nov 2026)
 S3 is tagged `s3-voxel-bodies` at `7944c38` after PR #115 closed the second review's one important
