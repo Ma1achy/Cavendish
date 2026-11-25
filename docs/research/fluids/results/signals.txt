@@ -1,0 +1,22 @@
+1. phase of 1 g, by position relative to the lower interferometer point
+   D =   1.0 m: beside 1.21e-05 rad, below 3.11e-04 rad; mass for one shot: 161 g, for a 1 h mean: 3.85 g
+   D =   2.0 m: beside 1.03e-05 rad, below 7.36e-05 rad; mass for one shot: 680 g, for a 1 h mean: 16.3 g
+   D =   5.0 m: beside 4.53e-06 rad, below 9.61e-06 rad; mass for one shot: 5.2e+03 g, for a 1 h mean: 125 g
+   D =  10.0 m: beside 1.15e-06 rad, below 1.78e-06 rad; mass for one shot: 2.81e+04 g, for a 1 h mean: 674 g
+2. response to an oscillating uniform gradient, relative to a static one
+   f =   0.05 Hz: |H| = 9.956e-01 (closed form 9.956e-01, envelope 7.6e+01)
+   f =   0.10 Hz: |H| = 9.826e-01 (closed form 9.826e-01, envelope 1.9e+01)
+   f =   0.20 Hz: |H| = 9.318e-01 (closed form 9.318e-01, envelope 4.8e+00)
+   f =   0.50 Hz: |H| = 6.317e-01 (closed form 6.317e-01, envelope 7.6e-01)
+   f =   1.00 Hz: |H| = 1.070e-01 (closed form 1.070e-01, envelope 1.9e-01)
+   f =   2.00 Hz: |H| = 4.679e-02 (closed form 4.679e-02, envelope 4.8e-02)
+   f =  17.00 Hz: |H| = 6.067e-04 (closed form 6.067e-04, envelope 6.6e-04)
+   f = 100.00 Hz: |H| = 6.258e-18 (closed form 1.480e-33, envelope 1.9e-05)
+3. air: density change per pascal and per kelvin
+   rho0 = 1.2041 kg/m^3, c = 343.2 m/s
+   per Pa (adiabatic) 8.488e-06 kg/m^3; per K (isobaric) 4.108e-03 kg/m^3
+   1 Pa is equivalent to 2.07 mK of the same air
+   with the heat note's 2e-2 rad per K of hall air: 1 Pa ~ 4.1e-05 rad
+   acoustic crossing of a 20 m hall: 58 ms; lowest mode of a 20 m hall: 8.6 Hz
+4. water: hydrostatic pressure and spurious-current scale
+   1 m^3 of water = 1000 kg; 1e-6 relative = 1 g; f32 epsilon 6e-8 of a 1 cm cell = 6.0e-08 g

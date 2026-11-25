@@ -778,6 +778,15 @@ Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
   tag>`; for S1 that is `s0-shell`.
 
 ## For George
+
+**Added 25 Nov 2026 (from the research round):**
+- AION-10's LMT pulse sequence: which arm is excited when, pulse durations, cloud temperature, bias field, and
+  the co-magnetometry plan. Magnetic, wavefront and blackbody effects are upper bounds until known; the TDR's
+  1 µG/√Hz field noise gives 1e-3 rad/√Hz in a single-kick sequence, ten times the goal.
+- Newtonian noise in a vertical shaft: Harms 2019 Eq. 97 and Badurina et al. (arXiv:2211.01854, App. B)
+  appear to differ by ~1.5 in the ratio of their two terms. Which is right for AION-10's shaft? (A voxel sum in
+  the shaft would settle it; planned.)
+- Is Carlton & McCabe's stairwell model (arXiv:2308.10731) the one the team uses? Cavendish will reproduce it.
 **Open.**
 - **Confirm: Fig 12's ~7 mrad is half the largest |ΔΦ|?** You said (24 Nov 2026) that Fig 12 is
   this same pass (10 kg at D = 10 m rising at 2.5 m/s). Its series changes sign as the mass goes
@@ -881,6 +890,27 @@ around each tower and coarser rings outward, with each level's radius measured (
 switch costs less than the phase tolerance; the whole world is read, not truncated. The world can be a
 finite patch, an infinite flat plane or a sphere. All in S5 (TASK-S5-11 to 13, with the measured LOD radii
 and the world octree / read-LOD view), which runs straight after S19.
+
+## Research round (25 Nov 2026): six notes, and what they change
+Notes in `docs/research/`: `voxel-engines.md`, `rigid-bodies.md` (S7), `fluids.md` (S8–S10),
+`elastic-solids.md` (S7 elastic core, S12/S14 ground), `gradar-inference.md` (S11),
+`gradiometer-environment.md`. Plan consequences, decided (second look welcome):
+- **S11's exit** becomes: on scenes where the bound is valid (|log r| ≤ 0.1), the baseline's RMSE / CRB σ in
+  [0.8, 1.25] per parameter and ~68 % of errors inside the Fisher 1σ region; elsewhere report ratio and
+  coverage. "CRB ≤ baseline error" cannot fail for an unbiased estimator. The Fisher matrix comes from the f64 path.
+- **S10's free surface** is a mass-conserving VOF field, not a level set (water must be conserved to ~1e-6 m³);
+  S8's de Vahl Davis exit names one reference set and grids of 64/128/256 with Richardson extrapolation
+  (32² passes only Ra 1e3–1e4).
+- **S7** gets closed-form free flight, Box2D-style soft-step contact, exact integer moment sums for fracture
+  (a small S3 change), and the elastic core split into four tasks; the kinematic seismic ground (closed form,
+  no FEM) can come before S7 for S12/S14.
+- **New oracle case**: Carlton & McCabe 2023 (arXiv:2308.10731) simulate AION-10's own stairwell with the
+  same phase integral — reproduce their Fig. 3 / Eq. 13.
+- **Instrument**: a seeded noise-model layer (one channel per source), a state-dependent frequency-shift
+  channel (Zeeman, blackbody, AC Stark, scalar dark matter), and options off by default (Earth's gradient in
+  flight, Roura compensation, kick duration) so the v1 tie stays bit-identical.
+- **S14 note correction**: the Rayleigh-wave factor γ is 0.71–0.83 by Poisson's ratio (Harms 2019 Eq. 99), not 0.7.
+- **S5**: measure node deduplication (content hashes) before any DAG; one summary per distinct content.
 
 ## Owner's ruling (25 Nov 2026): draw modes for bodies
 Bodies get draw modes: plain voxels; the partial fill made visible (each boundary cell shaded by its
