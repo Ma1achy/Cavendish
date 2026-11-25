@@ -12,10 +12,10 @@
 //! read through its mass moments (the octupole expansion about its centre of mass) when the bound
 //! on what that leaves out is within its share of `read.tolerance` radians; otherwise leaf by
 //! leaf, each leaf a uniform cube with the exact kernel. The bound (`docs/slices/S4.md` §2): the
-//! remainder after the octupole has a gradient at most `√2 M q⁴(5 − 4q)/((1 − q)² R²)` with
-//! `q = a/R`, `a` the chunk's radius about its centre of mass and `R` the distance to the
-//! interferometer's arms; times the arms' separation it bounds the remainder's share of
-//! `V(upper) − V(lower)`. That bound is itself read through the flight ([`BoundSource`]) and added
+//! remainder after the octupole has a gradient at most `Σ_{l≥4} (l+1) Σ m s^l / R^{l+2}`, `s`
+//! the distance of the chunk's matter from its centre of mass (all within `a`) and `R` the
+//! distance to the interferometer's arms ([`Multipole::bound`]); times the arms' separation it
+//! bounds the remainder's share of `V(upper) − V(lower)`. That bound is itself read through the flight ([`BoundSource`]) and added
 //! to the read's error estimate, so the error the read reports covers the approximation. Matter
 //! beyond the radius or the cap is not read, and the read says so: reading a whole 10¹⁰-cell
 //! world is S5's bounded walk.
@@ -450,38 +450,54 @@ fn box_to_segment(b: &Aabb, base: Vec3, height: f64) -> f64 {
     dx.hypot(dy).hypot(dz)
 }
 
+/// The orders `l` from 4 whose `Σ m s^l` a [`Multipole`] keeps one by one; past them the bound
+/// goes geometrically from the last (`Σ m s^l ≤ a^{l−L} Σ m s^L`).
+pub const BOUND_ORDERS: usize = 13;
+
 /// A chunk read through its moments: mass, centre of mass, second and third central moments,
-/// its radius `a` about the centre (everything of it is within `a`) and a bound on its fourth
-/// moment, which together bound what the octupole expansion leaves out.
+/// its radius `a` about the centre (everything of it is within `a`) and bounds on its moments of
+/// order 4 to `3 + BOUND_ORDERS`, which together bound what the octupole expansion leaves out.
 #[derive(Clone, Copy, Debug)]
 pub struct Multipole {
     /// The moments, in the world's frame.
     pub moments: Moments,
     /// The radius about the centre of mass holding all the chunk's matter, metres.
     pub radius: f64,
-    /// `Σ m s⁴` over the chunk's matter, `s` the distance from the centre of mass, bounded from
-    /// above: each leaf's mass at its farthest point, `|c − centre| + side·√3/2`. kg m⁴.
-    pub fourth: f64,
+    /// `powers[i]` bounds `Σ m s^(4+i)` over the chunk's matter from above, `s` the distance from
+    /// the centre of mass, kg m^(4+i): for `l = 4` each leaf's exact `∫ s⁴ dm` (a uniform cube of
+    /// side `h` whose centre is `d` from the centre of mass: `m (d⁴ + 5d²h²/6 + 19h⁴/240)`); for
+    /// higher orders each leaf's mass at its farthest point, `d + h√3/2`.
+    pub powers: [f64; BOUND_ORDERS],
 }
 
-/// `√((l+1)(2l+1))` for `l` from 4: the most the gradient of `P_l(cos γ)/R^{l+1}` can be, in
-/// units of `1/R^{l+2}` (from `|P_l| ≤ 1` and `(1 − x²)P_l'² ≤ l(l+1)`).
+/// `l + 1` for `l` from 4: the most the gradient of `P_l(cos γ)/R^{l+1}` can be, in units of
+/// `1/R^{l+2}`. Its square is `(l+1)² P_l² + (1 − x²) P_l'²`, and since
+/// `P_l² + (1 − x²) P_l'²/(l(l+1)) ≤ 1` on `[−1, 1]` (checked in
+/// `the_legendre_gradient_bound_holds`) that is at most `l(l+1) + (l+1) P_l² ≤ (l+1)²`; it is
+/// reached on the axis.
 fn gradient_factor(l: u32) -> f64 {
-    f64::from((l + 1) * (2 * l + 1)).sqrt()
+    f64::from(l + 1)
 }
 
 impl Multipole {
-    /// The chunk's multipole: its moments, and its radius and fourth moment from its leaves.
+    /// The chunk's multipole: its moments, and its radius and moment bounds from its leaves.
     #[must_use]
     pub fn of(chunk: &Chunk, grid: &WorldGrid, densities: &[f64]) -> Self {
         let moments = chunk.moments(grid, densities);
-        let (mut radius, mut fourth) = (0f64, 0f64);
+        let (mut radius, mut powers) = (0f64, [0f64; BOUND_ORDERS]);
         for (centre, mass, side) in chunk.cubes(grid, densities) {
-            let far = (centre - moments.centre).length() + 0.5 * side * 3f64.sqrt();
+            let d = (centre - moments.centre).length();
+            let far = d + 0.5 * side * 3f64.sqrt();
             radius = radius.max(far);
-            fourth += mass * far.powi(4);
+            let (d2, h2) = (d * d, side * side);
+            powers[0] += mass * (d2 * d2 + 5.0 * d2 * h2 / 6.0 + 19.0 * h2 * h2 / 240.0);
+            let mut power = mass * far.powi(4);
+            for p in &mut powers[1..] {
+                power *= far;
+                *p += power;
+            }
         }
-        Self { moments, radius, fourth }
+        Self { moments, radius, powers }
     }
 
     /// `−V/G` at offset `d` from the centre of mass, kg/m, to the octupole, without the monopole
@@ -522,25 +538,34 @@ impl Multipole {
     }
 
     /// The most the remainder after the octupole can change `V/G` between two points `separation`
-    /// metres apart on a line all of whose points are at least `distance` from the centre of
-    /// mass, kg/m. The remainder's gradient is at most `Σ_{l≥4} √((l+1)(2l+1)) Σ m s^l / R^{l+2}`
-    /// and `Σ m s^l ≤ fourth · a^{l−4}`, so it is at most
-    /// `fourth / R⁶ · Σ_{l≥4} √((l+1)(2l+1)) q^{l−4}`, `q = a/R`; times the separation. Infinite
-    /// when `q ≥ 1`.
+    /// metres apart on a line all of whose points are at least `distance` (`R`) from the centre of
+    /// mass, kg/m. The remainder's gradient is at most `Σ_{l≥4} (l+1) Σ m s^l / R^{l+2}`, each
+    /// `Σ m s^l` from [`Multipole::powers`] to order `3 + BOUND_ORDERS` and past it
+    /// `powers[last] · a^{l−L}`; times the separation. Infinite when `q = a/R ≥ 1`.
     #[must_use]
     pub fn bound(&self, distance: f64, separation: f64) -> f64 {
         let q = self.radius / distance;
         if q >= 1.0 {
             return f64::INFINITY;
         }
-        // The series to where its terms are below 1e-17 of its first (at most a few hundred).
-        let (mut sum, mut power, mut l) = (0.0, 1.0, 4u32);
+        let mut sum = 0.0;
+        let mut scale = 1.0 / distance.powi(6);
+        let mut l = 4u32;
+        for p in &self.powers {
+            sum += gradient_factor(l) * p * scale;
+            scale /= distance;
+            l += 1;
+        }
+        // The tail, from the last kept order on geometrically: Σ_{l>L} (l+1) P_L a^{l−L}/R^{l+2},
+        // to where its terms are below 1e-17 of its first.
+        let last = self.powers[BOUND_ORDERS - 1] / distance.powi(BOUND_ORDERS as i32 + 5);
+        let mut power = q;
         while power > 1e-17 && l < 4000 {
-            sum += gradient_factor(l) * power;
+            sum += gradient_factor(l) * last * power;
             power *= q;
             l += 1;
         }
-        separation.abs() * self.fourth * sum / distance.powi(6)
+        separation.abs() * sum
     }
 }
 

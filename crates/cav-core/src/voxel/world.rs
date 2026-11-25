@@ -945,16 +945,30 @@ mod tests {
     fn a_coarse_brick_holds_its_children() {
         let terrain = hills();
         let house = cuboid([0.3, 0.1, 0.2], [2.05, 1.6, 2.4]);
-        let pieces = [Piece { solid: &house, material: 2 }, Piece { solid: &terrain, material: 0 }];
+        // A cellar in the negative octant, so that the parent at (−1, −1, −1) (where keys halve
+        // by `div_euclid`, not by truncation) holds matter too.
+        let cellar = cuboid([-5.1, -6.3, -3.2], [-1.15, -2.45, -0.62]);
+        let pieces = [
+            Piece { solid: &house, material: 2 },
+            Piece { solid: &cellar, material: 1 },
+            Piece { solid: &terrain, material: 0 },
+        ];
         let g = grid(0.05, 2);
         // Level 0 from chunks, levels 1 to 3 from the pieces: each level's eight children's
-        // cells, halved, are within the parent's.
-        for level in 1..=3u8 {
-            let parent_key = ChunkKey::new(0, 0, 0);
+        // cells, halved, are within the parent's; for a parent at the origin and one at
+        // (−1, −1, −1).
+        for (level, parent_key) in
+            (1..=3u8).flat_map(|l| [(l, ChunkKey::new(0, 0, 0)), (l, ChunkKey::new(-1, -1, -1))])
+        {
             let parent = brick_of_pieces(&pieces, &g, level, parent_key).unwrap();
             let mut children_cells = 0;
             for c in 0..8 {
-                let key = ChunkKey::new(c & 1, c >> 1 & 1, c >> 2 & 1);
+                let key = ChunkKey::new(
+                    2 * parent_key.x + (c & 1),
+                    2 * parent_key.y + (c >> 1 & 1),
+                    2 * parent_key.z + (c >> 2 & 1),
+                );
+                assert_eq!(key.parent(), parent_key);
                 let child = if level == 1 {
                     voxelise_chunk(&pieces, &g, key).unwrap().map(|chunk| Brick::of_chunk(&chunk))
                 } else {
@@ -967,9 +981,9 @@ mod tests {
                             if child.get([x, y, z]) {
                                 children_cells += 1;
                                 let up = [
-                                    (x + 32 * key.x as u32) / 2,
-                                    (y + 32 * key.y as u32) / 2,
-                                    (z + 32 * key.z as u32) / 2,
+                                    (x + 32 * (key.x - 2 * parent_key.x) as u32) / 2,
+                                    (y + 32 * (key.y - 2 * parent_key.y) as u32) / 2,
+                                    (z + 32 * (key.z - 2 * parent_key.z) as u32) / 2,
                                 ];
                                 assert!(parent.get(up), "level {level}: child {key:?} cell {:?}", [x, y, z]);
                             }
@@ -977,7 +991,7 @@ mod tests {
                     }
                 }
             }
-            assert!(children_cells > 1000, "{children_cells}");
+            assert!(children_cells > 1000, "level {level}, parent {parent_key:?}: {children_cells}");
             // Every set cell's sub-block is in the mask, with a material.
             for z in 0..32 {
                 for y in 0..32 {

@@ -1,7 +1,8 @@
 //! Cavendish's local build and test tiers (REBUILD §8). No CI: these are the gates.
 //!
 //! ```text
-//! cargo xtask quick [--budget]   fmt, clippy, CPU tests; under 10 s warm
+//! cargo xtask quick [--budget]   fmt, clippy, CPU tests; under 20 s warm
+//! cargo xtask test <filter>      the workspace tests whose names contain <filter>, with output
 //! cargo xtask gpu                tests that need the local adapter; under 2 min
 //! cargo xtask oracle             the engine against v1 at v1-final and George's scripts
 //! cargo xtask demo <slice>       the slice's demo, headless, with screenshots
@@ -32,9 +33,13 @@ const HELP: &str = "\
 cargo xtask <tier>
 
   quick [--budget]   cargo fmt --check, clippy -D warnings, then every test whose name does not
-                     contain `gpu_`, through cargo-nextest, then the doc tests. Fails if fewer tests ran
-                     than the floor in xtask/floors.txt. With --budget it also fails when it took over 10 s
+                     contain `gpu_`, through cargo-nextest (doc tests are the oracle tier's). Fails if
+                     fewer tests ran than the floor in xtask/floors.txt. With --budget it also fails when it took over 20 s
                      (meaningful on a warm build only).
+  test <filter> [--release]
+                     the workspace tests whose names contain <filter> (any tier), their output shown,
+                     at the same priority and job count as the tiers: for working on one test
+                     without running a tier. No floor; never a gate.
   gpu                the tests whose names contain `gpu_`: they need the local adapter. Same floor rule.
   oracle             the oracle tier: the `oracle` crate, which compiles v1's forward model at tag
                      v1-final and holds the engine to it and to arrays made by running George's
@@ -81,6 +86,8 @@ fn main() -> ExitCode {
         ["quick"] => tiers::quick(&root, false),
         ["quick", "--budget"] => tiers::quick(&root, true),
         ["gpu"] => tiers::gpu(&root),
+        ["test", filter] => tiers::one(&root, filter, false),
+        ["test", filter, "--release"] => tiers::one(&root, filter, true),
         ["oracle"] => tiers::oracle(&root),
         ["demo", slice] => demo::run(&root, slice),
         ["validate"] => validate::run(&root, false, validate::Against::Head),

@@ -268,6 +268,33 @@
 - id: TASK-S4-11
   milestone: S4
   title: "GPU work bounded a submission (the owner's desktop froze under a full stress-1e10 render): a cap on the far field's pixel work a frame, a scaled-down town for screenshots, bounded measurement runs"
+- id: TASK-S4-12
+  milestone: S4
+  title: "S4's review I1, minors 1 and 3: the moment bound tightened to its criterion over every q; R6's and R13's controls; `cargo xtask test <filter>`"
+- id: TASK-S4-13
+  milestone: S4
+  title: "S4's review I2, I3, minor 18: a truncated world read flagged through the API, MCP, bundles and the badge; the world through the wire, the bundle and superposition"
+- id: TASK-S4-14
+  milestone: S4
+  title: "S4's review I4, minor 17: streaming's caps reached in tests; streaming memory bounded (memtest); the resident bytes held within a batch"
+- id: TASK-S4-15
+  milestone: S4
+  title: "S4's review I5, I6, I7, I9, minors 2, 8, 13: the renderer's caps said to the user; the overdraw budget after frustum culling; no re-meshing at the caps; axis-parallel rays; a chunk re-meshed when a neighbour arrives"
+- id: TASK-S4-16
+  milestone: S4
+  title: "S4's review I8: the region cache keyed by the voxeliser's version; a file it cannot read left alone"
+- id: TASK-S4-17
+  milestone: S4
+  title: "S4's review I10, minors 4 to 7 and 10: the stray guard stops only what xtask recorded starting; quick's budget, the demo's pipes and wall-clock limits, the bench's frame count, one clippy at a time"
+- id: TASK-S4-18
+  milestone: S4
+  title: "S4's review I11, minor 9: worker respawns bounded, a page fallback that comes back, the panic's message shown; the lane's state tested natively"
+- id: TASK-S4-19
+  milestone: S4
+  title: "S4's review I12: the world in the outliner, selectable"
+- id: TASK-S4-20
+  milestone: S4
+  title: "S4's review: the validation report, the demo and the flythrough again, the brief's results, PROGRESS"
 - id: TASK-S5-01
   milestone: S5
   title: GPU tree walk with float-float accumulation and parity tests
