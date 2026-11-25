@@ -1,7 +1,7 @@
 //! Cavendish's local build and test tiers (REBUILD §8). No CI: these are the gates.
 //!
 //! ```text
-//! cargo xtask quick [--budget]   fmt, clippy, CPU tests; under 20 s warm
+//! cargo xtask quick [--budget]   fmt, clippy, CPU tests; under 30 s warm
 //! cargo xtask test <filter>      the workspace tests whose names contain <filter>, with output
 //! cargo xtask gpu                tests that need the local adapter; under 2 min
 //! cargo xtask oracle             the engine against v1 at v1-final and George's scripts
@@ -9,7 +9,7 @@
 //! cargo xtask validate [--report] every validation case, tabulated; missing cases fail
 //! cargo xtask web [build|serve]  the browser build in target/web/dist; with no word, its tier
 //! cargo xtask hooks              install the pre-push hook that runs `quick`
-//! cargo xtask strays [--stop]     agents' leftover processes on this PC: list, or stop by signature
+//! cargo xtask strays [--stop]     leftover processes on this PC: list, or stop those xtask started
 //! ```
 
 mod demo;
@@ -34,7 +34,7 @@ cargo xtask <tier>
 
   quick [--budget]   cargo fmt --check, clippy -D warnings, then every test whose name does not
                      contain `gpu_`, through cargo-nextest (doc tests are the oracle tier's). Fails if
-                     fewer tests ran than the floor in xtask/floors.txt. With --budget it also fails when it took over 20 s
+                     fewer tests ran than the floor in xtask/floors.txt. With --budget it also fails when it took over 30 s
                      (meaningful on a warm build only).
   test <filter> [--release]
                      the workspace tests whose names contain <filter> (any tier), their output shown,
@@ -73,8 +73,11 @@ cargo xtask <tier>
   strays [--stop | --self-test]
                      lists processes an agent may have left running (scripts/strays.ps1: by command
                      line, e.g. `python -`, `python -m http.server`, `xtask web serve`, headless
-                     Chrome on a temp profile); fails when one is over 30 min old or 600 CPU s. With
-                     --stop it stops those, and only those. --self-test checks the script. Windows.
+                     Chrome on a temp profile); fails when one that may be stopped is over 30 min
+                     old. With --stop it stops those, and only those: processes xtask started (each
+                     run records itself under target/strays and removes the record when it ends),
+                     over 30 min old by the clock (CPU time alone never stops one). Everything
+                     else is reported, never stopped. --self-test checks the script. Windows.
 ";
 
 fn main() -> ExitCode {
@@ -82,6 +85,8 @@ fn main() -> ExitCode {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let root = root();
     let started = Instant::now();
+    // This run's record, so that `strays --stop` knows what it started (removed at the end).
+    let _record = strays::Record::start(&root, &args);
     let outcome = match args.as_slice() {
         ["quick"] => tiers::quick(&root, false),
         ["quick", "--budget"] => tiers::quick(&root, true),

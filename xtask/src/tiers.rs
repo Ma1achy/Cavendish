@@ -13,10 +13,12 @@ use std::time::Instant;
 use crate::{cargo, step};
 
 /// The warm budget for `quick`, seconds. S0's gate was 10 s; REBUILD §8 and CLAUDE.md allow 30 s.
-/// Set at the start of S4 from the measured 13.8 to 13.9 s warm (three runs, with the voxel
-/// sphere's wire test moved to `cargo xtask web`), with room for S4's tests: 20 s
-/// (S17's second review, item 1; `docs/slices/S4.md` §6).
-const QUICK_BUDGET_S: f64 = 20.0;
+/// Set at the start of S4 to 20 s from the measured 13.8 to 13.9 s warm (S17's second review,
+/// item 1); S4's tests and its review's took it to 18.6 to 23.8 s warm, so that `--budget` failed
+/// at times (S4's review, minor 4). It is now CLAUDE.md's 30 s, the plan's own limit, with a line
+/// in `docs/slices/S4.md` §7.6: the long poles are the world's slab series (9 s) and the wire's
+/// world job (6 s), each a validation case or a test the review asked for.
+const QUICK_BUDGET_S: f64 = 30.0;
 
 /// Tests that need a GPU carry `gpu_` in their names; everything else is the quick tier.
 const QUICK_FILTER: &str = "not test(gpu_)";
@@ -30,7 +32,7 @@ pub fn quick(root: &Path, enforce_budget: bool) -> Result<(), String> {
     // its lints run here when the branch touches it, and its tests wait for `cargo xtask oracle`. Clippy includes `cargo check`.
     // Cargo's fingerprints make it a no-op for unchanged crates, which is the plan's "clippy on
     // changed crates" without a second mechanism to get wrong.
-    let mut steps = vec![
+    let steps = vec![
         ("fmt", cargo(root, &["fmt", "--all", "--check"])),
         ("fmt (oracle)", cargo(root, &["fmt", "--manifest-path", ORACLE_MANIFEST, "--check"])),
         (
@@ -38,15 +40,17 @@ pub fn quick(root: &Path, enforce_budget: bool) -> Result<(), String> {
             cargo(root, &["clippy", "--workspace", "--all-targets", "--quiet", "--", "-D", "warnings"]),
         ),
     ];
+    together(steps)?;
     // The oracle crate's lints, when this branch touches it (S3's review: a clippy fault in
     // `george.rs` reached main because only `cargo xtask oracle` linted it). Its own target
-    // directory, so a check here costs nothing when the oracle is unchanged.
+    // directory, so a check here costs nothing when the oracle is unchanged. After the
+    // workspace's clippy, not beside it: two cargos at once would run twice the job cap (S4's
+    // review, minor 10).
     if touches_oracle(root) {
         let clippy = ["clippy", "--manifest-path", ORACLE_MANIFEST, "--target-dir", ORACLE_TARGET];
         let lints = ["--all-targets", "--quiet", "--", "-D", "warnings"];
-        steps.push(("clippy (oracle)", cargo(root, &[&clippy[..], &lints[..]].concat())));
+        step("clippy (oracle)", cargo(root, &[&clippy[..], &lints[..]].concat()))?;
     }
-    together(steps)?;
     run_tier(root, "quick", QUICK_FILTER)?;
     // Documentation examples are not built here: the one there was cost two to three seconds of
     // the ten, and is a unit test now. `cargo xtask oracle` runs any that are written later.

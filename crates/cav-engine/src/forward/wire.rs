@@ -321,13 +321,9 @@ mod tests {
         };
         assert_eq!((sent.truncated, sent.settled), (Some(1.0), false));
         assert!(sent.gradiometer.len() == shots.total());
-        // Control: the whole box comes back whole, and read, not as zeros.
-        let Answer::Contribution(sent) =
-            answer(&serve(&contribution_request(&whole, SourceId::World))).unwrap()
-        else {
-            panic!("no contribution came back")
-        };
-        assert!(sent.truncated.is_none() && sent.settled && sent.gradiometer.iter().any(|v| *v != 0.0));
+        // (Control: the whole box went through `same_bits` above, untruncated and settled on both
+        // sides, so `None` comes back as `None`; its reading is not zeros: `world_bundle` and
+        // the web tier's equivalence read it.)
         // A world asked of a scene without one is nothing, not a world of zeros.
         let none = answer(&serve(&contribution_request(&cav_sim::dev::point(), SourceId::World))).unwrap();
         assert_eq!(none, Answer::Nothing);

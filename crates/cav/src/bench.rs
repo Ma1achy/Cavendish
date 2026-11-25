@@ -90,6 +90,8 @@ pub fn flythrough(
         "frame,ms,poll_ms,draw_ms,chunks,bricks,pending,meshes,bricks_on_gpu,vertices,resident_mb,marched\n",
     );
     let mut times = Vec::with_capacity(frames);
+    // What the renderer left out, by kind (the words before the colon), and in how many frames.
+    let mut cuts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for frame in 0..frames {
         let s = frame as f64 * speed / 60.0 / loop_length();
         let began = Instant::now();
@@ -101,7 +103,10 @@ pub fn flythrough(
         wait(&gpu)?;
         let ms = began.elapsed().as_secs_f64() * 1e3;
         let world = engine.frame(0)?.world.cloned().unwrap_or_default();
-        let ([meshes, bricks_on_gpu, vertices], _) = renderer.world_counts();
+        let ([meshes, bricks_on_gpu, vertices], notes) = renderer.world_counts();
+        for note in &notes {
+            *cuts.entry(note.split(':').next().unwrap_or_default().to_owned()).or_default() += 1;
+        }
         let _ = writeln!(
             out,
             "{frame},{ms:.3},{polled:.3},{:.3},{},{},{},{meshes},{bricks_on_gpu},{vertices},{:.1},{:.2}",
@@ -127,14 +132,18 @@ pub fn flythrough(
     let _ = writeln!(
         out,
         "# stress-1e10: about {cells:.2e} finest cells; {}x{} px at {speed} m/s; first view resident in {load:.2} s ({} made, {} from the cache{}); \
-         {frames} frames: mean {mean:.1} ms ({:.0} fps), median {median:.1} ms, 99th percentile {p99:.1} ms, worst {worst:.1} ms",
+         {} frames of the {frames} asked: mean {mean:.1} ms ({:.0} fps), median {median:.1} ms, 99th percentile {p99:.1} ms, worst {worst:.1} ms",
         size[0],
         size[1],
         made.0,
         made.1,
         if whole { "" } else { ", NOT WHOLE in 600 s" },
+        times.len(),
         1000.0 / mean
     );
+    for (kind, count) in &cuts {
+        let _ = writeln!(out, "# not drawn in {count} of {} frames: {kind}", times.len());
+    }
     Ok(out)
 }
 
