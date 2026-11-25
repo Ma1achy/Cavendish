@@ -810,6 +810,15 @@ switch costs less than the phase tolerance; the whole world is read, not truncat
 finite patch, an infinite flat plane or a sphere. All in S5 (TASK-S5-11 to 13, with the measured LOD radii
 and the world octree / read-LOD view), which runs straight after S19.
 
+## Owner's ruling (25 Nov 2026): phones and tablets
+The GUI must work well on mobile and tablets (iPad) in the web build: touch (tap selects, one-finger orbit,
+two-finger pan and pinch zoom, long-press for the context menu, on-screen gizmo handles big enough for a
+finger), layouts that fit narrow and portrait screens (side panels as slide-over drawers or bottom sheets,
+the tool strip as a bottom bar), hit targets ≥ 44 pt on touch, no hover-only controls, the on-screen
+keyboard only for text, Safari's WebGPU and memory limits respected. Tested by touch-event UI tests and
+headless screenshots at phone and tablet sizes. Part of S19 (with the side-panel redesign), or its own
+slice if S19 is full.
+
 ## Owner's rulings (25 Nov 2026): the editor
 Also: resizable side panels, windows that pop out and dock back, minimise and full screen, tabs;
 importing 3-D models (OBJ and STL already load as shapes since S3; the editor adds dropping them in,
