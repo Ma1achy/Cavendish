@@ -308,6 +308,141 @@ fn task_add_a_sphere_move_it_two_metres_read_tower_one() {
 /// get longer unnoticed.
 const TASK_EVENTS: usize = 20;
 
+/// A file in the system's temporary folder for one test, removed when dropped.
+struct Scratch(std::path::PathBuf);
+
+impl Scratch {
+    fn new(name: &str) -> Self {
+        Self(std::env::temp_dir().join(format!("cavendish-s18-{}-{name}", std::process::id())))
+    }
+
+    fn path(&self) -> String {
+        self.0.to_string_lossy().replace('\\', "/")
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+#[test]
+fn reset_puts_a_field_back_and_the_title_says_unsaved() {
+    // S18 E7.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("select body 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(!rig.shell.title().contains('*'), "{}", rig.shell.title());
+    let mass = rig.shell.engine.spec().bodies[0].mass;
+    rig.shell.run("set bodies[0].mass 5").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.title().ends_with(" *"), "an edit: unsaved");
+    // Backspace on the field puts it back: one edit, and the mark goes.
+    let tree = rig.shell.focus_tree().clone();
+    rig.shell.keyboard.focus_on(&tree, "field/bodies[0].mass");
+    assert_eq!(rig.shell.keyboard.focused(), "field/bodies[0].mass", "the field is in the keyboard's tree");
+    rig.shell.keyboard.nav_on = true;
+    rig.key(Key::Backspace, Modifiers::NONE);
+    assert_eq!(rig.shell.engine.spec().bodies[0].mass, mass);
+    assert!(!rig.shell.title().contains('*'));
+    // Control: the reset of an unchanged field is disabled and does nothing.
+    let journal = rig.shell.engine.journal().len();
+    let reset = rig.shell.focus_tree().node("field/bodies[0].mass/reset").expect("the reset keeps its place");
+    assert!(!reset.enabled);
+    rig.key(Key::Backspace, Modifiers::NONE);
+    assert_eq!(rig.shell.engine.journal().len(), journal + 1, "a set to the same value: journalled, no step");
+    // Saving clears the mark: the saved scene is what fields reset to from now on.
+    rig.shell.run("set bodies[0].mass 7").unwrap();
+    let file = Scratch::new("saved.ron");
+    rig.shell.run(&format!("save {}", file.path())).unwrap();
+    assert!(!rig.shell.engine.unsaved());
+    rig.shell.run("set bodies[0].mass 9").unwrap();
+    rig.shell.run("reset bodies[0].mass").unwrap();
+    assert_eq!(rig.shell.engine.spec().bodies[0].mass, 7.0, "reset to the saved value, not the loaded one");
+}
+
+#[test]
+fn the_history_list_goes_to_a_row() {
+    // S18 E8.
+    let mut rig = Rig::new();
+    for d in [13, 14, 15] {
+        rig.shell.run(&format!("set duration {d}")).unwrap();
+    }
+    rig.key(Key::H, Modifiers::COMMAND);
+    assert!(rig.shell.history_open);
+    rig.frames(vec![vec![], vec![]]);
+    let (done, undone) = rig.shell.engine.steps();
+    assert_eq!(done, ["set duration 13", "set duration 14", "set duration 15"]);
+    assert!(undone.is_empty());
+    rig.click_button("history 1");
+    assert_eq!(rig.shell.engine.spec().duration, 13.0, "to the first edit");
+    rig.frames(vec![vec![]]);
+    rig.click_button("history 3");
+    assert_eq!(rig.shell.engine.spec().duration, 15.0, "and forward to the last");
+    rig.frames(vec![vec![]]);
+    rig.click_button("history 0");
+    assert_eq!(rig.shell.engine.spec().duration, cav_sim::SceneSpec::room().duration, "to before them all");
+    // Control: Esc closes it and the scene stays.
+    rig.shell.keyboard.focus = vec!["history".into(), "history/start".into()];
+    rig.key(Key::Escape, Modifiers::NONE);
+    assert!(!rig.shell.history_open);
+}
+
+#[test]
+fn task_build_a_scene_from_the_wizard() {
+    // S18 T2: one tower on a floor with a voxel sphere, by clicks, one undo away.
+    let mut rig = Rig::new();
+    rig.key(Key::N, Modifiers::COMMAND);
+    rig.frames(vec![vec![], vec![]]);
+    for button in ["wizard array 1", "wizard surroundings 1", "wizard body sphere", "wizard create"] {
+        rig.click_button(button);
+    }
+    let spec = rig.shell.engine.spec().clone();
+    assert_eq!((spec.array.towers.len(), spec.room.is_some(), spec.floor.is_some()), (1, false, true));
+    assert_eq!(spec.bodies.len(), 1);
+    assert!(spec.bodies[0].shape.is_some());
+    assert!(rig.shell.wizard.is_none(), "the wizard closed");
+    rig.shell.run("undo").unwrap();
+    assert_eq!(rig.shell.engine.spec(), &cav_sim::SceneSpec::room(), "one undo takes the scene away");
+    // Control: cancelled, nothing is made.
+    rig.key(Key::N, Modifiers::COMMAND);
+    rig.frames(vec![vec![]]);
+    rig.shell.keyboard.focus = vec!["wizard".into(), "wizard/array".into()];
+    rig.key(Key::Escape, Modifiers::NONE);
+    assert!(rig.shell.wizard.is_none());
+    assert_eq!(rig.shell.engine.spec(), &cav_sim::SceneSpec::room());
+}
+
+#[test]
+fn task_save_and_reopen_gives_the_same_scene() {
+    // S18 T2: save through the Save window, open something else, open the file again.
+    let mut rig = Rig::new();
+    rig.shell.run("load comb").unwrap();
+    rig.shell.run("set bodies[0].mass 3.5").unwrap();
+    let saved = rig.shell.engine.spec().clone();
+    let file = Scratch::new("reopen.ron");
+    rig.key(Key::S, Modifiers::COMMAND);
+    assert!(rig.shell.save_window.is_some(), "no file yet: Ctrl+S asks for one");
+    rig.shell.save_window = Some(file.path());
+    rig.frames(vec![vec![]]);
+    rig.click_button("save go");
+    assert!(rig.shell.save_window.is_none() && !rig.shell.engine.unsaved());
+    assert_eq!(rig.shell.file.as_deref(), Some(file.path().as_str()));
+    rig.shell.run("load room").unwrap();
+    rig.key(Key::O, Modifiers::COMMAND);
+    rig.shell.open_window = Some(file.path());
+    rig.frames(vec![vec![]]);
+    rig.click_button("open go");
+    assert_eq!(rig.shell.engine.spec(), &saved, "the same scene, to the bit");
+    // Control: Ctrl+S now saves to the file without asking.
+    rig.shell.run("set bodies[0].mass 4").unwrap();
+    rig.key(Key::S, Modifiers::COMMAND);
+    assert!(rig.shell.save_window.is_none() && !rig.shell.engine.unsaved());
+    assert_eq!(cav_sim::load(&file.path()).unwrap().bodies[0].mass, 4.0);
+}
+
 fn overlap(a: egui::Rect, b: egui::Rect) -> f32 {
     let i = a.intersect(b);
     if i.is_positive() { i.area() } else { 0.0 }

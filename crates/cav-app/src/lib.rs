@@ -21,6 +21,7 @@
 pub mod actions;
 pub mod app;
 pub mod camera;
+pub mod dialogs;
 pub mod editors;
 pub mod headless;
 pub mod keyboard;
