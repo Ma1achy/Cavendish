@@ -882,6 +882,12 @@ switch costs less than the phase tolerance; the whole world is read, not truncat
 finite patch, an infinite flat plane or a sphere. All in S5 (TASK-S5-11 to 13, with the measured LOD radii
 and the world octree / read-LOD view), which runs straight after S19.
 
+## Owner's ruling (25 Nov 2026): draw modes for bodies
+Bodies get draw modes: plain voxels; the partial fill made visible (each boundary cell shaded by its
+exact fill fraction — the "mass anti-aliasing" of `docs/research/exact-skin-and-partial-fill.md`); the
+original mesh as triangles; and each boundary cell as its exact clipped piece. In S5 with the exact-skin
+work (TASK-S5-16, TASK-S5-17).
+
 ## Owner's ruling (25 Nov 2026): the look
 Ambient occlusion and shading now; shadows, sky and atmosphere later; voxel colouring with the variation of
 voxel-art games (techniques only, no game's look copied). Research: `docs/research/voxel-lighting.md`. Slice
