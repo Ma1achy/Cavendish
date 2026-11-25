@@ -276,8 +276,9 @@ impl Renderer {
         let mut world = self.world_gpu.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         // A validation error inside wgpu would otherwise be a panic; here it is an answer.
         gpu.checked(|| {
-            let draw =
-                frame.world.and_then(|w| world.prepare(gpu, &self.world, w, frame.view, camera, complete));
+            let draw = frame
+                .world
+                .and_then(|w| world.prepare(gpu, &self.world, w, frame.view, camera, target.size, complete));
             self.draw_things(
                 gpu,
                 target,
@@ -287,6 +288,13 @@ impl Renderer {
                 draw.as_ref().map(|d| (&*world, d)),
             );
         })
+    }
+
+    /// The bricks' boxes the last frame marched, in pixels over the pane's (at most
+    /// [`crate::world::MAX_BRICK_OVERDRAW`]).
+    #[must_use]
+    pub fn world_marched(&self) -> f64 {
+        self.world_gpu.lock().unwrap_or_else(std::sync::PoisonError::into_inner).marched
     }
 
     /// What the world's GPU copies hold: `[chunk meshes, bricks, mesh vertices]`, and what could

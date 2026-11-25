@@ -136,6 +136,10 @@ This PC is the owner's, and one agent's leftover process once ran for six hours.
   cargo yourself from PowerShell, start it the same way:
   `$p = Start-Process cargo -ArgumentList 'build' -NoNewWindow -PassThru; $p.PriorityClass = 'BelowNormal'; $p.WaitForExit()`.
 
+- The GPU is the owner's desktop's too: a submission of more than about 50 ms stops Windows'
+  compositor. The renderer bounds the far field's work a frame (`MAX_BRICK_OVERDRAW`); pictures
+  are taken of `town`, not of the full `stress-1e10`, which is only measured in short runs that stop
+  at a slow frame (`cav bench flythrough --max-frame-ms 250`), started below normal priority.
 - Start a server, a browser or a background script in the same command that stops it, holding its
   handle, or give it a lifetime (`cargo xtask web serve --exit-after 600`). Never leave one running
   for a later tool call to stop: the handle is gone by then, and stopping by id is refused.

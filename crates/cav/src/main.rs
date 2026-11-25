@@ -20,6 +20,7 @@ cav <command>
          [--size 1280x720] [--exec \"<commands>\"]
                                  draw a scene to a PNG, with no window
   bench flythrough [--frames 600] [--size 1280x720] [--speed 15] [--cache <dir>] [--out <trace.csv>]
+                   [--max-frame-ms 250]
                                  fly a scripted camera over stress-1e10 offscreen and print (or write)
                                  the frame-time trace: what this GPU holds
   scenes                         list the built-in scene library
@@ -398,7 +399,7 @@ fn set(rest: &[String]) -> Result<(), String> {
 /// `cav render`: every option becomes a console command, so a render is a short engine session.
 /// `cav bench flythrough`: see `bench.rs`.
 fn bench(rest: &[String]) -> Result<(), String> {
-    let mut args = Args::parse(rest, &["frames", "size", "cache", "out", "speed"])?;
+    let mut args = Args::parse(rest, &["frames", "size", "cache", "out", "speed", "max-frame-ms"])?;
     let frames = args
         .option("frames")
         .map_or(Ok(600), |f| f.parse::<usize>().map_err(|_| format!("--frames {f} is not a count")))?;
@@ -413,12 +414,15 @@ fn bench(rest: &[String]) -> Result<(), String> {
     if !(speed > 0.0 && speed <= 1000.0) {
         return Err(format!("--speed {speed}: metres a second, more than 0 and at most 1000"));
     }
+    let max_frame_ms = args
+        .option("max-frame-ms")
+        .map_or(Ok(250.0), |v| v.parse::<f64>().map_err(|_| format!("--max-frame-ms {v} is not a number")))?;
     let out = args.option("out");
     let [what] = args.finish(1)?.try_into().map_err(|_| "bench takes what to run: flythrough")?;
     if what != "flythrough" {
         return Err(format!("`{what}` is not a bench; there is `flythrough`"));
     }
-    let trace = bench::flythrough(frames, size, speed, cache)?;
+    let trace = bench::flythrough(frames, size, speed, cache, max_frame_ms)?;
     match out {
         Some(path) => {
             std::fs::write(&path, &trace).map_err(|e| format!("writing {path}: {e}"))?;
