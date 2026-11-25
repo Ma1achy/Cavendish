@@ -3,7 +3,8 @@
     python regimes.py distance      # regimes-distance.png, regimes-distance.json
     python regimes.py orientation   # orientation.png, orientation.json
     python regimes.py translation   # translation.png, translation-spectrum.png, translation.json
-    python regimes.py spin          # spin.png, spin.json (needs orientation.json for world-fixed)
+    python regimes.py spin          # spin.json (body frame), then
+    python regimes.py spinworld     # adds the world-fixed period to spin.json; spin.png
 
 Techniques, all from the same voxelisation (interior cells are full cubes in (a)–(e); they cancel in
 the error, so only boundary cells are summed, as in skin_bench.py):
@@ -83,7 +84,7 @@ def technique_errors(vox: L.Voxels, pts: np.ndarray, g_mesh: np.ndarray, with_ex
 
 # ================================ DISTANCE ================================
 
-DIST_SHAPES = {"sphere": 0.0625, "torus": 0.05, "suzanne": 0.05}
+DIST_SHAPES = {"sphere": 0.0625, "torus": 0.05, "teapot": 0.03125}
 
 
 def distance() -> None:
@@ -172,7 +173,7 @@ def orientation() -> None:
     generic_axis = np.array([0.3, 0.5, 0.81])
     cases = [("torus", L.torus_mesh(), np.array([0.0, 0.0, 1.0]), TORUS_SWEEP),
              ("box", box_mesh(), generic_axis, ANGLES_SMALL),
-             ("suzanne", L.suzanne_mesh(), generic_axis, ANGLES_SMALL)]
+             ("teapot", L.teapot_mesh(), generic_axis, ANGLES_SMALL)]
     res: dict[str, object] = {}
     for name, mesh, axis, angles in cases:
         pts = L.tower(mesh, np.array([1.5]))
@@ -204,7 +205,7 @@ def plot_orientation() -> None:
         ax.set_xscale("symlog", linthresh=0.1, linscale=0.5)
         ax.set_yscale("log")
         how = "about its axis (z)" if name == "torus" else "about a generic axis"
-        ax.set_title(f"{name}, turned {how}, h = {r['h']} m, 1.5 m away")
+        ax.set_title(f"{name}, turned {how}\nh = {r['h']} m, 1.5 m away")
         ax.set_xlabel("rotation from the grid-aligned pose (degrees)")
         _clean(ax)
     axes[0].set_ylabel("|phase error| (rad)")
@@ -213,7 +214,7 @@ def plot_orientation() -> None:
     fig.text(0.01, 0.01, "Static body, re-voxelised at each rotation on the same lattice. (e) is exact "
              "at every angle; (f) and (g) do not depend on the lattice. The torus's true signal does not "
              "change with the angle, so its curves are pure lattice effects.", fontsize=8.5, color="#52514e")
-    fig.subplots_adjust(left=0.05, right=0.99, top=0.85, bottom=0.14, wspace=0.18)
+    fig.subplots_adjust(left=0.05, right=0.99, top=0.82, bottom=0.14, wspace=0.18)
     fig.savefig(L.HERE / "orientation.png", dpi=110)
 
 
@@ -323,31 +324,55 @@ def spin() -> None:
     e = technique_errors(vox, pts, g_mesh, with_exact=False)
     res = {"theta": theta.tolist(), "h": h, "signal": L.phase(g_mesh).tolist(),
            "body": {t: v.tolist() for t, v in e.items()}}
-    (L.HERE / "spin.json").write_text(json.dumps(res))
+    (L.HERE / "spin.json").write_text(json.dumps(res))  # spin_world adds the world-fixed part, then plots
+
+
+NU_TORUS = 64  # segments round the torus mesh's axis (torus_mesh default)
+
+
+def spin_world() -> None:
+    """World-fixed voxels of the spinning torus over one period of the error. Turning the 64-segment
+    mesh by 360/64 = 5.625° maps it onto itself and the lattice is unchanged, so the error repeats
+    every 5.625°: its harmonics are multiples of 64 of the spin frequency. Sampled 48 times in that
+    period (Nyquist: harmonic 64·24). Same procedure as `orientation` (tower of the unturned torus)."""
+    h = 0.1
+    mesh = L.torus_mesh()
+    pts = L.tower(mesh, np.array([1.5]))
+    c = 0.5 * (mesh.verts.min(axis=0) + mesh.verts.max(axis=0))
+    period = 360.0 / NU_TORUS
+    angles = np.arange(48) * period / 48
+    errs: dict[str, list[float]] = {t: [] for t in TECH[:4]}
+    for ang in angles:
+        m = L.Mesh(mesh.name, (mesh.verts - c) @ L.rot_about(np.array([0.0, 0.0, 1.0]), ang).T + c, mesh.faces,
+                   mesh.source)
+        e = technique_errors(L.voxelise(m, h), pts, L.g_mesh(m.tris, pts), with_exact=False)
+        for t in TECH[:4]:
+            errs[t].append(float(e[t][0]))
+    path = L.HERE / "spin.json"
+    res = json.loads(path.read_text())
+    res["world"] = {"theta": angles.tolist(), "period": period, "h": h, "err": errs}
+    path.write_text(json.dumps(res))
     plot_spin()
 
 
 def plot_spin() -> None:
     _style()
     r = json.loads((L.HERE / "spin.json").read_text())
-    o = json.loads((L.HERE / "orientation.json").read_text())["torus"]
+    w = r["world"]
     th = np.array(r["theta"])
     fig, axes = plt.subplots(2, 2, figsize=(14, 8.5))
     for tech, colour in zip(TECH[:4], COLOURS[:4]):
         axes[0, 0].plot(th, r["body"][tech], color=colour, lw=1.4, label=tech)
-        a = np.array(o["angles"])
-        sel = np.isclose(a % 1.5, 0) | np.isclose(a % 1.5, 1.5)
-        axes[0, 1].plot(a[sel], np.array(o["err"][tech])[sel], color=colour, lw=1.4, marker="o", ms=2.5)
+        axes[0, 1].plot(w["theta"], w["err"][tech], color=colour, lw=1.4, marker="o", ms=2.5)
         f = np.fft.rfft(np.array(r["body"][tech]))
         amp = np.abs(f) * 2 / len(th)
         axes[1, 0].semilogy(np.arange(len(amp))[1:41], np.maximum(amp[1:41], 1e-18), "o-", color=colour,
                             ms=3, lw=1)
-        ys = np.array(o["err"][tech])[sel][:-1]  # 0 ≤ θ < 90°, one period
-        amp_w = np.abs(np.fft.rfft(ys)) * 2 / len(ys)
-        harm = 4 * np.arange(len(amp_w))
-        axes[1, 1].semilogy(harm[1:11], np.maximum(amp_w[1:11], 1e-18), "o-", color=colour, ms=3, lw=1)
+        amp_w = np.abs(np.fft.rfft(np.array(w["err"][tech]))) * 2 / len(w["theta"])
+        harm = NU_TORUS * np.arange(len(amp_w))
+        axes[1, 1].semilogy(harm[1:], np.maximum(amp_w[1:], 1e-18), "o-", color=colour, ms=3, lw=1)
     axes[0, 0].set_title(f"body-frame voxels, torus spinning about its axis, h = {r['h']} m")
-    axes[0, 1].set_title("world-fixed voxels (re-voxelised each angle), 0–90°")
+    axes[0, 1].set_title(f"world-fixed voxels (re-voxelised each angle), one period 0–{w['period']:g}°")
     for ax in axes[0]:
         ax.set_yscale("symlog", linthresh=1e-6)
         ax.set_xlabel("spin angle (degrees)")
@@ -356,7 +381,8 @@ def plot_spin() -> None:
         ax.set_xlabel("harmonic of the spin frequency")
         ax.set_ylabel("amplitude (rad)")
     axes[1, 0].set_title("spectrum of the body-frame error (one turn)")
-    axes[1, 1].set_title("spectrum of the world-fixed error (one 90° period, so harmonics 4k)")
+    axes[1, 1].set_title(f"spectrum of the world-fixed error (period {w['period']:g}°, so harmonics "
+                         f"{NU_TORUS}k)")
     for ax in axes.ravel():
         _clean(ax)
     h_, l_ = axes[0, 0].get_legend_handles_labels()
@@ -367,4 +393,5 @@ def plot_spin() -> None:
 
 if __name__ == "__main__":
     {"distance": distance, "orientation": orientation, "translation": translation, "spin": spin,
+     "spinworld": spin_world,
      "plot": lambda: (plot_distance(), plot_orientation(), plot_translation(), plot_spin())}[sys.argv[1]]()

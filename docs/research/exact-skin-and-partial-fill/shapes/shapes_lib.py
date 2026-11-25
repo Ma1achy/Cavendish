@@ -128,6 +128,10 @@ def torus_mesh(big_r: float = 1.0, small_r: float = 0.4, nu: int = 64, nv: int =
 
 
 # Pinned sources (alecjacobson/common-3d-test-models at a fixed commit). Not redistributed here.
+# Licences: that repository's README (read at this commit, 25 Nov 2026) states none for either model.
+# The teapot's source is given as Martin Newell (1975, the ftp.funet.fi teaset); Suzanne's as Blender
+# (the Blender Foundation's test mesh). With no licence stated, we only download them at run time and
+# commit nothing derived from them except numbers and pictures of our own measurements.
 _COMMIT = "8a4f8642acaf43f9cd7b67858a1502e1055ef202"
 SOURCES = {
     "teapot": (f"https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/{_COMMIT}/data/teapot.obj",
@@ -182,12 +186,13 @@ def winding(tris: F64, pts: F64) -> F64:
     return out
 
 
-def closed_from_soup(name: str, verts: F64, faces: I64, n: int, up: tuple[int, int, int]) -> Mesh:
+def closed_from_soup(name: str, v: F64, faces: I64, n: int) -> Mesh:
     """Close an open or self-intersecting mesh: the zero set of a signed distance whose sign is the
     generalised winding number's (inside where it exceeds 0.5).
 
-    The raw mesh is turned so `up` (its up axis, signed index list) is +z, centred on its bounding box
-    and scaled so its largest extent is 1 m. The winding number is sampled on a grid of `n` cells
+    REJECTED for the study (it re-meshes the surface: terraced rims, a stray spout fragment, a
+    column under Suzanne's chin); kept only as the control arm of `check_repair`. `v` is already in
+    the study's frame (`_raw`). The winding number is sampled on a grid of `n` cells
     across that 1 m (grid offset off-lattice). Within two grid steps of a change of side, the exact
     distance to the raw triangles gives the magnitude (the winding number alone jumps by 1 across the
     surface, and marching cubes on it terraces); further out the magnitude is clamped. Marching cubes
@@ -198,13 +203,6 @@ def closed_from_soup(name: str, verts: F64, faces: I64, n: int, up: tuple[int, i
     from skimage import measure
 
     cache = CACHE / f"{name}-closed-sdf-{n}.npz"
-    perm = [abs(a) - 1 for a in up]
-    sign = np.array([1.0 if a > 0 else -1.0 for a in up])
-    v = verts[:, perm] * sign
-    if np.linalg.det(np.eye(3)[perm] * sign[:, None]) < 0:
-        faces = faces[:, ::-1]
-    lo, hi = v.min(axis=0), v.max(axis=0)
-    v = (v - 0.5 * (lo + hi)) / float((hi - lo).max())
     if cache.exists():
         z = np.load(cache)
         mv, mf = z["v"], z["f"]
@@ -249,24 +247,316 @@ def closed_from_soup(name: str, verts: F64, faces: I64, n: int, up: tuple[int, i
     return Mesh(name, mv, mf, f"marching cubes on a 1/{n} m grid, {len(mf)} triangles")
 
 
+def _raw(name: str, up: tuple[int, int, int]) -> tuple[F64, I64, float, F64]:
+    """The downloaded mesh turned so `up` is +z, its bounding box centred and its largest extent 1 m.
+
+    Returns (vertices, faces, scale, shift) with v_new = (v_old[:, perm]·sign − shift)·scale.
+    """
+    verts, faces = _read_obj(_download(name))
+    perm = [abs(a) - 1 for a in up]
+    sign = np.array([1.0 if a > 0 else -1.0 for a in up])
+    v = verts[:, perm] * sign
+    if np.linalg.det(np.eye(3)[perm] * sign[:, None]) < 0:
+        faces = faces[:, ::-1]
+    lo, hi = v.min(axis=0), v.max(axis=0)
+    shift = 0.5 * (lo + hi)
+    scale = 1.0 / float((hi - lo).max())
+    return (v - shift) * scale, faces, scale, shift
+
+
+def _components(faces: I64) -> list[I64]:
+    """Face index sets of the components connected through shared edges (not mere shared vertices)."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+
+    nf = len(faces)
+    e = np.sort(np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]]), axis=1)
+    owner = np.tile(np.arange(nf), 3)
+    key = e[:, 0] * (int(faces.max()) + 1) + e[:, 1]
+    order = np.argsort(key, kind="stable")
+    k, o = key[order], owner[order]
+    same = np.nonzero(k[1:] == k[:-1])[0]
+    adj = coo_matrix((np.ones(len(same)), (o[same], o[same + 1])), shape=(nf, nf))
+    _, lab = connected_components(adj, directed=False)
+    return [np.nonzero(lab == c)[0] for c in np.unique(lab)]
+
+
+@dataclass
+class Repair:
+    """What `repair` did and what its check measured.
+
+    Attributes:
+        mesh        (Mesh):  The repaired closed mesh.
+        parts       (list):  Per source part: faces, open edges, holes capped, kept or dropped and why.
+        caps        (F64):   The cap triangles added (each a fan from its hole's centroid), m.
+        source_tris (F64):   The original triangles after welding, in the repaired mesh's frame, m.
+        dropped_tris (F64):  Original triangles of dropped parts (zero-volume), m.
+        check       (dict):  The check's measurements and verdict (see `check_repair`).
+    """
+
+    mesh:         Mesh
+    parts:        list[dict[str, object]]
+    caps:         F64
+    source_tris:  F64
+    dropped_tris: F64
+    closed_parts: list[tuple[F64, F64]] = field(default_factory=list)
+    check:        dict[str, object] = field(default_factory=dict)
+
+
+def repair(name: str, up: tuple[int, int, int], digits: int = 8) -> Repair:
+    """Close an open mesh while keeping its triangles.
+
+    1. Weld vertices equal to `digits` decimals (unwelded patch seams become shared edges).
+    2. Split into edge-connected parts. A part of zero volume (a two-sided sheet) is dropped.
+    3. Cap every remaining hole of every part: one triangle per open edge, to the hole's centroid,
+       wound against the edge so the part becomes closed and consistently wound.
+    4. Union the closed parts with manifold3d (Apache-2.0, double precision `Mesh64`), so parts that
+       pass through each other (spout and handle into a teapot body, eyes into a head) count once.
+    Then `check_repair` measures the result against the original triangles.
+    """
+    import manifold3d
+
+    v, f, _, _ = _raw(name, up)
+    q = np.round(v / 1.0, digits)
+    _, first, inv = np.unique(q, axis=0, return_index=True, return_inverse=True)
+    inv = inv.reshape(-1)
+    v = v[first]
+    f = inv[f]
+    f = f[(f[:, 0] != f[:, 1]) & (f[:, 1] != f[:, 2]) & (f[:, 2] != f[:, 0])]
+    # Back-to-back triangle pairs (the same three vertices, opposite winding) are a zero-thickness
+    # sheet: no volume, and glued to the rest they make non-manifold edges. Drop both.
+    tri_key = np.sort(f, axis=1)
+    _, inv_t, cnt_t = np.unique(tri_key, axis=0, return_inverse=True, return_counts=True)
+    sheet = cnt_t[inv_t.reshape(-1)] > 1
+    dropped_sheet = v[f[sheet]]
+    f = f[~sheet]
+    parts_info: list[dict[str, object]] = []
+    if sheet.any():
+        parts_info.append({"faces": int(sheet.sum()), "open_edges": 0, "holes": 0, "volume_m3": 0.0,
+                           "kept": "dropped: back-to-back triangles (a zero-thickness sheet)"})
+    closed: list[tuple[F64, I64]] = []
+    closed_parts: list[tuple[F64, F64]] = []
+    caps: list[F64] = []
+    dropped: list[F64] = [dropped_sheet] if len(dropped_sheet) else []
+    for comp in _components(f):
+        pf = f[comp]
+        e = np.concatenate([pf[:, [0, 1]], pf[:, [1, 2]], pf[:, [2, 0]]])
+        key = e[:, 0] * len(v) + e[:, 1]
+        rev = e[:, 1] * len(v) + e[:, 0]
+        open_e = e[~np.isin(key, rev)]
+        cap_f: list[list[int]] = []
+        pv = v.copy()
+        n_holes = 0
+        if len(open_e):
+            # Group open edges into holes (connected by shared vertices), cap each to its centroid.
+            from scipy.sparse import coo_matrix
+            from scipy.sparse.csgraph import connected_components
+
+            nodes = np.unique(open_e)
+            idx = {int(x): i for i, x in enumerate(nodes)}
+            a = np.array([idx[int(x)] for x in open_e[:, 0]])
+            b = np.array([idx[int(x)] for x in open_e[:, 1]])
+            ncomp, lab = connected_components(coo_matrix((np.ones(len(a)), (a, b)),
+                                                         shape=(len(nodes), len(nodes))), directed=False)
+            n_holes = ncomp
+            extra = []
+            for k in range(ncomp):
+                sel = lab[a] == k
+                ring = np.unique(open_e[sel])
+                c = v[ring].mean(axis=0)
+                ci = len(v) + len(extra)
+                extra.append(c)
+                for p0, p1 in open_e[sel]:
+                    cap_f.append([int(p1), int(p0), ci])
+            pv = np.concatenate([v, np.array(extra)])
+        allf = np.concatenate([pf, np.array(cap_f, dtype=np.int64)]) if cap_f else pf
+        vol = float(np.einsum("nk,nk->n", pv[allf[:, 0]], np.cross(pv[allf[:, 1]], pv[allf[:, 2]])).sum() / 6)
+        info: dict[str, object] = {"faces": int(len(pf)), "open_edges": int(len(open_e)), "holes": int(n_holes),
+                                   "volume_m3": abs(vol)}
+        if abs(vol) < 1e-9:
+            info["kept"] = "dropped: zero volume (a two-sided sheet)"
+            dropped.append(v[pf])
+        else:
+            if vol < 0:
+                allf = allf[:, ::-1]
+            ok, why = check_closed(allf)
+            info["kept"] = "closed" if ok else f"NOT closed: {why}"
+            if not ok:
+                raise RuntimeError(f"{name}: part could not be closed: {why}")
+            closed.append((pv, allf))
+            closed_parts.append((v[pf], pv[allf]))
+            if cap_f:
+                caps.append(pv[np.array(cap_f)])
+        parts_info.append(info)
+    union = manifold3d.Manifold()
+    for pv, pf in closed:
+        used = np.unique(pf)
+        remap = np.full(len(pv), -1, dtype=np.int64)
+        remap[used] = np.arange(len(used))
+        mesh64 = manifold3d.Mesh64(np.ascontiguousarray(pv[used], dtype=np.float64),
+                                   np.ascontiguousarray(remap[pf], dtype=np.uint64))
+        part = manifold3d.Manifold(mesh64)
+        if part.status() != manifold3d.Error.NoError:
+            raise RuntimeError(f"{name}: manifold3d rejected a part: {part.status()}")
+        union = union + part
+    out = union.to_mesh64()
+    mv = np.array(out.vert_properties)[:, :3].astype(np.float64)
+    mf = np.array(out.tri_verts).astype(np.int64)
+    # manifold3d splits a vertex where properties differ between input meshes; its merge vectors say
+    # which copies are the same point. Apply them so the mesh is one connected surface.
+    to = np.arange(len(mv))
+    mfrom, mto = np.array(out.merge_from_vert, dtype=np.int64), np.array(out.merge_to_vert, dtype=np.int64)
+    to[mfrom] = mto
+    mf = to[mf]
+    used = np.unique(mf)
+    remap = np.full(len(mv), -1, dtype=np.int64)
+    remap[used] = np.arange(len(used))
+    mv, mf = mv[used], remap[mf]
+    mf = _oriented(mv, mf)
+    src = v[f]
+    return Repair(Mesh(name, mv, mf, ""), parts_info,
+                  np.concatenate(caps) if caps else np.zeros((0, 3, 3)), src,
+                  np.concatenate(dropped) if dropped else np.zeros((0, 3, 3)), closed_parts)
+
+
+def check_repair(rep: Repair, mesh: Mesh, expected_components: int, tol: float = 1e-6) -> dict[str, object]:
+    """Measure a closed mesh against the original triangles; pass/fail written before measuring.
+
+    - closed: every directed edge has its twin (`check_closed`);
+    - components: the number of edge-connected pieces equals `expected_components` (a stray fragment
+      or a column fails this);
+    - to_source: every vertex of `mesh` lies within `tol` (m) of the original triangles or of the
+      added caps (a re-meshed surface fails this: its vertices sit off the original);
+    - from_source: every original vertex that is not inside another part lies within `tol` of `mesh`
+      (lost or moved detail fails this). "Inside another part" is judged by that part's winding
+      number > 0.5.
+    """
+    ok_closed, why = check_closed(mesh.faces)
+    comps = _components(mesh.faces)
+    n_comp = len(comps)
+    comp_info = []
+    for cf in comps:
+        t = mesh.verts[mesh.faces[cf]]
+        vol = float(np.einsum("nk,nk->n", t[:, 0], np.cross(t[:, 1], t[:, 2])).sum() / 6)
+        comp_info.append({"triangles": int(len(cf)), "volume_m3": round(vol, 6),
+                          "lo": np.round(t.reshape(-1, 3).min(0), 3).tolist(),
+                          "hi": np.round(t.reshape(-1, 3).max(0), 3).tolist()})
+    ref = np.concatenate([rep.source_tris, rep.caps]) if len(rep.caps) else rep.source_tris
+    tris_m = mesh.tris
+    to_src = max(distance_to_mesh(ref, p) for p in mesh.verts)
+    # Original vertices of each kept part that lie outside every other kept part.
+    keep_list = []
+    n_inside = 0
+    for i, (src_i, _) in enumerate(rep.closed_parts):
+        sv = np.unique(src_i.reshape(-1, 3), axis=0)
+        inside = np.zeros(len(sv), dtype=bool)
+        for j, (_, closed_j) in enumerate(rep.closed_parts):
+            if j != i:
+                inside |= winding(closed_j, sv) > 0.5
+        n_inside += int(inside.sum())
+        keep_list.append(sv[~inside])
+    keep = np.concatenate(keep_list)
+    from_src = max(distance_to_mesh(tris_m, p) for p in keep)
+    passed = bool(ok_closed and n_comp == expected_components and to_src < tol and from_src < tol)
+    return {"closed": ok_closed, "closed_detail": why, "components": n_comp, "component_info": comp_info,
+            "expected_components": expected_components, "max_vertex_to_source_m": float(to_src),
+            "max_source_to_mesh_m": float(from_src), "source_vertices_checked": int(len(keep)),
+            "source_vertices_inside_other_parts": n_inside, "tolerance_m": tol,
+            "passed": passed}
+
+
+TEAPOT_UP = (1, -3, 2)
+SUZANNE_UP = (-1, 3, 2)  # facing +y, towards the camera
+
+
+def teapot_repair() -> Repair:
+    # One body: the lid's capped rim (radius 1.3 in Newell's units) sits on the body's capped opening
+    # (radius 1.4), both at height 2.4, so the union joins them there; spout and handle pass into it.
+    return _cached_repair("teapot", TEAPOT_UP, 1)
+
+
+def suzanne_repair() -> Repair:
+    return _cached_repair("suzanne", SUZANNE_UP, 1)
+
+
+def _cached_repair(name: str, up: tuple[int, int, int], expected: int) -> Repair:
+    import pickle
+
+    path = CACHE / f"{name}-repair.pkl"
+    if path.exists():
+        return pickle.loads(path.read_bytes())
+    rep = repair(name, up)
+    rep.check = check_repair(rep, rep.mesh, expected)
+    if not rep.check["passed"]:
+        raise RuntimeError(f"{name}: repaired mesh fails its check: {rep.check}")
+    CACHE.mkdir(exist_ok=True)
+    path.write_bytes(pickle.dumps(rep))
+    return rep
+
+
 def teapot_mesh() -> Mesh:
-    v, f = _read_obj(_download("teapot"))
-    m = closed_from_soup("teapot", v, f, 48, (1, -3, 2))
-    return Mesh(m.name, m.verts, m.faces,
-                "Utah teapot (Newell 1975) as 6320 triangles in four separate open surfaces (body, lid, spout, "
-                "handle; open bottom, unwelded patch seams: 1036 open edges; spout and handle pushed through "
-                "the body), closed by the sign of its generalised winding number and the exact distance to "
-                "its triangles: a solid teapot, " + m.source)
+    rep = teapot_repair()
+    p = rep.parts
+    return Mesh("teapot", rep.mesh.verts, rep.mesh.faces,
+                f"Utah teapot (Newell 1975) as 6320 triangles: patch seams welded, giving {len(p)} open "
+                f"parts (body open at the top, lid open at its rim, spout and handle open at both ends: "
+                f"{sum(int(x['holes']) for x in p)} holes), each hole capped by a fan to its centroid, the "
+                f"closed parts united with manifold3d (spout and handle pass into the body; the lid sits "
+                f"on the rim); {len(rep.mesh.faces)} triangles, the original triangles kept")
 
 
 def suzanne_mesh() -> Mesh:
-    v, f = _read_obj(_download("suzanne"))
-    m = closed_from_soup("suzanne", v, f, 48, (-1, 3, 2))  # facing +y, towards the camera
-    return Mesh(m.name, m.verts, m.faces,
-                "Blender's Suzanne as 968 triangles in three parts (the head: 856 triangles, 26 open edges, "
-                "1 non-manifold edge; two eyes: 56 triangles each, open at the back), closed by the sign of "
-                "its generalised winding number and the exact distance to its triangles (eyes merged into "
-                "the head where they meet it), " + m.source)
+    rep = suzanne_repair()
+    p = rep.parts
+    kept = [x for x in p if str(x["kept"]).startswith("closed")]
+    return Mesh("suzanne", rep.mesh.verts, rep.mesh.faces,
+                f"Blender's Suzanne as 968 triangles: welded, {len(p)} parts (head with two open eye "
+                f"sockets, two eyes open at the back, one two-sided sheet of 2 triangles dropped), "
+                f"{sum(int(x['holes']) for x in kept)} holes capped by fans to their centroids, the head "
+                f"and eyes united (manifold3d); {len(rep.mesh.faces)} triangles, original triangles kept")
+
+
+def remeshed_by_winding(name: str) -> Mesh:
+    """The earlier, rejected closing (marching cubes on a 1/48 m grid), for the check's control arm."""
+    up = TEAPOT_UP if name == "teapot" else SUZANNE_UP
+    v, f, _, _ = _raw(name, up)
+    return closed_from_soup(name, v, f, 48)
+
+
+def mesh_check() -> dict[str, object]:
+    """Run `check_repair` on each repaired mesh and, as the control arm, on the rejected marching-cubes
+    closing of the same download. Pass: every repaired mesh passes and every control fails (the
+    teapot's control has a detached spout fragment; both controls sit off the original triangles).
+    Writes mesh-check.json and mesh-check.md here; raises if the verdict is not as expected."""
+    import json
+
+    out: dict[str, object] = {}
+    lines = ["| mesh | closed | pieces (expected) | max vertex → original or caps (m) | "
+             "max original vertex → mesh (m) | verdict |", "|---|---|---|---|---|---|"]
+    ok = True
+    for name in ("teapot", "suzanne"):
+        rep = teapot_repair() if name == "teapot" else suzanne_repair()
+        control = check_repair(rep, remeshed_by_winding(name), 1)
+        out[name] = {"repaired": rep.check, "control_marching_cubes": control, "parts": rep.parts}
+        for label, c in (("repaired", rep.check), ("control: marching cubes 1/48 m", control)):
+            lines.append(f"| {name}, {label} | {c['closed']} | {c['components']} ({c['expected_components']}) | "
+                         f"{c['max_vertex_to_source_m']:.1e} | {c['max_source_to_mesh_m']:.1e} | "
+                         f"{'pass' if c['passed'] else 'FAIL'} |")
+        ok &= bool(rep.check["passed"]) and not bool(control["passed"])
+    out["as_expected"] = ok
+    (HERE / "mesh-check.json").write_text(json.dumps(out, indent=1, default=str))
+    (HERE / "mesh-check.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    if not ok:
+        raise RuntimeError("mesh check: a repaired mesh failed, or a control passed")
+    return out
+
+
+if __name__ == "__main__":
+    # Through the module, not __main__, so the cached Repair pickles under `shapes_lib`.
+    import shapes_lib
+
+    shapes_lib.mesh_check()
+    print((HERE / "mesh-check.md").read_text(encoding="utf-8"))
 
 
 def mesh_by_name(name: str) -> Mesh:
@@ -342,6 +632,36 @@ def grid_inside(tris: F64, origin: F64, pitch: float, shape: tuple[int, int, int
 
 
 # ================================ VOXELISER ================================
+
+
+def _sampled_fill(tris: F64, base: F64, h: float, ijk: I64) -> F64:
+    """Cavendish's sampled fill: the fraction of a cell's 4³ sample points (at (i + ½)h/4) inside.
+
+    Only the boundary cells' 16 z-columns are cast: winding at each sample = the sum of crossing
+    steps below it on its column (`searchsorted` on (column, z) keys).
+    """
+    if len(ijk) == 0:
+        return np.zeros(0)
+    sub = (np.arange(4) + 0.5) * h / 4
+    nx = int(ijk[:, 0].max()) + 1
+    ny = int(ijk[:, 1].max()) + 1
+    n2 = (4 * nx, 4 * ny)
+    line, t, dw = crossings(tris, 2, base[[0, 1]] + h / 8, h / 4, n2)
+    cum = np.concatenate([[0.0], np.cumsum(dw)])
+    t0 = float(base[2]) - 1.0
+    scale = float(np.ceil((t.max() - t0) if len(t) else 1.0)) + 2.0
+    keys = line * scale + (t - t0)  # sorted, since crossings are sorted by (line, t)
+    # Sample columns of each cell: (4i + a, 4j + b), a, b < 4; heights base_z + kh + sub.
+    a, b = np.meshgrid(np.arange(4), np.arange(4), indexing="ij")
+    cols = ((4 * ijk[:, 0, None] + a.ravel()[None]) * n2[1] + 4 * ijk[:, 1, None] + b.ravel()[None])  # (N, 16)
+    first = np.searchsorted(keys, cols * scale)  # first crossing on each column
+    count = np.zeros(len(ijk))
+    for kz in range(4):
+        z = base[2] + ijk[:, 2] * h + sub[kz]
+        below = np.searchsorted(keys, cols * scale + (z[:, None] - t0))
+        wind = cum[below] - cum[first]
+        count += (np.rint(wind) > 0).sum(axis=1)
+    return count / 64.0
 
 
 def _clip_to_box(poly: list[list[float]], walls: list[tuple[int, float, float]]) -> list[list[float]]:
@@ -474,11 +794,7 @@ def voxelise(mesh: Mesh, h: float, origin: F64 | None = None, keep_drawing: bool
     ucid, first = np.unique(cid, return_index=True)
     bounds = np.append(first, len(cid))
 
-    sub = (np.arange(4) + 0.5) / 4
-    samples_in = grid_inside(tris, base + h / 8, h / 4, (int(n[0]) * 4, int(n[1]) * 4, int(n[2]) * 4))
-    ss_all = samples_in.reshape(int(n[0]), 4, int(n[1]), 4, int(n[2]), 4).sum(axis=(1, 3, 5)) / 64.0
     ctr_all = grid_inside(tris, base + h / 2, h, (int(n[0]), int(n[1]), int(n[2])))
-    del sub
 
     is_boundary = np.zeros(tuple(int(x) for x in n), dtype=bool)
     b_ijk, b_frac, b_cen, b_sec, b_ctr, b_ss, p_tris, p_of = [], [], [], [], [], [], [], []
@@ -552,7 +868,6 @@ def voxelise(mesh: Mesh, h: float, origin: F64 | None = None, keep_drawing: bool
         b_cen.append(cen)
         b_sec.append(sb.second_moment(t_all, cen) if vol > 1e-15 * h**3 else np.zeros((3, 3)))
         b_ctr.append(float(ctr_all[tuple(ijk)]))
-        b_ss.append(float(ss_all[tuple(ijk)]))
         p_tris.append(t_all)
         p_of.append(np.full(len(t_all), len(b_ijk) - 1))
         if keep_drawing:
@@ -561,6 +876,7 @@ def voxelise(mesh: Mesh, h: float, origin: F64 | None = None, keep_drawing: bool
 
     corner_in = wz[:-1, :-1, :-1] > 0
     interior = np.argwhere(corner_in & ~is_boundary).astype(np.int64)
+    b_ss = list(_sampled_fill(tris, base, h, np.array(b_ijk, dtype=np.int64)))
     mv, _ = sb.volume_centroid(tris, np.zeros(3))
     vox = Voxels(
         h=h, base=base, n=n, interior=interior, ijk=np.array(b_ijk, dtype=np.int64),
@@ -608,6 +924,36 @@ def g_points(mass: F64, pos: F64, pts: F64) -> F64:
         rl = np.linalg.norm(r, axis=2)
         out += (mass[None, s : s + step, None] * r / rl[..., None] ** 3).sum(axis=1)
     return out
+
+
+def g_series4(mass: F64, c: F64, h: float, pts: F64) -> F64:
+    """Uniform cubes of side h as their series to order 4 (Cavendish's far kernel): point mass + the
+    l = 4 term U₄ = A(5Σxᵢ⁴/r⁹ − 3/r⁵), A = −(7/60)(h/2)⁴·mass, x = point − centre. (A cube has no
+    quadrupole, so order 2 is the point mass.)"""
+    out = g_points(mass, c, pts)
+    step = max(1, 2_000_000 // max(len(pts), 1))
+    for s in range(0, len(mass), step):
+        x = pts[:, None] - c[None, s : s + step]
+        r = np.linalg.norm(x, axis=2)
+        big_s = (x**4).sum(axis=2)
+        a = -(7 / 60) * (h / 2) ** 4 * mass[None, s : s + step]
+        g = a[..., None] * (20 * x**3 / r[..., None] ** 9 - 45 * (big_s / r**11)[..., None] * x
+                            + 15 * x / r[..., None] ** 7)
+        out += g.sum(axis=1)
+    return out
+
+
+def g_cubes_fast(centres: F64, h: float, fill: F64, pts: F64, ratio: float = 0.01) -> F64:
+    """Uniform cubes: the series to order 4 where (h/2)/distance < `ratio` (its l = 6 remainder is
+    then < ratio⁶ ≈ 1e-12 relative), the exact polyhedral cube elsewhere."""
+    if len(centres) == 0:
+        return np.zeros((len(pts), 3))
+    dmin = np.full(len(centres), np.inf)
+    for p in pts:
+        dmin = np.minimum(dmin, np.linalg.norm(centres - p, axis=1))
+    far = 0.5 * h / dmin < ratio
+    return (g_series4(fill[far] * h**3, centres[far], h, pts)
+            + g_cubes(centres[~far], h, fill[~far], pts))
 
 
 def g_quadrupole(second: F64, pos: F64, pts: F64) -> F64:

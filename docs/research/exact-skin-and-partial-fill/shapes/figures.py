@@ -1,13 +1,13 @@
-"""Pictures: each shape exact | as cube voxels | as clipped polyhedra, whole and cut away.
+"""Pictures: each shape analytic or repaired mesh | as cube voxels | as clipped polyhedra, whole and cut.
 
-    python -I figures.py                 # all four shapes
-    python -I figures.py sphere torus    # some
+    python figures.py                 # all four shapes
+    python figures.py sphere torus    # some
 
 Writes `<shape>.png` and `<shape>-cutaway.png` here. Same lattice, camera and light in every panel.
-Colours: exact mesh blue; cube voxels grey (interior) and yellow (boundary cells whose centre is
+Colours: the shape blue; cube voxels grey (interior) and yellow (boundary cells whose centre is
 inside); clipped polyhedra grey (interior cubes) and orange (boundary pieces). Cell edges are drawn
 faintly. The cutaway removes every cell whose centre lies beyond the lattice wall nearest the body's
-centre plane y = const, and cuts the exact mesh at the same wall.
+centre plane y = const, and cuts the shape at the same wall.
 """
 
 from __future__ import annotations
@@ -135,8 +135,35 @@ def _clipped(cv: L.Canvas, vox: L.Voxels, removed: np.ndarray) -> None:
     cv.lines(np.concatenate(lines), INK, 0.22)
 
 
+def _analytic_surface(name: str) -> L.Mesh:
+    """A fine parametric tessellation used only to draw the analytic surface (256 × 128 quads)."""
+    if name == "torus":
+        return L.torus_mesh(1.0, 0.4, 256, 128)
+    nu, nv = 256, 128
+    u = 2 * np.pi * np.arange(nu) / nu
+    w = np.pi * (np.arange(nv + 1) / nv)
+    uu, ww = np.meshgrid(u, w, indexing="ij")
+    v = np.stack([np.sin(ww) * np.cos(uu), np.sin(ww) * np.sin(uu), np.cos(ww)], -1)
+    i, j = np.meshgrid(np.arange(nu), np.arange(nv), indexing="ij")
+    a = i * (nv + 1) + j
+    b = ((i + 1) % nu) * (nv + 1) + j
+    c = ((i + 1) % nu) * (nv + 1) + j + 1
+    d = i * (nv + 1) + j + 1
+    faces = np.concatenate([np.stack([a, b, c], -1).reshape(-1, 3), np.stack([a, c, d], -1).reshape(-1, 3)])
+    verts = v.reshape(-1, 3)
+    t = verts[faces]
+    area = np.linalg.norm(np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]), axis=1)
+    faces = faces[area > 1e-14]
+    n = np.cross(verts[faces[:, 1]] - verts[faces[:, 0]], verts[faces[:, 2]] - verts[faces[:, 0]])
+    flip = np.einsum("nk,nk->n", n, verts[faces].mean(axis=1)) < 0
+    faces[flip] = faces[flip][:, ::-1]
+    return L.Mesh("sphere", verts, faces.astype(np.int64), "")
+
+
 def figure(name: str) -> None:
     mesh = L.mesh_by_name(name)
+    analytic = name in ("sphere", "torus")
+    drawn = _analytic_surface(name) if analytic else mesh
     h = PITCH[name]
     vox = L.voxelise(mesh, h, keep_drawing=True)
     centre_y = 0.5 * (mesh.verts[:, 1].min() + mesh.verts[:, 1].max())
@@ -151,7 +178,7 @@ def figure(name: str) -> None:
         for kind in ("exact", "cubes", "clipped"):
             cv = _canvas(mesh)
             if kind == "exact":
-                _exact(cv, mesh, y_cut if cut else None)
+                _exact(cv, drawn, y_cut if cut else None)
             elif kind == "cubes":
                 _cubes(cv, vox, removed)
             else:
@@ -164,7 +191,7 @@ def figure(name: str) -> None:
         panels = [p[top:bottom] for p in panels]
         aspect = (bottom - top) / SIZE
         fig, axes = plt.subplots(1, 3, figsize=(15, 5.0 * aspect + 1.6), facecolor="#fcfcfb")
-        titles = ["exact (the mesh)",
+        titles = ["analytic" if analytic else "repaired mesh (original triangles)",
                   f"cube voxels: {len(vox.interior)} interior + {n_on} boundary",
                   f"clipped polyhedra: {len(vox.interior)} cubes + {len(vox.frac)} pieces"]
         for ax, img, title in zip(axes, panels, titles):
@@ -173,12 +200,20 @@ def figure(name: str) -> None:
             ax.set_title(title, fontsize=12, color="#0b0b0b")
         what = {"sphere": "Sphere, radius 1 m", "torus": "Torus, R = 1 m, r = 0.4 m",
                 "teapot": "Utah teapot, 1 m long", "suzanne": "Suzanne, 1 m wide"}[name]
-        caption = (f"{what}, pitch {h} m{', cut away at the wall y = ' + format(y_cut, '.3f') + ' m' if cut else ''}. "
-                   f"Mesh: {mesh.source}. The 'exact' shape is exact to this mesh, and the pieces are "
-                   f"clipped by it. Cube voxels: a cell is solid if its centre is inside (grey: cells "
-                   f"wholly inside; yellow: cells the surface crosses whose centre is inside). Clipped "
-                   f"polyhedra: the same grey interior cubes, and every cell the surface crosses cut to "
-                   f"its inside piece (orange).")
+        cut_txt = f", cut away at the lattice wall y = {y_cut:.3f} m" if cut else ""
+        if analytic:
+            left = ("Left: the analytic surface (drawn from a 256 × 128 parametric tessellation). The voxels "
+                    f"and pieces are made from a mesh: {mesh.source}; the pieces are exact to that mesh.")
+        else:
+            chk = (L.teapot_repair() if name == "teapot" else L.suzanne_repair()).check
+            left = (f"Left: the repaired mesh. {mesh.source}. Check (pass if within 1e-6 m): closed, "
+                    f"{chk['components']} piece; vertices to original triangles or caps, max "
+                    f"{chk['max_vertex_to_source_m']:.1e} m; original vertices outside other parts to the "
+                    f"result, max {chk['max_source_to_mesh_m']:.1e} m. The pieces are exact to this mesh.")
+        caption = (f"{what}, pitch {h} m{cut_txt}. {left} Cube voxels: a cell is solid if its centre is "
+                   f"inside (grey: wholly inside; yellow: crossed by the surface, centre inside). Clipped "
+                   f"polyhedra: the same grey interior cubes, and every crossed cell cut to its inside piece "
+                   f"(orange).")
         height = 5.0 * aspect + 1.6
         fig.text(0.02, 0.08 / height, "\n".join(textwrap.wrap(caption, 190)), fontsize=9, color="#52514e",
                  va="bottom", ha="left")

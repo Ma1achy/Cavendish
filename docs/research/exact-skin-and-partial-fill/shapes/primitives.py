@@ -35,7 +35,7 @@ from scipy.special import erf  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import shapes_lib as L  # noqa: E402
 
-SHAPES = {"sphere": 0.125, "torus": 0.1, "suzanne": 0.1}
+SHAPES = {"sphere": 0.125, "torus": 0.1, "teapot": 0.0625}
 CELLS = np.array([0.5, 0.75, 1, 1.5, 2, 3, 5, 7, 10, 15, 20, 30, 50, 70, 100])
 NAMES = ["(1) point at centre", "(2) point at centroid", "(3) sphere", "(4) cube (prism)",
          "(5) cube series l≤4", "(6) Gaussian σ=h/√12", "(7) trilinear density", "(8) exact piece"]
