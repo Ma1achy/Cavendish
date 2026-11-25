@@ -81,3 +81,60 @@ pub fn snap(painter: &Painter, rect: Rect, colour: Color32) {
     );
     painter.circle_filled(at(rect, 10.0, 10.0), 2.6, colour);
 }
+
+/// A small picture of what a starter adds: a dot for a point mass, a disc for a sphere, a square
+/// for a cube, a drum for a cylinder, a triangle for a Platonic solid or any other shape; a moving
+/// body (an oscillator, a pendulum) has a swing drawn under it. `None` (no body) is a cross.
+pub fn starter(painter: &Painter, rect: Rect, body: Option<&cav_sim::BodySpec>, colour: Color32) {
+    let stroke = Stroke::new(1.4, colour);
+    let Some(body) = body else {
+        painter.line_segment([at(rect, 5.0, 5.0), at(rect, 15.0, 15.0)], stroke);
+        painter.line_segment([at(rect, 15.0, 5.0), at(rect, 5.0, 15.0)], stroke);
+        return;
+    };
+    let moving = !matches!(body.motion, cav_sim::Motion::Static { .. });
+    let (y, size) = if moving { (8.0, 0.75) } else { (10.0, 1.0) };
+    let c = at(rect, 10.0, y);
+    let r = rect.width() * 0.32 * size;
+    match body.shape.as_ref().map(|s| &s.kind) {
+        None => {
+            painter.circle_filled(c, rect.width() * 0.12, colour);
+        }
+        Some(
+            cav_sim::ShapeKind::Sphere { .. }
+            | cav_sim::ShapeKind::Shell { .. }
+            | cav_sim::ShapeKind::Ellipsoid { .. },
+        ) => {
+            painter.circle_stroke(c, r, stroke);
+        }
+        Some(cav_sim::ShapeKind::Cuboid { .. }) => {
+            painter.rect_stroke(
+                Rect::from_center_size(c, egui::vec2(2.0 * r, 2.0 * r) * 0.85),
+                0.0,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
+        }
+        Some(cav_sim::ShapeKind::Cylinder { .. }) => {
+            painter.rect_stroke(
+                Rect::from_center_size(c, egui::vec2(1.4 * r, 2.0 * r)),
+                3.0,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
+        }
+        Some(_) => {
+            let points = vec![
+                c + egui::vec2(0.0, -r),
+                c + egui::vec2(r * 0.9, r * 0.7),
+                c + egui::vec2(-r * 0.9, r * 0.7),
+            ];
+            painter.add(Shape::closed_line(points, stroke));
+        }
+    }
+    if moving {
+        painter.line_segment([at(rect, 3.0, 18.0), at(rect, 17.0, 18.0)], Stroke::new(1.0, colour));
+        painter.line_segment([at(rect, 3.0, 18.0), at(rect, 5.0, 16.5)], Stroke::new(1.0, colour));
+        painter.line_segment([at(rect, 17.0, 18.0), at(rect, 15.0, 16.5)], Stroke::new(1.0, colour));
+    }
+}

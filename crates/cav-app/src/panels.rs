@@ -1694,6 +1694,76 @@ fn draw_gizmo(
     Some(gizmo)
 }
 
+/// The Place tool's aim: the ground's grid, a metre a line, eight metres round the point under the
+/// pointer (`at`, points within pane `pane` at `rect`; with no pointer over the pane, round the
+/// point under the pane's middle), and, under the pointer, a ghost of the starter: its outline on
+/// the ground at its size (a point mass's a small ring) and a line up to where its middle will be.
+/// The ghost's box is in the layout's buttons as `place ghost`.
+fn place_preview(shell: &mut Shell, ui: &egui::Ui, pane: usize, rect: Rect, at: Option<egui::Pos2>) {
+    let view = shell.engine.view(pane).clone();
+    let size = [f64::from(rect.width()), f64::from(rect.height())];
+    let ground = shell.ground();
+    let middle_of_pane = egui::pos2(0.5 * rect.width(), 0.5 * rect.height());
+    let aimed = at.unwrap_or(middle_of_pane);
+    let aim = crate::tools::on_ground(&view, size, [f64::from(aimed.x), f64::from(aimed.y)], ground);
+    let camera = cav_render::Camera::new(&view, size[0] / size[1]);
+    let scale = 1024.0;
+    let whole = [(size[0] * scale) as u32, (size[1] * scale) as u32];
+    let screen = |p: [f64; 3]| {
+        camera
+            .pixel(cav_core::Vec3::from_array(p), whole)
+            .map(|[x, y]| rect.min + vec2((x / scale) as f32, (y / scale) as f32))
+    };
+    let painter = ui.painter_at(rect);
+    let line = Stroke::new(1.0, Color32::from_white_alpha(38));
+    let (cx, cy) = (aim[0].round(), aim[1].round());
+    for k in -8..=8 {
+        let k = f64::from(k);
+        for (a, b) in [
+            ([cx + k, cy - 8.0, ground], [cx + k, cy + 8.0, ground]),
+            ([cx - 8.0, cy + k, ground], [cx + 8.0, cy + k, ground]),
+        ] {
+            if let (Some(a), Some(b)) = (screen(a), screen(b)) {
+                painter.line_segment([a, b], line);
+            }
+        }
+    }
+    if at.is_none() {
+        return;
+    }
+    let starter = cav_sim::starters::find(&shell.place_starter);
+    let body = starter.and_then(|s| s.body.as_ref());
+    let reach = body.map_or(0.5, |b| {
+        if b.shape.is_none() && b.radius == 0.0 { 0.15 } else { cav_sim::starters::reach(b) }
+    });
+    let lift = match body {
+        Some(b) if b.shape.is_none() && b.radius == 0.0 => 1.0,
+        Some(b) => cav_sim::starters::lift(b),
+        None => 0.0,
+    };
+    let ghost = theme::GOLD.gamma_multiply(0.85);
+    let ring: Vec<egui::Pos2> = (0..=40)
+        .filter_map(|k| {
+            let a = std::f64::consts::TAU * f64::from(k) / 40.0;
+            screen([aim[0] + reach * a.cos(), aim[1] + reach * a.sin(), ground])
+        })
+        .collect();
+    if ring.len() > 2 {
+        painter.add(egui::Shape::line(ring.clone(), Stroke::new(1.5, ghost)));
+    }
+    let middle = [aim[0], aim[1], ground + lift];
+    if let (Some(foot), Some(top)) = (screen(aim), screen(middle)) {
+        painter.line_segment([foot, top], Stroke::new(1.0, ghost));
+        painter.circle_stroke(top, 4.0, Stroke::new(1.5, ghost));
+        let bounds =
+            ring.iter().fold(Rect::from_min_max(foot, foot), |r, p| r.union(Rect::from_min_max(*p, *p)));
+        shell
+            .layout
+            .buttons
+            .push(("place ghost".to_owned(), bounds.union(Rect::from_center_size(top, vec2(8.0, 8.0)))));
+    }
+}
+
 /// How far one keyboard step orbits the canvas, degrees (the spec's 1° for spherical views).
 pub const ORBIT_STEP: f64 = 1.0;
 /// How far one keyboard step pans the canvas, as a share of the camera's distance.
@@ -1906,6 +1976,12 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                         Rect::from_center_size(p + rect.min.to_vec2(), vec2(24.0, 24.0))
                     }),
             };
+        }
+        // The Place tool in hand over the scene: a grid on the ground round the pointer and a ghost
+        // of the starter where a click would put it (S18's second review, UX 2: in the void there
+        // was nothing to aim at).
+        if behaviour == crate::tools::Behaviour::Place && pane == active {
+            place_preview(shell, ui, pane, rect, response.hover_pos().map(within));
         }
         if behaviour == crate::tools::Behaviour::Place
             && response.clicked()

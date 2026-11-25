@@ -1730,3 +1730,46 @@ fn the_inspector_says_when_it_scrolls_and_names_a_point_s_radius() {
     rig.frames(vec![vec![], vec![]]);
     assert!(rig.shell.layout().button("reset bodies[0].mass").is_some());
 }
+
+#[test]
+fn the_place_tool_shows_where_a_click_puts_the_starter() {
+    // S18's second review, UX 2: with Place in hand, a ghost of the starter follows the pointer on
+    // the ground. Control: with Select in hand there is none.
+    let mut rig = Rig::new();
+    rig.shell.run("load void").unwrap();
+    rig.shell.run("tool place").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let rect = rig.shell.layout().panes[0];
+    let pointer = rect.min + egui::vec2(0.55 * rect.width(), 0.7 * rect.height());
+    rig.frames(vec![vec![Event::PointerMoved(pointer)], vec![]]);
+    let ghost = rig.shell.layout().button("place ghost").expect("a ghost under the pointer");
+    assert!(ghost.expand(1.0).contains(pointer), "{ghost:?} holds the pointer {pointer:?}");
+    rig.shell.run("tool select").unwrap();
+    rig.frames(vec![vec![Event::PointerMoved(pointer)], vec![]]);
+    assert!(rig.shell.layout().button("place ghost").is_none());
+}
+
+#[test]
+fn the_wizard_offers_its_bodies_as_tiles() {
+    // S18's second review, UX 7: the first body is a grid of tiles, three to a row, inside the
+    // wizard; every starter with a body and "none" are offered.
+    let mut rig = Rig::new();
+    rig.key(Key::N, Modifiers::COMMAND);
+    rig.frames(vec![vec![], vec![]]);
+    let tiles: Vec<egui::Rect> = rig
+        .shell
+        .layout()
+        .buttons
+        .iter()
+        .filter(|(l, _)| l.starts_with("wizard body "))
+        .map(|(_, r)| *r)
+        .collect();
+    let bodies = cav_sim::starters::starters().iter().filter(|s| s.body.is_some()).count();
+    assert_eq!(tiles.len(), bodies + 1);
+    let rows: std::collections::BTreeSet<i32> = tiles.iter().map(|r| r.top().round() as i32).collect();
+    assert_eq!(rows.len(), tiles.len().div_ceil(3), "three to a row (control: a column has a row each)");
+    let window = rig.shell.focus_tree().node("wizard").and_then(|n| n.rect).unwrap();
+    assert!(rig.shell.layout().screen.contains_rect(window), "the wizard fits the window");
+    rig.click_button("wizard body cube");
+    assert_eq!(rig.shell.wizard.as_ref().unwrap().body.as_deref(), Some("cube"));
+}

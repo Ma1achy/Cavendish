@@ -412,18 +412,57 @@ fn wizard(shell: &mut Shell, ctx: &egui::Context) {
                     .filter(|s| s.body.is_some())
                     .map(|s| (Some(s.name.clone()), s.label.clone())),
             );
-            for (n, (name, label)) in options.iter().enumerate() {
-                let r = ui.radio(choices.body == *name, label);
-                let id = format!("wizard/body/{n}");
-                shell.register("wizard/body", &id, label, Kind::Button, r.rect);
-                shell
-                    .layout
-                    .buttons
-                    .push((format!("wizard body {}", name.as_deref().unwrap_or("none")), r.rect));
-                if r.clicked() || shell.take_click(&id) {
-                    choices.body.clone_from(name);
+            // A grid of tiles, each with a small picture of what it adds, three to a row: fifteen
+            // radios in a column did not fit the window or scan (S18's second review, UX 7).
+            egui::Grid::new("wizard bodies").num_columns(3).spacing([4.0, 4.0]).show(ui, |ui| {
+                for (n, (name, label)) in options.iter().enumerate() {
+                    let starter = name.as_deref().and_then(cav_sim::starters::find);
+                    let on = choices.body == *name;
+                    let (rect, r) = ui.allocate_exact_size(egui::vec2(118.0, 26.0), egui::Sense::click());
+                    let visuals = ui.style().interact_selectable(&r, on);
+                    let painter = ui.painter_at(rect);
+                    painter.rect(
+                        rect,
+                        3.0,
+                        visuals.weak_bg_fill,
+                        visuals.bg_stroke,
+                        egui::StrokeKind::Inside,
+                    );
+                    let icon = egui::Rect::from_center_size(
+                        rect.left_center() + egui::vec2(13.0, 0.0),
+                        egui::vec2(16.0, 16.0),
+                    );
+                    crate::icons::starter(
+                        &painter,
+                        icon,
+                        starter.and_then(|s| s.body.as_ref()),
+                        visuals.fg_stroke.color,
+                    );
+                    painter.text(
+                        rect.left_center() + egui::vec2(26.0, 0.0),
+                        egui::Align2::LEFT_CENTER,
+                        label,
+                        egui::FontId::proportional(11.5),
+                        visuals.fg_stroke.color,
+                    );
+                    let r = match starter {
+                        Some(s) => r.on_hover_text(&s.about),
+                        None => r.on_hover_text("no body: begin with the array alone"),
+                    };
+                    let id = format!("wizard/body/{n}");
+                    shell.register("wizard/body", &id, label, Kind::Button, r.rect);
+                    shell
+                        .layout
+                        .buttons
+                        .push((format!("wizard body {}", name.as_deref().unwrap_or("none")), r.rect));
+                    if r.clicked() || shell.take_click(&id) {
+                        choices.body.clone_from(name);
+                    }
+                    if n % 3 == 2 {
+                        ui.end_row();
+                    }
                 }
-            }
+            });
             section(shell, ui, "wizard/duration", "How long, seconds");
             let r = ui
                 .add(egui::DragValue::new(&mut choices.duration).range(1.0..=1.0e5).speed(0.5).suffix(" s"));
