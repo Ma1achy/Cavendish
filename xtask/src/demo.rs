@@ -6,7 +6,7 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use crate::{cargo, step};
 
@@ -29,7 +29,7 @@ fn binary(root: &Path, name: &str) -> PathBuf {
 /// Runs a program, returning its standard output; a failure carries its standard error.
 fn capture(program: &Path, args: &[&str]) -> Result<String, String> {
     let output =
-        Command::new(program).args(args).output().map_err(|e| format!("{}: {e}", program.display()))?;
+        crate::gentle(program).args(args).output().map_err(|e| format!("{}: {e}", program.display()))?;
     if !output.status.success() {
         return Err(format!(
             "`{} {}` failed ({}): {}",
@@ -494,7 +494,7 @@ fn s2(root: &Path) -> Result<(), String> {
         ("staggered", "flight", "paper-full", "flight-paper-full.svg"),
     ] {
         // Run from the figures' directory, so that nothing a figure records names this machine.
-        let output = Command::new(&cav)
+        let output = crate::gentle(&cav)
             .args(["figure", scene, what, "--preset", preset, "--out", file])
             .current_dir(&figures)
             .output()
@@ -541,7 +541,7 @@ fn s2(root: &Path) -> Result<(), String> {
                 print(redraw(load(sys.argv[1]).unwrap(), sys.argv[2]).unwrap().name)";
     let from = figures.join("periodogram-paper-column.json").to_string_lossy().into_owned();
     let to = figures.join("redrawn.png").to_string_lossy().into_owned();
-    let output = Command::new(&python)
+    let output = crate::gentle(&python)
         .args(["-c", code, &from, &to])
         .current_dir(root.join("python"))
         .output()
@@ -563,7 +563,7 @@ fn s2(root: &Path) -> Result<(), String> {
     let mut signals = Vec::new();
     for threads in ["1", "6"] {
         let target = temp(&format!("threads-{threads}"));
-        let output = Command::new(&cav)
+        let output = crate::gentle(&cav)
             .args(["run", "comb", "--exec", "set duration 20000", "--out", &target])
             .env("CAV_THREADS", threads)
             .output()
@@ -666,7 +666,7 @@ fn s3(root: &Path) -> Result<(), String> {
     let mut said = String::new();
     for file in ["platonic-row.svg", "platonic-row.pdf", "platonic-row.png"] {
         let exec = "view top; proj ortho; colour height";
-        let output = Command::new(&cav)
+        let output = crate::gentle(&cav)
             .args(["figure", "platonic-row", "view", "--preset", "paper-full", "--exec", exec, "--out", file])
             .current_dir(&figures)
             .output()
@@ -727,7 +727,7 @@ fn s3(root: &Path) -> Result<(), String> {
 
     // 8. Timings: the voxeliser on spheres, optimised as the hot crate is; frame times with leaves.
     let mut timings = String::from("This machine; recorded, not gated.\n\n");
-    let output = Command::new("cargo")
+    let output = crate::gentle("cargo")
         .args(["run", "--quiet", "--release", "-p", "cav-core", "--example", "voxel_timing"])
         .current_dir(root)
         .output()
@@ -782,7 +782,7 @@ struct Mcp {
 
 impl Mcp {
     fn start(cav: &Path, heading: &str) -> Result<Self, String> {
-        let mut child = Command::new(cav)
+        let mut child = crate::gentle(cav)
             .arg("mcp")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -949,7 +949,7 @@ fn s17(root: &Path) -> Result<(), String> {
             if script.is_empty() { String::new() } else { format!("#exec={}", script.replace(' ', "%20")) };
         let url = format!("http://127.0.0.1:{}/{fragment}", server.port);
         let target = out.join(file);
-        let output = Command::new("node")
+        let output = crate::gentle("node")
             .current_dir(root)
             .arg("scripts/web_screenshot.mjs")
             .arg(&chrome)
@@ -982,7 +982,7 @@ fn s17(root: &Path) -> Result<(), String> {
     let page = |url: &str, click: bool, seconds: u32| -> Result<String, String> {
         let _ = std::fs::remove_dir_all(&downloads);
         std::fs::create_dir_all(&downloads).map_err(|e| format!("{}: {e}", downloads.display()))?;
-        let mut node = Command::new("node");
+        let mut node = crate::gentle("node");
         node.current_dir(root).env("CAV_DOWNLOADS", &downloads).arg("scripts/web_screenshot.mjs");
         if click {
             node.env("CAV_CLICK", "held-downloads");
@@ -1101,7 +1101,7 @@ fn s17(root: &Path) -> Result<(), String> {
         ("web-no-webgpu.png", "no-webgpu", "without WebGPU"),
         ("web-no-adapter.png", "no-adapter", "with WebGPU but no adapter"),
     ] {
-        let output = Command::new("node")
+        let output = crate::gentle("node")
             .current_dir(root)
             .args(["scripts/web_screenshot.mjs"])
             .arg(&chrome)

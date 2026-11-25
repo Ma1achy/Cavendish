@@ -605,7 +605,7 @@ pub fn baseline(against: Against<'_>, found: &Found) -> Result<Option<Vec<Earlie
 /// Asks git for the baseline: `docs/validation/report.json` as committed at the revision.
 fn find(root: &Path, revision: &str) -> Found {
     let git = |args: &[&str]| {
-        let output = std::process::Command::new("git").current_dir(root).args(args).output().ok()?;
+        let output = crate::gentle("git").current_dir(root).args(args).output().ok()?;
         output.status.success().then(|| String::from_utf8_lossy(&output.stdout).into_owned())
     };
     Found {
@@ -718,7 +718,7 @@ fn plots(root: &Path) -> Result<(), String> {
     let script = "scripts/validation_plots.py";
     let args = [script, "--report", "docs/validation/report.json", "--out", "docs/validation"];
     for python in ["python", "python3", "py"] {
-        let mut command = std::process::Command::new(python);
+        let mut command = crate::gentle(python);
         command.current_dir(root).args(args);
         match command.status() {
             Ok(status) if status.success() => return Ok(()),

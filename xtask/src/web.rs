@@ -12,7 +12,6 @@
 //! must agree), wasm-opt is binaryen's `version_133`. Neither is installed by this command.
 
 use std::path::Path;
-use std::process::Command;
 
 use crate::{cargo, step};
 
@@ -74,13 +73,13 @@ pub fn build(root: &Path) -> Result<(), String> {
         std::fs::remove_dir_all(&dist).map_err(|e| format!("{}: not emptied: {e}", dist.display()))?;
     }
     let built = root.join("target").join(TARGET).join("web").join("cav-web.wasm");
-    let mut bindgen = Command::new("wasm-bindgen");
+    let mut bindgen = crate::gentle("wasm-bindgen");
     bindgen.current_dir(root).args(["--target", "web", "--no-typescript", "--out-dir", DIST, "--out-name"]);
     bindgen.arg("cavendish").arg(&built);
     step("wasm-bindgen", bindgen)?;
     let module = dist.join("cavendish_bg.wasm");
     let before = size(&module)?;
-    let mut opt = Command::new("wasm-opt");
+    let mut opt = crate::gentle("wasm-opt");
     opt.args(["-O2", "-o"]).arg(&module).arg(&module).args(FEATURES);
     step("wasm-opt -O2", opt)?;
     let page = std::fs::read_to_string(root.join("crates/cav-app/web/index.html"))
@@ -188,7 +187,7 @@ fn lock_version(lock: &str, name: &str) -> Option<String> {
 /// Runs `tool` with `args` and fails, saying how to get it, unless its output contains `wanted`.
 fn check_tool(tool: &str, args: &[&str], wanted: &str, install: &str) -> Result<(), String> {
     let output =
-        Command::new(tool).args(args).output().map_err(|e| format!("{tool}: not found ({e}); {install}"))?;
+        crate::gentle(tool).args(args).output().map_err(|e| format!("{tool}: not found ({e}); {install}"))?;
     let said = String::from_utf8_lossy(&output.stdout);
     if said.contains(wanted) {
         Ok(())
@@ -203,7 +202,7 @@ fn size(path: &Path) -> Result<u64, String> {
 
 /// The commit the page is built from, as git names it (`GITHUB_SHA` in the workflow is the same).
 fn revision(root: &Path) -> String {
-    Command::new("git")
+    crate::gentle("git")
         .current_dir(root)
         .args(["rev-parse", "HEAD"])
         .output()

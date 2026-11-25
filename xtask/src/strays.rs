@@ -4,7 +4,6 @@
 //! passes the exit code on. Windows only, like the leftovers it looks for.
 
 use std::path::Path;
-use std::process::Command;
 
 /// What `cargo xtask strays …` was asked to do.
 #[derive(Debug, PartialEq, Eq)]
@@ -46,7 +45,7 @@ pub fn run(root: &Path, args: &[&str]) -> Result<(), String> {
         return Err("strays looks for Windows processes; there is nothing to do here".into());
     }
     let (script, arguments) = script_and_arguments(&mode);
-    let mut command = Command::new("powershell.exe");
+    let mut command = crate::gentle("powershell.exe");
     command
         .current_dir(root)
         .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
