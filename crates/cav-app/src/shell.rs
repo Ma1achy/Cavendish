@@ -20,7 +20,11 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("play", "start or stop playback"),
     ("pause", "stop playback"),
     ("keys", "the keyboard reference"),
-    ("palette", "the command palette: search every action, starter, scene, command and field (Ctrl+K)"),
+    (
+        "palette",
+        "the command palette: search every action, starter, scene, command and field (Ctrl+K); `palette add` lists what can be added, `palette <menu>` one menu",
+    ),
+    ("rename", "type a new name for the selected body or tower in the scene tree (F2)"),
     ("about", "version and credits"),
     ("clear", "empty the console's log"),
     ("quit", "close the application"),
@@ -201,6 +205,8 @@ pub struct Shell {
     /// Whether what is being done now came from the keyboard (a window opened from it shows
     /// the ring at once).
     pub(crate) by_keyboard: bool,
+    /// The item being renamed in the scene tree (`F2`), and the name typed so far.
+    pub renaming: Option<(Target, String)>,
 }
 
 /// How near a body's picture the pointer must be to take hold of it, points.
@@ -267,7 +273,45 @@ impl Shell {
             pending: Vec::new(),
             palette: Palette::default(),
             by_keyboard: false,
+            renaming: None,
         }
+    }
+
+    /// The height of the ground under the scene, metres: the floor's top, else the room's floor,
+    /// else 0 (the towers' base level in the default array).
+    #[must_use]
+    pub fn ground(&self) -> f64 {
+        let spec = self.engine.spec();
+        spec.floor
+            .as_ref()
+            .map(|f| f.height)
+            .or_else(|| spec.room.as_ref().map(|r| r.origin[2]))
+            .unwrap_or(0.0)
+    }
+
+    /// Where a starter is put when no place is said: under where the active pane's camera
+    /// looks, on the ground (a voxel shape resting on it, a point mass a metre above it), and
+    /// not on a tower's axis (moved 2 m east until it is clear of every tower by a metre).
+    /// Metres, the world's frame.
+    #[must_use]
+    pub fn place_for(&self, starter: &str) -> [f64; 3] {
+        let view = self.engine.view(self.engine.active_pane());
+        let body = cav_sim::starters::find(starter).and_then(|s| s.body.as_ref());
+        let lift = match body {
+            Some(body) if body.shape.is_none() && body.radius == 0.0 => 1.0,
+            Some(body) => cav_sim::starters::lift(body),
+            None => 0.0,
+        };
+        // A tower goes at the ground; a body clear of the towers' axes.
+        let (mut x, y) = ((view.target[0] * 4.0).round() / 4.0, (view.target[1] * 4.0).round() / 4.0);
+        if body.is_some() {
+            let towers = &self.engine.spec().array.towers;
+            let near = |x: f64| towers.iter().any(|t| (t.position[0] - x).hypot(t.position[1] - y) < 1.0);
+            while near(x) {
+                x += 2.0;
+            }
+        }
+        [x, y, self.ground() + lift]
     }
 
     /// The scopes and elements of the last whole frame, as the keyboard walks them.
@@ -303,11 +347,7 @@ impl Shell {
             Needs::Undo => can_undo,
             Needs::Redo => can_redo,
             Needs::Selection => self.engine.selection().is_some(),
-            Needs::Removable => match self.engine.selection() {
-                Some(Target::Body(_) | Target::Room | Target::Floor) => true,
-                Some(Target::Tower(_)) => spec.array.towers.len() > 1,
-                _ => false,
-            },
+            Needs::Item => matches!(self.engine.selection(), Some(Target::Body(_) | Target::Tower(_))),
             Needs::Body => matches!(self.engine.selection(), Some(Target::Body(_))),
             Needs::Tower(n) => n >= 1 && n <= spec.array.towers.len(),
             Needs::Shapes => spec.bodies.iter().any(|b| b.shape.is_some()),
@@ -327,6 +367,24 @@ impl Shell {
         }
         let line = Self::resolve(&action.line, self.engine.selection());
         self.run(&line)
+    }
+
+    /// Adds the starter `name` where [`Self::place_for`] puts it, and selects it: the Add menu,
+    /// the empty scene's buttons and the palette's Add entries.
+    ///
+    /// # Errors
+    /// Why it was refused.
+    pub fn add_starter(&mut self, name: &str) -> Result<String, String> {
+        let [x, y, z] = self.place_for(name);
+        let outcome = self.run(&format!("add {name} at {x} {y} {z}"))?;
+        // What was added is selected, so that the next thing done (a move, a field) is to it.
+        let spec = self.engine.spec();
+        let select = match cav_sim::starters::find(name).map(cav_sim::starters::Starter::list) {
+            Some("array.towers") => format!("select tower {}", spec.array.towers.len()),
+            _ => format!("select body {}", spec.bodies.len()),
+        };
+        let _ = self.run(&select);
+        Ok(outcome)
     }
 
     /// The paths of the fields the inspector shows for the selection, for the palette.
@@ -415,7 +473,11 @@ impl Shell {
                 .iter()
                 .find(|c| c.name == line)
                 .is_some_and(|c| c.usage.trim() != c.name);
-            if takes_words {
+            if let Some(starter) = line.strip_prefix("add ").filter(|s| cav_sim::starters::find(s).is_some())
+            {
+                // A starter goes where the camera looks, and is selected.
+                let _ = self.add_starter(starter);
+            } else if takes_words {
                 // A command that needs words: the console opens with its name typed.
                 self.console_open = true;
                 self.focus_console = true;
@@ -469,6 +531,22 @@ impl Shell {
     fn run_app_command(&mut self, line: &str) -> Result<String, String> {
         let mut words = line.split_whitespace();
         let name = words.next().unwrap_or_default();
+        // `palette <menu>` opens the palette filtered to a menu (`palette add`: the starters).
+        if name == "palette"
+            && let Some(menu) = words.next()
+        {
+            let titles = crate::menus::titles();
+            let Some(title) = titles.iter().find(|t| t.eq_ignore_ascii_case(menu)) else {
+                let why = format!("`{menu}` is not a menu: {}", titles.join(", "));
+                self.engine.note(Level::Error, Subsystem::App, why.clone());
+                self.console_open = true;
+                return Err(why);
+            };
+            self.palette =
+                Palette { open: true, focus_query: true, menu: Some(title.clone()), ..Palette::default() };
+            self.window_opened("palette", "palette/query", true);
+            return Ok(line.to_owned());
+        }
         if words.next().is_some() {
             let why = format!("`{name}` takes no arguments");
             self.engine.note(Level::Error, Subsystem::App, why.clone());
@@ -495,6 +573,21 @@ impl Shell {
                 self.palette = Palette { open: true, focus_query: true, ..Palette::default() };
                 self.window_opened("palette", "palette/query", true);
             }
+            "rename" => match self.engine.selection() {
+                Some(target @ (Target::Body(n) | Target::Tower(n))) => {
+                    let spec = self.engine.spec();
+                    let label = match target {
+                        Target::Body(_) => spec.bodies[n - 1].label.clone(),
+                        _ => spec.array.towers[n - 1].label.clone(),
+                    };
+                    self.renaming = Some((target, label));
+                }
+                _ => {
+                    let why = "select a body or a tower to rename".to_owned();
+                    self.engine.note(Level::Error, Subsystem::App, why.clone());
+                    return Err(why);
+                }
+            },
             "clear" => self.engine.clear_log(),
             "quit" => self.quit = true,
             _ => unreachable!("is_app_command checked the name"),

@@ -56,7 +56,14 @@ impl Rig {
         ]);
     }
 
+    /// Clicks the button that runs `line`; one that is in the header's View popover is reached by
+    /// opening the popover first, as a person would.
     fn click_button(&mut self, line: &str) {
+        if self.shell.layout().button(line).is_none()
+            && let Some(popover) = self.shell.layout().button("view menu")
+        {
+            self.click(popover.center());
+        }
         let rect = self.shell.layout().button(line).unwrap_or_else(|| panic!("no button runs `{line}`"));
         self.click(rect.center());
     }
@@ -203,26 +210,38 @@ fn every_menu_item_is_an_action_that_runs() {
             assert!(Shell::new().engine.parse(line).is_ok(), "`{line}`");
             continue;
         }
-        // Each runs on a shell prepared so that undo, redo and the comparison have something to act on.
+        // Each runs on a shell prepared so that undo, redo and the selection's items have
+        // something to act on: tower 2 is selected, and `{selection}` is it.
         let mut shell = Shell::new();
         shell.run("load void").unwrap();
+        shell.run("select tower 2").unwrap();
         if line == "redo" {
             shell.run("undo").unwrap();
         }
-        let outcome = shell.run(line);
+        let line = Shell::resolve(line, shell.engine.selection());
+        let outcome = shell.run(&line);
         assert!(outcome.is_ok(), "the menu item `{line}` is not a command that runs: {outcome:?}");
         // And it is either the window's own or one the engine's console parses.
-        assert!(Shell::is_app_command(line) || Shell::new().engine.parse(line).is_ok(), "`{line}`");
+        assert!(Shell::is_app_command(&line) || shell.engine.parse("select none").is_ok(), "`{line}`");
     }
     // Every menu is reachable and none is empty.
     let titles = menus::titles();
-    assert_eq!(titles, ["File", "Edit", "View", "Scene", "Array", "Help"]);
+    assert_eq!(titles, ["File", "Edit", "Add", "View", "Scene", "Array", "Help"]);
+    // The Add menu is the starters; every other menu has actions.
+    assert!(!cav_sim::starters::starters().is_empty());
     assert!(
-        titles.iter().all(|title| cav_app::actions::table()
+        titles.iter().filter(|title| *title != "Add").all(|title| cav_app::actions::table()
             .actions
             .iter()
             .any(|a| a.menu.starts_with(title.as_str())))
     );
+    // Every starter the Add menu offers is added where the camera looks, and selected.
+    for starter in cav_sim::starters::starters() {
+        let mut shell = Shell::new();
+        shell.run("load void").unwrap();
+        shell.add_starter(&starter.name).unwrap_or_else(|why| panic!("{}: {why}", starter.name));
+        assert!(shell.engine.selection().is_some(), "{} is selected once added", starter.name);
+    }
     // Control: a line that is not a command fails the same check, so the loop above can fail.
     let mut shell = Shell::new();
     assert!(shell.run("view sideways").is_err());
@@ -447,9 +466,16 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
     // The window's own commands never reach the engine's journal, and take no arguments.
     for (name, _) in cav_app::APP_COMMANDS {
         let mut shell = Shell::new();
-        assert!(shell.run(name).is_ok(), "{name}");
+        let outcome = shell.run(name);
+        // `rename` needs a selection, which a fresh shell has not: it says so and changes nothing.
+        assert!(outcome.is_ok() || (*name == "rename" && outcome.unwrap_err().contains("select")), "{name}");
         assert!(shell.engine.journal().is_empty(), "{name} reached the engine");
-        assert!(shell.run(&format!("{name} now")).unwrap_err().contains("takes no arguments"));
+        // `palette` takes a menu's name (`palette add`); the others take nothing.
+        let wrong = shell.run(&format!("{name} now")).unwrap_err();
+        assert!(
+            wrong.contains("takes no arguments") || (*name == "palette" && wrong.contains("not a menu")),
+            "{name}: {wrong}"
+        );
     }
     let mut shell = Shell::new();
     shell.run("quit").unwrap();
@@ -829,20 +855,29 @@ fn every_schema_field_has_a_widget() {
     let all = ["Absent", "Choice", "Flag", "Integer", "Number", "Text", "Variant", "Vector"];
     assert_eq!(seen.iter().map(String::as_str).collect::<Vec<_>>(), all);
 
-    // On screen: select a body and every field under it has an editor, in `ls` order; so has
-    // every field of the instrument. Nothing the schema has is left out of the panel.
+    // On screen: select a body and every field under it has an editor, in `ls` order; select
+    // nothing and every field of the instrument and the schedule has (since S18 the array's own
+    // settings are the scene's, not each body's). Nothing the schema has is left out of the panel.
     let mut rig = Rig::new([1440, 900]);
     rig.shell.run("load oscillator-zoo").unwrap();
+    let spec = rig.shell.engine.spec().clone();
+    for (selection, prefixes) in
+        [("select body 1", &["bodies[0]"][..]), ("select none", &["array.instrument", "array.schedule"][..])]
+    {
+        rig.shell.run(selection).unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        let shown: Vec<String> = rig.shell.layout().editors.iter().map(|(path, _)| path.clone()).collect();
+        for prefix in prefixes {
+            for entry in paths::leaves(&spec, prefix, 1000).unwrap() {
+                assert!(shown.contains(&entry.path), "{selection}: no editor for {}: {shown:?}", entry.path);
+            }
+        }
+    }
     rig.shell.run("select body 1").unwrap();
     rig.frames(vec![vec![], vec![]]);
     let shown: Vec<String> = rig.shell.layout().editors.iter().map(|(path, _)| path.clone()).collect();
-    let spec = rig.shell.engine.spec().clone();
-    for prefix in ["bodies[0]", "array.instrument"] {
-        for entry in paths::leaves(&spec, prefix, 1000).unwrap() {
-            assert!(shown.contains(&entry.path), "no editor for {}: {shown:?}", entry.path);
-        }
-    }
     assert!(!shown.iter().any(|path| path.starts_with("bodies[1]")), "only the selection's");
+    assert!(!shown.iter().any(|path| path.starts_with("array.")), "a body's inspector is the body's");
     // Control: another selection, other editors.
     rig.shell.run("select tower 2").unwrap();
     rig.frames(vec![vec![], vec![]]);

@@ -64,7 +64,11 @@ impl Rig {
 
 /// Numbers that six significant figures do not say.
 /// The visits each selection makes (the counts the one test made between them, split).
-const BODY_VISITS: usize = 48;
+/// S18 (TASK-S18-08): a body's inspector shows the body's fields only; the array's instrument and
+/// cadence (24 of the 48 visits it made) moved to the scene's and the towers' inspectors, which
+/// still visit every one of them (`TOWER_VISITS`, `SCENE_VISITS` unchanged). The floor is the
+/// body's own fields' count, measured: 24.
+const BODY_VISITS: usize = 24;
 const TOWER_VISITS: usize = 48;
 const SCENE_VISITS: usize = 56;
 
