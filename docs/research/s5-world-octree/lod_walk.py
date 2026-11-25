@@ -203,5 +203,145 @@ def bound_of(lv, pts, th, order):
     return 2 * KT2 * tot  # both points, the worst-case sign
 
 
+# ---------------------------------------------------------------------------------------------
+# Part 2 (E to H): a cut shared by a tower's points, a local expansion of its far field, the
+# differential bound, and an edit. See docs/research/s5-world-octree.md section 2.
+# ---------------------------------------------------------------------------------------------
+CHILD = np.array([[a_, b, c] for a_ in (0, 1) for b in (0, 1) for c in (0, 1)])
+
+
+def shared_cut(lv, c, rho, accept):
+    """One cut for every point within rho of c. accept(level, M, a, Rm) with Rm = |c - com| - rho.
+    Returns (far, near): far = accepted nodes, near = level-0 cells the criterion rejected."""
+    idx = np.zeros((1, 3), int)
+    far, near = [], []
+    for level in range(LEVELS, -1, -1):
+        M, com, qc, a = node_data(lv, level, idx)
+        keep = M > 0
+        idx, M, com, qc, a = idx[keep], M[keep], com[keep], qc[keep], a[keep]
+        Rm = np.maximum(np.sqrt(((c - com) ** 2).sum(1)) - rho, 1e-9)
+        ok = accept(level, M, a, Rm)
+        far.append((M[ok], com[ok], qc[ok]))
+        if level == 0:
+            near.append((M[~ok], com[~ok], qc[~ok]))
+            break
+        idx = (idx[~ok][:, None, :] * 2 + CHILD[None]).reshape(-1, 3)
+    cat = lambda parts: tuple(np.concatenate([p[i] for p in parts]) for i in range(3))
+    return cat(far), cat(near)
+
+
+def gz_at(x, s, order=2):
+    if len(s[0]) == 0:
+        return 0.0
+    return accel(x, s[0], s[1], s[2], order)[2]
+
+
+def monomials(d, q):
+    out = []
+    for i in range(q + 1):
+        for j in range(q + 1 - i):
+            for k in range(q + 1 - i - j):
+                out.append(d[:, 0] ** i * d[:, 1] ** j * d[:, 2] ** k)
+    return np.stack(out, 1)
+
+
+def cells_set(occ):
+    ac = np.argwhere(occ) + 0.5
+    return (np.full(len(ac), RHO), ac, np.zeros((len(ac), 6)))
+
+
+def main2():
+    occ = build_world()
+    lv = pyramid(occ)
+    cx = N // 2
+    p1, p2 = np.array([cx + 0.3, cx + 0.2, 20.5]), np.array([cx + 0.3, cx + 0.2, 25.5])
+    cT = 0.5 * (p1 + p2)
+    rho = 2.6
+    sref = cells_set(occ)
+    refg = lambda x: gz_at(x, sref, 1)
+    ref = KT2 * (refg(p2) - refg(p1))
+    NPTS = 40
+    rng = np.random.default_rng(3)
+    tz = np.linspace(20.5, 25.5, NPTS)
+    tpts = np.stack([cx + 0.3 + rng.uniform(-0.01, 0.01, NPTS), cx + 0.2 + rng.uniform(-0.01, 0.01, NPTS), tz], 1)
+    nleaf = int(occ.sum())
+    phase = lambda far, near: KT2 * (gz_at(p2, far) + gz_at(p2, near) - gz_at(p1, far) - gz_at(p1, near))
+    print(f"\nE. one shared cut and a local expansion (reference phase {ref:.4f} rad; {nleaf:,} cells; {NPTS} points)")
+    print("theta_c   far  near | cut err  poly err (rad) | far-poly: max |dg|  spread (rad) | node-point interactions: shared cut / local exp / exact")
+    for th in (0.5, 0.35, 0.25):
+        far, near = shared_cut(lv, cT, rho, lambda L, M, a, Rm, th=th: a <= th * Rm)
+        F, U = len(far[0]), len(near[0])
+        cut = phase(far, near)
+        ns = 400  # fit the far field's g_z by a degree-4 polynomial over the ball (sampling stands in for M2L)
+        u = rng.normal(size=(ns, 3))
+        u *= (rho * rng.random(ns) ** (1 / 3) / np.linalg.norm(u, axis=1))[:, None]
+        gs = np.array([gz_at(cT + d, far) for d in u])
+        coef, *_ = np.linalg.lstsq(monomials(u / rho, 4), gs, rcond=None)
+        pol1 = lambda x: (monomials(((x - cT) / rho)[None], 4) @ coef)[0]
+        polyph = KT2 * (pol1(p2) + gz_at(p2, near) - pol1(p1) - gz_at(p1, near))
+        dfar = np.array([gz_at(x, far) - pol1(x) for x in tpts])
+        spread = KT2 * (dfar.max() - dfar.min())
+        absmax = KT2 * np.abs(dfar).max()
+        local = F * 7 + NPTS * (U + 1)  # a far node ~7 interactions to form the expansion (assumed), +1 to evaluate
+        print(f"{th:6.2f} {F:6d} {U:5d} | {abs(cut - ref):9.2e} {abs(polyph - ref):9.2e} | {absmax:9.2e} {spread:9.2e} | {NPTS * (F + U):9,d} {local:9,d} {NPTS * nleaf:,d}")
+
+    print("\nF. shared cut: g-based bound vs differential bound (same epsilon, in rad of phase)")
+    print("eps rad    crit   cut nodes  |phase err|")
+    Lb = 5.0
+    for eps in (1e1, 3e0, 1e0, 3e-1, 1e-1, 3e-2, 1e-2, 3e-3, 1e-3, 3e-4, 1e-4):
+        for crit in ("g", "diff"):
+
+            def acc(L, M, a, Rm, crit=crit, eps=eps):
+                x = np.minimum(a / Rm, 0.999)
+                if crit == "g":
+                    b = 2 * KT2 * G * M / Rm**2 * sum((l + 1) * x**l for l in range(3, 40))
+                else:
+                    b = KT2 * Lb * G * M / Rm**3 * sum((l + 1) * (l + 2) * x**l for l in range(3, 40))
+                return b <= eps
+
+            far, near = shared_cut(lv, cT, rho, acc)
+            print(f"{eps:7.0e}   {crit:5s} {len(far[0]) + len(near[0]):9d}  {abs(phase(far, near) - ref):10.2e}")
+
+    print("\nF2. independent cuts per point vs one shared cut, theta = 0.35, quadrupole")
+    ph_i, n_i, _ = read(lv, [p1, p2], lambda L, M, a, R: a <= 0.35 * R, 2)
+    far, near = shared_cut(lv, cT, rho, lambda L, M, a, Rm: a <= 0.35 * Rm)
+    print(f"  independent: nodes {n_i}, phase error {abs(ph_i - ref):.3e};  shared: nodes {len(far[0]) + len(near[0])}, error {abs(phase(far, near) - ref):.3e}")
+    e1 = KT2 * (gz_at(p1, far) + gz_at(p1, near) - refg(p1))
+    e2 = KT2 * (gz_at(p2, far) + gz_at(p2, near) - refg(p2))
+    print(f"  shared cut: error of g at point 1 {e1:+.3e}, point 2 {e2:+.3e} (times k_eff T^2), difference {e2 - e1:+.3e}")
+
+    print("\nG. the difference only helps far nodes: matter beyond 30 m of the tower only, theta = 0.5, quadrupole")
+    pos = np.argwhere(occ)
+    dist = np.sqrt(((pos + 0.5 - cT) ** 2).sum(1))
+    occ3 = np.zeros_like(occ)
+    occ3[tuple(pos[dist > 30].T)] = True
+    lv3 = pyramid(occ3)
+    s3 = cells_set(occ3)
+    f3, n3 = shared_cut(lv3, cT, rho, lambda L, M, a, Rm: a <= 0.5 * Rm)
+    e1 = KT2 * (gz_at(p1, f3) + gz_at(p1, n3) - gz_at(p1, s3, 1))
+    e2 = KT2 * (gz_at(p2, f3) + gz_at(p2, n3) - gz_at(p2, s3, 1))
+    dmean = np.sqrt(((s3[1] - cT) ** 2).sum(1)).mean()
+    print(f"  error of g at p1 {e1:+.3e}, p2 {e2:+.3e}, of the difference {e2 - e1:+.3e}: |diff|/|g| = {abs(e2 - e1) / max(abs(e1), abs(e2)):.3f}")
+    print(f"  mean distance of that matter {dmean:.0f} m; (l+2) L / R at l = 3, L = 5 m: {5 * 5 / dmean:.3f}")
+
+    print("\nH. an edit: a new 6x6x10 block 40 m from the tower; the cached far field, updated where the edit lands")
+    th = 0.35
+    far0, near0 = shared_cut(lv, cT, rho, lambda L, M, a, Rm: a <= th * Rm)
+    occ2 = occ.copy()
+    occ2[cx + 36 : cx + 42, cx : cx + 6, 8:18] = True
+    lv2 = pyramid(occ2)
+    far1, near1 = shared_cut(lv2, cT, rho, lambda L, M, a, Rm: a <= th * Rm)
+    s2 = cells_set(occ2)
+    ref2 = KT2 * (gz_at(p2, s2, 1) - gz_at(p1, s2, 1))
+    ph_new, before = phase(far1, near1), phase(far0, near0)
+    same_topology = len(far0[0]) == len(far1[0]) and len(near0[0]) == len(near1[0])
+    touched = int((~np.isclose(far0[0], far1[0])).sum()) if same_topology else -1
+    print(f"  leaf-exact phase {ref:.4f} -> {ref2:.4f} rad (the edit moves it by {ref2 - ref:+.4f})")
+    print(f"  cached cut {before:.4f} -> re-cut {ph_new:.4f}: moves it by {ph_new - before:+.4f}; same cut topology: {same_topology}")
+    print(f"  nodes in the cut whose moments the edit changed: {touched} of {len(far0[0]) + len(near0[0])}")
+    print(f"  one edited leaf's path to the root: {LEVELS + 1} records (levels 0..{LEVELS})")
+
+
 if __name__ == "__main__":
     main()
+    main2()

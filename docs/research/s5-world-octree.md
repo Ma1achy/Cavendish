@@ -1,10 +1,10 @@
 # One world octree for drawing and for the gravity read (S5)
 
-*Research note for slice S5 (and S14's wider world). Written 25 Nov 2026. No code was changed; one
-small benchmark was written and run ([`s5-world-octree/lod_walk.py`](s5-world-octree/lod_walk.py),
+*Research note for slice S5 (and S14's wider world). Written 25 Nov 2026. No code was changed; two
+small benchmarks were written and run ([`s5-world-octree/lod_walk.py`](s5-world-octree/lod_walk.py),
 output in [`results.txt`](s5-world-octree/results.txt)). Tags: **[R]** read in a primary source this
 session; **[S]** read only as a search-result summary; **[M]** measured here; **[D]** derived by me,
-to be checked; **[U]** not verified (listed again in section 9).*
+to be checked; **[U]** not verified (listed again in section 8).* Extended the same day with the owner's Barnes–Hut frame (2.1 to 2.5), view modes (7a) and seams (7b).
 
 ## 0. One-page summary
 
@@ -45,6 +45,21 @@ level  0     S S S S S S S S S S S S S S        Brick                   Body (pa
   octree (the same code and the same cube kernel), *not* a cube-sphere; the cube-sphere stays a way to
   tile elevation data. Records are stored relative to their node centre in `f32`; only the
   node-to-tower vector is `f64` (or float-float on the GPU) ([section 4](#4-infinite-plane-and-sphere)).
+
+**Frame (owner's suggestion, section 2).** The read is a **Barnes–Hut walk opened by Cavendish's phase-error
+bound** (not a fixed θ), taken **once per tower for its whole cluster of arm points and time samples** (a shared
+cut, Dehnen's cell–cell criterion), with the far field gathered into a **local (Taylor) expansion** about the
+tower and **cached** until an edit's path touches it. On the town, per tower per shot (40 points): leaf-exact
+6.5×10⁶ interactions; Barnes–Hut per point 1.9×10⁴ (335× fewer); one shared cut 1.7×10⁴; shared cut + local
+expansion ≈ 3×10³ (2,200× fewer); the cached expansion ≈ 40–100 (10⁵× fewer) plus ~10 node updates per edit.
+At µrad the town's cut is as big as its cell count and the expansion needs degree ~10 (286 terms, 1.6×10⁻⁶ rad,
+measured): the gain is real as the world grows and the bound tightens. **The baseline's help (2.4) is modest:**
+the difference bound allows a node at about 0.7× the distance at 100 m and 0.5× at 1 km (one level coarser
+beyond a kilometre); on the town it gains nothing (same nodes at the same measured error), because a 5 m
+baseline does not cancel the error of nodes within ~10 baselines. **View modes and seams (7a, 7b):**
+`lod_view: Camera | Tower(n) | Towers([..])` draws the tower's cached read cut (the union is the common
+refinement) with a level, tower or error overlay; seams are hidden by dithered cross-fade in the brick march,
+time-driven on ring snaps (not Transvoxel, skirts or geomorphing).
 
 **What the benchmark said** (a 128³-cell town, quadrupole only, so pessimistic against Cavendish's
 octupole): with the geometric criterion the nearest accepted node of each level sits **2.6–5.7 node
@@ -129,6 +144,164 @@ hangs on it: the two uses do not fight over a layout.
 camera needs level-0 data there to read, and nothing to draw; the camera over a distant city needs
 level-3 bricks and no gravity data at all. Separate resident sets keep each cheap; the shared tree
 makes an edit land once.
+
+### 2.1 The frame: Barnes–Hut per target point, opened by phase error
+
+The owner's suggestion is the frame. The read is a **Barnes–Hut walk** ([Barnes & Hut 1986](https://doi.org/10.1038/324446a0) [U: not opened]):
+for each target point, descend the tree from the root; a node whose moments are good enough
+stands for all its mass, otherwise its eight children are tried. What Cavendish changes is the
+*test*. Barnes–Hut's fixed opening angle θ has no bounded error (Dehnen's footnote 3, [R]); the
+test here is Cavendish's rigorous bound turned into a threshold:
+
+```
+accept node n for target x   when   B(n, x)  <=  eps_level
+B(n, x) = G * k_eff T^2 * L_base * sum_{l > p} (l+1)(l+2) S_l(n) / R^(l+3)      (a phase, rad)   [D; see 2.4]
+```
+
+with `S_l = Σ m s^l` from the node's `Summary` (§2 table), `R` the least distance from the node's
+centre to the target (S4 uses the least distance to the atom path), and `eps_level` the level's
+share of the tolerance (§5 measures the radii this implies). The ledger is `Σ B` over the cut.
+Section 6 C and F are this test, and A is the fixed-θ test it replaces.
+
+### 2.2 Shared cut and local expansions (the dual-tree step)
+
+A tower's arm points and time samples lie within a few metres of each other, so most of the world
+is "far" for **all** of them. Treat the points as one *target cluster* (centre `c`, radius `ρ`):
+accept a node for the whole cluster when `a / (|c − centre| − ρ) ≤ θ` (or the bound with `R = |c − centre| − ρ`).
+This is Dehnen's cell–cell criterion, `(ρ_A + ρ_B) / r < θ_crit` ([Dehnen 2014](https://arxiv.org/abs/1405.2255) [R]).
+Then:
+
+* **Option 1, one shared cut, every point evaluates every node.** Cost `N_pts × |cut|`.
+* **Option 2, a local expansion.** Gather the far nodes' field into one Taylor series about `c`
+  (an M2L translation per node), evaluate it at each point: cost `|far| × K_M2L + N_pts × terms`.
+  The near leaves (the cut's rejected cells) are summed directly per point.
+
+**[M]** (benchmark E, town, quadrupole, 40 points on the 5 m arm axis, ρ = 2.6 m; the expansion
+is made by *fitting* a degree-q polynomial to the far field's `g_z`, which stands in for M2L and has
+the same truncation behaviour):
+
+| θ_c | far nodes | shared-cut error | **extra** error of the local expansion (q = 4): max over points / spread between points |
+|---|---|---|---|
+| 0.50 | 232 | 13.4 rad | 1.9×10⁻² / 2.2×10⁻² rad |
+| 0.35 | 423 | 4.9 rad | 3.8×10⁻² / 6.4×10⁻² rad |
+| 0.25 | 942 | 0.50 rad | 5.2×10⁻² / 6.0×10⁻² rad |
+
+The expansion's own error is far below the cut's at q = 4. For µrad it is not. On the θ = 0.25 cut
+(nearest far node 11.5 m, ρ = 2.6 m), **[M]** ([`poly_degree.py`](s5-world-octree/poly_degree.py), [`poly_results.txt`](s5-world-octree/poly_results.txt)):
+
+| degree q | terms | max error | spread between points |
+|---|---|---|---|
+| 2 | 10 | 1.2 rad | 1.3 rad |
+| 4 | 35 | 0.11 | 0.14 |
+| 6 | 84 | 5.2×10⁻³ | 6.1×10⁻³ |
+| 8 | 165 | 5.0×10⁻⁵ | 1.0×10⁻⁴ |
+| 10 | 286 | 1.6×10⁻⁶ | 2.1×10⁻⁶ |
+
+Each two orders buy ~20–100× (`(ρ/R_min)² ≈ 0.05`), so **µrad needs q ≈ 10–12 (about 300–450 terms)**
+when the nearest far node is 4–5 ρ away; pushing the near boundary out (a larger θ-floor at fine
+levels) lets q fall. Evaluating 300 terms at a point is ~600 flops, against ~60 flops for a node-point
+interaction, so the expansion wins as soon as the cut has more than ~10 nodes. Whether to form it by
+M2L recurrence (Dehnen's route) or by a fitted polynomial is the builder's call; the fit is simple
+and testable against direct evaluation, the recurrence is cheaper to form. For the GPU the natural
+split is: form the expansion on the CPU in `f64` (tens of thousands of nodes, once), evaluate the
+polynomial on the GPU at every point and time sample, a few hundred flops each [D].
+
+A shared cut is also not worse in error: independent cuts per point (benchmark F2, θ = 0.35) read 971
+nodes for two points with a phase error of 8.3 rad; one shared cut reads 423 nodes with 4.9 rad
+(one sample, a hint and not a rate). Both points then use the same nodes, which the differential
+bound of §2.4 needs.
+
+### 2.3 The static far field is computed once and cached
+
+For a static world the far field at each tower is fixed. Cache, per tower: the cut (node keys with the
+`Summary` hash each was read from) and the local-expansion coefficients. An edit changes the
+`Summary` of its ancestors only (§3). The far field is **linear in the node moments**, so the update is
+`local += M2L(new summary) − M2L(old summary)` for each cut node on the edit's path, and the cut test is
+repeated on those nodes only (their `S_l` and centre moved).
+
+**[M]** (benchmark H): a 6 × 6 × 10 block added 40 m from the tower moves the leaf-exact phase by
+−14.4191 rad; the cached cut, re-read from the new pyramid, moves by −14.4193 rad (a 2×10⁻⁴ rad
+difference, the cut's own error on the changed nodes). The cut *topology* changed (a building's centre
+of mass moved, so a node opened or closed): the update must repeat the acceptance test along the edit's
+path, not just add a delta. One leaf's path is 8 records here (levels 0–7), about 13 for a 10¹¹-cell
+world. Per edit and tower the cost is those ~10 nodes, not the cut. A tower **inside** an edit's
+footprint rebuilds its near field (the bubble), which is the leaf-exact part anyway.
+
+Time-varying coarse cells (S14: tides, weather) are edits to `Summary` records of existing nodes; the
+same rule applies, so "drive the planet's coarse cells from a model" costs ~10 node updates per tower
+per step, not a read.
+
+### 2.4 The gradiometer reads a difference: how much coarser may the far field be?
+
+The phase is the difference of `g_z` at two points `L` apart (benchmark: `L = 5 m`, factor 4.8×10⁹ rad per m s⁻²).
+A truncated multipole of order `l` has a remainder whose `g` is at most `(l+1) m s^l / R^(l+2)`, the bound S4
+already uses, and whose **difference of `g` across the baseline** is at most `L` times the next derivative,
+`(l+1)(l+2) m s^l / R^(l+3)` [D: the `n`-th derivative of an `l`-pole carries `(l+1)…(l+n)`; I believe it but
+found no proof in a source]. The differential bound is smaller than the sum of the two `g` bounds by
+`(l+2) L / (2R)`. Equating the two bounds at their own radii (`R_g` for the `g` bound, `R_d` for the
+difference) gives `R_d^(l+3) = R_g^(l+2) · (l+2) L / 2`. Worked, `l = 3`, `L = 5 m`:
+
+| `R_g` (m) | `R_d` (m) | closer by |
+|---|---|---|
+| 25 | 26 | none: the baseline is not small against R |
+| 100 | 71 | 29 % |
+| 1,000 | 481 | 52 % |
+| 10,000 | 5,100 | 49 % |
+
+So **beyond a hundred metres a node of a given size may be accepted at about half to three-quarters of the
+distance: about one level coarser from ~1 km outwards.** The gain is modest because the exponent is
+`1/(l+3)` and the baseline is short: the `1/d³` fall of the gradient is already in the monopole, so this
+does not remove rings, it moves each ring's inner edge in.
+
+**Measured** (benchmark F, shared cut, town):
+* At the *same bound* ε the differential criterion reads ~30 % fewer nodes than the `g` criterion (4,416 → 3,072
+  at ε = 1 rad; 36,802 → 24,542 at 10⁻² rad; 153,887 → 106,421 at 10⁻⁴ rad), **but its measured error is larger
+  at the same ε** (at ε = 10⁻⁴ rad: 2.5×10⁻⁵ against 4.9×10⁻⁷ rad), and at the *same measured error* the two read
+  the same number of nodes (4.3×10⁻⁴ rad: 56,428 against 55,776 nodes). So the differential bound is a valid,
+  smaller *certificate*, not a measured gain at 100 m scale.
+* The cancellation needs the error to be common to both points, which it is not for nodes within ~10 baselines:
+  F2 shows the `g` errors at the two points as 5.3 and 0.43 (times k_eff T²), and G (matter beyond 30 m only, θ = 0.5)
+  shows +2.6 and −9.7 with the difference at −12.3, *larger* than either, because a 5 m baseline resolves a
+  node's own multipole pattern at R ≈ 55 m.
+* **Where it should pay:** `R ≳ 10 L` and more, i.e. 50–100 m and out for a 5 m baseline, where
+  `(l+2)L/(2R)` is 0.125 or below: the far field of S14 (kilometres, the planet). **I could not measure that
+  here** (the town is 128 m across); the experiment of §5 should include a far-field case (a distant box,
+  with a prism closed form) to check the `R_d` column.
+
+The far field's *physical* contribution falls the same way: a uniform shell beyond `R` has no gradient inside
+it (shell theorem), so only **departures** from symmetry matter at the far rings, which is why the plane and
+sphere worlds of §4 carry departures only.
+
+### 2.5 Cost per tower per shot, against today's leaf-exact read
+
+`N_pts` = 40 points a tower a shot (the exact-skin note counts ~200 points across five towers,
+[§4](exact-skin-and-partial-fill.md) [D: my division]); one interaction is one node or cell against one point,
+~10–25 ns (the exact-skin note measures 8.5 ns for a cube's series on one thread; a quadrupole node costs more) [D].
+Town: 162,259 cells, 128 m (benchmark E, F); errors are the town's, with a quadrupole.
+
+| Option | One-off per tower | Per shot, static world | Per shot after one edit | Town interactions a shot | Error (rad) |
+|---|---|---|---|---|---|
+| **0. Leaf-exact (today's S4 read, no merging)** | none | `N_pts × N_leaf` | same | **6.5×10⁶** | 0 (its own) |
+| 1a. Barnes–Hut, a cut per point, θ = 0.35 | none | sum of the per-point cuts | same | 1.9×10⁴ (≈ 335× fewer) | 8.3 |
+| 1b. Barnes–Hut, one shared cut, θ = 0.35 | the cut | `N_pts × cut size` | same, plus path tests | 1.7×10⁴ (≈ 380× fewer) | 4.9 |
+| 2. Shared cut + local expansion (q = 4) | cut + 423 M2L | 40 evaluations of 35 terms + near leaves | same | **≈ 3×10³** (≈ 2,200× fewer) | 4.9 (+ 0.04) |
+| 3. Option 2, **cached** (static world) | cut + M2L | evaluations + near leaves only | ~10 node M2L updates + the near field | **≈ 40–100** (≈ 10⁵× fewer) | as 2 |
+| 2′. as 2 at µrad: `g` criterion ε = 10⁻⁴ rad, q = 10 | a 1.5×10⁵-node cut, M2L at ~10⁴ flops each | 40 × 286 terms ≈ 2×10⁴ flops | ~10 nodes | the cut itself is **about the number of cells** here | 5×10⁻⁷ (+ 1.6×10⁻⁶ at q = 10) |
+
+At the town's scale µrad **costs as many nodes as there are cells** (row 2′: 153,887 nodes for 162,259 cells):
+the crude bound is too loose (§6 C), the order is a quadrupole, and the world is small. The tree earns its
+keep as the world grows, not at 10⁵ cells. Scaled (derived, not measured): leaf-exact at 10⁹ cells is
+`40 × 10⁹ × 8.5 ns ≈ 340 s` a tower a shot, at 10¹¹ cells ≈ 3×10⁴ s; a cut that grows by the level count
+(7 → ~13) and at S4's bound looseness (175–457×) might be 10⁵–10⁶ nodes, so 0.1–1 s a shot for option 1b, and
+~10⁻⁴ s a shot for option 3 after a one-off of 0.3–3 s a tower [D]. The decision that matters is **a cached
+expansion and a tighter bound**, not the choice between 1a and 1b.
+
+**Recommended:** option 3 for the static world (a cached expansion about each tower, updated by node-path
+deltas), with option 1b as the fallback when a tower moves its centre (a mobile tower, or a tower inside an
+edited bubble), and the exact leaf kernel only in the bubble. Everything that moves (bodies, populations, S6
+onwards) stays on its own trees through its own near kernels, so the cached field is the *static world only*; that
+matches S4's "the world is static, so each tower's reading is made once" and adds the updates S4 lacks.
+
 
 ## 3. Where chunks sit in the tree; files, streaming and edits
 
@@ -393,6 +566,82 @@ milliseconds at 10³–10⁴ nodes (no measurement of Cavendish's own walk was m
 GigaVoxels-style ray-driven demand for the read (the tower's opening test is the demand); a DAG for
 bricks (the S3 note's conclusion); moving fluids in the tree (S8/S9).
 
+## 7a. LOD view modes (as data)
+
+The owner asks to see the world at the level of detail a reader uses. Three modes, one record, no new renderer:
+
+```ron
+lod_view: (
+  source:  Camera                  // today's: S4's rings about the camera (screen-space error)
+         | Tower(2)                // the world as tower 2's read sees it: its bubble and rings
+         | Towers([1, 2, 5]),      // together: each region at the finest level any chosen tower reads it
+  overlay: None | Level | Tower | Error | NotRead,   // by level, by which tower sets it, by share of the bound
+  legend:  Auto,                   // made from what is drawn (S3's rule)
+)
+```
+
+**How the renderer draws a read cut.** A cut, for drawing or for reading, is the same thing: a list of
+`(level, key)` forming an antichain. The camera cut comes from the screen-space rule; a tower's read cut
+comes from the opening test (§2.1) and is already held as the tower's cached node list (§2.3), so the
+draw list **is that list**, with no new walk. For each node: level 0 gets the near mesh (as ring 0 today,
+with the same caps), level ≥ 1 gets its `Brick` ray-marched. S4's rule "a level draws only bricks outside
+the next finer level's box" becomes "draw the list"; a flat list needs no nesting, and S4's
+`MAX_BRICK_OVERDRAW` and `MAX_MARCH_STEPS` still apply. Shared nodes make it cheap: the bricks are the same
+objects the camera cut draws, so a view of tower 2 changes only **which** nodes are in the draw list and asks
+the streamer to keep their bricks resident (the read needs summaries, not bricks, so the mode pins the
+bricks of its cut, with the caps said).
+
+* *A cut node with no brick resident:* draw its nearest resident ancestor and mark it in the overlay, with a count in the badge, as S4 does for caps.
+* **`Towers([…])`, the net LOD.** The finest level any chosen tower reads each region at is the common
+  refinement of their cuts: mark every strict ancestor of any cut node as *open*, traverse from the root,
+  recurse into open nodes and emit the rest. O(Σ cut × depth) with a hash set, a few ×10⁴ nodes at most.
+  Overlay `Tower` colours each emitted node by the tower that forced its level (ties to the lowest id).
+* **Overlays.** `Level` uses S3's level palette (S3 has `overlay leaves` and `overlay cut <level>` for bodies;
+  this is the world version, one colour per level, a legend of exactly the levels drawn). `Error` colours by each
+  node's share of `Σ B` (§2.1; free, the bound is stored), so it shows where the ledger is spent. `NotRead`
+  hatches matter outside the read radius or past the cap, which is the read's honest "not read" (S4 §2).
+* **It is the read-LOD debug view.** (I did not find the plan's own wording for that view; S3's `overlay cut <level>` is the
+  nearest thing in the repository.) One difference from "show the cut": the camera may be far from the tower,
+  so screen-space error is not respected. Far rings are coarse near a distant camera; fine cells near the tower
+  may be many pixels wide. That is the picture. The caps and the badge keep it bounded.
+* The record lives with the scene's view settings (principle 11); the same record is a CLI flag
+  (`--lod-view tower:2`) and an MCP query. A test: the draw list of `Tower(n)` equals the engine's cut for
+  tower `n` (same node set, by key); `Towers([a,b])` is a common refinement of both and minimal (control: a naive
+  union that is not a partition double-covers, S4's R12 test).
+
+## 7b. Hiding LOD seams
+
+Setting: S4 draws ring 0 as greedy meshes and levels ≥ 1 as ray-marched bricks, each a **conservative superset**
+of its children (S4 §2: "a coarse brick holds every finer brick's cells, and may add some"), with the rings
+exactly nested by snapping (R12). So there are **no holes** at a seam. What shows is a *step* (the coarse surface
+stands proud of the fine one by up to `2^L − 1` fine cells at the box edge) and a *pop* when the camera crosses
+a snap. The survey, with sources:
+
+| Technique | Source | What it does | Fit here |
+|---|---|---|---|
+| **Transvoxel** | [Lengyel](https://transvoxel.org/) [R] | Transition cells (9 high-resolution samples, 512 cases in 73 classes) seal a seam between marching-cubes blocks that differ by exactly 2:1 | **No.** Needs meshed surfaces at both levels; ours are blocky meshes and ray-marched bricks. Only 2:1 [R]; our rings are 2:1, so it would apply if levels ≥ 1 were meshed |
+| **Skirts** | Ulrich's chunked LOD (*Game Programming Gems 2*, [U: not opened]); described in [a Cesium forum post](https://community.cesium.com/t/skirts-tablecloth-overhangs/1864) [S] and [a gamedev thread](https://gamedev.net/forums/topic/376154-terrain-lod-and-skirting/) [S] | Extend each tile's edge downward so a crack shows skirt, not sky; can show on silhouettes and top-down zig-zags [S] | **Low value.** We have no cracks (superset bricks); a skirt only adds walls under the near mesh's outer edge |
+| **Geomorphing** (CDLOD) | [Strugar's CDLOD paper](https://raw.githubusercontent.com/fstrugar/CDLOD/master/cdlod_paper_latest.pdf) [R, as extracted text] | Per-vertex morph from the fine grid to the coarse grid over the **last 15–30 % of each LOD range**, in the vertex shader, so a level's edge equals the next level's, with no stitching strips and no T-junctions | **Meshes only.** A blocky mesh's vertices sit on the lattice, so a snap toward the coarse lattice is possible, but occupancy is binary: a morphing face collapses a thin wall, which is not conservative. The ray-marched far field has no vertices. Skip |
+| **Dithered (screen-door) cross-fade** | Unity's LOD Group cross-fade ([manual](https://docs.unity.com/en-us/engine/6000.0/manual/analysis/graphics-performance-profiling/simplifying-distant-meshes-with-level-of-detail-lod/level-of-detail); the page I could read does not describe cross-fade, so my account of dithering and "animate cross-fading" is from memory of Unity, not read here [U]) | During a fade both levels are drawn and each pixel keeps one by a dither threshold, so opaque rendering and depth still work | **The best fit.** In the brick ray-march, over an overlap band the finer level also draws its outer cells and each pixel takes one of the two by a Bayer or blue-noise threshold on the distance fraction. The cost is the band drawn twice (bounded by `MAX_BRICK_OVERDRAW`). Opaque, no sorting |
+| **Overlapping rings with alpha blend** | The clipmap's transition band, [Losasso & Hoppe 2004](https://hhoppe.com/geomclipmap.pdf) [R]: it blends *heights* and normals toward the next coarser level near a ring's outer edge, not alpha | Smooth in geometry | **Not as alpha** (opaque voxels, no order-independent transparency); the dither is its opaque form |
+| **Fog / haze** | No primary source read | Hides far steps and pops by distance | Free beyond the last ring, and at planet scale. S21's plan lists fog among "the look" (branch `plan-look`, commit `979a144`; I read only its subject line [U]) |
+| **Matching coarse cells to the near mesh's faces** | None; my design | Rings nest exactly (S4's snapping puts level boundaries on multiples of `2^L`), so a coarse cell boundary is always a fine lattice line. A **mass-weighted** occupancy for the *drawn* coarse brick (≥ 50 % of the mass) cuts the proud halo, while the **conservative** superset stays for occlusion and the read | **Yes, per payload:** draw bits mass-weighted, occlusion bits superset. Two bit-planes per brick, ~4 KiB more |
+| **Temporal blend** | Unity's "animate cross-fading" [U]; TAA in general [U] | A level switch fades over a few frames, driven by time rather than distance | **Yes for snaps:** a ring shift is a discrete event, so run the cross-fade in time (≈ 0.2–0.3 s), the dither threshold stepping. No history buffer |
+
+**Recommended for the mesh-near, ray-march-far split** [D, a design judgement; nothing here is tested]:
+1. Keep exact nesting and superset bricks (no cracks by construction; R12 is the test).
+2. **Dithered cross-fade in the brick ray-march** across an overlap band of 1–2 coarse cells at the outer edge of
+   each finer ring, and **time-driven** on a ring snap. That mirrors CDLOD's morph band (15–30 % of a range) in the
+   one currency a ray-marcher has: a per-pixel choice between two cells.
+3. **Mass-weighted drawn bits, superset occlusion bits**, to lower the halo.
+4. Haze beyond the last ring (S21).
+5. Not Transvoxel, skirts or geomorphing: they fix problems the brick-and-mesh split does not have.
+
+A test with a control arm: render a camera path across 50 ring snaps; the seam metric is the mean absolute
+frame difference in a band around each ring boundary, normalised by the frame difference elsewhere. Pass: below a
+threshold stated before measuring; control: the blend switched off must exceed it.
+
+
 ## 8. What to test, and what could not be verified
 
 **Tests** (each with a control arm that fails when the property is broken):
@@ -424,6 +673,21 @@ bricks (the S3 note's conclusion); moving fluids in the tree (S8/S9).
   was read as text; its figures were not seen.
 * **Cesium, "camera-relative" patents, Voxel Farm, Outerra**: not opened; the floating-origin claims
   here rest on S4's own `f64`-on-the-CPU rule and the arithmetic of `f32`.
+* **Sources I could not read, with their exact URLs** (to fetch by hand):
+  * `https://maverick.inria.fr/Publications/2009/CNLE09/` (GigaVoxels; connection refused). The HAL page
+    `https://hal.archives-ouvertes.fr/inria-00345899` gave a search summary only.
+  * `https://developer.nvidia.com/blog/nanovdb-sparse-volume-gpu-rendering/` (404). The paper
+    `https://research.nvidia.com/labs/prl/nanovdb/nanovdb2021.pdf` was not opened.
+  * `https://docs.unity3d.com/Manual/lod/lod-cross-fade.html` (404). The replacement page returned only the LOD
+    basics. To try: `https://docs.unity.com/en-us/engine/6000.0/manual/analysis/graphics-performance-profiling/simplifying-distant-meshes-with-level-of-detail-lod/class-lodgroup` (not fetched).
+  * Barnes & Hut 1986, `https://doi.org/10.1038/324446a0`; Salmon & Warren 1994, `https://doi.org/10.1006/jcph.1994.1050`
+    (abstract through search only); Ulrich 2002, "Rendering massive terrains using chunked level of detail
+    control" (SIGGRAPH course notes; no URL found, a search returned only forum discussions); Lengyel's dissertation,
+    possibly `https://core.ac.uk/download/52926121.pdf` (not opened, not confirmed to be it); the ESVO paper
+    (`https://research.nvidia.com/publication/2010-02_efficient-sparse-voxel-octrees`, abstract only).
+  * Read in full as extracted text: Strugar's CDLOD paper
+    (`https://raw.githubusercontent.com/fstrugar/CDLOD/master/cdlod_paper_latest.pdf`), Losasso & Hoppe's PDF and
+    Dehnen's PDF (the figures were not seen).
 * **S4's code**: I read the slice note, not `cav-sim/world.rs`. How its `Σ m s^l` is held (per chunk, per
   node) decides whether §2's carried `S_l` is a small change or a new field.
 * **Costs at 10⁹–10¹¹ cells** are derived, not measured; the town benchmark is 2×10⁶ cells in numpy.
@@ -435,6 +699,8 @@ bricks (the S3 note's conclusion); moving fluids in the tree (S8/S9).
 walk timing with the S4 stress scene; the planet-offset parity test settles the precision.
 
 ## 9. Further questions (not chased)
+
+0. The far-field cases for §2.4's `R_d` column (a distant prism, 100 m to 10 km), and a world big enough, with an octupole and S4's tighter bound, that the cut is much smaller than the cell count at µrad.
 
 1. Mass-weighted dominant material versus a per-brick palette for colour when levels mix many materials
    (a colour/appearance question for S19's materials).
@@ -450,4 +716,5 @@ walk timing with the S4 stress scene; the planet-offset parity test settles the 
 ## Files
 
 * [`s5-world-octree/lod_walk.py`](s5-world-octree/lod_walk.py): the benchmark (`python lod_walk.py`, numpy only, ~3 s).
-* [`s5-world-octree/results.txt`](s5-world-octree/results.txt): its output, as quoted in §6.
+* [`s5-world-octree/results.txt`](s5-world-octree/results.txt): its output, as quoted in §2 and §6.
+* [`s5-world-octree/poly_degree.py`](s5-world-octree/poly_degree.py) and [`poly_results.txt`](s5-world-octree/poly_results.txt): the local-expansion degree sweep (§2.2).
