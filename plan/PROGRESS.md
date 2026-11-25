@@ -604,6 +604,9 @@ Answered 21 Nov 2026 (through the owner). The defaults below replace v1's conven
 5. **Floor:** the arms never go below launch. There is a floor, coded as the Python scripts code the
    sequence; copy that.
 
+## Owner's rulings (25 Nov 2026): the editor
+The GUI and UX need to be natural and intuitive, taking from game engines, model editors and physics tools: a toolbar of tools (select, move, rotate, scale, place, paint, measure, slice, probe), the 3-D view interactive for editing, and data-driven panels (an inspector generated from the scene schema) with both routes through the one command path. Principia's keyboard model is a requirement, in full: `docs/design/keyboard.md`. Research: `docs/research/editor-ux.md` (in progress). An editor slice follows S4.
+
 ## Owner's rulings (24 Nov 2026): the app on the web, and more shapes and worlds
 - **The whole app as a web page** on GitHub Pages, built to WebAssembly with WebGPU by CI: slice S17,
   run next (research: `docs/research/web-build-and-pages.md`; Pages is enabled with source = Actions,
