@@ -527,3 +527,6 @@
 - id: TASK-S17-08
   milestone: S17
   title: "Review fix: no-adapter page, #exec downloads behind a click, CSP, wasm lints, cfg only in seams, panic hook, docs"
+- id: TASK-S17-10
+  milestone: S17
+  title: "The live site's record after the review fixes"
