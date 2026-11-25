@@ -1,0 +1,31 @@
+nu=0.25: q=0.8475 s=0.3933 zeta=sqrt(q/s)=1.4679
+  Harms prefactor 1/(q-zeta) = -1.61185;  Badurina (1+s^2)/((1-s^2) q) = 1.61185 (equal in magnitude, opposite sign: Harms's A is negative)
+  h*k=0.5: numeric -2.283245e-07  Eq97 -2.283245e-07  B.19 -2.283245e-07  rel(num-97)=3.5e-16 rel(B19-97)=5.3e-14
+  h*k=1.0: numeric -6.193319e-08  Eq97 -6.193319e-08  B.19 -6.193319e-08  rel(num-97)=1.5e-15 rel(B19-97)=5.3e-14
+  h*k=3.0: numeric 4.194547e-08  Eq97 4.194547e-08  B.19 4.194547e-08  rel(num-97)=7.9e-16 rel(B19-97)=5.3e-14
+  potential-level coefficient ratio (Harms 97): -(1+zeta)/2 = -1.2339
+  acceleration-level ratio (B.22/B.21 and d/dh of Eq 97): -(1+zeta)/(2q) = -1.4560
+  earlier note's misreading (sqrt lost): -(1+q/s)/(2q) = -1.8612; ratio to potential-level = 1.508
+nu=0.33: q=0.8829 s=0.3624 zeta=sqrt(q/s)=1.5609
+  Harms prefactor 1/(q-zeta) = -1.47504;  Badurina (1+s^2)/((1-s^2) q) = 1.47504 (equal in magnitude, opposite sign: Harms's A is negative)
+  h*k=0.5: numeric -2.973636e-07  Eq97 -2.973636e-07  B.19 -2.973636e-07  rel(num-97)=0.0e+00 rel(B19-97)=1.1e-15
+  h*k=1.0: numeric -1.280090e-07  Eq97 -1.280090e-07  B.19 -1.280090e-07  rel(num-97)=8.3e-16 rel(B19-97)=1.0e-15
+  h*k=3.0: numeric 1.555137e-08  Eq97 1.555137e-08  B.19 1.555137e-08  rel(num-97)=1.5e-15 rel(B19-97)=8.5e-16
+  potential-level coefficient ratio (Harms 97): -(1+zeta)/2 = -1.2804
+  acceleration-level ratio (B.22/B.21 and d/dh of Eq 97): -(1+zeta)/(2q) = -1.4502
+  earlier note's misreading (sqrt lost): -(1+q/s)/(2q) = -1.9460; ratio to potential-level = 1.520
+note's rounded values q=0.88 s=0.36: 1.5268906921482026
+Hughes & Thorne Eq. 1.24 against Harms Eq. 99 (half-space fundamental Rayleigh mode):
+  nu=0.25: anisotropy A=sqrt2*|xiV/xiH|=2.08  beta'=0.763  (subsurface only 0.249)  sqrt(3/2)*gamma*xiV/norm=0.763  gamma(Eq99)=0.7542  gamma from 1+sub/xiV=0.7542
+  nu=0.33: anisotropy A=sqrt2*|xiV/xiH|=2.21  beta'=0.853  (subsurface only 0.178)  sqrt(3/2)*gamma*xiV/norm=0.853  gamma(Eq99)=0.8273  gamma from 1+sub/xiV=0.8273
+Junca et al. 2019 Eqs. 12-14 against the x-derivative of Harms Eq. 97 (amplitude / (2 pi G rho xi_z)):
+  nu=0.25: gamma Junca Eq.13 = 0.754171, Harms Eq.99 = 0.754171; b = -4.2745; worst relative difference over depths 2.1e-16
+  nu=0.33: gamma Junca Eq.13 = 0.827339, Harms Eq.99 = 0.827339; b = -3.5657; worst relative difference over depths 1.5e-15
+Surface jump of a_z between Eq. 96 (above) and Eq. 97 (below), in units of 4 pi G rho xi_z (should be 1):
+  nu=0.25: (a_below - a_above)/(2 * xi_z) = 1.000000000000
+  nu=0.33: (a_below - a_above)/(2 * xi_z) = 1.000000000000
+Harms Eq. 39 sign check: free-surface tractions (sigma_xz, sigma_zz), rho = 1, c_S = 1, A = 1:
+  nu=0.25: with a minus on xi_k (derived from potentials)   sigma_xz = -3.819e-14, sigma_zz = -2.598e-14
+  nu=0.25: as printed                                       sigma_xz = +1.241e+00, sigma_zz = +8.453e-01
+  nu=0.33: with a minus on xi_k (derived from potentials)   sigma_xz = -6.661e-16, sigma_zz = -3.886e-16
+  nu=0.33: as printed                                       sigma_xz = +1.356e+00, sigma_zz = +1.686e+00
