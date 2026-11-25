@@ -1,14 +1,10 @@
 # Papers still to fetch
 
-The owner fetched eight batches on 25 Nov 2026 and every research note in `docs/research/` has been updated
-from them. What is still unread, by note (tick as fetched; PDFs stay outside the repo, which is public):
-
-## Gradar (`gradar-inference.md`)
-- [ ] Kay, *Fundamentals of Statistical Signal Processing: Estimation Theory* (1993): chapter 3 (pp. 27–77) and chapter 7 (pp. 164–190). The supplied PDF was front matter only.
+The owner fetched nine batches on 25 Nov 2026 and every research note in `docs/research/` has been updated
+from them (the ninth: Kay 1993 for `gradar-inference.md`, Wilson et al. 1973 for `elastic-solids.md`, Safronova et al. 2013 and Porsev & Derevianko 2006 for `gradiometer-environment.md`; their lines are removed). What is still unread, by note (tick as fetched; PDFs stay outside the repo, which is public):
 
 ## The gradiometer's environment (`gradiometer-environment.md`)
 - [ ] Fiorucci et al. 2018, atmospheric Newtonian noise (abstract only so far)
-- [ ] Safronova et al. 2013 or Porsev & Derevianko 2006, Sr polarizabilities (to firm up the blackbody force)
 - [ ] Saulson 1984, https://doi.org/10.1103/PhysRevD.30.732
 - [ ] ELGAR's companion paper (ref. [56] of Canuel 2020) and MIGA's systematics paper; Boy et al. on 3-D pressure corrections
 
@@ -18,7 +14,6 @@ from them. What is still unread, by note (tick as fetched; PDFs stay outside the
 - [ ] Morton, Taylor & Turner 1956, the plume law (no DOI found)
 
 ## Elastic solids (`elastic-solids.md`)
-- [ ] Wilson et al. 1973, incompatible displacement models (book chapter, pp. 43–57): https://doi.org/10.1016/B978-0-12-253250-4.50008-7
 - [ ] Komatitsch & Vilotte 1998: https://doi.org/10.1785/bssa0880020368
 - [ ] Richards 1979: https://doi.org/10.1785/bssa0690040947
 - [ ] Bonet & Wood, *Nonlinear Continuum Mechanics for FEA* (the supplied file was front matter only)
