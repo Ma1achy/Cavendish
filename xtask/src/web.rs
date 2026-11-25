@@ -87,8 +87,18 @@ pub fn build(root: &Path) -> Result<(), String> {
     let page = page.replace("{{revision}}", &revision(root));
     std::fs::write(dist.join("index.html"), page).map_err(|e| format!("{DIST}/index.html: {e}"))?;
     // The forward stage's Web Worker: the same module, started by this script.
-    // The page's script, the forward stage's Web Worker (the same module, started by it), the icon.
-    for file in ["start.js", "worker.js", "favicon.svg"] {
+    // The page's script, the forward stage's Web Worker (the same module, started by it), the icons
+    // and the web manifest.
+    for file in [
+        "start.js",
+        "worker.js",
+        "favicon.svg",
+        "favicon.ico",
+        "apple-touch-icon.png",
+        "icon-192.png",
+        "icon-512.png",
+        "site.webmanifest",
+    ] {
         std::fs::copy(root.join("crates/cav-app/web").join(file), dist.join(file))
             .map_err(|e| format!("crates/cav-app/web/{file}: {e}"))?;
     }
@@ -359,6 +369,7 @@ fn content_type(path: &str) -> &'static str {
         Some("png") => "image/png",
         Some("svg") => "image/svg+xml",
         Some("ico") => "image/x-icon",
+        Some("webmanifest") => "application/manifest+json",
         _ => "application/octet-stream",
     }
 }
