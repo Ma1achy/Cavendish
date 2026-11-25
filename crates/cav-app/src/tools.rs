@@ -28,6 +28,9 @@ pub enum Behaviour {
     Translate,
     /// A click on the ground adds the chosen starter there.
     Place,
+    /// A click reads the point under the pointer: the bodies' gravity, the voxel cell and its
+    /// share of each tower's phase (S19; `probe x y z`).
+    Probe,
 }
 
 /// One tool of the strip.
@@ -202,10 +205,11 @@ pub fn snapped(value: f64, step: Option<f64>) -> f64 {
     }
 }
 
-/// Where the ray through `pointer` (points within a pane of `size`) meets the horizontal plane
-/// z = `ground`, metres; the point on the target's plane when the ray does not come down to it.
+/// The ray through `pointer` (points within a pane of `size`): where it starts and which way it
+/// goes (not of unit length), metres, the world's frame; and the point under the pointer on the
+/// target's plane.
 #[must_use]
-pub fn on_ground(view: &ViewSpec, size: [f64; 2], pointer: [f64; 2], ground: f64) -> [f64; 3] {
+pub fn ray(view: &ViewSpec, size: [f64; 2], pointer: [f64; 2]) -> ([f64; 3], [f64; 3], [f64; 3]) {
     let p = crate::camera::under_pointer(view, size, pointer);
     let (to_eye, _, _) = view.basis();
     let (origin, direction) = match view.projection {
@@ -223,11 +227,76 @@ pub fn on_ground(view: &ViewSpec, size: [f64; 2], pointer: [f64; 2], ground: f64
             (o, [-to_eye[0], -to_eye[1], -to_eye[2]])
         }
     };
+    (origin, direction, p)
+}
+
+/// Where the ray through `pointer` (points within a pane of `size`) meets the horizontal plane
+/// z = `ground`, metres; the point on the target's plane when the ray does not come down to it.
+#[must_use]
+pub fn on_ground(view: &ViewSpec, size: [f64; 2], pointer: [f64; 2], ground: f64) -> [f64; 3] {
+    let (origin, direction, p) = ray(view, size, pointer);
     if direction[2] >= -1e-9 {
         return p;
     }
     let t = (ground - origin[2]) / direction[2];
     [origin[0] + t * direction[0], origin[1] + t * direction[1], ground]
+}
+
+/// What a click picks in the view: the nearest voxel cell the ray meets (its body, from 0, and
+/// where it meets the cell's face), else the ground. Metres, the world's frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Picked {
+    /// The point.
+    pub point: [f64; 3],
+    /// The body whose cell it is on, from 0; none for the ground.
+    pub body: Option<usize>,
+}
+
+/// The ray through `pointer` against every voxel body's leaves (each an axis-aligned box, its
+/// body where it is at `time`), nearest first; the ground (z = `ground`) if it meets none.
+#[must_use]
+pub fn pick(
+    view: &ViewSpec,
+    size: [f64; 2],
+    pointer: [f64; 2],
+    engine: &cav_engine::Engine,
+    ground: f64,
+) -> Picked {
+    let (origin, direction, _) = ray(view, size, pointer);
+    let spec = engine.spec();
+    let gravity = spec.array.instrument.gravity;
+    let mut best: Option<(f64, usize)> = None;
+    for (n, body) in spec.bodies.iter().enumerate() {
+        let Some(tree) = engine.body_tree(n) else { continue };
+        let at = body.motion.position(engine.time(), gravity);
+        for leaf in &tree.leaves {
+            let c = tree.block_centre(leaf.key, leaf.level).to_array();
+            let h = 0.5 * tree.side(leaf.level);
+            // The slab test: where the ray enters and leaves the box along each axis.
+            let (mut near, mut far) = (0.0_f64, f64::INFINITY);
+            for a in 0..3 {
+                let (lo, hi) = (at[a] + c[a] - h, at[a] + c[a] + h);
+                if direction[a].abs() < 1e-300 {
+                    if origin[a] < lo || origin[a] > hi {
+                        far = -1.0;
+                    }
+                    continue;
+                }
+                let (t0, t1) = ((lo - origin[a]) / direction[a], (hi - origin[a]) / direction[a]);
+                near = near.max(t0.min(t1));
+                far = far.min(t0.max(t1));
+            }
+            if near <= far && best.is_none_or(|(t, _)| near < t) {
+                best = Some((near, n));
+            }
+        }
+    }
+    match best {
+        Some((t, n)) => {
+            Picked { point: std::array::from_fn(|a| origin[a] + t * direction[a]), body: Some(n) }
+        }
+        None => Picked { point: on_ground(view, size, pointer, ground), body: None },
+    }
 }
 
 /// A transform session (the keyboard's Move: `docs/slices/S18.md`): where the body started, how
@@ -326,7 +395,7 @@ mod tests {
         let strip = Strip::parse(TOOLS_RON).unwrap();
         assert_eq!(
             strip.tools.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(),
-            ["select", "move", "place"]
+            ["select", "move", "place", "probe"]
         );
         assert_eq!(strip.snap_step, 0.25);
         // Control: a tool no action chooses, and a twice-listed one, are refused.

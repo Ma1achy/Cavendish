@@ -1,5 +1,5 @@
 // The tool strip, as data (docs/slices/S18.md §2). Each tool is a behaviour the code knows
-// (Select, Translate, Place); its key is the action `tool <id>` in ui/actions.ron, so the keys,
+// (Select, Translate, Place, Probe); its key is the action `tool <id>` in ui/actions.ron, so the keys,
 // the ? sheet and the palette have it from one place. Rotate, Scale, Paint, Measure, Slice and
 // Probe come in S19 (E and R are kept for Rotate and Scale).
 //
@@ -28,6 +28,12 @@
             label: "Place",
             behaviour: Place,
             about: "click the ground to add the chosen starter there",
+        ),
+        (
+            id: "probe",
+            label: "Probe",
+            behaviour: Probe,
+            about: "click a point: the bodies' gravity there, the voxel cell and its share of each tower's phase",
         ),
     ],
 )

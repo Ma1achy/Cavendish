@@ -266,6 +266,9 @@ pub struct Shell {
     /// from its top left (`pointer 0.5 0.7`): what shows a tool's hover (the Place tool's ghost)
     /// in the demo's pictures. UI state, read only by [`crate::headless::Headless::screenshot`].
     pub pointer_at: Option<[f32; 2]>,
+    /// What the Probe tool last read, and where (S19): shown as a card in the active pane until
+    /// another probe, another tool, or a new scene. UI state; `probe x y z` is the same reading.
+    pub probed: Option<cav_sim::probe::Probe>,
     /// The tool in hand: an id of `ui/tools.ron`. UI state, never journalled.
     pub tool: String,
     /// Whether the Move tool snaps to the step.
@@ -395,6 +398,7 @@ impl Shell {
             fly_speed: crate::camera::FLY_SPEED,
             mouse_fly: None,
             pointer_at: None,
+            probed: None,
             tool: "select".to_owned(),
             snap: true,
             place_starter: "sphere".to_owned(),
@@ -1212,6 +1216,13 @@ impl Shell {
         let spec = self.engine.spec();
         let body = spec.bodies.get(n)?;
         let at = body.motion.position(self.engine.time(), spec.array.instrument.gravity);
+        self.point_on_screen(pane, at, size)
+    }
+
+    /// Where the world's point `at` (metres) is drawn in pane `pane` of `size` points, from its
+    /// top left; None behind the camera.
+    #[must_use]
+    pub fn point_on_screen(&self, pane: usize, at: [f64; 3], size: egui::Vec2) -> Option<egui::Pos2> {
         let camera = cav_render::Camera::new(self.engine.view(pane), f64::from(size.x / size.y));
         // The camera's own arithmetic, in points instead of pixels.
         let scale = 1024.0;

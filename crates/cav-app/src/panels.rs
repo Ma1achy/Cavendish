@@ -1632,11 +1632,35 @@ fn tool_options_row(shell: &mut Shell, ui: &mut egui::Ui) {
                 }
                 ui.label(weak(format!("click the ground (z = {} m) to add one there", shell.ground())));
             }
+            Some(Behaviour::Probe) => {
+                ui.label(weak("click a point of a body or the ground: the bodies' gravity there, the cell's share of each tower's phase".into()));
+            }
             _ => {
                 ui.label(weak("click selects · drag a body to move it in the view's plane · middle-drag pans · hold the right button and W A S D to fly".into()));
             }
         }
     });
+}
+
+/// The Probe tool's reading as a card in the pane's top left corner, and its point marked in the
+/// view: what is there, in words, a line a fact.
+fn probe_card(shell: &mut Shell, ui: &egui::Ui, pane: usize, rect: Rect) {
+    let Some(probed) = shell.probed.clone() else { return };
+    let painter = ui.painter_at(rect);
+    if let Some(p) = shell.point_on_screen(pane, probed.point, rect.size()) {
+        let p = p + rect.min.to_vec2();
+        painter.circle_stroke(p, 6.0, Stroke::new(3.0, Color32::from_black_alpha(160)));
+        painter.circle_stroke(p, 6.0, Stroke::new(1.5, theme::GOLD));
+        painter.circle_filled(p, 1.5, theme::GOLD);
+    }
+    let text = probed.words(shell.engine.spec());
+    let galley = painter.layout_no_wrap(text, FontId::monospace(11.0), theme::TEXT);
+    let at = rect.left_top() + vec2(10.0, 34.0);
+    let card = Rect::from_min_size(at, galley.size()).expand(6.0);
+    painter.rect_filled(card, 4.0, theme::PANEL.gamma_multiply(0.92));
+    painter.rect_stroke(card, 4.0, Stroke::new(1.0, theme::WIDGET_EDGE), StrokeKind::Inside);
+    painter.galley(at, galley, theme::TEXT);
+    shell.layout.buttons.push(("probe card".to_owned(), card));
 }
 
 /// The Move tool's gizmo on body `body` in a pane at `rect`: three arrows (x red, y green, z blue,
@@ -1987,6 +2011,24 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         // was nothing to aim at).
         if behaviour == crate::tools::Behaviour::Place && pane == active {
             place_preview(shell, ui, pane, rect, response.hover_pos().map(within));
+        }
+        if behaviour == crate::tools::Behaviour::Probe && pane == active {
+            if response.clicked()
+                && let Some(point) = response.interact_pointer_pos()
+            {
+                let at = within(point);
+                let size = [f64::from(rect.width()), f64::from(rect.height())];
+                let picked = crate::tools::pick(
+                    shell.engine.view(pane),
+                    size,
+                    [f64::from(at.x), f64::from(at.y)],
+                    &shell.engine,
+                    shell.ground(),
+                );
+                shell.probed = Some(shell.engine.probe(picked.point));
+            }
+            probe_card(shell, ui, pane, rect);
+            continue;
         }
         if behaviour == crate::tools::Behaviour::Place
             && response.clicked()

@@ -1746,6 +1746,14 @@ impl Engine {
         self.selection
     }
 
+    /// What the Probe tool reads at `point` (metres, the world's frame) at the playhead: the
+    /// bodies' gravity, the voxel cell there and its share of each tower's phase, the distance to
+    /// each tower ([`cav_sim::probe`]). A question: nothing changes, nothing is journalled.
+    #[must_use]
+    pub fn probe(&self, point: [f64; 3]) -> cav_sim::probe::Probe {
+        cav_sim::probe::probe(&self.spec, self.voxels.trees(), self.time, point)
+    }
+
     /// Body `n`'s voxel tree (from 0) as the panes draw it, in its own frame: what the inspector
     /// reads a body's mass from when its materials set it, the probe's cell, the paint brush's
     /// target. None for a body not made of voxels, or one the scene's tree budget left out
