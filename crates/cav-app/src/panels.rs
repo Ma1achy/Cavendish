@@ -280,7 +280,7 @@ fn menu_bar(shell: &mut Shell, ui: &mut egui::Ui) {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let spec = shell.engine.spec();
             // The scene's name, with `*` while it has edits not saved.
-            let star = if shell.engine.unsaved() { " *" } else { "" };
+            let star = if shell.unsaved() { " *" } else { "" };
             let status =
                 format!("{}{star} · t {:.2} / {:.0} s", spec.name, shell.engine.time(), spec.duration);
             ui.add(egui::Label::new(RichText::new(status).monospace().color(theme::TEXT)).truncate());
@@ -348,19 +348,43 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
             // Whatever is left is the status line, cut short rather than wrapped. When it says an
             // edit, an Undo link stands before it (the toast: what was just done, and the way back).
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                let edited =
-                    shell.engine.log().iter().next_back().is_some_and(|e| e.subsystem == Subsystem::Edit);
-                if edited && shell.engine.history().0 {
-                    let undo = ui
-                        .add(Button::new(RichText::new("undo").size(11.5).color(theme::LINK)).frame(false))
-                        .on_hover_text("take this edit back (Ctrl+Z)");
-                    shell.register("footer", "footer/undo", "Undo", Kind::Button, undo.rect);
-                    shell.layout.buttons.push(("toast undo".to_owned(), undo.rect));
-                    if undo.clicked() || shell.take_click("footer/undo") {
-                        let _ = shell.run("undo");
+                // The toast: what the last edit did, in words (S18's review, U6), and the way
+                // back. After an undo it says what was undone, and the way forward.
+                let last = shell.engine.log().iter().next_back().cloned();
+                let edited = last.as_ref().is_some_and(|e| e.subsystem == Subsystem::Edit);
+                let undid = last.as_ref().is_some_and(|e| e.message.starts_with("undo"));
+                let spec = shell.engine.spec().clone();
+                let (done, undone) = shell.engine.history_steps();
+                let toast = match (edited, undid) {
+                    (true, true) => undone
+                        .first()
+                        .map(|s| (format!("Undid: {}", crate::dialogs::step_words(s, &spec)), "redo")),
+                    (true, false) => done.last().map(|s| (crate::dialogs::step_words(s, &spec), "undo")),
+                    _ => None,
+                };
+                match toast {
+                    Some((words, back)) => {
+                        ui.add(
+                            egui::Label::new(RichText::new(words).size(11.5).color(theme::STRONG)).truncate(),
+                        );
+                        let (label, hover) = if back == "undo" {
+                            ("Undo", "take this edit back (Ctrl+Z)")
+                        } else {
+                            ("Redo", "put it back (Ctrl+Shift+Z)")
+                        };
+                        let link = ui
+                            .add(Button::new(RichText::new(label).size(11.5).color(theme::LINK)).frame(false))
+                            .on_hover_text(hover);
+                        shell.register("footer", "footer/undo", label, Kind::Button, link.rect);
+                        shell.layout.buttons.push((format!("toast {back}"), link.rect));
+                        if link.clicked() || shell.take_click("footer/undo") {
+                            let _ = shell.run(back);
+                        }
+                    }
+                    None => {
+                        ui.add(egui::Label::new(RichText::new(text).size(11.5).color(colour)).truncate());
                     }
                 }
-                ui.add(egui::Label::new(RichText::new(text).size(11.5).color(colour)).truncate());
             });
         });
     });
