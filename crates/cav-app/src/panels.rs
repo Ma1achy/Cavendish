@@ -1812,52 +1812,89 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
     if keys_open {
         shell.building.window("sheet", "Keyboard");
     }
+    // The sheet fits the window (S18's review, R6): as wide as the window allows less a margin,
+    // three columns when there is room, the descriptions wrapped, and what does not fit scrolls,
+    // with the mouse or from the keyboard (Enter on the list, then the arrows and Page Up/Down).
+    let room = ctx.content_rect();
+    let width = (room.width() - 32.0).clamp(320.0, 1180.0);
+    let columns = if width >= 1000.0 {
+        3
+    } else if width >= 640.0 {
+        2
+    } else {
+        1
+    };
     let sheet = egui::Window::new("Keyboard")
         .open(&mut keys_open)
         .collapsible(false)
         .resizable(false)
-        .default_width(640.0)
-        .default_pos(pos2(ctx.content_rect().center().x - 320.0, 60.0))
+        .fixed_size([width, (room.height() - 120.0).max(200.0)])
+        .pivot(Align2::CENTER_TOP)
+        .default_pos(pos2(room.center().x, room.top() + 40.0))
         .show(ctx, |ui| {
             // Made from the action table and the model's own keys: a key added to the table is
             // here with no line of this code.
             let rows = crate::sheet::rows(crate::actions::table());
-            egui::ScrollArea::vertical().max_height(ctx.content_rect().height() - 160.0).show(ui, |ui| {
-                ui.columns(2, |columns| {
-                    let half = rows.len().div_ceil(2);
-                    for (column, chunk) in columns.iter_mut().zip(rows.chunks(half.max(1))) {
-                        let mut scope = String::new();
-                        egui::Grid::new(("keys", chunk.first().map(|r| r.action.clone())))
-                            .num_columns(2)
-                            .spacing([12.0, 3.0])
-                            .show(column, |ui| {
-                                for row in chunk {
-                                    if row.scope != scope {
-                                        scope.clone_from(&row.scope);
-                                        ui.label(RichText::new(&row.scope).color(theme::GOLD).size(11.5));
-                                        ui.end_row();
-                                    }
-                                    ui.label(
-                                        RichText::new(row.keys.join(" · ")).monospace().color(theme::STRONG),
-                                    );
-                                    ui.label(RichText::new(&row.label).size(12.0));
-                                    ui.end_row();
-                                }
-                            });
+            // Each step of the keys is a row's height; a page is ten.
+            let step = 18.0;
+            let mut area = egui::ScrollArea::vertical().id_salt("sheet list").auto_shrink([false, false]);
+            let scrolled: f32 =
+                shell.take_adjust("sheet/list").iter().filter(|(axis, ..)| *axis >= 1).map(|(_, steps, ..)| *steps as f32).sum();
+            if scrolled != 0.0 {
+                area = area.vertical_scroll_offset((shell.sheet_scroll - scrolled * step).max(0.0));
+            }
+            let shown = area.max_height(ui.available_height() - 24.0).show(ui, |ui| {
+                ui.columns(columns, |cols| {
+                    // Whole groups to a column, as evenly as their rows allow.
+                    let per = rows.len().div_ceil(columns);
+                    let mut column = 0;
+                    let mut in_column = 0;
+                    let mut scope = String::new();
+                    for row in &rows {
+                        if row.scope != scope && in_column >= per && column + 1 < columns {
+                            column += 1;
+                            in_column = 0;
+                        }
+                        let ui = &mut cols[column];
+                        if row.scope != scope {
+                            scope.clone_from(&row.scope);
+                            ui.add_space(if in_column == 0 { 0.0 } else { 6.0 });
+                            ui.label(RichText::new(&row.scope).color(theme::GOLD).size(12.0));
+                        }
+                        ui.horizontal_top(|ui| {
+                            ui.add_sized(
+                                [118.0, 16.0],
+                                egui::Label::new(
+                                    RichText::new(row.keys_text()).monospace().size(11.5).color(theme::STRONG),
+                                )
+                                .halign(Align::Min)
+                                .truncate(),
+                            );
+                            let label = ui.add(egui::Label::new(RichText::new(&row.label).size(12.0)).wrap());
+                            if !row.about.is_empty() {
+                                label.on_hover_text(&row.about);
+                            }
+                        });
+                        in_column += 1;
                     }
                 });
             });
-            ui.add_space(6.0);
+            shell.sheet_scroll = shown.state.clamped_offset().y;
+            ui.add_space(4.0);
             ui.label(
                 RichText::new(
-                    "every key is an action, every action a console line; Ctrl+K finds them by name",
+                    "every key is an action, every action a console line; Ctrl+K finds them by name · Enter, then the arrows, scrolls this list",
                 )
                 .size(11.0)
                 .color(theme::WEAK),
             );
+            shown.inner_rect
         });
     if let Some(window) = sheet {
-        shell.register("sheet", "sheet/list", "Keys", Kind::ReadOnly, window.response.rect);
+        // The list is a stop that scrolls (the spec's §6 for lists: the whole list is reachable).
+        let list = window.inner.unwrap_or(window.response.rect);
+        shell.building.place("sheet", window.response.rect);
+        shell.register("sheet", "sheet/list", "Keys", Kind::Adjust, list);
     }
     shell.keys_open = keys_open;
 

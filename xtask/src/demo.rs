@@ -953,6 +953,15 @@ fn s18(root: &Path) -> Result<(), String> {
         )?;
         expect_png(&out, file, [1440, 900], &mut made)?;
     }
+    // The editor's budgets of §6, measured in the release build on `point` with no window.
+    let timings = capture_within(
+        &app,
+        &["--screenshot", &path("timings.png"), "--size", "1440x900", "--exec", "load point", "--timings"],
+        300,
+        None,
+    )?;
+    let _ = std::fs::remove_file(out.join("timings.png"));
+    write(&out, "timings.txt", &timings, &mut made)?;
     // The end-to-end task as console lines (what the editor's clicks issue), with tower 1's phase.
     let script = "load room; add sphere at 2 0 0.25; set bodies[0].motion.Static.position [2, 2, 0.25]; \
                   journal; reading";

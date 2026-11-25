@@ -177,11 +177,11 @@ impl Table {
         Ok(())
     }
 
-    /// Whether `id` is a scope the keyboard knows: a big scope, or a scope under one that the
-    /// frame registers (`viewport/…`, `tree/…`), or a window.
+    /// Whether `id` is a scope the keyboard knows: a big scope, a window, or one of the scopes
+    /// under them that the frame registers ([`SUB_SCOPES`]). The whole id is checked, so a
+    /// misspelt `tree/sorces` is refused (S18's review, minor 6: only its first part was).
     fn knows_scope(&self, id: &str) -> bool {
-        let root = id.split('/').next().unwrap_or(id);
-        self.scopes.iter().any(|s| s.id == root) || WINDOWS.contains(&root)
+        self.scopes.iter().any(|s| s.id == id) || WINDOWS.contains(&id) || SUB_SCOPES.contains(&id)
     }
 
     /// The scopes a shortcut in `scope` can be heard from, innermost first: `tree/bodies` is
@@ -238,6 +238,18 @@ impl Table {
         self.scopes.iter().find(|s| s.id == id).map_or(id, |s| s.name.as_str())
     }
 }
+
+/// The scopes inside the big scopes that the frame registers every frame, whatever is shown, and
+/// that may own shortcuts. `every_sub_scope_is_registered` holds this list to what is drawn.
+pub const SUB_SCOPES: &[&str] = &[
+    "tree/sources",
+    "tree/array",
+    "tree/surroundings",
+    "viewport/canvas",
+    "viewport/selection",
+    "inspector/selection",
+    "timeline/scrubber",
+];
 
 /// The windows the keyboard model knows (each a list of sections): their ids may own shortcuts.
 pub const WINDOWS: &[&str] = &["palette", "sheet", "about", "console", "history", "wizard", "open", "save"];
@@ -310,6 +322,13 @@ mod tests {
         assert!(why.contains("nowhere") && why.starts_with("ui/actions.ron:"), "{why}");
         let line: usize = why.split(':').nth(1).unwrap().parse().unwrap();
         assert!(corrupt.lines().nth(line - 1).unwrap().contains("proj-toggle"), "{why}");
+        // A scope under a big one is checked whole: `tree/sorces` is not `tree/sources`.
+        let misspelt = ACTIONS_RON
+            .replace("scope: \"viewport\", keys: [\"O\"]", "scope: \"tree/sorces\", keys: [\"O\"]");
+        assert!(Table::parse(&misspelt).unwrap_err().contains("tree/sorces"));
+        let right = ACTIONS_RON
+            .replace("scope: \"viewport\", keys: [\"O\"]", "scope: \"tree/sources\", keys: [\"O\"]");
+        assert!(Table::parse(&right).is_ok(), "the control: the scope as it is spelt");
         // And a key that is not a key, and a menu that is not a menu.
         assert!(Table::parse(&ACTIONS_RON.replace("keys: [\"F3\"]", "keys: [\"F99\"]")).is_err());
         assert!(
@@ -333,7 +352,8 @@ mod tests {
             assert!(
                 sheet
                     .iter()
-                    .any(|row| row.keys.contains(&shortcut.chord.text()) && row.action == shortcut.action),
+                    .any(|row| row.keys.contains(&shortcut.chord.text())
+                        && row.actions.contains(&shortcut.action)),
                 "{} is not on the sheet",
                 shortcut.action
             );
