@@ -627,6 +627,10 @@ pub struct PeriodogramReply {
     pub power: Vec<f64>,
     /// Each oscillating body's first harmonics and where they fold to.
     pub combs: Vec<Comb>,
+    /// Present when the signal it is made from left matter out: the world was read only within
+    /// this many metres of each tower (as [`SignalReply::truncated`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<f64>,
 }
 
 /// The spectral window of one tower's shots.

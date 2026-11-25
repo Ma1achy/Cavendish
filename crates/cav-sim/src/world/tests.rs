@@ -281,7 +281,8 @@ fn moments_against_bound() -> &'static (f64, f64) {
         let readers = read::Readers::new(&spec);
         let reader = readers.of(0);
         let (mut worst_over, mut loosest) = (0f64, 0f64);
-        let mut checked = 0;
+        // The (q, arm) pairs whose error is at rounding, so not in the looseness: named, not counted.
+        let mut under_rounding: Vec<(f64, &str)> = Vec::new();
         for q in MOMENT_QS {
             // The tower placed so that the chunk's centre is a/q from its atoms' path, to the side.
             let distance = multipole.radius / q;
@@ -293,14 +294,16 @@ fn moments_against_bound() -> &'static (f64, f64) {
             };
             let approx = read_as(multipole);
             let bound = reader.read(base, &BoundSource { far: &[multipole] }, 0.0);
-            for (e, a, b) in
-                [(exact.lower, approx.lower, bound.lower), (exact.upper, approx.upper, bound.upper)]
-            {
+            for (arm, e, a, b) in [
+                ("lower", exact.lower, approx.lower, bound.lower),
+                ("upper", exact.upper, approx.upper, bound.upper),
+            ] {
                 let error = (e - a).abs();
                 worst_over = worst_over.max(error / b.abs());
                 if error > 1e-13 * e.abs() {
                     loosest = loosest.max(b.abs() / error);
-                    checked += 1;
+                } else {
+                    under_rounding.push((q, arm));
                 }
             }
             // Controls, each a fault of the expansion that the bound must not cover where it is
@@ -326,7 +329,8 @@ fn moments_against_bound() -> &'static (f64, f64) {
                 }
             }
         }
-        assert!(checked >= 2 * MOMENT_QS.len() - 2, "{checked}");
+        // Every q tried is in the looseness (S4's second review, minor 2): none is at rounding.
+        assert!(under_rounding.is_empty(), "at rounding, so not measured: {under_rounding:?}");
         (worst_over, loosest)
     })
 }
@@ -544,6 +548,7 @@ fn the_world_read_is_bounded() {
     let shots = read::shots(&spec).unwrap();
     let c = read::contribution(&spec, SourceId::World, &shots, &|| false).unwrap();
     assert!(!c.settled && c.warnings.iter().any(|w| w.text.starts_with("the world is not read")));
+    assert_eq!(c.truncated, Some(0.0), "a refused read read nothing of the world");
     // Within the scan but past the chunk cap: the nearest are kept, nearest first, and the rest said.
     let mut world = world_of(0.05, vec![boxed([-60.0, -60.0, -2.0], [60.0, 60.0, -1.0])]);
     world.read.radius = 80.0;

@@ -545,8 +545,12 @@ fn an_unsettled_reading_says_so() {
     // A read of part of the matter (the world within 2 m of each tower) says so, whatever the
     // quadrature did, and never "within" a number of radians.
     let part = cav_engine::estimate_text(1e-8, false, Some(2.0));
-    assert_eq!(part, "not settled: of the matter within 2 m only, estimate 1e-8 rad");
+    assert_eq!(
+        part,
+        "not settled: of the matter within 2 m only (quadrature of what was read within 1e-8 rad)"
+    );
     assert_eq!(cav_engine::estimate_text(1e-8, true, Some(2.0)), part);
+    assert!(cav_engine::estimate_text(1e-8, false, Some(0.03)).contains("within 0.03 m only"));
     // A point mass on a tower's axis does not settle. The reading that comes back is the one
     // asked for (`refined`), and its heading must not pass the estimate off as a bound.
     let mut engine = loaded(dev::point());
@@ -1373,4 +1377,54 @@ fn a_scene_with_no_towers_answers_every_query() {
     engine.run_line("add array.towers {\"label\": \"t\", \"position\": [0.0, 3.0, 0.0]}").unwrap();
     assert!(engine.settle(Duration::from_secs(60)));
     assert!(engine.query(&asked).is_ok());
+}
+
+#[test]
+fn a_truncated_world_read_reaches_every_reply() {
+    // S4's second review, J4: the truncation and `settled` as the API and MCP serve them, in the
+    // signal, the reading under a playhead and the periodogram, and in their JSON; and in
+    // `read::reading` itself. world-box read only within 1 m of the towers (it is farther).
+    let mut part = dev::world_box();
+    part.world.as_mut().unwrap().read.radius = 1.0;
+    let replies = |scene: SceneSpec| {
+        let mut engine = loaded(scene);
+        engine.set_patience(LONG);
+        assert!(engine.settle(LONG));
+        let Reply::Signal(signal) = engine
+            .ask(&Query::Signal { tower: 1, channel: ChannelName::Gradiometer, span: None, compared: false })
+            .unwrap()
+        else {
+            panic!("a signal")
+        };
+        let Reply::Reading(reading) = engine.ask(&Query::Reading(Some(1.0))).unwrap() else {
+            panic!("a reading")
+        };
+        let Reply::Periodogram(periodogram) = engine
+            .ask(&Query::Periodogram { tower: 1, channel: ChannelName::Gradiometer, compared: false })
+            .unwrap()
+        else {
+            panic!("a periodogram")
+        };
+        let texts = [
+            serde_json::to_string(&signal).unwrap(),
+            serde_json::to_string(&reading).unwrap(),
+            serde_json::to_string(&periodogram).unwrap(),
+        ];
+        (
+            (signal.truncated, signal.settled),
+            (reading.truncated, reading.settled),
+            periodogram.truncated,
+            texts,
+        )
+    };
+    let (signal, reading, periodogram, texts) = replies(part.clone());
+    assert_eq!((signal, reading, periodogram), ((Some(1.0), false), (Some(1.0), false), Some(1.0)));
+    assert!(texts.iter().all(|t| t.contains("\"truncated\":1.0")), "{texts:?}");
+    assert_eq!(read::reading(&part, 1.0, &|| false).unwrap().truncated, Some(1.0));
+    // Control: the whole box is read whole: no truncation, settled, and no key in the JSON.
+    let whole = dev::world_box();
+    let (signal, reading, periodogram, texts) = replies(whole.clone());
+    assert_eq!((signal, reading, periodogram), ((None, true), (None, true), None));
+    assert!(texts.iter().all(|t| !t.contains("truncated")), "{texts:?}");
+    assert_eq!(read::reading(&whole, 1.0, &|| false).unwrap().truncated, None);
 }

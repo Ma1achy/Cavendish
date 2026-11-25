@@ -58,8 +58,10 @@ use cav_core::npy;
 use crate::read::Signal;
 use crate::{SceneSpec, SignSpec};
 
-/// The version of the bundle's layout this build writes.
-pub const BUNDLE_VERSION: u32 = 1;
+/// The version of the bundle's layout this build writes. 2 (S4's second review, minor 8): the
+/// manifest says `truncated` (and what it means), and `sources` counts every source (the floor,
+/// the world and the bodies), with `bodies` the bodies alone.
+pub const BUNDLE_VERSION: u32 = 2;
 
 /// Who made a bundle: the engine's version and the revision of its source. These are the
 /// build's, fixed when the engine was compiled (`cav_engine::build`); nothing here is found out
@@ -503,7 +505,8 @@ fn manifest_of(
         "instruments": table,
         "tower_instrument": column,
         "towers": signal.towers,
-        "sources": spec.bodies.len(),
+        "sources": crate::read::sources(spec).len(),
+        "bodies": spec.bodies.len(),
         "sign": sign,
         "settled": signal.settled,
         "truncated": signal.truncated,
@@ -665,11 +668,12 @@ mod tests {
         write(&dir, &scene, &signal, &build(), None).unwrap();
         let manifest: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join("manifest.json")).unwrap()).unwrap();
-        assert_eq!(manifest["cavendish_bundle"], 1);
+        assert_eq!(manifest["cavendish_bundle"], 2);
         assert_eq!(
-            (&manifest["scene"], &manifest["towers"], &manifest["sources"]),
+            (&manifest["scene"], &manifest["towers"], &manifest["bodies"]),
             (&"staggered".into(), &5.into(), &2.into())
         );
+        assert_eq!(manifest["sources"], crate::read::sources(&scene).len());
         // The sign, in words, and that it is not v1's.
         let sign = manifest["sign"].as_str().unwrap();
         assert!(

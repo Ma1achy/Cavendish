@@ -949,6 +949,8 @@ fn world_contribution(
             channel.resize(shots.total(), 0.0);
         }
         out.settled = false;
+        // Nothing of the world was read: within 0 m.
+        out.truncated = Some(0.0);
         out.warnings.push(Warning::general(format!("the world is not read: {why}")));
     };
     let crate::world::ReadKeys { keys, said, within } = match crate::world::read_keys(spec, &world) {
