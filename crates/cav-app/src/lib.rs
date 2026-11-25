@@ -21,6 +21,7 @@
 pub mod app;
 pub mod editors;
 pub mod headless;
+pub mod lane;
 pub mod menus;
 mod panels;
 pub use panels::MAX_OUTLINE_ROWS;
