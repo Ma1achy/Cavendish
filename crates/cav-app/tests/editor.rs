@@ -352,6 +352,10 @@ fn task_keyboard_only() {
         key(&mut rig, Key::Tab, Modifiers::NONE);
     }
     key(&mut rig, Key::Enter, Modifiers::NONE);
+    // Past the panel's tabs (S19's panels: Inspector, Readings) to the selection's section.
+    while rig.shell.keyboard.focused() != "inspector/selection" {
+        key(&mut rig, Key::ArrowDown, Modifiers::NONE);
+    }
     key(&mut rig, Key::Enter, Modifiers::NONE);
     while rig.shell.keyboard.focused() != "field/bodies[0].mass" {
         key(&mut rig, Key::ArrowDown, Modifiers::NONE);
@@ -1397,14 +1401,13 @@ fn the_tool_strip_has_one_name_a_tool_and_snap_apart() {
         assert_eq!(node.name, tool.label);
     }
     let strip: Vec<&str> = rig.shell.focus_tree().children("toolbar");
-    assert_eq!(strip.last(), Some(&"toolbar/snap"), "snap last, after the tools");
-    let lowest_tool = cav_app::tools::strip()
-        .tools
-        .iter()
-        .map(|t| rig.shell.layout().button(&format!("tool {}", t.id)).unwrap().bottom())
-        .fold(0.0_f32, f32::max);
+    assert!(strip.contains(&"toolbar/snap"), "snap is the tool strip's scope's, wherever it is drawn");
+    // Since S19's panels snap is in the tool's options row, beside its hint, apart from the tools.
     let snap = rig.shell.layout().button("snap").unwrap();
-    assert!(snap.top() >= lowest_tool + 8.0, "apart from the tools: {} after {lowest_tool}", snap.top());
+    let options = rig.shell.layout().panel("options").unwrap();
+    assert!(options.contains_rect(snap), "snap {snap:?} in the options row {options:?}");
+    let strip = rig.shell.layout().button("tool strip").unwrap();
+    assert!(!strip.intersects(snap), "and not in the strip");
     // On the sheet snap is the tool strip's, and no tool (S18's second review, minor 6: it was
     // listed under "Tools"); its menu is Edit, not Edit › Tool.
     let rows = cav_app::sheet::rows(table);
@@ -1506,7 +1509,7 @@ fn the_history_says_what_happened_in_words_beside_the_figure() {
     let figure = rig.shell.layout().figure;
     assert!(overlap(window, figure) < 1.0, "{window:?} covers the figure {figure:?}");
     // Inside the outliner: not over the tool strip either (UX 4).
-    let strip = rig.shell.layout().panel("toolbar").unwrap();
+    let strip = rig.shell.layout().button("tool strip").unwrap();
     assert!(overlap(window, strip) < 1.0, "{window:?} covers the tool strip {strip:?}");
     assert_eq!(rig.shell.focus_tree().node("history/done/1").unwrap().name, "Added sphere");
     // The first row says what it goes back to, not something like the load below it, and its

@@ -1197,8 +1197,14 @@ impl Engine {
                 // are kept.
                 let before = self.views[pane].clone();
                 let (colour, overlay, section) = (before.colour, before.overlay, before.section);
-                self.views[pane] =
-                    ViewSpec { colour, overlay, section, ..home_view(&self.spec, pane, before.style) };
+                let hidden = before.hidden.clone();
+                self.views[pane] = ViewSpec {
+                    colour,
+                    overlay,
+                    section,
+                    hidden,
+                    ..home_view(&self.spec, pane, before.style)
+                };
                 // The one camera move that is an edit: undo puts the camera back where it was.
                 if before != self.views[pane] {
                     self.history.edited(Step {
@@ -1210,6 +1216,14 @@ impl Engine {
             ViewCommand::Colour { pane, colour } => self.views[pane].colour = colour,
             ViewCommand::Overlay { pane, overlay } => self.views[pane].overlay = overlay,
             ViewCommand::Section { pane, section } => self.views[pane].section = section,
+            ViewCommand::Hide { ref label, hidden } => {
+                for view in &mut self.views {
+                    view.hidden.retain(|l| l != label);
+                    if hidden {
+                        view.hidden.push(label.clone());
+                    }
+                }
+            }
         }
     }
 

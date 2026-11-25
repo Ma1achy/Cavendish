@@ -76,7 +76,16 @@ never an edit, Home or a selection) and its action;
    (`take_click`, `take_adjust`, `take_type`, `take_pick`): then the keyboard reaches it with no
    more code. A control that is sometimes unusable stays registered, disabled
    (`building.disable`): order never depends on state.
-4. Nothing it draws may cover the figure: `every_panel_is_laid_out_and_none_covers_the_figure`.
+4. Nothing it draws may cover the figure: `every_panel_is_laid_out_and_none_covers_the_figure`
+   (the tool strip is the one thing on the figure, by design: it floats over the view's edge).
+5. **In the inspector** (`crates/cav-app/src/inspector.rs`, `docs/design/panels.md`): a part of
+   the selection is a card (`inspector::card`: folds, a ⋮ menu by `inspector::part_menu`), its
+   rows on the one grid whose label column is `Shell::label_width`; a value worked out and not
+   edited goes in the Info card (`inspector::info`), never among the fields; an optional field is
+   a checkbox (`gate`), never "none add"; no help paragraphs (the doc string is the name's hover).
+   `every_value_in_the_inspector_starts_at_one_x` holds the grid.
+6. **In the scene tree** (`crates/cav-app/src/outliner.rs`): rows name things (an icon a kind of
+   thing, no numbers: those are the Readings tab's); a group folds; `the_outliner_is_one_tree_of_named_rows`.
 
 ## Starters (what Add adds)
 

@@ -156,7 +156,17 @@ impl Voxels {
                         section,
                         eye: cav_sim::voxel_view::eye_direction(view.yaw, view.pitch),
                     });
-                    Some(voxel_frame_cut(spec, &self.trees, view.colour, view.overlay, cutting, time))
+                    // A body the view hides has no cubes in it either.
+                    let trees: Vec<_> = if view.hidden.is_empty() {
+                        self.trees.clone()
+                    } else {
+                        self.trees
+                            .iter()
+                            .zip(&spec.bodies)
+                            .map(|(t, b)| t.clone().filter(|_| !view.hidden.contains(&b.label)))
+                            .collect()
+                    };
+                    Some(voxel_frame_cut(spec, &trees, view.colour, view.overlay, cutting, time))
                 }
                 _ => None,
             };

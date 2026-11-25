@@ -8,7 +8,7 @@
 
 use cav_engine::Command;
 use cav_sim::paths::{self, Entry, Kind};
-use egui::{Align, Layout, RichText};
+use egui::{Align, Color32, Layout, RichText};
 use serde_json::{Value, json};
 
 use crate::keyboard::Kind as Focus;
@@ -128,8 +128,7 @@ pub fn shown(value: f64) -> String {
     }
 }
 
-/// The width of the column of names, and of one number, points: together they fit the panel.
-const NAME_WIDTH: f32 = 92.0;
+/// The width of one number, and of a vector's component, points.
 const NUMBER_WIDTH: f32 = 88.0;
 const COMPONENT_WIDTH: f32 = 44.0;
 
@@ -147,12 +146,10 @@ fn number(
     let atomic = entry.unit.as_deref() == Some("kg") && value.abs() < 1e-20;
     let scale = if atomic { cav_core::constants::ATOMIC_MASS_UNIT } else { 1.0 };
     let unit = if atomic { Some("u") } else { entry.unit.as_deref() };
-    let unit = unit.filter(|unit| *unit != "1" && width >= NUMBER_WIDTH);
-    let unit = unit.map_or_else(String::new, |unit| format!(" {unit}"));
+    let unit = unit.filter(|unit| *unit != "1" && width >= NUMBER_WIDTH).map(str::to_owned);
     let mut drag = egui::DragValue::new(&mut edited)
         .speed(speed(value))
         .range(range(entry))
-        .suffix(unit)
         .custom_formatter(move |value, _| shown(value / scale))
         // The field shows six figures; the value has seventeen. Text that is still what the
         // field showed is the value itself, not its six figures read back: leaving a field
@@ -169,7 +166,11 @@ fn number(
     if whole {
         drag = drag.max_decimals(0);
     }
-    let response = ui.add_sized([width, 18.0], drag);
+    let response = ui.add_sized([width, 20.0], drag);
+    // The unit is a muted word outside the box (S19's panels), not part of the number.
+    if let Some(unit) = unit {
+        ui.label(RichText::new(unit).size(11.5).color(theme::WEAK));
+    }
     ((edited != value).then_some(edited), response)
 }
 
@@ -195,9 +196,32 @@ fn nudged(value: f64, steps: f64, entry: &Entry, whole: bool) -> f64 {
 /// an element of the keyboard's scope `scope` ([`field_id`]), so it is reached by Tab and the
 /// arrows, adjusted with them, typed into, or chosen from, as the spec says.
 pub fn show(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, prefix: &str) {
+    show_without(shell, ui, scope, prefix, &[]);
+}
+
+/// [`show`] but for the fields directly under `prefix` named in `skip` (a body's label, which the
+/// inspector's header edits).
+pub fn show_without(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, prefix: &str, skip: &[&str]) {
+    show_in_cards(shell, ui, scope, prefix, skip, None);
+}
+
+/// [`show_without`] with the fields directly under `prefix` in a card of their own, titled
+/// `own` (its id `scope`), beside the cards of its parts (S19's panels: Body, Shape, Motion side
+/// by side, not one inside another).
+pub fn show_in_cards(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    scope: &str,
+    prefix: &str,
+    skip: &[&str],
+    own: Option<&str>,
+) {
     let spec = shell.engine.spec().clone();
     let entries = match paths::leaves(&spec, prefix, MAX_FIELDS) {
-        Ok(entries) => entries,
+        Ok(entries) => entries
+            .into_iter()
+            .filter(|e| !skip.iter().any(|s| e.path == format!("{prefix}.{s}")))
+            .collect::<Vec<_>>(),
         Err(why) => {
             ui.label(RichText::new(why).size(11.0).color(theme::WARN));
             return;
@@ -226,37 +250,45 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, prefix: &str) {
     }
     for section in sections {
         let in_section: Vec<&Entry> = entries.iter().filter(|e| section_of(e) == section).collect();
-        let mut grid = |shell: &mut Shell, ui: &mut egui::Ui, scope: &str| {
-            egui::Grid::new(("editors", prefix, section.as_str())).num_columns(2).spacing([8.0, 3.0]).show(
-                ui,
-                |ui| {
-                    for entry in &in_section {
-                        row(shell, ui, &spec, &baseline, scope, prefix, entry, &mut commands);
-                        ui.end_row();
-                    }
-                },
-            );
+        // One grid for every card: the label column's width the panel's (S19's panels), so the
+        // value column starts at the same x on every row.
+        let draw = |shell: &mut Shell, ui: &mut egui::Ui, scope: &str, commands: &mut Vec<Command>| {
+            let mut gates: Vec<String> = Vec::new();
+            for entry in &in_section {
+                gate(shell, ui, &spec, scope, prefix, entry, &mut gates, commands);
+                row(shell, ui, &spec, &baseline, scope, prefix, entry, commands);
+            }
         };
         if section.is_empty() {
-            grid(shell, ui, scope);
+            match own {
+                Some(title) => {
+                    let parent = scope.rsplit_once('/').map_or("inspector", |(p, _)| p).to_owned();
+                    crate::inspector::card(
+                        shell,
+                        ui,
+                        &parent,
+                        scope,
+                        title,
+                        title,
+                        true,
+                        None,
+                        |shell, ui| {
+                            draw(shell, ui, scope, &mut commands);
+                        },
+                    );
+                }
+                None => draw(shell, ui, scope, &mut commands),
+            }
             continue;
         }
         let id = format!("{scope}/{prefix}/{section}");
         // What the section is, in words: "Motion", "Shape", "Timing" (S18's review, U4).
         let title = paths::words(&section);
-        // The section first, so that its fields find it; where it is, once it is drawn. From the
-        // keyboard Enter on it goes in (or, folded, opens it); a click on its header folds it.
-        let opened = shell.take_click(&id);
-        shell.building.add(scope, &id, &title, Focus::Scope);
-        let header = egui::CollapsingHeader::new(RichText::new(&title).size(12.0).color(theme::STRONG))
-            .id_salt(("section", prefix, section.as_str()))
-            .default_open(true)
-            .open(opened.then_some(true))
-            .show(ui, |ui| grid(shell, ui, &id));
-        shell.building.place(&id, header.header_response.rect);
-        if header.body_returned.is_none() {
-            shell.building.add(scope, &id, &title, Focus::Button);
-        }
+        let part = format!("{prefix}.{section}");
+        let menu = |shell: &mut Shell, ui: &mut egui::Ui| crate::inspector::part_menu(shell, ui, &part);
+        crate::inspector::card(shell, ui, scope, &id, &title, prefix, true, Some(&menu), |shell, ui| {
+            draw(shell, ui, &id, &mut commands);
+        });
     }
     if entries.len() >= MAX_FIELDS {
         ui.label(
@@ -269,6 +301,52 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, prefix: &str) {
         // A step that is refused continues nothing, and nothing continues it.
         if !shell.apply(command) {
             shell.editing = None;
+        }
+    }
+}
+
+/// Before `entry`'s row: for each optional part it lies in (a schedule's jitter, gaps, window)
+/// that is there and not yet gated, a ticked checkbox with the part's name, which unticked takes
+/// the part away (S19's panels: optional properties behind checkboxes, not "none add").
+#[allow(clippy::too_many_arguments)]
+fn gate(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    spec: &cav_sim::SceneSpec,
+    scope: &str,
+    prefix: &str,
+    entry: &Entry,
+    gates: &mut Vec<String>,
+    commands: &mut Vec<Command>,
+) {
+    let below = entry.path.strip_prefix(prefix).unwrap_or(&entry.path);
+    let mut at = prefix.to_owned();
+    for part in below.split('.').filter(|p| !p.is_empty()) {
+        at = if at.is_empty() { part.to_owned() } else { format!("{at}.{part}") };
+        if at == entry.path || gates.contains(&at) {
+            continue;
+        }
+        let Ok(part_entry) = paths::entry(spec, &at) else { continue };
+        if !part_entry.optional || part_entry.value.is_null() {
+            continue;
+        }
+        gates.push(at.clone());
+        let id = format!("{}/on", field_id(&at));
+        let name = part_entry.label();
+        let mut on = true;
+        let response = ui.horizontal(|ui| {
+            theme::fixed_left(
+                ui,
+                egui::vec2(shell.label_width, 20.0),
+                egui::Label::new(RichText::new(&name).size(12.0).color(theme::WEAK)).truncate(),
+            );
+            ui.checkbox(&mut on, "")
+        });
+        let response = response.inner.on_hover_text(&part_entry.doc);
+        shell.register(scope, &id, &name, Focus::Button, response.rect);
+        shell.layout.buttons.push((format!("gate {at}"), response.rect));
+        if response.changed() || shell.take_click(&id) {
+            commands.push(command_for(&at, Value::Null, false));
         }
     }
 }
@@ -317,42 +395,61 @@ fn row(
     let colour = if differs { theme::GOLD } else { theme::WEAK };
     let text =
         egui::Label::new(RichText::new(format!("{indent}{name}{unit}")).color(colour).size(12.0)).truncate();
-    let named = theme::fixed_left(ui, egui::vec2(NAME_WIDTH, 18.0), text).on_hover_text(&hover);
-    if differs {
-        // Unity's mark for an overridden field: a bar at the edge, beside the gold name.
-        let x = ui.max_rect().left() - 6.0;
-        ui.painter().vline(x, named.rect.y_range(), egui::Stroke::new(2.0, theme::GOLD));
-    }
-    let start = ui.cursor().min;
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 3.0;
-        edit(shell, ui, spec, scope, name, entry, commands);
-        if matches!(entry.kind, Kind::List) && !entry.whole {
-            list_buttons(shell, ui, spec, scope, name, entry, commands);
-        }
-        let reset_id = format!("{}/reset", field_id(&entry.path));
-        // Drawn only where there is something to put back; where there is not, its place is
-        // kept (and its stop in the keyboard's order, disabled) without a mark to read.
-        let reset = ui
-            .add_visible(
-                differs,
-                egui::Button::new(RichText::new("‹").size(12.0).color(theme::GOLD)).small().frame(false),
-            )
-            .on_hover_text("put back the value the scene was opened or saved with (Backspace)");
-        shell.register(scope, &reset_id, &format!("{name}: reset"), Focus::Button, reset.rect);
+    let width = shell.label_width;
+    let line = ui.horizontal(|ui| {
+        let named = theme::fixed_left(ui, egui::vec2(width, 20.0), text).on_hover_text(&hover);
         if differs {
-            // Only a reset that is drawn is in the layout's buttons (what a test can see).
-            shell.layout.buttons.push((format!("reset {}", entry.path), reset.rect));
+            // Unity's mark for an overridden field: a bar at the edge, beside the gold name.
+            let x = ui.max_rect().left() - 6.0;
+            ui.painter().vline(x, named.rect.y_range(), egui::Stroke::new(2.0, theme::GOLD));
         }
-        if !differs {
-            shell.building.disable(&reset_id);
-        }
-        if differs && (reset.clicked() || shell.take_click(&reset_id)) {
-            commands.push(command_for(&entry.path, saved.clone().unwrap_or(Value::Null), false));
-        }
+        let start = ui.cursor().min;
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 3.0;
+            // An optional value that is there: a ticked box before it, which unticked takes it
+            // away (S19's panels).
+            if entry.optional
+                && !entry.value.is_null()
+                && entry.kind.is_leaf()
+                && material_field(&entry.path).is_none()
+            {
+                let mut on = true;
+                let tick = ui.checkbox(&mut on, "").on_hover_text(format!("{name}: take it away"));
+                let tick_id = format!("{}/on", field_id(&entry.path));
+                shell.register(scope, &tick_id, &format!("{name}: on"), Focus::Button, tick.rect);
+                shell.layout.buttons.push((format!("gate {}", entry.path), tick.rect));
+                if tick.changed() || shell.take_click(&tick_id) {
+                    commands.push(command_for(&entry.path, Value::Null, false));
+                }
+            }
+            edit(shell, ui, spec, scope, name, entry, commands);
+            if matches!(entry.kind, Kind::List) && !entry.whole {
+                list_buttons(shell, ui, spec, scope, name, entry, commands);
+            }
+            let reset_id = format!("{}/reset", field_id(&entry.path));
+            // Drawn only where there is something to put back; where there is not, its place is
+            // kept (and its stop in the keyboard's order, disabled) without a mark to read.
+            let reset = ui
+                .add_visible(
+                    differs,
+                    egui::Button::new(RichText::new("‹").size(12.0).color(theme::GOLD)).small().frame(false),
+                )
+                .on_hover_text("put back the value the scene was opened or saved with (Backspace)");
+            shell.register(scope, &reset_id, &format!("{name}: reset"), Focus::Button, reset.rect);
+            if differs {
+                // Only a reset that is drawn is in the layout's buttons (what a test can see).
+                shell.layout.buttons.push((format!("reset {}", entry.path), reset.rect));
+            }
+            if !differs {
+                shell.building.disable(&reset_id);
+            }
+            if differs && (reset.clicked() || shell.take_click(&reset_id)) {
+                commands.push(command_for(&entry.path, saved.clone().unwrap_or(Value::Null), false));
+            }
+        });
+        egui::Rect::from_min_max(start, egui::pos2(ui.min_rect().right(), ui.min_rect().bottom()))
     });
-    let took = egui::Rect::from_min_max(start, egui::pos2(ui.min_rect().right(), ui.min_rect().bottom()));
-    shell.layout.editors.push((entry.path.clone(), took));
+    shell.layout.editors.push((entry.path.clone(), line.inner));
 }
 
 /// A list's own buttons: `+` adds an item (a copy of the last, so it is valid as the others
@@ -475,11 +572,24 @@ fn edit(
             }
         }
         Widget::Vector(n) => {
+            // The components share what the row has left (a letter each, the unit and the reset
+            // after them), so a vector never widens the panel.
+            let room = ui.available_width() - 18.0 - if n == 3 { 3.0 * 13.0 } else { 0.0 };
+            let width = (room / n.max(1) as f32 - 4.0).clamp(22.0, 2.0 * COMPONENT_WIDTH);
             for axis in 0..n {
+                // The axis's letter, in the gizmo's colours (x red, y green, z blue).
+                if n == 3 {
+                    let colour = [
+                        Color32::from_rgb(0xe0, 0x5a, 0x4f),
+                        Color32::from_rgb(0x6c, 0xc0, 0x5a),
+                        Color32::from_rgb(0x5a, 0x8f, 0xe0),
+                    ][axis];
+                    ui.label(RichText::new(["X", "Y", "Z"][axis]).size(11.5).strong().color(colour));
+                }
                 let value = entry.value[axis].as_f64().unwrap_or_default();
                 let component = format!("{path}[{axis}]");
                 let component_id = field_id(&component);
-                let (changed, response) = number(ui, value, entry, false, COMPONENT_WIDTH);
+                let (changed, response) = number(ui, value, entry, false, width);
                 let axis_name = format!("{name} {}", ["x", "y", "z", "w"].get(axis).copied().unwrap_or("·"));
                 shell.register(scope, &component_id, &axis_name, Focus::Adjust, response.rect);
                 if let Some(value) = changed {
@@ -497,7 +607,10 @@ fn edit(
                 Some((typing, buffer)) if typing == path => buffer.clone(),
                 _ => current.clone(),
             };
-            let response = ui.add(egui::TextEdit::singleline(&mut text).desired_width(132.0));
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut text)
+                    .desired_width((ui.available_width() - 24.0).clamp(72.0, 160.0)),
+            );
             shell.register(scope, &id, name, Focus::Text, response.rect);
             if shell.take_type(&id) {
                 response.request_focus();
@@ -534,7 +647,7 @@ fn edit(
             };
             // The variants in words ("Lower minus upper"); what is set is the variant's name.
             let combo = egui::ComboBox::from_id_salt(("choice", path))
-                .width(132.0)
+                .width((ui.available_width() - 24.0).clamp(72.0, 160.0))
                 .selected_text(paths::words(&now))
                 .show_ui(ui, |ui| {
                     for name in names {
@@ -574,10 +687,13 @@ fn edit(
             }
         }
         Widget::Absent => {
-            ui.label(RichText::new("none").size(12.0).color(theme::WEAK));
-            let add = ui.small_button("add");
+            // An optional part that is not there: an unticked box that puts it there (S19's
+            // panels: not "none add").
+            let mut on = false;
+            let add = ui.checkbox(&mut on, "").on_hover_text(format!("{name}: add it"));
             shell.register(scope, &id, &format!("{name}: add"), Focus::Button, add.rect);
-            if add.clicked() || shell.take_click(&id) {
+            shell.layout.buttons.push((format!("gate {path}"), add.rect));
+            if add.changed() || shell.take_click(&id) {
                 let value = match (&entry.kind, starter(spec, path, None)) {
                     (_, Some(value)) if !value.is_null() && path.starts_with("array.schedule") => value,
                     // A number that may be absent starts at the bottom of its range, or zero.
@@ -633,7 +749,7 @@ fn material_choice(
     let words = |choice: &Option<String>| choice.clone().unwrap_or_else(|| none.to_owned());
     let mut chosen: Option<Option<String>> = None;
     let combo = egui::ComboBox::from_id_salt(("material", path))
-        .width(132.0)
+        .width((ui.available_width() - 24.0).clamp(72.0, 160.0))
         .selected_text(words(&now))
         .show_ui(ui, |ui| {
             for choice in &choices {
