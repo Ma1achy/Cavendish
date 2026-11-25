@@ -245,7 +245,11 @@ Checked numerically (`skin_bench.py selftest`):
   the point projects onto the segment (ℓ₁ ≤ 0 ≤ ℓ₂ along the edge), a + b − ℓ = r₀²/(a − ℓ₁) + r₀²/(b +
   ℓ₂) with r₀ = |r₁ × ê|. Measured on a 1/64 m edge at distance d from its middle: the direct form is
   wrong by 5×10⁻¹² at d = 10⁻⁶ m, 3×10⁻⁶ at 10⁻⁸ m and divides by zero at 10⁻¹⁰ m; the r₀² form stays
-  below 6×10⁻¹¹ ([`exact-skin-and-partial-fill/nearedge.py`](exact-skin-and-partial-fill/nearedge.py)). In U and g the log is multiplied by (n_e·r_e) → 0, so
+  below 6×10⁻¹¹ ([`exact-skin-and-partial-fill/nearedge.py`](exact-skin-and-partial-fill/nearedge.py))
+  down to d = 10⁻⁸ m. (Corrected 25 Nov 2026, for the paper in `docs/papers/polyhedral-gravity/`:
+  below that the same script gives 7×10⁻⁹ at 10⁻¹⁰ m and 2×10⁻⁵ at 10⁻¹⁴ m. That is the floor set by
+  rounding the point's own position, ε|p|/(d·L), which no formula removes, not a fault of the r₀²
+  form.) In U and g the log is multiplied by (n_e·r_e) → 0, so
   the product tends to 0; H&K omit the term once r₀/L is too small for r₀² to register (eq. 30).
 - *Points on a face, an edge or a vertex.* Tsoulis & Petrović (p. 539) prove that U and g are defined
   and continuous everywhere, on the surface included; the second derivatives jump across a face (the

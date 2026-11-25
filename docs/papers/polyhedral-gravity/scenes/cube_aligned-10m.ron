@@ -1,0 +1,104 @@
+// Paper scene `cube_aligned-10m` (docs/papers/polyhedral-gravity), written by scripts/make_scenes.py from
+// the research benchmark's body `cube_aligned` (docs/research/exact-skin-and-partial-fill/skin_bench.py).
+// Frame: metres, x east, y north, z up; seconds. Body at the origin; tower k's base at 10 m
+// along the benchmark's direction k. Regenerate rather than edit.
+(
+    version: 1,
+    name: "cube_aligned-10m",
+    description: "Benchmark body cube_aligned (rho 2700 kg/m^3, 12 triangles) seen by three towers 10 m from its centre, for the polyhedral-gravity paper.",
+    duration: 4.0,
+    array: (
+        instrument: (
+            tower_height: 10.1,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+            atom_mass: 1.4431558652473234e-25,
+            gravity: 9.81,
+            kicks: 1000,
+            launch_floor: true,
+            sign: LowerMinusUpper,
+        ),
+        towers: [
+            (
+                label: "tower 1",
+                position: (9.407208683835972, 1.8814417367671945, -2.8221626051507913),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "tower 2",
+                position: (-3.6980013081681937, 9.245003270420485, 0.9245003270420484),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "tower 3",
+                position: (2.5916052767440805, -4.319342127906801, -8.638684255813603),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+        ],
+        schedule: (
+            jitter: None,
+            alternate: None,
+            gaps: None,
+            window: None,
+            loss: 0.0,
+            seed: 0,
+        ),
+    ),
+    room: None,
+    floor: None,
+    bodies: [
+        (
+            label: "cube_aligned",
+            mass: 1382.4000000000003,
+            radius: 0.0,
+            shape: Some((
+                kind: Triangles(
+                    vertices: [
+                        (-0.4, -0.4, 0.4),
+                        (-0.4, 0.4, 0.4),
+                        (-0.4, 0.4, -0.4),
+                        (0.4, -0.4, -0.4),
+                        (0.4, 0.4, -0.4),
+                        (0.4, 0.4, 0.4),
+                        (0.4, -0.4, 0.4),
+                        (-0.4, -0.4, -0.4),
+                    ],
+                    triangles: [
+                        (0, 1, 2),
+                        (3, 4, 5),
+                        (3, 6, 0),
+                        (2, 1, 5),
+                        (2, 4, 3),
+                        (0, 6, 5),
+                        (0, 2, 7),
+                        (3, 5, 6),
+                        (3, 0, 7),
+                        (2, 5, 4),
+                        (2, 3, 7),
+                        (0, 5, 1),
+                    ],
+                ),
+                pitch: 0.015625,
+                supersample: 4,
+                material: None,
+                parts: [],
+            )),
+            motion: Static(
+                position: (0.0, 0.0, 0.0),
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+    ],
+)
