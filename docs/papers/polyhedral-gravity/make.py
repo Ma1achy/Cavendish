@@ -31,7 +31,7 @@ BODIES = ("cube_aligned", "cube", "icosahedron", "plate", "sphere")
 REPS = ("zero_one_raw", "zero_one", "ss4", "frac", "frac_cen", "frac_pt", "frac_cen_q")
 LABELS = {
     "zero_one_raw": "0/1", "zero_one": "0/1, renormalised", "ss4": "sampled fill $4^3$ (today)",
-    "frac": "exact fill", "frac_cen": "fill + centroid (cube)", "frac_pt": "fill + centroid (point)",
+    "frac": "fill fraction", "frac_cen": "fill + centroid (cube)", "frac_pt": "fill + centroid (point)",
     "frac_cen_q": "fill + centroid + 2nd moment",
 }
 K_EFF_T2 = 2.0 * math.pi * 1000.0 / 698e-9 * 0.73**2  # rad per (m s^-2)
@@ -310,6 +310,11 @@ def budget() -> None:
         f"\\newcommand{{\\ClosedRel}}{{{sci(rel)}}}\n", encoding="utf-8")
 
 
+def diagrams() -> None:
+    run([sys.executable, str(HERE / "scripts" / "diagrams.py")])
+    run([sys.executable, str(HERE / "scripts" / "octree_diagrams.py")])
+
+
 def figures() -> None:
     budget()
     FIG.mkdir(exist_ok=True)
@@ -336,7 +341,7 @@ def pdf() -> None:
 
 TARGETS = {"bench": bench, "tables": tables, "farfield": farfield, "nearedge": nearedge,
            "crosscheck": crosscheck, "mp": mp, "scenes": scenes, "render": render,
-           "figures": figures, "pdf": pdf}
+           "figures": figures, "diagrams": diagrams, "pdf": pdf}
 
 
 def main() -> None:
@@ -345,7 +350,8 @@ def main() -> None:
         esa(args[1])
         return
     if args == ["all"]:
-        args = ["tables", "farfield", "nearedge", "crosscheck", "mp", "scenes", "figures", "pdf"]
+        args = ["tables", "farfield", "nearedge", "crosscheck", "mp", "scenes", "diagrams", "figures",
+                "pdf"]
     for t in args:
         print("==", t)
         TARGETS[t]()

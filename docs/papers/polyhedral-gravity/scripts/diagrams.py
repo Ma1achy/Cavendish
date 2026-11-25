@@ -8,7 +8,7 @@ cue so each figure reads in greyscale; thin lines; every element labelled; no de
     b  diag-fill-moments.pdf      fill fraction, centroid against cell centre, second moment
     c  diag-cuts.pdf              one cell cut by planes: the clipped piece in each case
     d  diag-closed-form.pdf       one face and one edge as the closed form sees them
-    e  diag-layers.pdf            the layered read around one tower
+    (e, the layered read, is drawn with the octree figures in octree_diagrams.py)
 
 Words as the paper uses them: "exact" is the analytic shape; a clipped piece is exact *to the mesh*.
 
@@ -234,9 +234,9 @@ def lat_off() -> np.ndarray:
 # ------------------------------------------------------------------ b
 
 def fig_fill_moments() -> None:
-    fig, axes = plt.subplots(1, 3, figsize=(6.8, 2.2))
+    fig, axes = plt.subplots(1, 3, figsize=(6.8, 2.4))
     # a surface (line) crossing a row of three cells; the body is below the line
-    a, b = np.array([-0.1, 0.36]), np.array([3.1, 0.72])
+    a, b = np.array([0.0, -0.2]), np.array([3.0, 1.2])
 
     def cut(i: int) -> np.ndarray:
         sq = np.array([[i, 0], [i + 1, 0], [i + 1, 1], [i, 1]], float)
@@ -244,6 +244,8 @@ def fig_fill_moments() -> None:
 
     titles = ["(a) fill fraction $f$", "(b) mass at the centroid $\\bar{\\mathbf{c}}$",
               "(c) + second moment $I$"]
+    notes = ["shade and number:\nhow full each cell is", "+ cell centre\n\u25cf centroid of the filled part",
+             "ellipse: the filled part's\nsecond moment"]
     for k, ax in enumerate(axes):
         bare(ax)
         for i in range(3):
@@ -255,7 +257,7 @@ def fig_fill_moments() -> None:
                                  ec=BLUE, lw=0.6))
             cc = np.array([i + 0.5, 0.5])
             if k == 0:
-                ax.text(i + 0.5, 0.82, f"$f$ = {f:.2f}", ha="center", fontsize=7.5)
+                ax.text(i + 0.5, 1.07, f"{f:.2f}", ha="center", fontsize=7.5)
             if k >= 1:
                 c = centroid(piece)
                 ax.plot(*cc, marker="+", color=INK2, ms=7, mew=0.9)
@@ -267,18 +269,13 @@ def fig_fill_moments() -> None:
                 m = second_moment(piece, c) / area(piece)
                 w, v = np.linalg.eigh(m)
                 ang = np.degrees(np.arctan2(v[1, 1], v[0, 1]))
-                ax.add_patch(Ellipse(c, 4 * np.sqrt(w[1]), 4 * np.sqrt(w[0]), angle=ang,
+                ax.add_patch(Ellipse(c, 2 * np.sqrt(w[1]), 2 * np.sqrt(w[0]), angle=ang,
                                      fill=False, ec=PURPLE, lw=1.0, ls="-"))
         ax.plot([a[0], b[0]], [a[1], b[1]], color=INK, lw=0.9, ls="--")
         ax.set_xlim(-0.15, 3.15)
-        ax.set_ylim(-0.12, 1.12)
+        ax.set_ylim(-0.12, 1.25)
         ax.set_title(titles[k], fontsize=8)
-    axes[1].text(1.5, -0.1, "+ cell centre   ● centroid of the filled part", ha="center",
-                 fontsize=6.5, va="top")
-    axes[2].text(1.5, -0.1, "ellipse: the piece's second moment (2σ)", ha="center",
-                 fontsize=6.5, va="top")
-    axes[0].text(1.5, -0.1, "shade and number: how full each cell is", ha="center",
-                 fontsize=6.5, va="top")
+        ax.text(1.5, -0.1, notes[k], ha="center", fontsize=6.5, va="top")
     fig.savefig(FIG / "diag-fill-moments.pdf")
     plt.close(fig)
 
@@ -309,9 +306,9 @@ def fig_cuts() -> None:
     fig = plt.figure(figsize=(6.8, 3.0))
     u = lambda *v: np.array(v, float)  # noqa: E731
     cases = [
-        ("corner cut: tetrahedron removed", [(u(1, 1, 1), 1.0)]),
-        ("corner cut: tetrahedron kept", [(u(-1, -1, -1), -1.0)]),
-        ("edge cut: a wedge (prism)", [(u(1, 1, 0), 0.45)]),
+        ("corner cut: tetrahedron removed", [(u(1, 1, 1), 0.5)]),
+        ("corner cut: tetrahedron kept", [(u(-1, -1, -1), -0.5)]),
+        ("edge cut: a wedge (prism) kept", [(u(-1, -1, 0), -0.25)]),
         ("face-parallel cut: a slab", [(u(0, 0, 1), -0.2)]),
         ("oblique cut: hexagonal section", [(u(1, 1, 1), 0.0)]),
         ("two planes (a mesh edge): non-convex", None),
@@ -333,7 +330,8 @@ def fig_cuts() -> None:
             gone = clip_cube([(-n1, -0.1), (-n2, -0.1)])
         if gone:
             draw_piece(ax, gone, GHOST, 0.12, lw=0.3, ec=GHOST)
-        draw_piece(ax, kept, ORANGE, 0.85, lw=0.5)
+        ax.add_collection3d(Poly3DCollection(kept, facecolors=shaded(kept, ORANGE),
+                                             edgecolors=INK, linewidths=0.5))
         if k == 4:
             # label one face and one edge the way the closed form uses them
             f = max(kept, key=lambda q: np.dot(skin_bench_normal(q), u(1, 1, 1)))
@@ -341,7 +339,8 @@ def fig_cuts() -> None:
             nrm = skin_bench_normal(f)
             ax.quiver(*cen, *(0.45 * nrm), color=BLUE, lw=1.0, arrow_length_ratio=0.25)
             ax.text(*(cen + 0.5 * nrm), "$\\hat{\\mathbf{n}}_f$", color=BLUE, fontsize=8)
-            e0, e1 = f[0], f[1]
+            i0 = max(range(len(f)), key=lambda i: np.linalg.norm(f[(i + 1) % len(f)] - f[i]))
+            e0, e1 = f[i0], f[(i0 + 1) % len(f)]
             ax.plot(*np.array([e0, e1]).T, color=VERMILION, lw=2.0)
             ax.text(*(0.5 * (e0 + e1) + u(0, 0, -0.18)), "$e$", color=VERMILION, fontsize=8)
         r = 0.6
@@ -377,7 +376,7 @@ def fig_closed_form() -> None:
         ax.text(*(vi + [0.05, 0.0, 0.05]), f"$\\mathbf{{v}}_{i + 1}$", fontsize=8)
     foot = np.array([p[0], p[1], 1.0])
     ax.plot(*np.array([p, foot]).T, color=VERMILION, lw=1.2)
-    ax.text(*(0.5 * (p + foot) + [0.06, 0, 0]), "$h_f$", color=VERMILION, fontsize=9)
+    ax.text(*(0.5 * (p + foot) + [0.08, 0, 0.12]), "$h_f$", color=VERMILION, fontsize=9)
     cen = v.mean(axis=0)
     ax.quiver(*cen, 0, 0, 0.45, color=BLUE, lw=1.0, arrow_length_ratio=0.25)
     ax.text(*(cen + [0.05, 0, 0.5]), "$\\hat{\\mathbf{n}}_f$", color=BLUE, fontsize=9)
@@ -390,7 +389,7 @@ def fig_closed_form() -> None:
         arc = np.array([(1 - s) * a_ + s * b_ for s in t])
         arc = 0.35 * arc / np.linalg.norm(arc, axis=1)[:, None] + p
         ax.plot(*arc.T, color=GREEN, lw=1.2)
-    ax.text(*(p + [0.0, 0.1, 0.42]), "$\\omega_f$", color=GREEN, fontsize=9)
+    ax.text(*(p + [-0.45, 0.0, 0.3]), "$\\omega_f$", color=GREEN, fontsize=9)
     ax.set_xlim(0, 1.4)
     ax.set_ylim(0, 1.4)
     ax.set_zlim(0, 1.3)
@@ -423,72 +422,6 @@ def fig_closed_form() -> None:
 
 # ------------------------------------------------------------------ e
 
-def fig_layers() -> None:
-    fig, ax = plt.subplots(figsize=(6.8, 3.6))
-    bare(ax)
-    arm_x = 0.0
-    # the tower, its two interferometers and the arms' flight
-    ax.plot([arm_x, arm_x], [0, 10.1], color=INK, lw=2.5)
-    t = np.linspace(0, 1, 50)
-    for z0 in (0.0, 5.0):
-        ax.plot(arm_x + 0.12 * np.sin(np.pi * t), z0 + 4.4 * np.sin(np.pi * t) ** 0.7,
-                color=PURPLE, lw=0.9)
-    ax.text(arm_x - 0.25, 10.3, "tower: two interferometers, arms (purple)", fontsize=7, ha="left")
-    # a body to the right, and a quadtree refined towards the arm
-    def inside(x: float, y: float) -> bool:
-        return (x - 4.5) ** 2 / 9.0 + (y - 3.0) ** 2 / 6.0 <= 1.0
-
-    def dist(x: float, y: float, s: float) -> float:
-        cx = min(max(arm_x, x), x + s)
-        return np.hypot(cx - arm_x, max(0.0, max(y - 9.0, -y)))
-
-    def visit(x: float, y: float, s: float) -> None:
-        corners = [inside(x + a * s, y + b * s) for a in (0, 1) for b in (0, 1)]
-        mid = inside(x + s / 2, y + s / 2)
-        if not any(corners) and not mid:
-            return
-        d = max(arm_x, x) - arm_x
-        if s > 0.25 and (d < 4 * s or not all(corners)) and s > d / 6:
-            for a in (0, 1):
-                for b in (0, 1):
-                    visit(x + a * s / 2, y + b * s / 2, s / 2)
-            return
-        if s <= 0.25 and d < 2.6:
-            boundary = not all(corners)
-            ax.add_patch(Rectangle((x, y), s, s, fc=ORANGE if boundary else SKY,
-                                   ec=VERMILION if boundary else BLUE, lw=0.3,
-                                   hatch="////" if boundary else None))
-        elif s <= 0.25:
-            ax.add_patch(Rectangle((x, y), s, s, fc=mpl.colors.to_rgba(GREEN, 0.35), ec=GREEN,
-                                   lw=0.3))
-        else:
-            ax.add_patch(Rectangle((x, y), s, s, fc=mpl.colors.to_rgba(BLUE, 0.15), ec=BLUE,
-                                   lw=0.6, ls="--"))
-
-    visit(1.0, -1.0, 8.0)
-    th = np.linspace(0, 2 * np.pi, 200)
-    ax.plot(4.5 + 3 * np.cos(th), 3 + np.sqrt(6) * np.sin(th), color=INK, lw=0.8, ls="--")
-    ax.set_xlim(-0.6, 13.5)
-    ax.set_ylim(-1.2, 10.8)
-    notes = [
-        (ORANGE, "////", "near (a few cells from an arm): clipped pieces, closed form;",
-         "rounding $\\sim10^{-11}$ rad"),
-        (mpl.colors.to_rgba(GREEN, 0.35), None, "middle: fill + centroid + second moment;",
-         "$4\\times10^{-7}$ rad at 1.5 m, $h$ = 1/64 m"),
-        (mpl.colors.to_rgba(BLUE, 0.15), None, "far: octree nodes (moments of their leaves);",
-         "walk bound $10^{-10}$ rad"),
-    ]
-    for i, (fc, hatch, l1, l2) in enumerate(notes):
-        y = 9.4 - 1.25 * i
-        ax.add_patch(Rectangle((8.6, y - 0.25), 0.45, 0.45, fc=fc, ec=INK2, lw=0.4, hatch=hatch))
-        ax.text(9.2, y + 0.05, l1, fontsize=6.8, va="center")
-        ax.text(9.2, y - 0.38, l2, fontsize=6.8, va="center", color=INK2)
-    ax.text(8.6, 5.6, "dashed outline: the true body\n(the mesh); interior cells in light blue",
-            fontsize=6.5, color=INK2)
-    fig.savefig(FIG / "diag-layers.pdf")
-    plt.close(fig)
-
-
 def main() -> None:
     FIG.mkdir(exist_ok=True)
     style()
@@ -496,7 +429,6 @@ def main() -> None:
     fig_fill_moments()
     fig_cuts()
     fig_closed_form()
-    fig_layers()
 
 
 if __name__ == "__main__":
