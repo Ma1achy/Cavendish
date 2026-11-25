@@ -1,0 +1,11 @@
+rotation per sub-step is cayley angle 2*atan(phi/2) = phi - phi^3/12, a relative frequency error phi^2/12
+trig splitting (b2)  h=1/60   max|dE/E|=1.94e-06 |dL|/|L|=4.21e-15 attitude err 2.56e-05 rad  orth 1.1e-14
+trig splitting (b2)  h=1/240  max|dE/E|=1.21e-07 |dL|/|L|=1.59e-14 attitude err 1.60e-06 rad  orth 3.3e-14
+trig splitting (b2)  h=1/960  max|dE/E|=7.58e-09 |dL|/|L|=4.66e-14 attitude err 1.01e-07 rad  orth 2.8e-14
+cayley splitting     h=1/60   max|dE/E|=1.93e-06 |dL|/|L|=5.37e-15 attitude err 1.05e-04 rad  orth 1.2e-14
+cayley splitting     h=1/240  max|dE/E|=1.21e-07 |dL|/|L|=1.18e-13 attitude err 6.55e-06 rad  orth 1.7e-13
+cayley splitting     h=1/960  max|dE/E|=7.53e-09 |dL|/|L|=2.54e-13 attitude err 4.07e-07 rad  orth 3.3e-13
+yoshida4(trig)       h=1/60   max|dE/E|=6.05e-10 attitude err 1.08e-08 rad
+yoshida4(trig)       h=1/240  max|dE/E|=2.37e-12 attitude err 2.92e-09 rad
+yoshida4(cayley)     h=1/60   max|dE/E|=7.76e-10 attitude err 4.91e-09 rad
+yoshida4(cayley)     h=1/240  max|dE/E|=3.16e-12 attitude err 2.90e-09 rad
