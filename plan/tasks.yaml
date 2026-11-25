@@ -566,3 +566,12 @@
 - id: TASK-S18-06
   milestone: S18
   title: Mesh import from the editor - OBJ, STL (and glTF if it earns its place) dropped in, scaled, placed and voxelised
+- id: TASK-S5-08
+  milestone: S5
+  title: Polyhedral gravity closed form - the oracle for mesh-made bodies and the direct kernel for analytic bodies up to ~1e3 faces (docs/research/exact-skin-and-partial-fill.md)
+- id: TASK-S5-09
+  milestone: S5
+  title: Voxeliser exact boundary moments - each clipped boundary cell stores mass, centroid and second moments; node moments built from them (third-order convergence, measured)
+- id: TASK-S5-10
+  milestone: S5
+  title: Exact clipped pieces as a near kernel within ~3 cells of an arm point, behind a distance switch
