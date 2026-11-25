@@ -295,6 +295,11 @@ pub struct Shell {
     pub tree_folded: std::collections::BTreeSet<(String, String)>,
     /// The right-hand panel's tab.
     pub right_tab: crate::outliner::RightTab,
+    /// The inspector's label column, points: 40 % of its width, at least 96 (S19's panels), so
+    /// that every row's value starts at the same x. Set as the panel is drawn.
+    pub label_width: f32,
+    /// What the inspector's ⋮ Copy took: a body's, a tower's or a part's whole value.
+    pub clipboard: Option<serde_json::Value>,
     /// The tool in hand: an id of `ui/tools.ron`. UI state, never journalled.
     pub tool: String,
     /// Whether the Move tool snaps to the step.
@@ -430,6 +435,8 @@ impl Shell {
             tree_filter: String::new(),
             tree_folded: std::collections::BTreeSet::new(),
             right_tab: crate::outliner::RightTab::Inspector,
+            label_width: crate::inspector::LABEL_MIN,
+            clipboard: None,
             tool: "select".to_owned(),
             snap: true,
             place_starter: "sphere".to_owned(),
@@ -632,6 +639,12 @@ impl Shell {
         }
         self.import_window = Some(crate::dialogs::ImportForm::new(name));
         self.window_opened("import", "import/go", false);
+    }
+
+    /// Whether body `n` (from 0) is locked in the scene tree: the view's pointer moves it not.
+    #[must_use]
+    pub fn is_locked(&self, n: usize) -> bool {
+        self.engine.spec().bodies.get(n).is_some_and(|b| self.locked.contains(&b.label))
     }
 
     /// Whether the scene tree's group `scope` is open for the scene now shown.

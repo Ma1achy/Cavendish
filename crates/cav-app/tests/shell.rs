@@ -1007,8 +1007,9 @@ fn all_entry_points_issue_the_same_edit() {
     // command that the line puts there (and MCP's scene_set and `cav set` put there: their
     // tests compare their journals with the same `Command::set`). The window is tall enough
     // for the whole instrument to be on screen: since the kick number became a field, the flag
-    // is one row lower, and in a window 900 high it is reached by scrolling the panel.
-    let mut rig = Rig::new([1440, 1000]);
+    // is one row lower, and in a window 900 high it is reached by scrolling the panel. (1200
+    // since S19's panels: cards with headers and 24 pt rows take more height.)
+    let mut rig = Rig::new([1440, 1200]);
     rig.shell.run("select tower 1").unwrap();
     // The reading is waited for before anything is clicked: when it arrives the properties
     // panel gains its rows and every editor below them moves. (Not waiting, the click landed
@@ -1034,10 +1035,12 @@ fn all_entry_points_issue_the_same_edit() {
     let tick = rig.shell.layout().editor("array.instrument.launch_floor").unwrap();
     rig.click(tick.left_center() + vec2(8.0, 0.0));
     assert_eq!(rig.last_command(), Some(&Command::set("array.instrument.launch_floor", json!(true))));
-    // The buttons that change a list are commands as well.
+    // The buttons that change a list are commands as well: since S19's panels, Delete is in the
+    // header's ⋮ menu (`docs/design/panels.md`), not a loose button among the fields.
     rig.shell.run("load point").unwrap();
     rig.shell.run("select body 1").unwrap();
     rig.frames(vec![vec![], vec![]]);
+    rig.click_button("inspector menu");
     rig.click_button("remove bodies[0]");
     assert_eq!(rig.last_command(), Some(&Command::Remove { path: "bodies[0]".into() }));
     assert!(rig.shell.engine.spec().bodies.is_empty());

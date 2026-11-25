@@ -232,3 +232,157 @@ fn the_tool_strip_floats_over_the_view_s_edge() {
     let tree = layout.panel("outliner").unwrap();
     assert!((layout.figure.left() - tree.right()).abs() < 2.0, "{tree:?} against {:?}", layout.figure);
 }
+
+/// Every editable row's value rectangle's left edge in the inspector, by path.
+fn value_lefts(rig: &Rig) -> Vec<(String, f32)> {
+    let panel = rig.shell.layout().panel("properties").unwrap();
+    rig.shell
+        .layout()
+        .editors
+        .iter()
+        .filter(|(path, rect)| panel.contains_rect(*rect) && !path.ends_with(".label") && path != "name")
+        .map(|(path, rect)| (path.clone(), rect.left()))
+        .collect()
+}
+
+#[test]
+fn every_value_in_the_inspector_starts_at_one_x() {
+    // docs/design/panels.md: one grid in every card, the value column at the same x on every
+    // row of the panel, a body's and the scene's alike. Control: the header's name field is not
+    // in a card, and the same measure sees it elsewhere.
+    for selection in ["select body 1", "select none", "select tower 1"] {
+        let mut rig = Rig::new();
+        rig.shell.run("load point").unwrap();
+        rig.shell.run(selection).unwrap();
+        if selection == "select none" {
+            // The instrument's and the cadence's cards open, so their rows are measured too.
+            rig.shell.run("layout instrument").unwrap();
+        }
+        rig.frames(vec![vec![], vec![], vec![]]);
+        let lefts = value_lefts(&rig);
+        assert!(lefts.len() >= 3, "{selection}: {lefts:?}");
+        let x = lefts[0].1;
+        for (path, left) in &lefts {
+            assert!((left - x).abs() < 0.5, "{selection}: {path} at {left}, not {x}");
+        }
+        let name = rig.shell.layout().editors.iter().find(|(p, _)| p.ends_with("label") || p == "name");
+        if let Some((_, rect)) = name {
+            assert!((rect.left() - x).abs() > 10.0, "control: the header's field is at {}", rect.left());
+        }
+    }
+}
+
+#[test]
+fn the_header_menu_holds_delete_and_duplicate() {
+    // docs/design/panels.md: no loose "remove this body" among the fields; the header's ⋮ menu
+    // has Duplicate and Delete, each one edit. Control: closed, the menu shows neither.
+    let mut rig = two_masses();
+    rig.shell.run("select body 2").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().button("remove bodies[1]").is_none(), "control: closed");
+    rig.click_button("inspector menu");
+    assert!(rig.shell.layout().button("remove bodies[1]").is_some());
+    rig.click_button("duplicate bodies[1]");
+    assert_eq!(rig.shell.engine.spec().bodies.len(), 3, "Duplicate made a copy");
+    rig.shell.run("undo").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    rig.click_button("inspector menu");
+    rig.click_button("remove bodies[1]");
+    assert_eq!(rig.shell.engine.spec().bodies.len(), 1, "Delete took it out");
+}
+
+#[test]
+fn optional_properties_are_behind_checkboxes() {
+    // docs/design/panels.md: "Appears none add" became a box. Ticking it puts the time there,
+    // one edit; unticking takes it away. Control: a body's mass, which is not optional, has none.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("select body 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().button("gate bodies[0].mass").is_none(), "control");
+    rig.click_button("gate bodies[0].appears");
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.engine.spec().bodies[0].appears.is_some(), "ticked: there");
+    rig.click_button("gate bodies[0].appears");
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.engine.spec().bodies[0].appears.is_none(), "unticked: gone");
+}
+
+#[test]
+fn text_reads_and_rows_are_big_enough() {
+    // docs/design/panels.md: text at least 4.5:1 against its ground, rows at least 24 pt.
+    // Control: the figures' own weak grey, used in the panels before, fails on a card.
+    use cav_app::theme::{TEXT, WEAK, contrast};
+    for ground in [cav_app::theme::PANEL, cav_app::inspector::CARD] {
+        for text in [TEXT, WEAK] {
+            assert!(contrast(text, ground) >= 4.5, "{text:?} on {ground:?}: {}", contrast(text, ground));
+        }
+    }
+    assert!(contrast(cav_plot::theme::WEAK, cav_app::inspector::CARD) < 4.5, "control");
+    let rig = Rig::new();
+    let rows = &rig.shell.layout().outline;
+    assert!(!rows.is_empty() && rows.iter().all(|(_, r)| r.height() >= 24.0), "the tree's rows as drawn");
+}
+
+#[test]
+fn folding_a_card_leaves_the_tab_order() {
+    // The keyboard's rule (keyboard.md §9): Tab walks the big scopes in their order whatever is
+    // folded. Control: the walk with nothing folded is the same.
+    let walk = |fold: bool| {
+        let mut rig = Rig::new();
+        rig.shell.run("load point").unwrap();
+        rig.shell.run("select body 1").unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        if fold {
+            let header =
+                rig.shell.layout().button("fold inspector/selection/bodies[0]/motion").expect("the card");
+            rig.click(header.center());
+            rig.frames(vec![vec![]]);
+        }
+        rig.shell.keyboard.focus = vec!["top-bar".into()];
+        rig.shell.keyboard.nav_on = true;
+        let mut seen = Vec::new();
+        for _ in 0..7 {
+            rig.key(Key::Tab, Modifiers::NONE);
+            seen.push(rig.shell.keyboard.focus.first().cloned().unwrap_or_default());
+        }
+        seen
+    };
+    assert_eq!(walk(true), walk(false));
+    assert_eq!(walk(false).len(), 7);
+}
+
+#[test]
+fn a_locked_body_is_not_moved_by_the_gizmo_and_a_hidden_one_is_not_drawn() {
+    // docs/design/panels.md: the tree's lock and eye. Locked, the Move tool has no gizmo on the
+    // body; hidden, the view does not draw it but the towers still read it. Controls: unlocked,
+    // the drag moves it; shown, it is in the view's frame.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("select body 1").unwrap();
+    rig.shell.run("tool move").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    rig.click_button("lock mass");
+    assert!(rig.shell.is_locked(0));
+    rig.frames(vec![vec![]]);
+    let rect = rig.shell.layout().panes[0];
+    let spec = rig.shell.engine.spec().clone();
+    let at = spec.bodies[0].motion.position(0.0, spec.array.instrument.gravity);
+    let g = cav_app::tools::gizmo(rig.shell.engine.view(0), rect.size(), at).unwrap();
+    let tip = g.tips[0].unwrap();
+    let from = rect.min + g.centre.to_vec2() + (tip - g.centre) * 0.6;
+    let start = anchor(&rig, 0);
+    rig.drag(from, from + (tip - g.centre));
+    assert_eq!(anchor(&rig, 0), start, "locked: not moved");
+    rig.click_button("lock mass");
+    rig.drag_arrow(0, 0, 1.0);
+    assert_ne!(anchor(&rig, 0), start, "control: unlocked, moved");
+    // The eye.
+    rig.click_button("eye mass");
+    assert_eq!(rig.shell.engine.view(0).hidden, ["mass".to_owned()]);
+    assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
+    let reading = rig.shell.reading().clone();
+    assert!(reading.towers.first().is_some_and(|t| t.gradiometer != 0.0), "still read");
+    rig.click_button("eye mass");
+    assert!(rig.shell.engine.view(0).hidden.is_empty(), "control: shown again");
+}

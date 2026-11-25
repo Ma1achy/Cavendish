@@ -37,102 +37,6 @@ fn short_number(value: f64) -> String {
     if text.contains('.') { text.trim_end_matches('0').trim_end_matches('.').to_owned() } else { text }
 }
 
-/// A heading that is also a scope of the keyboard's tree (`id`, under `parent`): the section's
-/// rows and fields register under it after.
-fn section(shell: &mut Shell, ui: &mut egui::Ui, parent: &str, id: &str, title: &str) {
-    named_section(shell, ui, parent, id, title, title);
-}
-
-/// [`section`] whose heading says `title` and whose name in the breadcrumb is `name`: what the
-/// section *is* ("Body"), where the heading also says which ("Body · ball"). S18's review, U4.
-fn named_section(shell: &mut Shell, ui: &mut egui::Ui, parent: &str, id: &str, name: &str, title: &str) {
-    let top = ui.cursor().min;
-    heading(ui, title);
-    let rect = Rect::from_min_max(top, pos2(ui.max_rect().right(), ui.cursor().top()));
-    shell.register(parent, id, name, Kind::Scope, rect);
-}
-
-/// A section of the inspector that folds (`id` under `parent`, headed `title`), open at first
-/// when `open`: a scope of the keyboard's tree while it is open, a button while it is folded, so
-/// that Enter on a folded one opens it. Its header's rect is in the layout's buttons as
-/// `fold <id>`. `salt` keeps one section's fold apart for each kind of selection.
-#[allow(clippy::too_many_arguments)]
-fn folding(
-    shell: &mut Shell,
-    ui: &mut egui::Ui,
-    parent: &str,
-    id: &str,
-    title: &str,
-    salt: &str,
-    open: bool,
-    contents: impl FnOnce(&mut Shell, &mut egui::Ui),
-) {
-    let opened = shell.take_click(id) || shell.unfold.iter().any(|u| u == id);
-    shell.building.add(parent, id, title, Kind::Scope);
-    let shown = egui::CollapsingHeader::new(RichText::new(title).color(theme::STRONG).size(12.5))
-        .id_salt(("fold", id, salt))
-        .default_open(open)
-        .open(opened.then_some(true))
-        .show(ui, |ui| contents(shell, ui));
-    let rect = shown.header_response.rect;
-    shell.building.place(id, rect);
-    shell.layout.buttons.push((format!("fold {id}"), rect));
-    if shown.body_returned.is_none() {
-        shell.building.add(parent, id, title, Kind::Button);
-    }
-}
-
-/// The scene at a glance, for the inspector with nothing selected (S18's review, U1): what the
-/// array is, what is in the scene, what surrounds it, where the signal stands.
-fn scene_summary(shell: &mut Shell, ui: &mut egui::Ui) {
-    let spec = shell.engine.spec();
-    let towers = spec.array.towers.len();
-    let instrument = cav_sim::presets::name_of(&spec.array.instrument).unwrap_or("its own instrument");
-    let plural = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
-    let around = match (&spec.room, &spec.floor, &spec.world) {
-        (Some(room), _, _) => {
-            let [x, y, z] = room.size;
-            format!("a room, {x:.0} × {y:.0} × {z:.0} m")
-        }
-        (None, Some(floor), _) => format!("a floor at z = {:.1} m", floor.height),
-        (None, None, Some(world)) => format!("a world, {} piece(s)", world.pieces.len()),
-        (None, None, None) => "nothing".to_owned(),
-    };
-    let signal = match shell.engine.signal() {
-        (cav_engine::SignalState::Refined, Some(signal)) => format!("{} shots, read", signal.most()),
-        (cav_engine::SignalState::Stale, _) => "computing".to_owned(),
-        _ => "none".to_owned(),
-    };
-    let summary = [
-        ("Array", format!("{}, {instrument}", plural(towers, "tower", "towers"))),
-        (
-            "Sources",
-            if spec.bodies.is_empty() {
-                "none yet".to_owned()
-            } else {
-                plural(spec.bodies.len(), "body", "bodies")
-            },
-        ),
-        ("Around it", around),
-        ("Signal", signal),
-    ];
-    egui::Grid::new("scene summary").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
-        for (name, value) in summary {
-            ui.label(RichText::new(name).color(theme::WEAK).size(12.0));
-            ui.add(egui::Label::new(RichText::new(value).color(theme::STRONG).size(12.0)).wrap());
-            ui.end_row();
-        }
-    });
-}
-
-fn heading(ui: &mut egui::Ui, text: &str) {
-    ui.add_space(6.0);
-    ui.label(RichText::new(text).color(theme::STRONG).size(12.0));
-    let y = ui.cursor().top();
-    ui.painter().hline(ui.max_rect().x_range(), y, Stroke::new(1.0, theme::RULE));
-    ui.add_space(3.0);
-}
-
 /// A small outlined label for the header strip.
 fn badge(ui: &mut egui::Ui, text: impl Into<String>, colour: Color32) {
     egui::Frame::new()
@@ -225,8 +129,10 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
         shell.layout.panels.push(("outliner", panel.response.rect));
         shell.building.place("tree", panel.response.rect);
         let panel = Panel::right("properties")
-            .default_size(264.0)
-            .size_range(264.0..=560.0)
+            // Wide enough for the cards' one grid (a 96 pt label column and X, Y, Z boxes): S19's
+            // panels; the tool strip's column it replaces gave the figure its 52 points back.
+            .default_size(INSPECTOR_WIDTH)
+            .size_range(INSPECTOR_WIDTH..=560.0)
             .resizable(true)
             .frame(frame(theme::PANEL, 10, 6))
             .show(ui, |ui| {
@@ -1037,169 +943,218 @@ fn rows(ui: &mut egui::Ui, id: &str, rows: &[(&str, String)]) {
     });
 }
 
+/// The inspector's width at first and its least, points: room for the cards' one grid. The label
+/// column is 40 % of this, not of the panel as dragged: egui widens a panel to what it holds, so a
+/// column that followed the panel's width would push it wider every frame.
+const INSPECTOR_WIDTH: f32 = 316.0;
+
 fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
     let spec = shell.engine.spec().clone();
-    // What the selection is (the breadcrumb's name for the section: S18's review, U4) and which.
-    let (kind, which, path) = match shell.engine.selection() {
-        None => ("Scene", spec.name.clone(), String::new()),
-        Some(Target::Tower(n)) => {
-            ("Tower", spec.array.towers[n - 1].label.clone(), format!("array.towers[{}]", n - 1))
-        }
-        Some(Target::Room) => ("Room", String::new(), "room".to_owned()),
-        Some(Target::Floor) => ("Floor", String::new(), "floor".to_owned()),
-        Some(Target::World) => ("World", String::new(), "world".to_owned()),
-        Some(Target::Body(n)) => ("Body", spec.bodies[n - 1].label.clone(), format!("bodies[{}]", n - 1)),
+    // One label column for every card: 40 % of the panel, at least 96 points (the card's own
+    // margin taken off), so every value starts at the same x.
+    shell.label_width = crate::inspector::label_width(INSPECTOR_WIDTH - 18.0);
+    // The selection's section, as before (the breadcrumb's "Inspector › Body › …").
+    let selection = shell.engine.selection();
+    let (kind, path) = match selection {
+        None => ("Scene", String::new()),
+        Some(Target::Tower(n)) => ("Tower", format!("array.towers[{}]", n - 1)),
+        Some(Target::Room) => ("Room", "room".to_owned()),
+        Some(Target::Floor) => ("Floor", "floor".to_owned()),
+        Some(Target::World) => ("World", "world".to_owned()),
+        Some(Target::Body(n)) => ("Body", format!("bodies[{}]", n - 1)),
     };
-    ui.label(RichText::new("Inspector").color(theme::STRONG).strong());
-    let title = if which.is_empty() { kind.to_owned() } else { format!("{kind} · {which}") };
-    named_section(shell, ui, "inspector", "inspector/selection", kind, &title);
-    // Every field under the selection has an editor, made from the schema: its name in words, its
-    // unit, its range, its doc string on hover. Each change is a `set`, as the console would issue it.
-    match shell.engine.selection() {
+    crate::inspector::header(shell, ui);
+    match selection {
         None => {
-            for path in ["name", "description", "duration"] {
-                crate::editors::show(shell, ui, "inspector/selection", path);
-            }
-            ui.add_space(4.0);
-            scene_summary(shell, ui);
-        }
-        Some(Target::Tower(n)) => {
-            crate::editors::show(shell, ui, "inspector/selection", &path);
-            crate::editors::structure(shell, ui, "inspector/selection", &path);
-            let reply = shell.reading().clone();
-            let title = format!("Reading · a shot read out at {:.2} s", reply.time);
-            section(shell, ui, "inspector", "inspector/reading", &title);
-            if let Some(reading) = reply.towers.get(n - 1) {
-                rows(
-                    ui,
-                    "reading",
-                    &[
-                        ("ΔΦ", crate::shell::phase_text(reading.gradiometer)),
-                        ("δφ₁ lower", crate::shell::phase_text(reading.lower)),
-                        ("δφ₂ upper", crate::shell::phase_text(reading.upper)),
-                        (
-                            "quadrature",
-                            cav_engine::estimate_text(reply.estimate, reply.settled, reply.truncated),
-                        ),
-                        ("state", reply.state.to_string()),
-                    ],
-                );
-            } else {
-                ui.label(RichText::new("computing").size(11.5).color(theme::WEAK));
-            }
-            // What the audit warns of about this tower's number is said beside it.
-            for warning in reply.warnings.iter().filter(|w| w.concerns(n - 1)) {
-                ui.label(RichText::new(&warning.text).size(11.0).color(theme::WARN));
-            }
-        }
-        Some(Target::Room | Target::Floor) => {
-            crate::editors::show(shell, ui, "inspector/selection", &path);
-            crate::editors::structure(shell, ui, "inspector/selection", &path);
+            crate::inspector::card(
+                shell,
+                ui,
+                "inspector",
+                "inspector/selection",
+                "Scene",
+                "scene",
+                true,
+                None,
+                |shell, ui| {
+                    for path in ["description", "duration"] {
+                        crate::editors::show(shell, ui, "inspector/selection", path);
+                    }
+                },
+            );
         }
         Some(Target::World) => {
-            // What the world is and what is resident, then its settings: how it is read, kept
-            // resident and coarsened (its pieces and materials are lists: `ls world.pieces`).
-            if let Some(world) = &spec.world {
+            let rows = spec.world.as_ref().map(|world| {
                 let streaming = shell.engine.streaming();
                 let resident = streaming.frame().map_or([0, 0], |f| [f.chunks.len(), f.bricks.len()]);
-                let world_rows = world_rows(world, resident, streaming.pending());
-                rows(ui, "world", &world_rows);
-                let signal = shell.engine.signal().1;
-                if let Some(within) = signal.and_then(|s| s.truncated) {
-                    let text = format!(
-                        "The towers read only the world's matter within {} m of their atoms: the signal is of \
-                         that matter alone (S5 reads the rest).",
-                        short_number(within)
-                    );
-                    ui.label(RichText::new(text).size(11.0).color(theme::WARN));
-                }
-            }
-            for part in ["world.read", "world.stream", "world.lod"] {
-                crate::editors::show(shell, ui, "inspector/selection", part);
-            }
+                world_rows(world, resident, streaming.pending())
+            });
+            crate::inspector::card(
+                shell,
+                ui,
+                "inspector",
+                "inspector/selection",
+                "World",
+                "world",
+                true,
+                None,
+                |shell, ui| {
+                    if let Some(rows) = &rows {
+                        let rows: Vec<(&str, String)> = rows.iter().map(|(n, v)| (*n, v.clone())).collect();
+                        crate::inspector::info_rows(shell, ui, &rows);
+                    }
+                    for part in ["world.read", "world.stream", "world.lod"] {
+                        crate::editors::show(shell, ui, "inspector/selection", part);
+                    }
+                },
+            );
         }
-        Some(Target::Body(n)) => {
-            crate::editors::show(shell, ui, "inspector/selection", &path);
-            crate::editors::structure(shell, ui, "inspector/selection", &path);
-            let body = &spec.bodies[n - 1];
-            let [x, y, z] = body.motion.position(shell.engine.time(), spec.array.instrument.gravity);
-            ui.add_space(3.0);
-            rows(ui, "body", &[("Now at", format!("{x:.3}, {y:.3}, {z:.3} m"))]);
+        Some(_) => {
+            // The selection's own fields in a card named by what it is; its parts in cards of
+            // their own (`editors::show`). Its name is the header's, so not repeated here.
+            crate::editors::show_in_cards(shell, ui, "inspector/selection", &path, &["label"], Some(kind));
         }
     }
-
-    // The array's own settings belong to the scene and to its towers, not to a body: a body's
-    // properties are the body's alone (`docs/research/editor-ux.md` §1.2, "Cadence and timing").
-    // With nothing selected they are folded under the scene's summary (S18's review, U1: the
-    // instrument's twelve fields were the first thing the inspector showed); a tower opens them.
-    let selection = shell.engine.selection();
+    crate::inspector::info(shell, ui);
+    // The array's own settings belong to the scene and to its towers, not to a body (S18).
     if !matches!(selection, None | Some(Target::Tower(_))) {
-        hint(ui);
         return;
     }
     let (salt, open) = if selection.is_none() { ("scene", false) } else { ("tower", true) };
-    folding(
+    crate::inspector::card(
+        shell,
+        ui,
+        "inspector",
+        "inspector/array",
+        "Array",
+        salt,
+        true,
+        None,
+        |shell, ui| {
+            let instrument = shell.engine.spec().array.instrument.clone();
+            let other = shell.engine.comparison().cloned();
+            let now = preset_word(&instrument);
+            preset_choice(shell, ui, "inspector/array", "Preset", "preset", now, false);
+            let compared = other.as_ref().map_or("off", preset_word);
+            preset_choice(shell, ui, "inspector/array", "Compare with", "compare", compared, true);
+        },
+    );
+    crate::inspector::card(
         shell,
         ui,
         "inspector",
         "inspector/cadence",
-        "Cadence · when the array fires",
+        "Cadence",
         salt,
         open,
+        None,
         |shell, ui| {
             crate::editors::show(shell, ui, "inspector/cadence", "array.schedule");
         },
     );
-    folding(
+    crate::inspector::card(
         shell,
         ui,
         "inspector",
         "inspector/instrument",
-        "Instrument · shared by every tower",
+        "Instrument",
         salt,
         open,
+        None,
         |shell, ui| {
-            let instrument = shell.engine.spec().array.instrument.clone();
-            let is = |name: &str| cav_sim::presets::load(name).is_ok_and(|preset| preset == instrument);
-            button_row(
-                shell,
-                ui,
-                "inspector/instrument",
-                "preset",
-                &[("AION-10", "preset aion10", is("aion10")), ("AICE 140 m", "preset aice", is("aice"))],
-            );
-            let other = shell.engine.comparison().cloned();
-            let with = |name: &str| cav_sim::presets::load(name).is_ok_and(|preset| Some(preset) == other);
-            button_row(
-                shell,
-                ui,
-                "inspector/instrument",
-                "compare",
-                &[
-                    ("AION-10", "compare aion10", with("aion10")),
-                    ("AICE", "compare aice", with("aice")),
-                    ("off", "compare off", other.is_none()),
-                ],
-            );
             crate::editors::show(shell, ui, "inspector/instrument", "array.instrument");
         },
     );
-    hint(ui);
 }
 
-/// The line under the inspector: how its fields work, in a newcomer's words.
-fn hint(ui: &mut egui::Ui) {
-    ui.add_space(6.0);
-    ui.add(
-        egui::Label::new(
-            RichText::new(
-                "Drag a number or type one. A changed field is marked; Backspace or ‹ puts it back, Ctrl+Z undoes. Hover a name for what it is.",
-            )
-            .size(11.0)
-            .color(theme::WEAK),
-        )
-        .wrap(),
-    );
+/// The preset an instrument is, by the word `preset` takes, or "custom".
+fn preset_word(instrument: &cav_sim::InstrumentSpec) -> &'static str {
+    ["aion10", "aice"]
+        .into_iter()
+        .find(|word| cav_sim::presets::load(word).is_ok_and(|preset| preset == *instrument))
+        .unwrap_or("custom")
+}
+
+/// A drop-down of the instrument presets that runs `<line> <preset>` (`preset aion10`, `compare
+/// aice`), with "off" for `compare off` when `off` is offered. `now` is the word chosen now.
+fn preset_choice(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    scope: &str,
+    name: &str,
+    line: &str,
+    now: &str,
+    off: bool,
+) {
+    let mut choices: Vec<(&str, &str)> = vec![("AION-10", "aion10"), ("AICE 140 m", "aice")];
+    if off {
+        choices.push(("off", "off"));
+    }
+    let shown = choices.iter().find(|(_, w)| *w == now).map_or("custom", |(l, _)| *l);
+    ui.horizontal(|ui| {
+        theme::fixed_left(
+            ui,
+            vec2(shell.label_width, 20.0),
+            egui::Label::new(RichText::new(name).size(12.0).color(theme::WEAK)),
+        );
+        let mut chosen = None;
+        let combo = egui::ComboBox::from_id_salt(("preset", line))
+            .width((ui.available_width() - 24.0).clamp(72.0, 160.0))
+            .selected_text(shown)
+            .show_ui(ui, |ui| {
+                for (label, word) in &choices {
+                    if ui.selectable_label(*label == shown, *label).clicked() {
+                        chosen = Some(*word);
+                    }
+                }
+            });
+        let id = format!("{scope}/{line}");
+        let current = choices.iter().position(|(l, _)| *l == shown).unwrap_or(0);
+        shell.register(scope, &id, name, Kind::Choice { count: choices.len(), current }, combo.response.rect);
+        if let Some(index) = shell.take_pick(&id) {
+            chosen = choices.get(index).map(|(_, w)| *w);
+        }
+        if let Some(word) = chosen
+            && word != now
+        {
+            let _ = shell.run(&format!("{line} {word}"));
+        }
+    });
+}
+
+/// The scene at a glance, for the Info card with nothing selected (S18's review, U1): what the
+/// array is, what is in the scene, what surrounds it, where the signal stands.
+pub(crate) fn scene_rows(shell: &mut Shell) -> Vec<(&'static str, String)> {
+    let spec = shell.engine.spec();
+    let towers = spec.array.towers.len();
+    let instrument = cav_sim::presets::name_of(&spec.array.instrument).unwrap_or("its own instrument");
+    let plural = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    let around = match (&spec.room, &spec.floor, &spec.world) {
+        (Some(room), _, _) => {
+            let [x, y, z] = room.size;
+            format!("a room, {x:.0} × {y:.0} × {z:.0} m")
+        }
+        (None, Some(floor), _) => format!("a floor at z = {:.1} m", floor.height),
+        (None, None, Some(world)) => format!("a world, {} piece(s)", world.pieces.len()),
+        (None, None, None) => "nothing".to_owned(),
+    };
+    let signal = match shell.engine.signal() {
+        (cav_engine::SignalState::Refined, Some(signal)) => format!("{} shots, read", signal.most()),
+        (cav_engine::SignalState::Stale, _) => "computing".to_owned(),
+        _ => "none".to_owned(),
+    };
+    vec![
+        ("Array", format!("{}, {instrument}", plural(towers, "tower", "towers"))),
+        (
+            "Sources",
+            if spec.bodies.is_empty() {
+                "none yet".to_owned()
+            } else {
+                plural(spec.bodies.len(), "body", "bodies")
+            },
+        ),
+        ("Around it", around),
+        ("Signal", signal),
+    ]
 }
 
 fn header(shell: &mut Shell, ui: &mut egui::Ui) {
@@ -1816,7 +1771,7 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
             _ => None,
         };
         let gizmo = match (behaviour, selected_body) {
-            (crate::tools::Behaviour::Translate, Some(body)) if pane == active => {
+            (crate::tools::Behaviour::Translate, Some(body)) if pane == active && !shell.is_locked(body) => {
                 draw_gizmo(shell, ui, pane, rect, body).map(|g| (body, g))
             }
             _ => None,
@@ -1928,6 +1883,7 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         if response.drag_started_by(egui::PointerButton::Primary)
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
             && let Some(n) = shell.body_under(pane, within(origin), rect.size())
+            && !shell.is_locked(n)
         {
             shell.dragging = Some((pane, n));
             shell.drag_under_way = false;

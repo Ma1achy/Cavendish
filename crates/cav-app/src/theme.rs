@@ -3,7 +3,28 @@
 use egui::{Color32, CornerRadius, FontFamily, FontId, Stroke, TextStyle};
 
 pub use cav_plot::fonts::{MONO_FONT, MONO_FONT_LICENCE, MONO_FONT_NAME, definitions as fonts};
-pub use cav_plot::theme::{BACKGROUND, LINK, PLAYHEAD, RULE, STRONG, TEXT, WEAK, tower};
+pub use cav_plot::theme::{BACKGROUND, LINK, PLAYHEAD, RULE, STRONG, TEXT, tower};
+
+/// Secondary text in the window: labels, hints, units. sRGB. Lighter than the figures' own weak
+/// grey (`cav_plot::theme::WEAK`, #6f6f6f), which on a card read at 3.2:1: the design asks at
+/// least 4.5:1 of every text against its ground (S19, `docs/design/panels.md`); this is 4.7:1
+/// on a card and 5.1:1 on a panel ([`contrast`]).
+pub const WEAK: Color32 = Color32::from_rgb(0x8c, 0x8c, 0x8c);
+
+/// The contrast ratio of two sRGB colours, WCAG 2's (1 to 21): `(L₁ + 0.05) / (L₂ + 0.05)` of
+/// their relative luminances, the lighter over the darker.
+#[must_use]
+pub fn contrast(a: Color32, b: Color32) -> f32 {
+    let luminance = |c: Color32| {
+        let channel = |v: u8| {
+            let v = f32::from(v) / 255.0;
+            if v <= 0.040_45 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+        };
+        0.2126 * channel(c.r()) + 0.7152 * channel(c.g()) + 0.0722 * channel(c.b())
+    };
+    let (x, y) = (luminance(a), luminance(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+}
 
 /// The background of a panel. sRGB.
 pub const PANEL: Color32 = Color32::from_rgb(0x1b, 0x1b, 0x1b);
