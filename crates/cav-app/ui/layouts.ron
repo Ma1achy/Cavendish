@@ -1,0 +1,33 @@
+// The window's layouts, as data (docs/slices/S18.md §2; docs/research/editor-ux.md §3.2): a
+// layout is a name and the console lines that arrange the figure for a task. Choosing
+// one runs its lines (each a view command: journalled, never an edit). The big scopes and their
+// Tab order are the same in every layout; a layout changes where things are, never the order.
+//
+//   id     what `layout <id>` names
+//   label  what the top bar's tab says
+//   lines  the console lines it runs, in order
+//   about  one line for the tooltip and the palette
+// Its key is the action `layout <id>` of ui/actions.ron (Ctrl+1, 2, 3: not bare digits, which
+// select towers).
+(
+    layouts: [
+        (
+            id: "scene",
+            label: "Scene",
+            lines: ["panes 1", "show scene @1", "pane 1"],
+            about: "building and placing: one big view of the scene",
+        ),
+        (
+            id: "instrument",
+            label: "Instrument",
+            lines: ["panes 2", "show scene @1", "show flight @2", "pane 2", "select none"],
+            about: "the array and its timing: the scene beside the atoms' flights, the instrument and cadence in the inspector",
+        ),
+        (
+            id: "analysis",
+            label: "Analysis",
+            lines: ["panes 4", "show signal @1", "show periodogram @2", "show scene @3", "show cadence @4", "pane 1"],
+            about: "reading results: the signal, the periodogram and the cadence's window, with the scene",
+        ),
+    ],
+)

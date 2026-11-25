@@ -27,6 +27,15 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("rename", "type a new name for the selected body or tower in the scene tree (F2)"),
     ("frame", "fit the selection (or the whole scene) into the active pane (F)"),
     ("tool", "take a tool in hand: `tool select` (Q), `tool move` (W), `tool place` (A)"),
+    (
+        "layout",
+        "arrange the window for a task: `layout scene` (Ctrl+1), `layout instrument` (Ctrl+2), `layout analysis` (Ctrl+3)",
+    ),
+    (
+        "maximise",
+        "the active pane fills the window but for the menu bar and the status line; again to restore (Ctrl+Space)",
+    ),
+    ("fullscreen", "the window fills the screen; again to restore (F11)"),
     ("snap", "snap the Move tool's moves to the step, or not (S)"),
     (
         "fly",
@@ -226,6 +235,14 @@ pub struct Shell {
     pub(crate) gizmo_drag: Option<GizmoDrag>,
     /// A transform session in hand (the keyboard's Move).
     pub session: Option<crate::tools::Session>,
+    /// Whether the active pane is maximised: it fills the window but for the menu bar and the
+    /// status line (`Ctrl+Space`). UI state.
+    pub maximised: bool,
+    /// Whether the window is full screen (`F11`), and what the window was last told.
+    pub fullscreen: bool,
+    fullscreen_sent: bool,
+    /// The layout last chosen (`ui/layouts.ron`).
+    pub layout_name: String,
 }
 
 /// A drag of the gizmo: the pane, the body, the handle, the gizmo as it was when the drag began
@@ -313,6 +330,10 @@ impl Shell {
             place_starter: "sphere".to_owned(),
             gizmo_drag: None,
             session: None,
+            maximised: false,
+            fullscreen: false,
+            fullscreen_sent: false,
+            layout_name: crate::layouts::layouts().layouts[0].id.clone(),
         }
     }
 
@@ -707,6 +728,24 @@ impl Shell {
     fn run_app_command(&mut self, line: &str) -> Result<String, String> {
         let mut words = line.split_whitespace();
         let name = words.next().unwrap_or_default();
+        // `layout <id>` runs a layout's lines (view commands): the figure arranged for a task.
+        if name == "layout" {
+            let all = crate::layouts::layouts();
+            let ids: Vec<&str> = all.layouts.iter().map(|l| l.id.as_str()).collect();
+            let Some(layout) = words.next().and_then(|id| all.layout(id)).filter(|_| words.next().is_none())
+            else {
+                let why = format!("`{line}`: layout <{}>", ids.join("|"));
+                self.engine.note(Level::Error, Subsystem::App, why.clone());
+                self.console_open = true;
+                return Err(why);
+            };
+            self.maximised = false;
+            self.layout_name.clone_from(&layout.id);
+            for step in &layout.lines {
+                self.run(step)?;
+            }
+            return Ok(line.to_owned());
+        }
         // `tool <id>` takes a tool of the strip in hand; nothing is journalled.
         if name == "tool" {
             let ids: Vec<&str> = crate::tools::strip().tools.iter().map(|t| t.id.as_str()).collect();
@@ -766,6 +805,8 @@ impl Shell {
                 self.window_opened("palette", "palette/query", true);
             }
             "snap" => self.snap = !self.snap,
+            "maximise" => self.maximised = !self.maximised,
+            "fullscreen" => self.fullscreen = !self.fullscreen,
             "frame" => {
                 // The selection (or, with nothing selected, the whole scene) fills the active
                 // pane from the present direction: one camera command.
@@ -1045,9 +1086,18 @@ impl Shell {
                     ctx.memory_mut(|m| m.surrender_focus(id));
                 }
             }
-            Effect::Reveal(_) | Effect::Interact(_) | Effect::Session(_) => {
-                self.pending.push((effect, repeat))
+            Effect::Reveal(scope) => {
+                // Tab onto a scope that is not on screen shows it first: nothing happens unseen
+                // (`docs/research/editor-ux.md` §3.11). The top bar, the view and the status line
+                // are shown even maximised.
+                if self.maximised && !matches!(scope.as_str(), "top-bar" | "viewport" | "footer") {
+                    self.maximised = false;
+                }
+                if self.gui_hidden && scope != "viewport" {
+                    self.gui_hidden = false;
+                }
             }
+            Effect::Interact(_) | Effect::Session(_) => self.pending.push((effect, repeat)),
             Effect::Click(_)
             | Effect::Adjust { .. }
             | Effect::Zoom { .. }
@@ -1135,6 +1185,10 @@ impl Shell {
         // The keys walk what the last frame registered; this frame registers anew as it draws.
         self.building = FocusTree::new(&crate::actions::table().big_scopes());
         self.keys(&ctx);
+        if self.fullscreen != self.fullscreen_sent {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.fullscreen));
+            self.fullscreen_sent = self.fullscreen;
+        }
         self.session_keys();
         self.fly_frame(&ctx);
         self.advance(&ctx);

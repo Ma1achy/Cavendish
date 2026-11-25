@@ -101,7 +101,12 @@
         (id: "overlay-leaves", label: "leaf bounds", menu: "View/Overlay", line: "overlay leaves", needs: Shapes, about: "each leaf's bounds, by level"),
         (id: "overlay-tree", label: "the whole octree", menu: "View/Overlay", line: "overlay tree", needs: Shapes, about: "every node of every voxel body's tree, by depth"),
         (id: "section-off", label: "no section", menu: "View/Overlay", line: "section off", needs: Shapes, rule: true, about: "take the section plane away"),
-        (id: "gui", label: "Hide the GUI", menu: "View", line: "gui", keys: ["F3"], rule: true, about: "the scene fills the window; F3 or Esc brings the panels back"),
+        (id: "layout-scene", label: "Scene", menu: "View/Layout", line: "layout scene", keys: ["Ctrl+1"], about: "building and placing: one big view of the scene"),
+        (id: "layout-instrument", label: "Instrument", menu: "View/Layout", line: "layout instrument", keys: ["Ctrl+2"], about: "the array and its timing: the scene beside the flights"),
+        (id: "layout-analysis", label: "Analysis", menu: "View/Layout", line: "layout analysis", keys: ["Ctrl+3"], about: "reading results: signal, periodogram, cadence and the scene"),
+        (id: "maximise", label: "Maximise the pane", menu: "View", line: "maximise", keys: ["Ctrl+Space"], rule: true, about: "the active pane fills the window but for the menu bar and the status line; again to restore"),
+        (id: "fullscreen", label: "Full screen", menu: "View", line: "fullscreen", keys: ["F11"], about: "the window fills the screen; again to restore"),
+        (id: "gui", label: "Hide the GUI", menu: "View", line: "gui", keys: ["F3"], about: "the scene fills the window; F3 or Esc brings the panels back"),
         (id: "console", label: "Console", menu: "View", line: "console", keys: ["`"], about: "open or close the console: every command, typed"),
 
         // Scene

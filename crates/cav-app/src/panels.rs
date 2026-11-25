@@ -91,6 +91,11 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
                 .show(ui, |ui| console(shell, ui));
             shell.layout.panels.push(("console", panel.response.rect));
         }
+    }
+    // Maximised, the active pane has the window but for the menu bar, the status line and the
+    // console (Ctrl+Space; Blender's "maximise area"). The big scopes keep their places in the
+    // Tab order: Tab onto a hidden one restores the window first.
+    if !shell.gui_hidden && !shell.maximised {
         // Up to eight lanes are shown; an array with more scrolls inside the panel.
         let lanes_shown = shell.engine.spec().array.towers.len().min(timeline::MAX_LANES_SHOWN);
         let lanes_height = timeline::height(lanes_shown);
@@ -102,10 +107,12 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
         shell.building.place("timeline", panel.response.rect);
         // The outliner gives way to the figure on a small window (S18: the tool strip and the
         // options strip took 72 points from it); the inspector's rows need their 264.
+        // Its edge can be dragged (egui keeps the width it is left at); the inspector's too.
         let side = (shell.layout.screen.width() * 0.19).clamp(210.0, 262.0);
         let panel = Panel::left("outliner")
-            .exact_size(side)
-            .resizable(false)
+            .default_size(side)
+            .size_range(180.0..=520.0)
+            .resizable(true)
             .frame(frame(theme::PANEL, 10, 6))
             .show(ui, |ui| scrolling(ui, "outliner", |ui| outliner(shell, ui)));
         shell.layout.panels.push(("outliner", panel.response.rect));
@@ -118,15 +125,16 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
         shell.layout.panels.push(("toolbar", panel.response.rect));
         shell.building.place("toolbar", panel.response.rect);
         let panel = Panel::right("properties")
-            .exact_size(264.0)
-            .resizable(false)
+            .default_size(264.0)
+            .size_range(264.0..=560.0)
+            .resizable(true)
             .frame(frame(theme::PANEL, 10, 6))
             .show(ui, |ui| scrolling(ui, "properties", |ui| properties(shell, ui)));
         shell.layout.panels.push(("properties", panel.response.rect));
         shell.building.place("inspector", panel.response.rect);
     }
     egui::CentralPanel::no_frame().show(ui, |ui| {
-        if !shell.gui_hidden {
+        if !shell.gui_hidden && !shell.maximised {
             let strip = Panel::top("header")
                 .exact_size(24.0)
                 .frame(frame(theme::FOOTER, 10, 0))
@@ -167,6 +175,21 @@ fn menu_bar(shell: &mut Shell, ui: &mut egui::Ui) {
                 shell.keyboard.open_window("palette", "palette/query", true);
             }
         }
+        // The layouts (`ui/layouts.ron`) as tabs: each arranges the figure for a task.
+        ui.separator();
+        for layout in &crate::layouts::layouts().layouts {
+            let tab = ui
+                .selectable_label(shell.layout_name == layout.id, RichText::new(&layout.label).size(12.0))
+                .on_hover_text(&layout.about);
+            let id = format!("top-bar/layout/{}", layout.id);
+            let line = format!("layout {}", layout.id);
+            shell.register("top-bar", &id, &layout.label, Kind::Button, tab.rect);
+            shell.layout.buttons.push((line.clone(), tab.rect));
+            if tab.clicked() || shell.take_click(&id) {
+                let _ = shell.run(&line);
+            }
+        }
+        ui.separator();
         let search = ui
             .add(Button::new(RichText::new("search  Ctrl+K").size(11.5).color(theme::WEAK)).frame(false))
             .on_hover_text("the command palette: every action, starter, scene, command and field");
@@ -1444,7 +1467,17 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     let mut body_drags: Vec<(usize, usize, egui::Vec2, egui::Vec2)> = Vec::new();
     let mut zooms: Vec<(usize, f32, [f64; 2], [f64; 2])> = Vec::new();
 
-    for (pane, pixels) in pane_rects(count, size, PANE_GAP).into_iter().enumerate() {
+    // Maximised, the active pane is the whole figure and the others are not drawn (their
+    // cameras and contents are kept: it is the window's state, not the engine's).
+    let mut rects = pane_rects(count, size, PANE_GAP);
+    if shell.maximised {
+        let whole = pane_rects(1, size, PANE_GAP)[0];
+        for (pane, rect) in rects.iter_mut().enumerate() {
+            *rect =
+                if pane == active { whole } else { cav_render::PaneRect { width: 0, height: 0, ..whole } };
+        }
+    }
+    for (pane, pixels) in rects.into_iter().enumerate() {
         let rect = Rect::from_min_size(
             area.min + vec2(pixels.x as f32, pixels.y as f32) / scale,
             vec2(pixels.width as f32, pixels.height as f32) / scale,
