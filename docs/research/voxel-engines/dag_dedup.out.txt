@@ -1,0 +1,43 @@
+
+random counts (control P1)   (cells (128, 128, 64), share of cells with 0 < count < 64: 97.0 %)
+level |  mixed a distinct a  ratio a |  mixed b distinct b  ratio b | distinct b / distinct a
+    1 |    15081         56    0.004 |   131072     131072    1.000 |   2340.6x
+    2 |    10182       2808    0.276 |    16384      16384    1.000 |      5.8x
+    3 |     2046       2046    1.000 |     2048       2048    1.000 |      1.0x
+    4 |      256        256    1.000 |      256        256    1.000 |      1.0x
+    5 |       32         32    1.000 |       32         32    1.000 |      1.0x
+    6 |        4          4    1.000 |        4          4    1.000 |      1.0x
+  all |    27601       5202    0.188 |   149796     149796    1.000 |     28.8x
+
+town, cell-aligned (control P2)   (cells (128, 128, 64), share of cells with 0 < count < 64: 0.0 %)
+level |  mixed a distinct a  ratio a |  mixed b distinct b  ratio b | distinct b / distinct a
+    2 |      144          1    0.007 |      144          1    0.007 |      1.0x
+    3 |      256          3    0.012 |      256          3    0.012 |      1.0x
+    4 |       80         21    0.263 |       80         21    0.263 |      1.0x
+    5 |       16          5    0.312 |       16          5    0.312 |      1.0x
+    6 |        4          4    1.000 |        4          4    1.000 |      1.0x
+  all |      500         34    0.068 |      500         34    0.068 |      1.0x
+
+town, sub-cell offsets   (cells (128, 128, 64), share of cells with 0 < count < 64: 0.4 %)
+level |  mixed a distinct a  ratio a |  mixed b distinct b  ratio b | distinct b / distinct a
+    1 |      948          6    0.006 |     1488         38    0.026 |      6.3x
+    2 |      417         13    0.031 |      522         77    0.148 |      5.9x
+    3 |      323         24    0.074 |      352        107    0.304 |      4.5x
+    4 |       88         35    0.398 |       88         53    0.602 |      1.5x
+    5 |       16          8    0.500 |       16          9    0.562 |      1.1x
+    6 |        4          4    1.000 |        4          4    1.000 |      1.0x
+  all |     1796         90    0.050 |     2470        288    0.117 |      3.2x
+
+terrain (smooth height field)   (cells (128, 128, 64), share of cells with 0 < count < 64: 1.9 %)
+level |  mixed a distinct a  ratio a |  mixed b distinct b  ratio b | distinct b / distinct a
+    1 |     3424         27    0.008 |     5976       4898    0.820 |    181.4x
+    2 |     1270        809    0.637 |     1588       1529    0.963 |      1.9x
+    3 |      370        364    0.984 |      403        402    0.998 |      1.1x
+    4 |       98         98    1.000 |      101        101    1.000 |      1.0x
+    5 |       18         18    1.000 |       18         18    1.000 |      1.0x
+    6 |        4          4    1.000 |        4          4    1.000 |      1.0x
+  all |     5184       1320    0.255 |     8090       6952    0.859 |      5.3x
+
+P1 random counts distinct/total > 0.99 where there are > 1000 nodes: PASS
+P2 aligned town: occupancy and coverage give identical ratios: PASS
+P2 control arm (offset town must NOT give identical ratios): PASS
