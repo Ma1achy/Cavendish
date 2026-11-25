@@ -357,9 +357,12 @@ its oracle checks, a performance note, screenshots in `docs/slices/`. Main alway
 | S16 | **The science case** | Inject a gravitational wave or a dark-matter signal and try to find it through a full simulated day; two sites on one planet, correlated; choose a site anywhere on Earth and get its noise budget; run beside the real instrument as its twin | injected signals recovered at the published sensitivity in a quiet world; two-site correlation rejects local noise by the predicted factor |
 | S17 | **In the browser** | The whole app as a web page on GitHub Pages, built to WebAssembly with WebGPU by CI on each push to main; single-threaded on the web, the engine's workers run in frame-sized slices | the web build runs the S0–S3 demos' scenes and reads the same phases as the native build, bit for bit where the arithmetic is the same |
 | S18 | **The editor** | A toolbar of tools, an interactive viewport, a schema-driven inspector, docking panels with tabs and pop-out windows, the keyboard model of `docs/design/keyboard.md`, materials and mesh import from the editor, GUI layouts and detail tiers as data | scripted tasks run end to end through the UI tests ("add a sphere, move it 2 m, read tower 1's phase"); the keyboard state machine tested with control arms; every edit by viewport or panel is one undoable command |
+| S19 | **The editor's second half** | Docking with tabs, pop-out windows, Rotate and Scale, Probe, Measure, Slice and Paint tools, follow and pointer lock, multi-selection and grouped edits, units typed with values, materials and mesh import from the editor, detail tiers as data | as S18's exits for each new tool; a tier's phase within its stated bound of the reference tier; mass conserved to the bit through every material edit |
 
 Order is a default. Slices that do not depend on each other (S6 and S8, say) can run in parallel.
 S18 was added by the owner on 25 Nov 2026 and runs straight after S4 (research: `docs/research/editor-ux.md`).
+S19 was split from S18 by its brief (`docs/slices/S18.md` §3): S18 builds the note's "A1" and "A2",
+S19 its "B", the owner's materials and mesh import, and the detail tiers.
 S17 was added by the owner on 24 Nov 2026 and runs next, after S3; its brief is
 `docs/slices/S17.md`, its research `docs/research/web-build-and-pages.md`.
 S14–S16 were added by the owner on 22 Nov 2026. What they hold is in §9.3; each starts with a
