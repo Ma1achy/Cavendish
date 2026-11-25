@@ -79,7 +79,7 @@ fn differing(a: &Path, b: &Path) -> usize {
 }
 
 cav_validate::case! {
-    test: validation_figure_regenerates,
+    test: validation_slow_figure_regenerates,
     name: "figure.regenerates",
     subsystem: "figure",
     slice: "S2",
@@ -106,7 +106,7 @@ cav_validate::case! {
         // The provenance in particular: every figure's .json is the same bytes from the second
         // engine, and what it says of the engine is the build's. (Two engines in one process
         // could not have caught a revision asked of git when the file is written; `cav`'s
-        // `cli_provenance_is_the_builds_whatever_the_tree_or_the_directory` runs the binary
+        // `slow_cli_provenance_is_the_builds_whatever_the_tree_or_the_directory` runs the binary
         // twice with the tree changed in between, and does.)
         let again = files_of(&dirs[1]);
         for (name, bytes) in files.iter().filter(|(name, _)| name.ends_with(".json")) {
@@ -160,7 +160,7 @@ cav_validate::case! {
 }
 
 #[test]
-fn a_figure_is_the_stated_size() {
+fn slow_a_figure_is_the_stated_size() {
     let dir = scratch("sizes");
     let mut engine = engine("load comb; set duration 200");
     for preset in PRESETS {
@@ -329,7 +329,7 @@ fn names(record: &serde_json::Value, key: &str) -> Vec<String> {
 }
 
 #[test]
-fn a_figures_record_lists_every_format_written_of_it() {
+fn slow_a_figures_record_lists_every_format_written_of_it() {
     // Finding 26 of S2's review: x.svg, x.pdf and x.png left one x.json, describing the last.
     let (dir, other) = (scratch("record"), scratch("record other order"));
     let mut engine = engine("load comb; set duration 200");
@@ -613,7 +613,7 @@ fn the_paper_periodogram_is_the_house_style() {
 }
 
 #[test]
-fn a_figure_is_bounded_in_points_and_pixels() {
+fn slow_a_figure_is_bounded_in_points_and_pixels() {
     let dir = scratch("bounds");
     // 21,000 shots of five towers: more rows than a text file is given.
     let mut engine = engine("load comb; set duration 42000");
@@ -741,7 +741,7 @@ fn files_under(dir: &Path) -> BTreeMap<String, Vec<u8>> {
 }
 
 #[test]
-fn a_session_with_figures_and_a_bundle_replays_to_the_same_files() {
+fn slow_a_session_with_figures_and_a_bundle_replays_to_the_same_files() {
     // The exit test with figures in it, which `cav-engine` cannot draw: a session that edits,
     // compares, exports figures and a bundle and saves its scene and its journal; the journal
     // read back from disk and replayed into another directory writes the same files.
@@ -1023,7 +1023,7 @@ fn a_figure_export_goes_through_the_files_seam() {
 }
 
 #[test]
-fn a_figures_record_says_how_far_its_numbers_go() {
+fn slow_a_figures_record_says_how_far_its_numbers_go() {
     // S4's second review, J4: a figure of a world read only within 1 m of the towers says so in
     // its record (settled, truncated, the warnings), as the bundle does.
     let dir = scratch("record truncated");

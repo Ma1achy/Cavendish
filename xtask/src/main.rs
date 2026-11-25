@@ -4,6 +4,7 @@
 //! cargo xtask quick [--budget]   fmt, clippy, CPU tests; under 30 s warm
 //! cargo xtask test <filter>      the workspace tests whose names contain <filter>, with output
 //! cargo xtask gpu                tests that need the local adapter; under 2 min
+//! cargo xtask slow               the workspace's slow tests (`slow_` in their names); part of oracle
 //! cargo xtask oracle             the engine against v1 at v1-final and George's scripts
 //! cargo xtask demo <slice>       the slice's demo, headless, with screenshots
 //! cargo xtask validate [--report] every validation case, tabulated; missing cases fail
@@ -32,8 +33,8 @@ use std::time::Instant;
 const HELP: &str = "\
 cargo xtask <tier>
 
-  quick [--budget]   cargo fmt --check, clippy -D warnings, then every test whose name does not
-                     contain `gpu_`, through cargo-nextest (doc tests are the oracle tier's). Fails if
+  quick [--budget]   cargo fmt --check, clippy -D warnings, then every test whose name contains
+                     neither `gpu_` nor `slow_`, through cargo-nextest (doc tests are the oracle tier's). Fails if
                      fewer tests ran than the floor in xtask/floors.txt. With --budget it also fails when it took over 30 s
                      (meaningful on a warm build only).
   test <filter> [--release]
@@ -41,10 +42,14 @@ cargo xtask <tier>
                      at the same priority and job count as the tiers: for working on one test
                      without running a tier. No floor; never a gate.
   gpu                the tests whose names contain `gpu_`: they need the local adapter. Same floor rule.
+  slow               the workspace tests whose names contain `slow_` (and not `gpu_`): CPU tests of
+                     seconds each, kept out of `quick` so that it stays within 30 s. Their own floor
+                     (`slow` in xtask/floors.txt). `oracle` runs them too.
   oracle             the oracle tier: the `oracle` crate, which compiles v1's forward model at tag
                      v1-final and holds the engine to it and to arrays made by running George's
                      reference scripts. A workspace of its own, built only by this command and by
-                     validate; formatted, linted and held to a floor like the other tiers. Then the
+                     validate; formatted, linted and held to a floor like the other tiers. Before
+                     it, the workspace's doc tests and its slow tests (`cargo xtask slow`). Then the
                      Python side (python/): pyright in strict mode and the tests of cavendish_figures on
                      figures this build writes; a missing Python, numpy, matplotlib or pyright fails it.
   demo <slice> [--no-web]
@@ -96,6 +101,7 @@ fn main() -> ExitCode {
         ["quick"] => tiers::quick(&root, false),
         ["quick", "--budget"] => tiers::quick(&root, true),
         ["gpu"] => tiers::gpu(&root),
+        ["slow"] => tiers::slow(&root),
         ["test", filter] => tiers::one(&root, filter, false),
         ["test", filter, "--release"] => tiers::one(&root, filter, true),
         ["oracle"] => tiers::oracle(&root),

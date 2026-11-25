@@ -18,11 +18,20 @@ use crate::{cargo, step};
 /// at times (S4's review, minor 4). It is now CLAUDE.md's 30 s, the plan's own limit, with a line
 /// in `docs/slices/S4.md` §7.6: the long poles are the world's slab series (9 s) and the wire's
 /// world job (6 s), each a validation case or a test the review asked for.
+///
+/// By the end of S19 `quick` took 48 s on an idle machine (681 tests). The budget stayed; the 45
+/// tests that took 1.4 s or more each and guard nothing about `quick` itself were named `slow_`
+/// and are run by `cargo xtask oracle` (and `cargo xtask slow`), with a floor of their own
+/// (`docs/slices/S19.md` §7.10 lists them).
 const QUICK_BUDGET_S: f64 = 30.0;
 
-/// Tests that need a GPU carry `gpu_` in their names; everything else is the quick tier.
-const QUICK_FILTER: &str = "not test(gpu_)";
+/// A test's name is its tier. `gpu_` in it: it needs the adapter (`cargo xtask gpu`). `slow_` in
+/// it: it takes seconds and guards nothing a commit needs within the half minute (`cargo xtask
+/// slow`, and so `cargo xtask oracle`). Everything else is the quick tier. A test with both
+/// markers is the GPU tier's.
+const QUICK_FILTER: &str = "not test(gpu_) and not test(slow_)";
 const GPU_FILTER: &str = "test(gpu_)";
+const SLOW_FILTER: &str = "test(slow_) and not test(gpu_)";
 
 pub fn quick(root: &Path, enforce_budget: bool) -> Result<(), String> {
     let started = Instant::now();
@@ -123,6 +132,13 @@ pub fn gpu(root: &Path) -> Result<(), String> {
     run_tier(root, "gpu", GPU_FILTER)
 }
 
+/// The workspace's slow tests (`slow_` in their names): CPU tests of seconds each, moved out of
+/// `quick` to keep it within its budget. Part of the oracle tier, and runnable alone; held to
+/// the `slow` floor.
+pub fn slow(root: &Path) -> Result<(), String> {
+    run_tier(root, "slow", SLOW_FILTER)
+}
+
 /// The oracle crate: a workspace of its own, so that the main one never fetches or compiles v1.
 pub const ORACLE_MANIFEST: &str = "oracle/Cargo.toml";
 /// Its artefacts go under the main `target/`, which is the directory excluded from virus scanning.
@@ -152,6 +168,8 @@ pub fn oracle(root: &Path) -> Result<(), String> {
     step("oracle clippy", cargo(root, &[&clippy[..], &lints[..]].concat()))?;
     // nextest does not run documentation examples, and `quick` has no time for them.
     step("doctests", cargo(root, &["test", "--doc", "--workspace", "--quiet"]))?;
+    // The workspace's slow tests: what `quick` has no time for (their own floor, `slow`).
+    slow(root)?;
     // The Python side: typed, and its tests pass on figures this build writes. Never skipped.
     crate::python::run(root)?;
     run_tests(root, "oracle", &ORACLE_NEXTEST)
@@ -324,6 +342,40 @@ mod tests {
         assert!(floor_for(floors, "gpu").is_ok());
         // From S1 the oracle tier is a tier like the others: it has a floor, and not an empty one.
         assert!(floor_for(floors, "oracle").unwrap() > 0, "the oracle tier must check something");
+        // The slow tests have their own floor: a test moved out of `quick` is still counted.
+        assert!(floor_for(floors, "slow").unwrap() > 0, "the slow tests are held to a floor");
+    }
+
+    #[test]
+    fn every_test_is_in_one_tier_by_its_name() {
+        // The three filters, read as the rule they state: a name with `gpu_` is the GPU tier's
+        // whatever else it holds, one with `slow_` and no `gpu_` the slow tier's, the rest
+        // quick's. Each name is in exactly one. Control: were `quick` still "not test(gpu_)", a
+        // slow test would run in two tiers (and `quick` would be no quicker).
+        let has = |filter: &str, name: &str| {
+            // The filters are conjunctions of `test(x)` and `not test(x)`: evaluate them as such.
+            filter.split(" and ").all(|term| {
+                let (want, marker) = match term.strip_prefix("not ") {
+                    Some(rest) => (false, rest),
+                    None => (true, term),
+                };
+                let marker = marker.strip_prefix("test(").and_then(|m| m.strip_suffix(')')).expect("test(…)");
+                name.contains(marker) == want
+            })
+        };
+        for (name, tier) in [
+            ("maths::tests::cross_product_is_right_handed", 0),
+            ("gpu_a_frame_is_drawn", 1),
+            ("validation_gpu_second", 1),
+            ("world::tests::slow_streaming_holds_its_caps", 2),
+            ("validation_slow_world_slab_equals_the_prism", 2),
+            ("gpu_slow_both", 1),
+        ] {
+            let tiers = [QUICK_FILTER, GPU_FILTER, SLOW_FILTER].map(|f| has(f, name));
+            let expected = [tier == 0, tier == 1, tier == 2];
+            assert_eq!(tiers, expected, "{name}");
+        }
+        assert!(has("not test(gpu_)", "slow_streaming_holds_its_caps"), "the control: the old filter ran it");
     }
 
     #[test]

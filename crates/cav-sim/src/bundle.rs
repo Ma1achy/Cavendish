@@ -914,7 +914,7 @@ mod tests {
     }
 
     #[test]
-    fn a_world_bundle_round_trips_and_says_what_it_read() {
+    fn slow_a_world_bundle_round_trips_and_says_what_it_read() {
         // `world-box`: the world is a source like a body, so its bundle is the signal bit for bit,
         // and the scene in it (with its world) is the scene.
         let scene = dev::world_box();

@@ -279,7 +279,8 @@ pub fn run(case: &Case, measured: &Measured) {
 ///
 /// ```text
 /// cav_validate::case! {
-///     test: validation_<what>,          // `validation_gpu_<what>` if it needs the adapter
+///     test: validation_<what>,          // `validation_gpu_<what>` if it needs the adapter,
+///                                       // `validation_slow_<what>` if it takes seconds
 ///     name: "subsystem.what",
 ///     subsystem: "subsystem",
 ///     slice: "S0",

@@ -53,15 +53,18 @@ runs console commands first. What a page cannot do, and where that is handled, i
 
 | Command | What it runs | When |
 |---|---|---|
-| `cargo xtask quick` | `fmt --check`, `clippy -D warnings`, every test whose name has no `gpu_` in it | before every commit; under 10 s warm. `cargo xtask hooks` installs it as a pre-push hook |
+| `cargo xtask quick` | `fmt --check`, `clippy -D warnings`, every test whose name has neither `gpu_` nor `slow_` in it | before every commit; under 30 s warm. `cargo xtask hooks` installs it as a pre-push hook |
 | `cargo xtask gpu` | the tests named `gpu_…`: they need the local adapter | before a slice is done, and after touching the renderer or a plot's painter |
-| `cargo xtask oracle` | the `oracle/` crate (v1 at `v1-final`, George's scripts), documentation examples, the Python package's types and tests | before a slice is done, and after touching the forward model or a spectrum |
+| `cargo xtask slow` | the tests named `slow_…`: CPU tests of seconds each that `quick` has no time for | with `oracle`, which runs them; alone after touching what one of them guards (the world read, streaming, figures, memory bounds) |
+| `cargo xtask oracle` | the `oracle/` crate (v1 at `v1-final`, George's scripts), documentation examples, the workspace's slow tests, the Python package's types and tests | before a slice is done, and after touching the forward model or a spectrum |
 | `cargo xtask validate [--report] [--against <tag>]` | every validation case, tabulated against its tolerance | at the end of a slice: `--report --against <the last slice's tag>` |
 | `cargo xtask web` | clippy for wasm32, the web build, the engine's numbers in wasm (Node.js) held to native | before merging a change to the engine, the read, a platform seam or the app's entry; before a slice is done |
 | `cargo xtask demo <slice>` | the slice's demo, headless, with its screenshots | at the end of a slice |
 
 Each tier has a floor on how many tests it runs (`xtask/floors.txt`): fewer is a failure. Floors
-only go up; raise one in the commit that adds tests.
+only go up; raise one in the commit that adds tests. The one exception is a test that moves from
+`quick` to `slow` by taking `slow_` into its name: `quick`'s floor falls by one and `slow`'s rises
+by one in the same commit, and the slice notes name the test and say why.
 
 The first build after a commit compiles `cav-engine` and everything that depends on it again
 (about eight seconds more than a warm `quick`): the engine carries the revision it was built
@@ -69,8 +72,12 @@ from, fixed by its build script, and a new commit is a new revision. The same ha
 `git add` and anything else that rewrites git's index. Edits outside `cav-core`, `cav-sim`,
 `cav-engine` and `scenes/` do not run the script.
 
-A test's name decides its tier: put `gpu_` in the name of a test that needs the adapter. A test
-that takes more than a second or two in `quick` should say why it must.
+A test's name decides its tier: put `gpu_` in the name of a test that needs the adapter, and
+`slow_` in the name of a CPU test that takes more than a second or two and guards nothing a
+commit needs at once (a validation case is `validation_slow_…`; `cargo xtask validate` runs it
+all the same). Where the property has a cheap arm, keep that arm in `quick` and move only the
+expensive one. `quick` must stay under 30 s warm on an idle machine: when it does not, move
+tests, never the budget.
 
 ## Rules for tests
 

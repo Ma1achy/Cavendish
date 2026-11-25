@@ -368,7 +368,7 @@ mod tests {
     }
 
     #[test]
-    fn a_world_job_through_the_wire_is_the_same_bits() {
+    fn slow_a_world_job_through_the_wire_is_the_same_bits() {
         // The world goes through the wire by its own index (`WORLD`): `world-box` (four chunks),
         // and the same box read only within 1 m of the towers, whose truncation must come back.
         let whole = cav_sim::dev::world_box();

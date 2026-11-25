@@ -30,7 +30,7 @@ the gradiometer reads lower minus upper unless a scene says otherwise. British E
 Dev-dependencies are apart from this table: any crate's tests may use `cav-validate`.
 
 "Does not link the window" is held by a test for `cav`, `cav-plot`, `cav-engine` and `cav-sim`
-(`xtask`: `nothing_that_runs_without_a_window_links_one`), and it means **built on its own**
+(`xtask`: `slow_nothing_that_runs_without_a_window_links_one`), and it means **built on its own**
 (`cargo build -p cav`, `cargo install`): cargo then gives `egui-wgpu` only the features `cav` asks
 for. In a build of the whole workspace cargo unifies features, so `egui-wgpu` is compiled once with
 the window's feature, which `cav-app` asks for, and that copy is the one `cav` links; no code of

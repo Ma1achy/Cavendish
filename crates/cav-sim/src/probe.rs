@@ -314,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    fn probe_reads_the_field_and_the_cell() {
+    fn slow_probe_reads_the_field_and_the_cell() {
         // S19 T1: beside a voxel ball the field is GM/d² towards its centre, to 1e-3; at twice the
         // distance a quarter of it (the control). A point on its surface is in a cell, and the
         // cell's share of tower 1's phase is the Phase colouring's number for that leaf, bit for

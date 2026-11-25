@@ -75,7 +75,7 @@ fn worst(a: &[[f64; 3]], b: &[[f64; 3]]) -> f64 {
 const BOX: ([f64; 3], [f64; 3]) = ([6.0, 5.0, 0.25], [10.0, 9.0, 2.25]);
 
 cav_validate::case! {
-    test: validation_world_box_reads_as_a_voxel_body,
+    test: validation_slow_world_box_reads_as_a_voxel_body,
     name: "world.box_reads_as_a_voxel_body",
     subsystem: "world",
     slice: "S4",
@@ -142,7 +142,7 @@ fn prism_reading(spec: &SceneSpec, n: usize, lo: [f64; 3], hi: [f64; 3]) -> Read
 }
 
 cav_validate::case! {
-    test: validation_world_box_reads_as_the_prism,
+    test: validation_slow_world_box_reads_as_the_prism,
     name: "world.box_reads_as_the_prism",
     subsystem: "world",
     slice: "S4",
@@ -205,7 +205,7 @@ fn worst_ratio(readings: &[f64]) -> f64 {
 }
 
 cav_validate::case! {
-    test: validation_world_slab_equals_the_prism,
+    test: validation_slow_world_slab_equals_the_prism,
     name: "world.slab_equals_the_prism",
     subsystem: "world",
     slice: "S4",
@@ -217,7 +217,7 @@ cav_validate::case! {
 }
 
 cav_validate::case! {
-    test: validation_world_slab_converges_to_the_null,
+    test: validation_slow_world_slab_converges_to_the_null,
     name: "world.slab_converges_to_the_null",
     subsystem: "world",
     slice: "S4",
@@ -332,7 +332,7 @@ fn moments_against_bound() -> &'static (f64, f64) {
 }
 
 cav_validate::case! {
-    test: validation_world_moments_within_their_bound,
+    test: validation_slow_world_moments_within_their_bound,
     name: "world.moments_within_their_bound",
     subsystem: "world",
     slice: "S4",
@@ -344,7 +344,7 @@ cav_validate::case! {
 }
 
 cav_validate::case! {
-    test: validation_world_moments_bound_is_not_vacuous,
+    test: validation_slow_world_moments_bound_is_not_vacuous,
     name: "world.moments_bound_is_not_vacuous",
     subsystem: "world",
     slice: "S4",

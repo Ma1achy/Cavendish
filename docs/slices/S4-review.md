@@ -81,7 +81,7 @@ The web build reads worlds in its workers through `WORLD = u64::MAX − 1`. A bu
 
 ### I4. Bound tests named in §3.1 do not exist, and R14 never reaches its caps
 **Missing tests:**
-- `streaming_memory_is_bounded` (W5, memtest);
+- `slow_streaming_memory_is_bounded` (W5, memtest);
 - `meshes_past_the_vertex_cap_are_not_drawn` (W7).
 
 §7.5 quietly changes W7 to "said as notes when reached", and §7.6 has no departure line for it. Those notes are never shown anyway: see I5.

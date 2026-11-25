@@ -1,5 +1,9 @@
 # The least number of tests each tier must execute (REBUILD §8). Fewer is a failure.
 # Floors only go up: raise one in the commit that adds tests; never lower one to pass.
-quick 683
+# `slow` is the workspace's `slow_` tests, run by `cargo xtask slow` and by `cargo xtask oracle`.
+# TASK-S19-26: 45 tests moved from quick to slow by name (docs/slices/S19.md §7.10 lists them),
+# to bring quick back within 30 s; quick 683 + 1 new = 684 = 639 + 45. Nothing was deleted.
+quick 639
 gpu 42
+slow 45
 oracle 58

@@ -425,7 +425,7 @@ cav-app = { path = "crates/cav-app" }
     }
 
     #[test]
-    fn nothing_that_runs_without_a_window_links_one() {
+    fn slow_nothing_that_runs_without_a_window_links_one() {
         for (name, forbidden) in MUST_NOT_LINK {
             let linked = links(name);
             assert!(linked.iter().any(|l| l == name), "{name} is not in its own tree: the tree was not read");

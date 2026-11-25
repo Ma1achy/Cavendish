@@ -33,7 +33,8 @@ cav_validate::case! {
 }
 ```
 
-The macro makes an ordinary test, so `cargo xtask quick` (or `gpu`) runs it and it fails like any other.
+The macro makes an ordinary test, so `cargo xtask quick` (or `gpu`; or `slow`, for a case named
+`validation_slow_…` because it takes seconds) runs it and it fails like any other.
 Nothing else needs registering: `validate` finds declarations by reading the source, runs the tests, and
 lays the two lists side by side.
 

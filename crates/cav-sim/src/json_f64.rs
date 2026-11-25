@@ -188,7 +188,7 @@ mod tests {
     }
 
     cav_validate::case! {
-        test: validation_ron_round_trip_is_exact,
+        test: validation_slow_ron_round_trip_is_exact,
         name: "spec.ron_f64_exact",
         subsystem: "spec",
         slice: "S2",

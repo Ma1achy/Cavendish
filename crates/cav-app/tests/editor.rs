@@ -269,7 +269,7 @@ fn choosing_a_tool_changes_no_scene() {
 }
 
 #[test]
-fn task_add_a_sphere_move_it_two_metres_read_tower_one() {
+fn slow_task_add_a_sphere_move_it_two_metres_read_tower_one() {
     // S18 T1, end to end through the UI: the palette adds a sphere, the Move tool's arrow takes it
     // 2 m east, and tower 1 reads what the forward model reads of the scene as edited.
     let mut rig = Rig::new();
