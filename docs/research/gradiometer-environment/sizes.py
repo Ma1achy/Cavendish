@@ -117,8 +117,34 @@ line("  same, per shot", C1 * 1e-6 * uniform_noise_transfer(0.1) / math.sqrt(2 *
 B0 = 10.0
 line("quadratic: 2*0.23*B0*dB, B0=10 G, dB=1 uG/rtHz, 0.1 Hz", 2 * 0.23 * B0 * 1e-6 * uniform_noise_transfer(0.1), "rad/rtHz")
 
-# blackbody: -2.354(32) Hz (T/300 K)^4 (Falke et al. 2011, Eq. 1; MAGIS-100 sec 5.9 rounds to -2.3)
-BBR_300 = 2.354  # Hz, magnitude of the clock (differential) shift at 300 K
+# Blackbody shift of the clock transition at 300 K, from the papers' polarizabilities (Safronova et al.
+# 2013, Phys. Rev. A 87, 012509; Porsev & Derevianko 2006, Phys. Rev. A 74, 020502(R)).
+# Static (E1) part, Safronova Eq. (5) first term, atomic units: dE = -(2/15) (alpha_fs pi)^3 (kB T)^4 alpha0,
+# with kB T in hartree. Dynamic correction, Safronova Table VI and the abstract: -0.1492(16) Hz at 300 K.
+ALPHA_FS = 1 / 137.035_999_084  # fine-structure constant
+KB_SI = 1.380_649e-23  # J/K
+HARTREE_J = 4.359_744_722_2071e-18  # J
+H_SI = 6.626_070_15e-34  # J s
+T_AU_300 = KB_SI * 300.0 / HARTREE_J  # kB T / E_h at 300 K
+
+
+def bbr_static_shift_hz(alpha0_au: float) -> float:
+    """Static BBR shift of a level of polarizability alpha0 (a.u.) at 300 K, in Hz (negative)."""
+    return -(2 / 15) * (ALPHA_FS * math.pi) ** 3 * T_AU_300**4 * alpha0_au * HARTREE_J / H_SI
+
+
+ALPHA_G = 197.14  # 5s2 1S0 static polarizability, a.u. (Safronova Table IV / Step 2: 197.14(20); Porsev Table II: 197.2(2))
+ALPHA_E = 444.5  # 5s5p 3P0 static polarizability, a.u. (Safronova Table V: 444.5(2); Porsev 2006: 458.3(3.6))
+DALPHA = 247.379  # clock Stark shift, a.u. (Middelmann 2012 measurement, Safronova Table IV; ALPHA_E - ALPHA_G = 247.4)
+BBR_DYN_CLOCK = -0.1492  # Hz, dynamic correction to the clock shift at 300 K (Safronova Table VI)
+BBR_DYN_GROUND = -0.0028  # Hz, the same for the 1S0 level alone (Safronova Table VI)
+BBR_300 = -(bbr_static_shift_hz(DALPHA) + BBR_DYN_CLOCK)  # Hz, magnitude of the clock shift at 300 K
+print("\n== Blackbody clock shift at 300 K from the polarizabilities")
+line("static clock shift, Eq. (5) with 247.379 a.u.", bbr_static_shift_hz(DALPHA), "Hz")
+line("static clock shift from 444.5 - 197.14 a.u.", bbr_static_shift_hz(ALPHA_E - ALPHA_G), "Hz")
+line("total clock shift = static + dynamic (-0.1492)", -BBR_300, "Hz")
+line("Porsev & Derevianko 2006 Table I / Falke 2011 Eq. (1), for comparison", -2.354, "Hz")
+line("static clock shift with the 2006 polarizabilities, 458.3 - 197.2", bbr_static_shift_hz(458.3 - 197.2), "Hz")
 DNU_DT = 4 * BBR_300 / 300.0
 line("BBR dnu/dT at 300 K", DNU_DT, "Hz/K")
 line("static: 1 K parabolic over 5 m (T''=0.08 K/m^2), gradiometer", 2 * math.pi * A * DR * DNU_DT * 0.08)
@@ -223,15 +249,21 @@ line("  the same as (7/12) k g Gamma T^4", 7 / 12 * KEFF * GRAV * GAMMA_EARTH * 
 
 # Blackbody force (Haslinger et al. 2018): the ground-state a.c. Stark shift in the thermal field is a
 # potential h nu_g(T(z)) felt by both arms, whatever their internal state. Its curvature along the
-# tower is a gravity-gradient-like term C * (h/m) * nu_g''. The ground-state static polarizability
-# of Sr, 197.2 a.u., and <E^2> = (831.9 V/m)^2 (T/300 K)^4 are from memory (not from the papers read).
+# tower is a gravity-gradient-like term C * (h/m) * nu_g''. The ground-state static polarizability of Sr
+# is 197.14(20) a.u. (Safronova 2013 Table IV; 197.2(2) in Porsev 2006 Table II); the 300 K field comes
+# from Eq. (5): -(2/15)(alpha pi)^3 (kB T)^4 alpha0 = -(1/2) alpha0 <E^2>, which gives
+# <E^2> = (831.9 V/m)^2 (T/300 K)^4 (my arithmetic, below; the papers do not print the field strength).
+# The dynamic correction to the ground state is -0.0028 Hz at 300 K (Safronova Table VI), taken to
+# scale as T^4 like the static part (it is 0.16 % of it, so the error is below that).
 H_PLANCK = 2 * math.pi * HBAR
-AU_POL = 1.648_777_274e-41  # C m^2 / V
-E2_300 = 831.9**2  # (V/m)^2
-NU_G_300 = 0.5 * 197.2 * AU_POL * E2_300 / H_PLANCK  # Hz, magnitude of the ground-state shift
+AU_POL_HZ = 2.48832e-8  # Hz/(V/m)^2 per a.u. of polarizability (Safronova, section II)
+E2_300 = -2 * bbr_static_shift_hz(1.0) / AU_POL_HZ  # (V/m)^2, <E^2> implied by Eq. (5) at 300 K
+NU_G_300 = -(bbr_static_shift_hz(ALPHA_G) + BBR_DYN_GROUND)  # Hz, magnitude of the ground-state shift
 DNU_G_DT = 4 * NU_G_300 / 300.0
 print("\n== Blackbody force: ground-state Stark potential on both arms (state-independent)")
-line("ground-state BBR shift magnitude at 300 K (alpha_g = 197.2 a.u.)", NU_G_300, "Hz")
+line("<E^2> implied by Eq. (5), square root, at 300 K", math.sqrt(E2_300), "V/m")
+line("ground-state BBR static shift, alpha_g = 197.14 a.u.", -bbr_static_shift_hz(ALPHA_G), "Hz")
+line("ground-state BBR shift magnitude incl. dynamic -0.0028 Hz", NU_G_300, "Hz")
 line("d nu_g / dT at 300 K", DNU_G_DT, "Hz/K")
 line("gradiometer phase per (Hz/m^2) of potential curvature, C h/m", C_GRAD * H_PLANCK / M_SR87,
      "rad/(Hz/m^2)")

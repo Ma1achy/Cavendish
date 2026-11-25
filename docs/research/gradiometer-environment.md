@@ -15,8 +15,14 @@
 >   Recommendation 3 gains one line: S13's temperature field also feeds the ordinary potential.
 > - **Row 3, wavefront × temperature**: 0.05–5 → **0.02–2 rad**, now from Dickerson's printed Table I
 >   term 6 (½ k_eff α (v_x²+v_y²) T²) instead of my own form, which was twice it.
-> - **Blackbody coefficient**: −2.3 → **−2.354(32) Hz (T/300 K)⁴** (Falke 2011 Eq. (1));
->   dν/dT 0.0307 → 0.0314 Hz/K. Rows 8 and 22 round to the same values (0.14 rad; 3×10⁻⁶ rad).
+> - **Blackbody coefficient**: −2.3 → −2.354(32) Hz (T/300 K)⁴ (Falke 2011 Eq. (1)) → **−2.279 Hz**
+>   (T/300 K)⁴ from the polarizabilities of Safronova et al. 2013 (third pass, §3); dν/dT 0.0307 →
+>   0.0314 → **0.0304 Hz/K**. Row 8: 0.14 → **0.13 rad** (0.1388 → 0.1344); row 22 unchanged at 3×10⁻⁶ rad
+>   (2.92 → 2.83×10⁻⁶).
+> - **Blackbody force, row 8a, no longer from memory.** α_g(Sr) = 197.14(20) a.u. and the 300 K field
+>   are now from Safronova et al. 2013 and Porsev & Derevianko 2006 (§3): the static value is unchanged
+>   (197.2 → 197.14 a.u.), the ground-state dynamic correction (−0.0028 Hz) is now included, and the row
+>   stays at **0.20 rad** (0.1995 → 0.1997); dν_g/dT 0.0226 → 0.0227 Hz/K.
 > - **Merriam's −0.356 µGal/hPa** is his *local-zone admittance* (0–0.5°), not a Table Mountain value
 >   as the search summary said; Merriam's effective range is −0.27 to −0.43 µGal/hPa.
 > - **DOIs**: the ZAIGA DOI from memory was wrong (it resolves to Quiros et al., an unrelated
@@ -126,8 +132,8 @@ spectrum tests).
 | 5 | Rain, 10 mm on a roof of radius 20–50 m, 10 m above the upper IFO | 1.8–3.1 | D, T | no (needs scene water) | disc: a_z = 2πGσ(1 − d/√(a²+d²)) | [derived]; near-field dominance: [Creutzfeldt et al. 2008, p. WA100, Fig. 5](https://doi.org/10.1190/1.2992508), [2010 ¶9, ¶41](https://doi.org/10.1029/2009WR008359) [read, primary] |
 | 6 | Lift, 1000 kg at 10 m, moving the tower's height | ~1.5 | T | **yes (core)** | as #2 | [Carlton Fig. 3](https://arxiv.org/abs/2308.10731) |
 | 7 | Coriolis, per µm/s of transverse velocity jitter, uncompensated | 0.43 (4.3×10⁻⁴ per nm/s) | N | no | 2 k_eff Ω cos φ v_⊥ T² | s14 §5.1, s15 (`docs/research/s14-wider-world.md`); [Lan 2012, p. 090402-4: Δφ = 2Ω·(v₀×k)T²](https://doi.org/10.1103/PhysRevLett.108.090402); [Dubetsky & Kasevich Table I row 2](https://doi.org/10.1103/PhysRevA.74.023615) [read, primary] |
-| 8 | Blackbody shift, 1 K parabolic temperature along the tower | 0.14 | S | no | 2π A Δr (dν/dT) T″, dν/dT = 0.0314 Hz/K | [derived]; coefficient −2.354(32) Hz (T/300 K)⁴, [Falke 2011 Eq. (1)](https://doi.org/10.1088/0026-1394/48/5/022) [read, primary] |
-| 8a | Blackbody *force* (ground-state Stark potential on both arms), same 1 K parabolic profile | 0.20 | S | no (needs S13's field in the potential) | C (h/m) (dν_g/dT) T″, dν_g/dT = 0.0226 Hz/K | [derived]; force measured by [Haslinger 2018, Eq. (2), Fig. 2](https://doi.org/10.1038/s41567-017-0004-9) [read, primary]; α_g(Sr) = 197.2 a.u. from memory |
+| 8 | Blackbody shift, 1 K parabolic temperature along the tower | 0.13 | S | no | 2π A Δr (dν/dT) T″, dν/dT = 0.0304 Hz/K | [derived]; coefficient −2.279 Hz (T/300 K)⁴ = static −2.130 (Eq. (5), Δα = 247.379 a.u.) + dynamic −0.1492, [Safronova et al. 2013](https://doi.org/10.1103/PhysRevA.87.012509) Eq. (5), Tables IV, VI [read, primary]; Falke 2011 Eq. (1) and [Porsev & Derevianko 2006](https://doi.org/10.1103/PhysRevA.74.020502) Table I give −2.354(32), from the older Δα = 261(4) a.u. (§3) |
+| 8a | Blackbody *force* (ground-state Stark potential on both arms), same 1 K parabolic profile | 0.20 | S | no (needs S13's field in the potential) | C (h/m) (dν_g/dT) T″, dν_g/dT = 0.0227 Hz/K | [derived]; force measured by [Haslinger 2018, Eq. (2), Fig. 2](https://doi.org/10.1038/s41567-017-0004-9) [read, primary]; α_g(Sr) = 197.14(20) a.u., [Safronova et al. 2013](https://doi.org/10.1103/PhysRevA.87.012509) Table IV [read, primary] |
 | 9 | People in the foyer (100 kg, 5 m, 12 m up); cars on the road (1–5 t, 20 m) | 0.03–0.2 | T | **yes (core)** | Carlton Eq. (13): −k_eff T² G M Δr (D²−2h²)/(D²+h²)^{5/2} | [Carlton Fig. 3](https://arxiv.org/abs/2308.10731); Eq. (13) gives 0.09 and −0.03 rad [derived] |
 | 9a | Wind-advected outdoor temperature, 0.1 Hz, wind 5–10 m/s, tower 5–20 m inside the building (c_T² = 0.2 K² m^−2/3) | 4×10⁻³–6×10⁻² rad/√Hz (**unvalidated model**) | N | no | Creighton Eq. (8) with the gradiometer kernel (`sizes.py`) | [Creighton 2008 §3, Eq. (8), (13)](https://doi.org/10.1088/0264-9381/25/12/125011) [read, primary]; validity warning: [Harms §5.6](https://arxiv.org/abs/1507.05850) |
 | 10 | Ocean-tide attraction near a coast (upper bound) | ≤5×10⁻² | D | no | πGρ_w a/d; Farrell Green's functions | s14 §2.2 (`docs/research/s14-wider-world.md`); [Farrell 1972 Table A3](https://doi.org/10.1029/RG010i003p00761) [read, primary] |
@@ -334,8 +340,35 @@ co-magnetometers with opposite-m_F interferometers, leaving the quadratic shift
 ([MAGIS §5.8](https://arxiv.org/abs/2104.02835)), measured by PTB as a = −23.0(3) Hz mT⁻² (= −0.230 Hz/G²)
 over 23–630 µT ([Falke et al. 2011 §3.2, Fig. 4](https://doi.org/10.1088/0026-1394/48/5/022)
 **[read, primary]**). Rows 4, 16, 21 of the table. Blackbody: Δν_BBR = −2.354(32) Hz (T/300 K)⁴
-([Falke 2011 Eq. (1)](https://doi.org/10.1088/0026-1394/48/5/022), from Porsev & Derevianko; MAGIS §5.9
-and Graham 2013 p. 4 round it to −2.3), 0.0314 Hz/K; rows 8 and 22. PTB's own vacuum system showed
+([Falke 2011 Eq. (1)](https://doi.org/10.1088/0026-1394/48/5/022), which takes Porsev & Derevianko's value;
+MAGIS §5.9 and Graham 2013 p. 4 round it to −2.3) was the number used in the second pass; it is
+superseded by **−2.279 Hz (T/300 K)⁴**, 0.0304 Hz/K, from the polarizabilities below; rows 8 and 22.
+
+**The blackbody coefficient from the polarizabilities (third pass, 25 Nov 2026).**
+- *Porsev & Derevianko 2006* ([Porsev & Derevianko 2006](https://doi.org/10.1103/PhysRevA.74.020502), Rapid Communication; read from the PDF): the E1 shift of a level is
+  −(2/15)(απ)³(k_BT)⁴ α₀(1 + η) in atomic units, with η a "dynamic" fractional correction (their Eq. (7);
+  the same form as Safronova's Eq. (5)). Static polarizabilities, Table II: Sr 5s² ¹S₀ **197.2(2)** a.u.,
+  5s5p ³P₀ **458.3(3.6)** a.u. (so Δα = 261.1); clock BBR shift at 300 K, Table I: **−2.35432 Hz**, fractional
+  −5.5×10⁻¹⁵, uncertainty 7×10⁻¹⁷; the M1 and E2 terms are 2.4×10⁻⁵ Hz and 2.5×10⁻⁸ Hz, negligible (p. 2).
+  This is where Falke's −2.354 comes from.
+- *Safronova et al. 2013* ([Safronova et al. 2013](https://doi.org/10.1103/PhysRevA.87.012509); read from the PDF): ground state 5s² ¹S₀ α₀ = **197.14(20)** a.u.
+  (Step 2 before §VI, p. 6, and Table IV, last entry of the ¹S₀ column; fixed from the measured 5s5p ¹P₁ lifetime);
+  clock state 5s5p ³P₀ α₀ = **444.5(2)** a.u. (Table V, "Total"); the clock Stark shift is therefore
+  Δα = **247.379(7)** a.u. (the PTB measurement of Middelmann et al. 2012, taken as input; their own
+  theory gives 247.5) against Porsev & Derevianko's 261(4), whose ³P₀ value (458.3) was too high
+  (444.5). Unit conversion (§II): α/h = 2.48832×10⁻⁸ Hz/(V/m)² per a.u. Dynamic correction at 300 K,
+  Table VI and the abstract: 5s² ¹S₀ **−0.0028 Hz**, 5s5p ³P₀ −0.1520 Hz, clock **−0.1492(16) Hz** (7 % of
+  the static shift, 98.2 % from the 5s4d ³D₁–5s5p ³P₀ transition; −0.1477(23) Hz in Middelmann).
+  The paper does not print a total. Summing its pieces, **my arithmetic** (`sizes.py`): Eq. (5) with
+  247.379 a.u. gives −2.130 Hz and the total is **−2.279 Hz**, 3.2 % smaller in magnitude than Falke's
+  −2.354. The 2006 theory had a different ³P₀ polarizability, so −2.354 is not "static plus Safronova's
+  dynamic term". Eq. (5)'s static term equals −½α₀⟨E²⟩ with ⟨E²⟩ = (831.9 V/m)² at 300 K (my check in
+  `sizes.py`); that is the field the forward model needs, and neither paper prints it.
+- *Which to use.* Falke's PTB paper (2011) predates Middelmann's measurement, so its −2.354(32) is the
+  superseded theory value; rows 8 and 22 now use −2.279 Hz. The T⁴ scaling used for the derivative
+  ignores the weaker temperature dependence of the dynamic term (Safronova Eq. (7) has T⁴, T², … terms);
+  that term is 7 % of the clock shift and 0.16 % of the ground-state shift, so row 8 could be off by a
+  few per cent of 7 % and row 8a by less than 0.2 %. I did not compute the variation. PTB's own vacuum system showed
 daily variations < 100 mK at each sensor but 4.2 K peak-to-peak *gradients* across it (§3.2), so a
 1 K profile along a 10 m tube is not extreme. The 10⁻¹¹ Hz cm³ mean-field scale (row 17) is the
 same order as JILA's measured 10⁻¹⁵ fractional shift at 10¹¹ cm⁻³ (≈ 4×10⁻¹² Hz cm³ [derived]), which
@@ -348,8 +381,10 @@ heated cylinder, a(r) ∝ −α (T_s⁴ − T₀⁴) R²/r³, in agreement with 
 note that a spatially constant shift is common to both arms and cancels
 ([Haslinger 2018, abstract, Eq. (2), Fig. 2](https://doi.org/10.1038/s41567-017-0004-9)
 **[read, primary]**). For Sr the ground-state shift is a potential h ν_g(T(x)) felt by *both* arms
-whatever their internal state, with |ν_g| ≈ 1.70 Hz at 300 K and dν_g/dT = 0.0226 Hz/K (from
-α_g = 197.2 a.u., which I quote from memory) **[derived]**. Through the gradiometer it acts like gravity:
+whatever their internal state, with |ν_g| ≈ 1.70 Hz at 300 K (static 1.698 Hz from α_g = 197.14 a.u.,
+Safronova 2013 Table IV, plus the ground-state dynamic correction 0.0028 Hz, Table VI) and
+dν_g/dT = 0.0227 Hz/K **[derived]**. The first version used 197.2 a.u. from memory; that is Porsev &
+Derevianko's value (Table II, 197.2(2)), so the number barely moved. Through the gradiometer it acts like gravity:
 C (h/m) ν_g″, 110 rad per Hz/m², so the same 1 K parabolic profile gives **0.20 rad** (row 8a), and a
 linear profile is a uniform force, 1.0×10⁻¹⁰ m s⁻² per K/m, which cancels between the IFOs. Unlike
 row 8 it is not reduced by keeping the arms in the ground state. In Cavendish it needs no new channel:
@@ -359,7 +394,7 @@ noise ([Canuel 2020](https://doi.org/10.1088/1361-6382/aba80e)).
 
 **The S13 estimate, corrected.** S13 §6 item 9 guessed ~0.1 rad per kelvin of temperature *difference*
 between the IFOs. A static difference that is linear in height cancels in the gradiometer; a static
-difference with curvature (1 K parabolic over 5 m) gives 0.14 rad, static; a difference in *drift* of
+difference with curvature (1 K parabolic over 5 m) gives 0.13 rad, static; a difference in *drift* of
 0.1 K/h gives 3×10⁻⁶ rad. So S13's temperature field matters to the blackbody channel only through its
 curvature along the tower and its in-band fluctuation; the clock-shift part is small in the real sequence,
 the force part (0.20 rad per 1 K of parabolic profile) is not. The gravity of the air (2.2×10⁻² rad/K,
@@ -518,10 +553,11 @@ sees what each costs.
 6. **Carlton Fig. 3 magnitudes** are read off a plot (person on stairs: −6 to +3 rad on the axis; lift
    ~ ±0.75–1.5 rad; foyer ~0.2; car ~ −0.05 to −0.1). Eq. (13) at far-field positions gives 0.09 and −0.03 rad,
    the same order; the near-field values need the integral.
-7. **Blackbody force (row 8a)**: Sr's ground-state static polarizability (197.2 a.u.) and the 300 K field
-   ⟨E²⟩ = (831.9 V/m)² are from memory, not from a paper read here; the dynamic correction is ignored.
-   Haslinger measured Cs, not Sr. Check against Safronova et al. (PRA 87, 012509, 2013) or Porsev &
-   Derevianko (PRA 74, 020502, 2006) before a slice relies on the number; the order of magnitude is safe
+7. **Blackbody force (row 8a)**: the polarizability (197.14 a.u.) and the dynamic correction are now from
+   Safronova et al. 2013; the 300 K field ⟨E²⟩ = (831.9 V/m)² is my arithmetic from their Eq. (5), not a
+   printed number, and the T⁴ scaling of the small dynamic correction is assumed.
+   Haslinger measured Cs, not Sr, and the force on Sr atoms in a gradiometer has not been measured; the
+   order of magnitude is safe
    because the ground-state shift is a large fraction of the measured clock shift.
 8. **Thorne & Winstein** read in abstract and introduction only; Fiorucci et al. read in part (its abstract
    is a snippet; so is the PMC summary of Stray et al.).
@@ -593,5 +629,6 @@ sees what each costs.
 
 Every paper in the earlier "could not read" list has now been read (above). Still unread, and worth
 fetching if a slice leans on them: ELGAR's companion paper (ref. [56] of Canuel 2020, where its Table 2
-is derived); MIGA's systematics paper; Boy et al. on 3-D atmospheric corrections; Safronova et al. 2013 or
-Porsev & Derevianko 2006 for Sr polarizabilities (row 8a); Saulson 1984 (the infrasound model ZAIGA uses).
+is derived); MIGA's systematics paper; Boy et al. on 3-D atmospheric corrections; Saulson 1984 (the infrasound
+model ZAIGA uses). Safronova et al. 2013 and Porsev & Derevianko 2006 (Sr polarizabilities, rows 8 and 8a) were
+read in the third pass.

@@ -85,8 +85,8 @@ an f32 V-cycle; the memory budget is withdrawn pending a measurement), and **the
   nonlinear use. A further caveat for us: they note "Q1/E4 may exhibit undesirable modes in the presence of
   fairly high strains, specially in the compressive regime" (conclusions); our strains are 10⁻⁹–10⁻⁴.
   **Recommendation unchanged: incompatible modes for ν ≤ 0.35, selective integration with ≥ 2 cells above.**
-- **Wilson 1973 is not fetched, but its DOI and pages are now known** (from Kozar et al.'s reference list):
-  pp. 43–57, doi:10.1016/B978-0-12-253250-4.50008-7.
+- **Wilson 1973 was fetched afterwards and is read** ("Third fetch", below). Its DOI, which I had only from Kozar
+  et al.'s reference list, is confirmed.
 - **Kozar, Rukavina & Ibrahimbegović 2018** (the third file; *Građevinar* 70(1), 19–29, "Method of
   incompatible modes — overview and application", doi:10.14256/JCE.2078.2017) is a subject review, not a
   source of new results. It restates the conditions (§2: incompatible strain independent of the compatible
@@ -102,6 +102,94 @@ an f32 V-cycle; the memory budget is withdrawn pending a measurement), and **the
   impulse, Fig. 10, the Summary); the detailed integrals of §§ 2–39 were not. Its doi is confirmed on the file
   as 10.1098/rsta.1904.0013 (the from-memory DOI was right; the earlier list's rspl DOI is the abstract).
   What it provides for the validation case is in §5.1 and §7 below.
+
+**Third fetch (Wilson, Taylor, Doherty & Ghaboussi 1973, read in full).**
+Citation, checked on the file: E. L. Wilson, R. L. Taylor, W. P. Doherty and J. Ghaboussi (Department of Civil
+Engineering, University of California, Berkeley), "Incompatible displacement models", in *Numerical and Computer
+Methods in Structural Mechanics*, Academic Press, New York, 1973, pp. 43–57,
+[doi:10.1016/B978-0-12-253250-4.50008-7](https://doi.org/10.1016/B978-0-12-253250-4.50008-7). The DOI is the one
+embedded in the PDF's own metadata (with the book's ISBN 978-0-12-253250-4 and the page range); the
+Kozar et al. DOI I had was right. The editors (Fenves, Perrone, Robinson, Schnobrich) are not in the file; I
+give them from memory [U]. The scan is 15 pages with a text layer; the figures and tables were read on rendered pages.
+- **The modes as originally defined, 2-D (§3.3, pp. 47–48; equations unnumbered).** The standard bilinear
+  quadrilateral (Eqs. (6)–(8), interpolation functions `h₁…h₄`) gets two extra functions per displacement
+  component, `u_x = Σhᵢu_xi + h₅α₁ + h₆α₂`, `u_y = Σhᵢu_yi + h₅α₃ + h₆α₄`, with `h₅ = 1 − s²`, `h₆ = 1 − t²`
+  (s, t the natural coordinates), zero at the four nodes. The four extra amplitudes make the stiffness 12 × 12;
+  "if the strain energy within the element is minimized with respect to αᵢ", four equations eliminate them,
+  leaving 8 × 8, "identical to the standard static condensation procedure" (they add that the αᵢ can instead be
+  treated as Lagrange multipliers). Their motivation (§2, Fig. 1, Eqs. (1)–(5), pp. 44–45): in pure bending a
+  rectangular bilinear element can only represent `u_x = α₁xy`, whereas the exact field also has
+  `u_y = α₂(a² − x²) + α₅(b² − y²)` (Eq. (2)); the modes are chosen "of the same form as the errors", so that
+  the element has zero spurious shear in pure bending. "If the element is rectangular only the y displacements
+  would need to be modified. However, for the general quadrilateral these modes must be added to both components"
+  (p. 48). Strains and stiffness use the usual isoparametric chain rule (Eqs. (12)–(20)) with the modes' derivatives
+  taken in global coordinates through the Jacobian at each integration point (implied by "the basic method is the same when internal degrees of freedom are added", §3.3; the paper does not write the enriched strain-displacement matrix out); the paper states no integration
+  order for the enriched element.
+- **3-D (§4, pp. 51–52).** For "an arbitrary eight-point brick", `u_x = Σhᵢu_xi + h₉α_x1 + h₁₀α_x2 + h₁₁α_x3`, and
+  likewise for `u_y`, `u_z`, with `h₉ = 1 − ξ²`, `h₁₀ = 1 − η²`, `h₁₁ = 1 − ζ²` ("associated with linear shear and
+  normal strains"): **nine incompatible modes**, "eliminated at the element stiffness level by static
+  condensation". 8 × 3 + 9 = **33**, condensed to 24 × 24; this settles the 32-or-33 doubt I raised about Kozar et
+  al.'s Q8 count (below) for the brick, though not for their Q8. These are the modes in `cantilever.py` (`1 − ξᵢ²`, one
+  per direction and component). The paper gives no 3-D numerical example ("additional examples of its behavior
+  will not be given here"), but reports qualitatively that the 8-node element "has been found to be comparable in
+  accuracy with the standard 20-node element" and that one element through the thickness of arch dams or thick
+  pipe joints "have been found to be adequate". It sketches the same enrichment for the 20-node brick (three more
+  functions, 69 × 69 reduced to 60 × 60, i.e. again 9 modes) and says "the authors do not have experience with
+  this type of modification". §5–6 add a 16-node thick-shell element with 5 enrichment functions per component and
+  plate and curved-beam examples; they are not relevant to cubes and I did not study them.
+- **What the paper says about convergence and the patch test: nothing about the patch test.** The words "patch
+  test" do not occur. The Introduction says "Convergence of the solution is assured" and the shell sections repeat
+  "convergence is assured" (pp. 43, 56, 57), with no argument. The only requirement stated for the modes is that
+  they vanish at the nodes, and that they "violate interelement compatibility" (p. 45). Every example is on regular
+  rectangular elements: the two cantilever meshes (Fig. 4), a straight axisymmetric cylinder meshed with 17
+  elements of equal length (Fig. 5, "17 at 3 = 51"), rectangles in the (r, z) plane, and the plates and curved beams of §6. **So the paper's own
+  evidence contains no distorted element**, which is why the failure was not seen there.
+- **What Wilson's version does on a distorted element (my derivation [D], and Taylor, Beresford & Wilson 1976 [R,
+  earlier note]).** The modes are fixed functions of the natural coordinates and their global derivatives use the
+  local Jacobian. The enriched strain integrates to zero over the element, `∫ ∂(1 − ξ²)/∂x dV = 0`, *only if the
+  Jacobian is constant over the element* (then `∂/∂x = J⁻¹∂/∂ξ` and `∫₋₁¹ ∂(1 − ξ²)/∂ξ dξ = 0`); with a constant J
+  that holds for any parallelogram or parallelepiped, with a varying J (a general quadrilateral or hexahedron) it
+  does not, a constant-stress state then carries spurious enriched energy, and the element fails the patch test.
+  That is the failure Taylor, Beresford & Wilson 1976 report and repair (QM6; the `det J₀/det J` form is Simo & Armero's Eq. 69, above). It postdates this
+  paper, which therefore predates the fix; I did not find in Wilson 1973 any hint of the problem.
+- **Why that does not bite Cavendish.** Voxels are cubes, J = (h/2)·I is constant in each element, so the
+  enriched strain integrates to zero and the original Wilson element passes the constant-strain patch test with
+  no correction (`det J₀/det J` = 1, as the Simo & Armero Eq. 69 note above already says). That holds for octree
+  leaves of any size, since each is a cube. The bubble modes vanish at the nodes, so hanging-node constraints,
+  which act on nodal degrees of freedom only, do not touch them [D]. The correction becomes necessary only for
+  non-box cells (cut cells, curved or skewed meshes), where S7 should use the QM6 form; the measured patch test
+  (5×10⁻¹⁶ on cubes) is consistent with this and is not a test of the distorted case.
+- **Their numerical examples against this note's benchmark.** The cantilever (Fig. 4, Table 1, p. 49): a plane-stress
+  beam 10 long and 2 deep, two meshes (Mesh 1: five square elements; Mesh 2: five-by-two elements of 2 × 1), two
+  loads (A: an end couple, two forces of 1000; B: an end shear). The table gives the end displacement at the free
+  corner `i` and the bending stress at `j` (the clamped end) against beam theory and the standard Q4:
+
+  | | Disp. A | Disp. B | Stress A | Stress B |
+  |---|---|---|---|---|
+  | Beam theory | 10.00 | 103.0 | 300.0 | 4050 |
+  | Q4, Mesh 1 | 6.81 (68 %) | 70.1 (68 %) | 218.2 (73 %) | 2945 (73 %) |
+  | Q4, Mesh 2 | 7.06 (71 %) | 72.3 (70 %) | 218.8 (73 %) | 2954 (73 %) |
+  | Q6, Mesh 1 | 10.00 | 101.5 (98.5 %) | 300.0 | 4050 |
+  | Q6, Mesh 2 | 10.00 | 101.3 (98.3 %) | 300.0 | 4050 |
+
+  Q6 is exact for the pure bending load on both meshes and within 1.7 % of beam theory for the shear load (beam
+  theory omits shear deformation, so a small difference is expected); Q4's displacement is 29–32 % too small (too stiff).
+  I could not reconstruct the material constants, thickness or the magnitude of load B from the text and figure
+  (the table's load B column is not the figure's nodal forces times the load A scale), so the numbers are used only
+  as ratios. **Comparison with the note's own §1.1 benchmark** [D, not like for like: 2-D static against a 3-D
+  frequency, a different ν and slenderness]: the note's one-cell-thick Q1 is +21.5 % in first bending frequency,
+  i.e. about ×1.48 in bending stiffness, and Wilson's one-element-deep Mesh 1 Q4 has displacement 0.68 of beam
+  theory, i.e. ×1.47; both elements have aspect ratio 1 and one element through the depth, and the two
+  measurements agree in size. The incompatible-mode element is exact (Wilson, pure bending) or within 0.3 %
+  (the note's frequency at one cell, ν = 0.2) in both. Wilson's Mesh 2 (2 × 1 elements, ×1.42) has no counterpart
+  among the cubic-cell cases. The axisymmetric shell (Fig. 5, Table 2, p. 50, 17 elements): at the loaded end the
+  lateral displacement is 100.00 (theory), 100.01 (Q6), 98.56 (QM5), 46.47 (Q4), 39.97 (Q4CST); the hoop stress at
+  z = 1.5 is 4868 (theory), 4837 (Q6), 4903 (QM5), 2536 (Q4). Q6 follows the theory closely along the shell (0.6 % at the hoop-stress peak, a few per cent of the local value further along);
+  the one visible miss is the last tabulated hoop stress, 153 against −138 at z = 34.5, which the paper does not
+  comment on.
+- **What the paper does not give:** an eigenvalue or dynamic test, any near-incompressible case (ν enters only as
+  0.25 in the shell data; no beam ν is given), a patch test, or any distorted mesh. The note's conclusion that the
+  element is bounded above by ν ≈ 0.35 rests on its own `nu_locking.py` and Simo & Armero, not on Wilson.
 
 **Sharpened (no change of direction).**
 - **Q1 + incompatible modes stays the default, but not for near-incompressible materials.** Measured here
@@ -183,7 +271,7 @@ Harms, Badurina et al. and Junca et al. agree on it once read correctly.
 **What could not be verified:** the GPU cost figures are from Dick et al., Wu et al. and extrapolation, on 2010–11
 Fermi hardware, not measured on the 1660 SUPER; the slab estimate idealises the slab as simply supported;
 the three-dimensional incompatible-mode element (9 modes) is now read in Simo & Armero and agrees with mine,
-but Wilson et al. 1973 itself was not fetched; and the full Harms 2019 Living Review was not among the fetched files (I used the copy already
+and Wilson et al. 1973 is now read too (it has no patch test, no distorted element and no 3-D numbers, so it adds the original definition and the 2-D beam table, not new evidence for the 3-D brick); and the full Harms 2019 Living Review was not among the fetched files (I used the copy already
 read, whose equation numbers the note cites). See §9.
 
 ---
@@ -202,7 +290,7 @@ shear strain. Remedies in the literature:
 
 | Remedy | What it fixes | Source |
 |---|---|---|
-| Incompatible modes (Q1 + 3 bubble modes per component, condensed) | bending (shear) locking; exact for pure bending on a rectangular element; weak near ν = 0.5 (measured below) | Wilson et al. 1973 [A, not fetched; pp. 43–57, doi:10.1016/B978-0-12-253250-4.50008-7 per Kozar et al.]; Simo & Armero 1992 [R]: the 3-D brick Q1/E4 with 9 modes, equal to QM6 for linear isotropic elasticity (Eqs. 66–69); Kozar et al. 2018 [R, review]; Taylor, Beresford & Wilson 1976 [R]: the original Q6 fails the patch test unless the element is a parallelogram, QM6 repairs it (pp. 1211–1216, Table I: both exact in pure bending on the rectangular mesh); Ibrahimbegovic & Wilson 1991 [R]: the same repair by Lagrange multipliers for any choice of modes; Simo & Rifai 1990 [R]: embeds it in a three-field enhanced-strain form, the patch test holds if the stress interpolation contains constants and is L2-orthogonal to the enhanced strain (§2) |
+| Incompatible modes (Q1 + 3 bubble modes per component, condensed) | bending (shear) locking; exact for pure bending on a rectangular element; weak near ν = 0.5 (measured below) | Wilson et al. 1973 [R; pp. 43–57, doi:10.1016/B978-0-12-253250-4.50008-7, confirmed on the file; see the Third fetch]; Simo & Armero 1992 [R]: the 3-D brick Q1/E4 with 9 modes, equal to QM6 for linear isotropic elasticity (Eqs. 66–69); Kozar et al. 2018 [R, review]; Taylor, Beresford & Wilson 1976 [R]: the original Q6 fails the patch test unless the element is a parallelogram, QM6 repairs it (pp. 1211–1216, Table I: both exact in pure bending on the rectangular mesh); Ibrahimbegovic & Wilson 1991 [R]: the same repair by Lagrange multipliers for any choice of modes; Simo & Rifai 1990 [R]: embeds it in a three-field enhanced-strain form, the patch test holds if the stress interpolation contains constants and is L2-orthogonal to the enhanced strain (§2) |
 | Selective reduced integration / B-bar | volumetric locking as ν → 0.5 | Hughes 1980 [R]: generalises selective integration and mean dilatation; "in rectilinear situations it is identical to a selective integration approach" (Introduction), i.e. for cubes |
 | One-point integration + hourglass control | both, at the cost of hourglass modes to stabilise | Flanagan & Belytschko 1981 [R, summary and introduction]: they present it for explicit transient analysis and note that selective schemes entail "severe computational penalties for transient analysis"; not our case (linear, implicit) |
 | Several cells through every member | everything, at cost | Guldberg et al. 1998 [R]: 3-D digital (voxel) cantilever, "a minimum discretization of three to four digital finite elements through the beam cross section to avoid high numerical stiffening errors under bending" |
@@ -797,7 +885,7 @@ measurement for S7-05b.
 ## 9. What I could not verify
 
 - **The 3-D incompatible-mode element**: now read in Simo & Armero 1992 (§3.4) and consistent with my
-  implementation; Wilson et al. 1973 itself is not fetched. The linear near-incompressible *bending-beam*
+  implementation, and Wilson et al. 1973 (read) defines it identically (nine modes `1 − ξᵢ²`, condensed), with no 3-D numerical example. The linear near-incompressible *bending-beam*
   numbers (§1.1) are still mine: no fetched source gives one for the 3-D brick, and Simo & Armero's evidence
   is finite-strain and qualitative.
 - The GPU timings are Dick et al.'s and Wu et al.'s, on 2010–11 Fermi hardware, and Kronbichler & Ljungkvist's
@@ -865,6 +953,7 @@ first version of the note; the rest after the owner fetched them (25 Nov 2026).
 - Komatitsch & Tromp 1999 (abstract, §6.1–6.2), Komatitsch & Martin 2007 (abstract), Virieux 1986 (Rayleigh-wave discussion), Bérenger 1994 (abstract), Komatitsch et al. 2009 and Michéa & Komatitsch 2010 (abstracts), Pekeris 1955 (§1, §6), Vinh & Ogden 2004 (§1–2, Eq. 1), Lamb 1904 (the three-page Proc. R. Soc. abstract, and the full paper, pp. 1–3 and 40–43), Biot 1956 (§2).
 
 *Finite elements, multigrid, GPUs*
+- Wilson, Taylor, Doherty & Ghaboussi 1973 (all 15 pages: §§1–6, Figs. 1–9, Tables 1–2; the thick-shell sections only skimmed).
 - Simo & Armero 1992 (summary, §1, §3.4, §4.2.2, conclusions; [doi:10.1002/nme.1620330705](https://doi.org/10.1002/nme.1620330705), DOI from memory [U]: the file carries none); Kozar, Rukavina & Ibrahimbegović 2018, [doi:10.14256/JCE.2078.2017](https://doi.org/10.14256/JCE.2078.2017) (§2–§3, Tables 1–2); Taylor, Beresford & Wilson 1976; Ibrahimbegovic & Wilson 1991 (introduction); Simo & Rifai 1990 (summary, §1, §4 remarks, §6.1); Hughes 1980 (summary, introduction, start of the theory); Flanagan & Belytschko 1981 (summary, introduction); MacNeal & Harder 1985 (Tables 3, 6–13, Figs. 3–4); Guldberg et al. 1998 (abstract, results).
 - Dick, Georgii, Westermann 2011, [doi:10.1016/j.simpat.2010.11.005](https://doi.org/10.1016/j.simpat.2010.11.005) ([TUM PDF](https://www.cs.cit.tum.de/fileadmin/w00cfj/cg/Research/Publications/2011/Real-Time_Multigrid_Finite_Hexahedra_Method/SIMPAT11.pdf)): abstract, §1–3 (first pass), results.
 - Wu, Dick, Westermann 2016 (§5, §7, Figs. 7–8, 12, Table 1); Kronbichler & Kormann 2012 (abstract, §3.1, §5.1); Kronbichler & Ljungkvist 2019 (abstract, §1, §4.2); Ljungkvist 2017 (abstract, results); Adams et al. 2004 (abstract, §5); Arbenz et al. 2008 (abstract); Aage et al. 2017 (abstract, Methods); Knyazev 2001 (abstract, §5); Burstedde et al. 2011 (abstract); Parvizian et al. 2007 (§2.3–2.4); Schillinger & Ruess (abstract, §2.2); de Prenter et al. 2019 (abstract).
@@ -874,7 +963,6 @@ first version of the note; the rest after the owner fetched them (25 Nov 2026).
 ## Papers still unread, or read only in part
 
 Not fetched, so not read:
-- Wilson, Taylor, Doherty & Ghaboussi 1973, *Incompatible displacement models* (book chapter in *Numerical and Computer Methods in Structural Mechanics*, Academic Press, pp. 43–57; [doi:10.1016/B978-0-12-253250-4.50008-7](https://doi.org/10.1016/B978-0-12-253250-4.50008-7) as given in Kozar et al.'s reference list)
 - [https://doi.org/10.1785/bssa0880020368](https://doi.org/10.1785/bssa0880020368) Komatitsch & Vilotte 1998, the spectral-element method (SPECFEM's origin)
 - [https://doi.org/10.1785/bssa0690040947](https://doi.org/10.1785/bssa0690040947) Richards 1979, Lamb's problem for a point source
 - Hassan & Nagy 1998 (cited by Harms for Eq. 39; not on the list)

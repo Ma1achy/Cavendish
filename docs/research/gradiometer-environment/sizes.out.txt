@@ -18,10 +18,17 @@ static: 5 mG/(5 m)^2 curvature, 489 Hz/G, gradiometer           5.405e+00 rad
 noise: 1 uG/rtHz differential at 0.1 Hz, 489 Hz/G               1.011e-03 rad/rtHz     
   same, per shot                                                5.054e-04 rad          
 quadratic: 2*0.23*B0*dB, B0=10 G, dB=1 uG/rtHz, 0.1 Hz          9.509e-06 rad/rtHz     
-BBR dnu/dT at 300 K                                             3.139e-02 Hz/K         
-static: 1 K parabolic over 5 m (T''=0.08 K/m^2), gradiometer    1.388e-01 rad          
-static: 1 K/m linear gradient, per IFO (cancels in gradiometer)  3.469e-01 rad          
-drift: 0.1 K/h differential between IFOs                        2.919e-06 rad          
+
+== Blackbody clock shift at 300 K from the polarizabilities
+static clock shift, Eq. (5) with 247.379 a.u.                  -2.130e+00 Hz           
+static clock shift from 444.5 - 197.14 a.u.                    -2.130e+00 Hz           
+total clock shift = static + dynamic (-0.1492)                 -2.279e+00 Hz           
+Porsev & Derevianko 2006 Table I / Falke 2011 Eq. (1), for comparison -2.354e+00 Hz           
+static clock shift with the 2006 polarizabilities, 458.3 - 197.2 -2.248e+00 Hz           
+BBR dnu/dT at 300 K                                             3.039e-02 Hz/K         
+static: 1 K parabolic over 5 m (T''=0.08 K/m^2), gradiometer    1.344e-01 rad          
+static: 1 K/m linear gradient, per IFO (cancels in gradiometer)  3.359e-01 rad          
+drift: 0.1 K/h differential between IFOs                        2.827e-06 rad          
 s13 note's estimate (0.1 rad/K), for comparison                 1.000e-01 rad          
 
 == Launch jitter through Earth's gradient and rotation (per IFO; independent in the two)
@@ -82,11 +89,13 @@ Dubetsky & Kasevich Table I col. 3: (7/192) k g T3^4 Tzz, T3 = 2T, per IFO  4.51
   the same as (7/12) k g Gamma T^4                              4.514e+04 rad          
 
 == Blackbody force: ground-state Stark potential on both arms (state-independent)
-ground-state BBR shift magnitude at 300 K (alpha_g = 197.2 a.u.)  1.698e+00 Hz           
-d nu_g / dT at 300 K                                            2.264e-02 Hz/K         
+<E^2> implied by Eq. (5), square root, at 300 K                 8.319e+02 V/m          
+ground-state BBR static shift, alpha_g = 197.14 a.u.            1.698e+00 Hz           
+ground-state BBR shift magnitude incl. dynamic -0.0028 Hz       1.700e+00 Hz           
+d nu_g / dT at 300 K                                            2.267e-02 Hz/K         
 gradiometer phase per (Hz/m^2) of potential curvature, C h/m    1.101e+02 rad/(Hz/m^2) 
-static: 1 K parabolic over 5 m (T''=0.08 K/m^2), gradiometer    1.995e-01 rad          
-acceleration per K/m of temperature gradient, (h/m) d nu_g/dT   1.039e-10 m s^-2/(K/m) 
+static: 1 K parabolic over 5 m (T''=0.08 K/m^2), gradiometer    1.997e-01 rad          
+acceleration per K/m of temperature gradient, (h/m) d nu_g/dT   1.041e-10 m s^-2/(K/m) 
 
 == Wind-advected temperature (Creighton 2008 sec. 3), gradiometer phase ASD (rad/rtHz)
    c_T^2 = 0.2 K^2 m^-2/3 (his 'typical daytime peak'), lower IFO 2 m above ground

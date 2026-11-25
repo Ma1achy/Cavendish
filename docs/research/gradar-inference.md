@@ -19,19 +19,45 @@
 ## Changed after reading the primary sources (25 Nov 2026)
 
 No recommendation for the S11 build order moved. Five claims in the first pass were recalled or
-secondhand and are corrected, one is sharpened, and one source turned out to be unusable.
+secondhand and are corrected, one is sharpened, and one source (Kay) was unusable at first and has since
+been read (third pass, last row of the table and the list under it).
 
 | Topic | First pass said | The source says | Effect |
 |---|---|---|---|
 | **Euler deconvolution** (§2.3) | "Needs dense gridded gradient data"; unsuitable by my reasoning from inputs | Not so: Zhang et al. run it on profiles and ungridded data too (p. 513, 516). The real obstacle is the **inputs per station**: conventional Euler needs the field T_z **and** its three gradients (Zhang eq. 1–2); tensor Euler needs the gravity vector and all six tensor components (eq. 3–4, "3n equations containing six unknowns"). Cavendish's tower measures **one** differenced component and no field. Reid et al. also say the method "should be directly applicable to gravity gradiometer measurements" (Conclusion, p. 88) and want profile spacing no larger than the source depth (Discussion, p. 87). | Verdict stands (still not recommended), now on checkable reasons, and the "dense grid" reason is dropped. §2.3. |
 | **Depth weighting for gradients** (§2.2) | "β nearer 3 would be the analogue"; Li 2001 "not read" | Li 2001 uses `w(z) = (z + z₀)^(−3/2)` (the paper's second eq. numbered (5)), i.e. β = 3 in Li & Oldenburg's `(z + z₀)^(−β/2)`; `z₀` is fitted so `w²` matches the decay of the sensitivities ("inverse distance cubed"). | Guess confirmed. Li 2001 offers little else beyond the five-component data vector, cell-wise bounds and wavelet compression: it is a four-page abstract (§2.2). |
-| **CRB conditions, efficiency** (§3.1) | Cited via Vallisneri only; Kay "not read" | **The supplied Kay PDF is front matter only** (5 pages: cover, title, contents). It cannot support a theorem citation. The contents locate the relevant sections (§3.4 p. 30, §3.9 p. 47 "CRLB for the General Gaussian Case", §7.5 p. 164, §7.9 p. 190). | Nothing changed; the conditions are given in §3.1 as *from memory, unverified*, with the pages to fetch. |
+| **CRB conditions, efficiency** (§3.1) | Cited via Vallisneri only; Kay "not read", conditions "from memory" | **Kay's Chapters 3, 4 and 7 are now read** (the second-pass file was front matter only; the whole book was supplied later). Every from-memory condition is replaced by a theorem, equation and page in §3.1 (Theorem 3.1 p. 30; Theorem 3.2 p. 44; Eq. (3.31) p. 47; Theorem 7.1 p. 167; Theorem 7.3 p. 182; Appendix 7B pp. 211–213). | The recalled conditions were right in substance; two things I had not said are added (the bound needs an *unbiased* estimator, so a prior-box-clamped estimator is outside it; and Kay guarantees attainment only asymptotically), and the S11 criterion's wording is sharpened (§1, §3.1). |
 | **Joint score ("mining gold")** (§4) | "A route to better sample efficiency later" for NPE | Brehmer et al.'s losses (eq. 7, 9, 12–14) train **likelihood-ratio and likelihood** surrogates (ROLR, RASCAL, CASCAL, SCANDAL) and a locally sufficient statistic (SALLY, eq. 15); none trains a posterior. Gains are for **small parameter differences**; "less powerful for deciding between model parameter points that are far apart". | The idea does not help the first model (amortised NPE over a wide prior). Moved to "later, and only for a likelihood or ratio surrogate" (§4). |
 | **Seismic noise** (§6) | Harms 2015 only | Hughes & Thorne is about the *force* on a test mass (their footnote 1: "not gradients of the local gravitational field ... but simply the direct fluctuation of the gravitational force"); Rayleigh modes only, Love modes give none; reduced transfer function β′ 0.35–0.6 quiet, 0.15–1.4 noisy (abstract, eq. 1.28, 1.30). | Adds a magnitude scale and a mode picture; the Fisher matrix still needs the full Σ (§6). |
 | **Noise model** (§1, §3) | "Instrument noise is additive (shot noise)" | True that it is additive and Gaussian-like, but Stray et al.'s field budget is **not shot-noise-limited**: detection (background light 344 E/√Hz, photodiode 144 E/√Hz) exceeds atom shot noise (184 E/√Hz) (Extended Data Table 1). | σ per tower is an input to `fisher()`, not a constant; test with and without a detection floor (§2.6, §7.3). |
 
 New in this pass: §2.6 (what Stray et al. report, with numbers a Cavendish validation scene can
 use), a field-anchored test row in §7.3, and §9's list of what was and was not read.
+
+**Third pass: Kay 1993 read (25 Nov 2026).** The whole book was supplied as a scan (two book pages per PDF
+page; no text layer, so the pages were read as images; book page *p* is on PDF page about *p*/2 + 6, not +3).
+Page numbers below are the printed book pages. What changed:
+- **§3.1 rewritten from the source.** Regularity condition, Theorem 3.1 and the equality condition (3.7),
+  Theorem 3.2 (vector), the general-Gaussian Fisher matrix (3.31) and its signal-in-white-noise special case
+  (3.33), transformation of parameters (3.16), (3.30), and Theorems 7.1, 7.3, 7.4 are quoted with pages.
+  Nothing I had recalled was wrong; the additions are listed next.
+- **The CRB is a bound on unbiased estimators only, and equality for a non-linear signal is not available at
+  finite data.** Kay's own phase example (Example 3.4, p. 33) says "a phase estimator does not exist which is
+  unbiased and attains the CRLB"; the MLE reaches it only asymptotically (Example 7.6, pp. 167–171), with a
+  **threshold effect**: below some SNR the variance is *above* the bound (outliers, Fig. 7.3–7.5), and at
+  short records it can be *below* it because the estimator is biased (Table 7.2, p. 169: "invalidating the
+  CRLB which assumes an unbiased estimator"). Both are what §8's toy benchmark measured (6.9× at SNR 14, 0.63–0.71
+  at SNR 6), so the benchmark's behaviour is the textbook behaviour, not an artefact.
+- **S11 exit criterion: numbers unchanged, wording changed** (§1). Kay gives no tolerance and no SNR gate; the band
+  [0.8, 1.25], the 68 % coverage and the |log r| ≤ 0.1 gate remain my Monte-Carlo choices (§9). What changes is
+  what the test is *said* to test: the asymptotic distribution (7.36), not the CRB as a bound.
+- **"Mass is linear, solved exactly" (§2.4)** now has its citation: Theorem 4.1 (p. 85–86) and the general linear
+  model (4.25)–(4.26) (p. 95) for the conditional estimate, and Kay's Example 7.16 (pp. 193–194, Eqs. (7.63)–(7.65))
+  for the same trick inside a non-linear problem (profile out the linear amplitudes, then maximise
+  xᵀH(HᵀH)⁻¹Hᵀx over the frequency).
+- Not needed and not read: Kay's Bayesian chapters (10–12); this note makes no Bayesian-bound claim beyond
+  Vallisneri's remark that a prior-biased estimator may beat the CRB, which Kay's Example 7.6 confirms for the
+  non-Bayesian case.
 
 ---
 
@@ -45,7 +71,7 @@ a scene of a few point-like bodies in shot noise, the likelihood is therefore *k
 form*: a Gaussian around the forward model. That gives three things learning problems rarely have:
 an exact Fisher matrix, a maximum-likelihood estimator that reaches the Cramér–Rao bound at
 high SNR ([Vallisneri 2008](https://arxiv.org/abs/gr-qc/0703086), §II D; the textbook theorems are
-Kay's, which could not be cited from the supplied file, §3.1), and an exact posterior
+Kay's, Theorems 3.2 and 7.1/7.3, §3.1), and an exact posterior
 against which a learned posterior can be checked. Learning earns its place only where the
 likelihood stops being tractable: unknown numbers of bodies, ambient populations, seismic Newtonian
 noise, masks and gaps, instrument nuisances. That is the territory simulation-based inference was
@@ -75,6 +101,21 @@ Measured here: the bounded baseline itself "beats" the CRB on position at SNR �
 instead: *on scenes where \|log r\| ≤ 0.1, baseline RMSE/√CRB ∈ [0.8, 1.25] for every parameter
 (measured 0.96–1.07 at SNR 226–814, and a wrong-σ control fails at 1.9–2.1); elsewhere, report the
 ratio and the coverage, and compare the model with the exact posterior.*
+
+**After reading Kay (third pass): the numbers stand, the wording changes.** Kay guarantees less than the
+criterion's phrasing suggests. (i) Theorem 3.2 bounds the covariance of an **unbiased** estimator, and
+equality for a non-linear signal is impossible at finite data (Example 3.4, p. 33); what holds is Theorem 7.3
+(p. 182), θ̂ ~ N(θ, I⁻¹(θ)) *asymptotically*, "for large data records", and Kay shows the approach to it depends on
+SNR as well as record length (Example 7.6, pp. 167–171). So the test checks **the asymptotic distribution of the
+estimator**, and RMSE/√CRB ≈ 1 is one consequence. (ii) The per-parameter denominator is √[F⁻¹]ᵢᵢ (Eq. (3.26),
+p. 44), never 1/√Fᵢᵢ (knowing the other parameters would lower the bound, Example 3.7, p. 43). (iii) "Fisher-ellipsoid
+coverage" must say which ellipsoid: under Theorem 7.3 the set ΔθᵀFΔθ ≤ χ²ₚ(0.6827) holds 68 % for p parameters; the
+literal 1σ ellipsoid ΔθᵀFΔθ ≤ 1 holds only P(χ²ₚ ≤ 1), 3.7 % for p = 5. The benchmark used the χ²₅ quantile (5.886), so
+its 0.65–0.68 is right; the sentence in §8 calling it the "1σ ellipsoid" is loose. (iv) Add **|bias| ≤ 0.1·√[F⁻¹]ᵢᵢ** as a
+stated condition of the test: an estimator whose prior box is active is biased and outside the theorem (the benchmark
+measured bias < 0.1 CRB at SNR ≥ 226). (v) The gate \|log r\| ≤ 0.1, the band [0.8, 1.25] and the 68 % are not Kay's
+and not from any theorem; they are my Monte-Carlo choices (§9), and Kay's own check is exactly that kind of simulation
+(Tables 7.1, 7.2: M = 1000 or 5000 realisations, mean and variance against (7.11)).
 
 ---
 
@@ -183,7 +224,18 @@ strategy, Discussion, Conclusion; Zhang et al. 2000 in full text]**
   transients (§IX). The Cavendish analogue is a per-tower χ² of the best-fit residual: a lift or a
   slammed door fits one tower and not the others.
 - **For Cavendish**: mass is linear, so it is profiled out exactly (M̂ = ⟨u, d⟩/⟨u, u⟩ for the
-  unit-mass template u); the bank spans position, velocity and reference time; Gauss–Newton with the
+  unit-mass template u). The source for this step is Kay: for `x = Hθ + w` with H known and `w ~ N(0, C)`, the
+  MVU and efficient estimator is `θ̂ = (HᵀC⁻¹H)⁻¹HᵀC⁻¹x` with covariance `(HᵀC⁻¹H)⁻¹` (Theorem 4.1 for C = σ²I,
+  Eqs. (4.8)–(4.11), pp. 85–86; general C, Eqs. (4.25)–(4.26), p. 95), so with H = u the mass estimate is the
+  one written above (with C⁻¹ weights) and its variance is 1/(uᵀC⁻¹u). Two limits. It is the MVU estimator
+  *only for fixed* nonlinear parameters; when those are also unknown, Kay's treatment is the MLE route:
+  Example 7.16 (pp. 193–194, Eqs. (7.63)–(7.65)) minimises `(x − Hα)ᵀ(x − Hα)` by substituting
+  `α̂ = (HᵀH)⁻¹Hᵀx`, leaving `xᵀ(I − H(HᵀH)⁻¹Hᵀ)x` to be minimised over the non-linear parameter (frequency),
+  after a one-to-one reparametrisation of (A, φ) as α, with Theorem 7.4 (invariance, p. 185) carrying the
+  result back. That is the structure of the bank-plus-Gauss–Newton baseline. The profiled estimate of the
+  non-linear parameters has the same asymptotic covariance as the joint MLE, which follows from Theorem 7.3
+  but is not stated by Kay for this case (my reading). The bound itself must be the *joint* one: the
+  mass–range coupling in F is what makes the range CRB large. The bank spans position, velocity and reference time; Gauss–Newton with the
   finite-difference Jacobian refines the best template. This is M17-R6 (a). *Measured here*: a 2,925
   template bank for one straight-line walker builds in 0.7 s in NumPy and never missed the global
   optimum at SNR ≥ 40.
@@ -270,21 +322,86 @@ reduces to the high-SNR/LSA result for the ML estimator" (§II C). Two consequen
   `|log r| = ½‖Δφ − JΔθ‖²_Σ` (the non-linear part of the signal change); if it exceeds ~0.1, the
   Fisher result is not self-consistent. One sinusoid needs SNR > 1.09 by this test (Fig. 1). It
   costs 2·(number of parameters) forward runs: cheap enough to run on every benchmark scene.
-- **Kay's conditions: not verified from the source.** The Kay PDF supplied for this pass
-  (*Fundamentals of Statistical Signal Processing: Estimation Theory*, 1993) is five pages: cover,
-  title page and the table of contents. So no theorem can be cited from it. What the contents do
-  establish is where to look: Ch. 3 "Cramer-Rao Lower Bound" (§3.4 CRLB p. 30; §3.5 signals in white
-  Gaussian noise p. 35; §3.7 vector parameter p. 39; **§3.9 "CRLB for the General Gaussian Case"
-  p. 47**, the case here: mean `φ(θ)`, covariance Σ), and Ch. 7 (§7.5 "Properties of the MLE" p. 164;
-  §7.8 vector MLE p. 182; §7.9 asymptotic MLE p. 190). From memory only, and to be checked against
-  those pages: the bound needs the regularity condition `E[∂ln p(x;θ)/∂θ] = 0` for all θ; an
-  unbiased estimator attains it iff `∂ln p/∂θ = I(θ)(g(x) − θ)` for some functions g and I, and then
-  it is the MVU estimator; for a Gaussian with θ-dependent mean and covariance the information has the
-  extra trace term `½ tr[Σ⁻¹ ∂Σ/∂θ Σ⁻¹ ∂Σ/∂θ]`, which vanishes when Σ does not depend on θ (as
-  assumed here); the MLE is asymptotically efficient, *as the number of independent data grows*, again
-  under regularity. The practical reading is Vallisneri's (above), which was read from source: for
-  `d = φ(θ) + n` with θ-independent Σ the estimator is efficient only in the linear-signal limit,
-  which the |log r| test checks. Nothing in the S11 plan depends on the exact theorem number.
+- **What Kay states** **[read, 3rd pass: Ch. 3 pp. 27–77 with Appendices 3A–3C; Ch. 4 pp. 83–95; Ch. 7
+  pp. 157–190 with Appendix 7B]** (Kay, *Fundamentals of Statistical Signal Processing, Vol. I: Estimation Theory*, Prentice Hall, 1993;
+  page numbers are the printed ones; the book has no DOI).
+  - **Regularity condition and scalar bound.** Theorem 3.1 (p. 30): if `E[∂ln p(x;θ)/∂θ] = 0` for all θ,
+    the variance of any unbiased estimator satisfies `var(θ̂) ≥ 1 / (−E[∂²ln p/∂θ²])` (3.6), evaluated at the
+    true θ, and an unbiased estimator attaining it for all θ exists **iff** `∂ln p/∂θ = I(θ)(g(x) − θ)` (3.7);
+    it is then θ̂ = g(x), the MVU estimator, with variance 1/I(θ). The condition is satisfied "if the order of
+    differentiation and integration may be interchanged", which "is generally true except when the domain of the
+    PDF for which it is nonzero depends on the unknown parameter" (Appendix 3A, p. 67, Eq. (3A.2)). For additive
+    Gaussian noise the support is all of Rᴺ, so it holds; the parameter space is open (Eq. (2.7), p. 22), so
+    the boundary M = 0 (a null scene) is outside the theory. Equality form `E[(∂ln p/∂θ)²] = −E[∂²ln p/∂θ²]`:
+    (3.11), p. 34. The Fisher information is *additive for independent observations*, I = N·i for IID samples
+    (p. 35); dependent samples carry less.
+  - **Signal in white Gaussian noise** `x[n] = s[n;θ] + w[n]`: `var(θ̂) ≥ σ² / Σ(∂s[n;θ]/∂θ)²` (3.14, p. 36). Kay's
+    sinusoidal phase bound `2σ²/(NA²)` (Example 3.4, p. 33) comes with the warning "the condition for the bound to
+    hold is not satisfied. Hence, a phase estimator does not exist which is unbiased and attains the CRLB. It is
+    still possible, however, that an MVU estimator may exist" (p. 33): for a signal non-linear in θ the equality
+    condition (3.7) generally fails, and the bound is a benchmark.
+  - **Vector parameter.** Theorem 3.2 (p. 44): under the same condition for the vector score, `C_θ̂ − I⁻¹(θ) ≥ 0`
+    (positive semidefinite, Eq. (3.24)) with `[I]ᵢⱼ = −E[∂²ln p/∂θᵢ∂θⱼ]` (3.21); equality iff
+    `∂ln p/∂θ = I(θ)(g(x) − θ)` (3.25), and the individual bound is `var(θ̂ᵢ) ≥ [I⁻¹(θ)]ᵢᵢ` (3.26). The
+    proof is Appendix 3B (pp. 70–72), by Cauchy–Schwarz; it uses invertible I, and Kay does not discuss a
+    singular I except for the linear model (p. 85, Fig. 4.1). The bound grows as parameters are added:
+    Example 3.7 (line fitting, p. 41–43), "the CRLB always increases as we estimate more parameters".
+  - **General Gaussian case, the case here** (§3.9, p. 47; proof in Appendix 3C, pp. 73–76): for
+    `x ~ N(μ(θ), C(θ))`,
+    `[I(θ)]ᵢⱼ = (∂μ/∂θᵢ)ᵀ C⁻¹(θ) (∂μ/∂θⱼ) + ½ tr[C⁻¹ ∂C/∂θᵢ C⁻¹ ∂C/∂θⱼ]` (3.31). When C does not depend on θ
+    the trace term vanishes and `I = (∂μ/∂θ)ᵀC⁻¹(∂μ/∂θ)`, which for C = σ²I is `(1/σ²)Σ ∂s/∂θᵢ ∂s/∂θⱼ`
+    (Example 3.9, Eq. (3.33), p. 49). So `F = JᵀΣ⁻¹J` with the full Σ is exactly right for a known, θ-independent
+    seismic-noise covariance (§6) — Kay shows no worked example with a non-diagonal θ-independent C, but (3.31)
+    covers it, and the whitening argument of §4.5 (p. 95) is the same statement. If the noise level itself is
+    unknown and enters C(θ), the trace term appears (Example 3.6, p. 40–41, where the mean and variance
+    parameters give a diagonal I; Kay: "not true in general", p. 41), and a nuisance noise parameter can
+    *raise* the bounds on the others when mean and covariance couple. Kay's derivation requires Gaussian data;
+    non-Gaussian noise needs the general definition (3.21).
+  - **Transformation of parameters.** For `α = g(θ)`: scalar `var(α̂) ≥ (∂g/∂θ)²/I(θ)` (3.16, p. 37); vector
+    `C_α̂ − (∂g/∂θ) I⁻¹ (∂g/∂θ)ᵀ ≥ 0` (3.30, p. 45), ∂g/∂θ the r×p Jacobian (p. 46). Efficiency is **preserved
+    only under affine** transformations (p. 37–38, Eq. (3.18) shows θ̂² of an efficient θ̂ is biased and not
+    efficient); under non-linear ones it holds approximately "if the data record is large enough" by
+    statistical linearity (Fig. 3.4, p. 39) and as N → ∞ (p. 47). Consequence for S11: a CRB on a derived
+    quantity (closest-approach range, speed, a different reference time) is `JgF⁻¹Jgᵀ` from the same F, not a
+    new computation; changing the reference time of a straight track is affine, so exact.
+  - **Efficiency and the MLE.** Theorem 7.1 (p. 167, Eq. (7.11)): "if the PDF p(x;θ) of the data x satisfies
+    some regularity conditions, then the MLE of the unknown parameter θ is asymptotically distributed (for large
+    data records) according to `θ̂ ~ N(θ, I⁻¹(θ))`", with I the Fisher information at the true value; hence the
+    MLE is "asymptotically unbiased and asymptotically attains the CRLB … asymptotically efficient". The vector
+    form is Theorem 7.3 (p. 182, Eq. (7.36)); the MLE of a function is the function of the MLE (invariance,
+    Theorems 7.2 and 7.4, pp. 176, 185). The regularity conditions are in Appendix 7B (p. 211): (1) the first
+    and second derivatives of the log-likelihood are well defined; (2) `E[∂ln p/∂θ] = 0`, plus the Fisher
+    information nonzero (p. 167). **The proof there is an outline, for IID observations only** ("a rigorous proof
+    … can be found in Dudewicz 1976 and Rao 1973"); Cavendish's samples are independent but not identically
+    distributed (different towers and shots have different means), which Kay does not cover and I did not
+    verify.
+  - **When the MLE does attain the bound.** (a) Linear model, exactly and at any N: Theorem 7.5 (p. 186) and
+    Theorem 4.1 (p. 86): `θ̂ = (HᵀC⁻¹H)⁻¹HᵀC⁻¹x`, efficient, Gaussian with covariance `(HᵀC⁻¹H)⁻¹`. (b) If any
+    efficient estimator exists the MLE is it (p. 164, Problem 7.12). (c) Otherwise only asymptotically, and **the
+    approach depends on SNR**: for the sinusoid phase (Example 7.6, pp. 167–171) the mean and variance attain the
+    asymptotic values at N = 80 for SNR 10 dB (Table 7.2, p. 169); at fixed N = 80, Figs. 7.3–7.4 (p. 170) show
+    the mean attained above about −10 dB (Kay's reading of the figure) and the variance above the CRB at low SNR, because the likelihood has competing peaks (Fig. 7.5, p. 171)
+    and large errors ("outliers", the "threshold effect") occur; Kay: "Only at higher SNRs is the CRLB attained",
+    and (p. 171) "for signal in noise problems the CRLB may be attained even for short data records if the SNR is
+    high enough". He explains it through the estimation error being small enough to linearise the estimator
+    (Eq. (7.20), p. 172). (d) It can fail altogether: when the noise is not independent (Example 7.7, p. 172–173) the
+    estimate is not even consistent; and when the number of parameters is large against the data the
+    asymptotic PDF is not given by (7.36) (Examples 7.12–7.13, pp. 183–185).
+  - **At short record or low SNR the estimator can be below the bound.** Table 7.2 (p. 169): at N = 20 the
+    variance is 0.0978/N against the CRB's 0.1/N, and Kay's explanation is "the bias of the estimator, thereby
+    invalidating the CRLB which assumes an unbiased estimator". This is the same effect as the bounded
+    baseline's 0.63–0.71 at SNR 6 (§8), and is exactly the reason for the bias condition in §1.
+  - **Practical reading of "the MLE needs a good start".** §7.7 (pp. 177–181): a grid search finds the MLE if the
+    spacing is small enough; Newton–Raphson (7.29) and scoring (7.33) may fail to converge or find a local
+    maximum, and "the importance of a good initial guess cannot be overemphasized" (p. 179; Table 7.3, p. 181, shows 29
+    iterations from a poor start). That is the bank plus Gauss–Newton (§2.4), with the scoring step using F in
+    place of the Hessian as (7.33) does. For a stationary Gaussian noise with unknown spectrum, §7.9 (p. 190,
+    Eq. (7.60)) gives the asymptotic log-likelihood and the asymptotic Fisher matrix (3.34,
+    p. 51); not needed unless the seismic noise's spectrum is fitted (§6).
+  - **The practical reading** is still Vallisneri's, from the other direction: for `d = φ(θ) + n` with
+    θ-independent Σ the estimator is efficient only in the linear-signal limit, which the |log r| test
+    checks; Kay's statement of that limit is "the estimation error is small" (7.20) and his Example 7.6 shows
+    the SNR dependence in one concrete case.
 - **Singular Fisher matrices** signal a parameter combination the data do not constrain (§IV):
   "a singular Fisher matrix is almost always a symptom" of a degeneracy, handled by priors or by
   reparametrising. *Measured here*: a **single tower** gives an exactly singular Fisher matrix
@@ -592,8 +709,8 @@ Other measurements from the same run:
 **Reading.**
 
 1. **Where \|log r\| ≤ 0.1 (SNR ≥ ~200 here), the bank + Gauss–Newton estimator attains the CRB**
-   within Monte-Carlo error (ratios 0.96–1.07, standard error ~4 %), its errors fill the Fisher 1σ
-   ellipsoid at the nominal 68 %, and the wrong-σ control fails by the expected factor of 2. This is
+   within Monte-Carlo error (ratios 0.96–1.07, standard error ~4 %), its errors fill the χ²₅ 68 % Fisher
+   ellipsoid (ΔθᵀFΔθ ≤ 5.886; not the literal 1σ ellipsoid, which holds 3.7 % for five parameters) at the nominal 68 %, and the wrong-σ control fails by the expected factor of 2. This is
    the known-answer validation case S11 can adopt as is.
 2. **Vallisneri's criterion is conservative here**: at SNR 40–62 (\|log r\| 2.5–12) the RMSE ratios
    are still 1.0–1.23, but the Fisher ellipsoid's coverage has already collapsed (0.45, 0.24): the error
@@ -617,7 +734,12 @@ Other measurements from the same run:
 - The pass band [0.8, 1.25] for RMSE/√CRB is from Monte-Carlo error at 300–500 draws (standard error
   of an RMSE ≈ 1/√(2n) ≈ 4 %) plus margin; not from a source.
 - Euler deconvolution's unsuitability is reasoned from the inputs the papers require (§2.3), not tested.
-- Kay's CRB and efficiency conditions (§3.1) are from memory; the supplied file has no theorem text.
+- Kay's theorems are now read (§3.1). What is not verified: (a) that Theorem 7.1's regularity conditions hold for
+  Cavendish's non-identically-distributed, correlated-in-time data (Kay's outline of proof, Appendix 7B, is for IID
+  samples, and I did not read the references he gives for the rigorous proofs); (b) any quantitative link between Kay's
+  SNR threshold and the |log r| ≤ 0.1 gate (neither is derived from the other); (c) Chapters 10–12 (Bayesian bounds), not
+  read because no claim here depends on them; (d) the book is a scan read as images, with the odd illegible symbol
+  (marked in the text where it mattered; the equations quoted were each read on the rendered page).
 - Hughes & Thorne's numbers are for a LIGO test mass's force, not a gradiometer's gradient; nothing
   here converts them to Cavendish's response or site (§6).
 - Stray et al.'s tunnel check (§2.6) is a one-line infinite-prism estimate; the paper's own site model
@@ -650,8 +772,6 @@ Read from the supplied PDFs (copies are not in the repository):
 | Brehmer et al. 2020 | Main text through the conclusions; the supporting information is not in the PDF |
 | Stray et al. 2022 | Main text, Methods, Extended Data Tables 1 and 2 (as images); Extended Data Figs 3–4 not examined beyond captions |
 | Hughes & Thorne 1998 | Abstract, §I (A–D), start of §II, §V; the layered-medium derivations (§II–IV) and appendices not read |
-| Kay 1993 | **Front matter and contents only (5 pages); no theorem text** |
+| Kay 1993 | Second pass: front matter only. Third pass: **Chapter 3 in full (pp. 27–77, appendices 3A–3C, plus 3D's start), Chapter 4 pp. 83–95, Chapter 7 pp. 157–213 (7.1–7.10, Appendix 7B; Appendix 7A's code skimmed)**; Chapters 1, 2 (pp. 20–25 only), 5, 6, 8–15 not read |
 
-Still to fetch: **Kay, Ch. 3 (pp. 27–47, with the proofs in Appendices 3A–3C, pp. 67–77) and Ch. 7
-(pp. 164–173, 190)**, to replace the from-memory conditions in §3.1; and Li & Oldenburg 2000
-(*Geophys. J. Int.*) only if the wavelet compression is ever wanted.
+Still to fetch: Li & Oldenburg 2000 (*Geophys. J. Int.*) only if the wavelet compression is ever wanted.
