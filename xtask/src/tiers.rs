@@ -102,6 +102,19 @@ pub fn together(steps: Vec<(&str, std::process::Command)>) -> Result<(), String>
     if failed.is_empty() { Ok(()) } else { Err(failed.join("; ")) }
 }
 
+/// The workspace tests whose names contain `filter`, with their output: a developer's loop, not a
+/// tier (no floor). Through xtask so that it runs at the tiers' priority and job count.
+pub fn one(root: &Path, filter: &str, release: bool) -> Result<(), String> {
+    // nextest's `test(…)` matches a name that contains the text.
+    let expression = format!("test({filter})");
+    let mut arguments =
+        vec!["nextest", "run", "--workspace", "--no-capture", "--no-tests=fail", "-E", &expression];
+    if release {
+        arguments.push("--release");
+    }
+    step("test", cargo(root, &arguments))
+}
+
 pub fn gpu(root: &Path) -> Result<(), String> {
     run_tier(root, "gpu", GPU_FILTER)
 }

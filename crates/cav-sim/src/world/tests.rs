@@ -162,26 +162,34 @@ cav_validate::case! {
 /// relative difference from the prism's closed form, and each width's gradiometer, radians.
 fn slab_series() -> &'static (f64, Vec<f64>) {
     static SERIES: std::sync::OnceLock<(f64, Vec<f64>)> = std::sync::OnceLock::new();
-    SERIES.get_or_init(|| {
-        let towers = SceneSpec::room().array.towers;
-        let centre =
-            towers.iter().position(|t| t.position == [0.0, 0.0, 0.0]).expect("a tower at the origin");
-        let mut against_prism = 0f64;
-        let mut readings = Vec::new();
-        for half in [160.0, 320.0, 640.0, 1280.0] {
-            let (lo, hi) = ([-half, -half, -33.0], [half, half, -1.0]);
-            let mut world = world_of(16.0, vec![boxed(lo, hi)]);
-            world.origin = [0.0, 0.0, -1.0];
-            world.read.radius = 2.0 * half;
-            let mut spec = scene(world);
-            spec.array.towers = vec![towers[centre].clone()];
-            let got = first_shots(&spec, SourceId::World)[0][2];
-            let want = prism_reading(&spec, 0, lo, hi);
-            against_prism = against_prism.max((got - (want.lower - want.upper)).abs() / got.abs());
-            readings.push(got);
-        }
-        (against_prism, readings)
-    })
+    SERIES.get_or_init(|| slab_readings(&[160.0, 320.0, 640.0, 1280.0], None))
+}
+
+/// The slabs of half-widths `halves` read with `world.read.radius` twice each half-width, or
+/// `radius` when given (the control: a read that stops at a fixed radius stops converging).
+fn slab_readings(halves: &[f64], radius: Option<f64>) -> (f64, Vec<f64>) {
+    let towers = SceneSpec::room().array.towers;
+    let centre = towers.iter().position(|t| t.position == [0.0, 0.0, 0.0]).expect("a tower at the origin");
+    let mut against_prism = 0f64;
+    let mut readings = Vec::new();
+    for &half in halves {
+        let (lo, hi) = ([-half, -half, -33.0], [half, half, -1.0]);
+        let mut world = world_of(16.0, vec![boxed(lo, hi)]);
+        world.origin = [0.0, 0.0, -1.0];
+        world.read.radius = radius.unwrap_or(2.0 * half);
+        let mut spec = scene(world);
+        spec.array.towers = vec![towers[centre].clone()];
+        let got = first_shots(&spec, SourceId::World)[0][2];
+        let want = prism_reading(&spec, 0, lo, hi);
+        against_prism = against_prism.max((got - (want.lower - want.upper)).abs() / got.abs());
+        readings.push(got);
+    }
+    (against_prism, readings)
+}
+
+/// The worst of the slab series' successive ratios, as its relative distance from 2.
+fn worst_ratio(readings: &[f64]) -> f64 {
+    readings.windows(2).map(|w| (w[0] / w[1] / 2.0 - 1.0).abs()).fold(0.0, f64::max)
 }
 
 cav_validate::case! {
@@ -207,23 +215,25 @@ cav_validate::case! {
     tolerance: 0.05,
     measure: {
         let readings = &slab_series().1;
-        let off = |a: f64, b: f64| (a / b / 2.0 - 1.0).abs();
-        let worst_ratio = readings.windows(2).map(|w| off(w[0], w[1])).fold(0.0, f64::max);
         assert!(readings.windows(2).all(|w| w[1].abs() < w[0].abs()), "{readings:?}");
-        // Control: the same slab twice (no growth) is a ratio of 1, far from 2.
-        assert!(off(readings[0], readings[0]) > 0.05);
-        cav_validate::Measured::Error(worst_ratio)
+        // Control: the two widest slabs read only within 320 m stop converging (both read the
+        // same chunks), so their ratio is far from 2.
+        let (_, stopped) = slab_readings(&[640.0, 1280.0], Some(320.0));
+        assert!(worst_ratio(&stopped) > 0.05, "{stopped:?}");
+        cav_validate::Measured::Error(worst_ratio(readings))
     },
 }
 
-/// R7's measurement: the worst error over the bound, and the loosest bound over the error where
-/// the error is above rounding, over q = a/R from 0.45 to 0.05 (the error over the bound also at
-/// 0.002, where the control is).
+/// The q = a/R R7 is measured at: from near (0.45) to far (0.002), where far chunks are read.
+const MOMENT_QS: [f64; 10] = [0.45, 0.3, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001];
+
+/// R7's measurement over every q of [`MOMENT_QS`]: the worst error over the bound, and the
+/// loosest bound over the error (where the error is above rounding).
 fn moments_against_bound() -> &'static (f64, f64) {
     static FOUND: std::sync::OnceLock<(f64, f64)> = std::sync::OnceLock::new();
     FOUND.get_or_init(|| {
         // One chunk of hilly terrain and a house (two materials), read through its moments against
-        // its leaves, from near (q = a/R = 0.45) to far (q = 0.05), on the centre tower.
+        // its leaves, from near to far, on the centre tower.
         let mut world = world_of(0.25, Vec::new());
         world.materials.push(MaterialSpec {
             label: "brick".into(),
@@ -260,39 +270,51 @@ fn moments_against_bound() -> &'static (f64, f64) {
         let reader = readers.of(0);
         let (mut worst_over, mut loosest) = (0f64, 0f64);
         let mut checked = 0;
-        for q in [0.45, 0.3, 0.2, 0.1, 0.05, 0.002] {
+        for q in MOMENT_QS {
             // The tower placed so that the chunk's centre is a/q from its atoms' path, to the side.
             let distance = multipole.radius / q;
             let c = multipole.moments.centre;
             let base = Vec3::new(c.x + distance, c.y, 0.0);
             let exact = reader.read_to(base, &leaves, 0.0, 1e-14).reading;
-            let far = WorldSource { cubes: Vec::new(), far: vec![multipole] };
-            let approx = reader.read_to(base, &far, 0.0, 1e-14).reading;
-            let bound = reader.read(base, &BoundSource { far: &far.far }, 0.0);
+            let read_as = |m: Multipole| {
+                reader.read_to(base, &WorldSource { cubes: Vec::new(), far: vec![m] }, 0.0, 1e-14).reading
+            };
+            let approx = read_as(multipole);
+            let bound = reader.read(base, &BoundSource { far: &[multipole] }, 0.0);
             for (e, a, b) in
                 [(exact.lower, approx.lower, bound.lower), (exact.upper, approx.upper, bound.upper)]
             {
                 let error = (e - a).abs();
                 worst_over = worst_over.max(error / b.abs());
-                // The looseness is measured from 0.45 to 0.05, as the brief says; the far point is for
-                // the control (there the bound is 1054 times the error: S4.md §7).
-                if error > 1e-13 * e.abs() && q >= 0.05 {
+                if error > 1e-13 * e.abs() {
                     loosest = loosest.max(b.abs() / error);
                     checked += 1;
                 }
             }
-            // Control: the octupole left out breaks the bound where the octupole outweighs what the
-            // bound allows for the rest (the bound is a few hundred times the error, so far out).
-            if q <= 0.002 {
-                let mut quadrupole = multipole;
-                quadrupole.moments.third = [0.0; 10];
-                let cut = reader
-                    .read_to(base, &WorldSource { cubes: Vec::new(), far: vec![quadrupole] }, 0.0, 1e-14)
-                    .reading;
-                assert!((exact.lower - cut.lower).abs() > bound.lower.abs(), "q = {q}");
+            // Controls, each a fault of the expansion that the bound must not cover where it is
+            // used: the quadrupole left out (from q = 0.1 in), the octupole's sign wrong (from
+            // 0.05) and the octupole left out (from 0.02). Nearer, the bound (Σ m s^l with
+            // |P_l| ≤ 1, a hundred times this chunk's true remainder) is above an octupole-sized
+            // fault: S4.md §7.6.
+            let mut no_quadrupole = multipole;
+            no_quadrupole.moments.second = [0.0; 6];
+            let mut flipped = multipole;
+            flipped.moments.third = multipole.moments.third.map(|t| -t);
+            let mut no_octupole = multipole;
+            no_octupole.moments.third = [0.0; 10];
+            for (name, broken, from) in [
+                ("quadrupole left out", no_quadrupole, 0.1),
+                ("octupole flipped", flipped, 0.05),
+                ("octupole left out", no_octupole, 0.02),
+            ] {
+                if q <= from {
+                    let cut = read_as(broken);
+                    let over = (exact.lower - cut.lower).abs().max((exact.upper - cut.upper).abs());
+                    assert!(over > bound.lower.abs().max(bound.upper.abs()), "{name} at q = {q}");
+                }
             }
         }
-        assert!(checked >= 6, "{checked}");
+        assert!(checked >= 2 * MOMENT_QS.len() - 2, "{checked}");
         (worst_over, loosest)
     })
 }
@@ -303,7 +325,7 @@ cav_validate::case! {
     subsystem: "world",
     slice: "S4",
     reference: Exact,
-    against: "a chunk of terrain and a house (two materials) read through its moments to the octupole, against its leaves: the worst error over the stated bound, q = a/R from 0.45 to 0.002 (the octupole left out breaks the bound at q = 0.002: the control)",
+    against: "a chunk of terrain and a house (two materials) read through its moments to the octupole, against its leaves: the worst error over the stated bound, q = a/R from 0.45 to 0.001 (controls: the quadrupole left out breaks the bound from q = 0.1 in, the octupole flipped from 0.05, the octupole left out from 0.02)",
     unit: Relative,
     tolerance: 1.0,
     measure: cav_validate::Measured::Error(moments_against_bound().0),
@@ -315,10 +337,74 @@ cav_validate::case! {
     subsystem: "world",
     slice: "S4",
     reference: Exact,
-    against: "the same: the bound over the error, the loosest where the error is above rounding",
+    against: "the same: the bound over the error, the loosest over every q tried (0.45 to 0.001) where the error is above rounding",
     unit: Relative,
     tolerance: 1000.0,
     measure: cav_validate::Measured::Error(moments_against_bound().1),
+}
+
+/// `P_l(x)` and `P_l'(x)` by the three-term recurrence.
+fn legendre(l: u32, x: f64) -> (f64, f64) {
+    let (mut p0, mut p1) = (1.0, x);
+    if l == 0 {
+        return (1.0, 0.0);
+    }
+    for n in 1..l {
+        let n = f64::from(n);
+        (p0, p1) = (p1, ((2.0 * n + 1.0) * x * p1 - n * p0) / (n + 1.0));
+    }
+    // (1 − x²) P_l' = l (P_{l−1} − x P_l).
+    let derivative =
+        if (1.0 - x * x).abs() < 1e-300 { 0.0 } else { f64::from(l) * (p0 - x * p1) / (1.0 - x * x) };
+    (p1, derivative)
+}
+
+#[test]
+fn the_legendre_gradient_bound_holds() {
+    // `Multipole::bound` takes `|∇(P_l(cos γ)/R^{l+1})| ≤ (l+1)/R^{l+2}`: its square over
+    // `1/R^{2l+4}` is `(l+1)² P_l² + (1 − x²) P_l'²`. Held on a fine grid of x for l = 4 to 40;
+    // it is reached on the axis.
+    for l in 4..=40u32 {
+        let lf = f64::from(l);
+        let mut most = 0f64;
+        for i in 0..=20_000 {
+            let x = -1.0 + 2.0 * f64::from(i) / 20_000.0;
+            let (p, dp) = legendre(l, x);
+            most = most.max(((lf + 1.0).powi(2) * p * p + (1.0 - x * x) * dp * dp).sqrt());
+        }
+        assert!(most <= (lf + 1.0) * (1.0 + 1e-12), "l = {l}: {most}");
+        assert!(most >= (lf + 1.0) * (1.0 - 1e-12), "l = {l}: {most}");
+        // Control: the factor without its tangential part (√l(l+1)) is below the gradient.
+        assert!(most > (lf * (lf + 1.0)).sqrt() * 1.01, "l = {l}");
+    }
+    // The recurrence itself: P_4(x) = (35x⁴ − 30x² + 3)/8.
+    let x = 0.3f64;
+    assert!((legendre(4, x).0 - (35.0 * x.powi(4) - 30.0 * x * x + 3.0) / 8.0).abs() < 1e-15);
+    assert!((legendre(4, x).1 - (140.0 * x.powi(3) - 60.0 * x) / 8.0).abs() < 1e-14);
+}
+
+#[test]
+fn a_leafs_fourth_moment_is_exact() {
+    // `Multipole::powers[0]` takes a uniform cube's `∫ s⁴ dm = m (d⁴ + 5d²h²/6 + 19h⁴/240)`:
+    // held to a midpoint sum over the cube, for an offset off every axis.
+    let (d, h) = (Vec3::new(0.7, -0.4, 1.1), 0.9);
+    let n = 120;
+    let mut sum = 0.0;
+    for i in 0..n {
+        for j in 0..n {
+            for k in 0..n {
+                let at = |c: u32| ((f64::from(c) + 0.5) / f64::from(n) - 0.5) * h;
+                let s = d + Vec3::new(at(i), at(j), at(k));
+                sum += s.dot(s).powi(2);
+            }
+        }
+    }
+    let numeric = sum / f64::from(n).powi(3);
+    let (d2, h2) = (d.dot(d), h * h);
+    let closed = d2 * d2 + 5.0 * d2 * h2 / 6.0 + 19.0 * h2 * h2 / 240.0;
+    assert!((numeric - closed).abs() < 1e-4 * closed, "{numeric} {closed}");
+    // Control: the farthest point's s⁴ (the old bound) is well above it.
+    assert!((d2.sqrt() + 0.5 * h * 3f64.sqrt()).powi(4) > 1.5 * closed);
 }
 
 #[test]
