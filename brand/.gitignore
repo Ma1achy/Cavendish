@@ -1,0 +1,16 @@
+# Build outputs: everything build_all.sh / build_all.ps1 writes.
+/out*/
+/svg/
+/png/
+/colour/
+/icon/
+/titles/
+/banners/
+/*.gif
+/*.jpg
+__pycache__/
+# Data the scripts remake (see BUILD.md, "Data"); what is committed is listed there.
+/work/*
+!/work/crop_a.npy
+!/work/vox.pkl
+!/work/plume.npz
