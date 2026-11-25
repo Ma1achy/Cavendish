@@ -16,6 +16,7 @@ beside it, lists the files to touch in order, and says which tests then hold the
 | a body made of voxels | [a-voxel-body.md](a-voxel-body.md) | `platonic_row` in `crates/cav-sim/src/dev.rs` |
 | static matter in the world volume: a kind of piece, or a material | [a-world-piece.md](a-world-piece.md) | `PieceKind::Terrain` in `crates/cav-sim/src/world.rs` |
 | anything a browser page cannot do (threads, files, waiting on the GPU) | [the-web-build.md](the-web-build.md) | `crates/cav-engine/src/forward/inline.rs` |
+| to the window: an action (menu item, key, palette entry), a tool, a layout, a panel or window, a starter | [a-tool-or-panel.md](a-tool-or-panel.md) | `proj-toggle` in `crates/cav-app/ui/actions.ron`; the Place tool |
 
 Whatever you add: every public item documented with its unit and frame; a test with a control
 arm; and if its size can be set by a scene, a view or a command, a bound and a row in the table

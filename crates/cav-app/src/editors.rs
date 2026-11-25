@@ -252,7 +252,7 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, prefix: &str) {
 }
 
 /// One row of the inspector: the field's name (gold when it differs from the scene as opened or
-/// saved), its widget, and its reset (`⟲`, always in its place in the order, disabled when there
+/// saved), its widget, and its reset (`‹`, always in its place in the order, disabled when there
 /// is nothing to put back). What it changes is pushed onto `commands`.
 #[allow(clippy::too_many_arguments)]
 fn row(
@@ -278,7 +278,7 @@ fn row(
         entry.doc,
         entry.path,
         if differs {
-            "\n\nedited since the scene was opened or saved (⟲ or Backspace puts it back)"
+            "\n\nedited since the scene was opened or saved (‹ or Backspace puts it back)"
         } else {
             ""
         }
@@ -303,7 +303,7 @@ fn row(
         }
         let reset_id = format!("{}/reset", field_id(&entry.path));
         let reset = ui
-            .add_enabled(differs, egui::Button::new(RichText::new("⟲").size(11.0)).small().frame(false))
+            .add_enabled(differs, egui::Button::new(RichText::new("‹").size(11.0)).small().frame(false))
             .on_hover_text("put back the value the scene was opened or saved with");
         shell.register(scope, &reset_id, &format!("{name}: reset"), Focus::Button, reset.rect);
         if !differs {
@@ -337,7 +337,7 @@ fn list_buttons(
     {
         commands.push(Command::Insert { path: entry.path.clone(), index: None, value: last.clone() });
     }
-    let remove = ui.small_button("−").on_hover_text("take the last item away");
+    let remove = ui.small_button("-").on_hover_text("take the last item away");
     shell.register(scope, &format!("{id}/remove"), &format!("{name}: remove"), Focus::Button, remove.rect);
     if (remove.clicked() || shell.take_click(&format!("{id}/remove"))) && items > 0 {
         commands.push(Command::Remove { path: format!("{}[{}]", entry.path, items - 1) });

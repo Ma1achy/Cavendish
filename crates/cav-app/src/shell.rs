@@ -31,6 +31,10 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
         "reset",
         "put a field back as the scene was opened or saved: `reset bodies[0].mass` (Backspace on a field)",
     ),
+    (
+        "focus",
+        "the keyboard's focus to a scope or element by its id, the ring showing: `focus inspector`, `focus field/duration`",
+    ),
     ("history", "the list of edits: click one to undo or redo to it (Ctrl+H)"),
     ("wizard", "start a new scene: the array, the surroundings, a first body, the duration (Ctrl+N)"),
     ("open", "open a scene: the library, or a file by its path (Ctrl+O)"),
@@ -262,6 +266,8 @@ pub struct Shell {
     pub save_window: Option<String>,
     /// The file the scene came from or was last saved to, which `Ctrl+S` saves to again.
     pub file: Option<String>,
+    /// A `focus` asked for before the first frame, applied once a frame has drawn its element.
+    pending_focus: Option<String>,
     title_said: String,
 }
 
@@ -359,6 +365,7 @@ impl Shell {
             open_window: None,
             save_window: None,
             file: None,
+            pending_focus: None,
             title_said: String::new(),
         }
     }
@@ -784,6 +791,32 @@ impl Shell {
                 self.run(step)?;
             }
             return Ok(line.to_owned());
+        }
+        // `focus <id>` puts the keyboard's focus on a scope or an element of the last frame's tree,
+        // with the ring showing: for scripts, the demo and a person who knows the id.
+        if name == "focus" {
+            let outcome = match (words.next(), words.next()) {
+                (Some(id), None) if self.tree.node(id).is_some() => {
+                    let tree = self.tree.clone();
+                    self.keyboard.focus_on(&tree, id);
+                    self.keyboard.nav_on = true;
+                    Ok(line.to_owned())
+                }
+                // Before the first frame nothing is registered (a script run before the window
+                // draws): the focus goes there once the frame has drawn it.
+                (Some(id), None) if self.layout.screen == Rect::NOTHING => {
+                    self.pending_focus = Some(id.to_owned());
+                    Ok(line.to_owned())
+                }
+                (Some(id), None) => {
+                    Err(format!("`{id}` is not on screen: `focus` takes a scope or an element's id"))
+                }
+                _ => Err(format!("`{line}`: focus <id>")),
+            };
+            if let Err(why) = &outcome {
+                self.engine.note(Level::Error, Subsystem::App, why.clone());
+            }
+            return outcome;
         }
         // `reset <path>` puts a field back as the scene was opened or saved: a `set` (an edit).
         if name == "reset" {
@@ -1306,6 +1339,19 @@ impl Shell {
         // What no widget took this frame (a click of something no longer drawn) is dropped.
         self.pending.clear();
         self.tree = std::mem::take(&mut self.building);
+        if let Some(id) = self.pending_focus.take() {
+            if self.tree.node(&id).is_some() {
+                let tree = self.tree.clone();
+                self.keyboard.focus_on(&tree, &id);
+                self.keyboard.nav_on = true;
+            } else {
+                self.engine.note(
+                    Level::Warn,
+                    Subsystem::App,
+                    format!("`focus {id}`: nothing of that id was drawn"),
+                );
+            }
+        }
         // The world still streaming, or its meshes still being made: another frame soon.
         if self.engine.streaming().pending() > 0 || surface.busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(16));

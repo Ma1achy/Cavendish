@@ -304,6 +304,66 @@ fn task_add_a_sphere_move_it_two_metres_read_tower_one() {
     assert!(rig.events <= TASK_EVENTS, "{} input events", rig.events);
 }
 
+#[test]
+fn task_keyboard_only() {
+    // S18 T3: with the mouse put away, select tower 2, add a body, move it 1 m, change its mass.
+    let mut rig = Rig::new();
+    rig.shell.run("load room").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let pointer = |frames: &[Vec<Event>]| {
+        frames.iter().flatten().any(|e| matches!(e, Event::PointerButton { .. } | Event::PointerMoved(_)))
+    };
+    let mut sent: Vec<Vec<Event>> = Vec::new();
+    let mut key = |rig: &mut Rig, key: Key, modifiers: Modifiers| {
+        let event = |pressed| Event::Key { key, physical_key: None, pressed, repeat: false, modifiers };
+        sent.push(vec![event(true)]);
+        sent.push(vec![event(false)]);
+        rig.key(key, modifiers);
+    };
+    // Tower 2: its digit, in the viewport where the focus starts.
+    key(&mut rig, Key::Num2, Modifiers::NONE);
+    assert_eq!(rig.shell.engine.selection(), Some(Target::Tower(2)));
+    // A body: the palette, typed, Enter.
+    key(&mut rig, Key::K, Modifiers::COMMAND);
+    rig.frames(vec![vec![]]);
+    rig.typed("point mass");
+    key(&mut rig, Key::Enter, Modifiers::NONE);
+    assert_eq!(rig.shell.engine.spec().bodies.len(), 1);
+    assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)));
+    // Move it 1 m: Tab round to the viewport, its Selection stop, a session, type 1, Enter.
+    let start = anchor(&rig, 0);
+    while rig.shell.keyboard.focus != ["viewport"] {
+        key(&mut rig, Key::Tab, Modifiers::NONE);
+    }
+    key(&mut rig, Key::Enter, Modifiers::NONE);
+    while rig.shell.keyboard.focused() != "viewport/selection" {
+        key(&mut rig, Key::ArrowRight, Modifiers::NONE);
+    }
+    key(&mut rig, Key::Enter, Modifiers::NONE);
+    key(&mut rig, Key::Num1, Modifiers::NONE);
+    key(&mut rig, Key::Enter, Modifiers::NONE);
+    let moved = anchor(&rig, 0);
+    assert!((moved[0] - start[0] - 1.0).abs() < 1e-12, "{start:?} → {moved:?}");
+    // Its mass: Tab to the inspector, in, down to the mass, adjust it up by one step.
+    while rig.shell.keyboard.focus != ["inspector"] {
+        key(&mut rig, Key::Tab, Modifiers::NONE);
+    }
+    key(&mut rig, Key::Enter, Modifiers::NONE);
+    key(&mut rig, Key::Enter, Modifiers::NONE);
+    while rig.shell.keyboard.focused() != "field/bodies[0].mass" {
+        key(&mut rig, Key::ArrowDown, Modifiers::NONE);
+    }
+    let mass = rig.shell.engine.spec().bodies[0].mass;
+    key(&mut rig, Key::Enter, Modifiers::NONE);
+    key(&mut rig, Key::ArrowUp, Modifiers::NONE);
+    key(&mut rig, Key::Escape, Modifiers::NONE);
+    assert!(rig.shell.engine.spec().bodies[0].mass > mass, "the mass went up a step");
+    assert!(!pointer(&sent), "no pointer event was sent");
+    // The breadcrumb said where the keys were: the inspector, the body's section (named after the
+    // body: the point mass is called "mass"), its mass.
+    assert_eq!(rig.shell.breadcrumb().as_deref(), Some("Inspector › mass › mass"));
+}
+
 /// The input events the T1 task takes: counted at its first pass and held, so the task does not
 /// get longer unnoticed.
 const TASK_EVENTS: usize = 20;

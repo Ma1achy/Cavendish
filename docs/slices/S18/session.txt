@@ -1,0 +1,12 @@
+$ cav exec "load room; add sphere at 2 0 0.25; set bodies[0].motion.Static.position [2, 2, 0.25]; journal; reading"
+load room
+add bodies {"label":"sphere","mass":100.0,"radius":0.0,"shape":{"kind":{"Sphere":{"radius":0.25}},"pitch":0.03125,"supersample":4},"motion":{"Static":{"position":[2.0,0.0,0.25]}},"appears":null,"vanishes":null}
+set bodies[0].motion.Static.position [2,2,0.25]
+[{"Load":{"version":1,"name":"room","description":"Five towers in a room: a default layout; there is no real one: this is a prospective study. Nothing moves yet.","duration":12.0,"array":{"instrument":{"tower_height":10.1,"ifo_separation":5.0,"half_sequence":0.73,"launch_velocity":3.86,"cycle":2.0,"atom_mass":1.4431558652473234e-25,"gravity":9.81,"kicks":1000,"launch_floor":true,"sign":"LowerMinusUpper"},"towers":[{"label":"tower 1","position":[0.0,0.0,0.0],"timing":{"offset":0.0},"instrument":null},{"label":"tower 2","position":[4.0,0.0,0.0],"timing":{"offset":0.0},"instrument":null},{"label":"tower 3","position":[-4.0,0.0,0.0],"timing":{"offset":0.0},"instrument":null},{"label":"tower 4","position":[0.0,4.0,0.0],"timing":{"offset":0.0},"instrument":null},{"label":"tower 5","position":[0.0,-4.0,0.0],"timing":{"offset":0.0},"instrument":null}],"schedule":{"jitter":null,"alternate":null,"gaps":null,"window":null,"loss":0.0,"seed":0}},"room":{"origin":[-5.0,-5.0,0.0],"size":[10.0,10.0,3.0]},"floor":null,"bodies":[]}},{"Insert":{"path":"bodies","index":null,"value":{"label":"sphere","mass":100.0,"radius":0.0,"shape":{"kind":{"Sphere":{"radius":0.25}},"pitch":0.03125,"supersample":4},"motion":{"Static":{"position":[2.0,0.0,0.25]}},"appears":null,"vanishes":null}}},{"Set":{"path":"bodies[0].motion.Static.position","value":[2,2,0.25],"continues":false}}]
+# a shot read out at 0 s · refined · quadrature within 1e-14 rad
+# tower    ΔΦ [rad]  δφ₁ lower [rad]  δφ₂ upper [rad]
+tower 1  6.809075429070973e-1  1.2330324060469366e0  5.521248631398393e-1
+tower 2  6.809075429070972e-1  1.2330324060469364e0  5.521248631398392e-1
+tower 3  -7.626507432267302e-2  1.911641341799085e-1  2.674292085025815e-1
+tower 4  6.809075429070971e-1  1.2330324060469364e0  5.521248631398393e-1
+tower 5  -7.626507432267296e-2  1.911641341799085e-1  2.6742920850258145e-1

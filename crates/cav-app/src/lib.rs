@@ -7,8 +7,12 @@
 //!
 //! ## What this crate is for
 //! The window: the menus, the outliner, the properties and their editors (made from the scene
-//! spec's schema), the timeline with a lane per tower, the panes and the console. Lengths on
-//! screen are egui points; times are seconds on the scene's clock.
+//! spec's schema), the timeline with a lane per tower, the panes and the console; and the editor
+//! of S18 around them: the keyboard model of `docs/design/keyboard.md` ([`keyboard`]), the
+//! actions, tools and layouts as data (`ui/*.ron`: [`actions`], [`tools`], [`layouts`]), the
+//! palette, the camera's moves ([`camera`]) and the editor's windows ([`dialogs`]). Lengths on
+//! screen are egui points; times are seconds on the scene's clock; positions in the world are
+//! metres in its frame (x east, y north, z up).
 //!
 //! ## What it may depend on
 //! Every other library crate of the workspace (`cav-core`, `cav-sim`, `cav-engine`, `cav-gpu`,

@@ -20,9 +20,10 @@ pub fn run(root: &Path, slice: &str, web: bool) -> Result<(), String> {
         "S3" | "s3" => s3(root),
         "S4" | "s4" => s4(root, web),
         "S17" | "s17" => s17(root),
-        other => {
-            Err(format!("no demo for slice `{other}`: the slices with demos are: S0, S1, S2, S3, S4, S17"))
-        }
+        "S18" | "s18" => s18(root),
+        other => Err(format!(
+            "no demo for slice `{other}`: the slices with demos are: S0, S1, S2, S3, S4, S17, S18"
+        )),
     }
 }
 
@@ -903,6 +904,61 @@ fn s4(root: &Path, web: bool) -> Result<(), String> {
     write(&out, "web.txt", &log, &mut made)?;
 
     eprintln!("xtask: demo S4 wrote {} files to {}:", made.len(), out.display());
+    for file in &made {
+        eprintln!("  {file}");
+    }
+    Ok(())
+}
+
+/// S18, the editor (`docs/slices/S18.md` §5): the window as a first-time user meets it, its
+/// menus as the palette, the tools, the keyboard's ring, the windows and the layouts; and the
+/// end-to-end task as console lines. Release builds, each run within a wall-clock limit;
+/// scenes `void`, `point`, `room`, `comb` and `town` only.
+fn s18(root: &Path) -> Result<(), String> {
+    let out = root.join("docs").join("slices").join("S18");
+    std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    step(
+        "build cav and cav-app (release)",
+        cargo(root, &["build", "--quiet", "--release", "-p", "cav", "-p", "cav-app"]),
+    )?;
+    let release = |name: &str| {
+        root.join("target").join("release").join(format!("{name}{}", std::env::consts::EXE_SUFFIX))
+    };
+    let (cav, app) = (release("cav"), release("cav-app"));
+    let path = |name: &str| out.join(name).to_string_lossy().into_owned();
+    let mut made: Vec<String> = Vec::new();
+    let shots: [(&str, &str); 12] = [
+        ("editor-empty.png", "load void"),
+        ("editor-add.png", "load void; palette add"),
+        ("editor-palette.png", "load point; palette"),
+        ("editor-gizmo.png", "load point; add sphere at 2 2 0.25; select body 2; tool move; frame"),
+        ("editor-keyboard.png", "load point; select body 1; focus field/bodies[0].mass"),
+        ("editor-sheet.png", "load point; keys"),
+        (
+            "editor-history.png",
+            "load point; set bodies[0].mass 5; set duration 20; add cube at 2 -2 0.25; history",
+        ),
+        ("editor-wizard.png", "load room; wizard"),
+        ("editor-instrument.png", "load point; layout instrument"),
+        ("editor-analysis.png", "load comb; layout analysis"),
+        ("editor-place.png", "load void; tool place"),
+        ("editor-maximised.png", "load town; view iso; pan 0 0 0; zoom 45; maximise"),
+    ];
+    for (file, script) in &shots {
+        capture_within(
+            &app,
+            &["--screenshot", &path(file), "--size", "1440x900", "--exec", script],
+            180,
+            None,
+        )?;
+        expect_png(&out, file, [1440, 900], &mut made)?;
+    }
+    // The end-to-end task as console lines (what the editor's clicks issue), with tower 1's phase.
+    let script = "load room; add sphere at 2 0 0.25; set bodies[0].motion.Static.position [2, 2, 0.25]; \
+                  journal; reading";
+    let answer = capture_within(&cav, &["exec", script], 300, None)?;
+    write(&out, "session.txt", &format!("$ cav exec \"{script}\"\n{answer}"), &mut made)?;
+    eprintln!("xtask: demo S18 wrote {} files to {}:", made.len(), out.display());
     for file in &made {
         eprintln!("  {file}");
     }
