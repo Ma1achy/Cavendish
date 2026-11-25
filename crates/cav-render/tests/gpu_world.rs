@@ -335,7 +335,9 @@ fn gpu_meshes_past_the_vertex_cap_are_not_drawn() {
     prepare(&gpu, &renderer, &mut whole, &frame, &v);
     let [meshes, bricks, vertices] = whole.counts();
     assert!(whole.notes.iter().all(|n| !n.contains("not drawn (the nearest are)")), "{:?}", whole.notes);
-    assert!(meshes > 20 && vertices > 10_000 && bricks > 20, "{meshes} {vertices} {bricks}");
+    // More of each than the small caps below, so each binds. (Bricks: only those in the frustum
+    // are uploaded since S4's second review, minor 15; this view holds 16.)
+    assert!(meshes > 20 && vertices > 10_000 && bricks > 7 + 4, "{meshes} {vertices} {bricks}");
     // The vertex cap: a third of what this view wants.
     let cap = vertices / 3;
     let mut capped = WorldGpu::with_caps(GpuCaps { vertices: cap, ..GpuCaps::default() });
@@ -348,6 +350,13 @@ fn gpu_meshes_past_the_vertex_cap_are_not_drawn() {
     prepare(&gpu, &renderer, &mut capped, &frame, &v);
     assert_eq!(capped.meshed, made, "no meshes are made and thrown away at the cap");
     assert!(capped.notes.iter().any(|n| n.contains("vertices are not drawn")));
+    // Nor a frame with the eye nudged round, which lists the waiting chunks in another order
+    // (S4's second review, J3).
+    let mut nudged = v.clone();
+    nudged.yaw += 7.0;
+    nudged.distance += 0.3;
+    prepare(&gpu, &renderer, &mut capped, &frame, &nudged);
+    assert_eq!(capped.meshed, made, "a camera moving at the cap makes no meshes");
     // Control: the capped frame made more meshes than it kept (which the next frame would make
     // and throw away again, but for the fingerprint), and a camera moved starts it again.
     assert!(made > held as u64, "{made} made, {held} kept");
@@ -369,21 +378,19 @@ fn gpu_meshes_past_the_vertex_cap_are_not_drawn() {
     assert_eq!(most.counts(), whole.counts());
 }
 
-#[test]
-fn gpu_a_neighbour_arriving_buries_faces() {
-    // Minor 13: two full chunks side by side are ten faces, five each; the first, meshed alone,
-    // had six, and is meshed again when its neighbour arrives.
-    let gpu = gpu();
-    let renderer = Renderer::new(&gpu);
+/// A chunk full of one material: six faces of four vertices when alone.
+fn full(key: ChunkKey) -> Arc<ChunkCells> {
+    Arc::new(ChunkCells {
+        key,
+        leaves: vec![cav_core::voxel::Leaf { key: 0, level: 5, count: 1, material: 0 }],
+        palette: vec![0],
+    })
+}
+
+/// A frame of full chunks at `keys`, on a grid of 25 cm (chunks of 8 m), seen from `view`'s
+/// camera (within its level 0).
+fn full_frame(keys: &[[i32; 3]]) -> WorldFrame {
     let grid = cav_core::voxel::world::WorldGrid { origin: Vec3::ZERO, pitch: 0.25, supersample: 1 };
-    let full = |key: ChunkKey| {
-        Arc::new(ChunkCells {
-            key,
-            leaves: vec![cav_core::voxel::Leaf { key: 0, level: 5, count: 1, material: 0 }],
-            palette: vec![0],
-        })
-    };
-    let v = view([4.0, 4.0, 4.0], 30.0, 20.0, 30.0);
     let mut frame = WorldFrame {
         grid: Some(grid),
         colours: vec![[200, 100, 50]],
@@ -392,7 +399,56 @@ fn gpu_a_neighbour_arriving_buries_faces() {
         world: 99,
         ..WorldFrame::default()
     };
-    frame.chunks.insert(ChunkKey::new(0, 0, 0), full(ChunkKey::new(0, 0, 0)));
+    for k in keys {
+        let key = ChunkKey::new(k[0], k[1], k[2]);
+        frame.chunks.insert(key, full(key));
+    }
+    frame
+}
+
+#[test]
+fn gpu_at_a_mesh_cap_no_drawn_chunk_disappears() {
+    // S4's second review, J3. Chunks A (0,0,0) and B (1,0,0) side by side: 20 vertices each.
+    let gpu = gpu();
+    let renderer = Renderer::new(&gpu);
+    let v = view([4.0, 4.0, 4.0], 30.0, 20.0, 30.0);
+    // (a) B leaves and N (far from A) arrives at a cap of 44: N (missing, first) takes 24, and
+    // A's new mesh (24, a face no longer buried) does not fit: A keeps its old mesh, still drawn.
+    // (The same frame changed in place: A's cells stay the same, as streaming keeps them.)
+    let moved = |frame: &mut WorldFrame| {
+        frame.chunks.remove(&ChunkKey::new(1, 0, 0));
+        frame.chunks.insert(ChunkKey::new(0, 3, 0), full(ChunkKey::new(0, 3, 0)));
+    };
+    for (cap, after) in [(44, [2, 0, 44]), (48, [2, 0, 48])] {
+        let mut world = WorldGpu::with_caps(GpuCaps { vertices: cap, ..GpuCaps::default() });
+        let mut frame = full_frame(&[[0, 0, 0], [1, 0, 0]]);
+        prepare(&gpu, &renderer, &mut world, &frame, &v);
+        assert_eq!(world.counts(), [2, 0, 40]);
+        moved(&mut frame);
+        prepare(&gpu, &renderer, &mut world, &frame, &v);
+        // At 44, A and N drawn, A with its old mesh; control, at 48, A meshed again with its
+        // sixth face.
+        assert_eq!(world.counts(), after, "cap {cap}");
+    }
+    // (b) A alone (24) at a cap of 30; B arrives. B (missing, first) needs 20 and does not fit;
+    // A's new mesh (20: its face against B buried) does, and is made: the loop goes on past B.
+    let mut tight = WorldGpu::with_caps(GpuCaps { vertices: 30, ..GpuCaps::default() });
+    let mut frame = full_frame(&[[0, 0, 0]]);
+    prepare(&gpu, &renderer, &mut tight, &frame, &v);
+    assert_eq!(tight.counts(), [1, 0, 24]);
+    frame.chunks.insert(ChunkKey::new(1, 0, 0), full(ChunkKey::new(1, 0, 0)));
+    prepare(&gpu, &renderer, &mut tight, &frame, &v);
+    assert_eq!(tight.counts(), [1, 0, 20], "B left out, A meshed again past it");
+}
+
+#[test]
+fn gpu_a_neighbour_arriving_buries_faces() {
+    // Minor 13: two full chunks side by side are ten faces, five each; the first, meshed alone,
+    // had six, and is meshed again when its neighbour arrives.
+    let gpu = gpu();
+    let renderer = Renderer::new(&gpu);
+    let v = view([4.0, 4.0, 4.0], 30.0, 20.0, 30.0);
+    let mut frame = full_frame(&[[0, 0, 0]]);
     let mut world = WorldGpu::default();
     prepare(&gpu, &renderer, &mut world, &frame, &v);
     assert_eq!(world.counts()[2], 6 * 4, "one full chunk: six faces of four vertices");

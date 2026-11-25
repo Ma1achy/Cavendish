@@ -54,9 +54,12 @@ pub const BRICK_WORDS: usize = 1042;
 /// visible bricks (those in the camera's frustum: bricks behind it are never counted) and leaves
 /// the farthest out, saying so. Chosen from the flythrough over `stress-1e10` (`docs/slices/S4.md`
 /// §7.4) so that a typical frame stays well under the ~50 ms after which Windows' desktop stops
-/// answering a busy GPU (measured after the frustum fix: median 30 ms, 99th percentile 59–64 ms,
-/// worst 68 ms on the build PC's GTX 1660 SUPER, the cap no longer binding there; a cap of 6
-/// saved 1–2 ms, the cost being in the nearest bricks). The bench's `--max-frame-ms 250` is not this limit: it is the alarm that stops a
+/// answering a busy GPU. Since the frustum fix it no longer binds in that flythrough (10× the
+/// pane marched on average): the median frame is 30 ms, but 1% of frames pass 59–64 ms (worst 68
+/// ms on the build PC's GTX 1660 SUPER), and nothing but the bench's 250 ms alarm bounds them. A
+/// cap of 6 saved 1–2 ms, and the draw's time follows the pixels this estimate counts only weakly
+/// (correlation 0.13–0.17 over the flythrough's frames): where the time goes is not yet measured
+/// (`plan/IDEAS.md`, early depth for the bricks). The bench's `--max-frame-ms 250` is not this limit: it is the alarm that stops a
 /// run whose frames have gone far past it, before the desktop freezes (TDR is at 2 s).
 ///
 /// The budget is a multiple of the pane's own pixels, so a 1440p pane marches up to four times
@@ -743,11 +746,16 @@ impl WorldGpu {
     }
 
     /// What identifies a frame's meshing at a cap: the chunks to mesh and what is in use.
+    /// Free of the order the chunks are listed in (nearest the eye first, which changes as the
+    /// camera moves: S4's second review, J3), so a camera moving at a cap does not mesh again.
     fn fingerprint(&self, todo: &[(bool, f64, ChunkKey, &Arc<ChunkCells>)]) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        for (stale, _, key, cells) in todo {
-            (stale, key, Arc::as_ptr(cells) as usize).hash(&mut hasher);
+        let mut entries: Vec<(ChunkKey, bool, usize)> =
+            todo.iter().map(|(stale, _, key, cells)| (*key, *stale, Arc::as_ptr(cells) as usize)).collect();
+        entries.sort_unstable();
+        for entry in &entries {
+            entry.hash(&mut hasher);
         }
         (self.vertices, self.free_meshes.len()).hash(&mut hasher);
         hasher.finish()
@@ -896,22 +904,31 @@ impl WorldGpu {
             self.empty.remove(key);
             let reached = if self.vertices + mesh.vertices.len() > self.caps.vertices {
                 Some(format!(
-                    "near field: meshes past {} vertices are not drawn (the nearest are)",
+                    "near field vertices: meshes past {} vertices are not drawn (the nearest are)",
                     self.caps.vertices
                 ))
             } else if old.is_none() && self.free_meshes.is_empty() {
-                Some(format!("near field: chunks past {} are not drawn (the nearest are)", self.caps.meshes))
+                Some(format!(
+                    "near field chunks: chunks past {} are not drawn (the nearest are)",
+                    self.caps.meshes
+                ))
             } else {
                 None
             };
             if let Some(note) = reached {
+                // A chunk already drawn keeps its old mesh (a hole where a neighbour left is
+                // better than the chunk gone); one not yet drawn waits. The rest are still tried:
+                // a smaller mesh further down may fit (S4's second review, J3).
                 if let Some(old) = old {
-                    self.free_meshes.push(old.slot);
+                    self.vertices += old.vertex_count;
+                    self.meshes.insert(*key, old);
                 }
-                self.notes.push(note.clone());
+                if !self.notes.contains(&note) {
+                    self.notes.push(note.clone());
+                }
                 // Remembered against what is wanted after this frame's meshes are kept.
                 self.full = Some((0, note));
-                break;
+                continue;
             }
             let slot = match old {
                 Some(old) => old.slot,
@@ -959,10 +976,25 @@ impl WorldGpu {
             }
         }
         self.incomplete = skipped > 0 && self.full.is_none();
-        // Upload the bricks wanted and missing.
+        // Upload the bricks wanted, in the frustum and missing, nearest first. At the slot cap a
+        // brick held but outside the frustum gives its slot up, so that "the nearest are" drawn
+        // stays true after the camera turns (S4's second review, minor 15).
+        let planes = frustum_planes(&camera.view_proj).map(|p| p.map(|v| v as f32));
+        let seen = |key: &(u8, ChunkKey)| {
+            let b = grid.brick_box(key.0, key.1);
+            let lo = b.lo - camera.origin;
+            visible(&planes, [lo.x as f32, lo.y as f32, lo.z as f32], grid.brick_side(key.0) as f32)
+        };
+        let mut unseen: Vec<(u8, ChunkKey)> = self.bricks.keys().filter(|k| !seen(k)).copied().collect();
         for (key, brick) in &far {
-            if self.bricks.contains_key(*key) {
+            if self.bricks.contains_key(*key) || !seen(key) {
                 continue;
+            }
+            if self.free_bricks.is_empty()
+                && let Some(out) = unseen.pop()
+                && let Some((slot, _)) = self.bricks.remove(&out)
+            {
+                self.free_bricks.push(slot);
             }
             let Some(slot) = self.free_bricks.pop() else {
                 self.notes.push(format!(
@@ -995,7 +1027,6 @@ impl WorldGpu {
         // frame's budget of pixels allows (MAX_BRICK_OVERDRAW times the pane): what bounds one
         // submission's far-field work. Bricks behind the camera are never counted against it.
         let eye_world = camera.origin + camera.eye;
-        let planes = frustum_planes(&camera.view_proj).map(|p| p.map(|v| v as f32));
         let held: Vec<((u8, ChunkKey), u32)> =
             far.iter().filter_map(|(key, _)| self.bricks.get(*key).map(|(slot, _)| (**key, *slot))).collect();
         let candidates: Vec<BrickCandidate> = held

@@ -36,8 +36,11 @@ pub const REPLAY_PATIENCE: std::time::Duration = std::time::Duration::from_secs(
 pub fn estimate_text(estimate: f64, settled: bool, truncated: Option<f64>) -> String {
     if let Some(radius) = truncated {
         // A truncated read is never settled; the estimate is the quadrature's, on what was read.
-        let quadrature =
-            if estimate.is_finite() { format!(", estimate {estimate:.0e} rad") } else { String::new() };
+        let quadrature = if estimate.is_finite() {
+            format!(" (quadrature of what was read within {estimate:.0e} rad)")
+        } else {
+            String::new()
+        };
         return format!("not settled: of the matter within {} m only{quadrature}", short_metres(radius));
     }
     if !settled {
@@ -53,9 +56,16 @@ pub fn estimate_text(estimate: f64, settled: bool, truncated: Option<f64>) -> St
     }
 }
 
-/// A distance in metres in as few digits as it needs: 2, 0.5, 12.5, 2e4.
+/// A distance in metres in as few digits as it needs: 2, 0.5, 12.5, 0.03, 2e4 (to a tenth of a
+/// metre from 1 m up, a millimetre below).
 fn short_metres(metres: f64) -> String {
-    if metres >= 1e4 { format!("{metres:.0e}") } else { format!("{}", (metres * 10.0).round() / 10.0) }
+    if metres >= 1e4 {
+        format!("{metres:.0e}")
+    } else if metres >= 1.0 {
+        format!("{}", (metres * 10.0).round() / 10.0)
+    } else {
+        format!("{}", (metres * 1000.0).round() / 1000.0)
+    }
 }
 
 /// Where an engine's exports go.
@@ -1285,6 +1295,7 @@ impl Engine {
                     frequencies: spectrum.frequencies,
                     power: spectrum.power,
                     combs,
+                    truncated: signal.truncated,
                 }))
             }
             Query::Cadence => {

@@ -302,7 +302,7 @@ mod tests {
         // the same code path at 8 to 9 s, so it runs in the web tier
         // (`a_voxel_job_through_the_wire_is_the_same_bits`); the point alone catches a broken
         // encoding in milliseconds (S17's second review, item 1).
-        same_bits(&[cav_sim::dev::point(), cav_sim::dev::comb(), cav_sim::dev::pass()]);
+        let _ = same_bits(&[cav_sim::dev::point(), cav_sim::dev::comb(), cav_sim::dev::pass()]);
     }
 
     #[test]
@@ -312,18 +312,12 @@ mod tests {
         let whole = cav_sim::dev::world_box();
         let mut part = whole.clone();
         part.world.as_mut().unwrap().read.radius = 1.0;
-        same_bits(&[whole.clone(), part.clone()]);
-        let shots = read::shots(&part).unwrap();
-        let Answer::Contribution(sent) =
-            answer(&serve(&contribution_request(&part, SourceId::World))).unwrap()
-        else {
-            panic!("no contribution came back")
-        };
-        assert_eq!((sent.truncated, sent.settled), (Some(1.0), false));
-        assert!(sent.gradiometer.len() == shots.total());
-        // (Control: the whole box went through `same_bits` above, untruncated and settled on both
-        // sides, so `None` comes back as `None`; its reading is not zeros: `world_bundle` and
-        // the web tier's equivalence read it.)
+        let flags = same_bits(&[whole, part]);
+        // What came back says it, whatever the direct read said (S4's second review, J4): the
+        // part is truncated at 1 m and not settled, in the contribution and the reading.
+        assert_eq!(flags[1], (Some((false, Some(1.0))), (false, Some(1.0))));
+        // Control: the whole box comes back whole and settled.
+        assert_eq!(flags[0], (Some((true, None)), (true, None)));
         // A world asked of a scene without one is nothing, not a world of zeros.
         let none = answer(&serve(&contribution_request(&cav_sim::dev::point(), SourceId::World))).unwrap();
         assert_eq!(none, Answer::Nothing);
@@ -333,14 +327,21 @@ mod tests {
     #[test]
     #[ignore = "8 to 9 s: run by `cargo xtask web`"]
     fn a_voxel_job_through_the_wire_is_the_same_bits() {
-        same_bits(&[cav_sim::dev::sphere()]);
+        let _ = same_bits(&[cav_sim::dev::sphere()]);
     }
 
     /// Every source of every scene, and the reading at 1 s, sent through the wire and read back:
     /// the same bits as made directly.
-    fn same_bits(specs: &[SceneSpec]) {
+    /// `(settled, truncated)` as an answer came back with them.
+    type Flags = (bool, Option<f64>);
+
+    /// Returns, for each scene, the flags of its sent world contribution (when it has a world)
+    /// and of its sent reading.
+    fn same_bits(specs: &[SceneSpec]) -> Vec<(Option<Flags>, Flags)> {
         let never = || false;
+        let mut flags = Vec::new();
         for spec in specs {
+            let mut world = None;
             let shots = read::shots(spec).unwrap();
             for source in read::sources(spec) {
                 let direct = read::contribution(spec, source, &shots, &never).unwrap();
@@ -361,6 +362,9 @@ mod tests {
                     (direct.settled, direct.truncated, &direct.warnings),
                     (sent.settled, sent.truncated, &sent.warnings)
                 );
+                if source == SourceId::World {
+                    world = Some((sent.settled, sent.truncated));
+                }
             }
             let direct = read::reading(spec, 1.0, &never).unwrap();
             let Answer::Reading(sent) = answer(&serve(&reading_request(spec, 1.0))).unwrap() else {
@@ -378,7 +382,9 @@ mod tests {
                 (direct.settled, direct.truncated, &direct.warnings),
                 (sent.settled, sent.truncated, &sent.warnings)
             );
+            flags.push((world, (sent.settled, sent.truncated)));
         }
+        flags
     }
 
     #[test]

@@ -430,6 +430,13 @@ fn provenance(
         },
         "engine": cav_engine::build().json(),
         "numerics": cav_sim::bundle::numerics(spec, cav_engine::build()),
+        // How far the numbers drawn can be trusted, as the bundle says it (S4's second review,
+        // J4): whether every read settled, the world's truncation, and the warnings.
+        "signal": engine.signal().1.map(|s| json!({
+            "settled": s.settled,
+            "truncated": s.truncated,
+            "warnings": s.warnings.iter().map(|w| w.text.clone()).collect::<Vec<_>>(),
+        })),
         "scene": { "name": spec.name, "spec": spec },
     });
     let entry = json!({
