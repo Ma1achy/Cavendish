@@ -72,11 +72,18 @@ fn fly(
     let frame = streaming.frame().expect("town has a world");
     world.prepare(gpu, pipelines, frame, &first, &Camera::new(&first, aspect), size, true);
     let mut last: Vec<Item> = world.drawn.clone();
+    let mut previous = first.clone();
     let mut flight = Flight::default();
     let lap = std::f64::consts::TAU * 60.0;
     for f in 1..=frames {
         let view = camera_at(&template, f as f64 * 15.0 / 60.0 / lap);
+        // As the engine does: a refresh a view command, so a pan then an orbit (the pan alone
+        // drops some of what the orbit wants again, which is made again).
+        let mut panned = previous.clone();
+        panned.target = view.target;
+        streaming.refresh(spec, std::slice::from_ref(&panned), &contents);
         streaming.refresh(spec, std::slice::from_ref(&view), &contents);
+        previous = view.clone();
         streaming.step(builds, f64::INFINITY);
         let frame = streaming.frame().expect("town has a world");
         let camera = Camera::new(&view, aspect);

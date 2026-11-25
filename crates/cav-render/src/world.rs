@@ -779,8 +779,8 @@ impl WorldGpu {
     }
 
     /// The near chunks whose meshes are to be made: `(stale, distance from the eye, key, cells)`,
-    /// the missing first, then those whose neighbours changed since their mesh was made, each
-    /// nearest first.
+    /// the missing first, then those whose neighbours changed since their mesh was made or that
+    /// the streaming has made again (each drawn with its old mesh until then), each nearest first.
     fn to_mesh<'f>(
         &self,
         near: &[(ChunkKey, &'f Arc<ChunkCells>)],
@@ -793,7 +793,7 @@ impl WorldGpu {
             .filter_map(|&(key, cells)| {
                 let now = around(frame, key);
                 let stale = match (self.meshes.get(&key), self.empty.get(&key)) {
-                    (Some(mesh), _) => mesh.around != now,
+                    (Some(mesh), _) => mesh.around != now || !Arc::ptr_eq(&mesh.source, cells),
                     (None, Some((made, then))) if Arc::ptr_eq(made, cells) => *then != now,
                     _ => false,
                 };
@@ -892,18 +892,10 @@ impl WorldGpu {
             .collect();
         let distance = |k: &(u8, ChunkKey)| (grid.brick_box(k.0, k.1).centre() - eye_at).length();
         far.sort_by(|a, b| distance(a.0).total_cmp(&distance(b.0)).then(a.0.cmp(b.0)));
-        // Drop the GPU copies of what has been made again. What the streaming no longer holds is
-        // kept, retired: drawn only in place of what is not yet ready where it was ([`stand_ins`]),
-        // and let go when it has not been needed for RETIRED_PREPARES prepares or its room is.
-        let gone: Vec<ChunkKey> = self
-            .meshes
-            .iter()
-            .filter(|(k, m)| frame.chunks.get(*k).is_some_and(|c| !Arc::ptr_eq(c, &m.source)))
-            .map(|(k, _)| *k)
-            .collect();
-        for key in gone {
-            self.drop_mesh(key);
-        }
+        // What the streaming no longer holds is kept, retired: drawn only in place of what is not
+        // yet ready where it was ([`stand_ins`]), and let go when it has not been needed for
+        // RETIRED_PREPARES prepares or its room is. What it has made again keeps its old copy,
+        // drawn, until the new one is made (a mesh below; a brick is written over in its slot).
         for key in self.meshes.keys() {
             if frame.chunks.contains_key(key) {
                 self.retired.remove(&(0, *key));
@@ -912,15 +904,6 @@ impl WorldGpu {
             }
         }
         self.empty.retain(|k, (c, _)| frame.chunks.get(k).is_some_and(|now| Arc::ptr_eq(now, c)));
-        let gone: Vec<(u8, ChunkKey)> = self
-            .bricks
-            .iter()
-            .filter(|(k, (_, b))| frame.bricks.get(*k).is_some_and(|c| !Arc::ptr_eq(c, b)))
-            .map(|(k, _)| *k)
-            .collect();
-        for key in gone {
-            self.drop_brick(key);
-        }
         for key in self.bricks.keys() {
             if frame.bricks.contains_key(key) {
                 self.retired.remove(key);
@@ -1088,7 +1071,19 @@ impl WorldGpu {
         };
         let mut unseen: Vec<(u8, ChunkKey)> = self.bricks.keys().filter(|k| !seen(k)).copied().collect();
         for (key, brick) in &far {
-            if self.bricks.contains_key(*key) || !seen(key) {
+            if let Some((slot, held)) = self.bricks.get_mut(*key) {
+                // Made again: written over in its slot, this frame (the old one drawn till now).
+                if !Arc::ptr_eq(held, brick) {
+                    *held = Arc::clone(brick);
+                    gpu.queue.write_buffer(
+                        store,
+                        (*slot as usize * BRICK_WORDS * 4) as u64,
+                        bytemuck::cast_slice(&brick_words(brick)),
+                    );
+                }
+                continue;
+            }
+            if !seen(key) {
                 continue;
             }
             if self.free_bricks.is_empty() {
@@ -1137,7 +1132,8 @@ impl WorldGpu {
             .keys()
             .filter(|k| !near_keys.contains(k))
             .map(|k| (0, *k))
-            .chain(self.bricks.keys().filter(|k| !selected(**k)).copied());
+            // A retired brick the camera selects again stands in for itself while it is made again.
+            .chain(self.bricks.keys().filter(|k| !selected(**k) || self.retired.contains_key(*k)).copied());
         let standing = if self.without_stand_ins { Vec::new() } else { stand_ins(unready, held) };
         for idle in self.retired.values_mut() {
             *idle = idle.saturating_add(1);

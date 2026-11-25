@@ -1,4 +1,5 @@
-//! `cav bench flythrough`: a scripted camera over `stress-1e10` (REBUILD §9.1 `flythrough`),
+//! `cav bench flythrough`: a scripted camera over `stress-1e10` (REBUILD §9.1 `flythrough`), or
+//! over another scene with a world (`--scene town`, the loop scaled to its world),
 //! drawn offscreen frame by frame as a window draws it (the world streamed a step a frame, its
 //! meshes made a few a frame), with a frame-time trace. What this card holds is measured here:
 //! the owner's ruling makes 60 fps and 10¹⁰ cells targets for a faster GPU, recorded, not gated.
@@ -16,13 +17,14 @@ use cav_render::{PaneTarget, Renderer};
 
 /// Where the camera is at `s` from 0 to 1 along the flythrough: its target (on the ground) and
 /// its yaw, pitch (degrees) and distance (metres). A loop out from the array over the town and
-/// back, low over the ground, looking along the way it goes.
+/// back, low over the ground, looking along the way it goes; `scale` shrinks the loop for a smaller
+/// world (1 for `stress-1e10`'s kilometre).
 #[must_use]
-pub fn path(s: f64) -> ([f64; 3], f64, f64, f64) {
+pub fn path(s: f64, scale: f64) -> ([f64; 3], f64, f64, f64) {
     let angle = std::f64::consts::TAU * s;
-    // An ellipse 480 m by 800 m through the array's neighbourhood at s = 0.
-    let (a, b) = (240.0, 400.0);
-    let x = a * (angle.cos() - 1.0) + 20.0;
+    // An ellipse 480 m by 800 m through the array's neighbourhood at s = 0 (scaled).
+    let (a, b) = (240.0 * scale, 400.0 * scale);
+    let x = a * (angle.cos() - 1.0) + 20.0 * scale;
     let y = b * angle.sin();
     // Facing along the path: the camera behind the target, so its yaw points back along it.
     let (dx, dy) = (-a * angle.sin(), b * angle.cos());
@@ -30,10 +32,10 @@ pub fn path(s: f64) -> ([f64; 3], f64, f64, f64) {
     ([x, y, 0.0], heading + 180.0, 14.0, 24.0)
 }
 
-/// The loop's length, metres: Ramanujan's perimeter of the path's ellipse.
+/// The loop's length, metres, at `scale`: Ramanujan's perimeter of the path's ellipse.
 #[must_use]
-pub fn loop_length() -> f64 {
-    let (a, b) = (240.0f64, 400.0f64);
+pub fn loop_length(scale: f64) -> f64 {
+    let (a, b) = (240.0 * scale, 400.0 * scale);
     std::f64::consts::PI * (3.0 * (a + b) - ((3.0 * a + b) * (a + 3.0 * b)).sqrt())
 }
 
@@ -52,6 +54,7 @@ fn summary(times: &[f64]) -> [f64; 4] {
 /// # Errors
 /// When there is no GPU or the scene cannot be loaded.
 pub fn flythrough(
+    scene: &str,
     frames: usize,
     size: [u32; 2],
     speed: f64,
@@ -60,8 +63,15 @@ pub fn flythrough(
 ) -> Result<String, String> {
     let mut engine = Engine::new();
     engine.set_world_cache(cache);
-    let spec = cav_sim::load("stress-1e10").map_err(|e| e.0)?;
-    let cells = spec.world.as_ref().map_or(0.0, |w| cav_sim::world::World::new(w).cells(w));
+    let spec = cav_sim::load(scene).map_err(|e| e.0)?;
+    let world = spec.world.as_ref().ok_or_else(|| format!("{scene} has no world to fly over"))?;
+    let built = cav_sim::world::World::new(world);
+    let cells = built.cells(world);
+    // The loop fits a kilometre; a smaller world's is scaled to its own half-width.
+    let scale = built.extent().map_or(1.0, |e| {
+        let half = 0.5 * (e.hi.x - e.lo.x).min(e.hi.y - e.lo.y);
+        (half / 500.0).clamp(0.01, 1.0)
+    });
     engine.apply(Command::load(spec)).map_err(|e| e.to_string())?;
     let gpu = Gpu::new()?;
     let renderer = Renderer::new(&gpu);
@@ -71,7 +81,7 @@ pub fn flythrough(
     };
     // The start: everything the first camera and the towers want, made at once (a load).
     let place = |engine: &mut Engine, s: f64| -> Result<(), String> {
-        let (target, yaw, pitch, distance) = path(s);
+        let (target, yaw, pitch, distance) = path(s, scale);
         for command in [
             ViewCommand::Pan { pane: 0, target },
             ViewCommand::Orbit { pane: 0, yaw, pitch },
@@ -93,7 +103,7 @@ pub fn flythrough(
     // What the renderer left out, by kind (the words before the colon), and in how many frames.
     let mut cuts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for frame in 0..frames {
-        let s = frame as f64 * speed / 60.0 / loop_length();
+        let s = frame as f64 * speed / 60.0 / loop_length(scale);
         let began = Instant::now();
         place(&mut engine, s)?;
         engine.poll();
@@ -131,8 +141,9 @@ pub fn flythrough(
     let [mean, median, p99, worst] = summary(&times);
     let _ = writeln!(
         out,
-        "# stress-1e10: about {cells:.2e} finest cells; {}x{} px at {speed} m/s; first view resident in {load:.2} s ({} made, {} from the cache{}); \
+        "# {scene}: about {cells:.2e} finest cells; the loop {:.0} m; {}x{} px at {speed} m/s; first view resident in {load:.2} s ({} made, {} from the cache{}); \
          {} frames of the {frames} asked: mean {mean:.1} ms ({:.0} fps), median {median:.1} ms, 99th percentile {p99:.1} ms, worst {worst:.1} ms",
+        loop_length(scale),
         size[0],
         size[1],
         made.0,
@@ -153,23 +164,29 @@ mod tests {
 
     #[test]
     fn the_flythrough_path_loops_and_looks_ahead() {
-        let (start, ..) = path(0.0);
-        let (end, ..) = path(1.0);
+        let (start, ..) = path(0.0, 1.0);
+        let (end, ..) = path(1.0, 1.0);
         assert!((start[0] - end[0]).abs() < 1e-6 && (start[1] - end[1]).abs() < 1e-6);
         // It starts by the array and goes out over the town, within the kilometre.
         assert!(start[0].abs() < 30.0 && start[1].abs() < 30.0);
-        let (far, ..) = path(0.5);
+        let (far, ..) = path(0.5, 1.0);
         assert!(far[0] < -400.0 && far[0] > -500.0);
         for i in 0..100 {
-            let (t, yaw, pitch, distance) = path(f64::from(i) / 100.0);
+            let (t, yaw, pitch, distance) = path(f64::from(i) / 100.0, 1.0);
             assert!(t[0].abs() <= 500.0 && t[1].abs() <= 500.0, "{t:?}");
             assert!(pitch > 0.0 && distance > 0.0 && yaw.is_finite());
             // The camera is behind the target: the next target is ahead, away from the eye.
-            let (next, ..) = path(f64::from(i) / 100.0 + 0.001);
+            let (next, ..) = path(f64::from(i) / 100.0 + 0.001, 1.0);
             let eye = [t[0] + yaw.to_radians().cos(), t[1] + yaw.to_radians().sin()];
             let ahead = (next[0] - t[0]) * (t[0] - eye[0]) + (next[1] - t[1]) * (t[1] - eye[1]);
             assert!(ahead > 0.0, "at {i} the camera looks back");
         }
+        // Scaled for town's 200 m: within ±100 m, and its length scales with it.
+        for i in 0..100 {
+            let (t, ..) = path(f64::from(i) / 100.0, 0.2);
+            assert!(t[0].abs() <= 100.0 && t[1].abs() <= 100.0, "{t:?}");
+        }
+        assert!((loop_length(0.2) - 0.2 * loop_length(1.0)).abs() < 1e-9);
         assert_eq!(summary(&[1.0, 2.0, 3.0, 10.0]), [4.0, 3.0, 10.0, 10.0]);
     }
 }
