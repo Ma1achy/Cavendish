@@ -153,12 +153,12 @@ pub struct ScheduleSpec {
     /// The probability that a shot is lost, for each shot of each tower on its own. From 0 (the
     /// default) to 0.99.
     #[serde(default)]
-    #[schemars(range(min = 0.0, max = 0.99), extend("x-unit" = "1"))]
+    #[schemars(range(min = 0.0, max = 0.99), extend("x-unit" = "1"), title = "Shots lost, fraction")]
     pub loss: f64,
     /// The seed of the schedule's random numbers. At most 2⁵³, so that it survives any JSON
     /// client. The default is 0.
     #[serde(default)]
-    #[schemars(range(max = 9_007_199_254_740_992u64))]
+    #[schemars(range(max = 9_007_199_254_740_992u64), title = "Random seed")]
     pub seed: u64,
 }
 

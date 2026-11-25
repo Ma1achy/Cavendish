@@ -1372,11 +1372,13 @@ fn the_right_button_flies_and_holds_the_letters() {
     assert_eq!(rig.shell.engine.selection(), Some(Target::Tower(2)), "the control: 2 selects again");
     // None of it was an edit.
     assert_eq!(rig.shell.engine.depth(), (1, 0));
-    // The pointer gone from the window ends the fly too (a release outside it is never seen).
+    // The window losing its focus ends the fly too (a release elsewhere is never seen). The
+    // pointer leaving it with the button held does not (S18's third review, minor 3, which
+    // replaces the second review's minor 4 here: see `editor/s19.rs`).
     rig.frames(vec![vec![Event::PointerMoved(at)], vec![Rig::press(at, PointerButton::Secondary, true)]]);
     assert!(rig.shell.mouse_fly.is_some());
-    rig.frames(vec![vec![Event::PointerGone], vec![]]);
-    assert!(rig.shell.mouse_fly.is_none(), "minor 4: the pointer left, the fly ended");
+    rig.frames(vec![vec![Event::WindowFocused(false)], vec![]]);
+    assert!(rig.shell.mouse_fly.is_none(), "minor 4: the window's focus lost, the fly ended");
 }
 
 #[test]
@@ -1507,8 +1509,10 @@ fn the_history_says_what_happened_in_words_beside_the_figure() {
     let strip = rig.shell.layout().panel("toolbar").unwrap();
     assert!(overlap(window, strip) < 1.0, "{window:?} covers the tool strip {strip:?}");
     assert_eq!(rig.shell.focus_tree().node("history/done/1").unwrap().name, "Added sphere");
-    // The first row says what it goes back to, not something like the load below it.
-    assert_eq!(rig.shell.focus_tree().node("history/start").map(|n| n.name.as_str()), Some("the start"));
+    // The first row says what it goes back to, not something like the load below it, and its
+    // node is named with the words drawn (S18's third review, minor 6: it was "the start").
+    let start = rig.shell.focus_tree().node("history/start").map(|n| n.name.clone());
+    assert_eq!(start.as_deref(), Some("Before opening: “room”"));
     // The toast says the last edit in words, with Undo; after an undo, what was undone and Redo.
     assert!(rig.shell.layout().button("toast undo").is_some());
     rig.click_button("toast undo");
@@ -1773,3 +1777,7 @@ fn the_wizard_offers_its_bodies_as_tiles() {
     rig.click_button("wizard body cube");
     assert_eq!(rig.shell.wizard.as_ref().unwrap().body.as_deref(), Some("cube"));
 }
+
+/// The tests of S19 (`docs/slices/S19.md` §4), on the same rig.
+#[path = "editor/s19.rs"]
+mod s19;

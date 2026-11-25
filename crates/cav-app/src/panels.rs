@@ -161,13 +161,17 @@ fn scrolling(ui: &mut egui::Ui, id: &str, contents: impl FnOnce(&mut egui::Ui)) 
             );
             painter.rect_filled(band, 0.0, theme::PANEL.gamma_multiply(t));
         }
-        painter.text(
-            pos2(rect.center().x, rect.bottom() - 3.0),
-            Align2::CENTER_BOTTOM,
-            "more below: scroll",
-            FontId::proportional(10.5),
-            theme::WEAK,
+        // On a solid band of its own, in the text's colour: over the faded rows it was too faint
+        // to read (S18's third review, minor 9).
+        let galley =
+            painter.layout_no_wrap("more below: scroll".to_owned(), FontId::proportional(10.5), theme::TEXT);
+        let at = pos2(rect.center().x - 0.5 * galley.size().x, rect.bottom() - 3.0 - galley.size().y);
+        painter.rect_filled(
+            Rect::from_min_size(at, galley.size()).expand2(egui::vec2(6.0, 1.0)),
+            3.0,
+            theme::WIDGET,
         );
+        painter.galley(at, galley, theme::TEXT);
     }
     below > 4.0
 }

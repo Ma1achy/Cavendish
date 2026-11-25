@@ -80,6 +80,22 @@ fn a_legend_is_made_from_what_is_drawn() {
         other.range = Some((lo - 1.0, hi + 1.0));
         assert_ne!(legend(&other, &scene, &style, &Outlines).unwrap().texts()[1..], texts[1..]);
     }
+    // A sequential field over a range that is not flat, segment by segment (S18's third review,
+    // minor 5: the cube's heights are one value, so only Phase, diverging, was checked so). The
+    // range is widened by hand; the bar is the field's own map from the least to the greatest.
+    let mut level = frame_of(&scene, LeafField::Level);
+    level.range = Some((0.0, 4.0));
+    let fills = bar(&legend(&level, &scene, &style, &Outlines).unwrap());
+    assert_eq!(fills.len(), BAR_SEGMENTS);
+    for (k, fill) in fills.iter().enumerate() {
+        let value = 4.0 * (k as f64 + 0.5) / BAR_SEGMENTS as f64;
+        assert_eq!(*fill, colour_of(&level, value, false), "Level, segment {k}");
+    }
+    // Control: the map read the other way round is not this bar.
+    let reversed: Vec<_> = (0..BAR_SEGMENTS)
+        .map(|k| colour_of(&level, 4.0 * (1.0 - (k as f64 + 0.5) / BAR_SEGMENTS as f64), false))
+        .collect();
+    assert_ne!(fills, reversed);
     // Nothing drawn, no legend.
     assert!(legend(&VoxelFrame::default(), &scene, &style, &Outlines).is_none());
 }

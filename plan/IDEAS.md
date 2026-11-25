@@ -151,3 +151,10 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **A wizard scene undone** keeps the `*` of the scene it replaced until the next save or load (`Shell::untitled` is the window's, not the history's). Harmless; tie it to the history step if it confuses anyone.
 - **Keyboard for the right-click menu** (Shift+F10, the Menu key): `context` opens the selection's row menu from the console; a key for it, with the menu walkable by the arrows, belongs with S19's keymap work.
 - **The inspector's name column** is 92 points: "Half sequence T" fits, longer titles are cut with the full name on hover. A panel wider than its default could give the names the extra room. S19, with docking.
+
+## From S18's third review (left, with why)
+
+- **The wizard's tiles share icons** (minor 8): Cube and Box one, the four polyhedra a triangle,
+  Oscillating mass, Pendulum and Walker one. Each starter could draw its own small picture from
+  its shape (a projected outline, as the Place ghost does). Not done: a picture a tile is polish
+  the wizard does not need to be used.

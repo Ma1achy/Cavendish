@@ -943,7 +943,7 @@ fn s18(root: &Path) -> Result<(), String> {
         ("editor-wizard.png", "load room; wizard"),
         ("editor-instrument.png", "load point; layout instrument"),
         ("editor-analysis.png", "load comb; layout analysis"),
-        ("editor-place.png", "load void; tool place"),
+        ("editor-place.png", "load void; tool place; pointer 0.55 0.7"),
         ("editor-maximised.png", "load town; view iso; pan 0 0 0; zoom 45; maximise"),
     ];
     for (file, script) in &shots {

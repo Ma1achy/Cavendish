@@ -55,6 +55,10 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
         "fly",
         "fly the camera: W A S D, E up, Q down, arrows or a drag to look; again, Enter or Esc to stop (Shift+F)",
     ),
+    (
+        "pointer",
+        "for a picture with no window: rest the pointer at a point of the active pane, as fractions from its top left (`pointer 0.5 0.7`)",
+    ),
     ("about", "version and credits"),
     ("clear", "empty the console's log"),
     ("quit", "close the application"),
@@ -254,6 +258,10 @@ pub struct Shell {
     /// The pane being flown with the right mouse button held (Unity's and Unreal's fly: W A S D
     /// move, the mouse looks, the wheel sets the speed), while it is held. UI state.
     pub mouse_fly: Option<usize>,
+    /// Where a picture taken with no window rests its pointer, as fractions of the active pane
+    /// from its top left (`pointer 0.5 0.7`): what shows a tool's hover (the Place tool's ghost)
+    /// in the demo's pictures. UI state, read only by [`crate::headless::Headless::screenshot`].
+    pub pointer_at: Option<[f32; 2]>,
     /// The tool in hand: an id of `ui/tools.ron`. UI state, never journalled.
     pub tool: String,
     /// Whether the Move tool snaps to the step.
@@ -380,6 +388,7 @@ impl Shell {
             renaming: None,
             fly_speed: crate::camera::FLY_SPEED,
             mouse_fly: None,
+            pointer_at: None,
             tool: "select".to_owned(),
             snap: true,
             place_starter: "sphere".to_owned(),
@@ -1051,6 +1060,19 @@ impl Shell {
                     return Err(why);
                 }
             },
+            "pointer" => {
+                let numbers: Vec<f32> = words.by_ref().filter_map(|w| w.parse().ok()).collect();
+                match numbers[..] {
+                    [x, y] if (0.0..=1.0).contains(&x) && (0.0..=1.0).contains(&y) => {
+                        self.pointer_at = Some([x, y]);
+                    }
+                    _ => {
+                        let why = "`pointer <x> <y>`: two fractions of the pane, from 0 to 1".to_owned();
+                        self.engine.note(Level::Error, Subsystem::App, why.clone());
+                        return Err(why);
+                    }
+                }
+            }
             "maximise" => self.maximised = !self.maximised,
             "fullscreen" => self.fullscreen = !self.fullscreen,
             "frame" => {
@@ -1256,20 +1278,32 @@ impl Shell {
                         presses.push(Press::with(*key, *modifiers));
                     }
                     Event::Key { key, pressed: false, .. } => released.push(*key),
-                    Event::PointerButton { pressed: true, pos, .. } => clicked = Some(*pos),
+                    Event::PointerButton { pressed: true, pos, button, .. } => {
+                        clicked = Some((*pos, *button == egui::PointerButton::Primary));
+                    }
                     _ => {}
                 }
             }
             (presses, released, clicked)
         });
-        // The right button let go, the window's focus lost or the pointer gone from it (a release
-        // outside the page is never seen): the mouse's fly ends (S18's second review, minor 4).
-        if self.mouse_fly.is_some()
-            && ctx.input(|i| !i.pointer.secondary_down() || !i.focused || i.pointer.hover_pos().is_none())
-        {
+        // The right button let go or the window's focus lost: the mouse's fly ends (S18's second
+        // review, minor 4). The pointer leaving the window while the button is held does not end
+        // it (S18's third review, minor 3: a wide look turn reaches the edge, and winit reports
+        // the cursor gone though the button is down); egui keeps the button down until its
+        // release is seen, as it does for any drag.
+        if self.mouse_fly.is_some() && ctx.input(|i| !i.pointer.secondary_down() || !i.focused) {
             self.mouse_fly = None;
         }
-        if let Some(pos) = clicked {
+        // A primary press anywhere but the tool's options row ends a transform session, its move
+        // kept: a click on a row of the tree, the canvas, a menu (S18's third review, minor 1; as
+        // a click outside a move keeps it in Blender). The options row is the session's own.
+        if let Some((pos, true)) = clicked
+            && self.session.is_some()
+            && !self.layout.panel("options").is_some_and(|r| r.contains(pos))
+        {
+            self.end_session(true);
+        }
+        if let Some((pos, _)) = clicked {
             self.keyboard.pointer();
             self.repeat.clear();
             // A click on a control in a window moves the keyboard's focus onto it, in navigation
