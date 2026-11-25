@@ -12,6 +12,7 @@ cav-core.workspace = true
 cav-gpu.workspace = true
 cav-sim.workspace = true
 png.workspace = true
+web-time.workspace = true
 wgpu.workspace = true
 
 [dev-dependencies]

@@ -56,6 +56,11 @@ pub const MAX_WORLD_VERTICES: usize = 12 << 20;
 pub const RETIRED_PREPARES: u32 = 8;
 /// The most chunk meshes made in one frame of a window (a picture taken once makes them all).
 pub const MAX_MESHES_PER_DRAW: usize = 96;
+/// The longest a frame of a window spends making chunk meshes, milliseconds: it makes no new
+/// batch past it (eight meshes a thread a batch; at least one batch). A mesh is about 0.08 ms on
+/// one thread of the build PC since TASK-S4-27, so natively [`MAX_MESHES_PER_DRAW`] binds first;
+/// in a page, which has one thread, this does (`docs/slices/S4.md` §7.10).
+pub const MESH_MILLISECONDS: f64 = 4.0;
 /// The most sub-blocks and cells one ray visits: 10 sub-blocks and 22 cells in each, and a margin.
 pub const MAX_MARCH_STEPS: u32 = 256;
 /// The words of one brick on the GPU: 32 768 occupancy bits, the 64-bit sub-block mask, and 64
@@ -176,7 +181,8 @@ pub struct Mesh {
     pub indices: Vec<u32>,
 }
 
-/// The unit step along axis `axis` (0 x, 1 y, 2 z).
+/// The unit step along axis `axis` (0 x, 1 y, 2 z): the reference mesher's.
+#[cfg(test)]
 const fn along(axis: usize) -> [i32; 3] {
     let mut v = [0; 3];
     v[axis] = 1;
@@ -186,10 +192,202 @@ const fn along(axis: usize) -> [i32; 3] {
 /// The chunk's exposed faces as rectangles, merged greedily per slice and material: a face of an
 /// occupied cell is exposed when the cell beyond it is empty, looked up in the neighbouring chunk
 /// across the chunk's side (`neighbours`, in face order −x, +x, −y, +y, −z, +z; a missing one is
-/// air). `materials` is the chunk's cells as [`ChunkCells::materials`] gives them (material + 1,
-/// 0 empty); every vertex carries `slot`.
+/// air; only its layer against this chunk is read, so [`ChunkCells::materials_layer`] will do).
+/// `materials` is the chunk's cells as [`ChunkCells::materials`] gives them (material + 1, 0
+/// empty); every vertex carries `slot`.
+///
+/// Which faces are exposed is found 34 cells at a time, as bits (TASK-S4-27): a row of the padded
+/// chunk along x is one `u64`, and a row's exposed faces are its occupied bits without the
+/// occupied bits beyond them. Only the slices and rows with an exposed face are then merged, cell
+/// by cell, in the same order as before, so the rectangles are the same, in the same order, as
+/// the cell-by-cell mesher's (held by `the_bit_mesher_is_the_cell_mesher`).
 #[must_use]
 pub fn greedy_mesh(materials: &[u8], neighbours: [Option<&[u8]>; 6], slot: u16) -> Mesh {
+    let n = CHUNK_SIDE as i32;
+    let nu = CHUNK_SIDE as usize;
+    // The chunk with a one-cell rim from its neighbours (34³, x fastest), so that every look-up
+    // below is one index.
+    const P: i32 = CHUNK_SIDE as i32 + 2;
+    const PU: usize = P as usize;
+    let mut padded = vec![0u8; PU * PU * PU];
+    let pad = |c: [i32; 3]| ((c[0] + 1) + P * ((c[1] + 1) + P * (c[2] + 1))) as usize;
+    for z in 0..n {
+        for y in 0..n {
+            let row = cell_index([0, y as u32, z as u32]);
+            let at = pad([0, y, z]);
+            padded[at..at + nu].copy_from_slice(&materials[row..row + nu]);
+        }
+    }
+    for (face, cells) in neighbours.iter().enumerate() {
+        let Some(cells) = cells else { continue };
+        let axis = face / 2;
+        let (inside, outside) = if face % 2 == 1 { (0, n) } else { (n - 1, -1) };
+        for b in 0..n {
+            for a in 0..n {
+                let (mut from, mut to) = ([0; 3], [0; 3]);
+                from[axis] = inside;
+                to[axis] = outside;
+                from[(axis + 1) % 3] = a;
+                to[(axis + 1) % 3] = a;
+                from[(axis + 2) % 3] = b;
+                to[(axis + 2) % 3] = b;
+                padded[pad(to)] = cells[cell_index(from.map(|v| v as u32))];
+            }
+        }
+    }
+    // Occupancy as bits: `occupied[y + P z]` has bit `x` set when padded cell (x, y, z) holds
+    // matter (padded coordinates, 0 to 33: chunk cell c is padded c + 1).
+    let mut occupied = vec![0u64; PU * PU];
+    for (at, bits) in occupied.iter_mut().enumerate() {
+        let cells = &padded[at * PU..at * PU + PU];
+        *bits = cells.iter().enumerate().fold(0u64, |acc, (x, &m)| acc | (u64::from(m != 0) << x));
+    }
+    let row = |y: usize, z: usize| occupied[y + PU * z];
+    // The chunk's own cells in a row: padded bits 1 to 32.
+    const INSIDE: u64 = 0xFFFF_FFFF << 1;
+    let mut mesh = Mesh::default();
+    let mut mask = vec![0u8; nu * nu];
+    let mut exposed = vec![0u64; PU * PU];
+    for face in 0..6usize {
+        let axis = face / 2;
+        let positive = face % 2 == 1;
+        let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+        // This face's exposed cells, as rows along x (padded rows 1 to 32 only).
+        let mut any = 0u64;
+        for z in 1..=nu {
+            for y in 1..=nu {
+                let here = row(y, z);
+                let beyond = match (axis, positive) {
+                    (0, true) => here >> 1,
+                    (0, false) => here << 1,
+                    (1, true) => row(y + 1, z),
+                    (1, false) => row(y - 1, z),
+                    (_, true) => row(y, z + 1),
+                    (_, false) => row(y, z - 1),
+                };
+                let bits = here & !beyond & INSIDE;
+                exposed[y + PU * z] = bits;
+                any |= bits;
+            }
+        }
+        if any == 0 {
+            continue;
+        }
+        // Chunk cell (x, y, z): whether its face is exposed, and its material.
+        let bit = |x: usize, y: usize, z: usize| (exposed[(y + 1) + PU * (z + 1)] >> (x + 1)) & 1 == 1;
+        let material = |x: usize, y: usize, z: usize| padded[(x + 1) + PU * ((y + 1) + PU * (z + 1))];
+        for slice in 0..nu {
+            // The slice's mask (a along u, b along v), and which of its rows b hold a face.
+            let mut rows = [false; CHUNK_SIDE as usize];
+            match axis {
+                // u = y, v = z: the slice is x = slice.
+                0 => {
+                    if (any >> (slice + 1)) & 1 == 0 {
+                        continue;
+                    }
+                    for b in 0..nu {
+                        for a in 0..nu {
+                            if bit(slice, a, b) {
+                                mask[a + nu * b] = material(slice, a, b);
+                                rows[b] = true;
+                            }
+                        }
+                    }
+                }
+                // u = z, v = x: the slice is y = slice; a row of bits runs along x, which is v.
+                1 => {
+                    for a in 0..nu {
+                        let mut bits = exposed[(slice + 1) + PU * (a + 1)] >> 1;
+                        while bits != 0 {
+                            let b = bits.trailing_zeros() as usize;
+                            bits &= bits - 1;
+                            mask[a + nu * b] = material(b, slice, a);
+                            rows[b] = true;
+                        }
+                    }
+                }
+                // u = x, v = y: the slice is z = slice; a row of bits runs along x, which is u.
+                _ => {
+                    for (b, filled) in rows.iter_mut().enumerate() {
+                        let mut bits = exposed[(b + 1) + PU * (slice + 1)] >> 1;
+                        *filled = bits != 0;
+                        while bits != 0 {
+                            let a = bits.trailing_zeros() as usize;
+                            bits &= bits - 1;
+                            mask[a + nu * b] = material(a, b, slice);
+                        }
+                    }
+                }
+            }
+            if !rows.contains(&true) {
+                continue;
+            }
+            // Greedy rectangles: widest first along u, then as tall as the row allows along v.
+            // Every set cell of the mask is taken, so the mask is all zero again after.
+            let slice = slice as i32;
+            for b in 0..n {
+                if !rows[b as usize] {
+                    continue;
+                }
+                let mut a = 0;
+                while a < n {
+                    let m = mask[(a + n * b) as usize];
+                    if m == 0 {
+                        a += 1;
+                        continue;
+                    }
+                    let mut width = 1;
+                    while a + width < n && mask[(a + width + n * b) as usize] == m {
+                        width += 1;
+                    }
+                    let mut height = 1;
+                    'grow: while b + height < n {
+                        for k in 0..width {
+                            if mask[(a + k + n * (b + height)) as usize] != m {
+                                break 'grow;
+                            }
+                        }
+                        height += 1;
+                    }
+                    for h in 0..height {
+                        for k in 0..width {
+                            mask[(a + k + n * (b + h)) as usize] = 0;
+                        }
+                    }
+                    let plane = slice + i32::from(positive);
+                    let corner = |du: i32, dv: i32| {
+                        let mut p = [0u16; 4];
+                        p[axis] = plane as u16;
+                        p[u] = (a + du) as u16;
+                        p[v] = (b + dv) as u16;
+                        p[3] = slot;
+                        ChunkVertex { cell: p, attributes: [face as u8, m - 1, 0, 0] }
+                    };
+                    let first = mesh.vertices.len() as u32;
+                    mesh.vertices.extend([
+                        corner(0, 0),
+                        corner(width, 0),
+                        corner(width, height),
+                        corner(0, height),
+                    ]);
+                    mesh.indices.extend([first, first + 1, first + 2, first, first + 2, first + 3]);
+                    a += width;
+                }
+            }
+        }
+    }
+    mesh
+}
+
+/// [`greedy_mesh`] as it was before TASK-S4-27, cell by cell: the reference its test holds it to.
+/// The chunk's exposed faces as rectangles, merged greedily per slice and material: a face of an
+/// occupied cell is exposed when the cell beyond it is empty, looked up in the neighbouring chunk
+/// across the chunk's side (`neighbours`, in face order −x, +x, −y, +y, −z, +z; a missing one is
+/// air). `materials` is the chunk's cells as [`ChunkCells::materials`] gives them (material + 1,
+/// 0 empty); every vertex carries `slot`.
+#[cfg(test)]
+#[must_use]
+fn greedy_mesh_by_cells(materials: &[u8], neighbours: [Option<&[u8]>; 6], slot: u16) -> Mesh {
     let n = CHUNK_SIDE as i32;
     // The chunk with a one-cell rim from its neighbours (34³, x fastest), so that every look-up
     // below is one index: what made this 10 to 20 times faster than a look-up that asked which
@@ -670,6 +868,9 @@ pub struct WorldGpu {
     full: Option<(u64, Vec<String>)>,
     /// How many chunk meshes have been made (for tests: a frame at a cap makes none).
     pub meshed: u64,
+    /// How long the last prepare spent making meshes and their buffers, milliseconds (for the
+    /// flythrough's trace).
+    pub mesh_ms: f64,
     vertices: usize,
     bricks: HashMap<(u8, ChunkKey), (u32, Arc<Brick>)>,
     free_bricks: Vec<u32>,
@@ -929,36 +1130,55 @@ impl WorldGpu {
             }
             _ => self.full = None,
         }
-        let skipped = if complete { 0 } else { todo.len().saturating_sub(MAX_MESHES_PER_DRAW) };
+        let mut skipped = if complete { 0 } else { todo.len().saturating_sub(MAX_MESHES_PER_DRAW) };
         todo.truncate(todo.len() - skipped);
         let mesh_of = |key: ChunkKey, cells: &ChunkCells| {
-            let neighbour = |d: [i32; 3]| {
+            // Of each neighbour only the layer against this chunk (its first along the face's
+            // axis on a + face, its last on a − face).
+            let neighbour = |face: usize| {
+                let d = AROUND[face];
+                let layer = if face % 2 == 1 { 0 } else { CHUNK_SIDE - 1 };
                 frame
                     .chunks
                     .get(&ChunkKey::new(key.x + d[0], key.y + d[1], key.z + d[2]))
-                    .map(|c| c.materials())
+                    .map(|c| c.materials_layer(face / 2, layer))
             };
-            let cells_around = AROUND.map(neighbour);
+            let cells_around: [Option<Vec<u8>>; 6] = std::array::from_fn(neighbour);
             greedy_mesh(&cells.materials(), cells_around.each_ref().map(|n| n.as_deref()), 0)
         };
-        let threads = cav_sim::read::threads().min(todo.len()).max(1);
-        let meshes: Vec<Mesh> = if threads > 1 {
-            let per = todo.len().div_ceil(threads);
+        // In batches (eight a thread), until MESH_MILLISECONDS have gone (at least one batch; all
+        // of them for a picture taken once): what keeps a page's frame, which has one thread,
+        // from meshing for tens of milliseconds (TASK-S4-27).
+        let meshing = web_time::Instant::now();
+        let threads = cav_sim::read::threads().max(1);
+        let mesh_batch = |part: &[(bool, f64, ChunkKey, &Arc<ChunkCells>)]| -> Vec<Mesh> {
+            let threads = threads.min(part.len()).max(1);
+            if threads == 1 {
+                return part.iter().map(|(_, _, key, cells)| mesh_of(*key, cells)).collect();
+            }
+            let per = part.len().div_ceil(threads);
             std::thread::scope(|scope| {
-                let handles: Vec<_> = todo
+                let handles: Vec<_> = part
                     .chunks(per)
-                    .map(|part| {
+                    .map(|share| {
                         let mesh_of = &mesh_of;
                         scope.spawn(move || {
-                            part.iter().map(|(_, _, key, cells)| mesh_of(*key, cells)).collect::<Vec<_>>()
+                            share.iter().map(|(_, _, key, cells)| mesh_of(*key, cells)).collect::<Vec<_>>()
                         })
                     })
                     .collect();
                 handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
             })
-        } else {
-            todo.iter().map(|(_, _, key, cells)| mesh_of(*key, cells)).collect()
         };
+        let mut meshes: Vec<Mesh> = Vec::with_capacity(todo.len());
+        for part in todo.chunks(threads * 8) {
+            if !complete && !meshes.is_empty() && meshing.elapsed().as_secs_f64() * 1e3 > MESH_MILLISECONDS {
+                break;
+            }
+            meshes.extend(mesh_batch(part));
+        }
+        skipped += todo.len() - meshes.len();
+        todo.truncate(meshes.len());
         self.meshed += meshes.len() as u64;
         for ((_, _, key, cells), mut mesh) in todo.iter().zip(meshes) {
             let now = around(frame, *key);
@@ -1050,6 +1270,7 @@ impl WorldGpu {
                 },
             );
         }
+        self.mesh_ms = meshing.elapsed().as_secs_f64() * 1e3;
         // The fingerprint of what will be wanted next frame if nothing changes: what this frame
         // left (the same chunks as would be listed then), so that the next frame skips them.
         if self.full.is_some() {
@@ -1414,6 +1635,47 @@ mod tests {
         let full = vec![1u8; 32 * 32 * 32];
         assert!(greedy_mesh(&full, [Some(&full[..]); 6], 0).indices.is_empty());
         assert_eq!(greedy_mesh(&full, [None; 6], 0).vertices.len(), 6 * 4);
+    }
+
+    #[test]
+    fn the_bit_mesher_is_the_cell_mesher() {
+        // The same rectangles in the same order (TASK-S4-27): random chunks at several fills, with
+        // and without neighbours; a ground (a half-space with steps); full and empty.
+        // A chunk's cells and its six neighbours'.
+        type Case = (Vec<u8>, [Option<Vec<u8>>; 6]);
+        let mut cases: Vec<Case> = Vec::new();
+        for (seed, fill) in [(1, 0.05), (2, 0.5), (3, 0.95)] {
+            let around =
+                std::array::from_fn(|f| (f % 3 != 0).then(|| random_cells(seed * 10 + f as u64, fill)));
+            cases.push((random_cells(seed, fill), around));
+            cases.push((random_cells(seed + 100, fill), std::array::from_fn(|_| None)));
+        }
+        let ground: Vec<u8> = (0..32 * 32 * 32usize)
+            .map(|i| {
+                let [x, y, z] = [i % 32, (i / 32) % 32, i / 1024];
+                u8::from(z < 10 + (x / 5 + y / 7) % 4) * (1 + u8::from(x > 20))
+            })
+            .collect();
+        cases.push((ground.clone(), std::array::from_fn(|f| (f != 5).then(|| ground.clone()))));
+        cases.push((vec![1; 32 * 32 * 32], std::array::from_fn(|_| Some(vec![1; 32 * 32 * 32]))));
+        cases.push((vec![2; 32 * 32 * 32], std::array::from_fn(|_| None)));
+        cases.push((vec![0; 32 * 32 * 32], std::array::from_fn(|_| None)));
+        let mesh = |cells: &[u8], around: &[Option<Vec<u8>>; 6], by_cells: bool| {
+            let around = around.each_ref().map(|n| n.as_deref());
+            if by_cells { greedy_mesh_by_cells(cells, around, 7) } else { greedy_mesh(cells, around, 7) }
+        };
+        let mut quads = 0;
+        for (i, (cells, around)) in cases.iter().enumerate() {
+            let want = mesh(cells, around, true);
+            assert_eq!(mesh(cells, around, false), want, "case {i}");
+            quads += want.vertices.len() / 4;
+        }
+        assert!(quads > 10_000, "the cases have faces to merge: {quads}");
+        // Control: a chunk one cell different meshes differently, so equal meshes are not a given.
+        let (cells, around) = &cases[1];
+        let mut changed = cells.clone();
+        changed[cell_index([16, 16, 16])] = if changed[cell_index([16, 16, 16])] == 0 { 1 } else { 0 };
+        assert_ne!(mesh(&changed, around, false), mesh(cells, around, true));
     }
 
     #[test]

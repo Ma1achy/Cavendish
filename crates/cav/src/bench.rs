@@ -97,9 +97,10 @@ pub fn flythrough(
     let load = started.elapsed().as_secs_f64();
     let made = (engine.streaming().made, engine.streaming().cached);
     let mut out = String::from(
-        "frame,ms,poll_ms,draw_ms,chunks,bricks,pending,meshes,bricks_on_gpu,vertices,resident_mb,marched\n",
+        "frame,ms,poll_ms,draw_ms,mesh_ms,meshed,made,chunks,bricks,pending,meshes,bricks_on_gpu,vertices,resident_mb,marched\n",
     );
     let mut times = Vec::with_capacity(frames);
+    let (mut meshed_before, mut made_before) = (0u64, made.0 + made.1);
     // What the renderer left out, by kind (the words before the colon), and in how many frames.
     let mut cuts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for frame in 0..frames {
@@ -114,12 +115,18 @@ pub fn flythrough(
         let ms = began.elapsed().as_secs_f64() * 1e3;
         let world = engine.frame(0)?.world.cloned().unwrap_or_default();
         let ([meshes, bricks_on_gpu, vertices], notes) = renderer.world_counts();
+        let (meshed, mesh_ms) = renderer.world_meshing();
+        let new_meshes = meshed - meshed_before;
+        meshed_before = meshed;
+        let streamed = engine.streaming().made + engine.streaming().cached;
+        let new_made = streamed - made_before;
+        made_before = streamed;
         for note in &notes {
             *cuts.entry(note.split(':').next().unwrap_or_default().to_owned()).or_default() += 1;
         }
         let _ = writeln!(
             out,
-            "{frame},{ms:.3},{polled:.3},{:.3},{},{},{},{meshes},{bricks_on_gpu},{vertices},{:.1},{:.2}",
+            "{frame},{ms:.3},{polled:.3},{:.3},{mesh_ms:.3},{new_meshes},{new_made},{},{},{},{meshes},{bricks_on_gpu},{vertices},{:.1},{:.2}",
             ms - polled,
             world.chunks.len(),
             world.bricks.len(),

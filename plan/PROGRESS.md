@@ -13,6 +13,18 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S19 the editor, part two | built in part: TASK-S19-09, TASK-S18-05, -06, TASK-S19-04, -13 merged, the record (TASK-S19-12); the rest moved to S20; not reviewed | | brief and results: `docs/slices/S19.md` (§7.1 the panels before and after); requirement: `docs/design/panels.md`; pictures: `docs/slices/S19/`; recipes: `docs/extending/a-material.md`, `a-shape.md` (import), `a-tool-or-panel.md` (cards, tree) |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
 
+## Streaming made cheaper (25 Nov 2026) — TASK-S4-27
+
+**Done.** Measured over town (the bench's trace now says each frame's meshing, meshes and chunks
+made; one thread as in a page with `CAV_THREADS=1`): the tail was meshing and the step's overshoot.
+The mesher finds exposed faces as bits (0.665 → 0.030 ms a chunk, same rectangles), reads a
+neighbour's layer only, meshes within 4 ms a frame; the step starts no batch past its 6 ms.
+Native frame p99 31–34 → 14.5–15 ms; one thread p99 107–116 → 18 ms, median 14–16 → 10 ms.
+`docs/slices/S4.md` §7.10. quick 666, gpu 42, web green (339 s).
+
+**Open.** stress-1e10's flythrough p99 with the far field off (not run here: this PC's rule);
+prefetch and arrival re-meshing in `plan/IDEAS.md`.
+
 ## The owner's bug: chunks go black and come back (25 Nov 2026) — TASK-S4-26, fixed
 
 **Done.** Measured over town (a loop at 15 m/s, engine and renderer frame by frame): 581 drawn
