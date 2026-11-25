@@ -408,7 +408,8 @@ impl Remote {
                         .map(|w| w.post_message_with_transfer(&message, &transfer));
                     if !matches!(posted, Some(Ok(()))) {
                         log::error!("a job could not be handed to the forward stage's worker {slot}");
-                        self.0.borrow_mut().lane.not_posted(slot, ticket, request, now_ms());
+                        let more = self.0.borrow_mut().lane.not_posted(slot, ticket, request, now_ms());
+                        self.apply(more);
                     }
                 }
                 Action::RunHere { ticket, request } => {

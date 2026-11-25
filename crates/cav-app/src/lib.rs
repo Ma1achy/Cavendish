@@ -25,6 +25,12 @@ pub mod lane;
 pub mod menus;
 mod panels;
 pub use panels::MAX_OUTLINE_ROWS;
+/// The outliner's words, for its tests: what a tower's row says, and whether a scene reads
+/// nothing. Not an interface.
+#[doc(hidden)]
+pub mod panels_for_tests {
+    pub use crate::panels::{silent, tower_detail};
+}
 pub mod panes;
 pub use cav_plot::plots;
 pub mod shell;

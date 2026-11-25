@@ -458,13 +458,38 @@ fn outlined(count: usize, selected: Option<usize>) -> Vec<usize> {
     rows
 }
 
+/// Whether a scene has nothing its towers could read: no bodies, no world, no floor.
+#[must_use]
+pub fn silent(spec: &cav_sim::SceneSpec) -> bool {
+    spec.bodies.is_empty() && spec.world.is_none() && spec.floor.is_none()
+}
+
+/// What tower `n`'s outliner row says: its reading under the playhead, marked ⚠ when the audit
+/// warns of it and ◐ when it is of part of the matter only (the world read within a radius);
+/// its place when the scene is `silent` (nothing to read) or there is no reading yet.
+#[must_use]
+pub fn tower_detail(reply: &cav_engine::ReadingReply, n: usize, position: [f64; 3], silent: bool) -> String {
+    let [x, y, _] = position;
+    let warned = reply.warnings.iter().any(|w| w.tower == Some(n));
+    match reply.towers.get(n) {
+        Some(reading) if !silent => format!(
+            "{}{}{}",
+            crate::shell::phase_text(reading.gradiometer),
+            if reply.truncated.is_some() { " ◐" } else { "" },
+            if warned { " ⚠" } else { "" }
+        ),
+        _ => format!("{x:+.1} {y:+.1}"),
+    }
+}
+
 /// The world's row in the outliner: its pitch, pieces and how far round each tower it is read.
 #[must_use]
 pub(crate) fn world_outline(world: &cav_sim::world::WorldSpec) -> String {
+    let pieces = world.pieces.len();
     format!(
-        "{} cm · {} pieces · read {} m",
+        "{} cm · {pieces} piece{} · read {} m",
         short_number(world.pitch * 100.0),
-        world.pieces.len(),
+        if pieces == 1 { "" } else { "s" },
         short_number(world.read.radius)
     )
 }
@@ -533,11 +558,15 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
         outline_row(shell, ui, Target::Body(n + 1), theme::GOLD, label, detail);
     }
     left_out(ui, bodies.0.len(), bodies.1, "bodies");
-    if bodies.1 == 0 && world.is_none() {
-        ui.label(RichText::new("none · `load point` has one").size(11.5).color(theme::WEAK));
-    } else if bodies.1 == 0 {
-        // The world is the scene's source: it is listed under Surroundings, with what it is.
-        ui.label(RichText::new("no bodies · the world below is read").size(11.5).color(theme::WEAK));
+    if bodies.1 == 0 {
+        // The world and the floor are sources too: listed under Surroundings, with what they are.
+        let text = match (world.is_some(), floor.is_some()) {
+            (false, false) => "none · `load point` has one",
+            (true, false) => "no bodies · the world below is read",
+            (false, true) => "no bodies · the floor below is read",
+            (true, true) => "no bodies · the world and floor below are read",
+        };
+        ui.label(RichText::new(text).size(11.5).color(theme::WEAK));
     }
     // Adding is a command too: a point mass at rest beside the array, to be edited from there.
     button_row(shell, ui, "", &[("+ mass", "mass 1 at 2 2 1", false)]);
@@ -545,18 +574,12 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     heading(ui, "Array");
     // With something to read, each tower's row shows what it reads under the playhead.
     let reply = shell.reading().clone();
-    let silent = bodies.1 == 0;
+    // Silent only when nothing is there to read: no bodies, no world, no floor (S4's second
+    // review, J5: a world scene's towers read the world).
+    let silent = silent(shell.engine.spec());
     for (n, label, position) in &towers.0 {
-        let (n, [x, y, _]) = (*n, *position);
-        // A number the audit warns of carries a mark; the warning is in the tower's properties.
-        let warned = reply.warnings.iter().any(|w| w.tower == Some(n));
-        let detail = match reply.towers.get(n) {
-            Some(reading) if !silent => {
-                format!("{}{}", crate::shell::phase_text(reading.gradiometer), if warned { " ⚠" } else { "" })
-            }
-            _ => format!("{x:+.1} {y:+.1}"),
-        };
-        outline_row(shell, ui, Target::Tower(n + 1), theme::tower(n), label, &detail);
+        let detail = tower_detail(&reply, *n, *position, silent);
+        outline_row(shell, ui, Target::Tower(n + 1), theme::tower(*n), label, &detail);
     }
     left_out(ui, towers.0.len(), towers.1, "array.towers");
     if !silent && !reply.warnings.is_empty() {
@@ -833,8 +856,9 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
                 let signal = shell.engine.signal().1;
                 if let Some(within) = signal.and_then(|s| s.truncated) {
                     let text = format!(
-                        "The towers read only the world's matter within {within} m of their atoms: the signal is of \
-                         that matter alone (S5 reads the rest)."
+                        "The towers read only the world's matter within {} m of their atoms: the signal is of \
+                         that matter alone (S5 reads the rest).",
+                        short_number(within)
                     );
                     ui.label(RichText::new(text).size(11.0).color(theme::WARN));
                 }

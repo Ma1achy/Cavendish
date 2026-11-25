@@ -71,3 +71,71 @@ fn the_world_is_in_the_outliner_and_can_be_selected() {
     assert!(!rows(&mut room).contains(&Target::World));
     assert!(room.run("select world").unwrap_err().contains("no world"));
 }
+
+#[test]
+fn a_world_scene_s_towers_show_what_they_read() {
+    // S4's second review, J5: with no bodies, a world scene still reads something, and the
+    // towers' rows say what, marked when it is of part of the matter only.
+    let mut shell = Shell::new();
+    shell.engine.set_patience(std::time::Duration::from_secs(60));
+    shell.run("load world-box").unwrap();
+    shell.run("set world.read.radius 1").unwrap();
+    assert!(shell.engine.settle(std::time::Duration::from_secs(60)));
+    let reply = shell.reading().clone();
+    assert_eq!(reply.truncated, Some(1.0));
+    let position = shell.engine.spec().array.towers[0].position;
+    let detail = cav_app::panels_for_tests::tower_detail(&reply, 0, position, false);
+    assert!(detail.contains("rad") && detail.contains('◐'), "{detail}");
+    assert!(!cav_app::panels_for_tests::silent(shell.engine.spec()));
+    // Control: `point` with its body taken away reads nothing: the row shows where the tower is.
+    let mut empty = cav_sim::dev::point();
+    empty.bodies.clear();
+    assert!(cav_app::panels_for_tests::silent(&empty));
+    assert_eq!(cav_app::panels_for_tests::tower_detail(&reply, 0, [1.0, -2.0, 0.0], true), "+1.0 -2.0");
+}
+
+/// A surface that draws nothing and says what it was told to.
+struct Saying(Vec<String>);
+
+impl cav_app::panes::PaneSurface for Saying {
+    fn texture(
+        &mut self,
+        _: usize,
+        _: [u32; 2],
+        _: u64,
+        _: cav_render::Frame<'_>,
+    ) -> Option<egui::TextureId> {
+        None
+    }
+
+    fn notes(&self) -> Vec<String> {
+        self.0.clone()
+    }
+}
+
+#[test]
+fn what_the_renderer_left_out_is_shown_and_logged_once_a_kind() {
+    // S4's second review, minor 5: the renderer's notes become the header's badges, and each
+    // kind (the words before the colon) is logged once, the near field's two caps apart.
+    let notes = vec![
+        "near field vertices: meshes past 10 vertices are not drawn (the nearest are)".to_owned(),
+        "near field chunks: chunks past 5 are not drawn (the nearest are)".to_owned(),
+        "far field cut: its 3 farthest visible bricks are not drawn".to_owned(),
+    ];
+    let mut shell = Shell::new();
+    shell.run("load world-box").unwrap();
+    let logged =
+        |shell: &Shell| shell.engine.log().iter().filter(|e| e.message.contains("are not drawn")).count();
+    let (ctx, mut clock) = (context(), 0.0);
+    let mut surface = Saying(notes.clone());
+    run_frames(&ctx, &mut shell, &mut surface, [1440, 900], &mut clock, vec![vec![], vec![]]);
+    assert_eq!(shell.render_notes, notes);
+    assert_eq!(logged(&shell), 3, "each kind once");
+    // The counts in a note change from frame to frame: the same kinds are not logged again.
+    surface.0[2] = "far field cut: its 4 farthest visible bricks are not drawn".to_owned();
+    run_frames(&ctx, &mut shell, &mut surface, [1440, 900], &mut clock, vec![vec![], vec![]]);
+    assert_eq!(logged(&shell), 3);
+    // Control: a surface that leaves nothing out leaves no badge.
+    run_frames(&ctx, &mut shell, &mut Saying(Vec::new()), [1440, 900], &mut clock, vec![vec![]]);
+    assert!(shell.render_notes.is_empty());
+}
