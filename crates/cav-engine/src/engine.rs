@@ -1414,12 +1414,6 @@ impl Engine {
         self.world.set_cache(folder);
     }
 
-    /// Draws the clipmap's levels in colours of their level (the LOD bands), or not.
-    pub fn set_world_bands(&mut self, on: bool) {
-        self.world.set_bands(on);
-        self.generation += 1;
-    }
-
     /// Waits, at most `patience`, for the reading alone to be the one asked for: a reading that
     /// is ready in milliseconds is not held up by a series that takes a minute. True when it is.
     pub fn settle_reading(&mut self, patience: std::time::Duration) -> bool {

@@ -217,7 +217,7 @@ fn gpu_brick_march_matches_the_cpu() {
 
 /// A world of hills at 50 cm, 240 m across, its frame made resident for `v` as the engine's
 /// streaming would make it.
-fn hills_frame(v: &ViewSpec, bands: bool) -> WorldFrame {
+fn hills_frame(v: &ViewSpec) -> WorldFrame {
     let spec = WorldSpec {
         pitch: 0.5,
         supersample: 1,
@@ -253,7 +253,6 @@ fn hills_frame(v: &ViewSpec, bands: bool) -> WorldFrame {
         levels: count,
         extent: Some(extent),
         world: spec.hash(),
-        bands,
         ..WorldFrame::default()
     };
     for level in levels(&grid, centre, n, count) {
@@ -280,7 +279,9 @@ fn gpu_a_world_is_drawn_near_and_far() {
     // Low over the hills, looking along them to the horizon.
     let v = view([0.0, 0.0, 2.0], 200.0, 8.0, 6.0);
     let size = [480, 270];
-    let draw = |world: Option<&WorldFrame>| {
+    let draw = |world: Option<&WorldFrame>, bands: bool| {
+        let mut v = v.clone();
+        v.overlay.bands = bands;
         let frame = Frame {
             scene: &scene,
             view: &v,
@@ -294,10 +295,10 @@ fn gpu_a_world_is_drawn_near_and_far() {
         renderer.render_rgba(&gpu, frame, size).unwrap()
     };
     // With the LOD bands: level 0 (meshes) orange, level 1 blue, level 2 green (ray-marched).
-    let banded = hills_frame(&v, true);
+    let banded = hills_frame(&v);
     assert!(!banded.chunks.is_empty() && !banded.bricks.is_empty());
-    let pixels = draw(Some(&banded));
-    let plain = draw(Some(&hills_frame(&v, false)));
+    let pixels = draw(Some(&banded), true);
+    let plain = draw(Some(&banded), false);
     std::fs::create_dir_all(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/gpu-world")).unwrap();
     for (name, p) in [("hills.png", &plain), ("hills-bands.png", &pixels)] {
         let png = cav_render::encode_png(p, size).unwrap();
@@ -333,6 +334,6 @@ fn gpu_a_world_is_drawn_near_and_far() {
     };
     assert!(count(&plain, 200..270, &green) > 2000 && count(&plain, 0..200, &green) > 500);
     // Control: no world, no green.
-    let none = draw(None);
+    let none = draw(None, false);
     assert_eq!(count(&none, 0..270, &green), 0);
 }

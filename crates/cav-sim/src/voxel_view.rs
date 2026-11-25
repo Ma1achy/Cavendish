@@ -131,6 +131,10 @@ pub struct Overlay {
     /// for its depth. None for no tree.
     #[serde(default)]
     pub tree: Option<TreeOverlay>,
+    /// The world's clipmap drawn in colours of its levels (the LOD bands, S4) in place of its
+    /// materials: level 0's meshes, then each ray-marched level.
+    #[serde(default)]
+    pub bands: bool,
 }
 
 /// How the tree overlay fades with depth: which end is drawn faint.

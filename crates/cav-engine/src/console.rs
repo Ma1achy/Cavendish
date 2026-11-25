@@ -167,8 +167,8 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "overlay",
-        usage: "overlay <none | [leaves] [cut <level>] [tree [depth <a>..<b>] [fade deep|shallow] [faces] [alone]]> [@N]",
-        about: "draw over voxel bodies: each leaf's bounds by level, the cut a level of detail would take, and the whole octree (every node from the root down, coloured by depth; `fade` makes one end faint, `faces` adds see-through faces in x-ray, `alone` hides the bodies' cubes)",
+        usage: "overlay <none | [leaves] [cut <level>] [tree [depth <a>..<b>] [fade deep|shallow] [faces] [alone]] [bands]> [@N]",
+        about: "draw over voxel bodies: each leaf's bounds by level, the cut a level of detail would take, and the whole octree (every node from the root down, coloured by depth; `fade` makes one end faint, `faces` adds see-through faces in x-ray, `alone` hides the bodies' cubes); `bands` colours the world's clipmap by level",
         example: "overlay tree depth 0..4 fade deep",
     },
     CommandDoc {
@@ -704,6 +704,7 @@ impl Engine {
                     match (*first, after) {
                         ("none", []) if words.len() == 1 => {}
                         ("leaves", _) => overlay.leaves = true,
+                        ("bands", _) => overlay.bands = true,
                         ("tree", _) => overlay.tree = Some(overlay.tree.unwrap_or_default()),
                         ("depth" | "fade" | "faces" | "alone", _) if overlay.tree.is_none() => {
                             return Err(format!("`{first}` follows `tree`; {}", usage(name)));
@@ -1285,7 +1286,12 @@ mod tests {
                 "overlay leaves cut 3",
                 Command::View(ViewCommand::Overlay {
                     pane: 0,
-                    overlay: cav_sim::voxel_view::Overlay { leaves: true, cut: Some(3), tree: None },
+                    overlay: cav_sim::voxel_view::Overlay {
+                        leaves: true,
+                        cut: Some(3),
+                        tree: None,
+                        bands: false,
+                    },
                 }),
             ),
             (
@@ -1318,6 +1324,7 @@ mod tests {
                             faces: false,
                             alone: false,
                         }),
+                        bands: false,
                     },
                 }),
             ),

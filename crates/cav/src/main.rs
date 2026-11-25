@@ -1,6 +1,7 @@
 //! `cav`: Cavendish without a window. Every subcommand drives the same engine API as the app.
 
 mod args;
+mod bench;
 mod doctor;
 mod mcp;
 mod session;
@@ -18,6 +19,9 @@ cav <command>
          [--proj persp|ortho] [--style shaded|flat|xray|wireframe|paper]
          [--size 1280x720] [--exec \"<commands>\"]
                                  draw a scene to a PNG, with no window
+  bench flythrough [--frames 600] [--size 1280x720] [--speed 15] [--cache <dir>] [--out <trace.csv>]
+                                 fly a scripted camera over stress-1e10 offscreen and print (or write)
+                                 the frame-time trace: what this GPU holds
   scenes                         list the built-in scene library
   schema [path]                  print the JSON Schema of the scene spec, or of the field at a path
   get <scene> [path]             print a scene, or the value at a path of it, as JSON
@@ -123,6 +127,7 @@ fn run(raw: &[String]) -> Result<(), String> {
             failure.map_or(Ok(()), Err)
         }
         "render" => render(rest),
+        "bench" => bench(rest),
         "mcp" => {
             Args::parse(rest, &[])?.finish(0)?;
             mcp::serve()
@@ -375,6 +380,49 @@ fn set(rest: &[String]) -> Result<(), String> {
 }
 
 /// `cav render`: every option becomes a console command, so a render is a short engine session.
+/// `cav bench flythrough`: see `bench.rs`.
+fn bench(rest: &[String]) -> Result<(), String> {
+    let mut args = Args::parse(rest, &["frames", "size", "cache", "out", "speed"])?;
+    let frames = args
+        .option("frames")
+        .map_or(Ok(600), |f| f.parse::<usize>().map_err(|_| format!("--frames {f} is not a count")))?;
+    if !(1..=100_000).contains(&frames) {
+        return Err(format!("--frames {frames}: from 1 to 100000"));
+    }
+    let size = args.option("size").map_or(Ok([1280, 720]), |s| parse_size(&s))?;
+    let cache = args.option("cache").map(std::path::PathBuf::from);
+    let speed = args
+        .option("speed")
+        .map_or(Ok(15.0), |v| v.parse::<f64>().map_err(|_| format!("--speed {v} is not a number")))?;
+    if !(speed > 0.0 && speed <= 1000.0) {
+        return Err(format!("--speed {speed}: metres a second, more than 0 and at most 1000"));
+    }
+    let out = args.option("out");
+    let [what] = args.finish(1)?.try_into().map_err(|_| "bench takes what to run: flythrough")?;
+    if what != "flythrough" {
+        return Err(format!("`{what}` is not a bench; there is `flythrough`"));
+    }
+    let trace = bench::flythrough(frames, size, speed, cache)?;
+    match out {
+        Some(path) => {
+            std::fs::write(&path, &trace).map_err(|e| format!("writing {path}: {e}"))?;
+            print!(
+                "{}",
+                trace
+                    .lines()
+                    .filter(|l| l.starts_with('#'))
+                    .map(|l| format!(
+                        "{l}
+"
+                    ))
+                    .collect::<String>()
+            );
+        }
+        None => print!("{trace}"),
+    }
+    Ok(())
+}
+
 fn render(rest: &[String]) -> Result<(), String> {
     let mut args = Args::parse(rest, &["out", "view", "proj", "style", "size", "exec"])?;
     let out = args.option("out").ok_or("render needs --out <file.png>")?;

@@ -155,9 +155,6 @@ pub struct WorldFrame {
     pub world: u64,
     /// How many chunks and bricks are still to be made for what the cameras want.
     pub pending: usize,
-    /// Whether the clipmap's levels are drawn in colours of their level, not their materials
-    /// (the LOD bands).
-    pub bands: bool,
 }
 
 #[cfg(test)]
