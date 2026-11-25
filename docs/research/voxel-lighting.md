@@ -5,6 +5,34 @@ the literature's, scaled by reasoning where I say so, and the first slice that b
 measure its own (section 9). Links are to the primary source where I could read it; where I could not, the
 claim is marked **(not read)** or **(unverified)**.
 
+**Changed after reading the primary sources (25 Nov 2026).** The owner supplied the papers; the web items
+were fetched directly. Papers are cited by title, authors, year and the open links in the source list;
+none is copied into the repo.
+- **Hillaire 2020, Table 2 read from the page image:** LUT sizes and costs are now exact (transmittance
+  256x64, sky-view 200x100, aerial perspective 32^3 over 32 km, multiple scattering 32^2; 0.17 ms for all
+  four LUTs on a GTX 1080), and the **total is 0.31 ms at 1280x720** (section 7), of which 0.14 ms is the
+  on-screen sky and aerial perspective. The earlier "garbled table" caveat is gone. The paper gives **no
+  1080p figure**; the 1080p number below is my scaling. The paper also says 16-bit float LUTs are enough
+  for its model, which removes the `float32-filterable` concern on the web.
+- **GTAO's `b` sign settled:** the fit is `G(A, rho) = a A^3 - b A^2 + c A` with `b = 4.7951 rho - 0.6417`
+  (Appendix B, eq. 33; it was "eq. 10" in my earlier note, wrongly). Checked: `G(1, rho) = 1` for every
+  `rho` only with the minus sign. The paper's main text (section 4.2, eq. 12) gives an analytic
+  alternative, `rho A / (1 - rho (1 - A))`. The AO integral is cosine-weighted (eq. 5), and the 0.5 ms
+  PS4 figure is half resolution with a 4x4 spatial and 6-frame temporal reuse (section 4.3).
+- **Bruneton & Neyret 2008 read:** table sizes (8 MB 4-D table at 16-bit), a 5 s precompute on an
+  8800 GTS, and light shafts by geometry-shader shadow volumes, which do not fit Cavendish (no geometry
+  shaders in WebGPU; the far field is not geometry). Recommendation unchanged.
+- **Hosek-Wilkie 2012 read:** no run-time timing in the paper, only "slightly more costly to evaluate
+  than the Preetham model" (section 8); fitted for a ground observer, turbidity 1 to 10, sun at or above
+  the horizon. Confirms "ground views only".
+- **Teardown's own blog read** (Gustafsson 2018): replaces the secondhand PC Games Hardware line with the
+  author's numbers (1-bit volume, 4 mip levels, 5 AO rays per pixel, about 9 ms for all lighting at
+  1080p on a GTX 1080) and adds blue-noise sampling advice for any jittered shadow. Shadow recommendation
+  unchanged; its cost estimate is now anchored to a primary figure.
+- **Cube World:** Wollay's 24 Oct 2026 patch notes read; they name tweaks (bloom, lighting, sand and snow
+  colour, a fix for coloured bands near shaded edges) but no method. The Reddit colour thread could not be
+  fetched. Section 7 still stands on its own, as before.
+
 ## 1. One-page summary
 
 **What the renderer has today.** Near chunks are greedy meshes (`ChunkVertex { cell, attributes: [face,
@@ -21,21 +49,21 @@ GTX 1660 SUPER (`docs/slices/S4.md` section 7.4), so every layer below must be n
 | 1 | **Per-vertex baked AO** in the greedy mesh (0fps), merge only when AO matches | Near-free at run time (a byte per vertex), view independent, exact on a corner and a step so it is testable | about 0 ms; mesh time up a little |
 | 2 | **The same AO formula evaluated at the ray-march hit** for far bricks (3 neighbour bit lookups per face corner, bilinear on the face) | Near and far match; no extra ray steps; no noise | under 0.3 ms (estimate; needs a measurement) |
 | 3 | **Sun plus hemisphere ambient, sRGB-correct, one tone curve, distance fog** to the sky colour | Fog also hides the LOD seam; pure arithmetic | under 0.1 ms |
-| 4 | **Hard sun shadows by a ray through a camera-centred coarse occupancy volume** (Teardown's way), not shadow maps | Shadow maps would need the ray-marched far field drawn a second time; the grid is already the data | 0.5 to 2 ms (estimate; the main unknown) |
-| 5 | **Analytic sky now, Hillaire LUT atmosphere with the planet** | A sky gradient is a few ALU; Hillaire's LUTs are 0.14 ms for the sky at 720p on a GTX 1080 (slides) | 0.1 to 0.5 ms later |
-| 6 | **GTAO** only if baked AO is not enough (thin features, bodies) | Needs depth plus normals, a denoise, and care with MSAA | 0.6 ms at 1080p on an RTX 2060 (XeGTAO), so 1 to 2 ms here (estimate) |
+| 4 | **Hard sun shadows by a ray through a camera-centred coarse occupancy volume** (Teardown's way), not shadow maps | Shadow maps would need the ray-marched far field drawn a second time; the grid is already the data | 0.5 to 2 ms (estimate; the main unknown; Teardown's author gives about 9 ms at 1080p on a GTX 1080 for *all* its traced lighting, AO, fog and reflections with ten lights) |
+| 5 | **Analytic sky now, Hillaire LUT atmosphere with the planet** | A sky gradient is a few ALU; Hillaire's method is 0.31 ms in total at 1280x720 on a GTX 1080 (0.17 ms LUTs + 0.14 ms on screen; paper, section 7 and Table 2) | 0.3 to 0.5 ms later |
+| 6 | **GTAO** only if baked AO is not enough (thin features, bodies) | Needs depth plus normals, a denoise, and care with MSAA | 0.5 ms at 1080p, half resolution, on a PS4 (paper); 0.6 ms at 1080p full resolution on an RTX 2060 (XeGTAO), so 1 to 2 ms here (estimate) |
 
 **Beauty versus data.** Every layer is a field in a `LookSpec` (data, principle 11), and a *data* look is
 the identity: base colour from the colour map, no AO, no shadow, no fog, no tone curve (section 8). The
 beauty layers multiply a colour that data never passes through, so a colour map is never distorted, and the
 data look is the default whenever a field colour is on.
 
-**Cube World's look** (section 7): per-voxel colour, no textures, flat faces, soft per-vertex occlusion. I
-could not read a primary source for its internals, so section 7 describes the general technique and
-labels the Cavendish choices as mine.
+**Cube World's look** (section 7): per-voxel colour, no textures, flat faces, soft per-vertex occlusion. No
+primary source describes its internals (the developer's 2026 patch notes name tweaks, not methods), so
+section 7 describes the general technique and labels the Cavendish choices as mine.
 
-**Not verified.** Any millisecond figure for this card or for WebGPU; Cube World's actual method;
-Bruneton 2008 (paper not read; only the author's reference implementation's page); the Hosek-Wilkie cost.
+**Not verified.** Any millisecond figure for this card or for WebGPU; Cube World's actual method; the
+Hosek-Wilkie run-time cost (the paper gives none; see section 6 here); Hillaire at 1080p (the paper gives 720p only).
 
 ## 2. What the code is today (so the layers fit it)
 
@@ -110,17 +138,47 @@ its reach grows with the level, which is what the eye expects at distance.
 - **Alternatives for the far field, rejected for now.** Ray or cone AO in the march: Teardown does
   large-scale AO with 2 cosine-weighted rays per pixel, up to 24 units, through its volumes, denoised with
   12 spatial samples and temporal blending ([Wittens, "Teardown Frame Teardown"](https://acko.net/blog/teardown-frame-teardown/),
-  [Montoya's breakdown](https://juandiegomontoya.github.io/teardown_breakdown.html)). That needs a
-  history buffer, motion vectors and a denoiser; on one web thread and a 1660 it would be the single
-  largest cost for a smoother effect than the data justifies.
+  [Montoya's breakdown](https://juandiegomontoya.github.io/teardown_breakdown.html)). The developer's
+  own earlier account of the engine ([Gustafsson, "From screen space to voxel space", 2018](https://blog.voxagon.se/2018/10/17/from-screen-space-to-voxel-space.html))
+  gives five unsophisticated rays per pixel in semi-random hemisphere directions, traced with fixed steps (not a
+  watertight walk, which he keeps for where exactness matters), each ray starting in screen space for the
+  first short stretch and switching to the voxel volume if nothing is hit, because the voxel-space origin
+  must be pushed off the surface to avoid self-intersection and loses fine detail. Denoising is "spatially
+  blurring and temporally accumulating", fed by 2-D blue noise advanced each frame by the golden ratio
+  ([Gustafsson, "The importance of good noise", 2018](https://blog.voxagon.se/2018/12/07/the-importance-of-good-noise.html)).
+  That needs a history buffer, motion vectors and a denoiser; on one web thread and a 1660 it would be
+  the single largest cost for a smoother effect than the data justifies.
 
 ### 3.3 Screen-space AO (GTAO), as an optional layer
 
-[Jimenez et al., "Practical Realtime Strategies for Accurate Indirect Occlusion" (2016)](https://www.iryoku.com/downloads/Practical-Realtime-Strategies-for-Accurate-Indirect-Occlusion.pdf)
-(read through text extraction): horizon-based, matches a ray-traced reference, "0.5 ms on a PS4 at 1080p",
-half-resolution with spatio-temporal filtering, plus a multi-bounce term `G(A, rho) = ((a A + b) A + c) A`
-with `a = 2.0404 rho - 0.3324`, `c = 2.7552 rho + 0.6903` (the extraction lost `b`'s sign; check the
-paper's eq. 10 before using it). Intel's port, [XeGTAO](https://github.com/GameTechDev/XeGTAO) (archived):
+Jimenez, Wu, Pesce and Jarabo, "Practical Real-Time Strategies for Accurate Indirect Occlusion" (2016,
+Activision technical report, [PDF](https://www.activision.com/cdn/research/Practical_Real_Time_Strategies_for_Accurate_Indirect_Occlusion_NEW%20VERSION_COLOR.pdf);
+read in full, equations checked against the page images):
+
+- **Cosine weighting.** The AO integral is written "on its radiometrically-correct form", with the
+  foreshortening term: `A(x) = (1/pi) int_0^pi int_{-pi/2}^{pi/2} V(phi, theta) cos(theta - gamma)^+ |sin theta| dtheta dphi`
+  (eq. 5; `gamma` the angle between normal and view vector), unlike HBAO's uniform form. With binary
+  visibility above two horizon angles per slice the inner integral is closed-form (eq. 7) and needs the
+  normal projected into the slice plane (eqs. 8, 9). This is the same cosine-weighted AO that baked
+  per-vertex AO approximates, so a GTAO layer and the baked layer measure the same quantity and can be
+  compared against a ray-traced reference (their Figure 7).
+- **Multi-bounce.** Two forms. Main text, section 4.2, eq. 12, from a Neumann series under uniform
+  lighting and constant albedo: `L_r = L_i (rho / pi) A / (1 - rho (1 - A))`. Appendix B, eq. 33, a fit
+  to simulations with up to three bounces over seven albedos:
+  `G(A, rho) = a A^3 - b A^2 + c A`, `a = 2.0404 rho - 0.3324`, **`b = 4.7951 rho - 0.6417`**,
+  `c = 2.7552 rho + 0.6903`. The minus sign is on the `A^2` term; written as Horner's rule,
+  `((a A - b) A + c) A`. Check: `G(1, rho) = 0.0005 rho + 0.9996`, i.e. 1 at every albedo, whereas with
+  `+b` it would be 0.68 at `rho = 0.1` and 8.3 at `rho = 0.9` (my arithmetic; a cheap unit test with a
+  control arm). Figure 4: eq. 12 versus the fit, error below 10 % even at high albedo and low `A`.
+- **Cost and sampling.** "0.5 ms on a PS4 at 1080p (for a standard halfres occlusion buffer)" (abstract,
+  section 1). Section 4.3: half resolution, bilaterally upsampled; one direction per pixel with 12 steps
+  in total, a 4x4 bilateral reconstruction with a 4x4 tiled noise, and 6 rotations over frames with
+  reprojection into an exponential accumulation buffer, "4 x 4 x 6 = 96 effective sampled directions per
+  pixel". So the published cost assumes temporal history; without it the noise is 16 directions.
+  Sampling radius is scaled with camera distance to make AO view-independent and clamped near the camera
+  to protect the cache (section 4.1); a thickness heuristic (eq. 13) limits thin-occluder over-darkening.
+
+Intel's port, [XeGTAO](https://github.com/GameTechDev/XeGTAO) (archived; not one of the papers re-read):
 High preset at full resolution, 3 slices x 6 samples, about 0.56 ms at 1080p on an RTX 2060, 1.4 ms at
 2160p on an RTX 3070, 2.39 ms at 1080p on an integrated Intel GPU; Medium about two-thirds of High; bent
 normals add about 25 %; it takes depth plus (advisably) normals, and a 5x5 depth-aware denoise. The RTX
@@ -178,9 +236,20 @@ of the light, through a **volumetric shadow map of the whole play area**, 1-bit,
 texel, two extra mip levels so a ray skips empty 2x2x2 and 4x4x4 blocks, and a "super sparse" trace with
 steps that double as the ray travels ([Wittens](https://acko.net/blog/teardown-frame-teardown/),
 [Montoya](https://juandiegomontoya.github.io/teardown_breakdown.html); Wittens gives 262 MB for a
-1752x100x1500 level). Dennis Gustafsson, via a PC Games Hardware report I could not read in full, says
-ray cost depends mainly on ray length, resolution and step size and that no ray-tracing hardware is
-needed (**secondhand**).
+1752x100x1500 level). The developer's own description of the precursor engine
+([Gustafsson, "From screen space to voxel space", 2018](https://blog.voxagon.se/2018/10/17/from-screen-space-to-voxel-space.html))
+agrees and adds numbers: a 5 cm shadow volume over 100x100x25 m (about two billion voxels) at "one bit per
+voxel", eight neighbours to a byte as octants of a 10 cm cell, four mip levels in all (the octant bits,
+10, 20 and 40 cm), about 292 MB; a ray starts "in the lowest mip level" and "if it hits, switch[es] to
+the larger ones progressively", i.e. coarse first, refining only where something is there; one ray per
+pixel toward each light with the light jittered for soft shadows; moving objects re-voxelised on the CPU
+and uploaded as sub-volumes; and "all ambient occlusion, lighting, fog and reflections in this scene in
+about 9 ms, including denoising" at full HD with about ten lights, "Timings taken on a GTX 1080". He names memory and the CPU update
+of large moving objects as the drawbacks, and notes that sharp shadows reveal the voxel grid. The 2020
+design notes ([Gustafsson, "Teardown design notes"](https://blog.voxagon.se/2020/11/05/teardown-design-notes.html))
+add one constraint: a level was cut to 400 m because of "a 3D texture size limitation on AMD graphics
+cards". The earlier line here, a PC Games Hardware report on ray cost and hardware, was secondhand and
+is dropped: none of the author's posts I read says it.
 
 What that means for Cavendish: a whole-world volume is out of the question at 10^11 cells, but the
 clipmap already organises the world around the camera. A **shadow volume per clipmap level** (say 3
@@ -197,7 +266,14 @@ field's overdraw (S4's `MAX_BRICK_OVERDRAW` is the model).
   about 1 cm per metre of occluder distance (my arithmetic): hard shadows are right at human scale.
   Teardown jitters the ray over the light and then blurs and temporally blends to hide the noise; that
   needs history and is the part to skip. A cheaper soft option later: 4 fixed rays in a rotated
-  pattern per 2x2 quad, no history.
+  pattern per 2x2 quad, no history. If jitter is ever used, take it from a 2-D blue-noise texture
+  mapped one texel per pixel with no filtering, advanced per frame by `fract(noise + 0.618034 * (frame % N))`
+  (and the R2 sequence's irrationals per channel for vectors), as Gustafsson recommends; he also records
+  a reader's warning that wrapping the frame count adds low-frequency error
+  ([Gustafsson, "The importance of good noise"](https://blog.voxagon.se/2018/12/07/the-importance-of-good-noise.html)).
+- **Cost anchor.** Gustafsson's 9 ms on a GTX 1080 at 1080p covers far more than one hard sun ray (AO,
+  ten lights, fog, reflections, a denoiser), so it is an upper bound on the kind of pass, not a forecast
+  for this one. The 0.5 to 2 ms estimate stands until measured.
 - **Self-shadowing and terminators.** Start the ray one half cell out along the face normal and skip
   faces with `n.l <= 0` (they are dark already). Without this the first cell shadows itself.
 - **Web.** Compute and storage buffers are core WebGPU; one thread is irrelevant, the CPU only uploads.
@@ -212,16 +288,26 @@ field's overdraw (S4's `MAX_BRICK_OVERDRAW` is the model).
 | Method | What it gives | Cost | Fit for Cavendish |
 |---|---|---|---|
 | Gradient + sun disc (analytic) | a plausible sky for the data/figure looks | a few ALU | now; also gives the fog colour |
-| Preetham 1999, [Hosek-Wilkie 2012](https://cgg.mff.cuni.cz/projects/SkylightModelling/) | physically fitted daytime sky from turbidity, ground albedo, sun elevation; Hosek-Wilkie "improves on Preetham, especially for sunsets and high turbidity" | one function per pixel; the page gives no cost figure | ground views only; the page does not say how it behaves from space or gives aerial perspective (**unverified**) |
-| Bruneton and Neyret 2008, [Bruneton's implementation](https://ebruneton.github.io/precomputed_atmospheric_scattering/) | precomputed single and multiple scattering tables, a reference for planets; texture mappings "no longer use Earth-specific constants" (the implementation's page) | a multi-second precompute; run-time lookups | I did not read the paper (its host refused); heavy 4-D tables |
-| Hillaire 2020 ([paper](https://diglib.eg.org/handle/10.1111/cgf14050), [slides](https://blog.selfshadow.com/publications/s2020-shading-course/hillaire/s2020_pbs_hillaire_slides.pdf)) | small LUTs (transmittance, multiple scattering, sky view, aerial perspective) decoupled from screen resolution; ground and space; dynamic time of day; denser atmospheres by the multiple-scattering LUT | slide 22: "Render sky & atmosphere @720p = 0.14 ms" on an NVIDIA 1080, with the LUT cost listed beside it (my text extraction of the table is garbled; the 0.31 ms total and 1.03 ms figures cannot be assigned to rows with confidence) | **the choice** once the planet exists |
+| Preetham 1999, Hosek-Wilkie 2012 ([page](https://cgg.mff.cuni.cz/projects/SkylightModelling/), [paper](https://cgg.mff.cuni.cz/projects/SkylightModelling/HosekWilkie_SkylightModel_SIGGRAPH2012_Preprint_lowres.pdf)) | an analytic sky-dome radiance: a modified Perez function with nine parameters A to I (eq. 8), each Bezier-interpolated in solar elevation from fitted tables, per spectral band or per CIE XYZ channel; turbidity 1 to 10, ground albedo 0 to 1, sun from 0 to 90 degrees elevation (section 5); fitted to a path tracer with the observer at sea level (section 3) | **no timing in the paper**: "slightly more costly to evaluate than the Preetham model ... could be alleviated e.g. by pre-computation of sky maps" (section 8); per pixel it is a few `exp`/`cos`/`pow` per channel | ground views only, confirmed: no aerial perspective, no view from altitude or space, and "it cannot recreate the earth casting a shadow onto the atmosphere" after sunset (section 8) |
+| Bruneton and Neyret 2008 ([paper](https://core.ac.uk/download/pdf/50255743.pdf), [implementation](https://ebruneton.github.io/precomputed_atmospheric_scattering/)) | precomputed single and multiple scattering, ground to space, Rayleigh and Mie, ground reflection, terrain shadows and light shafts (abstract); transmittance 64x256 and irradiance 16x64 2-D tables, a 32x128x32x8 4-D scattering table packed as one 32x128x256 RGBA 3-D texture, 8 MB at 16-bit (section 6) | precompute "5 scattering orders ... in 5 seconds on a NVidia 8800 GTS" (section 6); run time "a few texture fetches per pixel (< 10)", 125 fps at 1024x768 on that card without light shafts, 25 fps with them, the shafts' two passes costing about 32 ms (section 6). Hillaire measures the 2017 code: 0.22 ms to render at 720p but 250 ms to update all LUTs (Hillaire, section 7) | not chosen: one 4-D table per atmosphere, a slow update when the atmosphere changes, and its light shafts need shadow volumes extruded by a geometry shader (section 6), which WebGPU lacks and Cavendish's ray-marched far field cannot supply |
+| Hillaire 2020 ([paper](https://sebh.github.io/publications/egsr2020.pdf), [slides](https://blog.selfshadow.com/publications/s2020-shading-course/hillaire/s2020_pbs_hillaire_slides.pdf), [code](https://github.com/sebh/UnrealEngineSkyAtmosphere)) | four small LUTs, all re-rendered every frame: transmittance (Bruneton's 2-D parameterisation, section 5.2), sky-view lat-long LUT with a quadratic squeeze toward the horizon (section 5.3, the sun disc composited after), aerial-perspective froxel volume, in-scatter RGB plus mean transmittance A, "32 x 32 over the screen and 32 depth slices over a depth range of 32 kilometers" (section 5.4), and a 2-D multiple-scattering LUT giving all orders at once by `1/(1 - f_ms)` (section 5.5, eq. 9); ground and space; 16-bit floats are enough (section 6) | **Table 2, GTX 1080:** transmittance 256x64, 40 steps, 0.01 ms; sky-view 200x100, 30 steps, 0.05 ms; aerial perspective 32^3, 30 steps, 0.04 ms; multiple scattering 32^2, 20 steps, 0.07 ms. "The final on-screen rendering of the sky and atmospheric perspective is 0.14 milliseconds" and "the total render time is 0.31 ms for a resolution of 1280 x 720" (section 7). From space it switches to per-pixel ray marching: 0.33 ms, 0.5 ms total. iPhone 6s rows: 0.53, 0.27, 0.11, 0.12 ms. Volumetric shadows (mountains on the air) need a separate ray march with shadow maps: 32 samples raise the sky to 1.0 ms (section 7). **No 1080p figure in the paper** | **the choice** once the planet exists |
 
 [A WebGPU port exists](https://github.com/JolifantoBambla/webgpu-sky-atmosphere) (a port of Hillaire's MIT-licensed
 demo; the aerial-perspective LUT is a frustum volume, example size 64x64x32; it needs `float32-filterable`
 for an `rgba32float` transmittance LUT and `timestamp-query` only for its timings; Rayleigh, Mie and
 ozone layers; the planet centre is placeable in world space; distance scale 1 unit = 1 km by default).
 Third-party timings for a GTX 1060 DirectX 11 port: sky-view 64x64 at 0.036 ms and the aerial LUT 64x64x32
-at 0.03 ms (a search summary of that repository's README, **not read directly**).
+at 0.03 ms (a search summary of that repository's README, **not read directly**). Hillaire's paper says a
+16-bit float representation "is enough" for his model (section 6, against 32-bit needed for Bruneton's
+iterative one), so Cavendish can store the LUTs as `rgba16float`, which core WebGPU filters, and drop the
+`float32-filterable` requirement.
+
+**Scaling Table 2 to Cavendish (my arithmetic, not a measurement).** The four LUTs (0.17 ms on a GTX
+1080) do not depend on screen size. The on-screen 0.14 ms at 720p is per pixel; if it scaled with pixel
+count it would be about 0.32 ms at 1080p and 0.56 ms at 1440p, so the whole sky about 0.5 ms at 1080p on a
+1080. The 1660 SUPER is a slower card than the 1080; expect somewhat more. The aerial-perspective default
+(32 km deep) covers a ground view of the AION site; from altitude or space Hillaire switches to per-pixel
+marching (0.33 ms on screen).
 
 **What an atmosphere needs for a planet world.** Only these (all from Hillaire's and the port's
 parameters): planet radius and atmosphere top height; Rayleigh, Mie and absorption coefficients and scale
@@ -248,9 +334,17 @@ transmittance)` out) as that LUT's interface.
 developer's posts on the [TIGSource thread](https://forums.tigsource.com/index.php?topic=19952.0)
 returned HTTP 403 to my fetcher **(not read)**, and a search summary of it says only that each voxel carries
 its own colour so the landscape "works like a low-resolution texture", that the style is untextured,
-and that the scene is chunks of polygons drawn with OpenGL **(secondhand)**. So what follows is the
-general technique voxel games of that kind use, derived from the sources above and ordinary practice,
-and stated as Cavendish's own choices, not as a description of that game.
+and that the scene is chunks of polygons drawn with OpenGL **(secondhand)**. The developer's current
+patch notes ([Wollay, "0.1.12: Lighting, Spirit Cubes and Editor Controls", 24 October 2026](https://wollay.com/patch-notes/2026-10-24-0-1-12-lighting-spirit-cubes-and-editor-controls/),
+read directly) name only adjustments: bloom and lighting refined so glow and reflections read more
+strongly while keeping lit surfaces from washing out, sand and snow colours tuned, and a fix for
+"colored bands appearing across sand near shaded edges". They describe no method. The Reddit thread on
+colour tweaking listed in the index could not be fetched (reddit.com refuses automated readers) **(not
+read)**. So what follows is the general technique voxel games of that kind use, derived from the sources
+above and ordinary practice, and stated as Cavendish's own choices, not as a description of that game.
+One general lesson from that fix, mine: smooth shading gradients across a flat-coloured face band visibly
+in 8-bit output, so the golden-image test (section 10, test 6) should include a long, gently shaded
+face and check for banding.
 
 1. **Colour is per voxel data, not texture.** The voxel's palette entry gives the albedo; the mesh carries
    the colour index (`material - 1`, today) or the final colour.
@@ -318,8 +412,8 @@ slice's own numbers via `cav bench`:
 | Baked AO, shading, fog | under 0.1 ms; mesh-thread time up | the same | the same; no extra bindings |
 | Hit-point AO in the march | under 0.3 ms | under 1 ms | the same shader; reads more of the brick buffer |
 | Ray-marched sun shadow | 0.5 to 2 ms (unmeasured) | 2 to 6 | compute is core; watch the 8 storage-buffer limit; Chrome on Windows is the likely device |
-| Hillaire sky, 0.14 ms on a GTX 1080 at 720p | 0.1 to 0.3 | 0.1 to 0.3 (LUTs are screen independent) | needs `float32-filterable` for the 32-bit LUT; 16-bit LUTs avoid it |
-| GTAO | 0.6 to 1 (at 1080p) | 1.5 to 2.5 | needs depth plus normal textures; a resolve per MSAA sample |
+| Hillaire sky, 0.31 ms total on a GTX 1080 at 720p (Table 2) | 0.3 to 0.5 | 0.6 to 0.9 (LUTs 0.17 ms fixed; on-screen part scales with pixels) | 16-bit LUTs, which the paper says suffice; no `float32-filterable` needed |
+| GTAO | 0.6 to 1 (at 1080p) | 1.5 to 2.5 | needs depth plus normal textures; a resolve per MSAA sample; the paper's 0.5 ms assumes half resolution and temporal history |
 
 The first rows are the only ones I would build without measuring; the shadow row decides the slice that
 builds it, and the rule from `plan/` and the owner's desktop freeze applies to it as to the far field:
@@ -349,6 +443,8 @@ Each looks like S4's R-rows. A property test with a control that fails when the 
    with a stated per-pixel and mean tolerance (so a driver change does not break it), with the beauty look
    on and **the same view with each layer turned off**, which must differ from the golden by more than
    the tolerance (the control arm) and must equal the old unlit render for the data look to the bit.
+   Include one long, gently shaded face and bound the largest run of equal 8-bit values along it, so
+   gradient banding is caught (section 7).
 7. **Data stays honest.** In the data look, a pixel read back from a face coloured by a field equals the
    colour map's output at that value, within one 8-bit step; control: with beauty on it must not.
 8. **Shadow sanity.** A pillar casts a shadow of the geometrically expected length on a plane
@@ -377,12 +473,15 @@ Each looks like S4's R-rows. A property test with a control that fails when the 
 - **The ray-marched shadow's cost and whether the 128^3-per-level volume is enough.** Resolve first in
   slice C, with a throwaway compute kernel before the integration.
 - **Whether merged AO is exact** (my derivation in 3.1, from the 0fps statement): test 2.
-- **Cube World's actual technique:** primary source not obtained. Do not cite it as a method; the
-  section 7 recipe stands on its own.
-- **Bruneton 2008:** the paper itself not read; the recommendation does not depend on it.
-- **Hillaire's timing table:** extracted text garbled; slide 22 gives 0.14 ms at 720p on a GTX 1080 for
-  the sky render, and a LUT cost I cannot attach to a row. Read the paper's table before budgeting.
-- **GTAO's `b` coefficient sign and the exact half-resolution cost on this card.**
+- **Cube World's actual technique:** no primary source describes it (the 2026 patch notes name tweaks
+  only; the Reddit thread could not be fetched). Do not cite it as a method; the section 7 recipe stands
+  on its own.
+- **Hillaire at 1080p and on this card:** the paper gives 720p on a GTX 1080 only (Table 2); the 1080p and
+  1440p figures in section 9 are my pixel-count scaling. Resolve with the slice's bench.
+- **Hosek-Wilkie's run-time cost:** the paper gives no timing. Irrelevant unless Hillaire proves too slow.
+- **The WebGPU port's GTX 1060 timings:** still from a search summary of its README.
+- **GTAO's cost on this card** at full and half resolution, and without temporal history. (The `b` sign is
+  settled: section 3.3.)
 - **Whether the current MSAA path leaves a depth a screen-space pass can read** (read `renderer.rs`).
 
 ## 13. Further questions (not chased)
@@ -399,11 +498,14 @@ Each looks like S4's R-rows. A property test with a control that fails when the 
 ## Sources
 
 - 0fps, [Ambient occlusion for Minecraft-like worlds](https://0fps.net/2013/07/03/ambient-occlusion-for-minecraft-like-worlds/) (read through a summariser).
-- Jimenez, Wu, Pesce, Jarabo, [GTAO](https://www.iryoku.com/downloads/Practical-Realtime-Strategies-for-Accurate-Indirect-Occlusion.pdf); Intel [XeGTAO](https://github.com/GameTechDev/XeGTAO).
+- Jimenez, Wu, Pesce and Jarabo, "Practical Real-Time Strategies for Accurate Indirect Occlusion", Activision technical report, 2016, [PDF](https://www.activision.com/cdn/research/Practical_Real_Time_Strategies_for_Accurate_Indirect_Occlusion_NEW%20VERSION_COLOR.pdf) (read: eqs. 5 to 13, section 4.3, Appendix B eq. 33; also at [iryoku.com](https://www.iryoku.com/downloads/Practical-Realtime-Strategies-for-Accurate-Indirect-Occlusion.pdf)); Intel [XeGTAO](https://github.com/GameTechDev/XeGTAO).
 - Wittens, [Teardown Frame Teardown](https://acko.net/blog/teardown-frame-teardown/); Montoya, [Teardown breakdown](https://juandiegomontoya.github.io/teardown_breakdown.html).
+- Gustafsson, [From screen space to voxel space](https://blog.voxagon.se/2018/10/17/from-screen-space-to-voxel-space.html) (2018), [The importance of good noise](https://blog.voxagon.se/2018/12/07/the-importance-of-good-noise.html) (2018), [Teardown design notes](https://blog.voxagon.se/2020/11/05/teardown-design-notes.html) (2020): read directly.
+- Wollay, [0.1.12: Lighting, Spirit Cubes and Editor Controls](https://wollay.com/patch-notes/2026-10-24-0-1-12-lighting-spirit-cubes-and-editor-controls/) (24 October 2026): read directly. [Reddit colour thread](https://www.reddit.com/r/CubeWorld/comments/1c7wgow/wollay_on_twitter_more_progress_tweaking_color/): not fetchable.
 - Microsoft, [Cascaded Shadow Maps](https://learn.microsoft.com/en-us/windows/win32/dxtecharts/cascaded-shadow-maps).
-- Hillaire, [A Scalable and Production Ready Sky and Atmosphere Rendering Technique](https://diglib.eg.org/handle/10.1111/cgf14050) (EGSR 2020; the paper PDF was not readable by my fetcher, so the slides above); [slides](https://blog.selfshadow.com/publications/s2020-shading-course/hillaire/s2020_pbs_hillaire_slides.pdf); [WebGPU port](https://github.com/JolifantoBambla/webgpu-sky-atmosphere).
-- Bruneton, [reference implementation](https://ebruneton.github.io/precomputed_atmospheric_scattering/); Hosek and Wilkie, [sky model page](https://cgg.mff.cuni.cz/projects/SkylightModelling/).
+- Hillaire, "A Scalable and Production Ready Sky and Atmosphere Rendering Technique", Computer Graphics Forum 39(4), EGSR 2020, [author PDF](https://sebh.github.io/publications/egsr2020.pdf), [EG page](https://diglib.eg.org/handle/10.1111/cgf14050) (read: sections 5 and 7, Table 2 from the page image); [slides](https://blog.selfshadow.com/publications/s2020-shading-course/hillaire/s2020_pbs_hillaire_slides.pdf); [code](https://github.com/sebh/UnrealEngineSkyAtmosphere); [WebGPU port](https://github.com/JolifantoBambla/webgpu-sky-atmosphere).
+- Bruneton and Neyret, "Precomputed Atmospheric Scattering", Computer Graphics Forum 27(4), EGSR 2008, [open PDF](https://core.ac.uk/download/pdf/50255743.pdf), [publisher](https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1467-8659.2008.01245.x) (read: sections 4 to 6); Bruneton, [reference implementation](https://ebruneton.github.io/precomputed_atmospheric_scattering/).
+- Hosek and Wilkie, "An Analytic Model for Full Spectral Sky-Dome Radiance", ACM TOG 31(4), SIGGRAPH 2012, [project page](https://cgg.mff.cuni.cz/projects/SkylightModelling/), [low-resolution preprint](https://cgg.mff.cuni.cz/projects/SkylightModelling/HosekWilkie_SkylightModel_SIGGRAPH2012_Preprint_lowres.pdf) (read: sections 3, 5, 7, 8).
 - Narkowicz and Hill, via [64's tone mapping notes](https://64.github.io/tonemapping/); [Khronos PBR Neutral](https://github.com/KhronosGroup/ToneMapping/blob/main/PBR_Neutral/README.md).
 - [WebGPU specification, limits](https://www.w3.org/TR/webgpu/#limits).
 - In-repo: `docs/slices/S4.md`, `docs/slices/S3.md`, `docs/research/web-build-and-pages.md`, `plan/REBUILD.md` sections 2, 3.4, 5.2, 6, `crates/cav-render/src/world.rs`, `world_render.wgsl`, `world_common.wgsl`.

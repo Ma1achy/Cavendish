@@ -6,6 +6,36 @@ output in [`results.txt`](s5-world-octree/results.txt)). Tags: **[R]** read in a
 session; **[S]** read only as a search-result summary; **[M]** measured here; **[D]** derived by me,
 to be checked; **[U]** not verified (listed again in section 8).* Extended the same day with the owner's Barnes–Hut frame (2.1 to 2.5), view modes (7a) and seams (7b).
 
+**Changed after reading the primary sources (25 Nov 2026).** The owner supplied the PDFs of Lengyel 2010,
+Strugar 2010, Losasso & Hoppe 2004 and Laine & Karras 2010 (read with their figures; not copied into the
+repository). What changed:
+* **Seam blend: driven by continuous camera position, not by time** (§7b). All three primary sources make the
+  transition weight a function of the viewer's position: the clipmap's `α` "is not time-based but instead tracks
+  the continuous viewer position" (Losasso & Hoppe 2004, §6.2), CDLOD morphs "based on its own LOD metric", the
+  3-D distance per vertex (Strugar 2010, pp. 4, 7–8), and Lengyel's geomorph "is a function of camera position
+  only" (Lengyel 2010, §6.1, p. 86). The clipmap does this *although its regions snap* in whole grid steps, by
+  measuring `α` from the viewer, not from the snapped region. So the dithered cross-fade stays, but its threshold
+  is the camera-distance fraction across a band inset from the snapped ring edge, and the time-driven fade on
+  snaps is dropped (it is kept only for a node that arrives late from the streamer). This also makes screenshots
+  and the seam test deterministic.
+* **Band width:** the sources use about a tenth of a level's extent (`w = n/10` grid units, L&H §6.2) to 15–30 %
+  of each LOD range (CDLOD p. 4); the note's "1–2 coarse cells" was narrower than any of them and is now a
+  measured parameter starting near 10 % of the ring.
+* **Transvoxel facts corrected and sourced** (§1, §7b, §8): blocks are **16³ cells at every LOD**, the physical
+  size doubling per level (Lengyel §4.2, p. 28; §4.4, p. 44): the same equal-cell-count pyramid this note
+  recommends, not the "growing cell count" a forum summary had claimed. A transition cell has 9 full-resolution
+  samples plus 4 duplicated corners, 2⁹ = 512 cases in 73 classes (§4.3, pp. 35–37; Table 4.8, p. 42), width
+  `w(k) = 2^(k−2)` (eq. 4.2, p. 46), 2:1 only (§4.1, p. 28). It still does not apply to a blocky
+  mesh-near/ray-march-far split (no isosurface mesh on either side of our seams).
+* **Lengyel's "surface shifting" (§4.2.1, pp. 28–30) is our proud-halo problem**, named in a primary source:
+  coarse surfaces must coincide with fine ones or objects "appear sunken" when the level changes. It supports the
+  mass-weighted drawn bits (§7b).
+* **ESVO read in full** (§1, §8): 64-bit child descriptor, children stored contiguously, contours as conservative
+  slab pairs, beam optimisation, 5–8 bytes per voxel measured. It confirms the layout (contiguous children
+  addressed by masks plus one relative pointer, the `Summary` array flat) and adds two optional ideas for the
+  brick march (a coarse depth pre-pass, and filter radii clamped across level boundaries).
+* **Skirts** are now sourced (Lengyel §2.1.1–2.1.2, pp. 6–8, which also says Ulrich's chunked LOD uses them).
+
 ## 0. One-page summary
 
 **Recommendation.** Keep S4's chunk (32³ cells, palette, `VoxTree` below it) as the level-0 node of a
@@ -59,7 +89,8 @@ beyond a kilometre); on the town it gains nothing (same nodes at the same measur
 baseline does not cancel the error of nodes within ~10 baselines. **View modes and seams (7a, 7b):**
 `lod_view: Camera | Tower(n) | Towers([..])` draws the tower's cached read cut (the union is the common
 refinement) with a level, tower or error overlay; seams are hidden by dithered cross-fade in the brick march,
-time-driven on ring snaps (not Transvoxel, skirts or geomorphing).
+weighted by the continuous camera distance across a band inset from each snapped ring edge, as the clipmap and
+CDLOD do (not time-driven, and not Transvoxel, skirts or geomorphing).
 
 **What the benchmark said** (a 128³-cell town, quadrupole only, so pessimistic against Cavendish's
 octupole): with the geometric criterion the nearest accepted node of each level sits **2.6–5.7 node
@@ -72,7 +103,7 @@ structure. Error-driven and θ-driven opening cost about the same nodes at the s
 
 **What I could not verify:** that the S4 `Σ m s^l` terms can be carried upwards with a bound close
 to the leaf-built one (the S4 code was not read, only its slice note); the sizes of any planet-scale
-case; ESVO, GigaVoxels and NanoVDB internals beyond abstracts; that float-float node offsets are
+case; GigaVoxels and NanoVDB internals beyond abstracts (ESVO is now read in full); that float-float node offsets are
 enough at 6.4×10⁶ m. Each has a measurement in the slice ([section 8](#8-what-to-test-and-what-could-not-be-verified)).
 
 ---
@@ -82,12 +113,12 @@ enough at 6.4×10⁶ m. Each has a measurement in the slice ([section 8](#8-what
 | System | Structure | LOD chosen by | Edit cost | Memory | Fit for Cavendish |
 |---|---|---|---|---|---|
 | **Fixed-size chunks per level** ("LOD chunk octree") | Every level's chunk has the same cell count (here 32³), cells double per level, 8 children per node | Distance or screen error per node; split when too coarse, merge when far | One chunk per level touched: re-aggregate the 8-children union | 1 + 1/8 + 1/64 … = **8/7** of the finest level (13 % extra) [D] | **The shape to take.** S4 already has it for bricks |
-| **Geometry clipmaps** ([Losasso & Hoppe 2004](https://hhoppe.com/geomclipmap.pdf) [R]; [GPU Gems 2 ch. 2](https://developer.nvidia.com/gpugems/gpugems2/part-i-geometric-complexity/chapter-2-terrain-rendering-using-gpu-based-geometry) [R]) | Nested n × n grids (n = 255) of a mip pyramid, centred on the viewer, toroidal addressing | By ring: levels fixed by distance from the viewer; levels dropped when the viewer is high (extent < 2.5 h); a blend band at each level's outer edge | Moving the viewer refills an L-shaped strip per level; coarse levels barely move (relative motion halves per level) | One float height map + normals per level; 33 % more than the finest in 2-D | S4's rings are this in 3-D. A clipmap is a *cut*, not a store: S4's rings are the draw cut |
-| **Transvoxel** ([Lengyel](https://transvoxel.org/) [R]) | Marching-cubes blocks of equal cell count at different resolution, joined by "transition cells" | Chosen by the caller (any block pyramid); the algorithm only seals seams | Local: a transition cell needs only its 9 neighbouring samples | Lookup tables only (73 classes from 512 cases) | Not needed: S4 does not mesh levels ≥ 1 (they are ray-marched bricks). Only 2:1 ratios across a seam are handled [R] |
+| **Geometry clipmaps** ([Losasso & Hoppe 2004](https://hhoppe.com/geomclipmap.pdf) [R]; [GPU Gems 2 ch. 2](https://developer.nvidia.com/gpugems/gpugems2/part-i-geometric-complexity/chapter-2-terrain-rendering-using-gpu-based-geometry) [R]) | Nested n × n grids (n = 255) of a mip pyramid, centred on the viewer, toroidal addressing | By ring: levels fixed by distance from the viewer; a level's active region is set empty when the viewer's height exceeds `0.4 n g_l` (§4), i.e. extent < 2.5 h; a transition band of width `w = n/10` grid units at each level's outer edge (§6.2) | Moving the viewer refills an L-shaped strip per level; coarse levels barely move (relative motion halves per level) | One float height map + normals per level; 33 % more than the finest in 2-D | S4's rings are this in 3-D. A clipmap is a *cut*, not a store: S4's rings are the draw cut |
+| **Transvoxel** ([Lengyel 2010, *Voxel-Based Terrain for Real-Time Virtual Simulations*, PhD dissertation, UC Davis](https://transvoxel.org/Lengyel-VoxelTerrain.pdf) [R]) | Marching-cubes blocks of **16³ cells at every LOD**, the block's physical size doubling per level, eight blocks per parent: an octree of blocks (§4.2, p. 28; §4.4, p. 44). Seams sealed by "transition cells" | Octree traversal; a visible block is drawn when its projected size falls below a threshold (§4.4, p. 44) | Local: a transition cell reads 9 full-resolution samples on one face (§4.3, pp. 35–36) | Lookup tables only (512 cases in 73 classes, Table 4.8, p. 42); each block stores up to seven meshes (its own plus one transition mesh per face) and a secondary position for boundary vertices (p. 46) | Not needed: S4 does not mesh levels ≥ 1 (they are ray-marched bricks). Only 2:1 ratios across a seam are handled (§4.1, p. 28) [R]. The block pyramid itself is the same shape as this note's |
 | **OpenVDB** ([overview](https://www.openvdb.org/documentation/doxygen/overview.html) [R]) | B+tree, default 5-4-3: leaf 8³, internal 16³ and 32³, a root map; constant *tiles* at any level | None built in (a data structure, not an LOD scheme) | Cheap; accessors must be cleared when nodes are deleted | Tiles make uniform regions free; leaves dense | The tile idea is S3's lossless merge. 5-4-3 is a very shallow tree: Cavendish's 32³ chunks are close to a 5-level VDB leaf |
 | **NanoVDB** ([NVIDIA research page](https://research.nvidia.com/labs/prl/publication/nanovdb) [S]; [follow-up on editing](https://arxiv.org/pdf/2611.08665) [S]) | A pointer-free linear snapshot of a VDB, copyable to the GPU by `memcpy` | n/a | **Read-only**: topology edits need a rebuild (the 2026 follow-up adds GPU topology edits) [S] | Compact; optional quantisation | Argues for a flat, pointer-free layout of the cut's `Summary` array, which is what S3's note already chose |
-| **Sparse voxel octrees** ([Laine & Karras, ESVO](https://research.nvidia.com/publication/2010-02_efficient-sparse-voxel-octrees) [R, abstract only]) | Compact octree with contours (a plane per node for smooth surfaces) | Not stated in the abstract | Not addressed; built offline | "Compact" | Contours are the same idea as the exact-skin pieces for drawing; the note's S3 conclusion (shallow chunks over a linear octree) stands |
-| **GigaVoxels** ([Crassin et al. 2009](https://hal.archives-ouvertes.fr/inria-00345899) [S]) | Octree of node pool + brick pool, streamed *by the ray traversal itself* | By what rays touch: data loaded on demand, detail clusters at the boundary of empty and full space | On-demand, view-driven; not an editing structure | Several billion voxels in a limited GPU budget, 20–90 fps (2009 hardware) [S] | The model for "resident set = cut + ancestors, filled by demand". For the read, demand is the *tower's* opening test, not a ray |
+| **Sparse voxel octrees** ([Laine & Karras 2010, "Efficient Sparse Voxel Octrees", I3D](https://research.nvidia.com/publication/2010-02_efficient-sparse-voxel-octrees) [R]) | Octree split into *blocks* of memory with block-relative pointers and a page header every 8 KB (§3). Each non-leaf voxel has a **64-bit child descriptor**: 15-bit child pointer, a far bit, 8-bit *valid mask*, 8-bit *leaf mask*, 24-bit contour pointer, 8-bit contour mask (Fig. 2, §3.1). A node's children are stored **contiguously**, so one pointer plus the masks addresses all eight; leaves have no descriptor. **Contours** (32 bits: a normal in 3 × 6 bits and two 7-bit plane positions) bound a voxel between two parallel planes; a voxel's shape is its cube intersected with its own and all its ancestors' contours, built greedily top-down so the original surface is always **enclosed** (§3.2–3.4) | Per ray: traversal stops when the voxel's projected size is small enough, `exp2(scale)` against a linear function of `t` (Fig. 8 line 11, §4.1); on-demand streaming "based on distance to camera" is mentioned, not described (§6) | Not addressed: the paper assumes "static geometry" (§2) and builds offline (Table 1: seconds to tens of minutes) | Topology ≈ 2 B per voxel at a mean branching factor of four; 1 B colour + 2 B normal (DXT-like blocks) gives **≈ 5 B per voxel** in theory, **5.16–8.10 B measured** (§3.5, Table 1) | Confirms a flat, pointer-light layout (contiguous children, masks, relative offsets) for GPU traversal; that is the S3 note's VoxTree-on-GPU shape, not a reason to change the world pyramid, which is key-addressed and edited. Contours are a *conservative* tightening of coarse voxels, the same idea as the exact-skin pieces for drawing, and an option for the far-field halo (§7b) |
+| **GigaVoxels** ([Crassin et al. 2009](https://hal.archives-ouvertes.fr/inria-00345899) [S]; described in Laine & Karras 2010 §2 [R]) | Octree of node pool + brick pool, streamed *by the ray traversal itself*; leaves are bricks "typically 16³ or 32³" sampled along the ray, kd-restart traversal (Laine & Karras §2) | By what rays touch: the renderer "detects when data is missing in GPU memory and signals this to the CPU, which then streams the needed data in" (Laine & Karras §2) | On-demand, view-driven; not an editing structure | Several billion voxels in a limited GPU budget, 20–90 fps (2009 hardware) [S] | The model for "resident set = cut + ancestors, filled by demand". For the read, demand is the *tower's* opening test, not a ray |
 | **Voxel planets, cube-sphere** ([acko.net, Making Worlds](https://acko.net/blog/making-worlds-4-the-devils-in-the-details/) [R]; [gamedev threads](https://gamedev.net/forums/topic/621554-imprecision-problem-on-planet/) [S]) | A subdivided cube projected to a sphere, a chunked quadtree per face, tiles split and merge around the camera | Quadtree split on screen need; tiles carry their own 1-pixel border so neighbours match | Per-tile regeneration | Two-D height data (16-bit heights banded beyond a few zooms [R]) | Fits height-field terrain; wrong for gravity (cells are not cubes, so the cube kernel and prism kernel do not apply) |
 | **Infinite terrain** ([Minecraft region files](https://minecraft.wiki/w/Region_file_format) [R]) | Chunks keyed by integers, grouped 32 × 32 per file with a sector table (offset, size), a timestamp table | By distance, streamed | A chunk rewritten into its sector slot | Files are sparse; unvisited regions do not exist | S4's region files (8³ chunks, 512 slots) are the same design, one file per level |
 
@@ -402,7 +433,10 @@ nothing on it reads exactly zero gradient.
   is formed in `f64` on the CPU, or as float-float on the GPU (S5-01/02), for the nodes in the
   tower's cut. The read's frame is the **tower-local frame** (S5-02): rotate the planet-centred
   positions once, subtract in `f64`, hand the GPU small numbers. The draw does the same
-  camera-relative ([S4 §3.4](../slices/S4.md): origin formed in `f64` on the CPU).
+  camera-relative ([S4 §3.4](../slices/S4.md): origin formed in `f64` on the CPU). The clipmap paper gives
+  the same remedy for many levels: "transform the viewpoint and view matrix into the local coordinate system
+  of each clipmap level (using double precision)" ([Losasso & Hoppe 2004](https://hhoppe.com/geomclipmap.pdf),
+  §9 "Precision" [R]).
   Float-float's ~10⁻¹⁴ relative on 6.4×10⁶ m is ~10⁻⁷ m: fine for a node 100 m away, which the cut
   makes the typical case [D; not measured].
 
@@ -615,31 +649,51 @@ Setting: S4 draws ring 0 as greedy meshes and levels ≥ 1 as ray-marched bricks
 of its children (S4 §2: "a coarse brick holds every finer brick's cells, and may add some"), with the rings
 exactly nested by snapping (R12). So there are **no holes** at a seam. What shows is a *step* (the coarse surface
 stands proud of the fine one by up to `2^L − 1` fine cells at the box edge) and a *pop* when the camera crosses
-a snap. The survey, with sources:
+a snap. The step is what Lengyel calls **surface shifting**: a coarse surface that does not coincide with the fine
+one makes "structures placed on the terrain ... suddenly appear sunken into the ground when the detail level
+changed, which is not acceptable"; his fix places every coarse vertex exactly on a vertex of the finest mesh
+(Lengyel 2010, §4.2.1, pp. 28–30, Figs. 4.2–4.3). Binary occupancy has no vertex to move, so our analogue is the
+choice of drawn bits (row "Matching coarse cells" below). The survey, with sources:
 
 | Technique | Source | What it does | Fit here |
 |---|---|---|---|
-| **Transvoxel** | [Lengyel](https://transvoxel.org/) [R] | Transition cells (9 high-resolution samples, 512 cases in 73 classes) seal a seam between marching-cubes blocks that differ by exactly 2:1 | **No.** Needs meshed surfaces at both levels; ours are blocky meshes and ray-marched bricks. Only 2:1 [R]; our rings are 2:1, so it would apply if levels ≥ 1 were meshed |
-| **Skirts** | Ulrich's chunked LOD (*Game Programming Gems 2*, [U: not opened]); described in [a Cesium forum post](https://community.cesium.com/t/skirts-tablecloth-overhangs/1864) [S] and [a gamedev thread](https://gamedev.net/forums/topic/376154-terrain-lod-and-skirting/) [S] | Extend each tile's edge downward so a crack shows skirt, not sky; can show on silhouettes and top-down zig-zags [S] | **Low value.** We have no cracks (superset bricks); a skirt only adds walls under the near mesh's outer edge |
-| **Geomorphing** (CDLOD) | [Strugar's CDLOD paper](https://raw.githubusercontent.com/fstrugar/CDLOD/master/cdlod_paper_latest.pdf) [R, as extracted text] | Per-vertex morph from the fine grid to the coarse grid over the **last 15–30 % of each LOD range**, in the vertex shader, so a level's edge equals the next level's, with no stitching strips and no T-junctions | **Meshes only.** A blocky mesh's vertices sit on the lattice, so a snap toward the coarse lattice is possible, but occupancy is binary: a morphing face collapses a thin wall, which is not conservative. The ray-marched far field has no vertices. Skip |
-| **Dithered (screen-door) cross-fade** | Unity's LOD Group cross-fade ([manual](https://docs.unity.com/en-us/engine/6000.0/manual/analysis/graphics-performance-profiling/simplifying-distant-meshes-with-level-of-detail-lod/level-of-detail); the page I could read does not describe cross-fade, so my account of dithering and "animate cross-fading" is from memory of Unity, not read here [U]) | During a fade both levels are drawn and each pixel keeps one by a dither threshold, so opaque rendering and depth still work | **The best fit.** In the brick ray-march, over an overlap band the finer level also draws its outer cells and each pixel takes one of the two by a Bayer or blue-noise threshold on the distance fraction. The cost is the band drawn twice (bounded by `MAX_BRICK_OVERDRAW`). Opaque, no sorting |
-| **Overlapping rings with alpha blend** | The clipmap's transition band, [Losasso & Hoppe 2004](https://hhoppe.com/geomclipmap.pdf) [R]: it blends *heights* and normals toward the next coarser level near a ring's outer edge, not alpha | Smooth in geometry | **Not as alpha** (opaque voxels, no order-independent transparency); the dither is its opaque form |
+| **Transvoxel** | [Lengyel 2010](https://transvoxel.org/Lengyel-VoxelTerrain.pdf) [R] | A cell of the half-resolution block on the seam is split in two (Fig. 4.7): a thin *transition cell* triangulated from the 9 samples of the full-resolution face (its 4 corners duplicated on the half-resolution face), 2⁹ = 512 cases in 73 classes (§4.3, pp. 35–42), and an ordinary cell from the 8 half-resolution samples. The half-resolution block's boundary vertices move inward by eq. 4.2 to make room, width `w(k) = 2^(k−2)`, half the adjacent full-resolution cell (p. 46, Fig. 4.11); transition meshes are drawn only where neighbours differ (p. 46) | **No.** Both sides must be Marching Cubes isosurface meshes of one scalar field; ours are a greedy blocky mesh beside a ray-marched brick, with no isosurface on either side, so there is nothing to triangulate between. Only 2:1 (§4.1, p. 28). Even if levels ≥ 1 were meshed blockily, transition cells solve cracks, which superset bricks do not have. Its §4.2.1 surface-shifting rule is the part that transfers (above) |
+| **Skirts** | Lengyel 2010 §2.1.1, Fig. 2.1(e)–(f), pp. 6–7 [R]: skirts and "flanges" hang extra triangles from the higher-detail mesh's edge downward; skirts "exhibit the same shading problems" as a vertical crack fill, flanges penetrate the surface and cause depth artefacts in additive lighting passes. Ulrich's chunked LOD (2002) uses skirts (Lengyel §2.1.2, p. 8 [R]; Ulrich's notes themselves not opened [U]) | Extend each tile's edge downward so a crack shows skirt, not sky | **Low value.** We have no cracks (superset bricks); a skirt only adds walls under the near mesh's outer edge |
+| **Geomorphing** (CDLOD) | [Strugar 2010, "Continuous Distance-Dependent Level of Detail for Rendering Heightmaps"](https://raw.githubusercontent.com/fstrugar/CDLOD/master/cdlod_paper_latest.pdf) [R]; Lengyel 2010 §6.1, p. 86 [R] | Each vertex morphs toward its coarse neighbour by `morphK` ∈ [0, 1], computed per vertex from the 3-D distance to the observer, over the **last 15–30 % of each LOD range**; ranges double per level (p. 4, Fig. 2), so a node at full morph "exactly matches the one from the lower LOD layer" and swaps without seams or T-junctions (pp. 7–8, Fig. 6). The distance function must be identical on both sides of a node edge or seams return (p. 8); a node can transition between **only two** adjacent layers, so ranges too short for the morph area produce seams, which the demo's debug build detects (p. 9). Lengyel lists geomorphing as future work for Transvoxel: it costs a secondary position (and normal) per vertex, ~12 B (p. 86) | **Meshes only.** A blocky mesh's vertices sit on the lattice, so a snap toward the coarse lattice is possible, but occupancy is binary: a morphing face collapses a thin wall, which is not conservative. The ray-marched far field has no vertices. Skip the morph; **keep its two rules**: a blend weight from continuous distance, and a ring wide enough that one band never overlaps the next |
+| **Dithered (screen-door) cross-fade** | Unity's LOD Group cross-fade ([manual](https://docs.unity.com/en-us/engine/6000.0/manual/analysis/graphics-performance-profiling/simplifying-distant-meshes-with-level-of-detail-lod/level-of-detail); the page I could read does not describe cross-fade, so my account of dithering and "animate cross-fading" is from memory of Unity, not read here [U]). No primary paper read for the dither itself | During a fade both levels are drawn and each pixel keeps one by a dither threshold, so opaque rendering and depth still work | **The best fit.** In the brick ray-march, over an overlap band the finer level also draws its outer cells and each pixel takes one of the two by a Bayer or blue-noise threshold on the distance fraction. The cost is the band drawn twice (bounded by `MAX_BRICK_OVERDRAW`). Opaque, no sorting. It is the opaque, per-pixel form of the clipmap's `α` (next row) |
+| **Overlapping rings with a blend weight** | The clipmap's transition region, [Losasso & Hoppe 2004, "Geometry Clipmaps: Terrain Rendering Using Nested Regular Grids"](https://hhoppe.com/geomclipmap.pdf) §6.2–6.3, Fig. 4–5 [R] | Near each level's outer boundary the geometry morphs toward the coarser level, `z' = (1 − α) z + α z_c`, with `α = max(α_x, α_y)`, `α_x = clamp((|x − v_x| − ((x_max − x_min)/2 − w − 1)) / w, 0, 1)`, `v` the **continuous** viewer position and `w = n/10` grid units (capped by the room to the finer region); "the transition is not time-based but instead tracks the continuous viewer position" (§6.2). Textures (normal maps) of levels `l` and `l−1` are blended in the pixel shader with the same `α` (§6.3). T-junctions are closed with zero-area triangles. The regions themselves move in whole even-grid steps (constraints 1–4, §5), yet `α` is continuous because it is measured from the viewer, not from the region | **Not as alpha** (opaque voxels, no order-independent transparency); the dither is its opaque form. **Its weight is the one to copy:** measured from the camera, inset from the snapped edge, so a snap happens where the coarse level is already fully shown |
 | **Fog / haze** | No primary source read | Hides far steps and pops by distance | Free beyond the last ring, and at planet scale. S21's plan lists fog among "the look" (branch `plan-look`, commit `979a144`; I read only its subject line [U]) |
-| **Matching coarse cells to the near mesh's faces** | None; my design | Rings nest exactly (S4's snapping puts level boundaries on multiples of `2^L`), so a coarse cell boundary is always a fine lattice line. A **mass-weighted** occupancy for the *drawn* coarse brick (≥ 50 % of the mass) cuts the proud halo, while the **conservative** superset stays for occlusion and the read | **Yes, per payload:** draw bits mass-weighted, occlusion bits superset. Two bit-planes per brick, ~4 KiB more |
-| **Temporal blend** | Unity's "animate cross-fading" [U]; TAA in general [U] | A level switch fades over a few frames, driven by time rather than distance | **Yes for snaps:** a ring shift is a discrete event, so run the cross-fade in time (≈ 0.2–0.3 s), the dither threshold stepping. No history buffer |
+| **Matching coarse cells to the near mesh's faces** | None; my design | Rings nest exactly (S4's snapping puts level boundaries on multiples of `2^L`), so a coarse cell boundary is always a fine lattice line. A **mass-weighted** occupancy for the *drawn* coarse brick (≥ 50 % of the mass) cuts the proud halo, while the **conservative** superset stays for occlusion and the read | **Yes, per payload:** draw bits mass-weighted, occlusion bits superset. Two bit-planes per brick, ~4 KiB more. This is the blocky analogue of Lengyel's surface-shifting fix (§4.2.1): the drawn coarse surface should sit on the fine one, not outside it |
+| **Conservative contours** | Laine & Karras 2010 §3.2–3.4, Fig. 4–5 [R] | A pair of parallel planes per voxel (32 bits), intersected with the ancestors' planes, shrinks a coarse voxel toward the surface while still enclosing it | **Optional, later.** Tightens the halo without giving up conservativeness, but the far field then stops looking blocky; mass-weighted bits are simpler and keep the look |
+| **Filter radius clamped across levels** | Laine & Karras 2010 §4.3, Fig. 10–11 [R] | Their post-process blur takes its radius from each pixel's voxel size; neighbours on different levels made "seams ... visible at hierarchy level changes", fixed by clamping each sample's radius to `min(r, r')` with weights tapering over the last pixel | **Only if** the far field gets a size-dependent screen filter (e.g. S21's look): then clamp across the level boundary the same way |
+| **Temporal blend** | Unity's "animate cross-fading" [U]; TAA in general [U]. None of the primary sources uses time: L&H, CDLOD and Lengyel all drive the blend from camera position (rows above) | A level switch fades over a few frames, driven by time rather than distance | **Only for late arrivals:** a node whose brick becomes resident after the camera has passed its band has no position to blend over, so fade it in over ≈ 0.2–0.3 s. Ring snaps do **not** need it once the band is inset from the snapped edge (row "Overlapping rings") |
 
-**Recommended for the mesh-near, ray-march-far split** [D, a design judgement; nothing here is tested]:
+**Recommended for the mesh-near, ray-march-far split** [D, a design judgement built on the sources above; nothing
+here is tested]:
 1. Keep exact nesting and superset bricks (no cracks by construction; R12 is the test).
-2. **Dithered cross-fade in the brick ray-march** across an overlap band of 1–2 coarse cells at the outer edge of
-   each finer ring, and **time-driven** on a ring snap. That mirrors CDLOD's morph band (15–30 % of a range) in the
-   one currency a ray-marcher has: a per-pixel choice between two cells.
-3. **Mass-weighted drawn bits, superset occlusion bits**, to lower the halo.
-4. Haze beyond the last ring (S21).
-5. Not Transvoxel, skirts or geomorphing: they fix problems the brick-and-mesh split does not have.
+2. **Dithered cross-fade in the brick ray-march**, the weight a function of the **continuous camera position**,
+   as in the clipmap (L&H §6.2) and CDLOD (pp. 4, 8): over a band at the outer edge of each finer ring, inset from
+   that ring's snapped boundary by at least one snap step, each pixel draws the finer or coarser level by a Bayer
+   or blue-noise threshold on `α`, the camera-distance fraction across the band (L&H's `α_x, α_y` with the
+   distance in the ring's own cells). Because `α` reaches 1 before the snapped edge, a snap changes nothing on
+   screen. **Band width is a measured parameter**: the sources use `n/10` grid units (L&H) to 15–30 % of a range
+   (CDLOD); start at ~10 % of the ring's half-width and not below 2 coarse cells, and keep each ring at least
+   band + snap step wide (CDLOD's two-layer limit, p. 9).
+3. **Mass-weighted drawn bits, superset occlusion bits**, to lower the halo (Lengyel's surface shifting).
+4. A time-driven fade only for bricks that arrive late from the streamer.
+5. Haze beyond the last ring (S21).
+6. Not Transvoxel, skirts or geomorphing: they fix cracks and vertex pops the brick-and-mesh split does not have.
+7. Optional, measured first: ESVO's **beam optimisation** for the brick march (Laine & Karras §4.2): a coarse pass
+   per 4 × 4 or 8 × 8 pixel block finds a conservative start distance (traversal stops at a voxel too small to
+   certainly cover a ray of the coarse grid; contours off), and each pixel's ray starts there. Their gain over
+   contours alone was 2–25 % at 1024 × 768 (Hairball 27.9 → 28.4, Sibenik 94.1 → 103.6, City 89.1 → 106.0,
+   Sibenik-D 38.7 → 48.3 Mrays/s; Table 2): modest, so only worth it if the march is step-bound.
 
 A test with a control arm: render a camera path across 50 ring snaps; the seam metric is the mean absolute
-frame difference in a band around each ring boundary, normalised by the frame difference elsewhere. Pass: below a
-threshold stated before measuring; control: the blend switched off must exceed it.
+frame difference in a band around each ring boundary, normalised by the frame difference elsewhere. Because the
+blend depends on position only, the path is a fixed list of camera poses and the frames are reproducible. Pass:
+below a threshold stated before measuring; controls: the blend switched off must exceed it, and the band placed
+*on* the snapped edge (not inset) must exceed it at the snap frames.
 
 
 ## 8. What to test, and what could not be verified
@@ -663,12 +717,15 @@ threshold stated before measuring; control: the blend switched off must exceed i
    material rule makes a roof paint a hill).
 
 **Could not verify**
-* **ESVO, GigaVoxels, NanoVDB internals**: only the abstract (ESVO) or search summaries (GigaVoxels,
-  NanoVDB) were read; the papers are not opened here. Their rows in §1 are what those sources state, not more.
-* **Lengyel's dissertation and the Transvoxel block sizes**: the Transvoxel page does not describe chunk sizes
-  or how equal-cell-count chunks are arranged. The "16³ at finest, 32³, 64³ coarser" remark came from
-  a forum post in a search summary, not a primary source, and it describes chunks of *growing* cell
-  count, the opposite of this note's choice.
+* **GigaVoxels, NanoVDB internals**: only search summaries and Laine & Karras's §2 account (GigaVoxels) were
+  read; the papers are not opened here. Their rows in §1 are what those sources state, not more. **ESVO** is now
+  read in full (owner's copy of the I3D paper).
+* **Lengyel's dissertation: resolved.** Read from the owner's copy of
+  `https://transvoxel.org/Lengyel-VoxelTerrain.pdf` (Chapters 2.1 and 4, §6.1). Blocks are **16³ cells at every
+  LOD**, doubling in physical size per level (§4.2, p. 28): the equal-cell-count pyramid this note recommends. The
+  earlier forum claim of "16³ at finest, 32³, 64³ coarser" (growing cell count) is **wrong** about Lengyel.
+* **The dithered cross-fade itself** has no primary source read here (Unity's page did not describe it); the
+  position-driven weight it uses is sourced (L&H §6.2, CDLOD), the dither is my design [D].
 * **Salmon & Warren 1994 and Barnes & Hut 1986**: only abstracts and Dehnen's account. Dehnen's PDF
   was read as text; its figures were not seen.
 * **Cesium, "camera-relative" patents, Voxel Farm, Outerra**: not opened; the floating-origin claims
@@ -682,12 +739,13 @@ threshold stated before measuring; control: the blend switched off must exceed i
     basics. To try: `https://docs.unity.com/en-us/engine/6000.0/manual/analysis/graphics-performance-profiling/simplifying-distant-meshes-with-level-of-detail-lod/class-lodgroup` (not fetched).
   * Barnes & Hut 1986, `https://doi.org/10.1038/324446a0`; Salmon & Warren 1994, `https://doi.org/10.1006/jcph.1994.1050`
     (abstract through search only); Ulrich 2002, "Rendering massive terrains using chunked level of detail
-    control" (SIGGRAPH course notes; no URL found, a search returned only forum discussions); Lengyel's dissertation,
-    possibly `https://core.ac.uk/download/52926121.pdf` (not opened, not confirmed to be it); the ESVO paper
-    (`https://research.nvidia.com/publication/2010-02_efficient-sparse-voxel-octrees`, abstract only).
-  * Read in full as extracted text: Strugar's CDLOD paper
-    (`https://raw.githubusercontent.com/fstrugar/CDLOD/master/cdlod_paper_latest.pdf`), Losasso & Hoppe's PDF and
-    Dehnen's PDF (the figures were not seen).
+    control" (SIGGRAPH course notes; no URL found; its use of skirts is now sourced through Lengyel §2.1.2).
+  * Read in full with figures (owner's copies, 25 Nov 2026): Strugar's CDLOD paper
+    (`https://raw.githubusercontent.com/fstrugar/CDLOD/master/cdlod_paper_latest.pdf`), Losasso & Hoppe
+    (`https://hhoppe.com/geomclipmap.pdf`), Laine & Karras
+    (`https://research.nvidia.com/publication/2010-02_efficient-sparse-voxel-octrees`, file `laine2010i3d_paper.pdf`),
+    and the LOD chapters of Lengyel (`https://transvoxel.org/Lengyel-VoxelTerrain.pdf`). Dehnen's PDF was read as
+    text (the figures were not seen).
 * **S4's code**: I read the slice note, not `cav-sim/world.rs`. How its `Σ m s^l` is held (per chunk, per
   node) decides whether §2's carried `S_l` is a small change or a new field.
 * **Costs at 10⁹–10¹¹ cells** are derived, not measured; the town benchmark is 2×10⁶ cells in numpy.
