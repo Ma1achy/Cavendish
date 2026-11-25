@@ -32,6 +32,12 @@ pub trait PaneSurface {
     fn busy(&self) -> bool {
         false
     }
+
+    /// What the last picture could not draw, in words (the world's caps reached): the shell
+    /// shows each as a badge. Empty when everything was drawn.
+    fn notes(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// No GPU: the shell draws an empty pane. For tests of layout and input.
@@ -137,6 +143,10 @@ impl PaneSurface for GpuPanes {
 
     fn busy(&self) -> bool {
         self.renderer.world_incomplete()
+    }
+
+    fn notes(&self) -> Vec<String> {
+        self.renderer.world_counts().1
     }
 }
 

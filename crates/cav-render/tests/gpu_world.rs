@@ -8,7 +8,8 @@ use cav_core::voxel::world::{Brick, ChunkCells, ChunkKey};
 use cav_gpu::Gpu;
 use cav_gpu::wgpu::{self, util::DeviceExt};
 use cav_render::world::{
-    BRICK_WORDS, MAX_MARCH_STEPS, brick_words, frustum_planes, march, march_source, visible,
+    BRICK_WORDS, GpuCaps, MAX_MARCH_STEPS, WorldGpu, brick_words, frustum_planes, march, march_source,
+    visible,
 };
 use cav_render::{Camera, Frame, Renderer};
 use cav_sim::world::clipmap::{WorldFrame, level_count, levels, lod_centre, ring};
@@ -49,6 +50,9 @@ fn gpu_world_culling_matches_the_cpu() {
     let (pipelines, store) = renderer.world_parts();
     let mut compared = 0;
     let (mut seen, mut hidden) = (0, 0);
+    // Control: the twin with one plane turned round disagrees with the GPU, so the comparison
+    // can fail.
+    let mut disagree = 0;
     for camera_n in 0..20u64 {
         let v = view(
             [40.0 * (unit(camera_n, 0) - 0.5), 40.0 * (unit(camera_n, 1) - 0.5), 2.0],
@@ -88,13 +92,20 @@ fn gpu_world_culling_matches_the_cpu() {
             let cpu = visible(&planes, [lo.x as f32, lo.y as f32, lo.z as f32], grid.chunk_side() as f32);
             let on_gpu = words[i * 5 + 1] == 1;
             assert_eq!(on_gpu, cpu, "camera {camera_n}, chunk {key:?}");
+            let mut turned = planes;
+            turned[0] = turned[0].map(|v| -v);
+            let wrong = visible(&turned, [lo.x as f32, lo.y as f32, lo.z as f32], grid.chunk_side() as f32);
+            disagree += usize::from(wrong != on_gpu);
             assert_eq!(words[i * 5], 36, "one cell: six faces, six indices each");
             compared += 1;
             if cpu { seen += 1 } else { hidden += 1 }
         }
     }
-    eprintln!("{compared} boxes compared: {seen} seen, {hidden} culled");
+    eprintln!(
+        "{compared} boxes compared: {seen} seen, {hidden} culled; a turned plane disagrees on {disagree}"
+    );
     assert!(compared >= 1900 && seen > 100 && hidden > 100, "{compared} {seen} {hidden}");
+    assert!(disagree > 100, "{disagree}");
 }
 
 #[test]
@@ -131,6 +142,34 @@ fn gpu_brick_march_matches_the_cpu() {
         let mut dir = [(unit(r, 4) - 0.5) as f32, (unit(r, 5) - 0.5) as f32, (unit(r, 6) - 0.5) as f32];
         dir[axis] = (0.3 + unit(r, 7) as f32) * if positive { -1.0 } else { 1.0 };
         // Entering through the face it starts on: stepping into −x from +x comes in through +x.
+        let entry = (axis * 2) as u32 + u32::from(positive);
+        rays.push(Ray {
+            start: [start[0], start[1], start[2], 0.0],
+            dir: [dir[0], dir[1], dir[2], 0.0],
+            info: [(r % 8) as u32, entry, 0, 0],
+        });
+    }
+    // Rays along an axis or in an axis plane (an orthographic named view: components exactly
+    // zero, the review's I9), half of them starting on a sub-block's plane or a cell's.
+    let along = rays.len();
+    for r in 0..1024u64 {
+        let face = (r % 6) as usize;
+        let axis = face / 2;
+        let positive = face % 2 == 1;
+        let on_plane =
+            |v: f64| if r % 2 == 0 { (8.0 * (v * 4.0).floor()).min(24.0) } else { (32.0 * v).floor() };
+        let mut start =
+            [on_plane(unit(r, 11)) as f32, on_plane(unit(r, 12)) as f32, on_plane(unit(r, 13)) as f32];
+        if r % 4 >= 2 {
+            start = start.map(|v| v + 0.5);
+        }
+        start[axis] = if positive { 32.0 } else { 0.0 };
+        let mut dir = [0.0f32; 3];
+        dir[axis] = if positive { -1.0 } else { 1.0 };
+        // A quarter in a plane: one other component not zero.
+        if r % 8 >= 6 {
+            dir[(axis + 1) % 3] = (unit(r, 14) - 0.5) as f32;
+        }
         let entry = (axis * 2) as u32 + u32::from(positive);
         rays.push(Ray {
             start: [start[0], start[1], start[2], 0.0],
@@ -184,6 +223,7 @@ fn gpu_brick_march_matches_the_cpu() {
     let bytes = gpu.read_buffer(&found).unwrap();
     let words: Vec<u32> = bytemuck::cast_slice(&bytes).to_vec();
     let (mut hits, mut worst_t, mut most_steps, mut different) = (0, 0f32, 0, Vec::new());
+    let mut axis_hits = 0;
     for (i, ray) in rays.iter().enumerate() {
         let w = &words[i * 8..i * 8 + 8];
         let cpu = march(
@@ -201,19 +241,25 @@ fn gpu_brick_march_matches_the_cpu() {
         }
         if cpu.hit {
             hits += 1;
+            axis_hits += usize::from(i >= along);
             worst_t = worst_t.max((f32::from_bits(w[1]) - cpu.t).abs());
         }
+        // Every number the GPU gave back is finite.
+        assert!(f32::from_bits(w[1]).is_finite(), "ray {i}: t {}", f32::from_bits(w[1]));
     }
     eprintln!(
-        "{} rays: {hits} hits; t within {worst_t:e} cells; at most {most_steps} steps; {} differ",
+        "{} rays ({} along an axis or in its plane): {hits} hits ({axis_hits} of those); t within {worst_t:e} \
+         cells; at most {most_steps} steps; {} differ",
         rays.len(),
+        rays.len() - along,
         different.len()
     );
     assert!(different.is_empty(), "{:?}", &different[..different.len().min(5)]);
     // Within 1e-4 of the brick's side (32 cells), and within the step cap.
     assert!(worst_t <= 1e-4 * 32.0, "{worst_t}");
     assert!(most_steps <= MAX_MARCH_STEPS);
-    assert!(hits > 1000 && hits < 4000, "{hits}");
+    assert!(hits > 1000 && hits < 5000, "{hits}");
+    assert!(axis_hits > 100 && axis_hits < 1024, "{axis_hits}");
 }
 
 /// A world of hills at 50 cm, 240 m across, its frame made resident for `v` as the engine's
@@ -268,6 +314,95 @@ fn hills_frame(v: &ViewSpec) -> WorldFrame {
         }
     }
     frame
+}
+
+/// Prepares `frame` for `v` on `world` (a picture taken once: every mesh wanted is made).
+fn prepare(gpu: &Gpu, renderer: &Renderer, world: &mut WorldGpu, frame: &WorldFrame, v: &ViewSpec) {
+    let (pipelines, _) = renderer.world_parts();
+    let camera = Camera::new(v, 480.0 / 270.0);
+    world.prepare(gpu, pipelines, frame, v, &camera, [480, 270], true).expect("a frame to draw");
+}
+
+#[test]
+fn gpu_meshes_past_the_vertex_cap_are_not_drawn() {
+    // W7: the near field's caps reached with small ones; the nearest meshes are kept, the cap is
+    // said, and a frame at the cap makes no meshes (the review's I5, I7).
+    let gpu = gpu();
+    let renderer = Renderer::new(&gpu);
+    let v = view([0.0, 0.0, 2.0], 200.0, 8.0, 6.0);
+    let frame = hills_frame(&v);
+    let mut whole = WorldGpu::default();
+    prepare(&gpu, &renderer, &mut whole, &frame, &v);
+    let [meshes, bricks, vertices] = whole.counts();
+    assert!(whole.notes.iter().all(|n| !n.contains("not drawn (the nearest are)")), "{:?}", whole.notes);
+    assert!(meshes > 20 && vertices > 10_000 && bricks > 20, "{meshes} {vertices} {bricks}");
+    // The vertex cap: a third of what this view wants.
+    let cap = vertices / 3;
+    let mut capped = WorldGpu::with_caps(GpuCaps { vertices: cap, ..GpuCaps::default() });
+    prepare(&gpu, &renderer, &mut capped, &frame, &v);
+    let [held, _, held_vertices] = capped.counts();
+    assert!(held_vertices <= cap && held < meshes && held > 0, "{held_vertices} of {cap}");
+    assert!(capped.notes.iter().any(|n| n.contains(&format!("meshes past {cap} vertices are not drawn"))));
+    // The next frame at the cap meshes nothing, and says the cap again.
+    let made = capped.meshed;
+    prepare(&gpu, &renderer, &mut capped, &frame, &v);
+    assert_eq!(capped.meshed, made, "no meshes are made and thrown away at the cap");
+    assert!(capped.notes.iter().any(|n| n.contains("vertices are not drawn")));
+    // Control: the capped frame made more meshes than it kept (which the next frame would make
+    // and throw away again, but for the fingerprint), and a camera moved starts it again.
+    assert!(made > held as u64, "{made} made, {held} kept");
+    let moved = view([30.0, 10.0, 2.0], 120.0, 8.0, 6.0);
+    prepare(&gpu, &renderer, &mut capped, &hills_frame(&moved), &moved);
+    assert!(capped.meshed > made);
+    // The slot cap: at most that many meshes.
+    let mut few = WorldGpu::with_caps(GpuCaps { meshes: 5, ..GpuCaps::default() });
+    prepare(&gpu, &renderer, &mut few, &frame, &v);
+    assert!(few.counts()[0] <= 5 && few.notes.iter().any(|n| n.contains("chunks past 5 are not drawn")));
+    // The brick cap: at most that many bricks, the nearest.
+    let mut store = WorldGpu::with_caps(GpuCaps { bricks: 7, ..GpuCaps::default() });
+    prepare(&gpu, &renderer, &mut store, &frame, &v);
+    assert!(store.counts()[1] == 7 && store.notes.iter().any(|n| n.contains("bricks past 7 are not drawn")));
+    // A cap is never raised past its constant.
+    let asked = GpuCaps { meshes: usize::MAX, vertices: usize::MAX, bricks: usize::MAX };
+    let mut most = WorldGpu::with_caps(asked);
+    prepare(&gpu, &renderer, &mut most, &frame, &v);
+    assert_eq!(most.counts(), whole.counts());
+}
+
+#[test]
+fn gpu_a_neighbour_arriving_buries_faces() {
+    // Minor 13: two full chunks side by side are ten faces, five each; the first, meshed alone,
+    // had six, and is meshed again when its neighbour arrives.
+    let gpu = gpu();
+    let renderer = Renderer::new(&gpu);
+    let grid = cav_core::voxel::world::WorldGrid { origin: Vec3::ZERO, pitch: 0.25, supersample: 1 };
+    let full = |key: ChunkKey| {
+        Arc::new(ChunkCells {
+            key,
+            leaves: vec![cav_core::voxel::Leaf { key: 0, level: 5, count: 1, material: 0 }],
+            palette: vec![0],
+        })
+    };
+    let v = view([4.0, 4.0, 4.0], 30.0, 20.0, 30.0);
+    let mut frame = WorldFrame {
+        grid: Some(grid),
+        colours: vec![[200, 100, 50]],
+        ring: 16,
+        levels: 1,
+        world: 99,
+        ..WorldFrame::default()
+    };
+    frame.chunks.insert(ChunkKey::new(0, 0, 0), full(ChunkKey::new(0, 0, 0)));
+    let mut world = WorldGpu::default();
+    prepare(&gpu, &renderer, &mut world, &frame, &v);
+    assert_eq!(world.counts()[2], 6 * 4, "one full chunk: six faces of four vertices");
+    frame.chunks.insert(ChunkKey::new(1, 0, 0), full(ChunkKey::new(1, 0, 0)));
+    prepare(&gpu, &renderer, &mut world, &frame, &v);
+    assert_eq!(world.counts(), [2, 0, 10 * 4], "the face between them is buried on both sides");
+    // And when the neighbour goes, the face is drawn again.
+    frame.chunks.remove(&ChunkKey::new(1, 0, 0));
+    prepare(&gpu, &renderer, &mut world, &frame, &v);
+    assert_eq!(world.counts(), [1, 0, 6 * 4]);
 }
 
 #[test]

@@ -882,6 +882,10 @@ fn header(shell: &mut Shell, ui: &mut egui::Ui) {
         for note in cav_render::decimation(shell.engine.spec()) {
             badge(ui, note, theme::WARN);
         }
+        // What the world's renderer left out of the last picture (a cut far field, a cap).
+        for note in &shell.render_notes {
+            badge(ui, note.clone(), theme::WARN);
+        }
         // What the voxel view drew in place of the leaves (a coarser cut), or could not colour.
         if let Ok(frame) = shell.engine.frame(pane)
             && let Some(voxels) = frame.voxels
@@ -1069,6 +1073,16 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
             }
         }
     }
+    // What the renderer left out of the last picture: badges in the header, and each kind said
+    // once in the log when it first appears (the counts in it change from frame to frame).
+    let notes = surface.notes();
+    let kind = |note: &String| note.split(':').next().unwrap_or_default().to_owned();
+    for note in &notes {
+        if !shell.render_notes.iter().any(|old| kind(old) == kind(note)) {
+            shell.engine.note(cav_engine::Level::Warn, cav_engine::Subsystem::Render, note.clone());
+        }
+    }
+    shell.render_notes = notes;
 
     // Home: the one control on the figure. It resets a camera, so it stands in the corner of a
     // pane that has one: the pane in the figure's top right corner if that shows the scene, else

@@ -122,9 +122,10 @@ fn fs_brick(in: BrickOut) -> FragOut {
     let side = cell * 32.0;
     // The ray: from the eye (perspective) or along the view through this point (orthographic).
     var ray_from = w.eye.xyz;
-    var dir = normalize(in.local - w.eye.xyz);
+    var dir = nonzero(normalize(in.local - w.eye.xyz));
     if w.eye.w > 0.5 {
-        dir = w.forward.xyz;
+        // Orthographic: a named view looks along an axis, so two components are zero.
+        dir = nonzero(w.forward.xyz);
         ray_from = in.local - dir * (4.0 * side + length(in.local - in.origin));
     }
     // Into the brick's box: [origin, origin + side]³.
