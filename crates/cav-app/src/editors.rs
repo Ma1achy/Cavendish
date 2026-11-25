@@ -188,42 +188,54 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, prefix: &str) {
         }
     };
     let mut commands: Vec<Command> = Vec::new();
-    egui::Grid::new(("editors", prefix)).num_columns(2).spacing([8.0, 3.0]).show(ui, |ui| {
-        for entry in &entries {
-            // The name under the selection: `motion.Linear.frequency` reads as `frequency`,
-            // set in under the choice it belongs to.
-            let below = entry.path.strip_prefix(prefix).unwrap_or(&entry.path).trim_start_matches('.');
-            let depth = below.matches('.').count();
-            // (A field shown on its own, `duration` say, is its own name.)
-            let name = if below.is_empty() {
-                entry.name.as_str()
-            } else {
-                below.rsplit('.').next().unwrap_or(below)
-            };
-            let hover = format!("{}\n\n{}", entry.doc, entry.path);
-            // A vector says its unit once, beside its name; its components have no room for it.
-            let unit = match (&entry.kind, entry.unit.as_deref()) {
-                (Kind::Vector(_), Some(unit)) if unit != "1" => format!(", {unit}"),
-                _ => String::new(),
-            };
-            let indent = " ".repeat(2 * depth);
-            let label = egui::Label::new(
-                RichText::new(format!("{indent}{name}{unit}")).color(theme::WEAK).size(12.0),
-            )
-            .truncate()
-            .halign(Align::Min);
-            ui.add_sized([NAME_WIDTH, 18.0], label).on_hover_text(&hover);
-            let start = ui.cursor().min;
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 3.0;
-                edit(shell, ui, &spec, scope, name, entry, &mut commands);
-            });
-            let took =
-                egui::Rect::from_min_max(start, egui::pos2(ui.min_rect().right(), ui.min_rect().bottom()));
-            shell.layout.editors.push((entry.path.clone(), took));
-            ui.end_row();
+    // The scene as it was opened or saved: a field that differs from it is marked (gold) and
+    // has a reset that puts its value back (S18 E7).
+    let baseline = shell.engine.baseline().to_value();
+    // Sections: the fields straight under the selection first, then one section for each part
+    // of it (`shape`, `motion`, …) in the schema's order, each a scope of the keyboard's tree
+    // that folds (`docs/research/editor-ux.md` §3.6).
+    let section_of = |entry: &Entry| -> String {
+        let below = entry.path.strip_prefix(prefix).unwrap_or(&entry.path).trim_start_matches('.');
+        match below.find(['.', '[']) {
+            Some(end) => below[..end].to_owned(),
+            None => String::new(),
         }
-    });
+    };
+    let mut sections: Vec<String> = Vec::new();
+    for entry in &entries {
+        let section = section_of(entry);
+        if !sections.contains(&section) {
+            sections.push(section);
+        }
+    }
+    for section in sections {
+        let in_section: Vec<&Entry> = entries.iter().filter(|e| section_of(e) == section).collect();
+        let mut grid = |shell: &mut Shell, ui: &mut egui::Ui, scope: &str| {
+            egui::Grid::new(("editors", prefix, section.as_str())).num_columns(2).spacing([8.0, 3.0]).show(
+                ui,
+                |ui| {
+                    for entry in &in_section {
+                        row(shell, ui, &spec, &baseline, scope, prefix, entry, &mut commands);
+                        ui.end_row();
+                    }
+                },
+            );
+        };
+        if section.is_empty() {
+            grid(shell, ui, scope);
+            continue;
+        }
+        let id = format!("{scope}/{prefix}/{section}");
+        let title = section.replace('_', " ");
+        // The section first, so that its fields find it; where it is, once it is drawn. From the
+        // keyboard Enter on it goes in; a click on its header folds it.
+        shell.building.add(scope, &id, &title, Focus::Scope);
+        let header = egui::CollapsingHeader::new(RichText::new(&title).size(12.0).color(theme::STRONG))
+            .id_salt(("section", prefix, section.as_str()))
+            .default_open(true)
+            .show(ui, |ui| grid(shell, ui, &id));
+        shell.building.place(&id, header.header_response.rect);
+    }
     if entries.len() >= MAX_FIELDS {
         ui.label(
             RichText::new(format!("the first {MAX_FIELDS} fields; `ls {prefix}` lists them all"))
@@ -236,6 +248,99 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, prefix: &str) {
         if !shell.apply(command) {
             shell.editing = None;
         }
+    }
+}
+
+/// One row of the inspector: the field's name (gold when it differs from the scene as opened or
+/// saved), its widget, and its reset (`⟲`, always in its place in the order, disabled when there
+/// is nothing to put back). What it changes is pushed onto `commands`.
+#[allow(clippy::too_many_arguments)]
+fn row(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    spec: &cav_sim::SceneSpec,
+    baseline: &Value,
+    scope: &str,
+    prefix: &str,
+    entry: &Entry,
+    commands: &mut Vec<Command>,
+) {
+    // The name under the selection: `motion.Linear.frequency` reads as `frequency`, set in under
+    // the choice it belongs to.
+    let below = entry.path.strip_prefix(prefix).unwrap_or(&entry.path).trim_start_matches('.');
+    let depth = below.matches('.').count().saturating_sub(1);
+    // (A field shown on its own, `duration` say, is its own name.)
+    let name = if below.is_empty() { entry.name.as_str() } else { below.rsplit('.').next().unwrap_or(below) };
+    let saved = paths::get(baseline, &entry.path).ok().cloned();
+    let differs = saved.as_ref().is_some_and(|saved| *saved != entry.value);
+    let hover = format!(
+        "{}\n\n{}{}",
+        entry.doc,
+        entry.path,
+        if differs {
+            "\n\nedited since the scene was opened or saved (⟲ or Backspace puts it back)"
+        } else {
+            ""
+        }
+    );
+    // A vector says its unit once, beside its name; its components have no room for it.
+    let unit = match (&entry.kind, entry.unit.as_deref()) {
+        (Kind::Vector(_), Some(unit)) if unit != "1" => format!(", {unit}"),
+        _ => String::new(),
+    };
+    let indent = " ".repeat(2 * depth);
+    let colour = if differs { theme::GOLD } else { theme::WEAK };
+    let label = egui::Label::new(RichText::new(format!("{indent}{name}{unit}")).color(colour).size(12.0))
+        .truncate()
+        .halign(Align::Min);
+    ui.add_sized([NAME_WIDTH, 18.0], label).on_hover_text(&hover);
+    let start = ui.cursor().min;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 3.0;
+        edit(shell, ui, spec, scope, name, entry, commands);
+        if matches!(entry.kind, Kind::List) {
+            list_buttons(shell, ui, scope, name, entry, commands);
+        }
+        let reset_id = format!("{}/reset", field_id(&entry.path));
+        let reset = ui
+            .add_enabled(differs, egui::Button::new(RichText::new("⟲").size(11.0)).small().frame(false))
+            .on_hover_text("put back the value the scene was opened or saved with");
+        shell.register(scope, &reset_id, &format!("{name}: reset"), Focus::Button, reset.rect);
+        if !differs {
+            shell.building.disable(&reset_id);
+        }
+        if differs && (reset.clicked() || shell.take_click(&reset_id)) {
+            commands.push(command_for(&entry.path, saved.clone().unwrap_or(Value::Null), false));
+        }
+    });
+    let took = egui::Rect::from_min_max(start, egui::pos2(ui.min_rect().right(), ui.min_rect().bottom()));
+    shell.layout.editors.push((entry.path.clone(), took));
+}
+
+/// A list's own buttons: `+` adds an item (a copy of the last, so it is valid as the others
+/// are), `−` takes the last away; each one edit, refused with the reason when the list would be
+/// outside its bounds (a motion's modes, one to 64).
+fn list_buttons(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    scope: &str,
+    name: &str,
+    entry: &Entry,
+    commands: &mut Vec<Command>,
+) {
+    let items = entry.value.as_array().map_or(0, Vec::len);
+    let id = field_id(&entry.path);
+    let add = ui.small_button("+").on_hover_text("add an item: a copy of the last");
+    shell.register(scope, &format!("{id}/add"), &format!("{name}: add"), Focus::Button, add.rect);
+    if (add.clicked() || shell.take_click(&format!("{id}/add")))
+        && let Some(last) = entry.value.as_array().and_then(|a| a.last())
+    {
+        commands.push(Command::Insert { path: entry.path.clone(), index: None, value: last.clone() });
+    }
+    let remove = ui.small_button("−").on_hover_text("take the last item away");
+    shell.register(scope, &format!("{id}/remove"), &format!("{name}: remove"), Focus::Button, remove.rect);
+    if (remove.clicked() || shell.take_click(&format!("{id}/remove"))) && items > 0 {
+        commands.push(Command::Remove { path: format!("{}[{}]", entry.path, items - 1) });
     }
 }
 

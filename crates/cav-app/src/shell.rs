@@ -28,6 +28,15 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("frame", "fit the selection (or the whole scene) into the active pane (F)"),
     ("tool", "take a tool in hand: `tool select` (Q), `tool move` (W), `tool place` (A)"),
     (
+        "reset",
+        "put a field back as the scene was opened or saved: `reset bodies[0].mass` (Backspace on a field)",
+    ),
+    ("history", "the list of edits: click one to undo or redo to it (Ctrl+H)"),
+    ("wizard", "start a new scene: the array, the surroundings, a first body, the duration (Ctrl+N)"),
+    ("open", "open a scene: the library, or a file by its path (Ctrl+O)"),
+    ("save-as", "save the scene to a file named in a box (Ctrl+S saves to the file it came from)"),
+    ("save-scene", "save the scene to the file it came from, or ask for one (Ctrl+S)"),
+    (
         "layout",
         "arrange the window for a task: `layout scene` (Ctrl+1), `layout instrument` (Ctrl+2), `layout analysis` (Ctrl+3)",
     ),
@@ -243,6 +252,17 @@ pub struct Shell {
     fullscreen_sent: bool,
     /// The layout last chosen (`ui/layouts.ron`).
     pub layout_name: String,
+    /// Whether the edit history window is open (`Ctrl+H`).
+    pub history_open: bool,
+    /// The new-scene wizard's choices, while it is open (`Ctrl+N`).
+    pub wizard: Option<crate::dialogs::Wizard>,
+    /// The Open window's path box, while it is open (`Ctrl+O`).
+    pub open_window: Option<String>,
+    /// The Save window's path box, while it is open.
+    pub save_window: Option<String>,
+    /// The file the scene came from or was last saved to, which `Ctrl+S` saves to again.
+    pub file: Option<String>,
+    title_said: String,
 }
 
 /// A drag of the gizmo: the pane, the body, the handle, the gizmo as it was when the drag began
@@ -334,7 +354,19 @@ impl Shell {
             fullscreen: false,
             fullscreen_sent: false,
             layout_name: crate::layouts::layouts().layouts[0].id.clone(),
+            history_open: false,
+            wizard: None,
+            open_window: None,
+            save_window: None,
+            file: None,
+            title_said: String::new(),
         }
+    }
+
+    /// The window's title: the scene's name, with `*` while it has unsaved edits.
+    #[must_use]
+    pub fn title(&self) -> String {
+        format!("Cavendish · {}{}", self.engine.spec().name, if self.engine.unsaved() { " *" } else { "" })
     }
 
     /// What the tool in hand does.
@@ -562,7 +594,14 @@ impl Shell {
         if !self.can_run(action) && !matches!(action.needs, Needs::Undo | Needs::Redo) {
             return Err(format!("`{}` cannot run now", action.label));
         }
-        let line = Self::resolve(&action.line, self.engine.selection());
+        let mut line = Self::resolve(&action.line, self.engine.selection());
+        if line.contains("{field}") {
+            // The field the keyboard is on, in the inspector.
+            let Some(path) = self.keyboard.focused().strip_prefix("field/").map(str::to_owned) else {
+                return Err("no field has the keyboard's focus".into());
+            };
+            line = line.replace("{field}", &path);
+        }
         self.run(&line)
     }
 
@@ -746,6 +785,27 @@ impl Shell {
             }
             return Ok(line.to_owned());
         }
+        // `reset <path>` puts a field back as the scene was opened or saved: a `set` (an edit).
+        if name == "reset" {
+            let outcome = match (words.next(), words.next()) {
+                (Some(path), None) => {
+                    let saved = cav_sim::paths::get(&self.engine.baseline().to_value(), path).cloned();
+                    match saved {
+                        Ok(value) => {
+                            self.apply(Command::Set { path: path.to_owned(), value, continues: false });
+                            Ok(line.to_owned())
+                        }
+                        Err(why) => Err(why),
+                    }
+                }
+                _ => Err(format!("`{line}`: reset <path>")),
+            };
+            if let Err(why) = &outcome {
+                self.engine.note(Level::Error, Subsystem::App, why.clone());
+                self.console_open = true;
+            }
+            return outcome;
+        }
         // `tool <id>` takes a tool of the strip in hand; nothing is journalled.
         if name == "tool" {
             let ids: Vec<&str> = crate::tools::strip().tools.iter().map(|t| t.id.as_str()).collect();
@@ -804,6 +864,34 @@ impl Shell {
                 self.palette = Palette { open: true, focus_query: true, ..Palette::default() };
                 self.window_opened("palette", "palette/query", true);
             }
+            "history" => {
+                self.history_open = !self.history_open;
+                self.window_opened("history", "history/start", self.history_open);
+            }
+            "wizard" => {
+                self.wizard = Some(crate::dialogs::Wizard::default());
+                self.window_opened("wizard", "wizard/array", true);
+            }
+            "open" => {
+                self.open_window = Some(String::new());
+                self.window_opened("open", "open/path", true);
+            }
+            "save-as" => {
+                self.save_window =
+                    Some(self.file.clone().unwrap_or_else(|| format!("{}.ron", self.engine.spec().name)));
+                self.window_opened("save", "save/path", true);
+            }
+            "save-scene" => match self.file.clone() {
+                Some(file) => {
+                    let quoted =
+                        if file.contains(char::is_whitespace) { format!("\"{file}\"") } else { file };
+                    return self.run(&format!("save {quoted}"));
+                }
+                None => {
+                    self.save_window = Some(format!("{}.ron", self.engine.spec().name));
+                    self.window_opened("save", "save/path", true);
+                }
+            },
             "snap" => self.snap = !self.snap,
             "maximise" => self.maximised = !self.maximised,
             "fullscreen" => self.fullscreen = !self.fullscreen,
@@ -1062,9 +1150,10 @@ impl Shell {
             Effect::Escape => {
                 // Esc at a big scope's top level: a window, then the console, then the hidden
                 // GUI, then the selection.
-                if self.keys_open || self.about_open {
+                if self.keys_open || self.about_open || self.history_open {
                     self.keys_open = false;
                     self.about_open = false;
+                    self.history_open = false;
                 } else if self.console_open {
                     self.console_open = false;
                 } else if self.gui_hidden {
@@ -1078,6 +1167,10 @@ impl Shell {
                 "about" => self.about_open = false,
                 "palette" => self.palette.open = false,
                 "console" => self.console_open = false,
+                "history" => self.history_open = false,
+                "wizard" => self.wizard = None,
+                "open" => self.open_window = None,
+                "save" => self.save_window = None,
                 _ => {}
             },
             Effect::StopTyping => {
@@ -1185,6 +1278,12 @@ impl Shell {
         // The keys walk what the last frame registered; this frame registers anew as it draws.
         self.building = FocusTree::new(&crate::actions::table().big_scopes());
         self.keys(&ctx);
+        // The window's title says the scene and whether it has unsaved edits.
+        let title = self.title();
+        if title != self.title_said {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.title_said = title;
+        }
         if self.fullscreen != self.fullscreen_sent {
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.fullscreen));
             self.fullscreen_sent = self.fullscreen;
@@ -1202,6 +1301,7 @@ impl Shell {
         }
         crate::panels::draw(self, ui, surface);
         crate::palette::draw(self, &ctx);
+        crate::dialogs::draw(self, &ctx);
         self.paint_ring(&ctx);
         // What no widget took this frame (a click of something no longer drawn) is dropped.
         self.pending.clear();

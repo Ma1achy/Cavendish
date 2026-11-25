@@ -162,6 +162,9 @@ pub struct Engine {
     /// The stretch of its plot's horizontal axis each pane shows.
     spans: [Option<[f64; 2]>; MAX_PANES],
     history: History,
+    /// The scene as it was last opened (loaded) or saved: what a field's reset puts back, and
+    /// what the window's unsaved mark compares with.
+    baseline: SceneSpec,
     journal: Vec<Command>,
     /// The bytes the journal is counted as holding, and whether it still records every command.
     journal_bytes: usize,
@@ -249,6 +252,7 @@ impl Engine {
             contents: [PaneContent::Scene; MAX_PANES],
             spans: [None; MAX_PANES],
             history: History::default(),
+            baseline: SceneSpec::room(),
             journal: Vec::new(),
             journal_bytes: crate::journal::envelope(),
             journal_whole: true,
@@ -401,6 +405,10 @@ impl Engine {
                 return Err(why);
             }
             wrote = Some(format!("{} ({} bytes)", path.display(), bytes.len()));
+            // A scene saved is the scene the unsaved mark and a field's reset now compare with.
+            if matches!(command, Command::Export { what: crate::ExportKind::Scene, .. }) {
+                self.baseline = self.spec.clone();
+            }
         }
         if let Prepared::Bundle(directory) = &prepared {
             let signal = self.forward.signal().expect("prepare saw a refined signal");
@@ -957,6 +965,7 @@ impl Engine {
         match (command, prepared) {
             (Command::Load(_), Prepared::Edit(spec, step)) => {
                 self.spec = *spec;
+                self.baseline = self.spec.clone();
                 self.history.edited(step);
                 self.time = 0.0;
                 self.selection = None;
@@ -1752,6 +1761,25 @@ impl Engine {
     pub fn history(&self) -> (bool, bool) {
         let (undo, redo) = self.history.depth();
         (undo > 0, redo > 0)
+    }
+
+    /// The lines that made the edits that can be undone, oldest first, and those that can be
+    /// redone, the next first: the editor's history list.
+    #[must_use]
+    pub fn steps(&self) -> (Vec<String>, Vec<String>) {
+        self.history.said()
+    }
+
+    /// The scene as it was last opened (load) or saved (save).
+    #[must_use]
+    pub const fn baseline(&self) -> &SceneSpec {
+        &self.baseline
+    }
+
+    /// Whether the scene differs from the one last opened or saved: unsaved edits.
+    #[must_use]
+    pub fn unsaved(&self) -> bool {
+        self.spec != self.baseline
     }
 
     /// The bytes the undo history and the journal are counted as holding, and whether the journal

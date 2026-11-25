@@ -79,6 +79,23 @@ impl Edit {
         }
     }
 
+    /// The console line that does this edit: `set <path> <value>`, `add <list> <index> <value>`,
+    /// `remove <path>`, `load <name>`, `view home`. What the history list shows.
+    #[must_use]
+    pub fn line(&self) -> String {
+        match self {
+            Self::Put { path, value } => format!("set {path} {value}"),
+            Self::Insert { list, index, value } => {
+                let text = value.to_string();
+                let short: String = text.chars().take(60).collect();
+                format!("add {list} {index} {short}{}", if text.chars().count() > 60 { "…" } else { "" })
+            }
+            Self::Remove { path } => format!("remove {path}"),
+            Self::Replace(scene) => format!("load {}", scene.name),
+            Self::View { pane, .. } => format!("view home @{}", pane + 1),
+        }
+    }
+
     /// The bytes the edit is counted as holding.
     #[must_use]
     pub fn weight(&self) -> usize {
@@ -225,6 +242,17 @@ impl History {
             self.bytes -= step.weight();
             self.push_undo(step);
         }
+    }
+
+    /// What each step that can be undone did, oldest first, and each that can be redone, the
+    /// next to redo first: a console line for each, from its redo edit ([`Edit::line`]), so that
+    /// the history holds no text of its own.
+    #[must_use]
+    pub fn said(&self) -> (Vec<String>, Vec<String>) {
+        (
+            self.undo.iter().map(|s| s.redo.line()).collect(),
+            self.redo.iter().rev().map(|s| s.redo.line()).collect(),
+        )
     }
 
     /// How many edits can be undone, and how many redone.

@@ -200,7 +200,10 @@ fn menu_bar(shell: &mut Shell, ui: &mut egui::Ui) {
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let spec = shell.engine.spec();
-            let status = format!("{} · t {:.2} / {:.0} s", spec.name, shell.engine.time(), spec.duration);
+            // The scene's name, with `*` while it has edits not saved.
+            let star = if shell.engine.unsaved() { " *" } else { "" };
+            let status =
+                format!("{}{star} · t {:.2} / {:.0} s", spec.name, shell.engine.time(), spec.duration);
             ui.add(egui::Label::new(RichText::new(status).monospace().color(theme::TEXT)).truncate());
             // Where the keys go, while keyboard navigation is on: the breadcrumb (the spec's §10).
             if let Some(crumb) = shell.breadcrumb() {
@@ -263,8 +266,21 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
                         .color(theme::WARN),
                 );
             }
-            // Whatever is left is the status line, cut short rather than wrapped.
+            // Whatever is left is the status line, cut short rather than wrapped. When it says an
+            // edit, an Undo link stands before it (the toast: what was just done, and the way back).
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                let edited =
+                    shell.engine.log().iter().next_back().is_some_and(|e| e.subsystem == Subsystem::Edit);
+                if edited && shell.engine.history().0 {
+                    let undo = ui
+                        .add(Button::new(RichText::new("undo").size(11.5).color(theme::LINK)).frame(false))
+                        .on_hover_text("take this edit back (Ctrl+Z)");
+                    shell.register("footer", "footer/undo", "Undo", Kind::Button, undo.rect);
+                    shell.layout.buttons.push(("toast undo".to_owned(), undo.rect));
+                    if undo.clicked() || shell.take_click("footer/undo") {
+                        let _ = shell.run("undo");
+                    }
+                }
                 ui.add(egui::Label::new(RichText::new(text).size(11.5).color(colour)).truncate());
             });
         });
