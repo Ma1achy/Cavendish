@@ -176,6 +176,9 @@ impl Layout {
     }
 }
 
+/// Every step of the history in words: those done, oldest first, and those undone, the next first.
+pub type HistoryWords = (Vec<String>, Vec<String>);
+
 /// The application's state.
 pub struct Shell {
     /// The engine this window drives. All scene state is here: the shell sends commands and reads replies.
@@ -282,6 +285,9 @@ pub struct Shell {
     pub save_window: Option<String>,
     /// The file the scene came from or was last saved to, which `Ctrl+S` saves to again.
     pub file: Option<String>,
+    /// The history in words ([`crate::dialogs::history_words`]) and the engine's generation they
+    /// were made at: made again only when the engine has changed.
+    history_said: Option<(u64, HistoryWords)>,
     /// Whether the scene was made in the window (the wizard) and has not been saved since: it
     /// is unsaved even though nothing has been edited since it was made.
     pub untitled: bool,
@@ -390,6 +396,7 @@ impl Shell {
             save_window: None,
             file: None,
             untitled: false,
+            history_said: None,
             pending_focus: None,
             title_said: String::new(),
         }
@@ -399,6 +406,15 @@ impl Shell {
     #[must_use]
     pub fn title(&self) -> String {
         format!("Cavendish · {}{}", self.engine.spec().name, if self.unsaved() { " *" } else { "" })
+    }
+
+    /// Every step of the history in words, done then undone, cached by the engine's generation.
+    pub fn history_words(&mut self) -> HistoryWords {
+        let generation = self.engine.generation();
+        if self.history_said.as_ref().is_none_or(|(at, _)| *at != generation) {
+            self.history_said = Some((generation, crate::dialogs::history_words(&self.engine)));
+        }
+        self.history_said.as_ref().expect("made above").1.clone()
     }
 
     /// Whether the scene has something not saved: an edit since it was opened or saved, or a
@@ -1043,8 +1059,16 @@ impl Shell {
                 let pane = self.engine.active_pane();
                 let (centre, radius) =
                     crate::camera::bounds_of(self.engine.spec(), self.engine.selection(), self.engine.time());
-                let command =
-                    crate::camera::frame(self.engine.view(pane), pane, centre, radius, self.active_aspect());
+                // A voxel body's selection box stays in the pane too.
+                let cage = crate::camera::cage_of(self.engine.spec(), self.engine.selection());
+                let command = crate::camera::frame_caged(
+                    self.engine.view(pane),
+                    pane,
+                    centre,
+                    radius,
+                    cage,
+                    self.active_aspect(),
+                );
                 self.apply(Command::View(command));
             }
             "fly" => {

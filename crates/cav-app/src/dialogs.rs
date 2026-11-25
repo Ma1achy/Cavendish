@@ -87,10 +87,11 @@ pub fn draw(shell: &mut Shell, ctx: &egui::Context) {
 
 /// A step of the history in a person's words (S18's review, U6: the list showed the console's
 /// derived lines, `add bodies 1 {"label":…`): "Added sphere", "Moved sphere to (2, 0, 1) m",
-/// "Set duration to 20 s", "Removed tower 3", "Opened “town”". Names are the scene's as it is
-/// now (`spec`); the line that does the step is [`cav_engine::history::Edit::line`], for a
-/// tooltip. Only the field touched is read, never a whole inserted value, so a long list costs
-/// little each frame (minor 8).
+/// "Set duration to 20 s", "Removed tower 3", "Opened “town”". Names are those of `spec`, the
+/// scene just after the step ([`history_words`] gives each step its own, so a removal later in
+/// the list renames nothing: S18's second review, minor 1); the line that does the step is
+/// [`cav_engine::history::Edit::line`], for a tooltip. Only the field touched is read, never a
+/// whole inserted value.
 #[must_use]
 pub fn step_words(step: &cav_engine::history::Step, spec: &SceneSpec) -> String {
     use cav_engine::history::Edit;
@@ -213,7 +214,58 @@ fn put_words(path: &str, value: &serde_json::Value, spec: &SceneSpec) -> String 
     if value.is_null() {
         return format!("Took away {}", place(path, spec));
     }
+    // A field of a body or a tower: "Set mass to 5 kg on “ball”" (S18's second review, UX 4: it
+    // read "Set ball's mass to 5 kg", and "Set mass's mass" for a body called mass).
+    if let Some(who) =
+        owner(path, spec).filter(|_| path.starts_with("bodies[") || path.starts_with("array.towers["))
+    {
+        let field = lower_first(&field_name(path));
+        return format!("Set {field} to {} on “{who}”", value_words(value, unit));
+    }
     format!("Set {} to {}", place(path, spec), value_words(value, unit))
+}
+
+/// A field's name from the schema alone (its title, else its name in words).
+fn field_name(path: &str) -> String {
+    let last = path.rsplit('.').next().unwrap_or(path);
+    cav_sim::paths::schema_at(path)
+        .ok()
+        .and_then(|schema| schema.get("title").and_then(serde_json::Value::as_str).map(str::to_owned))
+        .unwrap_or_else(|| cav_sim::paths::words(last))
+}
+
+/// Every step of the engine's history in words, each named from the scene as it was just after
+/// that step (walked back from the scene now by the steps' own undo edits, and forward by the
+/// redo edits): the done ones oldest first, then the undone ones, the next to redo first.
+#[must_use]
+pub fn history_words(engine: &cav_engine::Engine) -> (Vec<String>, Vec<String>) {
+    let (done, undone) = engine.history_steps();
+    let now = engine.spec().clone();
+    let mut after = now.clone();
+    let mut done_words = Vec::with_capacity(done.len());
+    for step in done.iter().rev() {
+        done_words.push(step_words(step, &after));
+        // A step the walk cannot take back (never, for the history's own steps) names from now on.
+        after = step.undo.apply(&after).unwrap_or_else(|_| now.clone());
+    }
+    done_words.reverse();
+    let mut after = now.clone();
+    let mut undone_words = Vec::with_capacity(undone.len());
+    for step in &undone {
+        after = step.redo.apply(&after).unwrap_or_else(|_| now.clone());
+        undone_words.push(step_words(step, &after));
+    }
+    (done_words, undone_words)
+}
+
+/// What the history list's first row says: what undoing every step goes back to.
+fn start_words(engine: &cav_engine::Engine) -> String {
+    use cav_engine::history::Edit;
+    match engine.history_steps().0.first().map(|s| &s.undo) {
+        Some(Edit::Replace(scene)) => format!("Before opening: “{}”", scene.name),
+        Some(_) => "Before the first edit".to_owned(),
+        None => "Nothing to undo yet".to_owned(),
+    }
 }
 
 fn history(shell: &mut Shell, ctx: &egui::Context) {
@@ -221,29 +273,24 @@ fn history(shell: &mut Shell, ctx: &egui::Context) {
         return;
     }
     shell.building.window("history", "History");
-    let spec = shell.engine.spec().clone();
-    // The words of each step (cheap: no inserted value is written out); the console line only
-    // when a row is hovered.
-    let (done, undone): (Vec<String>, Vec<String>) = {
-        let (done, undone) = shell.engine.history_steps();
-        (
-            done.iter().map(|s| step_words(s, &spec)).collect(),
-            undone.iter().map(|s| step_words(s, &spec)).collect(),
-        )
-    };
+    // The words of each step, made once a change of the engine (the console line only when a
+    // row is hovered).
+    let (done, undone) = shell.history_words();
+    let start_label = start_words(&shell.engine);
     let mut open = true;
     let mut go: Option<(usize, &str)> = None;
     let mut hovered: Option<(bool, usize)> = None;
-    // Over the outliner, never over the figure (S18's review, U6): the outliner and the tool strip
-    // are the first ~310 points of the window's left.
-    let left = shell.layout.panel("outliner").map_or(ctx.content_rect().left() + 8.0, |r| r.left() + 6.0);
-    let top = shell.layout.panel("outliner").map_or(60.0, |r| r.top() + 30.0);
+    // Inside the outliner, over neither the figure nor the tool strip (S18's reviews, U6 and UX 4).
+    let outliner = shell.layout.panel("outliner");
+    let left = outliner.map_or(ctx.content_rect().left() + 8.0, |r| r.left() + 4.0);
+    let top = outliner.map_or(60.0, |r| r.top() + 30.0);
+    let width = outliner.map_or(260.0, |r| r.width() - 22.0);
     let window = egui::Window::new("Edit history")
         .open(&mut open)
         .collapsible(false)
         .default_pos(egui::pos2(left, top))
-        .default_width(292.0)
-        .max_width(300.0)
+        .min_width(width)
+        .max_width(width)
         .show(ctx, |ui| {
             ui.label(
                 RichText::new(
@@ -253,8 +300,7 @@ fn history(shell: &mut Shell, ctx: &egui::Context) {
                 .color(theme::WEAK),
             );
             egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-                let start =
-                    ui.selectable_label(done.is_empty(), RichText::new("The scene as it was").italics());
+                let start = ui.selectable_label(done.is_empty(), RichText::new(&start_label).italics());
                 shell.register("history", "history/start", "the start", Kind::Button, start.rect);
                 shell.layout.buttons.push(("history 0".to_owned(), start.rect));
                 if (start.clicked() || shell.take_click("history/start")) && !done.is_empty() {

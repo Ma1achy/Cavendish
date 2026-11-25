@@ -103,6 +103,49 @@ pub fn legend(
     let size = style.text_size;
     let pad = 0.5 * size;
     let title = heading(frame, scene);
+    // Every leaf of one value (one level, say): one swatch and its number, not a bar labelled
+    // "3 3 3" (S18's second review, UX 5).
+    if hi - lo <= 1e-12 * lo.abs().max(1.0) {
+        let [title_w, title_h] = measure.size(&title, Face::Sans, size);
+        let label = format!("all {}", number(lo, field));
+        let [label_w, label_h] = measure.size(&label, Face::Mono, size);
+        let swatch = 0.9 * size;
+        let width = title_w.max(swatch + pad + label_w) + 2.0 * pad;
+        let height = title_h + label_h.max(swatch) + 3.0 * pad;
+        let mut drawing = Drawing::new([width, height], format!("legend · {title}"));
+        drawing.items.push(Item::Rect {
+            min: [0.0, 0.0],
+            max: [width, height],
+            fill: Some(style.background),
+            stroke: Some((style.rule_width, style.rule)),
+        });
+        drawing.items.push(Item::Text {
+            at: [pad, pad],
+            anchor: Anchor::LEFT_TOP,
+            text: title,
+            face: Face::Sans,
+            size,
+            colour: style.text,
+            turned: false,
+        });
+        let top = 2.0 * pad + title_h;
+        drawing.items.push(Item::Rect {
+            min: [pad, top],
+            max: [pad + swatch, top + swatch],
+            fill: Some(colour_of(frame, lo, dark)),
+            stroke: Some((style.rule_width, style.rule)),
+        });
+        drawing.items.push(Item::Text {
+            at: [2.0 * pad + swatch, top],
+            anchor: Anchor::LEFT_TOP,
+            text: label,
+            face: Face::Mono,
+            size,
+            colour: style.text,
+            turned: false,
+        });
+        return Some(drawing);
+    }
     let [title_w, title_h] = measure.size(&title, Face::Sans, size);
     let labels = ticks(frame)?.map(|v| number(v, field));
     let widths: Vec<f32> = labels.iter().map(|l| measure.size(l, Face::Mono, size)[0]).collect();

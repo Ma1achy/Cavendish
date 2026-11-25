@@ -54,8 +54,15 @@ fn a_legend_is_made_from_what_is_drawn() {
         let (lo, hi) = frame.range.unwrap();
         let drawn = legend(&frame, &scene, &style, &Outlines).unwrap();
         let texts = drawn.texts();
-        // Its heading is the field's, and its numbers are the drawn range's ends and middle.
+        // Its heading is the field's, and its numbers are the drawn range's ends and middle; a
+        // range of one value (the cube's leaves all at one height) is one swatch and its number
+        // (S18's second review, UX 5: it was a bar labelled "2.5 2.5 2.5").
         assert_eq!(texts[0], heading(&frame, &scene));
+        if lo == hi {
+            assert_eq!(texts[1..], [format!("all {}", number(lo, field))]);
+            assert!(bar(&drawn).is_empty());
+            continue;
+        }
         assert_eq!(texts[1..], [number(lo, field), number(0.5 * (lo + hi), field), number(hi, field)]);
         // The bar is the field's own map, segment by segment, from the least to the greatest.
         let fills = bar(&drawn);
@@ -75,6 +82,24 @@ fn a_legend_is_made_from_what_is_drawn() {
     }
     // Nothing drawn, no legend.
     assert!(legend(&VoxelFrame::default(), &scene, &style, &Outlines).is_none());
+}
+
+#[test]
+fn a_legend_of_one_value_is_one_swatch() {
+    // S18's second review, UX 5: every leaf of one level read "3 3 3" under a bar of one colour.
+    let scene = cav_sim::dev::unit_cube();
+    let style = Style::preset("screen").unwrap();
+    let mut frame = frame_of(&scene, LeafField::Level);
+    frame.range = Some((3.0, 3.0));
+    let drawn = legend(&frame, &scene, &style, &Outlines).unwrap();
+    let texts = drawn.texts();
+    assert_eq!(texts[1..], ["all 3".to_owned()], "{texts:?}");
+    assert!(bar(&drawn).is_empty(), "a swatch, no bar");
+    // Control: a range of two values is a bar with its three numbers.
+    frame.range = Some((2.0, 3.0));
+    let drawn = legend(&frame, &scene, &style, &Outlines).unwrap();
+    assert_eq!(drawn.texts().len(), 4);
+    assert_eq!(bar(&drawn).len(), BAR_SEGMENTS);
 }
 
 #[test]
@@ -184,7 +209,14 @@ fn a_voxel_view_is_a_vector_figure() {
     let paper = Style::preset("paper-full").unwrap().background;
     assert!(text.contains(&format!("fill=\"{}\"", paper.css())), "the paper's colour");
     let labels: Vec<&str> = text.split("aria-label=\"").skip(1).map(|t| &t[..t.find('"').unwrap()]).collect();
-    for wanted in ["View · unit-cube", "height, m", &number(lo, LeafField::Height)] {
+    // (The cube's leaves are all at one height: its legend is one swatch, "all 2.5", since S18's
+    // second review, UX 5.)
+    let number = if lo == hi {
+        format!("all {}", number(lo, LeafField::Height))
+    } else {
+        number(lo, LeafField::Height)
+    };
+    for wanted in ["View · unit-cube", "height, m", &number] {
         assert!(labels.contains(&wanted), "{wanted:?} not in {labels:?}");
     }
     let scale = svg_entry["scale_m"].as_f64().unwrap();

@@ -144,8 +144,32 @@ fn badge(ui: &mut egui::Ui, text: impl Into<String>, colour: Color32) {
 
 /// A side panel's contents in a scroll area, so that a short window scrolls them instead of
 /// letting them spill over the panel below.
-fn scrolling(ui: &mut egui::Ui, id: &str, contents: impl FnOnce(&mut egui::Ui)) {
-    egui::ScrollArea::vertical().id_salt(id).auto_shrink([false, false]).show(ui, contents);
+/// Where more lies below what is shown, the panel's foot fades and says so (S18's second review,
+/// UX 8: a clipped inspector gave no sign that it scrolls). Returns whether it did.
+fn scrolling(ui: &mut egui::Ui, id: &str, contents: impl FnOnce(&mut egui::Ui)) -> bool {
+    let shown = egui::ScrollArea::vertical().id_salt(id).auto_shrink([false, false]).show(ui, contents);
+    let rect = shown.inner_rect;
+    let below = shown.content_size.y - shown.state.clamped_offset().y - rect.height();
+    if below > 4.0 {
+        let painter = ui.painter_at(rect);
+        let steps = 12;
+        for k in 0..steps {
+            let t = k as f32 / steps as f32;
+            let band = Rect::from_min_max(
+                pos2(rect.left(), rect.bottom() - 28.0 * (1.0 - t)),
+                pos2(rect.right(), rect.bottom() - 28.0 * (1.0 - t) + 28.0 / steps as f32 + 0.5),
+            );
+            painter.rect_filled(band, 0.0, theme::PANEL.gamma_multiply(t));
+        }
+        painter.text(
+            pos2(rect.center().x, rect.bottom() - 3.0),
+            Align2::CENTER_BOTTOM,
+            "more below: scroll",
+            FontId::proportional(10.5),
+            theme::WEAK,
+        );
+    }
+    below > 4.0
 }
 
 pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
@@ -209,6 +233,9 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
             .resizable(true)
             .frame(frame(theme::PANEL, 10, 6))
             .show(ui, |ui| scrolling(ui, "properties", |ui| properties(shell, ui)));
+        if panel.inner {
+            shell.layout.buttons.push(("more below".to_owned(), panel.response.rect));
+        }
         shell.layout.panels.push(("properties", panel.response.rect));
         shell.building.place("inspector", panel.response.rect);
     }
@@ -361,13 +388,16 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
                     .cloned();
                 let edited = last.as_ref().is_some_and(|e| e.subsystem == Subsystem::Edit);
                 let undid = last.as_ref().is_some_and(|e| e.message.starts_with("undo"));
-                let spec = shell.engine.spec().clone();
-                let (done, undone) = shell.engine.history_steps();
+                // Opening a scene is not offered as an edit to undo (S18's second review, UX 9):
+                // undo still takes it back, from the history or Ctrl+Z.
+                let opened = matches!(
+                    shell.engine.history_steps().0.last().map(|s| &s.redo),
+                    Some(cav_engine::history::Edit::Replace(_))
+                );
+                let (done, undone) = shell.history_words();
                 let toast = match (edited, undid) {
-                    (true, true) => undone
-                        .first()
-                        .map(|s| (format!("Undid: {}", crate::dialogs::step_words(s, &spec)), "redo")),
-                    (true, false) => done.last().map(|s| (crate::dialogs::step_words(s, &spec), "undo")),
+                    (true, true) => undone.first().map(|w| (format!("Undid: {w}"), "redo")),
+                    (true, false) if !opened => done.last().map(|w| (w.clone(), "undo")),
                     _ => None,
                 };
                 match toast {

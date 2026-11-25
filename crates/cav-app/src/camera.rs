@@ -91,6 +91,75 @@ pub fn frame(view: &ViewSpec, pane: usize, centre: [f64; 3], radius: f64, aspect
     ViewCommand::Camera { pane, target: centre, yaw: view.yaw, pitch: view.pitch, distance }
 }
 
+/// How much of the pane's shorter side a framed voxel body's selection cage may span at most:
+/// the cage (the box round its drawn cubes) stays inside the pane, with a margin.
+pub const CAGE_FILL: f64 = 0.9;
+
+/// The half-size of the box the view draws round a selected voxel body (`target` a body with a
+/// shape), metres from its centre on each axis; `None` for anything else. Conservative: the
+/// shape's reach on every axis, which is the drawn box for a sphere and holds any other shape.
+#[must_use]
+pub fn cage_of(spec: &SceneSpec, target: Option<Target>) -> Option<f64> {
+    match target {
+        Some(Target::Body(n)) => {
+            spec.bodies.get(n.checked_sub(1)?).filter(|b| b.shape.is_some()).map(cav_sim::starters::reach)
+        }
+        _ => None,
+    }
+}
+
+/// [`frame`], and then farther back if need be so that a selection cage of half-size `cage`
+/// (metres, about `centre`) spans no more than [`CAGE_FILL`] of the pane's shorter side: its
+/// corners, seen in perspective, reach farther out than the body inside (S18's second review,
+/// UX 3: after F the cage ran off the pane).
+#[must_use]
+pub fn frame_caged(
+    view: &ViewSpec,
+    pane: usize,
+    centre: [f64; 3],
+    radius: f64,
+    cage: Option<f64>,
+    aspect: f64,
+) -> ViewCommand {
+    let command = frame(view, pane, centre, radius, aspect);
+    let Some(half) = cage else { return command };
+    let ViewCommand::Camera { mut distance, .. } = command else { return command };
+    let span = |distance: f64| {
+        let framed = ViewSpec { target: centre, distance, ..view.clone() };
+        cage_span(&framed, centre, half, aspect)
+    };
+    // The span falls as the camera backs off; a few steps of the ratio settle it within a hair.
+    for _ in 0..40 {
+        let now = span(distance);
+        if now <= CAGE_FILL {
+            break;
+        }
+        distance *= (now / CAGE_FILL).max(1.0001);
+    }
+    ViewCommand::Camera { pane, target: centre, yaw: view.yaw, pitch: view.pitch, distance }
+}
+
+/// How much of the shorter side the cube of half-size `half` about `centre` spans in `view`, in a
+/// pane `aspect` times as wide as high: twice its farthest corner from its centre's picture.
+#[must_use]
+pub fn cage_span(view: &ViewSpec, centre: [f64; 3], half: f64, aspect: f64) -> f64 {
+    let camera = cav_render::Camera::new(view, aspect);
+    let (w, h) = if aspect >= 1.0 { (4096.0 * aspect, 4096.0) } else { (4096.0, 4096.0 / aspect) };
+    let whole = [w as u32, h as u32];
+    let at = |p: [f64; 3]| camera.pixel(cav_core::Vec3::from_array(p), whole);
+    let Some([x0, y0]) = at(centre) else { return f64::INFINITY };
+    let mut reach: f64 = 0.0;
+    for corner in 0..8 {
+        let sign = |bit: usize| if corner & bit == 0 { -half } else { half };
+        let p = [centre[0] + sign(1), centre[1] + sign(2), centre[2] + sign(4)];
+        match at(p) {
+            Some([x, y]) => reach = reach.max((x - x0).hypot(y - y0)),
+            None => return f64::INFINITY,
+        }
+    }
+    2.0 * reach / w.min(h)
+}
+
 /// Which way an arrow key moves the selection in a transform session, seen in `view`: `arrow` 0
 /// for ← →, 1 for ↑ ↓, 2 for Page Up / Down. ← → go along the horizontal world axis nearest the
 /// screen's right; ↑ ↓ along the one nearest the view's direction across the ground (away from

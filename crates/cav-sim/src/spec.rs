@@ -394,10 +394,11 @@ pub struct BodySpec {
     #[schemars(extend("x-unit" = "kg"))]
     pub mass: f64,
     /// The radius of the sphere, metres; zero (the default) for a point. A sphere is a point
-    /// outside itself and may cross an atom's path, where a point may not.
+    /// outside itself and may cross an atom's path, where a point may not. A body with a shape
+    /// has its size in the shape and this at zero: hence the editor's name, "Point radius".
     #[serde(default)]
     #[schemars(range(min = 0.0, max = 1.0e3))]
-    #[schemars(extend("x-unit" = "m"))]
+    #[schemars(extend("x-unit" = "m"), title = "Point radius")]
     pub radius: f64,
     /// The solid it is, made of voxels and centred on its position; none (the default) for a
     /// point or a sphere. A body with a shape has a radius of zero.
