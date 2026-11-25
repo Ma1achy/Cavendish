@@ -714,3 +714,12 @@
 - id: TASK-S19-
   milestone: S19
   title: The side panels redesigned - outliner as a tree, inspector as component cards, a readings panel, tool strip in the viewport (docs/design/panels.md)
+- id: TASK-S5-11
+  milestone: S5
+  title: The world as one LOD octree - chunks merged upward into coarser nodes with mass moments (and the exact-skin boundary moments), built and streamed like the chunks
+- id: TASK-S5-12
+  milestone: S5
+  title: The gravity read walks the world octree with LODs - a full-precision bubble per tower, coarser rings outward at the measured radii, the whole world read within the error budget, no truncation
+- id: TASK-S5-13
+  milestone: S5
+  title: World shapes - an infinite flat plane (analytic base, voxel detail over a finite patch, the infinite remainder in closed form) and a sphere (a planet: analytic spherical base, voxel crust, curvature in the chunks and the read)
