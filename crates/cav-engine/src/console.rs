@@ -1079,7 +1079,7 @@ pub fn render(reply: &Reply) -> String {
                 signal.channel.name(),
                 signal.state,
                 signal.times.len(),
-                crate::estimate_text(signal.estimate, signal.settled)
+                crate::estimate_text(signal.estimate, signal.settled, signal.truncated)
             )];
             lines.extend(signal.warnings.iter().map(|warning| format!("# warning: {warning}")));
             let shots = signal.times.iter().zip(&signal.values).enumerate();
@@ -1196,7 +1196,7 @@ pub fn render(reply: &Reply) -> String {
                 "# a shot read out at {} s · {} · quadrature {}",
                 reading.time,
                 reading.state,
-                crate::estimate_text(reading.estimate, reading.settled)
+                crate::estimate_text(reading.estimate, reading.settled, reading.truncated)
             )];
             lines.extend(reading.warnings.iter().map(|warning| format!("# warning: {warning}")));
             lines.push(format!("# {:<width$}  ΔΦ [rad]  δφ₁ lower [rad]  δφ₂ upper [rad]", "tower"));

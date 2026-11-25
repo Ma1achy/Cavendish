@@ -506,6 +506,9 @@ fn manifest_of(
         "sources": spec.bodies.len(),
         "sign": sign,
         "settled": signal.settled,
+        "truncated": signal.truncated,
+        "truncated_means": "null when every source's matter was read; a number r (metres) when the world was read only \
+                            within r of each tower's atoms' path: the arrays are of that matter alone, and `settled` is false",
         "warnings": signal.warnings.iter().map(|warning| warning.text.clone()).collect::<Vec<_>>(),
         "comparison": comparison,
         "numerics": numerics(spec, build),
@@ -800,6 +803,38 @@ mod tests {
         // Control: an even array is not ragged: no padding at all.
         let even = read::signal(&dev::comb()).unwrap();
         assert!((0..even.towers).all(|d| even.count(d) == even.most()));
+    }
+
+    #[test]
+    fn a_world_bundle_round_trips_and_says_what_it_read() {
+        // `world-box`: the world is a source like a body, so its bundle is the signal bit for bit,
+        // and the scene in it (with its world) is the scene.
+        let scene = dev::world_box();
+        let signal = read::signal(&scene).unwrap();
+        assert!(signal.gradiometer.iter().any(|v| *v != 0.0), "the world is read");
+        let dir = scratch("world");
+        write(&dir, &scene, &signal, &build(), None).unwrap();
+        let (_, flat) = array(&dir, "phase_flat").into_f64().unwrap();
+        assert!(flat.iter().zip(&signal.gradiometer).all(|(a, b)| a.to_bits() == b.to_bits()));
+        assert_eq!(crate::load(dir.join("scene.ron").to_str().unwrap()).unwrap(), scene);
+        let manifest = |dir: &Path| -> serde_json::Value {
+            serde_json::from_str(&std::fs::read_to_string(dir.join("manifest.json")).unwrap()).unwrap()
+        };
+        let whole = manifest(&dir);
+        assert!(whole["truncated"].is_null() && whole["settled"] == true, "{}", whole["truncated"]);
+        assert_eq!(SceneSpec::from_json(&whole["spec"].to_string()).unwrap(), scene);
+        // Control: the same box read only within 1 m of the towers (it is 4 m away and more) is
+        // a reading of part of the matter, and the bundle says so as a fact, not only in words.
+        let mut part = scene.clone();
+        part.world.as_mut().unwrap().read.radius = 1.0;
+        let partial = read::signal(&part).unwrap();
+        assert_eq!(partial.truncated, Some(1.0));
+        assert!(!partial.settled);
+        let dir = scratch("world, part");
+        write(&dir, &part, &partial, &build(), None).unwrap();
+        let said = manifest(&dir);
+        assert_eq!((&said["truncated"], &said["settled"]), (&1.0.into(), &false.into()));
+        assert!(said["truncated_means"].as_str().unwrap().contains("of that matter alone"));
     }
 
     #[test]

@@ -715,9 +715,14 @@ pub struct SignalReply {
     #[serde(with = "cav_sim::json_f64")]
     #[schemars(schema_with = "cav_sim::json_f64::schema")]
     pub estimate: f64,
-    /// Whether every read settled to the tolerance; when false the estimate is how far the worst
-    /// was from settling, not a bound that was met.
+    /// Whether every read settled to the tolerance and read all the scene's matter; when false
+    /// the estimate is how far the worst was from settling, or (see `truncated`) of part of the
+    /// matter only: not a bound that was met.
     pub settled: bool,
+    /// Present when matter was left out: the world was read only within this many metres of each
+    /// tower's atoms' path, and these values are of that matter alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<f64>,
     /// What a person should know about these readings, each with the tower it is about (from 0).
     pub warnings: Vec<cav_sim::read::Warning>,
 }
@@ -737,9 +742,14 @@ pub struct ReadingReply {
     #[serde(with = "cav_sim::json_f64")]
     #[schemars(schema_with = "cav_sim::json_f64::schema")]
     pub estimate: f64,
-    /// Whether every read settled to the tolerance; when false the estimate is how far the worst
-    /// was from settling, not a bound that was met.
+    /// Whether every read settled to the tolerance and read all the scene's matter; when false
+    /// the estimate is how far the worst was from settling, or (see `truncated`) of part of the
+    /// matter only: not a bound that was met.
     pub settled: bool,
+    /// Present when matter was left out: the world was read only within this many metres of each
+    /// tower's atoms' path, and these numbers are of that matter alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<f64>,
     /// What a person should know about these numbers: a reading that did not settle, a body in
     /// the atoms' path, an unbounded floor. Each with the tower it is about (from 0).
     pub warnings: Vec<cav_sim::read::Warning>,

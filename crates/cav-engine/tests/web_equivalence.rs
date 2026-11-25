@@ -26,9 +26,10 @@ use cav_sim::{SceneSpec, dev};
 const PATIENCE: Duration = Duration::from_secs(600);
 
 /// The scenes compared: a point mass, a voxel sphere (the cube kernel) and an oscillator's comb
-/// (the Lomb–Scargle or FFT periodogram).
+/// (the Lomb–Scargle or FFT periodogram), and a box in the world volume (its chunks, read through
+/// the cube kernel; S4).
 fn scenes() -> Vec<SceneSpec> {
-    vec![dev::point(), dev::sphere(), dev::comb()]
+    vec![dev::point(), dev::sphere(), dev::comb(), dev::world_box()]
 }
 
 /// Every number the engine gives a client for each scene, labelled `scene/what`.

@@ -720,8 +720,8 @@ pub fn stress_1e10() -> SceneSpec {
         name: "stress-1e10".into(),
         description:
             "A square kilometre of rolling ground at a 5 cm pitch, forty buildings and a road, around \
-                      the array: about 10^10 finest cells. Fly over it; the instrument reads the 2 m around \
-                      each tower."
+                      the array: about 10^10 finest cells. Fly over it; the instrument reads only the 2 m \
+                      around each tower: its numbers are of that matter alone."
                 .into(),
         room: None,
         floor: None,
@@ -790,7 +790,9 @@ pub fn town() -> SceneSpec {
     let n = world.pieces.len();
     scene.name = "town".into();
     scene.description = format!(
-        "stress-1e10 scaled down: 200 m of rolling ground at 10 cm, {} buildings and the road, around the array: about          5x10^7 finest cells. For pictures on a modest GPU.",
+        "stress-1e10 scaled down: 200 m of rolling ground at 10 cm, {} buildings and the road, around the array: about 5x10^7 \
+         finest cells. For pictures on a modest GPU. The instrument reads only the 2 m around each tower: its numbers are of \
+         that matter alone.",
         n - 2
     );
     scene

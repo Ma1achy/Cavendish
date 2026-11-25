@@ -202,7 +202,7 @@ fn run_scene(rest: &[String]) -> Result<(), String> {
         session.engine.spec().name,
         signal.towers,
         signal.clock.len(),
-        cav_engine::estimate_text(signal.estimate, signal.settled),
+        cav_engine::estimate_text(signal.estimate, signal.settled, signal.truncated),
         started.elapsed().as_secs_f64()
     );
     Ok(())

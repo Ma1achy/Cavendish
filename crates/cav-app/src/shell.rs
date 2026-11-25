@@ -319,6 +319,7 @@ impl Shell {
                     towers: Vec::new(),
                     estimate: 0.0,
                     settled: true,
+                    truncated: None,
                     warnings: Vec::new(),
                 },
             };

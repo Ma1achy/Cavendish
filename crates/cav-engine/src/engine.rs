@@ -29,9 +29,17 @@ pub const REPLAY_PATIENCE: std::time::Duration = std::time::Duration::from_secs(
 
 /// A quadrature estimate as people read it. `settled` says whether every read reached the
 /// tolerance: only then is the estimate a bound ("within"); otherwise it is how far the worst
-/// read was from settling, and is said as that.
+/// read was from settling, and is said as that. `truncated` is `Some(r)` when the world was read
+/// only within `r` metres of the towers: then the numbers are said to be of that matter alone,
+/// whatever the quadrature did ("not settled: of the matter within 2 m only, estimate 1e-8 rad").
 #[must_use]
-pub fn estimate_text(estimate: f64, settled: bool) -> String {
+pub fn estimate_text(estimate: f64, settled: bool, truncated: Option<f64>) -> String {
+    if let Some(radius) = truncated {
+        // A truncated read is never settled; the estimate is the quadrature's, on what was read.
+        let quadrature =
+            if estimate.is_finite() { format!(", estimate {estimate:.0e} rad") } else { String::new() };
+        return format!("not settled: of the matter within {} m only{quadrature}", short_metres(radius));
+    }
     if !settled {
         if estimate.is_finite() {
             format!("did not settle, estimate {estimate:.0e} rad")
@@ -43,6 +51,11 @@ pub fn estimate_text(estimate: f64, settled: bool) -> String {
     } else {
         format!("within {estimate:.0e} rad")
     }
+}
+
+/// A distance in metres in as few digits as it needs: 2, 0.5, 12.5, 2e4.
+fn short_metres(metres: f64) -> String {
+    if metres >= 1e4 { format!("{metres:.0e}") } else { format!("{}", (metres * 10.0).round() / 10.0) }
 }
 
 /// Where an engine's exports go.
@@ -1178,6 +1191,7 @@ impl Engine {
                     }),
                     estimate: signal.map_or(0.0, |s| s.estimate),
                     settled: signal.is_none_or(|s| s.settled),
+                    truncated: signal.and_then(|s| s.truncated),
                     warnings: signal.map_or_else(Vec::new, |s| s.warnings.clone()),
                 }))
             }
@@ -1343,6 +1357,7 @@ impl Engine {
                     towers,
                     estimate: held.map_or(0.0, |reading| reading.estimate),
                     settled: held.is_none_or(|reading| reading.settled),
+                    truncated: held.and_then(|reading| reading.truncated),
                     warnings: held.map_or_else(Vec::new, |reading| reading.warnings.clone()),
                 }))
             }
@@ -1519,7 +1534,7 @@ impl Engine {
                 "signal: {} tower(s), {} shot(s) in all, quadrature {}",
                 signal.towers,
                 signal.clock.len(),
-                estimate_text(signal.estimate, signal.settled)
+                estimate_text(signal.estimate, signal.settled, signal.truncated)
             ),
         );
         for warning in &signal.warnings {
