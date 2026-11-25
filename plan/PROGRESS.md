@@ -9,8 +9,39 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
 | S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
 | S4 big scenes | done: TASK-S4-01 to 25 merged; reviewed three times (`docs/slices/S4-review.md`, `-2`, `-3`), nothing important remains; oracle 58/58, validation 113/113 | `s4-big-scenes` | brief and results: `docs/slices/S4.md` (§7.7–§7.8: the fixes); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
-| S18 the editor | built: TASK-S18-01 to 04 and 07 to 11 merged; not yet reviewed | | brief: `docs/slices/S18.md`; research: `docs/research/editor-ux.md`; requirement: `docs/design/keyboard.md` |
+| S18 the editor | built: TASK-S18-01 to 04 and 07 to 11 merged; first review's fixes merged (TASK-S18-12 to 18); awaiting re-review | | brief: `docs/slices/S18.md` (§7.7: the fixes); review: `docs/slices/S18-review.md`; research: `docs/research/editor-ux.md`; requirement: `docs/design/keyboard.md` |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
+
+## S18 after its first review (25 Nov 2026) — fixes done, awaiting re-review
+
+**Done** (TASK-S18-12 to 18, PRs #169–#175; `docs/slices/S18.md` §7.7, a row a finding). R1: a
+transform session holds every key but the globals, a global cancels it first, and it checks its
+body before every move. R2: the engine keeps a run of sets as one step across seeks, selections
+and camera moves, so a drag or a session while the scene plays is one undo (live and replayed).
+R3/R4: the vacuous assertions count `Engine::depth()` with controls; the menu test parses the
+item's line. R5: every test §4 names is written (K3, K4, K9, E6, T1's 12 events, T2 typed, C5
+through the frame) and §6's budgets measured (key 1.1 µs, filter 0.18 ms, palette frame +0.25 ms).
+R6: the `?` sheet fits and scrolls from the keys. U1–U7: the inspector reads as an editor (names
+and choices in words from the schema, the reset only where something changed, a scene summary,
+the instrument folded), drawn tool icons with one name a tool and snap a switch apart, hold the
+right button to fly, "Inspector › Body › Mass", a gizmo on a halo and F framing the silhouette,
+the history and toast in words over the outliner, Restore beside Home. Minors 1, 3–7, 9–13, 15
+done; 2, 8 (in part), 14 in `plan/IDEAS.md` with why.
+
+**Numbers.** `quick` 618 (floor raised each PR), 26–30 s warm; gpu, oracle and web: §7.7 of the
+brief; validation 113 of 113 against `s4-big-scenes`, no case added (UI fixes), none dropped, no
+tolerance moved. Pictures retaken (release, each within 180 s), with `editor-context.png` and
+`timings.txt` new.
+
+**Decided (worth a second look).** R2 fixed in the engine rather than by pausing playback; the
+right button flies and the middle pans (right-drag panned); Ctrl+Z in a session is its cancel;
+the instrument folded with nothing selected; layouts never clear the selection; short schema
+titles for six instrument fields; a session's arrows follow the screen.
+
+**Open.** Home after an undo still drops the redo (the owner's rule; minor 2, for a second look);
+browser-reserved keys (S19); nobody has used the editor in the real window yet.
+
+**Next.** A re-review of S18, then its tag; then S5 or S19.
 
 ## S18, the editor (25 Nov 2026) — built, not reviewed
 

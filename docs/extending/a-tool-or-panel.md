@@ -36,9 +36,13 @@ Read the Place tool (`Behaviour::Place`) beside this.
 1. If it does something no tool does yet, add a `Behaviour` variant in `crates/cav-app/src/tools.rs`
    with its geometry as pure functions there (as `gizmo`, `hit`, `along`, `on_ground`), tested
    on their own.
-2. Add it to `crates/cav-app/ui/tools.ron` (`id`, `label`, `short`, `behaviour`, `about`) and an
+2. Add it to `crates/cav-app/ui/tools.ron` (`id`, `label`, `behaviour`, `about`) and an
    action `tool <id>` with its key to `ui/actions.ron`, twice: in `toolbar` and in `viewport`
-   (`tool-place` and `tool-place-in-view`).
+   (`tool-place` and `tool-place-in-view`). The tool's `label` is its one name and must be the
+   action's `label` (the strip's tooltip, the options row, the menus and the `?` sheet all say
+   it); the strip draws its icon by `behaviour`, so a new behaviour gets an icon in
+   `crates/cav-app/src/icons.rs` (a few painter strokes in a 20 × 20 grid: the fonts have no
+   pictographs).
 3. Its pointer handling goes in `figure` in `crates/cav-app/src/panels.rs`, beside the gizmo's
    and the Place click; what it changes is a command (`Shell::apply`, `Shell::run`), never a
    field of the scene. Its options go in `tool_options_row`.
@@ -51,9 +55,10 @@ its own in `crates/cav-app/tests/editor.rs` driven by input events, with a contr
 ## A layout
 
 Add an entry to `crates/cav-app/ui/layouts.ron` (`id`, `label`, the console `lines` that arrange
-the figure, `about`) and an action `layout <id>` with its key. `the_layouts_are_valid` holds its
-lines and its action; `every_layout_keeps_every_scope_and_the_figure_uncovered` holds the
-window's rules in it.
+the figure, optionally the inspector's folding sections it opens, `unfold`, and `about`) and an
+action `layout <id>` with its key. `the_layouts_are_valid` holds its lines (view commands only:
+never an edit, Home or a selection) and its action;
+`every_layout_keeps_every_scope_and_the_figure_uncovered` holds the window's rules in it.
 
 ## A panel or a window
 

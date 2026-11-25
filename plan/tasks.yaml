@@ -642,6 +642,9 @@
 - id: TASK-S18-17
   milestone: S18
   title: "Review fixes, what happened (U6, minors 8, 10): the history and the toast in words with the console line on hover, the history window over the outliner; a scene from the wizard unsaved until saved"
+- id: TASK-S18-18
+  milestone: S18
+  title: "Review fixes, the record: the pictures section 5 promised (context menu, palette with words, history with its toast, add-menu), the budgets measured, the brief, ARCHITECTURE, the recipe, REBUILD's row, IDEAS, PROGRESS and the validation report"
 - id: TASK-S19-01
   milestone: S19
   title: "Docking: panels as tabs in dock areas, drag to dock, saved layouts of the dock tree (a crate spike first, egui 0.37 and wasm)"

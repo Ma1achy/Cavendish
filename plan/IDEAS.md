@@ -141,4 +141,13 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **The palette learns**: recently used results first, and the ranking weights measured on what people type. S19.
 - **Browser keys**: Ctrl+N, Ctrl+K, Ctrl+S, Ctrl+D, Ctrl+1–3 and F3 are the browser's own on the web; the page must `preventDefault` those it can and the sheet show the others' alternatives. The web check of S19.
 - **A user keymap file** merged over `ui/actions.ron`'s keys, refused with the line and the reason when it clashes. S19.
-- **The context menu in the view** (right-click a body): the tree's, for the body under the pointer; right-drag pans today. S19.
+- **The context menu in the view** (right-click a body): the tree's, for the body under the pointer. Since S18's review the right button flies (held) and the middle button pans, so the menu would be a right *click* without a drag. S19.
+
+## From S18's first review (left, with why)
+
+- **Home after an undo drops the redo stack** (review minor 2). It follows the owner's rule that Home is an undoable step (`docs/slices/S18.md` §7.3.6): undo a delete, press Home to look, and the delete cannot be redone. A separate one-level camera undo (the view's own, not the scene's) would keep both. For the owner's second look; not changed.
+- **Browser-reserved keys on the sheet** (minor 14): the page cannot take Ctrl+N, Ctrl+1–3, Ctrl+Shift+P; the `?` sheet could mark them "not in the page" until S19's web check gives them alternatives. With the browser-keys item above, S19.
+- **The history's console lines** are made only for the hovered row since the review (minor 8); `Engine::steps` still writes every inserted value whole for the console's `history`. If a scene of large meshes makes that slow, cache each step's line by its place in the history. Measure first.
+- **A wizard scene undone** keeps the `*` of the scene it replaced until the next save or load (`Shell::untitled` is the window's, not the history's). Harmless; tie it to the history step if it confuses anyone.
+- **Keyboard for the right-click menu** (Shift+F10, the Menu key): `context` opens the selection's row menu from the console; a key for it, with the menu walkable by the arrows, belongs with S19's keymap work.
+- **The inspector's name column** is 92 points: "Half sequence T" fits, longer titles are cut with the full name on hover. A panel wider than its default could give the names the extra room. S19, with docking.

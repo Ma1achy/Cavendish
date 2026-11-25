@@ -1158,7 +1158,7 @@ mod tests {
         let height = instrument.iter().find(|e| e.name == "tower_height").unwrap();
         assert_eq!((height.title.as_deref(), height.label().as_str()), (None, "Tower height"));
         let separation = instrument.iter().find(|e| e.name == "ifo_separation").unwrap();
-        assert_eq!(separation.label(), "Interferometer separation Δr");
+        assert_eq!(separation.label(), "Separation Δr");
         assert_eq!(words("LowerMinusUpper"), "Lower minus upper");
         assert_eq!(words("HalfSpace"), "Half space");
         assert_eq!(words("launch_floor"), "Launch floor");

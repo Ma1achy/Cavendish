@@ -1297,10 +1297,7 @@ fn the_inspector_reads_as_an_editor() {
     // Names in words, from the schema.
     let tree = rig.shell.focus_tree();
     assert_eq!(tree.node("field/array.instrument.tower_height").unwrap().name, "Tower height");
-    assert_eq!(
-        tree.node("field/array.instrument.ifo_separation").unwrap().name,
-        "Interferometer separation Δr"
-    );
+    assert_eq!(tree.node("field/array.instrument.ifo_separation").unwrap().name, "Separation Δr");
     // The reset: disabled (and not drawn) on an unchanged field, there on a changed one.
     assert!(!tree.node("field/duration/reset").unwrap().enabled);
     rig.shell.run("set duration 21").unwrap();
@@ -1506,4 +1503,27 @@ fn a_scene_from_the_wizard_is_unsaved_until_saved() {
     // Control: a library scene opened is as it was saved, no `*`.
     rig.shell.run("load room").unwrap();
     assert!(!rig.shell.title().contains('*'));
+}
+
+#[test]
+fn context_opens_the_selection_s_menu_and_palette_takes_words() {
+    // For scripts and the demo: `context` opens the selection's row's right-click menu, and
+    // `palette <words>` opens the palette with them typed.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("select body 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().button("context delete").is_none(), "the control: no menu yet");
+    rig.shell.run("context").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().button("context delete").is_some(), "the menu is open");
+    rig.click_button("context delete");
+    assert!(rig.shell.engine.spec().bodies.is_empty(), "and its Delete acts on the row's body");
+    assert!(rig.shell.run("context").is_err(), "nothing selected: no menu to open");
+    rig.shell.run("palette sph").unwrap();
+    assert!(rig.shell.palette.open);
+    assert_eq!(rig.shell.palette.query, "sph");
+    rig.shell.palette.open = false;
+    rig.shell.run("palette add").unwrap();
+    assert_eq!((rig.shell.palette.query.as_str(), rig.shell.palette.menu.as_deref()), ("", Some("Add")));
 }

@@ -350,7 +350,15 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 // The toast: what the last edit did, in words (S18's review, U6), and the way
                 // back. After an undo it says what was undone, and the way forward.
-                let last = shell.engine.log().iter().next_back().cloned();
+                // It stands until something worth more notice is logged after the edit (a
+                // warning, an error); routine news (the signal recomputed) does not hide it.
+                let last = shell
+                    .engine
+                    .log()
+                    .iter()
+                    .rev()
+                    .find(|e| e.subsystem == Subsystem::Edit || e.level >= Level::Warn)
+                    .cloned();
                 let edited = last.as_ref().is_some_and(|e| e.subsystem == Subsystem::Edit);
                 let undid = last.as_ref().is_some_and(|e| e.message.starts_with("undo"));
                 let spec = shell.engine.spec().clone();
@@ -650,7 +658,24 @@ fn outline_row(
     if response.secondary_clicked() && !selected {
         shell.apply(Command::Select(Some(target)));
     }
-    response.context_menu(|ui| context_menu(shell, ui));
+    // The menu opens at the pointer on a right-click (egui's context menu), or under the row when
+    // `context` asks for the selection's (for scripts and the demo's picture of it).
+    let by_command = selected && std::mem::take(&mut shell.open_context);
+    if by_command {
+        shell.context_at_row = true;
+    } else if response.secondary_clicked() {
+        shell.context_at_row = false;
+    }
+    let open = if response.secondary_clicked() || by_command {
+        Some(egui::SetOpenCommand::Bool(true))
+    } else if response.clicked() {
+        Some(egui::SetOpenCommand::Bool(false))
+    } else {
+        None
+    };
+    let popup = egui::Popup::menu(&response).open_memory(open);
+    let popup = if shell.context_at_row { popup } else { popup.at_pointer_fixed() };
+    popup.show(|ui| context_menu(shell, ui));
 }
 
 /// The right-click menu of the scene tree and the view: the table's `context` actions for the

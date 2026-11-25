@@ -479,11 +479,12 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
     for (name, _) in cav_app::APP_COMMANDS {
         let mut shell = Shell::new();
         let outcome = shell.run(name);
-        // `rename` needs a selection, which a fresh shell has not, and `tool` a tool's name: each
+        // `rename` and `context` need a selection, which a fresh shell has not, and `tool` a tool's name: each
         // says so and changes nothing.
         assert!(
             outcome.is_ok()
-                || (*name == "rename" && outcome.as_ref().unwrap_err().contains("select"))
+                || (matches!(*name, "rename" | "context")
+                    && outcome.as_ref().unwrap_err().contains("select"))
                 || (*name == "tool" && outcome.as_ref().unwrap_err().contains("tool <"))
                 || (*name == "layout" && outcome.as_ref().unwrap_err().contains("layout <"))
                 || (*name == "reset" && outcome.as_ref().unwrap_err().contains("reset <"))
@@ -501,9 +502,10 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
         } else {
             assert!(journal.is_empty(), "{name} reached the engine");
         }
-        // `palette` takes a menu's name (`palette add`); the others take nothing. (`focus` takes
-        // an id, which before the first frame it waits for.)
-        if *name == "focus" {
+        // The others take nothing. (`focus` takes an id, which before the first frame it waits
+        // for; `palette` takes a menu's name, `palette add`, or words to search for, `palette
+        // sph`, since the review fixes of S18: any word is one.)
+        if matches!(*name, "focus" | "palette") {
             continue;
         }
         let wrong = shell.run(&format!("{name} now")).unwrap_err();
