@@ -36,10 +36,10 @@ pub enum Behaviour {
 pub struct ToolData {
     /// Its id: `tool <id>` chooses it.
     pub id: String,
-    /// What a tooltip and the palette call it.
+    /// Its one name, wherever it is shown: the strip's tooltip, the options row, the menus, the
+    /// `?` sheet (S18's review, U2: the Place tool was "Add" on the strip). Must be the label of
+    /// the action that chooses it (`tool <id>`).
     pub label: String,
-    /// What its button says.
-    pub short: String,
     /// What it does.
     pub behaviour: Behaviour,
     /// One line for its tooltip.
@@ -73,8 +73,14 @@ impl Strip {
                 return Err(format!("ui/tools.ron: the tool `{}` is listed twice", tool.id));
             }
             let line = format!("tool {}", tool.id);
-            if !crate::actions::table().actions.iter().any(|a| a.line == line) {
+            let Some(action) = crate::actions::table().actions.iter().find(|a| a.line == line) else {
                 return Err(format!("ui/tools.ron: no action of ui/actions.ron runs `{line}`"));
+            };
+            if action.label != tool.label {
+                return Err(format!(
+                    "ui/tools.ron: the tool `{}` is called `{}`, its action `{}`: a tool has one name",
+                    tool.id, tool.label, action.label
+                ));
             }
         }
         Ok(strip)
@@ -330,6 +336,9 @@ mod tests {
         );
         assert!(Strip::parse(&TOOLS_RON.replace("id: \"place\"", "id: \"move\"")).is_err());
         assert!(Strip::parse(&TOOLS_RON.replace("snap_step: 0.25", "snap_step: 0.0")).is_err());
+        // A tool has one name: the strip's and its action's (S18's review, U2).
+        let renamed = TOOLS_RON.replace("label: \"Place\"", "label: \"Add\"");
+        assert!(Strip::parse(&renamed).unwrap_err().contains("one name"));
     }
 
     #[test]

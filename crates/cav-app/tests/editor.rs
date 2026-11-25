@@ -1292,3 +1292,98 @@ fn the_inspector_reads_as_an_editor() {
     rig.frames(vec![vec![], vec![]]);
     assert!(rig.shell.layout().editor("array.instrument.tower_height").is_some());
 }
+
+#[test]
+fn the_right_button_flies_and_holds_the_letters() {
+    // S18's review, U3 (Unity's and Unreal's fly): hold the right button over the view, W moves
+    // the camera forward and is not the Move tool; the mouse looks round from the eye; let go,
+    // and W is the Move tool again (the control).
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("tool select").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let pane = rig.shell.layout().panes[0];
+    let at = pane.center() + egui::vec2(0.0, -0.3 * pane.height());
+    let start = rig.shell.engine.view(0).clone();
+    let w = |pressed, repeat| Event::Key {
+        key: Key::W,
+        physical_key: None,
+        pressed,
+        repeat,
+        modifiers: Modifiers::NONE,
+    };
+    let mut frames =
+        vec![vec![Event::PointerMoved(at)], vec![Rig::press(at, PointerButton::Secondary, true)]];
+    frames.push(vec![w(true, false)]);
+    frames.extend((0..5).map(|_| vec![w(true, true)]));
+    frames.push(vec![w(false, false)]);
+    rig.frames(frames);
+    assert!(rig.shell.mouse_fly.is_some(), "the right button is held: flying");
+    assert_eq!(rig.shell.tool, "select", "W was the flight's, not the Move tool");
+    let flown = rig.shell.engine.view(0).clone();
+    let (to_eye, _, _) = start.basis();
+    let moved: f64 = (0..3).map(|i| -(flown.target[i] - start.target[i]) * to_eye[i]).sum();
+    assert!(moved > 0.05, "flew {moved} m forward");
+    // The mouse looks: a drag with the button held turns the view, the eye kept.
+    rig.frames(vec![
+        vec![Event::PointerMoved(at + egui::vec2(30.0, 0.0))],
+        vec![Event::PointerMoved(at + egui::vec2(60.0, 0.0))],
+    ]);
+    let looked = rig.shell.engine.view(0).clone();
+    assert_ne!(looked.yaw, flown.yaw, "the mouse turned the view");
+    let eye = |v: &cav_sim::ViewSpec| cav_app::camera::eye(v);
+    assert!(eye(&looked).iter().zip(eye(&flown)).all(|(a, b)| (a - b).abs() < 1e-6), "from the eye");
+    // Let go: no longer flying, and W is the Move tool again.
+    rig.frames(vec![vec![Rig::press(at + egui::vec2(60.0, 0.0), PointerButton::Secondary, false)], vec![]]);
+    assert!(rig.shell.mouse_fly.is_none());
+    rig.shell.keyboard.focus = vec!["viewport".into()];
+    rig.key(Key::W, Modifiers::NONE);
+    assert_eq!(rig.shell.tool, "move");
+    // None of it was an edit.
+    assert_eq!(rig.shell.engine.depth(), (1, 0));
+}
+
+#[test]
+fn the_tool_strip_has_one_name_a_tool_and_snap_apart() {
+    // S18's review, U2: each tool has one name, its action's (Place is Place on the strip, in
+    // the options row and on the sheet); snap is a toggle below the tools, not one of them.
+    let mut rig = Rig::new();
+    rig.shell.run("load void").unwrap();
+    rig.shell.run("tool place").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let table = cav_app::actions::table();
+    for tool in &cav_app::tools::strip().tools {
+        let action = table.actions.iter().find(|a| a.line == format!("tool {}", tool.id)).unwrap();
+        assert_eq!(tool.label, action.label);
+        let node = rig.shell.focus_tree().node(&format!("toolbar/{}", tool.id)).unwrap();
+        assert_eq!(node.name, tool.label);
+    }
+    let strip: Vec<&str> = rig.shell.focus_tree().children("toolbar");
+    assert_eq!(strip.last(), Some(&"toolbar/snap"), "snap last, after the tools");
+    let lowest_tool = cav_app::tools::strip()
+        .tools
+        .iter()
+        .map(|t| rig.shell.layout().button(&format!("tool {}", t.id)).unwrap().bottom())
+        .fold(0.0_f32, f32::max);
+    let snap = rig.shell.layout().button("snap").unwrap();
+    assert!(snap.top() >= lowest_tool + 8.0, "apart from the tools: {} after {lowest_tool}", snap.top());
+    assert!(
+        !cav_app::sheet::rows(table).iter().any(|r| r.label.starts_with("Tool: Snap")),
+        "snap is no tool on the sheet"
+    );
+}
+
+#[test]
+fn maximised_there_is_a_way_back_in_sight() {
+    // S18's review, U7: maximised, a Restore button stands beside Home; it restores the window.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.layout().button("maximise").is_none(), "the control: not maximised, no Restore");
+    rig.key(Key::Space, Modifiers::COMMAND);
+    assert!(rig.shell.maximised);
+    rig.frames(vec![vec![]]);
+    rig.click_button("maximise");
+    assert!(!rig.shell.maximised, "the button restored it");
+    assert!(rig.shell.layout().panel("outliner").is_some());
+}

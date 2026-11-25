@@ -380,10 +380,12 @@ fn buttons_and_the_pointer_issue_engine_commands() {
     assert_eq!(after.pitch, 90.0);
     assert_eq!((after.target, after.distance), (before.target, before.distance));
 
-    // A right-drag pans: the scene follows the pointer, so the target moves the other way.
+    // A middle-drag pans: the scene follows the pointer, so the target moves the other way.
+    // (Since S18's review, U3, the right button flies, as in Unity and Unreal: `editor.rs`'s
+    // `the_right_button_flies_and_holds_the_letters`.)
     let before = rig.shell.engine.view(3).clone();
     let centre = panes[3].center();
-    rig.drag(centre, centre + vec2(40.0, 0.0), PointerButton::Secondary);
+    rig.drag(centre, centre + vec2(40.0, 0.0), PointerButton::Middle);
     let after = rig.shell.engine.view(3).clone();
     assert!(
         matches!(rig.last_command(), Some(Command::View(ViewCommand::Pan { pane: 3, .. }))),

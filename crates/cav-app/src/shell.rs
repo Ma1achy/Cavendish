@@ -241,6 +241,9 @@ pub struct Shell {
     pub renaming: Option<(Target, String)>,
     /// How fast a fly session moves, metres per second, before Shift and Alt.
     pub fly_speed: f64,
+    /// The pane being flown with the right mouse button held (Unity's and Unreal's fly: W A S D
+    /// move, the mouse looks, the wheel sets the speed), while it is held. UI state.
+    pub mouse_fly: Option<usize>,
     /// The tool in hand: an id of `ui/tools.ron`. UI state, never journalled.
     pub tool: String,
     /// Whether the Move tool snaps to the step.
@@ -358,6 +361,7 @@ impl Shell {
             by_keyboard: false,
             renaming: None,
             fly_speed: crate::camera::FLY_SPEED,
+            mouse_fly: None,
             tool: "select".to_owned(),
             snap: true,
             place_starter: "sphere".to_owned(),
@@ -516,6 +520,13 @@ impl Shell {
         self.keyboard.session == Some(crate::keyboard::Session::Fly)
     }
 
+    /// Whether the camera is flown in either way: a fly session (Shift+F) or the right mouse
+    /// button held over a scene pane.
+    #[must_use]
+    pub fn any_fly(&self) -> bool {
+        self.flying() || self.mouse_fly.is_some()
+    }
+
     /// The active pane's width over its height, from the last frame (1.6 before there is one).
     fn active_aspect(&self) -> f64 {
         self.layout
@@ -528,7 +539,7 @@ impl Shell {
     /// One frame of a fly session: the held keys push the camera ([`crate::camera::fly`]) at
     /// [`Self::fly_speed`], Shift ×10 and Alt ×0.1, for the frame's time.
     pub(crate) fn fly_frame(&mut self, ctx: &egui::Context) {
-        if !self.flying() || self.keyboard.typing {
+        if !self.any_fly() || self.keyboard.typing {
             return;
         }
         let (push, modifiers, dt) = ctx.input(|i| {
@@ -546,7 +557,7 @@ impl Shell {
             return;
         }
         let speed = self.fly_speed * Press::with(egui::Key::W, modifiers).multiplier();
-        let pane = self.engine.active_pane();
+        let pane = self.mouse_fly.unwrap_or_else(|| self.engine.active_pane());
         let command = crate::camera::fly(self.engine.view(pane), pane, push, speed, dt);
         self.apply(Command::View(command));
         ctx.request_repaint();
@@ -1169,6 +1180,10 @@ impl Shell {
             }
             (presses, released, clicked)
         });
+        // The right button let go: the mouse's fly ends.
+        if self.mouse_fly.is_some() && !ctx.input(|i| i.pointer.secondary_down()) {
+            self.mouse_fly = None;
+        }
         if let Some(pos) = clicked {
             self.keyboard.pointer();
             self.repeat.clear();
@@ -1189,6 +1204,14 @@ impl Shell {
             routed.push((press, false));
         }
         routed.extend(self.repeat.due(now).into_iter().map(|press| (press, true)));
+        // While the right button flies the camera, letters are the flight's (W A S D E Q, read
+        // as held keys by `fly_frame`) and no letter is a shortcut: W is not the Move tool, A not
+        // Place (S18's review, U3).
+        if self.mouse_fly.is_some() {
+            let letter =
+                |key: egui::Key| key.name().len() == 1 && key.name().chars().all(|c| c.is_ascii_alphabetic());
+            routed.retain(|(press, _)| !(letter(press.key) && !press.modifiers.command));
+        }
         if self.repeat.any() {
             ctx.request_repaint();
         }
@@ -1444,7 +1467,7 @@ impl Shell {
     /// session the wheel sets the flying speed instead.
     pub(crate) fn zoom_by(&mut self, pane: usize, scroll: f32, pointer: [f64; 2], size: [f64; 2]) {
         let factor = f64::from(-scroll * 0.002).exp();
-        if self.flying() {
+        if self.any_fly() {
             self.fly_speed = (self.fly_speed / factor).clamp(0.01, 1000.0);
             return;
         }

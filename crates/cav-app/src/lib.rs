@@ -28,6 +28,7 @@ pub mod camera;
 pub mod dialogs;
 pub mod editors;
 pub mod headless;
+pub mod icons;
 pub mod keyboard;
 pub mod lane;
 pub mod layouts;

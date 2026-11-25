@@ -5,28 +5,27 @@
 //
 //   snap_step  the Move tool's snap and the transform session's step, metres
 //   tools      in the strip's order, top to bottom:
-//              id, label, short (what the strip's button says), behaviour, about
+//              id, label (the tool's one name: strip tooltip, options row, menus, ? sheet),
+//              behaviour (which also picks the button's icon), about
+// Snap is not a tool: it is a toggle drawn apart, below the tools (the action `snap`).
 (
     snap_step: 0.25,
     tools: [
         (
             id: "select",
             label: "Select",
-            short: "Sel",
             behaviour: Select,
             about: "click a body or a tower to select it; drag a body to move it in the view's plane",
         ),
         (
             id: "move",
             label: "Move",
-            short: "Move",
             behaviour: Translate,
             about: "a gizmo on the selected body: drag an arrow to move it along x, y or z, snapped; drag the square to move it freely",
         ),
         (
             id: "place",
             label: "Place",
-            short: "Add",
             behaviour: Place,
             about: "click the ground to add the chosen starter there",
         ),
