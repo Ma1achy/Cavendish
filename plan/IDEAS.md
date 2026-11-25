@@ -105,3 +105,6 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **`?scene=` and a "copy link" button** that writes the current view as `#exec=`, so a link shows exactly what was on screen.
 - **PNG figures on the web** by an asynchronous read-back (`map_async` and a later frame), then the PNG written as a download.
 - **A smoke test in the Pages workflow**: headless Chrome on the runner (with SwiftShader's WebGPU) loading the built page and failing on a console panic before deploying.
+- **The paper drawing's materials**: in plan the road is the ground's height and is not drawn; outlines where the top cell's material changes (from a chunk's palette at the finer levels) would draw it, and each material could take its own hatch in a section (the usual concrete, brick and earth patterns).
+- **A section's vertical exaggeration** (stated in the title block, `section y 64 exaggerated 10`): a kilometre of ground 25 m deep is a strip a few millimetres high at any honest scale.
+- **A paper drawing cropped to a box** (`figure paper plan within <x0,y0,x1,y1>`), so a part of a big world is drawn at a scale that shows its buildings, and a section's cut line drawn on the plan.
