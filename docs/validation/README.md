@@ -80,6 +80,15 @@ One axis serves every case whatever its unit: the **margin**, the measured error
 tolerance, on a log scale. A case passes to the left of (or below) 1. Cases that measured zero have
 their own column, since zero has no logarithm; only a case whose tolerance is zero is called exact.
 
+**One case sits at its tolerance by construction.** `materials.shared_cells_are_within_their_dipole_bound`
+measures an error as a fraction of a first-order bound on a body built to attain that bound (every shared
+cell half and half, every error of one sign), so it reads 0.99 of its 1.01 tolerance and always will: the
+1 % is the allowance for the higher orders, reasoned before measuring, and the case's own assertions fail it
+if the error falls below half the bound. It is therefore the report's "worst margin" for good, and that
+line says nothing about how near the engine is to a tolerance: read the next case down in `report.md` for
+that. (S19's second review, minor 9; the case and its tolerance were left as they are rather than
+remeasured as a residual, so that no tolerance moved.)
+
 - `error-vs-tolerance-*.svg`: every case's margin, grouped by subsystem.
 - `convergence-*.svg`: error against step for each convergence case, with the expected rate drawn in.
 - `history-*.svg`: every case's margin at every commit that changed `report.json`.

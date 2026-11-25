@@ -397,8 +397,9 @@ pub struct BodySpec {
     pub label: String,
     /// Kilograms, above 0, for a point, a sphere or a uniform voxel body. A voxel body with a
     /// material weighs its materials and this is not read (validation then asks only that it be
-    /// a number from 0 to 1e12): what any body weighs is [`BodySpec::mass_in`], never this field
-    /// alone.
+    /// a number from 0 to 1e12, so 0 is allowed with a material, whatever the schema's
+    /// exclusive minimum says of the uniform case): what any body weighs is
+    /// [`BodySpec::mass_in`], never this field alone.
     #[schemars(range(max = 1.0e12), extend("exclusiveMinimum" = 0.0))]
     #[schemars(extend("x-unit" = "kg"))]
     pub mass: f64,
@@ -741,7 +742,7 @@ impl BodySpec {
     }
 
     /// What the body weighs in `scene`, kilograms: the one rule every consumer of a body's mass
-    /// uses (the bundle's `source_mass`, the inspector, the console). A body of materials weighs
+    /// uses (the bundle's `source_mass`, the inspector). A body of materials weighs
     /// its densities times its volumes as voxelised (the tree's mass, which is what the forward
     /// model reads); any other body weighs its `mass` field, exactly.
     ///

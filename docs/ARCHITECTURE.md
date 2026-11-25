@@ -165,7 +165,7 @@ field's reset and the window's unsaved mark.
 | An instrument preset | `cav-sim/src/presets.rs` | — |
 | A dev scene | `cav-sim/src/dev.rs` and `scenes/dev/*.ron` | [a dev scene](extending/a-dev-scene.md) |
 | The bundle's arrays and manifest | `cav-sim/src/bundle.rs` | — |
-| What a body weighs (its materials' or its `mass`: one rule for the bundle, the inspector, the console) | `cav-sim/src/spec.rs` (`BodySpec::mass_in`, `mass_with`) | — |
+| What a body weighs (its materials' or its `mass`: one rule for the bundle and the inspector; `get bodies[n].mass` answers the field) | `cav-sim/src/spec.rs` (`BodySpec::mass_in`, `mass_with`) | — |
 | The Probe's reading of a point (the field of every body and a slab floor, the finest cell, its share of each tower's phase, what is not counted) | `cav-sim/src/probe.rs`; `probe x y z` in `cav-engine/src/console.rs`, `Engine::probe`; the card in `cav-app/src/panels.rs` (`probe_card`) | — |
 | A command, a query, a reply | `cav-engine/src/command.rs`; applied in `engine.rs`; its words in `console.rs` | [a command](extending/a-command.md) |
 | The workers, the cache of contributions | `cav-engine/src/forward.rs` | — |

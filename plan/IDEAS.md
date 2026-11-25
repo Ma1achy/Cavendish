@@ -173,8 +173,6 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **The Paint tool's stroke as one undo** needs a `Set` inside an item just inserted to continue
   the `Insert`'s step (the engine's run keeps an item path as it keeps a field's). Designed in the
   S19 brief (§2), not built: TASK-S19-20.
-- **The probe's field leaves out the room, the floor and the world**: it says "bodies". The world's
-  chunk moments would give it the world's too, cheaply, once S5's octree is there.
 - **Lead and steel look alike** in the material library's colours (two greys); a palette chosen
   for telling materials apart (and colour-blind-safe) would read better than "looks like the metal".
   (Done after S19's review: every two at least 15 apart in L*a*b*; colour-blind safety below.)
