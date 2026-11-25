@@ -26,6 +26,8 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ),
     ("rename", "type a new name for the selected body or tower in the scene tree (F2)"),
     ("frame", "fit the selection (or the whole scene) into the active pane (F)"),
+    ("tool", "take a tool in hand: `tool select` (Q), `tool move` (W), `tool place` (A)"),
+    ("snap", "snap the Move tool's moves to the step, or not (S)"),
     (
         "fly",
         "fly the camera: W A S D, E up, Q down, arrows or a drag to look; again, Enter or Esc to stop (Shift+F)",
@@ -214,6 +216,30 @@ pub struct Shell {
     pub renaming: Option<(Target, String)>,
     /// How fast a fly session moves, metres per second, before Shift and Alt.
     pub fly_speed: f64,
+    /// The tool in hand: an id of `ui/tools.ron`. UI state, never journalled.
+    pub tool: String,
+    /// Whether the Move tool snaps to the step.
+    pub snap: bool,
+    /// The starter the Place tool adds (a name of `scenes/starters.ron`).
+    pub place_starter: String,
+    /// A drag of the Move tool's gizmo in hand.
+    pub(crate) gizmo_drag: Option<GizmoDrag>,
+    /// A transform session in hand (the keyboard's Move).
+    pub session: Option<crate::tools::Session>,
+}
+
+/// A drag of the gizmo: the pane, the body, the handle, the gizmo as it was when the drag began
+/// (so the arrow's scale does not change under the pointer), the anchor then, how far the pointer
+/// has gone, points, and whether an edit has been made.
+#[derive(Clone, Debug)]
+pub(crate) struct GizmoDrag {
+    pub pane: usize,
+    pub body: usize,
+    pub handle: crate::tools::Handle,
+    pub gizmo: crate::tools::Gizmo,
+    pub start: [f64; 3],
+    pub moved: egui::Vec2,
+    pub edited: bool,
 }
 
 /// How near a body's picture the pointer must be to take hold of it, points.
@@ -282,6 +308,106 @@ impl Shell {
             by_keyboard: false,
             renaming: None,
             fly_speed: crate::camera::FLY_SPEED,
+            tool: "select".to_owned(),
+            snap: true,
+            place_starter: "sphere".to_owned(),
+            gizmo_drag: None,
+            session: None,
+        }
+    }
+
+    /// What the tool in hand does.
+    #[must_use]
+    pub fn behaviour(&self) -> crate::tools::Behaviour {
+        crate::tools::strip().tool(&self.tool).map_or(crate::tools::Behaviour::Select, |t| t.behaviour)
+    }
+
+    /// The step a move snaps to, metres, when snapping is on.
+    #[must_use]
+    pub fn snap_step(&self) -> Option<f64> {
+        self.snap.then_some(crate::tools::strip().snap_step)
+    }
+
+    /// Moves body `body`'s anchor to `anchor` (metres): the `Set` of `bodies[i].motion.<anchor>`
+    /// that the gizmo, the transform session and a drag all issue. `continues`: a step of a run
+    /// after its first. True when it was applied.
+    pub(crate) fn move_anchor(&mut self, body: usize, anchor: [f64; 3], continues: bool) -> bool {
+        let Some(spec) = self.engine.spec().bodies.get(body) else { return false };
+        let (_, field) = spec.motion.anchor();
+        self.apply(Command::Set {
+            path: format!("bodies[{body}].motion.{field}"),
+            value: serde_json::json!(anchor),
+            continues,
+        })
+    }
+
+    /// Adds the Place tool's starter on the ground at `ground` (metres: a voxel shape resting on
+    /// it, a point mass a metre above it), and selects it.
+    ///
+    /// # Errors
+    /// Why it was refused.
+    pub fn place_at(&mut self, ground: [f64; 3]) -> Result<String, String> {
+        let name = self.place_starter.clone();
+        let lift = match cav_sim::starters::find(&name).and_then(|s| s.body.as_ref()) {
+            Some(body) if body.shape.is_none() && body.radius == 0.0 => 1.0,
+            Some(body) => cav_sim::starters::lift(body),
+            None => 0.0,
+        };
+        let [x, y, z] = ground;
+        let outcome = self.run(&format!("add {name} at {x} {y} {}", z + lift))?;
+        let spec = self.engine.spec();
+        let select = match cav_sim::starters::find(&name).map(cav_sim::starters::Starter::list) {
+            Some("array.towers") => format!("select tower {}", spec.array.towers.len()),
+            _ => format!("select body {}", spec.bodies.len()),
+        };
+        let _ = self.run(&select);
+        Ok(outcome)
+    }
+
+    /// A key for the transform session (`docs/slices/S18.md` K10): starts it on the selected
+    /// body, moves it by the snap step (or 0.25 m) along an axis, types a distance, locks an axis,
+    /// keeps it (Enter) or cancels it (Esc: the move is undone, as if it had not been made).
+    /// Every move is the same `Set` of the anchor a gizmo drag issues, a run of them one edit.
+    pub(crate) fn session_keys(&mut self) {
+        use crate::keyboard::{Effect, SessionKey};
+        const ID: &str = "viewport/selection";
+        if self.take(|e| matches!(e, Effect::Interact(i) if i == ID)).is_some()
+            && let Some(Target::Body(n)) = self.engine.selection()
+            && let Some(body) = self.engine.spec().bodies.get(n - 1)
+        {
+            self.session = Some(crate::tools::Session::new(n - 1, body.motion.anchor().0));
+        }
+        let step = self.snap_step().unwrap_or(crate::tools::strip().snap_step);
+        let mut changed = false;
+        while let Some((effect, _)) = self
+            .take(|e| matches!(e, Effect::Adjust { id, .. } if id == ID) || matches!(e, Effect::Session(_)))
+        {
+            let Some(session) = self.session.as_mut() else { continue };
+            match effect {
+                Effect::Adjust { axis, steps, .. } => session.nudge(axis, steps, step),
+                Effect::Session(SessionKey::Char(c)) => session.type_char(c),
+                Effect::Session(SessionKey::Lock(axis)) => session.toggle_lock(axis),
+                Effect::Session(SessionKey::NextAxis) => session.next_axis(),
+                _ => {}
+            }
+            changed = true;
+        }
+        if changed && let Some(session) = self.session.clone() {
+            let applied = self.move_anchor(session.body, session.anchor(), session.edited);
+            if let Some(s) = self.session.as_mut() {
+                s.edited |= applied;
+            }
+        }
+        if let Some((Effect::Release { keep, .. }, _)) =
+            self.take(|e| matches!(e, Effect::Release { id, .. } if id == ID))
+            && let Some(session) = self.session.take()
+            && !keep
+            && session.edited
+        {
+            // Esc: the body goes back where it began, as the run's last step, so the run changed
+            // nothing and leaves no step to undo or redo (the owner's rule for a transform
+            // session; the engine's history drops a run that ends where it began).
+            self.move_anchor(session.body, session.start, true);
         }
     }
 
@@ -581,6 +707,22 @@ impl Shell {
     fn run_app_command(&mut self, line: &str) -> Result<String, String> {
         let mut words = line.split_whitespace();
         let name = words.next().unwrap_or_default();
+        // `tool <id>` takes a tool of the strip in hand; nothing is journalled.
+        if name == "tool" {
+            let ids: Vec<&str> = crate::tools::strip().tools.iter().map(|t| t.id.as_str()).collect();
+            return match (words.next(), words.next()) {
+                (Some(id), None) if ids.contains(&id) => {
+                    self.tool = id.to_owned();
+                    Ok(line.to_owned())
+                }
+                _ => {
+                    let why = format!("`{line}`: tool <{}>", ids.join("|"));
+                    self.engine.note(Level::Error, Subsystem::App, why.clone());
+                    self.console_open = true;
+                    Err(why)
+                }
+            };
+        }
         // `palette <menu>` opens the palette filtered to a menu (`palette add`: the starters).
         if name == "palette"
             && let Some(menu) = words.next()
@@ -623,6 +765,7 @@ impl Shell {
                 self.palette = Palette { open: true, focus_query: true, ..Palette::default() };
                 self.window_opened("palette", "palette/query", true);
             }
+            "snap" => self.snap = !self.snap,
             "frame" => {
                 // The selection (or, with nothing selected, the whole scene) fills the active
                 // pane from the present direction: one camera command.
@@ -992,6 +1135,7 @@ impl Shell {
         // The keys walk what the last frame registered; this frame registers anew as it draws.
         self.building = FocusTree::new(&crate::actions::table().big_scopes());
         self.keys(&ctx);
+        self.session_keys();
         self.fly_frame(&ctx);
         self.advance(&ctx);
         // Take whatever the forward worker has finished; while it is still at work, keep drawing so

@@ -41,6 +41,7 @@ pub use cav_plot::plots;
 pub mod shell;
 pub mod theme;
 pub mod timeline;
+pub mod tools;
 
 pub mod address;
 // The platform seam: the application's entry and what it does around each frame. Natively next

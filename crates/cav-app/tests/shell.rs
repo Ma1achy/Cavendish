@@ -78,7 +78,8 @@ fn overlap(a: Rect, b: Rect) -> f32 {
     if i.is_positive() { i.area() } else { 0.0 }
 }
 
-const PANELS: [&str; 6] = ["menu", "footer", "timeline", "outliner", "properties", "header"];
+const PANELS: [&str; 8] =
+    ["menu", "footer", "timeline", "outliner", "toolbar", "properties", "header", "options"];
 
 #[test]
 fn every_panel_is_laid_out_and_none_covers_the_figure() {
@@ -112,7 +113,9 @@ fn every_panel_is_laid_out_and_none_covers_the_figure() {
                 let rect = layout
                     .panel(name)
                     .unwrap_or_else(|| panic!("the {name} panel was not shown at {size:?}"));
-                assert!(rect.width() >= 100.0 && rect.height() >= 20.0, "{name} is {rect:?}");
+                // The tool strip is the one narrow panel (S18): a column of tool buttons.
+                let least = if *name == "toolbar" { 40.0 } else { 100.0 };
+                assert!(rect.width() >= least && rect.height() >= 20.0, "{name} is {rect:?}");
                 assert!(screen.contains_rect(rect), "{name} {rect:?} leaves the window {screen:?}");
                 // The rule: the figure is never covered.
                 assert!(
@@ -473,8 +476,14 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
     for (name, _) in cav_app::APP_COMMANDS {
         let mut shell = Shell::new();
         let outcome = shell.run(name);
-        // `rename` needs a selection, which a fresh shell has not: it says so and changes nothing.
-        assert!(outcome.is_ok() || (*name == "rename" && outcome.unwrap_err().contains("select")), "{name}");
+        // `rename` needs a selection, which a fresh shell has not, and `tool` a tool's name: each
+        // says so and changes nothing.
+        assert!(
+            outcome.is_ok()
+                || (*name == "rename" && outcome.as_ref().unwrap_err().contains("select"))
+                || (*name == "tool" && outcome.as_ref().unwrap_err().contains("tool <")),
+            "{name}: {outcome:?}"
+        );
         // `frame` works out a camera and issues it: the journal holds that one camera command
         // (so the session replays), never the window's own word.
         let journal = shell.engine.journal();
@@ -489,7 +498,9 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
         // `palette` takes a menu's name (`palette add`); the others take nothing.
         let wrong = shell.run(&format!("{name} now")).unwrap_err();
         assert!(
-            wrong.contains("takes no arguments") || (*name == "palette" && wrong.contains("not a menu")),
+            wrong.contains("takes no arguments")
+                || (*name == "palette" && wrong.contains("not a menu"))
+                || (*name == "tool" && wrong.contains("tool <")),
             "{name}: {wrong}"
         );
     }

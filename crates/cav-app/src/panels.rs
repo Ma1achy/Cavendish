@@ -100,13 +100,23 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
             .show(ui, |ui| timeline_panel(shell, ui));
         shell.layout.panels.push(("timeline", panel.response.rect));
         shell.building.place("timeline", panel.response.rect);
+        // The outliner gives way to the figure on a small window (S18: the tool strip and the
+        // options strip took 72 points from it); the inspector's rows need their 264.
+        let side = (shell.layout.screen.width() * 0.19).clamp(210.0, 262.0);
         let panel = Panel::left("outliner")
-            .exact_size(262.0)
+            .exact_size(side)
             .resizable(false)
             .frame(frame(theme::PANEL, 10, 6))
             .show(ui, |ui| scrolling(ui, "outliner", |ui| outliner(shell, ui)));
         shell.layout.panels.push(("outliner", panel.response.rect));
         shell.building.place("tree", panel.response.rect);
+        let panel = Panel::left("toolbar")
+            .exact_size(48.0)
+            .resizable(false)
+            .frame(frame(theme::FOOTER, 4, 6))
+            .show(ui, |ui| tool_strip(shell, ui));
+        shell.layout.panels.push(("toolbar", panel.response.rect));
+        shell.building.place("toolbar", panel.response.rect);
         let panel = Panel::right("properties")
             .exact_size(264.0)
             .resizable(false)
@@ -122,6 +132,11 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
                 .frame(frame(theme::FOOTER, 10, 0))
                 .show(ui, |ui| header(shell, ui));
             shell.layout.panels.push(("header", strip.response.rect));
+            let options = Panel::top("options")
+                .exact_size(24.0)
+                .frame(frame(theme::PANEL, 10, 0))
+                .show(ui, |ui| tool_options(shell, ui));
+            shell.layout.panels.push(("options", options.response.rect));
         }
         egui::CentralPanel::no_frame().show(ui, |ui| figure(shell, ui, surface));
     });
@@ -1119,6 +1134,15 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
 }
 
 fn header(shell: &mut Shell, ui: &mut egui::Ui) {
+    // The strip keeps its width whatever it holds: badges past its end scroll (the wheel or a
+    // drag), never pushing the strip over the panels beside it.
+    egui::ScrollArea::horizontal()
+        .id_salt("header badges")
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+        .show(ui, |ui| header_badges(shell, ui));
+}
+
+fn header_badges(shell: &mut Shell, ui: &mut egui::Ui) {
     ui.horizontal_centered(|ui| {
         // How the pane looks, in a popover: the header strip is the mock-up's home for it.
         let popover = ui
@@ -1228,6 +1252,139 @@ fn header(shell: &mut Shell, ui: &mut egui::Ui) {
             badge(ui, format!("selected: {text}"), theme::STRONG);
         }
     });
+}
+
+/// The tool strip (`ui/tools.ron`): one button a tool, the one in hand lit, then the snap toggle.
+/// Each is a button of the keyboard's Tools scope; a click and Enter both run `tool <id>`.
+fn tool_strip(shell: &mut Shell, ui: &mut egui::Ui) {
+    let table = crate::actions::table();
+    for tool in &crate::tools::strip().tools {
+        let line = format!("tool {}", tool.id);
+        let key = table
+            .actions
+            .iter()
+            .find(|a| a.line == line)
+            .map(crate::actions::Action::shortcut_text)
+            .unwrap_or_default();
+        let text = RichText::new(format!("{}\n{key}", tool.short)).size(11.0);
+        let response = ui
+            .add_sized([38.0, 36.0], Button::new(text).selected(shell.tool == tool.id))
+            .on_hover_text(format!("{} ({key}): {}", tool.label, tool.about));
+        let id = format!("toolbar/{}", tool.id);
+        shell.register("toolbar", &id, &tool.label, Kind::Button, response.rect);
+        shell.layout.buttons.push((line.clone(), response.rect));
+        if response.clicked() || shell.take_click(&id) {
+            let _ = shell.run(&line);
+        }
+    }
+    ui.add_space(8.0);
+    let snap = ui
+        .add_sized([38.0, 30.0], Button::new(RichText::new("Snap\nS").size(11.0)).selected(shell.snap))
+        .on_hover_text(format!("snap moves to {} m (S)", crate::tools::strip().snap_step));
+    shell.register("toolbar", "toolbar/snap", "Snap", Kind::Button, snap.rect);
+    shell.layout.buttons.push(("snap".to_owned(), snap.rect));
+    if snap.clicked() || shell.take_click("toolbar/snap") {
+        let _ = shell.run("snap");
+    }
+}
+
+/// The tool's options, in a strip above the figure (Algodoo's and Blender's): what the tool does
+/// and its settings, and a transform session's state while one is under way.
+fn tool_options(shell: &mut Shell, ui: &mut egui::Ui) {
+    // As the header: a strip of fixed width; what is past its end scrolls.
+    egui::ScrollArea::horizontal()
+        .id_salt("tool options")
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+        .show(ui, |ui| tool_options_row(shell, ui));
+}
+
+fn tool_options_row(shell: &mut Shell, ui: &mut egui::Ui) {
+    use crate::tools::Behaviour;
+    ui.horizontal_centered(|ui| {
+        let tool = crate::tools::strip().tool(&shell.tool).cloned();
+        if let Some(tool) = &tool {
+            ui.label(RichText::new(&tool.label).color(theme::GOLD).size(12.0));
+        }
+        let weak = |text: String| RichText::new(text).size(11.5).color(theme::WEAK);
+        if let Some(session) = shell.session.clone() {
+            let [dx, dy, dz] = session.offset;
+            let lock = session.lock.map_or(String::new(), |a| format!(" · locked to {}", ["x", "y", "z"][a]));
+            let typed = if session.typed.is_empty() {
+                String::new()
+            } else {
+                format!(" · typing {} = {} m", ["x", "y", "z"][session.lock.unwrap_or(session.typed_axis)], session.typed)
+            };
+            ui.label(
+                RichText::new(format!("moving by ({dx:+.3}, {dy:+.3}, {dz:+.3}) m{lock}{typed}"))
+                    .size(12.0)
+                    .color(crate::shell::RING_INTERACTION),
+            );
+            ui.label(weak("arrows move · X Y Z lock · type a distance, Tab: next axis · Enter keeps · Esc cancels".into()));
+            return;
+        }
+        match tool.map(|t| t.behaviour) {
+            Some(Behaviour::Translate) => {
+                let step = crate::tools::strip().snap_step;
+                let snap = if shell.snap { format!("snap {step} m (S)") } else { "snap off (S)".to_owned() };
+                ui.label(weak(format!(
+                    "{snap} · drag an arrow to move along it, the square to move freely · Enter on the selection moves it by keys"
+                )));
+            }
+            Some(Behaviour::Place) => {
+                let starters = cav_sim::starters::starters();
+                let current = starters.iter().find(|s| s.name == shell.place_starter).map_or("?", |s| s.label.as_str());
+                let mut chosen = None;
+                let combo = egui::ComboBox::from_id_salt("place starter").selected_text(current).width(150.0).show_ui(ui, |ui| {
+                    for starter in starters {
+                        if ui.selectable_label(starter.name == shell.place_starter, &starter.label).clicked() {
+                            chosen = Some(starter.name.clone());
+                        }
+                    }
+                });
+                shell.layout.buttons.push(("place starter".to_owned(), combo.response.rect));
+                if let Some(name) = chosen {
+                    shell.place_starter = name;
+                }
+                ui.label(weak(format!("click the ground (z = {} m) to add one there", shell.ground())));
+            }
+            _ => {
+                ui.label(weak("click selects · drag a body to move it in the view's plane · right-drag pans · Shift+F flies".into()));
+            }
+        }
+    });
+}
+
+/// The Move tool's gizmo on body `body` in a pane at `rect`: three arrows (x red, y green, z blue,
+/// as the inspector's vectors read) and a square, drawn over the body; what is drawn is what the
+/// pointer can take. Returns the gizmo, in the pane's own points.
+fn draw_gizmo(
+    shell: &Shell,
+    ui: &egui::Ui,
+    pane: usize,
+    rect: Rect,
+    body: usize,
+) -> Option<crate::tools::Gizmo> {
+    let spec = shell.engine.spec();
+    let at = spec.bodies.get(body)?.motion.position(shell.engine.time(), spec.array.instrument.gravity);
+    let gizmo = crate::tools::gizmo(shell.engine.view(pane), rect.size(), at)?;
+    let painter = ui.painter_at(rect);
+    let colours = [
+        Color32::from_rgb(0xe0, 0x50, 0x50),
+        Color32::from_rgb(0x60, 0xc0, 0x60),
+        Color32::from_rgb(0x50, 0x90, 0xf0),
+    ];
+    let held = shell.gizmo_drag.as_ref().map(|d| d.handle);
+    let origin = rect.min.to_vec2();
+    for (axis, tip) in gizmo.tips.iter().enumerate() {
+        if let Some(tip) = tip {
+            let lit = held == Some(crate::tools::Handle::Axis(axis));
+            let stroke = Stroke::new(if lit { 3.5 } else { 2.5 }, colours[axis]);
+            painter.arrow(gizmo.centre + origin, *tip - gizmo.centre, stroke);
+        }
+    }
+    let square = Rect::from_center_size(gizmo.centre + origin, vec2(9.0, 9.0));
+    painter.rect_stroke(square, 1.0, Stroke::new(1.5, theme::STRONG), StrokeKind::Middle);
+    Some(gizmo)
 }
 
 /// How far one keyboard step orbits the canvas, degrees (the spec's 1° for spherical views).
@@ -1400,6 +1557,91 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         }
         // A click on a body selects it; a drag that starts on one takes hold of it.
         let within = |point: egui::Pos2| (point - rect.min).to_pos2();
+        let behaviour = shell.behaviour();
+        // The Move tool's gizmo on the selected body, in the active pane: its handles are taken
+        // before anything else under the pointer.
+        let selected_body = match shell.engine.selection() {
+            Some(Target::Body(n)) => Some(n - 1),
+            _ => None,
+        };
+        let gizmo = match (behaviour, selected_body) {
+            (crate::tools::Behaviour::Translate, Some(body)) if pane == active => {
+                draw_gizmo(shell, ui, pane, rect, body).map(|g| (body, g))
+            }
+            _ => None,
+        };
+        // The selection's keyboard handle (Enter starts a transform session): a stop of the
+        // viewport whether or not a body is selected (order never depends on state).
+        let handle_rect = match gizmo {
+            Some((_, g)) => Rect::from_center_size(g.centre + rect.min.to_vec2(), vec2(24.0, 24.0)),
+            None => selected_body
+                .and_then(|n| shell.body_point(pane, n, rect.size()))
+                .map_or(Rect::NOTHING, |p| Rect::from_center_size(p + rect.min.to_vec2(), vec2(24.0, 24.0))),
+        };
+        if pane == active {
+            shell.register("viewport", "viewport/selection", "Selection", Kind::Session, handle_rect);
+            if selected_body.is_none() {
+                shell.building.disable("viewport/selection");
+            }
+        }
+        if behaviour == crate::tools::Behaviour::Place
+            && response.clicked()
+            && let Some(point) = response.interact_pointer_pos()
+        {
+            // The Place tool: the starter goes on the ground under the pointer.
+            let at = within(point);
+            let size = [f64::from(rect.width()), f64::from(rect.height())];
+            let ground = crate::tools::on_ground(
+                shell.engine.view(pane),
+                size,
+                [f64::from(at.x), f64::from(at.y)],
+                shell.ground(),
+            );
+            let _ = shell.place_at(ground);
+            continue;
+        }
+        if response.drag_started_by(egui::PointerButton::Primary)
+            && let Some((body, g)) = gizmo
+            && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+            && let Some(handle) = crate::tools::hit(&g, within(origin))
+            && let Some(spec) = shell.engine.spec().bodies.get(body)
+        {
+            shell.gizmo_drag = Some(crate::shell::GizmoDrag {
+                pane,
+                body,
+                handle,
+                gizmo: g,
+                start: spec.motion.anchor().0,
+                moved: egui::Vec2::ZERO,
+                edited: false,
+            });
+            shell.drag_under_way = false;
+        }
+        if let Some(drag) = shell.gizmo_drag.clone().filter(|d| d.pane == pane) {
+            if response.dragged() {
+                let delta = response.drag_delta();
+                match drag.handle {
+                    crate::tools::Handle::Axis(axis) => {
+                        let moved = drag.moved + delta;
+                        let metres = crate::tools::snapped(
+                            crate::tools::along(&drag.gizmo, axis, moved),
+                            shell.snap_step(),
+                        );
+                        let mut anchor = drag.start;
+                        anchor[axis] += metres;
+                        let applied = shell.move_anchor(drag.body, anchor, drag.edited);
+                        shell.gizmo_drag =
+                            Some(crate::shell::GizmoDrag { moved, edited: drag.edited || applied, ..drag });
+                    }
+                    crate::tools::Handle::Centre => body_drags.push((pane, drag.body, delta, rect.size())),
+                }
+            }
+            if response.drag_stopped() {
+                shell.gizmo_drag = None;
+                shell.drag_under_way = false;
+            }
+            continue;
+        }
         if response.clicked()
             && let Some(point) = response.interact_pointer_pos()
             && let Some(n) = shell.body_under(pane, within(point), rect.size())

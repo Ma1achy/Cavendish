@@ -127,6 +127,9 @@ pub struct History {
     budget: usize,
     /// How many steps have been dropped for room since the start.
     dropped: u64,
+    /// The step of a drag that has come back to where it began, while the drag may go on.
+    #[serde(skip)]
+    parked: Option<Step>,
 }
 
 impl Default for History {
@@ -139,23 +142,42 @@ impl History {
     /// An empty history that holds at most `budget` bytes of edits.
     #[must_use]
     pub fn with_budget(budget: usize) -> Self {
-        Self { undo: VecDeque::new(), redo: Vec::new(), bytes: 0, budget, dropped: 0 }
+        Self { undo: VecDeque::new(), redo: Vec::new(), bytes: 0, budget, dropped: 0, parked: None }
     }
 
-    /// An edit has been made: it can be undone, and nothing can be redone any more.
+    /// An edit has been made: it can be undone, and nothing can be redone any more. An edit that
+    /// changed nothing (its undo and its redo the same: a `set` to the value already there) is
+    /// no step to undo (S18: a cancelled transform session leaves none, live or replayed).
     pub fn edited(&mut self, step: Step) {
         self.forget_redo();
-        self.push_undo(step);
+        self.parked = None;
+        if step.undo == step.redo {
+            // Parked, not dropped: if it is the first step of a drag, the drag's later steps
+            // renew it, never the edit before it.
+            self.parked = Some(step);
+        } else {
+            self.push_undo(step);
+        }
     }
 
     /// A step of a drag after its first: the edit that takes the whole drag back is already
-    /// held, and what puts it on again is now `redo`.
+    /// held, and what puts it on again is now `redo`. A drag that comes back to where it began
+    /// leaves no step: there is nothing to undo. (The step is parked while the drag may still
+    /// go on, so that a drag passing through its start keeps its own step and never renews
+    /// the edit before it.)
     pub fn continued(&mut self, redo: Edit) {
         self.forget_redo();
+        if let Some(step) = self.parked.take() {
+            self.push_undo(step);
+        }
         if let Some(last) = self.undo.back_mut() {
             self.bytes -= last.weight();
             last.redo = redo;
-            self.bytes += last.weight();
+            if last.undo == last.redo {
+                self.parked = self.undo.pop_back();
+            } else {
+                self.bytes += last.weight();
+            }
         }
     }
 
@@ -190,6 +212,7 @@ impl History {
 
     /// The last edit has been taken back: it can now be redone.
     pub fn undone(&mut self) {
+        self.parked = None;
         if let Some(step) = self.undo.pop_back() {
             self.redo.push(step);
         }
@@ -197,6 +220,7 @@ impl History {
 
     /// The edit last taken back has been put on again: it can be undone once more.
     pub fn redone(&mut self) {
+        self.parked = None;
         if let Some(step) = self.redo.pop() {
             self.bytes -= step.weight();
             self.push_undo(step);
@@ -294,6 +318,34 @@ mod tests {
         short.continued(Edit::Put { path: "duration".into(), value: json!(9.0) });
         assert_eq!(short.last().unwrap().undo, put(2).undo);
         assert_eq!(short.last().unwrap().redo, Edit::Put { path: "duration".into(), value: json!(9.0) });
+    }
+
+    #[test]
+    fn a_change_to_nothing_is_no_step_and_never_renews_the_one_before() {
+        let put = |v: f64| Edit::Put { path: "duration".into(), value: json!(v) };
+        let mut history = History::default();
+        history.edited(Step { undo: put(1.0), redo: put(2.0) });
+        // A set to the value already there is no step.
+        history.edited(Step { undo: put(2.0), redo: put(2.0) });
+        assert_eq!(history.depth(), (1, 0));
+        // A drag from 2 that comes back to 2 leaves no step, and the edit before it is untouched.
+        history.edited(Step { undo: put(2.0), redo: put(3.0) });
+        history.continued(put(2.0));
+        assert_eq!(history.depth(), (1, 0));
+        assert_eq!(history.last(), Some(&Step { undo: put(1.0), redo: put(2.0) }));
+        // Control: the same drag going on past its start keeps a step of its own.
+        history.continued(put(4.0));
+        assert_eq!(history.depth(), (2, 0));
+        assert_eq!(history.last(), Some(&Step { undo: put(2.0), redo: put(4.0) }));
+        assert_eq!(history.bytes(), 2 * Step { undo: put(1.0), redo: put(2.0) }.weight());
+        // A drag whose first step changes nothing (it starts where the value is) still has its
+        // own step once it moves, and the edit before it is untouched.
+        history.edited(Step { undo: put(4.0), redo: put(4.0) });
+        history.continued(put(5.0));
+        assert_eq!(history.depth(), (3, 0));
+        assert_eq!(history.last(), Some(&Step { undo: put(4.0), redo: put(5.0) }));
+        history.undone();
+        assert_eq!(history.last(), Some(&Step { undo: put(2.0), redo: put(4.0) }));
     }
 
     #[test]
