@@ -1,0 +1,37 @@
+10.1002/fld.1650030305 | De Vahl Davis 1983: Natural convection of air in a square cavity: A bench mark numerical solution
+10.1016/0021-9991(82)90058-4 | Ghia 1982: High-Re solutions for incompressible flow using the Navier-Stokes equations and a multigri
+10.1098/rsta.1952.0006 | Martin 1952: Part IV. An experimental study of the collapse of liquid columns on a rigid horizontal pla
+10.1090/S0025-5718-1968-0242392-2 | Chorin 1968: Numerical solution of the Navier-Stokes equations
+10.1063/1.1761178 | Harlow 1965: Numerical Calculation of Time-Dependent Viscous Incompressible Flow of Fluid with Free Sur
+10.1016/0021-9991(81)90145-5 | Hirt 1981: Volume of fluid (VOF) method for the dynamics of free boundaries
+10.1006/jcph.2002.7166 | Enright 2002: A Hybrid Particle Level Set Method for Improved Interface Capturing
+10.1016/j.jcp.2009.04.042 | Popinet 2009: An accurate adaptive solver for surface-tension-driven interfacial flows
+10.1016/j.jcp.2009.12.018 | Weymouth 2010: Conservative Volume-of-Fluid method for free-surface simulations on Cartesian-grids
+10.1145/1276377.1276502 | Batty 2007: A fast variational framework for accurate solid-fluid coupling
+10.1016/j.jcp.2009.08.032 | Ng 2009: An efficient fluid–solid coupling algorithm for single-phase flows
+10.1145/1015706.1015745 | Losasso 2004: Simulating water and smoke with an octree data structure
+10.1145/3072959.3073625 | Aanjaneya 2017: Power diagrams and sparse paged grids for high resolution adaptive liquids
+10.1137/100791634 | Burstedde 2011: <tt>p4est</tt>
+                    : Scalable Algorithms for Parallel Adaptive Mesh Refine
+10.1145/2766996 | Jiang 2015: The affine particle-in-cell method
+10.1103/PhysRevE.106.015308 | Lehmann 2022: Accuracy and performance of the lattice Boltzmann method with 64-bit, 32-bit, and customiz
+10.1137/15M1035240 | Schornbaum 2016: Massively Parallel Algorithms for the Lattice Boltzmann Method on NonUniform Grids
+10.1145/2786784.2786796 | Bender 2015: Divergence-free smoothed particle hydrodynamics
+10.1145/3197517.3201293 | Hu 2018: A moving least squares material point method with displacement discontinuity and two-way r
+10.1002/fld.1140 | NOT FOUND
+10.1007/s10955-005-8879-8 | Körner 2005: Lattice Boltzmann Model for Free Surface Flow for Modeling Foaming
+10.1016/j.jcp.2018.07.055 | Fuster 2018: An all-Mach method for the simulation of bubble dynamics problems in the presence of surfa
+10.1016/S0045-7930(98)00002-4 | Botella 1998: Benchmark spectral results on the lid-driven cavity flow
+10.1145/2661229.2661269 | Setaluri 2014: SPGrid
+10.1016/0021-9991(89)90151-4 | Bell 1989: A second-order projection method for the incompressible navier-stokes equations
+10.1063/1.863522 | Prosperetti 1981: Motion of two superposed viscous fluids
+10.1016/j.jcp.2005.08.004 | Francois 2006: A balanced-force algorithm for continuous and sharp interfacial surface tension models wit
+10.1006/jcph.2001.6960 | Cheng 2002: Motion of Curves Constrained on Surfaces Using a Level-Set Approach
+10.1002/fld.1650110206 | NOT FOUND
+10.1016/0017-9310(91)90295-P | Fusegi 1991: A numerical study of three-dimensional natural convection in a differentially heated cubic
+10.1016/S0021-9991(03)00298-5 | Popinet 2003: Gerris: a tree-based adaptive solver for the incompressible Euler equations in complex geo
+10.2312/SCA/SCA10/065-074 | NOT FOUND
+10.1016/j.compfluid.2005.01.006 | Losasso 2006: Spatially adaptive techniques for level set methods and incompressible flow
+10.1016/j.jcp.2015.09.009 | Popinet 2015: A quadtree-adaptive multigrid solver for the Serre–Green–Naghdi equations
+10.1146/annurev-fluid-122316-045034 | Popinet 2018: Numerical Models of Surface Tension
+10.1016/0017-9310(76)90168-X | Gray 1976: The validity of the boussinesq approximation for liquids and gases

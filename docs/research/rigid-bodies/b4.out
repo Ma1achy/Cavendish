@@ -1,0 +1,6 @@
+fixed step, projection   dt=1/60   max impact-time err=1.40e-01 s  max apex err=1.70e-02 m (apex_1=0.266959 vs 0.250000)
+fixed step, projection   dt=1/240  max impact-time err=3.59e-02 s  max apex err=3.05e-03 m (apex_1=0.252828 vs 0.250000)
+fixed step, projection   dt=1/960  max impact-time err=7.80e-03 s  max apex err=5.35e-04 m (apex_1=0.250535 vs 0.250000)
+fixed step + TOI         dt=1/60   max impact-time err=1.67e-15 s  max apex err=1.73e-04 m (apex_1=0.249827 vs 0.250000)
+fixed step + TOI         dt=1/240  max impact-time err=1.33e-15 s  max apex err=2.06e-05 m (apex_1=0.249985 vs 0.250000)
+fixed step + TOI         dt=1/960  max impact-time err=1.08e-14 s  max apex err=1.11e-06 m (apex_1=0.250000 vs 0.250000)
