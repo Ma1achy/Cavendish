@@ -310,6 +310,9 @@
 - id: TASK-S4-25
   milestone: S4
   title: "S4's third review K1, K2, minors 1-5, 7, 8: the page keeps computing when its workers never load; J5's test through the rendered outliner; a failed request not handed on; the cap notes kept; the docs"
+- id: TASK-S4-26
+  milestone: S4
+  title: "The owner's bug on the live page: chunks go black and come back as the camera moves; what was drawn stands in until what replaces it is ready (the handover between clipmap levels)"
 - id: TASK-S5-01
   milestone: S5
   title: GPU tree walk with float-float accumulation and parity tests

@@ -194,9 +194,9 @@ field's reset and the window's unsaved mark.
 | Colour by field, overlays (leaves, a cut, the whole tree by depth), section planes (`Cutting`: a 2-D section square-on, a cut-away otherwise), the cubes and cells a view draws | `cav-sim/src/voxel_view.rs`; drawn in `cav-render/src/scene.rs` (`drawables_with`) with `colour.rs`; trees kept by `cav-engine/src/voxels.rs` | — |
 | The world volume: chunks of 32³ cells with palettes, the far field's bricks, terrain; region files (bytes) | `cav-core/src/voxel/world.rs`, `region.rs` | [a world piece](extending/a-world-piece.md) |
 | A scene's world: its spec, its pieces made solids, its read (leaves near, moments far, the bound) | `cav-sim/src/world.rs`; source `SourceId::World` in `read.rs` | [a world piece](extending/a-world-piece.md) |
-| The clipmap (which bricks a camera draws at which level) and what a renderer is handed of the world (`WorldFrame`) | `cav-sim/src/world/clipmap.rs` | — |
+| The clipmap (which bricks a camera draws at which level), the handover between levels (`stand_ins`: what was drawn stays until what replaces it is ready) and what a renderer is handed of the world (`WorldFrame`, with the streaming's queue as `waiting`) | `cav-sim/src/world/clipmap.rs` | — |
 | Streaming the world around the cameras and towers; the region-file cache (natively) | `cav-engine/src/world.rs`, `world/cache_native.rs` (a seam: `cache_web.rs` keeps none) | — |
-| Drawing the world: greedy meshes and GPU culling near, ray-marched bricks far; the kernels' CPU twins | `cav-render/src/world.rs`, `world_*.wgsl` | — |
+| Drawing the world: greedy meshes and GPU culling near, ray-marched bricks far; the kernels' CPU twins; GPU copies of what the streaming let go kept, retired, as stand-ins | `cav-render/src/world.rs`, `world_*.wgsl` | — |
 | A bound on memory | `cav-memtest/tests/` | — |
 | Something that differs in a browser page (threads, files, the device, waiting) | one module per seam, listed under "The web build and its platform seams" | [the web build](extending/the-web-build.md) |
 | The web page itself, its build and its deployment | `crates/cav-app/web/` (`index.html`, `start.js`, `worker.js`), `cav-app/src/platform/web.rs`, `xtask/src/web.rs`, `.github/workflows/pages.yml` | [the web build](extending/the-web-build.md) |
