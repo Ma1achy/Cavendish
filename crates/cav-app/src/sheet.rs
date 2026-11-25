@@ -53,7 +53,7 @@ pub const MODEL: &[(&str, &str, &str)] = &[
     ("The view, adjusting", "+ · −", "zoom"),
     ("The view, with the mouse", "right button held", "fly: W A S D, E Q; the mouse looks"),
     ("The view, with the mouse", "middle drag · wheel", "pan · zoom toward the pointer"),
-    ("Moving the selection", "arrows · Page Up, Page Down", "move along x, y · z by the snap step"),
+    ("Moving the selection", "arrows · Page Up, Page Down", "move the way they point on screen · up and down, by the snap step"),
     ("Moving the selection", "X · Y · Z", "lock to an axis"),
     ("Moving the selection", "0–9 - .", "type a distance, metres"),
     ("Moving the selection", "Tab", "type the next axis's distance"),

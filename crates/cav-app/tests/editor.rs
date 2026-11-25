@@ -625,8 +625,10 @@ fn every_layout_keeps_every_scope_and_the_figure_uncovered() {
     assert!(cav_app::layouts::Layouts::parse(&edited).is_err(), "a layout may not edit the scene");
 }
 
-/// What share of the pane's shorter side a sphere (`centre`, `radius` metres) spans on screen,
-/// measured by projecting its edge, in pane `pane` of the last frame.
+/// What share of the pane's shorter side a sphere (`centre`, `radius` metres) spans on screen, in
+/// pane `pane` of the last frame: twice the farthest its outline reaches from its centre's
+/// picture, over points all round the sphere (its silhouette, which in perspective is wider than
+/// its radius at its centre's depth: S18's review, U5).
 fn spans(rig: &Rig, pane: usize, centre: [f64; 3], radius: f64) -> f64 {
     let rect = rig.shell.layout().panes[pane];
     let view = rig.shell.engine.view(pane).clone();
@@ -635,8 +637,19 @@ fn spans(rig: &Rig, pane: usize, centre: [f64; 3], radius: f64) -> f64 {
     let at = |p: cav_core::Vec3| camera.pixel(p, whole).expect("in front of the camera");
     let c = cav_core::Vec3::from_array(centre);
     let [x0, y0] = at(c);
-    let [x1, y1] = at(c + camera.right * radius);
-    2.0 * (x1 - x0).hypot(y1 - y0) / f64::from(rect.width().min(rect.height()))
+    // A Fibonacci sphere of points: the outline's farthest point within a fraction of a pixel.
+    let n = 4000;
+    let golden = std::f64::consts::PI * (3.0 - 5f64.sqrt());
+    let reach = (0..n)
+        .map(|i| {
+            let z = 1.0 - 2.0 * (f64::from(i) + 0.5) / f64::from(n);
+            let ring = (1.0 - z * z).sqrt();
+            let a = golden * f64::from(i);
+            let [x, y] = at(c + cav_core::Vec3::new(ring * a.cos(), ring * a.sin(), z) * radius);
+            (x - x0).hypot(y - y0)
+        })
+        .fold(0.0, f64::max);
+    2.0 * reach / f64::from(rect.width().min(rect.height()))
 }
 
 #[test]
@@ -654,6 +667,10 @@ fn f_frames_the_selection() {
     rig.key(Key::F, Modifiers::NONE);
     let after = spans(&rig, 0, centre, radius);
     assert!((0.4..=0.8).contains(&after), "the framed body spans {after} of the pane (C3: 0.4 to 0.8)");
+    // And it is what framing aims at, the outline at FILL of the shorter side, to 2% (it was
+    // 0.79, the edge at the centre's depth measured where the silhouette is wider, and the
+    // field of a square picture used for a wide one: S18's review, U5).
+    assert!((after - cav_app::camera::FILL).abs() < 0.02, "{after}");
     assert!(matches!(
         rig.shell.engine.journal().last(),
         Some(Command::View(cav_engine::ViewCommand::Camera { .. }))
@@ -670,6 +687,14 @@ fn f_frames_the_selection() {
     let (centre, radius) = cav_app::camera::bounds_of(rig.shell.engine.spec(), Some(Target::Tower(3)), 0.0);
     let tower = spans(&rig, 0, centre, radius);
     assert!((0.4..=0.8).contains(&tower), "{tower}");
+    assert!((tower - cav_app::camera::FILL).abs() < 0.02, "{tower}");
+    // In a narrow pane too (two side by side), and orthographic.
+    rig.shell.run("panes 2").unwrap();
+    rig.shell.run("proj ortho").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    rig.key(Key::F, Modifiers::NONE);
+    let narrow = spans(&rig, 0, centre, radius);
+    assert!((narrow - cav_app::camera::FILL).abs() < 0.02, "{narrow}");
 }
 
 #[test]
@@ -1386,4 +1411,38 @@ fn maximised_there_is_a_way_back_in_sight() {
     rig.click_button("maximise");
     assert!(!rig.shell.maximised, "the button restored it");
     assert!(rig.shell.layout().panel("outliner").is_some());
+}
+
+#[test]
+fn the_session_s_arrows_go_the_way_they_point_on_screen() {
+    // S18's review, minor 11: seen from the east, → moves the body right on screen (it moved it
+    // along +x, which from the east is to the left).
+    let screen_x = |rig: &Rig| {
+        let rect = rig.shell.layout().panes[0];
+        rig.shell.body_point(0, 0, rect.size()).unwrap().x
+    };
+    for view in ["view east", "view iso", "view north", "view top"] {
+        let mut rig = two_masses();
+        rig.shell.run(view).unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        let before = screen_x(&rig);
+        rig.key(Key::Enter, Modifiers::NONE);
+        rig.key(Key::ArrowRight, Modifiers::NONE);
+        rig.frames(vec![vec![]]);
+        assert!(
+            screen_x(&rig) > before + 1.0,
+            "{view}: → moved it right on screen ({before} → {})",
+            screen_x(&rig)
+        );
+        rig.key(Key::Escape, Modifiers::NONE);
+    }
+    // Control: from the north, +x is to the left on screen, so the old arrows (→ always +x) went
+    // the wrong way. (From the east +x comes toward the eye: they did not move it across at all.)
+    let mut rig = two_masses();
+    rig.shell.run("view north").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let before = screen_x(&rig);
+    rig.shell.run("set bodies[0].motion.Static.position [3.0, 0.0, 2.5]").unwrap();
+    rig.frames(vec![vec![]]);
+    assert!(screen_x(&rig) < before - 1.0);
 }

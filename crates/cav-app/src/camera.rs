@@ -26,11 +26,14 @@ fn scaled(a: [f64; 3], s: f64) -> [f64; 3] {
     [a[0] * s, a[1] * s, a[2] * s]
 }
 
-/// Half the picture's height at the target's depth, per metre of distance: how big the view is
-/// for a camera this far away (the same for both projections, which keep the target's scale).
-fn half_height_per_metre(view: &ViewSpec) -> f64 {
+/// Half the picture's height at the target's depth, per metre of distance, in a picture `aspect`
+/// times as wide as high: how big the view is for a camera this far away (the same for both
+/// projections, which keep the target's scale). The camera widens its field in a narrow picture,
+/// so the aspect is the pane's own (S18's review, U5: it was 1, which framed a wide pane's body
+/// about 1.5 times too large).
+fn half_height_per_metre(view: &ViewSpec, aspect: f64) -> f64 {
     let unit = ViewSpec { distance: 1.0, ..view.clone() };
-    cav_render::Camera::new(&unit, 1.0).half_height
+    cav_render::Camera::new(&unit, aspect).half_height
 }
 
 /// Where the camera eye is, metres in the world's frame.
@@ -71,12 +74,45 @@ pub fn bounds_of(spec: &SceneSpec, target: Option<Target>, t: f64) -> ([f64; 3],
 }
 
 /// The camera that frames a sphere (`centre`, `radius` metres) in a pane `aspect` times as wide
-/// as high, from the present direction: the sphere spans [`FILL`] of the pane's shorter side.
+/// as high, from the present direction: the sphere's outline on screen spans [`FILL`] of the
+/// pane's shorter side, leaving a margin round it. In perspective the outline of a sphere is
+/// wider than its radius at its centre's depth (its silhouette is where the eye's rays graze it:
+/// a half-angle of asin(r/d)), so the distance is solved for the silhouette.
 #[must_use]
 pub fn frame(view: &ViewSpec, pane: usize, centre: [f64; 3], radius: f64, aspect: f64) -> ViewCommand {
-    let fit = half_height_per_metre(view) * aspect.min(1.0);
-    let distance = radius / (FILL * fit);
+    // The slope (half the shorter side over the distance) the outline must fill a share of.
+    let fit = half_height_per_metre(view, aspect) * aspect.min(1.0);
+    let k = FILL * fit;
+    let distance = match view.projection {
+        // tan(asin(r/d)) = k  ⇒  d = r √(1 + k²) / k.
+        cav_sim::Projection::Perspective => radius * (1.0 + k * k).sqrt() / k,
+        cav_sim::Projection::Orthographic => radius / k,
+    };
     ViewCommand::Camera { pane, target: centre, yaw: view.yaw, pitch: view.pitch, distance }
+}
+
+/// Which way an arrow key moves the selection in a transform session, seen in `view`: `arrow` 0
+/// for ← →, 1 for ↑ ↓, 2 for Page Up / Down. ← → go along the horizontal world axis nearest the
+/// screen's right; ↑ ↓ along the one nearest the view's direction across the ground (away from
+/// the eye is up the screen); Page Up / Down along z. Returns the world axis (0 x, 1 y, 2 z) and
+/// the sign that makes the key's "more" (→, ↑, Page Up) go that way. S18's review, minor 11: the
+/// arrows went along x and y whatever the view, so from the east → moved the body left.
+#[must_use]
+pub fn arrow_axis(view: &ViewSpec, arrow: usize) -> (usize, f64) {
+    let (to_eye, right, _) = view.basis();
+    let along = match arrow {
+        0 => [right[0], right[1]],
+        1 => [-to_eye[0], -to_eye[1]],
+        _ => return (2, 1.0),
+    };
+    // Straight down (a plan view) the view's direction has no ground part: its up is the screen's.
+    let along = if along[0].hypot(along[1]) < 1e-6 {
+        let (_, _, up) = view.basis();
+        [up[0], up[1]]
+    } else {
+        along
+    };
+    if along[0].abs() >= along[1].abs() { (0, along[0].signum()) } else { (1, along[1].signum()) }
 }
 
 /// The point on the plane through the target, square to the view, under `pointer` (points from
