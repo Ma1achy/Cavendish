@@ -654,6 +654,9 @@
 - id: TASK-S18-21
   milestone: S18
   title: "Second review, UX 2, 6, 7: the Place tool's ground grid and ghost; the palette gives word matches alone when there are any; the wizard's first body as a grid of tiles with pictures"
+- id: TASK-S18-22
+  milestone: S18
+  title: "Second review, the record: the pictures retaken, the brief's section 7.8, ARCHITECTURE, PROGRESS and the validation report"
 - id: TASK-S19-01
   milestone: S19
   title: "Docking: panels as tabs in dock areas, drag to dock, saved layouts of the dock tree (a crate spike first, egui 0.37 and wasm)"

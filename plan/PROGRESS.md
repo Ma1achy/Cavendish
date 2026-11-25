@@ -9,10 +9,24 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
 | S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
 | S4 big scenes | done: TASK-S4-01 to 25 merged; reviewed three times (`docs/slices/S4-review.md`, `-2`, `-3`), nothing important remains; oracle 58/58, validation 113/113 | `s4-big-scenes` | brief and results: `docs/slices/S4.md` (§7.7–§7.8: the fixes); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
-| S18 the editor | built: TASK-S18-01 to 04 and 07 to 11 merged; first review's fixes merged (TASK-S18-12 to 18); awaiting re-review | | brief: `docs/slices/S18.md` (§7.7: the fixes); review: `docs/slices/S18-review.md`; research: `docs/research/editor-ux.md`; requirement: `docs/design/keyboard.md` |
+| S18 the editor | built: TASK-S18-01 to 04 and 07 to 11 merged; both reviews' fixes merged (TASK-S18-12 to 22); awaiting a third look or the tag | | brief: `docs/slices/S18.md` (§7.7, §7.8: the fixes); reviews: `docs/slices/S18-review.md`, `-2`; research: `docs/research/editor-ux.md`; requirement: `docs/design/keyboard.md` |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
 
-## S18 after its first review (25 Nov 2026) — fixes done, awaiting re-review
+## S18 after its second review (25 Nov 2026) — fixes done
+
+**Done** (TASK-S18-19 to 22, PRs #178–#181; `docs/slices/S18.md` §7.8). I1: Home ends a run of
+sets, so it keeps its own step. I2: a transform session ends, its move kept, when the keyboard
+leaves it or a drag starts (keyboard.md §8). UX 1–9: "Point radius"; the Place tool's grid and
+ghost; F keeps a voxel body's box in the pane; the history named from each step's own scene and
+worded "Set mass to 5 kg on “mass”", inside the outliner; one swatch for one value; the palette's
+word matches alone; the wizard's bodies as tiles; the inspector says it scrolls, atom mass in u;
+no toast for opening. Minors 1–7 done.
+
+**Numbers.** `quick` 628; gpu, oracle, web and validation: see the line below once run on main.
+
+**Next.** A third look, or the tag `s18-the-editor`; then S5 or S19.
+
+## S18 after its first review (25 Nov 2026) — fixes done, re-reviewed
 
 **Done** (TASK-S18-12 to 18, PRs #169–#175; `docs/slices/S18.md` §7.7, a row a finding). R1: a
 transform session holds every key but the globals, a global cancels it first, and it checks its
