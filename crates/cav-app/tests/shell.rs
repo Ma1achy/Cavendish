@@ -904,6 +904,15 @@ fn every_schema_field_has_a_widget() {
     {
         rig.shell.run(selection).unwrap();
         rig.frames(vec![vec![], vec![]]);
+        // Nothing selected, the instrument and cadence are folded (S18's review, U1): opened by
+        // a click on each header, as a person would.
+        if selection == "select none" {
+            for fold in ["fold inspector/instrument", "fold inspector/cadence"] {
+                let header = rig.shell.layout().button(fold).expect("the folded section's header");
+                rig.click(header.center());
+                rig.frames(vec![vec![], vec![]]);
+            }
+        }
         let shown: Vec<String> = rig.shell.layout().editors.iter().map(|(path, _)| path.clone()).collect();
         for prefix in prefixes {
             for entry in paths::leaves(&spec, prefix, 1000).unwrap() {

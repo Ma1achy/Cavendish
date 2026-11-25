@@ -259,6 +259,9 @@ pub struct Shell {
     fullscreen_sent: bool,
     /// The layout last chosen (`ui/layouts.ron`).
     pub layout_name: String,
+    /// The inspector's folding sections a layout asked to open (`unfold` in `ui/layouts.ron`),
+    /// opened as they are next drawn.
+    pub(crate) unfold: Vec<String>,
     /// Whether the edit history window is open (`Ctrl+H`).
     pub history_open: bool,
     /// The new-scene wizard's choices, while it is open (`Ctrl+N`).
@@ -364,6 +367,7 @@ impl Shell {
             fullscreen: false,
             fullscreen_sent: false,
             layout_name: crate::layouts::layouts().layouts[0].id.clone(),
+            unfold: Vec::new(),
             history_open: false,
             wizard: None,
             open_window: None,
@@ -822,6 +826,7 @@ impl Shell {
             };
             self.maximised = false;
             self.layout_name.clone_from(&layout.id);
+            self.unfold.clone_from(&layout.unfold);
             for step in &layout.lines {
                 self.run(step)?;
             }
@@ -1389,8 +1394,10 @@ impl Shell {
         crate::palette::draw(self, &ctx);
         crate::dialogs::draw(self, &ctx);
         self.paint_ring(&ctx);
-        // What no widget took this frame (a click of something no longer drawn) is dropped.
+        // What no widget took this frame (a click of something no longer drawn) is dropped; so is
+        // a layout's unfolding, once a frame has drawn what it opens.
         self.pending.clear();
+        self.unfold.clear();
         self.tree = std::mem::take(&mut self.building);
         if let Some(id) = self.pending_focus.take() {
             if self.tree.node(&id).is_some() {

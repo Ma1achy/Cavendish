@@ -83,3 +83,14 @@ pub fn apply(ctx: &egui::Context) {
         widgets.open.corner_radius = radius;
     });
 }
+
+/// Adds `widget` in a box of `size` points, at the box's left and centred down it: a column of
+/// names that reads down its left edge, where `Ui::add_sized` would centre each in its box.
+pub fn fixed_left(ui: &mut egui::Ui, size: egui::Vec2, widget: impl egui::Widget) -> egui::Response {
+    ui.allocate_ui_with_layout(size, egui::Layout::left_to_right(egui::Align::Center), |ui| {
+        ui.set_min_size(size);
+        ui.set_max_width(size.x);
+        ui.add(widget)
+    })
+    .inner
+}

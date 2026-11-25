@@ -22,6 +22,31 @@ use serde_json::Value;
 
 use crate::SceneSpec;
 
+/// A field's or a variant's name in words, capitalised: `tower_height` is "Tower height",
+/// `LowerMinusUpper` "Lower minus upper", `HalfSpace` "Half space". Display only: what a file or
+/// a console line writes is the name itself.
+#[must_use]
+pub fn words(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 4);
+    let mut previous: Option<char> = None;
+    for c in name.chars() {
+        if c == '_' {
+            out.push(' ');
+        } else if c.is_uppercase() && previous.is_some_and(|p| p.is_lowercase() || p.is_ascii_digit()) {
+            out.push(' ');
+            out.extend(c.to_lowercase());
+        } else if out.is_empty() {
+            out.extend(c.to_uppercase());
+        } else if c.is_uppercase() && out.ends_with(' ') {
+            out.extend(c.to_lowercase());
+        } else {
+            out.push(c);
+        }
+        previous = Some(c);
+    }
+    out
+}
+
 /// One step of a path.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Seg {
@@ -302,6 +327,9 @@ pub struct Entry {
     pub optional: bool,
     /// Its doc string.
     pub doc: String,
+    /// What an editor calls it, when the schema gives it a title (`#[schemars(title = …)]`);
+    /// otherwise [`Entry::label`] makes one from its name.
+    pub title: Option<String>,
     /// Its unit, as written in the schema (`m`, `s`, `kg/m³`, `1` for a pure number); `None` for
     /// things that have none (text, flags, groups).
     pub unit: Option<String>,
@@ -320,6 +348,25 @@ pub struct Entry {
 }
 
 impl Entry {
+    /// What a person reads for it: the schema's title, else its name in words (`tower_height`
+    /// is "Tower height", `[2]` is "Item 3"). For editors and breadcrumbs; the path stays the
+    /// name a console line uses.
+    #[must_use]
+    pub fn label(&self) -> String {
+        if let Some(title) = &self.title {
+            return title.clone();
+        }
+        if let Some(n) = self
+            .name
+            .strip_prefix('[')
+            .and_then(|n| n.strip_suffix(']'))
+            .and_then(|n| n.parse::<usize>().ok())
+        {
+            return format!("Item {}", n + 1);
+        }
+        words(&self.name)
+    }
+
     /// One line for `ls`: the name, the value (shortened), the unit, the kind and the first
     /// sentence of the doc string.
     #[must_use]
@@ -515,6 +562,7 @@ fn entry_of(root: &Value, segs: &[Seg], stage: Stage, value: &Value) -> Result<E
         max_length: keyword("maxLength").and_then(Value::as_u64).map(|n| n as usize),
         unit: keyword("x-unit").and_then(Value::as_str).map(str::to_owned),
         doc: keyword("description").and_then(Value::as_str).unwrap_or_default().to_owned(),
+        title: looked.site.get("title").and_then(Value::as_str).map(str::to_owned),
         optional: looked.optional,
         kind,
         stage,
@@ -1104,6 +1152,17 @@ mod tests {
         );
         let half = instrument.iter().find(|e| e.name == "half_sequence").unwrap();
         assert_eq!(half.minimum, Some((1.0e-3, false)), "an inclusive bound is said as one");
+        // What an editor calls a field: the schema's title, else its name in words (S18's review,
+        // U1); control: a field with no title is its name, capitalised, its underscores spaces.
+        assert_eq!(half.label(), "Half sequence T");
+        let height = instrument.iter().find(|e| e.name == "tower_height").unwrap();
+        assert_eq!((height.title.as_deref(), height.label().as_str()), (None, "Tower height"));
+        let separation = instrument.iter().find(|e| e.name == "ifo_separation").unwrap();
+        assert_eq!(separation.label(), "Interferometer separation Δr");
+        assert_eq!(words("LowerMinusUpper"), "Lower minus upper");
+        assert_eq!(words("HalfSpace"), "Half space");
+        assert_eq!(words("launch_floor"), "Launch floor");
+        assert_eq!(words("x"), "X");
         // A list's children are its items; a vector is one value; a flag and a choice say so.
         let bodies = ls(&spec, "bodies").unwrap();
         assert_eq!(bodies.len(), spec.bodies.len());

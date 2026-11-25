@@ -7,6 +7,7 @@
 //   id     what `layout <id>` names
 //   label  what the top bar's tab says
 //   lines  the console lines it runs, in order
+//   unfold the inspector's folding sections it opens (optional)
 //   about  one line for the tooltip and the palette
 // Its key is the action `layout <id>` of ui/actions.ron (Ctrl+1, 2, 3: not bare digits, which
 // select towers).
@@ -22,7 +23,8 @@
             id: "instrument",
             label: "Instrument",
             lines: ["panes 2", "show scene @1", "show flight @2", "pane 2"],
-            about: "the array and its timing: the scene beside the atoms' flights, the instrument and cadence in the inspector",
+            unfold: ["inspector/cadence", "inspector/instrument"],
+            about: "the array and its timing: the scene beside the atoms' flights; with nothing selected, the instrument and cadence open in the inspector",
         ),
         (
             id: "analysis",

@@ -362,9 +362,10 @@ fn task_keyboard_only() {
     key(&mut rig, Key::Escape, Modifiers::NONE);
     assert!(rig.shell.engine.spec().bodies[0].mass > mass, "the mass went up a step");
     assert!(!pointer(&sent), "no pointer event was sent");
-    // The breadcrumb said where the keys were: the inspector, the body's section (named after the
-    // body: the point mass is called "mass"), its mass.
-    assert_eq!(rig.shell.breadcrumb().as_deref(), Some("Inspector › mass › mass"));
+    // The breadcrumb said where the keys were: the inspector, the section by what it is (the
+    // body), the field by its name in words (S18's review, U4: it was "Inspector › mass › mass",
+    // the section named after the body's label).
+    assert_eq!(rig.shell.breadcrumb().as_deref(), Some("Inspector › Body › Mass"));
 }
 
 /// The input events the T1 task takes: 12, counted at its first pass (docs/slices/S18.md §7.2)
@@ -1244,4 +1245,50 @@ fn the_sheet_fits_the_window_and_scrolls_from_the_keyboard() {
     rig.key(Key::Escape, Modifiers::NONE);
     rig.key(Key::Escape, Modifiers::NONE);
     assert!(!rig.shell.keys_open, "Esc, Esc: out of the list, then the window closes");
+}
+
+#[test]
+fn the_inspector_reads_as_an_editor() {
+    // S18's review, U1: with nothing selected the inspector is the scene's (its name, its
+    // duration, a summary), the instrument and cadence folded under it; fields are named in words
+    // from the schema; a reset is offered only where there is something to put back.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().editor("duration").is_some());
+    assert!(rig.shell.layout().editor("array.instrument.tower_height").is_none(), "the instrument is folded");
+    assert!(rig.shell.layout().button("fold inspector/instrument").is_some());
+    // Control: unfolded by a click on its header, every field of it has an editor.
+    rig.click_button("fold inspector/instrument");
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.layout().editor("array.instrument.tower_height").is_some());
+    // And from the keyboard: Enter on a folded section opens it.
+    let cadence = rig.shell.focus_tree().node("inspector/cadence").unwrap().clone();
+    assert_eq!(cadence.kind, cav_app::keyboard::Kind::Button, "folded, Enter opens it");
+    rig.shell.run("focus inspector/cadence").unwrap();
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.layout().editor("array.schedule.loss").is_some());
+    // Names in words, from the schema.
+    let tree = rig.shell.focus_tree();
+    assert_eq!(tree.node("field/array.instrument.tower_height").unwrap().name, "Tower height");
+    assert_eq!(
+        tree.node("field/array.instrument.ifo_separation").unwrap().name,
+        "Interferometer separation Δr"
+    );
+    // The reset: disabled (and not drawn) on an unchanged field, there on a changed one.
+    assert!(!tree.node("field/duration/reset").unwrap().enabled);
+    rig.shell.run("set duration 21").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.focus_tree().node("field/duration/reset").unwrap().enabled);
+    // A tower opens them as it did: the array's settings are a tower's to see.
+    rig.shell.run("select tower 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().editor("array.instrument.launch_floor").is_some());
+    // The Instrument layout opens them with nothing selected (a fresh window, so nothing is open).
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("layout instrument").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().editor("array.instrument.tower_height").is_some());
 }
