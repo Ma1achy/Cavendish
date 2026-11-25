@@ -255,6 +255,13 @@ fn key(common: u64, spec: &SceneSpec, source: SourceId) -> u64 {
     let json = |value: &dyn erased::Json| value.text();
     let this = match source {
         SourceId::Floor => format!("floor {}", json(&spec.floor)),
+        // The world's read depends on every tower's place and instrument, which `common` holds,
+        // and on the scene's voxel bodies through the kernel's share.
+        SourceId::World => format!(
+            "world {} {}",
+            json(&spec.world),
+            spec.bodies.iter().filter(|b| b.shape.is_some()).count()
+        ),
         SourceId::Body(n) => format!("body {}", json(&spec.bodies[n])),
     };
     hash(&format!("{common:016x} {this}"))

@@ -14,6 +14,9 @@
 //! - [`voxelise`](voxelise()): the top-down voxeliser, and [`raster`], the oracle it must equal.
 //! - [`tree`]: the tree, its moments, its cuts.
 //! - [`kernel`]: the potential of a uniform cube, exact to rounding (series or prism).
+//! - [`world`]: the world volume: static matter in chunks of 32³ cells with their palettes, and
+//!   the far field's bricks (S4).
+//! - [`region`]: chunks as bytes, eight cubed to a region file (S4).
 //!
 //! Frames and units: a tree is in its body's own frame, metres, x east, y north, z up when the
 //! body is unrotated; masses are kilograms. Every count that comes from a spec or a file has a
@@ -22,9 +25,11 @@
 pub mod kernel;
 pub mod mesh;
 pub mod morton;
+pub mod region;
 pub mod shape;
 pub mod tree;
 mod voxeliser;
+pub mod world;
 
 #[cfg(test)]
 mod tests;

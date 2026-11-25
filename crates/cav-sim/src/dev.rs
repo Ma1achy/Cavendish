@@ -620,6 +620,134 @@ pub const S1_SCENES: [fn() -> SceneSpec; 13] = [
     precision_far,
 ];
 
+// ── S4: big scenes ─────────────────────────────────────────────────────────────────────────────
+
+/// A material of the S4 scenes.
+fn material(label: &str, density: f64, colour: &str) -> crate::world::MaterialSpec {
+    crate::world::MaterialSpec { label: label.into(), density, colour: colour.into() }
+}
+
+/// A box piece of the S4 scenes, from its corners.
+fn block(label: &str, material: usize, lo: [f64; 3], hi: [f64; 3]) -> crate::world::PieceSpec {
+    crate::world::PieceSpec {
+        label: label.into(),
+        material,
+        kind: crate::world::PieceKind::Box {
+            centre: [0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]), 0.5 * (lo[2] + hi[2])],
+            size: [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]],
+        },
+    }
+}
+
+/// `world-box`: a concrete box in the world volume beside the array, on the world's cells and
+/// over four of its chunks. It reads as the same box made a voxel body, and as the prism's
+/// closed form (`world.box_reads_as_a_voxel_body`, `world.box_reads_as_the_prism`).
+#[must_use]
+pub fn world_box() -> SceneSpec {
+    SceneSpec {
+        name: "world-box".into(),
+        description:
+            "A box of concrete, 4 × 4 × 2 m, in the world volume beside the array: chunks of 8 m at a \
+                      25 cm pitch. It reads as the same box made a voxel body and as the prism's closed form."
+                .into(),
+        room: None,
+        floor: None,
+        duration: 10.0,
+        world: Some(crate::world::WorldSpec {
+            pitch: 0.25,
+            supersample: 2,
+            origin: [0.0; 3],
+            materials: vec![material("concrete", 2400.0, "#b2b0a8")],
+            pieces: vec![block("box", 0, [6.0, 5.0, 0.25], [10.0, 9.0, 2.25])],
+            stream: crate::world::StreamSpec::default(),
+            read: crate::world::WorldReadSpec::default(),
+            lod: crate::world::LodSpec::default(),
+        }),
+        ..SceneSpec::room()
+    }
+}
+
+/// The buildings of `stress-1e10`: forty blocks on a jittered grid, none within 30 m of the
+/// array, of heights from 4 to 22 m, alternately concrete and brick; deterministic.
+fn town() -> Vec<crate::world::PieceSpec> {
+    let mut out = Vec::new();
+    let mut n = 0u32;
+    for row in 0..8 {
+        for column in 0..5 {
+            // A cheap, fixed scatter: no random numbers, so the scene is the same everywhere.
+            let jitter = |k: u32| f64::from((k * 7919 + 104_729) % 97) / 97.0;
+            let x = -420.0 + 210.0 * f64::from(column) + 40.0 * jitter(n);
+            let y = -400.0 + 110.0 * f64::from(row) + 30.0 * jitter(n + 13);
+            if x.abs() < 40.0 && y.abs() < 40.0 {
+                continue;
+            }
+            let (w, d) = (10.0 + 14.0 * jitter(n + 5), 8.0 + 10.0 * jitter(n + 9));
+            let h = 4.0 + 18.0 * jitter(n + 21);
+            out.push(block(
+                &format!("building {}", n + 1),
+                1 + (n as usize % 2) * 2,
+                [x, y, -1.0],
+                [x + w, y + d, h],
+            ));
+            n += 1;
+        }
+    }
+    out
+}
+
+/// `stress-1e10`: a kilometre square of rolling ground at 5 cm, a town of forty buildings and a
+/// road through it, around the array: about 10¹⁰ finest cells (REBUILD §9.1). For the big-scene
+/// budgets of §5, measured (`docs/slices/S4.md` §7); the instrument reads the 20 m around each
+/// tower, the far chunks by their moments within 1e-3 rad.
+#[must_use]
+pub fn stress_1e10() -> SceneSpec {
+    let mut pieces = vec![block("road", 2, [-500.0, 52.0, -0.9], [500.0, 59.0, -0.05])];
+    pieces.extend(town());
+    pieces.push(crate::world::PieceSpec {
+        label: "ground".into(),
+        material: 0,
+        kind: crate::world::PieceKind::Terrain {
+            lo: [-500.0, -500.0],
+            hi: [500.0, 500.0],
+            bottom: -1.55,
+            level: -0.3,
+            relief: 0.25,
+            wavelength: 160.0,
+            seed: 1,
+        },
+    });
+    SceneSpec {
+        name: "stress-1e10".into(),
+        description:
+            "A square kilometre of rolling ground at a 5 cm pitch, forty buildings and a road, around \
+                      the array: about 10^10 finest cells. Fly over it; the instrument reads the 20 m around \
+                      each tower."
+                .into(),
+        room: None,
+        floor: None,
+        duration: 10.0,
+        world: Some(crate::world::WorldSpec {
+            pitch: 0.05,
+            supersample: 2,
+            origin: [0.0; 3],
+            materials: vec![
+                material("ground", 1800.0, "#708054"),
+                material("concrete", 2400.0, "#b2b0a8"),
+                material("asphalt", 2300.0, "#46484c"),
+                material("brick", 1900.0, "#9c5440"),
+            ],
+            pieces,
+            stream: crate::world::StreamSpec::default(),
+            read: crate::world::WorldReadSpec { radius: 20.0, tolerance: 1e-3 },
+            lod: crate::world::LodSpec::default(),
+        }),
+        ..SceneSpec::room()
+    }
+}
+
+/// The scenes S4 added, in the order the library lists them.
+pub const S4_SCENES: [fn() -> SceneSpec; 2] = [world_box, stress_1e10];
+
 /// The text of a dev scene's file: a comment that says where it comes from, then the builder's RON.
 #[must_use]
 pub fn file_text(scene: &SceneSpec) -> String {
@@ -651,7 +779,7 @@ mod tests {
         // is committed.
         let write = std::env::var_os("CAV_WRITE_SCENES").is_some();
         let rewrite = std::env::var_os("CAV_REWRITE_SCENES").is_some();
-        for build in S1_SCENES.into_iter().chain(S2_SCENES).chain(S3_SCENES) {
+        for build in S1_SCENES.into_iter().chain(S2_SCENES).chain(S3_SCENES).chain(S4_SCENES) {
             let scene = build();
             assert_eq!(scene.validate(), Ok(()), "{}", scene.name);
             let path = scene_path(&scene.name);
