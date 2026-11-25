@@ -4,7 +4,7 @@ Written by `cargo xtask validate --report`; do not edit by hand. Every case is d
 `cav_validate::case!` beside the code it checks, and all of them are listed here: one that did not run
 is shown as **missing**, never left out.
 
-**115 of 115 cases pass; worst margin: voxel.cube_to_point_order at 99% of its tolerance.**
+**116 of 116 cases pass; worst margin: materials.shared_cells_are_within_their_dipole_bound at 99% of its tolerance.**
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="error-vs-tolerance-dark.svg"><img src="error-vs-tolerance-light.svg" alt="Each case's measured error against its tolerance, on a log scale." width="100%"></picture>
 
@@ -66,6 +66,7 @@ is shown as **missing**, never left out.
 
 | Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
 |---|---|---|---|---|---|---|---|
+| `materials.shared_cells_are_within_their_dipole_bound` (S19) | closed form: a steel cuboid and a lead one (0.175 × 0.2 × 0.2 m each, side by side along x) as one body at 0.05 m pitch, k = 2, the interface halfway through a layer of 16 cells: tower 1's gradiometer phase of one shot against the two closed-form prisms, as a fraction of the shared cells' first-order dipole bound Σ /Δρ/·v·h/8 · /∂ΔΦ/∂x/ (1 % over it allowed for the higher orders, (h/r)² ≈ 1e-3 here) | 0.9999 | 1.01 | relative | 99% |  | pass |
 | `materials.two_material_body_is_the_sum_of_its_parts` (S19) | exact self-consistency: a steel box and a lead box (0.4 m, sharing a face) as one body of two materials, against the two read as separate uniform bodies of density × volume: tower 1's gradiometer phase over every shot, beside it on a 6 s timeline | 7.105e-15 | 1.000e-9 | radians | 0% |  | pass |
 | `materials.imported_box_mesh_is_the_cuboid` (S19) | exact self-consistency: an STL box (1 m × 0.5 m × 0.25 m) imported as a steel body, against the Cuboid body of the same size, material and pitch (0.05 m): the same leaves, and tower 1's gradiometer phase over every shot of a 6 s timeline, relative | 0 | 1.000e-12 | relative | 0% |  | pass |
 

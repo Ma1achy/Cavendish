@@ -514,7 +514,7 @@ pub fn readings(shell: &mut Shell, ui: &mut egui::Ui) {
     ui.label(RichText::new(format!("a shot read out at {:.2} s", reply.time)).size(11.5).color(theme::WEAK));
     ui.add_space(4.0);
     egui::Grid::new("readings").num_columns(5).spacing([10.0, 4.0]).striped(true).show(ui, |ui| {
-        for heading in ["tower", "ΔΦ", "δφ₁ lower", "δφ₂ upper", "state"] {
+        for heading in ["tower", "ΔΦ", "δφ₁ lower", "δφ₂ upper", ""] {
             ui.label(RichText::new(heading).size(11.5).color(theme::WEAK));
         }
         ui.end_row();
@@ -542,11 +542,11 @@ pub fn readings(shell: &mut Shell, ui: &mut egui::Ui) {
                     }
                 }
             }
-            ui.horizontal(|ui| {
-                let (rect, _) = ui.allocate_exact_size(vec2(10.0, 10.0), Sense::hover());
-                ui.painter().circle_filled(rect.center(), 4.0, dot.colour());
-                ui.label(RichText::new(dot.words()).size(11.5).color(theme::WEAK));
-            });
+            // The state as the tree's dot, its words under the pointer: the table fits the
+            // panel's fixed width (S19's review: the words ran past its edge).
+            let (rect, response) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+            ui.painter().circle_filled(rect.center(), 4.0, dot.colour());
+            let _ = response.on_hover_text(dot.words());
             ui.end_row();
         }
     });

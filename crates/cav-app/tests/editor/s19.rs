@@ -458,6 +458,10 @@ fn a_body_s_cards_come_in_the_design_s_order_each_with_a_menu() {
     assert_eq!(cards[parts - 1], "inspector/material");
     assert_eq!(cards[parts + 1], "inspector/motion");
     assert_eq!(rig.shell.focus_tree().node("inspector/material").map(|n| n.name.as_str()), Some("Material"));
+    // No box anywhere that takes the shape away (the Kind row does that, as a choice); the
+    // lifetime's boxes are there (the control: the measure sees a box).
+    assert!(rig.shell.layout().button("gate bodies[0].shape").is_none(), "no hidden point-mass switch");
+    assert!(rig.shell.layout().button("gate bodies[0].appears").is_some());
 }
 
 #[test]
@@ -548,6 +552,13 @@ fn the_inspector_keeps_its_width_whatever_is_shown() {
     rig.shell.add_starter("cube").unwrap();
     rig.shell.run("set bodies[1].shape.material \"stainless steel\"").unwrap();
     rig.shell.run("set bodies[1].label \"a body with a long name that goes on and on and on\"").unwrap();
+    // Parts too: a solid and a stroke, each under its header.
+    rig.shell
+        .run(r#"add bodies[1].shape.parts {"mode":"Add","material":"lead","at":[0.45,0,0],"kind":{"Solid":{"shape":{"Sphere":{"radius":0.3}}}}}"#)
+        .unwrap();
+    rig.shell
+        .run(r#"add bodies[1].shape.parts {"mode":"Paint","material":"copper","at":[0,0,0.3],"kind":{"Stroke":{"radius":0.1,"points":[[-0.3,-0.3,0],[0.3,0.3,0]]}}}"#)
+        .unwrap();
     let mut widths = Vec::new();
     for selection in ["select body 1", "select body 2", "select none", "select tower 1", "readings"] {
         if selection == "readings" {
@@ -558,16 +569,27 @@ fn the_inspector_keeps_its_width_whatever_is_shown() {
         rig.frames(vec![vec![], vec![], vec![]]);
         let panel = rig.shell.layout().panel("properties").unwrap();
         widths.push((selection, panel.width()));
-        // Nothing in it is cut off at its right edge: what it holds fits the width it keeps.
+        // Nothing in it runs past its margin (10 points), and every card is as wide as the first:
+        // a row too wide for its card widened every card after it (S19's pictures: the cards'
+        // menus were cut at the panel's edge).
         let layout = rig.shell.layout();
+        let edge = panel.right() - 10.0;
         let over: Vec<String> = layout
             .editors
             .iter()
             .chain(&layout.buttons)
-            .filter(|(_, r)| panel.intersects(*r) && r.right() > panel.right() + 0.5)
+            .filter(|(what, r)| what != "more below" && panel.intersects(*r) && r.right() > edge + 0.5)
             .map(|(what, r)| format!("{what} to {}", r.right()))
             .collect();
-        assert!(over.is_empty(), "{selection}: past the panel's edge at {}: {over:?}", panel.right());
+        assert!(over.is_empty(), "{selection}: past the panel's edge at {edge}: {over:?}");
+        let cards: Vec<(String, f32)> = layout
+            .buttons
+            .iter()
+            .filter(|(b, r)| b.starts_with("fold inspector/") && panel.intersects(*r))
+            .map(|(b, r)| (b.clone(), r.right()))
+            .collect();
+        assert!(cards.len() >= 2 || selection == "readings", "{selection}: {cards:?}");
+        assert!(cards.iter().all(|(_, right)| (right - cards[0].1).abs() < 0.5), "{selection}: {cards:?}");
     }
     let first = widths[0].1;
     for (selection, width) in &widths {

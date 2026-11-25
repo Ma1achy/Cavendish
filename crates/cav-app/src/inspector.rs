@@ -530,14 +530,17 @@ pub fn body(shell: &mut Shell, ui: &mut egui::Ui, n: usize) {
     });
 
     // Material: what it is made of, and what it weighs.
-    let mut material = single(&format!("{shape_path}.material"));
-    material.extend(single(&format!("{at}.mass")));
+    // (Each drawn under its own parent: drawn from the body, the material's row would put the
+    // shape's own box before it, the "Shape" tick the review asked to be rid of.)
+    let material = single(&format!("{shape_path}.material"));
+    let mass = single(&format!("{at}.mass"));
     let voxels = body.shape.is_some();
     let title = if voxels { "Material" } else { "Mass" };
     let fields: &[&str] = if voxels { &["shape.material", "mass"] } else { &["mass"] };
     let menu = |shell: &mut Shell, ui: &mut egui::Ui| fields_menu(shell, ui, &at, fields);
     card(shell, ui, "inspector", "inspector/material", title, "body", true, Some(&menu), |shell, ui| {
-        crate::editors::draw_rows(shell, ui, "inspector/material", &at, &material);
+        crate::editors::draw_rows(shell, ui, "inspector/material", &shape_path, &material);
+        crate::editors::draw_rows(shell, ui, "inspector/material", &at, &mass);
     });
 
     // Parts: a body of materials only.
