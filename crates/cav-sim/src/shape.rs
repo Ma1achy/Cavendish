@@ -527,6 +527,15 @@ impl ShapeSpec {
         for (n, part) in self.parts.iter().enumerate() {
             part.validate(&format!("{at}.parts[{n}]"))?;
         }
+        // A leaf's material is a byte: the body's own and its parts' distinct materials together
+        // fit one (the voxeliser would refuse more only when the body is made).
+        let palette = self.palette().len();
+        if palette > layers::MAX_BODY_MATERIALS {
+            return Err(format!(
+                "{at}.parts: {palette} materials in one body; at most {}",
+                layers::MAX_BODY_MATERIALS
+            ));
+        }
         // The grid needs only the boxes, which a mesh does not give without its file.
         if let Some(bounds) = self.bounds() {
             Grid::around(bounds, self.pitch, self.supersample).map_err(|e| format!("{at}.pitch: {e}"))?;
@@ -681,5 +690,25 @@ mod tests {
         let missing = ShapeSpec::new(ShapeKind::Mesh { file: "no/such/file.obj".into(), scale: 1.0 }, 0.1, 2);
         assert_eq!(missing.validate("s"), Ok(()), "a file is read when the body is voxelised");
         assert!(missing.tree(1.0, &[]).is_err());
+    }
+
+    #[test]
+    fn a_body_s_materials_fit_a_byte() {
+        // S19 review minor 6: 255 parts of 255 distinct materials and the body's own make 256,
+        // one more than a leaf's byte holds; validation refuses it by the field. Control: 254
+        // distinct part materials (255 in all) pass.
+        let part = |n: usize| PartSpec {
+            mode: PartMode::Paint,
+            material: Some(format!("m{n}")),
+            at: [0.0; 3],
+            kind: PartKind::Solid { shape: ShapeKind::Sphere { radius: 0.1 } },
+        };
+        let mut shape = ShapeSpec::new(ShapeKind::Sphere { radius: 0.5 }, 0.1, 1);
+        shape.material = Some("own".into());
+        shape.parts = (0..255).map(part).collect();
+        let why = shape.validate("bodies[0].shape").unwrap_err();
+        assert!(why.starts_with("bodies[0].shape.parts: 256 materials"), "{why}");
+        shape.parts[254].material = Some("m0".into());
+        assert_eq!(shape.validate("bodies[0].shape"), Ok(()));
     }
 }
