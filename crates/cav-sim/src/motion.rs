@@ -310,6 +310,27 @@ impl Motion {
         }
     }
 
+    /// The same motion moved by `by` (metres, the world's frame): every point it is defined by
+    /// (a position, a pass's both ends, a centre, a pivot) shifted alike; displacements,
+    /// frequencies and phases unchanged. What `add` and `duplicate` place a body with.
+    #[must_use]
+    pub fn shifted(&self, by: [f64; 3]) -> Self {
+        let mut moved = self.clone();
+        match &mut moved {
+            Self::Static { position: p }
+            | Self::Linear { centre: p, .. }
+            | Self::Circular { centre: p, .. }
+            | Self::Pendulum { pivot: p, .. }
+            | Self::Sphere { centre: p, .. }
+            | Self::Modes { centre: p, .. } => *p = add(*p, by),
+            Self::Pass { from, to, .. } => {
+                *from = add(*from, by);
+                *to = add(*to, by);
+            }
+        }
+        moved
+    }
+
     /// The fundamental frequency of the motion, hertz, if it repeats: what a comb of harmonics is
     /// drawn from. `None` for a body at rest or on a pass, or an oscillator that does not move.
     #[must_use]

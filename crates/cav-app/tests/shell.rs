@@ -192,11 +192,18 @@ fn f3_hides_the_panels_and_the_figure_fills_the_window() {
 }
 
 #[test]
-fn every_menu_item_is_a_console_command() {
+fn every_menu_item_is_an_action_that_runs() {
+    // The menus are a view of the action table (docs/slices/S18.md D3): nothing greyed out
+    // that works, every item a line that runs.
     let lines = menus::lines();
-    assert!(lines.len() >= 35, "the menus have {} runnable items", lines.len());
-    for &line in &lines {
-        // Each runs on a shell prepared so that undo and redo have something to act on.
+    assert!(lines.len() >= 50, "the menus have {} runnable items", lines.len());
+    for line in &lines {
+        // A scene's load is parsed, not run: loading the town here would start its world.
+        if line.starts_with("load ") {
+            assert!(Shell::new().engine.parse(line).is_ok(), "`{line}`");
+            continue;
+        }
+        // Each runs on a shell prepared so that undo, redo and the comparison have something to act on.
         let mut shell = Shell::new();
         shell.run("load void").unwrap();
         if line == "redo" {
@@ -208,9 +215,14 @@ fn every_menu_item_is_a_console_command() {
         assert!(Shell::is_app_command(line) || Shell::new().engine.parse(line).is_ok(), "`{line}`");
     }
     // Every menu is reachable and none is empty.
-    let titles: Vec<&str> = menus::MENUS.iter().map(|(title, _)| *title).collect();
-    assert_eq!(titles, ["File", "Edit", "View", "Scene", "Array", "Dataset", "Windows", "Help"]);
-    assert!(menus::MENUS.iter().all(|(_, items)| !items.is_empty()));
+    let titles = menus::titles();
+    assert_eq!(titles, ["File", "Edit", "View", "Scene", "Array", "Help"]);
+    assert!(
+        titles.iter().all(|title| cav_app::actions::table()
+            .actions
+            .iter()
+            .any(|a| a.menu.starts_with(title.as_str())))
+    );
     // Control: a line that is not a command fails the same check, so the loop above can fail.
     let mut shell = Shell::new();
     assert!(shell.run("view sideways").is_err());
@@ -247,11 +259,28 @@ fn keys_issue_engine_commands() {
     assert_eq!(rig.last_command(), Some(&Command::View(ViewCommand::Home { pane: 0 })));
     assert_eq!(rig.shell.engine.view(0).named(), Some(NamedView::Iso));
 
+    // The arrows step the playhead in the timeline's scrubber, adjusting it (the keyboard spec;
+    // before S18 they did from anywhere). From the viewport, Tab twice is the timeline.
+    rig.key(Key::Tab, Modifiers::NONE);
+    rig.key(Key::Tab, Modifiers::NONE);
+    assert_eq!(rig.shell.keyboard.focus, ["timeline"]);
+    rig.key(Key::Enter, Modifiers::NONE);
+    // Control: in navigation mode the arrows move between the timeline's elements, not the time.
+    while rig.shell.keyboard.focused() != "timeline/scrubber" {
+        rig.key(Key::ArrowRight, Modifiers::NONE);
+        assert_eq!(rig.shell.engine.time(), 0.0, "an arrow in navigation mode is not a step");
+    }
+    rig.key(Key::Enter, Modifiers::NONE);
     rig.key(Key::ArrowRight, Modifiers::NONE);
     rig.key(Key::ArrowRight, Modifiers::NONE);
     assert_eq!(rig.shell.engine.time(), 0.2);
     rig.key(Key::ArrowLeft, Modifiers::NONE);
     assert_eq!(rig.shell.engine.time(), 0.1);
+    rig.key(Key::ArrowRight, Modifiers::SHIFT);
+    assert!((rig.shell.engine.time() - 1.1).abs() < 1e-12, "Shift ×10");
+    rig.key(Key::Escape, Modifiers::NONE);
+    rig.key(Key::Escape, Modifiers::NONE);
+    assert_eq!(rig.shell.keyboard.focus, ["timeline"]);
 
     // Undo with nothing to undo is refused, logged, and opens the console.
     let before = rig.shell.engine.digest();
@@ -1410,12 +1439,18 @@ fn a_scene_with_no_towers_draws_every_pane_and_the_timeline() {
     rig.shell.run("show scene @1").unwrap();
     rig.frames(vec![vec![], vec![]]);
     assert!(rig.shell.run("select tower 1").unwrap_err().contains("the scene has no towers"));
-    let towers: Vec<&str> =
-        menus::lines().into_iter().filter(|line| line.starts_with("select tower")).collect();
-    assert!(!towers.is_empty() && towers.iter().all(|line| !menus::possible(line, 0)));
-    // Control: with five towers they are, and one past the fifth is not.
-    assert!(towers.iter().all(|line| menus::possible(line, 5)));
-    assert!(!menus::possible("select tower 3", 2) && menus::possible("undo", 0));
+    let table = cav_app::actions::table();
+    let towers: Vec<&cav_app::actions::Action> =
+        table.actions.iter().filter(|a| a.line.starts_with("select tower")).collect();
+    assert!(!towers.is_empty() && towers.iter().all(|a| !rig.shell.can_run(a)));
+    // Control: with five towers the first five are, and one past the fifth is not.
+    rig.shell.run("load room").unwrap();
+    let can: Vec<bool> = towers.iter().map(|a| rig.shell.can_run(a)).collect();
+    assert!(
+        can.iter().filter(|c| **c).count() >= 5
+            && towers.iter().any(|a| a.line == "select tower 6" && !rig.shell.can_run(a))
+    );
+    assert!(rig.shell.can_run(table.action("rewind").unwrap()));
     // The last tower of a scene can be taken away, and the application goes on.
     rig.shell.run("load point").unwrap();
     for _ in 0..5 {

@@ -39,6 +39,11 @@ pub struct CommandDoc {
     pub example: &'static str,
 }
 
+/// Where `add <starter>` puts a starter when no place is said: beside the default array, a metre
+/// up (metres, the world's frame: x east, y north, z up). The editor says a place: where the
+/// camera looks, or where the pointer is.
+pub const DEFAULT_PLACE: [f64; 3] = [2.0, 2.0, 1.0];
+
 /// Every console command. View commands act on the active pane unless the line ends in `@N`.
 pub const COMMANDS: &[CommandDoc] = &[
     CommandDoc {
@@ -62,9 +67,15 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "add",
-        usage: "add <list> <value> | add <list> <index> <value>",
-        about: "put an item into a list of the scene (bodies, array.towers), as JSON: at the end, or before item <index> (an edit)",
+        usage: "add <starter> [at <x> <y> <z>] | add <list> <value> | add <list> <index> <value>",
+        about: "add a starter by name (point-mass, sphere, cube, cylinder, tower, … : `cav_sim::starters`) at a place, metres, or beside the array; or put an item into a list of the scene (bodies, array.towers), as JSON: at the end, or before item <index> (an edit)",
         example: "add array.towers {\"label\": \"tower 6\", \"position\": [6, 0, 0]}",
+    },
+    CommandDoc {
+        name: "duplicate",
+        usage: "duplicate <bodies[i]|array.towers[i]>",
+        about: "add a copy of a body (half a metre east) or a tower (a metre east), with a label of its own (an edit)",
+        example: "duplicate array.towers[0]",
     },
     CommandDoc {
         name: "remove",
@@ -538,6 +549,24 @@ impl Engine {
         {
             return Ok(Request::Do(Command::set(path, value_of(value)?)));
         }
+        // `add <starter> [at x y z]`: a starter by name (`cav_sim::starters`), put where it is
+        // said, or beside the array.
+        if let Some(rest) = line.trim_start().strip_prefix("add")
+            && rest.starts_with(char::is_whitespace)
+            && let Some(first) = rest.split_whitespace().next()
+            && cav_sim::starters::find(first).is_some()
+        {
+            let words: Vec<&str> = rest.split_whitespace().collect();
+            let at = match words.as_slice() {
+                [_] => DEFAULT_PLACE,
+                [_, "at", x, y, z] => {
+                    [number(x, "metres", "add")?, number(y, "metres", "add")?, number(z, "metres", "add")?]
+                }
+                _ => return Err(format!("`{}`: {}", line.trim(), usage("add"))),
+            };
+            let (list, value) = cav_sim::starters::make(self.spec(), first, at)?;
+            return Ok(Request::Do(Command::Insert { path: list.to_owned(), index: None, value }));
+        }
         // `add` too: a list, an index if there is one, and the item as it was written.
         if let Some(rest) = line.trim_start().strip_prefix("add")
             && rest.starts_with(char::is_whitespace)
@@ -590,6 +619,10 @@ impl Engine {
                 Ok(Request::Do(Command::Insert { path: "bodies".into(), index: None, value }))
             }
             ("remove", [path]) => Ok(Request::Do(Command::Remove { path: (*path).to_owned() })),
+            ("duplicate", [path]) => {
+                let (list, value) = cav_sim::starters::duplicate(self.spec(), path)?;
+                Ok(Request::Do(Command::Insert { path: list.to_owned(), index: None, value }))
+            }
             ("save", [file]) => {
                 Ok(Request::Do(Command::Export { what: ExportKind::Scene, to: (*file).to_owned() }))
             }

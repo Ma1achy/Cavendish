@@ -11,6 +11,7 @@ use cav_sim::paths::{self, Entry, Kind};
 use egui::{Align, Layout, RichText};
 use serde_json::{Value, json};
 
+use crate::keyboard::Kind as Focus;
 use crate::shell::Shell;
 use crate::theme;
 
@@ -156,8 +157,28 @@ fn number(
     ((edited != value).then_some(edited), response)
 }
 
-/// Draws the editors for everything under `prefix` and applies what they change.
-pub fn show(shell: &mut Shell, ui: &mut egui::Ui, prefix: &str) {
+/// The keyboard's id of the editor of the field at `path`: `field/bodies[0].mass`.
+#[must_use]
+pub fn field_id(path: &str) -> String {
+    format!("field/{path}")
+}
+
+/// `value` moved by `steps` of its step ([`crate::keyboard::step_for`]), kept to the step's
+/// decimals so that 2.5 + 0.1 is 2.6 and not 2.6000000000000001, and to the field's range.
+fn nudged(value: f64, steps: f64, entry: &Entry, whole: bool) -> f64 {
+    let step = crate::keyboard::step_for(value, entry.unit.as_deref(), whole) * steps.abs();
+    let raw = value + step * steps.signum();
+    let decimals = (-step.log10().floor()).max(0.0) as usize;
+    let tidy = format!("{raw:.decimals$}").parse::<f64>().unwrap_or(raw);
+    let next = if (tidy - raw).abs() <= step * 1e-6 { tidy } else { raw };
+    let range = range(entry);
+    next.clamp(*range.start(), *range.end())
+}
+
+/// Draws the editors for everything under `prefix` and applies what they change. Each field is
+/// an element of the keyboard's scope `scope` ([`field_id`]), so it is reached by Tab and the
+/// arrows, adjusted with them, typed into, or chosen from, as the spec says.
+pub fn show(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, prefix: &str) {
     let spec = shell.engine.spec().clone();
     let entries = match paths::leaves(&spec, prefix, MAX_FIELDS) {
         Ok(entries) => entries,
@@ -195,7 +216,7 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, prefix: &str) {
             let start = ui.cursor().min;
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 3.0;
-                edit(shell, ui, &spec, entry, &mut commands);
+                edit(shell, ui, &spec, scope, name, entry, &mut commands);
             });
             let took =
                 egui::Rect::from_min_max(start, egui::pos2(ui.min_rect().right(), ui.min_rect().bottom()));
@@ -218,17 +239,41 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, prefix: &str) {
     }
 }
 
-/// One field's widget. What it changes is pushed onto `commands`.
+/// One field's widget, registered in the keyboard's `scope` as `name`. What it changes is pushed
+/// onto `commands`.
 fn edit(
     shell: &mut Shell,
     ui: &mut egui::Ui,
     spec: &cav_sim::SceneSpec,
+    scope: &str,
+    name: &str,
     entry: &Entry,
     commands: &mut Vec<Command>,
 ) {
     let path = entry.path.as_str();
+    let id = field_id(path);
+    // Keys: each adjustment of a held key continues the edit before it (one undo for the hold);
+    // a new press is a new edit. The end of the interaction ends the run.
+    let keyed =
+        |shell: &mut Shell, id: &str, path: &str, value: f64, whole: bool, commands: &mut Vec<Command>| {
+            let mut value = value;
+            for (_, steps, _, repeat) in shell.take_adjust(id) {
+                value = nudged(value, steps, entry, whole);
+                let continues = repeat && shell.editing.as_deref() == Some(path);
+                shell.editing = Some(path.to_owned());
+                let json = if whole { json!(value as i64) } else { json!(value) };
+                commands.push(command_for(path, json, continues));
+            }
+            if shell.take_release(id).is_some() && shell.editing.as_deref() == Some(path) {
+                shell.editing = None;
+            }
+        };
     // A step of a drag continues the edit before it when that edit was of this path and applied.
-    let mut dragged = |response: &egui::Response, path: &str, value: Value, shell: &mut Shell| {
+    let dragged = |response: &egui::Response,
+                   path: &str,
+                   value: Value,
+                   shell: &mut Shell,
+                   commands: &mut Vec<Command>| {
         let continues = response.dragged() && shell.editing.as_deref() == Some(path);
         if response.dragged() && !continues {
             // The first step of a drag: mark it, so that the steps after it continue it.
@@ -239,30 +284,41 @@ fn edit(
     match widget_for(entry) {
         Widget::Number | Widget::Integer => {
             let whole = entry.kind == Kind::Integer;
-            let (changed, response) =
-                number(ui, entry.value.as_f64().unwrap_or_default(), entry, whole, NUMBER_WIDTH);
+            let now = entry.value.as_f64().unwrap_or_default();
+            let (changed, response) = number(ui, now, entry, whole, NUMBER_WIDTH);
+            shell.register(scope, &id, name, Focus::Adjust, response.rect);
             if let Some(value) = changed {
                 let value = if whole { json!(value as i64) } else { json!(value) };
-                dragged(&response, path, value, shell);
+                dragged(&response, path, value, shell, commands);
             }
             if response.drag_stopped() {
                 shell.editing = None;
             }
-            if entry.optional && ui.small_button("×").on_hover_text("none").clicked() {
-                commands.push(command_for(path, Value::Null, false));
+            keyed(shell, &id, path, now, whole, commands);
+            if entry.optional {
+                let none = ui.small_button("×").on_hover_text("none");
+                let none_id = format!("{id}/none");
+                shell.register(scope, &none_id, &format!("{name}: none"), Focus::Button, none.rect);
+                if none.clicked() || shell.take_click(&none_id) {
+                    commands.push(command_for(path, Value::Null, false));
+                }
             }
         }
         Widget::Vector(n) => {
             for axis in 0..n {
                 let value = entry.value[axis].as_f64().unwrap_or_default();
                 let component = format!("{path}[{axis}]");
+                let component_id = field_id(&component);
                 let (changed, response) = number(ui, value, entry, false, COMPONENT_WIDTH);
+                let axis_name = format!("{name} {}", ["x", "y", "z", "w"].get(axis).copied().unwrap_or("·"));
+                shell.register(scope, &component_id, &axis_name, Focus::Adjust, response.rect);
                 if let Some(value) = changed {
-                    dragged(&response, &component, json!(value), shell);
+                    dragged(&response, &component, json!(value), shell, commands);
                 }
                 if response.drag_stopped() {
                     shell.editing = None;
                 }
+                keyed(shell, &component_id, &component, value, false, commands);
             }
         }
         Widget::Text => {
@@ -272,6 +328,10 @@ fn edit(
                 _ => current.clone(),
             };
             let response = ui.add(egui::TextEdit::singleline(&mut text).desired_width(140.0));
+            shell.register(scope, &id, name, Focus::Text, response.rect);
+            if shell.take_type(&id) {
+                response.request_focus();
+            }
             if response.has_focus() {
                 shell.typing = Some((path.to_owned(), text.clone()));
             }
@@ -284,8 +344,12 @@ fn edit(
         }
         Widget::Flag => {
             let mut on = entry.value.as_bool().unwrap_or_default();
-            if ui.checkbox(&mut on, "").changed() {
+            let response = ui.checkbox(&mut on, "");
+            shell.register(scope, &id, name, Focus::Button, response.rect);
+            if response.changed() {
                 commands.push(command_for(path, Value::Bool(on), false));
+            } else if shell.take_click(&id) {
+                commands.push(command_for(path, Value::Bool(!on), false));
             }
         }
         Widget::Choice | Widget::Variant => {
@@ -294,22 +358,55 @@ fn edit(
                 return;
             };
             let now = entry.variant.clone().unwrap_or_default();
-            egui::ComboBox::from_id_salt(("choice", path)).width(132.0).selected_text(now.as_str()).show_ui(
-                ui,
-                |ui| {
+            let choose = |name: &String, commands: &mut Vec<Command>| {
+                let value = starter(spec, path, Some(name)).unwrap_or_else(|| Value::String(name.clone()));
+                commands.push(command_for(path, value, false));
+            };
+            let combo = egui::ComboBox::from_id_salt(("choice", path))
+                .width(132.0)
+                .selected_text(now.as_str())
+                .show_ui(ui, |ui| {
                     for name in names {
                         if ui.selectable_label(*name == now, name).clicked() && *name != now {
-                            let value = starter(spec, path, Some(name))
-                                .unwrap_or_else(|| Value::String(name.clone()));
-                            commands.push(command_for(path, value, false));
+                            choose(name, commands);
                         }
                     }
-                },
+                });
+            let current = names.iter().position(|n| *n == now).unwrap_or(0);
+            shell.register(
+                scope,
+                &id,
+                name,
+                Focus::Choice { count: names.len(), current },
+                combo.response.rect,
             );
+            // Opened from the keyboard: the choices below it, the highlighted one lit (the
+            // router holds ↑ ↓ Enter Esc while it is open).
+            if let Some(popup) = shell.keyboard.popup.as_ref().filter(|p| p.id == id) {
+                let at = popup.at;
+                egui::Area::new(egui::Id::unique(("keyboard choice", path)))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(combo.response.rect.left_bottom())
+                    .show(ui.ctx(), |ui| {
+                        egui::Frame::popup(ui.style()).show(ui, |ui| {
+                            for (n, choice) in names.iter().enumerate() {
+                                let _ = ui.selectable_label(n == at, choice);
+                            }
+                        });
+                    });
+            }
+            if let Some(index) = shell.take_pick(&id)
+                && let Some(name) = names.get(index)
+                && *name != now
+            {
+                choose(name, commands);
+            }
         }
         Widget::Absent => {
             ui.label(RichText::new("none").size(12.0).color(theme::WEAK));
-            if ui.small_button("add").clicked() {
+            let add = ui.small_button("add");
+            shell.register(scope, &id, &format!("{name}: add"), Focus::Button, add.rect);
+            if add.clicked() || shell.take_click(&id) {
                 let value = match (&entry.kind, starter(spec, path, None)) {
                     (_, Some(value)) if !value.is_null() && path.starts_with("array.schedule") => value,
                     // A number that may be absent starts at the bottom of its range, or zero.
@@ -325,7 +422,7 @@ fn edit(
 
 /// The buttons under a selection that change a list or take an optional part away: remove this
 /// body, remove this tower, remove the room. Each is a command like any other.
-pub fn structure(shell: &mut Shell, ui: &mut egui::Ui, prefix: &str) {
+pub fn structure(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, prefix: &str) {
     let spec = shell.engine.spec();
     let command = match prefix {
         "room" | "floor" => Some((format!("remove the {prefix}"), command_for(prefix, Value::Null, false))),
@@ -339,9 +436,11 @@ pub fn structure(shell: &mut Shell, ui: &mut egui::Ui, prefix: &str) {
     };
     if let Some((label, command)) = command {
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-            let response = ui.small_button(label);
+            let response = ui.small_button(&label);
             shell.layout.buttons.push((cav_engine::describe(&command, 0), response.rect));
-            if response.clicked() {
+            let id = format!("{scope}/remove");
+            shell.register(scope, &id, &label, Focus::Button, response.rect);
+            if response.clicked() || shell.take_click(&id) {
                 shell.apply(command);
             }
         });
@@ -360,7 +459,7 @@ mod tests {
             ..Default::default()
         };
         let mut output = ctx.run_ui(input, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| show(shell, ui, prefix));
+            egui::ScrollArea::vertical().show(ui, |ui| show(shell, ui, "inspector", prefix));
         });
         // Nothing is painted here, so the font atlas has nowhere to go.
         output.textures_delta.clear();
