@@ -4,8 +4,9 @@
 //! binary for `wasm32-unknown-unknown` in the `web` profile, wasm-bindgen's glue, wasm-opt, and
 //! the page with its revision stamped. The Pages workflow runs exactly this.
 //!
-//! `cargo xtask web` is the tier: the web code's lints (native clippy does not compile it), the
-//! build, and the engine's numbers in wasm held to the native ones (`web_equivalence`).
+//! `cargo xtask web` is the tier: the web code's lints (native clippy does not compile it: every
+//! target of `cav-app` for wasm32, and the equivalence test), the build, and the engine's numbers
+//! in wasm held to the native ones (`web_equivalence`).
 //!
 //! The tools are pinned: wasm-bindgen must be the version `Cargo.lock` has (the glue and the crate
 //! must agree), wasm-opt is binaryen's `version_133`. Neither is installed by this command.
@@ -38,8 +39,8 @@ pub fn tier(root: &Path) -> Result<(), String> {
         cargo(
             root,
             &[
-                "clippy", "--target", TARGET, "-p", "cav-app", "--lib", "--bin", "cav-web", "--quiet", "--",
-                "-D", "warnings",
+                "clippy", "--target", TARGET, "-p", "cav-app", "--lib", "--bins", "--quiet", "--", "-D",
+                "warnings",
             ],
         ),
     )?;
@@ -87,8 +88,11 @@ pub fn build(root: &Path) -> Result<(), String> {
     let page = page.replace("{{revision}}", &revision(root));
     std::fs::write(dist.join("index.html"), page).map_err(|e| format!("{DIST}/index.html: {e}"))?;
     // The forward stage's Web Worker: the same module, started by this script.
-    std::fs::copy(root.join("crates/cav-app/web/worker.js"), dist.join("worker.js"))
-        .map_err(|e| format!("crates/cav-app/web/worker.js: {e}"))?;
+    // The page's script, the forward stage's Web Worker (the same module, started by it), the icon.
+    for file in ["start.js", "worker.js", "favicon.svg"] {
+        std::fs::copy(root.join("crates/cav-app/web").join(file), dist.join(file))
+            .map_err(|e| format!("crates/cav-app/web/{file}: {e}"))?;
+    }
     eprintln!(
         "xtask: web: {DIST}: cav-web.wasm {} bytes from cargo, {before} after wasm-bindgen, {} after wasm-opt; \
          cavendish.js {} bytes",
@@ -107,6 +111,25 @@ fn equivalence(root: &Path) -> Result<(), String> {
         cargo(root, &["test", "-p", "cav-engine", "--test", "web_equivalence", "--", "--ignored"]);
     native.env("CAV_WEB_EQUIVALENCE", &numbers);
     step("equivalence: native numbers", native)?;
+    // The wasm test's own lints (it builds the native numbers in, so it is linted after them).
+    let mut lint = cargo(
+        root,
+        &[
+            "clippy",
+            "--target",
+            TARGET,
+            "-p",
+            "cav-engine",
+            "--test",
+            "web_equivalence",
+            "--quiet",
+            "--",
+            "-D",
+            "warnings",
+        ],
+    );
+    lint.env("CAV_WEB_EQUIVALENCE", &numbers);
+    step("clippy (wasm32, the equivalence test)", lint)?;
     check_tool("wasm-bindgen-test-runner", &["--version"], "", "it comes with wasm-bindgen-cli")?;
     // In the `web` profile: the optimisation, LTO and overflow checks the page is built with.
     let mut wasm = cargo(

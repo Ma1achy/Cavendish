@@ -1,8 +1,8 @@
 //! The Cavendish application: an egui shell around the engine.
 //!
 //! [`Shell`] is the application without a window: its state, its input handling and its drawing,
-//! all against an `egui::Ui` and a [`PaneSurface`]. [`app::App`] is it inside eframe: `main.rs`
-//! puts that in a window, and `web` (on `wasm32` only) on a browser page's canvas;
+//! all against an `egui::Ui` and a [`PaneSurface`]. [`app::App`] is it inside eframe: [`window`]
+//! puts that in a native window, and [`platform`] (on `wasm32`) on a browser page's canvas;
 //! [`headless::Headless`] draws it into a texture for screenshots and tests.
 //!
 //! ## What this crate is for
@@ -40,6 +40,13 @@ pub mod platform;
 #[cfg(target_arch = "wasm32")]
 #[path = "platform/web.rs"]
 pub mod platform;
+// The native window and its command line (the `cav-app` binary); a page has neither.
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "window/native.rs"]
+pub mod window;
+#[cfg(target_arch = "wasm32")]
+#[path = "window/web.rs"]
+pub mod window;
 
 pub use panes::{GpuPanes, NoSurface, PaneSurface};
 pub use shell::{APP_COMMANDS, ConsoleFilter, Layout, Shell};

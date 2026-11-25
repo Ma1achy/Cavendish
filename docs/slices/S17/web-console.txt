@@ -1,78 +1,97 @@
-$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:61231/" web-room.png 8
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:62732/" web-room.png 8
+log.warning (rendering): The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127 http://127.0.0.1:62732/cavendish.js
 console.info: [eframe::web::web_runner] ~\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
-running 1.43 s after the address was opened
-resources (name, ms, bytes): [["cavendish.js",7,104740],["favicon.ico",6,300],["cavendish_bg.wasm",25,5682638]]
+running 1.44 s after the address was opened
+resources (name, ms, bytes): [["start.js",6,2203],["favicon.svg",7,558],["cavendish_bg.wasm",38,5810197],["cavendish.js",5,107656],["worker.js",-7,862],["cavendish.js",3,107656],["worker.js",-3,862],["cavendish.js",7,107656]]
 waited 8.2 s
 web-room.png: written
 
-$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:61231/#exec=load%20comb;%20panes%204;%20show%20signal%20@2;%20show%20periodogram%20@3;%20show%20cadence%20@4" web-comb.png 20
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:62732/#exec=load%20comb;%20panes%204;%20show%20signal%20@2;%20show%20periodogram%20@3;%20show%20cadence%20@4" web-comb.png 20
+log.warning (rendering): The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127 http://127.0.0.1:62732/cavendish.js
 console.info: [eframe::web::web_runner] ~\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `load comb` in 12 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `panes 4` in 0 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `show signal @2` in 0 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `show periodogram @3` in 0 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `show cadence @4` in 0 ms
-running 0.82 s after the address was opened
-resources (name, ms, bytes): [["cavendish.js",11,104740],["favicon.ico",11,300],["cavendish_bg.wasm",43,5682638]]
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `load comb` in 12 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `panes 4` in 0 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `show signal @2` in 0 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `show periodogram @3` in 0 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `show cadence @4` in 0 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:232: the signal of `comb` was whole 178 ms after it went stale
+running 0.85 s after the address was opened
+resources (name, ms, bytes): [["start.js",16,2203],["favicon.svg",10,558],["cavendish_bg.wasm",42,5810197],["cavendish.js",10,107656],["worker.js",-8,862],["cavendish.js",3,107656],["worker.js",-4,862],["cavendish.js",6,107656]]
 waited 20.2 s
 web-comb.png: written
 
-$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:61231/#exec=load%20sphere;%20pan%202%200%202.5;%20zoom%202.5;%20colour%20mass;%20overlay%20cut%202" web-sphere.png 12
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:62732/#exec=load%20sphere;%20pan%202%200%202.5;%20zoom%202.5;%20colour%20mass;%20overlay%20cut%202" web-sphere.png 12
+log.warning (rendering): The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127 http://127.0.0.1:62732/cavendish.js
 console.info: [eframe::web::web_runner] ~\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `load sphere` in 26 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `pan 2 0 2.5` in 2 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `zoom 2.5` in 1 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `colour mass` in 1 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `overlay cut 2` in 1 ms
-running 1.47 s after the address was opened
-resources (name, ms, bytes): [["cavendish.js",6,104740],["favicon.ico",5,300],["cavendish_bg.wasm",21,5682638]]
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `load sphere` in 28 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `pan 2 0 2.5` in 2 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `zoom 2.5` in 1 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `colour mass` in 1 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `overlay cut 2` in 1 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:232: the signal of `sphere` was whole 5613 ms after it went stale
+running 1.53 s after the address was opened
+resources (name, ms, bytes): [["start.js",6,2203],["favicon.svg",5,558],["cavendish_bg.wasm",27,5810197],["cavendish.js",4,107656],["worker.js",-9,862],["cavendish.js",13,107656],["worker.js",-4,862],["cavendish.js",17,107656]]
 waited 12.2 s
 web-sphere.png: written
 
-$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:61231/#exec=load%20platonic-row;%20panes%202;%20view%20iso%20@1;%20pan%200%200%202.5%20@1;%20zoom%209%20@1;%20colour%20level%20@1;%20view%20top%20@2;%20colour%20height%20@2" web-platonic.png 12
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:62732/#exec=load%20platonic-row;%20panes%202;%20view%20iso%20@1;%20pan%200%200%202.5%20@1;%20zoom%209%20@1;%20colour%20level%20@1;%20view%20top%20@2;%20colour%20height%20@2" web-platonic.png 12
+log.warning (rendering): The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127 http://127.0.0.1:62732/cavendish.js
 console.info: [eframe::web::web_runner] ~\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `load platonic-row` in 40 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `panes 2` in 4 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `view iso @1` in 2 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `pan 0 0 2.5 @1` in 2 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `zoom 9 @1` in 2 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `colour level @1` in 2 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `view top @2` in 2 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `colour height @2` in 3 ms
-running 1.54 s after the address was opened
-resources (name, ms, bytes): [["cavendish.js",6,104740],["cavendish_bg.wasm",27,5682638],["favicon.ico",2,300]]
-waited 16.9 s
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `load platonic-row` in 41 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `panes 2` in 4 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `view iso @1` in 3 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `pan 0 0 2.5 @1` in 2 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `zoom 9 @1` in 2 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `colour level @1` in 2 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `view top @2` in 2 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `colour height @2` in 3 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:232: the signal of `platonic-row` was whole 8959 ms after it went stale
+running 1.66 s after the address was opened
+resources (name, ms, bytes): [["start.js",6,2203],["favicon.svg",9,558],["cavendish_bg.wasm",39,5810197],["cavendish.js",12,107656],["worker.js",-7,862],["cavendish.js",2,107656],["worker.js",-3,862],["cavendish.js",7,107656]]
+waited 12.2 s
 web-platonic.png: written
 
-$ (page, no click) http://127.0.0.1:61231/#exec=load%20comb;%20save%20comb.ron
+$ (page, no click) http://127.0.0.1:62732/#exec=load%20comb;%20save%20comb.ron
+log.warning (rendering): The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127 http://127.0.0.1:62732/cavendish.js
 console.info: [eframe::web::web_runner] C:\Users\Georg\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `load comb` in 13 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `save comb.ron` in 2 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `load comb` in 11 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `save comb.ron` in 1 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:232: the signal of `comb` was whole 202 ms after it went stale
 running 1.45 s after the address was opened
-resources (name, ms, bytes): [["cavendish.js",6,104740],["favicon.ico",5,300],["cavendish_bg.wasm",23,5682638]]
+resources (name, ms, bytes): [["start.js",6,2203],["favicon.svg",3,558],["cavendish_bg.wasm",24,5810197],["cavendish.js",7,107656],["worker.js",-8,862],["cavendish.js",12,107656],["worker.js",-3,862],["cavendish.js",19,107656]]
 waited 6.2 s
 page.png: written
 nothing downloaded: the file waits behind the button
 
-$ (page, clicking the button) http://127.0.0.1:61231/#exec=load%20pass;%20save%20pass.ron;%20figure%20signal%20to%20pass.svg;%20load%20comb;%20figure%20periodogram%20to%20comb.svg
+$ (page, clicking the button) http://127.0.0.1:62732/#exec=load%20pass;%20save%20pass.ron;%20figure%20signal%20to%20pass.svg;%20load%20comb;%20figure%20periodogram%20to%20comb.svg
+log.warning (rendering): The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127 http://127.0.0.1:62732/cavendish.js
 console.info: [eframe::web::web_runner] C:\Users\Georg\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\eframe-0.37.0\src\web\web_runner.rs:94: event handlers installed.
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `load pass` in 12 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `save pass.ron` in 2 ms
-clicked #held-downloads at 0.75 s: Download 1 file this link made: pass.ron
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `figure signal to pass.svg` in 17 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `load comb` in 1 ms
-console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:141: #exec: `figure periodogram to comb.svg` in 14 ms
-clicked #held-downloads at 1.16 s: Download 6 files this link made: pass.svg, pass.csv, pass.json, comb.svg, comb.csv, comb.json
-running 0.74 s after the address was opened
-resources (name, ms, bytes): [["cavendish.js",7,104740],["favicon.ico",8,300],["cavendish_bg.wasm",35,5682638]]
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `load pass` in 9 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `save pass.ron` in 1 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:232: the signal of `pass` was whole 21 ms after it went stale
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `figure signal to pass.svg` in 22 ms
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `load comb` in 1 ms
+clicked #held-downloads at 0.76 s: Download 4 files this link made: pass.ron, pass.svg, pass.csv, pass.json
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:232: the signal of `comb` was whole 174 ms after it went stale
+console.info: [cav_app::platform] crates\cav-app\src\platform\web.rs:149: #exec: `figure periodogram to comb.svg` in 16 ms
+clicked #held-downloads at 1.14 s: Download 3 files this link made: comb.svg, comb.csv, comb.json
+running 0.72 s after the address was opened
+resources (name, ms, bytes): [["start.js",15,2203],["favicon.svg",5,558],["cavendish_bg.wasm",23,5810197],["cavendish.js",5,107656],["worker.js",-12,862],["cavendish.js",9,107656],["worker.js",-4,862],["cavendish.js",17,107656]]
 waited 20.2 s
 page.png: written
-downloaded: pass.csv 1420 bytes, pass.json: platform "wasm32-unknown", against "x86_64-windows",, the rest the same bytes, pass.json 11666 bytes, pass.svg 105026 bytes, comb.svg 218360 bytes (arrived whole), comb.csv 25640 bytes (arrived whole), comb.json 13048 bytes (arrived whole); pass.ron 2300 bytes, line for line the native `save`
+downloaded: pass.csv 1420 bytes, pass.json: platform wasm32-unknown against x86_64-windows, the rest the same bytes, pass.json 11668 bytes, pass.svg 105026 bytes, comb.svg 218360 bytes (arrived whole), comb.csv 25640 bytes (arrived whole), comb.json 13050 bytes (arrived whole); pass.ron 2300 bytes, line for line the native `save`
 
-$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:61231/" web-no-webgpu.png 4 1440x900 no-webgpu
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:62732/" web-no-webgpu.png 4 1440x900 no-webgpu
 the application did not start
 message: This browser does not offer WebGPU, which Cavendish draws and computes with. Open this page in a current Chrome or Edge (Windows, macOS, ChromeOS, Android), Safari 26 or later, or Firefox 141 or later on Windows. On Linux, Chrome may need WebGPU switched on in chrome://flags. The native application is in the repository.
-resources (name, ms, bytes): [["favicon.ico",2,300]]
+resources (name, ms, bytes): [["start.js",6,2203],["favicon.svg",10,558]]
 waited 4.2 s
 web-no-webgpu.png: written
+
+$ node scripts/web_screenshot.mjs <chrome> "http://127.0.0.1:62732/" web-no-adapter.png 4 1440x900 no-adapter
+the application did not start
+message: This browser offers WebGPU but found no graphics adapter for it, and Cavendish draws and computes with WebGPU: it may be switched off in the browser's settings, or the graphics driver blocked. Open this page in a current Chrome or Edge (Windows, macOS, ChromeOS, Android), Safari 26 or later, or Firefox 141 or later on Windows. On Linux, Chrome may need WebGPU switched on in chrome://flags. The native application is in the repository.
+resources (name, ms, bytes): [["start.js",9,2203],["favicon.svg",9,558]]
+waited 4.2 s
+web-no-adapter.png: written
 

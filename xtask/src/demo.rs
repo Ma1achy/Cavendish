@@ -1094,27 +1094,33 @@ fn s17(root: &Path) -> Result<(), String> {
         downloaded.len()
     ));
 
-    // A browser without WebGPU: the page's message, and the module never fetched.
+    // A browser without WebGPU, and one with WebGPU but no adapter: the page's message, and the
+    // module never fetched.
     let url = format!("http://127.0.0.1:{}/", server.port);
-    let output = Command::new("node")
-        .current_dir(root)
-        .args(["scripts/web_screenshot.mjs"])
-        .arg(&chrome)
-        .arg(&url)
-        .arg(out.join("web-no-webgpu.png"))
-        .args(["4", "1440x900", "no-webgpu"])
-        .output()
-        .map_err(|e| format!("node: {e}"))?;
-    let said = String::from_utf8_lossy(&output.stdout).into_owned();
-    log.push_str(&format!(
-        "$ node scripts/web_screenshot.mjs <chrome> \"{url}\" web-no-webgpu.png 4 1440x900 no-webgpu
+    for (file, mode, what) in [
+        ("web-no-webgpu.png", "no-webgpu", "without WebGPU"),
+        ("web-no-adapter.png", "no-adapter", "with WebGPU but no adapter"),
+    ] {
+        let output = Command::new("node")
+            .current_dir(root)
+            .args(["scripts/web_screenshot.mjs"])
+            .arg(&chrome)
+            .arg(&url)
+            .arg(out.join(file))
+            .args(["4", "1440x900", mode])
+            .output()
+            .map_err(|e| format!("node: {e}"))?;
+        let said = String::from_utf8_lossy(&output.stdout).into_owned();
+        log.push_str(&format!(
+            "$ node scripts/web_screenshot.mjs <chrome> \"{url}\" {file} 4 1440x900 {mode}
 {said}
 "
-    ));
-    if !output.status.success() {
-        return Err(format!("web-no-webgpu.png: the page without WebGPU did not say so: {said}"));
+        ));
+        if !output.status.success() {
+            return Err(format!("{file}: the page {what} did not say so: {said}"));
+        }
+        expect_png(&out, file, [1440, 900], &mut made)?;
     }
-    expect_png(&out, "web-no-webgpu.png", [1440, 900], &mut made)?;
     drop(server);
     std::fs::write(out.join("web-console.txt"), &log).map_err(|e| format!("web-console.txt: {e}"))?;
     eprintln!("xtask: demo S17: {} in {}", made.join(", "), out.display());

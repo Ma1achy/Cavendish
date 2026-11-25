@@ -14,7 +14,11 @@
 //
 // With `no-webgpu` the page is loaded as a browser without WebGPU sees it (`navigator.gpu` removed
 // before the page's script runs): it must show its message and never fetch the module; exit 0 then
-// means exactly that.
+// means exactly that. `no-adapter` is the same for a browser with WebGPU but no adapter
+// (`requestAdapter` answers null).
+//
+// The browser's own log is watched too (the DevTools `Log` domain): a Content-Security-Policy
+// violation, a failed load or any other error there fails the run as a console error does.
 //
 // Chrome is started here with a throw-away profile under the output's folder, talked to over the
 // DevTools protocol (Node's own WebSocket), and closed here: nothing is left running. Exit status 1
@@ -26,6 +30,7 @@ import { basename, dirname, join, resolve } from "node:path";
 
 const [chrome, url, out, seconds = "12", size = "1440x900", mode = ""] = process.argv.slice(2);
 const withoutGpu = mode === "no-webgpu";
+const withoutAdapter = mode === "no-adapter";
 if (!chrome || !url || !out) {
   console.error("usage: node web_screenshot.mjs <chrome> <url> <out.png> [seconds] [WxH]");
   process.exit(2);
@@ -99,15 +104,23 @@ listeners.push((message) => {
     console.log(`console.${message.params.type}: ${text}`);
     if (message.params.type === "error" || /panicked/.test(text)) failed = true;
   }
+  if (message.method === "Log.entryAdded") {
+    const entry = message.params.entry;
+    console.log(`log.${entry.level} (${entry.source}): ${entry.text}${entry.url ? " " + entry.url : ""}`);
+    // A favicon the page does not have is the browser's guess, not the page's fault.
+    if (entry.level === "error" && !/favicon\.ico/.test(entry.url ?? "")) failed = true;
+  }
   if (message.method === "Runtime.exceptionThrown") {
     console.log(`exception: ${message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text}`);
     failed = true;
   }
 });
 await send("Runtime.enable", {}, sessionId);
-if (withoutGpu) {
+await send("Log.enable", {}, sessionId);
+if (withoutGpu || withoutAdapter) {
   await send("Page.enable", {}, sessionId);
-  await send("Page.addScriptToEvaluateOnNewDocument", { source: "delete Navigator.prototype.gpu;" }, sessionId);
+  const source = withoutGpu ? "delete Navigator.prototype.gpu;" : "GPU.prototype.requestAdapter = async () => null;";
+  await send("Page.addScriptToEvaluateOnNewDocument", { source }, sessionId);
 }
 const budget = Number(process.env.CAV_FRAMES) || 50;
 if (process.env.CAV_FRAMES) {
@@ -159,7 +172,7 @@ if (click && clicked === 0) {
   console.log(`#${click} never appeared`);
   failed = true;
 }
-if (withoutGpu) {
+if (withoutGpu || withoutAdapter) {
   const said = await send("Runtime.evaluate", {
     expression: "document.getElementById('message')?.textContent ?? ''",
     returnByValue: true,
@@ -169,7 +182,8 @@ if (withoutGpu) {
     returnByValue: true,
   }, sessionId);
   console.log(`message: ${said.result?.result?.value}`);
-  failed = !/does not offer WebGPU/.test(said.result?.result?.value ?? "") || fetched.result?.result?.value !== false;
+  const wanted = withoutGpu ? /does not offer WebGPU/ : /found no graphics adapter/;
+  failed = failed || !wanted.test(said.result?.result?.value ?? "") || fetched.result?.result?.value !== false;
 } else if (running === null) {
   failed = true;
 }
