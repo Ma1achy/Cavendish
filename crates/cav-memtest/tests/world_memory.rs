@@ -1,6 +1,7 @@
-//! The world volume's memory is bounded by its caps (`docs/slices/S4.md` §3.1, rows W2 to W4):
-//! a chunk by its cells, a region's record by its stated bytes, and a record that claims more
-//! than it holds is refused before anything is reserved for it. Measured with the counting
+//! The world volume's memory is bounded by its caps (`docs/slices/S4.md` §3.1, rows W2 to W5):
+//! a chunk by its cells, a region's record by its stated bytes, a record that claims more than
+//! it holds is refused before anything is reserved for it, and streaming holds no more than its
+//! resident cap and a working set. Measured with the counting
 //! allocator; nextest runs each test in a process of its own.
 
 use cav_core::Vec3;
@@ -52,4 +53,41 @@ fn reading_a_region_is_bounded() {
     let (refused, peak) = peak_during(|| decode_chunk(&lying, &grid, key));
     assert!(refused.is_err());
     assert!(peak < 4096, "{peak} bytes reserved for a refused record");
+}
+
+/// Streams `stress-1e10` for a camera 300 m east of the array, held to `caps`, until nothing is
+/// queued; returns the bytes resident at the end and the most live during it.
+fn stream(caps: cav_engine::world::Caps) -> (usize, usize) {
+    use cav_engine::world::{MAX_BUILDS_PER_POLL, Streaming};
+    use cav_sim::{DrawStyle, NamedView, PaneContent, Projection, SceneSpec, ViewSpec};
+    let mut spec = cav_sim::dev::stress_1e10();
+    spec.world.as_mut().unwrap().lod.error_px = 32.0;
+    let mut view =
+        ViewSpec::framing(&SceneSpec::room(), NamedView::Top, Projection::Perspective, DrawStyle::Shaded);
+    view.target = [300.0, 0.0, 0.0];
+    view.distance = 4.0;
+    let (bytes, peak) = peak_during(|| {
+        let mut streaming = Streaming::with_caps(caps);
+        streaming.refresh(&spec, &[view], &[PaneContent::Scene]);
+        while streaming.pending() > 0 {
+            streaming.step(MAX_BUILDS_PER_POLL, f64::INFINITY);
+        }
+        streaming.bytes()
+    });
+    (bytes, peak)
+}
+
+#[test]
+fn streaming_memory_is_bounded() {
+    // W5: what streaming holds live is its resident chunks and bricks, within the bytes cap, and
+    // a working set (the wanted map and queue, one batch being made) of at most 2 MiB more.
+    use cav_engine::world::{Caps, MAX_RESIDENT};
+    let cap = 1 << 20;
+    let (held, peak) = stream(Caps { resident: MAX_RESIDENT, bytes: cap });
+    let (whole, whole_peak) = stream(Caps::default());
+    eprintln!("capped at {cap}: {held} resident, {peak} peak; uncapped: {whole} resident, {whole_peak} peak");
+    assert!(held <= cap && held > cap / 2, "{held}");
+    assert!(peak <= cap + (2 << 20), "{peak} bytes live at most under a cap of {cap}");
+    // Control: the scene wants several times the cap, and without it streaming holds that.
+    assert!(whole > 4 * cap && whole_peak > cap + (2 << 20), "{whole} {whole_peak}");
 }

@@ -10,7 +10,7 @@
 //! `Engine::poll`) makes at most a stated number of them within a stated time, so the frame is
 //! never held for long and the work is the same in a page, which has one thread.
 //!
-//! **Bounded** (`docs/slices/S4.md` §3.1, rows W5 and W6): at most [`MAX_RESIDENT`] chunks and
+//! **Bounded** (`docs/slices/S4.md` §3.1, rows W5 and W6; [`Caps`]): at most [`MAX_RESIDENT`] chunks and
 //! bricks and [`MAX_RESIDENT_BYTES`] of them; the queue is what is wanted and not resident, so at
 //! most [`MAX_RESIDENT`]; the wanted set is cut to the nearest [`MAX_RESIDENT`] and the cut is
 //! said; at most [`MAX_BUILDS_PER_POLL`] made a step.
@@ -68,9 +68,27 @@ enum Made {
     Refused(String),
 }
 
+/// The caps a [`Streaming`] holds itself to: [`MAX_RESIDENT`] and [`MAX_RESIDENT_BYTES`] unless
+/// a test asks for smaller ([`Streaming::with_caps`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Caps {
+    /// The most chunks and bricks resident together.
+    pub resident: usize,
+    /// The most bytes of resident chunks and bricks.
+    pub bytes: usize,
+}
+
+impl Default for Caps {
+    fn default() -> Self {
+        Self { resident: MAX_RESIDENT, bytes: MAX_RESIDENT_BYTES }
+    }
+}
+
 /// The world's resident part and its queue.
 #[derive(Default)]
 pub struct Streaming {
+    /// What it holds itself to.
+    caps: Caps,
     /// The world being streamed: its hash, and its pieces made solids.
     world: Option<(u64, World)>,
     frame: WorldFrame,
@@ -83,6 +101,8 @@ pub struct Streaming {
     /// What the last refresh was asked for (the world, the cameras' snapped level boxes, the
     /// towers): a refresh asked the same again changes nothing and is skipped.
     asked: Vec<u64>,
+    /// Whether the bytes cap stopped the making since the last refresh (said once).
+    full: bool,
     /// How many chunks and bricks have been made, and how many read from the cache.
     pub made: u64,
     /// See `made`.
@@ -101,6 +121,22 @@ impl std::fmt::Debug for Streaming {
 }
 
 impl Streaming {
+    /// A streaming held to `caps`, each at most its constant ([`MAX_RESIDENT`],
+    /// [`MAX_RESIDENT_BYTES`]): for tests that reach the caps with a small scene. The engine's
+    /// own is [`Streaming::default`]. Must not be used to raise a cap.
+    #[must_use]
+    pub fn with_caps(caps: Caps) -> Self {
+        let caps =
+            Caps { resident: caps.resident.min(MAX_RESIDENT), bytes: caps.bytes.min(MAX_RESIDENT_BYTES) };
+        Self { caps, ..Self::default() }
+    }
+
+    /// The caps it holds itself to.
+    #[must_use]
+    pub fn caps(&self) -> Caps {
+        self.caps
+    }
+
     /// Reads and writes chunks through the region files under `folder` from now on (natively;
     /// in a page, nothing). `None` for no cache.
     pub fn set_cache(&mut self, folder: Option<std::path::PathBuf>) {
@@ -134,13 +170,13 @@ impl Streaming {
     /// want, drops what is resident and no longer wanted, and queues the rest nearest first.
     pub fn refresh(&mut self, spec: &SceneSpec, views: &[ViewSpec], contents: &[PaneContent]) {
         let Some(world_spec) = &spec.world else {
-            *self = Self { cache: self.cache.take(), ..Self::default() };
+            *self = Self { cache: self.cache.take(), caps: self.caps, ..Self::default() };
             return;
         };
         let hash = world_spec.hash();
         if self.world.as_ref().is_none_or(|(h, _)| *h != hash) {
             let cache = self.cache.take();
-            *self = Self { cache, ..Self::default() };
+            *self = Self { cache, caps: self.caps, ..Self::default() };
             self.world = Some((hash, World::new(world_spec)));
         }
         let Some((_, world)) = &self.world else { return };
@@ -219,12 +255,14 @@ impl Streaming {
         }
         let mut wanted: Vec<(Want, f64)> = wanted.into_iter().collect();
         wanted.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
-        if wanted.len() > MAX_RESIDENT {
+        let most = self.caps.resident;
+        if wanted.len() > most {
+            // The towers' chunks are wanted at distance 0, so they are the last to go.
             self.notes.push(format!(
-                "the world's cameras and towers want {} chunks and bricks; the {MAX_RESIDENT} that matter most are kept",
+                "the world's cameras and towers want {} chunks and bricks; the {most} that matter most are kept",
                 wanted.len()
             ));
-            wanted.truncate(MAX_RESIDENT);
+            wanted.truncate(most);
         }
         let keep: HashSet<Want> = wanted.iter().map(|(w, _)| *w).collect();
         // Drop what is no longer wanted.
@@ -244,6 +282,7 @@ impl Streaming {
             stays
         });
         self.bytes -= freed.min(self.bytes);
+        self.full = false;
         let resident = |w: &Want| {
             if w.0 == 0 { self.frame.chunks.contains_key(&w.1) } else { self.frame.bricks.contains_key(w) }
         };
@@ -280,13 +319,6 @@ impl Streaming {
         // on the thread count.
         let threads = cav_sim::read::threads();
         while left > 0 && started.elapsed().as_secs_f64() * 1e3 <= milliseconds && !self.queue.is_empty() {
-            if self.bytes > MAX_RESIDENT_BYTES {
-                self.notes.push(format!(
-                    "the world's resident chunks and bricks reached {MAX_RESIDENT_BYTES} bytes; no more are made"
-                ));
-                self.queue.clear();
-                break;
-            }
             let width = threads.min(left);
             let batch: Vec<Want> = (0..width).map_while(|_| self.queue.pop_front()).collect();
             left -= batch.len();
@@ -348,9 +380,11 @@ impl Streaming {
                         self.made += 1;
                         match brick {
                             Some(brick) => {
-                                self.bytes += BRICK_BYTES;
-                                self.frame.bricks.insert((level, key), Arc::new(brick));
-                                changed = true;
+                                if self.fits(BRICK_BYTES) {
+                                    self.bytes += BRICK_BYTES;
+                                    self.frame.bricks.insert((level, key), Arc::new(brick));
+                                    changed = true;
+                                }
                             }
                             None => self.forget_empty(want),
                         }
@@ -364,9 +398,28 @@ impl Streaming {
         changed
     }
 
+    /// Whether `more` bytes fit under the bytes cap. When they do not, nothing more is made until
+    /// the next refresh (the queue is emptied) and that is said once: what is resident stays
+    /// within the cap, a batch included.
+    fn fits(&mut self, more: usize) -> bool {
+        if self.bytes + more <= self.caps.bytes {
+            return true;
+        }
+        if !self.full {
+            self.notes.push(format!(
+                "the world's resident chunks and bricks reached their {} bytes; no more are made until the view moves",
+                self.caps.bytes
+            ));
+        }
+        self.full = true;
+        self.queue.clear();
+        false
+    }
+
     /// Keeps a chunk made or read (or remembers it empty). True when it became resident.
     fn keep_chunk(&mut self, want: Want, cells: Option<ChunkCells>) -> bool {
         match cells {
+            Some(cells) if !self.fits(cells.bytes()) => false,
             Some(cells) => {
                 self.bytes += cells.bytes();
                 self.frame.chunks.insert(want.1, Arc::new(cells));
@@ -467,5 +520,85 @@ mod tests {
         let mut none = Streaming::default();
         none.refresh(&SceneSpec::room(), &[far], &contents);
         assert!(none.frame().is_none());
+    }
+
+    /// Streams `spec` for a camera 300 m east with `caps` until nothing is queued; returns it.
+    fn streamed(spec: &SceneSpec, caps: Caps) -> Streaming {
+        let mut streaming = Streaming::with_caps(caps);
+        streaming.refresh(spec, &[view_above([300.0, 0.0, 0.0], 4.0)], &[PaneContent::Scene]);
+        for _ in 0..10_000 {
+            if streaming.pending() == 0 {
+                break;
+            }
+            streaming.step(MAX_BUILDS_PER_POLL, f64::INFINITY);
+        }
+        assert_eq!(streaming.pending(), 0);
+        streaming
+    }
+
+    /// The chunks with matter within 8 m of some tower's atoms: what must stay resident.
+    fn tower_chunks(spec: &SceneSpec) -> Vec<ChunkKey> {
+        let world = World::new(spec.world.as_ref().unwrap());
+        let mut keys = std::collections::BTreeSet::new();
+        for tower in &spec.array.towers {
+            let base = Vec3::from_array(tower.position);
+            let reach = cav_core::voxel::Aabb::new(base, base + Vec3::new(0.0, 0.0, 10.1)).grown(8.0);
+            let (lo, hi) = world.grid.bricks_of(0, &reach);
+            for x in lo.x..=hi.x {
+                for y in lo.y..=hi.y {
+                    for z in lo.z..=hi.z {
+                        let key = ChunkKey::new(x, y, z);
+                        if world.chunk(key).unwrap().is_some() {
+                            keys.insert(key);
+                        }
+                    }
+                }
+            }
+        }
+        keys.into_iter().collect()
+    }
+
+    #[test]
+    fn streaming_holds_its_caps() {
+        let mut spec = cav_sim::dev::stress_1e10();
+        spec.world.as_mut().unwrap().lod.error_px = 32.0;
+        let towers = tower_chunks(&spec);
+        // Builds a step: asked for any number, a step makes at most MAX_BUILDS_PER_POLL.
+        let mut streaming = Streaming::default();
+        streaming.refresh(&spec, &[view_above([300.0, 0.0, 0.0], 4.0)], &[PaneContent::Scene]);
+        let queued = streaming.pending();
+        assert!(queued > MAX_BUILDS_PER_POLL, "{queued}: more than a step's worth is wanted");
+        streaming.step(usize::MAX, f64::INFINITY);
+        let first = streaming.made + streaming.cached;
+        assert!(first == MAX_BUILDS_PER_POLL as u64, "{first}");
+        assert_eq!(streaming.pending(), queued - MAX_BUILDS_PER_POLL);
+        let whole = streamed(&spec, Caps::default());
+        let wants = whole.frame().map_or(0, |f| f.chunks.len() + f.bricks.len());
+        // The resident cap: a cap below what the scene wants keeps the nearest, the towers'
+        // chunks first, and says so.
+        let cap = towers.len() + 40;
+        assert!(wants > cap + 100, "{wants} wanted");
+        let mut capped = streamed(&spec, Caps { resident: cap, bytes: MAX_RESIDENT_BYTES });
+        let frame = capped.frame().unwrap();
+        assert!(frame.chunks.len() + frame.bricks.len() <= cap);
+        assert!(towers.iter().all(|k| frame.chunks.contains_key(k)), "every tower chunk is kept");
+        assert!(
+            capped.take_notes().iter().any(|n| n.contains(&format!("the {cap} that matter most are kept")))
+        );
+        // Control: with the default cap nothing is cut and nothing is said.
+        let mut uncut = streamed(&spec, Caps::default());
+        assert!(!uncut.take_notes().iter().any(|n| n.contains("that matter most")));
+        // The bytes cap: held after every batch, not only before it (a batch is as wide as the
+        // machine's threads), and said once.
+        let bytes = whole.bytes() / 5;
+        let mut small = streamed(&spec, Caps { resident: MAX_RESIDENT, bytes });
+        assert!(small.bytes() <= bytes && small.bytes() > bytes / 2, "{} of {bytes}", small.bytes());
+        let notes = small.take_notes();
+        assert_eq!(notes.iter().filter(|n| n.contains("no more are made")).count(), 1, "{notes:?}");
+        // Control: the default holds everything this scene wants, past the small cap.
+        assert!(whole.bytes() > bytes);
+        // A cap is never raised past its constant.
+        let asked = Caps { resident: usize::MAX, bytes: usize::MAX };
+        assert_eq!(Streaming::with_caps(asked).caps(), Caps::default());
     }
 }
