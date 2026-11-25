@@ -130,6 +130,10 @@ already Lock).
     Esc and Enter → stop typing, back to navigation mode on the field, text KEPT;
     Tab / Shift+Tab → leave the field and move on (next section inside a window).
   Ctrl+Z undoes the text edit; "?" types a "?"; global keys type what the platform types.
+- **Cavendish's one local exception** (owner, 25 Nov 2026): in a viewport *transform session*
+  (moving the selection with arrows or a typed distance, `docs/slices/S18.md`) **Esc cancels**
+  the session, putting the selection back where it was, and **Enter keeps** it. Everywhere else
+  Esc keeps what was typed, as above. Both end in navigation mode on the same element.
 - A mouse click on a text field starts typing immediately (interaction mode), caret at the click,
   ring hidden until the next key press (the first character typed shows the ring blue).
 - A click anywhere else ends typing and leaves the keyboard in navigation mode.

@@ -592,22 +592,61 @@
   title: "The live site's record after the review fixes"
 - id: TASK-S18-01
   milestone: S18
-  title: The editor - toolbar and tools, an interactive viewport (select, gizmos, place, paint, measure, slice, probe), a schema-driven inspector
+  title: "Tools: the tool strip (Select, Move, Place, snap), a translate gizmo, click-to-place and the keyboard transform session (re-titled by the S18 brief; rotate, scale, paint, measure, slice, probe moved to S19)"
 - id: TASK-S18-02
   milestone: S18
-  title: Window management - docking, resizable panels, tabs, pop-out windows, minimise and full screen, saved layouts
+  title: "Window management, first half: resizable side panels, maximise a pane, full screen, three layouts as data (docking, tabs and pop-out moved to S19)"
 - id: TASK-S18-03
   milestone: S18
   title: The keyboard model of docs/design/keyboard.md, in full
 - id: TASK-S18-04
   milestone: S18
-  title: Data-driven GUI and detail tiers - layouts, toolbars, keymaps and simulation tiers as data with a schema
+  title: "The GUI as data: actions, keymap, scopes, tools and layouts as validated files; the command palette and the ? sheet from them (detail tiers moved to S19)"
 - id: TASK-S18-05
-  milestone: S18
+  milestone: S19
   title: Materials - a per-voxel material palette (density, colour, elastic and thermal properties) and a material library
 - id: TASK-S18-06
-  milestone: S18
+  milestone: S19
   title: Mesh import from the editor - OBJ, STL (and glTF if it earns its place) dropped in, scaled, placed and voxelised
+- id: TASK-S18-07
+  milestone: S18
+  title: "The S18 brief (docs/slices/S18.md), the task split and the S19 row"
+- id: TASK-S18-08
+  milestone: S18
+  title: "Adding and removing: starters as scene data (add <starter>), the Add menu, the scene tree's right-click menu and keys, view controls in the header, empty-state guidance"
+- id: TASK-S18-09
+  milestone: S18
+  title: "Camera: one Camera command, frame the selection, zoom toward the pointer, fly, the mode switcher, Home undoable, bookmarks in the scene"
+- id: TASK-S18-10
+  milestone: S18
+  title: "Inspector sections, lists and reset; the history list, toasts, the new-scene wizard and templates, Save and Open with the unsaved mark"
+- id: TASK-S18-11
+  milestone: S18
+  title: "Scripted end-to-end tasks through the UI, the demo, the validation report, ARCHITECTURE and the tool-or-panel recipe"
+- id: TASK-S19-01
+  milestone: S19
+  title: "Docking: panels as tabs in dock areas, drag to dock, saved layouts of the dock tree (a crate spike first, egui 0.37 and wasm)"
+- id: TASK-S19-02
+  milestone: S19
+  title: "Pop-out windows (native, egui viewports), keeping each panel's place in the Tab order"
+- id: TASK-S19-03
+  milestone: S19
+  title: "Rotate and Scale tools: an orientation for bodies, rotate and scale gizmos, typed angles and factors"
+- id: TASK-S19-04
+  milestone: S19
+  title: "Probe, Measure, the Slice handle in the view and voxel Paint tools"
+- id: TASK-S19-05
+  milestone: S19
+  title: "Camera follow, pointer lock (native and web) and the trackball"
+- id: TASK-S19-06
+  milestone: S19
+  title: "Detail tiers: a numerics block in the scene, tier files (preview, standard, reference) measured against the reference, progressive refinement and the footer switch"
+- id: TASK-S19-07
+  milestone: S19
+  title: "Multi-selection and grouped edits: Select as a set, box select, multi-drag, reorder and templates as one undo step"
+- id: TASK-S19-08
+  milestone: S19
+  title: "Units typed with values (2 km, 45 deg) in fields, sessions and the console"
 - id: TASK-S5-08
   milestone: S5
   title: Polyhedral gravity closed form - the oracle for mesh-made bodies and the direct kernel for analytic bodies up to ~1e3 faces (docs/research/exact-skin-and-partial-fill.md)
