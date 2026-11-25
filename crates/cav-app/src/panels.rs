@@ -1033,7 +1033,7 @@ fn view_controls(shell: &mut Shell, ui: &mut egui::Ui) {
     ui.add_space(4.0);
     ui.label(
         RichText::new(
-            "drag to orbit · right-drag to pan · scroll to zoom · drag a body to move it · O swaps the projection · Home resets",
+            "drag to orbit · middle-drag to pan · scroll to zoom · hold the right button to fly (W A S D) · drag a body to move it · O swaps the projection · Home resets",
         )
         .size(11.0)
         .color(theme::WEAK),
@@ -1300,7 +1300,7 @@ fn header_badges(shell: &mut Shell, ui: &mut egui::Ui) {
             let _ = shell.run("palette view");
         }
         // The camera's mode: orbit about the target (the default), or fly from the eye.
-        let flying = shell.flying();
+        let flying = shell.any_fly();
         let mode = ui
             .menu_button(
                 RichText::new(if flying { "fly ›" } else { "orbit ›" }).color(theme::STRONG),
@@ -1310,7 +1310,12 @@ fn header_badges(shell: &mut Shell, ui: &mut egui::Ui) {
                         let _ = shell.run("fly");
                         ui.close();
                     }
-                    if ui.selectable_label(flying, "Fly: W A S D, E Q, drag to look (Shift+F)").clicked()
+                    if ui
+                        .selectable_label(
+                            flying,
+                            "Fly: W A S D, E Q, drag to look (Shift+F; or hold the right button)",
+                        )
+                        .clicked()
                         && !flying
                     {
                         let _ = shell.run("fly");
@@ -1397,10 +1402,14 @@ fn header_badges(shell: &mut Shell, ui: &mut egui::Ui) {
     });
 }
 
-/// The tool strip (`ui/tools.ron`): one button a tool, the one in hand lit, then the snap toggle.
-/// Each is a button of the keyboard's Tools scope; a click and Enter both run `tool <id>`.
+/// The tool strip (`ui/tools.ron`): one button a tool, an icon with its key in the corner, the
+/// one in hand lit; then, apart and drawn as a switch, the snap toggle (S18's review, U2: the
+/// strip was abbreviated text, and snap looked like a fourth tool). Each is a button of the
+/// keyboard's Tools scope; a click and Enter both run its line. The tooltip says the tool's one
+/// name, its key and what it does.
 fn tool_strip(shell: &mut Shell, ui: &mut egui::Ui) {
     let table = crate::actions::table();
+    ui.spacing_mut().item_spacing.y = 4.0;
     for tool in &crate::tools::strip().tools {
         let line = format!("tool {}", tool.id);
         let key = table
@@ -1409,10 +1418,11 @@ fn tool_strip(shell: &mut Shell, ui: &mut egui::Ui) {
             .find(|a| a.line == line)
             .map(crate::actions::Action::shortcut_text)
             .unwrap_or_default();
-        let text = RichText::new(format!("{}\n{key}", tool.short)).size(10.0);
-        let response = ui
-            .add_sized([42.0, 36.0], Button::new(text).selected(shell.tool == tool.id))
-            .on_hover_text(format!("{} ({key}): {}", tool.label, tool.about));
+        let held = shell.tool == tool.id;
+        let response = icon_button(ui, held, &key, |painter, rect, colour| {
+            crate::icons::tool(painter, rect, tool.behaviour, colour);
+        })
+        .on_hover_text(format!("{} ({key})\n{}", tool.label, tool.about));
         let id = format!("toolbar/{}", tool.id);
         shell.register("toolbar", &id, &tool.label, Kind::Button, response.rect);
         shell.layout.buttons.push((line.clone(), response.rect));
@@ -1420,15 +1430,63 @@ fn tool_strip(shell: &mut Shell, ui: &mut egui::Ui) {
             let _ = shell.run(&line);
         }
     }
-    ui.add_space(8.0);
-    let snap = ui
-        .add_sized([42.0, 30.0], Button::new(RichText::new("Snap\nS").size(10.0)).selected(shell.snap))
-        .on_hover_text(format!("snap moves to {} m (S)", crate::tools::strip().snap_step));
+    // Snap: a setting of the Move tool and the transform session, not a tool.
+    ui.add_space(6.0);
+    let y = ui.cursor().top();
+    ui.painter().hline(ui.max_rect().x_range(), y, Stroke::new(1.0, theme::RULE));
+    ui.add_space(6.0);
+    let step = crate::tools::strip().snap_step;
+    let on = shell.snap;
+    let (rect, snap) = ui.allocate_exact_size(vec2(ui.available_width(), 46.0), Sense::click());
+    let visuals = ui.style().interact(&snap);
+    let painter = ui.painter_at(rect);
+    let grid = Rect::from_center_size(rect.center_top() + vec2(0.0, 14.0), vec2(20.0, 20.0));
+    crate::icons::snap(&painter, grid, if on { theme::GOLD } else { theme::WEAK });
+    // The switch under it: a pill with its knob right and gold when on, left and grey when off.
+    let pill = Rect::from_center_size(rect.center_top() + vec2(0.0, 36.0), vec2(26.0, 12.0));
+    painter.rect(
+        pill,
+        6.0,
+        if on { Color32::from_rgb(0x4a, 0x3c, 0x14) } else { theme::WIDGET },
+        visuals.bg_stroke,
+        StrokeKind::Inside,
+    );
+    let knob = if on { pill.right_center() - vec2(6.0, 0.0) } else { pill.left_center() + vec2(6.0, 0.0) };
+    painter.circle_filled(knob, 4.5, if on { theme::GOLD } else { theme::WEAK });
+    let snap = snap.on_hover_text(if on {
+        format!("Snap is on (S): moves go in steps of {step} m. Click or S to turn it off.")
+    } else {
+        "Snap is off (S): moves are free. Click or S to snap to the step.".to_owned()
+    });
     shell.register("toolbar", "toolbar/snap", "Snap", Kind::Button, snap.rect);
     shell.layout.buttons.push(("snap".to_owned(), snap.rect));
     if snap.clicked() || shell.take_click("toolbar/snap") {
         let _ = shell.run("snap");
     }
+}
+
+/// A square button of the tool strip: an icon drawn by `icon` (in the colour the button's state
+/// gives) and `key` small in its bottom-right corner; lit when `selected`.
+fn icon_button(
+    ui: &mut egui::Ui,
+    selected: bool,
+    key: &str,
+    icon: impl FnOnce(&egui::Painter, Rect, Color32),
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::click());
+    let visuals = ui.style().interact_selectable(&response, selected);
+    let painter = ui.painter_at(rect);
+    painter.rect(rect, 4.0, visuals.weak_bg_fill, visuals.bg_stroke, StrokeKind::Inside);
+    let colour = if selected { Color32::WHITE } else { theme::STRONG };
+    icon(&painter, Rect::from_center_size(rect.center() - vec2(3.0, 2.0), vec2(20.0, 20.0)), colour);
+    painter.text(
+        rect.right_bottom() - vec2(4.0, 3.0),
+        Align2::RIGHT_BOTTOM,
+        key,
+        FontId::monospace(9.5),
+        if selected { theme::STRONG } else { theme::WEAK },
+    );
+    response
 }
 
 /// The tool's options, in a strip above the figure (Algodoo's and Blender's): what the tool does
@@ -1491,7 +1549,7 @@ fn tool_options_row(shell: &mut Shell, ui: &mut egui::Ui) {
                 ui.label(weak(format!("click the ground (z = {} m) to add one there", shell.ground())));
             }
             _ => {
-                ui.label(weak("click selects · drag a body to move it in the view's plane · right-drag pans · Shift+F flies".into()));
+                ui.label(weak("click selects · drag a body to move it in the view's plane · middle-drag pans · hold the right button and W A S D to fly".into()));
             }
         }
     });
@@ -1710,6 +1768,14 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
             }
             continue;
         }
+        // The right button pressed over the scene flies its camera while it is held (Unity's and
+        // Unreal's: W A S D move, the mouse looks). S18's review, U3.
+        if response.hovered() && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary)) {
+            shell.mouse_fly = Some(pane);
+            if pane != active {
+                commands.push(Command::View(ViewCommand::Activate(pane)));
+            }
+        }
         // A click on a body selects it; a drag that starts on one takes hold of it.
         let within = |point: egui::Pos2| (point - rect.min).to_pos2();
         let behaviour = shell.behaviour();
@@ -1815,8 +1881,8 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                     body_drags.push((pane, n, response.drag_delta(), rect.size()));
                 }
                 _ => {
-                    let panning = response.dragged_by(egui::PointerButton::Secondary)
-                        || response.dragged_by(egui::PointerButton::Middle);
+                    // The middle button pans; the right looks round from the eye (it flies).
+                    let panning = response.dragged_by(egui::PointerButton::Middle);
                     drags.push((pane, response.drag_delta(), panning, rect.size()));
                 }
             }
@@ -1877,6 +1943,18 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         if response.clicked() {
             let _ = shell.run("view home");
         }
+        // Maximised, the way back is in sight beside Home (S18's review, U7: only Ctrl+Space
+        // brought the window back, and nothing said so).
+        if shell.maximised {
+            let restore = Rect::from_min_size(home.left_top() - vec2(150.0, 0.0), vec2(142.0, 20.0));
+            let response = ui
+                .put(restore, Button::new(RichText::new("Restore  Ctrl+Space").size(12.0)))
+                .on_hover_text("bring back the panels: the window as it was before the pane filled it");
+            shell.layout.buttons.push(("maximise".to_owned(), response.rect));
+            if response.clicked() {
+                let _ = shell.run("maximise");
+            }
+        }
     }
 
     for command in commands {
@@ -1886,8 +1964,8 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         if delta != egui::Vec2::ZERO {
             if panning {
                 shell.pan_by(pane, delta, size);
-            } else if shell.flying() {
-                // In a fly session a drag looks round from the eye, as the arrows do.
+            } else if shell.any_fly() {
+                // Flying, a drag looks round from the eye, as the arrows do.
                 let command = crate::camera::look(
                     shell.engine.view(pane),
                     pane,

@@ -51,6 +51,8 @@ pub const MODEL: &[(&str, &str, &str)] = &[
     ("Typing", "Tab", "leave the field and move on"),
     ("The view, adjusting", "arrows", "orbit by 1° (Ctrl: pan)"),
     ("The view, adjusting", "+ · −", "zoom"),
+    ("The view, with the mouse", "right button held", "fly: W A S D, E Q; the mouse looks"),
+    ("The view, with the mouse", "middle drag · wheel", "pan · zoom toward the pointer"),
     ("Moving the selection", "arrows · Page Up, Page Down", "move along x, y · z by the snap step"),
     ("Moving the selection", "X · Y · Z", "lock to an axis"),
     ("Moving the selection", "0–9 - .", "type a distance, metres"),
