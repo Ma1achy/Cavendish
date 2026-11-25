@@ -273,6 +273,10 @@ fn window(mut shell: Shell, options: &Options) -> Result<(), String> {
     shell.adapter = Some(gpu.adapter_report().to_string());
     let viewport = egui::ViewportBuilder::default()
         .with_title("Cavendish")
+        .with_icon(
+            eframe::icon_data::from_png_bytes(include_bytes!("../../assets/icon-256.png"))
+                .expect("the bundled window icon is a valid PNG"),
+        )
         .with_inner_size([options.size[0] as f32, options.size[1] as f32])
         .with_min_inner_size([900.0, 600.0])
         // A minimised start must not take the focus from whatever the owner is doing.

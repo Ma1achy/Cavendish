@@ -1,0 +1,23 @@
+h=1/60   T= 1.0 symplectic_euler  dx=-8.172e-02 dv=+1.776e-15
+h=1/60   T= 1.0 leapfrog_kdk      dx=+0.000e+00 dv=+7.105e-15
+h=1/60   T= 1.0 velocity_verlet   dx=+1.137e-13 dv=+1.776e-15
+h=1/60   T=10.0 symplectic_euler  dx=-8.172e-01 dv=+6.537e-13
+h=1/60   T=10.0 leapfrog_kdk      dx=+3.297e-12 dv=+9.095e-13
+h=1/60   T=10.0 velocity_verlet   dx=+2.274e-12 dv=+6.537e-13
+h=1/240  T= 1.0 symplectic_euler  dx=-2.043e-02 dv=-1.865e-14
+h=1/240  T= 1.0 leapfrog_kdk      dx=+1.421e-14 dv=+1.155e-14
+h=1/240  T= 1.0 velocity_verlet   dx=+2.274e-13 dv=-1.865e-14
+h=1/240  T=10.0 symplectic_euler  dx=-2.043e-01 dv=-4.349e-12
+h=1/240  T=10.0 leapfrog_kdk      dx=-1.307e-11 dv=+9.521e-13
+h=1/240  T=10.0 velocity_verlet   dx=-9.720e-12 dv=-4.349e-12
+h=1/960  T= 1.0 symplectic_euler  dx=-5.108e-03 dv=+5.596e-14
+h=1/960  T= 1.0 leapfrog_kdk      dx=+1.421e-14 dv=+8.882e-14
+h=1/960  T= 1.0 velocity_verlet   dx=-5.031e-12 dv=+5.596e-14
+h=1/960  T=10.0 symplectic_euler  dx=-5.108e-02 dv=-1.228e-11
+h=1/960  T=10.0 leapfrog_kdk      dx=-2.308e-11 dv=+1.290e-11
+h=1/960  T=10.0 velocity_verlet   dx=-1.523e-11 dv=-1.228e-11
+verlet fused-unfused position diff after 10 s: 2.2737367544323206e-13
+--- dyadic step 1/256 and closed-form-from-epoch, long flights
+T=  10.0 verlet h=1/256 dx=-2.22e-12 dv=+2.17e-12; closed form from epoch: dx=+0.0e+00 (identical expression; rounding only ~5.7e-14)
+T= 100.0 verlet h=1/256 dx=-2.21e-08 dv=-5.65e-10; closed form from epoch: dx=+0.0e+00 (identical expression; rounding only ~7.3e-12)
+T=1000.0 verlet h=1/256 dx=+1.30e-05 dv=-2.91e-09; closed form from epoch: dx=+0.0e+00 (identical expression; rounding only ~9.3e-10)

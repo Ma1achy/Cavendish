@@ -1,0 +1,597 @@
+# What else an AION-10 gradiometer sees: environment and instrument systematics, and what Cavendish should simulate
+
+> **Changed after reading the primary sources (25 Nov 2026).** The owner fetched the sixteen papers this note
+> could not read, and ZAIGA was read from arXiv. Every [snippet], second-hand or from-memory claim below
+> has been checked against them and now cites page, section, table or equation. What moved:
+> - **New row 9a, wind-advected outdoor temperature** (Creighton 2008 §3, Eq. (8), carried to the
+>   gradiometer by `sizes.py`): 4×10⁻³–6×10⁻² rad/√Hz at 0.1 Hz for wind of 5–10 m/s and a tower 5–20 m
+>   inside a building, 40–600× the goal (1×10⁻⁴–7×10⁻³ at 0.25 Hz). Creighton and Harms both warn the model is unvalidated below a few Hz, so this is
+>   an *unvalidated order of magnitude*, not a prediction; it is the largest in-band environmental term in
+>   the table and needs a site measurement (§7 item 10). Recommendation 5 changes accordingly.
+> - **New row 8a, the blackbody *force*** (Haslinger et al. 2018): the ground-state Stark potential acts
+>   on both arms whatever their state, so unlike row 8 it is not reduced by keeping the arms in the
+>   ground state: 0.20 rad static for the same 1 K parabolic profile. ELGAR budgets blackbody
+>   radiation as an *acceleration* noise for the same reason (Canuel 2020, Table 2 line 9).
+>   Recommendation 3 gains one line: S13's temperature field also feeds the ordinary potential.
+> - **Row 3, wavefront × temperature**: 0.05–5 → **0.02–2 rad**, now from Dickerson's printed Table I
+>   term 6 (½ k_eff α (v_x²+v_y²) T²) instead of my own form, which was twice it.
+> - **Blackbody coefficient**: −2.3 → **−2.354(32) Hz (T/300 K)⁴** (Falke 2011 Eq. (1));
+>   dν/dT 0.0307 → 0.0314 Hz/K. Rows 8 and 22 round to the same values (0.14 rad; 3×10⁻⁶ rad).
+> - **Merriam's −0.356 µGal/hPa** is his *local-zone admittance* (0–0.5°), not a Table Mountain value
+>   as the search summary said; Merriam's effective range is −0.27 to −0.43 µGal/hPa.
+> - **DOIs**: the ZAIGA DOI from memory was wrong (it resolves to Quiros et al., an unrelated
+>   scalar-tensor paper, IJMPD 29, 2050047); ZAIGA is IJMPD 29, 1940005,
+>   [doi:10.1142/S0218271819400054](https://doi.org/10.1142/S0218271819400054). Every other DOI was
+>   confirmed on the paper itself.
+> - New validation cases from the papers (§5.1): D'Amico's zero crossing, Lan's compensating tilt rate,
+>   Van Camp's 45 kg boy, Creutzfeldt's 1 m water slab, Farrell's Table A3.
+
+> Research note, 25 Nov 2026. Scope: everything an atom-interferometer gravity gradiometer (AION-10, ⁸⁷Sr,
+> 698 nm, n = 1000, T = 0.73 s, Δr = 5 m) reads that is *not* seismic ground motion or seismic Newtonian
+> noise (another note covers those). It builds on `docs/research/s14-wider-world.md` (far field, tides,
+> rotation), `docs/research/s15-instruments-anywhere.md` (rotation and gradient phase terms, verified there)
+> and `docs/research/s13-heat.md` (air temperature), and does not repeat their derivations.
+>
+> **Sources.** Unlike the S14 note, this one was written with network access: the papers marked **[read]**
+> below were downloaded from arXiv and read in the relevant sections (the text extraction garbles some
+> printed prefactors; where I relied on one I re-read it in a second extraction or the page image and say
+> so). Papers marked **[read, primary]** were read from the published PDFs fetched by the owner on
+> 25 Nov 2026. **[derived]** means computed here. **[snippet]** (abstract or summary only) remains only on
+> Fiorucci et al. and Stray et al., which were not in the fetched set.
+> **Numbers.** Every size that is not a quotation comes from
+> [`gradiometer-environment/sizes.py`](gradiometer-environment/sizes.py) (standard library only; output in
+> [`sizes.out.txt`](gradiometer-environment/sizes.out.txt)), which uses the engine's own arm rules
+> (`crates/cav-core/src/forward.rs`: one n-photon kick at 0, the π pulse at T, a floor at the launch height).
+
+---
+
+## 0. One-page summary
+
+**The instrument's ruler.** A slow, uniform vertical gradient Γ gives ΔΦ = C·Γ with C = k_eff T² Δr =
+2.40×10¹⁰ rad per s⁻² (24 rad per eötvös); one shot's noise at the goal 10⁻⁴ rad/√Hz
+([AION, Table 1](https://arxiv.org/abs/1911.11755)) and a 2 s cycle is 5×10⁻⁵ rad. Rad/√Hz figures below
+divide by 2 to give rad per shot.
+
+**Three findings that change what Cavendish should build.**
+
+1. **The moving-mass signals Cavendish targets are large, and published for this very site.** Carlton &
+   McCabe simulate the Beecroft stairwell with the same semiclassical phase Cavendish uses: a person on the
+   stairs beside the tower gives several radians, a 1000 kg lift at 10 m about 1.5 rad, people in the foyer
+   and cars on the road 0.05–0.2 rad, five rodents under the base ~50 µrad
+   ([Carlton & McCabe 2023, §III, Fig. 3](https://arxiv.org/abs/2308.10731) **[read]**). That paper is the
+   best validation target in the literature for Cavendish's core and should become an oracle case.
+2. **Instrument systematics are as large as the environment, and none is in the forward model.** Kinematic
+   jitter through Earth's own gradient (1.5×10⁻⁵ rad per nm of launch height, per IFO) and through Earth's
+   rotation (4.3×10⁻⁴ rad per nm/s of transverse velocity) exceed shot noise at nanometre and sub-nm/s
+   jitter, so real instruments compensate: the gradient by changing the middle pulse's wave number by
+   Δk/k = ΓT²/2 ([Roura 2017, Eq. 11](https://arxiv.org/abs/1509.08098) **[read]**), rotation with a tip-tilt
+   mirror ([MAGIS-100 §4, Fig. 17](https://arxiv.org/abs/2104.02835) **[read]**;
+   [AION-10 TDR §3.6](https://arxiv.org/abs/2508.03491) **[read]**). What survives is a *residual*, and that is
+   what Cavendish should carry. Scaled to n = 1000 from MAGIS-100's published budget, wavefront × kinematic
+   jitter, pointing jitter and AC Stark shifts are each ~5×10⁻³ rad/√Hz at MAGIS's reference parameters,
+   fifty times the AION-10 goal: AION-10's requirements on those parameters must be ~50× tighter than
+   MAGIS's ([MAGIS-100 §5.2, 5.4, 5.5](https://arxiv.org/abs/2104.02835)).
+3. **Clock-transition shifts (magnetic, blackbody, AC Stark, and scalar dark matter) are one mechanism**: an
+   energy shift felt only by the arm in the excited state. In the engine's single-kick sequence the upper
+   arm is excited on [0, T] and the lower on [T, 2T], so a uniform, constant shift cancels exactly; a
+   linear-in-height static shift is read by each IFO (11 rad per Hz/m) and cancels in the gradiometer;
+   only its curvature survives (55 rad per Hz/m²) **[derived]**. This corrects the S13 note's first guess
+   of ~0.1 rad per kelvin for the blackbody shift: a 1 K parabolic temperature profile along the tower gives
+   0.14 rad, *static*; a 0.1 K/h difference in drift between the two IFOs gives 3×10⁻⁶ rad; MAGIS's estimate
+   for a 1 K, 1 h oscillation is 10⁻⁶ rad/√Hz ([MAGIS-100 §5.9](https://arxiv.org/abs/2104.02835);
+   [Mitchell et al. 2022 §6.1](https://arxiv.org/abs/2202.04763) **[read]**). The same thermal field also
+   exerts a *force* on both arms through the ground state's Stark shift
+   ([Haslinger et al. 2018, Eq. (2)](https://doi.org/10.1038/s41567-017-0004-9) **[read, primary]**),
+   0.20 rad for the same profile **[derived]**, independent of which arm is excited: it is an ordinary
+   potential, so the engine's existing integral carries it. The linear Zeeman shift of the
+   stretched line is 489 Hz/G ([TDR §2.3](https://arxiv.org/abs/2508.03491)); with the TDR's 1 µG/√Hz field
+   noise requirement, the simple sequence gives 1×10⁻³ rad/√Hz differential, ten times the goal, so the real
+   sequence must keep the arms mostly in the ground state (as MAGIS states it does) or co-magnetometer
+   ([MAGIS-100 §5.8](https://arxiv.org/abs/2104.02835)). Which arm is excited when is therefore an instrument
+   parameter, not a detail.
+
+**Recommendation (§7).** In order: (1) an oracle case reproducing Carlton & McCabe's Fig. 3 and their
+Eq. (13); (2) a **noise-model layer** on the readout (seeded, labelled per component, in rad) carrying shot
+noise plus the residual-coupling terms with closed forms (gradient × launch jitter, rotation × transverse
+jitter, wavefront, AC Stark, magnetic, timing), each parameterised by the published coupling;
+(3) a **state-dependent-shift channel** in the forward model (one integral serving Zeeman, blackbody from
+S13's temperature field, and S16's scalar dark matter), with an occupancy-pattern parameter, plus the
+ground-state blackbody potential h ν_g(T(x)) added to the ordinary potential on both arms;
+(4) optional **Earth's gradient, Coriolis and the Roura kick** in the arms (S14/S15 already ask for the
+first two); (5) a **finite kick-duration** parameter, because an LMT train of 10 ms changes every signal
+by ~1.4 % **[derived]**. Environment sources (weather, rain, ground water, tides) stay where S14 put them;
+this note confirms their sizes and adds the rain-on-a-roof case, which at 2–3 rad for 10 mm of water
+**[derived]** belongs in the scene, not the far field. **Changed 25 Nov:** wind-advected outdoor
+temperature (Creighton's model, row 9a) may be the largest in-band environmental noise, 10⁻²-ish rad/√Hz
+at 0.1 Hz, but the model is unvalidated in AION's band; carry it as a labelled noise channel with its
+parameters exposed (c_T², wind speed, building size), not as physics, and ask for a site measurement.
+
+---
+
+## 1. Effects ranked by size (AION-10, radians)
+
+"Size" is the typical amplitude of the phase it puts on the gradiometer reading; for noise, rad/√Hz with
+rad per shot = ASD/2. "Kind": **S** static (a constant offset, invisible to a time-varying search but a
+real number in a twin), **D** slow drift (hours to days), **T** transient (seconds to minutes), **N** noise
+in band (0.01–0.25 Hz). "Now": what Cavendish models today (from `forward.rs`: source potential on point
+arms in uniform g; no Earth gradient, rotation, internal state or noise on the readout; shot noise only in
+spectrum tests).
+
+| # | Effect | Size (rad) | Kind | Now | Closed form to validate against | Source |
+|---|---|---|---|---|---|---|
+| 1 | Earth's static vertical gradient | 7.4×10⁴ | S | no (by design) | C·Γ_E, Γ_E = 3.086×10⁻⁶ s⁻² | [derived]; removed in practice by [Roura Eq. 11](https://arxiv.org/abs/1509.08098), demonstrated in [D'Amico 2017, Eq. (1)–(3), Figs. 2–3](https://doi.org/10.1103/PhysRevLett.119.253201) [read, primary] |
+| 2 | Person on the stairs beside the tower | ~1–6 | T | **yes (core)** | Carlton Eq. (11)–(12) numerically; Eq. (13) far field | [Carlton & McCabe Fig. 3](https://arxiv.org/abs/2308.10731) |
+| 3 | Wavefront curvature × cloud temperature (1–10 nK, R = 1–10 km) | 0.02–2 (static); fluctuates with δT/T | S, N | no | ½ k_eff α (v_x²+v_y²) T², α = 1/(2R): k_eff σ_v² T²/(2R) | [Dickerson 2013, Table I term 6](https://doi.org/10.1103/PhysRevLett.111.083001) [read, primary]; [derived] |
+| 4 | Linear Zeeman (489 Hz/G), 5 mG field inhomogeneity read as curvature over 5 m | ~5 | S | no | 2π A Δr c₁ B″, A = 1.76 m s | [derived]; [TDR §2.3](https://arxiv.org/abs/2508.03491) |
+| 5 | Rain, 10 mm on a roof of radius 20–50 m, 10 m above the upper IFO | 1.8–3.1 | D, T | no (needs scene water) | disc: a_z = 2πGσ(1 − d/√(a²+d²)) | [derived]; near-field dominance: [Creutzfeldt et al. 2008, p. WA100, Fig. 5](https://doi.org/10.1190/1.2992508), [2010 ¶9, ¶41](https://doi.org/10.1029/2009WR008359) [read, primary] |
+| 6 | Lift, 1000 kg at 10 m, moving the tower's height | ~1.5 | T | **yes (core)** | as #2 | [Carlton Fig. 3](https://arxiv.org/abs/2308.10731) |
+| 7 | Coriolis, per µm/s of transverse velocity jitter, uncompensated | 0.43 (4.3×10⁻⁴ per nm/s) | N | no | 2 k_eff Ω cos φ v_⊥ T² | s14 §5.1, s15 (`docs/research/s14-wider-world.md`); [Lan 2012, p. 090402-4: Δφ = 2Ω·(v₀×k)T²](https://doi.org/10.1103/PhysRevLett.108.090402); [Dubetsky & Kasevich Table I row 2](https://doi.org/10.1103/PhysRevA.74.023615) [read, primary] |
+| 8 | Blackbody shift, 1 K parabolic temperature along the tower | 0.14 | S | no | 2π A Δr (dν/dT) T″, dν/dT = 0.0314 Hz/K | [derived]; coefficient −2.354(32) Hz (T/300 K)⁴, [Falke 2011 Eq. (1)](https://doi.org/10.1088/0026-1394/48/5/022) [read, primary] |
+| 8a | Blackbody *force* (ground-state Stark potential on both arms), same 1 K parabolic profile | 0.20 | S | no (needs S13's field in the potential) | C (h/m) (dν_g/dT) T″, dν_g/dT = 0.0226 Hz/K | [derived]; force measured by [Haslinger 2018, Eq. (2), Fig. 2](https://doi.org/10.1038/s41567-017-0004-9) [read, primary]; α_g(Sr) = 197.2 a.u. from memory |
+| 9 | People in the foyer (100 kg, 5 m, 12 m up); cars on the road (1–5 t, 20 m) | 0.03–0.2 | T | **yes (core)** | Carlton Eq. (13): −k_eff T² G M Δr (D²−2h²)/(D²+h²)^{5/2} | [Carlton Fig. 3](https://arxiv.org/abs/2308.10731); Eq. (13) gives 0.09 and −0.03 rad [derived] |
+| 9a | Wind-advected outdoor temperature, 0.1 Hz, wind 5–10 m/s, tower 5–20 m inside the building (c_T² = 0.2 K² m^−2/3) | 4×10⁻³–6×10⁻² rad/√Hz (**unvalidated model**) | N | no | Creighton Eq. (8) with the gradiometer kernel (`sizes.py`) | [Creighton 2008 §3, Eq. (8), (13)](https://doi.org/10.1088/0264-9381/25/12/125011) [read, primary]; validity warning: [Harms §5.6](https://arxiv.org/abs/1507.05850) |
+| 10 | Ocean-tide attraction near a coast (upper bound) | ≤5×10⁻² | D | no | πGρ_w a/d; Farrell Green's functions | s14 §2.2 (`docs/research/s14-wider-world.md`); [Farrell 1972 Table A3](https://doi.org/10.1029/RG010i003p00761) [read, primary] |
+| 11 | Air in a 5 m × 6 m hall, per K of mean temperature | 2.2×10⁻² | D | planned (S8, S13) | slab: 4πG δρ Δz | s13 §5.2 (`docs/research/s13-heat.md`) |
+| 12 | Gravity gradient × launch jitter, per IFO: per µm height / per µm/s velocity | 1.5×10⁻² / 1.1×10⁻² | N | no | k_eff Γ T²(δz + δv T) | [Roura Eq. 4](https://arxiv.org/abs/1509.08098); 7/12 term verified in s15 (`docs/research/s15-instruments-anywhere.md`) |
+| 13 | Pressure systems (10 hPa at 1000 km; 5 hPa at 300 km) | 6×10⁻³–9×10⁻³ | D | planned (S14) | 2πG(ρ₀/p₀)δp·kH/(1+kH) | s14 §2.3 (`docs/research/s14-wider-world.md`), recomputed [derived]; gravimeter admittance [Merriam 1992 p. 495](https://doi.org/10.1111/j.1365-246X.1992.tb00112.x) [read, primary] |
+| 14 | AC Stark, wavefront × kinematics, pointing × wavefront, at MAGIS's reference parameters scaled to n = 1000 | 5–6×10⁻³ rad/√Hz each | N | no | MAGIS scalings (§4) | [MAGIS §5.2, 5.4, 5.5](https://arxiv.org/abs/2104.02835) |
+| 15 | Solid-Earth tide (Moon + Sun, Love factor 0.97) | 3.6×10⁻³ | D | planned (S14) | (GM/d³)(3cos²ψ − 1)(1 + 6k₂ − 3h₂) | s14 §2.1 (`docs/research/s14-wider-world.md`) |
+| 16 | Linear Zeeman noise, 1 µG/√Hz differential at 0.1 Hz, simple sequence | 1.0×10⁻³ rad/√Hz | N | no | 2π c₁ δB (4/ω) sin²(ωT/2) | [derived]; requirement from [TDR §2.3](https://arxiv.org/abs/2508.03491) |
+| 17 | Mean-field shift (δN/N = 0.01), n = 1000 | 5×10⁻⁴ rad/√Hz | N | no | MAGIS scaling | [MAGIS §5.7](https://arxiv.org/abs/2104.02835); same order as the measured 10⁻¹⁵ shift at 10¹¹ cm⁻³ in [Swallows 2012 Fig. 5](https://doi.org/10.1109/TUFFC.2012.2210) [read, primary] |
+| 18 | Timing jitter 1 ns/√Hz, with the clouds' 11 µm/s velocity difference from Γ | 1.1×10⁻⁴ rad/√Hz | N | no | MAGIS §5.10 scaling | [MAGIS §5.10](https://arxiv.org/abs/2104.02835); Δv [derived] |
+| 19 | Infrasound, per pascal (adiabatic plane wave, k ≫ 1/H) | 8.5×10⁻⁵ per Pa | N | planned (S14) | 2πG δp/c²; underground: Junca Eq. (23)–(25) | [Harms §5.1](https://arxiv.org/abs/1507.05850); [Junca 2019 §IV](https://arxiv.org/abs/1902.05337) |
+| 20 | Small animals near the base (5 × 0.25 kg) | ~5×10⁻⁵ | T | **yes (core)** | as #2 | [Carlton Fig. 3](https://arxiv.org/abs/2308.10731) |
+| 21 | Quadratic Zeeman after co-magnetometry (−0.23 Hz/G², B₀ = 10 G, 1 µG/√Hz) | 1×10⁻⁵ rad/√Hz | N | no | 2π·2βB₀δB·(4/ω)sin²(ωT/2) | [MAGIS §5.8](https://arxiv.org/abs/2104.02835); coefficient −23.0(3) Hz/mT² = −0.230 Hz/G², [Falke 2011 §3.2, Fig. 4](https://doi.org/10.1088/0026-1394/48/5/022) [read, primary]; [derived] |
+| 22 | Blackbody drift, 0.1 K/h *difference* between the IFOs; 1 K, 1 h oscillation | 3×10⁻⁶; 1×10⁻⁶ rad/√Hz | D, N | no | −2π ν̇ T²; MAGIS §5.9 | [derived]; [Mitchell 2022 §6.1](https://arxiv.org/abs/2202.04763) |
+| 23 | Mirror vibration (10⁻⁴ m/s²/√Hz) with Δv = 11 µm/s | 8×10⁻⁹ rad/√Hz | N | no | MAGIS §5.3 | [MAGIS §5.3](https://arxiv.org/abs/2104.02835) |
+| 24 | Laser frequency noise (single-photon gradiometer) | ~10⁻¹³ rad/√Hz | N | no | N Δv δk Δτ: MAGIS §5.1; [Graham 2013 Table I term 3](https://doi.org/10.1103/PhysRevLett.110.171102) [read, primary] | [MAGIS §5.1](https://arxiv.org/abs/2104.02835) |
+| — | Finite kick (LMT train) duration τ: relative change of *every* signal | 1.4×10⁻³ (τ = 1 ms) … 6.7×10⁻² (50 ms) | — | no | separation integral with a ramp | [derived]; "a substantial fraction of a second" for large n: [MAGIS §5.2](https://arxiv.org/abs/2104.02835) |
+
+Rows 8a and 9a were added on 25 Nov 2026; the other numbers are kept so earlier references stay valid.
+Read the table with three cautions. (a) Rows 3, 4, 8 and 16 use my single-kick model of which arm is excited
+when; real LMT sequences keep both arms in the ground state for most of the flight (MAGIS §5.8), which
+shrinks them by roughly the excited-state dwell fraction. (b) Rows 14 and 17 are *requirements in disguise*:
+they are what MAGIS's reference parameters would give at n = 1000, not predictions for AION-10, whose
+parameters are not published. (c) Static rows matter for a twin and for contrast, not for a search for
+time-varying signals.
+
+---
+
+## 2. The environment (other than seismic)
+
+### 2.1 Atmospheric mass
+
+- **Pressure systems and the gravity admittance.** Gravimeters see ≈ −0.3 µGal/hPa: "about −0.3 µgal mbar⁻¹"
+  in [Merriam 1992, Introduction, p. 488](https://doi.org/10.1111/j.1365-246X.1992.tb00112.x)
+  **[read, primary]**, who reviews earlier values (Merriam 1981's fit −0.34 at Alice Springs; Warburton &
+  Goodkind −0.43 for large cells to −0.35 for cells tens of km across; p. 489). His own Green's functions
+  give a **local-zone admittance of −0.356 µGal/mbar** (0–0.5°, p. 495); in that zone loading is only
+  ~1 % of the Newtonian attraction, about half the local signal comes from 1–10 km, and 90 % of a
+  1000 km weather system's signal comes from within 50 km (p. 490). The effective (single-regression)
+  admittance can lie anywhere in −0.27 to −0.43 µGal/mbar depending on the regional pressure field
+  (p. 495). Van Camp et al. split it as −4 nm s⁻²/hPa attraction and +1 loading, net −3, worth ~30 nm s⁻²
+  for a 10 hPa standard deviation, with a single admittance removing ~90 %
+  ([Van Camp 2017, Appendix A1.3](https://doi.org/10.1002/2017RG000566) **[read, primary]**), and the
+  correction falls to zero by 1–2 mHz (their discussion of station noise against Peterson's low-noise model). The Bouguer value
+  2πGδp/g = 0.43 µGal/hPa [derived] is the attraction alone. **For a gradiometer the admittance is the wrong quantity**: a laterally
+  uniform air layer has zero vertical gradient at the ground, and what is read is the lateral structure
+  through 2πG(ρ₀/p₀)δp·kH/(1+kH) (S14's E5a). Recomputed here: 6.1×10⁻³ rad (10 hPa, λ = 1000 km) and
+  9.1×10⁻³ rad (5 hPa, λ = 300 km). Gravimeters see atmospheric effects below ~1 mHz, modelled as pressure
+  plus loading ([Harms §5](https://arxiv.org/abs/1507.05850) **[read]**).
+- **Infrasound.** With δρ/ρ₀ = δp/(γp₀) and a wave fully reflected at the ground, the gravity perturbation is
+  [Harms Eq. (143), (171)](https://arxiv.org/abs/1507.05850) **[read]**; for a detector at depth h,
+  [Junca et al. 2019 Eq. (23)–(25)](https://arxiv.org/abs/1902.05337) **[read]** give
+  a ∝ (4πGρ₀/(γp₀k)) δp e^{−hk sinθ}, so burial suppresses the near-horizontal waves exponentially.
+  In gradient form at the surface: 3.6×10⁻¹⁵ s⁻² per Pa, 8.5×10⁻⁵ rad per Pa [derived, agrees with S14].
+  MIGA measured the pressure spectrum on site with a microbarometer (1.75 mPa rms resolution, 0.02–4 Hz),
+  compared it with Bowman's low/mid/high noise models, and found infrasound Newtonian noise rising as
+  f^−2.2 below 0.1 Hz and detectable by the improved MIGA in windy weather
+  ([Junca §IV, Figs. 7–9](https://arxiv.org/abs/1902.05337)). Fiorucci et al. add the effect of the hosting
+  building and of depth ([abstract](https://arxiv.org/abs/1801.04564) **[snippet]**; the text says the field
+  outside and inside the building differ and models a 6 m hemispherical building **[read, in part]**).
+  Harms warns that sound transmitted into the ground may *raise* the gravity perturbation (transmissivity
+  2α₁/α₂ can exceed 1 at soft sites) and that the model is unproven below a few Hz
+  ([Harms §5.1, §5.6](https://arxiv.org/abs/1507.05850)).
+- **Advected temperature in the air.** Creighton's model of quasi-static temperature fields carried past a
+  test mass by wind (δρ = −ρ₀δT/T₀, Kolmogorov structure function, Taylor's hypothesis) is reviewed with its
+  spectrum in [Harms §5.2, Eq. (145)–(155), (173)](https://arxiv.org/abs/1507.05850) **[read]** and is
+  given in [Creighton 2008 §3](https://doi.org/10.1088/0264-9381/25/12/125011) **[read, primary]**: pockets
+  of size l ≈ v/(2πf) with ⟨δT²(l)⟩ = c_T² l^p, p ≈ 2/3, arriving independently along each streamline
+  (order-of-magnitude Eq. (8), rigorous Eq. (10)); c_T² ≈ 0.2 K² m^−2/3 is "a typical daytime peak" and
+  v ≈ 20 m/s "fairly windy" (p. 9). The spectrum is cut off exponentially above v/(2π r_min), r_min the
+  distance to the nearest streamline (p. 8). **That cut-off is what makes it negligible for LIGO at
+  10 Hz and what fails for AION-10**: at 0.1 Hz, v = 10 m/s and r_min ≈ 10 m, 2πf r_min/v ≈ 0.6, so no
+  suppression. Carried to the gradiometer's vertical baseline (`sizes.py`, Eq. (8) with the kernel
+  a_z(z₂) − a_z(z₁), streamlines excluded from a building of half-width b and height H), it gives
+  2×10⁻² rad/√Hz at 0.1 Hz for v = 10 m/s, b = 10 m, H = 25 m; 6×10⁻² for b = 5 m; 7×10⁻³ for b = 20 m;
+  4×10⁻³ for v = 5 m/s; and 10⁻⁴–7×10⁻³ at 0.25 Hz **[derived]**. Two caveats bound how much weight it
+  bears. Creighton's power law holds only for l up to ~50 times the height above ground, i.e. above
+  ≈ 0.2 Hz (v/10 m s⁻¹) for streamlines a metre up (p. 8); and Harms states the advected-temperature model
+  "likely does not hold at low frequencies" because the field is no longer quasi-static and ground
+  temperature matters (§5.6). So this is an **unvalidated order of magnitude**, and still the largest
+  in-band environmental term here; it is row 9a. Creighton also finds sonic-boom shocks and wind-borne
+  objects hitting buildings give large transients (abstract; §4–5): fences "within about 30 m".
+- **Temperature in the room or shaft.** S13 gives 2.2×10⁻² rad per K for a 5 m × 6 m hall and 2.2×10⁻³ for a
+  1 m shaft. MAGIS's site survey found the underground shaft stable and the surface building following the
+  weather daily, and set targets of ±0.3 °C for the laser room and ±1 °C for enclosures
+  ([Mitchell et al. 2022 §2, §6.1](https://arxiv.org/abs/2202.04763) **[read]**). At 2.2×10⁻² rad/K, ±0.3 °C in
+  a hall is ~7 mrad of slow drift: a real, slow signal.
+
+### 2.2 Hydrology and loading
+
+- **Near water dominates.** The disc formula (S14 §2.3) makes a rain contrast 1/a: 10 mm on a roof of radius
+  20–50 m, 10 m above the upper IFO, gives 1.8–3.1 rad across the 5 m baseline [derived; geometry
+  illustrative, the Beecroft roof is not in hand]. At the Wettzell superconducting gravimeter, a 1 m water
+  layer over the whole model gives 42 µGal on flat terrain and 52 µGal with topography (the Bouguer slab
+  is 41.9 µGal [derived]); with real topography 80 % (1 m layers) to 52 % (20 m layers) of the signal
+  comes from within 50 m, 91–84 % within 500 m; on flat terrain 98–66 % within 50 m
+  ([Creutzfeldt et al. 2008, abstract and p. WA100](https://doi.org/10.1190/1.2992508)
+  **[read, primary]**; restated in [Creutzfeldt et al. 2010 ¶9](https://doi.org/10.1029/2009WR008359)
+  **[read, primary]**: "the higher percentages apply to … WSC closer to the terrain surface"). Both
+  papers stress the **building**: the gravimeter house's foundation removes 8.5 µGal of the 1 m response,
+  its roof's "umbrella effect" stops infiltration beneath it, and snow on the roof *lowers* gravity because
+  it sits above the sensor (2008, p. WA100–WA101; 2010 ¶41); Van Camp et al. advise small enclosures to
+  limit the umbrella effect ([2017, appendix "Limiting the umbrella effect"](https://doi.org/10.1002/2017RG000566)).
+  For a gradiometer, whose kernel falls as 1/r³ rather than 1/r², the near-field share is larger still. So
+  a roof, gutters, a lawn and a drain are scene objects, and rain is a source with mass, which S10 (water)
+  can carry; the umbrella (dry soil under the building) is part of the same scene.
+- **Loading.** Ocean and atmospheric loading move the tower through the ambient gradient, 1.45×10⁻¹² s⁻² per
+  metre (S14): 1 cm is 3.5×10⁻⁴ rad. The point-load Green's functions are tabulated per kilogram for the
+  Gutenberg–Bullen earth in [Farrell 1972, Table A3](https://doi.org/10.1029/RG010i003p00761)
+  **[read, primary]** (radial displacement −33.6×10⁻¹²/(aθ) m and elastic gravity −77.9×10⁻¹⁸/(aθ) m s⁻²
+  per kg near the load, aθ in metres; normalisation §6, Figs. 2–3), and for PREM in
+  [Guo et al. 2004, Table 2](https://doi.org/10.1111/j.1365-246X.2004.02410.x) **[read, primary]**, who
+  also show that treating the atmosphere as a thin layer rather than a thick one makes a negligible
+  difference (summary, Table 7). Either table is a ready validation set for a far-field loading module.
+
+### 2.3 Tides and rotation
+
+S14 sized these and S15 verified the phase terms; nothing here overturns them. Two additions from the
+papers read: the rotation-compensating mirror for MAGIS has 1.3 mrad of range on three in-vacuum piezos,
+measured from below by a position-sensitive detector ([MAGIS-100 Fig. 17](https://arxiv.org/abs/2104.02835)),
+and AION-10's design realises compensation with a tunable effective pivot from the steering mirrors and the
+bottom retroreflector ([TDR §3.6](https://arxiv.org/abs/2508.03491)). At Oxford the mirror must turn at
+Ω cos φ = 4.5×10⁻⁵ rad/s, 66 µrad over 2T [derived]. Lan et al. found the contrast-maximising tilt rate
+at 58.5 ± 1.0 µrad/s against Ω cos φ = 57.4 µrad/s at Berkeley, with the Coriolis phase
+Δφ = 2Ω·(v₀ × k)T² ([Lan 2012, Table I and p. 090402-4](https://doi.org/10.1103/PhysRevLett.108.090402)
+**[read, primary]**); Dickerson et al. compensated Ω_E = 57.9 µrad/s with a tip-tilt stage of 1 nrad
+precision and confirmed the rotation term's slope to <10 % ([Dickerson 2013, Fig. 3, Table I term 2](https://doi.org/10.1103/PhysRevLett.111.083001)
+**[read, primary]**). D'Amico et al. still saw shifts of up to 4 mrad for a 0.1 mm/s change of transverse
+velocity with the mirror rotating, so a "compensated" coupling need not be small
+([D'Amico 2017, p. 253201-4](https://doi.org/10.1103/PhysRevLett.119.253201) **[read, primary]**). With compensation, MAGIS's leading residual for a
+three-loop sequence is (17/3 + 4√2) n k δv_x Ω_y T_zz T⁴; for AION-10's numbers that is 4×10⁻⁹ rad per nm/s
+[derived from MAGIS §5.6]: negligible.
+
+### 2.4 Anthropogenic
+
+- **AION-10's own site.** Carlton & McCabe model a passenger lift (1000–2000 kg, 2.5 m/s, 20 moves an hour at
+  peak), people on the stairs (5 an hour, 50–100 kg, 0.5 m/s up the stairs), 100 people an hour in the foyer,
+  60 vehicles an hour (1–5 t, 10 m/s, 20 m away) and rodents, through the phase
+  δφ = (m_A/ħ)∫[V(z₂,t) − V(z₁,t)]dt with V = −GM/√(D² + (z − h)²): the same form as `forward.rs`
+  ([§III, Eq. (11)–(12)](https://arxiv.org/abs/2308.10731)). They show the semiclassical treatment is
+  adequate (leading correction ~10⁻¹⁶ g for 80 kg at 2 m and a 1 mm cloud), that the daytime series is
+  dominated by these transients, and that masking them restores ULDM sensitivity to within 10–40 % of
+  shot-noise-limited; night running alone costs ~30 % ([abstract, §IV](https://arxiv.org/abs/2308.10731)).
+  They ignore Coriolis (assumed compensated) and the Earth-gradient constant (noting sequences can remove it).
+- **Gravitational-wave detectors.** Thorne & Winstein: walking people produce gravity-gradient noise through
+  their centre-of-mass jerks; doors slamming and fists striking walls (5 kg m/s) are comparable; vehicles
+  decelerating to rest dominate the vehicle term; people must be kept ≳10 m from LIGO test masses
+  ([Thorne & Winstein 1999](https://arxiv.org/abs/gr-qc/9810016) **[read, abstract and §I]**). Those are
+  10 Hz effects; at AION-10's 0.01–0.25 Hz the quasi-static mass term dominates. Harms gives the Fourier
+  transform of a mass in uniform motion, a(ω) ∝ (2Gm/v²)[K₁(ωr/v) … + iK₀(ωr/v) …], exponentially cut off above
+  v/r, and recommends a speed limit below 10 m/s for 0.1 Hz sensitivity
+  ([Harms §6.2, Eq. (176)–(181)](https://arxiv.org/abs/1507.05850) **[read]**); and a rule of thumb that an
+  oscillating object matters only if V/r³ is not small ([§6.1](https://arxiv.org/abs/1507.05850)).
+- **MAGIS-100 site.** Higher-frequency seismic content from air handlers, compressors and a lift; human noise
+  falls at night ([Mitchell et al. 2022 §4](https://arxiv.org/abs/2202.04763) **[read]**). No gravitational
+  estimate of people or vehicles there.
+- **A field atom gradiometer.** Birmingham's 1 m Rb gradiometer measured a lab mass change of 205 ± 13.1 E
+  against 202 E modelled, and found a tunnel of 150 E modelled peak (17.5 mrad); it did not quantify people or
+  vehicles ([Stray et al. 2022](https://doi.org/10.1038/s41586-021-04315-3), via
+  [PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC8866129/) [snippet of full text]). A ready
+  "known mass, measured phase" case for a Raman instrument.
+- **Superconducting gravimeters see people.** A 45 kg boy sitting for 6 minutes with his navel ~1 m above
+  an iGrav lowered gravity by 2.8 nm s⁻² ([Van Camp 2017, Fig. A7](https://doi.org/10.1002/2017RG000566)
+  **[read, primary]**); a point mass gives 3.0 [derived]. Van Camp et al. say such instruments "detect the
+  presence of operators and nearby vehicles" and resolve "10 kg at a distance of one meter" (§4).
+  A second known-mass case (§5.1).
+- **ELGAR and ZAIGA.** ELGAR's requirements table ([Canuel 2020, Table 2 and §2.1](https://doi.org/10.1088/1361-6382/aba80e)
+  **[read, primary]**) sets each spurious term below 0.1 µrad/√Hz per interferometer at 1.7 Hz and lists,
+  among others, velocity noise against Earth's rotation (50 nm s⁻¹ Hz^−1/2), gravity-gradient compensation
+  to 1 %, pointing jitter, a 25 km wavefront radius, magnetic field 0.1 nT Hz^−1/2 for a 1 nT/m gradient
+  and **blackbody radiation 2 mK Hz^−1/2 for a 0.1 K/m temperature gradient, as an acceleration noise**
+  (lines 8–10); the derivations are in its companion paper [56], not read. It also argues that averaging
+  80 gradiometers per arm reduces gravity-gradient noise by ≥ 1/√N (§1.3.2). ZAIGA ([Zhan et al. 2020,
+  §2.2.2](https://doi.org/10.1142/S0218271819400054), read from [arXiv:1903.09288](https://arxiv.org/abs/1903.09288))
+  is a Newtonian-noise estimate rather than a systematics budget: Saulson's coherence-cell model with
+  an assumed pressure spectrum p̃² ≈ 3×10⁻⁶/(f/Hz)² Pa²/Hz and 20 m/s wind, concluding that Newtonian noise
+  "overtakes the shot noise below 1 Hz"; no site measurement yet (Eq. (4)–(9)).
+
+---
+
+## 3. The state-dependent shift channel (Zeeman, blackbody, AC Stark, scalar dark matter)
+
+**Mechanism.** On the 698 nm clock line each arm alternates between ¹S₀ and ³P₀. A shift δν(x, t) of the
+transition adds phase 2π∫δν dt to whichever arm is excited. In the engine's sequence the upper (kicked)
+arm is excited on [0, T] and the lower on [T, 2T], so per IFO
+
+    Φ = 2π [ ∫₀^T δν(z_u, t) dt − ∫_T^{2T} δν(z_l, t) dt ].
+
+Consequences [derived, `sizes.py`]:
+- uniform and constant: Φ = 0 exactly (an echo);
+- uniform drift ν̇: Φ = −2π ν̇ T² (3.35 rad per Hz/s), common to both IFOs if the drift is common;
+- uniform noise at frequency f: amplitude 2π δν (4/ω) sin²(ωT/2) (2.07 rad per Hz at 0.1 Hz);
+- static linear in height ν′: Φ = 2π ν′ A with A = ∫₀^T z_u − ∫_T^{2T} z_l = 1.76 m s, the same for both IFOs,
+  so it **cancels in the gradiometer**; the gradiometer reads the curvature, 2π ν″ Δr A = 55 rad per Hz/m².
+
+So each IFO reads the gradient of the shift and the gradiometer its curvature, exactly as for gravity. The
+scalar-ULDM phase of Carlton & McCabe's Eq. (7) is this channel with δν ∝ cos(mt), which gives a ready
+closed form for testing it.
+
+**Numbers.** Magnetic: the stretched 9/2 → 9/2 line shifts 489 Hz/G, with a bias up to 10 G, 5 mG
+homogeneity and a 1 µG/√Hz noise requirement ([TDR §2.3](https://arxiv.org/abs/2508.03491)); MAGIS
+co-magnetometers with opposite-m_F interferometers, leaving the quadratic shift
+([MAGIS §5.8](https://arxiv.org/abs/2104.02835)), measured by PTB as a = −23.0(3) Hz mT⁻² (= −0.230 Hz/G²)
+over 23–630 µT ([Falke et al. 2011 §3.2, Fig. 4](https://doi.org/10.1088/0026-1394/48/5/022)
+**[read, primary]**). Rows 4, 16, 21 of the table. Blackbody: Δν_BBR = −2.354(32) Hz (T/300 K)⁴
+([Falke 2011 Eq. (1)](https://doi.org/10.1088/0026-1394/48/5/022), from Porsev & Derevianko; MAGIS §5.9
+and Graham 2013 p. 4 round it to −2.3), 0.0314 Hz/K; rows 8 and 22. PTB's own vacuum system showed
+daily variations < 100 mK at each sensor but 4.2 K peak-to-peak *gradients* across it (§3.2), so a
+1 K profile along a 10 m tube is not extreme. The 10⁻¹¹ Hz cm³ mean-field scale (row 17) is the
+same order as JILA's measured 10⁻¹⁵ fractional shift at 10¹¹ cm⁻³ (≈ 4×10⁻¹² Hz cm³ [derived]), which
+they suppress to (0.6 ± 1.7)×10⁻¹⁷ in a strongly interacting lattice
+([Swallows 2012, Figs. 5, 8](https://doi.org/10.1109/TUFFC.2012.2210) **[read, primary]**).
+
+**The blackbody force (added 25 Nov 2026).** Haslinger et al. measured the attraction of Cs atoms to a
+heated cylinder, a(r) ∝ −α (T_s⁴ − T₀⁴) R²/r³, in agreement with the a.c. Stark-shift gradient of the
+*ground state* and "orders of magnitude stronger than the outward-directed radiation pressure"; they
+note that a spatially constant shift is common to both arms and cancels
+([Haslinger 2018, abstract, Eq. (2), Fig. 2](https://doi.org/10.1038/s41567-017-0004-9)
+**[read, primary]**). For Sr the ground-state shift is a potential h ν_g(T(x)) felt by *both* arms
+whatever their internal state, with |ν_g| ≈ 1.70 Hz at 300 K and dν_g/dT = 0.0226 Hz/K (from
+α_g = 197.2 a.u., which I quote from memory) **[derived]**. Through the gradiometer it acts like gravity:
+C (h/m) ν_g″, 110 rad per Hz/m², so the same 1 K parabolic profile gives **0.20 rad** (row 8a), and a
+linear profile is a uniform force, 1.0×10⁻¹⁰ m s⁻² per K/m, which cancels between the IFOs. Unlike
+row 8 it is not reduced by keeping the arms in the ground state. In Cavendish it needs no new channel:
+add h ν_g(T) from S13's temperature field to the potential the arms already integrate; the excited arm's
+extra shift stays in the state channel. ELGAR's Table 2 line 9 is this effect, budgeted as acceleration
+noise ([Canuel 2020](https://doi.org/10.1088/1361-6382/aba80e)).
+
+**The S13 estimate, corrected.** S13 §6 item 9 guessed ~0.1 rad per kelvin of temperature *difference*
+between the IFOs. A static difference that is linear in height cancels in the gradiometer; a static
+difference with curvature (1 K parabolic over 5 m) gives 0.14 rad, static; a difference in *drift* of
+0.1 K/h gives 3×10⁻⁶ rad. So S13's temperature field matters to the blackbody channel only through its
+curvature along the tower and its in-band fluctuation; the clock-shift part is small in the real sequence,
+the force part (0.20 rad per 1 K of parabolic profile) is not. The gravity of the air (2.2×10⁻² rad/K,
+S13) remains the larger heat effect for time-varying work indoors; outdoors, wind-advected temperature
+(row 9a) may be larger still.
+
+---
+
+## 4. Instrument systematics, with their published scalings
+
+All from [MAGIS-100 §5](https://arxiv.org/abs/2104.02835) **[read; prefactors re-read in a raw text
+extraction]** unless stated; each scales linearly with n, quoted at their n = 100 reference and moved here
+to n = 1000.
+
+| Term | MAGIS scaling (n = 100) | At n = 1000, MAGIS reference parameters | What sets it |
+|---|---|---|---|
+| Laser frequency noise | ~1×10⁻¹³ rad/√Hz (Δv/100 µm/s)(δf/10 Hz/√Hz)(τ/100 µs) | ~10⁻¹³ (Δv = 11 µm/s) | single-photon common mode: N Δv δk Δτ, with the requirement cδk/2π ≲ 10² kHz/√Hz for their satellite case ([Graham et al. 2013, Table I term 3](https://doi.org/10.1103/PhysRevLett.110.171102) **[read, primary]**) |
+| Wavefront × kinematic jitter, 1st order | 5×10⁻⁴ rad/√Hz (ε/5 mrad)(δx/10 µm/√Hz)(sin…/0.3) | 5×10⁻³ | aberration amplitude ε at 1/k_t ≈ 3 mm; per-shot position knowledge |
+| Wavefront, 2nd order | 3×10⁻⁸ rad/√Hz, ∝ n² | 3×10⁻⁶ | transverse kicks |
+| Mirror vibration | 1×10⁻⁸ rad/√Hz (Δv)(T)(δa/10⁻⁴ m s⁻² /√Hz) | 8×10⁻⁹ | velocity mismatch of the clouds |
+| Pointing × wavefront | 6×10⁻⁴ rad/√Hz (δθ/30 nrad/√Hz) | 6×10⁻³ | AION-10 holds pointing to < 35 nrad ([TDR §3.5](https://arxiv.org/abs/2508.03491)) |
+| AC Stark | 6×10⁻⁴ rad/√Hz (δI/I / 10⁻⁵/√Hz) | 6×10⁻³ | differential intensity between the IFOs |
+| Rotation × gradient × velocity (3-loop) | 2×10⁻⁵ rad/√Hz (δv_x/10 µm/s/√Hz) | — | 4×10⁻⁹ per nm/s at AION's T [derived] |
+| Mean field (⁸⁷Sr, ~10⁻¹¹ Hz cm³) | 5×10⁻⁵ rad/√Hz (τ/200 µs)(δN/N / 0.01) | 5×10⁻⁴ | population asymmetry |
+| Quadratic Zeeman | 1×10⁻³ rad/√Hz (B₀/1 G)(δB/1 mG/√Hz)(T/1 s) | not ∝ n | bias current stability |
+| Blackbody | 1×10⁻⁶ rad/√Hz (1 K, 1 h, T = 1 s, 3-loop) | not ∝ n | tube temperature |
+| Timing jitter | 1×10⁻⁴ rad/√Hz (Δv/100 µm/s)(δT/1 ns/√Hz) | 1.1×10⁻⁴ per ns/√Hz | pulse generator |
+| Gas index of refraction | strain-equivalent 10⁻²⁶–10⁻²¹/√Hz at 10⁻¹¹ Torr | negligible | vacuum |
+| Cloud's own index of refraction | ~10⁻⁷ rad/√Hz | ~10⁻⁶ | atom number and size jitter |
+
+**Gravity gradient and its compensation.** Per IFO, δφ = k_effᵀ(g + a)T² + k_effᵀΓT²(r₀ + v₀T) + …
+([Roura Eq. 4](https://arxiv.org/abs/1509.08098)); the two clouds' launch jitters are independent, so the
+gradiometer sees k_eff Γ T² times their *difference*: 1.48×10⁻⁵ rad per nm and 1.08×10⁻⁵ rad per nm/s
+[derived]. Changing the middle pulse's effective wave number by Δk_eff = (ΓT²/2)k_eff closes the
+interferometer, removes the dependence on r₀ and v₀, and moves it onto the mirror position at the middle
+pulse, −2k_effᵀΔ·r_mirror·T² (Eq. 11–13), which cancels between the two IFOs of a single-laser gradiometer.
+For AION-10, Δk/k = 8.2×10⁻⁷, a 353 MHz laser frequency step, and the kick at T changes by 5.4 µm/s
+[derived]. Residual: the error in the assumed Γ (Roura's "relative accuracy δΓ/Γ ~ 10⁻³ relaxes co-location by
+three orders"; ELGAR requires compensation to 1 %, Canuel 2020 Table 2 line 4). The compensation also
+cancels Earth's 7.4×10⁴ rad constant (row 1), which is why Carlton & McCabe and Cavendish can leave it out.
+**Demonstrated** by D'Amico et al. with three ⁸⁷Rb clouds 31 cm apart, 2T = 320 ms: Eq. (1) is the
+uncompensated phase k_eff g T² − k_eff Γ_zz(z₀ + v_z0 T)T², Eq. (2) the condition Δk_eff = (Γ_zz T²/2)k_eff,
+and Eq. (3) makes the gradiometer phase linear in the π-pulse detuning with a zero crossing that gives Γ
+without knowing the baseline. They measured Γ₂₃ = −3.32(2), Γ₁₂ = −3.48(1), Γ₁₃ = −3.40(1) ×10⁻⁶ s⁻² (source
+masses far) and, with them close, Γ₁₃ = (Γ₁₂ + Γ₂₃)/2 as expected; the slope gave d₂₃ = 0.3072(3) m. The
+residual instability was 10 mrad, dominated by the AC Stark shift of the Raman beams
+([D'Amico 2017, Eq. (1)–(3), Figs. 2–5, p. 253201-3–4](https://doi.org/10.1103/PhysRevLett.119.253201)
+**[read, primary]**). The full term list to T⁴, including the (7/12) k g Γ T⁴ term S15 verified and
+Roura's k Γ v T³, is [Dubetsky & Kasevich 2006, Table I](https://doi.org/10.1103/PhysRevA.74.023615)
+**[read, primary; page image]** (column 3 with T₃ = 2T: (1/8) k v_z T₃³ T_zz = k v Γ T³,
+(7/192) k g T₃⁴ T_zz = (7/12) k g Γ T⁴, ħk²T₃³T_zz/(16m) = (ħk²/2m)ΓT³); Dickerson et al.'s Table I
+lists the same terms with sizes for a 10 m Rb fountain (terms 4–6: 0.44, 0.18, 0.04 rad). The finite-pulse and gradient-induced Doppler detuning
+(2π × 200 Hz for MAGIS's 100 m, ~0.5 % pulse inefficiency) is in [MAGIS §5.6](https://arxiv.org/abs/2104.02835).
+
+**Finite kick duration.** The engine kicks instantly. A real LMT train of N pulses lasts N·τ_π; with a ramp of
+duration τ at the start of each half the arm-separation integral falls by ≈ τ/T: 1.4×10⁻³ at 1 ms,
+1.4×10⁻² at 10 ms, 6.7×10⁻² at 50 ms [derived]. That is a relative error on *every* moving-mass signal, far
+above the engine's 10⁻⁹ oracle tie. MAGIS says the interaction time "can become a substantial fraction of a
+second" ([§5.2](https://arxiv.org/abs/2104.02835)). AION-10's pulse durations are not published (§8).
+
+---
+
+## 5. What Cavendish models, and what to add
+
+| Effect | Today | Add as | Why this form |
+|---|---|---|---|
+| Moving masses (people, lift, cars, animals) | **source, core** | an oracle case on Carlton & McCabe | it is the same integral; the paper is the published anchor for this site |
+| Weather, infrasound, Lamb wave | planned S14 | far-field source (E5a) | closed form; data-driven later |
+| Air temperature in the room | planned S8/S13 | scene source | S13 |
+| Rain, roof water, soil moisture near the tower | not planned as such | **scene source** (S10 water: a sheet with a fill level) | 1/a: near water dominates (2–3 rad) |
+| Tides, ocean loading, rotation | planned S14 | far-field source; Coriolis optional in the arms | S14 |
+| Earth's gradient in the flight; Roura Δk at T | not planned explicitly | **instrument options** in `Instrument` (`earth_gradient`, `gradient_compensation`) | changes signals by ~10⁻⁶ relative; validates against Roura |
+| Finite kick duration | no | **instrument parameter** `kick_duration` (ramp) | relative error τ/T on every signal |
+| Clock shifts: Zeeman, blackbody, AC Stark, scalar ULDM | no | **state-dependent channel**: a shift field δν(x, t) read on the excited arm, with an occupancy pattern | one integral, four physical sources; ULDM is S16's |
+| Blackbody force (ground-state Stark potential) | no | **a term in the ordinary potential**, h ν_g(T(x)) from S13's temperature field, on both arms | 0.2 rad per K of profile curvature; needs no new channel (added 25 Nov) |
+| Wind-advected outdoor temperature | no | **noise channel** with exposed c_T², wind speed and building size (Creighton Eq. (8) spectrum), labelled unvalidated | model unproven below a few Hz; 10⁻²-ish rad/√Hz at 0.1 Hz if it holds (added 25 Nov) |
+| Kinematic jitter × residual Γ, residual Ω; wavefront; pointing; AC Stark intensity noise; mean field; timing | no | **noise models** on the readout, each with its coupling and a residual parameter | statistically exact from closed forms; no physics to simulate |
+| Laser frequency noise, mirror vibration, gas index | no | **null tests** with the number recorded | ≤ 10⁻⁸ rad/√Hz |
+
+**The noise-model layer, concretely.** For each tower and shot, add a seeded draw from each enabled
+component: white shot noise σ = ASD/√(2Δt); k_eff ΔΓ T²(δz₁ − δz₂ + (δv₁ − δv₂)T) with ΔΓ the compensation
+residual and δz, δv drawn per cloud; 2k_eff ΔΩ_⊥ (δv_x,1 − δv_x,2) T² with ΔΩ_⊥ the tip-tilt residual; and the
+MAGIS-scaled ASD terms as coloured noise with the instrument's transfer function. Each component is a named
+channel in the bundle (as `signal = targets + ambient` already is), so Gradar can switch them and a reader
+sees what each costs.
+
+### 5.1 Validation cases (pass criterion first; each has a control that must fail)
+
+| Case | Asserts | Against | Control |
+|---|---|---|---|
+| `carlton_fig3_replay` | the engine's phase for the lift, stairs, foyer, car and RAT trajectories of Carlton Fig. 3 | their figure's extremes, within 10 % (read off the plot) | swapping the IFO sign flips every curve |
+| `carlton_eq13_far_field` | stationary point mass, D, h ≫ arm excursion | Eq. (13): −k_eff T² G M Δr (D²−2h²)/(D²+h²)^{5/2}, ≤ 10⁻³ relative at D = 200 m | the sign change at D ≈ √2 h must appear |
+| `clock_shift_uniform_is_silent` | uniform constant δν gives 0 per IFO | exact (≤ 10⁻¹² rad) | the shift applied to both arms (wrong occupancy) gives 2π δν T |
+| `clock_shift_gradient_cancels` | linear static δν: per IFO 2π ν′A, gradiometer 0 | A from the closed-form arms | quadratic δν gives 2π ν″ Δr A |
+| `clock_shift_drift` | uniform ν̇: −2π ν̇ T² | closed form | |
+| `scalar_uldm_closed_form` | the channel with δν ∝ cos(ωt) | Carlton Eq. (7) for their broadband sequence (once the occupancy pattern is that sequence's) | wrong ω fails |
+| `roura_compensation` | with Δk = (ΓT²/2)k at T, the phase no longer depends on z₀, v₀ (to O(Γ²)); without it, k Γ T²(δz + δvT) | [Roura Eq. 4, 11–13](https://arxiv.org/abs/1509.08098); s15's 7/12 check | Δk = 0 restores the dependence |
+| `kick_ramp_limit` | the separation integral with a ramp of τ; τ → 0 bit-identical to today | closed form of the ramp | |
+| `noise_channels_periodogram` | each noise channel's periodogram equals its ASD × transfer function | the engine's own `spectrum.rs` estimators | doubling an ASD fails |
+| `infrasound_depth` | surface and buried response of a plane acoustic wave | Harms Eq. (143); Junca Eq. (23)–(25) | k → 0 gives 0 |
+| `stray_lab_mass` (optional) | a Raman 1 m gradiometer with Stray et al.'s lab mass change | 202 E modelled / 205 ± 13 E measured | |
+| `damico_zero_crossing` | with source masses giving Γ₁₂, Γ₂₃, the π-pulse detuning that nulls each gradiometer phase gives Γ independent of d, and Γ₁₃ = (Γ₁₂+Γ₂₃)/2 | [D'Amico 2017 Eq. (3)](https://doi.org/10.1103/PhysRevLett.119.253201) and its measured values, ≤ 1 % | an error in d must not move the zero crossing; it must move the ellipse-fit value by Δd/d |
+| `coriolis_tilt_rate` | the tip-tilt rate that zeroes the transverse-velocity phase equals Ω cos φ | Lan 2012 (58.5 ± 1.0 vs 57.4 µrad/s); Dickerson Table I term 2 | the wrong sign of rate doubles the phase |
+| `vancamp_boy` | a 45 kg body ~1 m above a gravimeter point | 2.8 nm s⁻² measured ([Van Camp 2017 Fig. A7](https://doi.org/10.1002/2017RG000566)); point mass 3.0 | moving the mass to the sensor's height gives ~0 vertical |
+| `water_slab_bouguer` | a 1 m water layer of large radius under a gravimeter | 2πGρh = 41.9 µGal; Creutzfeldt 2008's flat-terrain model 42 | a finite disc of radius a converges as 1 − d/√(a²+d²) |
+| `farrell_point_load` (when loading is built) | radial displacement and elastic gravity of a 1 kg surface load | [Farrell 1972 Table A3](https://doi.org/10.1029/RG010i003p00761) (or Guo 2004 Table 2 for PREM), ≤ 1 % | |
+
+---
+
+## 6. Recommendation, with reasons
+
+1. **Validate the core against Carlton & McCabe first.** It is the only published simulation of AION-10's
+   own site with the same physics, it covers every anthropogenic class asked about, and it costs one
+   oracle case. (Prefer the case that checks a known answer.)
+2. **Add the noise-model layer before adding more physics.** Most instrumental terms are linear couplings of
+   a jitter to a known coefficient; drawing them per shot is statistically exact, cheap, and validated by
+   periodogram. This is what a training set for Gradar needs to be realistic; simulating wavefronts or
+   magnetic fields from first principles would add cost without a published answer to check against.
+3. **Build the state-dependent channel once.** It serves the magnetic and blackbody budgets (S15), S13's
+   temperature field, and S16's scalar dark matter, all with closed forms (§5.1). *Added 25 Nov:* when
+   S13's field reaches the tower, also add the ground-state blackbody potential h ν_g(T) to the ordinary
+   potential on both arms (row 8a); it is as large as the clock-shift part and survives any sequence.
+4. **Give `Instrument` three options**: Earth's gradient in the flight, the Roura Δk at T, and a kick
+   duration. Each defaults off, so the v1 tie and every existing fixture stay bit-identical. D'Amico's
+   zero-crossing measurement is the published check on the second (§5.1).
+5. **Leave seismic to the other note; keep S14's far field as it is; put rain and roof water (and the
+   building's umbrella) in the scene.** *Changed 25 Nov:* add wind-advected outdoor temperature to the
+   noise-model layer as a labelled, *unvalidated* channel (Creighton's spectrum with c_T², wind speed and
+   building size as parameters, default off), and put the question to George: a weather mast with a fast
+   thermometer and anemometer at the Beecroft site would settle whether it is 10⁻² or 10⁻⁴ rad/√Hz. Do not
+   simulate it as a physical air field until a measurement exists; the model's authors say it is unproven
+   in this band.
+
+---
+
+## 7. What I could not verify
+
+1. **AION-10's actual sequence**: which arm is excited when during the n = 1000 LMT train, the π-pulse
+   duration and total kick time, the cloud temperature and size, the bias field in use, and whether a
+   co-magnetometer is planned. The TDR states requirements, not these. My clock-shift and kick-duration
+   numbers use the engine's single-kick sequence and are upper bounds; the 1 µG/√Hz requirement giving
+   10× the phase goal in my model suggests the real sequence suppresses excited-state dwell. **Ask the AION
+   team (via George).**
+2. **MAGIS scaling prefactors**: the PDF's equations extract badly. I re-read each prefactor in a second
+   extraction (5×10⁻⁴, 3×10⁻⁸, 1×10⁻⁸, 6×10⁻⁴, 6×10⁻⁴, 2×10⁻⁵, 5×10⁻⁵, 1×10⁻³, 1×10⁻⁶, 1×10⁻⁴, 10⁻¹³), but the
+   full parameter dependence of the wavefront terms (the k_t and sin factors) I could not read cleanly.
+   Check against the published version (Quantum Sci. Technol. 6, 044003).
+3. **Wavefront curvature × temperature** (row 3) now uses Dickerson's printed term 6 (read from the page
+   image). Recomputing Dickerson's own row from his stated parameters gives 0.066 rad against the printed
+   0.04, so either the table uses a different velocity convention or I misread one parameter: the form is
+   right to within a factor of 2. For single-photon LMT with pulses from alternating directions the
+   coefficient may differ again. Order of magnitude only.
+4. **Rain on a roof**: the Beecroft roof's size and height above the tower are not in hand; the 2–3 rad is
+   illustrative. (Creutzfeldt's near-field shares are now read in both papers.)
+5. **Admittance**: now read in Merriam and Van Camp. Boy et al. (3-D atmospheric models) not read.
+6. **Carlton Fig. 3 magnitudes** are read off a plot (person on stairs: −6 to +3 rad on the axis; lift
+   ~ ±0.75–1.5 rad; foyer ~0.2; car ~ −0.05 to −0.1). Eq. (13) at far-field positions gives 0.09 and −0.03 rad,
+   the same order; the near-field values need the integral.
+7. **Blackbody force (row 8a)**: Sr's ground-state static polarizability (197.2 a.u.) and the 300 K field
+   ⟨E²⟩ = (831.9 V/m)² are from memory, not from a paper read here; the dynamic correction is ignored.
+   Haslinger measured Cs, not Sr. Check against Safronova et al. (PRA 87, 012509, 2013) or Porsev &
+   Derevianko (PRA 74, 020502, 2006) before a slice relies on the number; the order of magnitude is safe
+   because the ground-state shift is a large fraction of the measured clock shift.
+8. **Thorne & Winstein** read in abstract and introduction only; Fiorucci et al. read in part (its abstract
+   is a snippet; so is the PMC summary of Stray et al.).
+9. **MIGA's systematics paper and ELGAR's companion paper** (ref. [56] of the ELGAR paper, where its
+   Table 2 is derived): not read.
+10. **Wind-advected temperature (row 9a)**: an extrapolation of Creighton's order-of-magnitude Eq. (8)
+    below its validity (Kolmogorov scaling only for l ≲ 50 × height, i.e. f ≳ 0.2 Hz (v/10 m s⁻¹); Harms
+    §5.6 says the model "likely does not hold at low frequencies"), with c_T² at its daytime peak, a
+    uniform wind, a box building and the lower IFO 2 m above ground. Its spread over plausible geometries
+    is a factor of ~15 at 0.1 Hz. Resolve with a site measurement of c_T² and wind (or a measured gravimeter
+    or gradiometer record against wind speed); the slice can carry it as a parameterised channel meanwhile.
+11. **ZAIGA** read from arXiv:1903.09288 (the accepted manuscript), not the journal version.
+
+---
+
+## 8. Further questions (not chased)
+
+- What does the AION collaboration's own systematics budget (if any beyond the TDR) assign to magnetic,
+  wavefront and blackbody terms at n = 1000?
+- Does AION-10 plan gravity-gradient compensation (Roura/D'Amico) or multi-loop sequences?
+- Are the Beecroft stairs to be closed during runs, as Carlton & McCabe assume at night?
+- How large is the sound-to-ground transmission term Harms flags, at a building on clay (Oxford)?
+- Can S13's temperature field and S8's air give a *joint* blackbody-plus-air-gravity budget for the tower
+  (the same temperature drives both, with opposite structure: air reads the room, blackbody reads the tube)?
+- Does the building damp advected-temperature noise inside (the stairwell air is still, but the outdoor
+  field is within 10–20 m), and does the noise fall with height as c_T² ∝ z^(−4/3) suggests?
+- What does ELGAR's companion paper derive for the blackbody acceleration noise, and does it match row 8a's
+  form when moved to Sr?
+
+---
+
+## References read
+
+- AION Collaboration, *AION-10: Technical Design Report*, [arXiv:2508.03491](https://arxiv.org/abs/2508.03491) — §2.2, 2.3, 3.5, 3.6, 4.3.
+- Badurina et al., *AION: An Atom Interferometer Observatory and Network*, [arXiv:1911.11755](https://arxiv.org/abs/1911.11755) — Table 1.
+- Abe et al. (MAGIS-100), *Matter-wave Atomic Gradiometer Interferometric Sensor*, [arXiv:2104.02835](https://arxiv.org/abs/2104.02835) — §4, §5.
+- Mitchell, Kovachy, Hahn, Adamson, Chattopadhyay, *MAGIS-100 environmental characterization and noise analysis*, JINST 17 P01007 (2022), [arXiv:2202.04763](https://arxiv.org/abs/2202.04763).
+- Roura, *Circumventing Heisenberg's uncertainty principle in atom interferometry tests of the equivalence principle*, PRL 118, 160401 (2017), [arXiv:1509.08098](https://arxiv.org/abs/1509.08098) — Eq. 4, 11–14.
+- Carlton & McCabe, *From RATs to riches: mitigating anthropogenic and synanthropic noise in atom interferometer searches for ultra-light dark matter*, [arXiv:2308.10731](https://arxiv.org/abs/2308.10731).
+- Junca et al., *Characterizing Earth gravity field fluctuations with the MIGA antenna*, PRD 99, 104026 (2019), [arXiv:1902.05337](https://arxiv.org/abs/1902.05337) — §IV, V.
+- Harms, *Terrestrial gravity fluctuations*, Living Rev. Relativ. 18, 3 (2015), [arXiv:1507.05850](https://arxiv.org/abs/1507.05850) — §5, §6.
+- Fiorucci, Harms, Barsuglia, Fiori, Paoletti, PRD 97, 062003 (2018), [arXiv:1801.04564](https://arxiv.org/abs/1801.04564) — in part.
+- Thorne & Winstein, PRD 60, 082001 (1999), [arXiv:gr-qc/9810016](https://arxiv.org/abs/gr-qc/9810016) — abstract and §I.
+- Stray et al., Nature 602, 590 (2022), [doi:10.1038/s41586-021-04315-3](https://doi.org/10.1038/s41586-021-04315-3) — via PMC, summary of full text.
+- Read from the published PDFs on 25 Nov 2026 (fetched by the owner; not committed):
+  - D'Amico, Rosi, Zhan, Cacciapuoti, Fattori, Tino, *Canceling the gravity gradient phase shift in atom interferometry*, PRL 119, 253201 (2017), [doi:10.1103/PhysRevLett.119.253201](https://doi.org/10.1103/PhysRevLett.119.253201) — whole paper.
+  - Canuel et al. (ELGAR), *ELGAR — a European Laboratory for Gravitation and Atom-interferometric Research*, CQG 37, 225017 (2020), [doi:10.1088/1361-6382/aba80e](https://doi.org/10.1088/1361-6382/aba80e) — §1.3–2.1, Tables 1–2.
+  - Creighton, *Tumbleweeds and airborne gravitational noise sources for LIGO*, CQG 25, 125011 (2008), [doi:10.1088/0264-9381/25/12/125011](https://doi.org/10.1088/0264-9381/25/12/125011) — abstract, §3 (Eq. (8)–(18)).
+  - Creutzfeldt, Güntner, Klügel, Wziontek, *Simulating the influence of water storage changes on the superconducting gravimeter of the Geodetic Observatory Wettzell, Germany*, Geophysics 73, WA95 (2008), [doi:10.1190/1.2992508](https://doi.org/10.1190/1.2992508) — abstract, results (p. WA99–WA101), Table 3.
+  - Creutzfeldt, Güntner, Thoss, Merz, Wziontek, *Measuring the effect of local water storage changes on in situ gravity observations*, WRR 46, W08531 (2010), [doi:10.1029/2009WR008359](https://doi.org/10.1029/2009WR008359) — §2, ¶41.
+  - Dickerson, Hogan, Sugarbaker, Johnson, Kasevich, *Multiaxis inertial sensing with long-time point source atom interferometry*, PRL 111, 083001 (2013), [doi:10.1103/PhysRevLett.111.083001](https://doi.org/10.1103/PhysRevLett.111.083001) — Table I (page image), Figs. 1–3.
+  - Dubetsky & Kasevich, *Atom interferometer as a selective sensor of rotation or gravity*, PRA 74, 023615 (2006), [doi:10.1103/PhysRevA.74.023615](https://doi.org/10.1103/PhysRevA.74.023615) — §I–II, Table I (page images).
+  - Falke et al., *The ⁸⁷Sr optical frequency standard at PTB*, Metrologia 48, 399 (2011), [doi:10.1088/0026-1394/48/5/022](https://doi.org/10.1088/0026-1394/48/5/022) — §3.2–3.3, Eq. (1).
+  - Farrell, *Deformation of the Earth by surface loads*, Rev. Geophys. Space Phys. 10, 761 (1972), [doi:10.1029/RG010i003p00761](https://doi.org/10.1029/RG010i003p00761) — §6, Figs. 2–4, Table A3.
+  - Graham, Hogan, Kasevich, Rajendran, *New method for gravitational wave detection with atomic sensors*, PRL 110, 171102 (2013), [doi:10.1103/PhysRevLett.110.171102](https://doi.org/10.1103/PhysRevLett.110.171102) — Eq. (1), Table I (page images).
+  - Guo et al., *Green's function of the deformation of the Earth as a result of atmospheric loading*, GJI 159, 53 (2004), [doi:10.1111/j.1365-246X.2004.02410.x](https://doi.org/10.1111/j.1365-246X.2004.02410.x) — summary, §1, table captions.
+  - Haslinger et al., *Attractive force on atoms due to blackbody radiation*, Nat. Phys. 14, 257 (2018), [doi:10.1038/s41567-017-0004-9](https://doi.org/10.1038/s41567-017-0004-9) — main text to Eq. (2).
+  - Lan, Kuan, Estey, Haslinger, Müller, *Influence of the Coriolis force in atom interferometry*, PRL 108, 090402 (2012), [doi:10.1103/PhysRevLett.108.090402](https://doi.org/10.1103/PhysRevLett.108.090402) — whole paper.
+  - Merriam, *Atmospheric pressure and gravity*, GJI 109, 488 (1992), [doi:10.1111/j.1365-246X.1992.tb00112.x](https://doi.org/10.1111/j.1365-246X.1992.tb00112.x) — summary, introduction, p. 490, p. 495.
+  - Swallows et al., *Operating a ⁸⁷Sr optical lattice clock with high precision and at high density*, IEEE TUFFC 59, 416 (2012), [doi:10.1109/TUFFC.2012.2210](https://doi.org/10.1109/TUFFC.2012.2210) — abstract, density-shift section, Figs. 5, 8.
+  - Van Camp et al., *Geophysics from terrestrial time-variable gravity measurements*, Rev. Geophys. 55 (2017), [doi:10.1002/2017RG000566](https://doi.org/10.1002/2017RG000566) — §3.4, §4, Appendix A1.3 and A-figures.
+  - Zhan et al. (ZAIGA), *ZAIGA: Zhaoshan long-baseline atom interferometer gravitation antenna*, IJMPD 29, 1940005 (2020), [doi:10.1142/S0218271819400054](https://doi.org/10.1142/S0218271819400054), read as [arXiv:1903.09288](https://arxiv.org/abs/1903.09288) — §2.2.
+  - Not ZAIGA: the file fetched from the from-memory DOI 10.1142/S0218271820500479 is Quiros, De Arcia, García-Salcedo, Gonzalez, Horta-Rangel, *An issue with the classification of the scalar-tensor theories of gravity*, IJMPD 29, 2050047 (2020), unrelated to this note.
+  - Harms §5.6 re-read from [arXiv:1507.05850](https://arxiv.org/abs/1507.05850) for the advected-temperature validity warning.
+- This repository: `crates/cav-core/src/forward.rs`; `plan/REBUILD.md` §9, §9.3; `plan/PROGRESS.md` (For George, rulings);
+  `docs/research/s13-heat.md` §5–6, `s14-wider-world.md`, `s15-instruments-anywhere.md`.
+
+## Papers still unread
+
+Every paper in the earlier "could not read" list has now been read (above). Still unread, and worth
+fetching if a slice leans on them: ELGAR's companion paper (ref. [56] of Canuel 2020, where its Table 2
+is derived); MIGA's systematics paper; Boy et al. on 3-D atmospheric corrections; Safronova et al. 2013 or
+Porsev & Derevianko 2006 for Sr polarizabilities (row 8a); Saulson 1984 (the infrasound model ZAIGA uses).

@@ -1,0 +1,12 @@
+|x|<=0.05 terms= 6: max error sin  0.93 ulp, cos  0.50 ulp
+|x|<=0.05 terms= 8: max error sin  0.93 ulp, cos  0.50 ulp
+|x|<=0.05 terms=10: max error sin  0.93 ulp, cos  0.50 ulp
+             this machine's libm sin:  0.50 ulp
+|x|<=0.25 terms= 6: max error sin  0.92 ulp, cos  0.52 ulp
+|x|<=0.25 terms= 8: max error sin  0.92 ulp, cos  0.52 ulp
+|x|<=0.25 terms=10: max error sin  0.92 ulp, cos  0.52 ulp
+             this machine's libm sin:  0.52 ulp
+|x|<=0.5  terms= 6: max error sin  1.25 ulp, cos  6.66 ulp
+|x|<=0.5  terms= 8: max error sin  0.95 ulp, cos  0.65 ulp
+|x|<=0.5  terms=10: max error sin  0.95 ulp, cos  0.65 ulp
+             this machine's libm sin:  0.54 ulp

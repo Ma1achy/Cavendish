@@ -1,0 +1,30 @@
+patch test (energy of a constant strain vs V eps:D:eps):
+  Q1      rel. error 4.7e-16
+  Q1-SRI  rel. error 2.3e-16
+  Q1-IM   rel. error 4.7e-16
+
+L/h = 10, f1(Euler-Bernoulli) = 5.7113 Hz (h = 1 m concrete)
+  Q1      n=1: elems     10 dofs    120  f1 6.9039  f1/fEB 1.2088  f3/f1 6.096  mass err 4.5e-16  eigsh 0.02 s
+  Q1      n=2: elems     80 dofs    540  f1 6.0202  f1/fEB 1.0541  f3/f1 6.052  mass err 1.5e-16  eigsh 0.01 s
+  Q1      n=4: elems    640 dofs   3000  f1 5.7695  f1/fEB 1.0102  f3/f1 6.023  mass err 1.5e-16  eigsh 0.11 s
+  Q1      n=8: elems   5120 dofs  19440  f1 5.7034  f1/fEB 0.9986  f3/f1 6.015  mass err 1.5e-16  eigsh 1.73 s
+  Q1-SRI  n=1: elems     10 dofs    120  f1 5.4004  f1/fEB 0.9456  f3/f1 6.188  mass err 4.5e-16  eigsh 0.00 s
+  Q1-SRI  n=2: elems     80 dofs    540  f1 5.7315  f1/fEB 1.0035  f3/f1 6.068  mass err 1.5e-16  eigsh 0.01 s
+  Q1-SRI  n=4: elems    640 dofs   3000  f1 5.7002  f1/fEB 0.9981  f3/f1 6.027  mass err 1.5e-16  eigsh 0.07 s
+  Q1-IM   n=1: elems     10 dofs    120  f1 5.6980  f1/fEB 0.9977  f3/f1 6.171  mass err 4.5e-16  eigsh 0.00 s
+  Q1-IM   n=2: elems     80 dofs    540  f1 5.6932  f1/fEB 0.9968  f3/f1 6.070  mass err 1.5e-16  eigsh 0.01 s
+  Q1-IM   n=4: elems    640 dofs   3000  f1 5.6853  f1/fEB 0.9954  f3/f1 6.027  mass err 1.5e-16  eigsh 0.07 s
+  Q1-IM   n=8: elems   5120 dofs  19440  f1 5.6820  f1/fEB 0.9949  f3/f1 6.016  mass err 1.5e-16  eigsh 1.40 s
+
+against Q1-IM n=8 (f1 = 5.6820 Hz):
+  Q1      n=1: f1 error +2.15e-01
+  Q1      n=2: f1 error +5.95e-02
+  Q1      n=4: f1 error +1.54e-02
+  Q1      n=8: f1 error +3.76e-03
+  Q1-SRI  n=1: f1 error -4.96e-02
+  Q1-SRI  n=2: f1 error +8.70e-03
+  Q1-SRI  n=4: f1 error +3.20e-03
+  Q1-IM   n=1: f1 error +2.82e-03
+  Q1-IM   n=2: f1 error +1.97e-03
+  Q1-IM   n=4: f1 error +5.75e-04
+  Q1-IM   n=8: f1 error +0.00e+00
