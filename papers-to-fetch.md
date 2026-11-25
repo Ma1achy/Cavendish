@@ -18,9 +18,7 @@ from them. What is still unread, by note (tick as fetched; PDFs stay outside the
 - [ ] Morton, Taylor & Turner 1956, the plume law (no DOI found)
 
 ## Elastic solids (`elastic-solids.md`)
-- [ ] Wilson et al. 1973, incompatible modes (book chapter, no DOI)
-- [ ] Simo & Armero 1992: https://doi.org/10.1002/nme.1620330705 (DOI from memory)
-- [ ] Lamb 1904, the full Phil. Trans. paper: https://doi.org/10.1098/rsta.1904.0013 (DOI from memory; the supplied file was the 3-page abstract)
+- [ ] Wilson et al. 1973, incompatible displacement models (book chapter, pp. 43–57): https://doi.org/10.1016/B978-0-12-253250-4.50008-7
 - [ ] Komatitsch & Vilotte 1998: https://doi.org/10.1785/bssa0880020368
 - [ ] Richards 1979: https://doi.org/10.1785/bssa0690040947
 - [ ] Bonet & Wood, *Nonlinear Continuum Mechanics for FEA* (the supplied file was front matter only)
