@@ -605,6 +605,14 @@ Answered 21 Nov 2026 (through the owner). The defaults below replace v1's conven
    sequence; copy that.
 
 ## Owner's rulings (25 Nov 2026): the editor
+Also: resizable side panels, windows that pop out and dock back, minimise and full screen, tabs;
+importing 3-D models (OBJ and STL already load as shapes since S3; the editor adds dropping them in,
+scaling and placing); voxels of different materials and densities (a per-voxel material palette,
+planned in §5.2 and not yet built: bodies are uniform today); and principle 11 — everything is
+data, including the GUI and simulation detail tiers. All in slice S18 (TASK-S18-01 to 06), after S4.
+Investigation asked for: keeping a body's exterior as exact triangles over a voxel interior, and
+"mass anti-aliasing" of boundary voxels (`docs/research/exact-skin-and-partial-fill.md`, in progress).
+
 The GUI and UX need to be natural and intuitive, taking from game engines, model editors and physics tools: a toolbar of tools (select, move, rotate, scale, place, paint, measure, slice, probe), the 3-D view interactive for editing, and data-driven panels (an inspector generated from the scene schema) with both routes through the one command path. Principia's keyboard model is a requirement, in full: `docs/design/keyboard.md`. Research: `docs/research/editor-ux.md` (in progress). An editor slice follows S4.
 
 ## Owner's rulings (24 Nov 2026): the app on the web, and more shapes and worlds

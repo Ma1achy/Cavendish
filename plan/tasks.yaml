@@ -542,3 +542,21 @@
 - id: TASK-S17-10
   milestone: S17
   title: "The live site's record after the review fixes"
+- id: TASK-S18-01
+  milestone: S18
+  title: The editor - toolbar and tools, an interactive viewport (select, gizmos, place, paint, measure, slice, probe), a schema-driven inspector
+- id: TASK-S18-02
+  milestone: S18
+  title: Window management - docking, resizable panels, tabs, pop-out windows, minimise and full screen, saved layouts
+- id: TASK-S18-03
+  milestone: S18
+  title: The keyboard model of docs/design/keyboard.md, in full
+- id: TASK-S18-04
+  milestone: S18
+  title: Data-driven GUI and detail tiers - layouts, toolbars, keymaps and simulation tiers as data with a schema
+- id: TASK-S18-05
+  milestone: S18
+  title: Materials - a per-voxel material palette (density, colour, elastic and thermal properties) and a material library
+- id: TASK-S18-06
+  milestone: S18
+  title: Mesh import from the editor - OBJ, STL (and glTF if it earns its place) dropped in, scaled, placed and voxelised
