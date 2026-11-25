@@ -20,6 +20,9 @@ pub struct LayoutData {
     pub label: String,
     /// The console lines it runs, in order.
     pub lines: Vec<String>,
+    /// The inspector's folding sections it opens (`inspector/instrument`), if any: UI only.
+    #[serde(default)]
+    pub unfold: Vec<String>,
     /// One line for the tooltip and the palette.
     pub about: String,
 }

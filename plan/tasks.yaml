@@ -630,6 +630,9 @@
 - id: TASK-S18-13
   milestone: S18
   title: "Review fixes, what is held: the tests section 4 names (K3, K4, K9, E6, T1's 12 events, T2 by typing, C5 through the frame), the ? sheet that fits and scrolls from the keys (R5, R6); a click in a window moves the focus; minor 6; the section 6 budgets measured by the demo"
+- id: TASK-S18-14
+  milestone: S18
+  title: "Review fixes, the inspector reads as an editor (U1, U4): names in words from the schema, choices in words, the reset only where something changed, a scene summary with the instrument and cadence folded, sections named by what they are"
 - id: TASK-S19-01
   milestone: S19
   title: "Docking: panels as tabs in dock areas, drag to dock, saved layouts of the dock tree (a crate spike first, egui 0.37 and wasm)"

@@ -226,15 +226,21 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, prefix: &str) {
             continue;
         }
         let id = format!("{scope}/{prefix}/{section}");
-        let title = section.replace('_', " ");
+        // What the section is, in words: "Motion", "Shape", "Timing" (S18's review, U4).
+        let title = paths::words(&section);
         // The section first, so that its fields find it; where it is, once it is drawn. From the
-        // keyboard Enter on it goes in; a click on its header folds it.
+        // keyboard Enter on it goes in (or, folded, opens it); a click on its header folds it.
+        let opened = shell.take_click(&id);
         shell.building.add(scope, &id, &title, Focus::Scope);
         let header = egui::CollapsingHeader::new(RichText::new(&title).size(12.0).color(theme::STRONG))
             .id_salt(("section", prefix, section.as_str()))
             .default_open(true)
+            .open(opened.then_some(true))
             .show(ui, |ui| grid(shell, ui, &id));
         shell.building.place(&id, header.header_response.rect);
+        if header.body_returned.is_none() {
+            shell.building.add(scope, &id, &title, Focus::Button);
+        }
     }
     if entries.len() >= MAX_FIELDS {
         ui.label(
@@ -251,9 +257,10 @@ pub fn show(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, prefix: &str) {
     }
 }
 
-/// One row of the inspector: the field's name (gold when it differs from the scene as opened or
-/// saved), its widget, and its reset (`‹`, always in its place in the order, disabled when there
-/// is nothing to put back). What it changes is pushed onto `commands`.
+/// One row of the inspector: the field's name in words (gold, with a gold bar at the panel's edge,
+/// when it differs from the scene as opened or saved), its widget, and its reset (`‹`, drawn only
+/// on a changed field; always in its place in the keyboard's order, disabled when there is
+/// nothing to put back). What it changes is pushed onto `commands`.
 #[allow(clippy::too_many_arguments)]
 fn row(
     shell: &mut Shell,
@@ -265,20 +272,22 @@ fn row(
     entry: &Entry,
     commands: &mut Vec<Command>,
 ) {
-    // The name under the selection: `motion.Linear.frequency` reads as `frequency`, set in under
-    // the choice it belongs to.
+    // The name under the selection, in words: `motion.Linear.frequency` reads as "Frequency", set
+    // in under the choice it belongs to; `tower_height` as "Tower height", or the schema's title
+    // ("Interferometer separation Δr"). S18's review, U1.
     let below = entry.path.strip_prefix(prefix).unwrap_or(&entry.path).trim_start_matches('.');
     let depth = below.matches('.').count().saturating_sub(1);
-    // (A field shown on its own, `duration` say, is its own name.)
-    let name = if below.is_empty() { entry.name.as_str() } else { below.rsplit('.').next().unwrap_or(below) };
+    let label = entry.label();
+    let name = label.as_str();
     let saved = paths::get(baseline, &entry.path).ok().cloned();
     let differs = saved.as_ref().is_some_and(|saved| *saved != entry.value);
+    // The doc string first; the console's path after it, for whoever wants to type it.
     let hover = format!(
-        "{}\n\n{}{}",
+        "{}\n\n`{}`{}",
         entry.doc,
         entry.path,
         if differs {
-            "\n\nedited since the scene was opened or saved (‹ or Backspace puts it back)"
+            "\n\nChanged since the scene was opened or saved: ‹ or Backspace puts it back."
         } else {
             ""
         }
@@ -290,10 +299,15 @@ fn row(
     };
     let indent = " ".repeat(2 * depth);
     let colour = if differs { theme::GOLD } else { theme::WEAK };
-    let label = egui::Label::new(RichText::new(format!("{indent}{name}{unit}")).color(colour).size(12.0))
+    let text = egui::Label::new(RichText::new(format!("{indent}{name}{unit}")).color(colour).size(12.0))
         .truncate()
         .halign(Align::Min);
-    ui.add_sized([NAME_WIDTH, 18.0], label).on_hover_text(&hover);
+    let named = ui.add_sized([NAME_WIDTH, 18.0], text).on_hover_text(&hover);
+    if differs {
+        // Unity's mark for an overridden field: a bar at the edge, beside the gold name.
+        let x = ui.max_rect().left() - 6.0;
+        ui.painter().vline(x, named.rect.y_range(), egui::Stroke::new(2.0, theme::GOLD));
+    }
     let start = ui.cursor().min;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 3.0;
@@ -302,9 +316,14 @@ fn row(
             list_buttons(shell, ui, scope, name, entry, commands);
         }
         let reset_id = format!("{}/reset", field_id(&entry.path));
+        // Drawn only where there is something to put back; where there is not, its place is
+        // kept (and its stop in the keyboard's order, disabled) without a mark to read.
         let reset = ui
-            .add_enabled(differs, egui::Button::new(RichText::new("‹").size(11.0)).small().frame(false))
-            .on_hover_text("put back the value the scene was opened or saved with");
+            .add_visible(
+                differs,
+                egui::Button::new(RichText::new("‹").size(12.0).color(theme::GOLD)).small().frame(false),
+            )
+            .on_hover_text("put back the value the scene was opened or saved with (Backspace)");
         shell.register(scope, &reset_id, &format!("{name}: reset"), Focus::Button, reset.rect);
         if !differs {
             shell.building.disable(&reset_id);
@@ -459,7 +478,7 @@ fn edit(
         }
         Widget::Choice | Widget::Variant => {
             let Kind::Choice(names) = &entry.kind else {
-                ui.label(RichText::new(entry.kind.name()).size(11.0).color(theme::WEAK));
+                ui.label(RichText::new(paths::words(&entry.kind.name())).size(11.0).color(theme::WEAK));
                 return;
             };
             let now = entry.variant.clone().unwrap_or_default();
@@ -467,12 +486,13 @@ fn edit(
                 let value = starter(spec, path, Some(name)).unwrap_or_else(|| Value::String(name.clone()));
                 commands.push(command_for(path, value, false));
             };
+            // The variants in words ("Lower minus upper"); what is set is the variant's name.
             let combo = egui::ComboBox::from_id_salt(("choice", path))
                 .width(132.0)
-                .selected_text(now.as_str())
+                .selected_text(paths::words(&now))
                 .show_ui(ui, |ui| {
                     for name in names {
-                        if ui.selectable_label(*name == now, name).clicked() && *name != now {
+                        if ui.selectable_label(*name == now, paths::words(name)).clicked() && *name != now {
                             choose(name, commands);
                         }
                     }
@@ -495,7 +515,7 @@ fn edit(
                     .show(ui.ctx(), |ui| {
                         egui::Frame::popup(ui.style()).show(ui, |ui| {
                             for (n, choice) in names.iter().enumerate() {
-                                let _ = ui.selectable_label(n == at, choice);
+                                let _ = ui.selectable_label(n == at, paths::words(choice));
                             }
                         });
                     });

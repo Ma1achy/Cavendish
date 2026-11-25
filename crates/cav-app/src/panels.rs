@@ -40,10 +40,89 @@ fn short_number(value: f64) -> String {
 /// A heading that is also a scope of the keyboard's tree (`id`, under `parent`): the section's
 /// rows and fields register under it after.
 fn section(shell: &mut Shell, ui: &mut egui::Ui, parent: &str, id: &str, title: &str) {
+    named_section(shell, ui, parent, id, title, title);
+}
+
+/// [`section`] whose heading says `title` and whose name in the breadcrumb is `name`: what the
+/// section *is* ("Body"), where the heading also says which ("Body · ball"). S18's review, U4.
+fn named_section(shell: &mut Shell, ui: &mut egui::Ui, parent: &str, id: &str, name: &str, title: &str) {
     let top = ui.cursor().min;
     heading(ui, title);
     let rect = Rect::from_min_max(top, pos2(ui.max_rect().right(), ui.cursor().top()));
-    shell.register(parent, id, title, Kind::Scope, rect);
+    shell.register(parent, id, name, Kind::Scope, rect);
+}
+
+/// A section of the inspector that folds (`id` under `parent`, headed `title`), open at first
+/// when `open`: a scope of the keyboard's tree while it is open, a button while it is folded, so
+/// that Enter on a folded one opens it. Its header's rect is in the layout's buttons as
+/// `fold <id>`. `salt` keeps one section's fold apart for each kind of selection.
+#[allow(clippy::too_many_arguments)]
+fn folding(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    parent: &str,
+    id: &str,
+    title: &str,
+    salt: &str,
+    open: bool,
+    contents: impl FnOnce(&mut Shell, &mut egui::Ui),
+) {
+    let opened = shell.take_click(id) || shell.unfold.iter().any(|u| u == id);
+    shell.building.add(parent, id, title, Kind::Scope);
+    let shown = egui::CollapsingHeader::new(RichText::new(title).color(theme::STRONG).size(12.5))
+        .id_salt(("fold", id, salt))
+        .default_open(open)
+        .open(opened.then_some(true))
+        .show(ui, |ui| contents(shell, ui));
+    let rect = shown.header_response.rect;
+    shell.building.place(id, rect);
+    shell.layout.buttons.push((format!("fold {id}"), rect));
+    if shown.body_returned.is_none() {
+        shell.building.add(parent, id, title, Kind::Button);
+    }
+}
+
+/// The scene at a glance, for the inspector with nothing selected (S18's review, U1): what the
+/// array is, what is in the scene, what surrounds it, where the signal stands.
+fn scene_summary(shell: &mut Shell, ui: &mut egui::Ui) {
+    let spec = shell.engine.spec();
+    let towers = spec.array.towers.len();
+    let instrument = cav_sim::presets::name_of(&spec.array.instrument).unwrap_or("its own instrument");
+    let plural = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    let around = match (&spec.room, &spec.floor, &spec.world) {
+        (Some(room), _, _) => {
+            let [x, y, z] = room.size;
+            format!("a room, {x:.0} × {y:.0} × {z:.0} m")
+        }
+        (None, Some(floor), _) => format!("a floor at z = {:.1} m", floor.height),
+        (None, None, Some(world)) => format!("a world, {} piece(s)", world.pieces.len()),
+        (None, None, None) => "nothing".to_owned(),
+    };
+    let signal = match shell.engine.signal() {
+        (cav_engine::SignalState::Refined, Some(signal)) => format!("{} shots, read", signal.most()),
+        (cav_engine::SignalState::Stale, _) => "computing".to_owned(),
+        _ => "none".to_owned(),
+    };
+    let summary = [
+        ("Array", format!("{}, {instrument}", plural(towers, "tower", "towers"))),
+        (
+            "Sources",
+            if spec.bodies.is_empty() {
+                "none yet".to_owned()
+            } else {
+                plural(spec.bodies.len(), "body", "bodies")
+            },
+        ),
+        ("Around it", around),
+        ("Signal", signal),
+    ];
+    egui::Grid::new("scene summary").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+        for (name, value) in summary {
+            ui.label(RichText::new(name).color(theme::WEAK).size(12.0));
+            ui.add(egui::Label::new(RichText::new(value).color(theme::STRONG).size(12.0)).wrap());
+            ui.end_row();
+        }
+    });
 }
 
 fn heading(ui: &mut egui::Ui, text: &str) {
@@ -1033,30 +1112,29 @@ fn rows(ui: &mut egui::Ui, id: &str, rows: &[(&str, String)]) {
 
 fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
     let spec = shell.engine.spec().clone();
-    let (title, path) = match shell.engine.selection() {
-        None => ("Scene".to_owned(), String::new()),
+    // What the selection is (the breadcrumb's name for the section: S18's review, U4) and which.
+    let (kind, which, path) = match shell.engine.selection() {
+        None => ("Scene", spec.name.clone(), String::new()),
         Some(Target::Tower(n)) => {
-            (spec.array.towers[n - 1].label.clone(), format!("array.towers[{}]", n - 1))
+            ("Tower", spec.array.towers[n - 1].label.clone(), format!("array.towers[{}]", n - 1))
         }
-        Some(Target::Room) => ("Room".to_owned(), "room".to_owned()),
-        Some(Target::Floor) => ("Floor".to_owned(), "floor".to_owned()),
-        Some(Target::World) => ("World".to_owned(), "world".to_owned()),
-        Some(Target::Body(n)) => (spec.bodies[n - 1].label.clone(), format!("bodies[{}]", n - 1)),
+        Some(Target::Room) => ("Room", String::new(), "room".to_owned()),
+        Some(Target::Floor) => ("Floor", String::new(), "floor".to_owned()),
+        Some(Target::World) => ("World", String::new(), "world".to_owned()),
+        Some(Target::Body(n)) => ("Body", spec.bodies[n - 1].label.clone(), format!("bodies[{}]", n - 1)),
     };
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("Properties").color(theme::STRONG).strong());
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.label(RichText::new(&path).monospace().size(11.0).color(theme::WEAK));
-        });
-    });
-    section(shell, ui, "inspector", "inspector/selection", &title);
-    // Every field under the selection has an editor, made from the schema: its unit, its range,
-    // its doc string on hover. Each change is a `set`, as the console would issue it.
+    ui.label(RichText::new("Inspector").color(theme::STRONG).strong());
+    let title = if which.is_empty() { kind.to_owned() } else { format!("{kind} · {which}") };
+    named_section(shell, ui, "inspector", "inspector/selection", kind, &title);
+    // Every field under the selection has an editor, made from the schema: its name in words, its
+    // unit, its range, its doc string on hover. Each change is a `set`, as the console would issue it.
     match shell.engine.selection() {
         None => {
             for path in ["name", "description", "duration"] {
                 crate::editors::show(shell, ui, "inspector/selection", path);
             }
+            ui.add_space(4.0);
+            scene_summary(shell, ui);
         }
         Some(Target::Tower(n)) => {
             crate::editors::show(shell, ui, "inspector/selection", &path);
@@ -1119,57 +1197,81 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
             let body = &spec.bodies[n - 1];
             let [x, y, z] = body.motion.position(shell.engine.time(), spec.array.instrument.gravity);
             ui.add_space(3.0);
-            rows(ui, "body", &[("now at", format!("{x:.3}, {y:.3}, {z:.3} m"))]);
+            rows(ui, "body", &[("Now at", format!("{x:.3}, {y:.3}, {z:.3} m"))]);
         }
     }
 
     // The array's own settings belong to the scene and to its towers, not to a body: a body's
     // properties are the body's alone (`docs/research/editor-ux.md` §1.2, "Cadence and timing").
-    if !matches!(shell.engine.selection(), None | Some(Target::Tower(_))) {
-        ui.add_space(6.0);
-        ui.label(
+    // With nothing selected they are folded under the scene's summary (S18's review, U1: the
+    // instrument's twelve fields were the first thing the inspector showed); a tower opens them.
+    let selection = shell.engine.selection();
+    if !matches!(selection, None | Some(Target::Tower(_))) {
+        hint(ui);
+        return;
+    }
+    let (salt, open) = if selection.is_none() { ("scene", false) } else { ("tower", true) };
+    folding(
+        shell,
+        ui,
+        "inspector",
+        "inspector/cadence",
+        "Cadence · when the array fires",
+        salt,
+        open,
+        |shell, ui| {
+            crate::editors::show(shell, ui, "inspector/cadence", "array.schedule");
+        },
+    );
+    folding(
+        shell,
+        ui,
+        "inspector",
+        "inspector/instrument",
+        "Instrument · shared by every tower",
+        salt,
+        open,
+        |shell, ui| {
+            let instrument = shell.engine.spec().array.instrument.clone();
+            let is = |name: &str| cav_sim::presets::load(name).is_ok_and(|preset| preset == instrument);
+            button_row(
+                shell,
+                ui,
+                "inspector/instrument",
+                "preset",
+                &[("AION-10", "preset aion10", is("aion10")), ("AICE 140 m", "preset aice", is("aice"))],
+            );
+            let other = shell.engine.comparison().cloned();
+            let with = |name: &str| cav_sim::presets::load(name).is_ok_and(|preset| Some(preset) == other);
+            button_row(
+                shell,
+                ui,
+                "inspector/instrument",
+                "compare",
+                &[
+                    ("AION-10", "compare aion10", with("aion10")),
+                    ("AICE", "compare aice", with("aice")),
+                    ("off", "compare off", other.is_none()),
+                ],
+            );
+            crate::editors::show(shell, ui, "inspector/instrument", "array.instrument");
+        },
+    );
+    hint(ui);
+}
+
+/// The line under the inspector: how its fields work, in a newcomer's words.
+fn hint(ui: &mut egui::Ui) {
+    ui.add_space(6.0);
+    ui.add(
+        egui::Label::new(
             RichText::new(
-                "drag a number or type one · every change is a `set <path> <value>` that undo takes back",
+                "Drag a number or type one. A changed field is marked; Backspace or ‹ puts it back, Ctrl+Z undoes. Hover a name for what it is.",
             )
             .size(11.0)
             .color(theme::WEAK),
-        );
-        return;
-    }
-    section(shell, ui, "inspector", "inspector/cadence", "Cadence · when the array fires");
-    crate::editors::show(shell, ui, "inspector/cadence", "array.schedule");
-
-    section(shell, ui, "inspector", "inspector/instrument", "Instrument · shared by every tower");
-    let instrument = shell.engine.spec().array.instrument.clone();
-    let is = |name: &str| cav_sim::presets::load(name).is_ok_and(|preset| preset == instrument);
-    button_row(
-        shell,
-        ui,
-        "inspector/instrument",
-        "preset",
-        &[("AION-10", "preset aion10", is("aion10")), ("AICE 140 m", "preset aice", is("aice"))],
-    );
-    let other = shell.engine.comparison().cloned();
-    let with = |name: &str| cav_sim::presets::load(name).is_ok_and(|preset| Some(preset) == other);
-    button_row(
-        shell,
-        ui,
-        "inspector/instrument",
-        "compare",
-        &[
-            ("AION-10", "compare aion10", with("aion10")),
-            ("AICE", "compare aice", with("aice")),
-            ("off", "compare off", other.is_none()),
-        ],
-    );
-    crate::editors::show(shell, ui, "inspector/instrument", "array.instrument");
-    ui.add_space(6.0);
-    ui.label(
-        RichText::new(
-            "drag a number or type one · every change is a `set <path> <value>` that undo takes back",
         )
-        .size(11.0)
-        .color(theme::WEAK),
+        .wrap(),
     );
 }
 

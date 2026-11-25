@@ -97,6 +97,14 @@ fn leave_every_editor(selection: &str) -> (Rig, usize) {
     // The reading arrives before anything is clicked: its rows move the editors below them.
     assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
     rig.frames(vec![vec![], vec![]]);
+    // With nothing selected the instrument and the cadence are folded (S18's review, U1): open
+    // both, so that every field they hold is visited as before.
+    for fold in ["fold inspector/instrument", "fold inspector/cadence"] {
+        if let Some(header) = rig.shell.layout().button(fold).filter(|_| selection == "select none") {
+            rig.click(header.center());
+            rig.frames(vec![vec![], vec![]]);
+        }
+    }
     let editors: Vec<(String, egui::Rect)> = rig.shell.layout().editors.clone();
     assert!(editors.len() >= 5, "`{selection}` shows {} editors", editors.len());
     for (path, _) in editors {
