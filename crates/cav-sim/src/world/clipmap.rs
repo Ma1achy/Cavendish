@@ -132,6 +132,54 @@ pub fn level_count(grid: &WorldGrid, extent: &Aabb, centre: Vec3, n: i64) -> u8 
     MAX_LEVELS
 }
 
+/// The brick of level `to` (at least `level`) that holds brick `key` of level `level` (a chunk at
+/// level 0): each level's bricks are twice the side of the one below, on the same origin.
+#[must_use]
+pub fn ancestor(level: u8, key: ChunkKey, to: u8) -> ChunkKey {
+    let s = 1i32 << (to.saturating_sub(level)).min(30);
+    ChunkKey::new(key.x.div_euclid(s), key.y.div_euclid(s), key.z.div_euclid(s))
+}
+
+/// Which of `held` to draw in place of `unready`: the handover between levels (the bug of chunks
+/// vanishing while the camera moves, TASK-S4-26).
+///
+/// When the camera moves, a piece of the world changes level: a chunk leaves level 0 and its
+/// region is drawn next by a brick of level 1, or the other way round. Until what is wanted now
+/// is ready to draw (made by the streaming, meshed or uploaded by the renderer), the region would
+/// be a hole. So what was drawn there before stands in: an item of `held` (by `(level, key)`,
+/// what a renderer still has a copy of but does not draw this frame) is returned when its box
+/// overlaps the box of an item of `unready` (what the camera's clipmap draws there this frame but
+/// cannot yet): a coarser one holding it, or finer ones inside it. Nothing else of `held` is
+/// returned, so a stand-in goes the frame its region is ready. Order: `held`'s.
+#[must_use]
+pub fn stand_ins(
+    unready: impl IntoIterator<Item = (u8, ChunkKey)>,
+    held: impl IntoIterator<Item = (u8, ChunkKey)>,
+) -> Vec<(u8, ChunkKey)> {
+    use std::collections::HashSet;
+    // Every unready item and every brick that holds one: a held item in this set has something
+    // unready inside it (or is itself unready).
+    let mut under: HashSet<(u8, ChunkKey)> = HashSet::new();
+    let mut unready_set: HashSet<(u8, ChunkKey)> = HashSet::new();
+    for (level, key) in unready {
+        unready_set.insert((level, key));
+        for to in level..MAX_LEVELS {
+            if !under.insert((to, ancestor(level, key, to))) {
+                break; // in already, and so are the bricks that hold it
+            }
+        }
+    }
+    if unready_set.is_empty() {
+        return Vec::new();
+    }
+    held.into_iter()
+        .filter(|&(level, key)| {
+            under.contains(&(level, key))
+                || (level + 1..MAX_LEVELS).any(|to| unready_set.contains(&(to, ancestor(level, key, to))))
+        })
+        .collect()
+}
+
 /// What a renderer is handed of the world: the resident chunks and bricks with matter, and what
 /// it needs to draw them. Made and kept by the engine's streaming; the renderer draws what of it
 /// its camera's clipmap wants and holds its own GPU copies keyed by `(level, key)`.
@@ -155,6 +203,10 @@ pub struct WorldFrame {
     pub world: u64,
     /// How many chunks and bricks are still to be made for what the cameras want.
     pub pending: usize,
+    /// Which, by `(level, key)` (level 0 for a chunk): the streaming's queue. A renderer draws
+    /// what it drew before in their place until they are made ([`stand_ins`]); a wanted item
+    /// neither resident nor here has no matter (or was cut by a cap) and needs no stand-in.
+    pub waiting: std::collections::HashSet<(u8, ChunkKey)>,
 }
 
 #[cfg(test)]
@@ -233,6 +285,31 @@ mod tests {
             }
         }
         assert!(wrong > 0, "unsnapped levels happened to nest");
+    }
+
+    #[test]
+    fn what_was_drawn_stands_in_until_what_replaces_it_is_ready() {
+        let k = |x, y, z| ChunkKey::new(x, y, z);
+        // A chunk not yet ready: the level-1 brick holding it stands in, a neighbouring one not.
+        let held = [(1, k(1, 1, 0)), (1, k(2, 2, 0)), (2, k(0, 0, 0)), (0, k(2, 3, 0))];
+        assert_eq!(stand_ins([(0, k(2, 3, 1))], held), vec![(1, k(1, 1, 0)), (2, k(0, 0, 0))]);
+        // A brick not yet ready: the chunks inside it stand in, those beside it not.
+        let chunks = [(0, k(3, 3, 3)), (0, k(4, 0, 0)), (0, k(0, 0, 0)), (1, k(1, 1, 1)), (3, k(0, 0, 0))];
+        assert_eq!(
+            stand_ins([(2, k(0, 0, 0))], chunks),
+            vec![(0, k(3, 3, 3)), (0, k(0, 0, 0)), (1, k(1, 1, 1)), (3, k(0, 0, 0))]
+        );
+        // Below zero the bricks hold the chunks below them (floor, not truncation): chunk −1 is in
+        // brick −1, not 0.
+        assert_eq!(ancestor(0, k(-1, -1, -3), 1), k(-1, -1, -2));
+        assert_eq!(
+            stand_ins([(0, k(-1, -1, 0))], [(1, k(-1, -1, 0)), (1, k(0, 0, 0))]),
+            vec![(1, k(-1, -1, 0))]
+        );
+        // Control: with everything ready, nothing stands in.
+        assert!(stand_ins([], held).is_empty());
+        // A held item that is itself unready (made again) is its own stand-in.
+        assert_eq!(stand_ins([(1, k(2, 2, 0))], [(1, k(2, 2, 0))]), vec![(1, k(2, 2, 0))]);
     }
 
     #[test]

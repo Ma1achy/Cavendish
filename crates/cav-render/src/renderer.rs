@@ -307,6 +307,12 @@ impl Renderer {
         (world.counts(), world.notes.clone())
     }
 
+    /// What the last frame drew of the world, by `(level, key)` ([`crate::world::WorldGpu::drawn`]).
+    #[must_use]
+    pub fn world_drawn(&self) -> Vec<(u8, cav_core::voxel::world::ChunkKey)> {
+        self.world_gpu.lock().unwrap_or_else(std::sync::PoisonError::into_inner).drawn.clone()
+    }
+
     /// Whether the last picture left chunk meshes to be made in later frames.
     #[must_use]
     pub fn world_incomplete(&self) -> bool {

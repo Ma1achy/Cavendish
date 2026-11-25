@@ -20,6 +20,16 @@
 //! header and logs it once. At a mesh cap nothing more is meshed until what is wanted changes.
 //! The far field's work a frame is [`MAX_BRICK_OVERDRAW`] times the pane's pixels, spent on the
 //! bricks in the camera's frustum, nearest first ([`choose_bricks`]).
+//!
+//! **The handover** (TASK-S4-26). When the camera moves, part of the world changes level: chunks
+//! leave level 0 for a brick of level 1, bricks give way to finer ones. The streaming drops what is
+//! no longer wanted at once and makes the rest over later frames (a few a frame in a page), and the
+//! meshes are made a few a frame, so the region would be a hole until they are: the owner saw
+//! chunks go black and come back. So a GPU copy whose source the streaming let go is kept,
+//! retired, and drawn in place of what is wanted there but not ready
+//! ([`cav_sim::world::clipmap::stand_ins`]); it goes when it has stood in for nothing for
+//! [`RETIRED_PREPARES`] prepares, or first when its room is needed. Held by
+//! `gpu_a_moving_camera_never_loses_what_it_drew` (control: [`WorldGpu::without_stand_ins`]).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -30,7 +40,7 @@ use cav_core::voxel::world::{BRICK_SIDE, Brick, CHUNK_SIDE, ChunkCells, ChunkKey
 use cav_gpu::Gpu;
 use cav_gpu::wgpu::{self, util::DeviceExt};
 use cav_sim::ViewSpec;
-use cav_sim::world::clipmap::{WorldFrame, levels, lod_centre};
+use cav_sim::world::clipmap::{WorldFrame, levels, lod_centre, stand_ins};
 
 use crate::camera::Camera;
 
@@ -40,6 +50,10 @@ pub const MAX_CHUNK_SLOTS: usize = 8192;
 pub const MAX_BRICK_SLOTS: usize = 8192;
 /// The most vertices of chunk meshes on the GPU at once (12 bytes each).
 pub const MAX_WORLD_VERTICES: usize = 12 << 20;
+/// How many prepares a retired GPU copy (of a chunk or brick the streaming has let go) is kept
+/// while it stands in for nothing ([`stand_ins`]): a few frames of every pane sharing it, so
+/// that one pane's frame does not let go what another's is drawing.
+pub const RETIRED_PREPARES: u32 = 8;
 /// The most chunk meshes made in one frame of a window (a picture taken once makes them all).
 pub const MAX_MESHES_PER_DRAW: usize = 96;
 /// The most sub-blocks and cells one ray visits: 10 sub-blocks and 22 cells in each, and a margin.
@@ -667,6 +681,19 @@ pub struct WorldGpu {
     /// The bricks' boxes marched last frame, in pixels over the pane's pixels (at most
     /// [`MAX_BRICK_OVERDRAW`]).
     pub marched: f64,
+    /// What the last frame drew of the world, by `(level, key)`: the near chunks with a mesh (or
+    /// meshed empty, buried whole: ready, with nothing to show), then the bricks marched. The
+    /// chunks are drawn whether or not they are in the frustum (the GPU culls them); the bricks
+    /// only when they are. For tests of what a moving camera keeps on screen; not for drawing.
+    pub drawn: Vec<(u8, ChunkKey)>,
+    /// GPU copies of what the streaming no longer holds, by `(level, key)` (they stay in
+    /// `meshes` and `bricks`), and for how many prepares each has not stood in for anything
+    /// ([`stand_ins`]).
+    retired: HashMap<(u8, ChunkKey), u32>,
+    /// True to draw no stand-ins: the handover as it was before TASK-S4-26, for the control arm
+    /// of the test that holds it (`gpu_a_moving_camera_never_loses_what_it_drew`). Never set it
+    /// otherwise.
+    pub without_stand_ins: bool,
 }
 
 impl std::fmt::Debug for WorldGpu {
@@ -711,6 +738,40 @@ impl WorldGpu {
         Self { caps, ..Self::default() }
     }
 
+    /// Lets chunk `key`'s mesh go: its slot and vertices given back.
+    fn drop_mesh(&mut self, key: ChunkKey) {
+        if let Some(mesh) = self.meshes.remove(&key) {
+            self.vertices -= mesh.vertex_count;
+            self.free_meshes.push(mesh.slot);
+        }
+        self.retired.remove(&(0, key));
+    }
+
+    /// Lets brick `key` go: its slot given back.
+    fn drop_brick(&mut self, key: (u8, ChunkKey)) {
+        if let Some((slot, _)) = self.bricks.remove(&key) {
+            self.free_bricks.push(slot);
+        }
+        self.retired.remove(&key);
+    }
+
+    /// Lets the retired mesh (`level` 0) or brick (`level` above 0) that has stood idle longest
+    /// go, to make room. False when none is retired.
+    fn retire_one(&mut self, level: u8) -> bool {
+        let pick = self
+            .retired
+            .iter()
+            .filter(|((l, _), _)| (*l == 0) == (level == 0))
+            .max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0)))
+            .map(|(k, _)| *k);
+        match pick {
+            Some((0, key)) => self.drop_mesh(key),
+            Some(item) => self.drop_brick(item),
+            None => return false,
+        }
+        true
+    }
+
     /// Chunk meshes and bricks held, and vertices of the meshes.
     #[must_use]
     pub fn counts(&self) -> [usize; 3] {
@@ -718,8 +779,8 @@ impl WorldGpu {
     }
 
     /// The near chunks whose meshes are to be made: `(stale, distance from the eye, key, cells)`,
-    /// the missing first, then those whose neighbours changed since their mesh was made, each
-    /// nearest first.
+    /// the missing first, then those whose neighbours changed since their mesh was made or that
+    /// the streaming has made again (each drawn with its old mesh until then), each nearest first.
     fn to_mesh<'f>(
         &self,
         near: &[(ChunkKey, &'f Arc<ChunkCells>)],
@@ -732,7 +793,7 @@ impl WorldGpu {
             .filter_map(|&(key, cells)| {
                 let now = around(frame, key);
                 let stale = match (self.meshes.get(&key), self.empty.get(&key)) {
-                    (Some(mesh), _) => mesh.around != now,
+                    (Some(mesh), _) => mesh.around != now || !Arc::ptr_eq(&mesh.source, cells),
                     (None, Some((made, then))) if Arc::ptr_eq(made, cells) => *then != now,
                     _ => false,
                 };
@@ -790,7 +851,13 @@ impl WorldGpu {
         let grid = frame.grid?;
         self.notes.clear();
         if self.world != frame.world {
-            *self = Self { world: frame.world, store: self.store.take(), caps: self.caps, ..Self::default() };
+            *self = Self {
+                world: frame.world,
+                store: self.store.take(),
+                caps: self.caps,
+                without_stand_ins: self.without_stand_ins,
+                ..Self::default()
+            };
         }
         if self.free_meshes.is_empty() && self.meshes.is_empty() {
             self.free_meshes = (0..self.caps.meshes as u32).rev().collect();
@@ -825,29 +892,23 @@ impl WorldGpu {
             .collect();
         let distance = |k: &(u8, ChunkKey)| (grid.brick_box(k.0, k.1).centre() - eye_at).length();
         far.sort_by(|a, b| distance(a.0).total_cmp(&distance(b.0)).then(a.0.cmp(b.0)));
-        // Drop the GPU copies of what is no longer resident (or has been made again).
-        let gone: Vec<ChunkKey> = self
-            .meshes
-            .iter()
-            .filter(|(k, m)| frame.chunks.get(*k).is_none_or(|c| !Arc::ptr_eq(c, &m.source)))
-            .map(|(k, _)| *k)
-            .collect();
-        for key in gone {
-            if let Some(mesh) = self.meshes.remove(&key) {
-                self.vertices -= mesh.vertex_count;
-                self.free_meshes.push(mesh.slot);
+        // What the streaming no longer holds is kept, retired: drawn only in place of what is not
+        // yet ready where it was ([`stand_ins`]), and let go when it has not been needed for
+        // RETIRED_PREPARES prepares or its room is. What it has made again keeps its old copy,
+        // drawn, until the new one is made (a mesh below; a brick is written over in its slot).
+        for key in self.meshes.keys() {
+            if frame.chunks.contains_key(key) {
+                self.retired.remove(&(0, *key));
+            } else {
+                self.retired.entry((0, *key)).or_insert(0);
             }
         }
         self.empty.retain(|k, (c, _)| frame.chunks.get(k).is_some_and(|now| Arc::ptr_eq(now, c)));
-        let gone: Vec<(u8, ChunkKey)> = self
-            .bricks
-            .iter()
-            .filter(|(k, (_, b))| frame.bricks.get(*k).is_none_or(|c| !Arc::ptr_eq(c, b)))
-            .map(|(k, _)| *k)
-            .collect();
-        for key in gone {
-            if let Some((slot, _)) = self.bricks.remove(&key) {
-                self.free_bricks.push(slot);
+        for key in self.bricks.keys() {
+            if frame.bricks.contains_key(key) {
+                self.retired.remove(key);
+            } else {
+                self.retired.entry(*key).or_insert(0);
             }
         }
         // Make the meshes wanted: the missing first, then those whose neighbours have come or
@@ -915,6 +976,12 @@ impl WorldGpu {
                 continue;
             }
             self.empty.remove(key);
+            // Room made from retired meshes first: they stand in only until what replaces them
+            // is drawn, which this mesh is part of.
+            while (self.vertices + mesh.vertices.len() > self.caps.vertices
+                || (old.is_none() && self.free_meshes.is_empty()))
+                && self.retire_one(0)
+            {}
             let reached = if self.vertices + mesh.vertices.len() > self.caps.vertices {
                 Some(format!(
                     "near field vertices: meshes past {} vertices are not drawn (the nearest are)",
@@ -1004,14 +1071,28 @@ impl WorldGpu {
         };
         let mut unseen: Vec<(u8, ChunkKey)> = self.bricks.keys().filter(|k| !seen(k)).copied().collect();
         for (key, brick) in &far {
-            if self.bricks.contains_key(*key) || !seen(key) {
+            if let Some((slot, held)) = self.bricks.get_mut(*key) {
+                // Made again: written over in its slot, this frame (the old one drawn till now).
+                if !Arc::ptr_eq(held, brick) {
+                    *held = Arc::clone(brick);
+                    gpu.queue.write_buffer(
+                        store,
+                        (*slot as usize * BRICK_WORDS * 4) as u64,
+                        bytemuck::cast_slice(&brick_words(brick)),
+                    );
+                }
                 continue;
+            }
+            if !seen(key) {
+                continue;
+            }
+            if self.free_bricks.is_empty() {
+                self.retire_one(1);
             }
             if self.free_bricks.is_empty()
                 && let Some(out) = unseen.pop()
-                && let Some((slot, _)) = self.bricks.remove(&out)
             {
-                self.free_bricks.push(slot);
+                self.drop_brick(out);
             }
             let Some(slot) = self.free_bricks.pop() else {
                 self.notes.push(format!(
@@ -1027,25 +1108,78 @@ impl WorldGpu {
             );
             self.bricks.insert(**key, (slot, Arc::clone(brick)));
         }
+        // The handover (TASK-S4-26): what this camera's clipmap draws but cannot yet (waiting in
+        // the streaming's queue, resident but not yet meshed, or a brick in view not uploaded),
+        // and what is held but not drawn by it (retired, or resident for another camera or a
+        // tower). Of the held, those over something not ready are drawn in its place this frame.
+        let ready = |key: &ChunkKey, cells: &Arc<ChunkCells>| {
+            self.meshes.contains_key(key)
+                || self.empty.get(key).is_some_and(|(made, _)| Arc::ptr_eq(made, cells))
+        };
+        let selected =
+            |(level, key): (u8, ChunkKey)| levels.get(usize::from(level)).is_some_and(|l| l.contains(key));
+        let unready: Vec<(u8, ChunkKey)> = frame
+            .waiting
+            .iter()
+            .copied()
+            .filter(|item| selected(*item))
+            .chain(near.iter().filter(|(k, c)| !ready(k, c)).map(|(k, _)| (0, *k)))
+            .chain(far.iter().filter(|(k, _)| !self.bricks.contains_key(*k) && seen(k)).map(|(k, _)| **k))
+            .collect();
+        let near_keys: std::collections::HashSet<ChunkKey> = near.iter().map(|(k, _)| *k).collect();
+        let held = self
+            .meshes
+            .keys()
+            .filter(|k| !near_keys.contains(k))
+            .map(|k| (0, *k))
+            // A retired brick the camera selects again stands in for itself while it is made again.
+            .chain(self.bricks.keys().filter(|k| !selected(**k) || self.retired.contains_key(*k)).copied());
+        let standing = if self.without_stand_ins { Vec::new() } else { stand_ins(unready, held) };
+        for idle in self.retired.values_mut() {
+            *idle = idle.saturating_add(1);
+        }
+        for item in &standing {
+            if let Some(idle) = self.retired.get_mut(item) {
+                *idle = 0;
+            }
+        }
+        let stale: Vec<(u8, ChunkKey)> =
+            self.retired.iter().filter(|(_, idle)| **idle > RETIRED_PREPARES).map(|(k, _)| *k).collect();
+        for item in stale {
+            if item.0 == 0 {
+                self.drop_mesh(item.1);
+            } else {
+                self.drop_brick(item);
+            }
+        }
         // This frame's buffers: the chunks' origins by slot, the draws, the brick instances.
         let origin = camera.origin;
         let mut origins = vec![[0f32; 4]; MAX_CHUNK_SLOTS];
         let mut draws: Vec<[u32; 2]> = Vec::new();
         let mut chunks = Vec::new();
-        for (key, _) in &near {
-            if let Some(mesh) = self.meshes.get(key) {
-                let lo = grid.chunk_box(*key).lo - origin;
+        self.drawn.clear();
+        let standing_chunks = standing.iter().filter(|(level, _)| *level == 0).map(|(_, k)| *k);
+        for key in near.iter().map(|(k, _)| *k).chain(standing_chunks) {
+            if let Some(mesh) = self.meshes.get(&key) {
+                let lo = grid.chunk_box(key).lo - origin;
                 origins[mesh.slot as usize] = [lo.x as f32, lo.y as f32, lo.z as f32, 0.0];
                 draws.push([mesh.slot, mesh.count]);
-                chunks.push(*key);
+                chunks.push(key);
+                self.drawn.push((0, key));
+            } else if self.empty.contains_key(&key) && near_keys.contains(&key) {
+                self.drawn.push((0, key));
             }
         }
         // The bricks to march: those in the camera's frustum, nearest first, as many as the
         // frame's budget of pixels allows (MAX_BRICK_OVERDRAW times the pane): what bounds one
         // submission's far-field work. Bricks behind the camera are never counted against it.
         let eye_world = camera.origin + camera.eye;
-        let held: Vec<((u8, ChunkKey), u32)> =
-            far.iter().filter_map(|(key, _)| self.bricks.get(*key).map(|(slot, _)| (**key, *slot))).collect();
+        let held: Vec<((u8, ChunkKey), u32)> = far
+            .iter()
+            .map(|(key, _)| **key)
+            .chain(standing.iter().filter(|(level, _)| *level > 0).copied())
+            .filter_map(|key| self.bricks.get(&key).map(|(slot, _)| (key, *slot)))
+            .collect();
         let candidates: Vec<BrickCandidate> = held
             .iter()
             .map(|(key, _)| {
@@ -1070,6 +1204,7 @@ impl WorldGpu {
         }
         self.marched = chosen.iter().map(|&i| candidates[i].pixels).sum::<f64>() / pane;
         let order: Vec<((u8, ChunkKey), u32)> = chosen.iter().map(|&i| held[i]).collect();
+        self.drawn.extend(order.iter().map(|(key, _)| *key));
         let mut instances: Vec<BrickInstance> = Vec::new();
         for (key, slot) in &order {
             let b = grid.brick_box(key.0, key.1);
