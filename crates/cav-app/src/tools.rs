@@ -124,12 +124,13 @@ pub struct Gizmo {
     pub metres: f64,
 }
 
-/// How long an arrow is drawn, points, when it lies across the view.
-pub const ARROW: f32 = 70.0;
+/// How long an arrow is drawn, points, when it lies across the view: the same on screen however
+/// near or far the body is (S18's review, U5: 70 was easy to lose).
+pub const ARROW: f32 = 90.0;
 /// The shortest an arrow may look and still be dragged along, points.
 pub const MIN_ARROW: f32 = 12.0;
 /// How near the pointer must be to an arrow or the square to take it, points.
-pub const REACH: f32 = 7.0;
+pub const REACH: f32 = 8.0;
 
 /// Where a point of the world (metres) is drawn in a pane of `size` points with `view`.
 fn on_screen(view: &ViewSpec, size: egui::Vec2, at: [f64; 3]) -> Option<egui::Pos2> {
@@ -359,6 +360,12 @@ mod tests {
         assert_eq!(hit(&g, g.centre + (tip - g.centre) * 0.8), Some(Handle::Axis(0)));
         assert_eq!(hit(&g, g.centre + egui::vec2(300.0, 300.0)), None);
         assert_eq!(snapped(1.13, Some(0.25)), 1.25);
+        // The gizmo is the same size on screen near and far (S18's review, U5); its metres are not.
+        let far = ViewSpec { distance: 3.0 * view.distance, ..view.clone() };
+        let g_far = gizmo(&far, size, [1.0, 0.5, 1.0]).expect("in view");
+        let long = |g: &Gizmo| g.tips[0].map_or(0.0, |t| t.distance(g.centre));
+        assert!((long(&g) - long(&g_far)).abs() < 0.05 * long(&g), "{} {}", long(&g), long(&g_far));
+        assert!(g_far.metres > 2.5 * g.metres, "control: farther, each point is more metres");
         assert_eq!(snapped(1.13, None), 1.13);
     }
 

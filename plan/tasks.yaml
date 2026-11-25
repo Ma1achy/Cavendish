@@ -636,6 +636,9 @@
 - id: TASK-S18-15
   milestone: S18
   title: "Review fixes, the tools and the view (U2, U3, U7): a tool strip of icons with their keys and one name a tool, snap a switch apart; hold the right button to fly (W A S D), letters held back meanwhile, the middle button pans; Restore beside Home when maximised"
+- id: TASK-S18-16
+  milestone: S18
+  title: "Review fixes, seeing what you move (U5, minor 11): a gizmo of bright arrows on a dark halo, the same size on screen; F frames the silhouette with a margin, in the pane's own aspect; a session's arrows go the way they point on screen"
 - id: TASK-S19-01
   milestone: S19
   title: "Docking: panels as tabs in dock areas, drag to dock, saved layouts of the dock tree (a crate spike first, egui 0.37 and wasm)"

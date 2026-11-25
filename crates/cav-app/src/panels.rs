@@ -1556,8 +1556,10 @@ fn tool_options_row(shell: &mut Shell, ui: &mut egui::Ui) {
 }
 
 /// The Move tool's gizmo on body `body` in a pane at `rect`: three arrows (x red, y green, z blue,
-/// as the inspector's vectors read) and a square, drawn over the body; what is drawn is what the
-/// pointer can take. Returns the gizmo, in the pane's own points.
+/// as the inspector's vectors read) and a square, drawn over the body in bright colours on a dark
+/// halo, so that they stand out from a body of any colour (S18's review, U5); the held handle is
+/// drawn thicker. What is drawn is what the pointer can take. Returns the gizmo, in the pane's
+/// own points.
 fn draw_gizmo(
     shell: &Shell,
     ui: &egui::Ui,
@@ -1568,23 +1570,48 @@ fn draw_gizmo(
     let spec = shell.engine.spec();
     let at = spec.bodies.get(body)?.motion.position(shell.engine.time(), spec.array.instrument.gravity);
     let gizmo = crate::tools::gizmo(shell.engine.view(pane), rect.size(), at)?;
+    // Over the pane's picture (painted before it, in the same layer), under any window.
     let painter = ui.painter_at(rect);
     let colours = [
-        Color32::from_rgb(0xe0, 0x50, 0x50),
-        Color32::from_rgb(0x60, 0xc0, 0x60),
-        Color32::from_rgb(0x50, 0x90, 0xf0),
+        Color32::from_rgb(0xff, 0x5a, 0x5a),
+        Color32::from_rgb(0x6c, 0xe8, 0x6c),
+        Color32::from_rgb(0x6c, 0xb4, 0xff),
     ];
+    let halo = Color32::from_black_alpha(200);
     let held = shell.gizmo_drag.as_ref().map(|d| d.handle);
     let origin = rect.min.to_vec2();
+    let centre = gizmo.centre + origin;
     for (axis, tip) in gizmo.tips.iter().enumerate() {
-        if let Some(tip) = tip {
-            let lit = held == Some(crate::tools::Handle::Axis(axis));
-            let stroke = Stroke::new(if lit { 3.5 } else { 2.5 }, colours[axis]);
-            painter.arrow(gizmo.centre + origin, *tip - gizmo.centre, stroke);
-        }
+        let Some(tip) = tip else { continue };
+        let width = if held == Some(crate::tools::Handle::Axis(axis)) { 4.0 } else { 2.5 };
+        let tip = *tip + origin;
+        let along = (tip - centre).normalized();
+        let side = vec2(-along.y, along.x);
+        let head = [tip, tip - along * 13.0 + side * 6.0, tip - along * 13.0 - side * 6.0];
+        let shaft = [centre + along * 7.0, tip - along * 11.0];
+        // The halo first, then the colour on it.
+        painter.line_segment(shaft, Stroke::new(width + 3.0, halo));
+        painter.add(egui::Shape::convex_polygon(head.to_vec(), colours[axis], Stroke::new(2.0, halo)));
+        painter.line_segment(shaft, Stroke::new(width, colours[axis]));
+        // The axis's letter by its tip.
+        painter.text(
+            tip + along * 9.0,
+            Align2::CENTER_CENTER,
+            ["x", "y", "z"][axis],
+            FontId::proportional(12.0),
+            colours[axis],
+        );
     }
-    let square = Rect::from_center_size(gizmo.centre + origin, vec2(9.0, 9.0));
-    painter.rect_stroke(square, 1.0, Stroke::new(1.5, theme::STRONG), StrokeKind::Middle);
+    let square = Rect::from_center_size(centre, vec2(11.0, 11.0));
+    let free = held == Some(crate::tools::Handle::Centre);
+    painter.rect(
+        square,
+        2.0,
+        if free { Color32::WHITE } else { Color32::from_white_alpha(60) },
+        Stroke::new(1.5, Color32::WHITE),
+        StrokeKind::Middle,
+    );
+    painter.rect_stroke(square.expand(1.5), 2.0, Stroke::new(1.5, halo), StrokeKind::Outside);
     Some(gizmo)
 }
 

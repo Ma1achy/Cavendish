@@ -462,8 +462,15 @@ impl Shell {
         while let Some((effect, _)) = self
             .take(|e| matches!(e, Effect::Adjust { id, .. } if id == ID) || matches!(e, Effect::Session(_)))
         {
+            let view = self.engine.view(self.engine.active_pane()).clone();
             let Some(session) = self.session.as_mut() else { continue };
             match effect {
+                // The arrows go the way they point on screen (S18's review, minor 11); an axis
+                // lock takes them along the locked axis, → and ↑ its plus way.
+                Effect::Adjust { axis, steps, .. } if session.lock.is_none() => {
+                    let (world, sign) = crate::camera::arrow_axis(&view, axis);
+                    session.nudge(world, sign * steps, step);
+                }
                 Effect::Adjust { axis, steps, .. } => session.nudge(axis, steps, step),
                 Effect::Session(SessionKey::Char(c)) => session.type_char(c),
                 Effect::Session(SessionKey::Lock(axis)) => session.toggle_lock(axis),
@@ -1388,10 +1395,12 @@ impl Shell {
     /// Draws one frame of the application into `ui` and handles its input.
     pub fn ui(&mut self, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         let ctx = ui.ctx().clone();
-        self.layout = Layout { screen: ui.max_rect(), ..Layout::default() };
-        // The keys walk what the last frame registered; this frame registers anew as it draws.
+        // The keys walk what the last frame registered and laid out (F frames the active pane as
+        // it was last drawn: S18's review, U5, found it framing for no pane at all); this frame
+        // registers and lays out anew as it draws.
         self.building = FocusTree::new(&crate::actions::table().big_scopes());
         self.keys(&ctx);
+        self.layout = Layout { screen: ui.max_rect(), ..Layout::default() };
         // The window's title says the scene and whether it has unsaved edits.
         let title = self.title();
         if title != self.title_said {
