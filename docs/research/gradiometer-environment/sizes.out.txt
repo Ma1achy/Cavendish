@@ -18,10 +18,10 @@ static: 5 mG/(5 m)^2 curvature, 489 Hz/G, gradiometer           5.405e+00 rad
 noise: 1 uG/rtHz differential at 0.1 Hz, 489 Hz/G               1.011e-03 rad/rtHz     
   same, per shot                                                5.054e-04 rad          
 quadratic: 2*0.23*B0*dB, B0=10 G, dB=1 uG/rtHz, 0.1 Hz          9.509e-06 rad/rtHz     
-BBR dnu/dT at 300 K                                             3.067e-02 Hz/K         
-static: 1 K parabolic over 5 m (T''=0.08 K/m^2), gradiometer    1.356e-01 rad          
-static: 1 K/m linear gradient, per IFO (cancels in gradiometer)  3.390e-01 rad          
-drift: 0.1 K/h differential between IFOs                        2.852e-06 rad          
+BBR dnu/dT at 300 K                                             3.139e-02 Hz/K         
+static: 1 K parabolic over 5 m (T''=0.08 K/m^2), gradiometer    1.388e-01 rad          
+static: 1 K/m linear gradient, per IFO (cancels in gradiometer)  3.469e-01 rad          
+drift: 0.1 K/h differential between IFOs                        2.919e-06 rad          
 s13 note's estimate (0.1 rad/K), for comparison                 1.000e-01 rad          
 
 == Launch jitter through Earth's gradient and rotation (per IFO; independent in the two)
@@ -47,11 +47,12 @@ timing jitter, 1 ns/rtHz, dv from Gamma                         1.126e-04 rad/rt
 mirror vibration 1e-4 m/s^2/rtHz, dv from Gamma                 8.223e-09 rad/rtHz     
 laser frequency noise 10 Hz/rtHz                                1.126e-13 rad/rtHz     
 
-== Wavefront curvature x cloud temperature: k_eff T^2 sigma_v^2 / R
-  1 nK, R = 1 km                                                4.589e-01 rad          
-  1 nK, R = 10 km                                               4.589e-02 rad          
-  10 nK, R = 1 km                                               4.589e+00 rad          
-  10 nK, R = 10 km                                              4.589e-01 rad          
+== Wavefront curvature x cloud temperature: Dickerson term 6, k_eff sigma_v^2 T^2 / (2R)
+  1 nK, R = 1 km                                                2.295e-01 rad          
+  1 nK, R = 10 km                                               2.295e-02 rad          
+  10 nK, R = 1 km                                               2.295e+00 rad          
+  10 nK, R = 10 km                                              2.295e-01 rad          
+  Dickerson's Table I term 6 recomputed (table: 0.04)           6.648e-02 rad          
 
 == Finite kick duration: relative change of the arms' separation integral
   tau = 1 ms                                                    1.369e-03 relative     
@@ -71,3 +72,33 @@ rain 10 mm on a roof r=50 m, 10 m above upper IFO               1.835e+00 rad
 Carlton eq13: M=80 kg D=3 m h=2 m                               4.935e-01 rad          
 Carlton eq13: M=80 kg D=5 m h=12 m                              9.071e-02 rad          
 Carlton eq13: M=1000 kg D=20 m h=12 m                          -2.598e-02 rad          
+
+== Cross-checks against the primary sources
+Bouguer plate of 1 m of water, 2 pi G rho_w h (Creutzfeldt 2008: 42 uGal flat)  4.194e+01 uGal         
+Merriam 1992 local-zone admittance (quoted)                    -3.560e-01 uGal/hPa     
+Van Camp 2017 A1.3: -4 attraction +1 loading (quoted)          -3.000e+00 nm/s^2/hPa   
+Van Camp 2017 Fig. A7: point mass 45 kg at 1 m, G M / r^2 (measured 2.8)  3.003e+00 nm/s^2       
+Dubetsky & Kasevich Table I col. 3: (7/192) k g T3^4 Tzz, T3 = 2T, per IFO  4.514e+04 rad          
+  the same as (7/12) k g Gamma T^4                              4.514e+04 rad          
+
+== Blackbody force: ground-state Stark potential on both arms (state-independent)
+ground-state BBR shift magnitude at 300 K (alpha_g = 197.2 a.u.)  1.698e+00 Hz           
+d nu_g / dT at 300 K                                            2.264e-02 Hz/K         
+gradiometer phase per (Hz/m^2) of potential curvature, C h/m    1.101e+02 rad/(Hz/m^2) 
+static: 1 K parabolic over 5 m (T''=0.08 K/m^2), gradiometer    1.995e-01 rad          
+acceleration per K/m of temperature gradient, (h/m) d nu_g/dT   1.039e-10 m s^-2/(K/m) 
+
+== Wind-advected temperature (Creighton 2008 sec. 3), gradiometer phase ASD (rad/rtHz)
+   c_T^2 = 0.2 K^2 m^-2/3 (his 'typical daytime peak'), lower IFO 2 m above ground
+  f = 0.05 Hz, v = 10 m/s, building half-width 10 m, height 25 m  1.017e-01 rad/rtHz     
+  f = 0.05 Hz, v = 10 m/s, building half-width 5 m, height 12 m  2.528e-01 rad/rtHz     
+  f = 0.05 Hz, v = 10 m/s, building half-width 20 m, height 30 m  4.151e-02 rad/rtHz     
+  f = 0.05 Hz, v = 5 m/s, building half-width 10 m, height 25 m  3.047e-02 rad/rtHz     
+  f = 0.1 Hz, v = 10 m/s, building half-width 10 m, height 25 m  2.126e-02 rad/rtHz     
+  f = 0.1 Hz, v = 10 m/s, building half-width 5 m, height 12 m  6.284e-02 rad/rtHz     
+  f = 0.1 Hz, v = 10 m/s, building half-width 20 m, height 30 m  6.719e-03 rad/rtHz     
+  f = 0.1 Hz, v = 5 m/s, building half-width 10 m, height 25 m  4.366e-03 rad/rtHz     
+  f = 0.25 Hz, v = 10 m/s, building half-width 10 m, height 25 m  1.319e-03 rad/rtHz     
+  f = 0.25 Hz, v = 10 m/s, building half-width 5 m, height 12 m  7.051e-03 rad/rtHz     
+  f = 0.25 Hz, v = 10 m/s, building half-width 20 m, height 30 m  1.547e-04 rad/rtHz     
+  f = 0.25 Hz, v = 5 m/s, building half-width 10 m, height 25 m  9.089e-05 rad/rtHz     
