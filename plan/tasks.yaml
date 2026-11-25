@@ -602,6 +602,7 @@
 - id: TASK-S18-04
   milestone: S18
   title: "The GUI as data: actions, keymap, scopes, tools and layouts as validated files; the command palette and the ? sheet from them (detail tiers moved to S19)"
+  status: done # merged in parts: actions, scopes, keys, palette and sheet with TASK-S18-03 (#161), tools.ron with TASK-S18-01 (#164), layouts.ron with TASK-S18-02
 - id: TASK-S18-05
   milestone: S19
   title: Materials - a per-voxel material palette (density, colour, elastic and thermal properties) and a material library

@@ -308,6 +308,96 @@ fn task_add_a_sphere_move_it_two_metres_read_tower_one() {
 /// get longer unnoticed.
 const TASK_EVENTS: usize = 20;
 
+fn overlap(a: egui::Rect, b: egui::Rect) -> f32 {
+    let i = a.intersect(b);
+    if i.is_positive() { i.area() } else { 0.0 }
+}
+
+const BIG: [&str; 7] = ["top-bar", "toolbar", "tree", "viewport", "inspector", "timeline", "footer"];
+
+#[test]
+fn panels_resize_and_maximise_restores() {
+    // S18 W1.
+    let mut rig = Rig::new();
+    rig.frames(vec![vec![], vec![]]);
+    let outliner = rig.shell.layout().panel("outliner").unwrap();
+    let edge = egui::pos2(outliner.right() - 1.0, outliner.center().y);
+    rig.drag(edge, edge + egui::vec2(40.0, 0.0));
+    rig.frames(vec![vec![], vec![]]);
+    let wider = rig.shell.layout().panel("outliner").unwrap();
+    assert!(
+        (wider.width() - outliner.width() - 40.0).abs() <= 1.0,
+        "{} → {}",
+        outliner.width(),
+        wider.width()
+    );
+    // It stays as it was left.
+    rig.frames(vec![vec![], vec![], vec![]]);
+    assert_eq!(rig.shell.layout().panel("outliner").unwrap(), wider);
+    // Ctrl+Space maximises the active pane: only the menu bar and the status line are left.
+    let before = rig.shell.layout().clone();
+    rig.key(Key::Space, Modifiers::COMMAND);
+    assert!(rig.shell.maximised);
+    let names: Vec<&str> = rig.shell.layout().panels.iter().map(|(n, _)| *n).collect();
+    assert_eq!(names, ["menu", "footer"], "{names:?}");
+    assert!(rig.shell.layout().figure.area() > 1.5 * before.figure.area());
+    assert!(!rig.shell.playing, "Ctrl+Space is not Space");
+    // Again: the window is as it was, to the point.
+    rig.key(Key::Space, Modifiers::COMMAND);
+    rig.frames(vec![vec![]]);
+    assert_eq!(rig.shell.layout().panels, before.panels);
+    assert_eq!(rig.shell.layout().figure, before.figure);
+    // Control: maximised, Tab onto a hidden scope (the tree) restores the window first.
+    rig.key(Key::Space, Modifiers::COMMAND);
+    rig.shell.keyboard.focus = vec!["toolbar".into()];
+    rig.key(Key::Tab, Modifiers::NONE);
+    assert_eq!(rig.shell.keyboard.focus, ["tree"]);
+    assert!(!rig.shell.maximised, "Tab onto the tree showed it");
+}
+
+#[test]
+fn every_layout_keeps_every_scope_and_the_figure_uncovered() {
+    // S18 W2 and K4: in every layout, and maximised, the figure is never covered, every big scope
+    // is in the tree, and Tab walks them in the same order.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    let mut states: Vec<String> = cav_app::layouts::layouts().layouts.iter().map(|l| l.id.clone()).collect();
+    states.push("maximised".into());
+    for state in &states {
+        if state == "maximised" {
+            rig.shell.run("layout scene").unwrap();
+            rig.shell.run("maximise").unwrap();
+        } else {
+            rig.shell.run(&format!("layout {state}")).unwrap();
+        }
+        rig.frames(vec![vec![], vec![]]);
+        let layout = rig.shell.layout().clone();
+        for (name, rect) in &layout.panels {
+            assert!(overlap(*rect, layout.figure) < 1.0, "{state}: {name} covers the figure");
+        }
+        assert_eq!(rig.shell.focus_tree().big_scopes(), BIG, "{state}");
+        if state != "maximised" {
+            for scope in BIG {
+                let node = rig.shell.focus_tree().node(scope).unwrap();
+                assert!(node.rect.is_some(), "{state}: {scope} is on screen");
+            }
+            let mut seen = Vec::new();
+            rig.shell.keyboard.focus = vec!["footer".into()];
+            for _ in 0..7 {
+                rig.key(Key::Tab, Modifiers::NONE);
+                seen.push(rig.shell.keyboard.focused().to_owned());
+            }
+            assert_eq!(seen, BIG, "{state}: Tab's order");
+        }
+    }
+    // The layouts arranged the figure as their lines say.
+    rig.shell.run("layout analysis").unwrap();
+    assert_eq!(rig.shell.engine.panes(), 4);
+    assert_eq!(rig.shell.engine.content(0), cav_engine::PaneContent::Signal);
+    // Control: a layout's lines are view commands, never edits.
+    assert_eq!(rig.shell.engine.history(), (true, false));
+}
+
 /// What share of the pane's shorter side a sphere (`centre`, `radius` metres) spans on screen,
 /// measured by projecting its edge, in pane `pane` of the last frame.
 fn spans(rig: &Rig, pane: usize, centre: [f64; 3], radius: f64) -> f64 {

@@ -481,7 +481,8 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
         assert!(
             outcome.is_ok()
                 || (*name == "rename" && outcome.as_ref().unwrap_err().contains("select"))
-                || (*name == "tool" && outcome.as_ref().unwrap_err().contains("tool <")),
+                || (*name == "tool" && outcome.as_ref().unwrap_err().contains("tool <"))
+                || (*name == "layout" && outcome.as_ref().unwrap_err().contains("layout <")),
             "{name}: {outcome:?}"
         );
         // `frame` works out a camera and issues it: the journal holds that one camera command
@@ -500,7 +501,8 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
         assert!(
             wrong.contains("takes no arguments")
                 || (*name == "palette" && wrong.contains("not a menu"))
-                || (*name == "tool" && wrong.contains("tool <")),
+                || (*name == "tool" && wrong.contains("tool <"))
+                || (*name == "layout" && wrong.contains("layout <")),
             "{name}: {wrong}"
         );
     }

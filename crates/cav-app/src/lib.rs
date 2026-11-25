@@ -25,6 +25,7 @@ pub mod editors;
 pub mod headless;
 pub mod keyboard;
 pub mod lane;
+pub mod layouts;
 pub mod menus;
 pub mod palette;
 mod panels;
