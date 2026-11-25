@@ -156,7 +156,7 @@ fn tree_against_raster() -> usize {
 }
 
 cav_validate::case! {
-    test: validation_the_tree_is_the_raster,
+    test: validation_slow_the_tree_is_the_raster,
     name: "voxel.tree_equals_raster",
     subsystem: "voxel",
     slice: "S3",
@@ -382,7 +382,7 @@ fn merge_error() -> f64 {
 }
 
 cav_validate::case! {
-    test: validation_merged_equals_unmerged,
+    test: validation_slow_merged_equals_unmerged,
     name: "voxel.merged_equals_unmerged",
     subsystem: "voxel",
     slice: "S3",

@@ -1063,7 +1063,7 @@ fn files_differing(a: &std::path::Path, b: &std::path::Path) -> usize {
 /// its towers staggered, read on a second instrument for a while, its cadence jittered and
 /// thinned, undone and redone, and exported twice, once before the last edits and once after.
 /// (Figures are not in it: this crate cannot draw. `cav-plot`'s
-/// `a_session_with_figures_and_a_bundle_replays_to_the_same_files` has them.)
+/// `slow_a_session_with_figures_and_a_bundle_replays_to_the_same_files` has them.)
 fn exit_session(engine: &mut Engine, out: &std::path::Path, settle_each: bool) {
     let step = |engine: &mut Engine, line: &str| {
         engine.run_line(line).unwrap_or_else(|why| panic!("`{line}`: {why}"));
@@ -1112,7 +1112,7 @@ fn exit_session(engine: &mut Engine, out: &std::path::Path, settle_each: bool) {
 }
 
 cav_validate::case! {
-    test: validation_replay_writes_identical_bundles,
+    test: validation_slow_replay_writes_identical_bundles,
     name: "engine.replay_bundles",
     subsystem: "engine",
     slice: "S2",
@@ -1170,7 +1170,7 @@ cav_validate::case! {
         // and what they say of the engine is the build's, which no replay can change. (Within
         // one process this could not have caught a revision asked of git when the file is
         // written: the answer was asked once and kept. `cav`'s
-        // `cli_provenance_is_the_builds_whatever_the_tree_or_the_directory` runs the binary
+        // `slow_cli_provenance_is_the_builds_whatever_the_tree_or_the_directory` runs the binary
         // twice with the tree changed in between, and does.)
         for dir in &dirs[1..] {
             let replay = files_of(dir);
@@ -1380,7 +1380,7 @@ fn a_scene_with_no_towers_answers_every_query() {
 }
 
 #[test]
-fn a_truncated_world_read_reaches_every_reply() {
+fn slow_a_truncated_world_read_reaches_every_reply() {
     // S4's second review, J4: the truncation and `settled` as the API and MCP serve them, in the
     // signal, the reading under a playhead and the periodogram, and in their JSON; and in
     // `read::reading` itself. world-box read only within 1 m of the towers (it is farther).

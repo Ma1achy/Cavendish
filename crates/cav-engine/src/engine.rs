@@ -459,7 +459,14 @@ impl Engine {
             // A bundle is of the scene's own instrument. With a comparison on, the manifest and
             // the log say that the other reading is not in it.
             let compared = self.comparison().map(compared_name);
-            match cav_sim::bundle::write(directory, &self.spec, signal, crate::build(), compared) {
+            match cav_sim::bundle::write_with(
+                directory,
+                &self.spec,
+                signal,
+                crate::build(),
+                compared,
+                self.voxels.trees(),
+            ) {
                 Ok(files) => {
                     let also = compared.map_or_else(String::new, |name| {
                         format!(", of the scene's own instrument: the comparison with {name} is not in it")

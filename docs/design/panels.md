@@ -115,5 +115,8 @@ look):
   that width (drop-downs cut their words).
 - **Targets are 24 pt a side** in both panels (rows, boxes, ticks, drop-downs, eye, lock, +, ⋮),
   and every text colour is held to 4.5:1 on every ground it is drawn on (`theme::text_pairs`).
+- **Not built, and not drawn as built** (S19's second review): "drag a letter to scrub" (a
+  number is dragged in its box, not by its axis letter) and Compare "under Advanced" (it stays
+  where S18 put it). Both are S20's, with the dense panels (`docs/design/workspace.md`).
 - **Readings** is a tab in every layout (not docked in two): a tab is one click from the Inspector
   wherever you are.

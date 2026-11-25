@@ -38,11 +38,11 @@ a sample point is inside (`contains`), and what it can say about a whole box at 
 
 - `cav-core`, `voxel::tests`: add it to `shapes()`. Then
   `cover_is_conservative_for_every_shape` checks the contract on 3000 random boxes,
-  `validation_the_tree_is_the_raster` checks that the tree expanded is the raster voxeliser
+  `validation_slow_the_tree_is_the_raster` checks that the tree expanded is the raster voxeliser
   cell for cell at three pitches and three supersamplings, `validation_the_mass_is_the_spec_s`
   that the mass is the spec's, `validation_volume_and_inertia_match_the_analytic` that the
   voxelised volume and inertia are your closed forms at 64 cells across, and
-  `validation_merged_equals_unmerged` that merging changes nothing.
+  `validation_slow_merged_equals_unmerged` that merging changes nothing.
 - `oracle/tests/bodies.rs`: add it to `solids()` for the convergence to 128 cells.
 - `cav-sim`: `shape::tests::every_kind_voxelises_and_is_named` (add a line), and
   `paths::tests::every_leaf_has_a_unit_or_is_dimensionless_and_a_stage` fails if a number has no

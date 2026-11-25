@@ -591,7 +591,7 @@ fn files_under(dir: &std::path::Path) -> std::collections::BTreeMap<String, Vec<
 }
 
 #[test]
-fn cli_provenance_is_the_builds_whatever_the_tree_or_the_directory() {
+fn slow_cli_provenance_is_the_builds_whatever_the_tree_or_the_directory() {
     // The revision and the dirty flag in a manifest and in a figure's .json are the build's.
     // The same binary, run before and after the working tree changes and from another
     // directory, writes the same bytes. (S2's review, I3: they were asked of git at run time,
@@ -736,7 +736,7 @@ fn gpu_cli_figure_takes_a_picture_wider_than_mcp_does() {
 }
 
 #[test]
-fn cli_figure_writes_a_figure_with_its_data_twice_the_same() {
+fn slow_cli_figure_writes_a_figure_with_its_data_twice_the_same() {
     let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli figure");
     let _ = std::fs::remove_dir_all(&root);
     let (a, b) = (root.join("a"), root.join("b"));

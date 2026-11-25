@@ -71,7 +71,7 @@ fn sphere_against_point(pitch: f64) -> f64 {
 }
 
 cav_validate::case! {
-    test: validation_a_voxel_sphere_reads_as_the_sphere,
+    test: validation_slow_a_voxel_sphere_reads_as_the_sphere,
     name: "voxel.sphere_reads_as_the_sphere",
     subsystem: "voxel",
     slice: "S3",
@@ -391,7 +391,7 @@ fn imported_box_against_cuboid(grow: f64) -> (bool, f64, f64) {
 }
 
 cav_validate::case! {
-    test: validation_imported_box_mesh_is_the_cuboid,
+    test: validation_slow_imported_box_mesh_is_the_cuboid,
     name: "materials.imported_box_mesh_is_the_cuboid",
     subsystem: "materials",
     slice: "S19",

@@ -64,7 +64,7 @@ fn points_of(drawing: &Drawing) -> (usize, usize) {
 }
 
 #[test]
-fn a_figure_is_bounded_in_series_and_its_data_is_streamed() {
+fn slow_a_figure_is_bounded_in_series_and_its_data_is_streamed() {
     let dir = scratch("bounded");
     let (towers, shots) = (1000, 4000);
     let mut engine = Engine::new();

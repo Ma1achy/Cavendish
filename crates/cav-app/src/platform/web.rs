@@ -435,7 +435,8 @@ impl Remote {
                 Action::Post { slot, ticket, request, assets } => {
                     let message = js_sys::Object::new();
                     // The held meshes this worker has not been sent yet go first, once each
-                    // (S19's review, I4): the page's store has their bytes.
+                    // (S19's review, I4): the page's store has their bytes (the lane names only
+                    // the ones the page holds).
                     let held: Vec<(String, String, std::sync::Arc<[u8]>)> = assets
                         .into_iter()
                         .filter_map(|hash| {
@@ -525,7 +526,10 @@ impl Remote {
 
     /// Asks the lane what to do now, and does it.
     fn pump(&self) {
-        let actions = self.0.borrow_mut().lane.pump(now_ms());
+        // The lane records a mesh as sent to a worker only when the page holds it to send
+        // (S19's second review, J1).
+        let held = |hash: &str| cav_sim::assets::held(hash).is_some();
+        let actions = self.0.borrow_mut().lane.pump(now_ms(), &held);
         self.apply(actions);
     }
 }

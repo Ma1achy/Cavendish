@@ -61,7 +61,7 @@ the rule into `panels::silent` and `panels::tower_detail`, and the call site now
 (`panels.rs:579`). The code is right.
 
 The test calls the two helpers directly, through `panels_for_tests`. Revert `panels.rs:579` to
-`let silent = bodies.1 == 0;` and `a_world_scene_s_towers_show_what_they_read` still passes. The
+`let silent = bodies.1 == 0;` and `slow_a_world_scene_s_towers_show_what_they_read` still passes. The
 tower rows in `world-box` and `town` would read "+0.0 +0.0" again, which is exactly J5's symptom,
 and every tier would stay green.
 
@@ -97,7 +97,7 @@ which runs headless frames) so that it looks for a tower's reading.
     (`[1,0,24]`), and the control at 48 re-meshes it. In (b), `break` would leave A at 24 vertices,
     and the test wants 20.
 - **J4, the truncation:**
-  - `a_truncated_world_read_reaches_every_reply` checks the signal, reading and periodogram replies
+  - `slow_a_truncated_world_read_reaches_every_reply` checks the signal, reading and periodogram replies
     and their JSON, plus `read::reading`. Writing `truncated: None` in any of them fails it.
   - The control is the whole box (no key, settled).
   - The wire test now asserts the flags that came back, not just their agreement with the direct

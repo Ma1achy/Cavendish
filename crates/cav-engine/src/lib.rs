@@ -130,7 +130,7 @@ mod provenance {
     }
 
     #[test]
-    fn built_without_git_or_outside_a_repository_the_stamp_is_unknown() {
+    fn slow_built_without_git_or_outside_a_repository_the_stamp_is_unknown() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         // No git on the PATH: a program that is not there. The stamp is made all the same, and
         // still says which sources to watch.

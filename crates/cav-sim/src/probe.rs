@@ -52,6 +52,8 @@ pub struct Probe {
     pub towers: Vec<TowerProbe>,
     /// What has matter but is not in `g`, a phrase each (empty when everything is counted).
     pub not_counted: Vec<String>,
+    /// How many bodies are in `g` (those that exist at the time and could be read).
+    pub bodies: usize,
 }
 
 /// The finest voxel cell under the probe.
@@ -147,6 +149,7 @@ pub fn probe(scene: &SceneSpec, trees: &[Option<Arc<VoxTree>>], time: f64, point
     let mut g = Vec3::ZERO;
     let mut cell: Option<(CellProbe, Arc<VoxTree>)> = None;
     let mut not_counted = Vec::new();
+    let mut counted = 0;
     for (n, body) in scene.bodies.iter().enumerate() {
         let (from, until) = body.exists();
         if time < from || time >= until {
@@ -161,6 +164,7 @@ pub fn probe(scene: &SceneSpec, trees: &[Option<Arc<VoxTree>>], time: f64, point
                 let inside = if r < body.radius { (r / body.radius).powi(3) } else { 1.0 };
                 g = g + d * (-G * body.mass * inside / (r * r * r));
             }
+            counted += 1;
             continue;
         };
         let tree = match trees.get(n).and_then(Option::as_ref) {
@@ -173,6 +177,7 @@ pub fn probe(scene: &SceneSpec, trees: &[Option<Arc<VoxTree>>], time: f64, point
                 }
             },
         };
+        counted += 1;
         for (l, leaf) in tree.leaves.iter().enumerate() {
             let centre = at + tree.block_centre(leaf.key, leaf.level);
             let side = tree.side(leaf.level);
@@ -224,7 +229,7 @@ pub fn probe(scene: &SceneSpec, trees: &[Option<Arc<VoxTree>>], time: f64, point
             TowerProbe { label: tower.label.clone(), distance, phase, why }
         })
         .collect();
-    Probe { point, g: g.to_array(), floor, cell: cell.map(|(c, _)| c), towers, not_counted }
+    Probe { point, g: g.to_array(), floor, cell: cell.map(|(c, _)| c), towers, not_counted, bodies: counted }
 }
 
 impl Probe {
@@ -234,19 +239,32 @@ impl Probe {
         if self.floor.is_some() { "the bodies and the floor" } else { "the bodies" }
     }
 
+    /// Whether `g` is of nothing while the scene has matter the probe does not count (no body,
+    /// no slab floor, and something in [`Self::not_counted`]): then `g` is not "0 m/s²", it is
+    /// not known, and is shown as a dash (S19's second review, minor 12).
+    #[must_use]
+    pub fn reads_nothing(&self) -> bool {
+        self.bodies == 0 && self.floor.is_none() && !self.not_counted.is_empty()
+    }
+
     /// The reading in words, a line a fact, as the console prints it.
     #[must_use]
     pub fn words(&self, scene: &SceneSpec) -> String {
         let [x, y, z] = self.point;
         let g = Vec3::from_array(self.g);
-        let mut out = format!(
-            "at ({x:.4}, {y:.4}, {z:.4}) m\ng from {}: {:.6e} m/s² ({:.4e}, {:.4e}, {:.4e})\n",
-            self.counted(),
-            g.length(),
-            self.g[0],
-            self.g[1],
-            self.g[2]
-        );
+        let mut out = format!("at ({x:.4}, {y:.4}, {z:.4}) m\n");
+        if self.reads_nothing() {
+            out.push_str("g: — (nothing here is counted)\n");
+        } else {
+            out.push_str(&format!(
+                "g from {}: {:.6e} m/s² ({:.4e}, {:.4e}, {:.4e})\n",
+                self.counted(),
+                g.length(),
+                self.g[0],
+                self.g[1],
+                self.g[2]
+            ));
+        }
         if !self.not_counted.is_empty() {
             out.push_str(&format!("not counted: {}\n", self.not_counted.join("; ")));
         }
@@ -296,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    fn probe_reads_the_field_and_the_cell() {
+    fn slow_probe_reads_the_field_and_the_cell() {
         // S19 T1: beside a voxel ball the field is GM/d² towards its centre, to 1e-3; at twice the
         // distance a quarter of it (the control). A point on its surface is in a cell, and the
         // cell's share of tower 1's phase is the Phase colouring's number for that leaf, bit for
@@ -329,20 +347,22 @@ mod tests {
 
     #[test]
     fn the_cell_is_the_finest_cell_however_the_tree_merged() {
-        // S19 review I2: at the middle of a 0.4 m steel box (pitch 0.05 m) the tree has merged the
-        // cells into large blocks, but the probe reports the one cell of 0.05 m holding the point:
-        // its mass ρh³, and its share of each tower's phase that cell's read alone. Control: the
-        // leaf holding the point is larger than a cell, and reading the whole leaf gives another
-        // share.
+        // S19 review I2: inside a 0.6 m steel box (pitch 0.05 m, 12 cells a side) the tree has
+        // merged the cells into blocks, but the probe reports the one cell of 0.05 m holding the
+        // point: its mass ρh³, and its share of each tower's phase that cell's read alone. The
+        // point lies in a block whose corner is not the grid's (the second review, minor 3: in a
+        // 0.4 m box the one block began at cell 0, and the offset by the block's corner was never
+        // other than zero). Control: the leaf holding the point is larger than a cell, and
+        // reading the whole leaf gives another share.
         let mut scene = crate::dev::void();
         scene.array.towers = vec![TowerSpec::at("tower 1", [0.0, 0.0, 0.0])];
-        let mut shape = ShapeSpec::new(ShapeKind::Cuboid { size: [0.4; 3] }, 0.05, 2);
+        let mut shape = ShapeSpec::new(ShapeKind::Cuboid { size: [0.6; 3] }, 0.05, 2);
         shape.material = Some("steel".into());
         scene.bodies =
             vec![BodySpec::shaped("box", 1.0, shape, Motion::Static { position: [2.0, 2.0, 1.0] })];
         let tree = Arc::new(scene.bodies[0].shape.as_ref().unwrap().tree(1.0, &[]).unwrap());
         let trees = vec![Some(Arc::clone(&tree))];
-        let inside = probe(&scene, &trees, 0.0, [2.01, 2.02, 1.03]);
+        let inside = probe(&scene, &trees, 0.0, [2.21, 2.22, 1.13]);
         let cell = inside.cell.clone().expect("a cell inside the box");
         assert_eq!(cell.side, 0.05, "the cell's side is the pitch");
         assert_eq!(cell.leaf.level, 0);
@@ -350,9 +370,12 @@ mod tests {
         assert!((cell.mass - rho * 0.05f64.powi(3)).abs() < 1e-12 * cell.mass, "{} kg", cell.mass);
         // The cell holds the point.
         let c = Vec3::new(2.0, 2.0, 1.0) + tree.block_centre(cell.leaf.key, 0);
-        let off = Vec3::new(2.01, 2.02, 1.03) - c;
+        let off = Vec3::new(2.21, 2.22, 1.13) - c;
         assert!(off.x.abs() <= 0.025 && off.y.abs() <= 0.025 && off.z.abs() <= 0.025, "{off:?}");
         let merged = tree.leaves[cell.block.0];
+        let corner = morton::decode(merged.key);
+        assert!(corner.iter().all(|c| *c > 0), "the block is away from the grid's corner: {corner:?}");
+        assert_ne!(cell.leaf.key, merged.key, "and the cell is not the block's first");
         assert!(
             merged.level > 0 && cell.block.1 > cell.side,
             "the control: the leaf there is a merged block"
@@ -398,6 +421,24 @@ mod tests {
         let half = probe(&scene, &trees, 0.0, point);
         assert!(half.floor.is_none() && half.not_counted.iter().any(|w| w.starts_with("the floor")));
         assert!(half.words(&scene).contains("not counted: the floor"));
+        // The world is named too (the second review, minor 4), and with a body counted the
+        // field is still a number.
+        scene.world = crate::dev::world_box().world;
+        assert!(scene.world.is_some(), "the dev scene has a world");
+        let world = probe(&scene, &trees, 0.0, point);
+        assert!(world.not_counted.iter().any(|w| w.starts_with("the world")), "{:?}", world.not_counted);
+        assert_eq!((world.bodies, world.reads_nothing()), (1, false));
+        assert!(world.words(&scene).contains("g from the bodies"));
+        // With no body and no slab, only what is not counted: g is not known, not zero (minor 12).
+        scene.bodies.clear();
+        let unknown = probe(&scene, &[], 0.0, point);
+        assert!(unknown.reads_nothing() && unknown.g == [0.0; 3]);
+        assert!(unknown.words(&scene).contains("g: —"), "{}", unknown.words(&scene));
+        // Control: empty space with nothing left out reads a true zero.
+        scene.floor = None;
+        scene.world = None;
+        let empty = probe(&scene, &[], 0.0, point);
+        assert!(!empty.reads_nothing() && empty.words(&scene).contains("g from the bodies: 0"));
     }
 
     const BIG_G_TEST: f64 = cav_core::constants::BIG_G;

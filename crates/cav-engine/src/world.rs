@@ -474,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn streaming_keeps_the_towers_and_the_camera() {
+    fn slow_streaming_keeps_the_towers_and_the_camera() {
         let mut spec = cav_sim::dev::stress_1e10();
         spec.world.as_mut().unwrap().lod.error_px = 32.0;
         let mut streaming = Streaming::default();
@@ -540,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn the_frame_says_what_is_waiting() {
+    fn slow_the_frame_says_what_is_waiting() {
         // A renderer draws stand-ins over what the streaming has still to make (TASK-S4-26), so
         // the frame carries the queue: what is wanted and neither resident nor known empty.
         let mut spec = cav_sim::dev::stress_1e10();
@@ -601,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn streaming_holds_its_caps() {
+    fn slow_streaming_holds_its_caps() {
         let mut spec = cav_sim::dev::stress_1e10();
         spec.world.as_mut().unwrap().lod.error_px = 32.0;
         let towers = tower_chunks(&spec);

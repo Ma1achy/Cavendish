@@ -203,6 +203,28 @@ mod tests {
         assert!(why.contains("has changed"), "{why}");
         let why = super::mesh("no/such/file.stl", Some(wrong)).unwrap_err();
         assert!(why.contains("not held in this session"), "{why}");
+        // A file read by its path (S19's second review, minor 1): a lopsided mesh (a torus with
+        // its +x and +z halves stretched, so the middle of its box is not its centroid) with no hash is
+        // centred on its box and is not held; named with its own hash it is read, held and the
+        // same mesh. Control: centred on its centroid, the box's middle is centimetres off.
+        let (v, t) = cav_core::voxel::mesh::torus_mesh(1.0, 0.3, 24, 12);
+        let stretch = |x: f64, by: f64| if x > 0.0 { by * x } else { x };
+        let v: Vec<Vec3> =
+            v.into_iter().map(|p| Vec3::new(stretch(p.x, 2.0), p.y, stretch(p.z, 3.0))).collect();
+        let lopsided = to_stl(&v, &t);
+        let file = dir.join("lopsided.stl");
+        std::fs::write(&file, &lopsided).unwrap();
+        let file = file.to_str().unwrap();
+        let middle = |m: &Mesh| cav_core::voxel::Shape::bounds(m).centre().length();
+        let read = super::mesh(file, None).unwrap();
+        assert!(middle(&read) < 1e-6, "a file's mesh is centred on its box: {} m off", middle(&read));
+        let centroid = Mesh::parse(file, &lopsided, 1.0).unwrap().centred();
+        assert!(middle(&centroid) > 1e-2, "the control: its centroid is not its box's middle");
+        let own = hash(&lopsided);
+        assert!(held(&own).is_none(), "a file named without a hash is not held");
+        let kept = super::mesh(file, Some(&own)).unwrap();
+        assert!(Arc::ptr_eq(&held(&own).unwrap(), &kept), "read with its hash, it is held");
+        assert_eq!(kept.vertices, read.vertices, "and it is the same mesh");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

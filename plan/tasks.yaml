@@ -772,6 +772,9 @@
 - id: TASK-S19-25
   milestone: S19
   title: "S19 after its review: the record (pictures before and after, validation against s18-the-editor, minors 10, 12, 13, 22, ARCHITECTURE, PROGRESS)"
+- id: TASK-S19-26
+  milestone: S19
+  title: "S19 second review: J1 (a held mesh reaches a worker that starts empty, tested with a control; the lane records only the meshes sent), minors 1-9, 12, 14, 18-20, and quick back within 30 s (45 slow tests named slow_, run by the oracle tier)"
 - id: TASK-S5-16
   milestone: S5
   title: Body draw modes as data: voxels (today); partial fill made visible (edge cells shaded by their exact fill fraction, with the clipped piece's outline and centroid on demand, and a legend); the original mesh as triangles; mesh over voxels for comparison
@@ -799,3 +802,12 @@
 - id: TASK-S20-09
   milestone: S20
   title: Time without an end - the scene's duration editable from the transport (not only the Scene card), end behaviour chosen there (loop, stop at the end, or run on), and a live mode where time keeps running and the signal, periodogram and timeline show a rolling window, bounded in memory
+- id: TASK-S20-10
+  milestone: S20
+  title: "The fly camera as a first-person game camera - pointer captured and hidden while flying (raw mouse deltas; pointer lock on the web), mouse-look yaw and pitch with pitch clamped short of straight up and down and no roll, W A S D along the view with Space up and Shift down, Ctrl (or double-tap W) to sprint and the wheel to change speed, movement integrated per frame with frame time and smooth acceleration (keys held, not key-repeat), sensitivity and speed as settings, entered by holding the right button or a toggle key and left by releasing it or Esc, never firing tool or scope shortcuts while flying; orbit and pan given the same per-frame smoothing"
+- id: TASK-S20-11
+  milestone: S20
+  title: "A physical camera - a walk mode with a character controller (a player-sized box with eye height, gravity, jump, step-up over one voxel, sliding along walls) colliding with the voxel world, voxel bodies, floor and room by swept-box tests against occupancy; double-tap Space toggles flying as in a creative-mode game, and the fly camera collides too; in walk mode Space jumps and Shift is free for sneak or slow-walk (not falling off edges), if cheap; noclip is an explicit toggle (off by default) for passing through matter; the camera has no mass and never enters the scene or the gravity read; player size, eye height, walk and fly speeds and jump height as settings"
+- id: TASK-S20-12
+  milestone: S20
+  title: "Carried from S19's second review into the dense panels (docs/design/workspace.md 0; docs/slices/S19-review-2.md): the scroll bar's width reserved so a row is as wide with it as without (minor 10: material densities cut), a uniform body's Material reading Uniform (11), the Probe's reading out of the figure and into the right panel or status line (13), one unit a column in Readings, and the review's list What S20 will have to shrink (theme::HIT and the tests that encode 24 pt)"

@@ -78,7 +78,7 @@ fn stream(caps: cav_engine::world::Caps) -> (usize, usize) {
 }
 
 #[test]
-fn streaming_memory_is_bounded() {
+fn slow_streaming_memory_is_bounded() {
     // W5: what streaming holds live is its resident chunks and bricks, within the bytes cap, and
     // a working set (the wanted map and queue, one batch being made) of at most 2 MiB more.
     use cav_engine::world::{Caps, MAX_RESIDENT};

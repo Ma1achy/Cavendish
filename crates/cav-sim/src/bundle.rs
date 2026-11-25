@@ -183,6 +183,26 @@ pub fn write(
     build: &Build,
     compared_with: Option<&str>,
 ) -> Result<Vec<PathBuf>, String> {
+    write_with(dir, spec, signal, build, compared_with, &[])
+}
+
+/// [`write`], lent the voxel trees the caller has already made of `spec`'s bodies (`trees[n]`
+/// body `n`'s, in its own frame; `None`, or a slice too short, for one not made): a body of
+/// materials is then weighed from its tree and not voxelised a second time for `source_mass`
+/// (S19's second review, minor 14: a doubling for runs of many bundles with large bodies). The
+/// trees must be of `spec` as it is (the engine's are kept so by every command); a body with no
+/// tree given is voxelised here, as [`write`] does for all.
+///
+/// # Errors
+/// As [`write`].
+pub fn write_with(
+    dir: &Path,
+    spec: &SceneSpec,
+    signal: &Signal,
+    build: &Build,
+    compared_with: Option<&str>,
+    trees: &[Option<std::sync::Arc<cav_core::voxel::VoxTree>>],
+) -> Result<Vec<PathBuf>, String> {
     let (towers, most, total, bodies) = (signal.towers, signal.most(), signal.clock.len(), spec.bodies.len());
     if towers != spec.array.towers.len() {
         return Err(format!(
@@ -209,8 +229,17 @@ pub fn write(
         None => std::borrow::Cow::Owned(crate::read::readouts(spec)?),
     };
     let nominal = time.len();
-    // What each body weighs (a body of materials is voxelised for it), before any file is written.
-    let masses = spec.bodies.iter().map(|body| body.mass_in(spec)).collect::<Result<Vec<f64>, String>>()?;
+    // What each body weighs, before any file is written: from its tree when the caller lent it,
+    // else a body of materials is voxelised for it.
+    let masses = spec
+        .bodies
+        .iter()
+        .enumerate()
+        .map(|(n, body)| {
+            let lent = trees.get(n).and_then(Option::as_ref).map(std::sync::Arc::as_ref);
+            body.mass_with(lent).map_or_else(|| body.mass_in(spec), Ok)
+        })
+        .collect::<Result<Vec<f64>, String>>()?;
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let mut listed: Vec<Listed> = Vec::new();
     let mut list = |name, shape: &[usize], dtype, unit, about| {
@@ -676,6 +705,24 @@ mod tests {
         // The one rule: `mass_in` is what the bundle wrote, and a body of materials needs no
         // positive `mass` to be valid.
         assert_eq!(scene.bodies.last().unwrap().mass_in(&scene).unwrap().to_bits(), steel.to_bits());
+        // Lent the body's tree, the bundle weighs it from the tree and writes the same bits (the
+        // second review, minor 14). Control: lent another tree (a box twice as wide), it writes
+        // that tree's mass, so the tree lent is the one read, not a second voxelisation.
+        let last = scene.bodies.len() - 1;
+        let tree_of = |size: f64| {
+            let mut shape = scene.bodies[last].shape.clone().unwrap();
+            shape.kind = crate::shape::ShapeKind::Cuboid { size: [size, 0.4, 0.4] };
+            Some(std::sync::Arc::new(shape.tree(1.0, &scene.materials).unwrap()))
+        };
+        let lent = |tree| {
+            let mut trees = vec![None; last];
+            trees.push(tree);
+            let dir = scratch("source mass lent");
+            write_with(&dir, &scene, &signal, &build(), None, &trees).unwrap();
+            array(&dir, "source_mass").into_f64().unwrap().1[last]
+        };
+        assert_eq!(lent(tree_of(0.4)).to_bits(), steel.to_bits());
+        assert!((lent(tree_of(0.8)) - 2.0 * expected).abs() <= 1e-12 * expected, "the tree lent is read");
         scene.bodies.last_mut().unwrap().mass = 0.0;
         assert_eq!(scene.validate(), Ok(()));
         scene.bodies.last_mut().unwrap().shape.as_mut().unwrap().material = None;
@@ -867,7 +914,7 @@ mod tests {
     }
 
     #[test]
-    fn a_world_bundle_round_trips_and_says_what_it_read() {
+    fn slow_a_world_bundle_round_trips_and_says_what_it_read() {
         // `world-box`: the world is a source like a body, so its bundle is the signal bit for bit,
         // and the scene in it (with its world) is the scene.
         let scene = dev::world_box();

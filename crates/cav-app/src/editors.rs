@@ -985,8 +985,36 @@ fn material_choice(
         chosen = Some(index);
     }
     if let Some(n) = chosen {
+        // A body of materials made uniform keeps what it weighed, as the Kind switch does: its
+        // `mass` field was not read until now and may be a placeholder or 0, which a uniform body
+        // may not weigh (S19's second review, minor 6). One edit of the whole body.
+        if choices[n].is_none()
+            && let Some(uniform) = made_uniform(shell, spec, path)
+        {
+            commands.push(uniform);
+            return;
+        }
         commands.push(command_for(path, choices[n].clone().map_or(Value::Null, Value::String), false));
     }
+}
+
+/// The one edit that makes the body whose material `path` is (`bodies[n].shape.material`)
+/// uniform at the mass it weighs now ([`cav_sim::BodySpec::mass_with`] of the tree drawn, else
+/// [`cav_sim::BodySpec::mass_in`]). None for a part's material, a body already uniform, or one
+/// whose weight cannot be worked out or is not above 0 (then the plain edit is made, and refused
+/// in words if its mass will not do).
+fn made_uniform(shell: &Shell, spec: &cav_sim::SceneSpec, path: &str) -> Option<Command> {
+    let n: usize = path.strip_prefix("bodies[")?.strip_suffix("].shape.material")?.parse().ok()?;
+    let body = spec.bodies.get(n).filter(|b| b.weighs_its_materials())?;
+    let weighs = body
+        .mass_with(shell.engine.body_tree(n).map(std::sync::Arc::as_ref))
+        .or_else(|| body.mass_in(spec).ok())
+        .filter(|kg| kg.is_finite() && *kg > 0.0)?;
+    let mut changed = body.clone();
+    changed.mass = weighs;
+    changed.shape.as_mut()?.material = None;
+    let value = serde_json::to_value(&changed).ok()?;
+    Some(command_for(&format!("bodies[{n}]"), value, false))
 }
 /// The buttons under a selection that change a list or take an optional part away: remove this
 /// body, remove this tower, remove the room. Each is a command like any other.

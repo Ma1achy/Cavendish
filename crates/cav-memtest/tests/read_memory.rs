@@ -50,7 +50,7 @@ fn memory_per_read_is_flat_in_the_length_of_the_flight() {
 }
 
 #[test]
-fn the_largest_valid_flight_is_read_within_its_budget() {
+fn slow_the_largest_valid_flight_is_read_within_its_budget() {
     // The longest half-sequence a scene may have, the floor off so that the whole 2000 s is
     // integrated, and a point mass on the atoms' own path, whose integral never settles: the
     // most work a read can be asked for.

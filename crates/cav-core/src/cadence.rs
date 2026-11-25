@@ -959,7 +959,7 @@ mod tests {
     }
 
     cav_validate::case! {
-        test: validation_window_loss_floor,
+        test: validation_slow_window_loss_floor,
         name: "cadence.window_loss_floor",
         subsystem: "cadence",
         slice: "S2",
