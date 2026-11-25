@@ -708,3 +708,6 @@
 - id: TASK-S5-10
   milestone: S5
   title: Exact clipped pieces as a near kernel within ~3 cells of an arm point, behind a distance switch
+- id: TASK-S19-
+  milestone: S19
+  title: The side panels redesigned - outliner as a tree, inspector as component cards, a readings panel, tool strip in the viewport (docs/design/panels.md)
