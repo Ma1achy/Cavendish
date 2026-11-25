@@ -810,6 +810,11 @@ switch costs less than the phase tolerance; the whole world is read, not truncat
 finite patch, an infinite flat plane or a sphere. All in S5 (TASK-S5-11 to 13, with the measured LOD radii
 and the world octree / read-LOD view), which runs straight after S19.
 
+## Owner's ruling (25 Nov 2026): the look
+Ambient occlusion and shading now; shadows, sky and atmosphere later; voxel colouring with the variation of
+voxel-art games (techniques only, no game's look copied). Research: `docs/research/voxel-lighting.md`. Slice
+S21 (TASK-S21-01 to 06), after S5. Every layer switchable; a data look keeps colour maps exact.
+
 ## Owner's ruling (25 Nov 2026): phones and tablets
 The GUI must work well on mobile and tablets (iPad) in the web build: touch (tap selects, one-finger orbit,
 two-finger pan and pinch zoom, long-press for the context menu, on-screen gizmo handles big enough for a

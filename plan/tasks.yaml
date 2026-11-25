@@ -729,6 +729,24 @@
 - id: TASK-S5-15
   milestone: S5
   title: World octree and read-LOD debug view - overlay tree for the world's chunks, and a per-tower overlay colouring what is read leaf-exact, by moments at which level, or not at all
+- id: TASK-S21-01
+  milestone: S21
+  title: Per-vertex ambient occlusion baked into the greedy meshes (merge only on equal AO) and the same AO at the far march's hit
+- id: TASK-S21-02
+  milestone: S21
+  title: Sun and sky light in linear light, a neutral tone curve and distance fog to the sky colour
+- id: TASK-S21-03
+  milestone: S21
+  title: Sun shadows: one ray per pixel through a camera-centred coarse occupancy volume, capped per frame (measure first)
+- id: TASK-S21-04
+  milestone: S21
+  title: Sky: an analytic gradient now; a scattering atmosphere (Hillaire 2020) with the planet world
+- id: TASK-S21-05
+  milestone: S21
+  title: Voxel colour: cell-hash lightness jitter and height/slope blends per material, computed at draw time
+- id: TASK-S21-06
+  milestone: S21
+  title: Looks as data: a beauty look and a data look (identity on colour maps), switchable, with a badge when lighting shifts colours
 - id: TASK-S19-14
   milestone: S20
   title: "Phones and tablets in the web build (owner, 25 Nov 2026): touch (tap, one-finger orbit, two-finger pan and pinch, long-press menu, finger-sized handles), drawers and a bottom tool bar on narrow screens, 44 pt targets, nothing hover-only, Safari's WebGPU and memory; screenshots at 390x844, 1024x1366, 1366x1024 (moved to S20 by the S19 brief: S19 is full)"
