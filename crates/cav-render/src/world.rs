@@ -653,7 +653,7 @@ pub struct WorldGpu {
     /// to mesh, the vertices and slots in use) and the note said. While the same is wanted,
     /// nothing is meshed again (the meshes would be thrown away again); a freed slot, fewer
     /// vertices or another set of chunks starts it again.
-    full: Option<(u64, String)>,
+    full: Option<(u64, Vec<String>)>,
     /// How many chunk meshes have been made (for tests: a frame at a cap makes none).
     pub meshed: u64,
     vertices: usize,
@@ -743,6 +743,18 @@ impl WorldGpu {
             .collect();
         todo.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)).then(a.2.cmp(&b.2)));
         todo
+    }
+
+    /// The chunks of `frame` waiting to be meshed for the camera of `view` (`camera` is its
+    /// renderer camera), in the order the next frame would mesh them: for tests that the order a
+    /// moving camera changes is not what stops the meshing at a cap.
+    #[must_use]
+    pub fn waiting(&self, frame: &WorldFrame, view: &ViewSpec, camera: &Camera) -> Vec<ChunkKey> {
+        let Some(grid) = frame.grid else { return Vec::new() };
+        let levels = levels(&grid, lod_centre(view), frame.ring, frame.levels.max(1));
+        let near: Vec<(ChunkKey, &Arc<ChunkCells>)> =
+            frame.chunks.iter().filter(|(k, _)| levels[0].contains(**k)).map(|(k, c)| (*k, c)).collect();
+        self.to_mesh(&near, frame, camera.origin + camera.eye).into_iter().map(|(_, _, key, _)| key).collect()
     }
 
     /// What identifies a frame's meshing at a cap: the chunks to mesh and what is in use.
@@ -849,8 +861,9 @@ impl WorldGpu {
         // thrown away again), and the cap is said again.
         let fingerprint = self.fingerprint(&todo);
         match &self.full {
-            Some((at, note)) if *at == fingerprint => {
-                self.notes.push(note.clone());
+            Some((at, notes)) if *at == fingerprint => {
+                // Every cap that bound, not only the last (S4's third review, minor 7).
+                self.notes.extend(notes.iter().cloned());
                 todo.clear();
             }
             _ => self.full = None,
@@ -927,7 +940,11 @@ impl WorldGpu {
                     self.notes.push(note.clone());
                 }
                 // Remembered against what is wanted after this frame's meshes are kept.
-                self.full = Some((0, note));
+                match &mut self.full {
+                    Some((_, notes)) if !notes.contains(&note) => notes.push(note),
+                    Some(_) => {}
+                    None => self.full = Some((0, vec![note])),
+                }
                 continue;
             }
             let slot = match old {

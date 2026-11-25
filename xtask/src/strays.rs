@@ -18,7 +18,9 @@ const HEARTBEAT_MS: u128 = 30_000;
 
 /// This `cargo xtask`'s record of itself, `target/strays/xtask-<pid>.txt`, written only when an
 /// agent runs it (Claude Code sets `CLAUDECODE` in its shells): the owner's own runs, and what
-/// they start, are never stoppable. The line is `<id> <earliest start> <latest start> <alive
+/// they start, are never stoppable. The owner's own interactive Claude Code session sets it too,
+/// so an `xtask` run through that session is recorded as an agent's (S4's third review, minor 8):
+/// its leftovers are stoppable once over 30 minutes old, as an agent's are. The line is `<id> <earliest start> <latest start> <alive
 /// until> <what it was asked>`, Unix milliseconds; a thread moves `alive until` on every
 /// [`HEARTBEAT_MS`] (to two heartbeats ahead). `strays --stop` takes a process as xtask's when it
 /// is this run, or this run is among its ancestors; through an ancestor that has ended, only when

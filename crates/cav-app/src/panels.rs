@@ -396,6 +396,7 @@ fn outline_row(
     let selected = shell.engine.selection() == Some(target);
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::click());
     shell.layout.outline.push((target, rect));
+    shell.layout.outline_words.push((target, label.to_owned(), detail.to_owned()));
     let painter = ui.painter();
     if selected {
         painter.rect_filled(rect, 2.0, Color32::from_rgb(0x10, 0x30, 0x3d));

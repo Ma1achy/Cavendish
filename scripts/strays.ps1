@@ -17,7 +17,8 @@
   Who may be stopped (S17's second review, item 3, and S4's review, I10: the owner runs some of
   these too, and the owner's own Claude Code session is a claude.exe like an agent's): only a
   process an agent's `cargo xtask` started. A `cargo xtask` run by an agent (Claude Code sets
-  CLAUDECODE in its shells; the owner's own runs write nothing) writes a record of itself under
+  CLAUDECODE in its shells; the owner's own runs write nothing, but a run through the owner's own
+  interactive Claude Code session counts as an agent's) writes a record of itself under
   `target/strays/` of its checkout or worktree: its id, when it started, and how long it has been
   alive, renewed every 30 s; it removes the record when it ends normally, and one killed part-way
   leaves it. A candidate is xtask's when it is a recorded xtask, or a recorded xtask is among its
