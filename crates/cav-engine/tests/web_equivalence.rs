@@ -100,8 +100,9 @@ impl Found {
 
 /// The labels whose numbers go through `sin`, `cos`, `exp` or `log`, and so may differ in their
 /// last bits (wasm takes Rust's own maths library, native the platform's): `comb`'s oscillator
-/// is placed by a sine (its three signal channels, and the reading under the playhead), and its
-/// periodogram's power goes through the FFT's twiddles. Every other label is held to the bit. A
+/// is placed by a sine, which reaches its three signal channels, the reading under the playhead
+/// and, through those signal values, its periodogram's power (the FFT's own twiddles are the same
+/// bits on both: S17's second review, item 4). Every other label is held to the bit. A
 /// label is added here only with a line in the slice notes saying which function it goes through.
 const THROUGH_LIBM: [&str; 5] = [
     "comb/signal.lower",

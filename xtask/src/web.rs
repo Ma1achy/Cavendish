@@ -111,6 +111,20 @@ fn equivalence(root: &Path) -> Result<(), String> {
         cargo(root, &["test", "-p", "cav-engine", "--test", "web_equivalence", "--", "--ignored"]);
     native.env("CAV_WEB_EQUIVALENCE", &numbers);
     step("equivalence: native numbers", native)?;
+    // The voxel job through the wire (8 to 9 s, so not in `quick`: S17's second review, item 1).
+    let wire = cargo(
+        root,
+        &[
+            "test",
+            "-p",
+            "cav-engine",
+            "--lib",
+            "--",
+            "--ignored",
+            "a_voxel_job_through_the_wire_is_the_same_bits",
+        ],
+    );
+    step("equivalence: a voxel job through the wire", wire)?;
     // The wasm test's own lints (it builds the native numbers in, so it is linted after them).
     let mut lint = cargo(
         root,
