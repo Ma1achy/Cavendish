@@ -54,8 +54,9 @@ pub enum Action {
         ticket: u64,
         /// Its request (`cav_engine::forward::wire`).
         request: Vec<u8>,
-        /// The held meshes (by hash) the job needs that this worker has not been sent: the page
-        /// sends them before the job (`wire::with_assets`), each to each worker once.
+        /// The held meshes (by hash) the job needs that the page holds and this worker has not
+        /// been sent: the page sends them before the job (`wire::with_assets`), each to each
+        /// worker once.
         assets: Vec<String>,
     },
     /// Run job `ticket` on the page's own thread now, and report it with [`Lane::ran_here`].
@@ -206,7 +207,12 @@ impl Lane {
     /// ready workers, and, when the page may run jobs itself (the module's rules), run one here
     /// (at most one a frame). With every slot empty for good, the waiting jobs are answered with
     /// nothing.
-    pub fn pump(&mut self, now: f64) -> Vec<Action> {
+    ///
+    /// `held` says whether the page holds the mesh of a hash now (`cav_sim::assets::held`): a
+    /// post carries, and the slot is recorded as sent, only the meshes the page has to send. One
+    /// it lacks is asked for again with the next job that names it, so a mesh imported after a
+    /// job that read its body as nothing still reaches the worker (S19's second review, J1).
+    pub fn pump(&mut self, now: f64, held: &dyn Fn(&str) -> bool) -> Vec<Action> {
         let mut actions = Vec::new();
         for (index, slot) in self.slots.iter_mut().enumerate() {
             if slot.respawn_at.is_some_and(|at| now >= at) {
@@ -235,8 +241,9 @@ impl Lane {
             slot.busy = Some((ticket, fingerprint(&request)));
             let assets: Vec<String> = cav_engine::forward::wire::needs(&request)
                 .into_iter()
-                .filter(|hash| slot.holds.insert(hash.clone()))
+                .filter(|hash| !slot.holds.contains(hash) && held(hash))
                 .collect();
+            slot.holds.extend(assets.iter().cloned());
             actions.push(Action::Post { slot: index, ticket, request, assets });
         }
         // Every slot empty for good after a worker died in a job: no worker will come and the
@@ -318,7 +325,7 @@ mod tests {
             let mut spawned = Vec::new();
             for _ in 0..3600 {
                 now += 1000.0 / 60.0;
-                spawned.extend(spawns(&lane.pump(now)));
+                spawned.extend(spawns(&lane.pump(now, &any)));
                 if !spawned.is_empty() {
                     break;
                 }
@@ -335,9 +342,14 @@ mod tests {
         // Its last failure says it is not started again; worker 1 was never touched.
         let last = lane.failed(0, "Script error", now);
         assert!(matches!(&last[1], Action::Say(text) if text.contains("is not started again")), "{last:?}");
-        assert!(spawns(&lane.pump(now + 1e7)).is_empty());
+        assert!(spawns(&lane.pump(now + 1e7, &any)).is_empty());
         // Control: a slot that has not failed is never started again.
         assert!(!started_again.is_empty() && lane.slots[1].respawns == 0);
+    }
+
+    /// A page that holds every mesh a job names (the tests that are not about meshes).
+    fn any(_: &str) -> bool {
+        true
     }
 
     /// Whether `actions` run anything on the page.
@@ -378,23 +390,65 @@ mod tests {
             cav_sim::Motion::Static { position: [2.0; 3] },
         ));
         let job = || wire::reading_request(&spec, 1.0);
+        // The page's own answer: what its store holds.
+        let held = |hash: &str| cav_sim::assets::held(hash).is_some();
         let (mut lane, _) = Lane::new();
         lane.ready(0);
         let first = lane.send(job(), 0.0);
-        assert_eq!(sent(&lane.pump(0.0)), [(0, vec![hash.clone()])]);
+        assert_eq!(sent(&lane.pump(0.0, &held)), [(0, vec![hash.clone()])]);
         lane.answered(0, first, vec![]);
         let second = lane.send(job(), 1.0);
-        assert_eq!(sent(&lane.pump(1.0)), [(0, vec![])], "worker 0 holds it already");
+        assert_eq!(sent(&lane.pump(1.0, &held)), [(0, vec![])], "worker 0 holds it already");
         lane.answered(0, second, vec![]);
         let plain = lane.send(wire::reading_request(&cav_sim::dev::point(), 1.0), 2.0);
-        assert_eq!(sent(&lane.pump(2.0)), [(0, vec![])], "the control: nothing named, nothing sent");
+        assert_eq!(sent(&lane.pump(2.0, &held)), [(0, vec![])], "the control: nothing named, nothing sent");
         lane.answered(0, plain, vec![]);
         // Worker 0 fails and is started again: the new one has nothing.
         lane.failed(0, "RuntimeError: unreachable", 3.0);
-        let _ = lane.pump(3.0 + FIRST_BACKOFF_MS);
+        let _ = lane.pump(3.0 + FIRST_BACKOFF_MS, &held);
         lane.ready(0);
         lane.send(job(), 5000.0);
-        assert_eq!(sent(&lane.pump(5000.0)), [(0, vec![hash])]);
+        assert_eq!(sent(&lane.pump(5000.0, &held)), [(0, vec![hash])]);
+    }
+
+    #[test]
+    fn a_mesh_the_page_lacks_is_not_recorded_as_sent() {
+        // S19's second review, J1(b): a scene names a mesh the page does not hold (a body added
+        // by a command, a link, a journal from another session). The job is posted with nothing
+        // before it and the worker is NOT recorded as holding the mesh; once the page holds it
+        // (the file dropped or imported again), the next job carries it. Control: recorded on
+        // posting whatever was sent (the code before), the second post carried nothing and the
+        // towers never read the body.
+        use cav_engine::forward::wire;
+        let hash = "0123456789abcdef".to_owned();
+        let mut spec = cav_sim::dev::point();
+        let mut shape = cav_sim::ShapeSpec::new(
+            cav_sim::ShapeKind::Mesh { file: "absent.stl".into(), scale: 1.0, hash: Some(hash.clone()) },
+            0.25,
+            1,
+        );
+        shape.material = Some("steel".into());
+        spec.bodies.push(cav_sim::BodySpec::shaped(
+            "absent",
+            1.0,
+            shape,
+            cav_sim::Motion::Static { position: [2.0; 3] },
+        ));
+        let job = || wire::reading_request(&spec, 1.0);
+        assert_eq!(wire::needs(&job()), std::slice::from_ref(&hash));
+        let (mut lane, _) = Lane::new();
+        lane.ready(0);
+        let first = lane.send(job(), 0.0);
+        assert_eq!(sent(&lane.pump(0.0, &|_| false)), [(0, vec![])], "nothing to send");
+        assert!(lane.slots[0].holds.is_empty(), "and nothing recorded as sent");
+        lane.answered(0, first, vec![]);
+        let second = lane.send(job(), 1.0);
+        assert_eq!(sent(&lane.pump(1.0, &any)), [(0, vec![hash.clone()])], "held now: it is sent");
+        lane.answered(0, second, vec![]);
+        // And then once only, as any mesh.
+        lane.send(job(), 2.0);
+        assert_eq!(sent(&lane.pump(2.0, &any)), [(0, vec![])]);
+        assert!(lane.slots[0].holds.contains(&hash));
     }
 
     #[test]
@@ -407,13 +461,13 @@ mod tests {
         lane.ready(1);
         let poison = vec![7, 7, 7];
         let first = lane.send(poison.clone(), 0.0);
-        assert!(matches!(lane.pump(0.0)[..], [Action::Post { slot: 0, .. }]));
+        assert!(matches!(lane.pump(0.0, &any)[..], [Action::Post { slot: 0, .. }]));
         lane.failed(0, "RuntimeError: unreachable", 1.0);
         assert_eq!(lane.take(first), Some(Vec::new()));
         // Asked again, it is not handed to worker 1 either (the third review's minor 1): it is
         // answered with nothing. Worker 1 then fails on its own (holding no job).
         let again = lane.send(poison.clone(), 2.0);
-        assert!(!lane.pump(2.0).iter().any(|a| matches!(a, Action::Post { .. })));
+        assert!(!lane.pump(2.0, &any).iter().any(|a| matches!(a, Action::Post { .. })));
         assert_eq!(lane.take(again), Some(Vec::new()));
         lane.failed(1, "RuntimeError: unreachable", 3.0);
         let third = lane.send(poison, 4.0);
@@ -422,7 +476,7 @@ mod tests {
         let mut now = 4.0;
         for _ in 0..3600 {
             now += 1000.0 / 60.0;
-            assert!(!runs_here(&lane.pump(now)), "at {now} ms");
+            assert!(!runs_here(&lane.pump(now, &any)), "at {now} ms");
         }
         assert_eq!(lane.take(third), Some(Vec::new()), "the poisoned request is answered with nothing");
         assert_eq!(lane.take(other), None, "the other waits for a worker");
@@ -431,7 +485,7 @@ mod tests {
         fresh.failed(0, "Script error", 0.0);
         fresh.failed(1, "Script error", 0.0);
         fresh.send(vec![1], 0.0);
-        assert!(runs_here(&fresh.pump(READY_WITHIN_MS)));
+        assert!(runs_here(&fresh.pump(READY_WITHIN_MS, &any)));
     }
 
     #[test]
@@ -443,32 +497,32 @@ mod tests {
         for round in 0..10u8 {
             lane.ready(0);
             let job = lane.send(vec![round], now);
-            lane.pump(now);
+            lane.pump(now, &any);
             lane.answered(0, job, vec![1]);
             lane.failed(0, "Script error", now);
             now += 20_000.0;
-            assert_eq!(spawns(&lane.pump(now)), [0], "round {round}: started again");
+            assert_eq!(spawns(&lane.pump(now, &any)), [0], "round {round}: started again");
         }
         // Control: failing in a row with no answer between empties the slot after MAX_RESPAWNS.
         for _ in 0..=MAX_RESPAWNS {
             lane.failed(1, "Script error", now);
             now += 20_000.0;
-            lane.pump(now);
+            lane.pump(now, &any);
         }
         assert!(lane.slots[1].dead && !lane.slots[0].dead);
         // With every slot empty for good after a worker died holding a job, a waiting job is
         // answered with nothing, and that is said.
         lane.ready(0);
         let held = lane.send(vec![9], now);
-        lane.pump(now);
+        lane.pump(now, &any);
         for _ in 0..=MAX_RESPAWNS {
             lane.failed(0, "RuntimeError: unreachable", now);
             now += 20_000.0;
-            lane.pump(now);
+            lane.pump(now, &any);
         }
         assert_eq!(lane.take(held), Some(Vec::new()));
         let job = lane.send(vec![5], now);
-        let said = lane.pump(now);
+        let said = lane.pump(now, &any);
         assert_eq!(lane.take(job), Some(Vec::new()));
         assert!(
             said.iter().any(|a| matches!(a, Action::Say(t) if t.contains("Every forward worker has failed")))
@@ -486,18 +540,18 @@ mod tests {
             if held_a_job {
                 lane.ready(1);
                 lane.send(vec![1], now);
-                lane.pump(now);
+                lane.pump(now, &any);
             }
             for _ in 0..=MAX_RESPAWNS {
                 for slot in 0..WORKERS {
                     lane.failed(slot, "Script error", now);
                 }
                 now += 20_000.0;
-                lane.pump(now);
+                lane.pump(now, &any);
             }
             assert!(lane.slots.iter().all(|s| s.dead));
             let job = lane.send(vec![2], now);
-            let ran = runs_here(&lane.pump(now + READY_WITHIN_MS));
+            let ran = runs_here(&lane.pump(now + READY_WITHIN_MS, &any));
             (ran, lane.take(job))
         };
         assert_eq!(run(false), (true, None), "the page runs it (its answer comes from `ran_here`)");
@@ -514,12 +568,12 @@ mod tests {
         lane.ready(0);
         lane.ready(1);
         let first = lane.send(vec![7], 0.0);
-        lane.pump(0.0);
+        lane.pump(0.0, &any);
         lane.failed(0, "RuntimeError: unreachable", 1.0);
         assert_eq!(lane.take(first), Some(Vec::new()));
         let again = lane.send(vec![7], 2.0);
         let other = lane.send(vec![8], 2.0);
-        let posted = lane.pump(2.0);
+        let posted = lane.pump(2.0, &any);
         assert!(
             matches!(posted[..], [Action::Post { slot: 1, ticket, .. }] if ticket == other),
             "{posted:?}"
@@ -528,10 +582,10 @@ mod tests {
         // A post that fails: the request is not tried again.
         let lost = lane.send(vec![6], 3.0);
         lane.ready(0);
-        let posted = lane.pump(3.0);
+        let posted = lane.pump(3.0, &any);
         assert!(matches!(posted[..], [Action::Post { slot: 0, ticket, .. }] if ticket == lost));
         lane.not_posted(0, lost, vec![6], 3.0);
-        lane.pump(4.0);
+        lane.pump(4.0, &any);
         assert_eq!(lane.take(lost), Some(Vec::new()));
     }
 
@@ -544,26 +598,34 @@ mod tests {
         let b = lane.send(vec![2], 20.0);
         let c = lane.send(vec![3], 20.0);
         // Control: before the wait is over, nothing runs here.
-        assert!(!lane.pump(20.0 + READY_WITHIN_MS - 1.0).iter().any(|x| matches!(x, Action::RunHere { .. })));
+        assert!(
+            !lane
+                .pump(20.0 + READY_WITHIN_MS - 1.0, &any)
+                .iter()
+                .any(|x| matches!(x, Action::RunHere { .. }))
+        );
         // Past it (the new workers were started but have not said ready): the page runs one, and
         // only one in its frame (S4's review, minor 9).
         let now = 20.0 + READY_WITHIN_MS;
-        let first = lane.pump(now);
+        let first = lane.pump(now, &any);
         let ran: Vec<u64> = first
             .iter()
             .filter_map(|x| if let Action::RunHere { ticket, .. } = x { Some(*ticket) } else { None })
             .collect();
         assert_eq!(ran, [b]);
-        assert!(!lane.pump(now + 1.0).iter().any(|x| matches!(x, Action::RunHere { .. })), "one a frame");
+        assert!(
+            !lane.pump(now + 1.0, &any).iter().any(|x| matches!(x, Action::RunHere { .. })),
+            "one a frame"
+        );
         lane.ran_here(b, vec![9], now + 5.0);
         assert!(
-            !lane.pump(now + 6.0).iter().any(|x| matches!(x, Action::RunHere { .. })),
+            !lane.pump(now + 6.0, &any).iter().any(|x| matches!(x, Action::RunHere { .. })),
             "not in the same frame"
         );
         assert_eq!(lane.take(b), Some(vec![9]));
         // A worker that comes back takes the jobs again: the page runs no more.
         lane.ready(1);
-        let back = lane.pump(now + 100.0);
+        let back = lane.pump(now + 100.0, &any);
         assert!(matches!(back[..], [Action::Post { slot: 1, ticket, .. }] if ticket == c), "{back:?}");
     }
 
@@ -572,7 +634,7 @@ mod tests {
         let (mut lane, _) = Lane::new();
         lane.ready(0);
         let job = lane.send(vec![1], 0.0);
-        lane.pump(0.0);
+        lane.pump(0.0, &any);
         // The worker posts its panic's message, then traps; the trap's words are not the news.
         lane.panicked(0, "index out of bounds at crates/cav-sim/src/read.rs:12".into());
         let said = lane.failed(0, "RuntimeError: unreachable", 1.0);
