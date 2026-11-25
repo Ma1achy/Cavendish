@@ -136,6 +136,8 @@ mod tests {
         ron_files(&root.join("scenes"), &root, &mut on_disk);
         on_disk.sort();
         let mut built_in: Vec<String> = LIBRARY.iter().map(|s| s.path.to_owned()).collect();
+        // The one file under scenes/ that is not a scene: the starters `add` puts into one.
+        built_in.push(crate::starters::STARTERS_PATH.to_owned());
         built_in.sort();
         // A file added to scenes/ but not to LIBRARY (or the reverse) fails here.
         assert_eq!(on_disk, built_in);

@@ -16,6 +16,8 @@ cav-sim.workspace = true
 eframe.workspace = true
 egui.workspace = true
 egui-wgpu.workspace = true
+ron.workspace = true # the GUI's data files (`ui/*.ron`): the scene's own format, already built
+serde.workspace = true
 serde_json.workspace = true
 web-time.workspace = true
 

@@ -250,6 +250,8 @@ dependencies = [
  "egui-wgpu",
  "js-sys",
  "log",
+ "ron",
+ "serde",
  "serde_json",
  "wasm-bindgen-futures",
  "web-sys",

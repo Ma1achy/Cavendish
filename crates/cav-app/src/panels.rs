@@ -13,7 +13,7 @@ use egui::{
     pos2, vec2,
 };
 
-use crate::menus::{Item, MENUS};
+use crate::keyboard::Kind;
 use crate::panes::PaneSurface;
 use crate::shell::{APP_COMMANDS, ConsoleFilter, Shell};
 use crate::{theme, timeline};
@@ -35,6 +35,15 @@ fn short_number(value: f64) -> String {
     let digits = (3 - value.abs().log10().floor() as i32).max(0) as usize;
     let text = format!("{value:.digits$}");
     if text.contains('.') { text.trim_end_matches('0').trim_end_matches('.').to_owned() } else { text }
+}
+
+/// A heading that is also a scope of the keyboard's tree (`id`, under `parent`): the section's
+/// rows and fields register under it after.
+fn section(shell: &mut Shell, ui: &mut egui::Ui, parent: &str, id: &str, title: &str) {
+    let top = ui.cursor().min;
+    heading(ui, title);
+    let rect = Rect::from_min_max(top, pos2(ui.max_rect().right(), ui.cursor().top()));
+    shell.register(parent, id, title, Kind::Scope, rect);
 }
 
 fn heading(ui: &mut egui::Ui, text: &str) {
@@ -68,11 +77,13 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
             .frame(frame(theme::PANEL, 8, 0))
             .show(ui, |ui| menu_bar(shell, ui));
         shell.layout.panels.push(("menu", menu.response.rect));
+        shell.building.place("top-bar", menu.response.rect);
         let footer_panel = Panel::bottom("footer")
             .exact_size(22.0)
             .frame(frame(theme::FOOTER, 10, 0))
             .show(ui, |ui| footer(shell, ui));
         shell.layout.panels.push(("footer", footer_panel.response.rect));
+        shell.building.place("footer", footer_panel.response.rect);
         if shell.console_open {
             let panel = Panel::bottom("console")
                 .exact_size(200.0)
@@ -88,18 +99,21 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
             .frame(frame(theme::PANEL, 8, 4))
             .show(ui, |ui| timeline_panel(shell, ui));
         shell.layout.panels.push(("timeline", panel.response.rect));
+        shell.building.place("timeline", panel.response.rect);
         let panel = Panel::left("outliner")
             .exact_size(262.0)
             .resizable(false)
             .frame(frame(theme::PANEL, 10, 6))
             .show(ui, |ui| scrolling(ui, "outliner", |ui| outliner(shell, ui)));
         shell.layout.panels.push(("outliner", panel.response.rect));
+        shell.building.place("tree", panel.response.rect);
         let panel = Panel::right("properties")
             .exact_size(264.0)
             .resizable(false)
             .frame(frame(theme::PANEL, 10, 6))
             .show(ui, |ui| scrolling(ui, "properties", |ui| properties(shell, ui)));
         shell.layout.panels.push(("properties", panel.response.rect));
+        shell.building.place("inspector", panel.response.rect);
     }
     egui::CentralPanel::no_frame().show(ui, |ui| {
         if !shell.gui_hidden {
@@ -118,45 +132,46 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
 }
 
 fn menu_bar(shell: &mut Shell, ui: &mut egui::Ui) {
-    fn items(shell: &mut Shell, ui: &mut egui::Ui, list: &'static [Item]) {
-        let (can_undo, can_redo) = shell.engine.history();
-        for item in list {
-            match *item {
-                Item::Separator => {
-                    ui.separator();
-                }
-                Item::Later { label, slice } => {
-                    ui.add_enabled(false, Button::new(label).shortcut_text(slice));
-                }
-                Item::Sub { label, items: nested } => {
-                    ui.menu_button(label, |ui| items(shell, ui, nested));
-                }
-                Item::Run { label, line, shortcut } => {
-                    let enabled = match line {
-                        "undo" => can_undo,
-                        "redo" => can_redo,
-                        _ => crate::menus::possible(line, shell.engine.spec().array.towers.len()),
-                    };
-                    if ui.add_enabled(enabled, Button::new(label).shortcut_text(shortcut)).clicked() {
-                        let _ = shell.run(line);
-                        ui.close();
-                    }
-                }
-            }
-        }
-    }
     // The brand, the menus and the status share the menu bar's own row, so that the status on the
     // right is laid out in what the menus leave and cannot be pushed off the window.
     egui::MenuBar::new().ui(ui, |ui| {
         ui.label(RichText::new("cavendish · dev").color(theme::STRONG).strong());
         ui.add_space(6.0);
-        for (title, list) in MENUS {
-            ui.menu_button(*title, |ui| items(shell, ui, list));
+        for title in crate::menus::titles() {
+            let response = ui.menu_button(&title, |ui| crate::menus::draw_items(shell, ui, &title)).response;
+            // From the keyboard a menu opens as the palette, filtered to it: its items, searchable.
+            let id = format!("top-bar/menu/{title}");
+            shell.register("top-bar", &id, &title, Kind::Button, response.rect);
+            if shell.take_click(&id) {
+                shell.palette = crate::palette::Palette {
+                    open: true,
+                    focus_query: true,
+                    menu: Some(title.clone()),
+                    ..Default::default()
+                };
+                shell.keyboard.open_window("palette", "palette/query", true);
+            }
+        }
+        let search = ui
+            .add(Button::new(RichText::new("search  Ctrl+K").size(11.5).color(theme::WEAK)).frame(false))
+            .on_hover_text("the command palette: every action, starter, scene, command and field");
+        shell.register("top-bar", "top-bar/search", "Search", Kind::Button, search.rect);
+        shell.layout.buttons.push(("palette".to_owned(), search.rect));
+        if search.clicked() || shell.take_click("top-bar/search") {
+            let _ = shell.run("palette");
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let spec = shell.engine.spec();
             let status = format!("{} · t {:.2} / {:.0} s", spec.name, shell.engine.time(), spec.duration);
             ui.add(egui::Label::new(RichText::new(status).monospace().color(theme::TEXT)).truncate());
+            // Where the keys go, while keyboard navigation is on: the breadcrumb (the spec's §10).
+            if let Some(crumb) = shell.breadcrumb() {
+                let colour = match shell.keyboard.mode {
+                    crate::keyboard::Mode::Navigation => crate::shell::RING_NAVIGATION,
+                    crate::keyboard::Mode::Interaction => crate::shell::RING_INTERACTION,
+                };
+                ui.add(egui::Label::new(RichText::new(crumb).size(11.5).color(colour)).truncate());
+            }
         });
     });
 }
@@ -182,8 +197,10 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
         let (warnings, errors) = shell.problem_counts();
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let label = if shell.console_open { "close console" } else { "console" };
-            if ui.add(Button::new(RichText::new(label).size(11.5)).frame(false)).on_hover_text("`").clicked()
-            {
+            let console =
+                ui.add(Button::new(RichText::new(label).size(11.5)).frame(false)).on_hover_text("`");
+            shell.register("footer", "footer/console", "Console", Kind::Button, console.rect);
+            if console.clicked() || shell.take_click("footer/console") {
                 let _ = shell.run("console");
             }
             ui.label(
@@ -255,6 +272,13 @@ fn console(shell: &mut Shell, ui: &mut egui::Ui) {
                 if shell.focus_console {
                     response.request_focus();
                     shell.focus_console = false;
+                }
+                if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Backtick)) {
+                    // The console's own key closes it from its line (a field keeps the global
+                    // keys, so the line hears this one itself), and is not typed.
+                    shell.console_line.retain(|c| c != '`');
+                    shell.console_open = false;
+                    response.surrender_focus();
                 }
                 if response.has_focus() {
                     // Up and down walk the history of what was typed.
@@ -338,13 +362,15 @@ fn timeline_panel(shell: &mut Shell, ui: &mut egui::Ui) {
     shell.layout.timeline_caption.clone_from(&caption);
     ui.horizontal(|ui| {
         ui.label(RichText::new("Timeline").color(theme::STRONG).strong());
-        if ui
-            .add(Button::new(if shell.playing { "pause" } else { "play" }).min_size(vec2(48.0, 0.0)))
-            .clicked()
-        {
+        let play =
+            ui.add(Button::new(if shell.playing { "pause" } else { "play" }).min_size(vec2(48.0, 0.0)));
+        shell.register("timeline", "timeline/play", "Play", Kind::Button, play.rect);
+        if play.clicked() || shell.take_click("timeline/play") {
             let _ = shell.run("play");
         }
-        if ui.button("rewind").clicked() {
+        let rewind = ui.button("rewind");
+        shell.register("timeline", "timeline/rewind", "Rewind", Kind::Button, rewind.rect);
+        if rewind.clicked() || shell.take_click("timeline/rewind") {
             let _ = shell.run("seek 0");
         }
         ui.label(RichText::new(format!("t {:.2} s", shell.engine.time())).monospace().color(theme::STRONG));
@@ -361,6 +387,21 @@ fn timeline_panel(shell: &mut Shell, ui: &mut egui::Ui) {
     shell.layout.lanes.clone_from(&response.bars);
     shell.layout.shots.clone_from(&response.shots);
     shell.layout.ruler = (response.ruler.clone(), response.rect.unwrap_or(Rect::NOTHING));
+    // The scrubber from the keyboard: Enter, then ← → step the playhead by 0.1 s (Shift 1 s,
+    // Alt 0.01 s), held keys repeating (the spec's §5 for Time).
+    shell.register(
+        "timeline",
+        "timeline/scrubber",
+        "Scrubber",
+        Kind::Adjust,
+        response.rect.unwrap_or(Rect::NOTHING),
+    );
+    for (axis, steps, _, _) in shell.take_adjust("timeline/scrubber") {
+        if axis == 0 {
+            shell.playing = false;
+            shell.apply(Command::Seek(shell.engine.time() + steps * crate::shell::SCRUB_STEP));
+        }
+    }
     // A lane dragged with Shift: a `set` of that tower's offset, each step continuing the last,
     // so that the whole drag is one edit.
     if let Some((tower, seconds)) = response.offset
@@ -384,10 +425,19 @@ fn timeline_panel(shell: &mut Shell, ui: &mut egui::Ui) {
     }
 }
 
-/// A row of the outliner that selects something when clicked.
+/// The id of the outliner row of `target`: `tree/row/body 2`, `tree/row/tower 1`, `tree/row/room`.
+#[must_use]
+pub fn row_id(target: Target) -> String {
+    let words = cav_engine::describe(&Command::Select(Some(target)), 0);
+    format!("tree/row/{}", words.trim_start_matches("select "))
+}
+
+/// A row of the outliner that selects something when clicked (or on Enter from the keyboard),
+/// registered under the tree's section `section`.
 fn outline_row(
     shell: &mut Shell,
     ui: &mut egui::Ui,
+    section: &str,
     target: Target,
     swatch: Color32,
     label: &str,
@@ -395,6 +445,9 @@ fn outline_row(
 ) {
     let selected = shell.engine.selection() == Some(target);
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::click());
+    let id = row_id(target);
+    shell.register(section, &id, label, Kind::Button, rect);
+    let keyed = shell.take_click(&id);
     shell.layout.outline.push((target, rect));
     shell.layout.outline_words.push((target, label.to_owned(), detail.to_owned()));
     let painter = ui.painter();
@@ -422,11 +475,21 @@ fn outline_row(
     );
     if response.clicked() {
         shell.apply(Command::Select(if selected { None } else { Some(target) }));
+    } else if keyed && !selected {
+        // From the keyboard Enter selects the row (it does not toggle: nothing unseen).
+        shell.apply(Command::Select(Some(target)));
     }
 }
 
 /// A row of small buttons, each running a console line; the one that matches the state is lit.
-fn button_row(shell: &mut Shell, ui: &mut egui::Ui, label: &str, buttons: &[(&str, &str, bool)]) {
+/// Each is a button of the keyboard's scope `scope`, its id `scope` + its line.
+fn button_row(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    scope: &str,
+    label: &str,
+    buttons: &[(&str, &str, bool)],
+) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 3.0;
         ui.spacing_mut().button_padding.x = 5.0;
@@ -438,7 +501,9 @@ fn button_row(shell: &mut Shell, ui: &mut egui::Ui, label: &str, buttons: &[(&st
             let response =
                 ui.add(Button::new(RichText::new(text).size(12.0)).selected(on)).on_hover_text(line);
             shell.layout.buttons.push((line.to_owned(), response.rect));
-            if response.clicked() {
+            let id = format!("{scope}/{line}");
+            shell.register(scope, &id, &format!("{label} {text}"), Kind::Button, response.rect);
+            if response.clicked() || shell.take_click(&id) {
                 let _ = shell.run(line);
             }
         }
@@ -554,9 +619,9 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
         }
     };
 
-    heading(ui, "Sources");
+    section(shell, ui, "tree", "tree/sources", "Sources");
     for (n, label, detail) in &bodies.0 {
-        outline_row(shell, ui, Target::Body(n + 1), theme::GOLD, label, detail);
+        outline_row(shell, ui, "tree/sources", Target::Body(n + 1), theme::GOLD, label, detail);
     }
     left_out(ui, bodies.0.len(), bodies.1, "bodies");
     if bodies.1 == 0 {
@@ -570,9 +635,9 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
         ui.label(RichText::new(text).size(11.5).color(theme::WEAK));
     }
     // Adding is a command too: a point mass at rest beside the array, to be edited from there.
-    button_row(shell, ui, "", &[("+ mass", "mass 1 at 2 2 1", false)]);
+    button_row(shell, ui, "tree/sources", "", &[("+ mass", "mass 1 at 2 2 1", false)]);
 
-    heading(ui, "Array");
+    section(shell, ui, "tree", "tree/array", "Array");
     // With something to read, each tower's row shows what it reads under the playhead.
     let reply = shell.reading().clone();
     // Silent only when nothing is there to read: no bodies, no world, no floor (S4's second
@@ -580,7 +645,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     let silent = silent(shell.engine.spec());
     for (n, label, position) in &towers.0 {
         let detail = tower_detail(&reply, *n, *position, silent);
-        outline_row(shell, ui, Target::Tower(n + 1), theme::tower(*n), label, &detail);
+        outline_row(shell, ui, "tree/array", Target::Tower(n + 1), theme::tower(*n), label, &detail);
     }
     left_out(ui, towers.0.len(), towers.1, "array.towers");
     if !silent && !reply.warnings.is_empty() {
@@ -588,11 +653,12 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
         ui.label(RichText::new(text).size(11.0).color(theme::WARN));
     }
 
-    heading(ui, "Surroundings");
+    section(shell, ui, "tree", "tree/surroundings", "Surroundings");
     if let Some([x, y, z]) = room {
         outline_row(
             shell,
             ui,
+            "tree/surroundings",
             Target::Room,
             theme::WIDGET_EDGE,
             "room",
@@ -603,6 +669,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
         outline_row(
             shell,
             ui,
+            "tree/surroundings",
             Target::Floor,
             theme::WIDGET_EDGE,
             "floor",
@@ -611,7 +678,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     }
     // The world volume: a source as a body is, and the scene's surroundings.
     if let Some(detail) = &world {
-        outline_row(shell, ui, Target::World, theme::WIDGET_EDGE, "world", detail);
+        outline_row(shell, ui, "tree/surroundings", Target::World, theme::WIDGET_EDGE, "world", detail);
     }
     if room.is_none() && floor.is_none() && world.is_none() {
         ui.label(RichText::new("nothing: no room, no floor, no world, no air").size(11.5).color(theme::WEAK));
@@ -641,13 +708,14 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     shell.layout.status.clone_from(&forward);
     ui.label(RichText::new(forward).size(11.5).color(theme::WEAK));
 
-    heading(ui, "View");
+    section(shell, ui, "tree", "tree/view", "View");
     let pane = shell.engine.active_pane();
     let view = shell.engine.view(pane).clone();
     let at = |named: NamedView| view.named() == Some(named);
     button_row(
         shell,
         ui,
+        "tree/view",
         "look",
         &[
             ("iso", "view iso", at(NamedView::Iso)),
@@ -662,6 +730,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     button_row(
         shell,
         ui,
+        "tree/view",
         "project",
         &[
             ("perspective", "proj persp", view.projection == Projection::Perspective),
@@ -672,6 +741,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     button_row(
         shell,
         ui,
+        "tree/view",
         "panes",
         &[("1", "panes 1", panes == 1), ("2", "panes 2", panes == 2), ("4", "panes 4", panes == 4)],
     );
@@ -679,6 +749,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     button_row(
         shell,
         ui,
+        "tree/view",
         "draw",
         &[
             ("shaded", "style shaded", style(DrawStyle::Shaded)),
@@ -689,6 +760,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     button_row(
         shell,
         ui,
+        "tree/view",
         "",
         &[
             ("wireframe", "style wireframe", style(DrawStyle::Wireframe)),
@@ -705,7 +777,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             .enumerate()
             .map(|(n, content)| (content.name(), lines[3 * row + n].as_str(), *content == shown))
             .collect();
-        button_row(shell, ui, if row == 0 { "show" } else { "" }, &buttons);
+        button_row(shell, ui, "tree/view", if row == 0 { "show" } else { "" }, &buttons);
     }
     voxel_rows(shell, ui, &view);
     ui.add_space(4.0);
@@ -730,13 +802,14 @@ fn voxel_rows(shell: &mut Shell, ui: &mut egui::Ui, view: &cav_sim::ViewSpec) {
     let colour = |f: LeafField| (f.name(), format!("colour {}", f.name()), field == f);
     let colours = [LeafField::Level, LeafField::Depth, LeafField::Mass, LeafField::Fill].map(colour);
     let buttons: Vec<(&str, &str, bool)> = colours.iter().map(|(t, l, on)| (*t, l.as_str(), *on)).collect();
-    button_row(shell, ui, "colour", &buttons);
+    button_row(shell, ui, "tree/view", "colour", &buttons);
     let tree = view.overlay.tree;
     let fade = tree.map(|t| t.fade);
     let plain = !view.overlay.leaves && view.overlay.cut.is_none();
     button_row(
         shell,
         ui,
+        "tree/view",
         "overlay",
         &[
             ("none", "overlay none", plain && tree.is_none()),
@@ -756,6 +829,7 @@ fn voxel_rows(shell: &mut Shell, ui: &mut egui::Ui, view: &cav_sim::ViewSpec) {
     button_row(
         shell,
         ui,
+        "tree/view",
         "section",
         &[
             ("off", "section off", on.is_none()),
@@ -805,20 +879,21 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
             ui.label(RichText::new(&path).monospace().size(11.0).color(theme::WEAK));
         });
     });
-    heading(ui, &title);
+    section(shell, ui, "inspector", "inspector/selection", &title);
     // Every field under the selection has an editor, made from the schema: its unit, its range,
     // its doc string on hover. Each change is a `set`, as the console would issue it.
     match shell.engine.selection() {
         None => {
             for path in ["name", "description", "duration"] {
-                crate::editors::show(shell, ui, path);
+                crate::editors::show(shell, ui, "inspector/selection", path);
             }
         }
         Some(Target::Tower(n)) => {
-            crate::editors::show(shell, ui, &path);
-            crate::editors::structure(shell, ui, &path);
+            crate::editors::show(shell, ui, "inspector/selection", &path);
+            crate::editors::structure(shell, ui, "inspector/selection", &path);
             let reply = shell.reading().clone();
-            heading(ui, &format!("Reading · a shot read out at {:.2} s", reply.time));
+            let title = format!("Reading · a shot read out at {:.2} s", reply.time);
+            section(shell, ui, "inspector", "inspector/reading", &title);
             if let Some(reading) = reply.towers.get(n - 1) {
                 rows(
                     ui,
@@ -843,8 +918,8 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
             }
         }
         Some(Target::Room | Target::Floor) => {
-            crate::editors::show(shell, ui, &path);
-            crate::editors::structure(shell, ui, &path);
+            crate::editors::show(shell, ui, "inspector/selection", &path);
+            crate::editors::structure(shell, ui, "inspector/selection", &path);
         }
         Some(Target::World) => {
             // What the world is and what is resident, then its settings: how it is read, kept
@@ -865,12 +940,12 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
                 }
             }
             for part in ["world.read", "world.stream", "world.lod"] {
-                crate::editors::show(shell, ui, part);
+                crate::editors::show(shell, ui, "inspector/selection", part);
             }
         }
         Some(Target::Body(n)) => {
-            crate::editors::show(shell, ui, &path);
-            crate::editors::structure(shell, ui, &path);
+            crate::editors::show(shell, ui, "inspector/selection", &path);
+            crate::editors::structure(shell, ui, "inspector/selection", &path);
             let body = &spec.bodies[n - 1];
             let [x, y, z] = body.motion.position(shell.engine.time(), spec.array.instrument.gravity);
             ui.add_space(3.0);
@@ -878,15 +953,16 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
         }
     }
 
-    heading(ui, "Cadence · when the array fires");
-    crate::editors::show(shell, ui, "array.schedule");
+    section(shell, ui, "inspector", "inspector/cadence", "Cadence · when the array fires");
+    crate::editors::show(shell, ui, "inspector/cadence", "array.schedule");
 
-    heading(ui, "Instrument · shared by every tower");
+    section(shell, ui, "inspector", "inspector/instrument", "Instrument · shared by every tower");
     let instrument = shell.engine.spec().array.instrument.clone();
     let is = |name: &str| cav_sim::presets::load(name).is_ok_and(|preset| preset == instrument);
     button_row(
         shell,
         ui,
+        "inspector/instrument",
         "preset",
         &[("AION-10", "preset aion10", is("aion10")), ("AICE 140 m", "preset aice", is("aice"))],
     );
@@ -895,6 +971,7 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
     button_row(
         shell,
         ui,
+        "inspector/instrument",
         "compare",
         &[
             ("AION-10", "compare aion10", with("aion10")),
@@ -902,11 +979,11 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
             ("off", "compare off", other.is_none()),
         ],
     );
-    crate::editors::show(shell, ui, "array.instrument");
+    crate::editors::show(shell, ui, "inspector/instrument", "array.instrument");
 
     let pane = shell.engine.active_pane();
     let view = shell.engine.view(pane).clone();
-    heading(ui, &format!("Camera · pane {}", pane + 1));
+    section(shell, ui, "inspector", "inspector/camera", &format!("Camera · pane {}", pane + 1));
     rows(
         ui,
         "camera",
@@ -996,10 +1073,48 @@ fn header(shell: &mut Shell, ui: &mut egui::Ui) {
     });
 }
 
+/// How far one keyboard step orbits the canvas, degrees (the spec's 1° for spherical views).
+pub const ORBIT_STEP: f64 = 1.0;
+/// How far one keyboard step pans the canvas, as a share of the camera's distance.
+pub const PAN_STEP: f64 = 0.02;
+/// How far one keyboard step zooms the canvas, in powers of two of the distance.
+pub const ZOOM_STEP: f64 = 0.25;
+
+/// The viewport's canvas as the keyboard reaches it: Enter, then the arrows orbit by
+/// [`ORBIT_STEP`] (with Ctrl they pan by [`PAN_STEP`] of the distance) and `+` `-` zoom by
+/// [`ZOOM_STEP`], Shift ×10 and Alt ×0.1. Each is the same view command a drag issues, so none is
+/// an edit and none is undone (the owner's rule: camera moves are not undoable, Home apart).
+fn canvas_keys(shell: &mut Shell, area: Rect) {
+    shell.register("viewport", "viewport/canvas", "Canvas", Kind::Canvas, area);
+    let pane = shell.engine.active_pane();
+    for (axis, steps, ctrl, _) in shell.take_adjust("viewport/canvas") {
+        let view = shell.engine.view(pane).clone();
+        let command = if ctrl {
+            let camera = cav_render::Camera::new(&view, 1.0);
+            let along = if axis == 0 { camera.right } else { camera.up };
+            let moved = camera.origin + along * (steps * PAN_STEP * view.distance);
+            ViewCommand::Pan { pane, target: moved.to_array() }
+        } else if axis == 0 {
+            ViewCommand::Orbit { pane, yaw: view.yaw - steps * ORBIT_STEP, pitch: view.pitch }
+        } else {
+            ViewCommand::Orbit { pane, yaw: view.yaw, pitch: view.pitch + steps * ORBIT_STEP }
+        };
+        shell.apply(Command::View(command));
+    }
+    while let Some((crate::keyboard::Effect::Zoom { steps, .. }, _)) = shell
+        .take_effect(|e| matches!(e, crate::keyboard::Effect::Zoom { id, .. } if id == "viewport/canvas"))
+    {
+        let distance = shell.engine.view(pane).distance * 2f64.powf(-steps * ZOOM_STEP);
+        shell.apply(Command::View(ViewCommand::Zoom { pane, distance }));
+    }
+}
+
 fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     let area = ui.max_rect();
     ui.painter().rect_filled(area, 0.0, theme::BACKGROUND);
     shell.layout.figure = area;
+    shell.building.place("viewport", area);
+    canvas_keys(shell, area);
     let scale = ui.ctx().pixels_per_point();
     let size =
         [(area.width() * scale).round().max(1.0) as u32, (area.height() * scale).round().max(1.0) as u32];
@@ -1218,42 +1333,63 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
 
 fn windows(shell: &mut Shell, ctx: &egui::Context) {
     let mut keys_open = shell.keys_open;
-    egui::Window::new("Keyboard")
+    if keys_open {
+        shell.building.window("sheet", "Keyboard");
+    }
+    let sheet = egui::Window::new("Keyboard")
         .open(&mut keys_open)
         .collapsible(false)
         .resizable(false)
-        .default_width(430.0)
+        .default_width(640.0)
+        .default_pos(pos2(ctx.content_rect().center().x - 320.0, 60.0))
         .show(ctx, |ui| {
-            let keys: &[(&str, &str)] = &[
-                ("Space", "play / pause"),
-                ("Left · Right", "step the playhead by 0.1 s"),
-                ("1 – 9", "select a tower"),
-                ("Esc", "close a window, the console, leave F3, clear the selection"),
-                ("Home", "reset the active pane's camera"),
-                ("O", "swap perspective and orthographic"),
-                ("Ctrl+Z · Ctrl+Shift+Z", "undo · redo: every edit, whatever made it"),
-                ("`", "console"),
-                ("F3", "hide the GUI; the scene fills the window"),
-                ("?", "this window"),
-            ];
-            egui::Grid::new("keys").num_columns(2).spacing([16.0, 5.0]).show(ui, |ui| {
-                for (key, what) in keys {
-                    ui.label(RichText::new(*key).monospace().color(theme::STRONG));
-                    ui.label(*what);
-                    ui.end_row();
-                }
+            // Made from the action table and the model's own keys: a key added to the table is
+            // here with no line of this code.
+            let rows = crate::sheet::rows(crate::actions::table());
+            egui::ScrollArea::vertical().max_height(ctx.content_rect().height() - 160.0).show(ui, |ui| {
+                ui.columns(2, |columns| {
+                    let half = rows.len().div_ceil(2);
+                    for (column, chunk) in columns.iter_mut().zip(rows.chunks(half.max(1))) {
+                        let mut scope = String::new();
+                        egui::Grid::new(("keys", chunk.first().map(|r| r.action.clone())))
+                            .num_columns(2)
+                            .spacing([12.0, 3.0])
+                            .show(column, |ui| {
+                                for row in chunk {
+                                    if row.scope != scope {
+                                        scope.clone_from(&row.scope);
+                                        ui.label(RichText::new(&row.scope).color(theme::GOLD).size(11.5));
+                                        ui.end_row();
+                                    }
+                                    ui.label(
+                                        RichText::new(row.keys.join(" · ")).monospace().color(theme::STRONG),
+                                    );
+                                    ui.label(RichText::new(&row.label).size(12.0));
+                                    ui.end_row();
+                                }
+                            });
+                    }
+                });
             });
             ui.add_space(6.0);
             ui.label(
-                RichText::new("every key is a console command; `help` lists them all")
-                    .size(11.0)
-                    .color(theme::WEAK),
+                RichText::new(
+                    "every key is an action, every action a console line; Ctrl+K finds them by name",
+                )
+                .size(11.0)
+                .color(theme::WEAK),
             );
         });
+    if let Some(window) = sheet {
+        shell.register("sheet", "sheet/list", "Keys", Kind::ReadOnly, window.response.rect);
+    }
     shell.keys_open = keys_open;
 
     let mut about_open = shell.about_open;
-    egui::Window::new("About Cavendish")
+    if about_open {
+        shell.building.window("about", "About");
+    }
+    let about = egui::Window::new("About Cavendish")
         .open(&mut about_open)
         .collapsible(false)
         .resizable(false)
@@ -1293,5 +1429,8 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
                 );
             }
         });
+    if let Some(window) = about {
+        shell.register("about", "about/text", "About", Kind::ReadOnly, window.response.rect);
+    }
     shell.about_open = about_open;
 }

@@ -18,12 +18,16 @@
 
 #![warn(missing_docs)]
 
+pub mod actions;
 pub mod app;
 pub mod editors;
 pub mod headless;
+pub mod keyboard;
 pub mod lane;
 pub mod menus;
+pub mod palette;
 mod panels;
+pub mod sheet;
 pub use panels::MAX_OUTLINE_ROWS;
 /// The outliner's words, for its tests: what a tower's row says, and whether a scene reads
 /// nothing. Not an interface.

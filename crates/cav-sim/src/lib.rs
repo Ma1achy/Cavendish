@@ -28,6 +28,7 @@ pub mod read;
 pub mod schedule;
 pub mod shape;
 pub mod spec;
+pub mod starters;
 pub mod view;
 pub mod voxel_view;
 pub mod world;

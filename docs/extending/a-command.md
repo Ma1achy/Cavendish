@@ -44,8 +44,10 @@ console, the command line or an agent must be the same `Command`.
 
 ## The window
 
-9. A menu entry in `crates/cav-app/src/menus.rs` or a button via `button_row` in `panels.rs`:
-   both run a console line, so there is nothing else to wire.
+9. An action in `crates/cav-app/ui/actions.ron` (its line, its menu, its keys and where they
+   work, when it can run): the menu bar, the palette (`Ctrl+K`), the `?` sheet and the keys all
+   read that table, so there is nothing else to wire. A button via `button_row` in `panels.rs`
+   runs a console line too.
 
 ## Tests that then hold it
 
@@ -59,7 +61,8 @@ console, the command line or an agent must be the same `Command`.
 - `engine::tests::a_refused_command_changes_nothing_and_logs_an_error`: add a refusal.
 - `cav`: `mcp_lists_its_tools_with_their_arguments` and `every_tool_runs_where_a_panic_is_an_answer`
   count the tools: update the count with your tool.
-- `cav-app`: `every_menu_item_is_a_console_command`.
+- `cav-app`: `every_menu_item_is_an_action_that_runs`, `actions::tests::the_data_files_are_valid`
+  (every action's line parses) and `no_shortcut_clashes_and_every_one_is_listed`.
 
 Followed end to end by S2's reviewer with a made-up command; what it found is in the steps above
 and in the tests: `Engine::perform` names every command (a new one does not compile until it has

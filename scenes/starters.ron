@@ -1,0 +1,145 @@
+// The starters: the things the editor's Add menu, its palette, the Place tool and the console's
+// `add <name> [at x y z]` put into a scene (docs/slices/S18.md). Each is a valid body or tower
+// with its anchor at the origin; `add` moves it to where it is put and gives it a label no other
+// body or tower has. Frame: metres, x east, y north, z up; kilograms; seconds; hertz.
+//
+// Voxel shapes are kept small and coarse (at most 16 cells across), so that adding one is
+// instant and its reading takes moments; their pitch is a field like any other.
+[
+    (
+        name: "point-mass",
+        label: "Point mass",
+        about: "1 kg at rest: the simplest source",
+        body: Some((label: "mass", mass: 1.0, motion: Static(position: (0.0, 0.0, 0.0)))),
+    ),
+    (
+        name: "sphere",
+        label: "Sphere",
+        about: "a voxel ball, 0.25 m radius, 100 kg",
+        body: Some((
+            label: "sphere",
+            mass: 100.0,
+            shape: Some((kind: Sphere(radius: 0.25), pitch: 0.03125)),
+            motion: Static(position: (0.0, 0.0, 0.0)),
+        )),
+    ),
+    (
+        name: "analytic-sphere",
+        label: "Analytic sphere",
+        about: "a uniform ball read in closed form, 0.25 m radius, 100 kg",
+        body: Some((label: "ball", mass: 100.0, radius: 0.25, motion: Static(position: (0.0, 0.0, 0.0)))),
+    ),
+    (
+        name: "cube",
+        label: "Cube",
+        about: "a voxel box, 0.5 m a side, 100 kg",
+        body: Some((
+            label: "cube",
+            mass: 100.0,
+            shape: Some((kind: Cuboid(size: (0.5, 0.5, 0.5)), pitch: 0.0625)),
+            motion: Static(position: (0.0, 0.0, 0.0)),
+        )),
+    ),
+    (
+        name: "box",
+        label: "Box",
+        about: "a voxel slab, 1 × 0.5 × 0.25 m, 100 kg",
+        body: Some((
+            label: "box",
+            mass: 100.0,
+            shape: Some((kind: Cuboid(size: (1.0, 0.5, 0.25)), pitch: 0.0625)),
+            motion: Static(position: (0.0, 0.0, 0.0)),
+        )),
+    ),
+    (
+        name: "cylinder",
+        label: "Cylinder",
+        about: "a voxel cylinder standing up, 0.2 m radius, 0.8 m tall, 100 kg",
+        body: Some((
+            label: "cylinder",
+            mass: 100.0,
+            shape: Some((kind: Cylinder(radius: 0.2, length: 0.8, axis: Z), pitch: 0.05)),
+            motion: Static(position: (0.0, 0.0, 0.0)),
+        )),
+    ),
+    (
+        name: "tetrahedron",
+        label: "Tetrahedron",
+        about: "a voxel Platonic solid, 0.6 m edges, 100 kg",
+        body: Some((
+            label: "tetrahedron",
+            mass: 100.0,
+            shape: Some((kind: Platonic(solid: Tetrahedron, edge: 0.6), pitch: 0.0375)),
+            motion: Static(position: (0.0, 0.0, 0.0)),
+        )),
+    ),
+    (
+        name: "octahedron",
+        label: "Octahedron",
+        about: "a voxel Platonic solid, 0.5 m edges, 100 kg",
+        body: Some((
+            label: "octahedron",
+            mass: 100.0,
+            shape: Some((kind: Platonic(solid: Octahedron, edge: 0.5), pitch: 0.045)),
+            motion: Static(position: (0.0, 0.0, 0.0)),
+        )),
+    ),
+    (
+        name: "dodecahedron",
+        label: "Dodecahedron",
+        about: "a voxel Platonic solid, 0.3 m edges, 100 kg",
+        body: Some((
+            label: "dodecahedron",
+            mass: 100.0,
+            shape: Some((kind: Platonic(solid: Dodecahedron, edge: 0.3), pitch: 0.0425)),
+            motion: Static(position: (0.0, 0.0, 0.0)),
+        )),
+    ),
+    (
+        name: "icosahedron",
+        label: "Icosahedron",
+        about: "a voxel Platonic solid, 0.4 m edges, 100 kg",
+        body: Some((
+            label: "icosahedron",
+            mass: 100.0,
+            shape: Some((kind: Platonic(solid: Icosahedron, edge: 0.4), pitch: 0.04)),
+            motion: Static(position: (0.0, 0.0, 0.0)),
+        )),
+    ),
+    (
+        name: "oscillator",
+        label: "Oscillating mass",
+        about: "10 kg swinging 0.5 m up and down at 0.05 Hz",
+        body: Some((
+            label: "oscillator",
+            mass: 10.0,
+            motion: Linear(centre: (0.0, 0.0, 0.0), amplitude: (0.0, 0.0, 0.5), frequency: 0.05, phase: 0.0),
+        )),
+    ),
+    (
+        name: "pendulum",
+        label: "Pendulum",
+        about: "10 kg on a 2 m string, swinging 0.5 m",
+        body: Some((
+            label: "pendulum",
+            mass: 10.0,
+            motion: Pendulum(pivot: (0.0, 0.0, 2.0), length: 2.0, major: 0.5, minor: 0.0, azimuth: 0.0),
+        )),
+    ),
+    (
+        name: "walker",
+        label: "Walker",
+        about: "a 70 kg person walking 4 m east at 1.4 m/s",
+        body: Some((
+            label: "walker",
+            mass: 70.0,
+            motion: Pass(from: (0.0, 0.0, 0.0), to: (4.0, 0.0, 0.0), start: 0.0, speed: 1.4),
+        )),
+    ),
+    (
+        name: "tower",
+        label: "Tower",
+        about: "another gradiometer tower, firing with the array",
+        tower: Some((label: "tower", position: (0.0, 0.0, 0.0))),
+    ),
+]

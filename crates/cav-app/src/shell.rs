@@ -6,8 +6,11 @@ use cav_engine::{
     Command, Engine, Level, LogFilter, Query, ReadingReply, Reply, Request, Subsystem, Target, TowerReading,
     ViewCommand,
 };
-use egui::{Key, Rect};
+use egui::{Event, Rect};
 
+use crate::actions::{Action, Needs};
+use crate::keyboard::{Effect, FocusTree, Keyboard, Kind, Press, Repeat};
+use crate::palette::Palette;
 use crate::panes::PaneSurface;
 
 /// Console commands the shell answers itself, because they are about the window, not the engine.
@@ -17,6 +20,7 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("play", "start or stop playback"),
     ("pause", "stop playback"),
     ("keys", "the keyboard reference"),
+    ("palette", "the command palette: search every action, starter, scene, command and field (Ctrl+K)"),
     ("about", "version and credits"),
     ("clear", "empty the console's log"),
     ("quit", "close the application"),
@@ -34,8 +38,14 @@ pub fn abridged(text: &str, lines: usize) -> String {
     format!("{}\n… {} more lines (`cav exec` prints them all)", head.join("\n"), total - lines)
 }
 
-/// How long one step with the arrow keys is, seconds.
-const STEP: f64 = 0.1;
+/// How long one step of the timeline's scrubber is, seconds (Shift ×10, Alt ×0.1).
+pub const SCRUB_STEP: f64 = 0.1;
+
+/// The ring's colour in navigation mode (orange) and in interaction mode (blue), sRGB: the spec's
+/// §10.
+pub const RING_NAVIGATION: egui::Color32 = egui::Color32::from_rgb(0xf0, 0x96, 0x2e);
+/// See [`RING_NAVIGATION`].
+pub const RING_INTERACTION: egui::Color32 = egui::Color32::from_rgb(0x3d, 0x9b, 0xff);
 
 /// Which log entries the console shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -175,6 +185,22 @@ pub struct Shell {
     /// a far field cut to its budget, meshes or bricks past their caps), shown as badges in the
     /// header (`docs/slices/S4.md` §7.6, the review's I5) and said once in the log.
     pub render_notes: Vec<String>,
+    /// The keyboard model's state (`docs/design/keyboard.md`): UI only, never in the engine.
+    pub keyboard: Keyboard,
+    /// The scopes and elements the last whole frame registered: what the keys walk.
+    pub(crate) tree: FocusTree,
+    /// The same, being registered by this frame as it draws.
+    pub(crate) building: FocusTree,
+    /// Held keys, for the repeat.
+    pub(crate) repeat: Repeat,
+    /// What the keys asked of particular widgets this frame (a click, an adjustment, a start of
+    /// typing), each with whether it came from a held key's repeat; a widget takes its own.
+    pub(crate) pending: Vec<(Effect, bool)>,
+    /// The command palette.
+    pub palette: Palette,
+    /// Whether what is being done now came from the keyboard (a window opened from it shows
+    /// the ring at once).
+    pub(crate) by_keyboard: bool,
 }
 
 /// How near a body's picture the pointer must be to take hold of it, points.
@@ -234,6 +260,169 @@ impl Shell {
             editing: None,
             typing: None,
             render_notes: Vec::new(),
+            keyboard: Keyboard::default(),
+            tree: FocusTree::new(&crate::actions::table().big_scopes()),
+            building: FocusTree::new(&crate::actions::table().big_scopes()),
+            repeat: Repeat::default(),
+            pending: Vec::new(),
+            palette: Palette::default(),
+            by_keyboard: false,
+        }
+    }
+
+    /// The scopes and elements of the last whole frame, as the keyboard walks them.
+    #[must_use]
+    pub const fn focus_tree(&self) -> &FocusTree {
+        &self.tree
+    }
+
+    /// An action's console line with its placeholders filled from `selection`: `{selection}` is
+    /// its path (`bodies[0]`, `array.towers[2]`, `room`), `{body}` and `{tower}` its number from 1.
+    #[must_use]
+    pub fn resolve(line: &str, selection: Option<Target>) -> String {
+        let (path, number) = match selection {
+            Some(Target::Body(n)) => (format!("bodies[{}]", n - 1), n),
+            Some(Target::Tower(n)) => (format!("array.towers[{}]", n - 1), n),
+            Some(Target::Room) => ("room".to_owned(), 0),
+            Some(Target::Floor) => ("floor".to_owned(), 0),
+            Some(Target::World) => ("world".to_owned(), 0),
+            None => (String::new(), 0),
+        };
+        line.replace("{selection}", &path)
+            .replace("{body}", &number.to_string())
+            .replace("{tower}", &number.to_string())
+    }
+
+    /// Whether `action` can run now (its `needs`).
+    #[must_use]
+    pub fn can_run(&self, action: &Action) -> bool {
+        let (can_undo, can_redo) = self.engine.history();
+        let spec = self.engine.spec();
+        match action.needs {
+            Needs::Always => true,
+            Needs::Undo => can_undo,
+            Needs::Redo => can_redo,
+            Needs::Selection => self.engine.selection().is_some(),
+            Needs::Removable => match self.engine.selection() {
+                Some(Target::Body(_) | Target::Room | Target::Floor) => true,
+                Some(Target::Tower(_)) => spec.array.towers.len() > 1,
+                _ => false,
+            },
+            Needs::Body => matches!(self.engine.selection(), Some(Target::Body(_))),
+            Needs::Tower(n) => n >= 1 && n <= spec.array.towers.len(),
+            Needs::Shapes => spec.bodies.iter().any(|b| b.shape.is_some()),
+        }
+    }
+
+    /// Runs the action called `id` from the table: its line, its placeholders filled. An action
+    /// that cannot run now does nothing, but undo and redo, which the engine refuses with the
+    /// reason (in the log).
+    ///
+    /// # Errors
+    /// Why it did not run.
+    pub fn run_action(&mut self, id: &str) -> Result<String, String> {
+        let action = crate::actions::table().action(id).ok_or_else(|| format!("no action `{id}`"))?;
+        if !self.can_run(action) && !matches!(action.needs, Needs::Undo | Needs::Redo) {
+            return Err(format!("`{}` cannot run now", action.label));
+        }
+        let line = Self::resolve(&action.line, self.engine.selection());
+        self.run(&line)
+    }
+
+    /// The paths of the fields the inspector shows for the selection, for the palette.
+    #[must_use]
+    pub fn inspected_fields(&self) -> Vec<String> {
+        let prefix = Self::resolve("{selection}", self.engine.selection());
+        let prefix = if prefix.is_empty() { "duration" } else { prefix.as_str() };
+        cav_sim::paths::leaves(self.engine.spec(), prefix, crate::editors::MAX_FIELDS)
+            .map(|entries| entries.into_iter().map(|e| e.path).collect())
+            .unwrap_or_default()
+    }
+
+    /// Registers a node of the keyboard's tree for this frame, drawn at `rect`.
+    pub(crate) fn register(&mut self, parent: &str, id: &str, name: &str, kind: Kind, rect: Rect) {
+        self.building.add(parent, id, name, kind);
+        self.building.place(id, rect);
+    }
+
+    /// Whether the keys asked for a click of `id` this frame (taken: asked once).
+    pub(crate) fn take_click(&mut self, id: &str) -> bool {
+        self.take(|e| matches!(e, Effect::Click(i) if i == id)).is_some()
+    }
+
+    /// Whether the keys asked to start typing in `id` this frame.
+    pub(crate) fn take_type(&mut self, id: &str) -> bool {
+        self.take(|e| matches!(e, Effect::Type(i) if i == id)).is_some()
+    }
+
+    /// Every adjustment the keys asked of `id` this frame: `(axis, steps, ctrl, repeat)`.
+    pub(crate) fn take_adjust(&mut self, id: &str) -> Vec<(usize, f64, bool, bool)> {
+        let mut out = Vec::new();
+        while let Some((effect, repeat)) = self.take(|e| matches!(e, Effect::Adjust { id: i, .. } if i == id))
+        {
+            if let Effect::Adjust { axis, steps, ctrl, .. } = effect {
+                out.push((axis, steps, ctrl, repeat));
+            }
+        }
+        out
+    }
+
+    /// The choice the keys picked in the drop-down `id` this frame, from 0.
+    pub(crate) fn take_pick(&mut self, id: &str) -> Option<usize> {
+        match self.take(|e| matches!(e, Effect::Pick { id: i, .. } if i == id)) {
+            Some((Effect::Pick { index, .. }, _)) => Some(index),
+            _ => None,
+        }
+    }
+
+    /// Whether interaction with `id` ended this frame, and whether what it did is kept.
+    pub(crate) fn take_release(&mut self, id: &str) -> Option<bool> {
+        match self.take(|e| matches!(e, Effect::Release { id: i, .. } if i == id)) {
+            Some((Effect::Release { keep, .. }, _)) => Some(keep),
+            _ => None,
+        }
+    }
+
+    /// The first effect this frame that `wanted` accepts, taken, with whether it came from a
+    /// held key's repeat.
+    pub(crate) fn take_effect(&mut self, wanted: impl Fn(&Effect) -> bool) -> Option<(Effect, bool)> {
+        self.take(wanted)
+    }
+
+    fn take(&mut self, wanted: impl Fn(&Effect) -> bool) -> Option<(Effect, bool)> {
+        let at = self.pending.iter().position(|(e, _)| wanted(e))?;
+        Some(self.pending.remove(at))
+    }
+
+    /// Closes the palette; the focus goes back to where it was.
+    pub(crate) fn palette_close(&mut self) {
+        self.palette.open = false;
+        if self.keyboard.focus.first().map(String::as_str) == Some("palette") {
+            self.keyboard.close_window();
+        }
+    }
+
+    /// Runs what the palette chose: an action, a line, or a move of the focus to a field.
+    pub(crate) fn palette_run(&mut self, entry: &crate::palette::Entry) {
+        if let Some(action) = &entry.action {
+            let _ = self.run_action(action);
+        } else if let Some(field) = &entry.field {
+            let id = format!("field/{field}");
+            self.keyboard.focus_on(&self.tree, &id);
+            self.keyboard.nav_on = true;
+        } else if let Some(line) = &entry.line {
+            let takes_words = cav_engine::console::COMMANDS
+                .iter()
+                .find(|c| c.name == line)
+                .is_some_and(|c| c.usage.trim() != c.name);
+            if takes_words {
+                // A command that needs words: the console opens with its name typed.
+                self.console_open = true;
+                self.focus_console = true;
+                self.console_line = format!("{line} ");
+            } else {
+                let _ = self.run(line);
+            }
         }
     }
 
@@ -294,13 +483,34 @@ impl Shell {
             "gui" => self.gui_hidden = !self.gui_hidden,
             "play" => self.playing = !self.playing,
             "pause" => self.playing = false,
-            "keys" => self.keys_open = !self.keys_open,
-            "about" => self.about_open = !self.about_open,
+            "keys" => {
+                self.keys_open = !self.keys_open;
+                self.window_opened("sheet", "sheet/list", self.keys_open);
+            }
+            "about" => {
+                self.about_open = !self.about_open;
+                self.window_opened("about", "about/text", self.about_open);
+            }
+            "palette" => {
+                self.palette = Palette { open: true, focus_query: true, ..Palette::default() };
+                self.window_opened("palette", "palette/query", true);
+            }
             "clear" => self.engine.clear_log(),
             "quit" => self.quit = true,
             _ => unreachable!("is_app_command checked the name"),
         }
         Ok(name.to_owned())
+    }
+
+    /// A window has opened (`open`) or closed: on opening it takes the keyboard's focus at its
+    /// first section, with the ring if it was opened from the keyboard; on closing the focus
+    /// goes back to where it was, if it was in the window.
+    fn window_opened(&mut self, window: &str, first: &str, open: bool) {
+        if open {
+            self.keyboard.open_window(window, first, self.by_keyboard);
+        } else if self.keyboard.focus.first().map(String::as_str) == Some(window) {
+            self.keyboard.close_window();
+        }
     }
 
     /// Applies a typed command, as a drag or a scrub issues it. A refusal opens the console.
@@ -409,81 +619,169 @@ impl Shell {
         }
     }
 
-    /// Turns this frame's key presses into commands. Keys go to a text field first if one has the
-    /// keyboard; the function keys and Escape always work.
+    /// Turns this frame's keys into effects through the keyboard model's router
+    /// ([`Keyboard::route`]): the fixed priority of `docs/design/keyboard.md` §11 over the
+    /// scopes and elements the last frame registered. A key the router uses is taken out of
+    /// egui's input, so no widget acts on it twice; a key it leaves (what a text field types)
+    /// stays. A mouse press turns keyboard navigation off.
     pub(crate) fn keys(&mut self, ctx: &egui::Context) {
-        let typing = ctx.egui_wants_keyboard_input();
-        let pressed = |key: Key| ctx.input(|i| i.key_pressed(key));
-        let (command, shift) = ctx.input(|i| (i.modifiers.command, i.modifiers.shift));
-        let mut lines: Vec<String> = Vec::new();
-        if pressed(Key::F3) {
-            lines.push("gui".into());
+        let now = ctx.input(|i| i.time);
+        // Typing is a text field with egui's focus. (egui lets go of a field on Esc before the
+        // frame starts; that Esc is still the field's, so the router hears it as typing.)
+        let typing = ctx.text_edit_focused();
+        let esc_from_field = self.keyboard.typing
+            && ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Enter));
+        if self.keyboard.typing && !typing && !esc_from_field {
+            // A click elsewhere ended the typing.
+            self.keyboard.mode = crate::keyboard::Mode::Navigation;
         }
-        if pressed(Key::Escape) {
-            // Escape backs out one step: a window, then the console, then the hidden GUI, then
-            // the selection.
-            if self.keys_open || self.about_open {
-                self.keys_open = false;
-                self.about_open = false;
-            } else if self.console_open {
-                self.console_open = false;
-            } else if self.gui_hidden {
-                self.gui_hidden = false;
-            } else if self.engine.selection().is_some() {
-                lines.push("select none".into());
-            }
+        if typing {
+            self.keyboard.mode = crate::keyboard::Mode::Interaction;
         }
-        if pressed(Key::Backtick) {
-            lines.push("console".into());
-            // The backtick that opened the console should not be typed into it.
-            self.console_line.retain(|c| c != '`');
-        }
-        if !typing {
-            if pressed(Key::Space) {
-                lines.push("play".into());
-            }
-            if pressed(Key::O) {
-                lines.push("proj toggle".into());
-            }
-            if pressed(Key::Home) {
-                lines.push("view home".into());
-            }
-            if pressed(Key::Questionmark) {
-                lines.push("keys".into());
-            }
-            if command && pressed(Key::Z) {
-                lines.push(if shift { "redo" } else { "undo" }.into());
-            }
-            for (key, direction) in [(Key::ArrowLeft, -1.0), (Key::ArrowRight, 1.0)] {
-                if pressed(key) {
-                    self.playing = false;
-                    self.apply(Command::Seek(self.engine.time() + direction * STEP));
+        self.keyboard.typing = typing || esc_from_field;
+        // egui would move its own focus between widgets on Tab and the arrows; the keyboard model
+        // owns those keys (`docs/design/keyboard.md`), so egui's move is cancelled every frame.
+        ctx.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
+        let (presses, released, clicked) = ctx.input(|i| {
+            let mut presses = Vec::new();
+            let mut released = Vec::new();
+            let mut clicked = false;
+            for event in &i.events {
+                match event {
+                    Event::Key { key, pressed: true, repeat: false, modifiers, .. } => {
+                        presses.push(Press::with(*key, *modifiers));
+                    }
+                    Event::Key { key, pressed: false, .. } => released.push(*key),
+                    Event::PointerButton { pressed: true, .. } => clicked = true,
+                    _ => {}
                 }
             }
-            let towers = self.engine.spec().array.towers.len();
-            for (n, key) in [
-                Key::Num1,
-                Key::Num2,
-                Key::Num3,
-                Key::Num4,
-                Key::Num5,
-                Key::Num6,
-                Key::Num7,
-                Key::Num8,
-                Key::Num9,
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                if !command && pressed(key) && n < towers {
-                    lines.push(format!("select tower {}", n + 1));
-                }
+            (presses, released, clicked)
+        });
+        if clicked {
+            self.keyboard.pointer();
+            self.repeat.clear();
+        }
+        for key in released {
+            self.repeat.release(key);
+        }
+        let mut routed: Vec<(Press, bool)> = Vec::new();
+        for press in presses {
+            self.repeat.press(press, now);
+            routed.push((press, false));
+        }
+        routed.extend(self.repeat.due(now).into_iter().map(|press| (press, true)));
+        if self.repeat.any() {
+            ctx.request_repaint();
+        }
+        let shortcuts = crate::actions::table().shortcuts();
+        let mut used = Vec::new();
+        for (press, repeat) in routed {
+            let (effects, took) = self.keyboard.route(&self.tree, &shortcuts, press);
+            if took {
+                used.push(press);
+            }
+            if press.key == egui::Key::Backtick {
+                // The backtick that opened the console should not be typed into it.
+                self.console_line.retain(|c| c != '`');
+            }
+            for effect in effects {
+                self.effect(ctx, effect, repeat);
             }
         }
-        for line in lines {
-            // A refusal (nothing to undo, say) is already in the log and opens the console.
-            let _ = self.run(&line);
+        if !used.is_empty() {
+            // The keys the router used are not seen again by a widget this frame.
+            ctx.input_mut(|i| {
+                i.events.retain(|event| {
+                    !matches!(event, Event::Key { key, pressed: true, .. } if used.iter().any(|p| p.key == *key))
+                });
+            });
         }
+    }
+
+    /// Carries out one effect of a key: an action at once; the frame's own ladder for Esc; what
+    /// a particular widget must do is left for it to take as it is drawn.
+    fn effect(&mut self, ctx: &egui::Context, effect: Effect, repeat: bool) {
+        match effect {
+            Effect::Action(id) => {
+                self.by_keyboard = true;
+                // A refusal (nothing to undo, say) is in the log and opens the console.
+                let _ = self.run_action(&id);
+                self.by_keyboard = false;
+            }
+            Effect::Escape => {
+                // Esc at a big scope's top level: a window, then the console, then the hidden
+                // GUI, then the selection.
+                if self.keys_open || self.about_open {
+                    self.keys_open = false;
+                    self.about_open = false;
+                } else if self.console_open {
+                    self.console_open = false;
+                } else if self.gui_hidden {
+                    self.gui_hidden = false;
+                } else if self.engine.selection().is_some() {
+                    let _ = self.run("select none");
+                }
+            }
+            Effect::Close(window) => match window.as_str() {
+                "sheet" => self.keys_open = false,
+                "about" => self.about_open = false,
+                "palette" => self.palette.open = false,
+                "console" => self.console_open = false,
+                _ => {}
+            },
+            Effect::StopTyping => {
+                // Tab left a field: egui lets it go, so the field commits what was typed.
+                if let Some(id) = ctx.memory(egui::Memory::focused) {
+                    ctx.memory_mut(|m| m.surrender_focus(id));
+                }
+            }
+            Effect::Reveal(_) | Effect::Interact(_) | Effect::Session(_) => {
+                self.pending.push((effect, repeat))
+            }
+            Effect::Click(_)
+            | Effect::Adjust { .. }
+            | Effect::Zoom { .. }
+            | Effect::Type(_)
+            | Effect::Pick { .. } => {
+                self.pending.push((effect, repeat));
+            }
+            Effect::Release { .. } => self.pending.push((effect, repeat)),
+        }
+    }
+
+    /// The ring and the breadcrumb, once the frame has drawn: a 2-point outline round the focused
+    /// node (a border round a whole big scope), orange in navigation mode and blue in
+    /// interaction mode, only while keyboard navigation is on (the spec's §10). Never a fill, so
+    /// it never covers the figure.
+    pub(crate) fn paint_ring(&self, ctx: &egui::Context) {
+        if !self.keyboard.nav_on {
+            return;
+        }
+        let colour = match self.keyboard.mode {
+            crate::keyboard::Mode::Navigation => RING_NAVIGATION,
+            crate::keyboard::Mode::Interaction => RING_INTERACTION,
+        };
+        // The innermost node of the path that was drawn.
+        let rect =
+            self.keyboard.focus.iter().rev().find_map(|id| self.building.node(id).and_then(|n| n.rect));
+        if let Some(rect) = rect {
+            let painter =
+                ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("ring")));
+            painter.rect_stroke(
+                rect.expand(1.0),
+                2.0,
+                egui::Stroke::new(2.0, colour),
+                egui::StrokeKind::Outside,
+            );
+        }
+    }
+
+    /// The breadcrumb of the focus path (`Inspector › Body › mass`), while navigation is on.
+    #[must_use]
+    pub fn breadcrumb(&self) -> Option<String> {
+        // The last whole frame's names: this frame's tree is still being registered.
+        self.keyboard.nav_on.then(|| self.tree.breadcrumb(&self.keyboard.focus)).filter(|t| !t.is_empty())
     }
 
     /// Moves the playhead while playing, by the frame's time step; loops at the end.
@@ -525,6 +823,8 @@ impl Shell {
     pub fn ui(&mut self, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         let ctx = ui.ctx().clone();
         self.layout = Layout { screen: ui.max_rect(), ..Layout::default() };
+        // The keys walk what the last frame registered; this frame registers anew as it draws.
+        self.building = FocusTree::new(&crate::actions::table().big_scopes());
         self.keys(&ctx);
         self.advance(&ctx);
         // Take whatever the forward worker has finished; while it is still at work, keep drawing so
@@ -536,6 +836,11 @@ impl Shell {
             ctx.request_repaint_after(std::time::Duration::from_millis(30));
         }
         crate::panels::draw(self, ui, surface);
+        crate::palette::draw(self, &ctx);
+        self.paint_ring(&ctx);
+        // What no widget took this frame (a click of something no longer drawn) is dropped.
+        self.pending.clear();
+        self.tree = std::mem::take(&mut self.building);
         // The world still streaming, or its meshes still being made: another frame soon.
         if self.engine.streaming().pending() > 0 || surface.busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(16));

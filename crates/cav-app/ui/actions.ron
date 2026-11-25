@@ -1,0 +1,109 @@
+// What the window offers, as data (plan/REBUILD.md principle 11; docs/slices/S18.md §2).
+//
+// `scopes`: the big scopes of the keyboard model (docs/design/keyboard.md), in Tab order. The
+// order never depends on what is open or shown.
+// `menus`: the menu bar's menus, left to right.
+// `actions`: every action. Each is a console line (`line`), so the menus, the right-click menus,
+// the palette, the tool strip and the keys are one path into the engine. Fields:
+//   id      unique, the name keys and tests use
+//   label   what a menu or the palette says
+//   menu    where it sits in the menu bar: "View/Look from" is the "Look from" submenu of View;
+//           empty for an action that is in no menu (keys and the palette only)
+//   line    the console line it runs; {selection} is the selection's path (bodies[0],
+//           array.towers[2]), {body} and {tower} its number from 1
+//   scope   where its keys work: a big scope's id or a node's, or "global"
+//   keys    its key chords: "Ctrl+Z", "Shift+F", "?", "Delete"
+//   needs   when it can run: Always, Undo, Redo, Selection, Removable, Body, Tower(n), Shapes
+//   rule    a rule above it in its menu
+//   about   one line for the palette and the ? sheet
+(
+    scopes: [
+        (id: "top-bar", name: "Top bar"),
+        (id: "toolbar", name: "Tools"),
+        (id: "tree", name: "Scene tree"),
+        (id: "viewport", name: "Viewport"),
+        (id: "inspector", name: "Inspector"),
+        (id: "timeline", name: "Timeline"),
+        (id: "footer", name: "Footer"),
+    ],
+    menus: ["File", "Edit", "View", "Scene", "Array", "Help"],
+    actions: [
+        // File
+        (id: "new-room", label: "room", menu: "File/New from template", line: "load room", about: "the default room with the five-tower array"),
+        (id: "new-void", label: "void", menu: "File/New from template", line: "load void", about: "the array and nothing else"),
+        (id: "new-floor", label: "infinite floor", menu: "File/New from template", line: "load infinite-floor", about: "a floor to the horizon below the array"),
+        (id: "new-point", label: "a mass beside the array", menu: "File/New from template", line: "load point", about: "one point mass near tower 1"),
+        (id: "new-pass", label: "a mass passing the array", menu: "File/New from template", line: "load pass", about: "a mass going past the towers"),
+        (id: "new-comb", label: "an oscillator", menu: "File/New from template", line: "load comb", about: "an oscillating mass and its comb of harmonics"),
+        (id: "new-sphere", label: "a voxel sphere", menu: "File/New from template", line: "load sphere", about: "a voxel body, coloured by level"),
+        (id: "new-world-box", label: "a world with a box", menu: "File/New from template", line: "load world-box", about: "a world volume holding one box"),
+        (id: "new-town", label: "a town", menu: "File/New from template", line: "load town", about: "terrain, buildings and a road around the array"),
+        (id: "quit", label: "Quit", menu: "File", line: "quit", rule: true, about: "close the application"),
+
+        // Edit
+        (id: "undo", label: "Undo", menu: "Edit", line: "undo", keys: ["Ctrl+Z"], needs: Undo, about: "take back the last edit, whatever made it"),
+        (id: "redo", label: "Redo", menu: "Edit", line: "redo", keys: ["Ctrl+Shift+Z", "Ctrl+Y"], needs: Redo, about: "put back the edit last taken back"),
+        (id: "select-none", label: "Select nothing", menu: "Edit", line: "select none", needs: Selection, rule: true, about: "clear the selection (Esc in the viewport does too)"),
+
+        // View
+        (id: "palette", label: "Command palette…", menu: "View", line: "palette", keys: ["Ctrl+K", "Ctrl+Shift+P"], about: "search every action, starter, scene and field"),
+        (id: "look-iso", label: "iso", menu: "View/Look from", line: "view iso", about: "look from the south-west, above"),
+        (id: "look-top", label: "top", menu: "View/Look from", line: "view top", about: "plan view, from above"),
+        (id: "look-bottom", label: "bottom", menu: "View/Look from", line: "view bottom", about: "from below"),
+        (id: "look-north", label: "north", menu: "View/Look from", line: "view north", about: "from the north, looking south"),
+        (id: "look-south", label: "south", menu: "View/Look from", line: "view south", about: "from the south, looking north"),
+        (id: "look-east", label: "east", menu: "View/Look from", line: "view east", about: "from the east, looking west"),
+        (id: "look-west", label: "west", menu: "View/Look from", line: "view west", about: "from the west, looking east"),
+        (id: "view-home", label: "Home", menu: "View", line: "view home", keys: ["Home"], about: "reset the active pane's camera (undo takes it back)"),
+        (id: "proj-persp", label: "perspective", menu: "View/Projection", line: "proj persp", about: "a perspective camera"),
+        (id: "proj-ortho", label: "orthographic", menu: "View/Projection", line: "proj ortho", about: "an orthographic camera"),
+        (id: "proj-toggle", label: "toggle", menu: "View/Projection", line: "proj toggle", scope: "viewport", keys: ["O"], about: "swap perspective and orthographic"),
+        (id: "panes-1", label: "1", menu: "View/Panes", line: "panes 1", about: "one pane"),
+        (id: "panes-2", label: "2", menu: "View/Panes", line: "panes 2", about: "two panes side by side"),
+        (id: "panes-4", label: "4", menu: "View/Panes", line: "panes 4", about: "four panes"),
+        (id: "show-scene", label: "the scene", menu: "View/Show in the pane", line: "show scene", about: "the active pane shows the scene"),
+        (id: "show-signal", label: "the signal", menu: "View/Show in the pane", line: "show signal", about: "every tower's signal against time"),
+        (id: "show-periodogram", label: "the periodogram", menu: "View/Show in the pane", line: "show periodogram", about: "the periodogram with each body's comb"),
+        (id: "show-flight", label: "the flights", menu: "View/Show in the pane", line: "show flight", about: "the atoms' flights on absolute time"),
+        (id: "show-cadence", label: "the cadence", menu: "View/Show in the pane", line: "show cadence", about: "the cadence's spectral window"),
+        (id: "style-shaded", label: "shaded", menu: "View/Draw style", line: "style shaded", about: "shaded surfaces"),
+        (id: "style-flat", label: "flat", menu: "View/Draw style", line: "style flat", about: "flat colours"),
+        (id: "style-xray", label: "x-ray", menu: "View/Draw style", line: "style xray", about: "additive, see-through"),
+        (id: "style-wireframe", label: "wireframe", menu: "View/Draw style", line: "style wireframe", about: "edges only"),
+        (id: "style-paper", label: "paper", menu: "View/Draw style", line: "style paper", about: "ink on cream paper"),
+        (id: "gui", label: "Hide the GUI", menu: "View", line: "gui", keys: ["F3"], rule: true, about: "the scene fills the window; F3 or Esc brings the panels back"),
+        (id: "console", label: "Console", menu: "View", line: "console", keys: ["`"], about: "open or close the console: every command, typed"),
+
+        // Scene
+        (id: "play", label: "Play / pause", menu: "Scene", line: "play", keys: ["Space"], about: "start or stop the playhead"),
+        (id: "rewind", label: "Rewind", menu: "Scene", line: "seek 0", about: "the playhead to the start"),
+        (id: "run", label: "Compute again", menu: "Scene", line: "run", rule: true, about: "compute the signal again from nothing"),
+
+        // Array
+        (id: "select-tower-1", label: "tower 1", menu: "Array/Select tower", line: "select tower 1", scope: "viewport", keys: ["1"], needs: Tower(1), about: "select tower 1"),
+        (id: "select-tower-2", label: "tower 2", menu: "Array/Select tower", line: "select tower 2", scope: "viewport", keys: ["2"], needs: Tower(2), about: "select tower 2"),
+        (id: "select-tower-3", label: "tower 3", menu: "Array/Select tower", line: "select tower 3", scope: "viewport", keys: ["3"], needs: Tower(3), about: "select tower 3"),
+        (id: "select-tower-4", label: "tower 4", menu: "Array/Select tower", line: "select tower 4", scope: "viewport", keys: ["4"], needs: Tower(4), about: "select tower 4"),
+        (id: "select-tower-5", label: "tower 5", menu: "Array/Select tower", line: "select tower 5", scope: "viewport", keys: ["5"], needs: Tower(5), about: "select tower 5"),
+        (id: "select-tower-6", label: "tower 6", menu: "", line: "select tower 6", scope: "viewport", keys: ["6"], needs: Tower(6), about: "select tower 6"),
+        (id: "select-tower-7", label: "tower 7", menu: "", line: "select tower 7", scope: "viewport", keys: ["7"], needs: Tower(7), about: "select tower 7"),
+        (id: "select-tower-8", label: "tower 8", menu: "", line: "select tower 8", scope: "viewport", keys: ["8"], needs: Tower(8), about: "select tower 8"),
+        (id: "select-tower-9", label: "tower 9", menu: "", line: "select tower 9", scope: "viewport", keys: ["9"], needs: Tower(9), about: "select tower 9"),
+        (id: "tree-tower-1", label: "tower 1", line: "select tower 1", scope: "tree", keys: ["1"], needs: Tower(1), about: "select tower 1"),
+        (id: "tree-tower-2", label: "tower 2", line: "select tower 2", scope: "tree", keys: ["2"], needs: Tower(2), about: "select tower 2"),
+        (id: "tree-tower-3", label: "tower 3", line: "select tower 3", scope: "tree", keys: ["3"], needs: Tower(3), about: "select tower 3"),
+        (id: "tree-tower-4", label: "tower 4", line: "select tower 4", scope: "tree", keys: ["4"], needs: Tower(4), about: "select tower 4"),
+        (id: "tree-tower-5", label: "tower 5", line: "select tower 5", scope: "tree", keys: ["5"], needs: Tower(5), about: "select tower 5"),
+        (id: "preset-aion10", label: "AION-10", menu: "Array/Instrument", line: "preset aion10", about: "the instrument to the AION-10 preset"),
+        (id: "preset-aice", label: "AICE 140 m", menu: "Array/Instrument", line: "preset aice", about: "the instrument to the AICE preset"),
+        (id: "compare-aion10", label: "AION-10", menu: "Array/Compare with", line: "compare aion10", about: "read the scene on AION-10 as well"),
+        (id: "compare-aice", label: "AICE", menu: "Array/Compare with", line: "compare aice", about: "read the scene on AICE as well"),
+        (id: "compare-off", label: "nothing", menu: "Array/Compare with", line: "compare off", about: "stop comparing"),
+
+        // Help
+        (id: "keys", label: "Keyboard reference", menu: "Help", line: "keys", keys: ["?"], about: "every key, by where it works"),
+        (id: "help", label: "Console commands", menu: "Help", line: "help", about: "every console command"),
+        (id: "schema", label: "Scene spec reference", menu: "Help", line: "schema", about: "the scene spec's JSON Schema"),
+        (id: "about", label: "About Cavendish", menu: "Help", line: "about", about: "version and credits"),
+    ],
+)
