@@ -1310,7 +1310,12 @@ fn header_badges(shell: &mut Shell, ui: &mut egui::Ui) {
                         let _ = shell.run("fly");
                         ui.close();
                     }
-                    if ui.selectable_label(flying, "Fly: W A S D, E Q, drag to look (Shift+F; or hold the right button)").clicked()
+                    if ui
+                        .selectable_label(
+                            flying,
+                            "Fly: W A S D, E Q, drag to look (Shift+F; or hold the right button)",
+                        )
+                        .clicked()
                         && !flying
                     {
                         let _ = shell.run("fly");
