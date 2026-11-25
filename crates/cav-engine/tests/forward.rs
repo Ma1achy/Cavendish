@@ -538,10 +538,15 @@ fn a_reading_does_not_wait_for_the_series() {
 #[test]
 fn an_unsettled_reading_says_so() {
     // The words: an estimate is "within" only when the read settled.
-    assert_eq!(cav_engine::estimate_text(0.0, true), "exact");
-    assert_eq!(cav_engine::estimate_text(3e-11, true), "within 3e-11 rad");
-    assert_eq!(cav_engine::estimate_text(0.1, false), "did not settle, estimate 1e-1 rad");
-    assert_eq!(cav_engine::estimate_text(f64::INFINITY, false), "did not settle");
+    assert_eq!(cav_engine::estimate_text(0.0, true, None), "exact");
+    assert_eq!(cav_engine::estimate_text(3e-11, true, None), "within 3e-11 rad");
+    assert_eq!(cav_engine::estimate_text(0.1, false, None), "did not settle, estimate 1e-1 rad");
+    assert_eq!(cav_engine::estimate_text(f64::INFINITY, false, None), "did not settle");
+    // A read of part of the matter (the world within 2 m of each tower) says so, whatever the
+    // quadrature did, and never "within" a number of radians.
+    let part = cav_engine::estimate_text(1e-8, false, Some(2.0));
+    assert_eq!(part, "not settled: of the matter within 2 m only, estimate 1e-8 rad");
+    assert_eq!(cav_engine::estimate_text(1e-8, true, Some(2.0)), part);
     // A point mass on a tower's axis does not settle. The reading that comes back is the one
     // asked for (`refined`), and its heading must not pass the estimate off as a bound.
     let mut engine = loaded(dev::point());

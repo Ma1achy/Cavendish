@@ -110,6 +110,7 @@ pub fn serve(request: &[u8]) -> Vec<u8> {
                     out.float(contribution.estimate);
                     out.floats(&contribution.estimates);
                     out.byte(u8::from(contribution.settled));
+                    out.maybe(contribution.truncated);
                     out.warnings(&contribution.warnings);
                 }
                 None => out.byte(NOTHING),
@@ -124,6 +125,7 @@ pub fn serve(request: &[u8]) -> Vec<u8> {
                 out.floats(&phases);
                 out.float(reading.estimate);
                 out.byte(u8::from(reading.settled));
+                out.maybe(reading.truncated);
                 out.warnings(&reading.warnings);
             }
             None => out.byte(NOTHING),
@@ -158,6 +160,7 @@ pub fn answer(bytes: &[u8]) -> Result<Answer, String> {
             estimate: reader.float()?,
             estimates: reader.floats()?,
             settled: reader.byte()? != 0,
+            truncated: reader.maybe()?,
             warnings: reader.warnings()?,
         }),
         READING => {
@@ -174,6 +177,7 @@ pub fn answer(bytes: &[u8]) -> Result<Answer, String> {
                     .collect(),
                 estimate: reader.float()?,
                 settled: reader.byte()? != 0,
+                truncated: reader.maybe()?,
                 warnings: reader.warnings()?,
             })
         }
@@ -196,6 +200,14 @@ impl Writer {
 
     fn count(&mut self, count: usize) {
         self.0.extend((count as u64).to_le_bytes());
+    }
+
+    /// A number that may be absent: a byte (0 or 1), then the number when it is there.
+    fn maybe(&mut self, value: Option<f64>) {
+        self.byte(u8::from(value.is_some()));
+        if let Some(value) = value {
+            self.float(value);
+        }
     }
 
     fn float(&mut self, value: f64) {
@@ -242,6 +254,14 @@ impl Reader<'_> {
         usize::try_from(u64::from_le_bytes(bytes)).map_err(|_| "a count larger than memory".to_owned())
     }
 
+    fn maybe(&mut self) -> Result<Option<f64>, String> {
+        match self.byte()? {
+            0 => Ok(None),
+            1 => self.float().map(Some),
+            other => Err(format!("a flag of {other}")),
+        }
+    }
+
     fn float(&mut self) -> Result<f64, String> {
         let bytes: [u8; 8] = self.take(8)?.try_into().map_err(|_| "a number")?;
         Ok(f64::from_bits(u64::from_le_bytes(bytes)))
@@ -285,6 +305,34 @@ mod tests {
         same_bits(&[cav_sim::dev::point(), cav_sim::dev::comb(), cav_sim::dev::pass()]);
     }
 
+    #[test]
+    fn a_world_job_through_the_wire_is_the_same_bits() {
+        // The world goes through the wire by its own index (`WORLD`): `world-box` (four chunks),
+        // and the same box read only within 1 m of the towers, whose truncation must come back.
+        let whole = cav_sim::dev::world_box();
+        let mut part = whole.clone();
+        part.world.as_mut().unwrap().read.radius = 1.0;
+        same_bits(&[whole.clone(), part.clone()]);
+        let shots = read::shots(&part).unwrap();
+        let Answer::Contribution(sent) =
+            answer(&serve(&contribution_request(&part, SourceId::World))).unwrap()
+        else {
+            panic!("no contribution came back")
+        };
+        assert_eq!((sent.truncated, sent.settled), (Some(1.0), false));
+        assert!(sent.gradiometer.len() == shots.total());
+        // Control: the whole box comes back whole, and read, not as zeros.
+        let Answer::Contribution(sent) =
+            answer(&serve(&contribution_request(&whole, SourceId::World))).unwrap()
+        else {
+            panic!("no contribution came back")
+        };
+        assert!(sent.truncated.is_none() && sent.settled && sent.gradiometer.iter().any(|v| *v != 0.0));
+        // A world asked of a scene without one is nothing, not a world of zeros.
+        let none = answer(&serve(&contribution_request(&cav_sim::dev::point(), SourceId::World))).unwrap();
+        assert_eq!(none, Answer::Nothing);
+    }
+
     /// The voxel sphere through the wire: run by `cargo xtask web`, not `quick`.
     #[test]
     #[ignore = "8 to 9 s: run by `cargo xtask web`"]
@@ -313,7 +361,10 @@ mod tests {
                     assert_eq!(bits(a), bits(b), "{}: {source:?}", spec.name);
                 }
                 assert_eq!(direct.estimate.to_bits(), sent.estimate.to_bits());
-                assert_eq!((direct.settled, &direct.warnings), (sent.settled, &sent.warnings));
+                assert_eq!(
+                    (direct.settled, direct.truncated, &direct.warnings),
+                    (sent.settled, sent.truncated, &sent.warnings)
+                );
             }
             let direct = read::reading(spec, 1.0, &never).unwrap();
             let Answer::Reading(sent) = answer(&serve(&reading_request(spec, 1.0))).unwrap() else {
@@ -327,7 +378,10 @@ mod tests {
                 (direct.time.to_bits(), direct.estimate.to_bits()),
                 (sent.time.to_bits(), sent.estimate.to_bits())
             );
-            assert_eq!((direct.settled, &direct.warnings), (sent.settled, &sent.warnings));
+            assert_eq!(
+                (direct.settled, direct.truncated, &direct.warnings),
+                (sent.settled, sent.truncated, &sent.warnings)
+            );
         }
     }
 

@@ -43,15 +43,24 @@ fn world_of(pitch: f64, pieces: Vec<PieceSpec>) -> WorldSpec {
 /// Every tower's phases from one source of `spec`: `(lower, upper, gradiometer)` of each tower's
 /// first shot.
 fn first_shots(spec: &SceneSpec, source: SourceId) -> Vec<[f64; 3]> {
+    let (phases, truncated) = first_shots_of_part(spec, source);
+    assert!(truncated.is_none());
+    phases
+}
+
+/// [`first_shots`] of a read that may leave matter out, with its truncation; settled apart from
+/// that.
+fn first_shots_of_part(spec: &SceneSpec, source: SourceId) -> (Vec<[f64; 3]>, Option<f64>) {
     let shots = read::shots(spec).unwrap();
     let c = read::contribution(spec, source, &shots, &|| false).unwrap();
-    assert!(c.settled, "{:?}", c.warnings);
-    (0..spec.array.towers.len())
+    assert!(c.settled || c.truncated.is_some(), "{:?}", c.warnings);
+    let phases = (0..spec.array.towers.len())
         .map(|d| {
             let at = shots.starts[d];
             [c.lower[at], c.upper[at], c.gradiometer[at]]
         })
-        .collect()
+        .collect();
+    (phases, c.truncated)
 }
 
 /// The worst difference of two towers' phases, each relative to the larger of the two values.
@@ -90,7 +99,7 @@ cav_validate::case! {
         assert!(as_world.iter().all(|t| t[2] != 0.0));
         // Control: the world with one of its four chunks left out is far from it.
         let w = World::new(&world);
-        let (keys, _) = read_keys(&spec, &w).unwrap();
+        let keys = read_keys(&spec, &w).unwrap().keys;
         let mut made = make(&w, &keys, &|| false).unwrap().unwrap();
         assert_eq!(made.chunks.len(), 4);
         made.chunks.remove(1);
@@ -179,7 +188,10 @@ fn slab_readings(halves: &[f64], radius: Option<f64>) -> (f64, Vec<f64>) {
         world.read.radius = radius.unwrap_or(2.0 * half);
         let mut spec = scene(world);
         spec.array.towers = vec![towers[centre].clone()];
-        let got = first_shots(&spec, SourceId::World)[0][2];
+        let (phases, truncated) = first_shots_of_part(&spec, SourceId::World);
+        // The control's reads leave matter out and say so; the series' do not.
+        assert_eq!(truncated, radius);
+        let got = phases[0][2];
         let want = prism_reading(&spec, 0, lo, hi);
         against_prism = against_prism.max((got - (want.lower - want.upper)).abs() / got.abs());
         readings.push(got);
@@ -427,6 +439,24 @@ fn the_world_is_a_source_like_any_other() {
         assert!(n > 1 && (at..at + n).all(|k| c.gradiometer[k] == c.gradiometer[at]));
     }
     assert!(c.estimates.iter().all(|e| e.is_finite()));
+    // Superposition (R8): the reading under a playhead is floor + world + body, each read alone,
+    // to 1e-15 of the largest (to the bit, as the sum is in the same order).
+    let shot = read::Shots::together(&spec, vec![1.0]);
+    let parts: Vec<read::Contribution> = read::sources(&spec)
+        .into_iter()
+        .map(|s| read::contribution(&spec, s, &shot, &|| false).unwrap())
+        .collect();
+    let together = read::reading(&spec, 1.0, &|| false).unwrap();
+    let sum_of = |parts: &[&read::Contribution]| -> Vec<f64> {
+        (0..spec.array.towers.len()).map(|t| parts.iter().fold(0.0, |s, p| s + p.gradiometer[t])).collect()
+    };
+    let scale = together.towers.iter().fold(0.0f64, |m, p| m.max(p.gradiometer.abs()));
+    let off = |sum: &[f64]| {
+        together.towers.iter().zip(sum).fold(0.0f64, |m, (p, s)| m.max((p.gradiometer - s).abs())) / scale
+    };
+    assert!(off(&sum_of(&parts.iter().collect::<Vec<_>>())) <= 1e-15);
+    // Control: the world left out of the sum is not the reading.
+    assert!(off(&sum_of(&[&parts[0], &parts[2]])) > 1e-6);
     // A world of nothing reads nothing; and a scene without a world has no such source.
     let empty = scene(world_of(0.5, Vec::new()));
     let none = read::contribution(&empty, SourceId::World, &read::shots(&empty).unwrap(), &|| false).unwrap();
@@ -518,15 +548,16 @@ fn the_world_read_is_bounded() {
     let mut world = world_of(0.05, vec![boxed([-60.0, -60.0, -2.0], [60.0, 60.0, -1.0])]);
     world.read.radius = 80.0;
     let spec = scene(world.clone());
-    let (keys, said) = read_keys(&spec, &World::new(&world)).unwrap();
+    let ReadKeys { keys, said, within } = read_keys(&spec, &World::new(&world)).unwrap();
     assert_eq!(keys.len(), MAX_READ_CHUNKS);
     assert!(said.iter().any(|s| s.contains("are read and the rest are not")), "{said:?}");
+    assert!(within.is_some_and(|r| r > 0.0 && r < 80.0), "{within:?}");
     // Control: a radius that holds the whole world says nothing is left.
     let mut world = world_of(0.5, vec![boxed([1.0, 1.0, 0.0], [3.0, 3.0, 1.0])]);
     world.read.radius = 100.0;
     let spec = scene(world.clone());
-    let (keys, said) = read_keys(&spec, &World::new(&world)).unwrap();
-    assert!(!keys.is_empty() && said.is_empty(), "{said:?}");
+    let ReadKeys { keys, said, within } = read_keys(&spec, &World::new(&world)).unwrap();
+    assert!(!keys.is_empty() && said.is_empty() && within.is_none(), "{said:?}");
     // The kernel's work: a read past its share is refused, with the numbers.
     let w = World::new(&world);
     let made = make(&w, &keys, &|| false).unwrap().unwrap();

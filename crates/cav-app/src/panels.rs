@@ -566,7 +566,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             };
             format!(
                 "forward · {count} · refined · {}",
-                cav_engine::estimate_text(signal.estimate, signal.settled)
+                cav_engine::estimate_text(signal.estimate, signal.settled, signal.truncated)
             )
         }
         (cav_engine::SignalState::Stale, _) => "forward · computing".to_owned(),
@@ -760,7 +760,10 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
                         ("ΔΦ", crate::shell::phase_text(reading.gradiometer)),
                         ("δφ₁ lower", crate::shell::phase_text(reading.lower)),
                         ("δφ₂ upper", crate::shell::phase_text(reading.upper)),
-                        ("quadrature", cav_engine::estimate_text(reply.estimate, reply.settled)),
+                        (
+                            "quadrature",
+                            cav_engine::estimate_text(reply.estimate, reply.settled, reply.truncated),
+                        ),
                         ("state", reply.state.to_string()),
                     ],
                 );
@@ -866,7 +869,10 @@ fn header(shell: &mut Shell, ui: &mut egui::Ui) {
             (cav_engine::SignalState::Refined, Some(signal)) => {
                 // A signal some of whose reads did not settle is the scene's, and is not good to
                 // the tolerance: the badge says which, and never "within" for the second.
-                let text = format!("signal · {}", cav_engine::estimate_text(signal.estimate, signal.settled));
+                let text = format!(
+                    "signal · {}",
+                    cav_engine::estimate_text(signal.estimate, signal.settled, signal.truncated)
+                );
                 badge(ui, text, if signal.settled { theme::STRONG } else { theme::WARN });
             }
             (cav_engine::SignalState::Stale, _) => badge(ui, "signal · stale", theme::WARN),

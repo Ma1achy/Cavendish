@@ -58,7 +58,9 @@ pub struct WorldSpec {
     #[schemars(extend("x-unit" = "m"))]
     pub pitch: f64,
     /// Sample points along each side of a finest cell, 1 to 6: how finely a cell a surface cuts
-    /// is weighed. The default is 2.
+    /// is weighed. The default is 2. The read's error estimate does not include this
+    /// voxelisation error (the matter as cells against the pieces as solids): it covers the
+    /// quadrature and the moments' bound for the matter as voxelised, as for a voxel body.
     #[serde(default = "default_supersample")]
     #[schemars(range(min = 1, max = 6))]
     #[schemars(extend("x-unit" = "1"))]
@@ -624,14 +626,28 @@ impl Source for Unit {
     }
 }
 
+/// The chunks a read of the world takes ([`read_keys`]), and what it leaves out.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ReadKeys {
+    /// The chunks to read, nearest first.
+    pub keys: Vec<ChunkKey>,
+    /// What was left out, in words, for the read's warnings.
+    pub said: Vec<String>,
+    /// `Some(r)` when matter was left out: every chunk within `r` metres of some tower's atoms'
+    /// path is read, and some farther matter is not (the read radius, or the distance of the
+    /// nearest chunk past [`MAX_READ_CHUNKS`]). `None` when the whole world is read.
+    pub within: Option<f64>,
+}
+
 /// The world's chunks a read takes, nearest first: within `read.radius` of some tower's atoms'
-/// path, at most [`MAX_READ_CHUNKS`]. Returns the keys and what was left out, in words.
+/// path, at most [`MAX_READ_CHUNKS`]. Returns the keys, what was left out in words, and the
+/// distance within which everything was read when something was left out.
 ///
 /// # Errors
 /// When the search itself would look at more than [`MAX_READ_SCAN`] keys.
-pub fn read_keys(spec: &crate::SceneSpec, world: &World) -> Result<(Vec<ChunkKey>, Vec<String>), String> {
-    let Some(w) = &spec.world else { return Ok((Vec::new(), Vec::new())) };
-    let Some(extent) = world.extent() else { return Ok((Vec::new(), Vec::new())) };
+pub fn read_keys(spec: &crate::SceneSpec, world: &World) -> Result<ReadKeys, String> {
+    let Some(w) = &spec.world else { return Ok(ReadKeys::default()) };
+    let Some(extent) = world.extent() else { return Ok(ReadKeys::default()) };
     let radius = w.read.radius;
     let mut found: std::collections::BTreeMap<ChunkKey, f64> = std::collections::BTreeMap::new();
     let mut scanned = 0u64;
@@ -671,7 +687,10 @@ pub fn read_keys(spec: &crate::SceneSpec, world: &World) -> Result<(Vec<ChunkKey
     let mut keys: Vec<(ChunkKey, f64)> = found.into_iter().collect();
     keys.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
     let mut said = Vec::new();
+    let mut within = None;
     if keys.len() > MAX_READ_CHUNKS {
+        // Every chunk nearer than the first left out is read.
+        within = Some(keys[MAX_READ_CHUNKS].1);
         said.push(format!(
             "the world has {} chunks within {radius} m of the towers; the nearest {MAX_READ_CHUNKS} (to {:.1} m) are \
              read and the rest are not",
@@ -686,11 +705,12 @@ pub fn read_keys(spec: &crate::SceneSpec, world: &World) -> Result<(Vec<ChunkKey
         (0..8).any(|c| to_segment(extent.corner(c), base, h) > radius)
     });
     if beyond {
+        within = Some(within.map_or(radius, |w: f64| w.min(radius)));
         said.push(format!(
             "world matter farther than {radius} m from a tower's atoms is not read (S5 reads the rest)"
         ));
     }
-    Ok((keys.into_iter().map(|(k, _)| k).collect(), said))
+    Ok(ReadKeys { keys: keys.into_iter().map(|(k, _)| k).collect(), said, within })
 }
 
 /// What reading the world at one tower found.

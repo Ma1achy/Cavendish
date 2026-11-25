@@ -498,11 +498,25 @@ pub struct Contribution {
     pub estimate: f64,
     /// The same for each tower on its own, radians, in the towers' order.
     pub estimates: Vec<f64>,
-    /// Whether every shot's read settled to the tolerance. When false, `estimate` is not a bound
-    /// that was met but how far the worst read was from settling.
+    /// Whether every shot's read settled to the tolerance and read all of the source's matter.
+    /// When false, `estimate` is not a bound on the error: it is how far the worst read was from
+    /// settling, or (with [`Self::truncated`]) the quadrature's error on part of the matter only.
     pub settled: bool,
+    /// `Some(r)` when matter was left out: the world's read takes only what is within `r` metres
+    /// of each tower's atoms' path, so these numbers are of that matter, not of the whole scene
+    /// (and `settled` is false). `None` when everything was read.
+    pub truncated: Option<f64>,
     /// What a person should know about this source's readings.
     pub warnings: Vec<Warning>,
+}
+
+/// Two truncations together: the nearer radius, when either left matter out.
+#[must_use]
+pub fn nearer(a: Option<f64>, b: Option<f64>) -> Option<f64> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
 }
 
 fn base(position: [f64; 3]) -> Vec3 {
@@ -689,6 +703,7 @@ pub fn contribution_on(
         estimate: 0.0,
         estimates: vec![0.0; towers.len()],
         settled: true,
+        truncated: None,
         warnings: Vec::new(),
     };
     // Each tower's own sign: the gradiometer is differenced as its instrument says.
@@ -936,7 +951,7 @@ fn world_contribution(
         out.settled = false;
         out.warnings.push(Warning::general(format!("the world is not read: {why}")));
     };
-    let (keys, said) = match crate::world::read_keys(spec, &world) {
+    let crate::world::ReadKeys { keys, said, within } = match crate::world::read_keys(spec, &world) {
         Ok(found) => found,
         Err(why) => {
             refuse(out, why);
@@ -944,6 +959,11 @@ fn world_contribution(
         }
     };
     out.warnings.extend(said.into_iter().map(Warning::general));
+    // Matter left out: the numbers are of the matter within `within` only, and never settled.
+    if within.is_some() {
+        out.truncated = within;
+        out.settled = false;
+    }
     let made = match crate::world::make(&world, &keys, cancelled) {
         Ok(Some(made)) => made,
         Ok(None) => return None,
@@ -1164,8 +1184,11 @@ pub struct Signal {
     /// of any one source's any shot at that tower. (The estimates of several sources are not
     /// added: each is a bound on its own read, and the largest says how far to trust the tower.)
     pub estimates: Vec<f64>,
-    /// Whether every read of every source settled to the tolerance.
+    /// Whether every read of every source settled to the tolerance and read all its matter.
     pub settled: bool,
+    /// `Some(r)` when some source's matter was left out: the world read only within `r` metres
+    /// of the towers' atoms ([`Contribution::truncated`]). `None` when everything was read.
+    pub truncated: Option<f64>,
     /// What a person should know about these readings.
     pub warnings: Vec<Warning>,
 }
@@ -1190,6 +1213,7 @@ impl Signal {
             estimate: 0.0,
             estimates: vec![0.0; towers],
             settled: true,
+            truncated: None,
             warnings: shots.warnings.clone(),
         }
     }
@@ -1212,6 +1236,7 @@ impl Signal {
             *own = own.max(*part);
         }
         self.settled &= contribution.settled;
+        self.truncated = nearer(self.truncated, contribution.truncated);
         self.warnings.extend(contribution.warnings.iter().cloned());
     }
 
@@ -1313,8 +1338,10 @@ pub struct ReadingAt {
     pub towers: Vec<Phases>,
     /// The largest quadrature estimate of any source at any tower, radians.
     pub estimate: f64,
-    /// Whether every read settled to the tolerance.
+    /// Whether every read settled to the tolerance and read all its matter.
     pub settled: bool,
+    /// `Some(r)` when the world was read only within `r` metres of the towers ([`Signal::truncated`]).
+    pub truncated: Option<f64>,
     /// What a person should know about these numbers: a reading that did not settle, a body in
     /// the atoms' path, an unbounded floor.
     pub warnings: Vec<Warning>,
@@ -1338,6 +1365,7 @@ pub fn reading(spec: &SceneSpec, time: f64, cancelled: &(dyn Fn() -> bool + Sync
         towers,
         estimate: total.estimate,
         settled: total.settled,
+        truncated: total.truncated,
         warnings: total.warnings,
     })
 }
