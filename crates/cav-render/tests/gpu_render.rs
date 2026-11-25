@@ -70,6 +70,7 @@ fn render(gpu: &Gpu, renderer: &Renderer, scene: &SceneSpec, view: &ViewSpec) ->
         content: cav_sim::PaneContent::Scene,
         span: None,
         voxels: None,
+        world: None,
     };
     Picture { rgba: renderer.render_rgba(gpu, frame, SIZE).expect("render") }
 }
@@ -428,6 +429,7 @@ fn gpu_the_largest_valid_scene_renders() {
             content: cav_sim::PaneContent::Scene,
             span: None,
             voxels: None,
+            world: None,
         };
         let rgba = renderer.render_rgba(&gpu, frame, SIZE).expect("the largest valid scene must draw");
         let picture = Picture { rgba };
@@ -606,6 +608,7 @@ fn gpu_a_body_appears_at_its_projected_pixel() {
             content: cav_sim::PaneContent::Scene,
             span: None,
             voxels: None,
+            world: None,
         };
         Picture { rgba: renderer.render_rgba(&gpu, frame, SIZE).expect("render") }
     };

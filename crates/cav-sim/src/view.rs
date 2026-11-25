@@ -220,6 +220,8 @@ pub struct SceneView<'a> {
     /// The voxel bodies as this pane draws them (their cubes, overlays and legend), when the
     /// scene has any; the renderer draws other bodies as before.
     pub voxels: Option<&'a crate::voxel_view::VoxelFrame>,
+    /// The resident world (S4) the pane draws its clipmap from, when the scene has a world.
+    pub world: Option<&'a crate::world::clipmap::WorldFrame>,
 }
 
 impl ViewSpec {

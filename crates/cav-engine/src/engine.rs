@@ -175,6 +175,8 @@ pub struct Engine {
     patience: std::time::Duration,
     /// The voxel bodies' trees, made when a shape or a mass changes, for drawing.
     voxels: crate::voxels::Voxels,
+    /// The world volume's resident chunks and bricks, streamed around the cameras and towers.
+    world: crate::world::Streaming,
 }
 
 /// Everything a replay must reproduce, in one serialisable piece. The journal and the log are not
@@ -243,6 +245,7 @@ impl Engine {
             compare: None,
             patience: TYPED_LINE_PATIENCE,
             voxels: crate::voxels::Voxels::default(),
+            world: crate::world::Streaming::default(),
         }
     }
 
@@ -480,6 +483,7 @@ impl Engine {
         // What the panes draw of voxel bodies follows the scene, the playhead and the views. What
         // it could not draw is said once, for the scene that has it (a refusal of a tree).
         let voxel_notes = self.voxels.refresh(&self.spec, self.time, &self.views[..self.panes]);
+        self.world.refresh(&self.spec, &self.views[..self.panes], &self.contents[..self.panes]);
         // Whatever changed the scene or moved the playhead changes what the towers read under it.
         if !matches!(command, Command::Select(_) | Command::View(_)) {
             self.forward.request_reading(&self.spec, self.time);
@@ -1344,12 +1348,20 @@ impl Engine {
     /// has just arrived; a signal's arrival is said in the log, with anything it warns of. The
     /// application calls this every frame; nothing in it waits and nothing in it computes.
     pub fn poll(&mut self) -> bool {
+        // The world's chunks and bricks, a few a frame (`world.rs`).
+        let streamed = self.world.step(crate::world::MAX_BUILDS_PER_POLL, crate::world::STEP_MILLISECONDS);
+        for note in self.world.take_notes() {
+            self.log.push(Level::Warn, Subsystem::Render, note);
+        }
+        if streamed {
+            self.generation += 1;
+        }
         let arrived = self.forward.poll();
         let compared = self.compare.as_mut().is_some_and(|(_, forward)| forward.poll().0);
         if compared {
             self.generation += 1;
         }
-        self.took(arrived) || compared
+        self.took(arrived) || compared || streamed
     }
 
     /// Waits, at most `patience`, for the signal and the reading to be the current scene's. For
@@ -1372,6 +1384,40 @@ impl Engine {
         compared
             && self.forward.state() != SignalState::Stale
             && self.forward.reading().0 != SignalState::Stale
+    }
+
+    /// Makes the world's wanted chunks and bricks until none is left or `patience` has passed: for
+    /// clients that take one picture (`cav render`, MCP `render_view`, the headless app) rather
+    /// than poll. True when the whole of what the cameras and towers want is resident.
+    pub fn settle_world(&mut self, patience: std::time::Duration) -> bool {
+        let started = web_time::Instant::now();
+        while self.world.pending() > 0 && started.elapsed() < patience {
+            if self.world.step(crate::world::MAX_BUILDS_PER_POLL, f64::INFINITY) {
+                self.generation += 1;
+            }
+        }
+        for note in self.world.take_notes() {
+            self.log.push(Level::Warn, Subsystem::Render, note);
+        }
+        self.world.pending() == 0
+    }
+
+    /// The world's streaming: what is resident and queued, its cache and its picture's bands.
+    #[must_use]
+    pub fn streaming(&self) -> &crate::world::Streaming {
+        &self.world
+    }
+
+    /// Reads and writes the world's chunks through region files under `folder` (natively), or
+    /// no cache for `None`.
+    pub fn set_world_cache(&mut self, folder: Option<std::path::PathBuf>) {
+        self.world.set_cache(folder);
+    }
+
+    /// Draws the clipmap's levels in colours of their level (the LOD bands), or not.
+    pub fn set_world_bands(&mut self, on: bool) {
+        self.world.set_bands(on);
+        self.generation += 1;
     }
 
     /// Waits, at most `patience`, for the reading alone to be the one asked for: a reading that
@@ -1627,6 +1673,7 @@ impl Engine {
             content: self.contents[pane],
             span: self.spans[pane],
             voxels: self.voxels.frame(pane),
+            world: self.world.frame(),
         })
     }
 

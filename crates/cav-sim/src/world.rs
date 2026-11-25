@@ -765,5 +765,7 @@ pub fn work_share(spec: &crate::SceneSpec) -> u64 {
     crate::read::kernel_share(spec).min(MAX_KERNEL_WORK)
 }
 
+pub mod clipmap;
+
 #[cfg(test)]
 mod tests;

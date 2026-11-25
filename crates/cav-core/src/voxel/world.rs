@@ -277,6 +277,52 @@ impl Chunk {
     }
 }
 
+/// What the picture needs of a chunk: its leaves and palette, without the tree's nodes and
+/// moments (which weigh twenty times as much and only the read needs). What streaming keeps
+/// resident and the region files hold.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChunkCells {
+    /// Where it is.
+    pub key: ChunkKey,
+    /// Its leaves, in Morton order, materials indexing `palette`.
+    pub leaves: Vec<Leaf>,
+    /// The world materials it holds, ascending.
+    pub palette: Vec<u8>,
+}
+
+impl ChunkCells {
+    /// A chunk's leaves and palette.
+    #[must_use]
+    pub fn of(chunk: &Chunk) -> Self {
+        Self { key: chunk.key, leaves: chunk.tree.leaves.clone(), palette: chunk.palette.clone() }
+    }
+
+    /// Every finest cell's world material plus one (0 where empty), x fastest ([`cell_index`]).
+    #[must_use]
+    pub fn materials(&self) -> Vec<u8> {
+        let mut out = vec![0u8; CHUNK_CELLS];
+        for leaf in &self.leaves {
+            let [cx, cy, cz] = decode(leaf.key);
+            let side = 1u32 << leaf.level;
+            let m = self.palette[usize::from(leaf.material)].saturating_add(1);
+            for z in cz..cz + side {
+                for y in cy..cy + side {
+                    for x in cx..cx + side {
+                        out[cell_index([x, y, z])] = m;
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// The bytes it holds.
+    #[must_use]
+    pub fn bytes(&self) -> usize {
+        self.leaves.len() * size_of::<Leaf>() + self.palette.len() + size_of::<Self>()
+    }
+}
+
 /// The index of chunk cell `[x, y, z]` in an expanded chunk: x fastest, then y, then z.
 #[must_use]
 pub const fn cell_index(cell: [u32; 3]) -> usize {

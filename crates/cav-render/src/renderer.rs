@@ -119,6 +119,9 @@ pub struct Renderer {
     line: wgpu::RenderPipeline,
     line_xray: wgpu::RenderPipeline,
     ground: wgpu::RenderPipeline,
+    world: crate::world::WorldPipelines,
+    /// The world's GPU copies (chunk meshes, the brick store), kept between frames.
+    world_gpu: std::sync::Mutex<crate::world::WorldGpu>,
 }
 
 impl Renderer {
@@ -214,6 +217,8 @@ impl Renderer {
             line: pipeline("line", "vs_line", "fs_line", Some(&line_buffer), false),
             line_xray: pipeline("line, x-ray", "vs_line", "fs_line", Some(&line_buffer), true),
             ground: pipeline("ground", "vs_ground", "fs_ground", None, false),
+            world: crate::world::WorldPipelines::new(gpu, COLOUR_FORMAT, SAMPLES, DEPTH_FORMAT),
+            world_gpu: std::sync::Mutex::new(crate::world::WorldGpu::default()),
             globals_layout,
         }
     }
@@ -236,8 +241,65 @@ impl Renderer {
             frame.voxels,
         );
         check_sizes(&things, gpu.device.limits().max_buffer_size)?;
+        self.draw_with_world(gpu, target, &camera, &things, &frame, false)
+    }
+
+    /// [`Self::draw`] with every chunk mesh the world wants made now, not a few a frame: for a
+    /// picture taken once (`cav render`, figures, tests), which has no later frame to finish in.
+    ///
+    /// # Errors
+    /// As [`Self::draw`].
+    pub fn draw_complete(&self, gpu: &Gpu, target: &PaneTarget, frame: Frame<'_>) -> Result<(), String> {
+        let [width, height] = target.size;
+        let camera = Camera::new(frame.view, f64::from(width) / f64::from(height));
+        let things = crate::scene::drawables_with(
+            frame.scene,
+            frame.view.style,
+            frame.highlight,
+            camera.origin,
+            frame.time,
+            frame.voxels,
+        );
+        check_sizes(&things, gpu.device.limits().max_buffer_size)?;
+        self.draw_with_world(gpu, target, &camera, &things, &frame, true)
+    }
+
+    fn draw_with_world(
+        &self,
+        gpu: &Gpu,
+        target: &PaneTarget,
+        camera: &Camera,
+        things: &Drawables,
+        frame: &Frame<'_>,
+        complete: bool,
+    ) -> Result<(), String> {
+        let mut world = self.world_gpu.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         // A validation error inside wgpu would otherwise be a panic; here it is an answer.
-        gpu.checked(|| self.draw_things(gpu, target, &camera, &things, frame.view.style))
+        gpu.checked(|| {
+            let draw =
+                frame.world.and_then(|w| world.prepare(gpu, &self.world, w, frame.view, camera, complete));
+            self.draw_things(
+                gpu,
+                target,
+                camera,
+                things,
+                frame.view.style,
+                draw.as_ref().map(|d| (&*world, d)),
+            );
+        })
+    }
+
+    /// What the world's GPU copies hold: `[chunk meshes, bricks, mesh vertices]`, and what could
+    /// not be drawn in the last frame.
+    #[must_use]
+    pub fn world_counts(&self) -> ([usize; 3], Vec<String>) {
+        let world = self.world_gpu.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        (world.counts(), world.notes.clone())
+    }
+
+    /// The world's pipelines and GPU copies, for tests of the culling against its CPU twin.
+    pub fn world_parts(&self) -> (&crate::world::WorldPipelines, &std::sync::Mutex<crate::world::WorldGpu>) {
+        (&self.world, &self.world_gpu)
     }
 
     fn draw_things(
@@ -247,6 +309,7 @@ impl Renderer {
         camera: &Camera,
         things: &Drawables,
         style: DrawStyle,
+        world: Option<(&crate::world::WorldGpu, &crate::world::WorldDraw)>,
     ) {
         let [width, height] = target.size;
         let xray = style == DrawStyle::XRay;
@@ -287,6 +350,9 @@ impl Renderer {
 
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pane") });
+        if let Some((gpu_world, draw)) = world {
+            gpu_world.cull(&self.world, &mut encoder, draw);
+        }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("scene"),
@@ -324,6 +390,10 @@ impl Renderer {
                 pass.set_vertex_buffer(0, triangles.slice(..));
                 pass.draw(0..things.triangles.len() as u32, 0..1);
             }
+            if let Some((gpu_world, draw)) = world {
+                gpu_world.draw(&self.world, &mut pass, draw);
+                pass.set_bind_group(0, &bind_group, &[]);
+            }
             if let Some(lines) = &lines {
                 pass.set_pipeline(if xray { &self.line_xray } else { &self.line });
                 pass.set_vertex_buffer(0, lines.slice(..));
@@ -340,7 +410,7 @@ impl Renderer {
     /// When the read-back fails.
     pub fn render_rgba(&self, gpu: &Gpu, frame: Frame<'_>, size: [u32; 2]) -> Result<Vec<u8>, String> {
         let target = PaneTarget::new(gpu, size);
-        self.draw(gpu, &target, frame)?;
+        self.draw_complete(gpu, &target, frame)?;
         gpu.read_rgba8(target.texture())
     }
 
