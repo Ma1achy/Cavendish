@@ -97,18 +97,37 @@ pub struct ImportForm {
     pub material: String,
     /// The voxel pitch, metres; empty for the widest side over 32.
     pub pitch: String,
+    /// The file the box below was read from, and its box's sides in the file's units (or why
+    /// it could not be read): shown in the window, and what sets the body's lift off the ground.
+    pub measured: Option<(String, Result<[f64; 3], String>)>,
 }
 
 impl ImportForm {
-    /// A form for `file`: fitted to 1 m, of the default material, the pitch worked out.
+    /// A form for `file`: at the file's own size (its units read as metres: S19's review,
+    /// minor 9, where it was fitted to 1 m whatever it was), of the default material, the pitch
+    /// worked out.
     #[must_use]
     pub fn new(file: &str) -> Self {
         Self {
             file: file.to_owned(),
-            fit: "1".to_owned(),
+            fit: String::new(),
             material: cav_sim::import::DEFAULT_MATERIAL.to_owned(),
             pitch: String::new(),
+            measured: None,
         }
+    }
+
+    /// The sides of the mesh's box as it will be imported, metres: the file's box, scaled to
+    /// the typed widest side (or 1:1). None when the file has not been read.
+    #[must_use]
+    pub fn imported_size(&self) -> Option<[f64; 3]> {
+        let size = self.measured.as_ref()?.1.as_ref().ok()?;
+        let widest = size.iter().copied().fold(0.0, f64::max);
+        let scale = match self.fit.trim().parse::<f64>() {
+            Ok(fit) if fit.is_finite() && fit > 0.0 && widest > 0.0 => fit / widest,
+            _ => 1.0,
+        };
+        Some(size.map(|s| s * scale))
     }
 
     /// The console line it runs, the body placed at `at` (metres): `import <file> fit … material
@@ -127,6 +146,21 @@ impl ImportForm {
         line.push_str(&format!(" at {} {} {}", at[0], at[1], at[2]));
         line
     }
+}
+
+/// The sides of the box of the mesh in `file` (a dropped file's name, or natively a path), in the
+/// file's units; or why it cannot be read.
+fn mesh_box(shell: &Shell, file: &str) -> Result<[f64; 3], String> {
+    if file.is_empty() {
+        return Err(String::new());
+    }
+    let bytes = match shell.engine.dropped(file) {
+        Some(bytes) => bytes.to_vec(),
+        None => cav_engine::files::read(std::path::Path::new(file), cav_core::voxel::mesh::MAX_MESH_BYTES)
+            .map_err(|e| format!("{file}: {e}"))?,
+    };
+    let mesh = cav_core::voxel::mesh::Mesh::parse(file, &bytes, 1.0).map_err(|e| e.0)?;
+    Ok(cav_core::voxel::Shape::bounds(&mesh).size().to_array())
 }
 
 /// The Import mesh window (File › Import mesh…, or a file dropped on the window): the file, its
@@ -165,13 +199,29 @@ fn import(shell: &mut Shell, ctx: &egui::Context) {
                 .inner
             };
             text_row(ui, shell, "import/file", "File", &mut form.file, "bracket.stl");
+            // The file's box, read once a file (S19's review, minor 9): so that its size is seen
+            // before it is chosen.
+            if form.measured.as_ref().is_none_or(|(of, _)| *of != form.file) {
+                form.measured = Some((form.file.clone(), mesh_box(shell, form.file.trim())));
+            }
+            let size = match &form.measured {
+                Some((_, Ok([x, y, z]))) => format!(
+                    "its box: {} × {} × {} in the file's units",
+                    crate::editors::shown(*x),
+                    crate::editors::shown(*y),
+                    crate::editors::shown(*z)
+                ),
+                Some((_, Err(why))) => why.clone(),
+                None => String::new(),
+            };
+            ui.label(RichText::new(size).size(11.0).color(theme::WEAK));
             text_row(
                 ui,
                 shell,
                 "import/fit",
                 "Widest side, m",
                 &mut form.fit,
-                "empty: the file's units are metres",
+                "empty: its own size, its units as metres",
             );
             ui.horizontal(|ui| {
                 ui.add_sized([96.0, 18.0], egui::Label::new(RichText::new("Material").color(theme::WEAK)));
@@ -212,8 +262,12 @@ fn import(shell: &mut Shell, ctx: &egui::Context) {
     }
     shell.import_window = Some(form.clone());
     if go && !form.file.trim().is_empty() {
-        // Where the camera looks, on the ground, as the Add menu puts a starter.
-        let at = shell.place_for("cube");
+        // Where the camera looks, as the Add menu puts a starter, standing on the ground: lifted
+        // by half its own height (S19's review, minor 8: the cube's lift sank a taller mesh).
+        let mut at = shell.place_for("cube");
+        if let Some([_, _, height]) = form.imported_size() {
+            at[2] = shell.ground() + 0.5 * height;
+        }
         if shell.run(&form.line(at)).is_ok() {
             let n = shell.engine.spec().bodies.len();
             let _ = shell.run(&format!("select body {n}"));

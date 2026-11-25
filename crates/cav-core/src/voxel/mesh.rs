@@ -81,6 +81,16 @@ impl Mesh {
         if let Some(t) = triangles.iter().find(|t| t.iter().any(|&i| i as usize >= vertices.len())) {
             return Err(VoxelError(format!("triangle {t:?} names a vertex that does not exist")));
         }
+        // A triangle with no area (a corner named twice, or three corners on a line) passes the
+        // edge count when its own edges pair up, yet bounds nothing (S19's review, minor 4).
+        if let Some((n, t)) = triangles.iter().enumerate().find(|(_, t)| {
+            let [a, b, c] = t.map(|i| vertices[i as usize]);
+            t[0] == t[1] || t[1] == t[2] || t[0] == t[2] || (b - a).cross(c - a) == Vec3::ZERO
+        }) {
+            return Err(VoxelError(format!(
+                "triangle {n} ({t:?}) has no area: a mesh's triangles each bound some"
+            )));
+        }
         // Each directed edge once, and its reverse once.
         let mut edges: HashMap<(u32, u32), u32> = HashMap::with_capacity(3 * triangles.len());
         for t in &triangles {
@@ -204,6 +214,39 @@ impl Mesh {
         let c = self.integrals().1;
         let vertices = self.vertices.iter().map(|v| *v - c).collect();
         Self::new(vertices, self.triangles).expect("moving a valid mesh keeps it valid")
+    }
+
+    /// The same mesh moved so that the middle of its box is at the origin: how every imported or
+    /// file mesh is placed (a mesh symmetric in its numbers then sits exactly on the origin,
+    /// where a centroid summed from its triangles is a rounding off it).
+    #[must_use]
+    pub fn centred_on_box(self) -> Self {
+        let middle = Shape::bounds(&self).centre();
+        let vertices = self.vertices.iter().map(|v| *v - middle).collect();
+        Self::new(vertices, self.triangles).expect("moving a valid mesh keeps it valid")
+    }
+
+    /// The same mesh with every corner multiplied by `scale` (above 0), without checking it again:
+    /// a positive scale keeps a mesh closed, wound the same way and free of crossings, and it
+    /// keeps each box of the hierarchy the box of its triangles to the bit (rounding is monotonic),
+    /// so this costs one pass over the corners and the nodes, not a new hierarchy.
+    ///
+    /// # Panics
+    /// When `scale` is not a positive number.
+    #[must_use]
+    pub fn scaled(&self, scale: f64) -> Self {
+        assert!(scale.is_finite() && scale > 0.0, "a mesh is scaled by a positive number, not {scale}");
+        let nodes = self
+            .nodes
+            .iter()
+            .map(|n| BvhNode { bounds: Aabb::new(n.bounds.lo * scale, n.bounds.hi * scale), ..*n })
+            .collect();
+        Self {
+            vertices: self.vertices.iter().map(|v| *v * scale).collect(),
+            triangles: self.triangles.clone(),
+            nodes,
+            order: self.order.clone(),
+        }
     }
 
     fn triangle_bounds(&self, t: usize) -> Aabb {
@@ -705,6 +748,26 @@ mod tests {
         assert!(Mesh::new(v, t).is_ok());
         let (tv, tt) = torus_mesh(1.0, 0.3, 24, 12);
         assert!(Mesh::new(tv, tt).is_ok());
+    }
+
+    #[test]
+    fn a_triangle_with_no_area_is_refused() {
+        // S19's review, minor 4: a box with a triangle [a, a, b] added passes the edge count (its
+        // own two edges a→b and b→a pair up) but bounds nothing; refused, by its index. So is one
+        // whose corners lie on a line. Control: the box alone is a mesh.
+        let (v, t) = box_mesh(Vec3::new(-1.0, -1.0, -1.0), Vec3::new(1.0, 1.0, 1.0));
+        assert!(Mesh::new(v.clone(), t.clone()).is_ok());
+        let mut repeated = t.clone();
+        repeated.push([0, 0, 1]);
+        let why = Mesh::new(v.clone(), repeated).unwrap_err().0;
+        assert!(why.contains(&format!("triangle {}", t.len())) && why.contains("no area"), "{why}");
+        // Three corners on a line, as a closed pair (each edge once each way).
+        let mut lined = v.clone();
+        let base = lined.len() as u32;
+        lined.extend([Vec3::new(5.0, 0.0, 0.0), Vec3::new(6.0, 0.0, 0.0), Vec3::new(7.0, 0.0, 0.0)]);
+        let mut both = t;
+        both.extend([[base, base + 1, base + 2], [base, base + 2, base + 1]]);
+        assert!(Mesh::new(lined, both).unwrap_err().0.contains("no area"));
     }
 
     #[test]

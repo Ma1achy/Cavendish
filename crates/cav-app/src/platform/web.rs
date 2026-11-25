@@ -59,6 +59,20 @@ pub fn dropped(ctx: &egui::Context) -> Vec<(String, Option<Vec<u8>>)> {
         let ctx = ctx.clone();
         wasm_bindgen_futures::spawn_local(async move {
             let name = file.path().to_string_lossy().into_owned();
+            // The size first, from the browser's handle (S19's review, minor 5): a file larger
+            // than the engine keeps is refused before its bytes are read into the page.
+            if let Some(size) = file.web_file().map(|f| f.size())
+                && size > cav_engine::MAX_DROPPED_BYTES as f64
+            {
+                let why = format!(
+                    "{name}: {} MiB is more than the {} MiB a dropped file may be",
+                    (size / f64::from(1u32 << 20)).round(),
+                    cav_engine::MAX_DROPPED_BYTES >> 20
+                );
+                log::warn!("{why}");
+                note(&why);
+                return;
+            }
             match file.bytes_async().await {
                 Ok(bytes) => DROPPED.with(|d| d.borrow_mut().push((name, Some(bytes)))),
                 Err(why) => log::warn!("{name} could not be read: {why}"),
@@ -418,9 +432,22 @@ impl Remote {
                         worker.terminate();
                     }
                 }
-                Action::Post { slot, ticket, request } => {
+                Action::Post { slot, ticket, request, assets } => {
                     let message = js_sys::Object::new();
-                    let bytes = js_sys::Uint8Array::from(request.as_slice());
+                    // The held meshes this worker has not been sent yet go first, once each
+                    // (S19's review, I4): the page's store has their bytes.
+                    let held: Vec<(String, String, std::sync::Arc<[u8]>)> = assets
+                        .into_iter()
+                        .filter_map(|hash| {
+                            cav_sim::assets::bytes(&hash).map(|(name, bytes)| (hash, name, bytes))
+                        })
+                        .collect();
+                    let sent = if held.is_empty() {
+                        request.clone()
+                    } else {
+                        cav_engine::forward::wire::with_assets(&request, &held)
+                    };
+                    let bytes = js_sys::Uint8Array::from(sent.as_slice());
                     let _ = js_sys::Reflect::set(&message, &"ticket".into(), &(ticket as f64).into());
                     let _ = js_sys::Reflect::set(&message, &"request".into(), &bytes);
                     let transfer = js_sys::Array::of1(&bytes.buffer());

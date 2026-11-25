@@ -49,42 +49,104 @@ pub fn remote() -> Option<Rc<dyn Remote>> {
 
 const CONTRIBUTION: u8 = 1;
 const READING: u8 = 2;
+/// Held meshes for the worker to keep, then a job (S19's review, I4).
+const ASSETS: u8 = 3;
 const NOTHING: u8 = 0;
 /// The world's index in a request (the floor's is `u64::MAX`, a body's its number).
 const WORLD: u64 = u64::MAX - 1;
+/// The length of a held mesh's hash ([`cav_sim::assets::hash`]).
+const HASH: usize = 16;
+
+/// A job's request: its kind, its head (a source's index, or a time's bits), the hashes of the
+/// held meshes its scene names (at most 255: a byte of count), then the scene.
+fn request(kind: u8, head: u64, spec: &SceneSpec) -> Vec<u8> {
+    let mut out = vec![kind];
+    out.extend(head.to_le_bytes());
+    let named = cav_sim::assets::named(spec);
+    out.push(u8::try_from(named.len()).unwrap_or(u8::MAX));
+    for hash in named.iter().take(usize::from(u8::MAX)) {
+        out.extend(hash.as_bytes());
+    }
+    out.extend(serde_json::to_vec(spec).expect("a scene is JSON"));
+    out
+}
 
 /// The request for `source`'s contribution to the signal of `spec`, at the shots
 /// `cav_sim::read::shots(spec)` gives (the ones the engine schedules).
 #[must_use]
 pub fn contribution_request(spec: &SceneSpec, source: SourceId) -> Vec<u8> {
-    let mut out = vec![CONTRIBUTION];
     let index = match source {
         SourceId::Floor => u64::MAX,
         SourceId::World => WORLD,
         SourceId::Body(n) => n as u64,
     };
-    out.extend(index.to_le_bytes());
-    out.extend(serde_json::to_vec(spec).expect("a scene is JSON"));
-    out
+    request(CONTRIBUTION, index, spec)
 }
 
 /// The request for what every tower of `spec` reads from a shot read out at `time`.
 #[must_use]
 pub fn reading_request(spec: &SceneSpec, time: f64) -> Vec<u8> {
-    let mut out = vec![READING];
-    out.extend(time.to_bits().to_le_bytes());
-    out.extend(serde_json::to_vec(spec).expect("a scene is JSON"));
+    request(READING, time.to_bits(), spec)
+}
+
+/// The hashes of the held meshes a request's scene names, read from its head (not its scene):
+/// what a worker must hold before it runs the job. None for bytes that are not a request.
+#[must_use]
+pub fn needs(request: &[u8]) -> Vec<String> {
+    let Some(&count) = request.get(9) else { return Vec::new() };
+    let hashes = request.get(10..10 + HASH * usize::from(count)).unwrap_or_default();
+    hashes
+        .as_chunks::<HASH>()
+        .0
+        .iter()
+        .filter_map(|h| std::str::from_utf8(h).ok())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// `request` with the held meshes `assets` (each a hash, the file's name and its bytes) put
+/// before it, for a worker that does not hold them yet: it keeps them, then runs the job. A page
+/// sends each mesh to each worker once (`cav-app`'s lane says which it lacks).
+#[must_use]
+pub fn with_assets(request: &[u8], assets: &[(String, String, std::sync::Arc<[u8]>)]) -> Vec<u8> {
+    let mut out = vec![ASSETS];
+    out.extend((assets.len() as u64).to_le_bytes());
+    for (_, name, bytes) in assets {
+        out.extend((name.len() as u64).to_le_bytes());
+        out.extend(name.as_bytes());
+        out.extend((bytes.len() as u64).to_le_bytes());
+        out.extend(bytes.iter());
+    }
+    out.extend(request);
     out
 }
 
 /// What a job's runner does: the request's work, done here, and its answer as bytes. A request
 /// that cannot be read, or a scene whose shots are refused, answers nothing (the engine never
-/// sends either: it is the same module at both ends).
+/// sends either: it is the same module at both ends). Held meshes sent before the job
+/// ([`with_assets`]) are kept first; one that cannot be kept leaves its bodies unread, with the
+/// voxeliser's words as their warning.
 #[must_use]
 pub fn serve(request: &[u8]) -> Vec<u8> {
     let never = || false;
     let Some((&kind, rest)) = request.split_first() else { return vec![NOTHING] };
-    let Some((head, json)) = rest.split_first_chunk::<8>() else { return vec![NOTHING] };
+    if kind == ASSETS {
+        let mut reader = Reader { bytes: rest, at: 0 };
+        let Ok(count) = reader.count() else { return vec![NOTHING] };
+        for _ in 0..count {
+            let name =
+                reader.count().and_then(|n| reader.take(n).map(|b| String::from_utf8_lossy(b).into_owned()));
+            let Ok(name) = name else { return vec![NOTHING] };
+            let Ok(bytes) = reader.count().and_then(|n| reader.take(n)) else { return vec![NOTHING] };
+            // One that cannot be kept (past the session's cap) is not held: the job then reads
+            // its bodies as unreadable, and its warning says why in the mesh's words.
+            let _ = cav_sim::assets::hold(&name, bytes);
+        }
+        return serve(&rest[reader.at..]);
+    }
+    let Some((head, rest)) = rest.split_first_chunk::<8>() else { return vec![NOTHING] };
+    let Some((&count, rest)) = rest.split_first() else { return vec![NOTHING] };
+    let Some(json) = rest.get(HASH * usize::from(count)..) else { return vec![NOTHING] };
     let Ok(spec) = serde_json::from_slice::<SceneSpec>(json) else { return vec![NOTHING] };
     let head = u64::from_le_bytes(*head);
     let mut out = Writer::default();
@@ -385,6 +447,41 @@ mod tests {
             flags.push((world, (sent.settled, sent.truncated)));
         }
         flags
+    }
+
+    #[test]
+    fn a_held_mesh_travels_with_the_job_that_needs_it() {
+        // S19's review, I4: a body of a held mesh (named by its hash) is read through the wire as
+        // in place, its job's head names the hash, and the mesh sent before the job is kept and
+        // the job answered with the same bits. Control: a scene without one needs nothing, and
+        // an assets message cut short answers nothing.
+        use cav_core::Vec3;
+        use cav_core::voxel::mesh::{box_mesh, to_stl};
+        let (v, t) = box_mesh(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.5, 0.25, 0.75));
+        let bytes = to_stl(&v, &t);
+        let (hash, _) = cav_sim::assets::hold("wired.stl", &bytes).unwrap();
+        let mut spec = cav_sim::dev::point();
+        let mut shape = cav_sim::ShapeSpec::new(
+            cav_sim::ShapeKind::Mesh { file: "wired.stl".into(), scale: 1.0, hash: Some(hash.clone()) },
+            0.125,
+            2,
+        );
+        shape.material = Some("steel".into());
+        spec.bodies.push(cav_sim::BodySpec::shaped(
+            "wired",
+            1.0,
+            shape,
+            cav_sim::Motion::Static { position: [2.0, 1.0, 1.0] },
+        ));
+        assert_eq!(spec.validate(), Ok(()));
+        let request = contribution_request(&spec, SourceId::Body(1));
+        assert_eq!(needs(&request), std::slice::from_ref(&hash));
+        assert!(needs(&contribution_request(&cav_sim::dev::point(), SourceId::Body(0))).is_empty());
+        let _ = same_bits(std::slice::from_ref(&spec));
+        let sent =
+            with_assets(&request, &[(hash, "wired.stl".into(), std::sync::Arc::from(bytes.as_slice()))]);
+        assert_eq!(serve(&sent), serve(&request));
+        assert_eq!(answer(&serve(&sent[..20])), Ok(Answer::Nothing), "cut short");
     }
 
     #[test]
