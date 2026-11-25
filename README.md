@@ -3,7 +3,10 @@
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/title-anim-dark.gif">
   <img src="docs/readme/title-anim-light.gif" alt="Cavendish. Atom-Interferometer Gravity Gradiometry. The icon: a voxel C hanging in a room corner while smoke churns on one wall, its gravity field glows on the other and the floor's quadtree refines beneath it." width="100%">
 </picture>
-<img src="docs/readme/hero.jpg" alt="Thermal plumes rising from warm voxel bodies, drawn in pale pencil on charcoal. An adaptive octree grid runs through the air, turning the smoke into voxels from left to right, above a voxel cut-away of the ground. The gradiometer tower stands among them, running down a shaft into the ground." width="100%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/hero-dark.jpg">
+  <img src="docs/readme/hero-light.jpg" alt="Thermal plumes rising from warm voxel bodies, drawn in pencil. An adaptive octree grid runs through the air, turning the smoke into voxels from left to right, above a voxel cut-away of the ground. The gradiometer tower stands among them, running down a shaft into the ground." width="100%">
+</picture>
 </p>
 
 ---
@@ -35,7 +38,10 @@ Edge, Safari 26, Firefox on Windows: it needs WebGPU). Built from `main` on ever
 </a>
 </p>
 
-<img src="docs/readme/banner-octree.jpg" alt="The plume field on an adaptive quadtree: cells stay coarse in empty air and refine where the smoke has structure." width="100%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/banner-octree-dark.jpg">
+  <img src="docs/readme/banner-octree-light.jpg" alt="The plume field on an adaptive quadtree: cells stay coarse in empty air and refine where the smoke has structure." width="100%">
+</picture>
 
 ## History
 
@@ -43,7 +49,10 @@ The previous code is kept in history: tag `v1-final` (the validated v1 forward m
 oracle) and tag `v2-prototype` (the world-physics prototype; branch `v2-world-physics`, commit `71ec48a`). Their design documents are in `reference/`.
 
 <p>
-<img src="docs/readme/footer.jpg" alt="The same plumes drawn in graphite on bone paper, rising from voxel bodies at ground level beside the gradiometer tower." width="100%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/footer-dark.jpg">
+  <img src="docs/readme/footer-light.jpg" alt="The same plumes drawn in pencil, rising from voxel bodies at ground level beside the gradiometer tower." width="100%">
+</picture>
 </p>
 
 <p align="right">
