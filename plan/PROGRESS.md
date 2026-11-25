@@ -28,9 +28,9 @@ right button to fly, "Inspector › Body › Mass", a gizmo on a halo and F fram
 the history and toast in words over the outliner, Restore beside Home. Minors 1, 3–7, 9–13, 15
 done; 2, 8 (in part), 14 in `plan/IDEAS.md` with why.
 
-**Numbers.** `quick` 618 (floor raised each PR), 26–30 s warm; gpu, oracle and web: §7.7 of the
-brief; validation 113 of 113 against `s4-big-scenes`, no case added (UI fixes), none dropped, no
-tolerance moved. Pictures retaken (release, each within 180 s), with `editor-context.png` and
+**Numbers.** `quick` 618 (floor raised each PR), 25–30 s warm; `gpu` 40 in 12 s; `oracle` 58 in
+432 s; `web` green in 260 s (all on main at 463dc1a); validation 113 of 113 against
+`s4-big-scenes`, the report unchanged: no case added (UI fixes), none dropped, no tolerance moved. Pictures retaken (release, each within 180 s), with `editor-context.png` and
 `timings.txt` new.
 
 **Decided (worth a second look).** R2 fixed in the engine rather than by pausing playback; the
