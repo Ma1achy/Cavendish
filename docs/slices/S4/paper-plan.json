@@ -1,0 +1,1006 @@
+{
+  "cavendish_figure": 2,
+  "what": "paper",
+  "subject": {
+    "tower": null,
+    "channel": "gradiometer",
+    "span": null,
+    "pane": 1,
+    "playhead_s": 0.0
+  },
+  "engine": {
+    "version": "0.0.0",
+    "revision": "73c18fbc61405628f019c88eec5a66a8f2ed4fc0",
+    "dirty": false,
+    "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
+  },
+  "numerics": {
+    "engine": {
+      "version": "0.0.0",
+      "revision": "73c18fbc61405628f019c88eec5a66a8f2ed4fc0",
+      "dirty": false,
+      "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
+    },
+    "platform": "x86_64-windows",
+    "precision": "f64 on the CPU",
+    "quadrature": "Gauss { order: 6, panel: 0.1 }, panels halved until two rules agree",
+    "phase_tolerance_rad": 1e-10,
+    "phase_tolerance_relative": 1e-12,
+    "max_halvings": 8,
+    "max_nodes_per_read": 4000000,
+    "constants": {
+      "big_g": 6.6743e-11,
+      "hbar": 1.0545718176461565e-34,
+      "atom_mass_kg": 1.4431558652473234e-25,
+      "kick_velocity_m_per_s": 6.577901532502563,
+      "gravity_m_per_s2": 9.81
+    },
+    "replay": "bit-identical with the same binary on the same platform (sin and cos are the platform's)"
+  },
+  "scene": {
+    "name": "stress-1e10",
+    "spec": {
+      "version": 1,
+      "name": "stress-1e10",
+      "description": "A square kilometre of rolling ground at a 5 cm pitch, forty buildings and a road, around the array: about 10^10 finest cells. Fly over it; the instrument reads the 20 m around each tower.",
+      "duration": 10.0,
+      "array": {
+        "instrument": {
+          "tower_height": 10.1,
+          "ifo_separation": 5.0,
+          "half_sequence": 0.73,
+          "launch_velocity": 3.86,
+          "cycle": 2.0,
+          "atom_mass": 1.4431558652473234e-25,
+          "gravity": 9.81,
+          "kicks": 1000,
+          "launch_floor": true,
+          "sign": "LowerMinusUpper"
+        },
+        "towers": [
+          {
+            "label": "tower 1",
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            },
+            "instrument": null
+          },
+          {
+            "label": "tower 2",
+            "position": [
+              4.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            },
+            "instrument": null
+          },
+          {
+            "label": "tower 3",
+            "position": [
+              -4.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            },
+            "instrument": null
+          },
+          {
+            "label": "tower 4",
+            "position": [
+              0.0,
+              4.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            },
+            "instrument": null
+          },
+          {
+            "label": "tower 5",
+            "position": [
+              0.0,
+              -4.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            },
+            "instrument": null
+          }
+        ],
+        "schedule": {
+          "jitter": null,
+          "alternate": null,
+          "gaps": null,
+          "window": null,
+          "loss": 0.0,
+          "seed": 0
+        }
+      },
+      "room": null,
+      "floor": null,
+      "bodies": [],
+      "world": {
+        "pitch": 0.05,
+        "supersample": 2,
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "materials": [
+          {
+            "label": "ground",
+            "density": 1800.0,
+            "colour": "#708054"
+          },
+          {
+            "label": "concrete",
+            "density": 2400.0,
+            "colour": "#b2b0a8"
+          },
+          {
+            "label": "asphalt",
+            "density": 2300.0,
+            "colour": "#46484c"
+          },
+          {
+            "label": "brick",
+            "density": 1900.0,
+            "colour": "#9c5440"
+          }
+        ],
+        "pieces": [
+          {
+            "label": "road",
+            "material": 2,
+            "kind": {
+              "Box": {
+                "centre": [
+                  0.0,
+                  55.5,
+                  -0.47500000000000003
+                ],
+                "size": [
+                  1000.0,
+                  7.0,
+                  0.85
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 1",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -381.64948453608247,
+                  -364.1443298969072,
+                  2.4278350515463916
+                ],
+                "size": [
+                  22.26804123711338,
+                  12.329896907216494,
+                  6.855670103092783
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 2",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -188.6082474226804,
+                  -376.77319587628864,
+                  8.180412371134022
+                ],
+                "size": [
+                  17.216494845360813,
+                  8.721649484536101,
+                  18.360824742268044
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 3",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  44.43298969072165,
+                  -384.4020618556701,
+                  4.93298969072165
+                ],
+                "size": [
+                  12.164948453608247,
+                  15.113402061855652,
+                  11.8659793814433
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 4",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  244.4742268041237,
+                  -367.03092783505156,
+                  1.6855670103092786
+                ],
+                "size": [
+                  21.11340206185568,
+                  11.50515463917526,
+                  5.371134020618557
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 5",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  437.5154639175258,
+                  -374.659793814433,
+                  7.438144329896907
+                ],
+                "size": [
+                  16.061855670103114,
+                  17.896907216494867,
+                  16.876288659793815
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 6",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -379.44329896907215,
+                  -277.2886597938144,
+                  4.190721649484535
+                ],
+                "size": [
+                  11.010309278350519,
+                  14.288659793814418,
+                  10.38144329896907
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 7",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -179.40206185567013,
+                  -259.91752577319585,
+                  9.943298969072165
+                ],
+                "size": [
+                  19.958762886597924,
+                  10.680412371134025,
+                  21.88659793814433
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 8",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  13.639175257731958,
+                  -267.54639175257734,
+                  6.695876288659793
+                ],
+                "size": [
+                  14.907216494845361,
+                  17.072164948453633,
+                  15.391752577319586
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 9",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  253.68041237113403,
+                  -280.1752577319588,
+                  3.448453608247423
+                ],
+                "size": [
+                  23.855670103092763,
+                  13.463917525773184,
+                  8.896907216494846
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 10",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  446.7216494845361,
+                  -262.80412371134025,
+                  9.20103092783505
+                ],
+                "size": [
+                  18.804123711340196,
+                  9.855670103092791,
+                  20.4020618556701
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 11",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -410.2371134020618,
+                  -160.43298969072163,
+                  5.953608247422681
+                ],
+                "size": [
+                  13.752577319587601,
+                  16.24742268041237,
+                  13.907216494845361
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 12",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -170.1958762886598,
+                  -173.06185567010309,
+                  2.7061855670103094
+                ],
+                "size": [
+                  22.701030927835035,
+                  12.63917525773195,
+                  7.412371134020619
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 13",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  22.84536082474227,
+                  -155.69072164948454,
+                  8.458762886597938
+                ],
+                "size": [
+                  17.649484536082475,
+                  9.030927835051557,
+                  18.917525773195877
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 14",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  255.88659793814435,
+                  -163.31958762886597,
+                  5.211340206185566
+                ],
+                "size": [
+                  12.597938144329902,
+                  15.422680412371136,
+                  12.422680412371133
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 15",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  455.92783505154637,
+                  -145.94845360824743,
+                  1.963917525773196
+                ],
+                "size": [
+                  21.546391752577335,
+                  11.814432989690715,
+                  5.927835051546392
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 16",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -401.03092783505156,
+                  -48.57731958762887,
+                  7.716494845360824
+                ],
+                "size": [
+                  16.49484536082474,
+                  8.206185567010309,
+                  17.432989690721648
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 17",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -167.98969072164948,
+                  -56.20618556701031,
+                  4.469072164948454
+                ],
+                "size": [
+                  11.443298969072174,
+                  14.597938144329895,
+                  10.938144329896907
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 18",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  32.051546391752574,
+                  -38.83505154639175,
+                  10.221649484536082
+                ],
+                "size": [
+                  20.39175257731959,
+                  10.989690721649481,
+                  22.443298969072163
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 19",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  225.09278350515464,
+                  -46.46391752577319,
+                  6.9742268041237105
+                ],
+                "size": [
+                  15.340206185567013,
+                  17.381443298969074,
+                  15.948453608247421
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 20",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  458.1340206185567,
+                  -59.09278350515463,
+                  3.7268041237113403
+                ],
+                "size": [
+                  10.288659793814418,
+                  13.77319587628866,
+                  9.45360824742268
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 21",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -391.8247422680412,
+                  68.27835051546391,
+                  9.47938144329897
+                ],
+                "size": [
+                  19.23711340206188,
+                  10.164948453608247,
+                  20.95876288659794
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 22",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -198.7835051546392,
+                  60.649484536082475,
+                  6.231958762886598
+                ],
+                "size": [
+                  14.185567010309285,
+                  16.55670103092784,
+                  14.463917525773196
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 23",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  41.25773195876289,
+                  48.02061855670103,
+                  2.984536082474227
+                ],
+                "size": [
+                  23.134020618556697,
+                  12.94845360824742,
+                  7.969072164948454
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 24",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  234.29896907216494,
+                  65.3917525773196,
+                  8.737113402061855
+                ],
+                "size": [
+                  18.082474226804123,
+                  9.340206185567013,
+                  19.47422680412371
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 25",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  427.340206185567,
+                  57.76288659793815,
+                  5.489690721649485
+                ],
+                "size": [
+                  13.030927835051557,
+                  15.731958762886599,
+                  12.97938144329897
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 26",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -382.6185567010309,
+                  185.1340206185567,
+                  2.2422680412371134
+                ],
+                "size": [
+                  21.979381443298962,
+                  12.1237113402062,
+                  6.484536082474227
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 27",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -189.5773195876289,
+                  172.50515463917526,
+                  7.994845360824742
+                ],
+                "size": [
+                  16.927835051546396,
+                  8.515463917525778,
+                  17.989690721649485
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 28",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  43.4639175257732,
+                  164.87628865979383,
+                  4.747422680412371
+                ],
+                "size": [
+                  11.876288659793815,
+                  14.907216494845358,
+                  11.494845360824742
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 29",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  243.50515463917526,
+                  182.24742268041237,
+                  1.5
+                ],
+                "size": [
+                  20.824742268041234,
+                  11.298969072164937,
+                  5.0
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 30",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  436.5463917525773,
+                  174.61855670103094,
+                  7.252577319587628
+                ],
+                "size": [
+                  15.77319587628864,
+                  17.690721649484544,
+                  16.505154639175256
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 31",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -380.4123711340206,
+                  271.9896907216495,
+                  4.005154639175258
+                ],
+                "size": [
+                  10.721649484536101,
+                  14.082474226804152,
+                  10.010309278350515
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 32",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -180.37113402061857,
+                  289.36082474226805,
+                  9.757731958762886
+                ],
+                "size": [
+                  19.670103092783506,
+                  10.474226804123703,
+                  21.51546391752577
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 33",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  12.670103092783505,
+                  281.7319587628866,
+                  6.510309278350515
+                ],
+                "size": [
+                  14.61855670103093,
+                  16.86597938144331,
+                  15.02061855670103
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 34",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  252.71134020618558,
+                  269.10309278350513,
+                  3.2628865979381443
+                ],
+                "size": [
+                  23.567010309278345,
+                  13.25773195876286,
+                  8.525773195876289
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 35",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  445.75257731958766,
+                  286.4742268041237,
+                  9.015463917525773
+                ],
+                "size": [
+                  18.51546391752578,
+                  9.649484536082468,
+                  20.030927835051546
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 36",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -411.20618556701027,
+                  388.8453608247423,
+                  5.768041237113402
+                ],
+                "size": [
+                  13.463917525773184,
+                  16.041237113402076,
+                  13.536082474226804
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 37",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  -171.16494845360825,
+                  376.2164948453608,
+                  2.520618556701031
+                ],
+                "size": [
+                  22.412371134020617,
+                  12.432989690721627,
+                  7.041237113402062
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 38",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  21.876288659793815,
+                  393.58762886597935,
+                  8.27319587628866
+                ],
+                "size": [
+                  17.360824742268044,
+                  8.824742268041234,
+                  18.54639175257732
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 39",
+            "material": 1,
+            "kind": {
+              "Box": {
+                "centre": [
+                  254.9175257731959,
+                  385.9587628865979,
+                  5.025773195876289
+                ],
+                "size": [
+                  12.309278350515484,
+                  15.216494845360842,
+                  12.051546391752577
+                ]
+              }
+            }
+          },
+          {
+            "label": "building 40",
+            "material": 3,
+            "kind": {
+              "Box": {
+                "centre": [
+                  454.9587628865979,
+                  403.3298969072165,
+                  1.7783505154639174
+                ],
+                "size": [
+                  21.25773195876286,
+                  11.608247422680392,
+                  5.556701030927835
+                ]
+              }
+            }
+          },
+          {
+            "label": "ground",
+            "material": 0,
+            "kind": {
+              "Terrain": {
+                "lo": [
+                  -500.0,
+                  -500.0
+                ],
+                "hi": [
+                  500.0,
+                  500.0
+                ],
+                "bottom": -1.55,
+                "level": -0.3,
+                "relief": 0.25,
+                "wavelength": 160.0,
+                "seed": 1
+              }
+            }
+          }
+        ],
+        "stream": {
+          "tower_radius": 8.0
+        },
+        "read": {
+          "radius": 20.0,
+          "tolerance": 0.001
+        },
+        "lod": {
+          "error_px": 4.0
+        }
+      }
+    }
+  },
+  "paper": "Plan",
+  "data": null,
+  "files": [
+    {
+      "file": "paper-plan.svg",
+      "format": "svg",
+      "preset": "paper-full",
+      "size_mm": [
+        260.0,
+        260.0
+      ],
+      "size_points": [
+        737.0078740157481,
+        737.0078740157481
+      ],
+      "command": {
+        "console": "figure paper plan as paper-full size 260x260 to paper-plan.svg",
+        "cli": "cav figure stress-1e10 paper --out paper-plan.svg --preset paper-full --size 260x260",
+        "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's"
+      },
+      "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
+      "title": "Plan · stress-1e10",
+      "pixels": null,
+      "dpi": null,
+      "projection": "orthographic",
+      "paper": {
+        "view": "plan",
+        "scale": "1:6000",
+        "points_per_metre": 0.4724409448818898,
+        "level": 7,
+        "cell_m": 6.4,
+        "finest_level": 7,
+        "bricks": 72,
+        "items": 78,
+        "max_items": 20000,
+        "outlines": 34,
+        "hatching": 0,
+        "dimensions": [
+          {
+            "label": "1000 m",
+            "m": 1000.0
+          },
+          {
+            "label": "1000 m",
+            "m": 1000.0
+          }
+        ],
+        "scale_bar_m": 200.0,
+        "north": "arrow up",
+        "title_block": [
+          "stress-1e10",
+          "Plan, from above",
+          "Scale 1:6000 on 260 × 260 mm",
+          "Matter in cells of 6.4 m",
+          "Cavendish 0.0.0 · 73c18fbc6140"
+        ],
+        "notes": [
+          "the towers' spacing (8 m) is too short to dimension at 1:6000",
+          "4 towers are drawn without their labels, which would overlap or are past 64"
+        ]
+      },
+      "colours": {
+        "background": "#f1ede4",
+        "ink": "#2b2620"
+      }
+    }
+  ],
+  "not_this_figure": []
+}

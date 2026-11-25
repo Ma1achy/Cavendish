@@ -1,0 +1,255 @@
+{
+  "cavendish_figure": 2,
+  "what": "paper",
+  "subject": {
+    "tower": null,
+    "channel": "gradiometer",
+    "span": null,
+    "pane": 1,
+    "playhead_s": 0.0
+  },
+  "engine": {
+    "version": "0.0.0",
+    "revision": "73c18fbc61405628f019c88eec5a66a8f2ed4fc0",
+    "dirty": false,
+    "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
+  },
+  "numerics": {
+    "engine": {
+      "version": "0.0.0",
+      "revision": "73c18fbc61405628f019c88eec5a66a8f2ed4fc0",
+      "dirty": false,
+      "built_from": "revision is the commit checked out when the engine was compiled; dirty is whether the engine's sources (cav-core, cav-sim, cav-engine, the built-in scenes, the workspace's manifest, lock file and toolchain) then differed from that commit: a tracked file changed or an untracked one present. Both are the build's, fixed at compile time: git is not asked when this file is written. Either is `unknown` when the engine was built outside a git repository"
+    },
+    "platform": "x86_64-windows",
+    "precision": "f64 on the CPU",
+    "quadrature": "Gauss { order: 6, panel: 0.1 }, panels halved until two rules agree",
+    "phase_tolerance_rad": 1e-10,
+    "phase_tolerance_relative": 1e-12,
+    "max_halvings": 8,
+    "max_nodes_per_read": 4000000,
+    "constants": {
+      "big_g": 6.6743e-11,
+      "hbar": 1.0545718176461565e-34,
+      "atom_mass_kg": 1.4431558652473234e-25,
+      "kick_velocity_m_per_s": 6.577901532502563,
+      "gravity_m_per_s2": 9.81
+    },
+    "replay": "bit-identical with the same binary on the same platform (sin and cos are the platform's)"
+  },
+  "scene": {
+    "name": "world-box",
+    "spec": {
+      "version": 1,
+      "name": "world-box",
+      "description": "A box of concrete, 4 × 4 × 2 m, in the world volume beside the array: chunks of 8 m at a 25 cm pitch. It reads as the same box made a voxel body and as the prism's closed form.",
+      "duration": 10.0,
+      "array": {
+        "instrument": {
+          "tower_height": 10.1,
+          "ifo_separation": 5.0,
+          "half_sequence": 0.73,
+          "launch_velocity": 3.86,
+          "cycle": 2.0,
+          "atom_mass": 1.4431558652473234e-25,
+          "gravity": 9.81,
+          "kicks": 1000,
+          "launch_floor": true,
+          "sign": "LowerMinusUpper"
+        },
+        "towers": [
+          {
+            "label": "tower 1",
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            },
+            "instrument": null
+          },
+          {
+            "label": "tower 2",
+            "position": [
+              4.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            },
+            "instrument": null
+          },
+          {
+            "label": "tower 3",
+            "position": [
+              -4.0,
+              0.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            },
+            "instrument": null
+          },
+          {
+            "label": "tower 4",
+            "position": [
+              0.0,
+              4.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            },
+            "instrument": null
+          },
+          {
+            "label": "tower 5",
+            "position": [
+              0.0,
+              -4.0,
+              0.0
+            ],
+            "timing": {
+              "offset": 0.0
+            },
+            "instrument": null
+          }
+        ],
+        "schedule": {
+          "jitter": null,
+          "alternate": null,
+          "gaps": null,
+          "window": null,
+          "loss": 0.0,
+          "seed": 0
+        }
+      },
+      "room": null,
+      "floor": null,
+      "bodies": [],
+      "world": {
+        "pitch": 0.25,
+        "supersample": 2,
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "materials": [
+          {
+            "label": "concrete",
+            "density": 2400.0,
+            "colour": "#b2b0a8"
+          }
+        ],
+        "pieces": [
+          {
+            "label": "box",
+            "material": 0,
+            "kind": {
+              "Box": {
+                "centre": [
+                  8.0,
+                  7.0,
+                  1.25
+                ],
+                "size": [
+                  4.0,
+                  4.0,
+                  2.0
+                ]
+              }
+            }
+          }
+        ],
+        "stream": {
+          "tower_radius": 8.0
+        },
+        "read": {
+          "radius": 100.0,
+          "tolerance": 1e-10
+        },
+        "lod": {
+          "error_px": 4.0
+        }
+      }
+    }
+  },
+  "paper": "Plan",
+  "data": null,
+  "files": [
+    {
+      "file": "paper-world-box.svg",
+      "format": "svg",
+      "preset": "paper-full",
+      "size_mm": [
+        178.0,
+        90.0
+      ],
+      "size_points": [
+        504.5669291338583,
+        255.1181102362205
+      ],
+      "command": {
+        "console": "figure paper plan as paper-full to paper-world-box.svg",
+        "cli": "cav figure world-box paper --out paper-world-box.svg --preset paper-full",
+        "note": "the console line is run on an engine holding this scene; the playhead and, for a view, the pane's camera are the session's"
+      },
+      "fonts": "Ubuntu Light and Ubuntu Mono (Ubuntu Font Licence 1.0); in SVG and PDF the text is the glyphs' outlines",
+      "title": "Plan · world-box",
+      "pixels": null,
+      "dpi": null,
+      "projection": "orthographic",
+      "paper": {
+        "view": "plan",
+        "scale": "1:300",
+        "points_per_metre": 9.448818897637796,
+        "level": 1,
+        "cell_m": 0.5,
+        "finest_level": 1,
+        "bricks": 1,
+        "items": 61,
+        "max_items": 20000,
+        "outlines": 1,
+        "hatching": 0,
+        "dimensions": [
+          {
+            "label": "4 m",
+            "m": 4.0
+          },
+          {
+            "label": "4 m",
+            "m": 4.0
+          },
+          {
+            "label": "4 m",
+            "m": 4.0
+          },
+          {
+            "label": "4 m",
+            "m": 4.0
+          }
+        ],
+        "scale_bar_m": 10.0,
+        "north": "arrow up",
+        "title_block": [
+          "world-box",
+          "Plan, from above",
+          "Scale 1:300 on 178 × 90 mm",
+          "Matter in cells of 0.5 m",
+          "Cavendish 0.0.0 · 73c18fbc6140"
+        ],
+        "notes": []
+      },
+      "colours": {
+        "background": "#f1ede4",
+        "ink": "#2b2620"
+      }
+    }
+  ],
+  "not_this_figure": []
+}
