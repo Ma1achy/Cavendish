@@ -327,7 +327,7 @@ fn table(engine: &Engine, figure: &Figure) -> Result<Table, String> {
             column("readout".into(), "s", readout);
             column("taken".into(), "1 if taken or 0 if not", taken);
         }
-        FigureKind::View => {}
+        FigureKind::View | FigureKind::Paper => {}
     }
     Ok(Table { columns: names, values: Values::Held(held) })
 }
@@ -394,6 +394,10 @@ fn cli_line(engine: &Engine, figure: &Figure, file: &str) -> String {
     }
     if let Some(dpi) = figure.dpi {
         line.push_str(&format!(" --dpi {dpi}"));
+    }
+    if let Some(cav_engine::PaperView::SectionX(at) | cav_engine::PaperView::SectionY(at)) = figure.paper {
+        let axis = if matches!(figure.paper, Some(cav_engine::PaperView::SectionX(_))) { "x" } else { "y" };
+        line.push_str(&format!(" --section {axis},{at}"));
     }
     if !figure.title {
         line.push_str(" --no-title");
@@ -473,6 +477,7 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
         FigureKind::Cadence => PaneContent::Cadence,
         FigureKind::Flight => PaneContent::Flight,
         FigureKind::View => return Err("a view of the scene is drawn by the renderer: export it".into()),
+        FigureKind::Paper => return Ok(paper(engine, figure, file, style, size, pixels)),
     };
     let points = [(size[0] / MM_PER_POINT) as f32, (size[1] / MM_PER_POINT) as f32];
     let Plot { drawing, drawn, described } =
@@ -569,6 +574,61 @@ pub fn build(engine: &Engine, figure: &Figure, file: &str) -> Result<Built, Stri
     merge(&mut provenance, extra);
     merge(&mut shared, data);
     Ok(Built { drawing, table: Some(table), figure: shared, provenance, style, pixels })
+}
+
+/// A figure of the scene as a technical drawing ([`crate::paper::drawing`]): a plan or a section,
+/// ink on cream at a stated scale, with no data file (what it draws is the scene, which the
+/// record holds verbatim).
+fn paper(
+    engine: &Engine,
+    figure: &Figure,
+    file: &str,
+    style: Style,
+    size: [f64; 2],
+    pixels: Option<[u32; 2]>,
+) -> Built {
+    let spec = engine.spec();
+    let points = [(size[0] / MM_PER_POINT) as f32, (size[1] / MM_PER_POINT) as f32];
+    let build = cav_engine::build();
+    let revision = crate::paper::Revision {
+        version: build.version.clone(),
+        revision: build.revision.clone(),
+        dirty: build.dirty,
+    };
+    let view = figure.paper.unwrap_or_default();
+    let (drawing, drawn) =
+        crate::paper::drawing(spec, engine.time(), view, &style, points, figure.title, &revision, &Outlines);
+    let (mut shared, mut provenance) = provenance(engine, figure, file, &style);
+    merge(
+        &mut provenance,
+        json!({
+            "title": figure.title.then_some(&drawing.title),
+            "pixels": pixels,
+            "dpi": pixels.map(|_| figure.dpi.unwrap_or(style.dpi)),
+            "projection": "orthographic",
+            "paper": {
+                "view": view.words(),
+                "scale": format!("1:{}", drawn.scale),
+                "points_per_metre": drawn.points_per_metre,
+                "level": drawn.level,
+                "cell_m": drawn.cell,
+                "finest_level": drawn.finest_level,
+                "bricks": drawn.bricks,
+                "items": drawing.items.len(),
+                "max_items": crate::paper::MAX_PAPER_ITEMS,
+                "outlines": drawn.outline_items.len(),
+                "hatching": drawn.hatch_items.len(),
+                "dimensions": drawn.dimensions.iter().map(|(label, metres)| json!({ "label": label, "m": metres })).collect::<Vec<_>>(),
+                "scale_bar_m": drawn.scale_bar,
+                "north": drawn.north,
+                "title_block": drawn.title_block,
+                "notes": drawn.notes,
+            },
+            "colours": { "background": crate::paper::PAPER.css(), "ink": crate::paper::INK.css() },
+        }),
+    );
+    merge(&mut shared, json!({ "paper": view, "data": null }));
+    Built { drawing, table: None, figure: shared, provenance, style, pixels }
 }
 
 /// A record as the text of its file.

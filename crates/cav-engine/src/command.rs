@@ -125,11 +125,16 @@ pub enum FigureKind {
     Flight,
     /// A pane's view of the scene, as the renderer draws it.
     View,
+    /// The scene as a technical drawing on paper, orthographic: a plan from above or a vertical
+    /// section ([`PaperView`]), with a scale bar, a north arrow, dimension lines and a title
+    /// block.
+    Paper,
 }
 
 impl FigureKind {
     /// Every kind, in the order the console lists them.
-    pub const ALL: [Self; 5] = [Self::Signal, Self::Periodogram, Self::Cadence, Self::Flight, Self::View];
+    pub const ALL: [Self; 6] =
+        [Self::Signal, Self::Periodogram, Self::Cadence, Self::Flight, Self::View, Self::Paper];
 
     /// The word the console uses.
     #[must_use]
@@ -140,6 +145,7 @@ impl FigureKind {
             Self::Cadence => "cadence",
             Self::Flight => "flight",
             Self::View => "view",
+            Self::Paper => "paper",
         }
     }
 
@@ -147,6 +153,64 @@ impl FigureKind {
     #[must_use]
     pub fn parse(word: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.name() == word)
+    }
+}
+
+/// What a paper drawing ([`FigureKind::Paper`]) shows: the scene from above, or a vertical cut
+/// through it. Positions are metres in the world's frame (x east, y north, z up).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub enum PaperView {
+    /// From above, north up the page.
+    #[default]
+    Plan,
+    /// The cut through the plane x = this many metres, looking west: north to the right of the
+    /// page, up up it. Finite.
+    SectionX(f64),
+    /// The cut through the plane y = this many metres, looking north: east to the right of the
+    /// page, up up it. Finite.
+    SectionY(f64),
+}
+
+impl PaperView {
+    /// The words the console writes it as: `plan`, `section x 12`, `section y -40`.
+    #[must_use]
+    pub fn words(self) -> String {
+        match self {
+            Self::Plan => "plan".into(),
+            Self::SectionX(at) => format!("section x {at}"),
+            Self::SectionY(at) => format!("section y {at}"),
+        }
+    }
+
+    /// The view some text names: `plan`, or a section as `section x 12`, `x 12`, `x=12` or
+    /// `y,-40` (metres). `None` when it names none, or the place is not a finite number.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        let words: Vec<&str> = text
+            .split(|c: char| c.is_whitespace() || c == '=' || c == ',')
+            .filter(|w| !w.is_empty())
+            .collect();
+        let (axis, at) = match words.as_slice() {
+            ["plan"] => return Some(Self::Plan),
+            ["section", axis, at] | [axis, at] => (*axis, *at),
+            _ => return None,
+        };
+        let at = at.parse::<f64>().ok().filter(|v| v.is_finite())?;
+        match axis {
+            "x" => Some(Self::SectionX(at)),
+            "y" => Some(Self::SectionY(at)),
+            _ => None,
+        }
+    }
+
+    /// The place of a section's cut, metres, if it is one and that is finite; `Some(0)` for a
+    /// plan. `None` only for a section at a place that is not a number.
+    #[must_use]
+    pub fn finite(self) -> Option<f64> {
+        match self {
+            Self::Plan => Some(0.0),
+            Self::SectionX(at) | Self::SectionY(at) => at.is_finite().then_some(at),
+        }
     }
 }
 
@@ -226,6 +290,10 @@ pub struct Figure {
     /// carries in its metadata, which is not drawn, is kept.
     #[serde(default = "titled")]
     pub title: bool,
+    /// For a paper drawing: a plan or a section; a plan if absent. Not used by any other kind
+    /// (and absent from their JSON).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paper: Option<PaperView>,
 }
 
 /// A figure has a title unless told otherwise.
@@ -249,6 +317,7 @@ impl Figure {
             size_mm: None,
             dpi: None,
             title: true,
+            paper: None,
         }
     }
 

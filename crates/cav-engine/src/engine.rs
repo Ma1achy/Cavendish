@@ -815,6 +815,11 @@ impl Engine {
         {
             return Err(no_tower(n, towers));
         }
+        if let Some(view) = figure.paper
+            && view.finite().is_none()
+        {
+            return Err(format!("a section is cut at a place in metres, not at {}", view.words()));
+        }
         if figure.what == FigureKind::View && figure.pane >= self.panes {
             return Err(format!("there is no pane {}; the figure has {}", figure.pane + 1, self.panes));
         }

@@ -95,7 +95,7 @@ pub struct RenderArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct FigureArgs {
-    /// What the figure shows: `signal` (every tower's, or one's), `periodogram`, `cadence` (the spectral window), `flight` (the atoms' flights) or `view` (a pane's view of the scene).
+    /// What the figure shows: `signal` (every tower's, or one's), `periodogram`, `cadence` (the spectral window), `flight` (the atoms' flights), `view` (a pane's view of the scene) or `paper` (a technical drawing of the scene: a plan, or a section with `section`).
     pub what: String,
     /// The file to write: its extension is the format, `.svg`, `.pdf` or `.png`. The data (`.csv`, or `.npy` when long) and a `.json` of axes, units and provenance are written beside it under the same name.
     pub file: String,
@@ -115,6 +115,8 @@ pub struct FigureArgs {
     pub pane: Option<usize>,
     /// Whether the picture has a title at its top (default true). Without one the axes take the room and the record's `title` is null.
     pub title: Option<bool>,
+    /// For a paper drawing: a vertical section, as `x 12` (the cut through x = 12 m, looking west) or `y -40` (through y = -40 m, looking north). Default: a plan from above.
+    pub section: Option<String>,
 }
 
 impl Cav {
@@ -264,7 +266,7 @@ impl Cav {
         use cav_engine::{ChannelName, Figure, FigureFormat, FigureKind};
         let what = FigureKind::parse(&args.what).ok_or_else(|| {
             format!(
-                "`{}` is not something a figure shows: signal, periodogram, cadence, flight or view",
+                "`{}` is not something a figure shows: signal, periodogram, cadence, flight, view or paper",
                 args.what
             )
         })?;
@@ -290,6 +292,20 @@ impl Cav {
         (figure.span, figure.size_mm, figure.dpi) = (args.span, args.size_mm, args.dpi);
         figure.title = args.title.unwrap_or(true);
         figure.pane = if what == FigureKind::View { pane } else { 0 };
+        let section = args
+            .section
+            .as_deref()
+            .map(|text| {
+                cav_engine::PaperView::parse(text).ok_or_else(|| {
+                    format!("`{text}` is not a section; write it as `x 12` or `y -40` (metres)")
+                })
+            })
+            .transpose()?;
+        if what == FigureKind::Paper {
+            figure.paper = Some(section.unwrap_or_default());
+        } else if section.is_some() {
+            return Err("`section` is for a paper drawing".into());
+        }
         within_this_server(&figure)?;
         let command = cav_engine::Command::Export {
             what: cav_engine::ExportKind::Figure(Box::new(figure)),

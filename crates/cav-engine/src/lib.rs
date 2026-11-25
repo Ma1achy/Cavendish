@@ -39,8 +39,8 @@ pub mod voxels;
 pub use cav_sim::{PaneContent, Target};
 pub use command::{
     COMB_HARMONICS, ChannelName, Comb, Command, DEFAULT_FIGURE_PRESET, ExportKind, Figure, FigureFormat,
-    FigureKind, Harmonic, MAX_FIGURE_DPI, MAX_FIGURE_MM, MAX_PANES, PeriodogramReply, Query, ReadingReply,
-    Reply, SignalReply, Stage, Standing, Stats, TowerReading, ViewCommand, WindowReply,
+    FigureKind, Harmonic, MAX_FIGURE_DPI, MAX_FIGURE_MM, MAX_PANES, PaperView, PeriodogramReply, Query,
+    ReadingReply, Reply, SignalReply, Stage, Standing, Stats, TowerReading, ViewCommand, WindowReply,
 };
 pub use console::{COMMANDS, CommandDoc, Request, describe, help, render, value_of};
 pub use engine::{Engine, Exports, FigureExporter, REPLAY_PATIENCE, TYPED_LINE_PATIENCE, estimate_text};
