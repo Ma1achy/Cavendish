@@ -158,3 +158,23 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   Oscillating mass, Pendulum and Walker one. Each starter could draw its own small picture from
   its shape (a projected outline, as the Place ghost does). Not done: a picture a tile is polish
   the wizard does not need to be used.
+
+## From S19 (left, with why)
+
+- **Progressive refinement** (preview while a drag goes on, the chosen tier on idle): the detail
+  tiers' main use. With the tiers (TASK-S19-06), in S20.
+- **Mixed cells hold mass, not moments**: a cell two materials share keeps the sum of their masses
+  at its centre (`VoxTree::mixed`); S5's exact piece moments (TASK-S5-09) fill the same table with
+  centroids and second moments. The table is where that revision goes.
+- **The Paint tool's stroke as one undo** needs a `Set` inside an item just inserted to continue
+  the `Insert`'s step (the engine's run keeps an item path as it keeps a field's). Designed in the
+  S19 brief (§2), not built: TASK-S19-20.
+- **The probe's field leaves out the room, the floor and the world**: it says "bodies". The world's
+  chunk moments would give it the world's too, cheaply, once S5's octree is there.
+- **Lead and steel look alike** in the material library's colours (two greys); a palette chosen
+  for telling materials apart (and colour-blind-safe) would read better than "looks like the metal".
+- **The label column follows the inspector's first width**, not the width it is dragged to (egui
+  widens a panel to its content, and a column that followed it pushed it wider every frame): with
+  docking (S20), take the dock area's own width, which egui_dock does not grow to content.
+- **A material's elastic and thermal numbers are read by nothing yet**: rigid dynamics (S7) and
+  heat (S13) will; until then the inspector could fold them under "Advanced".

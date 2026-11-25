@@ -4,7 +4,7 @@ Written by `cargo xtask validate --report`; do not edit by hand. Every case is d
 `cav_validate::case!` beside the code it checks, and all of them are listed here: one that did not run
 is shown as **missing**, never left out.
 
-**113 of 113 cases pass; worst margin: voxel.cube_to_point_order at 99% of its tolerance.**
+**115 of 115 cases pass; worst margin: voxel.cube_to_point_order at 99% of its tolerance.**
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="error-vs-tolerance-dark.svg"><img src="error-vs-tolerance-light.svg" alt="Each case's measured error against its tolerance, on a log scale." width="100%"></picture>
 
@@ -61,6 +61,13 @@ is shown as **missing**, never left out.
 | `forward.quadrature_on_the_anchors` (S1) | exact self-consistency: the engine's rule (Gauss, 6 nodes, 0.1 s panels) against 12 nodes on 0.025 s panels, on a static mass and the two published anchors; largest difference as a fraction of each series' peak | 2.893e-15 | 1.000e-11 | relative | 0% |  | pass |
 | `forward.audited_read_close_pass` (S1) | exact self-consistency: 10 kg passing 0.5 m from a tower at 2.5 m/s, read until two successive rules agree to 1e-10 rad, against 12 nodes on 1.6 ms panels; largest error over 25 shots and both interferometers | 9.770e-15 | 1.000e-10 | radians | 0% |  | pass |
 | `forward.v1_anchor_fixture` (S1) | v1 oracle: v1's outputs on the three anchors and on the oscillation read by the five towers, frozen in oracle/fixtures/v1 (the oracle tier checks them against v1 itself); engine set to v1's conventions; largest difference as a fraction of each series' peak | 1.575e-15 | 1.000e-10 | relative | 0% |  | pass |
+
+## materials
+
+| Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
+|---|---|---|---|---|---|---|---|
+| `materials.two_material_body_is_the_sum_of_its_parts` (S19) | exact self-consistency: a steel box and a lead box (0.4 m, sharing a face) as one body of two materials, against the two read as separate uniform bodies of density × volume: tower 1's gradiometer phase over every shot, beside it on a 6 s timeline | 7.105e-15 | 1.000e-9 | radians | 0% |  | pass |
+| `materials.imported_box_mesh_is_the_cuboid` (S19) | exact self-consistency: an STL box (1 m × 0.5 m × 0.25 m) imported as a steel body, against the Cuboid body of the same size, material and pitch (0.05 m): the same leaves, and tower 1's gradiometer phase over every shot of a 6 s timeline, relative | 0 | 1.000e-12 | relative | 0% |  | pass |
 
 ## maths
 
