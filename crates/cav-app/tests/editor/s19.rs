@@ -147,3 +147,44 @@ fn mass_is_kept_to_the_bit_through_material_edits() {
         .unwrap();
     assert_eq!(tree_mass(&rig, 1).to_bits(), start.to_bits(), "steel painted over steel");
 }
+
+fn stl_box(half: [f64; 3]) -> Vec<u8> {
+    let h = cav_core::Vec3::from_array(half);
+    let (v, t) = cav_core::voxel::mesh::box_mesh(-h, h);
+    cav_core::voxel::mesh::to_stl(&v, &t)
+}
+
+#[test]
+fn a_dropped_file_adds_a_body() {
+    // S19 I1 through the window: a file dropped on it (its bytes, as a page hands them over)
+    // opens the Import window on it; Import adds the body, fitted to 1 m, where the camera looks,
+    // selected; its corners are one row, not one each; one undo takes it out. Control: a dropped
+    // file that is not a mesh adds nothing, and the console says why.
+    let mut rig = Rig::new();
+    rig.shell.run("load void").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    rig.shell.dropped_file("crate.stl", Some(stl_box([0.5, 0.25, 0.125])));
+    rig.frames(vec![vec![], vec![]]);
+    assert_eq!(rig.shell.import_window.as_ref().map(|f| f.file.as_str()), Some("crate.stl"));
+    rig.click_button("import go");
+    rig.frames(vec![vec![], vec![]]);
+    let spec = rig.shell.engine.spec().clone();
+    assert_eq!(spec.bodies.len(), 1);
+    assert_eq!(spec.bodies[0].label, "crate");
+    assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)));
+    assert!(rig.shell.import_window.is_none(), "the window closed");
+    let shape = spec.bodies[0].shape.as_ref().unwrap();
+    assert!((shape.kind.bounds().unwrap().size().x - 1.0).abs() < 1e-12, "fitted to 1 m");
+    let corners =
+        rig.shell.focus_tree().node("field/bodies[0].shape.kind.Triangles.vertices").expect("one row");
+    assert_eq!(corners.kind, cav_app::keyboard::Kind::ReadOnly);
+    assert!(rig.shell.focus_tree().node("field/bodies[0].shape.kind.Triangles.vertices[0]").is_none());
+    rig.shell.run("undo").unwrap();
+    assert!(rig.shell.engine.spec().bodies.is_empty(), "one undo");
+    rig.shell.dropped_file("notes.txt", Some(b"hello".to_vec()));
+    rig.frames(vec![vec![], vec![]]);
+    rig.click_button("import go");
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.engine.spec().bodies.is_empty(), "control: nothing added");
+    assert!(rig.shell.console_open, "and the console says why");
+}

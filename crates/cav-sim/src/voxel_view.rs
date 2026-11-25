@@ -407,12 +407,9 @@ pub fn section_span(scene: &SceneSpec, axis: crate::shape::Axis, time: f64) -> O
         .filter_map(|(n, body)| {
             let shape = body.shape.as_ref()?;
             let at = body_at(scene, n, time).to_array()[a];
-            let (lo, hi) = match &shape.kind {
-                crate::ShapeKind::Mesh { .. } => (-2.0, 2.0),
-                kind => kind.solid().ok().map(|s| {
-                    let b = s.bounds();
-                    (b.lo.to_array()[a], b.hi.to_array()[a])
-                })?,
+            let (lo, hi) = match shape.kind.bounds() {
+                None => (-2.0, 2.0),
+                Some(b) => (b.lo.to_array()[a], b.hi.to_array()[a]),
             };
             Some((at + lo, at + hi))
         })

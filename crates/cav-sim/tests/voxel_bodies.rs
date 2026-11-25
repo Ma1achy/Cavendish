@@ -258,3 +258,63 @@ cav_validate::case! {
         cav_validate::Measured::Error(worst)
     },
 }
+
+/// An STL box imported (1 m × 0.5 m × 0.25 m, sides an STL's single precision holds exactly;
+/// steel, pitch 0.05 m) against the `Cuboid` body of
+/// the same size, material and pitch, beside tower 1: (whether the leaves are the same, bit for
+/// bit; the largest relative difference of the gradiometer phase over every shot; the imported
+/// tree's mass against ρV, relative). `grow` scales the imported box (1 for the case, 1.1 for its
+/// control).
+fn imported_box_against_cuboid(grow: f64) -> (bool, f64, f64) {
+    use cav_core::voxel::mesh::{box_mesh, to_stl};
+    let half = Vec3::new(0.5, 0.25, 0.125);
+    let (v, t) = box_mesh(-half, half);
+    let bytes = to_stl(&v, &t);
+    let at = [1.5, 0.0, 3.0];
+    let base = scene_with(BodySpec::point("placeholder", 1.0, [9.0, 9.0, 9.0]));
+    let options = cav_sim::import::Options {
+        size: cav_sim::import::Size::Scale(grow),
+        material: "steel".into(),
+        pitch: Some(0.05),
+        at,
+    };
+    let imported = cav_sim::import::body(&base, "box.stl", &bytes, None, &options).unwrap();
+    let mut cuboid = box_of(1.0, Some("steel"));
+    cuboid.kind = ShapeKind::Cuboid { size: [1.0, 0.5, 0.25] };
+    let analytic = BodySpec::shaped("cuboid", 1.0, cuboid, Motion::Static { position: at });
+    let read = |body: BodySpec| {
+        let scene = scene_with(body.clone());
+        let tree = body.shape.as_ref().unwrap().tree(body.mass, &scene.materials).unwrap();
+        let part = contribution(&scene, SourceId::Body(0), &shots(&scene).unwrap(), &|| false).unwrap();
+        assert!(part.settled, "{:?}", part.warnings);
+        (tree, part.gradiometer)
+    };
+    let (mine, phase) = read(imported);
+    let (theirs, expected) = read(analytic);
+    let same = mine.leaves == theirs.leaves && mine.grid == theirs.grid;
+
+    let worst = phase.iter().zip(&expected).map(|(a, b)| ((a - b) / b).abs()).fold(0.0, f64::max);
+    let mass = 7850.0 * 0.125 * grow.powi(3);
+    (same, worst, (mine.body().mass - mass).abs() / mass)
+}
+
+cav_validate::case! {
+    test: validation_imported_box_mesh_is_the_cuboid,
+    name: "materials.imported_box_mesh_is_the_cuboid",
+    subsystem: "materials",
+    slice: "S19",
+    reference: Exact,
+    against: "an STL box (1 m × 0.5 m × 0.25 m) imported as a steel body, against the Cuboid body of the same size, material and pitch (0.05 m): the same leaves, and tower 1's gradiometer phase over every shot of a 6 s timeline, relative",
+    unit: Relative,
+    tolerance: 1e-12,
+    measure: {
+        let (same, worst, mass) = imported_box_against_cuboid(1.0);
+        assert!(same, "the same leaves on the same grid");
+        assert!(mass < 1e-12, "and it weighs ρV: {mass:e}");
+        // Control: the box imported 10 % larger is another body. (1 % was first written: it moves
+        // each face less than the quarter cell to the nearest sample point, so no sample changes.)
+        let (same, broken, _) = imported_box_against_cuboid(1.1);
+        assert!(!same && broken > 1e-3, "{broken:e}");
+        cav_validate::Measured::Error(worst)
+    },
+}

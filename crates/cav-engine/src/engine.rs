@@ -208,7 +208,13 @@ pub struct Engine {
     voxels: crate::voxels::Voxels,
     /// The world volume's resident chunks and bricks, streamed around the cameras and towers.
     world: crate::world::Streaming,
+    /// Files dropped on the window, by name, newest last: what `import <name>` reads first (in a
+    /// page, the only files it can read). At most [`MAX_DROPPED_BYTES`] together.
+    dropped: Vec<(String, Vec<u8>)>,
 }
+
+/// The most bytes of dropped files the engine keeps at once: older ones are let go first.
+pub const MAX_DROPPED_BYTES: usize = 64 << 20;
 
 /// Everything a replay must reproduce, in one serialisable piece. The journal and the log are not
 /// part of it: they are the record, not the state.
@@ -279,7 +285,36 @@ impl Engine {
             patience: TYPED_LINE_PATIENCE,
             voxels: crate::voxels::Voxels::default(),
             world: crate::world::Streaming::default(),
+            dropped: Vec::new(),
         }
+    }
+
+    /// Keeps the bytes of a file dropped on the window under `name` (its file name), for
+    /// `import <name>` to read: in a page, where nothing is read by its path, the only way a file
+    /// comes in. A file of the same name is replaced; the oldest are let go to stay within
+    /// [`MAX_DROPPED_BYTES`]. Not an edit: nothing is journalled until the import is.
+    ///
+    /// # Errors
+    /// When the one file is larger than [`MAX_DROPPED_BYTES`].
+    pub fn keep_dropped(&mut self, name: &str, bytes: Vec<u8>) -> Result<(), String> {
+        if bytes.len() > MAX_DROPPED_BYTES {
+            return Err(format!(
+                "{name}: {} bytes is more than a dropped file may be, {MAX_DROPPED_BYTES}",
+                bytes.len()
+            ));
+        }
+        self.dropped.retain(|(n, _)| n != name);
+        while self.dropped.iter().map(|(_, b)| b.len()).sum::<usize>() + bytes.len() > MAX_DROPPED_BYTES {
+            self.dropped.remove(0);
+        }
+        self.dropped.push((name.to_owned(), bytes));
+        Ok(())
+    }
+
+    /// The bytes of the file dropped under `name`, if it is kept.
+    #[must_use]
+    pub fn dropped(&self, name: &str) -> Option<&[u8]> {
+        self.dropped.iter().rev().find(|(n, _)| n == name).map(|(_, b)| b.as_slice())
     }
 
     /// A fresh engine whose undo history and journal hold at most the given bytes, in place of

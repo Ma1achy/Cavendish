@@ -19,6 +19,7 @@
 
 pub mod bundle;
 pub mod dev;
+pub mod import;
 pub mod json_f64;
 pub mod library;
 pub mod materials;

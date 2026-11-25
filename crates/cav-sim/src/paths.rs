@@ -345,6 +345,10 @@ pub struct Entry {
     pub value: Value,
     /// For a choice: the variant it is now.
     pub variant: Option<String>,
+    /// Whether it is shown whole, as one row that says how many items it has, rather than item by
+    /// item: a list the schema marks `x-whole` (a held mesh's corners and triangles, S19). The
+    /// console still reaches every item by its path.
+    pub whole: bool,
 }
 
 impl Entry {
@@ -568,6 +572,7 @@ fn entry_of(root: &Value, segs: &[Seg], stage: Stage, value: &Value) -> Result<E
         stage,
         value: value.clone(),
         variant,
+        whole: keyword("x-whole").and_then(Value::as_bool).unwrap_or(false),
     })
 }
 
@@ -669,7 +674,7 @@ pub fn leaves(spec: &SceneSpec, path: &str, limit: usize) -> Result<Vec<Entry>, 
         }
         let own = entry_in(root, &whole, &at)?;
         let plain_choice = matches!(own.kind, Kind::Choice(_)) && !own.value.is_object();
-        if own.kind.is_leaf() || plain_choice || own.value.is_null() {
+        if own.kind.is_leaf() || plain_choice || own.value.is_null() || own.whole {
             out.push(own);
             continue;
         }

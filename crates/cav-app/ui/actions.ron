@@ -38,6 +38,7 @@
         (id: "open", label: "Open…", menu: "File", line: "open", keys: ["Ctrl+O"], about: "open a library scene or a file"),
         (id: "save", label: "Save", menu: "File", line: "save-scene", keys: ["Ctrl+S"], about: "save the scene to its file, or ask for one (in the page: a download)"),
         (id: "save-as", label: "Save as…", menu: "File", line: "save-as", keys: ["Ctrl+Shift+S"], about: "save the scene to a file named in a box"),
+        (id: "import-mesh", label: "Import mesh…", menu: "File", line: "import-mesh", about: "add a body made from an OBJ or STL file: dropped on the window, or a path; its size, material and pitch"),
         (id: "new-room", label: "room", menu: "File/New from template", line: "load room", about: "the default room with the five-tower array"),
         (id: "new-void", label: "void", menu: "File/New from template", line: "load void", about: "the array and nothing else"),
         (id: "new-floor", label: "infinite floor", menu: "File/New from template", line: "load infinite-floor", about: "a floor to the horizon below the array"),

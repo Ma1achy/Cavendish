@@ -169,8 +169,12 @@ impl PartSpec {
     /// Its box, the body's frame, when it is known without reading a file.
     fn bounds(&self) -> Option<Aabb> {
         match &self.kind {
-            PartKind::Solid { shape: ShapeKind::Mesh { .. } } => None,
-            _ => self.region().ok().map(|r| r.bounds()),
+            PartKind::Solid { shape } => {
+                let b = shape.bounds()?;
+                let by = Vec3::from_array(self.at);
+                Some(Aabb::new(b.lo + by, b.hi + by))
+            }
+            PartKind::Stroke { .. } => self.region().ok().map(|r| r.bounds()),
         }
     }
 }
@@ -289,7 +293,35 @@ pub enum ShapeKind {
         #[schemars(extend("x-unit" = "m"))]
         scale: f64,
     },
+    /// A closed triangle mesh held in the scene itself, as an imported file becomes one (S19,
+    /// `import`): so the scene needs no file beside it, in a page as natively. Corners from the
+    /// body's position, metres; at most 10,000 triangles. Checked whole (every edge in two
+    /// triangles, no crossing) when the body is voxelised.
+    Triangles {
+        /// The corners; each coordinate within ±1e3 m.
+        #[schemars(length(min = 4, max = 30000))]
+        #[schemars(extend("x-whole" = true))]
+        vertices: Vec<Vertex>,
+        /// Each triangle's three corners by index into `vertices`, anticlockwise seen from
+        /// outside.
+        #[schemars(length(min = 4, max = 10000))]
+        #[schemars(extend("x-whole" = true))]
+        triangles: Vec<Corners>,
+    },
 }
+
+/// The most triangles a mesh held in a scene may have ([`ShapeKind::Triangles`]): about half a
+/// megabyte of scene, within a scene file's 1 MiB.
+pub const MAX_INLINE_TRIANGLES: usize = 10_000;
+/// The most corners a mesh held in a scene may have.
+pub const MAX_INLINE_VERTICES: usize = 30_000;
+
+/// A triangle of a held mesh: its three corners by index into the mesh's `vertices`,
+/// anticlockwise seen from outside.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
+#[schemars(extend("x-unit" = "1"))]
+pub struct Corners(pub [u32; 3]);
 
 /// A corner of a polyhedron: `[x, y, z]` (east, north, up), metres, from the body's position.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -302,8 +334,8 @@ pub const MAX_SIZE: f64 = 1.0e3;
 
 impl ShapeKind {
     /// The names of the kinds, as the spec writes them.
-    pub const KINDS: [&'static str; 8] =
-        ["Sphere", "Shell", "Cuboid", "Cylinder", "Ellipsoid", "Platonic", "Polyhedron", "Mesh"];
+    pub const KINDS: [&'static str; 9] =
+        ["Sphere", "Shell", "Cuboid", "Cylinder", "Ellipsoid", "Platonic", "Polyhedron", "Mesh", "Triangles"];
 
     /// The kind's name as written in a scene file.
     #[must_use]
@@ -317,6 +349,7 @@ impl ShapeKind {
             Self::Platonic { .. } => "Platonic",
             Self::Polyhedron { .. } => "Polyhedron",
             Self::Mesh { .. } => "Mesh",
+            Self::Triangles { .. } => "Triangles",
         }
     }
 
@@ -350,7 +383,31 @@ impl ShapeKind {
             Self::Mesh { file, scale } => {
                 Box::new(Mesh::read(std::path::Path::new(file), *scale).map_err(|e| e.0)?.centred())
             }
+            Self::Triangles { vertices, triangles } => Box::new(
+                Mesh::new(
+                    vertices.iter().map(|v| Vec3::from_array(v.0)).collect(),
+                    triangles.iter().map(|t| t.0).collect(),
+                )
+                .map_err(|e| e.0)?,
+            ),
         })
+    }
+
+    /// Its box about the body's position when it is known without reading a file or making the
+    /// mesh: a held mesh's from its corners.
+    #[must_use]
+    pub fn bounds(&self) -> Option<Aabb> {
+        match self {
+            Self::Mesh { .. } => None,
+            Self::Triangles { vertices, .. } => {
+                let first = Vec3::from_array(vertices.first()?.0);
+                Some(vertices.iter().fold(Aabb::new(first, first), |b, v| {
+                    let p = Vec3::from_array(v.0);
+                    b.union(&Aabb::new(p, p))
+                }))
+            }
+            _ => self.solid().ok().map(|s| s.bounds()),
+        }
     }
 
     /// Checks the numbers (the file of a mesh is read only when the body is voxelised).
@@ -392,6 +449,29 @@ impl ShapeKind {
                 (scale.is_finite() && *scale > 0.0 && *scale <= 1.0e6)
                     .then_some(())
                     .ok_or_else(|| format!("{at}.scale: {scale} must be above 0 and at most 1e6"))
+            }
+            // The counts, the indices and the numbers; whether it is closed and does not cross
+            // itself is checked when it is voxelised (as a file's mesh is), not on every edit.
+            Self::Triangles { vertices, triangles } => {
+                if !(4..=MAX_INLINE_VERTICES).contains(&vertices.len()) {
+                    return Err(format!(
+                        "{at}.vertices: {} corners; from 4 to {MAX_INLINE_VERTICES}",
+                        vertices.len()
+                    ));
+                }
+                if !(4..=MAX_INLINE_TRIANGLES).contains(&triangles.len()) {
+                    return Err(format!(
+                        "{at}.triangles: {} triangles; from 4 to {MAX_INLINE_TRIANGLES}",
+                        triangles.len()
+                    ));
+                }
+                if vertices.iter().flat_map(|v| v.0).any(|c| !(c.is_finite() && c.abs() <= MAX_SIZE)) {
+                    return Err(format!("{at}.vertices: every coordinate within ±{MAX_SIZE} m"));
+                }
+                match triangles.iter().flat_map(|t| t.0).find(|&i| i as usize >= vertices.len()) {
+                    Some(i) => Err(format!("{at}.triangles: corner {i} of {} corners", vertices.len())),
+                    None => Ok(()),
+                }
             }
         }
     }
@@ -457,10 +537,7 @@ impl ShapeSpec {
     /// The box of the shape and of the parts that add matter, the shape centred on the origin,
     /// when it is known without reading a file.
     fn bounds(&self) -> Option<Aabb> {
-        let own = match self.kind {
-            ShapeKind::Mesh { .. } => None,
-            _ => self.kind.solid().ok().map(|s| s.bounds()),
-        }?;
+        let own = self.kind.bounds()?;
         self.parts
             .iter()
             .filter(|p| p.mode == PartMode::Add)
@@ -576,6 +653,14 @@ mod tests {
             ShapeKind::Platonic { solid: PlatonicSolid::Dodecahedron, edge: 0.2 },
             ShapeKind::Polyhedron {
                 vertices: [[0.0; 3], [0.3, 0.0, 0.0], [0.0, 0.3, 0.0], [0.0, 0.0, 0.3]].map(Vertex).to_vec(),
+            },
+            {
+                let half = Vec3::new(0.2, 0.15, 0.1);
+                let (v, t) = cav_core::voxel::mesh::box_mesh(-half, half);
+                ShapeKind::Triangles {
+                    vertices: v.iter().map(|p| Vertex(p.to_array())).collect(),
+                    triangles: t.into_iter().map(Corners).collect(),
+                }
             },
         ];
         assert_eq!(kinds.len() + 1, ShapeKind::KINDS.len(), "every kind but the mesh, which needs a file");

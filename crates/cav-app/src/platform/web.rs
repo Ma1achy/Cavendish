@@ -46,6 +46,27 @@ thread_local! {
     static EXEC: RefCell<Exec> = const { RefCell::new(Exec { commands: VecDeque::new(), waiting_since: None }) };
     /// Files an address's commands made, held until the person clicks for them.
     static HELD: RefCell<Vec<cav_engine::files::Download>> = const { RefCell::new(Vec::new()) };
+    /// Files dropped on the page whose bytes the browser has given, waiting for the next frame.
+    static DROPPED: RefCell<Vec<(String, Option<Vec<u8>>)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The files dropped on the page whose bytes have been read, each as its name and its bytes. A
+/// browser reads a dropped file only asynchronously: a file dropped this frame is asked for here
+/// and handed over a frame or two later.
+#[must_use]
+pub fn dropped(ctx: &egui::Context) -> Vec<(String, Option<Vec<u8>>)> {
+    for file in ctx.input(|i| i.raw.dropped_files.clone()) {
+        let ctx = ctx.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let name = file.path().to_string_lossy().into_owned();
+            match file.bytes_async().await {
+                Ok(bytes) => DROPPED.with(|d| d.borrow_mut().push((name, Some(bytes)))),
+                Err(why) => log::warn!("{name} could not be read: {why}"),
+            }
+            ctx.request_repaint();
+        });
+    }
+    DROPPED.with(|d| std::mem::take(&mut *d.borrow_mut()))
 }
 
 /// Starts the application on the page's canvas. Returns at once; the application runs from the

@@ -72,6 +72,12 @@ pub const COMMANDS: &[CommandDoc] = &[
         example: "add array.towers {\"label\": \"tower 6\", \"position\": [6, 0, 0]}",
     },
     CommandDoc {
+        name: "import",
+        usage: "import <file> [fit <metres> | scale <factor>] [material <label>] [pitch <metres>] [at <x> <y> <z>]",
+        about: "add a body made from an OBJ or STL mesh: a file dropped on the window, or (natively) a path; fitted so its widest side is that long, or scaled from the file's units; of a material (steel unless named), voxelised at the pitch (its widest side over 32 unless named), the middle of its box placed (an edit)",
+        example: "import bracket.stl fit 0.5 material aluminium at 2 2 1",
+    },
+    CommandDoc {
         name: "duplicate",
         usage: "duplicate <bodies[i]|array.towers[i]>",
         about: "add a copy of a body (half a metre east) or a tower (a metre east), with a label of its own (an edit)",
@@ -537,6 +543,47 @@ fn usage(name: &str) -> String {
     COMMANDS.iter().find(|c| c.name == name).map_or_else(String::new, |c| format!("usage: {}", c.usage))
 }
 
+/// The words after `import <file>`: `fit <m>` or `scale <f>`, `material <label>`, `pitch <m>`,
+/// `at <x> <y> <z>`, each at most once, in any order.
+fn import_options(words: &[&str]) -> Result<cav_sim::import::Options, String> {
+    use cav_sim::import::{Options, Size};
+    let mut options = Options { at: DEFAULT_PLACE, ..Options::default() };
+    let mut rest = words;
+    let positive = |word: &str, what: &str| -> Result<f64, String> {
+        word.parse::<f64>()
+            .ok()
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .ok_or_else(|| format!("`{word}` is not a positive number ({what})"))
+    };
+    while let Some((&first, after)) = rest.split_first() {
+        rest = match (first, after) {
+            ("fit", [m, more @ ..]) => {
+                options.size = Size::Fit(positive(m, "metres")?);
+                more
+            }
+            ("scale", [f, more @ ..]) => {
+                options.size = Size::Scale(positive(f, "metres per unit of the file")?);
+                more
+            }
+            ("material", [label, more @ ..]) => {
+                (*label).clone_into(&mut options.material);
+                more
+            }
+            ("pitch", [m, more @ ..]) => {
+                options.pitch = Some(positive(m, "metres")?);
+                more
+            }
+            ("at", [x, y, z, more @ ..]) => {
+                let n = |w: &str| w.parse::<f64>().map_err(|_| format!("`{w}` is not a number (metres)"));
+                options.at = [n(x)?, n(y)?, n(z)?];
+                more
+            }
+            _ => return Err(format!("`{first}` is not an option of import")),
+        };
+    }
+    Ok(options)
+}
+
 fn number(word: &str, what: &str, command: &str) -> Result<f64, String> {
     word.parse::<f64>().map_err(|_| format!("`{word}` is not a number ({what}); {}", usage(command)))
 }
@@ -627,6 +674,29 @@ impl Engine {
                 Ok(Request::Do(Command::Insert { path: "bodies".into(), index: None, value }))
             }
             ("remove", [path]) => Ok(Request::Do(Command::Remove { path: (*path).to_owned() })),
+            ("import", [file, options @ ..]) => {
+                let options =
+                    import_options(options).map_err(|why| format!("`{line}`: {why}; {}", usage(name)))?;
+                // A dropped file first (a page's only way in), then the path, natively.
+                let (bytes, path) = match self.dropped(file) {
+                    Some(bytes) => (bytes.to_vec(), None),
+                    None => {
+                        let bytes = crate::files::read(
+                            std::path::Path::new(file),
+                            cav_core::voxel::mesh::MAX_MESH_BYTES,
+                        )
+                        .map_err(|e| {
+                            format!(
+                                "{file}: not a file dropped on the window, and not one that can be read ({e})"
+                            )
+                        })?;
+                        (bytes, Some(*file))
+                    }
+                };
+                let body = cav_sim::import::body(self.spec(), file, &bytes, path, &options)?;
+                let value = serde_json::to_value(body).expect("a body is JSON");
+                Ok(Request::Do(Command::Insert { path: "bodies".into(), index: None, value }))
+            }
             ("duplicate", [path]) => {
                 let (list, value) = cav_sim::starters::duplicate(self.spec(), path)?;
                 Ok(Request::Do(Command::Insert { path: list.to_owned(), index: None, value }))
@@ -1613,6 +1683,12 @@ mod tests {
             }
             if doc.name == "undo" {
                 engine.run_line("load void").unwrap();
+            }
+            // `import` reads a file dropped on the window: drop one by the example's name.
+            if doc.name == "import" {
+                let half = cav_core::Vec3::new(0.2, 0.1, 0.05);
+                let (v, t) = cav_core::voxel::mesh::box_mesh(-half, half);
+                engine.keep_dropped("bracket.stl", cav_core::voxel::mesh::to_stl(&v, &t)).unwrap();
             }
             let out = engine.run_line(doc.example);
             if doc.name == "figure" {

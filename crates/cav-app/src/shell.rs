@@ -40,6 +40,10 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("wizard", "start a new scene: the array, the surroundings, a first body, the duration (Ctrl+N)"),
     ("open", "open a scene: the library, or a file by its path (Ctrl+O)"),
     ("save-as", "save the scene to a file named in a box (Ctrl+S saves to the file it came from)"),
+    (
+        "import-mesh",
+        "the Import mesh window: an OBJ or STL file (dropped on the window, or a path natively), its size, material and pitch; `import-mesh <file>` opens it with the file named",
+    ),
     ("save-scene", "save the scene to the file it came from, or ask for one (Ctrl+S)"),
     (
         "layout",
@@ -291,6 +295,8 @@ pub struct Shell {
     pub open_window: Option<String>,
     /// The Save window's path box, while it is open.
     pub save_window: Option<String>,
+    /// The Import mesh window, when it is open: what it will import.
+    pub import_window: Option<crate::dialogs::ImportForm>,
     /// The file the scene came from or was last saved to, which `Ctrl+S` saves to again.
     pub file: Option<String>,
     /// The history in words ([`crate::dialogs::history_words`]) and the engine's generation they
@@ -403,6 +409,7 @@ impl Shell {
             wizard: None,
             open_window: None,
             save_window: None,
+            import_window: None,
             file: None,
             untitled: false,
             history_said: None,
@@ -575,6 +582,21 @@ impl Shell {
             self.keyboard.session = None;
             self.keyboard.mode = crate::keyboard::Mode::Navigation;
         }
+    }
+
+    /// A file dropped on the window (S19), by its name (natively its path): its bytes, when the
+    /// platform gives them (a page), are kept by the engine under the name, and the Import mesh
+    /// window opens on it. A file that is not a mesh is said in the log when it is imported.
+    pub fn dropped_file(&mut self, name: &str, bytes: Option<Vec<u8>>) {
+        if let Some(bytes) = bytes
+            && let Err(why) = self.engine.keep_dropped(name, bytes)
+        {
+            self.engine.note(Level::Error, Subsystem::App, why);
+            self.console_open = true;
+            return;
+        }
+        self.import_window = Some(crate::dialogs::ImportForm::new(name));
+        self.window_opened("import", "import/go", false);
     }
 
     /// Whether a fly session is on: the viewport's canvas holds the keys W A S D E Q.
@@ -1035,6 +1057,11 @@ impl Shell {
                 self.open_window = Some(String::new());
                 self.window_opened("open", "open/path", true);
             }
+            "import-mesh" => {
+                let file = words.next().map(str::to_owned).unwrap_or_default();
+                self.import_window = Some(crate::dialogs::ImportForm::new(&file));
+                self.window_opened("import", "import/file", true);
+            }
             "save-as" => {
                 self.save_window =
                     Some(self.file.clone().unwrap_or_else(|| format!("{}.ron", self.engine.spec().name)));
@@ -1403,6 +1430,7 @@ impl Shell {
                 "wizard" => self.wizard = None,
                 "open" => self.open_window = None,
                 "save" => self.save_window = None,
+                "import" => self.import_window = None,
                 _ => {}
             },
             Effect::StopTyping => {
@@ -1521,6 +1549,9 @@ impl Shell {
         if self.fullscreen != self.fullscreen_sent {
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.fullscreen));
             self.fullscreen_sent = self.fullscreen;
+        }
+        for (name, bytes) in crate::platform::dropped(&ctx) {
+            self.dropped_file(&name, bytes);
         }
         self.session_keys();
         self.orphaned_session();

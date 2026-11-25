@@ -41,3 +41,38 @@ fn text_that_begins_as_json_and_is_not_is_refused() {
     engine.run_line(r#"set name "yours""#).unwrap();
     assert_eq!(engine.spec().name, "yours");
 }
+
+#[test]
+fn import_adds_a_mesh_body_in_one_step() {
+    // S19 I1 and I3: a mesh file dropped on the window (its bytes kept by the engine), imported
+    // fitted to 2 m, of lead, placed: one body, one step, which one undo takes out; the journal
+    // holds the body, so a replay needs no file. Control: a file that is not a mesh is refused in
+    // words and changes nothing; so is a name nothing was dropped under and no file has.
+    use cav_core::Vec3;
+    use cav_core::voxel::mesh::{box_mesh, to_stl};
+    let (v, t) = box_mesh(Vec3::new(-0.5, -0.25, -0.1), Vec3::new(0.5, 0.25, 0.1));
+    let mut engine = Engine::new();
+    engine.run_line("load void").unwrap();
+    engine.keep_dropped("crate.stl", to_stl(&v, &t)).unwrap();
+    let depth = engine.depth().0;
+    engine.run_line("import crate.stl fit 2 material lead at 1 2 3").unwrap();
+    let body = engine.spec().bodies.last().unwrap().clone();
+    assert_eq!(body.label, "crate");
+    assert_eq!(body.motion.anchor().0, [1.0, 2.0, 3.0]);
+    let shape = body.shape.as_ref().unwrap();
+    assert!((shape.kind.bounds().unwrap().size().x - 2.0).abs() < 1e-12);
+    assert_eq!(shape.material.as_deref(), Some("lead"));
+    assert_eq!(engine.depth().0, depth + 1, "one step");
+    let replayed = Engine::replay(engine.journal()).unwrap();
+    assert_eq!(replayed.spec(), engine.spec(), "a replay needs no file");
+    engine.run_line("undo").unwrap();
+    assert!(engine.spec().bodies.is_empty());
+    engine.keep_dropped("notes.txt", b"not a mesh".to_vec()).unwrap();
+    let why = engine.run_line("import notes.txt").unwrap_err();
+    assert!(why.contains(".obj or an .stl"), "{why}");
+    let why = engine.run_line("import nothing-dropped.stl").unwrap_err();
+    assert!(why.contains("not a file dropped on the window"), "{why}");
+    let why = engine.run_line("import crate.stl fit -1").unwrap_err();
+    assert!(why.contains("not a positive number"), "{why}");
+    assert!(engine.spec().bodies.is_empty() && engine.depth().0 == depth, "nothing changed");
+}

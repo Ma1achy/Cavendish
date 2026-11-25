@@ -89,6 +89,7 @@ pub fn lift(body: &BodySpec) -> f64 {
             ShapeKind::Platonic { solid, edge } => edge * circumradius(*solid),
             ShapeKind::Polyhedron { vertices } => vertices.iter().map(|v| -v.0[2]).fold(0.0_f64, f64::max),
             ShapeKind::Mesh { .. } => 0.0,
+            ShapeKind::Triangles { vertices, .. } => vertices.iter().map(|v| -v.0[2]).fold(0.0_f64, f64::max),
         },
         None => body.radius,
     }
@@ -115,6 +116,10 @@ pub fn reach(body: &BodySpec) -> f64 {
                 .map(|v| (v.0[0] * v.0[0] + v.0[1] * v.0[1] + v.0[2] * v.0[2]).sqrt())
                 .fold(0.0, f64::max),
             ShapeKind::Mesh { .. } => 1.0,
+            ShapeKind::Triangles { vertices, .. } => vertices
+                .iter()
+                .map(|v| (v.0[0] * v.0[0] + v.0[1] * v.0[1] + v.0[2] * v.0[2]).sqrt())
+                .fold(0.0, f64::max),
         },
         None => body.radius,
     };
