@@ -783,9 +783,13 @@ Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
 - AION-10's LMT pulse sequence: which arm is excited when, pulse durations, cloud temperature, bias field, and
   the co-magnetometry plan. Magnetic, wavefront and blackbody effects are upper bounds until known; the TDR's
   1 µG/√Hz field noise gives 1e-3 rad/√Hz in a single-kick sequence, ten times the goal.
-- Newtonian noise in a vertical shaft: Harms 2019 Eq. 97 and Badurina et al. (arXiv:2211.01854, App. B)
-  appear to differ by ~1.5 in the ratio of their two terms. Which is right for AION-10's shaft? (A voxel sum in
-  the shaft would settle it; planned.)
+- Could Beecroft have a weather mast with a fast thermometer and anemometer? Wind-advected temperature
+  (Creighton 2008 applied to the vertical baseline) may be the largest in-band environmental noise, 40–600× the
+  goal at 0.1 Hz, but the model is unvalidated below ~0.2 Hz.
+- Harms 2019 Eq. 39 as printed is not traction-free; with a minus sign on the horizontal component it is, to
+  1e-13. Misprint or convention? (The closed forms used are unaffected.)
+- (Withdrawn: the "factor 1.5" between Harms Eq. 97 and Badurina App. B was our misreading — a square root lost
+  in text extraction, and potential compared with phase. They agree to 1e-15; see `docs/research/elastic-solids.md`.)
 - Is Carlton & McCabe's stairwell model (arXiv:2308.10731) the one the team uses? Cavendish will reproduce it.
 **Open.**
 - **Confirm: Fig 12's ~7 mrad is half the largest |ΔΦ|?** You said (24 Nov 2026) that Fig 12 is
@@ -911,6 +915,15 @@ Notes in `docs/research/`: `voxel-engines.md`, `rigid-bodies.md` (S7), `fluids.m
   flight, Roura compensation, kick duration) so the v1 tie stays bit-identical.
 - **S14 note correction**: the Rayleigh-wave factor γ is 0.71–0.83 by Poisson's ratio (Harms 2019 Eq. 99), not 0.7.
 - **S5**: measure node deduplication (content hashes) before any DAG; one summary per distinct content.
+
+## Owner's ruling (25 Nov 2026): the workspace, and density
+After using S19: the tool palette must float inside the viewport (Photoshop, Blender); the viewport's row of
+text chips goes (a proper header: view type, camera, shading, overlays; status to the status bar); real
+transport buttons; the top bar tidied; fields that fill their width and buttons that make sense; folders in
+the scene tree; viewports as a resizable mosaic (as matplotlib's `subplot_mosaic`), more than four, each able
+to pop out. **A dense GUI is wanted**: a professional scientific desktop app, small is fine, everything
+functional, no prose in the chrome — this withdraws `panels.md`'s 24 pt minimum on desktop. Requirement:
+`docs/design/workspace.md`. Tasks TASK-S20-03 to TASK-S20-07, first in S20.
 
 ## Owner's ruling (25 Nov 2026): draw modes for bodies
 Bodies get draw modes: plain voxels; the partial fill made visible (each boundary cell shaded by its

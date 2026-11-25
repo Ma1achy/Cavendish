@@ -778,3 +778,18 @@
 - id: TASK-S5-17
   milestone: S5
   title: Clipped-piece view: each boundary cell drawn as its exact clipped polyhedron (the solid side of the mesh's planes), the view the exact-skin near kernel reads, capped per frame
+- id: TASK-S20-03
+  milestone: S20
+  title: Viewports as a mosaic - layouts as subplot_mosaic-style label grids with weights, any number of viewports, resizable splitters, split/close/swap, pop out and dock (docs/design/workspace.md 1)
+- id: TASK-S20-04
+  milestone: S20
+  title: The viewport header and navigation gizmo - view type, camera menu, shading icons, overlays popover; status moved to the status bar (workspace.md 2)
+- id: TASK-S20-05
+  milestone: S20
+  title: The floating tool palette inside the viewport, draggable, with flyouts and an options bar (workspace.md 3)
+- id: TASK-S20-06
+  milestone: S20
+  title: Top bar, transport buttons (start, step, play/pause, step, end, loop, speed) and the density pass - compact sizes, fields that fill their column, every button with a clear action (workspace.md 0, 4, 5)
+- id: TASK-S20-07
+  milestone: S20
+  title: Scene tree folders - user folders inside the groups, nest, drag, eye and lock for children, saved with the scene (workspace.md 6)

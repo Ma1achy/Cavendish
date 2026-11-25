@@ -1,0 +1,36 @@
+Ra = 1e+03   (reference for the pass test: de Vahl Davis 1.118)
+  N =  32  Nu = 1.1201  vs dVD  +0.19 %
+  N =  64  Nu = 1.1184  vs dVD  +0.03 %
+  N = 128  Nu = 1.1179  vs dVD  -0.01 %
+  Richardson (64,128), p = 2           1.11779  vs dVD  -0.019 %
+  Richardson (32,64,128), p = 2.06     1.11779  vs dVD  -0.018 %
+  N for 1 % against de Vahl Davis if error ~ N^-2: 10
+  N = 128 u_max 3.650 v_max 3.698: vs dVD +0.01 / +0.02 %
+
+Ra = 1e+04   (reference for the pass test: Hortmann 2.24475)
+  N =  32  Nu = 2.2725  vs dVD  +1.31 %  vs Hortmann  +1.23 %
+  N =  64  Nu = 2.2512  vs dVD  +0.37 %  vs Hortmann  +0.29 %
+  N = 128  Nu = 2.2463  vs dVD  +0.15 %  vs Hortmann  +0.07 %
+  Richardson (64,128), p = 2           2.24473  vs dVD  +0.077 %  vs Hortmann  -0.001 %
+  Richardson (32,64,128), p = 2.13     2.24491  vs dVD  +0.085 %  vs Hortmann  +0.007 %
+  N for 1 % against Hortmann if error ~ N^-2: 34
+  N = 128 u_max 16.183 v_max 19.626: vs dVD +0.03 / +0.05 %; vs Hortmann +0.02 / -0.02 %
+
+Ra = 1e+05   (reference for the pass test: Hortmann 4.52164)
+  N =  32  Nu = 4.7453  vs dVD  +5.01 %  vs Hortmann  +4.95 %
+  N =  64  Nu = 4.5697  vs dVD  +1.12 %  vs Hortmann  +1.06 %
+  N = 128  Nu = 4.5326  vs dVD  +0.30 %  vs Hortmann  +0.24 %
+  Richardson (64,128), p = 2           4.52029  vs dVD  +0.029 %  vs Hortmann  -0.030 %
+  Richardson (32,64,128), p = 2.24     4.52273  vs dVD  +0.083 %  vs Hortmann  +0.024 %
+  N for 1 % against Hortmann if error ~ N^-2: 63
+  N = 128 u_max 34.756 v_max 68.668: vs dVD +0.08 / +0.11 %; vs Hortmann +0.05 / +0.04 %
+
+Ra = 1e+06   (reference for the pass test: Hortmann 8.82513)
+  N =  32  Nu = 10.4909  vs dVD +19.22 %  vs Hortmann +18.88 %
+  N =  64  Nu = 9.1844  vs dVD  +4.37 %  vs Hortmann  +4.07 %
+  N = 128  Nu = 8.9014  vs dVD  +1.15 %  vs Hortmann  +0.86 %
+  Richardson (64,128), p = 2           8.80706  vs dVD  +0.080 %  vs Hortmann  -0.205 %
+  Richardson (32,64,128), p = 2.21     8.82314  vs dVD  +0.263 %  vs Hortmann  -0.023 %
+  N for 1 % against Hortmann if error ~ N^-2: 119
+  N = 128 u_max 64.986 v_max 220.556: vs dVD +0.55 / +0.55 %; vs Hortmann +0.23 / +0.04 %
+
