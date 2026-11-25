@@ -177,7 +177,7 @@ fn a_held_nudge_is_one_undo_and_esc_cancels_it() {
     rig.shell.run("load point").unwrap();
     rig.shell.run("select body 1").unwrap();
     rig.frames(vec![vec![]]);
-    let (start, history) = (anchor(&rig, 0), rig.shell.engine.history());
+    let (start, depth) = (anchor(&rig, 0), rig.shell.engine.depth());
     let session = |rig: &mut Rig| {
         rig.shell.keyboard.focus = vec!["viewport".into(), "viewport/selection".into()];
         rig.shell.keyboard.nav_on = true;
@@ -207,11 +207,12 @@ fn a_held_nudge_is_one_undo_and_esc_cancels_it() {
     assert!((held[0] - start[0] - 14.0 * 0.25).abs() < 1e-9, "{} steps", (held[0] - start[0]) / 0.25);
     rig.key(Key::Escape, Modifiers::NONE);
     assert_eq!(anchor(&rig, 0), start, "Esc cancels: the body is where it began");
-    assert_eq!(rig.shell.engine.history(), history, "and nothing new can be undone");
-    // Control: Enter keeps it, and one undo takes the whole held run back.
+    assert_eq!(rig.shell.engine.depth(), depth, "and nothing new can be undone or redone");
+    // Control: Enter keeps it, as exactly one step, and one undo takes the whole held run back.
     session(&mut rig);
     rig.key(Key::Enter, Modifiers::NONE);
     assert!((anchor(&rig, 0)[0] - start[0] - 3.5).abs() < 1e-9);
+    assert_eq!(rig.shell.engine.depth(), (depth.0 + 1, 0), "Enter kept one step");
     rig.shell.run("undo").unwrap();
     assert_eq!(anchor(&rig, 0), start, "one undo for the whole session");
 }
@@ -286,14 +287,16 @@ fn task_add_a_sphere_move_it_two_metres_read_tower_one() {
     assert_eq!(rig.shell.tool, "move", "W: the Move tool");
     rig.frames(vec![vec![]]);
     let start = anchor(&rig, 0);
-    let undo_depth = rig.shell.engine.history();
+    // One undo per step: the add, so far (loading the room the window opened with changed
+    // nothing, so it is no step).
+    assert_eq!(rig.shell.engine.depth(), (1, 0), "the add");
     // North (y): east would take it onto tower 2's axis at (4, 0), where the read is the
     // through-the-tower case (S5's bounded walk; docs/slices/S18.md §7).
     rig.drag_arrow(0, 1, 2.0);
     let moved = anchor(&rig, 0);
     assert!((moved[1] - start[1] - 2.0).abs() <= 1e-12, "moved by {}", moved[1] - start[1]);
     assert_eq!((moved[0], moved[2]), (start[0], start[2]));
-    assert_eq!(undo_depth, (true, false));
+    assert_eq!(rig.shell.engine.depth(), (2, 0), "the drag is one step more");
     // The reading the window shows is the forward model's of the edited scene, bit for bit.
     assert!(rig.shell.engine.settle_reading(std::time::Duration::from_secs(120)));
     let shown = rig.shell.reading().clone();
@@ -589,8 +592,14 @@ fn every_layout_keeps_every_scope_and_the_figure_uncovered() {
     rig.shell.run("layout analysis").unwrap();
     assert_eq!(rig.shell.engine.panes(), 4);
     assert_eq!(rig.shell.engine.content(0), cav_engine::PaneContent::Signal);
-    // Control: a layout's lines are view commands, never edits.
-    assert_eq!(rig.shell.engine.history(), (true, false));
+    // A layout's lines are view commands, never edits: the history is as deep as the load made
+    // it. (S18's review, R3: `history()` was (true, false) whatever the depth.)
+    assert_eq!(rig.shell.engine.depth(), (1, 0));
+    // Control: the measure sees an edit, and a layout with one in its lines is refused.
+    rig.shell.run("set duration 5").unwrap();
+    assert_eq!(rig.shell.engine.depth(), (2, 0));
+    let edited = cav_app::layouts::LAYOUTS_RON.replace("\"pane 1\"]", "\"pane 1\", \"set duration 5\"]");
+    assert!(cav_app::layouts::Layouts::parse(&edited).is_err(), "a layout may not edit the scene");
 }
 
 /// What share of the pane's shorter side a sphere (`centre`, `radius` metres) spans on screen,
@@ -626,7 +635,11 @@ fn f_frames_the_selection() {
         rig.shell.engine.journal().last(),
         Some(Command::View(cav_engine::ViewCommand::Camera { .. }))
     ));
-    assert_eq!(rig.shell.engine.history(), (true, false), "framing is no edit: only the load can be undone");
+    assert_eq!(rig.shell.engine.depth(), (1, 0), "framing is no edit: only the load can be undone");
+    // Control: Home, the one camera move that is an edit, is seen by the same measure.
+    rig.shell.run("view home").unwrap();
+    assert_eq!(rig.shell.engine.depth(), (2, 0));
+    rig.shell.run("undo").unwrap();
     // A tower frames too, from the tree.
     rig.shell.run("select tower 3").unwrap();
     rig.shell.keyboard.focus = vec!["tree".into()];
@@ -677,7 +690,7 @@ fn fly_is_a_session() {
     rig.shell.run("load point").unwrap();
     rig.frames(vec![vec![]]);
     let start = rig.shell.engine.view(0).clone();
-    let history = rig.shell.engine.history();
+    let depth = rig.shell.engine.depth();
     // Outside a session W does not move the camera.
     rig.shell.keyboard.focus = vec!["viewport".into()];
     rig.key(Key::W, Modifiers::NONE);
@@ -719,8 +732,11 @@ fn fly_is_a_session() {
     assert_eq!(rig.shell.engine.view(0).target, flown.target);
     rig.key(Key::O, Modifiers::NONE);
     assert_ne!(rig.shell.engine.view(0).projection, start.projection);
-    // None of it was an edit.
-    assert_eq!(rig.shell.engine.history(), history);
+    // None of it was an edit (S18's review, R3: counted, not `history()`'s two flags).
+    assert_eq!(rig.shell.engine.depth(), depth);
+    // Control: an edit is seen by the same count.
+    rig.shell.run("set duration 13").unwrap();
+    assert_eq!(rig.shell.engine.depth(), (depth.0 + 1, 0));
 }
 
 #[test]
@@ -853,4 +869,183 @@ fn the_palette_adds_and_runs_what_is_typed() {
     rig.key(Key::Escape, Modifiers::NONE);
     assert!(!rig.shell.palette.open);
     assert_eq!(rig.shell.engine.journal().len(), journal);
+}
+
+/// Holds a key down for `frames` frames of the rig's clock, then lets it go.
+fn hold(rig: &mut Rig, key: Key, frames: usize) {
+    let event =
+        |pressed| Event::Key { key, physical_key: None, pressed, repeat: false, modifiers: Modifiers::NONE };
+    let mut sent = vec![vec![event(true)]];
+    sent.extend(std::iter::repeat_with(Vec::new).take(frames));
+    sent.push(vec![event(false)]);
+    rig.frames(sent);
+}
+
+/// A rig on `point` with a second mass at (3, 3, 1), body 1 selected and the keyboard on its
+/// handle in the viewport.
+fn two_masses() -> Rig {
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell
+        .run(r#"add bodies {"label":"other","mass":5.0,"motion":{"Static":{"position":[3.0,3.0,1.0]}}}"#)
+        .unwrap();
+    rig.shell.run("select body 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    rig.shell.keyboard.focus = vec!["viewport".into(), "viewport/selection".into()];
+    rig.shell.keyboard.nav_on = true;
+    rig
+}
+
+#[test]
+fn delete_inside_a_transform_session_removes_nothing_and_esc_moves_no_other_body() {
+    // S18's review, R1: in a session, Delete and Ctrl+D are the session's (eaten); Esc then
+    // puts back the body it moved, and never moves another into its place.
+    let mut rig = two_masses();
+    let (start, other) = (anchor(&rig, 0), anchor(&rig, 1));
+    rig.key(Key::Enter, Modifiers::NONE);
+    assert!(rig.shell.session.is_some());
+    rig.key(Key::ArrowRight, Modifiers::NONE);
+    rig.key(Key::Delete, Modifiers::NONE);
+    assert_eq!(rig.shell.engine.spec().bodies.len(), 2, "Delete did nothing mid-move");
+    rig.key(Key::D, Modifiers::COMMAND);
+    assert_eq!(rig.shell.engine.spec().bodies.len(), 2, "nor Ctrl+D");
+    rig.key(Key::Escape, Modifiers::NONE);
+    assert_eq!((anchor(&rig, 0), anchor(&rig, 1)), (start, other), "Esc put back the one it moved");
+    // Control: the same Delete outside a session takes the selected body out.
+    rig.key(Key::Delete, Modifiers::NONE);
+    assert_eq!(rig.shell.engine.spec().bodies.len(), 1);
+    assert_eq!(anchor(&rig, 0), other, "the other body, untouched");
+}
+
+#[test]
+fn a_session_whose_body_has_gone_moves_nothing() {
+    // R1's second half: the body at the session's index is checked before every move and at
+    // Esc; a console `remove` mid-session (the one way left to take it) leaves the other alone.
+    let mut rig = two_masses();
+    let other = anchor(&rig, 1);
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.key(Key::ArrowRight, Modifiers::NONE);
+    rig.shell.run("remove bodies[0]").unwrap();
+    rig.key(Key::ArrowRight, Modifiers::NONE);
+    rig.key(Key::Escape, Modifiers::NONE);
+    assert_eq!(rig.shell.engine.spec().bodies.len(), 1);
+    assert_eq!(anchor(&rig, 0), other, "the body now at index 0 was neither moved nor put back");
+    assert!(rig.shell.session.is_none());
+    // Control: with its body there, Esc does put it back.
+    let mut rig = two_masses();
+    let start = anchor(&rig, 0);
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.key(Key::ArrowRight, Modifiers::NONE);
+    assert_ne!(anchor(&rig, 0), start);
+    rig.key(Key::Escape, Modifiers::NONE);
+    assert_eq!(anchor(&rig, 0), start);
+}
+
+#[test]
+fn a_global_key_ends_a_session_first_and_undo_is_its_cancel() {
+    // R1: a global (the only key that reaches an action from a session) cancels the session
+    // before it runs; Ctrl+Z after a move is that cancel and takes back nothing more.
+    let mut rig = two_masses();
+    rig.shell.run("set duration 20").unwrap();
+    let (start, depth) = (anchor(&rig, 0), rig.shell.engine.depth());
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.key(Key::ArrowUp, Modifiers::NONE);
+    rig.key(Key::Z, Modifiers::COMMAND);
+    assert!(rig.shell.session.is_none() && rig.shell.keyboard.session.is_none());
+    assert_eq!(anchor(&rig, 0), start, "the move was taken back");
+    assert_eq!(rig.shell.engine.spec().duration, 20.0, "and the edit before the session kept");
+    assert_eq!(rig.shell.engine.depth().0, depth.0);
+    // Control: Ctrl+Z outside a session undoes that edit.
+    rig.key(Key::Z, Modifiers::COMMAND);
+    assert_ne!(rig.shell.engine.spec().duration, 20.0);
+}
+
+#[test]
+fn enter_on_the_handle_with_a_tower_selected_starts_no_session() {
+    // S18's review, minor 4: the handle is disabled with no body; even reached, it starts nothing.
+    let mut rig = two_masses();
+    rig.shell.run("select tower 2").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(!rig.shell.focus_tree().node("viewport/selection").unwrap().enabled);
+    rig.key(Key::Enter, Modifiers::NONE);
+    assert!(rig.shell.session.is_none());
+    assert_eq!(
+        rig.shell.keyboard.mode,
+        cav_app::keyboard::Mode::Navigation,
+        "no blue ring with nothing to move"
+    );
+    // Control: with a body selected Enter starts one.
+    rig.shell.run("select body 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    rig.key(Key::Enter, Modifiers::NONE);
+    assert!(rig.shell.session.is_some());
+}
+
+#[test]
+fn the_selection_handle_keeps_its_place_whatever_the_panes_show() {
+    // S18's review, minor 5: in the Analysis layout (pane 1 a plot) the viewport's stops are the
+    // same, in the same order, as in the Scene layout.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("select body 1").unwrap();
+    let stops = |rig: &mut Rig, layout: &str| {
+        rig.shell.run(&format!("layout {layout}")).unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        rig.shell.focus_tree().children("viewport").iter().map(|s| (*s).to_owned()).collect::<Vec<_>>()
+    };
+    let scene = stops(&mut rig, "scene");
+    let analysis = stops(&mut rig, "analysis");
+    assert!(scene.iter().any(|s| s == "viewport/selection"), "{scene:?}");
+    assert_eq!(scene, analysis);
+    // Control: there, it is disabled (pane 1 shows a plot: nothing to move in it).
+    assert!(!rig.shell.focus_tree().node("viewport/selection").unwrap().enabled);
+}
+
+#[test]
+fn a_drag_or_a_session_while_playing_is_one_undo() {
+    // S18's review, R2: the scene plays (a seek every frame between the drag's steps); a gizmo
+    // drag is still one step, and a session cancelled with Esc leaves none. Control: paused.
+    let run = |playing: bool| {
+        let mut rig = Rig::new();
+        rig.shell.run("load point").unwrap();
+        rig.shell.run("select body 1").unwrap();
+        rig.shell.run("tool move").unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        rig.shell.playing = playing;
+        let (start, depth) = (anchor(&rig, 0), rig.shell.engine.depth());
+        rig.drag_arrow(0, 0, 2.0);
+        assert!(rig.shell.engine.time() > 0.0 || !playing, "it played");
+        assert!((anchor(&rig, 0)[0] - start[0] - 2.0).abs() < 1e-12);
+        let after_drag = rig.shell.engine.depth();
+        rig.shell.run("undo").unwrap();
+        assert_eq!(anchor(&rig, 0), start, "one undo took the drag back (playing: {playing})");
+        rig.shell.run("redo").unwrap();
+        // A session of three presses, then Esc.
+        let before = rig.shell.engine.depth();
+        rig.shell.keyboard.focus = vec!["viewport".into(), "viewport/selection".into()];
+        rig.shell.keyboard.nav_on = true;
+        rig.key(Key::Enter, Modifiers::NONE);
+        for _ in 0..3 {
+            rig.key(Key::ArrowRight, Modifiers::NONE);
+        }
+        rig.key(Key::Escape, Modifiers::NONE);
+        (after_drag.0 - depth.0, rig.shell.engine.depth().0 - before.0)
+    };
+    assert_eq!(run(true), (1, 0), "playing: one step for the drag, none for the cancelled session");
+    assert_eq!(run(false), (1, 0), "paused, the same");
+}
+
+#[test]
+fn a_held_session_while_playing_is_one_undo() {
+    // R2 with a held key: 14 steps over a second of play, one undo.
+    let mut rig = two_masses();
+    rig.shell.playing = true;
+    let (start, depth) = (anchor(&rig, 0), rig.shell.engine.depth());
+    rig.key(Key::Enter, Modifiers::NONE);
+    hold(&mut rig, Key::ArrowRight, 59);
+    rig.key(Key::Enter, Modifiers::NONE);
+    assert!((anchor(&rig, 0)[0] - start[0] - 3.5).abs() < 1e-9);
+    assert_eq!(rig.shell.engine.depth().0, depth.0 + 1);
+    rig.shell.run("undo").unwrap();
+    assert_eq!(anchor(&rig, 0), start);
 }

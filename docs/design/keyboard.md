@@ -134,6 +134,11 @@ already Lock).
   (moving the selection with arrows or a typed distance, `docs/slices/S18.md`) **Esc cancels**
   the session, putting the selection back where it was, and **Enter keeps** it. Everywhere else
   Esc keeps what was typed, as above. Both end in navigation mode on the same element.
+  Within a session **Tab is "the next axis"** of the typed distance (Blender's), not the next
+  big scope, and the session holds **every key that is not a global**, used or not: nothing else
+  acts on a body half moved. A global key (Ctrl+Z, Space, ?, …) first ends the session,
+  cancelled, then acts; Ctrl+Z after a move is that cancel and nothing more. (Recorded after S18's
+  review, R1 and minor 3.)
 - A mouse click on a text field starts typing immediately (interaction mode), caret at the click,
   ring hidden until the next key press (the first character typed shows the ring blue).
 - A click anywhere else ends typing and leaves the keyboard in navigation mode.

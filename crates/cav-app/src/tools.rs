@@ -230,6 +230,9 @@ pub fn on_ground(view: &ViewSpec, size: [f64; 2], pointer: [f64; 2], ground: f64
 pub struct Session {
     /// The body, from 0.
     pub body: usize,
+    /// The body's label when the session began: a session acts only while the body at
+    /// [`Self::body`] still has it (S18's review, R1: another body can come to that index).
+    pub label: String,
     /// Its anchor at the start, metres.
     pub start: [f64; 3],
     /// The offset so far, metres, per axis.
@@ -245,10 +248,25 @@ pub struct Session {
 }
 
 impl Session {
-    /// A session on body `body` whose anchor is `start`.
+    /// A session on body `body`, labelled `label`, whose anchor is `start` (metres).
     #[must_use]
-    pub fn new(body: usize, start: [f64; 3]) -> Self {
-        Self { body, start, offset: [0.0; 3], lock: None, typed: String::new(), typed_axis: 0, edited: false }
+    pub fn new(body: usize, label: &str, start: [f64; 3]) -> Self {
+        Self {
+            body,
+            label: label.to_owned(),
+            start,
+            offset: [0.0; 3],
+            lock: None,
+            typed: String::new(),
+            typed_axis: 0,
+            edited: false,
+        }
+    }
+
+    /// Whether the body at [`Self::body`] in `spec` is still the one the session began on.
+    #[must_use]
+    pub fn holds(&self, spec: &cav_sim::SceneSpec) -> bool {
+        spec.bodies.get(self.body).is_some_and(|b| b.label == self.label)
     }
 
     /// The anchor now: the start plus the offset.
@@ -355,7 +373,7 @@ mod tests {
 
     #[test]
     fn a_session_moves_types_and_locks() {
-        let mut s = Session::new(0, [1.0, 2.0, 3.0]);
+        let mut s = Session::new(0, "ball", [1.0, 2.0, 3.0]);
         s.nudge(0, 1.0, 0.25);
         s.nudge(0, 10.0, 0.25);
         assert_eq!(s.anchor(), [3.75, 2.0, 3.0]);

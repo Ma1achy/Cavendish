@@ -428,14 +428,22 @@ impl Shell {
     /// body, moves it by the snap step (or 0.25 m) along an axis, types a distance, locks an axis,
     /// keeps it (Enter) or cancels it (Esc: the move is undone, as if it had not been made).
     /// Every move is the same `Set` of the anchor a gizmo drag issues, a run of them one edit.
+    /// With no body selected (a tower, nothing) Enter starts no session: the keys go back to
+    /// navigation at once (S18's review, minor 4).
     pub(crate) fn session_keys(&mut self) {
         use crate::keyboard::{Effect, SessionKey};
         const ID: &str = "viewport/selection";
-        if self.take(|e| matches!(e, Effect::Interact(i) if i == ID)).is_some()
-            && let Some(Target::Body(n)) = self.engine.selection()
-            && let Some(body) = self.engine.spec().bodies.get(n - 1)
-        {
-            self.session = Some(crate::tools::Session::new(n - 1, body.motion.anchor().0));
+        if self.take(|e| matches!(e, Effect::Interact(i) if i == ID)).is_some() {
+            let body = match self.engine.selection() {
+                Some(Target::Body(n)) => self.engine.spec().bodies.get(n - 1).map(|b| (n - 1, b)),
+                _ => None,
+            };
+            match body {
+                Some((n, body)) => {
+                    self.session = Some(crate::tools::Session::new(n, &body.label, body.motion.anchor().0));
+                }
+                None => self.end_keyboard_session(),
+            }
         }
         let step = self.snap_step().unwrap_or(crate::tools::strip().snap_step);
         let mut changed = false;
@@ -453,21 +461,44 @@ impl Shell {
             changed = true;
         }
         if changed && let Some(session) = self.session.clone() {
-            let applied = self.move_anchor(session.body, session.anchor(), session.edited);
-            if let Some(s) = self.session.as_mut() {
-                s.edited |= applied;
+            if session.holds(self.engine.spec()) {
+                let applied = self.move_anchor(session.body, session.anchor(), session.edited);
+                if let Some(s) = self.session.as_mut() {
+                    s.edited |= applied;
+                }
+            } else {
+                // The body is gone or another is in its place: the session ends, touching nothing.
+                self.session = None;
+                self.end_keyboard_session();
             }
         }
         if let Some((Effect::Release { keep, .. }, _)) =
             self.take(|e| matches!(e, Effect::Release { id, .. } if id == ID))
-            && let Some(session) = self.session.take()
-            && !keep
-            && session.edited
         {
-            // Esc: the body goes back where it began, as the run's last step, so the run changed
-            // nothing and leaves no step to undo or redo (the owner's rule for a transform
-            // session; the engine's history drops a run that ends where it began).
+            self.end_session(keep);
+        }
+    }
+
+    /// Ends the transform session in hand, if there is one: `keep` leaves the body where it was
+    /// moved (Enter); otherwise it goes back where it began, as the run's last step, so the run
+    /// changed nothing and leaves no step to undo or redo (Esc: the owner's rule; the engine's
+    /// history drops a run that ends where it began). Nothing is moved unless the body at the
+    /// session's index is still the one it began on (S18's review, R1). True when the session
+    /// had moved its body.
+    pub(crate) fn end_session(&mut self, keep: bool) -> bool {
+        let Some(session) = self.session.take() else { return false };
+        self.end_keyboard_session();
+        if !keep && session.edited && session.holds(self.engine.spec()) {
             self.move_anchor(session.body, session.start, true);
+        }
+        session.edited
+    }
+
+    /// The keyboard leaves a transform session it is in: back to navigation on the same element.
+    fn end_keyboard_session(&mut self) {
+        if self.keyboard.session == Some(crate::keyboard::Session::Transform) {
+            self.keyboard.session = None;
+            self.keyboard.mode = crate::keyboard::Mode::Navigation;
         }
     }
 
@@ -1175,6 +1206,17 @@ impl Shell {
     fn effect(&mut self, ctx: &egui::Context, effect: Effect, repeat: bool) {
         match effect {
             Effect::Action(id) => {
+                // A global key in a transform session (the only keys that reach an action from
+                // one) first ends it, cancelled, so that no other action runs on a body half
+                // moved (S18's review, R1). Undo in a session that has moved its body *is* that
+                // cancel, and takes back nothing more.
+                if self.session.is_some() {
+                    self.session_keys();
+                    let moved = self.end_session(false);
+                    if moved && id == "undo" {
+                        return;
+                    }
+                }
                 self.by_keyboard = true;
                 // A refusal (nothing to undo, say) is in the log and opens the console.
                 let _ = self.run_action(&id);

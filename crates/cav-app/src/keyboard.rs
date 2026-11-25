@@ -659,10 +659,14 @@ impl Keyboard {
         self.mode_key(tree, press)
     }
 
-    /// A key in a session, or `None` when the session leaves it to the rest of the router.
+    /// A key in a session, or `None` when the session leaves it to the rest of the router: only
+    /// the arrows, which the mode handling turns into adjustments of the session. Every other key
+    /// that is not a global is the session's, used or eaten, so that nothing else acts while it
+    /// is open (S18's review, R1: Delete inside a transform session removed the body, and Esc
+    /// then moved another).
     fn session_key(&mut self, session: Session, press: Press) -> Option<Vec<Effect>> {
         let id = self.focused().to_owned();
-        let letter = |key: Key| key.name().len() == 1 && key.name().chars().all(|c| c.is_ascii_alphabetic());
+        let arrow = matches!(press.key, Key::ArrowLeft | Key::ArrowRight | Key::ArrowUp | Key::ArrowDown);
         match session {
             Session::Transform => {
                 let typed = match press.key {
@@ -703,9 +707,10 @@ impl Keyboard {
                             ctrl: false,
                         }])
                     }
-                    // Every other letter is the session's too: nothing changes tool mid-move.
-                    key if letter(key) && !press.modifiers.command => Some(Vec::new()),
-                    _ => None,
+                    _ if arrow => None,
+                    // Every other key is the session's too: nothing changes tool, deletes or
+                    // duplicates mid-move.
+                    _ => Some(Vec::new()),
                 }
             }
             Session::Fly => match press.key {
@@ -718,8 +723,8 @@ impl Keyboard {
                     self.session = None;
                     Some(vec![Effect::Release { id, keep: true }])
                 }
-                key if letter(key) && !press.modifiers.command => Some(Vec::new()),
-                _ => None,
+                _ if arrow => None,
+                _ => Some(Vec::new()),
             },
         }
     }
@@ -920,12 +925,30 @@ pub const REPEAT_EVERY: f64 = 0.04;
 
 /// Held keys and when each next fires: Tetris's DAS/ARR on the frame's clock (seconds), so a
 /// test can hold a key without a real clock.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Repeat {
     held: Vec<(Press, f64, u32)>,
+    /// The delay before the first repeat, seconds ([`REPEAT_DELAY`]).
+    delay: f64,
+    /// The time between repeats after it, seconds ([`REPEAT_EVERY`]).
+    every: f64,
+}
+
+impl Default for Repeat {
+    fn default() -> Self {
+        Self::with_clock(REPEAT_DELAY, REPEAT_EVERY)
+    }
 }
 
 impl Repeat {
+    /// A repeat on another clock: `delay` seconds before the first repeat, then one every
+    /// `every` seconds. The application uses [`Repeat::default`] (the spec's 500 ms and 40 ms);
+    /// this is for a test that needs a broken one as its control.
+    #[must_use]
+    pub const fn with_clock(delay: f64, every: f64) -> Self {
+        Self { held: Vec::new(), delay, every }
+    }
+
     /// A key went down at `t`: it fires now (the caller routes it) and, if it repeats, is held.
     pub fn press(&mut self, press: Press, t: f64) {
         self.release(press.key);
@@ -954,13 +977,14 @@ impl Repeat {
     /// went down, then one every `REPEAT_EVERY`.
     pub fn due(&mut self, t: f64) -> Vec<Press> {
         let mut out = Vec::new();
+        let (delay, every) = (self.delay, self.every);
         for (press, down, fired) in &mut self.held {
             let held = t - *down;
-            let total = if held < REPEAT_DELAY {
+            let total = if held < delay {
                 1
             } else {
                 // A small allowance so that a frame landing on a repeat's instant counts it.
-                2 + ((held - REPEAT_DELAY + 1e-9) / REPEAT_EVERY).floor() as u32
+                2 + ((held - delay + 1e-9) / every).floor() as u32
             };
             while *fired < total {
                 out.push(*press);
@@ -1039,6 +1063,8 @@ mod tests {
             s("viewport", "F", "frame"),
             s("viewport", "Shift+F", "fly"),
             s("tree", "Delete", "delete"),
+            s("viewport", "Delete", "delete-in-view"),
+            s("viewport", "Ctrl+D", "duplicate-in-view"),
             s("tree/bodies", "A", "add-body"),
             s("tree", "A", "add"),
         ]
@@ -1059,6 +1085,17 @@ mod tests {
         assert!(kb.nav_on, "and then the ring shows");
         // Control: the ring shows where the focus already was; the key did not move it.
         assert_eq!(kb.focus, vec!["viewport".to_owned()]);
+        // Control of the order: a router that turned the ring on *before* acting would make a
+        // first Enter press what is focused. The real one does not; one already on does.
+        let mut first =
+            Keyboard { focus: vec!["footer".into(), "footer/console".into()], ..Keyboard::default() };
+        assert!(first.route(&t, &s, key(Key::Enter)).0.is_empty());
+        let mut on_first = Keyboard {
+            focus: vec!["footer".into(), "footer/console".into()],
+            nav_on: true,
+            ..Keyboard::default()
+        };
+        assert_eq!(on_first.route(&t, &s, key(Key::Enter)).0, vec![Effect::Click("footer/console".into())]);
         // A click hides it again; the next key shows it where the focus is.
         kb.pointer();
         assert!(!kb.nav_on);
@@ -1197,29 +1234,23 @@ mod tests {
 
     #[test]
     fn a_held_key_repeats_on_the_tetris_clock() {
-        let fires = |delay_free: bool| {
-            let mut repeat = Repeat::default();
-            let press = key(Key::ArrowRight);
-            repeat.press(press, 0.0);
+        // Held for a second at 60 frames a second, through a `Repeat` on the given clock.
+        let fires = |mut repeat: Repeat| {
+            repeat.press(key(Key::ArrowRight), 0.0);
             let mut count = 1; // the press itself
             let mut t = 0.0_f64;
             while t < 1.0 - 1e-12 {
                 t += 1.0 / 60.0;
-                let t = t.min(1.0);
-                if delay_free {
-                    // The control: repeating every 40 ms from the start, with no delay.
-                    count = 1 + (t / REPEAT_EVERY + 1e-9).floor() as usize;
-                } else {
-                    count += repeat.due(t).len();
-                }
+                count += repeat.due(t.min(1.0)).len();
             }
-            if !delay_free {
-                count += repeat.due(1.0).len();
-            }
-            count
+            count + repeat.due(1.0).len()
         };
-        assert_eq!(fires(false), 14, "1 + 1 at 500 ms + 12 more by 1000 ms");
-        assert_eq!(fires(true), 26, "the control: no delay gives more");
+        assert_eq!(fires(Repeat::default()), 14, "1 + 1 at 500 ms + 12 more by 1000 ms");
+        // The control: the same machinery with no delay before the repeats (S18's review, minor
+        // 9: a broken `Repeat`, driven, where the first control was a closed form).
+        // With no delay the first repeat comes with the press, then one every 40 ms to 1000 ms: 1 + 26
+        // (the brief's closed form said 26, leaving out the repeat at 0 ms).
+        assert_eq!(fires(Repeat::with_clock(0.0, REPEAT_EVERY)), 27, "no delay gives more");
         // Shortcuts and Home do not repeat.
         let mut repeat = Repeat::default();
         repeat.press(key(Key::Home), 0.0);
@@ -1293,6 +1324,25 @@ mod tests {
             kb.route(&t, &s, Press::with(Key::Home, Modifiers::COMMAND)).0.is_empty(),
             "Ctrl+Home is not Home"
         );
+        // (4) over (5): a scope shortcut on a key the modes use (an arrow, Enter) wins over the
+        // mode (S18's review, minor 9); control: unbound, the arrow moves and Enter goes in.
+        let mut bound = s.clone();
+        for (chord, action) in [("ArrowDown", "next"), ("Enter", "open")] {
+            bound.push(Shortcut {
+                scope: "tree".into(),
+                chord: Chord::parse(chord).unwrap(),
+                action: action.into(),
+            });
+        }
+        let mut kb = Keyboard { focus: vec!["tree".into()], nav_on: true, ..Keyboard::default() };
+        assert_eq!(kb.route(&t, &bound, key(Key::ArrowDown)).0, vec![Effect::Action("next".into())]);
+        assert_eq!(kb.route(&t, &bound, key(Key::Enter)).0, vec![Effect::Action("open".into())]);
+        assert_eq!(kb.focus, ["tree"]);
+        kb.route(&t, &s, key(Key::ArrowDown));
+        assert_eq!(kb.focus, ["viewport"], "unbound, the arrow moves to the next big scope");
+        kb.focus = vec!["tree".into()];
+        kb.route(&t, &s, key(Key::Enter));
+        assert_eq!(kb.focus, ["tree", "tree/bodies"], "unbound, Enter goes in");
         // Control: with the priorities swapped (scope before global), Home in a scope that binds
         // it would not reach the global. Built here by binding Home in the viewport and asking
         // the scope first.
@@ -1351,6 +1401,20 @@ mod tests {
         assert_eq!(kb.route(&t, &s, key(Key::Enter)).0, vec![Effect::Interact("selection".into())]);
         assert_eq!(kb.session, Some(Session::Transform));
         assert_eq!(kb.route(&t, &s, key(Key::W)).0, Vec::new(), "no tool change mid-move");
+        // Nor a delete or a duplicate of the body being moved (S18's review, R1): the session
+        // takes every key that is not a global, used or not.
+        for press in [key(Key::Delete), Press::with(Key::D, Modifiers::COMMAND), key(Key::F2), key(Key::F)] {
+            let (effects, used) = kb.route(&t, &s, press);
+            assert!(
+                used && !effects.iter().any(|e| matches!(e, Effect::Action(_))),
+                "{press:?}: {effects:?}"
+            );
+        }
+        // A global still reaches the frame, which decides what it does to the session.
+        assert_eq!(
+            kb.route(&t, &s, Press::with(Key::Z, Modifiers::COMMAND)).0,
+            vec![Effect::Action("undo".into())]
+        );
         assert_eq!(kb.route(&t, &s, key(Key::X)).0, vec![Effect::Session(SessionKey::Lock(0))]);
         assert_eq!(kb.route(&t, &s, key(Key::Num2)).0, vec![Effect::Session(SessionKey::Char('2'))]);
         assert_eq!(
@@ -1368,13 +1432,19 @@ mod tests {
             kb.route(&t, &s, key(Key::Enter)).0,
             vec![Effect::Release { id: "selection".into(), keep: true }]
         );
-        // Outside a session W is the Move tool's again.
+        // Outside a session W is the Move tool's again, and Delete and Ctrl+D act (the control
+        // of the arm above).
         assert_eq!(kb.route(&t, &s, key(Key::W)).0, vec![Effect::Action("tool-move".into())]);
+        assert_eq!(kb.route(&t, &s, key(Key::Delete)).0, vec![Effect::Action("delete-in-view".into())]);
+        assert_eq!(
+            kb.route(&t, &s, Press::with(Key::D, Modifiers::COMMAND)).0,
+            vec![Effect::Action("duplicate-in-view".into())]
+        );
         // A fly session keeps W A S D E Q, and Esc keeps the camera.
         kb.focus = vec!["viewport".into(), "canvas".into()];
         kb.mode = Mode::Interaction;
         kb.session = Some(Session::Fly);
-        for k in [Key::W, Key::A, Key::S, Key::D, Key::E, Key::Q, Key::R] {
+        for k in [Key::W, Key::A, Key::S, Key::D, Key::E, Key::Q, Key::R, Key::Delete, Key::F] {
             assert_eq!(kb.route(&t, &s, key(k)).0, Vec::new(), "{k:?} is the flight's");
         }
         assert_eq!(

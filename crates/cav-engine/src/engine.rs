@@ -181,6 +181,11 @@ pub struct Engine {
     /// Whether the last command offered was refused: a step that says it continues the edit
     /// before it then has nothing to continue.
     refused: bool,
+    /// The path of the `Set` that made the history's last step, while nothing else has edited
+    /// the scene since: the run a later `Set { continues: true }` of that path continues, even
+    /// with seeks, selections and camera moves between them (S18's review, R2: a drag while the
+    /// scene plays). Any other edit, an undo or a redo ends it.
+    run: Option<String>,
     /// Where exports are written.
     exports: Exports,
     /// What draws figures: the client's.
@@ -261,6 +266,7 @@ impl Engine {
             unrecorded: None,
             landed: Vec::new(),
             refused: false,
+            run: None,
             exports: Exports::AsNamed,
             drawer: Drawer::default(),
             window: std::sync::Mutex::new(None),
@@ -509,7 +515,20 @@ impl Engine {
         {
             *continues = *first;
         }
-        self.perform(&command, prepared, overwrites);
+        // A step of a run continues it whatever came between, so long as nothing else edited the
+        // scene: a seek each frame while the scene plays, a camera move, a selection. (The
+        // journal then holds each step, and a replay, which sees the same commands, makes the
+        // same one step of undo.)
+        let continues = overwrites
+            || matches!(&command, Command::Set { path, continues: true, .. } if self.run.as_deref() == Some(path));
+        let edit = matches!(prepared, Prepared::Edit(..) | Prepared::Restore(_));
+        self.perform(&command, prepared, continues);
+        if edit {
+            self.run = match &command {
+                Command::Set { path, .. } => Some(path.clone()),
+                _ => None,
+            };
+        }
         self.generation += 1;
         // What the panes draw of voxel bodies follows the scene, the playhead and the views. What
         // it could not draw is said once, for the scene that has it (a refusal of a tree).
@@ -1763,6 +1782,13 @@ impl Engine {
         (undo > 0, redo > 0)
     }
 
+    /// How many steps can be undone, and how many redone: the depth of the history, which tells
+    /// one step from two where [`Self::history`] cannot.
+    #[must_use]
+    pub fn depth(&self) -> (usize, usize) {
+        self.history.depth()
+    }
+
     /// The lines that made the edits that can be undone, oldest first, and those that can be
     /// redone, the next first: the editor's history list.
     #[must_use]
@@ -1863,6 +1889,58 @@ mod tests {
         let mut fresh = Engine::new();
         fresh.run_line("view home").unwrap();
         assert_eq!(fresh.history(), (false, false));
+    }
+
+    #[test]
+    fn a_run_of_sets_is_one_step_whatever_comes_between() {
+        // S18's review, R2: a drag while the scene plays is a seek each frame between its sets;
+        // it is still one step of undo, live and replayed, and one that ends where it began is
+        // none.
+        let [x0, y0, z0] = dev::point().bodies[0].motion.anchor().0;
+        let set = |x: f64, continues: bool| Command::Set {
+            path: "bodies[0].motion.Static.position".into(),
+            value: serde_json::json!([x, y0, z0]),
+            continues,
+        };
+        let mut engine = Engine::new();
+        engine.apply(Command::load(dev::point())).unwrap();
+        let start = engine.depth();
+        for (n, step) in [0.5, 1.0, 1.5, 2.0].into_iter().enumerate() {
+            engine.apply(set(x0 + step, n > 0)).unwrap();
+            engine.apply(Command::Seek(0.1 * (n + 1) as f64)).unwrap();
+            engine.apply(Command::View(ViewCommand::Orbit { pane: 0, yaw: n as f64, pitch: 20.0 })).unwrap();
+        }
+        assert_eq!(engine.depth(), (start.0 + 1, 0), "one step for the run");
+        let replayed = Engine::replay(engine.journal()).unwrap();
+        assert_eq!(replayed.depth(), engine.depth(), "and the replay makes the same");
+        assert_eq!(replayed.spec(), engine.spec());
+        engine.apply(Command::Undo).unwrap();
+        assert_eq!(engine.spec().bodies[0].motion.anchor().0[0], x0, "one undo takes the run back");
+        // A run that comes back to its start, seeks between, leaves no step.
+        engine.apply(Command::Redo).unwrap();
+        engine.apply(Command::Undo).unwrap();
+        let before = engine.depth();
+        engine.apply(set(x0 + 1.0, false)).unwrap();
+        engine.apply(Command::Seek(0.5)).unwrap();
+        engine.apply(set(x0, true)).unwrap();
+        assert_eq!(engine.depth().0, before.0, "a cancelled run leaves nothing to undo");
+        // Control: an edit between ends the run, so the next set is a step of its own.
+        let mut broken = Engine::new();
+        broken.apply(Command::load(dev::point())).unwrap();
+        let start = broken.depth().0;
+        broken.apply(set(x0 + 1.0, false)).unwrap();
+        broken.apply(Command::set("duration", serde_json::json!(20.0))).unwrap();
+        broken.apply(set(x0 + 2.0, true)).unwrap();
+        assert_eq!(broken.depth().0, start + 3);
+        // And a set of another path does not continue it.
+        let mut other = Engine::new();
+        other.apply(Command::load(dev::point())).unwrap();
+        let start = other.depth().0;
+        other.apply(set(x0 + 1.0, false)).unwrap();
+        other
+            .apply(Command::Set { path: "duration".into(), value: serde_json::json!(21.0), continues: true })
+            .unwrap();
+        assert_eq!(other.depth().0, start + 2);
     }
 
     #[test]

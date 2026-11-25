@@ -1,6 +1,7 @@
 // The window's layouts, as data (docs/slices/S18.md §2; docs/research/editor-ux.md §3.2): a
 // layout is a name and the console lines that arrange the figure for a task. Choosing
-// one runs its lines (each a view command: journalled, never an edit). The big scopes and their
+// one runs its lines (each a view command: journalled, never an edit, never the selection; the
+// check refuses anything else). The big scopes and their
 // Tab order are the same in every layout; a layout changes where things are, never the order.
 //
 //   id     what `layout <id>` names
@@ -20,7 +21,7 @@
         (
             id: "instrument",
             label: "Instrument",
-            lines: ["panes 2", "show scene @1", "show flight @2", "pane 2", "select none"],
+            lines: ["panes 2", "show scene @1", "show flight @2", "pane 2"],
             about: "the array and its timing: the scene beside the atoms' flights, the instrument and cadence in the inspector",
         ),
         (
