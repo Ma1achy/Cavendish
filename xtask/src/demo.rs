@@ -21,8 +21,9 @@ pub fn run(root: &Path, slice: &str, web: bool) -> Result<(), String> {
         "S4" | "s4" => s4(root, web),
         "S17" | "s17" => s17(root),
         "S18" | "s18" => s18(root),
+        "S19" | "s19" => s19(root),
         other => Err(format!(
-            "no demo for slice `{other}`: the slices with demos are: S0, S1, S2, S3, S4, S17, S18"
+            "no demo for slice `{other}`: the slices with demos are: S0, S1, S2, S3, S4, S17, S18, S19"
         )),
     }
 }
@@ -981,6 +982,49 @@ fn s18(root: &Path) -> Result<(), String> {
     let answer = capture_within(&cav, &["exec", script], 300, None)?;
     write(&out, "session.txt", &format!("$ cav exec \"{script}\"\n{answer}"), &mut made)?;
     eprintln!("xtask: demo S18 wrote {} files to {}:", made.len(), out.display());
+    for file in &made {
+        eprintln!("  {file}");
+    }
+    Ok(())
+}
+
+/// S19, the editor's second half (`docs/slices/S19.md` §5): the side panels redesigned
+/// (`docs/design/panels.md`), materials, a probe, an imported mesh. Release builds, each run
+/// within a wall-clock limit; scenes `point`, `world-box` and `town` only.
+fn s19(root: &Path) -> Result<(), String> {
+    let out = root.join("docs").join("slices").join("S19");
+    std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    step(
+        "build cav and cav-app (release)",
+        cargo(root, &["build", "--quiet", "--release", "-p", "cav", "-p", "cav-app"]),
+    )?;
+    let app = root.join("target").join("release").join(format!("cav-app{}", std::env::consts::EXE_SUFFIX));
+    let path = |name: &str| out.join(name).to_string_lossy().into_owned();
+    let mut made: Vec<String> = Vec::new();
+    // A steel box with a lead part beside it, as `point`'s second body.
+    let materials = "add bodies {\"label\":\"block\",\"mass\":1.0,\"shape\":{\"kind\":{\"Cuboid\":{\"size\":[0.6,0.6,0.6]}},\"pitch\":0.05,\"supersample\":2,\"material\":\"steel\",\"parts\":[{\"mode\":\"Add\",\"material\":\"lead\",\"at\":[0.45,0,0],\"kind\":{\"Solid\":{\"shape\":{\"Sphere\":{\"radius\":0.3}}}}},{\"mode\":\"Paint\",\"material\":\"copper\",\"at\":[0,0,0.3],\"kind\":{\"Stroke\":{\"radius\":0.1,\"points\":[[-0.3,-0.3,0],[0.3,0.3,0]]}}}]},\"motion\":{\"Static\":{\"position\":[2,2,0.5]}}}";
+    let shots: Vec<(&str, String)> = vec![
+        ("panels-body.png", "load point; add sphere at 2 2 0.25; select body 2; tool move; frame".to_owned()),
+        ("panels-scene.png", "load point; layout instrument".to_owned()),
+        ("panels-tower.png", "load town; select tower 2".to_owned()),
+        ("panels-readings.png", "load point; tab readings".to_owned()),
+        ("materials.png", format!("load point; {materials}; select body 2; colour material; frame")),
+        (
+            "probe.png",
+            "load point; add sphere at 2 2 0.25; select body 2; frame; tool probe; probe-at 0.5 0.5"
+                .to_owned(),
+        ),
+    ];
+    for (file, script) in &shots {
+        capture_within(
+            &app,
+            &["--screenshot", &path(file), "--size", "1440x900", "--exec", script],
+            180,
+            None,
+        )?;
+        expect_png(&out, file, [1440, 900], &mut made)?;
+    }
+    eprintln!("xtask: demo S19 wrote {} files to {}:", made.len(), out.display());
     for file in &made {
         eprintln!("  {file}");
     }

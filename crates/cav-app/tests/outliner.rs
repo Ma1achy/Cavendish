@@ -72,38 +72,74 @@ fn the_world_is_in_the_outliner_and_can_be_selected() {
     assert!(room.run("select world").unwrap_err().contains("no world"));
 }
 
-/// What the rendered outliner's row for `target` said (its detail), after a couple of frames.
-fn row_words(shell: &mut Shell, target: Target) -> String {
+/// What the Readings tab wrote for tower `n` (from 0) after a couple of frames: the numbers moved
+/// there from the tree's rows (S19, `docs/design/panels.md`).
+fn reading_words(shell: &mut Shell, n: usize) -> String {
+    shell.right_tab = cav_app::outliner::RightTab::Readings;
     rows(shell);
-    let found = shell.layout().outline_words.iter().find(|(t, _, _)| *t == target);
-    found.unwrap_or_else(|| panic!("no row for {target:?}")).2.clone()
+    let found = shell.layout().readings.iter().find(|(t, _)| *t == n);
+    found.unwrap_or_else(|| panic!("no reading for tower {}", n + 1)).1.clone()
 }
 
 #[test]
 fn a_world_scene_s_towers_show_what_they_read() {
     // S4's second review J5, third review K2: with no bodies, a world scene still reads
-    // something, and the rendered outliner's tower rows say what, marked ◐ when it is of part of
-    // the matter only.
+    // something, and the Readings tab says what, marked ◐ when it is of part of the matter only;
+    // the tree's status dot says the same. (Until S19 the tree's row carried the number.)
     let mut shell = Shell::new();
     shell.engine.set_patience(std::time::Duration::from_secs(60));
     shell.run("load world-box").unwrap();
     shell.run("set world.read.radius 1").unwrap();
     assert!(shell.engine.settle(std::time::Duration::from_secs(60)));
-    let words = row_words(&mut shell, Target::Tower(1));
+    let words = reading_words(&mut shell, 0);
     assert!(words.contains("rad") && words.contains('◐'), "{words}");
-    // The helpers say the same.
+    let dot = shell.layout().dots.iter().find(|(t, _)| *t == 0).map(|(_, d)| *d);
+    assert_eq!(dot, Some(cav_app::outliner::Dot::Partial));
     let reply = shell.reading().clone();
     assert_eq!(reply.truncated, Some(1.0));
     assert!(!cav_app::panels_for_tests::silent(shell.engine.spec()));
-    // Control: `point` with its body taken away reads nothing: the row shows where the tower is.
+    // Control: `point` with its body taken away reads nothing: no number, a silent dot.
     let mut empty = cav_sim::dev::point();
     empty.bodies.clear();
-    let (x, y) = (empty.array.towers[0].position[0], empty.array.towers[0].position[1]);
     let mut nothing = Shell::new();
     nothing.engine.apply(Command::load(empty)).unwrap();
     assert!(nothing.engine.settle(std::time::Duration::from_secs(60)));
-    let words = row_words(&mut nothing, Target::Tower(1));
-    assert_eq!(words, format!("{x:+.1} {y:+.1}"));
+    assert_eq!(reading_words(&mut nothing, 0), "");
+    let dot = nothing.layout().dots.iter().find(|(t, _)| *t == 0).map(|(_, d)| *d);
+    assert_eq!(dot, Some(cav_app::outliner::Dot::Silent));
+}
+
+#[test]
+fn the_outliner_is_one_tree_of_named_rows() {
+    // S19, docs/design/panels.md: the scene's groups (Array, Bodies, Surroundings) fold, each
+    // row names a thing and carries no number. Control: the rows of S18 carried "100 kg ·
+    // static" and the towers' phases.
+    for scene in ["point", "town", "world-box"] {
+        let mut shell = Shell::new();
+        shell.run(&format!("load {scene}")).unwrap();
+        rows(&mut shell);
+        let groups: Vec<String> = shell.layout().tree_groups.iter().map(|(g, _)| g.clone()).collect();
+        assert_eq!(groups, ["tree/array", "tree/sources", "tree/surroundings"], "{scene}");
+        for (_, label, words) in &shell.layout().outline_words {
+            let numbered =
+                |t: &str| t.chars().any(|c| c.is_ascii_digit()) && !label.chars().any(|c| c.is_ascii_digit());
+            assert!(!numbered(words), "{scene}: `{label}` says `{words}`");
+        }
+        assert_eq!(shell.layout().dots.len(), shell.engine.spec().array.towers.len(), "a dot a tower");
+    }
+    let reply = Shell::new().reading().clone();
+    let old = cav_app::panels_for_tests::tower_detail(&reply, 0, [1.0, 2.0, 0.0], true);
+    assert!(old.chars().any(|c| c.is_ascii_digit()), "control: S18's row words had numbers: {old}");
+    // A group folds by a click on its row, and its rows go; the fold is kept for the scene.
+    let mut shell = Shell::new();
+    shell.run("load point").unwrap();
+    rows(&mut shell);
+    let bodies_before = shell.layout().outline.iter().filter(|(t, _)| matches!(t, Target::Body(_))).count();
+    assert!(bodies_before > 0);
+    shell.tree_folded.insert(("point".to_owned(), "tree/sources".to_owned()));
+    rows(&mut shell);
+    assert!(!shell.layout().outline.iter().any(|(t, _)| matches!(t, Target::Body(_))), "folded");
+    assert!(shell.layout().tree_groups.contains(&("tree/sources".to_owned(), false)));
 }
 
 /// A surface that draws nothing and says what it was told to.

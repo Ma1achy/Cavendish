@@ -74,6 +74,18 @@ pub const COMMANDS: &[CommandDoc] = &[
         example: "add array.towers {\"label\": \"tower 6\", \"position\": [6, 0, 0]}",
     },
     CommandDoc {
+        name: "hide",
+        usage: "hide <body label>",
+        about: "stop drawing a body in every pane (the scene tree's eye); the towers still read it (a view's: not an edit)",
+        example: "hide mass",
+    },
+    CommandDoc {
+        name: "unhide",
+        usage: "unhide <body label>",
+        about: "draw a hidden body again",
+        example: "unhide mass",
+    },
+    CommandDoc {
         name: "probe",
         usage: "probe <x> <y> <z>",
         about: "the Probe tool's reading at a point, metres: the bodies' gravity there, the voxel cell under it (its body, material, mass) and that cell's share of each tower's phase now, and the distance to each tower (a question: changes nothing)",
@@ -417,6 +429,9 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
                     words.push("none".to_owned());
                 }
                 format!("overlay {}{}", words.join(" "), at(pane))
+            }
+            ViewCommand::Hide { ref label, hidden } => {
+                format!("{} {}", if hidden { "hide" } else { "unhide" }, quoted(label))
             }
             ViewCommand::Section { pane, section: None } => format!("section off{}", at(pane)),
             ViewCommand::Section { pane, section: Some(s) } => {
@@ -882,6 +897,12 @@ impl Engine {
                     rest = after;
                 }
                 view(ViewCommand::Overlay { pane, overlay })
+            }
+            ("hide" | "unhide", [label]) => {
+                if !self.spec().bodies.iter().any(|b| b.label == *label) {
+                    return Err(format!("`{label}` is not a body of the scene; {}", usage(name)));
+                }
+                view(ViewCommand::Hide { label: (*label).to_owned(), hidden: name == "hide" })
             }
             ("section", ["off"]) => view(ViewCommand::Section { pane, section: None }),
             ("section", [axis, offset]) => {
@@ -1698,6 +1719,10 @@ mod tests {
             if doc.name == "undo" {
                 engine.run_line("load void").unwrap();
             }
+            // `hide` and `unhide` name a body: the point scene's.
+            if matches!(doc.name, "hide" | "unhide") {
+                engine.run_line("load point").unwrap();
+            }
             // `import` reads a file dropped on the window: drop one by the example's name.
             if doc.name == "import" {
                 let half = cav_core::Vec3::new(0.2, 0.1, 0.05);
@@ -1721,6 +1746,10 @@ mod tests {
             // The imported body is taken out again: the examples after it read the scene.
             if doc.name == "import" {
                 engine.run_line("undo").unwrap();
+            }
+            // And the point scene `hide` named is let go of: the examples after it want the room.
+            if matches!(doc.name, "hide" | "unhide") {
+                engine.run_line("load room").unwrap();
             }
         }
         assert!(help().lines().count() == COMMANDS.len());

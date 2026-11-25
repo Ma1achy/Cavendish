@@ -661,14 +661,14 @@
   milestone: S18
   title: "Second review, the record: the pictures retaken, the brief's section 7.8, ARCHITECTURE, PROGRESS and the validation report"
 - id: TASK-S19-01
-  milestone: S19
-  title: "Docking: panels as tabs in dock areas, drag to dock, floating panels in the canvas (egui_dock), the Tab order kept"
+  milestone: S20
+  title: "Docking: panels as tabs in dock areas, drag to dock, floating panels in the canvas (egui_dock), the Tab order kept (moved to S20 by the S19 record: the panels redesign came first)"
 - id: TASK-S19-02
   milestone: S20
   title: "Pop-out windows (native, egui viewports), keeping each panel's place in the Tab order (moved to S20 by the S19 brief; floating in-page panels are TASK-S19-01's)"
 - id: TASK-S19-03
-  milestone: S19
-  title: "The Scale tool: handles on the selection, a typed factor, one edit (re-titled by the S19 brief; Rotate is TASK-S20-01)"
+  milestone: S20
+  title: "The Scale tool: handles on the selection, a typed factor, one edit (re-titled by the S19 brief; Rotate is TASK-S20-01) (moved to S20 by the S19 record: the panels redesign came first)"
 - id: TASK-S19-04
   milestone: S19
   title: "The Probe tool: click a point, read the bodies' gravity there, the voxel cell and its share of each tower's phase (split by S19: Measure, Slice and Paint are TASK-S19-20)"
@@ -676,29 +676,29 @@
   milestone: S20
   title: "Camera follow, pointer lock (native and web) and the trackball"
 - id: TASK-S19-06
-  milestone: S19
-  title: "Detail tiers: a numerics block in the scene, tier files (preview, standard, reference) measured against the reference, progressive refinement and the footer switch"
+  milestone: S20
+  title: "Detail tiers: a numerics block in the scene, tier files (preview, standard, reference) measured against the reference, progressive refinement and the footer switch (moved to S20 by the S19 record: the panels redesign came first)"
 - id: TASK-S19-07
   milestone: S20
   title: "Multi-selection and grouped edits: Select as a set, box select, multi-drag, reorder and templates as one undo step"
 - id: TASK-S19-08
-  milestone: S19
-  title: "Units typed with values (2 km, 45 deg) in fields, sessions and the console"
+  milestone: S20
+  title: "Units typed with values (2 km, 45 deg) in fields, sessions and the console (moved to S20 by the S19 record: the panels redesign came first)"
 - id: TASK-S19-09
   milestone: S19
   title: "S18's third review, minors 1-9: a click outside the options ends a session kept; the mouse fly outlives the pointer leaving while held; a Home that changes nothing keeps the run; a sequential legend checked; the history's first row named as drawn; the ghost in the demo; Loss and Seed hints"
 - id: TASK-S19-10
-  milestone: S19
-  title: "Camera bookmarks in the scene: view save, goto, drop; , and . step through them; the header's list (S18's C6)"
+  milestone: S20
+  title: "Camera bookmarks in the scene: view save, goto, drop; , and . step through them; the header's list (S18's C6) (moved to S20 by the S19 record: the panels redesign came first)"
 - id: TASK-S19-11
-  milestone: S19
-  title: "The browser's reserved keys: a web chord for every action on one, on the ? sheet and in the palette in the page"
+  milestone: S20
+  title: "The browser's reserved keys: a web chord for every action on one, on the ? sheet and in the palette in the page (moved to S20 by the S19 record: the panels redesign came first)"
 - id: TASK-S19-12
   milestone: S19
   title: "S19's record: the demo, the validation report against s18-the-editor, ARCHITECTURE, the recipes, PROGRESS"
 - id: TASK-S19-20
-  milestone: S19
-  title: "Measure, the Slice handle in the view and the voxel Paint brush (split from TASK-S19-04)"
+  milestone: S20
+  title: "Measure, the Slice handle in the view and the voxel Paint brush (split from TASK-S19-04) (moved to S20 by the S19 record: the panels redesign came first)"
 - id: TASK-S20-01
   milestone: S20
   title: "Rotate: an orientation for bodies (the read turns the arm points into the body's frame), the ring gizmo, typed angles"
@@ -714,7 +714,7 @@
 - id: TASK-S5-10
   milestone: S5
   title: Exact clipped pieces as a near kernel within ~3 cells of an arm point, behind a distance switch
-- id: TASK-S19-
+- id: TASK-S19-13
   milestone: S19
   title: The side panels redesigned - outliner as a tree, inspector as component cards, a readings panel, tool strip in the viewport (docs/design/panels.md)
 - id: TASK-S5-11
@@ -732,3 +732,24 @@
 - id: TASK-S5-15
   milestone: S5
   title: World octree and read-LOD debug view - overlay tree for the world's chunks, and a per-tower overlay colouring what is read leaf-exact, by moments at which level, or not at all
+- id: TASK-S21-01
+  milestone: S21
+  title: Per-vertex ambient occlusion baked into the greedy meshes (merge only on equal AO) and the same AO at the far march's hit
+- id: TASK-S21-02
+  milestone: S21
+  title: Sun and sky light in linear light, a neutral tone curve and distance fog to the sky colour
+- id: TASK-S21-03
+  milestone: S21
+  title: Sun shadows: one ray per pixel through a camera-centred coarse occupancy volume, capped per frame (measure first)
+- id: TASK-S21-04
+  milestone: S21
+  title: Sky: an analytic gradient now; a scattering atmosphere (Hillaire 2020) with the planet world
+- id: TASK-S21-05
+  milestone: S21
+  title: Voxel colour: cell-hash lightness jitter and height/slope blends per material, computed at draw time
+- id: TASK-S21-06
+  milestone: S21
+  title: Looks as data: a beauty look and a data look (identity on colour maps), switchable, with a badge when lighting shifts colours
+- id: TASK-S19-14
+  milestone: S20
+  title: "Phones and tablets in the web build (owner, 25 Nov 2026): touch (tap, one-finger orbit, two-finger pan and pinch, long-press menu, finger-sized handles), drawers and a bottom tool bar on narrow screens, 44 pt targets, nothing hover-only, Safari's WebGPU and memory; screenshots at 390x844, 1024x1366, 1366x1024 (moved to S20 by the S19 brief: S19 is full)"

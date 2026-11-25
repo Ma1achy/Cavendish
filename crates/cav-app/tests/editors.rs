@@ -128,13 +128,20 @@ fn leave_every_editor(selection: &str) -> (Rig, usize) {
                 let Some(rect) = rig.shell.layout().editor(&path) else { continue };
                 let at = match place {
                     0 => rect.center(),
-                    1 => rect.left_center() + vec2(8.0, 0.0),
-                    _ => rect.right_center() - vec2(8.0, 0.0),
+                    // Past a vector's axis letter, and short of the reset's place (S19's panels
+                    // put X, Y, Z before the boxes).
+                    1 => rect.left_center() + vec2(20.0, 0.0),
+                    _ => rect.right_center() - vec2(26.0, 0.0),
                 };
                 let (before, sets) = (rig.bits(), rig.sets());
                 rig.click(at);
                 match leave {
-                    0 => rig.click(rect.left_center() - vec2(40.0, 0.0)),
+                    // Elsewhere: the inspector's own ground beside its tabs (S19's panels: the
+                    // name is edited in the header, with no label column to its left to click).
+                    0 => {
+                        let panel = rig.shell.layout().panel("properties").unwrap();
+                        rig.click(panel.right_top() + vec2(-14.0, 14.0));
+                    }
                     1 => rig.key(Key::Tab),
                     2 => rig.key(Key::Enter),
                     _ => rig.key(Key::Escape),

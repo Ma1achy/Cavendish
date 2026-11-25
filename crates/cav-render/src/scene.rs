@@ -419,6 +419,21 @@ pub fn drawables_with(
     time: f64,
     voxels: Option<&cav_sim::voxel_view::VoxelFrame>,
 ) -> Drawables {
+    drawables_hiding(scene, style, highlight, origin, time, voxels, &[])
+}
+
+/// [`drawables_with`] without the bodies whose labels are in `hidden` (a view's hidden bodies,
+/// `ViewSpec::hidden`): they are not drawn at all, not even as an outline.
+#[must_use]
+pub fn drawables_hiding(
+    scene: &SceneSpec,
+    style: DrawStyle,
+    highlight: Option<Target>,
+    origin: Vec3,
+    time: f64,
+    voxels: Option<&cav_sim::voxel_view::VoxelFrame>,
+    hidden: &[String],
+) -> Drawables {
     let paper = style == DrawStyle::Paper;
     let palette = if paper { &PAPER } else { &DARK };
     // Wireframe and paper draw edges; the other styles also fill surfaces.
@@ -521,6 +536,9 @@ pub fn drawables_with(
 
     let gravity = scene.array.instrument.gravity;
     for (n, body) in scene.bodies.iter().enumerate() {
+        if hidden.contains(&body.label) {
+            continue;
+        }
         let selected = highlight == Some(Target::Body(n + 1));
         let at = Vec3::from_array(body.motion.position(time, gravity));
         let radius = body.radius.max(BODY_RADIUS);

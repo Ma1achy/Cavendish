@@ -1,5 +1,5 @@
 # The least number of tests each tier must execute (REBUILD §8). Fewer is a failure.
 # Floors only go up: raise one in the commit that adds tests; never lower one to pass.
-quick 651
+quick 659
 gpu 42
 oracle 58
