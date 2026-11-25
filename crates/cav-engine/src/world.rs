@@ -298,6 +298,7 @@ impl Streaming {
         self.frame.extent = Some(extent);
         self.frame.world = hash;
         self.frame.pending = self.queue.len();
+        self.frame.waiting = self.queue.iter().copied().collect();
     }
 
     /// Makes what is queued, nearest first: at most `most` of them, stopping after the one that
@@ -321,6 +322,9 @@ impl Streaming {
         while left > 0 && started.elapsed().as_secs_f64() * 1e3 <= milliseconds && !self.queue.is_empty() {
             let width = threads.min(left);
             let batch: Vec<Want> = (0..width).map_while(|_| self.queue.pop_front()).collect();
+            for want in &batch {
+                self.frame.waiting.remove(want);
+            }
             left -= batch.len();
             // The cache first, on this thread (it holds open files); what it has not, made below.
             let mut found: Vec<Option<Made>> = batch
@@ -413,6 +417,7 @@ impl Streaming {
         }
         self.full = true;
         self.queue.clear();
+        self.frame.waiting.clear();
         false
     }
 
@@ -520,6 +525,31 @@ mod tests {
         let mut none = Streaming::default();
         none.refresh(&SceneSpec::room(), &[far], &contents);
         assert!(none.frame().is_none());
+    }
+
+    #[test]
+    fn the_frame_says_what_is_waiting() {
+        // A renderer draws stand-ins over what the streaming has still to make (TASK-S4-26), so
+        // the frame carries the queue: what is wanted and neither resident nor known empty.
+        let mut spec = cav_sim::dev::stress_1e10();
+        spec.world.as_mut().unwrap().lod.error_px = 32.0;
+        let mut streaming = Streaming::default();
+        streaming.refresh(&spec, &[view_above([300.0, 0.0, 0.0], 4.0)], &[PaneContent::Scene]);
+        let queued: HashSet<Want> = streaming.queue.iter().copied().collect();
+        let frame = streaming.frame().unwrap();
+        assert!(queued.len() > 10 && frame.waiting == queued, "{} queued", queued.len());
+        // As things are made they leave it; none of it is resident.
+        streaming.step(7, f64::INFINITY);
+        let frame = streaming.frame().unwrap();
+        assert_eq!(frame.waiting.len(), queued.len() - 7);
+        assert!(frame.waiting.iter().all(|w| {
+            if w.0 == 0 { !frame.chunks.contains_key(&w.1) } else { !frame.bricks.contains_key(w) }
+        }));
+        // Control: made whole, nothing waits.
+        while streaming.pending() > 0 {
+            streaming.step(MAX_BUILDS_PER_POLL, f64::INFINITY);
+        }
+        assert!(streaming.frame().unwrap().waiting.is_empty());
     }
 
     /// Streams `spec` for a camera 300 m east with `caps` until nothing is queued; returns it.

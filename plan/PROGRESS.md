@@ -13,6 +13,27 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S19 the editor, part two | built in part: TASK-S19-09, TASK-S18-05, -06, TASK-S19-04, -13 merged, the record (TASK-S19-12); the rest moved to S20; not reviewed | | brief and results: `docs/slices/S19.md` (§7.1 the panels before and after); requirement: `docs/design/panels.md`; pictures: `docs/slices/S19/`; recipes: `docs/extending/a-material.md`, `a-shape.md` (import), `a-tool-or-panel.md` (cards, tree) |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
 
+## The owner's bug: chunks go black and come back (25 Nov 2026) — TASK-S4-26, fixed
+
+**Done.** Measured over town (a loop at 15 m/s, engine and renderer frame by frame): 581 drawn
+items vanished in 53 of 900 frames, at every 6.4 m snap of the clipmap, none still resident: the
+handover between levels (the streaming drops what a level leaves at once and makes its
+replacement later, one thread and 6 ms a frame on the page). Now what was drawn stands in until
+what replaces it is ready (`clipmap::stand_ins`, `WorldFrame::waiting`, retired GPU copies): 0
+vanished. Near/far planes and ortho checked and held by a test; not the cause. `docs/slices/S4.md`
+§7.9. `cav bench flythrough --scene town`.
+
+**Numbers.** `quick` 659; `gpu` 42; `web` green in 646 s; the town flythrough not regressed
+(median 4.5 → 4.6 ms, 99th percentile 35.3 → 36.9 ms, worst 51.9 → 41.7 ms, quiet runs only).
+
+**Decided (worth a second look).** Stand-ins may overlap a finer neighbour for a frame or two (a
+coarse brick drawn with some of its chunks): better than a hole. A retired copy is kept 8
+prepares standing in for nothing (so two panes do not let go each other's).
+
+**Open.** Coarse bricks overreach (a 20 cm layer beyond a building's face at level 1;
+`plan/IDEAS.md`). The engine refreshes once a view command, so a pan then an orbit drops and
+remakes what the orbit wants back: the streaming optimisation's PR (next).
+
 ## S19, the editor's second half (25 Nov 2026) — built in part, not reviewed
 
 **Done** (PRs #185–#188, #190, #195 and the record; `docs/slices/S19.md`). S18's third review's

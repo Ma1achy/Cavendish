@@ -19,10 +19,10 @@ cav <command>
          [--proj persp|ortho] [--style shaded|flat|xray|wireframe|paper]
          [--size 1280x720] [--exec \"<commands>\"]
                                  draw a scene to a PNG, with no window
-  bench flythrough [--frames 600] [--size 1280x720] [--speed 15] [--cache <dir>] [--out <trace.csv>]
-                   [--max-frame-ms 250]
-                                 fly a scripted camera over stress-1e10 offscreen and print (or write)
-                                 the frame-time trace: what this GPU holds
+  bench flythrough [--scene stress-1e10] [--frames 600] [--size 1280x720] [--speed 15] [--cache <dir>]
+                   [--out <trace.csv>] [--max-frame-ms 250]
+                                 fly a scripted camera over a world (stress-1e10, or e.g. town, the loop
+                                 scaled to it) offscreen and print (or write) the frame-time trace
   scenes                         list the built-in scene library
   schema [path]                  print the JSON Schema of the scene spec, or of the field at a path
   get <scene> [path]             print a scene, or the value at a path of it, as JSON
@@ -399,7 +399,8 @@ fn set(rest: &[String]) -> Result<(), String> {
 /// `cav render`: every option becomes a console command, so a render is a short engine session.
 /// `cav bench flythrough`: see `bench.rs`.
 fn bench(rest: &[String]) -> Result<(), String> {
-    let mut args = Args::parse(rest, &["frames", "size", "cache", "out", "speed", "max-frame-ms"])?;
+    let mut args = Args::parse(rest, &["scene", "frames", "size", "cache", "out", "speed", "max-frame-ms"])?;
+    let scene = args.option("scene").unwrap_or_else(|| "stress-1e10".to_owned());
     let frames = args
         .option("frames")
         .map_or(Ok(600), |f| f.parse::<usize>().map_err(|_| format!("--frames {f} is not a count")))?;
@@ -422,7 +423,7 @@ fn bench(rest: &[String]) -> Result<(), String> {
     if what != "flythrough" {
         return Err(format!("`{what}` is not a bench; there is `flythrough`"));
     }
-    let trace = bench::flythrough(frames, size, speed, cache, max_frame_ms)?;
+    let trace = bench::flythrough(&scene, frames, size, speed, cache, max_frame_ms)?;
     match out {
         Some(path) => {
             std::fs::write(&path, &trace).map_err(|e| format!("writing {path}: {e}"))?;

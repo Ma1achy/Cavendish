@@ -465,10 +465,17 @@ fn gpu_a_neighbour_arriving_buries_faces() {
     frame.chunks.insert(ChunkKey::new(1, 0, 0), full(ChunkKey::new(1, 0, 0)));
     prepare(&gpu, &renderer, &mut world, &frame, &v);
     assert_eq!(world.counts(), [2, 0, 10 * 4], "the face between them is buried on both sides");
-    // And when the neighbour goes, the face is drawn again.
+    // And when the neighbour goes, the face is drawn again: A is meshed again with six faces. B's
+    // mesh is kept a few frames, retired (TASK-S4-26: it would stand in for anything not yet
+    // ready in its place; here nothing is, so it is not drawn), and then let go.
     frame.chunks.remove(&ChunkKey::new(1, 0, 0));
     prepare(&gpu, &renderer, &mut world, &frame, &v);
-    assert_eq!(world.counts(), [1, 0, 6 * 4]);
+    assert_eq!(world.counts(), [2, 0, 6 * 4 + 5 * 4], "A's six faces, and B's five, retired");
+    assert_eq!(world.drawn, vec![(0, ChunkKey::new(0, 0, 0))], "B is not drawn");
+    for _ in 0..cav_render::world::RETIRED_PREPARES {
+        prepare(&gpu, &renderer, &mut world, &frame, &v);
+    }
+    assert_eq!(world.counts(), [1, 0, 6 * 4], "B let go once it has stood in for nothing a while");
 }
 
 #[test]
@@ -538,4 +545,71 @@ fn gpu_a_world_is_drawn_near_and_far() {
     // Control: no world, no green.
     let none = draw(None, false);
     assert_eq!(count(&none, 0..270, &green), 0);
+}
+
+#[test]
+fn gpu_the_world_near_the_eye_and_at_the_ring_is_drawn() {
+    // The owner's question (TASK-S4-26): do the near or far planes, or the culling, take the world
+    // away? A full chunk (8 m) between an orthographic camera and its target, close to the eye;
+    // one at the near ring's edge, 120 m ahead of a perspective eye; each drawn alone, and one
+    // beside the frustum, not drawn (the control: the test can see "not drawn").
+    let gpu = gpu();
+    let renderer = Renderer::new(&gpu);
+    let mut scene = SceneSpec::room();
+    scene.room = None;
+    scene.array.towers.clear();
+    let size = [320u32, 240];
+    let draw = |v: &ViewSpec, world: Option<&WorldFrame>| {
+        let frame = Frame {
+            scene: &scene,
+            view: v,
+            highlight: None,
+            time: 0.0,
+            content: PaneContent::Scene,
+            span: None,
+            voxels: None,
+            world,
+        };
+        renderer.render_rgba(&gpu, frame, size).unwrap()
+    };
+    // The chunk (of `full_frame`'s 8 m grid) holding `p`, and a frame of it alone.
+    let chunk_at = |p: Vec3| {
+        let k = [p.x, p.y, p.z].map(|v| (v / 8.0).floor() as i32);
+        (
+            full_frame(&[k]),
+            Vec3::new(f64::from(k[0]) + 0.5, f64::from(k[1]) + 0.5, f64::from(k[2]) + 0.5) * 8.0,
+        )
+    };
+    // Whether the pixel where `p` lands differs from the empty picture's there.
+    let drawn_at = |v: &ViewSpec, frame: &WorldFrame, p: Vec3| {
+        let camera = Camera::new(v, f64::from(size[0]) / f64::from(size[1]));
+        let [x, y] = camera.pixel(p, size).expect("in front of the camera");
+        let (x, y) = (x as u32, y as u32);
+        assert!(x < size[0] && y < size[1], "the point is in the picture");
+        let i = ((y * size[0] + x) * 4) as usize;
+        let (with, without) = (draw(v, Some(frame)), draw(v, None));
+        with[i..i + 3] != without[i..i + 3]
+    };
+    // (a) Orthographic, 100 m from the target: a chunk 90 m along the way to the eye, 10 m from it.
+    let mut ortho = view([0.0, 0.0, 0.0], 30.0, 25.0, 100.0);
+    ortho.projection = Projection::Orthographic;
+    let to_eye = Vec3::from_array(ortho.basis().0);
+    let (near_eye, centre) = chunk_at(to_eye * 90.0);
+    assert!(drawn_at(&ortho, &near_eye, centre), "a chunk 10 m in front of an orthographic eye is drawn");
+    // Behind the eye too (the slab reaches behind: `Camera::new`), within the near ring.
+    let (behind, centre_behind) = chunk_at(to_eye * 104.0);
+    let mut nearer = ortho.clone();
+    nearer.distance = 96.0;
+    assert!(drawn_at(&nearer, &behind, centre_behind), "a chunk just behind an orthographic eye is drawn");
+    // (b) Perspective, the eye 6 m behind the target: a chunk 120 m ahead, at the ring's edge (16
+    // chunks of 8 m from the eye's).
+    let persp = view([0.0, 0.0, 0.0], 30.0, 2.0, 6.0);
+    let eye = Vec3::from_array(persp.basis().0) * 6.0;
+    let (far, centre) = chunk_at(eye - Vec3::from_array(persp.basis().0) * 120.0);
+    assert!(drawn_at(&persp, &far, centre), "a chunk 120 m ahead is drawn");
+    // (c) Control: a chunk 40 m to the side of the perspective camera is outside its frustum, and
+    // the picture is the empty one.
+    let side = Vec3::from_array(persp.basis().1) * 40.0;
+    let (beside, _) = chunk_at(eye + side);
+    assert_eq!(draw(&persp, Some(&beside)), draw(&persp, None), "a chunk outside the frustum is not drawn");
 }
