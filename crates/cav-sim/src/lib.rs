@@ -26,6 +26,7 @@ pub mod materials;
 pub mod motion;
 pub mod paths;
 pub mod presets;
+pub mod probe;
 pub mod read;
 pub mod schedule;
 pub mod shape;

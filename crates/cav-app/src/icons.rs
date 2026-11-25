@@ -19,7 +19,17 @@ pub fn tool(painter: &Painter, rect: Rect, behaviour: Behaviour, colour: Color32
         Behaviour::Select => pointer(painter, rect, colour),
         Behaviour::Translate => four_arrows(painter, rect, colour),
         Behaviour::Place => place(painter, rect, colour),
+        Behaviour::Probe => probe(painter, rect, colour),
     }
+}
+
+/// A probe's needle into a point, with the point ringed: read what is there.
+fn probe(painter: &Painter, rect: Rect, colour: Color32) {
+    let stroke = Stroke::new(1.8, colour);
+    painter.line_segment([at(rect, 17.0, 3.0), at(rect, 8.0, 12.0)], stroke);
+    painter.rect_filled(Rect::from_two_pos(at(rect, 14.5, 2.0), at(rect, 18.5, 6.0)), 1.0, colour);
+    painter.circle_stroke(at(rect, 6.0, 14.0), rect.width() * 0.16, stroke);
+    painter.circle_filled(at(rect, 6.0, 14.0), rect.width() * 0.05, colour);
 }
 
 /// An arrow pointer, as every system draws one.

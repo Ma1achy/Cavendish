@@ -668,7 +668,7 @@
   title: "The Scale tool: handles on the selection, a typed factor, one edit (re-titled by the S19 brief; Rotate is TASK-S20-01)"
 - id: TASK-S19-04
   milestone: S19
-  title: "Probe, Measure, the Slice handle in the view and voxel Paint tools"
+  title: "The Probe tool: click a point, read the bodies' gravity there, the voxel cell and its share of each tower's phase (split by S19: Measure, Slice and Paint are TASK-S19-20)"
 - id: TASK-S19-05
   milestone: S20
   title: "Camera follow, pointer lock (native and web) and the trackball"
@@ -693,6 +693,9 @@
 - id: TASK-S19-12
   milestone: S19
   title: "S19's record: the demo, the validation report against s18-the-editor, ARCHITECTURE, the recipes, PROGRESS"
+- id: TASK-S19-20
+  milestone: S19
+  title: "Measure, the Slice handle in the view and the voxel Paint brush (split from TASK-S19-04)"
 - id: TASK-S20-01
   milestone: S20
   title: "Rotate: an orientation for bodies (the read turns the arm points into the body's frame), the ring gizmo, typed angles"

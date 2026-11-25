@@ -24,6 +24,8 @@ pub enum Request {
     Scenes,
     /// Start the journal again from the session as it stands ([`Engine::restart_journal`]).
     Restart,
+    /// What the Probe tool reads at a point, metres, the world's frame ([`Engine::probe`]).
+    Probe([f64; 3]),
 }
 
 /// One console command, for `help`, completion and the menus.
@@ -70,6 +72,12 @@ pub const COMMANDS: &[CommandDoc] = &[
         usage: "add <starter> [at <x> <y> <z>] | add <list> <value> | add <list> <index> <value>",
         about: "add a starter by name (point-mass, sphere, cube, cylinder, tower, … : `cav_sim::starters`) at a place, metres, or beside the array; or put an item into a list of the scene (bodies, array.towers), as JSON: at the end, or before item <index> (an edit)",
         example: "add array.towers {\"label\": \"tower 6\", \"position\": [6, 0, 0]}",
+    },
+    CommandDoc {
+        name: "probe",
+        usage: "probe <x> <y> <z>",
+        about: "the Probe tool's reading at a point, metres: the bodies' gravity there, the voxel cell under it (its body, material, mass) and that cell's share of each tower's phase now, and the distance to each tower (a question: changes nothing)",
+        example: "probe 2 2 1",
     },
     CommandDoc {
         name: "import",
@@ -674,6 +682,11 @@ impl Engine {
                 Ok(Request::Do(Command::Insert { path: "bodies".into(), index: None, value }))
             }
             ("remove", [path]) => Ok(Request::Do(Command::Remove { path: (*path).to_owned() })),
+            ("probe", [x, y, z]) => Ok(Request::Probe([
+                number(x, "metres", name)?,
+                number(y, "metres", name)?,
+                number(z, "metres", name)?,
+            ])),
             ("import", [file, options @ ..]) => {
                 let options =
                     import_options(options).map_err(|why| format!("`{line}`: {why}; {}", usage(name)))?;
@@ -1020,6 +1033,7 @@ impl Engine {
                 })
                 .inspect_err(|why| self.note(Level::Error, Subsystem::Engine, why.clone())),
             Request::Help(None) => Ok(help()),
+            Request::Probe(point) => Ok(self.probe(point).words(self.spec())),
 
             Request::Help(Some(topic)) => COMMANDS
                 .iter()
@@ -1704,6 +1718,10 @@ mod tests {
                 continue;
             }
             assert!(out.is_ok(), "`{}` failed: {out:?}", doc.example);
+            // The imported body is taken out again: the examples after it read the scene.
+            if doc.name == "import" {
+                engine.run_line("undo").unwrap();
+            }
         }
         assert!(help().lines().count() == COMMANDS.len());
         // Control: what is not documented is not a command, and says so.

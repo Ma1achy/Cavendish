@@ -188,3 +188,32 @@ fn a_dropped_file_adds_a_body() {
     assert!(rig.shell.engine.spec().bodies.is_empty(), "control: nothing added");
     assert!(rig.shell.console_open, "and the console says why");
 }
+
+#[test]
+fn the_probe_tool_reads_where_it_is_clicked() {
+    // S19 T1 through the window: with Probe in hand a click on a voxel body reads its cell (the
+    // card is drawn, the reading is `probe x y z`'s), and changes no scene. Control: the same
+    // click with Select in hand reads nothing.
+    let click_body = |tool: &str| {
+        let mut rig = Rig::new();
+        rig.shell.run("load point").unwrap();
+        rig.shell.run("add sphere at 2 2 1").unwrap();
+        rig.shell.run(&format!("tool {tool}")).unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        let pane = rig.shell.layout().panes[0];
+        let at = rig.shell.body_point(0, 1, pane.size()).expect("the sphere is in view") + pane.min.to_vec2();
+        let (spec, depth) = (rig.shell.engine.spec().clone(), rig.shell.engine.depth());
+        rig.click(at);
+        rig.frames(vec![vec![]]);
+        assert_eq!((rig.shell.engine.spec(), rig.shell.engine.depth()), (&spec, depth), "{tool}: no edit");
+        rig
+    };
+    let rig = click_body("probe");
+    let probed = rig.shell.probed.clone().expect("a reading");
+    let cell = probed.cell.clone().expect("the click is on the sphere's cells");
+    assert_eq!(cell.body, 1);
+    assert!(probed.towers[0].phase.is_some_and(|p| p != 0.0), "its share of tower 1");
+    assert_eq!(rig.shell.engine.probe(probed.point), probed, "the reading is the console's");
+    assert!(rig.shell.layout().button("probe card").is_some());
+    assert!(click_body("select").shell.probed.is_none(), "control: Select reads nothing");
+}

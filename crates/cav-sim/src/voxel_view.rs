@@ -501,16 +501,45 @@ pub fn leaf_phases(
             tree.leaves.len()
         ));
     }
-    let sign = reader.instrument().sign;
-    let one = |leaf: &cav_core::voxel::Leaf| {
-        // The leaf on its own, read with the rule of the instrument: one rule, and its check.
-        let body = TreeBody::single(tree, leaf, |_| at);
-        reader
-            .read_to_within(Vec3::from_array(base), &body, time, PHASE_TOLERANCE, most_nodes)
-            .reading
-            .gradiometer(sign)
-    };
-    Ok(tree.leaves.iter().map(one).collect())
+    Ok(tree.leaves.iter().map(|leaf| one_leaf(&reader, tree, leaf, at, base, time, most_nodes)).collect())
+}
+
+/// The leaf on its own, read with the rule of the instrument: one rule, and its check.
+fn one_leaf(
+    reader: &Reader,
+    tree: &VoxTree,
+    leaf: &cav_core::voxel::Leaf,
+    at: Vec3,
+    base: [f64; 3],
+    time: f64,
+    most_nodes: u64,
+) -> f64 {
+    let body = TreeBody::single(tree, leaf, |_| at);
+    reader
+        .read_to_within(Vec3::from_array(base), &body, time, PHASE_TOLERANCE, most_nodes)
+        .reading
+        .gradiometer(reader.instrument().sign)
+}
+
+/// One leaf's share of tower `tower`'s ΔΦ, radians, the body held at `at` (metres, the world's
+/// frame) and read out at `time`: the number [`leaf_phases`] gives that leaf (the Phase
+/// colouring's), for the Probe tool.
+///
+/// # Errors
+/// When there is no such tower.
+pub fn leaf_phase(
+    scene: &SceneSpec,
+    tree: &VoxTree,
+    leaf: &cav_core::voxel::Leaf,
+    at: Vec3,
+    tower: usize,
+    time: f64,
+) -> Result<f64, String> {
+    let base =
+        scene.array.towers.get(tower).ok_or_else(|| format!("there is no tower {}", tower + 1))?.position;
+    let reader = Reader::new(scene.array.instrument_of(tower).instrument());
+    let most_nodes = LEAF_REFINEMENT * reader.instrument().node_count(&[]);
+    Ok(one_leaf(&reader, tree, leaf, at, base, time, most_nodes))
 }
 
 /// The voxel frame of `scene` at `time`, with `trees[n]` body `n`'s tree (None for a body that is
