@@ -10,7 +10,7 @@ tower 5  -3.562219269972549e1  8.8288667275163e0  4.445105942724179e1
 
 $ cav exec "load town; reading 1; log"
 load town
-# a shot read out at 1 s · refined · quadrature within 1e-8 rad
+# a shot read out at 1 s · refined · quadrature not settled: of the matter within 2 m only, estimate 1e-8 rad
 # warning: world matter farther than 2 m from a tower's atoms is not read (S5 reads the rest)
 # tower    ΔΦ [rad]  δφ₁ lower [rad]  δφ₂ upper [rad]
 tower 1  1.6108059305974693e3  2.5789485529565513e3  9.681426223590819e2
@@ -20,7 +20,7 @@ tower 4  1.2145250756240412e3  2.013605392602607e3  7.99080316978566e2
 tower 5  1.4834455070173265e3  2.3264992384779925e3  8.430537314606661e2
     0.000  info   engine  cavendish 0.0.0 · scene `room`
     0.003  info   edit    load town · 5 towers, no room, no floor, no bodies
-   22.918  debug  engine  the signal was whole 12010 ms after the edit
-   22.918  info   engine  signal: 5 tower(s), 25 shot(s) in all, quadrature within 1e-8 rad
-   22.918  warn   engine  world matter farther than 2 m from a tower's atoms is not read (S5 reads the rest)
+   23.900  debug  engine  the signal was whole 12418 ms after the edit
+   23.900  info   engine  signal: 5 tower(s), 25 shot(s) in all, quadrature not settled: of the matter within 2 m only, estimate 1e-8 rad
+   23.900  warn   engine  world matter farther than 2 m from a tower's atoms is not read (S5 reads the rest)
 

@@ -54,8 +54,9 @@ pub const BRICK_WORDS: usize = 1042;
 /// visible bricks (those in the camera's frustum: bricks behind it are never counted) and leaves
 /// the farthest out, saying so. Chosen from the flythrough over `stress-1e10` (`docs/slices/S4.md`
 /// §7.4) so that a typical frame stays well under the ~50 ms after which Windows' desktop stops
-/// answering a busy GPU (measured: 99th percentile 42–59 ms, worst 65 ms on the build PC's
-/// GTX 1660 SUPER). The bench's `--max-frame-ms 250` is not this limit: it is the alarm that stops a
+/// answering a busy GPU (measured after the frustum fix: median 30 ms, 99th percentile 59–64 ms,
+/// worst 68 ms on the build PC's GTX 1660 SUPER, the cap no longer binding there; a cap of 6
+/// saved 1–2 ms, the cost being in the nearest bricks). The bench's `--max-frame-ms 250` is not this limit: it is the alarm that stops a
 /// run whose frames have gone far past it, before the desktop freezes (TDR is at 2 s).
 ///
 /// The budget is a multiple of the pane's own pixels, so a 1440p pane marches up to four times

@@ -47,7 +47,10 @@ cargo xtask <tier>
                      validate; formatted, linted and held to a floor like the other tiers. Then the
                      Python side (python/): pyright in strict mode and the tests of cavendish_figures on
                      figures this build writes; a missing Python, numpy, matplotlib or pyright fails it.
-  demo <slice>       runs the slice's demo headlessly and saves screenshots to docs/slices/<slice>/.
+  demo <slice> [--no-web]
+                     runs the slice's demo headlessly and saves screenshots to docs/slices/<slice>/.
+                     --no-web leaves out a demo's page in headless Chrome (and the local server it
+                     needs), keeping the page's screenshots already there (S4 only).
   validate [--report] [--against <revision>]
                      runs every validation case (tests named `validation_…`, declared with
                      `cav_validate::case!`, in the workspace and in the oracle crate) and tabulates
@@ -94,7 +97,8 @@ fn main() -> ExitCode {
         ["test", filter] => tiers::one(&root, filter, false),
         ["test", filter, "--release"] => tiers::one(&root, filter, true),
         ["oracle"] => tiers::oracle(&root),
-        ["demo", slice] => demo::run(&root, slice),
+        ["demo", slice] => demo::run(&root, slice, true),
+        ["demo", slice, "--no-web"] => demo::run(&root, slice, false),
         ["validate"] => validate::run(&root, false, validate::Against::Head),
         ["validate", "--report"] => validate::run(&root, true, validate::Against::Head),
         ["validate", "--against", revision] => {

@@ -8,8 +8,41 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S1 a point mass | done: TASK-S1-01 to 19 merged; reviewed twice, nothing important remains | `s1-point-mass` | brief, results and the record of each first measurement: `docs/slices/S1.md` (§7, §7.1 to §7.4); screenshots: `docs/slices/S1/`; validation: `docs/validation/report.md` |
 | S2 scenes as files | done: TASK-S2-01 to 20 merged; reviewed twice, nothing important remains | `s2-scenes-as-files` | brief and results: `docs/slices/S2.md` (§7); screenshots, transcripts and sample figures: `docs/slices/S2/`; validation: `docs/validation/report.md`; research: `docs/research/s2-replay-spec-paths-cadence.md`; for contributors: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/extending/` |
 | S3 voxel bodies | done: TASK-S3-01 to 26 merged; reviewed twice, the second review's one important finding fixed (#115) | `s3-voxel-bodies` | brief and results: `docs/slices/S3.md` (§7, §8 after the review); screenshots, a session and timings: `docs/slices/S3/`; validation: `docs/validation/report.md`; research: `docs/research/s3-sparse-voxel-structures.md` and its review; recipes: `docs/extending/a-shape.md`, `a-voxel-body.md` |
-| S4 big scenes | built: TASK-S4-01 to 11 merged (#128–#133, #137, #138 and the demo's); awaiting review | | brief and results: `docs/slices/S4.md` (§7); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
+| S4 big scenes | built: TASK-S4-01 to 11 merged; reviewed once (`docs/slices/S4-review.md`), all twelve important findings fixed (TASK-S4-12 to 20, #143–#150 and this); awaiting re-review | | brief and results: `docs/slices/S4.md` (§7, §7.7 after the review); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
+
+## S4 after its review (25 Nov 2026) — fixes done, awaiting re-review
+
+**Done** (TASK-S4-12 to 20, PRs #143–#150 and the last; `docs/slices/S4.md` §7.7, a row a
+finding). I1: the moment bound keeps each order's `Σ m s^l` (the fourth exact) and the factor
+`l+1`; 457× at its loosest over every q from 0.45 to 0.001 (was 1054× outside the measured range);
+R7's control restated with its reason. I2: a world read of part of the matter carries
+`truncated` through the API, MCP, the wire and bundles, is never `settled`, and every badge says
+"of the matter within 2 m only". I3: the world through the wire, the web equivalence, a bundle,
+superposition. I4: the caps reached in tests, streaming memory in memtest. I5–I7, I9: the
+renderer's caps as header badges; the overdraw budget after the frustum; no re-meshing at a cap;
+axis-parallel rays. I8: the region cache keyed by `VOXELISER_VERSION`, foreign files left alone.
+I10: `strays --stop` stops only what `cargo xtask` recorded starting, old by the clock. I11: the
+worker lane a tested state machine (bounded respawns, a fallback that comes back, the panic's
+message). I12: the world in the outliner, `select world`. Minors 1–10, 13, 17, 18 done; 11, 12,
+14, 15, 16 in `plan/IDEAS.md`. `cargo xtask test <filter>` for one test at the tiers' priority.
+
+**Numbers.** `quick` 536, 21–24 s warm (budget now CLAUDE.md's 30 s); `gpu` 39 in 23 s; `oracle`
+58 in 448 s; `web` green with `world-box` in the equivalence; validation 113 of 113 against
+`s17-in-the-browser`, no case dropped, no tolerance moved. Flythrough re-measured (bounded,
+release): mean 31–33 ms, 99th percentile 59–64 ms, worst 68 ms: slower than before because the
+budget now goes to visible bricks (it was spent on bricks behind the camera, which cost nothing);
+a cap of 6 saved only 1–2 ms, so it stays at 12 and draws the whole visible far field.
+
+**Decided.** R7's written control could not hold with the 1000× criterion (S4.md §7.6); quick's
+budget 30 s; the demo's paper drawings of `town` and `--no-web` (no local server outside `cargo
+xtask web`; the page's pictures kept from TASK-S4-09).
+
+**Open.** The far field's 99th percentile over 50 ms (early depth for bricks, `plan/IDEAS.md`);
+the page's pictures not retaken after the review (`cargo xtask demo S4` with the page, when a
+local server is allowed); concurrent writers of one region file.
+
+**Next.** A re-review of S4; then its tag and S5.
 
 ## S4, big scenes (25 Nov 2026) — built, not reviewed
 

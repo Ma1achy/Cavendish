@@ -1,9 +1,9 @@
 $ cav bench flythrough --frames 300 --size 1280x720 --cache <cache> --max-frame-ms 250 --out fly-cold.csv
-# stress-1e10: about 1.09e10 finest cells; 1280x720 px at 15 m/s; first view resident in 2.28 s (6083 made, 0 from the cache); 300 frames: mean 19.5 ms (51 fps), median 17.9 ms, 99th percentile 42.5 ms, worst 56.2 ms
+# stress-1e10: about 1.09e10 finest cells; 1280x720 px at 15 m/s; first view resident in 2.43 s (6083 made, 0 from the cache); 300 frames of the 300 asked: mean 32.3 ms (31 fps), median 30.8 ms, 99th percentile 58.7 ms, worst 67.9 ms
 
 $ cav bench flythrough --frames 300 --size 1280x720 --cache <cache> --max-frame-ms 250 --out fly-warm.csv
-# stress-1e10: about 1.09e10 finest cells; 1280x720 px at 15 m/s; first view resident in 1.95 s (3350 made, 2733 from the cache); 300 frames: mean 18.8 ms (53 fps), median 17.3 ms, 99th percentile 44.0 ms, worst 49.7 ms
+# stress-1e10: about 1.09e10 finest cells; 1280x720 px at 15 m/s; first view resident in 2.04 s (3350 made, 2733 from the cache); 300 frames of the 300 asked: mean 31.2 ms (32 fps), median 30.0 ms, 99th percentile 60.2 ms, worst 62.2 ms
 
 $ cav bench flythrough --frames 150 --size 2560x1440 --cache <cache> --max-frame-ms 250 --out fly-1440.csv
-# stress-1e10: about 1.09e10 finest cells; 2560x1440 px at 15 m/s; first view resident in 1.99 s (3350 made, 2733 from the cache); 150 frames: mean 23.3 ms (43 fps), median 19.3 ms, 99th percentile 58.7 ms, worst 64.7 ms
+# stress-1e10: about 1.09e10 finest cells; 2560x1440 px at 15 m/s; first view resident in 1.94 s (3350 made, 2733 from the cache); 150 frames of the 150 asked: mean 33.2 ms (30 fps), median 29.9 ms, 99th percentile 63.8 ms, worst 67.6 ms
 
