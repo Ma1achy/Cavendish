@@ -539,7 +539,7 @@ fn edit(
         return;
     }
     if let Some(n) = materials_set_the_mass(spec, path) {
-        let mass = shell.engine.body_tree(n).map(|tree| tree.body().mass);
+        let mass = spec.bodies[n].mass_with(shell.engine.body_tree(n).map(std::sync::Arc::as_ref));
         let text = mass.map_or_else(
             || "from its materials".to_owned(),
             |kg| format!("{} kg, from its materials", shown(kg)),

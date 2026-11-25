@@ -259,6 +259,97 @@ cav_validate::case! {
     },
 }
 
+/// Tower 1's gradiometer phase of one shot of a point of 1 kg at `p`, radians.
+fn one_kilogram(scene: &SceneSpec, p: Vec3) -> f64 {
+    let reader = cav_core::forward::Reader::new(scene.array.instrument.instrument());
+    let time = shots(scene).unwrap().times(0)[0];
+    let point = Mass::point(1.0, move |_| p);
+    let r = reader.read_to(Vec3::ZERO, &point, time, cav_core::forward::PHASE_TOLERANCE).reading;
+    r.lower - r.upper
+}
+
+/// A body of two materials whose interface lies in the middle of a layer of cells (S19 review,
+/// minor 1): a steel cuboid 0.175 × 0.2 × 0.2 m with a lead one of the same size added beside it
+/// along x, at a pitch of 0.05 m and k = 2. The outer faces lie on cell faces and the interface
+/// halfway through the cells between (one sample each side), so 16 cells are shared and every
+/// sample is exact: the only approximation is that a shared cell is read as one uniform cube of
+/// both masses. Returns (|ΔΦ − ΔΦ of the two prisms|, the shared cells' first-order dipole bound,
+/// both radians, one shot of tower 1, and how many cells are shared). `first`/`second` are the
+/// two materials (steel, lead; swapped for the control).
+fn shared_cells_against_prisms(first: &str, second: &str) -> (f64, f64, usize) {
+    use cav_sim::shape::{PartKind, PartMode, PartSpec};
+    let (a, b, pitch) = (0.175, 0.2, 0.05);
+    let at = [1.5, 0.0, 3.0];
+    let mut shape = ShapeSpec::new(ShapeKind::Cuboid { size: [a, b, b] }, pitch, 2);
+    shape.material = Some(first.into());
+    shape.parts.push(PartSpec {
+        mode: PartMode::Add,
+        material: Some(second.into()),
+        at: [a, 0.0, 0.0],
+        kind: PartKind::Solid { shape: ShapeKind::Cuboid { size: [a, b, b] } },
+    });
+    let scene = scene_with(BodySpec::shaped("two", 1.0, shape.clone(), Motion::Static { position: at }));
+    let tree = shape.tree(1.0, &[]).unwrap();
+    let shots = shots(&scene).unwrap();
+    let voxels = contribution(&scene, SourceId::Body(0), &shots, &|| false).unwrap();
+    assert!(voxels.settled, "{:?}", voxels.warnings);
+    // The reference: steel and lead as the two prisms they are (always steel, then lead).
+    let density = |label: &str| cav_sim::materials::find(&[], label).unwrap().density;
+    let c = Vec3::from_array(at);
+    let half = Vec3::new(0.5 * a, 0.5 * b, 0.5 * b);
+    let reader = cav_core::forward::Reader::new(scene.array.instrument.instrument());
+    let time = shots.times(0)[0];
+    let read = |density: f64, centre: Vec3| {
+        let prism = Prism { density, lo: centre - half, hi: centre + half };
+        let r = reader.read_to(Vec3::ZERO, &prism, time, cav_core::forward::PHASE_TOLERANCE).reading;
+        r.lower - r.upper
+    };
+    let exact = read(density("steel"), c) + read(density("lead"), c + Vec3::new(a, 0.0, 0.0));
+    // The bound: a shared cell read as a uniform cube has the right mass but not the right
+    // centre. Its dipole error, about its centre, is at most |Δρ|·v·h/8 (the excess density over
+    // the lighter material filling half the cell, its centroid h/4 off: the worst case, which this
+    // body attains), and to first order it moves the phase by that times ∂ΔΦ/∂x of a kilogram
+    // there.
+    let (v, h) = (pitch.powi(3), pitch);
+    let dipole = (density(first) - density(second)).abs() * v * h / 8.0;
+    let step = 1e-3;
+    let bound: f64 = tree
+        .mixed
+        .iter()
+        .map(|cell| {
+            let centre = c + tree.block_centre(cell.key, 0);
+            let dx = Vec3::new(step, 0.0, 0.0);
+            let slope =
+                (one_kilogram(&scene, centre + dx) - one_kilogram(&scene, centre - dx)) / (2.0 * step);
+            dipole * slope.abs()
+        })
+        .sum();
+    ((voxels.gradiometer[0] - exact).abs(), bound, tree.mixed.len())
+}
+
+cav_validate::case! {
+    test: validation_a_shared_cell_is_within_its_dipole_bound,
+    name: "materials.shared_cells_are_within_their_dipole_bound",
+    subsystem: "materials",
+    slice: "S19",
+    reference: ClosedForm,
+    against: "a steel cuboid and a lead one (0.175 × 0.2 × 0.2 m each, side by side along x) as one body at 0.05 m pitch, k = 2, the interface halfway through a layer of 16 cells: tower 1's gradiometer phase of one shot against the two closed-form prisms, as a fraction of the shared cells' first-order dipole bound Σ |Δρ|·v·h/8 · |∂ΔΦ/∂x| (1 % over it allowed for the higher orders, (h/r)² ≈ 1e-3 here)",
+    unit: Relative,
+    tolerance: 1.01,
+    measure: {
+        let (error, bound, shared) = shared_cells_against_prisms("steel", "lead");
+        assert_eq!(shared, 16, "the interface's layer of cells is shared");
+        // The case is not vacuous: the shared cells' error is most of the bound (it is attained
+        // here) and far above the read's rounding.
+        assert!(error > 0.5 * bound && bound > 1e-9, "{error:e} rad against a bound of {bound:e} rad");
+        // Control: the materials the wrong way round are not the two prisms, by far more than the
+        // bound.
+        let (swapped, swapped_bound, _) = shared_cells_against_prisms("lead", "steel");
+        assert!(swapped > 10.0 * swapped_bound, "{swapped:e} against {swapped_bound:e}");
+        cav_validate::Measured::Error(error / bound)
+    },
+}
+
 /// An STL box imported (1 m × 0.5 m × 0.25 m, sides an STL's single precision holds exactly;
 /// steel, pitch 0.05 m) against the `Cuboid` body of
 /// the same size, material and pitch, beside tower 1: (whether the leaves are the same, bit for
@@ -311,10 +402,11 @@ cav_validate::case! {
         let (same, worst, mass) = imported_box_against_cuboid(1.0);
         assert!(same, "the same leaves on the same grid");
         assert!(mass < 1e-12, "and it weighs ρV: {mass:e}");
-        // Control: the box imported 10 % larger is another body. (1 % was first written: it moves
-        // each face less than the quarter cell to the nearest sample point, so no sample changes.)
-        let (same, broken, _) = imported_box_against_cuboid(1.1);
-        assert!(!same && broken > 1e-3, "{broken:e}");
+        // Control: the box imported 1 % larger (as first written) is another body: another grid,
+        // and a phase beyond the tolerance (measured 1.2e-7: the grid re-centred, though each
+        // face moves less than the quarter cell to the nearest sample point).
+        let (same, broken, _) = imported_box_against_cuboid(1.01);
+        assert!(!same && broken > 1e-12, "{broken:e}");
         cav_validate::Measured::Error(worst)
     },
 }

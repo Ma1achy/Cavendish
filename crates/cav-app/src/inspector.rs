@@ -334,10 +334,15 @@ pub fn info(shell: &mut Shell, ui: &mut egui::Ui) {
             let body = &spec.bodies[n - 1];
             let [x, y, z] = body.motion.position(shell.engine.time(), gravity);
             let mut rows = vec![("Now at", format!("{x:.3}, {y:.3}, {z:.3} m"))];
-            if let Some(tree) = shell.engine.body_tree(n - 1) {
+            let tree = shell.engine.body_tree(n - 1);
+            // What the body weighs, by the one rule (`BodySpec::mass_with`): its materials', or
+            // its `mass`.
+            if let Some(kg) = body.mass_with(tree.map(std::sync::Arc::as_ref)) {
+                rows.push(("Mass", format!("{} kg", crate::editors::shown(kg))));
+            }
+            if let Some(tree) = tree {
                 let volume =
                     tree.samples as f64 * (tree.grid.pitch / f64::from(tree.grid.supersample)).powi(3);
-                rows.push(("Mass", format!("{} kg", crate::editors::shown(tree.body().mass))));
                 rows.push(("Volume", format!("{} m³", crate::editors::shown(volume))));
                 rows.push(("Cells", format!("{} leaves", tree.leaves.len())));
             }

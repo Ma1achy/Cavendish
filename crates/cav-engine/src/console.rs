@@ -88,7 +88,7 @@ pub const COMMANDS: &[CommandDoc] = &[
     CommandDoc {
         name: "probe",
         usage: "probe <x> <y> <z>",
-        about: "the Probe tool's reading at a point, metres: the bodies' gravity there, the voxel cell under it (its body, material, mass) and that cell's share of each tower's phase now, and the distance to each tower (a question: changes nothing)",
+        about: "the Probe tool's reading at a point, metres: the gravity there of the bodies and a slab floor (naming what is not counted), the finest voxel cell under it (its body, material, mass) and that cell's share of each tower's phase now, and the distance to each tower (a question: changes nothing)",
         example: "probe 2 2 1",
     },
     CommandDoc {
@@ -198,8 +198,8 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "colour",
-        usage: "colour <level|depth|mass|fill|height|distance|phase [tower]> [@N]",
-        about: "what colours the leaves of voxel bodies; `phase` is each leaf's share of a tower's ΔΦ (the legend is made from what is drawn)",
+        usage: "colour <level|depth|mass|fill|height|distance|material|phase [tower]> [@N]",
+        about: "what colours the leaves of voxel bodies; `material` is each leaf's material's colour, `phase` each leaf's share of a tower's ΔΦ (the legend is made from what is drawn)",
         example: "colour phase 1",
     },
     CommandDoc {
