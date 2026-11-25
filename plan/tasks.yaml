@@ -729,3 +729,21 @@
 - id: TASK-S5-15
   milestone: S5
   title: World octree and read-LOD debug view - overlay tree for the world's chunks, and a per-tower overlay colouring what is read leaf-exact, by moments at which level, or not at all
+- id: TASK-S21-01
+  milestone: S21
+  title: Per-vertex ambient occlusion baked into the greedy meshes (merge only on equal AO) and the same AO at the far march's hit
+- id: TASK-S21-02
+  milestone: S21
+  title: Sun and sky light in linear light, a neutral tone curve and distance fog to the sky colour
+- id: TASK-S21-03
+  milestone: S21
+  title: Sun shadows: one ray per pixel through a camera-centred coarse occupancy volume, capped per frame (measure first)
+- id: TASK-S21-04
+  milestone: S21
+  title: Sky: an analytic gradient now; a scattering atmosphere (Hillaire 2020) with the planet world
+- id: TASK-S21-05
+  milestone: S21
+  title: Voxel colour: cell-hash lightness jitter and height/slope blends per material, computed at draw time
+- id: TASK-S21-06
+  milestone: S21
+  title: Looks as data: a beauty look and a data look (identity on colour maps), switchable, with a badge when lighting shifts colours
