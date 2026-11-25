@@ -459,25 +459,82 @@ fn outline_row(
     let swatch_rect = Rect::from_center_size(pos2(rect.left() + 14.0, rect.center().y), vec2(9.0, 9.0));
     painter.rect_filled(swatch_rect, 1.0, swatch);
     let text = if selected { theme::STRONG } else { theme::TEXT };
-    painter.text(
-        pos2(rect.left() + 26.0, rect.center().y),
-        Align2::LEFT_CENTER,
-        label,
-        FontId::proportional(13.0),
-        text,
-    );
-    painter.text(
-        pos2(rect.right() - 4.0, rect.center().y),
-        Align2::RIGHT_CENTER,
-        detail,
-        FontId::monospace(11.0),
-        theme::WEAK,
-    );
+    let renaming = shell.renaming.as_ref().is_some_and(|(t, _)| *t == target);
+    if renaming {
+        rename_field(shell, ui, target, Rect::from_min_max(pos2(rect.left() + 22.0, rect.top()), rect.max));
+    } else {
+        painter.text(
+            pos2(rect.left() + 26.0, rect.center().y),
+            Align2::LEFT_CENTER,
+            label,
+            FontId::proportional(13.0),
+            text,
+        );
+        painter.text(
+            pos2(rect.right() - 4.0, rect.center().y),
+            Align2::RIGHT_CENTER,
+            detail,
+            FontId::monospace(11.0),
+            theme::WEAK,
+        );
+    }
     if response.clicked() {
         shell.apply(Command::Select(if selected { None } else { Some(target) }));
     } else if keyed && !selected {
         // From the keyboard Enter selects the row (it does not toggle: nothing unseen).
         shell.apply(Command::Select(Some(target)));
+    }
+    if response.double_clicked() && matches!(target, Target::Body(_) | Target::Tower(_)) {
+        shell.apply(Command::Select(Some(target)));
+        let _ = shell.run("rename");
+    }
+    // Right-click: the row is selected and its menu is the actions that act on an item, as the
+    // Edit menu has them (data: `context` in ui/actions.ron), and what can be added.
+    if response.secondary_clicked() && !selected {
+        shell.apply(Command::Select(Some(target)));
+    }
+    response.context_menu(|ui| context_menu(shell, ui));
+}
+
+/// The right-click menu of the scene tree and the view: the table's `context` actions for the
+/// selection, then the Add menu.
+fn context_menu(shell: &mut Shell, ui: &mut egui::Ui) {
+    let table = crate::actions::table();
+    for action in table.actions.iter().filter(|a| a.context) {
+        let enabled = shell.can_run(action);
+        let button = Button::new(&action.label).shortcut_text(action.shortcut_text());
+        let response = ui.add_enabled(enabled, button).on_hover_text(&action.about);
+        shell.layout.buttons.push((format!("context {}", action.id), response.rect));
+        if response.clicked() {
+            let _ = shell.run_action(&action.id);
+            ui.close();
+        }
+    }
+    ui.separator();
+    ui.menu_button("Add", |ui| crate::menus::add_menu(shell, ui));
+}
+
+/// The text field that renames an item in place (`F2`, a double click): Enter keeps the name
+/// (a `set` of its label: one edit, undone as one), Esc leaves it as it was.
+fn rename_field(shell: &mut Shell, ui: &mut egui::Ui, target: Target, rect: Rect) {
+    let Some((_, mut text)) = shell.renaming.clone() else { return };
+    let response = ui.put(rect, egui::TextEdit::singleline(&mut text).font(FontId::proportional(13.0)));
+    shell.layout.editors.push(("rename".to_owned(), response.rect));
+    if !response.has_focus() && !response.lost_focus() {
+        response.request_focus();
+    }
+    shell.renaming = Some((target, text.clone()));
+    if response.lost_focus() {
+        shell.renaming = None;
+        let keep = ui.input(|i| i.key_pressed(egui::Key::Enter)) && !text.trim().is_empty();
+        let path = match target {
+            Target::Body(n) => format!("bodies[{}].label", n - 1),
+            Target::Tower(n) => format!("array.towers[{}].label", n - 1),
+            _ => return,
+        };
+        if keep {
+            shell.apply(Command::Set { path, value: serde_json::json!(text.trim()), continues: false });
+        }
     }
 }
 
@@ -626,16 +683,52 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     left_out(ui, bodies.0.len(), bodies.1, "bodies");
     if bodies.1 == 0 {
         // The world and the floor are sources too: listed under Surroundings, with what they are.
+        // An empty scene says how to begin, here and not in the console (the brief's §1).
         let text = match (world.is_some(), floor.is_some()) {
-            (false, false) => "none · `load point` has one",
-            (true, false) => "no bodies · the world below is read",
-            (false, true) => "no bodies · the floor below is read",
-            (true, true) => "no bodies · the world and floor below are read",
+            (false, false) => {
+                "Nothing for the towers to read yet. Add a mass or a shape, or start from a template:"
+            }
+            (true, false) => "No bodies: the world below is read. Add one:",
+            (false, true) => "No bodies: the floor below is read. Add one:",
+            (true, true) => "No bodies: the world and the floor below are read. Add one:",
         };
-        ui.label(RichText::new(text).size(11.5).color(theme::WEAK));
+        ui.add(egui::Label::new(RichText::new(text).size(11.5).color(theme::WEAK)).wrap());
     }
-    // Adding is a command too: a point mass at rest beside the array, to be edited from there.
-    button_row(shell, ui, "tree/sources", "", &[("+ mass", "mass 1 at 2 2 1", false)]);
+    // Adding is a command too: each starter is an `add` where the camera looks, selected after.
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        if bodies.1 == 0 {
+            let mass = ui.button("Add a mass").on_hover_text("a 1 kg point mass where the view looks");
+            shell.register("tree/sources", "tree/sources/add-mass", "Add a mass", Kind::Button, mass.rect);
+            shell.layout.buttons.push(("add point-mass".to_owned(), mass.rect));
+            if mass.clicked() || shell.take_click("tree/sources/add-mass") {
+                let _ = shell.add_starter("point-mass");
+            }
+        }
+        let add = ui.menu_button("Add ▾", |ui| crate::menus::add_menu(shell, ui)).response;
+        shell.register("tree/sources", "tree/sources/add", "Add", Kind::Button, add.rect);
+        shell.layout.buttons.push(("add".to_owned(), add.rect));
+        if shell.take_click("tree/sources/add") {
+            let _ = shell.run("palette add");
+        }
+        if bodies.1 == 0 {
+            let templates = ui
+                .menu_button("Template ▾", |ui| {
+                    crate::menus::draw_items(shell, ui, "File/New from template")
+                })
+                .response;
+            shell.register(
+                "tree/sources",
+                "tree/sources/templates",
+                "Templates",
+                Kind::Button,
+                templates.rect,
+            );
+            if shell.take_click("tree/sources/templates") {
+                let _ = shell.run("palette file");
+            }
+        }
+    });
 
     section(shell, ui, "tree", "tree/array", "Array");
     // With something to read, each tower's row shows what it reads under the playhead.
@@ -707,15 +800,27 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     };
     shell.layout.status.clone_from(&forward);
     ui.label(RichText::new(forward).size(11.5).color(theme::WEAK));
+    ui.add_space(6.0);
+    ui.label(
+        RichText::new("right-click a row for what it can do · A adds · F2 renames · Delete takes away")
+            .size(11.0)
+            .color(theme::WEAK),
+    );
+}
 
-    section(shell, ui, "tree", "tree/view", "View");
+/// How the active pane looks: its direction, projection, panes, draw style, what it shows, the
+/// voxel colouring, overlays and section, and its camera. A popover of the header strip (`view
+/// ▾`): rarely changed, so out of the scene tree (`docs/research/editor-ux.md` §3.2). Every row is
+/// a console line; the View menu and the palette have the same.
+fn view_controls(shell: &mut Shell, ui: &mut egui::Ui) {
+    ui.set_min_width(330.0);
     let pane = shell.engine.active_pane();
     let view = shell.engine.view(pane).clone();
     let at = |named: NamedView| view.named() == Some(named);
     button_row(
         shell,
         ui,
-        "tree/view",
+        "top-bar/view",
         "look",
         &[
             ("iso", "view iso", at(NamedView::Iso)),
@@ -730,7 +835,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     button_row(
         shell,
         ui,
-        "tree/view",
+        "top-bar/view",
         "project",
         &[
             ("perspective", "proj persp", view.projection == Projection::Perspective),
@@ -741,7 +846,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     button_row(
         shell,
         ui,
-        "tree/view",
+        "top-bar/view",
         "panes",
         &[("1", "panes 1", panes == 1), ("2", "panes 2", panes == 2), ("4", "panes 4", panes == 4)],
     );
@@ -749,7 +854,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     button_row(
         shell,
         ui,
-        "tree/view",
+        "top-bar/view",
         "draw",
         &[
             ("shaded", "style shaded", style(DrawStyle::Shaded)),
@@ -760,7 +865,7 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     button_row(
         shell,
         ui,
-        "tree/view",
+        "top-bar/view",
         "",
         &[
             ("wireframe", "style wireframe", style(DrawStyle::Wireframe)),
@@ -777,9 +882,19 @@ fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             .enumerate()
             .map(|(n, content)| (content.name(), lines[3 * row + n].as_str(), *content == shown))
             .collect();
-        button_row(shell, ui, "tree/view", if row == 0 { "show" } else { "" }, &buttons);
+        button_row(shell, ui, "top-bar/view", if row == 0 { "show" } else { "" }, &buttons);
     }
     voxel_rows(shell, ui, &view);
+    ui.add_space(4.0);
+    rows(
+        ui,
+        "camera",
+        &[
+            ("target", format!("{:.2}, {:.2}, {:.2} m", view.target[0], view.target[1], view.target[2])),
+            ("yaw · pitch", format!("{:.1}° · {:.1}°", view.yaw, view.pitch)),
+            ("distance", format!("{:.2} m", view.distance)),
+        ],
+    );
     ui.add_space(4.0);
     ui.label(
         RichText::new(
@@ -802,14 +917,14 @@ fn voxel_rows(shell: &mut Shell, ui: &mut egui::Ui, view: &cav_sim::ViewSpec) {
     let colour = |f: LeafField| (f.name(), format!("colour {}", f.name()), field == f);
     let colours = [LeafField::Level, LeafField::Depth, LeafField::Mass, LeafField::Fill].map(colour);
     let buttons: Vec<(&str, &str, bool)> = colours.iter().map(|(t, l, on)| (*t, l.as_str(), *on)).collect();
-    button_row(shell, ui, "tree/view", "colour", &buttons);
+    button_row(shell, ui, "top-bar/view", "colour", &buttons);
     let tree = view.overlay.tree;
     let fade = tree.map(|t| t.fade);
     let plain = !view.overlay.leaves && view.overlay.cut.is_none();
     button_row(
         shell,
         ui,
-        "tree/view",
+        "top-bar/view",
         "overlay",
         &[
             ("none", "overlay none", plain && tree.is_none()),
@@ -829,7 +944,7 @@ fn voxel_rows(shell: &mut Shell, ui: &mut egui::Ui, view: &cav_sim::ViewSpec) {
     button_row(
         shell,
         ui,
-        "tree/view",
+        "top-bar/view",
         "section",
         &[
             ("off", "section off", on.is_none()),
@@ -953,6 +1068,19 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
         }
     }
 
+    // The array's own settings belong to the scene and to its towers, not to a body: a body's
+    // properties are the body's alone (`docs/research/editor-ux.md` §1.2, "Cadence and timing").
+    if !matches!(shell.engine.selection(), None | Some(Target::Tower(_))) {
+        ui.add_space(6.0);
+        ui.label(
+            RichText::new(
+                "drag a number or type one · every change is a `set <path> <value>` that undo takes back",
+            )
+            .size(11.0)
+            .color(theme::WEAK),
+        );
+        return;
+    }
     section(shell, ui, "inspector", "inspector/cadence", "Cadence · when the array fires");
     crate::editors::show(shell, ui, "inspector/cadence", "array.schedule");
 
@@ -980,19 +1108,6 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
         ],
     );
     crate::editors::show(shell, ui, "inspector/instrument", "array.instrument");
-
-    let pane = shell.engine.active_pane();
-    let view = shell.engine.view(pane).clone();
-    section(shell, ui, "inspector", "inspector/camera", &format!("Camera · pane {}", pane + 1));
-    rows(
-        ui,
-        "camera",
-        &[
-            ("target", format!("{:.2}, {:.2}, {:.2} m", view.target[0], view.target[1], view.target[2])),
-            ("yaw · pitch", format!("{:.1}° · {:.1}°", view.yaw, view.pitch)),
-            ("distance", format!("{:.2} m", view.distance)),
-        ],
-    );
     ui.add_space(6.0);
     ui.label(
         RichText::new(
@@ -1005,7 +1120,18 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
 
 fn header(shell: &mut Shell, ui: &mut egui::Ui) {
     ui.horizontal_centered(|ui| {
-        ui.label(RichText::new("Scene view").color(theme::STRONG));
+        // How the pane looks, in a popover: the header strip is the mock-up's home for it.
+        let popover = ui
+            .menu_button(RichText::new("View ▾").color(theme::STRONG), |ui| view_controls(shell, ui))
+            .response
+            .on_hover_text(
+                "look, projection, panes, draw style, what the pane shows, voxel colouring, overlays",
+            );
+        shell.layout.buttons.push(("view menu".to_owned(), popover.rect));
+        shell.register("viewport", "viewport/view-menu", "View", Kind::Button, popover.rect);
+        if shell.take_click("viewport/view-menu") {
+            let _ = shell.run("palette view");
+        }
         let pane = shell.engine.active_pane();
         let view = shell.engine.view(pane);
         badge(ui, shell.engine.spec().name.clone(), theme::GOLD);

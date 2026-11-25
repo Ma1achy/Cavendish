@@ -55,8 +55,42 @@ fn items(prefix: &str) -> Vec<Item<'static>> {
     out
 }
 
+/// The Add menu: the starters (`scenes/starters.ron`), bodies first, voxel shapes in a submenu,
+/// then the tower. Each adds its starter where the camera looks and selects it.
+pub(crate) fn add_menu(shell: &mut Shell, ui: &mut egui::Ui) {
+    let starters = cav_sim::starters::starters();
+    let is_shape = |s: &cav_sim::starters::Starter| s.body.as_ref().is_some_and(|b| b.shape.is_some());
+    let mut chosen: Option<&str> = None;
+    for starter in starters.iter().filter(|s| s.body.is_some() && !is_shape(s)) {
+        if ui.button(&starter.label).on_hover_text(&starter.about).clicked() {
+            chosen = Some(&starter.name);
+        }
+    }
+    ui.menu_button("Voxel shape", |ui| {
+        for starter in starters.iter().filter(|s| is_shape(s)) {
+            if ui.button(&starter.label).on_hover_text(&starter.about).clicked() {
+                chosen = Some(&starter.name);
+            }
+        }
+    });
+    ui.separator();
+    for starter in starters.iter().filter(|s| s.tower.is_some()) {
+        if ui.button(&starter.label).on_hover_text(&starter.about).clicked() {
+            chosen = Some(&starter.name);
+        }
+    }
+    if let Some(name) = chosen {
+        let _ = shell.add_starter(name);
+        ui.close();
+    }
+}
+
 /// Draws the items of the menu `prefix` into an open menu, running what is clicked.
 pub(crate) fn draw_items(shell: &mut Shell, ui: &mut egui::Ui, prefix: &str) {
+    if prefix == "Add" {
+        add_menu(shell, ui);
+        return;
+    }
     for item in items(prefix) {
         match item {
             Item::Action(action) => {

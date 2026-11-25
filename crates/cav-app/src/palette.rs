@@ -202,9 +202,14 @@ pub fn draw(shell: &mut Shell, ctx: &egui::Context) {
     let table = crate::actions::table();
     let mut all = entries(table, shell);
     if let Some(menu) = &shell.palette.menu {
-        let in_menu =
-            |id: &String| table.action(id).is_some_and(|a| a.menu_path().first() == Some(&menu.as_str()));
-        all.retain(|e| e.action.as_ref().is_some_and(in_menu));
+        if menu == "Add" {
+            // The Add menu is the starters.
+            all.retain(|e| e.group == Group::Add);
+        } else {
+            let in_menu =
+                |id: &String| table.action(id).is_some_and(|a| a.menu_path().first() == Some(&menu.as_str()));
+            all.retain(|e| e.action.as_ref().is_some_and(in_menu));
+        }
     }
     let found = filter(&all, &shell.palette.query, SHOWN);
     shell.palette.at = shell.palette.at.min(found.len().saturating_sub(1));

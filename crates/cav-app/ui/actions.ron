@@ -13,9 +13,14 @@
 //           array.towers[2]), {body} and {tower} its number from 1
 //   scope   where its keys work: a big scope's id or a node's, or "global"
 //   keys    its key chords: "Ctrl+Z", "Shift+F", "?", "Delete"
-//   needs   when it can run: Always, Undo, Redo, Selection, Removable, Body, Tower(n), Shapes
+//   needs   when it can run: Always, Undo, Redo, Selection, Item (a body or a tower), Body,
+//           Tower(n), Shapes
 //   rule    a rule above it in its menu
+//   context on the right-click menu of a row of the scene tree and of the view
 //   about   one line for the palette and the ? sheet
+//
+// The Add menu is not listed here: it is the starters (scenes/starters.ron), each run as
+// `add <name> at {place}`, {place} being where the camera looks, on the ground.
 (
     scopes: [
         (id: "top-bar", name: "Top bar"),
@@ -26,7 +31,7 @@
         (id: "timeline", name: "Timeline"),
         (id: "footer", name: "Footer"),
     ],
-    menus: ["File", "Edit", "View", "Scene", "Array", "Help"],
+    menus: ["File", "Edit", "Add", "View", "Scene", "Array", "Help"],
     actions: [
         // File
         (id: "new-room", label: "room", menu: "File/New from template", line: "load room", about: "the default room with the five-tower array"),
@@ -43,6 +48,12 @@
         // Edit
         (id: "undo", label: "Undo", menu: "Edit", line: "undo", keys: ["Ctrl+Z"], needs: Undo, about: "take back the last edit, whatever made it"),
         (id: "redo", label: "Redo", menu: "Edit", line: "redo", keys: ["Ctrl+Shift+Z", "Ctrl+Y"], needs: Redo, about: "put back the edit last taken back"),
+        (id: "duplicate", label: "Duplicate", menu: "Edit", line: "duplicate {selection}", scope: "tree", keys: ["Ctrl+D"], needs: Item, rule: true, context: true, about: "a copy of the selected body or tower beside it"),
+        (id: "duplicate-in-view", label: "Duplicate", line: "duplicate {selection}", scope: "viewport", keys: ["Ctrl+D"], needs: Item, about: "a copy of the selected body or tower beside it"),
+        (id: "rename", label: "Rename", menu: "Edit", line: "rename", scope: "tree", keys: ["F2"], needs: Item, context: true, about: "type a new name for the selected body or tower"),
+        (id: "delete", label: "Delete", menu: "Edit", line: "remove {selection}", scope: "tree", keys: ["Delete"], needs: Item, context: true, about: "take the selected body or tower out of the scene"),
+        (id: "delete-in-view", label: "Delete", line: "remove {selection}", scope: "viewport", keys: ["Delete"], needs: Item, about: "take the selected body or tower out of the scene"),
+        (id: "add-here", label: "Add…", line: "palette add", scope: "tree", keys: ["A"], about: "search the things to add: bodies, shapes, a tower"),
         (id: "select-none", label: "Select nothing", menu: "Edit", line: "select none", needs: Selection, rule: true, about: "clear the selection (Esc in the viewport does too)"),
 
         // View
@@ -71,6 +82,14 @@
         (id: "style-xray", label: "x-ray", menu: "View/Draw style", line: "style xray", about: "additive, see-through"),
         (id: "style-wireframe", label: "wireframe", menu: "View/Draw style", line: "style wireframe", about: "edges only"),
         (id: "style-paper", label: "paper", menu: "View/Draw style", line: "style paper", about: "ink on cream paper"),
+        (id: "colour-level", label: "tree level", menu: "View/Colour voxels by", line: "colour level", needs: Shapes, about: "colour each leaf by its level in the tree"),
+        (id: "colour-depth", label: "depth", menu: "View/Colour voxels by", line: "colour depth", needs: Shapes, about: "colour each leaf by its depth"),
+        (id: "colour-mass", label: "mass", menu: "View/Colour voxels by", line: "colour mass", needs: Shapes, about: "colour each leaf by its mass"),
+        (id: "colour-fill", label: "fill", menu: "View/Colour voxels by", line: "colour fill", needs: Shapes, about: "colour each leaf by how full it is"),
+        (id: "overlay-none", label: "none", menu: "View/Overlay", line: "overlay none", needs: Shapes, about: "no overlay"),
+        (id: "overlay-leaves", label: "leaf bounds", menu: "View/Overlay", line: "overlay leaves", needs: Shapes, about: "each leaf's bounds, by level"),
+        (id: "overlay-tree", label: "the whole octree", menu: "View/Overlay", line: "overlay tree", needs: Shapes, about: "every node of every voxel body's tree, by depth"),
+        (id: "section-off", label: "no section", menu: "View/Overlay", line: "section off", needs: Shapes, rule: true, about: "take the section plane away"),
         (id: "gui", label: "Hide the GUI", menu: "View", line: "gui", keys: ["F3"], rule: true, about: "the scene fills the window; F3 or Esc brings the panels back"),
         (id: "console", label: "Console", menu: "View", line: "console", keys: ["`"], about: "open or close the console: every command, typed"),
 

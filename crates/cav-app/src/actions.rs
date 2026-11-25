@@ -40,9 +40,9 @@ pub enum Needs {
     Redo,
     /// Something is selected.
     Selection,
-    /// Something is selected that can be taken out of its list or the scene (a body, a tower when
-    /// there are others, the room, the floor).
-    Removable,
+    /// A body or a tower is selected: an item of a list, which can be duplicated, renamed and
+    /// taken out.
+    Item,
     /// A body is selected.
     Body,
     /// The scene has a tower n (from 1).
@@ -76,6 +76,9 @@ pub struct Action {
     /// A rule above it in its menu.
     #[serde(default)]
     pub rule: bool,
+    /// On the right-click menu of a row of the scene tree (for that row's item).
+    #[serde(default)]
+    pub context: bool,
     /// One line for the palette and the `?` sheet.
     #[serde(default)]
     pub about: String,
@@ -292,7 +295,8 @@ mod tests {
         // Every line parses: the window's own, or one the engine's console reads.
         let shell = crate::Shell::new();
         for action in &table.actions {
-            let line = crate::Shell::resolve(&action.line, Some(cav_engine::Target::Body(1)));
+            // The default scene has towers and no bodies: a tower is what is selected.
+            let line = crate::Shell::resolve(&action.line, Some(cav_engine::Target::Tower(1)));
             assert!(
                 crate::Shell::is_app_command(&line) || shell.engine.parse(&line).is_ok(),
                 "`{}` runs `{line}`, which is not a command",
