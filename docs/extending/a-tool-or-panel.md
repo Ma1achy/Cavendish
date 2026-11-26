@@ -43,8 +43,9 @@ Read the Place tool (`Behaviour::Place`) beside this.
    it); the strip draws its icon by `behaviour`, so a new behaviour gets an icon in
    `crates/cav-app/src/icons.rs` (a few painter strokes in a 20 × 20 grid: the fonts have no
    pictographs).
-3. Its pointer handling goes in `figure` in `crates/cav-app/src/panels.rs`, beside the gizmo's
-   and the Place click; what it changes is a command (`Shell::apply`, `Shell::run`), never a
+3. Its pointer handling goes in `viewport` in `crates/cav-app/src/panels.rs` (the one function
+   that draws a viewport of the mosaic and takes its pointer), beside the gizmo's and the Place
+   click; what it changes is a command (`Shell::apply`, `Shell::run`), never a
    field of the scene. Its options go in `tool_options_row`.
 4. A tool is UI state: `choosing_a_tool_changes_no_scene` must still pass with it.
 
@@ -56,7 +57,8 @@ its own in `crates/cav-app/tests/editor.rs` driven by input events, with a contr
 
 Add an entry to `crates/cav-app/ui/layouts.ron` (`id`, `label`, the console `lines` that arrange
 the figure, optionally the inspector's folding sections it opens, `unfold`, and `about`) and an
-action `layout <id>` with its key. `the_layouts_are_valid` holds its lines (view commands only:
+action `layout <id>` with its key. How the figure's own arrangement is written (a `mosaic` line)
+is in [a-view-or-a-layout.md](a-view-or-a-layout.md). `the_layouts_are_valid` holds its lines (view commands only:
 never an edit, Home or a selection) and its action;
 `every_layout_keeps_every_scope_and_the_figure_uncovered` holds the window's rules in it.
 

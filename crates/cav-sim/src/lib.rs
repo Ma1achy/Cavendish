@@ -7,8 +7,9 @@
 //! ## What this crate is for
 //! What a scene *is* and what the instrument reads from it: the scene spec, its validation and its
 //! built-in library; motions; edits by path with their units and stages; the schedule of every
-//! tower's shots; presets; the read (the forward model applied to a scene); bundles; and the view
-//! spec that says how a scene is looked at.
+//! tower's shots; presets; the read (the forward model applied to a scene); bundles; the view
+//! spec that says how a scene is looked at; and the mosaic that says how a figure is divided
+//! into viewports ([`mosaic`]: pure data, with split, close, swap and resize as functions).
 //!
 //! ## What it may depend on
 //! Of the workspace, `cav-core` only (`cav-validate` in its tests).

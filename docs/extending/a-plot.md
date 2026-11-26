@@ -60,8 +60,9 @@ the steps below name each such place.
    never as its slot's zero, and the caption counts the shots taken.
 6. **In a pane.** Choices made by content, each with a default that is some other plot's:
    `Subject::of_pane` (which tower: the selected one, except for a signal); `of_pane` in
-   `plots.rs` (only a signal and a periodogram are drawn twice while comparing); and in the pane
-   loop of `crates/cav-app/src/panels.rs` how far the wheel may zoom out (the `whole` of the
+   `plots.rs` (only a signal and a periodogram are drawn twice while comparing); and in
+   `viewport` in `crates/cav-app/src/panels.rs` (which draws each viewport of the mosaic:
+   [a-view-or-a-layout.md](a-view-or-a-layout.md)) how far the wheel may zoom out (the `whole` of the
    horizontal axis: a catch-all arm gives it half the mean shot rate, a periodogram's) and
    whether a click seeks (a signal and a flight diagram only).
 
@@ -136,8 +137,7 @@ which is counted before the level is chosen. The Python redraw does not draw it 
   scene at its caps.
 - `slow_a_figure_is_bounded_in_points_and_pixels`: the scene of 21,000 shots there would make your
   plot large; assert the drawing and the table hold what step 4 says.
-- `crates/cav-app/tests/shell.rs`: no test shows every content in a pane (there are four panes
-  and more plots). `panes_show_plots_and_the_scene` shows a signal and a periodogram, and
+- `crates/cav-app/tests/shell.rs`: no test shows every content in a pane. `panes_show_plots_and_the_scene` shows a signal and a periodogram, and
   `four_plots_in_a_small_window_keep_their_text_in_their_panes` four plots; adding a pane to
   either breaks the counts they assert after. Write a test of your own that shows the plot in a
   pane, checks that its text stays inside it, and shows the scene again as the control.

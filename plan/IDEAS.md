@@ -209,3 +209,19 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   with the oracle tier. Where one guards a property a small scene would also show (the probe's
   field on a coarse ball, the wire's world job on one chunk), a cheap twin in `quick` would catch
   a break at the commit and not at the slice's end.
+- **Closing a viewport into several neighbours** (TASK-S20-03): `Mosaic::close` lets one
+  neighbour that shares a whole edge grow into the closed place, and refuses when none does (`A`
+  in `AAB;CDB`, whose lower edge is C's and D's together). Letting the neighbours that tile one
+  edge between them each grow would close anything; so would Blender's "join areas" by a drag.
+- **Which neighbour grows** (TASK-S20-03): the left one first, then above, right, below, so a
+  split down of a viewport with a neighbour to its left closes into that neighbour and not back
+  into what was split. Remembering the split's parent in the window (not in the mosaic) would
+  make close the exact inverse of split.
+- **Home's undo step names a pane by number** (TASK-S20-03): `Edit::View { pane }` was made when
+  panes never changed number. After a close or a typed mosaic renumbers the viewports, undoing
+  a Home made before it puts the camera back in whichever viewport now has that number. Key the
+  step by label.
+- **Swap by dragging a header; the splitters' crossings** (TASK-S20-03, for TASK-S20-04): the
+  design's swap is a drag of a viewport's header onto another (there is `swap <a> <b>` and
+  "Swap with the next" until the header exists). The 2 px square where a column's gap crosses a
+  row's is no handle: a four-way handle there would resize both at once.
