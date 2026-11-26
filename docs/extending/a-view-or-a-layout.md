@@ -24,18 +24,49 @@ A view type is a variant of `PaneContent`. One that is a plot is the whole of
 `crates/cav-plot/src/plots.rs`, its figure, its tests). What the mosaic adds to that recipe:
 
 1. Nothing to register: a viewport of any label shows any content, and every list the window
-   offers a content from is made from `PaneContent::ALL` (the `show` buttons of the View panel,
-   the console's `show <word>`). The action table's `show-…` items in
-   `crates/cav-app/ui/actions.ron` are written by hand: add one, with its `about`.
-2. Its input goes in `viewport` in `crates/cav-app/src/panels.rs`, the one function that draws a
-   viewport and takes its pointer, docked or floating: a plot's branch is the one that ends in
-   `return` after the wheel and the click; the scene's is everything after it. What it asks of
-   the engine is pushed to `Asked` and carried out once every viewport is drawn; never apply a
-   command in the middle of the loop (the viewports after it would draw another generation).
+   offers a content from is made from `PaneContent::ALL` (the first control of every viewport's
+   header, the console's `show <word>`). The action table's `show-…` items in
+   `crates/cav-app/ui/actions.ron` are written by hand: add one, with its `about` (the header's
+   drop-down shows it as the row's tooltip), and an icon in `icons::content`
+   (`crates/cav-app/src/icons.rs`).
+2. Its input goes in `canvas` in `crates/cav-app/src/panels.rs`, the one function that draws a
+   viewport's canvas and takes its pointer, docked or floating: a plot's branch is the one that
+   ends in `return` after the wheel and the click; the scene's is everything after it. What it
+   asks of the engine is pushed to `Asked` and carried out once every viewport is drawn; never
+   apply a command in the middle of the loop (the viewports after it would draw another
+   generation).
 3. A viewport is drawn at any size from `MIN_VIEWPORT` up, in any place, and twelve at once:
    keep whatever it draws inside the rectangle it is given, and bounded
    (`four_plots_in_a_small_window_keep_their_text_in_their_panes` is the pattern; show yours in
    one viewport of `mosaic "ABC;DEF"` in a test of your own).
+
+## A view type's header controls
+
+Every viewport has a header along its top (`crates/cav-app/src/header.rs`,
+`docs/design/workspace.md` §2) and its canvas under it. `Layout::panes` is the viewport, header
+and all; `Layout::canvases` is the canvas, and every place of a pointer in a view is measured
+from the canvas's corner.
+
+1. The header's controls are data: `header::CONTROLS`, in order, each with the view types it is
+   for (`Applies::Scene`, `Applies::Plot`, `Applies::Any`) and the action of
+   `crates/cav-app/ui/actions.ron` it runs. A control for your view type is an entry there (give
+   `Applies` a variant if neither fits) and its drawing in `header::draw`, beside the plot's
+   `span`: one call of `control` with its icon, its tooltip (`header::tooltip` of its action:
+   the name, the key, what it does) and its look (disabled says why in the tooltip), then the
+   line it runs pushed to `Asked::lines`, addressed to its own viewport (`span all @3`).
+2. A menu's rows are actions too: the camera menu is the actions whose `menu` is one of
+   `header::CAMERA_MENUS`, the overlays popover those of `header::OVERLAY_MENUS`. An action added
+   to `View/Overlay` in the table is in the popover with no code; which row is the one chosen is
+   worked out by parsing its line and comparing it with the view.
+3. The keyboard needs nothing more: the active viewport's header is the scope `viewport/header`,
+   whose stops are `CONTROLS` in that order whatever the viewport shows (a stop that does not
+   apply is disabled, never left out). Push a `Stop` for yours.
+4. No status in a header. Something to warn of (a stale input, something left out of the
+   picture) goes in `header::warnings`: the viewport then shows one dot whose tooltip holds the
+   words. Standing facts go to the status bar (`status_parts` in `panels.rs`).
+5. Width: the left group gives way as a viewport narrows (words first, then the shading's four
+   buttons fold into one drop-down, then controls are left out where the right group begins).
+   Look at yours in `mosaic "ABCDE" cols 1 1 1 1 4`.
 
 ## A layout of the figure
 
@@ -73,7 +104,11 @@ and the mosaic keeps the viewport's place.
   replays to the same mosaic and cameras.
 - `the_layouts_are_valid` and `every_layout_keeps_every_scope_and_the_figure_uncovered`: a new
   layout's lines and the window's rules in it.
-- `crates/cav-app/tests/editor/s20.rs`: `six_viewports_draw_and_the_thirteenth_is_refused`,
+- `crates/cav-app/tests/editor/s20.rs`: `the_header_holds_no_status_and_the_bar_says_the_engine_s`,
+  `every_header_control_says_what_it_does` (a control with no tooltip, or whose tooltip lacks its
+  action's key, fails it), `the_view_type_is_chosen_in_the_header`,
+  `the_gizmo_snaps_to_an_axis_and_orbits`;
+  `six_viewports_draw_and_the_thirteenth_is_refused`,
   `a_splitter_drag_keeps_the_sum_and_is_one_line`,
   `tab_and_arrows_follow_the_labels_whatever_floats`, `pop_out_and_dock_return_the_layout`,
   `the_big_scopes_are_unchanged_by_the_mosaic`.
@@ -86,6 +121,8 @@ and the mosaic keeps the viewport's place.
   `Mosaic::number` and `Mosaic::label`.
 - A label whose cells are an L or two islands: refused in words by `Mosaic::parse`; so are
   ragged rows, a thirteenth label and a letter outside `A`–`Z`.
+- Pointer arithmetic from `Layout::panes`: that rectangle includes the header. Use
+  `Layout::canvases`.
 - A `;` in a script outside quotes ends the statement: write `mosaic "AB;CD"`, quoted.
 - Closing a viewport no single neighbour can grow into (`A` in `AAB;CDB`): refused; swap it
   with one that can be closed, or write the mosaic wanted.

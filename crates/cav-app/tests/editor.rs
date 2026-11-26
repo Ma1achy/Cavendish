@@ -70,7 +70,7 @@ impl Rig {
     /// Drags the Move tool's gizmo on body `body` along `axis` by `metres`, from a point on the
     /// arrow, as a person would (the pointer moves `metres` worth of the arrow on screen).
     fn drag_arrow(&mut self, body: usize, axis: usize, metres: f64) {
-        let rect = self.shell.layout().panes[0];
+        let rect = self.shell.layout().canvases[0];
         let spec = self.shell.engine.spec();
         let at = spec.bodies[body].motion.position(self.shell.engine.time(), spec.array.instrument.gravity);
         let g =
@@ -225,7 +225,7 @@ fn the_place_tool_drops_a_starter_where_the_pointer_is() {
     rig.shell.run("tool place").unwrap();
     rig.shell.place_starter = "cube".into();
     rig.frames(vec![vec![], vec![]]);
-    let rect = rig.shell.layout().panes[0];
+    let rect = rig.shell.layout().canvases[0];
     let pointer = rect.min + egui::vec2(0.62 * rect.width(), 0.7 * rect.height());
     let size = [f64::from(rect.width()), f64::from(rect.height())];
     let within = [f64::from(pointer.x - rect.min.x), f64::from(pointer.y - rect.min.y)];
@@ -263,7 +263,7 @@ fn choosing_a_tool_changes_no_scene() {
     // Control: a tool's action does change the scene (Place), and is journalled.
     rig.shell.run("tool place").unwrap();
     rig.frames(vec![vec![]]);
-    let rect = rig.shell.layout().panes[0];
+    let rect = rig.shell.layout().canvases[0];
     rig.click(rect.center() + egui::vec2(0.0, 0.3 * rect.height()));
     assert_ne!(rig.shell.engine.digest(), digest);
 }
@@ -635,7 +635,7 @@ fn every_layout_keeps_every_scope_and_the_figure_uncovered() {
 /// picture, over points all round the sphere (its silhouette, which in perspective is wider than
 /// its radius at its centre's depth: S18's review, U5).
 fn spans(rig: &Rig, pane: usize, centre: [f64; 3], radius: f64) -> f64 {
-    let rect = rig.shell.layout().panes[pane];
+    let rect = rig.shell.layout().canvases[pane];
     let view = rig.shell.engine.view(pane).clone();
     let camera = cav_render::Camera::new(&view, f64::from(rect.width() / rect.height()));
     let whole = [rect.width().round() as u32, rect.height().round() as u32];
@@ -707,7 +707,7 @@ fn the_wheel_zooms_toward_the_pointer() {
     let mut rig = Rig::new();
     rig.shell.run("load room").unwrap();
     rig.frames(vec![vec![], vec![]]);
-    let pane = rig.shell.layout().panes[0];
+    let pane = rig.shell.layout().canvases[0];
     let pointer = pane.min + egui::vec2(0.8 * pane.width(), 0.25 * pane.height());
     let size = [f64::from(pane.width()), f64::from(pane.height())];
     let within = [f64::from(pointer.x - pane.min.x), f64::from(pointer.y - pane.min.y)];
@@ -1116,7 +1116,7 @@ fn a_canvas_click_does_not_move_the_keyboard_focus() {
     rig.key(Key::Enter, Modifiers::NONE);
     let focus = rig.shell.keyboard.focus.clone();
     assert!(rig.shell.keyboard.nav_on && focus.len() > 1, "{focus:?}");
-    let pane = rig.shell.layout().panes[0];
+    let pane = rig.shell.layout().canvases[0];
     let at = rig.shell.body_point(0, 0, pane.size()).expect("the mass is in view");
     rig.click(pane.min + at.to_vec2());
     assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)), "the click did its canvas action");
@@ -1345,7 +1345,7 @@ fn the_right_button_flies_and_holds_the_letters() {
     rig.shell.run("load point").unwrap();
     rig.shell.run("tool select").unwrap();
     rig.frames(vec![vec![], vec![]]);
-    let pane = rig.shell.layout().panes[0];
+    let pane = rig.shell.layout().canvases[0];
     let at = pane.center() + egui::vec2(0.0, -0.3 * pane.height());
     let start = rig.shell.engine.view(0).clone();
     let w = |pressed, repeat| Event::Key {
@@ -1441,11 +1441,15 @@ fn maximised_there_is_a_way_back_in_sight() {
     let mut rig = Rig::new();
     rig.shell.run("load point").unwrap();
     rig.frames(vec![vec![]]);
-    assert!(rig.shell.layout().button("maximise").is_none(), "the control: not maximised, no Restore");
+    // (S20: the way back is the viewport header's maximise button, which reads Restore while
+    // maximised; it was a button beside Home on the figure.)
+    let tip = |rig: &Rig| rig.shell.layout().control(0, "maximise").expect("in the header").tooltip.clone();
+    assert!(tip(&rig).starts_with("Maximise (Ctrl+Space)"), "the control: not maximised, no Restore");
     rig.key(Key::Space, Modifiers::COMMAND);
     assert!(rig.shell.maximised);
     rig.frames(vec![vec![]]);
-    rig.click_button("maximise");
+    assert!(tip(&rig).starts_with("Restore (Ctrl+Space)"), "{}", tip(&rig));
+    rig.click_button("viewport maximise 1");
     assert!(!rig.shell.maximised, "the button restored it");
     assert!(rig.shell.layout().panel("outliner").is_some());
 }
@@ -1455,7 +1459,7 @@ fn the_session_s_arrows_go_the_way_they_point_on_screen() {
     // S18's review, minor 11: seen from the east, → moves the body right on screen (it moved it
     // along +x, which from the east is to the left).
     let screen_x = |rig: &Rig| {
-        let rect = rig.shell.layout().panes[0];
+        let rect = rig.shell.layout().canvases[0];
         rig.shell.body_point(0, 0, rect.size()).unwrap().x
     };
     for view in ["view east", "view iso", "view north", "view top"] {
@@ -1593,7 +1597,7 @@ fn home_in_the_middle_of_a_drag_keeps_its_own_step() {
         rig.shell.run("orbit 33 20").unwrap();
         rig.frames(vec![vec![], vec![]]);
         let start = anchor(&rig, 0);
-        let rect = rig.shell.layout().panes[0];
+        let rect = rig.shell.layout().canvases[0];
         let spec = rig.shell.engine.spec();
         let at = spec.bodies[0].motion.position(0.0, spec.array.instrument.gravity);
         let g = cav_app::tools::gizmo(rig.shell.engine.view(0), rect.size(), at).unwrap();
@@ -1718,7 +1722,7 @@ fn a_framed_voxel_body_keeps_its_cage_in_the_pane() {
     let selection = rig.shell.engine.selection();
     let (centre, radius) = cav_app::camera::bounds_of(&spec, selection, 0.0);
     let half = cav_app::camera::cage_of(&spec, selection).expect("a voxel body has a cage");
-    let rect = rig.shell.layout().panes[0];
+    let rect = rig.shell.layout().canvases[0];
     let aspect = f64::from(rect.width() / rect.height());
     let view = rig.shell.engine.view(0).clone();
     let cage = cav_app::camera::cage_span(&view, centre, half, aspect);
@@ -1768,7 +1772,7 @@ fn the_place_tool_shows_where_a_click_puts_the_starter() {
     rig.shell.run("load void").unwrap();
     rig.shell.run("tool place").unwrap();
     rig.frames(vec![vec![], vec![]]);
-    let rect = rig.shell.layout().panes[0];
+    let rect = rig.shell.layout().canvases[0];
     let pointer = rect.min + egui::vec2(0.55 * rect.width(), 0.7 * rect.height());
     rig.frames(vec![vec![Event::PointerMoved(pointer)], vec![]]);
     let ghost = rig.shell.layout().button("place ghost").expect("a ghost under the pointer");

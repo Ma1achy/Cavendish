@@ -27,6 +27,7 @@ pub mod app;
 pub mod camera;
 pub mod dialogs;
 pub mod editors;
+pub mod header;
 pub mod headless;
 pub mod icons;
 pub mod inspector;
@@ -34,11 +35,13 @@ pub mod keyboard;
 pub mod lane;
 pub mod layouts;
 pub mod menus;
+pub mod navgizmo;
 pub mod outliner;
 pub mod palette;
 mod panels;
 pub mod sheet;
 pub use panels::{MAX_OUTLINE_ROWS, MIN_FLOAT, MIN_VIEWPORT, VIEWPORT_MENU, splitter_moved};
+pub use shell::HeaderControl;
 /// The outliner's words, for its tests: what a tower's row says, and whether a scene reads
 /// nothing; and the side panels' scroll area, with and without its bar's width reserved. Not an
 /// interface.

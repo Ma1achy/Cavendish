@@ -42,7 +42,7 @@ fn the_mouse_fly_outlives_the_pointer_leaving_while_held() {
     let mut rig = Rig::new();
     rig.shell.run("load point").unwrap();
     rig.frames(vec![vec![], vec![]]);
-    let at = rig.shell.layout().panes[0].center();
+    let at = rig.shell.layout().canvases[0].center();
     rig.frames(vec![vec![Event::PointerMoved(at)], vec![Rig::press(at, PointerButton::Secondary, true)]]);
     assert!(rig.shell.mouse_fly.is_some(), "flying");
     rig.frames(vec![vec![Event::PointerGone], vec![], vec![]]);
@@ -209,7 +209,7 @@ fn the_probe_tool_reads_where_it_is_clicked() {
         rig.shell.run("add sphere at 2 2 1").unwrap();
         rig.shell.run(&format!("tool {tool}")).unwrap();
         rig.frames(vec![vec![], vec![]]);
-        let pane = rig.shell.layout().panes[0];
+        let pane = rig.shell.layout().canvases[0];
         let at = rig.shell.body_point(0, 1, pane.size()).expect("the sphere is in view") + pane.min.to_vec2();
         let (spec, depth) = (rig.shell.engine.spec().clone(), rig.shell.engine.depth());
         rig.click(at);
@@ -706,7 +706,7 @@ fn a_locked_body_is_not_moved_by_the_gizmo_and_a_hidden_one_is_not_drawn() {
     rig.click_button("lock mass");
     assert!(rig.shell.is_locked(0));
     rig.frames(vec![vec![]]);
-    let rect = rig.shell.layout().panes[0];
+    let rect = rig.shell.layout().canvases[0];
     let spec = rig.shell.engine.spec().clone();
     let at = spec.bodies[0].motion.position(0.0, spec.array.instrument.gravity);
     let g = cav_app::tools::gizmo(rig.shell.engine.view(0), rect.size(), at).unwrap();

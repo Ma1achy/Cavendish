@@ -34,7 +34,7 @@ pub const GRID: f32 = 4.0;
 /// stand at a pitch of 22 pt (the design asks for no more than 24).
 pub const ROW_GAP: f32 = 2.0;
 
-/// The height of a card's header and of a panel's tab, points.
+/// The height of a card's header, of a panel's tab and of a viewport's header, points.
 pub const HEADER: f32 = 22.0;
 
 /// The size of body and button text, points.
@@ -73,7 +73,13 @@ pub fn dense(ui: &mut egui::Ui, row_gap: f32) {
 pub fn text_pairs() -> Vec<(&'static str, Color32, &'static str, Color32)> {
     let card = crate::inspector::CARD;
     let mut pairs = Vec::new();
-    for (ground_name, ground) in [("panel", PANEL), ("card", card), ("status line", FOOTER)] {
+    let grounds = [
+        ("panel", PANEL),
+        ("card", card),
+        ("status line", FOOTER),
+        ("active viewport header", HEADER_ACTIVE),
+    ];
+    for (ground_name, ground) in grounds {
         for (text_name, text) in [
             ("text", TEXT),
             ("weak", WEAK),
@@ -118,6 +124,9 @@ pub fn contrast(a: Color32, b: Color32) -> f32 {
 pub const PANEL: Color32 = Color32::from_rgb(0x1b, 0x1b, 0x1b);
 /// The background of the status line. sRGB.
 pub const FOOTER: Color32 = Color32::from_rgb(0x14, 0x14, 0x14);
+/// The ground of the active viewport's header when the figure has more than one: the selection's
+/// blue, darkened until [`WEAK`] text reads on it at 4.8:1. sRGB.
+pub const HEADER_ACTIVE: Color32 = Color32::from_rgb(0x12, 0x22, 0x2b);
 /// The fill of a button or a field at rest. sRGB.
 pub const WIDGET: Color32 = Color32::from_rgb(0x3c, 0x3c, 0x3c);
 /// The outline of a button or a field. sRGB.

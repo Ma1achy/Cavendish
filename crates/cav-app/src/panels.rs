@@ -1,12 +1,13 @@
-//! Drawing the shell: the menu bar, the outliner, the properties, the figure with its header
-//! strip, the timeline, the console and the footer.
+//! Drawing the shell: the menu bar, the outliner, the properties, the figure (a mosaic of
+//! viewports, each with its header: [`crate::header`]), the timeline, the console and the status
+//! bar.
 //!
-//! Principia's rules, from the mock-up: the figure is never covered (panels take space beside it,
-//! nothing floats over it but Home); badges live in the header strip; rarely used things are in
-//! windows; F3 hides everything but the figure.
+//! Principia's rules, from the mock-up: the figure is never covered (panels take space beside
+//! it; over a scene's canvas float only the tool strip and the navigation gizmo); status is the
+//! status bar's, never a viewport header's; rarely used things are in windows; F3 hides
+//! everything but the figure.
 
 use cav_engine::{Boundary, Command, Level, Mosaic, Subsystem, Target, ViewCommand};
-use cav_sim::{DrawStyle, NamedView, Projection};
 use egui::{
     Align, Align2, Button, Color32, FontId, Layout, Margin, Panel, Rect, RichText, Sense, Stroke, StrokeKind,
     pos2, vec2,
@@ -34,15 +35,6 @@ pub(crate) fn short_number(value: f64) -> String {
     let digits = (3 - value.abs().log10().floor() as i32).max(0) as usize;
     let text = format!("{value:.digits$}");
     if text.contains('.') { text.trim_end_matches('0').trim_end_matches('.').to_owned() } else { text }
-}
-
-/// A small outlined label for the header strip.
-fn badge(ui: &mut egui::Ui, text: impl Into<String>, colour: Color32) {
-    egui::Frame::new()
-        .stroke(Stroke::new(1.0, theme::WIDGET))
-        .corner_radius(9)
-        .inner_margin(Margin::symmetric(7, 0))
-        .show(ui, |ui| ui.label(RichText::new(text).size(theme::SMALL_PT).color(colour)));
 }
 
 /// A side panel's contents in a scroll area, so that a short window scrolls them instead of
@@ -157,11 +149,6 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
     }
     egui::CentralPanel::no_frame().show(ui, |ui| {
         if !shell.gui_hidden && !shell.maximised {
-            let strip = Panel::top("header")
-                .exact_size(24.0)
-                .frame(frame(theme::FOOTER, 10, 0))
-                .show(ui, |ui| header(shell, ui));
-            shell.layout.panels.push(("header", strip.response.rect));
             let options = Panel::top("options")
                 .exact_size(24.0)
                 .frame(frame(theme::PANEL, 10, 0))
@@ -271,6 +258,83 @@ fn menu_bar(shell: &mut Shell, ui: &mut egui::Ui) {
     });
 }
 
+/// The most characters a part of the status bar paints: a longer one is cut short, and whole in
+/// its tooltip (S20: no sentences in the chrome).
+const STATUS_MOST: usize = 32;
+
+/// The status bar's parts, in its order (left to right), each with its name, its words and
+/// their colour: the selection, the instrument (and the one the scene is also read on), the
+/// signal's state in the engine's own words, the forward stage, and the counts of warnings and
+/// errors and the frame's time when there are any.
+fn status_parts(shell: &mut Shell) -> Vec<(&'static str, String, Color32)> {
+    let spec = shell.engine.spec();
+    let selection = match shell.engine.selection() {
+        Some(Target::Tower(n)) => (spec.array.towers[n - 1].label.clone(), theme::STRONG),
+        Some(Target::Body(n)) => (spec.bodies[n - 1].label.clone(), theme::STRONG),
+        Some(Target::Room) => ("room".to_owned(), theme::STRONG),
+        Some(Target::Floor) => ("floor".to_owned(), theme::STRONG),
+        Some(Target::World) => ("world".to_owned(), theme::STRONG),
+        None => ("nothing selected".to_owned(), theme::WEAK),
+    };
+    let mut instrument =
+        cav_sim::presets::name_of(&spec.array.instrument).unwrap_or("custom instrument").to_owned();
+    if let Some(other) = shell.engine.comparison() {
+        let other = cav_sim::presets::name_of(other).unwrap_or("another instrument");
+        instrument = format!("{instrument} vs {other}");
+    }
+    // Where the signal stands: a stale one is never mistaken for the current scene's, and one
+    // some of whose reads did not settle never reads "within".
+    let signal = match shell.engine.signal() {
+        (cav_engine::SignalState::Refined, Some(signal)) => (
+            cav_engine::estimate_text(signal.estimate, signal.settled, signal.truncated),
+            if signal.settled { theme::TEXT } else { theme::WARN },
+        ),
+        (cav_engine::SignalState::Stale, _) => ("stale".to_owned(), theme::WARN),
+        _ => ("none".to_owned(), theme::WEAK),
+    };
+    let forward = forward_status(&shell.engine);
+    shell.layout.status.clone_from(&forward);
+    let (warnings, errors) = shell.problem_counts();
+    let plural = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
+    let mut parts = vec![
+        ("selection", selection.0, selection.1),
+        ("instrument", instrument, theme::TEXT),
+        ("signal", signal.0, signal.1),
+        ("forward", forward, theme::WEAK),
+    ];
+    if warnings > 0 {
+        parts.push(("warnings", plural(warnings, "warning"), theme::WARN));
+    }
+    if errors > 0 {
+        parts.push(("errors", plural(errors, "error"), theme::ERROR));
+    }
+    if let Some(ms) = shell.frame_ms {
+        parts.push(("frame", format!("{ms:.1} ms"), theme::WEAK));
+    }
+    parts
+}
+
+/// What a part of the status bar paints: its words (the signal's after the word "signal", the
+/// forward stage's without the word "forward", which its place says), cut to [`STATUS_MOST`]
+/// characters.
+fn status_painted(name: &str, whole: &str) -> String {
+    let words = match name {
+        "signal" => format!("signal {whole}"),
+        "forward" => whole.trim_start_matches("forward · ").to_owned(),
+        _ => whole.to_owned(),
+    };
+    if words.chars().count() <= STATUS_MOST {
+        return words;
+    }
+    let kept: String = words.chars().take(STATUS_MOST - 1).collect();
+    format!("{}…", kept.trim_end())
+}
+
+/// The status bar: at the left the toast (what the last edit did, with the way back) or the
+/// newest thing worth knowing; at the right, in a fixed order with rules between, the selection,
+/// the instrument, the signal's state, the forward stage, the counts of warnings and errors, the
+/// frame's time and the console's button. Each part is whole in its tooltip and in the layout's
+/// `status_bar`; what is painted is in its `chrome` under `status`.
 fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
     ui.horizontal_centered(|ui| {
         // The newest thing worth knowing: the last entry that is not routine.
@@ -289,43 +353,33 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
             };
             (entry.message, colour)
         });
-        let (warnings, errors) = shell.problem_counts();
-        let forward = forward_status(&shell.engine);
-        shell.layout.status.clone_from(&forward);
+        let parts = status_parts(shell);
+        shell.layout.status_bar = parts.iter().map(|(name, whole, _)| (*name, whole.clone())).collect();
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = theme::GRID;
             let label = if shell.console_open { "close console" } else { "console" };
             let console = ui
                 .add(Button::new(RichText::new(label).size(theme::SMALL_PT)).frame(false))
-                .on_hover_text("`");
+                .on_hover_text("the console: every command, typed (`)");
             shell.register("footer", "footer/console", "Console", Kind::Button, console.rect);
             if console.clicked() || shell.take_click("footer/console") {
                 let _ = shell.run("console");
             }
-            ui.label(
-                RichText::new(if shell.playing { "Space pause" } else { "Space play" })
-                    .size(theme::SMALL_PT)
-                    .color(theme::WEAK),
-            );
-            ui.label(RichText::new(&forward).size(theme::SMALL_PT).color(theme::WEAK));
-            if let Some(ms) = shell.frame_ms {
-                ui.label(
-                    RichText::new(format!("{ms:.1} ms")).monospace().size(theme::SMALL_PT).color(theme::WEAK),
-                );
+            // Right to left, so the last part first; a rule before each.
+            for (name, whole, colour) in parts.iter().rev() {
+                ui.separator();
+                let painted = status_painted(name, whole);
+                let font = if *name == "frame" {
+                    FontId::monospace(theme::SMALL_PT)
+                } else {
+                    FontId::proportional(theme::SMALL_PT)
+                };
+                ui.label(RichText::new(&painted).font(font).color(*colour))
+                    .on_hover_text(format!("{name}: {whole}"));
+                shell.layout.chrome.push(("status", painted));
+                shell.layout.chrome.push(("status tooltip", format!("{name}: {whole}")));
             }
-            if errors > 0 {
-                ui.label(
-                    RichText::new(format!("{errors} error{}", if errors == 1 { "" } else { "s" }))
-                        .size(theme::SMALL_PT)
-                        .color(theme::ERROR),
-                );
-            }
-            if warnings > 0 {
-                ui.label(
-                    RichText::new(format!("{warnings} warning{}", if warnings == 1 { "" } else { "s" }))
-                        .size(theme::SMALL_PT)
-                        .color(theme::WARN),
-                );
-            }
+            ui.separator();
             // Whatever is left is the status line, cut short rather than wrapped. When it says an
             // edit, an Undo link stands before it (the toast: what was just done, and the way back).
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
@@ -356,25 +410,35 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
                 };
                 match toast {
                     Some((words, back)) => {
-                        ui.add(
-                            egui::Label::new(RichText::new(words).size(theme::SMALL_PT).color(theme::STRONG))
-                                .truncate(),
-                        );
                         let (label, hover) = if back == "undo" {
                             ("Undo", "take this edit back (Ctrl+Z)")
                         } else {
                             ("Redo", "put it back (Ctrl+Shift+Z)")
                         };
-                        let link = ui
-                            .add(
-                                Button::new(RichText::new(label).size(theme::SMALL_PT).color(theme::LINK))
+                        // What was done, then the way back; when the words are longer than the
+                        // room, the link first, so that it is the words that are cut short.
+                        let font = FontId::proportional(theme::SMALL_PT);
+                        let wide = ui.painter().layout_no_wrap(words.clone(), font, theme::STRONG).size().x;
+                        let fits = wide + 48.0 <= ui.available_width();
+                        for link in if fits { [false, true] } else { [true, false] } {
+                            if !link {
+                                let words = RichText::new(&words).size(theme::SMALL_PT).color(theme::STRONG);
+                                ui.add(egui::Label::new(words).truncate());
+                                continue;
+                            }
+                            let link = ui
+                                .add(
+                                    Button::new(
+                                        RichText::new(label).size(theme::SMALL_PT).color(theme::LINK),
+                                    )
                                     .frame(false),
-                            )
-                            .on_hover_text(hover);
-                        shell.register("footer", "footer/undo", label, Kind::Button, link.rect);
-                        shell.layout.buttons.push((format!("toast {back}"), link.rect));
-                        if link.clicked() || shell.take_click("footer/undo") {
-                            let _ = shell.run(back);
+                                )
+                                .on_hover_text(hover);
+                            shell.register("footer", "footer/undo", label, Kind::Button, link.rect);
+                            shell.layout.buttons.push((format!("toast {back}"), link.rect));
+                            if link.clicked() || shell.take_click("footer/undo") {
+                                let _ = shell.run(back);
+                            }
                         }
                     }
                     None => {
@@ -389,8 +453,9 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
     });
 }
 
-/// The forward stage's state in a line: how many shots, refined or computing, and the
-/// quadrature's error. The status bar's (it was the outliner's foot before S19's panels).
+/// The forward stage's state in a line: how many shots, and refined or computing. The status
+/// bar's (it was the outliner's foot before S19's panels); the quadrature's error is the bar's
+/// `signal` part.
 fn forward_status(engine: &cav_engine::Engine) -> String {
     match engine.signal() {
         (cav_engine::SignalState::Refined, Some(signal)) => {
@@ -401,10 +466,7 @@ fn forward_status(engine: &cav_engine::Engine) -> String {
                 (_, true) => format!("{shots} shots, {most} taken a tower"),
                 _ => format!("{shots} shots, {fewest} to {most} taken a tower"),
             };
-            format!(
-                "forward · {count} · refined · {}",
-                cav_engine::estimate_text(signal.estimate, signal.settled, signal.truncated)
-            )
+            format!("forward · {count} · refined")
         }
         (cav_engine::SignalState::Stale, _) => "forward · computing".to_owned(),
         _ => "forward · no signal".to_owned(),
@@ -741,37 +803,6 @@ pub(crate) fn rename_field_at(shell: &mut Shell, ui: &mut egui::Ui, target: Targ
     }
 }
 
-/// A row of small buttons, each running a console line; the one that matches the state is lit.
-/// Each is a button of the keyboard's scope `scope`, its id `scope` + its line.
-fn button_row(
-    shell: &mut Shell,
-    ui: &mut egui::Ui,
-    scope: &str,
-    label: &str,
-    buttons: &[(&str, &str, bool)],
-) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 3.0;
-        ui.spacing_mut().button_padding.x = 5.0;
-        theme::fixed_left(
-            ui,
-            vec2(52.0, 18.0),
-            egui::Label::new(RichText::new(label).color(theme::WEAK).size(theme::BODY_PT)),
-        );
-        for &(text, line, on) in buttons {
-            let response = ui
-                .add(Button::new(RichText::new(text).size(theme::BODY_PT)).selected(on))
-                .on_hover_text(line);
-            shell.layout.buttons.push((line.to_owned(), response.rect));
-            let id = format!("{scope}/{line}");
-            shell.register(scope, &id, &format!("{label} {text}"), Kind::Button, response.rect);
-            if response.clicked() || shell.take_click(&id) {
-                let _ = shell.run(line);
-            }
-        }
-    });
-}
-
 /// The most rows the outliner lays out for the bodies, and for the towers: a scene of a thousand
 /// of either is not a list to scroll, and every row is laid out every frame. The rest are said
 /// to be there; `ls bodies` lists them all. A selected item past the cap keeps its row.
@@ -821,175 +852,6 @@ pub(crate) fn world_rows(
         ("resident", format!("{} chunks, {} bricks", resident[0], resident[1])),
         ("queued", pending.to_string()),
     ]
-}
-
-/// How the active pane looks: its direction, projection, panes, draw style, what it shows, the
-/// voxel colouring, overlays and section, and its camera. A popover of the header strip (`view
-/// ▾`): rarely changed, so out of the scene tree (`docs/research/editor-ux.md` §3.2). Every row is
-/// a console line; the View menu and the palette have the same.
-fn view_controls(shell: &mut Shell, ui: &mut egui::Ui) {
-    ui.set_min_width(330.0);
-    let pane = shell.engine.active_pane();
-    let view = shell.engine.view(pane).clone();
-    let at = |named: NamedView| view.named() == Some(named);
-    button_row(
-        shell,
-        ui,
-        "top-bar/view",
-        "look",
-        &[
-            ("iso", "view iso", at(NamedView::Iso)),
-            ("top", "view top", at(NamedView::Top)),
-            ("btm", "view bottom", at(NamedView::Bottom)),
-            ("N", "view north", at(NamedView::North)),
-            ("S", "view south", at(NamedView::South)),
-            ("E", "view east", at(NamedView::East)),
-            ("W", "view west", at(NamedView::West)),
-        ],
-    );
-    button_row(
-        shell,
-        ui,
-        "top-bar/view",
-        "project",
-        &[
-            ("perspective", "proj persp", view.projection == Projection::Perspective),
-            ("orthographic", "proj ortho", view.projection == Projection::Orthographic),
-        ],
-    );
-    let panes = shell.engine.panes();
-    button_row(
-        shell,
-        ui,
-        "top-bar/view",
-        "panes",
-        &[("1", "panes 1", panes == 1), ("2", "panes 2", panes == 2), ("4", "panes 4", panes == 4)],
-    );
-    let style = |s: DrawStyle| view.style == s;
-    button_row(
-        shell,
-        ui,
-        "top-bar/view",
-        "draw",
-        &[
-            ("shaded", "style shaded", style(DrawStyle::Shaded)),
-            ("flat", "style flat", style(DrawStyle::Flat)),
-            ("x-ray", "style xray", style(DrawStyle::XRay)),
-        ],
-    );
-    button_row(
-        shell,
-        ui,
-        "top-bar/view",
-        "",
-        &[
-            ("wireframe", "style wireframe", style(DrawStyle::Wireframe)),
-            ("paper", "style paper", style(DrawStyle::Paper)),
-        ],
-    );
-    // A button for every content there is, three to a row: a content added to
-    // `PaneContent::ALL` has its button with no line here.
-    let shown = shell.engine.content(pane);
-    let lines = cav_engine::PaneContent::ALL.map(|content| format!("show {}", content.name()));
-    for (row, contents) in cav_engine::PaneContent::ALL.chunks(3).enumerate() {
-        let buttons: Vec<(&str, &str, bool)> = contents
-            .iter()
-            .enumerate()
-            .map(|(n, content)| (content.name(), lines[3 * row + n].as_str(), *content == shown))
-            .collect();
-        button_row(shell, ui, "top-bar/view", if row == 0 { "show" } else { "" }, &buttons);
-    }
-    voxel_rows(shell, ui, &view);
-    ui.add_space(4.0);
-    rows(
-        ui,
-        "camera",
-        &[
-            ("target", format!("{:.2}, {:.2}, {:.2} m", view.target[0], view.target[1], view.target[2])),
-            ("yaw · pitch", format!("{:.1}° · {:.1}°", view.yaw, view.pitch)),
-            ("distance", format!("{:.2} m", view.distance)),
-        ],
-    );
-    ui.add_space(4.0);
-    ui.label(
-        RichText::new(
-            "drag to orbit · middle-drag to pan · scroll to zoom · hold the right button to fly (W A S D) · drag a body to move it · O swaps the projection · Home resets",
-        )
-        .size(theme::SMALL_PT)
-        .color(theme::WEAK),
-    );
-}
-
-/// The View panel's rows for voxel bodies: what colours them, the overlays (the whole octree by
-/// depth among them) and the section plane with a slider for its place. Each is the console's
-/// command, so each is journalled.
-fn voxel_rows(shell: &mut Shell, ui: &mut egui::Ui, view: &cav_sim::ViewSpec) {
-    use cav_sim::voxel_view::{Fade, LeafField};
-    if !shell.engine.spec().bodies.iter().any(|b| b.shape.is_some()) {
-        return;
-    }
-    let field = view.colour.field;
-    let colour = |f: LeafField| (f.name(), format!("colour {}", f.name()), field == f);
-    let colours = [LeafField::Level, LeafField::Depth, LeafField::Mass, LeafField::Fill, LeafField::Material]
-        .map(colour);
-    let buttons: Vec<(&str, &str, bool)> = colours.iter().map(|(t, l, on)| (*t, l.as_str(), *on)).collect();
-    button_row(shell, ui, "top-bar/view", "colour", &buttons);
-    let tree = view.overlay.tree;
-    let fade = tree.map(|t| t.fade);
-    let plain = !view.overlay.leaves && view.overlay.cut.is_none();
-    button_row(
-        shell,
-        ui,
-        "top-bar/view",
-        "overlay",
-        &[
-            ("none", "overlay none", plain && tree.is_none()),
-            ("leaves", "overlay leaves", view.overlay.leaves && tree.is_none()),
-            ("tree", "overlay tree", plain && fade == Some(Fade::Off)),
-            ("tree, deep solid", "overlay tree fade deep", plain && fade == Some(Fade::Deep)),
-        ],
-    );
-    let time = shell.engine.time();
-    let on = view.section.map(|s| s.axis);
-    let line = |axis: cav_sim::Axis, word: &str| {
-        let (lo, hi) =
-            cav_sim::voxel_view::section_span(shell.engine.spec(), axis, time).unwrap_or((0.0, 0.0));
-        format!("section {word} {}", 0.5 * (lo + hi))
-    };
-    let lines = [line(cav_sim::Axis::X, "x"), line(cav_sim::Axis::Y, "y"), line(cav_sim::Axis::Z, "z")];
-    button_row(
-        shell,
-        ui,
-        "top-bar/view",
-        "section",
-        &[
-            ("off", "section off", on.is_none()),
-            ("x", &lines[0], on == Some(cav_sim::Axis::X)),
-            ("y", &lines[1], on == Some(cav_sim::Axis::Y)),
-            ("z", &lines[2], on == Some(cav_sim::Axis::Z)),
-        ],
-    );
-    if let Some(section) = view.section
-        && let Some((lo, hi)) = cav_sim::voxel_view::section_span(shell.engine.spec(), section.axis, time)
-    {
-        let mut offset = section.offset;
-        let slider = egui::Slider::new(&mut offset, lo..=hi).suffix(" m").max_decimals(3).text("place");
-        if ui.add(slider).changed() {
-            let word = ["x", "y", "z"][section.axis as usize];
-            let _ = shell.run(&format!("section {word} {offset}"));
-        }
-    }
-}
-
-/// A two-column table of names and values.
-fn rows(ui: &mut egui::Ui, id: &str, rows: &[(&str, String)]) {
-    egui::Grid::new(id).num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
-        for (name, value) in rows {
-            ui.label(RichText::new(*name).color(theme::WEAK).size(theme::BODY_PT));
-            ui.label(RichText::new(value).monospace().color(theme::STRONG));
-            ui.end_row();
-        }
-    });
 }
 
 /// The inspector's width at first and its least, points: room for the cards' one grid (a label
@@ -1234,132 +1096,6 @@ pub(crate) fn scene_rows(shell: &mut Shell) -> Vec<(&'static str, String)> {
     ]
 }
 
-fn header(shell: &mut Shell, ui: &mut egui::Ui) {
-    // The strip keeps its width whatever it holds: badges past its end scroll (the wheel or a
-    // drag), never pushing the strip over the panels beside it.
-    egui::ScrollArea::horizontal()
-        .id_salt("header badges")
-        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-        .show(ui, |ui| header_badges(shell, ui));
-}
-
-fn header_badges(shell: &mut Shell, ui: &mut egui::Ui) {
-    ui.horizontal_centered(|ui| {
-        // How the pane looks, in a popover: the header strip is the mock-up's home for it.
-        let popover = ui
-            .menu_button(RichText::new("View ›").color(theme::STRONG), |ui| view_controls(shell, ui))
-            .response
-            .on_hover_text(
-                "look, projection, panes, draw style, what the pane shows, voxel colouring, overlays",
-            );
-        shell.layout.buttons.push(("view menu".to_owned(), popover.rect));
-        shell.register("viewport", "viewport/view-menu", "View", Kind::Button, popover.rect);
-        if shell.take_click("viewport/view-menu") {
-            let _ = shell.run("palette view");
-        }
-        // The camera's mode: orbit about the target (the default), or fly from the eye.
-        let flying = shell.any_fly();
-        let mode = ui
-            .menu_button(
-                RichText::new(if flying { "fly ›" } else { "orbit ›" }).color(theme::STRONG),
-                |ui| {
-                    if ui.selectable_label(!flying, "Orbit: drag turns about the target").clicked() && flying
-                    {
-                        let _ = shell.run("fly");
-                        ui.close();
-                    }
-                    if ui
-                        .selectable_label(
-                            flying,
-                            "Fly: W A S D, E Q, drag to look (Shift+F; or hold the right button)",
-                        )
-                        .clicked()
-                        && !flying
-                    {
-                        let _ = shell.run("fly");
-                        ui.close();
-                    }
-                    ui.separator();
-                    if ui.button("Frame the selection (F)").clicked() {
-                        let _ = shell.run("frame");
-                        ui.close();
-                    }
-                },
-            )
-            .response
-            .on_hover_text("the camera's mode");
-        shell.layout.buttons.push(("camera mode".to_owned(), mode.rect));
-        shell.register("viewport", "viewport/camera-mode", "Camera mode", Kind::Button, mode.rect);
-        if shell.take_click("viewport/camera-mode") {
-            let _ = shell.run("fly");
-        }
-        let pane = shell.engine.active_pane();
-        let view = shell.engine.view(pane);
-        badge(ui, shell.engine.spec().name.clone(), theme::GOLD);
-        let direction = view.named().map_or("free", NamedView::name);
-        let projection =
-            if view.projection == Projection::Perspective { "perspective" } else { "orthographic" };
-        match shell.engine.content(pane) {
-            cav_engine::PaneContent::Scene => {
-                badge(ui, format!("{direction} · {projection}"), theme::STRONG);
-                badge(ui, view.style.name(), theme::STRONG);
-            }
-            plot => badge(ui, plot.name(), theme::STRONG),
-        }
-        if shell.engine.panes() > 1 {
-            badge(ui, format!("pane {} of {}", pane + 1, shell.engine.panes()), theme::LINK);
-        }
-        // The instrument, when it is a preset; and the one the scene is also being read on.
-        if let Some(name) = cav_sim::presets::name_of(&shell.engine.spec().array.instrument) {
-            badge(ui, name, theme::STRONG);
-        }
-        if let Some(other) = shell.engine.comparison() {
-            let name = cav_sim::presets::name_of(other).unwrap_or("another instrument");
-            badge(ui, format!("compared with {name}"), theme::LINK);
-        }
-        // Where the signal stands: a stale one is never mistaken for the current scene's.
-        match shell.engine.signal() {
-            (cav_engine::SignalState::Refined, Some(signal)) => {
-                // A signal some of whose reads did not settle is the scene's, and is not good to
-                // the tolerance: the badge says which, and never "within" for the second.
-                let text = format!(
-                    "signal · {}",
-                    cav_engine::estimate_text(signal.estimate, signal.settled, signal.truncated)
-                );
-                badge(ui, text, if signal.settled { theme::STRONG } else { theme::WARN });
-            }
-            (cav_engine::SignalState::Stale, _) => badge(ui, "signal · stale", theme::WARN),
-            _ => {}
-        }
-        // What the renderer thinned to keep a huge scene drawable is said here, not passed over.
-        for note in cav_render::decimation(shell.engine.spec()) {
-            badge(ui, note, theme::WARN);
-        }
-        // What the world's renderer left out of the last picture (a cut far field, a cap).
-        for note in &shell.render_notes {
-            badge(ui, note.clone(), theme::WARN);
-        }
-        // What the voxel view drew in place of the leaves (a coarser cut), or could not colour.
-        if let Ok(frame) = shell.engine.frame(pane)
-            && let Some(voxels) = frame.voxels
-        {
-            for note in &voxels.notes {
-                badge(ui, note.clone(), theme::WARN);
-            }
-        }
-        if let Some(target) = shell.engine.selection() {
-            let text = match target {
-                Target::Tower(n) => shell.engine.spec().array.towers[n - 1].label.clone(),
-                Target::Room => "room".into(),
-                Target::Floor => "floor".into(),
-                Target::World => "world".into(),
-                Target::Body(n) => shell.engine.spec().bodies[n - 1].label.clone(),
-            };
-            badge(ui, format!("selected: {text}"), theme::STRONG);
-        }
-    });
-}
-
 /// The tool strip (`ui/tools.ron`): one button a tool, an icon with its key in the corner, the
 /// one in hand lit; then, apart and drawn as a switch, the snap toggle (S18's review, U2: the
 /// strip was abbreviated text, and snap looked like a fourth tool). Each is a button of the
@@ -1423,7 +1159,8 @@ fn icon_button(
 /// The tool's options, in a strip above the figure (Algodoo's and Blender's): what the tool does
 /// and its settings, and a transform session's state while one is under way.
 fn tool_options(shell: &mut Shell, ui: &mut egui::Ui) {
-    // As the header: a strip of fixed width; what is past its end scrolls.
+    // A strip of fixed width: what is past its end scrolls, never pushing the strip over the
+    // panels beside it.
     egui::ScrollArea::horizontal()
         .id_salt("tool options")
         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
@@ -1780,20 +1517,46 @@ pub fn splitter_moved(
 }
 
 /// What the viewports of one frame asked for, carried out once all of them are drawn.
-struct Asked {
-    commands: Vec<Command>,
-    /// Camera drags: the pane, the pointer's move, whether it pans, the pane's size.
-    drags: Vec<(usize, egui::Vec2, bool, egui::Vec2)>,
-    /// Drags of a body: the pane, the body, the pointer's move, the pane's size.
-    body_drags: Vec<(usize, usize, egui::Vec2, egui::Vec2)>,
-    /// The wheel: the pane, the scroll, the pointer in the pane, the pane's size.
-    zooms: Vec<(usize, f32, [f64; 2], [f64; 2])>,
+pub(crate) struct Asked {
+    /// Typed commands, applied first and in order.
+    pub commands: Vec<Command>,
+    /// Camera drags: the pane, the pointer's move, whether it pans, the canvas's size.
+    pub drags: Vec<(usize, egui::Vec2, bool, egui::Vec2)>,
+    /// Drags of a body: the pane, the body, the pointer's move, the canvas's size.
+    pub body_drags: Vec<(usize, usize, egui::Vec2, egui::Vec2)>,
+    /// The wheel: the pane, the scroll, the pointer in the canvas, the canvas's size.
+    pub zooms: Vec<(usize, f32, [f64; 2], [f64; 2])>,
     /// Where the selection's keyboard handle is drawn, if the active pane shows the scene.
-    handle_rect: Rect,
+    pub handle_rect: Rect,
     /// Actions chosen from a viewport's right-click menu, by id.
-    actions: Vec<String>,
-    /// Console lines the mosaic's own buttons run (dock).
-    lines: Vec<String>,
+    pub actions: Vec<String>,
+    /// Console lines the viewports' headers, gizmos and dock buttons run, in order.
+    pub lines: Vec<String>,
+    /// A header let go after a drag: the pane it is of and where the pointer was, points. Let
+    /// go over another viewport, the two swap places.
+    pub dropped: Option<(usize, egui::Pos2)>,
+    /// The active viewport's header controls, as the keyboard's stops.
+    pub stops: Vec<crate::header::Stop>,
+}
+
+/// A viewport's right-click menu on `response` (its canvas, or its header's empty stretch): what
+/// can be done to this viewport (the View menu's Viewport items, from the action table). A
+/// click, not a hold: holding the right button over a scene flies the camera.
+pub(crate) fn viewport_menu(shell: &mut Shell, asked: &mut Asked, response: &egui::Response) {
+    response.context_menu(|ui| {
+        for action in crate::actions::table().actions.iter().filter(|a| a.menu == VIEWPORT_MENU) {
+            if action.rule {
+                ui.separator();
+            }
+            let button = Button::new(&action.label).shortcut_text(action.shortcut_text());
+            let item = ui.add_enabled(shell.can_run(action), button).on_hover_text(&action.about);
+            shell.layout.buttons.push((format!("viewport menu {}", action.id), item.rect));
+            if item.clicked() {
+                asked.actions.push(action.id.clone());
+                ui.close();
+            }
+        }
+    });
 }
 
 /// One viewport to draw: which, where, and what the figure round it is.
@@ -1801,32 +1564,71 @@ struct Asked {
 struct Place {
     /// The pane, from 0.
     pane: usize,
-    /// Where it is drawn, points.
+    /// Where it is drawn, points: the whole viewport, or, for [`canvas`], its canvas.
     rect: Rect,
-    /// Its size in pixels.
+    /// That rectangle's size in pixels.
     pixels: [u32; 2],
     /// How many viewports the figure has, and which is active.
     count: usize,
     active: usize,
     /// The engine's generation this frame.
     generation: u64,
-    /// The figure, points.
-    figure: Rect,
-    /// Whether it floats over the window (its bar says what it is; no label is drawn in it).
+    /// Whether it floats over the window (its header is the bar it is dragged by).
     floating: bool,
 }
 
-/// Draws one viewport at its place and takes its input: what it shows (the scene's picture or a
-/// plot), the active one's edge, its right-click menu, and the pointer's work in it (select,
-/// drag, orbit, pan, zoom, the tool in hand). What it asks of the engine goes into `asked`.
+/// Draws one viewport at its place and takes its input: its header ([`crate::header`]) along
+/// its top, its canvas under it ([`canvas`]), a scene's navigation gizmo in the canvas's corner
+/// ([`crate::navgizmo`]) and the active one's edge. With the panels hidden (F3) there is no
+/// header and no gizmo: the canvas is the viewport. Returns what the header's own pointer work
+/// leaves for a floating viewport's frame.
 fn viewport(
     shell: &mut Shell,
     ui: &mut egui::Ui,
     surface: &mut dyn PaneSurface,
     asked: &mut Asked,
     place: Place,
+) -> crate::header::Outcome {
+    let Place { pane, rect, pixels, count, active, floating, .. } = place;
+    let scale = ui.ctx().pixels_per_point();
+    let mut outcome = crate::header::Outcome::default();
+    // The header's height in whole pixels, so that the canvas is whole pixels too.
+    let head = if shell.gui_hidden { 0 } else { ((theme::HEADER * scale).round() as u32).min(pixels[1]) };
+    let split = rect.top() + head as f32 / scale;
+    let inner = Rect::from_min_max(pos2(rect.left(), split), rect.max);
+    shell.layout.canvases[pane] = inner;
+    if head > 0 {
+        let row = Rect::from_min_max(rect.min, pos2(rect.right(), split));
+        let head = crate::header::Head { pane, rect: row, active: pane == active, count, floating };
+        outcome = crate::header::draw(shell, ui, asked, head);
+    }
+    let left = [pixels[0], pixels[1] - head];
+    if left[1] > 0 {
+        canvas(shell, ui, surface, asked, Place { rect: inner, pixels: left, ..place });
+        if head > 0 && shell.engine.content(pane) == cav_engine::PaneContent::Scene {
+            crate::navgizmo::draw(shell, ui, asked, pane, inner, pane == active);
+        }
+    }
+    // The active viewport is marked by its edge (and its header's ground), not by words.
+    if count > 1 {
+        let (colour, width) = if pane == active { (theme::SELECTION_EDGE, 1.5) } else { (theme::RULE, 1.0) };
+        ui.painter().rect_stroke(rect, 0.0, Stroke::new(width, colour), StrokeKind::Inside);
+    }
+    outcome
+}
+
+/// Draws one viewport's canvas (`place.rect`, `place.pixels`) and takes its input: what it
+/// shows (the scene's picture or a plot), its right-click menu, and the pointer's work in it
+/// (select, drag, orbit, pan, zoom, the tool in hand), every place of the pointer measured from
+/// the canvas's corner. What it asks of the engine goes into `asked`.
+fn canvas(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    surface: &mut dyn PaneSurface,
+    asked: &mut Asked,
+    place: Place,
 ) {
-    let Place { pane, rect, pixels, count, active, generation, figure, floating } = place;
+    let Place { pane, rect, pixels, active, generation, .. } = place;
     let content = shell.engine.content(pane);
     if content == cav_engine::PaneContent::Scene {
         let frame = shell.engine.frame(pane).expect("the mosaic has no more panes than the engine has");
@@ -1869,45 +1671,11 @@ fn viewport(
         let drawn = crate::plots::paint(&shell.engine, &ui.painter_at(rect), pane, rect);
         shell.layout.plots.extend(drawn);
     }
-    if count > 1 {
-        let (colour, width) = if pane == active { (theme::SELECTION_EDGE, 1.5) } else { (theme::RULE, 1.0) };
-        ui.painter().rect_stroke(rect, 0.0, Stroke::new(width, colour), StrokeKind::Inside);
-        // A plot says what it is in its own title; a floating viewport in its bar.
-        if content == cav_engine::PaneContent::Scene && !floating {
-            let view = shell.engine.view(pane);
-            let name = view.named().map_or("free", NamedView::name);
-            // Clear of the floating tool strip on the figure's left edge (S19's review,
-            // minor 15: it covered the left pane's "iso").
-            let x = if rect.left() - figure.left() < 48.0 { TOOL_BUTTON + 24.0 } else { 6.0 };
-            ui.painter().text(
-                rect.left_top() + vec2(x, 4.0),
-                Align2::LEFT_TOP,
-                name,
-                FontId::proportional(11.0),
-                theme::WEAK,
-            );
-        }
-    }
     let response = ui.interact(rect, egui::Id::unique(("pane", pane)), Sense::click_and_drag());
     if (response.clicked() || response.drag_started() || response.secondary_clicked()) && pane != active {
         asked.commands.push(Command::View(ViewCommand::Activate(pane)));
     }
-    // The right-click menu: what can be done to this viewport (the View menu's Viewport items,
-    // from the action table). A click, not a hold: holding the right button flies the camera.
-    response.context_menu(|ui| {
-        for action in crate::actions::table().actions.iter().filter(|a| a.menu == VIEWPORT_MENU) {
-            if action.rule {
-                ui.separator();
-            }
-            let button = Button::new(&action.label).shortcut_text(action.shortcut_text());
-            let item = ui.add_enabled(shell.can_run(action), button).on_hover_text(&action.about);
-            shell.layout.buttons.push((format!("viewport menu {}", action.id), item.rect));
-            if item.clicked() {
-                asked.actions.push(action.id.clone());
-                ui.close();
-            }
-        }
-    });
+    viewport_menu(shell, asked, &response);
     if content != cav_engine::PaneContent::Scene {
         // A plot has no camera. On the signal plot the pointer is the playhead; on either,
         // the wheel zooms the horizontal axis about the pointer and a double click shows all of it.
@@ -2126,9 +1894,10 @@ fn empty_slot(shell: &mut Shell, ui: &mut egui::Ui, asked: &mut Asked, pane: usi
     }
 }
 
-/// A viewport floating over the window (`viewport pop-out`): a frame with a bar to drag it by, a
-/// dock button and a corner to resize it, drawn above the panels. Where it is and how big is the
-/// window's state ([`Shell::floating`]); the engine knows nothing of it.
+/// A viewport floating over the window (`viewport pop-out`): a frame whose header is the bar it
+/// is dragged by (its pop-out button docks it) and a corner to resize it, drawn above the
+/// panels. Where it is and how big is the window's state ([`Shell::floating`]); the engine
+/// knows nothing of it.
 fn floating_viewport(
     shell: &mut Shell,
     ctx: &egui::Context,
@@ -2150,49 +1919,26 @@ fn floating_viewport(
         .show(ctx, |ui| {
             ui.set_clip_rect(screen);
             ui.allocate_rect(frame, Sense::hover());
-            let bar = Rect::from_min_size(frame.min, vec2(frame.width(), theme::HIT));
-            // Whole pixels, as the docked viewports are.
-            let body = Rect::from_min_max(pos2(frame.left() + 1.0, bar.bottom()), frame.max - vec2(1.0, 1.0));
+            // Inside the frame's edge, whole pixels, as the docked viewports are.
+            let inside = frame.shrink(1.0);
             let pixels = [
-                (body.width() * scale).round().max(1.0) as u32,
-                (body.height() * scale).round().max(1.0) as u32,
+                (inside.width() * scale).round().max(1.0) as u32,
+                (inside.height() * scale).round().max(1.0) as u32,
             ];
-            let body = Rect::from_min_size(body.min, vec2(pixels[0] as f32, pixels[1] as f32) / scale);
+            let inside = Rect::from_min_size(inside.min, vec2(pixels[0] as f32, pixels[1] as f32) / scale);
             ui.painter().rect_filled(frame, 2.0, theme::BACKGROUND);
-            ui.painter().rect_filled(bar, 2.0, theme::FOOTER);
             let pane = place.pane;
-            let name = format!("{} · {}", pane + 1, shell.engine.content(pane).name());
-            ui.painter().text(
-                bar.left_center() + vec2(8.0, 0.0),
-                Align2::LEFT_CENTER,
-                name,
-                FontId::proportional(theme::SMALL_PT),
-                if pane == place.active { theme::STRONG } else { theme::WEAK },
-            );
-            // The bar moves the frame; it stays where a pointer can reach it.
-            let dock = Rect::from_min_size(bar.right_top() - vec2(44.0, 0.0), vec2(44.0, theme::HIT));
-            let grab = Rect::from_min_max(bar.min, pos2(dock.left(), bar.bottom()));
-            let moved = ui
-                .interact(grab, egui::Id::unique(("float bar", label)), Sense::click_and_drag())
-                .on_hover_cursor(egui::CursorIcon::Grab);
-            shell.layout.buttons.push((format!("float bar {}", pane + 1), grab));
+            shell.layout.panes[pane] = inside;
+            let outcome = viewport(shell, ui, surface, asked, Place { rect: inside, pixels, ..place });
+            // The header moves the frame; it stays where a pointer can reach it.
             let mut next = frame;
-            if moved.dragged() {
-                next = next.translate(moved.drag_delta());
+            if outcome.dragged != egui::Vec2::ZERO {
+                next = next.translate(outcome.dragged);
                 let reach = 48.0;
                 let x = next.left().clamp(screen.left() + reach - next.width(), screen.right() - reach);
-                let y = next.top().clamp(screen.top(), screen.bottom() - theme::HIT);
+                let y = next.top().clamp(screen.top(), screen.bottom() - theme::HEADER);
                 next = Rect::from_min_size(pos2(x, y), next.size());
             }
-            let docked = ui
-                .put(dock, Button::new(RichText::new("dock").size(theme::SMALL_PT)))
-                .on_hover_text("put this viewport back in its place in the mosaic");
-            shell.layout.buttons.push((format!("float dock {}", pane + 1), docked.rect));
-            if docked.clicked() {
-                asked.lines.push(format!("viewport dock {}", pane + 1));
-            }
-            shell.layout.panes[pane] = body;
-            viewport(shell, ui, surface, asked, Place { rect: body, pixels, ..place });
             // The corner resizes it (drawn last: it is above the picture).
             let corner = Rect::from_min_max(frame.max - vec2(14.0, 14.0), frame.max);
             let resized = ui
@@ -2258,6 +2004,8 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         handle_rect: Rect::NOTHING,
         actions: Vec::new(),
         lines: Vec::new(),
+        dropped: None,
+        stops: Vec::new(),
     };
     let points = |[x, y, width, height]: [u32; 4]| {
         Rect::from_min_size(
@@ -2286,10 +2034,10 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
             count,
             active,
             generation,
-            figure: area,
             floating: false,
         };
         shell.layout.slots.push(slot);
+        shell.layout.canvases.push(Rect::NOTHING);
         match shell.floating.get(&labels[pane]).copied().filter(|_| !shell.maximised) {
             Some(frame) => {
                 shell.layout.panes.push(frame);
@@ -2311,7 +2059,33 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     for (place, label) in floats {
         floating_viewport(shell, ui.ctx(), surface, &mut asked, place, label);
     }
-    let Asked { commands, drags, body_drags, zooms, handle_rect, actions, lines } = asked;
+    let Asked { commands, drags, body_drags, zooms, handle_rect, actions, mut lines, dropped, stops } = asked;
+    // A header dragged over another viewport: while it is held the one under the pointer is
+    // marked, and let go there the two swap places (one `swap`, the engine's).
+    let other_under = |shell: &Shell, from: usize, at: egui::Pos2| {
+        let floating = shell.layout.floating.iter().map(|(pane, frame)| (*pane, *frame));
+        let docked = shell.layout.slots.iter().copied().enumerate();
+        let floats = |pane: usize| shell.layout.floating.iter().any(|(floating, _)| *floating == pane);
+        floating
+            .chain(docked.filter(|(pane, _)| !floats(*pane)))
+            .find(|(_, rect)| rect.contains(at))
+            .filter(|(pane, _)| *pane != from)
+    };
+    if let Some(from) = shell.header_drag
+        && let Some(at) = ui.input(|i| i.pointer.latest_pos())
+        && let Some((_, rect)) = other_under(shell, from, at)
+    {
+        ui.painter().rect_filled(rect, 0.0, theme::SELECTION.gamma_multiply(0.25));
+        ui.painter().rect_stroke(rect, 0.0, Stroke::new(2.0, theme::SELECTION_EDGE), StrokeKind::Inside);
+    }
+    if let Some((from, at)) = dropped
+        && let Some((onto, _)) = other_under(shell, from, at)
+    {
+        lines.push(format!("swap {} {}", from + 1, onto + 1));
+    }
+    if !ui.input(|i| i.pointer.any_down()) {
+        shell.header_drag = None;
+    }
     // The tool strip: a floating bar over the view's left edge, not a column of its own
     // (S19, `docs/design/panels.md`: Blender's and Unity's scene toolbars).
     if !shell.gui_hidden && !shell.maximised {
@@ -2319,7 +2093,8 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         let strip = egui::Area::new(egui::Id::unique("tool strip"))
             .fade_in(false)
             .order(egui::Order::Foreground)
-            .fixed_pos(area.min + vec2(8.0, 8.0))
+            // Under the header of the viewport in the figure's corner.
+            .fixed_pos(area.min + vec2(8.0, 8.0 + theme::HEADER))
             .show(ui.ctx(), |ui| {
                 egui::Frame::new()
                     .fill(theme::FOOTER.gamma_multiply(0.94))
@@ -2357,13 +2132,18 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
             shell.apply(Command::View(ViewCommand::Activate(pane)));
         }
     }
+    // The active viewport's header, as the keyboard reaches it: its controls in the order of
+    // `header::CONTROLS`, whatever the viewport shows.
+    let header = shell.layout.headers.iter().find(|(pane, _)| *pane == active).map_or(Rect::NOTHING, |h| h.1);
+    crate::header::register(shell, &stops, header);
     let movable = matches!(shell.engine.selection(), Some(Target::Body(_)))
         && shell.engine.content(active) == cav_engine::PaneContent::Scene;
     if !movable {
         shell.building.disable("viewport/selection");
     }
-    // What the renderer left out of the last picture: badges in the header, and each kind said
-    // once in the log when it first appears (the counts in it change from frame to frame).
+    // What the renderer left out of the last picture: in the tooltip of each scene viewport's
+    // warning dot, and each kind said once in the log when it first appears (the counts in it
+    // change from frame to frame).
     let notes = surface.notes();
     let kind = |note: &String| note.split(':').next().unwrap_or_default().to_owned();
     for note in &notes {
@@ -2372,45 +2152,6 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         }
     }
     shell.render_notes = notes;
-
-    // Home: the one control on the figure. It resets a camera, so it stands in the corner of a
-    // pane that has one: the pane in the figure's top right corner if that shows the scene, else
-    // the active pane, else the first that does. A plot has its title along its top and no
-    // camera; with no scene in any pane there is no Home.
-    let shows_scene = |pane: &usize| shell.engine.content(*pane) == cav_engine::PaneContent::Scene;
-    let corner = pos2(area.right() - 4.0, area.top() + 4.0);
-    // (A floating viewport is not in the figure: Home stands in one that is docked.)
-    let docked = |pane: &usize| !shell.layout.floating.iter().any(|(floating, _)| floating == pane);
-    let under = (0..count).find(|pane| shell.layout.panes[*pane].contains(corner));
-    let home_pane = under
-        .into_iter()
-        .chain([active])
-        .chain(0..count)
-        .filter(docked)
-        .find(shows_scene)
-        .map(|pane| shell.layout.panes[pane]);
-    if let (false, Some(pane)) = (shell.gui_hidden, home_pane) {
-        let home = Rect::from_min_size(pos2(pane.right() - 62.0, pane.top() + 8.0), vec2(54.0, 20.0));
-        let response = ui
-            .put(home, Button::new(RichText::new("Home").size(theme::BODY_PT)))
-            .on_hover_text("reset the camera (Home)");
-        shell.layout.buttons.push(("view home".to_owned(), response.rect));
-        if response.clicked() {
-            let _ = shell.run("view home");
-        }
-        // Maximised, the way back is in sight beside Home (S18's review, U7: only Ctrl+Space
-        // brought the window back, and nothing said so).
-        if shell.maximised {
-            let restore = Rect::from_min_size(home.left_top() - vec2(150.0, 0.0), vec2(142.0, 20.0));
-            let response = ui
-                .put(restore, Button::new(RichText::new("Restore  Ctrl+Space").size(theme::BODY_PT)))
-                .on_hover_text("bring back the panels: the window as it was before the pane filled it");
-            shell.layout.buttons.push(("maximise".to_owned(), response.rect));
-            if response.clicked() {
-                let _ = shell.run("maximise");
-            }
-        }
-    }
 
     for command in commands {
         shell.apply(command);

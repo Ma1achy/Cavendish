@@ -364,7 +364,7 @@ fn the_probe_reads_into_the_right_panel() {
     assert!(rig.shell.layout().probe.is_none() && rig.shell.layout().probe_rows.is_empty(), "control");
     rig.shell.run("tab inspector").unwrap();
     rig.frames(vec![vec![]]);
-    let pane = rig.shell.layout().panes[0];
+    let pane = rig.shell.layout().canvases[0];
     let at = rig.shell.body_point(0, 1, pane.size()).expect("the sphere is in view") + pane.min.to_vec2();
     rig.click(at);
     rig.frames(vec![vec![], vec![]]);
@@ -391,12 +391,20 @@ fn the_probe_reads_into_the_right_panel() {
         .iter()
         .filter(|(_, rect)| layout.figure.contains_rect(*rect) && rect.is_positive())
         .map(|(name, _)| name.as_str())
-        .filter(|name| !name.starts_with("tool ") && *name != "view home")
+        // (S20's header and gizmo are over the figure by design; Home is gone.)
+        .filter(|name| !name.starts_with("tool ") && !over_by_design(name))
         .collect();
     assert!(over.is_empty(), "over the figure: {over:?}");
 }
 
 // ---- The mosaic (TASK-S20-03): rows M3 to M6 and K1 ----
+
+/// Whether a registered button is one of a viewport's own (its header's controls, its
+/// navigation gizmo), which stand over the figure by design.
+fn over_by_design(name: &str) -> bool {
+    let line = ["style ", "proj toggle", "span all"].iter().any(|start| name.starts_with(start));
+    line || ["header ", "viewport ", "gizmo "].iter().any(|start| name.starts_with(start))
+}
 
 /// How much of `a` lies inside `b`, points squared.
 fn overlap(a: Rect, b: Rect) -> f32 {
@@ -748,4 +756,335 @@ fn the_big_scopes_are_unchanged_by_the_mosaic() {
             assert_ne!(placed, BIG, "{what}: control");
         }
     }
+}
+
+// ---- The viewport header, the status bar and the navigation gizmo (TASK-S20-04): H1 to H4 ----
+
+/// Every text the viewports' headers painted in the last frame.
+fn header_texts(rig: &Rig) -> Vec<String> {
+    let chrome = &rig.shell.layout().chrome;
+    chrome.iter().filter(|(place, _)| *place == "header").map(|(_, text)| text.clone()).collect()
+}
+
+#[test]
+fn the_header_holds_no_status_and_the_bar_says_the_engine_s() {
+    // H1. Criterion (written before measuring): no text a header paints names the instrument,
+    // the comparison, the signal's state, the selection or the scene; the status bar's parts say
+    // them, in a fixed order, and its `signal` part is `estimate_text` of the engine's signal to
+    // the character. Control: a stale signal changes the bar's part and lights the dot of the
+    // viewport that plots the signal (and of no other), the header still holding no words of it.
+    let mut rig = Rig::new();
+    for line in ["load point", "compare aice", "select body 1", "panes 2", "show signal @2"] {
+        rig.shell.run(line).unwrap();
+    }
+    assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
+    rig.frames(vec![vec![], vec![]]);
+    let spec = rig.shell.engine.spec().clone();
+    let instrument = cav_sim::presets::name_of(&spec.array.instrument).expect("a preset");
+    let other = cav_sim::presets::name_of(rig.shell.engine.comparison().unwrap()).expect("a preset");
+    let estimate = |rig: &Rig| match rig.shell.engine.signal() {
+        (cav_engine::SignalState::Refined, Some(signal)) => {
+            cav_engine::estimate_text(signal.estimate, signal.settled, signal.truncated)
+        }
+        other => panic!("the signal is {:?}", other.0),
+    };
+    let said = estimate(&rig);
+    let no_status = |rig: &Rig, what: &str| {
+        let texts = header_texts(rig);
+        assert_eq!(rig.shell.layout().headers.len(), 2, "{what}: a header a viewport");
+        assert!(texts.len() >= 4, "{what}: the headers paint their controls' words: {texts:?}");
+        let banned =
+            [instrument, other, said.as_str(), "stale", " rad", "pane ", &spec.name, &spec.bodies[0].label];
+        for text in &texts {
+            for word in banned {
+                assert!(!text.contains(word), "{what}: a header says `{text}`, which holds `{word}`");
+            }
+        }
+    };
+    no_status(&rig, "settled");
+    let layout = rig.shell.layout().clone();
+    let names: Vec<&str> = layout.status_bar.iter().map(|(name, _)| *name).collect();
+    assert_eq!(names, ["selection", "instrument", "signal", "forward"], "the bar's order");
+    assert_eq!(layout.status_part("signal"), Some(said.as_str()), "the engine's words, to the character");
+    assert_eq!(layout.status_part("selection"), Some(spec.bodies[0].label.as_str()));
+    assert_eq!(layout.status_part("instrument"), Some(format!("{instrument} vs {other}").as_str()));
+    assert!(layout.status_part("forward").is_some_and(|f| f.ends_with("refined")), "{:?}", layout.status_bar);
+    // What is painted is those words (a part of 32 characters or fewer is painted whole).
+    let painted: Vec<&str> =
+        layout.chrome.iter().filter(|(place, _)| *place == "status").map(|(_, t)| t.as_str()).collect();
+    assert!(said.chars().count() <= 25, "`{said}` fits");
+    assert!(painted.contains(&format!("signal {said}").as_str()), "{painted:?}");
+    assert!(painted.contains(&format!("{instrument} vs {other}").as_str()), "{painted:?}");
+    assert!(!layout.warnings.iter().any(|(pane, ..)| *pane == 1), "settled: no dot on the plot");
+
+    // Control: the scene moves on and the worker is held, so the signal is stale.
+    rig.shell.engine.hold_workers(true);
+    rig.shell.run("set bodies[0].motion.Static.position [-2, 0, 2.5]").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let layout = rig.shell.layout().clone();
+    assert_eq!(layout.status_part("signal"), Some("stale"), "the bar changed");
+    let dots: Vec<_> = layout.warnings.iter().filter(|(pane, ..)| *pane == 1).collect();
+    assert_eq!(dots.len(), 1, "one dot on the signal's viewport: {:?}", layout.warnings);
+    let (_, dot, texts) = dots[0];
+    let header = layout.headers.iter().find(|(pane, _)| *pane == 1).unwrap().1;
+    assert!(header.contains_rect(*dot), "{dot:?} in its header {header:?}");
+    assert!(texts.iter().any(|text| text.contains("stale")), "{texts:?}");
+    let stale = |texts: &Vec<String>| texts.iter().any(|text| text.contains("stale"));
+    assert!(!layout.warnings.iter().any(|(pane, _, texts)| *pane == 0 && stale(texts)), "not the scene's");
+    no_status(&rig, "stale");
+    // And back: the worker answers, the dot goes out and the bar says the new estimate.
+    rig.shell.engine.hold_workers(false);
+    assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
+    rig.frames(vec![vec![], vec![]]);
+    let layout = rig.shell.layout().clone();
+    assert_eq!(layout.status_part("signal"), Some(estimate(&rig).as_str()));
+    assert!(!layout.warnings.iter().any(|(pane, ..)| *pane == 1));
+    // A long part is cut short where it is painted and whole in the layout (and its tooltip).
+    rig.shell.run("select none").unwrap();
+    rig.frames(vec![vec![]]);
+    assert_eq!(rig.shell.layout().status_part("selection"), Some("nothing selected"));
+}
+
+/// What H2 asks of one control: a tooltip, and in it the key of the action it runs when that
+/// action has one.
+fn says_what_it_does(control: &cav_app::HeaderControl) -> Result<(), String> {
+    if control.tooltip.trim().is_empty() {
+        return Err(format!("`{}` of viewport {} has no tooltip", control.id, control.pane + 1));
+    }
+    let Some(id) = &control.action else { return Ok(()) };
+    let action = cav_app::actions::table().action(id).ok_or_else(|| format!("`{id}` is not an action"))?;
+    match action.keys.first() {
+        Some(key) if !control.tooltip.contains(key.as_str()) => {
+            Err(format!("`{}`: its tooltip `{}` lacks its key {key}", control.id, control.tooltip))
+        }
+        _ => Ok(()),
+    }
+}
+
+#[test]
+fn every_header_control_says_what_it_does() {
+    // H2. Criterion: in a mosaic of six with mixed view types (one floating), every control a
+    // header or a gizmo drew has a tooltip, holding its action's key where the action has one;
+    // each viewport has the controls its view type calls for; a disabled one says why; and the
+    // keyboard's stops are `header::CONTROLS` in that order. Controls: a control with no tooltip,
+    // and one whose tooltip lacks its action's key, fail the same walk.
+    use cav_app::header::{CONTROLS, SCOPE};
+    let mut rig = mosaic_rig("ABC;DEF");
+    for line in ["show signal @2", "show periodogram @3", "show flight @5", "viewport pop-out 6"] {
+        rig.shell.run(line).unwrap();
+    }
+    rig.frames(vec![vec![], vec![]]);
+    let layout = rig.shell.layout().clone();
+    assert_eq!(layout.headers.len(), 6);
+    for control in &layout.controls {
+        says_what_it_does(control).unwrap();
+        assert!(control.rect.is_positive(), "{control:?}");
+    }
+    let ids = |pane: usize| -> Vec<&str> {
+        layout.controls.iter().filter(|c| c.pane == pane).map(|c| c.id.as_str()).collect()
+    };
+    let scene = [
+        "type",
+        "camera",
+        "style shaded",
+        "style flat",
+        "style xray",
+        "style wireframe",
+        "overlays",
+        "maximise",
+        "pop-out",
+        "close",
+        "gizmo/zoom",
+        "gizmo/pan",
+        "gizmo/projection",
+    ];
+    let plot = ["type", "span", "maximise", "pop-out", "close"];
+    for (pane, wanted) in [(0, &scene[..]), (1, &plot[..]), (2, &plot[..]), (3, &scene[..]), (4, &plot[..])] {
+        let mut drawn = ids(pane);
+        let mut wanted = wanted.to_vec();
+        drawn.sort_unstable();
+        wanted.sort_unstable();
+        assert_eq!(drawn, wanted, "viewport {}", pane + 1);
+    }
+    // The keys the design names are in the tooltips.
+    let tip = |pane: usize, id: &str| layout.control(pane, id).unwrap().tooltip.clone();
+    assert!(tip(0, "maximise").contains("Ctrl+Space"));
+    assert!(tip(0, "gizmo/projection").contains("(O)"), "{}", tip(0, "gizmo/projection"));
+    assert!(tip(0, "camera").contains("(F)") && tip(0, "camera").contains("Shift+F"), "{}", tip(0, "camera"));
+    // Disabled, with why: a plot that shows all of its axis; maximise on the one that floats.
+    let span = layout.control(1, "span").unwrap();
+    assert!(!span.enabled && span.tooltip.contains("all of it is shown"), "{span:?}");
+    assert!(!layout.control(5, "maximise").unwrap().enabled);
+    let mut one = Rig::new();
+    one.frames(vec![vec![]]);
+    let close = one.shell.layout().control(0, "close").unwrap().clone();
+    assert!(!close.enabled && close.tooltip.contains("the last viewport cannot be closed"), "{close:?}");
+    says_what_it_does(&close).unwrap();
+    // The keyboard: the header's stops are the data's, in its order, whatever the viewport shows.
+    let wanted: Vec<String> = CONTROLS.iter().map(|c| format!("{SCOPE}/{}", c.id)).collect();
+    for pane in [1, 2] {
+        rig.shell.run(&format!("pane {pane}")).unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        let tree = rig.shell.focus_tree();
+        assert_eq!(tree.children(SCOPE), wanted, "active viewport {pane}");
+        for control in &CONTROLS {
+            let node = tree.node(&format!("{SCOPE}/{}", control.id)).unwrap();
+            let applies = control.applies.to(rig.shell.engine.content(pane - 1));
+            assert!(applies || !node.enabled, "`{}` does not apply to viewport {pane}", control.id);
+            if let Some(action) = control.action {
+                assert!(cav_app::actions::table().action(action).is_some(), "{action}");
+            }
+        }
+    }
+    assert!(!tree_enabled(&rig, "camera") && !tree_enabled(&rig, "span"), "a plot, all of it shown");
+    rig.shell.run("pane 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(tree_enabled(&rig, "camera") && tree_enabled(&rig, "type"), "the scene's viewport");
+    // Controls: the walk fails a control with no tooltip, and one that hides its key.
+    let mut mute = layout.control(0, "maximise").unwrap().clone();
+    mute.tooltip = "Maximise".to_owned();
+    assert!(says_what_it_does(&mute).unwrap_err().contains("Ctrl+Space"));
+    mute.tooltip = " ".to_owned();
+    assert!(says_what_it_does(&mute).unwrap_err().contains("no tooltip"));
+}
+
+/// Whether the header's stop `id` is enabled in the keyboard's tree.
+fn tree_enabled(rig: &Rig, id: &str) -> bool {
+    rig.shell.focus_tree().node(&format!("{}/{id}", cav_app::header::SCOPE)).is_some_and(|n| n.enabled)
+}
+
+#[test]
+fn the_view_type_is_chosen_in_the_header() {
+    // H3. Criterion: the view type is the first control of every header (the leftmost, and the
+    // first of the data and of the keyboard's stops); choosing Periodogram in the header of
+    // viewport 3 of six makes viewport 3 show the periodogram, by one `show` command addressed
+    // to it. Control: the other five show what they showed. The same from the keyboard.
+    use cav_engine::PaneContent;
+    let mut rig = mosaic_rig("ABC;DEF");
+    let contents = |rig: &Rig| (0..6).map(|pane| rig.shell.engine.content(pane)).collect::<Vec<_>>();
+    assert_eq!(contents(&rig), [PaneContent::Scene; 6]);
+    let layout = rig.shell.layout().clone();
+    assert_eq!(cav_app::header::CONTROLS[0].id, "type");
+    for pane in 0..6 {
+        let header = layout.headers.iter().find(|(p, _)| *p == pane).unwrap().1;
+        let in_header: Vec<_> =
+            layout.controls.iter().filter(|c| c.pane == pane && header.contains_rect(c.rect)).collect();
+        let first = in_header.iter().min_by(|a, b| a.rect.left().total_cmp(&b.rect.left())).unwrap();
+        assert_eq!(first.id, "type", "viewport {}", pane + 1);
+        assert!(first.rect.left() - header.left() <= 4.0);
+    }
+    // By the pointer: open viewport 3's drop-down, choose Periodogram.
+    let journal = rig.shell.engine.journal().len();
+    rig.click_button("header type 3");
+    rig.click_button("show periodogram @3");
+    rig.frames(vec![vec![], vec![]]);
+    let mut wanted = [PaneContent::Scene; 6];
+    wanted[2] = PaneContent::Periodogram;
+    assert_eq!(contents(&rig), wanted, "viewport 3 only");
+    let said: Vec<_> = rig.shell.engine.journal()[journal..].to_vec();
+    assert!(
+        said.contains(&Command::View(ViewCommand::Show { pane: 2, content: PaneContent::Periodogram })),
+        "{said:?}"
+    );
+    assert_eq!(rig.shell.engine.active_pane(), 2, "a click on a header makes its viewport the active one");
+    assert!(header_texts(&rig).iter().any(|text| text == "Periodogram"), "the header says what it shows");
+    // By the keyboard, on the active viewport's header: Enter opens the list at what is shown,
+    // the arrow moves to the next (the flights), Enter chooses it.
+    let scope = cav_app::header::SCOPE;
+    assert_eq!(rig.shell.focus_tree().children(scope)[0], format!("{scope}/type"));
+    rig.shell.keyboard.focus = vec!["viewport".into(), scope.into(), format!("{scope}/type")];
+    rig.shell.keyboard.nav_on = true;
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.frames(vec![vec![], vec![]]);
+    wanted[2] = PaneContent::Flight;
+    assert_eq!(contents(&rig), wanted, "the keyboard changed viewport 3 only");
+}
+
+#[test]
+fn the_gizmo_snaps_to_an_axis_and_orbits() {
+    // H4. Criterion: a click on the triad's +Z end gives the top view's yaw and pitch exactly
+    // (one `Look`); a drag of d points on the triad orbits by 0.4° a point, to the bit what the
+    // same drag in the view gives; no Home or Restore button is laid out and the Home key still
+    // resets the camera; the gizmo is inside its canvas and at most a quarter of its shorter
+    // side. Control: a click beside the gizmo changes no view.
+    use cav_sim::NamedView;
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let layout = rig.shell.layout().clone();
+    let gizmo = layout.button("gizmo 1").expect("a scene viewport has a gizmo");
+    let canvas = layout.canvases[0];
+    assert!(canvas.contains_rect(gizmo), "{gizmo:?} in {canvas:?}");
+    assert!(gizmo.width() <= 64.0 && gizmo.width() <= 0.25 * canvas.width().min(canvas.height()));
+    assert!(
+        (canvas.right() - gizmo.right() - 8.0).abs() < 0.01
+            && (gizmo.top() - canvas.top() - 8.0).abs() < 0.01
+    );
+    assert!(
+        layout.button("view home").is_none() && layout.button("maximise").is_none(),
+        "no Home, no Restore"
+    );
+    let angles = |rig: &Rig| (rig.shell.engine.view(0).yaw, rig.shell.engine.view(0).pitch);
+    let iso = angles(&rig);
+    assert_eq!(iso, NamedView::Iso.angles());
+    // Control: a click beside the gizmo is the view's (it selects nothing here) and snaps nothing.
+    let journal = rig.shell.engine.journal().len();
+    rig.click(gizmo.left_center() - vec2(6.0, 0.0));
+    assert_eq!((angles(&rig), rig.shell.engine.journal().len()), (iso, journal), "beside it: nothing");
+    // The +Z end: the top view.
+    let end = layout.button("gizmo 1 +z").expect("the end is laid out");
+    assert!(gizmo.contains_rect(end));
+    rig.click(end.center());
+    assert_eq!(angles(&rig), NamedView::Top.angles(), "exactly the top view");
+    let last = rig.shell.engine.journal().last().cloned();
+    assert_eq!(last, Some(Command::View(ViewCommand::Look { pane: 0, view: NamedView::Top })));
+    // The end faced, clicked again, looks from the other side; an end at the rim snaps to it.
+    let end = rig.shell.layout().button("gizmo 1 +z").unwrap();
+    rig.click(end.center());
+    assert_eq!(angles(&rig), NamedView::Bottom.angles());
+    let end = rig.shell.layout().button("gizmo 1 -x").unwrap();
+    rig.click(end.center());
+    assert_eq!(angles(&rig), NamedView::West.angles());
+    // The Home key still resets.
+    rig.key(Key::Home, Modifiers::NONE);
+    assert_eq!(angles(&rig), iso, "Home");
+    // A drag of d on the triad orbits by 0.4° a point, as the same drag in the view does.
+    let d = vec2(30.0, 12.0);
+    let from = gizmo.center() + vec2(-12.0, 9.0);
+    rig.drag(from, from + d);
+    let by_gizmo = angles(&rig);
+    assert!(
+        (by_gizmo.0 - (iso.0 - 0.4 * 30.0)).abs() < 1e-9 && (by_gizmo.1 - (iso.1 + 0.4 * 12.0)).abs() < 1e-9
+    );
+    assert!(matches!(
+        rig.shell.engine.journal().last(),
+        Some(Command::View(ViewCommand::Orbit { pane: 0, .. }))
+    ));
+    let mut plain = Rig::new();
+    plain.shell.run("load point").unwrap();
+    plain.frames(vec![vec![], vec![]]);
+    let middle = plain.shell.layout().canvases[0].center() + vec2(0.0, 120.0);
+    plain.drag(middle, middle + d);
+    let by_view = angles(&plain);
+    assert_eq!((by_gizmo.0.to_bits(), by_gizmo.1.to_bits()), (by_view.0.to_bits(), by_view.1.to_bits()));
+    // The buttons under it: the projection's toggles it, a click on zoom steps nearer.
+    let before = rig.shell.engine.view(0).clone();
+    rig.click_button("proj toggle @1");
+    assert_ne!(rig.shell.engine.view(0).projection, before.projection);
+    rig.click_button("gizmo 1 zoom");
+    assert!(rig.shell.engine.view(0).distance < before.distance);
+    // In a small viewport it is a quarter of the canvas's shorter side (too small a canvas has
+    // none: `navgizmo::tests`); with the panels hidden (F3) there is none.
+    rig.shell.run("mosaic \"ABCD;EFGH;IJKL\"").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let small = rig.shell.layout().canvases[0];
+    let side = rig.shell.layout().button("gizmo 1").map(|g| g.width());
+    assert!(small.width().min(small.height()) < 256.0, "{small:?}");
+    assert_eq!(side, cav_app::navgizmo::place(small).map(|g| g.width()));
+    assert!(side.is_none_or(|side| (side - 0.25 * small.width().min(small.height())).abs() < 0.01));
+    rig.shell.run("gui").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().button("gizmo 1").is_none());
 }
