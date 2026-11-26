@@ -5,8 +5,7 @@
 //! nothing floats over it but Home); badges live in the header strip; rarely used things are in
 //! windows; F3 hides everything but the figure.
 
-use cav_engine::{Command, Level, Subsystem, Target, ViewCommand};
-use cav_render::pane_rects;
+use cav_engine::{Boundary, Command, Level, Mosaic, Subsystem, Target, ViewCommand};
 use cav_sim::{DrawStyle, NamedView, Projection};
 use egui::{
     Align, Align2, Button, Color32, FontId, Layout, Margin, Panel, Rect, RichText, Sense, Stroke, StrokeKind,
@@ -1721,6 +1720,505 @@ fn canvas_keys(shell: &mut Shell, area: Rect) {
     }
 }
 
+/// The menu path of the actions that act on one viewport: the View menu's Viewport submenu, and
+/// every viewport's right-click menu.
+pub const VIEWPORT_MENU: &str = "View/Viewport";
+
+/// The least a viewport's column is wide and its row high, points: a splitter stops there.
+pub const MIN_VIEWPORT: f32 = 80.0;
+
+/// The least a floating viewport's frame is, points (width, height).
+pub const MIN_FLOAT: egui::Vec2 = vec2(200.0, 140.0);
+
+/// A splitter being dragged: the layout follows the pointer here, in the window, and the engine
+/// hears of it once, when the drag ends (one journal line a drag).
+#[derive(Clone, Debug)]
+pub(crate) struct SplitterDrag {
+    /// The boundary it moves.
+    pub boundary: Boundary,
+    /// The engine's mosaic when the drag began.
+    pub from: Mosaic,
+    /// The mosaic as the drag has made it so far.
+    pub now: Mosaic,
+    /// How far the pointer was pressed from the middle of the gap, points along the drag's axis.
+    pub grab: f32,
+}
+
+/// `from` with `boundary` moved so that the middle of its gap lies `wanted` pixels along a
+/// figure `extent` pixels long (with `gap` pixels between tracks): the two weights either side
+/// change, their sum kept, and neither track is left narrower than `least` pixels (if both
+/// cannot have that, nothing moves).
+#[must_use]
+pub fn splitter_moved(
+    from: &Mosaic,
+    boundary: Boundary,
+    wanted: f32,
+    extent: u32,
+    gap: u32,
+    least: f32,
+) -> Mosaic {
+    let (weights, k) = match boundary {
+        Boundary::Column(k) => (from.column_weights(), k),
+        Boundary::Row(k) => (from.row_weights(), k),
+    };
+    if k + 1 >= weights.len() {
+        return from.clone();
+    }
+    let gaps = (gap * (weights.len() as u32 - 1)).min(extent);
+    let room = f64::from(extent - gaps);
+    let total: f64 = weights.iter().sum();
+    let pair = weights[k] + weights[k + 1];
+    let least = f64::from(least) / room * total;
+    if !(room > 0.0 && 2.0 * least < pair) {
+        return from.clone();
+    }
+    // The gap's middle is half a gap past the end of track `k`, with `k` gaps before it.
+    let edge = f64::from(wanted) - (k as f64 + 0.5) * f64::from(gap);
+    let before: f64 = weights[..k].iter().sum();
+    let weight = (edge / room * total - before).clamp(least, pair - least);
+    from.resize(boundary, weight - weights[k]).unwrap_or_else(|_| from.clone())
+}
+
+/// What the viewports of one frame asked for, carried out once all of them are drawn.
+struct Asked {
+    commands: Vec<Command>,
+    /// Camera drags: the pane, the pointer's move, whether it pans, the pane's size.
+    drags: Vec<(usize, egui::Vec2, bool, egui::Vec2)>,
+    /// Drags of a body: the pane, the body, the pointer's move, the pane's size.
+    body_drags: Vec<(usize, usize, egui::Vec2, egui::Vec2)>,
+    /// The wheel: the pane, the scroll, the pointer in the pane, the pane's size.
+    zooms: Vec<(usize, f32, [f64; 2], [f64; 2])>,
+    /// Where the selection's keyboard handle is drawn, if the active pane shows the scene.
+    handle_rect: Rect,
+    /// Actions chosen from a viewport's right-click menu, by id.
+    actions: Vec<String>,
+    /// Console lines the mosaic's own buttons run (dock).
+    lines: Vec<String>,
+}
+
+/// One viewport to draw: which, where, and what the figure round it is.
+#[derive(Clone, Copy)]
+struct Place {
+    /// The pane, from 0.
+    pane: usize,
+    /// Where it is drawn, points.
+    rect: Rect,
+    /// Its size in pixels.
+    pixels: [u32; 2],
+    /// How many viewports the figure has, and which is active.
+    count: usize,
+    active: usize,
+    /// The engine's generation this frame.
+    generation: u64,
+    /// The figure, points.
+    figure: Rect,
+    /// Whether it floats over the window (its bar says what it is; no label is drawn in it).
+    floating: bool,
+}
+
+/// Draws one viewport at its place and takes its input: what it shows (the scene's picture or a
+/// plot), the active one's edge, its right-click menu, and the pointer's work in it (select,
+/// drag, orbit, pan, zoom, the tool in hand). What it asks of the engine goes into `asked`.
+fn viewport(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    surface: &mut dyn PaneSurface,
+    asked: &mut Asked,
+    place: Place,
+) {
+    let Place { pane, rect, pixels, count, active, generation, figure, floating } = place;
+    let content = shell.engine.content(pane);
+    if content == cav_engine::PaneContent::Scene {
+        let frame = shell.engine.frame(pane).expect("the mosaic has no more panes than the engine has");
+        match surface.texture(pane, pixels, generation, frame) {
+            Some(texture) => {
+                let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+                ui.painter().image(texture, rect, uv, Color32::WHITE);
+                // The legend of what colours the voxel bodies, made from what is drawn, in
+                // the pane's bottom right corner: never over the middle of the figure.
+                if let Some(voxels) = frame.voxels {
+                    let painter = ui.painter_at(rect);
+                    let measure = cav_plot::paint::EguiMeasure(&painter);
+                    let style = cav_plot::style::Style::screen();
+                    // The field's legend, and the tree overlay's above it.
+                    let keys = [
+                        cav_plot::voxels::legend(voxels, frame.scene, &style, &measure),
+                        cav_plot::voxels::tree_legend(voxels, &style, &measure),
+                    ];
+                    let mut bottom = rect.bottom();
+                    for key in keys.into_iter().flatten() {
+                        let size = vec2(key.size[0], key.size[1]);
+                        let at = pos2(rect.right(), bottom) - size - vec2(8.0, 8.0);
+                        cav_plot::paint::paint(&painter, at, &key);
+                        shell.layout.legends.push((pane, Rect::from_min_size(at, size)));
+                        bottom = at.y;
+                    }
+                }
+            }
+            None => {
+                ui.painter().text(
+                    rect.center(),
+                    Align2::CENTER_CENTER,
+                    surface.problem(pane).unwrap_or_else(|| "no GPU surface".to_owned()),
+                    theme::body(),
+                    theme::WEAK,
+                );
+            }
+        }
+    } else {
+        let drawn = crate::plots::paint(&shell.engine, &ui.painter_at(rect), pane, rect);
+        shell.layout.plots.extend(drawn);
+    }
+    if count > 1 {
+        let (colour, width) = if pane == active { (theme::SELECTION_EDGE, 1.5) } else { (theme::RULE, 1.0) };
+        ui.painter().rect_stroke(rect, 0.0, Stroke::new(width, colour), StrokeKind::Inside);
+        // A plot says what it is in its own title; a floating viewport in its bar.
+        if content == cav_engine::PaneContent::Scene && !floating {
+            let view = shell.engine.view(pane);
+            let name = view.named().map_or("free", NamedView::name);
+            // Clear of the floating tool strip on the figure's left edge (S19's review,
+            // minor 15: it covered the left pane's "iso").
+            let x = if rect.left() - figure.left() < 48.0 { TOOL_BUTTON + 24.0 } else { 6.0 };
+            ui.painter().text(
+                rect.left_top() + vec2(x, 4.0),
+                Align2::LEFT_TOP,
+                name,
+                FontId::proportional(11.0),
+                theme::WEAK,
+            );
+        }
+    }
+    let response = ui.interact(rect, egui::Id::unique(("pane", pane)), Sense::click_and_drag());
+    if (response.clicked() || response.drag_started() || response.secondary_clicked()) && pane != active {
+        asked.commands.push(Command::View(ViewCommand::Activate(pane)));
+    }
+    // The right-click menu: what can be done to this viewport (the View menu's Viewport items,
+    // from the action table). A click, not a hold: holding the right button flies the camera.
+    response.context_menu(|ui| {
+        for action in crate::actions::table().actions.iter().filter(|a| a.menu == VIEWPORT_MENU) {
+            if action.rule {
+                ui.separator();
+            }
+            let button = Button::new(&action.label).shortcut_text(action.shortcut_text());
+            let item = ui.add_enabled(shell.can_run(action), button).on_hover_text(&action.about);
+            shell.layout.buttons.push((format!("viewport menu {}", action.id), item.rect));
+            if item.clicked() {
+                asked.actions.push(action.id.clone());
+                ui.close();
+            }
+        }
+    });
+    if content != cav_engine::PaneContent::Scene {
+        // A plot has no camera. On the signal plot the pointer is the playhead; on either,
+        // the wheel zooms the horizontal axis about the pointer and a double click shows all of it.
+        if let Some(drawn) = shell.layout.plots.iter().find(|d| d.pane == pane).cloned() {
+            let value = |point: egui::Pos2| {
+                let along = f64::from((point.x - drawn.area.left()) / drawn.area.width()).clamp(0.0, 1.0);
+                drawn.x.lo + along * (drawn.x.hi - drawn.x.lo)
+            };
+            let spec = shell.engine.spec();
+            let whole = match content {
+                cav_engine::PaneContent::Signal | cav_engine::PaneContent::Flight => spec.duration,
+                cav_engine::PaneContent::Cadence => {
+                    2.5 / spec.array.schedule.mean_cycle(spec.array.instrument.cycle)
+                }
+                _ => 0.5 / spec.array.schedule.mean_cycle(spec.array.instrument.cycle),
+            };
+            let scroll = if response.hovered() { ui.input(|i| i.smooth_scroll_delta.y) } else { 0.0 };
+            if response.double_clicked() {
+                asked.commands.push(Command::View(ViewCommand::Span { pane, span: None }));
+            } else {
+                // The wheel's movement is smoothed over several frames, so a click may land
+                // while it is still arriving: the two are not alternatives.
+                if scroll != 0.0
+                    && let Some(point) = ui.input(|i| i.pointer.hover_pos())
+                {
+                    let span = crate::plots::zoomed([drawn.x.lo, drawn.x.hi], value(point), scroll, whole);
+                    asked.commands.push(Command::View(ViewCommand::Span { pane, span }));
+                }
+                if matches!(content, cav_engine::PaneContent::Signal | cav_engine::PaneContent::Flight)
+                    && (response.clicked() || response.dragged())
+                    && let Some(point) = response.interact_pointer_pos()
+                {
+                    asked.commands.push(Command::Seek(value(point)));
+                }
+            }
+        }
+        return;
+    }
+    // The right button pressed over the scene flies its camera while it is held (Unity's and
+    // Unreal's: W A S D move, the mouse looks). S18's review, U3.
+    if response.hovered() && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary)) {
+        shell.mouse_fly = Some(pane);
+        if pane != active {
+            asked.commands.push(Command::View(ViewCommand::Activate(pane)));
+        }
+    }
+    // A click on a body selects it; a drag that starts on one takes hold of it.
+    let within = |point: egui::Pos2| (point - rect.min).to_pos2();
+    let behaviour = shell.behaviour();
+    // The Move tool's gizmo on the selected body, in the active pane: its handles are taken
+    // before anything else under the pointer.
+    let selected_body = match shell.engine.selection() {
+        Some(Target::Body(n)) => Some(n - 1),
+        _ => None,
+    };
+    let gizmo = match (behaviour, selected_body) {
+        (crate::tools::Behaviour::Translate, Some(body)) if pane == active && !shell.is_locked(body) => {
+            draw_gizmo(shell, ui, pane, rect, body).map(|g| (body, g))
+        }
+        _ => None,
+    };
+    if pane == active {
+        asked.handle_rect = match gizmo {
+            Some((_, g)) => Rect::from_center_size(g.centre + rect.min.to_vec2(), vec2(24.0, 24.0)),
+            None => selected_body
+                .and_then(|n| shell.body_point(pane, n, rect.size()))
+                .map_or(Rect::NOTHING, |p| Rect::from_center_size(p + rect.min.to_vec2(), vec2(24.0, 24.0))),
+        };
+    }
+    // The Place tool in hand over the scene: a grid on the ground round the pointer and a ghost
+    // of the starter where a click would put it (S18's second review, UX 2: in the void there
+    // was nothing to aim at).
+    if behaviour == crate::tools::Behaviour::Place && pane == active {
+        place_preview(shell, ui, pane, rect, response.hover_pos().map(within));
+    }
+    if behaviour == crate::tools::Behaviour::Probe && pane == active {
+        let asked = shell.probe_at.take().map(|[x, y]| rect.min + vec2(x * rect.width(), y * rect.height()));
+        let clicked = response.clicked().then(|| response.interact_pointer_pos()).flatten();
+        if let Some(point) = clicked.or(asked) {
+            let at = within(point);
+            let size = [f64::from(rect.width()), f64::from(rect.height())];
+            let picked = crate::tools::pick(
+                shell.engine.view(pane),
+                size,
+                [f64::from(at.x), f64::from(at.y)],
+                &shell.engine,
+                shell.ground(),
+            );
+            shell.probed = Some(shell.engine.probe(picked.point));
+            // The reading is the right panel's Probe tab, which comes forward (S20).
+            shell.right_tab = crate::outliner::RightTab::Probe;
+        }
+        probe_mark(shell, ui, pane, rect);
+        return;
+    }
+    if behaviour == crate::tools::Behaviour::Place
+        && response.clicked()
+        && let Some(point) = response.interact_pointer_pos()
+    {
+        // The Place tool: the starter goes on the ground under the pointer.
+        let at = within(point);
+        let size = [f64::from(rect.width()), f64::from(rect.height())];
+        let ground = crate::tools::on_ground(
+            shell.engine.view(pane),
+            size,
+            [f64::from(at.x), f64::from(at.y)],
+            shell.ground(),
+        );
+        let _ = shell.place_at(ground);
+        return;
+    }
+    // A drag in the view ends a transform session first, its move kept, so the drag starts
+    // from where the body is (S18's second review, I2).
+    if response.drag_started_by(egui::PointerButton::Primary) && shell.session.is_some() {
+        shell.end_session(true);
+    }
+    if response.drag_started_by(egui::PointerButton::Primary)
+        && let Some((body, g)) = gizmo
+        && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+        && let Some(handle) = crate::tools::hit(&g, within(origin))
+        && let Some(spec) = shell.engine.spec().bodies.get(body)
+    {
+        shell.gizmo_drag = Some(crate::shell::GizmoDrag {
+            pane,
+            body,
+            handle,
+            gizmo: g,
+            start: spec.motion.anchor().0,
+            moved: egui::Vec2::ZERO,
+            edited: false,
+        });
+        shell.drag_under_way = false;
+    }
+    if let Some(drag) = shell.gizmo_drag.clone().filter(|d| d.pane == pane) {
+        if response.dragged() {
+            let delta = response.drag_delta();
+            match drag.handle {
+                crate::tools::Handle::Axis(axis) => {
+                    let moved = drag.moved + delta;
+                    let metres = crate::tools::snapped(
+                        crate::tools::along(&drag.gizmo, axis, moved),
+                        shell.snap_step(),
+                    );
+                    let mut anchor = drag.start;
+                    anchor[axis] += metres;
+                    let applied = shell.move_anchor(drag.body, anchor, drag.edited);
+                    shell.gizmo_drag =
+                        Some(crate::shell::GizmoDrag { moved, edited: drag.edited || applied, ..drag });
+                }
+                crate::tools::Handle::Centre => asked.body_drags.push((pane, drag.body, delta, rect.size())),
+            }
+        }
+        if response.drag_stopped() {
+            shell.gizmo_drag = None;
+            shell.drag_under_way = false;
+        }
+        return;
+    }
+    if response.clicked()
+        && let Some(point) = response.interact_pointer_pos()
+        && let Some(n) = shell.body_under(pane, within(point), rect.size())
+    {
+        asked.commands.push(Command::Select(Some(Target::Body(n + 1))));
+    }
+    if response.drag_started_by(egui::PointerButton::Primary)
+        && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+        && let Some(n) = shell.body_under(pane, within(origin), rect.size())
+        && !shell.is_locked(n)
+    {
+        shell.dragging = Some((pane, n));
+        shell.drag_under_way = false;
+        if shell.engine.selection() != Some(Target::Body(n + 1)) {
+            asked.commands.push(Command::Select(Some(Target::Body(n + 1))));
+        }
+    }
+    if response.dragged() {
+        match shell.dragging {
+            Some((held_in, n)) if held_in == pane => {
+                asked.body_drags.push((pane, n, response.drag_delta(), rect.size()));
+            }
+            _ => {
+                // The middle button pans; the right looks round from the eye (it flies).
+                let panning = response.dragged_by(egui::PointerButton::Middle);
+                asked.drags.push((pane, response.drag_delta(), panning, rect.size()));
+            }
+        }
+    }
+    if response.drag_stopped() {
+        shell.dragging = None;
+        shell.drag_under_way = false;
+    }
+    if response.hovered() {
+        let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+        if scroll != 0.0 {
+            // Toward the point under the pointer (the pane's middle if there is none).
+            let at = ui.input(|i| i.pointer.hover_pos()).unwrap_or(rect.center()) - rect.min;
+            let size = [f64::from(rect.width()), f64::from(rect.height())];
+            asked.zooms.push((pane, scroll, [f64::from(at.x), f64::from(at.y)], size));
+        }
+    }
+}
+
+/// The place of a floating viewport in the mosaic: an empty slot with a quiet button that docks
+/// it back.
+fn empty_slot(shell: &mut Shell, ui: &mut egui::Ui, asked: &mut Asked, pane: usize, label: char, slot: Rect) {
+    ui.painter().rect_filled(slot, 0.0, theme::FOOTER);
+    ui.painter().rect_stroke(slot, 0.0, Stroke::new(1.0, theme::RULE), StrokeKind::Inside);
+    let size = vec2(132.0, theme::HIT).min(slot.size());
+    let button = Rect::from_center_size(slot.center(), size);
+    let response = ui
+        .put(button, Button::new(RichText::new("floating — dock").size(theme::SMALL_PT).color(theme::WEAK)))
+        .on_hover_text(format!("viewport {} ({label}) floats over the window: put it back here", pane + 1));
+    shell.layout.buttons.push((format!("viewport dock {}", pane + 1), response.rect));
+    if response.clicked() {
+        asked.lines.push(format!("viewport dock {}", pane + 1));
+    }
+}
+
+/// A viewport floating over the window (`viewport pop-out`): a frame with a bar to drag it by, a
+/// dock button and a corner to resize it, drawn above the panels. Where it is and how big is the
+/// window's state ([`Shell::floating`]); the engine knows nothing of it.
+fn floating_viewport(
+    shell: &mut Shell,
+    ctx: &egui::Context,
+    surface: &mut dyn PaneSurface,
+    asked: &mut Asked,
+    place: Place,
+    label: char,
+) {
+    let frame = place.rect;
+    let screen = shell.layout.screen;
+    let scale = ctx.pixels_per_point();
+    egui::Area::new(egui::Id::unique(("floating viewport", label)))
+        .order(egui::Order::Middle)
+        .fixed_pos(frame.min)
+        .constrain(false)
+        .movable(false)
+        .fade_in(false)
+        .sizing_pass(false)
+        .show(ctx, |ui| {
+            ui.set_clip_rect(screen);
+            ui.allocate_rect(frame, Sense::hover());
+            let bar = Rect::from_min_size(frame.min, vec2(frame.width(), theme::HIT));
+            // Whole pixels, as the docked viewports are.
+            let body = Rect::from_min_max(pos2(frame.left() + 1.0, bar.bottom()), frame.max - vec2(1.0, 1.0));
+            let pixels = [
+                (body.width() * scale).round().max(1.0) as u32,
+                (body.height() * scale).round().max(1.0) as u32,
+            ];
+            let body = Rect::from_min_size(body.min, vec2(pixels[0] as f32, pixels[1] as f32) / scale);
+            ui.painter().rect_filled(frame, 2.0, theme::BACKGROUND);
+            ui.painter().rect_filled(bar, 2.0, theme::FOOTER);
+            let pane = place.pane;
+            let name = format!("{} · {}", pane + 1, shell.engine.content(pane).name());
+            ui.painter().text(
+                bar.left_center() + vec2(8.0, 0.0),
+                Align2::LEFT_CENTER,
+                name,
+                FontId::proportional(theme::SMALL_PT),
+                if pane == place.active { theme::STRONG } else { theme::WEAK },
+            );
+            // The bar moves the frame; it stays where a pointer can reach it.
+            let dock = Rect::from_min_size(bar.right_top() - vec2(44.0, 0.0), vec2(44.0, theme::HIT));
+            let grab = Rect::from_min_max(bar.min, pos2(dock.left(), bar.bottom()));
+            let moved = ui
+                .interact(grab, egui::Id::unique(("float bar", label)), Sense::click_and_drag())
+                .on_hover_cursor(egui::CursorIcon::Grab);
+            shell.layout.buttons.push((format!("float bar {}", pane + 1), grab));
+            let mut next = frame;
+            if moved.dragged() {
+                next = next.translate(moved.drag_delta());
+                let reach = 48.0;
+                let x = next.left().clamp(screen.left() + reach - next.width(), screen.right() - reach);
+                let y = next.top().clamp(screen.top(), screen.bottom() - theme::HIT);
+                next = Rect::from_min_size(pos2(x, y), next.size());
+            }
+            let docked = ui
+                .put(dock, Button::new(RichText::new("dock").size(theme::SMALL_PT)))
+                .on_hover_text("put this viewport back in its place in the mosaic");
+            shell.layout.buttons.push((format!("float dock {}", pane + 1), docked.rect));
+            if docked.clicked() {
+                asked.lines.push(format!("viewport dock {}", pane + 1));
+            }
+            shell.layout.panes[pane] = body;
+            viewport(shell, ui, surface, asked, Place { rect: body, pixels, ..place });
+            // The corner resizes it (drawn last: it is above the picture).
+            let corner = Rect::from_min_max(frame.max - vec2(14.0, 14.0), frame.max);
+            let resized = ui
+                .interact(corner, egui::Id::unique(("float corner", label)), Sense::drag())
+                .on_hover_cursor(egui::CursorIcon::ResizeNwSe);
+            shell.layout.buttons.push((format!("float corner {}", pane + 1), corner));
+            if resized.dragged() {
+                let size = (next.size() + resized.drag_delta()).max(MIN_FLOAT);
+                next = Rect::from_min_size(next.min, size);
+            }
+            let grip = if resized.hovered() || resized.dragged() { theme::STRONG } else { theme::WEAK };
+            for inset in [4.0, 8.0] {
+                ui.painter().line_segment(
+                    [frame.max - vec2(inset + 2.0, 3.0), frame.max - vec2(3.0, inset + 2.0)],
+                    Stroke::new(1.0, grip),
+                );
+            }
+            let edge = if pane == place.active { theme::SELECTION_EDGE } else { theme::WIDGET_EDGE };
+            ui.painter().rect_stroke(frame, 2.0, Stroke::new(1.0, edge), StrokeKind::Inside);
+            if next != frame {
+                shell.floating.insert(label, next);
+                ctx.request_repaint();
+            }
+        });
+}
+
 fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     // A whole number of pixels across and down, as the panes are made: the side panels' widths
     // may leave a fraction of a point (the inspector's is fixed since S19's review), and the one
@@ -1739,306 +2237,81 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     let scale = ui.ctx().pixels_per_point();
     let size =
         [(area.width() * scale).round().max(1.0) as u32, (area.height() * scale).round().max(1.0) as u32];
-    let count = shell.engine.panes();
+    // The mosaic drawn is the engine's; while a splitter is dragged, the one the drag has made
+    // so far (the engine hears of it once, when the drag ends). A drag the engine's mosaic has
+    // changed under (a command from elsewhere) is dropped.
+    if shell.splitter.as_ref().is_some_and(|drag| &drag.from != shell.engine.mosaic()) {
+        shell.splitter = None;
+    }
+    let mosaic =
+        shell.splitter.as_ref().map_or_else(|| shell.engine.mosaic().clone(), |drag| drag.now.clone());
+    let labels = mosaic.labels();
+    let count = labels.len();
     let active = shell.engine.active_pane();
     let generation = shell.engine.generation();
-    let mut commands: Vec<Command> = Vec::new();
-    let mut drags: Vec<(usize, egui::Vec2, bool, egui::Vec2)> = Vec::new();
-    let mut body_drags: Vec<(usize, usize, egui::Vec2, egui::Vec2)> = Vec::new();
-    let mut zooms: Vec<(usize, f32, [f64; 2], [f64; 2])> = Vec::new();
-    // Where the selection's keyboard handle is drawn, if the active pane shows the scene.
-    let mut handle_rect = Rect::NOTHING;
+    shell.floating.retain(|label, _| labels.contains(label));
+    let mut asked = Asked {
+        commands: Vec::new(),
+        drags: Vec::new(),
+        body_drags: Vec::new(),
+        zooms: Vec::new(),
+        handle_rect: Rect::NOTHING,
+        actions: Vec::new(),
+        lines: Vec::new(),
+    };
+    let points = |[x, y, width, height]: [u32; 4]| {
+        Rect::from_min_size(
+            area.min + vec2(x as f32, y as f32) / scale,
+            vec2(width as f32, height as f32) / scale,
+        )
+    };
 
     // Maximised, the active pane is the whole figure and the others are not drawn (their
     // cameras and contents are kept: it is the window's state, not the engine's).
-    let mut rects = pane_rects(count, size, PANE_GAP);
+    let mut rects = mosaic.rects(size, PANE_GAP);
     if shell.maximised {
-        let whole = pane_rects(1, size, PANE_GAP)[0];
         for (pane, rect) in rects.iter_mut().enumerate() {
-            *rect =
-                if pane == active { whole } else { cav_render::PaneRect { width: 0, height: 0, ..whole } };
+            *rect = if pane == active { [0, 0, size[0], size[1]] } else { [0, 0, 0, 0] };
         }
     }
+    // The viewports in their places, in the labels' order; those that float are drawn after,
+    // above the window.
+    let mut floats: Vec<(Place, char)> = Vec::new();
     for (pane, pixels) in rects.into_iter().enumerate() {
-        let rect = Rect::from_min_size(
-            area.min + vec2(pixels.x as f32, pixels.y as f32) / scale,
-            vec2(pixels.width as f32, pixels.height as f32) / scale,
-        );
-        shell.layout.panes.push(rect);
-        if pixels.width == 0 || pixels.height == 0 {
-            continue;
-        }
-        let content = shell.engine.content(pane);
-        if content == cav_engine::PaneContent::Scene {
-            let frame = shell.engine.frame(pane).expect("pane_rects gives no more panes than the engine has");
-            match surface.texture(pane, [pixels.width, pixels.height], generation, frame) {
-                Some(texture) => {
-                    let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-                    ui.painter().image(texture, rect, uv, Color32::WHITE);
-                    // The legend of what colours the voxel bodies, made from what is drawn, in
-                    // the pane's bottom right corner: never over the middle of the figure.
-                    if let Some(voxels) = frame.voxels {
-                        let painter = ui.painter_at(rect);
-                        let measure = cav_plot::paint::EguiMeasure(&painter);
-                        let style = cav_plot::style::Style::screen();
-                        // The field's legend, and the tree overlay's above it.
-                        let keys = [
-                            cav_plot::voxels::legend(voxels, frame.scene, &style, &measure),
-                            cav_plot::voxels::tree_legend(voxels, &style, &measure),
-                        ];
-                        let mut bottom = rect.bottom();
-                        for key in keys.into_iter().flatten() {
-                            let size = vec2(key.size[0], key.size[1]);
-                            let at = pos2(rect.right(), bottom) - size - vec2(8.0, 8.0);
-                            cav_plot::paint::paint(&painter, at, &key);
-                            shell.layout.legends.push((pane, Rect::from_min_size(at, size)));
-                            bottom = at.y;
-                        }
-                    }
-                }
-                None => {
-                    ui.painter().text(
-                        rect.center(),
-                        Align2::CENTER_CENTER,
-                        surface.problem(pane).unwrap_or_else(|| "no GPU surface".to_owned()),
-                        theme::body(),
-                        theme::WEAK,
-                    );
-                }
-            }
-        } else {
-            let drawn = crate::plots::paint(&shell.engine, &ui.painter_at(rect), pane, rect);
-            shell.layout.plots.extend(drawn);
-        }
-        if count > 1 {
-            let (colour, width) =
-                if pane == active { (theme::SELECTION_EDGE, 1.5) } else { (theme::RULE, 1.0) };
-            ui.painter().rect_stroke(rect, 0.0, Stroke::new(width, colour), StrokeKind::Inside);
-            // A plot says what it is in its own title.
-            if content == cav_engine::PaneContent::Scene {
-                let view = shell.engine.view(pane);
-                let name = view.named().map_or("free", NamedView::name);
-                // Clear of the floating tool strip on the figure's left edge (S19's review,
-                // minor 15: it covered the left pane's "iso").
-                let x = if rect.left() - area.left() < 48.0 { TOOL_BUTTON + 24.0 } else { 6.0 };
-                ui.painter().text(
-                    rect.left_top() + vec2(x, 4.0),
-                    Align2::LEFT_TOP,
-                    name,
-                    FontId::proportional(11.0),
-                    theme::WEAK,
-                );
-            }
-        }
-        let response = ui.interact(rect, egui::Id::unique(("pane", pane)), Sense::click_and_drag());
-        if (response.clicked() || response.drag_started()) && pane != active {
-            commands.push(Command::View(ViewCommand::Activate(pane)));
-        }
-        if content != cav_engine::PaneContent::Scene {
-            // A plot has no camera. On the signal plot the pointer is the playhead; on either,
-            // the wheel zooms the horizontal axis about the pointer and a double click shows all of it.
-            if let Some(drawn) = shell.layout.plots.iter().find(|d| d.pane == pane).cloned() {
-                let value = |point: egui::Pos2| {
-                    let along = f64::from((point.x - drawn.area.left()) / drawn.area.width()).clamp(0.0, 1.0);
-                    drawn.x.lo + along * (drawn.x.hi - drawn.x.lo)
-                };
-                let spec = shell.engine.spec();
-                let whole = match content {
-                    cav_engine::PaneContent::Signal | cav_engine::PaneContent::Flight => spec.duration,
-                    cav_engine::PaneContent::Cadence => {
-                        2.5 / spec.array.schedule.mean_cycle(spec.array.instrument.cycle)
-                    }
-                    _ => 0.5 / spec.array.schedule.mean_cycle(spec.array.instrument.cycle),
-                };
-                let scroll = if response.hovered() { ui.input(|i| i.smooth_scroll_delta.y) } else { 0.0 };
-                if response.double_clicked() {
-                    commands.push(Command::View(ViewCommand::Span { pane, span: None }));
-                } else {
-                    // The wheel's movement is smoothed over several frames, so a click may land
-                    // while it is still arriving: the two are not alternatives.
-                    if scroll != 0.0
-                        && let Some(point) = ui.input(|i| i.pointer.hover_pos())
-                    {
-                        let span =
-                            crate::plots::zoomed([drawn.x.lo, drawn.x.hi], value(point), scroll, whole);
-                        commands.push(Command::View(ViewCommand::Span { pane, span }));
-                    }
-                    if matches!(content, cav_engine::PaneContent::Signal | cav_engine::PaneContent::Flight)
-                        && (response.clicked() || response.dragged())
-                        && let Some(point) = response.interact_pointer_pos()
-                    {
-                        commands.push(Command::Seek(value(point)));
-                    }
-                }
-            }
-            continue;
-        }
-        // The right button pressed over the scene flies its camera while it is held (Unity's and
-        // Unreal's: W A S D move, the mouse looks). S18's review, U3.
-        if response.hovered() && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary)) {
-            shell.mouse_fly = Some(pane);
-            if pane != active {
-                commands.push(Command::View(ViewCommand::Activate(pane)));
-            }
-        }
-        // A click on a body selects it; a drag that starts on one takes hold of it.
-        let within = |point: egui::Pos2| (point - rect.min).to_pos2();
-        let behaviour = shell.behaviour();
-        // The Move tool's gizmo on the selected body, in the active pane: its handles are taken
-        // before anything else under the pointer.
-        let selected_body = match shell.engine.selection() {
-            Some(Target::Body(n)) => Some(n - 1),
-            _ => None,
+        let slot = points(pixels);
+        let place = Place {
+            pane,
+            rect: slot,
+            pixels: [pixels[2], pixels[3]],
+            count,
+            active,
+            generation,
+            figure: area,
+            floating: false,
         };
-        let gizmo = match (behaviour, selected_body) {
-            (crate::tools::Behaviour::Translate, Some(body)) if pane == active && !shell.is_locked(body) => {
-                draw_gizmo(shell, ui, pane, rect, body).map(|g| (body, g))
+        shell.layout.slots.push(slot);
+        match shell.floating.get(&labels[pane]).copied().filter(|_| !shell.maximised) {
+            Some(frame) => {
+                shell.layout.panes.push(frame);
+                shell.layout.floating.push((pane, frame));
+                empty_slot(shell, ui, &mut asked, pane, labels[pane], slot);
+                floats.push((Place { rect: frame, floating: true, ..place }, labels[pane]));
             }
-            _ => None,
-        };
-        if pane == active {
-            handle_rect = match gizmo {
-                Some((_, g)) => Rect::from_center_size(g.centre + rect.min.to_vec2(), vec2(24.0, 24.0)),
-                None => selected_body
-                    .and_then(|n| shell.body_point(pane, n, rect.size()))
-                    .map_or(Rect::NOTHING, |p| {
-                        Rect::from_center_size(p + rect.min.to_vec2(), vec2(24.0, 24.0))
-                    }),
-            };
-        }
-        // The Place tool in hand over the scene: a grid on the ground round the pointer and a ghost
-        // of the starter where a click would put it (S18's second review, UX 2: in the void there
-        // was nothing to aim at).
-        if behaviour == crate::tools::Behaviour::Place && pane == active {
-            place_preview(shell, ui, pane, rect, response.hover_pos().map(within));
-        }
-        if behaviour == crate::tools::Behaviour::Probe && pane == active {
-            let asked =
-                shell.probe_at.take().map(|[x, y]| rect.min + vec2(x * rect.width(), y * rect.height()));
-            let clicked = response.clicked().then(|| response.interact_pointer_pos()).flatten();
-            if let Some(point) = clicked.or(asked) {
-                let at = within(point);
-                let size = [f64::from(rect.width()), f64::from(rect.height())];
-                let picked = crate::tools::pick(
-                    shell.engine.view(pane),
-                    size,
-                    [f64::from(at.x), f64::from(at.y)],
-                    &shell.engine,
-                    shell.ground(),
-                );
-                shell.probed = Some(shell.engine.probe(picked.point));
-                // The reading is the right panel's Probe tab, which comes forward (S20).
-                shell.right_tab = crate::outliner::RightTab::Probe;
-            }
-            probe_mark(shell, ui, pane, rect);
-            continue;
-        }
-        if behaviour == crate::tools::Behaviour::Place
-            && response.clicked()
-            && let Some(point) = response.interact_pointer_pos()
-        {
-            // The Place tool: the starter goes on the ground under the pointer.
-            let at = within(point);
-            let size = [f64::from(rect.width()), f64::from(rect.height())];
-            let ground = crate::tools::on_ground(
-                shell.engine.view(pane),
-                size,
-                [f64::from(at.x), f64::from(at.y)],
-                shell.ground(),
-            );
-            let _ = shell.place_at(ground);
-            continue;
-        }
-        // A drag in the view ends a transform session first, its move kept, so the drag starts
-        // from where the body is (S18's second review, I2).
-        if response.drag_started_by(egui::PointerButton::Primary) && shell.session.is_some() {
-            shell.end_session(true);
-        }
-        if response.drag_started_by(egui::PointerButton::Primary)
-            && let Some((body, g)) = gizmo
-            && let Some(origin) = ui.input(|i| i.pointer.press_origin())
-            && let Some(handle) = crate::tools::hit(&g, within(origin))
-            && let Some(spec) = shell.engine.spec().bodies.get(body)
-        {
-            shell.gizmo_drag = Some(crate::shell::GizmoDrag {
-                pane,
-                body,
-                handle,
-                gizmo: g,
-                start: spec.motion.anchor().0,
-                moved: egui::Vec2::ZERO,
-                edited: false,
-            });
-            shell.drag_under_way = false;
-        }
-        if let Some(drag) = shell.gizmo_drag.clone().filter(|d| d.pane == pane) {
-            if response.dragged() {
-                let delta = response.drag_delta();
-                match drag.handle {
-                    crate::tools::Handle::Axis(axis) => {
-                        let moved = drag.moved + delta;
-                        let metres = crate::tools::snapped(
-                            crate::tools::along(&drag.gizmo, axis, moved),
-                            shell.snap_step(),
-                        );
-                        let mut anchor = drag.start;
-                        anchor[axis] += metres;
-                        let applied = shell.move_anchor(drag.body, anchor, drag.edited);
-                        shell.gizmo_drag =
-                            Some(crate::shell::GizmoDrag { moved, edited: drag.edited || applied, ..drag });
-                    }
-                    crate::tools::Handle::Centre => body_drags.push((pane, drag.body, delta, rect.size())),
+            None => {
+                shell.layout.panes.push(slot);
+                if pixels[2] > 0 && pixels[3] > 0 {
+                    viewport(shell, ui, surface, &mut asked, place);
                 }
-            }
-            if response.drag_stopped() {
-                shell.gizmo_drag = None;
-                shell.drag_under_way = false;
-            }
-            continue;
-        }
-        if response.clicked()
-            && let Some(point) = response.interact_pointer_pos()
-            && let Some(n) = shell.body_under(pane, within(point), rect.size())
-        {
-            commands.push(Command::Select(Some(Target::Body(n + 1))));
-        }
-        if response.drag_started_by(egui::PointerButton::Primary)
-            && let Some(origin) = ui.input(|i| i.pointer.press_origin())
-            && let Some(n) = shell.body_under(pane, within(origin), rect.size())
-            && !shell.is_locked(n)
-        {
-            shell.dragging = Some((pane, n));
-            shell.drag_under_way = false;
-            if shell.engine.selection() != Some(Target::Body(n + 1)) {
-                commands.push(Command::Select(Some(Target::Body(n + 1))));
-            }
-        }
-        if response.dragged() {
-            match shell.dragging {
-                Some((held_in, n)) if held_in == pane => {
-                    body_drags.push((pane, n, response.drag_delta(), rect.size()));
-                }
-                _ => {
-                    // The middle button pans; the right looks round from the eye (it flies).
-                    let panning = response.dragged_by(egui::PointerButton::Middle);
-                    drags.push((pane, response.drag_delta(), panning, rect.size()));
-                }
-            }
-        }
-        if response.drag_stopped() {
-            shell.dragging = None;
-            shell.drag_under_way = false;
-        }
-        if response.hovered() {
-            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-            if scroll != 0.0 {
-                // Toward the point under the pointer (the pane's middle if there is none).
-                let at = ui.input(|i| i.pointer.hover_pos()).unwrap_or(rect.center()) - rect.min;
-                let size = [f64::from(rect.width()), f64::from(rect.height())];
-                zooms.push((pane, scroll, [f64::from(at.x), f64::from(at.y)], size));
             }
         }
     }
+    if !shell.maximised {
+        splitters(shell, ui, &mosaic, area, size);
+    }
+    for (place, label) in floats {
+        floating_viewport(shell, ui.ctx(), surface, &mut asked, place, label);
+    }
+    let Asked { commands, drags, body_drags, zooms, handle_rect, actions, lines } = asked;
     // The tool strip: a floating bar over the view's left edge, not a column of its own
     // (S19, `docs/design/panels.md`: Blender's and Unity's scene toolbars).
     if !shell.gui_hidden && !shell.maximised {
@@ -2065,6 +2338,25 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     // viewport whatever is selected and whatever the panes show (order never depends on state:
     // S18's review, minor 5), disabled when there is no body in a scene pane to move.
     shell.register("viewport", "viewport/selection", "Selection", Kind::Session, handle_rect);
+    // The mosaic as the keyboard walks it: one scope whose stops are the viewports in the
+    // labels' order, wherever each stands and whether or not it floats (the order comes from
+    // data, never from the layout: `docs/design/keyboard.md` §9). Enter on one makes it the
+    // active viewport, as a click on it does.
+    shell.register("viewport", "viewport/mosaic", "Viewports", Kind::Scope, area);
+    for (pane, label) in labels.iter().enumerate() {
+        let id = format!("viewport/mosaic/{}", pane + 1);
+        let rect = shell.layout.panes[pane];
+        shell.register(
+            "viewport/mosaic",
+            &id,
+            &format!("Viewport {} ({label})", pane + 1),
+            Kind::Button,
+            rect,
+        );
+        if shell.take_click(&id) && pane != shell.engine.active_pane() {
+            shell.apply(Command::View(ViewCommand::Activate(pane)));
+        }
+    }
     let movable = matches!(shell.engine.selection(), Some(Target::Body(_)))
         && shell.engine.content(active) == cav_engine::PaneContent::Scene;
     if !movable {
@@ -2087,11 +2379,14 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     // camera; with no scene in any pane there is no Home.
     let shows_scene = |pane: &usize| shell.engine.content(*pane) == cav_engine::PaneContent::Scene;
     let corner = pos2(area.right() - 4.0, area.top() + 4.0);
+    // (A floating viewport is not in the figure: Home stands in one that is docked.)
+    let docked = |pane: &usize| !shell.layout.floating.iter().any(|(floating, _)| floating == pane);
     let under = (0..count).find(|pane| shell.layout.panes[*pane].contains(corner));
     let home_pane = under
         .into_iter()
         .chain([active])
         .chain(0..count)
+        .filter(docked)
         .find(shows_scene)
         .map(|pane| shell.layout.panes[pane]);
     if let (false, Some(pane)) = (shell.gui_hidden, home_pane) {
@@ -2120,6 +2415,13 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     for command in commands {
         shell.apply(command);
     }
+    // What a right-click menu chose runs on the viewport it was opened on, now the active one.
+    for action in actions {
+        let _ = shell.run_action(&action);
+    }
+    for line in lines {
+        let _ = shell.run(&line);
+    }
     for (pane, delta, panning, size) in drags {
         if delta != egui::Vec2::ZERO {
             if panning {
@@ -2145,6 +2447,68 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     }
     for (pane, scroll, pointer, size) in zooms {
         shell.zoom_by(pane, scroll, pointer, size);
+    }
+}
+
+/// The splitters between the viewports: each stretch of gap between two of them is a handle
+/// [`theme::GRID`] wide. A drag moves its boundary with the pointer (the layout follows here, in
+/// the window) and ends as one `Mosaic` command; a double click evens its two sides.
+fn splitters(shell: &mut Shell, ui: &mut egui::Ui, mosaic: &Mosaic, area: Rect, size: [u32; 2]) {
+    let scale = ui.ctx().pixels_per_point();
+    for (n, (boundary, [x, y, width, height])) in mosaic.splitters(size, PANE_GAP).into_iter().enumerate() {
+        let gap = Rect::from_min_size(
+            area.min + vec2(x as f32, y as f32) / scale,
+            vec2(width as f32, height as f32) / scale,
+        );
+        let across = matches!(boundary, Boundary::Column(_));
+        // The handle: the gap widened to the grid, so that a pointer finds it.
+        let handle = if across {
+            gap.expand2(vec2(((theme::GRID - gap.width()) / 2.0).max(0.0), 0.0))
+        } else {
+            gap.expand2(vec2(0.0, ((theme::GRID - gap.height()) / 2.0).max(0.0)))
+        };
+        shell.layout.splitters.push((boundary, handle));
+        let response =
+            ui.interact(handle, egui::Id::unique(("splitter", n, across)), Sense::click_and_drag());
+        let held = shell.splitter.as_ref().is_some_and(|drag| drag.boundary == boundary);
+        if response.hovered() || response.dragged() || held {
+            ui.ctx().set_cursor_icon(if across {
+                egui::CursorIcon::ResizeHorizontal
+            } else {
+                egui::CursorIcon::ResizeVertical
+            });
+            ui.painter().rect_filled(gap, 0.0, theme::SELECTION_EDGE);
+        }
+        let along = |point: egui::Pos2| if across { point.x - area.left() } else { point.y - area.top() };
+        if response.drag_started_by(egui::PointerButton::Primary)
+            && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+        {
+            let from = shell.engine.mosaic().clone();
+            let grab = along(origin) - along(gap.center());
+            shell.splitter = Some(SplitterDrag { boundary, now: from.clone(), from, grab });
+        }
+        if response.dragged()
+            && let Some(point) = response.interact_pointer_pos()
+            && let Some(drag) = shell.splitter.as_mut().filter(|drag| drag.boundary == boundary)
+        {
+            let (extent, wanted) = (size[usize::from(!across)], (along(point) - drag.grab) * scale);
+            drag.now = splitter_moved(&drag.from, boundary, wanted, extent, PANE_GAP, MIN_VIEWPORT * scale);
+            ui.ctx().request_repaint();
+        }
+        if response.drag_stopped()
+            && let Some(drag) = shell.splitter.take()
+            && drag.now != drag.from
+        {
+            // The one command a drag is: one journal line.
+            shell.apply(Command::View(ViewCommand::Mosaic { layout: drag.now, from: None }));
+        }
+        if response.double_clicked()
+            && let Ok(evened) = shell.engine.mosaic().even_at(boundary)
+            && &evened != shell.engine.mosaic()
+        {
+            shell.splitter = None;
+            shell.apply(Command::View(ViewCommand::Mosaic { layout: evened, from: None }));
+        }
     }
 }
 

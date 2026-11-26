@@ -47,7 +47,11 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("save-scene", "save the scene to the file it came from, or ask for one (Ctrl+S)"),
     (
         "layout",
-        "arrange the window for a task: `layout scene` (Ctrl+1), `layout instrument` (Ctrl+2), `layout analysis` (Ctrl+3)",
+        "arrange the window for a task: `layout scene` (Ctrl+1), `layout instrument` (Ctrl+2), `layout analysis` (Ctrl+3); or the figure as a mosaic written out: `layout \"AAB;CDB\"` (as `mosaic`)",
+    ),
+    (
+        "viewport",
+        "act on a viewport (the active one, or number N): `viewport close [N]`; `viewport swap [N]` exchanges its place with the next viewport's; `viewport pop-out [N]` floats it over the window, or docks it if it floats; `viewport dock [N]` puts it back in the mosaic (with no N, every floating one)",
     ),
     (
         "maximise",
@@ -117,8 +121,15 @@ pub struct Layout {
     pub panels: Vec<(&'static str, Rect)>,
     /// The area the panes share.
     pub figure: Rect,
-    /// Each pane, in order.
+    /// Each pane (viewport), in order: where it is drawn. A floating one's is where it floats.
     pub panes: Vec<Rect>,
+    /// Each pane's place in the mosaic, in order: where it is drawn unless it floats (then the
+    /// place is empty but for its dock button).
+    pub slots: Vec<Rect>,
+    /// The viewports that float over the window: the pane (from 0) and its frame, bar and all.
+    pub floating: Vec<(usize, Rect)>,
+    /// The splitters between the viewports: the boundary each moves and its handle.
+    pub splitters: Vec<(cav_engine::Boundary, Rect)>,
     /// Buttons worth finding from a test, by the console line they run.
     pub buttons: Vec<(String, Rect)>,
     /// What each pane that shows a plot drew.
@@ -179,6 +190,9 @@ impl Default for Layout {
             panels: Vec::new(),
             figure: Rect::NOTHING,
             panes: Vec::new(),
+            slots: Vec::new(),
+            floating: Vec::new(),
+            splitters: Vec::new(),
             buttons: Vec::new(),
             plots: Vec::new(),
             editors: Vec::new(),
@@ -343,6 +357,12 @@ pub struct Shell {
     /// Whether the active pane is maximised: it fills the window but for the menu bar and the
     /// status line (`Ctrl+Space`). UI state.
     pub maximised: bool,
+    /// The viewports that float over the window (`viewport pop-out`), by label, each with its
+    /// frame in points. Window state: the mosaic keeps the viewport's place, the engine knows
+    /// nothing of it, and nothing is journalled. A label that leaves the mosaic is dropped.
+    pub floating: std::collections::BTreeMap<char, Rect>,
+    /// A splitter's drag in hand: the layout follows the pointer here until the drag ends.
+    pub(crate) splitter: Option<crate::panels::SplitterDrag>,
     /// Whether the window is full screen (`F11`), and what the window was last told.
     pub fullscreen: bool,
     fullscreen_sent: bool,
@@ -492,6 +512,8 @@ impl Shell {
             gizmo_drag: None,
             session: None,
             maximised: false,
+            floating: std::collections::BTreeMap::new(),
+            splitter: None,
             fullscreen: false,
             fullscreen_sent: false,
             layout_name: crate::layouts::layouts().layouts[0].id.clone(),
@@ -825,6 +847,7 @@ impl Shell {
             Needs::Body => matches!(self.engine.selection(), Some(Target::Body(_))),
             Needs::Tower(n) => n >= 1 && n <= spec.array.towers.len(),
             Needs::Shapes => spec.bodies.iter().any(|b| b.shape.is_some()),
+            Needs::Viewports => self.engine.panes() > 1,
         }
     }
 
@@ -1022,10 +1045,24 @@ impl Shell {
             let ids: Vec<&str> = all.layouts.iter().map(|l| l.id.as_str()).collect();
             let Some(layout) = words.next().and_then(|id| all.layout(id)).filter(|_| words.next().is_none())
             else {
-                let why = format!("`{line}`: layout <{}>", ids.join("|"));
-                self.engine.note(Level::Error, Subsystem::App, why.clone());
-                self.console_open = true;
-                return Err(why);
+                // Not a named layout: a mosaic written out (`layout "AAB;CDB" cols 2 1 1`), which
+                // is the engine's `mosaic` command.
+                let written = line.trim_start_matches("layout").trim();
+                return match cav_engine::Mosaic::parse(written) {
+                    Ok(mosaic) => {
+                        self.maximised = false;
+                        self.run(&format!("mosaic {}", mosaic.quoted()))
+                    }
+                    Err(why) => {
+                        let why = format!(
+                            "`{line}`: layout <{}>, or a mosaic as `\"AAB;CDB\"` ({why})",
+                            ids.join("|")
+                        );
+                        self.engine.note(Level::Error, Subsystem::App, why.clone());
+                        self.console_open = true;
+                        Err(why)
+                    }
+                };
             };
             self.maximised = false;
             self.layout_name.clone_from(&layout.id);
@@ -1034,6 +1071,14 @@ impl Shell {
                 self.run(step)?;
             }
             return Ok(line.to_owned());
+        }
+        if name == "viewport" {
+            let outcome = self.viewport_command(&words.collect::<Vec<_>>());
+            if let Err(why) = &outcome {
+                self.engine.note(Level::Error, Subsystem::App, why.clone());
+                self.console_open = true;
+            }
+            return outcome.map(|()| line.to_owned());
         }
         // `focus <id>` puts the keyboard's focus on a scope or an element of the last frame's tree,
         // with the ring showing: for scripts, the demo and a person who knows the id.
@@ -1281,6 +1326,53 @@ impl Shell {
             _ => unreachable!("is_app_command checked the name"),
         }
         Ok(name.to_owned())
+    }
+
+    /// `viewport <close|swap|pop-out|dock> [N]`: what the View menu and a viewport's right-click
+    /// menu do to one viewport (the active one, or number N from 1). Close and swap are the
+    /// engine's `close @N` and `swap N M` (one `Mosaic` command each, journalled); pop-out and
+    /// dock are the window's own state and journal nothing.
+    fn viewport_command(&mut self, words: &[&str]) -> Result<(), String> {
+        const USAGE: &str = "viewport <close|swap|pop-out|dock> [N]";
+        let count = self.engine.panes();
+        let (verb, pane, named) = match *words {
+            [verb] => (verb, self.engine.active_pane(), false),
+            [verb, n] => match n.parse::<usize>().ok().and_then(|n| n.checked_sub(1)) {
+                Some(pane) if pane < count => (verb, pane, true),
+                _ => return Err(format!("there is no viewport {n}; the figure has 1 to {count}")),
+            },
+            _ => return Err(USAGE.to_owned()),
+        };
+        let label = self.engine.mosaic().label(pane).expect("the pane is one of the mosaic's");
+        match verb {
+            "close" => self.run(&format!("close @{}", pane + 1)).map(|_| ()),
+            "swap" if count < 2 => Err("there is no other viewport to swap with".to_owned()),
+            "swap" => self.run(&format!("swap {} {}", pane + 1, (pane + 1) % count + 1)).map(|_| ()),
+            "pop-out" if self.floating.remove(&label).is_some() => Ok(()),
+            "pop-out" => {
+                // Over its own place, a little in from the corner, at a size that leaves the
+                // window in sight; before any frame has been drawn, a default.
+                let frame = match (self.layout.slots.get(pane), self.layout.figure) {
+                    (Some(slot), figure) if figure.is_positive() => {
+                        let size = slot.size().max(crate::panels::MIN_FLOAT).min(figure.size() * 0.6);
+                        Rect::from_min_size(slot.min + egui::vec2(24.0, 24.0), size)
+                    }
+                    _ => Rect::from_min_size(egui::pos2(120.0, 120.0), egui::vec2(480.0, 360.0)),
+                };
+                self.maximised = false;
+                self.floating.insert(label, frame);
+                Ok(())
+            }
+            "dock" if named => {
+                self.floating.remove(&label);
+                Ok(())
+            }
+            "dock" => {
+                self.floating.clear();
+                Ok(())
+            }
+            _ => Err(USAGE.to_owned()),
+        }
     }
 
     /// A window has opened (`open`) or closed: on opening it takes the keyboard's focus at its

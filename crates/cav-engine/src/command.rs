@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::log::{LogEntry, LogFilter};
 
-/// The most panes a figure is split into.
-pub const MAX_PANES: usize = 4;
+/// The most panes (viewports) a figure holds: the mosaic's cap, 12. A thirteenth is refused with a
+/// message that says so.
+pub const MAX_PANES: usize = cav_sim::mosaic::MAX_VIEWPORTS;
 
 /// Something that changes the engine's state. Every applied command is journalled and logged.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -331,8 +332,28 @@ impl Figure {
 /// A change to the figure's panes and their cameras.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub enum ViewCommand {
-    /// Split the figure into this many panes: 1, 2 or 4.
+    /// Split the figure into this many panes: 1, 2 or 4. Short for the mosaics `A`, `AB` and
+    /// `AB;CD` ([`Self::Mosaic`], with no `from`).
     Panes(usize),
+    /// Arrange the figure as this mosaic of viewports (`cav_sim::mosaic`). What a split, a
+    /// close, a swap and a splitter's drag each end as: one command, journalled and replayed,
+    /// never an edit, never undone.
+    ///
+    /// A viewport is known by its label. One whose label is in the figure already keeps its
+    /// camera, its style and what it shows, wherever the new mosaic puts it and whatever its
+    /// number becomes (a pane's number is its label's rank in the alphabet among those present).
+    /// A label new to the figure starts as a copy of `from`'s viewport when `from` is given (a
+    /// split), and otherwise takes the camera and content last left in a pane that is not shown
+    /// (as `panes 4` after `panes 1` brings the three others back as they were). The active
+    /// pane stays with its label; if that has gone, the first viewport is active.
+    Mosaic {
+        /// The mosaic.
+        layout: cav_sim::mosaic::Mosaic,
+        /// The label of a viewport of the figure as it is now, which the labels new to the
+        /// figure start as copies of; `None` for none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<char>,
+    },
     /// Make this pane (from 0) the one that keys and unaddressed commands act on.
     Activate(usize),
     /// Look from a named direction, keeping the target and the distance.
@@ -460,7 +481,7 @@ impl ViewCommand {
     #[must_use]
     pub const fn pane(&self) -> Option<usize> {
         match *self {
-            Self::Panes(_) | Self::Hide { .. } => None,
+            Self::Panes(_) | Self::Mosaic { .. } | Self::Hide { .. } => None,
             Self::Activate(pane)
             | Self::Look { pane, .. }
             | Self::Project { pane, .. }
@@ -865,6 +886,8 @@ pub struct Stats {
     pub selection: Option<Target>,
     /// How many panes the figure shows.
     pub panes: usize,
+    /// How the figure is divided into those panes: the mosaic as written (`AAB;CDB cols 2 1 1`).
+    pub mosaic: String,
     /// The active pane, from 0.
     pub active_pane: usize,
     /// Commands in the journal.

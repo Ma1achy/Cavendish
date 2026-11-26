@@ -25,6 +25,7 @@ pub mod import;
 pub mod json_f64;
 pub mod library;
 pub mod materials;
+pub mod mosaic;
 pub mod motion;
 pub mod paths;
 pub mod presets;

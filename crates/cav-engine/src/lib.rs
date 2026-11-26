@@ -37,6 +37,7 @@ pub mod log;
 pub mod voxels;
 pub mod world;
 
+pub use cav_sim::mosaic::{Boundary, Mosaic};
 pub use cav_sim::{PaneContent, Target};
 pub use command::{
     COMB_HARMONICS, ChannelName, Comb, Command, DEFAULT_FIGURE_PRESET, ExportKind, Figure, FigureFormat,
@@ -262,6 +263,11 @@ mod tests {
             Command::Undo,
             Command::Redo,
             Command::View(ViewCommand::Panes(2)),
+            Command::View(ViewCommand::Mosaic {
+                layout: Mosaic::parse("AAB;CDB cols 0.1 0.30000000000000004 1").unwrap(),
+                from: Some('B'),
+            }),
+            Command::View(ViewCommand::Mosaic { layout: Mosaic::single(), from: None }),
             Command::View(ViewCommand::Activate(1)),
             Command::View(ViewCommand::Look { pane: 1, view: NamedView::Bottom }),
             Command::View(ViewCommand::Project { pane: 0, projection: Projection::Orthographic }),
