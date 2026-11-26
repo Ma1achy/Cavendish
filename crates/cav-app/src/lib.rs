@@ -40,10 +40,11 @@ mod panels;
 pub mod sheet;
 pub use panels::MAX_OUTLINE_ROWS;
 /// The outliner's words, for its tests: what a tower's row says, and whether a scene reads
-/// nothing. Not an interface.
+/// nothing; and the side panels' scroll area, with and without its bar's width reserved. Not an
+/// interface.
 #[doc(hidden)]
 pub mod panels_for_tests {
-    pub use crate::panels::{silent, tower_detail};
+    pub use crate::panels::{scrolling, silent, tower_detail};
 }
 pub mod panes;
 pub use cav_plot::plots;

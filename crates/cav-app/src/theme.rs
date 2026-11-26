@@ -16,9 +16,55 @@ pub const WEAK: Color32 = Color32::from_rgb(0x8c, 0x8c, 0x8c);
 /// (S19's review, I6); this is at least 4.5:1 on both ([`text_pairs`]).
 pub const WEAK_ON_WIDGET: Color32 = Color32::from_rgb(0xbd, 0xbd, 0xbd);
 
-/// The least side of anything a pointer aims at in the side panels, points: a row, a box, a
-/// tick, an eye (`docs/design/panels.md`: rows and targets at least 24 pt).
-pub const HIT: f32 = 24.0;
+/// The side of anything a pointer aims at in the side panels, points: a row, a box, a tick, a
+/// drop-down, an eye, a lock, a ⋮, a `+` (`docs/design/workspace.md` §0: desktop rows 20 pt; the
+/// owner's ruling of 25 Nov 2026 withdrew `panels.md`'s 24 pt on desktop). Not the touch rule
+/// (44 pt), which is the phone and tablet layout's.
+pub const HIT: f32 = 20.0;
+
+/// The side of an icon button, points: the tool strip's, a viewport header's, the transport's
+/// (the design's 20 to 22). Larger than a row ([`HIT`]) so that icons read at a glance.
+pub const ICON: f32 = 22.0;
+
+/// The spacing grid, points: margins inside a panel and a card, and the gap between items and
+/// between cards, are this or a whole multiple of it.
+pub const GRID: f32 = 4.0;
+
+/// The gap between two rows of a card, points: half a step of [`GRID`], so that rows of [`HIT`]
+/// stand at a pitch of 22 pt (the design asks for no more than 24).
+pub const ROW_GAP: f32 = 2.0;
+
+/// The height of a card's header and of a panel's tab, points.
+pub const HEADER: f32 = 22.0;
+
+/// The size of body and button text, points.
+pub const BODY_PT: f32 = 12.0;
+/// The size of small text (units, hints, captions), points.
+pub const SMALL_PT: f32 = 11.0;
+/// The size of monospace text (numbers), points.
+pub const MONO_PT: f32 = 12.0;
+
+/// A font for numbers: monospace at [`MONO_PT`], so that digits stand in columns.
+#[must_use]
+pub fn mono() -> FontId {
+    FontId::monospace(MONO_PT)
+}
+
+/// A font for names and words: proportional at [`BODY_PT`].
+#[must_use]
+pub fn body() -> FontId {
+    FontId::proportional(BODY_PT)
+}
+
+/// The side panels' own spacing on `ui` and what is laid out in it after: every control
+/// [`HIT`] high and at least as wide (egui's least width of a box is 40), items [`GRID`] apart
+/// along a row and rows `row_gap` apart ([`ROW_GAP`] in the inspector, 0 in the tree, whose rows
+/// touch).
+pub fn dense(ui: &mut egui::Ui, row_gap: f32) {
+    let spacing = ui.spacing_mut();
+    spacing.interact_size = egui::vec2(HIT, HIT);
+    spacing.item_spacing = egui::vec2(GRID, row_gap);
+}
 
 /// Every (text, ground) pair the window's panels draw, by name: what the contrast test holds to
 /// 4.5:1 (`docs/design/panels.md`). A new colour of text, or a text on a new ground, is added
@@ -95,16 +141,18 @@ pub fn apply(ctx: &egui::Context) {
     ctx.set_theme(egui::Theme::Dark);
     ctx.all_styles_mut(|style| {
         style.text_styles = [
-            (TextStyle::Small, FontId::new(11.0, FontFamily::Proportional)),
-            (TextStyle::Body, FontId::new(13.0, FontFamily::Proportional)),
-            (TextStyle::Button, FontId::new(13.0, FontFamily::Proportional)),
-            (TextStyle::Heading, FontId::new(15.0, FontFamily::Proportional)),
-            (TextStyle::Monospace, FontId::new(12.0, FontFamily::Monospace)),
+            (TextStyle::Small, FontId::new(SMALL_PT, FontFamily::Proportional)),
+            (TextStyle::Body, FontId::new(BODY_PT, FontFamily::Proportional)),
+            (TextStyle::Button, FontId::new(BODY_PT, FontFamily::Proportional)),
+            (TextStyle::Heading, FontId::new(14.0, FontFamily::Proportional)),
+            (TextStyle::Monospace, FontId::new(MONO_PT, FontFamily::Monospace)),
         ]
         .into();
-        style.spacing.item_spacing = egui::vec2(6.0, 4.0);
-        style.spacing.button_padding = egui::vec2(7.0, 2.0);
-        style.spacing.interact_size.y = 20.0;
+        // A number that is dragged or typed is set in the monospace face (the design's §0).
+        style.drag_value_text_style = TextStyle::Monospace;
+        style.spacing.item_spacing = egui::vec2(GRID, GRID);
+        style.spacing.button_padding = egui::vec2(6.0, 2.0);
+        style.spacing.interact_size.y = HIT;
 
         let visuals = &mut style.visuals;
         visuals.dark_mode = true;
@@ -147,6 +195,17 @@ pub fn apply(ctx: &egui::Context) {
         widgets.open.weak_bg_fill = HOVER;
         widgets.open.corner_radius = radius;
     });
+}
+
+/// Adds `widget` in a box of `size` points, at the box's right and centred down it: a column of
+/// numbers whose last digits stand under one another.
+pub fn fixed_right(ui: &mut egui::Ui, size: egui::Vec2, widget: impl egui::Widget) -> egui::Response {
+    ui.allocate_ui_with_layout(size, egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        ui.set_min_size(size);
+        ui.set_max_width(size.x);
+        ui.add(widget)
+    })
+    .inner
 }
 
 /// Adds `widget` in a box of `size` points, at the box's left and centred down it: a column of

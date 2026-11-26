@@ -5,7 +5,9 @@
 //! Transform, Shape, Material, Parts, Motion, Lifetime), the scene's (Scene, Array, Cadence,
 //! Instrument), a tower's; and last an Info card of what is worked out and not edited. No help
 //! paragraphs: what a field is lives on its name's hover. Each control is a console line or a
-//! `Command`, through the same path as before. Every target is [`crate::theme::HIT`] a side.
+//! `Command`, through the same path as before. Every target is [`crate::theme::HIT`] a side, and
+//! every size here is the theme's (S20, `docs/design/workspace.md` §0: rows of 20 pt at a pitch
+//! of 22, card headers of 22, margins and gaps on the 4 pt grid).
 
 use cav_engine::{Command, Target};
 use cav_sim::paths::Entry;
@@ -20,15 +22,16 @@ use crate::theme;
 pub const CARD: Color32 = Color32::from_rgb(0x22, 0x22, 0x22);
 /// The least width of the label column, points (the design's 96 pt).
 pub const LABEL_MIN: f32 = 96.0;
-/// The label column's share of the panel's width.
-pub const LABEL_SHARE: f32 = 0.4;
-/// A card's inner margin, points.
-const MARGIN: i8 = 8;
+/// The label column's share of the panel's width: a third (40 % until S20, when the panel was
+/// 352 pt wide; the values need the room more than the names do).
+pub const LABEL_SHARE: f32 = 1.0 / 3.0;
+/// A card's inner margin, points: one step of the grid.
+const MARGIN: i8 = theme::GRID as i8;
 
 /// The ⋮ of a menu, painted (the fonts have no such glyph): three dots one above another.
 fn dots(painter: &egui::Painter, rect: Rect, colour: Color32) {
     for k in [-1.0, 0.0, 1.0] {
-        painter.circle_filled(rect.center() + vec2(0.0, 4.5 * k), 1.6, colour);
+        painter.circle_filled(rect.center() + vec2(0.0, theme::GRID * k), 1.4, colour);
     }
 }
 
@@ -71,7 +74,7 @@ fn same_kind(a: &Value, b: &Value) -> bool {
     }
 }
 
-/// The width of the label column for a panel `width` points wide: 40 % of it, at least 96 pt.
+/// The width of the label column for a panel `width` points wide: a third of it, at least 96 pt.
 #[must_use]
 pub fn label_width(width: f32) -> f32 {
     (width * LABEL_SHARE).max(LABEL_MIN).min(width * 0.5)
@@ -104,12 +107,12 @@ pub fn card(
     egui::Frame::new()
         .fill(CARD)
         .stroke(Stroke::new(1.0, theme::WIDGET_EDGE.gamma_multiply(0.6)))
-        .corner_radius(5.0)
-        .inner_margin(egui::Margin { left: MARGIN, right: MARGIN, top: 2, bottom: 4 })
+        .corner_radius(3.0)
+        .inner_margin(egui::Margin { left: MARGIN, right: MARGIN, top: 0, bottom: MARGIN })
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             let width = ui.available_width();
-            let (rect, response) = ui.allocate_exact_size(vec2(width, 26.0), Sense::click());
+            let (rect, response) = ui.allocate_exact_size(vec2(width, theme::HEADER), Sense::click());
             let painter = ui.painter();
             let tri = Rect::from_center_size(pos2(rect.left() + 5.0, rect.center().y), vec2(8.0, 8.0));
             let points = if state.is_open() {
@@ -122,13 +125,13 @@ pub fn card(
                 pos2(rect.left() + 16.0, rect.center().y),
                 Align2::LEFT_CENTER,
                 title,
-                FontId::proportional(13.0),
+                theme::body(),
                 theme::STRONG,
             );
             let mut on_menu = false;
             if let Some(menu) = menu {
                 let at = Rect::from_center_size(
-                    pos2(rect.right() - 12.0, rect.center().y),
+                    pos2(rect.right() - 0.5 * theme::HIT, rect.center().y),
                     vec2(theme::HIT, theme::HIT),
                 );
                 let button = ui.interact(at, egui::Id::unique(("card menu", id.to_owned())), Sense::click());
@@ -148,7 +151,6 @@ pub fn card(
             shell.layout.buttons.push((format!("fold {id}"), rect));
             if state.is_open() {
                 ui.painter().hline(rect.x_range(), rect.bottom(), Stroke::new(1.0, theme::RULE));
-                ui.add_space(3.0);
                 contents(shell, ui);
             }
         });
@@ -156,7 +158,8 @@ pub fn card(
         shell.building.add(parent, id, title, Kind::Button);
     }
     state.store(ui.ctx());
-    ui.add_space(6.0);
+    // One step of the grid between cards, the rows' own gap counted in it.
+    ui.add_space((theme::GRID - ui.spacing().item_spacing.y).max(0.0));
 }
 
 /// Read-only rows of a card: a muted name in the label column, the value after it.
@@ -167,9 +170,9 @@ pub fn info_rows(shell: &Shell, ui: &mut egui::Ui, rows: &[(&str, String)]) {
             theme::fixed_left(
                 ui,
                 vec2(width, theme::HIT),
-                egui::Label::new(RichText::new(*name).size(12.0).color(theme::WEAK)).truncate(),
+                egui::Label::new(RichText::new(*name).size(theme::BODY_PT).color(theme::WEAK)).truncate(),
             );
-            ui.add(egui::Label::new(RichText::new(value).size(12.0).color(theme::TEXT)).wrap());
+            ui.add(egui::Label::new(RichText::new(value).size(theme::BODY_PT).color(theme::TEXT)).wrap());
         });
     }
 }
@@ -219,7 +222,7 @@ pub fn header(shell: &mut Shell, ui: &mut egui::Ui) {
     shell.building.add("inspector", "inspector/header", "Header", Kind::Scope);
     let top = ui.cursor().min;
     ui.horizontal(|ui| {
-        ui.set_min_height(30.0);
+        ui.set_min_height(theme::HEADER);
         // The tree's own icon for what it is (S19's review, minor 18: a gold dot for everything).
         let (icon, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
         let kind = match target {
@@ -239,7 +242,7 @@ pub fn header(shell: &mut Shell, ui: &mut egui::Ui) {
         let field = ui.add_enabled(
             label_path.is_some(),
             egui::TextEdit::singleline(&mut text)
-                .font(FontId::proportional(14.0))
+                .font(FontId::proportional(theme::BODY_PT + 1.0))
                 .min_size(vec2(0.0, theme::HIT))
                 .desired_width(ui.available_width() * 0.5),
         );
@@ -265,7 +268,7 @@ pub fn header(shell: &mut Shell, ui: &mut egui::Ui) {
                 }
             }
         }
-        ui.label(RichText::new(kind_words(&spec, target)).size(12.0).color(theme::WEAK));
+        ui.label(RichText::new(kind_words(&spec, target)).size(theme::BODY_PT).color(theme::WEAK));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let (at, menu) = ui.allocate_exact_size(vec2(theme::HIT, theme::HIT), Sense::click());
             dots(ui.painter(), at, if menu.hovered() { theme::STRONG } else { theme::TEXT });
@@ -290,7 +293,7 @@ pub fn header(shell: &mut Shell, ui: &mut egui::Ui) {
     });
     let rect = Rect::from_min_max(top, pos2(ui.max_rect().right(), ui.cursor().top()));
     shell.building.place("inspector/header", rect);
-    ui.add_space(4.0);
+    ui.add_space(theme::ROW_GAP);
 }
 
 /// The header's ⋮ menu: duplicate, delete, reset all, copy, paste, for what can have them.
@@ -474,7 +477,7 @@ pub fn body(shell: &mut Shell, ui: &mut egui::Ui, n: usize) {
     let entries = match cav_sim::paths::leaves(&spec, &at, crate::editors::MAX_FIELDS) {
         Ok(entries) => entries,
         Err(why) => {
-            ui.label(RichText::new(why).size(11.0).color(theme::WARN));
+            ui.label(RichText::new(why).size(theme::SMALL_PT).color(theme::WARN));
             return;
         }
     };
@@ -577,9 +580,12 @@ pub fn body(shell: &mut Shell, ui: &mut egui::Ui, n: usize) {
     let always = body.appears.is_none() && body.vanishes.is_none();
     let title = if always { "Lifetime · always there" } else { "Lifetime" };
     let menu = |shell: &mut Shell, ui: &mut egui::Ui| fields_menu(shell, ui, &at, &["appears", "vanishes"]);
-    // Open at first, as every card is, so that each field is one look away (the design drew it
-    // folded; S18's E6 asks every field to have its editor in sight).
-    card(shell, ui, "inspector", "inspector/lifetime", title, "body", true, Some(&menu), |shell, ui| {
+    // Folded at first while the body is always there, as the design drew it (S20: two rows of
+    // empty boxes on every body told nothing; its title says "always there", and a click or Enter
+    // opens it). A body that comes or goes has it open. Its fold is kept apart for the two, so a
+    // body given a time shows it.
+    let salt = if always { "body" } else { "body, timed" };
+    card(shell, ui, "inspector", "inspector/lifetime", title, salt, !always, Some(&menu), |shell, ui| {
         crate::editors::draw_rows(shell, ui, "inspector/lifetime", &at, &lifetime);
     });
 }
@@ -651,7 +657,7 @@ fn parts(shell: &mut Shell, ui: &mut egui::Ui, n: usize, entries: &[Entry]) {
         shell.building.add("inspector/parts", &scope, &title, Kind::Scope);
         let header = ui.horizontal(|ui| {
             ui.set_min_height(theme::HIT);
-            ui.label(RichText::new(&title).size(12.5).color(theme::STRONG));
+            ui.label(RichText::new(&title).size(theme::BODY_PT).color(theme::STRONG));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // An id of its own, as the cards' ⋮ have, so that its menu stays open from frame to
                 // frame whatever is laid out before it.
@@ -678,7 +684,7 @@ fn parts(shell: &mut Shell, ui: &mut egui::Ui, n: usize, entries: &[Entry]) {
             pos2(header.response.rect.right(), ui.cursor().top()),
         );
         shell.building.place(&scope, rect);
-        ui.add_space(4.0);
+        ui.add_space(theme::GRID);
     }
     let add = ui.add_sized(vec2(ui.available_width(), theme::HIT), egui::Button::new("+ Add part"));
     shell.register("inspector/parts", "inspector/parts/add", "Add part", Kind::Button, add.rect);

@@ -28,7 +28,7 @@ fn frame(fill: Color32, x: i8, y: i8) -> egui::Frame {
 /// A section heading inside a side panel.
 /// A number for a list, to four significant figures (281.7 for 281.7428672266191): the editor
 /// shows every digit; a list needs only to tell its rows apart.
-fn short_number(value: f64) -> String {
+pub(crate) fn short_number(value: f64) -> String {
     if value == 0.0 || !value.is_finite() {
         return format!("{value}");
     }
@@ -43,52 +43,37 @@ fn badge(ui: &mut egui::Ui, text: impl Into<String>, colour: Color32) {
         .stroke(Stroke::new(1.0, theme::WIDGET))
         .corner_radius(9)
         .inner_margin(Margin::symmetric(7, 0))
-        .show(ui, |ui| ui.label(RichText::new(text).size(11.5).color(colour)));
+        .show(ui, |ui| ui.label(RichText::new(text).size(theme::SMALL_PT).color(colour)));
 }
 
 /// A side panel's contents in a scroll area, so that a short window scrolls them instead of
-/// letting them spill over the panel below.
-/// Where more lies below what is shown, the panel's foot fades and says so (S18's second review,
-/// UX 8: a clipped inspector gave no sign that it scrolls). Returns whether it did.
-fn scrolling(ui: &mut egui::Ui, id: &str, contents: impl FnOnce(&mut egui::Ui)) -> bool {
+/// letting them spill over the panel below. Returns whether there is more than fits, which is
+/// when the solid scroll bar shows.
+///
+/// With `reserve` (every panel's own use), the bar's width is kept free whether the bar shows or
+/// not, so a row is as wide with it as without and nothing jumps or is cut when it appears
+/// (S19's second review, minor 10). Without it the contents are egui's: wider by the bar's width
+/// when there is no bar (what the reserve's test compares with).
+///
+/// The "more below: scroll" badge at the foot is gone (S20): the solid bar is in sight whenever
+/// there is more, and the badge covered the last row.
+pub fn scrolling(ui: &mut egui::Ui, id: &str, reserve: bool, contents: impl FnOnce(&mut egui::Ui)) -> bool {
     // A solid scroll bar, seen whenever there is more than fits (S19's review, minor 16: egui's
-    // floating one showed only under the pointer), and room after the last row so that the
-    // "more below" badge never covers it once scrolled to the end.
+    // floating one showed only under the pointer).
     ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
+    let width = ui.available_width() - ui.spacing().scroll.allocated_width();
     let shown = egui::ScrollArea::vertical()
         .id_salt(id)
         .auto_shrink([false, false])
         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
         .show(ui, |ui| {
+            if reserve {
+                ui.set_max_width(width);
+            }
             contents(ui);
-            ui.add_space(28.0);
+            ui.add_space(theme::GRID);
         });
-    let rect = shown.inner_rect;
-    let below = shown.content_size.y - shown.state.clamped_offset().y - rect.height();
-    if below > 4.0 {
-        let painter = ui.painter_at(rect);
-        let steps = 12;
-        for k in 0..steps {
-            let t = k as f32 / steps as f32;
-            let band = Rect::from_min_max(
-                pos2(rect.left(), rect.bottom() - 28.0 * (1.0 - t)),
-                pos2(rect.right(), rect.bottom() - 28.0 * (1.0 - t) + 28.0 / steps as f32 + 0.5),
-            );
-            painter.rect_filled(band, 0.0, theme::PANEL.gamma_multiply(t));
-        }
-        // On a solid band of its own, in the text's colour: over the faded rows it was too faint
-        // to read (S18's third review, minor 9).
-        let galley =
-            painter.layout_no_wrap("more below: scroll".to_owned(), FontId::proportional(10.5), theme::TEXT);
-        let at = pos2(rect.center().x - 0.5 * galley.size().x, rect.bottom() - 3.0 - galley.size().y);
-        painter.rect_filled(
-            Rect::from_min_size(at, galley.size()).expand2(egui::vec2(6.0, 1.0)),
-            3.0,
-            theme::WIDGET,
-        );
-        painter.galley(at, galley, theme::TEXT);
-    }
-    below > 4.0
+    shown.content_size.y > shown.inner_rect.height() + 0.5
 }
 
 pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
@@ -135,8 +120,8 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
             .default_size(side)
             .size_range(180.0..=520.0)
             .resizable(true)
-            .frame(frame(theme::PANEL, 10, 6))
-            .show(ui, |ui| scrolling(ui, "outliner", |ui| crate::outliner::outliner(shell, ui)));
+            .frame(frame(theme::PANEL, PANEL_MARGIN, PANEL_MARGIN))
+            .show(ui, |ui| scrolling(ui, "outliner", true, |ui| crate::outliner::outliner(shell, ui)));
         shell.layout.panels.push(("outliner", panel.response.rect));
         shell.building.place("tree", panel.response.rect);
         let panel = Panel::right("properties")
@@ -145,7 +130,7 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
             .default_size(INSPECTOR_WIDTH)
             .size_range(INSPECTOR_WIDTH..=560.0)
             .resizable(true)
-            .frame(frame(theme::PANEL, 10, 6))
+            .frame(frame(theme::PANEL, PANEL_MARGIN, PANEL_MARGIN))
             .show(ui, |ui| {
                 // The panel keeps its width whatever it shows (S19's review, UX: egui widened it to
                 // its widest row, so it jumped with the selection): drawn into a child of exactly
@@ -159,7 +144,14 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
                 below
             });
         if panel.inner {
-            shell.layout.buttons.push(("more below".to_owned(), panel.response.rect));
+            // Where the solid scroll bar stands while there is more than fits: the panel's
+            // right edge, inside its margin.
+            let rect = panel.response.rect;
+            let bar = Rect::from_min_max(
+                pos2(rect.right() - f32::from(PANEL_MARGIN) - SCROLL_BAR, rect.top()),
+                pos2(rect.right() - f32::from(PANEL_MARGIN), rect.bottom()),
+            );
+            shell.layout.buttons.push(("inspector scroll bar".to_owned(), bar));
         }
         shell.layout.panels.push(("properties", panel.response.rect));
         shell.building.place("inspector", panel.response.rect);
@@ -185,14 +177,12 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
     }
 }
 
-/// The inspector's panel: its tabs (the selection's properties, or the towers' readings) and the
-/// tab shown, scrolling. Returns whether more lies below what is shown.
+/// The inspector's panel: its tabs (the selection's properties, the towers' readings, the
+/// Probe's reading) and the tab shown, scrolling. Returns whether there is more than fits.
 fn inspector_panel(shell: &mut Shell, ui: &mut egui::Ui) -> bool {
     ui.horizontal(|ui| {
-        for (tab, name) in [
-            (crate::outliner::RightTab::Inspector, "Inspector"),
-            (crate::outliner::RightTab::Readings, "Readings"),
-        ] {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        for (tab, name) in crate::outliner::RightTab::ALL {
             let response = tab_title(ui, name, shell.right_tab == tab);
             let id = format!("inspector/tab/{name}");
             shell.register("inspector", &id, name, Kind::Button, response.rect);
@@ -202,11 +192,13 @@ fn inspector_panel(shell: &mut Shell, ui: &mut egui::Ui) -> bool {
             }
         }
     });
-    ui.add_space(4.0);
     match shell.right_tab {
-        crate::outliner::RightTab::Inspector => scrolling(ui, "properties", |ui| properties(shell, ui)),
+        crate::outliner::RightTab::Inspector => scrolling(ui, "properties", true, |ui| properties(shell, ui)),
         crate::outliner::RightTab::Readings => {
-            scrolling(ui, "readings", |ui| crate::outliner::readings(shell, ui))
+            scrolling(ui, "readings", true, |ui| crate::outliner::readings(shell, ui))
+        }
+        crate::outliner::RightTab::Probe => {
+            scrolling(ui, "probe", true, |ui| crate::outliner::probe(shell, ui))
         }
     }
 }
@@ -236,7 +228,10 @@ fn menu_bar(shell: &mut Shell, ui: &mut egui::Ui) {
         ui.separator();
         for layout in &crate::layouts::layouts().layouts {
             let tab = ui
-                .selectable_label(shell.layout_name == layout.id, RichText::new(&layout.label).size(12.0))
+                .selectable_label(
+                    shell.layout_name == layout.id,
+                    RichText::new(&layout.label).size(theme::BODY_PT),
+                )
                 .on_hover_text(&layout.about);
             let id = format!("top-bar/layout/{}", layout.id);
             let line = format!("layout {}", layout.id);
@@ -248,7 +243,10 @@ fn menu_bar(shell: &mut Shell, ui: &mut egui::Ui) {
         }
         ui.separator();
         let search = ui
-            .add(Button::new(RichText::new("search  Ctrl+K").size(11.5).color(theme::WEAK)).frame(false))
+            .add(
+                Button::new(RichText::new("search  Ctrl+K").size(theme::SMALL_PT).color(theme::WEAK))
+                    .frame(false),
+            )
             .on_hover_text("the command palette: every action, starter, scene, command and field");
         shell.register("top-bar", "top-bar/search", "Search", Kind::Button, search.rect);
         shell.layout.buttons.push(("palette".to_owned(), search.rect));
@@ -268,7 +266,7 @@ fn menu_bar(shell: &mut Shell, ui: &mut egui::Ui) {
                     crate::keyboard::Mode::Navigation => crate::shell::RING_NAVIGATION,
                     crate::keyboard::Mode::Interaction => crate::shell::RING_INTERACTION,
                 };
-                ui.add(egui::Label::new(RichText::new(crumb).size(11.5).color(colour)).truncate());
+                ui.add(egui::Label::new(RichText::new(crumb).size(theme::SMALL_PT).color(colour)).truncate());
             }
         });
     });
@@ -297,32 +295,35 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
         shell.layout.status.clone_from(&forward);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let label = if shell.console_open { "close console" } else { "console" };
-            let console =
-                ui.add(Button::new(RichText::new(label).size(11.5)).frame(false)).on_hover_text("`");
+            let console = ui
+                .add(Button::new(RichText::new(label).size(theme::SMALL_PT)).frame(false))
+                .on_hover_text("`");
             shell.register("footer", "footer/console", "Console", Kind::Button, console.rect);
             if console.clicked() || shell.take_click("footer/console") {
                 let _ = shell.run("console");
             }
             ui.label(
                 RichText::new(if shell.playing { "Space pause" } else { "Space play" })
-                    .size(11.5)
+                    .size(theme::SMALL_PT)
                     .color(theme::WEAK),
             );
-            ui.label(RichText::new(&forward).size(11.5).color(theme::WEAK));
+            ui.label(RichText::new(&forward).size(theme::SMALL_PT).color(theme::WEAK));
             if let Some(ms) = shell.frame_ms {
-                ui.label(RichText::new(format!("{ms:.1} ms")).monospace().size(11.0).color(theme::WEAK));
+                ui.label(
+                    RichText::new(format!("{ms:.1} ms")).monospace().size(theme::SMALL_PT).color(theme::WEAK),
+                );
             }
             if errors > 0 {
                 ui.label(
                     RichText::new(format!("{errors} error{}", if errors == 1 { "" } else { "s" }))
-                        .size(11.5)
+                        .size(theme::SMALL_PT)
                         .color(theme::ERROR),
                 );
             }
             if warnings > 0 {
                 ui.label(
                     RichText::new(format!("{warnings} warning{}", if warnings == 1 { "" } else { "s" }))
-                        .size(11.5)
+                        .size(theme::SMALL_PT)
                         .color(theme::WARN),
                 );
             }
@@ -357,7 +358,8 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
                 match toast {
                     Some((words, back)) => {
                         ui.add(
-                            egui::Label::new(RichText::new(words).size(11.5).color(theme::STRONG)).truncate(),
+                            egui::Label::new(RichText::new(words).size(theme::SMALL_PT).color(theme::STRONG))
+                                .truncate(),
                         );
                         let (label, hover) = if back == "undo" {
                             ("Undo", "take this edit back (Ctrl+Z)")
@@ -365,7 +367,10 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
                             ("Redo", "put it back (Ctrl+Shift+Z)")
                         };
                         let link = ui
-                            .add(Button::new(RichText::new(label).size(11.5).color(theme::LINK)).frame(false))
+                            .add(
+                                Button::new(RichText::new(label).size(theme::SMALL_PT).color(theme::LINK))
+                                    .frame(false),
+                            )
                             .on_hover_text(hover);
                         shell.register("footer", "footer/undo", label, Kind::Button, link.rect);
                         shell.layout.buttons.push((format!("toast {back}"), link.rect));
@@ -374,7 +379,10 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
                         }
                     }
                     None => {
-                        ui.add(egui::Label::new(RichText::new(text).size(11.5).color(colour)).truncate());
+                        ui.add(
+                            egui::Label::new(RichText::new(text).size(theme::SMALL_PT).color(colour))
+                                .truncate(),
+                        );
                     }
                 }
             });
@@ -485,7 +493,7 @@ fn console(shell: &mut Shell, ui: &mut egui::Ui) {
             egui::ScrollArea::vertical().auto_shrink([false, false]).stick_to_bottom(true).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
                 ui.spacing_mut().interact_size.y = 0.0;
-                let font = FontId::monospace(11.5);
+                let font = FontId::monospace(theme::SMALL_PT);
                 for entry in shell.console_entries(300) {
                     let colour = match entry.level {
                         Level::Error => theme::ERROR,
@@ -531,8 +539,13 @@ fn timeline_panel(shell: &mut Shell, ui: &mut egui::Ui) {
     let mean_cycle = spec.array.schedule.mean_cycle(spec.array.instrument.cycle);
     let caption = timeline::caption(shell.engine.shots(), mean_cycle, taken);
     shell.layout.timeline_caption.clone_from(&caption);
+    let facts = timeline::facts(shell.engine.shots(), taken);
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Timeline").color(theme::STRONG).strong());
+        // What the lanes are and how they are worked is the title's tooltip (S20: no sentences
+        // in the chrome); the head keeps the facts that are data.
+        ui.label(RichText::new("Timeline").color(theme::STRONG).strong()).on_hover_text(&caption);
+        shell.layout.chrome.push(("timeline", "Timeline".to_owned()));
+        shell.layout.chrome.push(("timeline tooltip", caption.clone()));
         let play =
             ui.add(Button::new(if shell.playing { "pause" } else { "play" }).min_size(vec2(48.0, 0.0)));
         shell.register("timeline", "timeline/play", "Play", Kind::Button, play.rect);
@@ -544,8 +557,14 @@ fn timeline_panel(shell: &mut Shell, ui: &mut egui::Ui) {
         if rewind.clicked() || shell.take_click("timeline/rewind") {
             let _ = shell.run("seek 0");
         }
-        ui.label(RichText::new(format!("t {:.2} s", shell.engine.time())).monospace().color(theme::STRONG));
-        ui.label(RichText::new(caption).size(11.0).color(theme::WEAK));
+        let time = format!("t {:.2} s", shell.engine.time());
+        ui.label(RichText::new(&time).monospace().color(theme::STRONG));
+        shell.layout.chrome.push(("timeline", time));
+        for fact in facts {
+            ui.label(RichText::new(&fact).font(FontId::monospace(theme::SMALL_PT)).color(theme::WEAK))
+                .on_hover_text(&caption);
+            shell.layout.chrome.push(("timeline", fact));
+        }
     });
     let labels: Vec<String> = spec.array.towers.iter().map(|t| t.label.clone()).collect();
     let offsets: Vec<f64> = spec.array.towers.iter().map(|t| t.timing.offset).collect();
@@ -632,8 +651,9 @@ pub(crate) fn row_menu(shell: &mut Shell, response: &egui::Response, target: Tar
 /// on a lifted ground, the others muted. Returns its response.
 pub(crate) fn tab_title(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
     let colour = if active { theme::STRONG } else { theme::WEAK };
-    let galley = ui.painter().layout_no_wrap(text.to_owned(), FontId::proportional(13.0), colour);
-    let (rect, response) = ui.allocate_exact_size(galley.size() + vec2(16.0, 10.0), Sense::click());
+    let galley = ui.painter().layout_no_wrap(text.to_owned(), theme::body(), colour);
+    let size = vec2(galley.size().x + 4.0 * theme::GRID, theme::HEADER);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     if active {
         ui.painter().rect_filled(rect, egui::CornerRadius { nw: 4, ne: 4, sw: 0, se: 0 }, theme::WIDGET);
         ui.painter().hline(rect.x_range(), rect.bottom(), Stroke::new(2.0, theme::SELECTION_EDGE));
@@ -644,19 +664,25 @@ pub(crate) fn tab_title(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Re
     response
 }
 
-/// What an empty scene says, and the ways to begin, in the tree under its Bodies.
-pub(crate) fn empty_guidance(shell: &mut Shell, ui: &mut egui::Ui, spec: &cav_sim::SceneSpec) {
-    let text = match (spec.world.is_some(), spec.floor.is_some()) {
+/// What a scene with no bodies means for what the towers read: the tooltip of the tree's Bodies
+/// group and of the buttons under it (it was a sentence in the tree until S20).
+#[must_use]
+pub(crate) fn empty_words(spec: &cav_sim::SceneSpec) -> &'static str {
+    match (spec.world.is_some(), spec.floor.is_some()) {
         (false, false) => "Nothing for the towers to read yet.",
         _ => "No bodies: the surroundings are read.",
-    };
+    }
+}
+
+/// The ways to begin an empty scene, in the tree under its Bodies: two buttons, no sentence
+/// ([`empty_words`] is the group's tooltip).
+pub(crate) fn empty_guidance(shell: &mut Shell, ui: &mut egui::Ui) {
     ui.horizontal_wrapped(|ui| {
         ui.add_space(30.0);
-        ui.label(RichText::new(text).size(12.0).color(theme::WEAK));
-    });
-    ui.horizontal_wrapped(|ui| {
-        ui.add_space(30.0);
-        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.spacing_mut().item_spacing.x = theme::GRID;
+        for text in ["Add a mass", "Template ›"] {
+            shell.layout.chrome.push(("tree", text.to_owned()));
+        }
         let mass = ui.button("Add a mass").on_hover_text("a 1 kg point mass where the view looks");
         shell.register("tree/sources", "tree/sources/add-mass", "Add a mass", Kind::Button, mass.rect);
         shell.layout.buttons.push(("add point-mass".to_owned(), mass.rect));
@@ -696,7 +722,7 @@ fn context_menu(shell: &mut Shell, ui: &mut egui::Ui) {
 /// The name of a row being renamed (F2), typed in place.
 pub(crate) fn rename_field_at(shell: &mut Shell, ui: &mut egui::Ui, target: Target, rect: Rect) {
     let Some((_, mut text)) = shell.renaming.clone() else { return };
-    let response = ui.put(rect, egui::TextEdit::singleline(&mut text).font(FontId::proportional(13.0)));
+    let response = ui.put(rect, egui::TextEdit::singleline(&mut text).font(theme::body()));
     shell.layout.editors.push(("rename".to_owned(), response.rect));
     if !response.has_focus() && !response.lost_focus() {
         response.request_focus();
@@ -731,11 +757,12 @@ fn button_row(
         theme::fixed_left(
             ui,
             vec2(52.0, 18.0),
-            egui::Label::new(RichText::new(label).color(theme::WEAK).size(12.0)),
+            egui::Label::new(RichText::new(label).color(theme::WEAK).size(theme::BODY_PT)),
         );
         for &(text, line, on) in buttons {
-            let response =
-                ui.add(Button::new(RichText::new(text).size(12.0)).selected(on)).on_hover_text(line);
+            let response = ui
+                .add(Button::new(RichText::new(text).size(theme::BODY_PT)).selected(on))
+                .on_hover_text(line);
             shell.layout.buttons.push((line.to_owned(), response.rect));
             let id = format!("{scope}/{line}");
             shell.register(scope, &id, &format!("{label} {text}"), Kind::Button, response.rect);
@@ -889,7 +916,7 @@ fn view_controls(shell: &mut Shell, ui: &mut egui::Ui) {
         RichText::new(
             "drag to orbit · middle-drag to pan · scroll to zoom · hold the right button to fly (W A S D) · drag a body to move it · O swaps the projection · Home resets",
         )
-        .size(11.0)
+        .size(theme::SMALL_PT)
         .color(theme::WEAK),
     );
 }
@@ -959,25 +986,32 @@ fn voxel_rows(shell: &mut Shell, ui: &mut egui::Ui, view: &cav_sim::ViewSpec) {
 fn rows(ui: &mut egui::Ui, id: &str, rows: &[(&str, String)]) {
     egui::Grid::new(id).num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
         for (name, value) in rows {
-            ui.label(RichText::new(*name).color(theme::WEAK).size(12.0));
+            ui.label(RichText::new(*name).color(theme::WEAK).size(theme::BODY_PT));
             ui.label(RichText::new(value).monospace().color(theme::STRONG));
             ui.end_row();
         }
     });
 }
 
-/// The inspector's width at first and its least, points: room for the cards' one grid with
-/// 24-point targets and a solid scroll bar (S19's review: 316 grew to 352 with a body's rows, so
-/// this is what a body needs). The label column is 40 % of this, not of the panel as dragged. The
-/// panel no longer grows with what it holds (its contents are drawn in a child of fixed width),
-/// so a dragged width is kept whatever is selected.
-const INSPECTOR_WIDTH: f32 = 352.0;
+/// The inspector's width at first and its least, points: room for the cards' one grid (a label
+/// column of 100 pt, then X, Y and Z boxes of six figures each, or a number, its unit and its
+/// reset) and the scroll bar's reserved width. 352 until S20, when targets were 24 pt and boxes
+/// had their text centred. The label column is a third of this, not of the panel as dragged. The
+/// panel does not grow with what it holds (its contents are drawn in a child of fixed width), so
+/// a dragged width is kept whatever is selected.
+const INSPECTOR_WIDTH: f32 = 320.0;
+/// A side panel's margin, points: one step of the grid.
+const PANEL_MARGIN: i8 = theme::GRID as i8;
+/// The width a side panel keeps for its solid scroll bar, points (egui's solid bar: 6 and a
+/// margin of 4).
+const SCROLL_BAR: f32 = 10.0;
 
 fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
     let spec = shell.engine.spec().clone();
-    // One label column for every card: 40 % of the panel, at least 96 points (the card's own
-    // margin taken off), so every value starts at the same x.
-    shell.label_width = crate::inspector::label_width(INSPECTOR_WIDTH - 18.0);
+    // One label column for every card: a third of the panel's own room (its margins and the
+    // scroll bar's width taken off), at least 96 points, so every value starts at the same x.
+    shell.label_width =
+        crate::inspector::label_width(INSPECTOR_WIDTH - 2.0 * f32::from(PANEL_MARGIN) - SCROLL_BAR);
     // The selection's section, as before (the breadcrumb's "Inspector › Body › …").
     let selection = shell.engine.selection();
     let (kind, path) = match selection {
@@ -988,11 +1022,11 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
         Some(Target::World) => ("World", "world".to_owned()),
         Some(Target::Body(n)) => ("Body", format!("bodies[{}]", n - 1)),
     };
-    // Every target in the panel at least 24 points a side (docs/design/panels.md; S19's review,
-    // I6): boxes, ticks and drop-downs take their height from this.
-    // The least width of a box is a target's too, not egui's 40: a vector's three boxes share
-    // what the row has (the panel keeps its width).
-    ui.spacing_mut().interact_size = egui::vec2(theme::HIT, theme::HIT);
+    // Every target in the panel the theme's side (S19's review, I6; 20 pt since S20): boxes,
+    // ticks and drop-downs take their height from this. The least width of a box is a target's
+    // too, not egui's 40: a vector's three boxes share what the row has (the panel keeps its
+    // width).
+    theme::dense(ui, theme::ROW_GAP);
     crate::inspector::header(shell, ui);
     match selection {
         None => {
@@ -1138,11 +1172,11 @@ fn preset_choice(
         theme::fixed_left(
             ui,
             vec2(shell.label_width, theme::HIT),
-            egui::Label::new(RichText::new(name).size(12.0).color(theme::WEAK)),
+            egui::Label::new(RichText::new(name).size(theme::BODY_PT).color(theme::WEAK)),
         );
         let mut chosen = None;
         let combo = egui::ComboBox::from_id_salt(("preset", line))
-            .width((ui.available_width() - 24.0).clamp(72.0, 160.0))
+            .width(crate::editors::value_room(ui))
             .selected_text(shown)
             .show_ui(ui, |ui| {
                 for (label, word) in &choices {
@@ -1334,7 +1368,7 @@ fn header_badges(shell: &mut Shell, ui: &mut egui::Ui) {
 /// name, its key and what it does.
 fn tool_strip(shell: &mut Shell, ui: &mut egui::Ui) {
     let table = crate::actions::table();
-    ui.spacing_mut().item_spacing.y = 4.0;
+    ui.spacing_mut().item_spacing.y = theme::GRID;
     for tool in &crate::tools::strip().tools {
         let line = format!("tool {}", tool.id);
         let key = table
@@ -1357,6 +1391,10 @@ fn tool_strip(shell: &mut Shell, ui: &mut egui::Ui) {
     }
 }
 
+/// The side of a button of the tool strip, points: an icon ([`theme::ICON`]) and a step of the
+/// grid round it, where its key's letter stands in the corner.
+const TOOL_BUTTON: f32 = theme::ICON + 2.0 * theme::GRID;
+
 /// A square button of the tool strip: an icon drawn by `icon` (in the colour the button's state
 /// gives) and `key` small in its bottom-right corner; lit when `selected`.
 fn icon_button(
@@ -1365,17 +1403,17 @@ fn icon_button(
     key: &str,
     icon: impl FnOnce(&egui::Painter, Rect, Color32),
 ) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(TOOL_BUTTON, TOOL_BUTTON), Sense::click());
     let visuals = ui.style().interact_selectable(&response, selected);
     let painter = ui.painter_at(rect);
-    painter.rect(rect, 4.0, visuals.weak_bg_fill, visuals.bg_stroke, StrokeKind::Inside);
+    painter.rect(rect, 3.0, visuals.weak_bg_fill, visuals.bg_stroke, StrokeKind::Inside);
     let colour = if selected { Color32::WHITE } else { theme::STRONG };
-    icon(&painter, Rect::from_center_size(rect.center() - vec2(3.0, 2.0), vec2(20.0, 20.0)), colour);
+    icon(&painter, Rect::from_center_size(rect.center() - vec2(2.0, 2.0), vec2(18.0, 18.0)), colour);
     painter.text(
-        rect.right_bottom() - vec2(4.0, 3.0),
+        rect.right_bottom() - vec2(2.0, 1.0),
         Align2::RIGHT_BOTTOM,
         key,
-        FontId::monospace(9.5),
+        FontId::monospace(9.0),
         // On the button's ground, not the panel's: the lighter grey (S19's review, I6: the weak
         // grey there read at 3.3:1).
         if selected { theme::STRONG } else { theme::WEAK_ON_WIDGET },
@@ -1400,8 +1438,9 @@ fn snap_switch(shell: &mut Shell, ui: &mut egui::Ui) {
     let on = shell.snap;
     let text = if on { format!("Snap {step} m") } else { "Snap off".to_owned() };
     let colour = if on { theme::GOLD } else { theme::WEAK };
+    shell.layout.chrome.push(("options", text.clone()));
     let snap = ui
-        .add(Button::new(RichText::new(text).size(11.5).color(colour)).selected(on))
+        .add(Button::new(RichText::new(text).size(theme::SMALL_PT).color(colour)).selected(on))
         .on_hover_text("snap moves to the step, or not (S)");
     shell.register("toolbar", "toolbar/snap", "Snap", Kind::Button, snap.rect);
     shell.layout.buttons.push(("snap".to_owned(), snap.rect));
@@ -1410,68 +1449,85 @@ fn snap_switch(shell: &mut Shell, ui: &mut egui::Ui) {
     }
 }
 
+/// What a tool's options row says of how the tool is worked: the tooltip of the tool's name in
+/// the row (S20: it was a sentence painted along the row). `ground` is the height the Place tool
+/// puts things at, metres.
+fn tool_hint(behaviour: Option<crate::tools::Behaviour>, session: bool, ground: f64) -> String {
+    use crate::tools::Behaviour;
+    if session {
+        return "arrows move · X Y Z lock · type a distance, Tab: next axis · Enter keeps · Esc cancels"
+            .to_owned();
+    }
+    match behaviour {
+        Some(Behaviour::Translate) => "drag an arrow to move along it, the square to move freely · Enter on the selection moves it by keys".to_owned(),
+        Some(Behaviour::Place) => format!("click the ground (z = {ground} m) to add one there"),
+        Some(Behaviour::Probe) => "click a point: the gravity there of the bodies (and a slab floor), the cell under it and its share of each tower's phase".to_owned(),
+        _ => "click selects · drag a body to move it in the view's plane · middle-drag pans · hold the right button and W A S D to fly".to_owned(),
+    }
+}
+
+/// The tool's options row: the snap switch, the tool's name (how it is worked is its tooltip),
+/// its settings (the Place tool's starter), and a transform session's numbers while one is
+/// under way. Every text it paints is recorded in the layout's `chrome`, and none is a sentence.
 fn tool_options_row(shell: &mut Shell, ui: &mut egui::Ui) {
     use crate::tools::Behaviour;
     ui.horizontal_centered(|ui| {
         snap_switch(shell, ui);
         let tool = crate::tools::strip().tool(&shell.tool).cloned();
+        let session = shell.session.clone();
+        let behaviour = tool.as_ref().map(|t| t.behaviour);
+        let hint = tool_hint(behaviour, session.is_some(), shell.ground());
         if let Some(tool) = &tool {
-            ui.label(RichText::new(&tool.label).color(theme::GOLD).size(12.0));
+            ui.label(RichText::new(&tool.label).color(theme::GOLD).size(theme::BODY_PT)).on_hover_text(&hint);
+            shell.layout.chrome.push(("options", tool.label.clone()));
         }
-        let weak = |text: String| RichText::new(text).size(11.5).color(theme::WEAK);
-        if let Some(session) = shell.session.clone() {
+        shell.layout.chrome.push(("options tooltip", hint));
+        let say = |shell: &mut Shell, ui: &mut egui::Ui, text: String| {
+            ui.label(RichText::new(&text).font(theme::mono()).color(crate::shell::RING_INTERACTION));
+            shell.layout.chrome.push(("options", text));
+        };
+        if let Some(session) = session {
             let [dx, dy, dz] = session.offset;
-            let lock = session.lock.map_or(String::new(), |a| format!(" · locked to {}", ["x", "y", "z"][a]));
-            let typed = if session.typed.is_empty() {
-                String::new()
-            } else {
-                format!(" · typing {} = {} m", ["x", "y", "z"][session.lock.unwrap_or(session.typed_axis)], session.typed)
-            };
-            ui.label(
-                RichText::new(format!("moving by ({dx:+.3}, {dy:+.3}, {dz:+.3}) m{lock}{typed}"))
-                    .size(12.0)
-                    .color(crate::shell::RING_INTERACTION),
-            );
-            ui.label(weak("arrows move · X Y Z lock · type a distance, Tab: next axis · Enter keeps · Esc cancels".into()));
+            say(shell, ui, format!("Δ {dx:+.3} {dy:+.3} {dz:+.3} m"));
+            if let Some(axis) = session.lock {
+                say(shell, ui, format!("lock {}", ["x", "y", "z"][axis]));
+            }
+            if !session.typed.is_empty() {
+                let axis = ["x", "y", "z"][session.lock.unwrap_or(session.typed_axis)];
+                say(shell, ui, format!("{axis} = {} m", session.typed));
+            }
             return;
         }
-        match tool.map(|t| t.behaviour) {
-            Some(Behaviour::Translate) => {
-                ui.label(weak(
-                    "drag an arrow to move along it, the square to move freely · Enter on the selection moves it by keys".into(),
-                ));
-            }
-            Some(Behaviour::Place) => {
-                let starters = cav_sim::starters::starters();
-                let current = starters.iter().find(|s| s.name == shell.place_starter).map_or("?", |s| s.label.as_str());
-                let mut chosen = None;
-                let combo = egui::ComboBox::from_id_salt("place starter").selected_text(current).width(150.0).show_ui(ui, |ui| {
+        if behaviour == Some(Behaviour::Place) {
+            let starters = cav_sim::starters::starters();
+            let current =
+                starters.iter().find(|s| s.name == shell.place_starter).map_or("?", |s| s.label.as_str());
+            let mut chosen = None;
+            let combo = egui::ComboBox::from_id_salt("place starter")
+                .selected_text(current)
+                .width(150.0)
+                .show_ui(ui, |ui| {
                     for starter in starters {
-                        if ui.selectable_label(starter.name == shell.place_starter, &starter.label).clicked() {
+                        if ui.selectable_label(starter.name == shell.place_starter, &starter.label).clicked()
+                        {
                             chosen = Some(starter.name.clone());
                         }
                     }
                 });
-                shell.layout.buttons.push(("place starter".to_owned(), combo.response.rect));
-                if let Some(name) = chosen {
-                    shell.place_starter = name;
-                }
-                ui.label(weak(format!("click the ground (z = {} m) to add one there", shell.ground())));
-            }
-            Some(Behaviour::Probe) => {
-                ui.label(weak("click a point: the gravity there of the bodies (and a slab floor), the cell under it and its share of each tower's phase".into()));
-            }
-            _ => {
-                ui.label(weak("click selects · drag a body to move it in the view's plane · middle-drag pans · hold the right button and W A S D to fly".into()));
+            shell.layout.chrome.push(("options", current.to_owned()));
+            shell.layout.buttons.push(("place starter".to_owned(), combo.response.rect));
+            if let Some(name) = chosen {
+                shell.place_starter = name;
             }
         }
     });
 }
 
-/// The Probe tool's reading as a card in the pane's top left corner, and its point marked in the
-/// view: what is there, in words, a line a fact.
-fn probe_card(shell: &mut Shell, ui: &mut egui::Ui, pane: usize, rect: Rect) {
-    let Some(probed) = shell.probed.clone() else { return };
+/// The Probe tool's point, marked in the view: a gold ring. Its reading is the right panel's
+/// Probe tab ([`crate::outliner::probe`]); nothing else of it is drawn over the figure (S20; S19's
+/// second review, minor 13).
+fn probe_mark(shell: &Shell, ui: &egui::Ui, pane: usize, rect: Rect) {
+    let Some(probed) = &shell.probed else { return };
     let painter = ui.painter_at(rect);
     if let Some(p) = shell.point_on_screen(pane, probed.point, rect.size()) {
         let p = p + rect.min.to_vec2();
@@ -1479,122 +1535,11 @@ fn probe_card(shell: &mut Shell, ui: &mut egui::Ui, pane: usize, rect: Rect) {
         painter.circle_stroke(p, 6.0, Stroke::new(1.5, theme::GOLD));
         painter.circle_filled(p, 1.5, theme::GOLD);
     }
-    // A card as the inspector's are (S19's review, UX: it was a block of monospace): the reading
-    // in rows with units, then each tower's distance and the cell's share of its phase as a
-    // table. Right of the floating tool strip, below the pane's top edge.
-    let spec = shell.engine.spec().clone();
-    let at = rect.left_top() + vec2(72.0, 14.0);
-    let room = Rect::from_min_max(at, pos2(rect.right() - 8.0, rect.bottom() - 8.0));
-    if room.width() < 120.0 || room.height() < 60.0 {
-        return;
-    }
-    let mut child =
-        ui.new_child(egui::UiBuilder::new().max_rect(room).layout(egui::Layout::top_down(egui::Align::Min)));
-    let card = egui::Frame::new()
-        .fill(crate::inspector::CARD.gamma_multiply(0.96))
-        .stroke(Stroke::new(1.0, theme::WIDGET_EDGE))
-        .corner_radius(5.0)
-        .inner_margin(Margin::same(8))
-        .show(&mut child, |ui| {
-            ui.set_max_width(330.0f32.min(room.width() - 16.0));
-            let [x, y, z] = probed.point;
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Probe").size(13.0).color(theme::STRONG));
-                ui.label(
-                    RichText::new(format!(
-                        "at {}, {}, {} m",
-                        short_number(x),
-                        short_number(y),
-                        short_number(z)
-                    ))
-                    .size(12.0)
-                    .color(theme::WEAK),
-                );
-            });
-            let g = cav_core::Vec3::from_array(probed.g);
-            let size = g.length();
-            // Nothing counted where something is left out: not known, not zero (S19's second
-            // review, minor 12).
-            let unknown = probed.reads_nothing();
-            let gravity = if unknown { "—".to_owned() } else { si(size, "m/s²") };
-            let mut rows: Vec<(&str, String)> = vec![("Gravity", gravity)];
-            if size > 0.0 {
-                let d = g * (1.0 / size);
-                rows.push(("Towards", format!("{:+.2}, {:+.2}, {:+.2}", d.x, d.y, d.z)));
-            }
-            if !unknown {
-                rows.push(("Of", probed.counted().to_owned()));
-            }
-            match &probed.cell {
-                Some(c) => {
-                    let body = spec.bodies.get(c.body).map_or("", |b| b.label.as_str());
-                    rows.push(("Cell of", body.to_owned()));
-                    rows.push((
-                        "Cell",
-                        format!(
-                            "{} · {} kg · {} m a side",
-                            c.material.as_deref().unwrap_or("uniform"),
-                            crate::editors::shown(c.mass),
-                            crate::editors::shown(c.side)
-                        ),
-                    ));
-                    if c.block.1 > c.side {
-                        rows.push((
-                            "In",
-                            format!("a block of {}³ cells alike", (c.block.1 / c.side).round()),
-                        ));
-                    }
-                }
-                None => rows.push(("Cell", "no body here".to_owned())),
-            }
-            egui::Grid::new(("probe rows", pane)).num_columns(2).spacing([10.0, 2.0]).show(ui, |ui| {
-                for (name, value) in &rows {
-                    ui.label(RichText::new(*name).size(12.0).color(theme::WEAK));
-                    ui.label(RichText::new(value).size(12.0).color(theme::TEXT));
-                    ui.end_row();
-                }
-            });
-            if !probed.not_counted.is_empty() {
-                ui.add(
-                    egui::Label::new(
-                        RichText::new(format!("not counted: {}", probed.not_counted.join("; ")))
-                            .size(11.0)
-                            .color(theme::WEAK),
-                    )
-                    .wrap(),
-                );
-            }
-            ui.add_space(4.0);
-            egui::Grid::new(("probe towers", pane)).num_columns(3).spacing([12.0, 2.0]).striped(true).show(
-                ui,
-                |ui| {
-                    for heading in ["tower", "distance", "cell's share of ΔΦ"] {
-                        ui.label(RichText::new(heading).size(11.5).color(theme::WEAK));
-                    }
-                    ui.end_row();
-                    for t in probed.towers.iter().take(MAX_OUTLINE_ROWS) {
-                        ui.label(RichText::new(&t.label).size(12.0).color(theme::TEXT));
-                        ui.label(RichText::new(format!("{:.2} m", t.distance)).size(12.0).color(theme::TEXT));
-                        let share = match (&t.phase, &t.why) {
-                            (Some(phase), _) => crate::shell::phase_text(*phase),
-                            (None, Some(_)) => "not read".to_owned(),
-                            (None, None) => "—".to_owned(),
-                        };
-                        let label = ui.label(RichText::new(share).size(12.0).color(theme::STRONG));
-                        if let Some(why) = &t.why {
-                            label.on_hover_text(why);
-                        }
-                        ui.end_row();
-                    }
-                },
-            );
-        });
-    shell.layout.buttons.push(("probe card".to_owned(), card.response.rect));
 }
 
 /// A positive quantity in `unit` with the SI prefix that keeps it between 1 and 1000: `si(1.2e-7,
 /// "m/s²")` is "120 nm/s²". Three significant figures.
-fn si(value: f64, unit: &str) -> String {
+pub(crate) fn si(value: f64, unit: &str) -> String {
     if value == 0.0 || !value.is_finite() {
         return format!("{value} {unit}");
     }
@@ -1649,7 +1594,7 @@ fn draw_gizmo(
             tip + along * 9.0,
             Align2::CENTER_CENTER,
             ["x", "y", "z"][axis],
-            FontId::proportional(12.0),
+            theme::body(),
             colours[axis],
         );
     }
@@ -1856,7 +1801,7 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                         rect.center(),
                         Align2::CENTER_CENTER,
                         surface.problem(pane).unwrap_or_else(|| "no GPU surface".to_owned()),
-                        FontId::proportional(12.0),
+                        theme::body(),
                         theme::WEAK,
                     );
                 }
@@ -1875,7 +1820,7 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                 let name = view.named().map_or("free", NamedView::name);
                 // Clear of the floating tool strip on the figure's left edge (S19's review,
                 // minor 15: it covered the left pane's "iso").
-                let x = if rect.left() - area.left() < 60.0 { 64.0 } else { 6.0 };
+                let x = if rect.left() - area.left() < 48.0 { TOOL_BUTTON + 24.0 } else { 6.0 };
                 ui.painter().text(
                     rect.left_top() + vec2(x, 4.0),
                     Align2::LEFT_TOP,
@@ -1982,8 +1927,10 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                     shell.ground(),
                 );
                 shell.probed = Some(shell.engine.probe(picked.point));
+                // The reading is the right panel's Probe tab, which comes forward (S20).
+                shell.right_tab = crate::outliner::RightTab::Probe;
             }
-            probe_card(shell, ui, pane, rect);
+            probe_mark(shell, ui, pane, rect);
             continue;
         }
         if behaviour == crate::tools::Behaviour::Place
@@ -2105,9 +2052,9 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
                     .fill(theme::FOOTER.gamma_multiply(0.94))
                     .stroke(Stroke::new(1.0, theme::WIDGET_EDGE))
                     .corner_radius(6.0)
-                    .inner_margin(egui::Margin::same(4))
+                    .inner_margin(egui::Margin::same(theme::GRID as i8))
                     .show(ui, |ui| {
-                        ui.set_width(40.0);
+                        ui.set_width(TOOL_BUTTON);
                         tool_strip(shell, ui);
                     });
             });
@@ -2150,7 +2097,7 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     if let (false, Some(pane)) = (shell.gui_hidden, home_pane) {
         let home = Rect::from_min_size(pos2(pane.right() - 62.0, pane.top() + 8.0), vec2(54.0, 20.0));
         let response = ui
-            .put(home, Button::new(RichText::new("Home").size(12.0)))
+            .put(home, Button::new(RichText::new("Home").size(theme::BODY_PT)))
             .on_hover_text("reset the camera (Home)");
         shell.layout.buttons.push(("view home".to_owned(), response.rect));
         if response.clicked() {
@@ -2161,7 +2108,7 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         if shell.maximised {
             let restore = Rect::from_min_size(home.left_top() - vec2(150.0, 0.0), vec2(142.0, 20.0));
             let response = ui
-                .put(restore, Button::new(RichText::new("Restore  Ctrl+Space").size(12.0)))
+                .put(restore, Button::new(RichText::new("Restore  Ctrl+Space").size(theme::BODY_PT)))
                 .on_hover_text("bring back the panels: the window as it was before the pane filled it");
             shell.layout.buttons.push(("maximise".to_owned(), response.rect));
             if response.clicked() {
@@ -2255,18 +2202,18 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
                         if row.scope != scope {
                             scope.clone_from(&row.scope);
                             ui.add_space(if in_column == 0 { 0.0 } else { 6.0 });
-                            ui.label(RichText::new(&row.scope).color(theme::GOLD).size(12.0));
+                            ui.label(RichText::new(&row.scope).color(theme::GOLD).size(theme::BODY_PT));
                         }
                         ui.horizontal_top(|ui| {
                             theme::fixed_left(
                                 ui,
                                 vec2(136.0, 16.0),
                                 egui::Label::new(
-                                    RichText::new(row.keys_text()).monospace().size(11.5).color(theme::STRONG),
+                                    RichText::new(row.keys_text()).monospace().size(theme::SMALL_PT).color(theme::STRONG),
                                 )
                                 .wrap(),
                             );
-                            let label = ui.add(egui::Label::new(RichText::new(&row.label).size(12.0)).wrap());
+                            let label = ui.add(egui::Label::new(RichText::new(&row.label).size(theme::BODY_PT)).wrap());
                             if !row.about.is_empty() {
                                 label.on_hover_text(&row.about);
                             }
@@ -2281,7 +2228,7 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
                 RichText::new(
                     "every key is an action, every action a console line; Ctrl+K finds them by name · Enter, then the arrows, scrolls this list",
                 )
-                .size(11.0)
+                .size(theme::SMALL_PT)
                 .color(theme::WEAK),
             );
             shown.inner_rect
@@ -2318,7 +2265,7 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
             };
             ui.label(RichText::new(format!("built from {}{dirty}", build.revision)).color(theme::WEAK));
             if let Some(adapter) = &shell.adapter {
-                ui.label(RichText::new(adapter).monospace().size(11.0).color(theme::WEAK));
+                ui.label(RichText::new(adapter).monospace().size(theme::SMALL_PT).color(theme::WEAK));
             }
             ui.add_space(4.0);
             ui.label(
@@ -2326,15 +2273,18 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
                     "Numbers are set in Ubuntu Mono, © Canonical Ltd, used unmodified under the Ubuntu Font \
                      Licence 1.0 (hover for the licence; `cav licences` prints it).",
                 )
-                .size(11.0)
+                .size(theme::SMALL_PT)
                 .color(theme::WEAK),
             )
             .on_hover_text(RichText::new(theme::MONO_FONT_LICENCE).size(10.0));
             ui.add_space(4.0);
-            ui.label(RichText::new("The window's own commands:").size(11.5));
+            ui.label(RichText::new("The window's own commands:").size(theme::SMALL_PT));
             for (name, about) in APP_COMMANDS {
                 ui.label(
-                    RichText::new(format!("{name:<8} {about}")).monospace().size(11.0).color(theme::WEAK),
+                    RichText::new(format!("{name:<8} {about}"))
+                        .monospace()
+                        .size(theme::SMALL_PT)
+                        .color(theme::WEAK),
                 );
             }
         });

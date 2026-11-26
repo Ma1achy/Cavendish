@@ -924,6 +924,12 @@ fn every_schema_field_has_a_widget() {
                 rig.frames(vec![vec![], vec![]]);
             }
         }
+        // (S20: a body that is always there has its Lifetime card folded at first; opened the
+        // same way, so that the panel is asked for every field as before.)
+        if let Some(header) = rig.shell.layout().button("fold inspector/lifetime") {
+            rig.click(header.center());
+            rig.frames(vec![vec![], vec![]]);
+        }
         let shown: Vec<String> = rig.shell.layout().editors.iter().map(|(path, _)| path.clone()).collect();
         for prefix in prefixes {
             for entry in paths::leaves(&spec, prefix, 1000).unwrap() {

@@ -87,11 +87,17 @@ never an edit, Home or a selection) and its action;
    one); a card of chosen fields draws them with `editors::draw_rows` under the path they are
    named from (draw a field under its own parent, or the boxes of the optional parts between
    appear before it); a drop-down that is not a field's is `editors::choice_row`. A body's cards
-   are `inspector::body`, in the design's order. Every target is at least `theme::HIT` (24 pt) a
-   side, every text colour on every ground is in `theme::text_pairs` (4.5:1), and the panel keeps
-   its width, so a row must fit it (`editors::combo_width`, `bounded`).
+   are `inspector::body`, in the design's order. Every target is at least `theme::HIT` (20 pt) a
+   side and every size is the theme's (`theme::HIT`, `ICON`, `GRID`, `ROW_GAP`, `HEADER`, the
+   text sizes; `theme::dense` sets a panel's spacing): no literal row heights. A widget fills its
+   column (`editors::value_room` is what a row has before the reset's place); a number is
+   monospace, right-aligned, its unit after it. No sentence is painted in the chrome: say it in a
+   tooltip. Every text colour on every ground is in `theme::text_pairs` (4.5:1), and the panel
+   keeps its width, so a row must fit it (`editors::combo_width`, `bounded`).
    `every_value_in_the_inspector_starts_at_one_x`, `every_target_in_the_side_panels_is_big_enough`,
-   `every_text_reads_on_its_ground` and `the_inspector_keeps_its_width_whatever_is_shown` hold it.
+   `every_text_reads_on_its_ground`, `the_inspector_keeps_its_width_whatever_is_shown` and S20's
+   `sizes_are_the_dense_design_s`, `a_field_takes_its_column_s_width`,
+   `the_scroll_bar_s_width_is_reserved` and `the_chrome_holds_no_sentences` hold it.
 6. **In the scene tree** (`crates/cav-app/src/outliner.rs`): rows name things (an icon a kind of
    thing, no numbers: those are the Readings tab's); a group folds; `the_outliner_is_one_tree_of_named_rows`.
 
