@@ -79,7 +79,9 @@ never an edit, Home or a selection) and its action;
    more code. A control that is sometimes unusable stays registered, disabled
    (`building.disable`): order never depends on state.
 4. Nothing it draws may cover the figure: `every_panel_is_laid_out_and_none_covers_the_figure`
-   (the tool strip is the one thing on the figure, by design: it floats over the view's edge).
+   (over a scene's canvas float only the tool strip, at the view's edge, and the navigation
+   gizmo in its corner, by design; a viewport's own header is above its canvas:
+   [a view type's header controls](a-view-or-a-layout.md)).
 5. **In the inspector** (`crates/cav-app/src/inspector.rs`, `docs/design/panels.md`): a part of
    the selection is a card (`inspector::card`: folds, a ⋮ menu by `inspector::part_menu`), its
    rows on the one grid whose label column is `Shell::label_width`; a value worked out and not

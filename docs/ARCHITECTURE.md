@@ -150,6 +150,24 @@ and where (`Shell::floating`: a floating viewport's place in the mosaic stays, e
 dock button). The keyboard walks the viewports as stops of one scope, `viewport/mosaic`, in the
 labels' order, so neither a swap nor a pop-out changes Tab's or the arrows' order.
 
+**The viewport header, the gizmo and the status bar (S20).** Each viewport has one compact row
+along its top (`cav-app/src/header.rs`, `docs/design/workspace.md` §2): the view type first
+(`PaneContent::ALL`), then a scene's camera menu, shading group and overlays popover or a plot's
+"show all", and at the right a warning dot, maximise, pop out and close. It is made from data
+(`header::CONTROLS`; the menus' rows are actions of `ui/actions.ron`) and every control runs a
+console line addressed to its own viewport (`show periodogram @3`). A header dragged onto
+another viewport swaps the two (the engine's `swap`); a floating viewport's header is the bar it
+is dragged by. The picture is drawn under it: `Layout::panes` is the viewport, `Layout::canvases`
+the canvas, and pointer arithmetic is the canvas's. A scene's canvas has a navigation gizmo in
+its top right corner (`cav-app/src/navgizmo.rs`): the view's own axes, an end clicked to look
+from it (the named views), a drag to orbit by the view's own `Orbit` command, and zoom, pan and
+projection buttons under it; it took the place of the Home button. No status is drawn in a
+header: the status bar (`footer` in `cav-app/src/panels.rs`) says, in a fixed order, the
+selection, the instrument (and the one compared with), the signal's state in the engine's words
+(`estimate_text`), the forward stage, the counts of warnings and errors and the frame's time;
+what each part says is in `Layout::status_bar`. The keyboard reaches the active viewport's
+header as the scope `viewport/header`, its stops `CONTROLS` in that order whatever is shown.
+
 Every edit, from the viewport, a panel, a key or the palette, ends in one `Command` through
 `Engine::apply`: the gizmo, the transform session and the inspector's field all issue the same
 `Set` of a body's anchor; a run of them (a drag, a held key, a typed distance) is one undo whatever
@@ -189,6 +207,7 @@ field's reset and the window's unsaved mark.
 | The scene as a technical drawing on paper (`figure paper`: a plan or a section, ink on cream at a scale 1:N, outlines of the world from coarse bricks, hatching, scale bar, north arrow, dimensions, title block; at most `MAX_PAPER_BRICKS` bricks, `MAX_PAPER_ITEMS` items, `MAX_PAPER_POINTS` points) | `cav-plot/src/paper.rs`; `PaperView` in `cav-engine/src/command.rs`; written by `paper` in `cav-plot/src/figure.rs` | [a plot](extending/a-plot.md) |
 | Redrawing a figure from its data, in Python | `python/cavendish_figures` (matplotlib style sheets, `load`, `redraw`) | [a plot](extending/a-plot.md) |
 | A panel, an editor (the inspector's sections, resets, lists), the timeline | `cav-app/src/panels.rs`, `editors.rs`, `timeline.rs` | [the window](extending/a-tool-or-panel.md) |
+| A viewport's header and its controls; the navigation gizmo; the status bar (`docs/design/workspace.md` §2) | `cav-app/src/header.rs`, `cav-app/src/navgizmo.rs`, `footer` in `cav-app/src/panels.rs` | [a view type's header controls](extending/a-view-or-a-layout.md) |
 | The scene tree (groups, icons, eye and lock, status dots), the Readings tab and the Probe tab; the inspector's header, cards and Info card (`docs/design/panels.md`); the panels' sizes (`cav-app/src/theme.rs`, `docs/design/workspace.md` §0) | `cav-app/src/outliner.rs`, `cav-app/src/inspector.rs` | [the window](extending/a-tool-or-panel.md) |
 | An action: a menu item, a key, a palette entry; the big scopes' order | `cav-app/ui/actions.ron`, read by `cav-app/src/actions.rs`; drawn by `menus.rs`, `palette.rs`, `sheet.rs` | [the window](extending/a-tool-or-panel.md) |
 | The keyboard model: scopes, modes, the ring, the router, held keys | `cav-app/src/keyboard.rs` (pure logic, tested as a state machine); the frame registers into it from `panels.rs` and `editors.rs` | [the window](extending/a-tool-or-panel.md) |

@@ -149,3 +149,19 @@ review" above:
 - **No sentences in the chrome**: a tool's hint is the tooltip of its name in the options row,
   the timeline's caption is its title's tooltip (the head keeps the shot count and 2T), and what
   an empty scene means is the Bodies group's tooltip.
+
+## As built after S20's viewport header (26 Nov 2026)
+
+`docs/design/workspace.md` §2, the owner's ruling. What is different from the above:
+- **The header strip above the figure is gone**, with its text chips and its "View ›" popover.
+  Each viewport has its own header row (`cav-app/src/header.rs`): view type, camera menu, shading
+  group, overlays popover (a plot: show all), then a warning dot, maximise, pop out, close. The
+  camera's target, angles and distance are read-only rows at the foot of the camera menu.
+- **Home and Restore are off the figure.** A scene's canvas has the navigation gizmo in its top
+  right corner (`cav-app/src/navgizmo.rs`); the Home key and View ▸ Home stay, and maximise and
+  restore are the header's button (Ctrl+Space).
+- **Status is the status bar's**: selection, instrument (and comparison), the signal's state,
+  the forward stage, warnings and errors, the frame's time, the console. Its "Space play" hint is
+  gone (the key is on the `?` sheet and the Scene menu).
+- The tool strip stands under the header of the viewport in the figure's corner until the
+  floating palette replaces it (TASK-S20-05).

@@ -14,7 +14,8 @@
 //   scope   where its keys work: a big scope's id or a node's, or "global"
 //   keys    its key chords: "Ctrl+Z", "Shift+F", "?", "Delete"
 //   needs   when it can run: Always, Undo, Redo, Selection, Item (a body or a tower), Body,
-//           Tower(n), Shapes, Viewports (the figure has more than one)
+//           Tower(n), Shapes, World (the scene has a world), Viewports (the figure has more than
+//           one)
 //   rule    a rule above it in its menu
 //   context on the right-click menu of a row of the scene tree and of the view
 //   about   one line for the palette and the ? sheet
@@ -97,6 +98,7 @@
         (id: "show-periodogram", label: "the periodogram", menu: "View/Show in the pane", line: "show periodogram", about: "the periodogram with each body's comb"),
         (id: "show-flight", label: "the flights", menu: "View/Show in the pane", line: "show flight", about: "the atoms' flights on absolute time"),
         (id: "show-cadence", label: "the cadence", menu: "View/Show in the pane", line: "show cadence", about: "the cadence's spectral window"),
+        (id: "span-all", label: "Show all", menu: "View", line: "span all", about: "the whole of the active plot's horizontal axis (a double click on the plot does too)"),
         (id: "style-shaded", label: "shaded", menu: "View/Draw style", line: "style shaded", about: "shaded surfaces"),
         (id: "style-flat", label: "flat", menu: "View/Draw style", line: "style flat", about: "flat colours"),
         (id: "style-xray", label: "x-ray", menu: "View/Draw style", line: "style xray", about: "additive, see-through"),
@@ -106,9 +108,12 @@
         (id: "colour-depth", label: "depth", menu: "View/Colour voxels by", line: "colour depth", needs: Shapes, about: "colour each leaf by its depth"),
         (id: "colour-mass", label: "mass", menu: "View/Colour voxels by", line: "colour mass", needs: Shapes, about: "colour each leaf by its mass"),
         (id: "colour-fill", label: "fill", menu: "View/Colour voxels by", line: "colour fill", needs: Shapes, about: "colour each leaf by how full it is"),
-        (id: "overlay-none", label: "none", menu: "View/Overlay", line: "overlay none", needs: Shapes, about: "no overlay"),
+        (id: "colour-material", label: "material", menu: "View/Colour voxels by", line: "colour material", needs: Shapes, about: "colour each leaf by its material"),
+        (id: "overlay-none", label: "none", menu: "View/Overlay", line: "overlay none", about: "no overlay"),
         (id: "overlay-leaves", label: "leaf bounds", menu: "View/Overlay", line: "overlay leaves", needs: Shapes, about: "each leaf's bounds, by level"),
         (id: "overlay-tree", label: "the whole octree", menu: "View/Overlay", line: "overlay tree", needs: Shapes, about: "every node of every voxel body's tree, by depth"),
+        (id: "overlay-tree-deep", label: "octree, deep solid", menu: "View/Overlay", line: "overlay tree fade deep", needs: Shapes, about: "the whole octree, its deep nodes solid and its shallow ones faint"),
+        (id: "overlay-bands", label: "LOD bands", menu: "View/Overlay", line: "overlay bands", needs: World, about: "the world drawn in the colours of its levels of detail"),
         (id: "section-off", label: "no section", menu: "View/Overlay", line: "section off", needs: Shapes, rule: true, about: "take the section plane away"),
         (id: "layout-scene", label: "Scene", menu: "View/Layout", line: "layout scene", keys: ["Ctrl+1"], about: "building and placing: one big view of the scene"),
         (id: "layout-instrument", label: "Instrument", menu: "View/Layout", line: "layout instrument", keys: ["Ctrl+2"], about: "the array and its timing: the scene beside the flights"),

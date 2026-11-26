@@ -62,7 +62,8 @@ fn render(headless: &mut Headless, shell: &mut Shell) -> Picture {
 
 /// Where a point 7.3 m up tower `n` should appear on screen, through pane `pane`'s camera.
 fn tower_on_screen(shell: &Shell, pane: usize, camera_of: usize, n: usize) -> [f64; 2] {
-    let rect = shell.layout().panes[pane];
+    // The canvas: the picture is drawn under the viewport's header (S20).
+    let rect = shell.layout().canvases[pane];
     let size = [rect.width().round() as u32, rect.height().round() as u32];
     let camera = Camera::new(shell.engine.view(camera_of), f64::from(size[0]) / f64::from(size[1]));
     let point = Vec3::from_array(shell.engine.spec().array.towers[n].position) + Vec3::Z * 7.3;
@@ -79,13 +80,16 @@ fn gpu_ui_draws_every_panel_and_the_scene() {
     let picture = render(&mut headless, &mut shell);
 
     // Every panel has something drawn in it: text and widgets make many colours.
-    for name in ["menu", "footer", "timeline", "outliner", "properties", "header", "console"] {
+    // (S20: the header strip is no panel; each viewport's header is checked below.)
+    for name in ["menu", "footer", "timeline", "outliner", "properties", "console"] {
         let rect = shell.layout().panel(name).unwrap_or_else(|| panic!("no {name} panel"));
         let colours = picture.colours_in(rect);
         assert!(colours >= 12, "the {name} panel is drawn with only {colours} colours");
     }
+    let (_, header) = shell.layout().headers[0];
+    assert!(picture.colours_in(header) >= 12, "the viewport's header is drawn");
     // The pane shows the scene: each tower where the pane's camera projects it, and nobody else's.
-    let pane = shell.layout().panes[0];
+    let pane = shell.layout().canvases[0];
     for n in 0..5 {
         let at = tower_on_screen(&shell, 0, 0, n);
         assert!(picture.has_near(at, 2, tower_srgb(n), 12), "tower {} is not at {at:?} in the window", n + 1);
@@ -219,7 +223,7 @@ fn gpu_a_scene_pane_with_voxel_bodies_has_a_legend() {
     let legends = shell.layout().legends.clone();
     assert_eq!(legends.len(), 1, "{legends:?}");
     let (pane, rect) = legends[0];
-    let figure = shell.layout().panes[pane];
+    let figure = shell.layout().canvases[pane];
     // Inside its pane, in the corner, clear of the middle of the figure.
     assert!(figure.contains_rect(rect), "{rect:?} in {figure:?}");
     assert!(!rect.contains(figure.center()));

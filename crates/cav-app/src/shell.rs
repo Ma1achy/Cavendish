@@ -117,12 +117,31 @@ pub struct Layout {
     /// The whole window, points.
     pub screen: Rect,
     /// Each panel that was shown, by name: `menu`, `outliner`, `properties`, `timeline`,
-    /// `console`, `footer`, `header`.
+    /// `console`, `footer`, `options`.
     pub panels: Vec<(&'static str, Rect)>,
     /// The area the panes share.
     pub figure: Rect,
-    /// Each pane (viewport), in order: where it is drawn. A floating one's is where it floats.
+    /// Each pane (viewport), in order: where it is drawn, its header and all. A floating one's is
+    /// where it floats. Not for pointer arithmetic: the picture is in [`Self::canvases`].
     pub panes: Vec<Rect>,
+    /// Each viewport's canvas, in order: its rectangle less its header, where the scene's picture
+    /// or the plot is drawn. A pointer's place in a view is measured from this rectangle's
+    /// corner. The same as its pane's while the headers are hidden (F3); nothing when the
+    /// viewport is not drawn (another is maximised).
+    pub canvases: Vec<Rect>,
+    /// Each viewport's header that was drawn: the pane (from 0) and its row.
+    pub headers: Vec<(usize, Rect)>,
+    /// Every control the viewports' headers and navigation gizmos drew, in the order drawn.
+    pub controls: Vec<HeaderControl>,
+    /// Each header's warning dot that was lit: the pane (from 0), the dot, and the texts its
+    /// tooltip holds (a stale or unsettled signal for a plot, what the renderer thinned or left
+    /// out for a scene).
+    pub warnings: Vec<(usize, Rect, Vec<String>)>,
+    /// What the status bar says, by part, in its order: `selection`, `instrument`, `signal`
+    /// (the engine's own words for the signal's state: [`cav_engine::estimate_text`] of it when
+    /// it is the scene's), `forward`, `warnings`, `errors`, `frame`. Each whole, as its tooltip
+    /// has it; what is painted (cut short when long) is in [`Self::chrome`] under `status`.
+    pub status_bar: Vec<(&'static str, String)>,
     /// Each pane's place in the mosaic, in order: where it is drawn unless it floats (then the
     /// place is empty but for its dock button).
     pub slots: Vec<Rect>,
@@ -143,7 +162,7 @@ pub struct Layout {
     pub shots: Vec<crate::timeline::Bar>,
     /// What the timeline's heading says about the shots.
     pub timeline_caption: String,
-    /// What the outliner says about the forward stage.
+    /// What the status bar says about the forward stage (its `forward` part).
     pub status: String,
     /// Each row the outliner laid out: what a click on it selects, and where it is.
     pub outline: Vec<(cav_engine::Target, Rect)>,
@@ -175,8 +194,9 @@ pub struct Layout {
     pub probe_rows: Vec<(String, String)>,
     /// Every text painted in the chrome that the design keeps free of sentences, by where it is:
     /// `options` (the tool's options row), `timeline` (the timeline's head), `tree` (what the
-    /// scene tree paints besides its rows' names, which are in `row_texts`); and what became a
-    /// tooltip there, as `options tooltip` and `timeline tooltip`.
+    /// scene tree paints besides its rows' names, which are in `row_texts`), `header` (the
+    /// viewports' headers) and `status` (the status bar's parts, as painted); and what became a
+    /// tooltip there, as `options tooltip`, `timeline tooltip` and `status tooltip`.
     pub chrome: Vec<(&'static str, String)>,
     /// What each material drop-down of the inspector shows closed: the path it edits and its
     /// words ("Uniform", "steel").
@@ -190,6 +210,11 @@ impl Default for Layout {
             panels: Vec::new(),
             figure: Rect::NOTHING,
             panes: Vec::new(),
+            canvases: Vec::new(),
+            headers: Vec::new(),
+            controls: Vec::new(),
+            warnings: Vec::new(),
+            status_bar: Vec::new(),
             slots: Vec::new(),
             floating: Vec::new(),
             splitters: Vec::new(),
@@ -218,6 +243,19 @@ impl Default for Layout {
 }
 
 impl Layout {
+    /// The status bar's part called `name` (`signal`, `instrument`, …), if it was drawn.
+    #[must_use]
+    pub fn status_part(&self, name: &str) -> Option<&str> {
+        self.status_bar.iter().find(|(n, _)| *n == name).map(|(_, text)| text.as_str())
+    }
+
+    /// The control `id` (`type`, `camera`, `style shaded`, `maximise`, `gizmo/zoom`, …) of pane
+    /// `pane`'s header or gizmo, if it was drawn.
+    #[must_use]
+    pub fn control(&self, pane: usize, id: &str) -> Option<&HeaderControl> {
+        self.controls.iter().find(|c| c.pane == pane && c.id == id)
+    }
+
     /// The panel called `name`, if it was shown.
     #[must_use]
     pub fn panel(&self, name: &str) -> Option<Rect> {
@@ -235,6 +273,25 @@ impl Layout {
     pub fn button(&self, line: &str) -> Option<Rect> {
         self.buttons.iter().find(|(l, _)| l == line).map(|(_, r)| *r)
     }
+}
+
+/// One control of a viewport's header or of its navigation gizmo, as it was drawn.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HeaderControl {
+    /// The pane it belongs to, from 0.
+    pub pane: usize,
+    /// Which control: `type`, `camera`, `style shaded`, `overlays`, `span`, `maximise`,
+    /// `pop-out`, `close`, `gizmo/zoom`, `gizmo/pan`, `gizmo/projection`.
+    pub id: String,
+    /// Where it is, points.
+    pub rect: Rect,
+    /// What its tooltip says: what it does, with its action's key where it has one; for a
+    /// disabled control, why.
+    pub tooltip: String,
+    /// The action of `ui/actions.ron` it runs, when it runs one (a menu's opener runs none).
+    pub action: Option<String>,
+    /// Whether it can be used now.
+    pub enabled: bool,
 }
 
 /// Every step of the history in words: those done, oldest first, and those undone, the next first.
@@ -283,8 +340,9 @@ pub struct Shell {
     /// not edited until the field is left.
     pub(crate) typing: Option<(String, String)>,
     /// What the renderer could not draw in the last picture of the scene (the world's caps:
-    /// a far field cut to its budget, meshes or bricks past their caps), shown as badges in the
-    /// header (`docs/slices/S4.md` §7.6, the review's I5) and said once in the log.
+    /// a far field cut to its budget, meshes or bricks past their caps), held in the tooltip of
+    /// each scene viewport's warning dot (`docs/slices/S4.md` §7.6, the review's I5; a badge of
+    /// the header strip until S20) and said once in the log.
     pub render_notes: Vec<String>,
     /// The keyboard model's state (`docs/design/keyboard.md`): UI only, never in the engine.
     pub keyboard: Keyboard,
@@ -361,6 +419,9 @@ pub struct Shell {
     /// frame in points. Window state: the mosaic keeps the viewport's place, the engine knows
     /// nothing of it, and nothing is journalled. A label that leaves the mosaic is dropped.
     pub floating: std::collections::BTreeMap<char, Rect>,
+    /// The viewport (pane, from 0) whose header is being dragged toward another viewport, to
+    /// swap places with it when it is let go there. UI state.
+    pub(crate) header_drag: Option<usize>,
     /// A splitter's drag in hand: the layout follows the pointer here until the drag ends.
     pub(crate) splitter: Option<crate::panels::SplitterDrag>,
     /// Whether the window is full screen (`F11`), and what the window was last told.
@@ -513,6 +574,7 @@ impl Shell {
             session: None,
             maximised: false,
             floating: std::collections::BTreeMap::new(),
+            header_drag: None,
             splitter: None,
             fullscreen: false,
             fullscreen_sent: false,
@@ -737,10 +799,11 @@ impl Shell {
         self.flying() || self.mouse_fly.is_some()
     }
 
-    /// The active pane's width over its height, from the last frame (1.6 before there is one).
+    /// The active pane's canvas's width over its height, from the last frame (1.6 before there
+    /// is one).
     fn active_aspect(&self) -> f64 {
         self.layout
-            .panes
+            .canvases
             .get(self.engine.active_pane())
             .filter(|r| r.height() > 0.0)
             .map_or(1.6, |r| f64::from(r.width() / r.height()))
@@ -847,6 +910,7 @@ impl Shell {
             Needs::Body => matches!(self.engine.selection(), Some(Target::Body(_))),
             Needs::Tower(n) => n >= 1 && n <= spec.array.towers.len(),
             Needs::Shapes => spec.bodies.iter().any(|b| b.shape.is_some()),
+            Needs::World => spec.world.is_some(),
             Needs::Viewports => self.engine.panes() > 1,
         }
     }
@@ -1355,7 +1419,8 @@ impl Shell {
                 let frame = match (self.layout.slots.get(pane), self.layout.figure) {
                     (Some(slot), figure) if figure.is_positive() => {
                         let size = slot.size().max(crate::panels::MIN_FLOAT).min(figure.size() * 0.6);
-                        Rect::from_min_size(slot.min + egui::vec2(24.0, 24.0), size)
+                        // (Clear of the tool strip on the figure's left edge.)
+                        Rect::from_min_size(slot.min + egui::vec2(56.0, 24.0), size)
                     }
                     _ => Rect::from_min_size(egui::pos2(120.0, 120.0), egui::vec2(480.0, 360.0)),
                 };

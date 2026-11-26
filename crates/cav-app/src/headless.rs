@@ -125,7 +125,7 @@ impl Headless {
                 self.render(shell, size, vec![Vec::new(); 2])?;
                 let pane = shell
                     .layout()
-                    .panes
+                    .canvases
                     .get(shell.engine.active_pane())
                     .copied()
                     .unwrap_or(egui::Rect::NOTHING);

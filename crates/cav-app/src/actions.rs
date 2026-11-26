@@ -49,8 +49,30 @@ pub enum Needs {
     Tower(usize),
     /// A body of the scene is a voxel shape.
     Shapes,
+    /// The scene has a world (voxel terrain streamed round the array).
+    World,
     /// The figure has more than one viewport (so one can be closed, or two swapped).
     Viewports,
+}
+
+impl Needs {
+    /// Why an action with this need cannot run when it cannot, for a disabled control's
+    /// tooltip.
+    #[must_use]
+    pub const fn why_not(self) -> &'static str {
+        match self {
+            Self::Always => "cannot run now",
+            Self::Undo => "there is nothing to undo",
+            Self::Redo => "there is nothing to redo",
+            Self::Selection => "nothing is selected",
+            Self::Item => "no body or tower is selected",
+            Self::Body => "no body is selected",
+            Self::Tower(_) => "the scene has no such tower",
+            Self::Shapes => "the scene has no voxel body",
+            Self::World => "the scene has no world",
+            Self::Viewports => "this is the only viewport",
+        }
+    }
 }
 
 /// One action.
