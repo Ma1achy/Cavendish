@@ -11,8 +11,8 @@ pub use cav_plot::theme::{BACKGROUND, LINK, PLAYHEAD, RULE, STRONG, TEXT, tower}
 /// on a card and 5.1:1 on a panel ([`contrast`]).
 pub const WEAK: Color32 = Color32::from_rgb(0x8c, 0x8c, 0x8c);
 
-/// Secondary text on a button's or a field's ground ([`WIDGET`], [`HOVER`]): the tool strip's key
-/// letters, a field's hint, a material's density in its drop-down. [`WEAK`] there read at 3.3:1
+/// Secondary text on a button's or a field's ground ([`WIDGET`], [`HOVER`]): the tool palette's
+/// corner marks, a field's hint, a material's density in its drop-down. [`WEAK`] there read at 3.3:1
 /// (S19's review, I6); this is at least 4.5:1 on both ([`text_pairs`]).
 pub const WEAK_ON_WIDGET: Color32 = Color32::from_rgb(0xbd, 0xbd, 0xbd);
 
@@ -22,7 +22,7 @@ pub const WEAK_ON_WIDGET: Color32 = Color32::from_rgb(0xbd, 0xbd, 0xbd);
 /// (44 pt), which is the phone and tablet layout's.
 pub const HIT: f32 = 20.0;
 
-/// The side of an icon button, points: the tool strip's, a viewport header's, the transport's
+/// The side of an icon button, points: the tool palette's, a viewport header's, the transport's
 /// (the design's 20 to 22). Larger than a row ([`HIT`]) so that icons read at a glance.
 pub const ICON: f32 = 22.0;
 

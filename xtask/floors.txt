@@ -6,7 +6,9 @@
 # TASK-S20-03 (the mosaic): 9 new quick tests (cav-sim 2, cav-engine 1, cav-render 1, cav-app 5).
 # TASK-S20-04 (the viewport header, the gizmo, the status bar): 6 new quick tests (cav-app: H1 to
 # H4 in tests/editor/s20.rs, two of navgizmo).
-quick 660
+# TASK-S20-05 (the tool palette, flyouts, the options row): 6 new quick tests (cav-app: P1, P2
+# and the session's row in tests/editor/s20.rs, two of tool_palette, one of tools).
+quick 666
 gpu 42
 slow 45
 oracle 58

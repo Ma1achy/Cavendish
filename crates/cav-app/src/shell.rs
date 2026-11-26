@@ -27,7 +27,15 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("context", "open the right-click menu of the selection's row in the scene tree"),
     ("rename", "type a new name for the selected body or tower in the scene tree (F2)"),
     ("frame", "fit the selection (or the whole scene) into the active pane (F)"),
-    ("tool", "take a tool in hand: `tool select` (Q), `tool move` (W), `tool place` (A)"),
+    (
+        "tool",
+        "take a tool in hand: `tool select` (Q), `tool move` (W), `tool place` (A), `tool probe` (I); with one of its variants: `tool place cube`",
+    ),
+    (
+        "tool-palette",
+        "where the tool palette stands in its view, kept for the layout: `tool-palette <top-left|top|top-right|left|right|bottom-left|bottom|bottom-right>`",
+    ),
+    ("flyout", "open a tool's flyout of variants beside the palette: `flyout place`; `flyout off` closes it"),
     (
         "reset",
         "put a field back as the scene was opened or saved: `reset bodies[0].mass` (Backspace on a field)",
@@ -117,8 +125,17 @@ pub struct Layout {
     /// The whole window, points.
     pub screen: Rect,
     /// Each panel that was shown, by name: `menu`, `outliner`, `properties`, `timeline`,
-    /// `console`, `footer`, `options`.
+    /// `console`, `footer`. (The tool's options row is no panel: it is inside a viewport, in
+    /// [`Self::options`].)
     pub panels: Vec<(&'static str, Rect)>,
+    /// The tool's options row, while it is shown: one row under the header of the viewport the
+    /// tool palette is in (`docs/design/workspace.md` §3). `None` while the tool in hand has no
+    /// settings and no transform session is under way: the canvas has the room.
+    pub options: Option<Rect>,
+    /// The viewport (pane, from 0) the tool palette was drawn in; `None` when it was not drawn
+    /// (no viewport shows the scene, the panels are hidden, or the canvas has no room for it).
+    /// Its rectangle is the button `tool palette`.
+    pub tool_host: Option<usize>,
     /// The area the panes share.
     pub figure: Rect,
     /// Each pane (viewport), in order: where it is drawn, its header and all. A floating one's is
@@ -208,6 +225,8 @@ impl Default for Layout {
         Self {
             screen: Rect::NOTHING,
             panels: Vec::new(),
+            options: None,
+            tool_host: None,
             figure: Rect::NOTHING,
             panes: Vec::new(),
             canvases: Vec::new(),
@@ -256,9 +275,13 @@ impl Layout {
         self.controls.iter().find(|c| c.pane == pane && c.id == id)
     }
 
-    /// The panel called `name`, if it was shown.
+    /// The panel called `name`, if it was shown. `options` is the tool's options row
+    /// ([`Self::options`]), which is inside a viewport and so not among [`Self::panels`].
     #[must_use]
     pub fn panel(&self, name: &str) -> Option<Rect> {
+        if name == "options" {
+            return self.options;
+        }
         self.panels.iter().find(|(n, _)| *n == name).map(|(_, r)| *r)
     }
 
@@ -406,8 +429,21 @@ pub struct Shell {
     pub tool: String,
     /// Whether the Move tool snaps to the step.
     pub snap: bool,
-    /// The starter the Place tool adds (a name of `scenes/starters.ron`).
+    /// The starter the Place tool adds (a name of `scenes/starters.ron`): the variant of the
+    /// tool chosen in its flyout (`tool place cube`).
     pub place_starter: String,
+    /// Where the tool palette stands in its viewport's canvas, by layout name
+    /// ([`Self::layout_name`]); a layout not here has it at the top left. Window state, never
+    /// journalled.
+    pub tool_anchors: std::collections::BTreeMap<String, crate::tool_palette::Anchor>,
+    /// The palette in hand by its grip: how far the pointer is from the palette's corner,
+    /// points. While it is held the palette follows the pointer.
+    pub(crate) tool_drag: Option<egui::Vec2>,
+    /// The tool (an id of `ui/tools.ron`) whose flyout of variants is open beside the palette.
+    pub flyout: Option<String>,
+    /// Whether the press that opened the flyout (a hold) is still down: its release takes no
+    /// tool.
+    pub(crate) flyout_held: bool,
     /// A drag of the Move tool's gizmo in hand.
     pub(crate) gizmo_drag: Option<GizmoDrag>,
     /// A transform session in hand (the keyboard's Move).
@@ -570,6 +606,10 @@ impl Shell {
             tool: "select".to_owned(),
             snap: true,
             place_starter: "sphere".to_owned(),
+            tool_anchors: std::collections::BTreeMap::new(),
+            tool_drag: None,
+            flyout: None,
+            flyout_held: false,
             gizmo_drag: None,
             session: None,
             maximised: false,
@@ -619,6 +659,12 @@ impl Shell {
     #[must_use]
     pub fn behaviour(&self) -> crate::tools::Behaviour {
         crate::tools::strip().tool(&self.tool).map_or(crate::tools::Behaviour::Select, |t| t.behaviour)
+    }
+
+    /// Where the tool palette stands in its canvas under the layout chosen now.
+    #[must_use]
+    pub fn tool_anchor(&self) -> crate::tool_palette::Anchor {
+        self.tool_anchors.get(&self.layout_name).copied().unwrap_or_default()
     }
 
     /// The step a move snaps to, metres, when snapping is on.
@@ -1191,21 +1237,83 @@ impl Shell {
             }
             return outcome;
         }
-        // `tool <id>` takes a tool of the strip in hand; nothing is journalled.
+        // `tool <id> [variant]` takes a tool of the palette in hand, with one of its variants
+        // if one is named (`tool place cube`); nothing is journalled.
         if name == "tool" {
-            let ids: Vec<&str> = crate::tools::strip().tools.iter().map(|t| t.id.as_str()).collect();
-            return match (words.next(), words.next()) {
-                (Some(id), None) if ids.contains(&id) => {
-                    self.tool = id.to_owned();
+            let tools = &crate::tools::strip().tools;
+            let ids: Vec<&str> = tools.iter().map(|t| t.id.as_str()).collect();
+            let (id, variant, more) = (words.next(), words.next(), words.next());
+            let tool = id.and_then(|id| tools.iter().find(|t| t.id == id)).filter(|_| more.is_none());
+            let outcome = match (tool, variant) {
+                (Some(tool), None) => {
+                    self.tool.clone_from(&tool.id);
                     Ok(line.to_owned())
                 }
-                _ => {
-                    let why = format!("`{line}`: tool <{}>", ids.join("|"));
+                (Some(tool), Some(variant)) => {
+                    let names: Vec<String> = tool.variants.list().into_iter().map(|v| v.name).collect();
+                    if names.iter().any(|name| name == variant) {
+                        match tool.variants {
+                            crate::tools::Variants::Starters => self.place_starter = variant.to_owned(),
+                            crate::tools::Variants::None => {}
+                        }
+                        self.tool.clone_from(&tool.id);
+                        Ok(line.to_owned())
+                    } else if names.is_empty() {
+                        Err(format!("`{line}`: the {} tool has no variants", tool.label))
+                    } else {
+                        Err(format!("`{line}`: tool {} <{}>", tool.id, names.join("|")))
+                    }
+                }
+                (None, _) => Err(format!("`{line}`: tool <{}> [variant]", ids.join("|"))),
+            };
+            match &outcome {
+                Ok(_) => self.flyout = None,
+                Err(why) => {
                     self.engine.note(Level::Error, Subsystem::App, why.clone());
                     self.console_open = true;
-                    Err(why)
+                }
+            }
+            return outcome;
+        }
+        // `tool-palette <anchor>` stands the palette at an edge or a corner of its view, for
+        // the layout chosen now; `flyout <tool>` opens a tool's variants beside it. Both are
+        // the window's own state.
+        if name == "tool-palette" || name == "flyout" {
+            let word = words.next().filter(|_| words.next().is_none());
+            let outcome = if name == "tool-palette" {
+                let names: Vec<&str> =
+                    crate::tool_palette::Anchor::ALL.iter().map(|anchor| anchor.name()).collect();
+                match word.and_then(crate::tool_palette::Anchor::parse) {
+                    Some(anchor) => {
+                        self.tool_anchors.insert(self.layout_name.clone(), anchor);
+                        Ok(line.to_owned())
+                    }
+                    None => Err(format!("`{line}`: tool-palette <{}>", names.join("|"))),
+                }
+            } else {
+                let with: Vec<&str> = crate::tools::strip()
+                    .tools
+                    .iter()
+                    .filter(|t| t.variants != crate::tools::Variants::None)
+                    .map(|t| t.id.as_str())
+                    .collect();
+                match word {
+                    Some("off") => {
+                        self.flyout = None;
+                        Ok(line.to_owned())
+                    }
+                    Some(id) if with.contains(&id) => {
+                        self.flyout = Some(id.to_owned());
+                        Ok(line.to_owned())
+                    }
+                    _ => Err(format!("`{line}`: flyout <{}|off>", with.join("|"))),
                 }
             };
+            if let Err(why) = &outcome {
+                self.engine.note(Level::Error, Subsystem::App, why.clone());
+                self.console_open = true;
+            }
+            return outcome;
         }
         // `palette <menu>` opens the palette filtered to a menu (`palette add`: the starters).
         // `palette <menu>` opens the palette filtered to a menu (`palette add`: the starters);
@@ -1419,7 +1527,7 @@ impl Shell {
                 let frame = match (self.layout.slots.get(pane), self.layout.figure) {
                     (Some(slot), figure) if figure.is_positive() => {
                         let size = slot.size().max(crate::panels::MIN_FLOAT).min(figure.size() * 0.6);
-                        // (Clear of the tool strip on the figure's left edge.)
+                        // (Clear of the tool palette at the canvas's top left.)
                         Rect::from_min_size(slot.min + egui::vec2(56.0, 24.0), size)
                     }
                     _ => Rect::from_min_size(egui::pos2(120.0, 120.0), egui::vec2(480.0, 360.0)),
@@ -1615,7 +1723,8 @@ impl Shell {
         }
         // A primary press anywhere but the tool's options row ends a transform session, its move
         // kept: a click on a row of the tree, the canvas, a menu (S18's third review, minor 1; as
-        // a click outside a move keeps it in Blender). The options row is the session's own.
+        // a click outside a move keeps it in Blender). The options row is the session's own (it
+        // is shown while a session is under way; were it not, any press would end the session).
         if let Some((pos, true)) = clicked
             && self.session.is_some()
             && !self.layout.panel("options").is_some_and(|r| r.contains(pos))
@@ -1705,6 +1814,8 @@ impl Shell {
                     self.keys_open = false;
                     self.about_open = false;
                     self.history_open = false;
+                } else if self.flyout.is_some() {
+                    self.flyout = None;
                 } else if self.console_open {
                     self.console_open = false;
                 } else if self.gui_hidden {

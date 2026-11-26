@@ -1,4 +1,4 @@
-//! The window's icons (the tool strip's, the scene tree's, a viewport header's and its navigation
+//! The window's icons (the tool palette's, the scene tree's, a viewport header's and its navigation
 //! gizmo's), drawn with the painter: the application's fonts have no pictographs (S18's first
 //! pictures drew `▾` and `⟲` as boxes), and a few strokes need no image files.
 //!

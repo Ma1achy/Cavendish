@@ -85,8 +85,10 @@ fn overlap(a: Rect, b: Rect) -> f32 {
 }
 
 /// The panels; the tool strip is not one since S19's panels (it floats over the view's edge),
-/// nor the header strip since S20 (each viewport has its own header, inside the figure).
-const PANELS: [&str; 6] = ["menu", "footer", "timeline", "outliner", "properties", "options"];
+/// nor the header strip since S20 (each viewport has its own header, inside the figure), nor the
+/// tool's options (S20: a row inside a viewport, under its header, shown only while the tool in
+/// hand has settings; it was a panel above the figure).
+const PANELS: [&str; 5] = ["menu", "footer", "timeline", "outliner", "properties"];
 
 #[test]
 fn every_panel_is_laid_out_and_none_covers_the_figure() {
@@ -449,8 +451,10 @@ fn buttons_and_the_pointer_issue_engine_commands() {
 
     // Control: a click on a panel that is not a button issues nothing.
     let journal = rig.shell.engine.journal().len();
-    let options = rig.shell.layout().panel("options").unwrap();
-    rig.click(options.right_center() - vec2(30.0, 0.0));
+    // (S20: the menu bar's right end, where the scene's name is written; it was the options
+    // panel above the figure, which is gone.)
+    let menu = rig.shell.layout().panel("menu").unwrap();
+    rig.click(menu.right_center() - vec2(30.0, 0.0));
     assert_eq!(rig.shell.engine.journal().len(), journal);
 }
 
@@ -511,6 +515,9 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
                 || (matches!(*name, "rename" | "context")
                     && outcome.as_ref().unwrap_err().contains("select"))
                 || (*name == "tool" && outcome.as_ref().unwrap_err().contains("tool <"))
+                // (S20: the palette's two commands take a word each, and say which.)
+                || (*name == "tool-palette" && outcome.as_ref().unwrap_err().contains("tool-palette <"))
+                || (*name == "flyout" && outcome.as_ref().unwrap_err().contains("flyout <"))
                 || (*name == "layout" && outcome.as_ref().unwrap_err().contains("layout <"))
                 || (*name == "reset" && outcome.as_ref().unwrap_err().contains("reset <"))
                 || (*name == "focus" && outcome.as_ref().unwrap_err().contains("focus <"))
@@ -543,6 +550,8 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
             wrong.contains("takes no arguments")
                 || (*name == "palette" && wrong.contains("not a menu"))
                 || (*name == "tool" && wrong.contains("tool <"))
+                || (*name == "tool-palette" && wrong.contains("tool-palette <"))
+                || (*name == "flyout" && wrong.contains("flyout <"))
                 || (*name == "layout" && wrong.contains("layout <"))
                 || (*name == "tab" && wrong.contains("tab <"))
                 || (*name == "pointer" && wrong.contains("pointer <"))
@@ -624,7 +633,7 @@ fn dragging_a_body_moves_it_under_the_pointer() {
         assert_eq!(rig.shell.engine.spec().bodies[0], before);
 
         // Control: a drag that starts on empty picture orbits the camera and moves no body.
-        // (Clear of the tool strip, which floats over the view's left edge since S19.)
+        // (Clear of the tool palette, which floats at the canvas's top left.)
         let empty = pane.left_top() + vec2(120.0, 40.0);
         assert!(rig.shell.body_under(0, (empty - pane.min).to_pos2(), pane.size()).is_none());
         rig.drag(empty, empty + vec2(60.0, 20.0), PointerButton::Primary);
