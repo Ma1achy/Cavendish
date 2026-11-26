@@ -66,7 +66,8 @@ pub fn bar_shape(rect: Rect, colour: Color32, taken: bool, flying: bool) -> Shap
     }
 }
 
-/// What the timeline's heading says about the shots: how long one is, how many the schedule
+/// What the timeline's title says under the pointer (its tooltip since S20; it was painted along
+/// the head) about the shots: how long one is, how many the schedule
 /// plans and how many each tower takes (`taken` is the least and the most over the towers), or
 /// why there are none. `shots` is the engine's answer (`Engine::shots`).
 #[must_use]
@@ -115,6 +116,31 @@ pub fn caption(shots: Result<&Shots, &str>, mean_cycle: f64, taken: Option<(usiz
             "one lane per tower · each bar is a shot, launch to readout ({flight}) · {count}{hollow} · drag to scrub · Shift-drag a lane to move its clock"
         )
     }
+}
+
+/// The facts of the shots that stay in the timeline's head, each a few words of data: how many
+/// shots (and how many are taken, when the schedule skips some) and how long one flies (2T), or
+/// that there are none. The sentences are [`caption`], the title's tooltip. `shots` and `taken`
+/// as [`caption`]'s.
+#[must_use]
+pub fn facts(shots: Result<&Shots, &str>, taken: Option<(usize, usize)>) -> Vec<String> {
+    let Ok(shots) = shots else { return vec!["no shots".to_owned()] };
+    if shots.towers() == 0 {
+        return vec!["no towers".to_owned()];
+    }
+    let planned = shots.most();
+    let fewest_planned = (0..shots.towers()).map(|d| shots.count(d)).min().unwrap_or(0);
+    let count = match taken {
+        Some((fewest, most)) if most < planned && fewest == most => format!("{planned} shots, {most} taken"),
+        Some((fewest, most)) if most < planned => format!("{planned} shots, {fewest}–{most} taken"),
+        _ if fewest_planned < planned => format!("{fewest_planned}–{planned} shots"),
+        _ => format!("{planned} shots"),
+    };
+    let (short, long) =
+        shots.flights.iter().fold((f64::INFINITY, 0.0f64), |(a, b), f| (a.min(*f), b.max(*f)));
+    let flight =
+        if short >= long { format!("2T {long:.2} s") } else { format!("2T {short:.2}–{long:.2} s") };
+    vec![count, flight]
 }
 
 /// The spacing of the ruler's marks for a timeline of `duration` seconds: the smallest of 1, 2 or 5

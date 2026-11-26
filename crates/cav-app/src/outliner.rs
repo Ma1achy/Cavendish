@@ -19,6 +19,15 @@ pub enum RightTab {
     Inspector,
     /// Every tower's reading.
     Readings,
+    /// The Probe tool's reading of the point last probed (S20: it was a card over the figure).
+    Probe,
+}
+
+impl RightTab {
+    /// Every tab, in the order drawn, with its title; the title in lower case is the word `tab`
+    /// takes (`tab probe`).
+    pub const ALL: [(Self, &'static str); 3] =
+        [(Self::Inspector, "Inspector"), (Self::Readings, "Readings"), (Self::Probe, "Probe")];
 }
 
 /// What a row is, for its icon.
@@ -173,9 +182,13 @@ pub(crate) fn body_kind(body: &cav_sim::BodySpec) -> (RowKind, String) {
 }
 
 /// How far a row's depth indents it, points.
-const INDENT: f32 = 14.0;
-/// A row's height, points (the design's least hit target).
-pub const ROW: f32 = 24.0;
+const INDENT: f32 = 3.0 * theme::GRID;
+/// Where a row's fold triangle, its icon and its name stand from its indented left edge, points.
+const FOLD_AT: f32 = 8.0;
+const ICON_AT: f32 = 20.0;
+const NAME_AT: f32 = 32.0;
+/// A row's height, points: the theme's target, and the rows touch, so it is their pitch too.
+pub const ROW: f32 = theme::HIT;
 
 #[allow(clippy::too_many_arguments)]
 /// One row: a fold triangle for a group, an icon, the label; on its right what is given
@@ -202,18 +215,24 @@ fn row(
     } else if response.hovered() {
         painter.rect_filled(rect, 2.0, Color32::from_rgb(0x24, 0x24, 0x24));
     }
-    let left = rect.left() + 4.0 + INDENT * depth as f32;
+    let left = rect.left() + INDENT * depth as f32;
     // Indent guides: a thin line for each level above.
     for d in 1..=depth {
-        let x = rect.left() + 4.0 + INDENT * d as f32 - INDENT * 0.5;
+        let x = rect.left() + FOLD_AT + INDENT * (d as f32 - 1.0);
         painter.vline(x, rect.y_range(), Stroke::new(1.0, Color32::from_rgb(0x30, 0x30, 0x30)));
     }
     let colour = if selected { theme::STRONG } else { theme::TEXT };
-    icon(painter, Rect::from_center_size(pos2(left + 18.0, rect.center().y), vec2(14.0, 14.0)), kind, colour);
-    let name_at = pos2(left + 30.0, rect.center().y);
-    let trailing = Rect::from_min_max(pos2(rect.right() - 64.0, rect.top()), rect.max);
+    icon(
+        painter,
+        Rect::from_center_size(pos2(left + ICON_AT, rect.center().y), vec2(14.0, 14.0)),
+        kind,
+        colour,
+    );
+    let name_at = pos2(left + NAME_AT, rect.center().y);
+    let trailing =
+        Rect::from_min_max(pos2(rect.right() - 2.0 * theme::HIT - theme::GRID, rect.top()), rect.max);
     if !shell.renaming.as_ref().is_some_and(|(t, _)| row_target(id) == Some(*t)) {
-        painter.text(name_at, Align2::LEFT_CENTER, label, FontId::proportional(13.0), colour);
+        painter.text(name_at, Align2::LEFT_CENTER, label, theme::body(), colour);
         shell.layout.row_texts.push((id.to_owned(), label.to_owned()));
     }
     (response, trailing)
@@ -231,15 +250,28 @@ fn row_target(id: &str) -> Option<Target> {
     }
 }
 
-/// A group's header: its fold triangle, icon and name, and a `+` that adds into it. Returns
-/// whether it is open. Its fold is remembered for each scene (egui's memory: UI state).
-fn group(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, name: &str, add: Option<&str>) -> bool {
+/// A group's header: its fold triangle, icon and name, and a `+` that adds into it; `about`,
+/// when there is something to say of the group, is its row's tooltip (S20: no sentences in the
+/// tree). Returns whether it is open. Its fold is remembered for each scene (egui's memory: UI
+/// state).
+fn group(
+    shell: &mut Shell,
+    ui: &mut egui::Ui,
+    scope: &str,
+    name: &str,
+    add: Option<&str>,
+    about: Option<&str>,
+) -> bool {
     let mut open = shell.tree_open(scope);
     // Under the scene, one level in (S19's review, minor 19: the groups sat beside the root).
     let (response, trailing) = row(shell, ui, "tree", scope, 1, RowKind::Group, name, false);
+    let response = match about {
+        Some(about) => response.on_hover_text(about),
+        None => response,
+    };
     let painter = ui.painter();
     let tri = Rect::from_center_size(
-        pos2(response.rect.left() + 9.0 + INDENT, response.rect.center().y),
+        pos2(response.rect.left() + FOLD_AT + INDENT, response.rect.center().y),
         vec2(8.0, 8.0),
     );
     let points = if open {
@@ -250,13 +282,13 @@ fn group(shell: &mut Shell, ui: &mut egui::Ui, scope: &str, name: &str, add: Opt
     painter.add(egui::Shape::convex_polygon(points, theme::WEAK, Stroke::NONE));
     let mut add_rect = None;
     if let Some(line) = add {
-        let plus = Rect::from_center_size(
-            pos2(trailing.right() - 12.0, trailing.center().y),
+        let plus = Rect::from_min_size(
+            pos2(trailing.right() - theme::HIT - 0.5 * theme::GRID, trailing.top()),
             vec2(theme::HIT, theme::HIT),
         );
         let hit = ui.interact(plus, egui::Id::unique(("group add", scope)), Sense::click());
         if hit.hovered() || response.hovered() {
-            painter.text(plus.center(), Align2::CENTER_CENTER, "+", FontId::proportional(15.0), theme::TEXT);
+            painter.text(plus.center(), Align2::CENTER_CENTER, "+", FontId::proportional(14.0), theme::TEXT);
         }
         let id = format!("{scope}/add");
         shell.register(scope, &id, &format!("{name}: add"), Kind::Button, plus);
@@ -313,7 +345,7 @@ fn item(
     let renaming = shell.renaming.as_ref().is_some_and(|(t, _)| *t == target);
     if renaming {
         let at = Rect::from_min_max(
-            pos2(response.rect.left() + 4.0 + 2.0 * INDENT + 30.0, response.rect.top()),
+            pos2(response.rect.left() + NAME_AT + 2.0 * INDENT - 2.0, response.rect.top()),
             response.rect.max,
         );
         crate::panels::rename_field_at(shell, ui, target, at);
@@ -321,7 +353,7 @@ fn item(
     let painter = ui.painter().clone();
     let mut on_control = false;
     if let Some(dot) = dot {
-        let at = pos2(trailing.right() - 10.0, trailing.center().y);
+        let at = pos2(trailing.right() - 0.5 * (theme::HIT + theme::GRID), trailing.center().y);
         painter.circle_filled(at, 4.0, dot.colour());
         let hit = ui.interact(
             Rect::from_center_size(at, vec2(16.0, 16.0)),
@@ -337,15 +369,12 @@ fn item(
         // The eye (the view's `hide`) and the lock (UI state): shown on hover, or when set.
         let hidden = shell.engine.view(0).hidden.iter().any(|l| l == label);
         let locked = shell.locked.contains(label);
-        // Each a full target (24 pt: S19's review, I6), side by side at the row's right.
-        let eye = Rect::from_center_size(
-            pos2(trailing.right() - 14.0 - theme::HIT, trailing.center().y),
+        // Each a full target ([`theme::HIT`]: S19's review, I6), side by side at the row's right.
+        let lock = Rect::from_min_size(
+            pos2(trailing.right() - theme::HIT - 0.5 * theme::GRID, trailing.top()),
             vec2(theme::HIT, theme::HIT),
         );
-        let lock = Rect::from_center_size(
-            pos2(trailing.right() - 12.0, trailing.center().y),
-            vec2(theme::HIT, theme::HIT),
-        );
+        let eye = lock.translate(vec2(-theme::HIT - 0.5 * theme::GRID, 0.0));
         let eye_hit = ui.interact(eye, egui::Id::unique(("eye", n)), Sense::click());
         let lock_hit = ui.interact(lock, egui::Id::unique(("lock", n)), Sense::click());
         let show = response.hovered() || eye_hit.hovered() || lock_hit.hovered();
@@ -404,15 +433,15 @@ fn shown(count: usize, selected: Option<usize>) -> Vec<usize> {
 
 /// The outliner: a header (the scene's name, `+` to add, a filter), then the tree.
 pub fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
-    // Every target at least 24 points a side (S19's review, I6).
-    ui.spacing_mut().interact_size = vec2(theme::HIT, theme::HIT);
+    // Every target the theme's side (S19's review, I6; S20: 20 pt), the rows touching.
+    theme::dense(ui, 0.0);
     // The header: the panel's title as a tab, `+`, and the filter.
     ui.horizontal(|ui| {
         crate::panels::tab_title(ui, "Scene", true);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // A full target by the theme's least size of a control, not by padding (S20).
             let add = ui
-                // Spaced so that the button is a full target (S19's review, I6).
-                .menu_button(RichText::new(" + ").size(15.0), |ui| crate::menus::add_menu(shell, ui))
+                .menu_button(RichText::new("+").size(14.0), |ui| crate::menus::add_menu(shell, ui))
                 .response;
             let add = add.on_hover_text("add a body, a shape or a tower");
             shell.register("tree", "tree/add", "Add", Kind::Button, add.rect);
@@ -424,7 +453,7 @@ pub fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             let field = ui.add(
                 egui::TextEdit::singleline(&mut filter)
                     .hint_text("filter")
-                    .desired_width(ui.available_width() - 6.0),
+                    .desired_width(ui.available_width() - theme::GRID),
             );
             shell.register("tree", "tree/filter", "Filter", Kind::Text, field.rect);
             if shell.take_type("tree/filter") {
@@ -433,7 +462,7 @@ pub fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             shell.tree_filter = filter;
         });
     });
-    ui.add_space(4.0);
+    ui.add_space(theme::GRID);
     let filter = shell.tree_filter.trim().to_lowercase();
     let wanted = |label: &str| filter.is_empty() || label.to_lowercase().contains(&filter);
     let spec = shell.engine.spec().clone();
@@ -452,7 +481,7 @@ pub fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     if scene_row.clicked() || shell.take_click("tree/scene") {
         shell.apply(Command::Select(None));
     }
-    if group(shell, ui, "tree/array", "Array", Some("add tower")) {
+    if group(shell, ui, "tree/array", "Array", Some("add tower"), None) {
         let selected = match shell.engine.selection() {
             Some(Target::Tower(n)) => Some(n - 1),
             _ => None,
@@ -474,7 +503,9 @@ pub fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             }
         }
     }
-    if group(shell, ui, "tree/sources", "Bodies", Some("palette add")) {
+    // What an empty group means is its tooltip, not a sentence in the tree (S20).
+    let about = spec.bodies.is_empty().then(|| crate::panels::empty_words(&spec));
+    if group(shell, ui, "tree/sources", "Bodies", Some("palette add"), about) {
         let selected = match shell.engine.selection() {
             Some(Target::Body(n)) => Some(n - 1),
             _ => None,
@@ -487,10 +518,10 @@ pub fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
             }
         }
         if spec.bodies.is_empty() {
-            crate::panels::empty_guidance(shell, ui, &spec);
+            crate::panels::empty_guidance(shell, ui);
         }
     }
-    if group(shell, ui, "tree/surroundings", "Surroundings", None) {
+    if group(shell, ui, "tree/surroundings", "Surroundings", None, None) {
         let rows = [
             (spec.room.is_some(), Target::Room, "room"),
             (spec.floor.is_some(), Target::Floor, "floor"),
@@ -504,62 +535,198 @@ pub fn outliner(shell: &mut Shell, ui: &mut egui::Ui) {
     }
 }
 
+/// The width of a column of numbers in the right panel's tables, points: a sign, four digits, a
+/// point and three more in the monospace face.
+const NUMBER_COLUMN: f32 = 62.0;
+
+/// One cell of a table's row: `text` in a box `width` wide and a row high, at the box's right
+/// when `right` (a number) or its left (a name).
+fn cell(ui: &mut egui::Ui, width: f32, right: bool, text: RichText) -> egui::Response {
+    let size = vec2(width, theme::HIT);
+    let label = egui::Label::new(text).truncate();
+    if right { theme::fixed_right(ui, size, label) } else { theme::fixed_left(ui, size, label) }
+}
+
+/// A table's row `n` (from 0; the heading is row 0): a faint band behind every other row, then
+/// `cells` laid out along it.
+fn table_row(ui: &mut egui::Ui, n: usize, cells: impl FnOnce(&mut egui::Ui)) {
+    if n > 0 && n.is_multiple_of(2) {
+        let band = Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), theme::HIT));
+        ui.painter().rect_filled(band, 0.0, ui.visuals().faint_bg_color);
+    }
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme::GRID;
+        cells(ui);
+    });
+}
+
+/// A number of a table, in the monospace face.
+fn number(text: String, colour: Color32) -> RichText {
+    RichText::new(text).font(theme::mono()).color(colour)
+}
+
+/// A table's heading, small and muted.
+fn heading(text: impl Into<String>) -> RichText {
+    RichText::new(text).size(theme::SMALL_PT).color(theme::WEAK)
+}
+
 /// The Readings tab: each tower's reading under the playhead as a table (its ΔΦ, the two
 /// interferometers' phases, its state), and what the audit warns of. The numbers the tree's
-/// rows no longer carry.
+/// rows no longer carry. One unit a column, in its heading, chosen from the column's largest
+/// magnitude ([`crate::shell::phase_unit`]); the numbers monospace and right-aligned, so their
+/// points stand under one another (S20, `docs/design/workspace.md` §0).
 pub fn readings(shell: &mut Shell, ui: &mut egui::Ui) {
+    theme::dense(ui, 0.0);
     let reply = shell.reading().clone();
     let spec = shell.engine.spec().clone();
     let silent = crate::panels::silent(&spec);
-    ui.label(RichText::new(format!("a shot read out at {:.2} s", reply.time)).size(11.5).color(theme::WEAK));
-    ui.add_space(4.0);
-    egui::Grid::new("readings").num_columns(5).spacing([10.0, 4.0]).striped(true).show(ui, |ui| {
-        for heading in ["tower", "ΔΦ", "δφ₁ lower", "δφ₂ upper", ""] {
-            ui.label(RichText::new(heading).size(11.5).color(theme::WEAK));
+    let towers = spec.array.towers.len().min(crate::panels::MAX_OUTLINE_ROWS);
+    let values =
+        |n: usize| reply.towers.get(n).filter(|_| !silent).map(|r| [r.gradiometer, r.lower, r.upper]);
+    let units: [(f64, &str); 3] = std::array::from_fn(|k| {
+        let largest =
+            (0..towers).filter_map(values).map(|v| v[k].abs()).filter(|v| v.is_finite()).fold(0.0, f64::max);
+        crate::shell::phase_unit(largest)
+    });
+    let dot_width = 14.0;
+    let name_width =
+        (ui.available_width() - 3.0 * (NUMBER_COLUMN + theme::GRID) - dot_width - theme::GRID).max(40.0);
+    table_row(ui, 0, |ui| {
+        cell(ui, name_width, false, heading(format!("t = {:.2} s", reply.time)))
+            .on_hover_text("the shot read out at this time");
+        for (name, (_, unit)) in ["ΔΦ", "δφ₁", "δφ₂"].into_iter().zip(units) {
+            cell(ui, NUMBER_COLUMN, true, heading(format!("{name}, {unit}")));
         }
-        ui.end_row();
-        for (n, tower) in spec.array.towers.iter().enumerate().take(crate::panels::MAX_OUTLINE_ROWS) {
-            let dot = dot_of(&reply, n, silent);
-            ui.label(RichText::new(&tower.label).size(12.5));
-            let number = |v: f64| RichText::new(crate::shell::phase_text(v)).monospace().size(12.0);
-            match reply.towers.get(n).filter(|_| !silent) {
-                Some(r) => {
+    });
+    for (n, tower) in spec.array.towers.iter().enumerate().take(towers) {
+        let dot = dot_of(&reply, n, silent);
+        table_row(ui, n + 1, |ui| {
+            cell(ui, name_width, false, RichText::new(&tower.label).size(theme::BODY_PT).color(theme::TEXT));
+            match values(n) {
+                Some(v) => {
                     let mark = if reply.truncated.is_some() { " ◐" } else { "" };
-                    let text = format!("{}{mark}", crate::shell::phase_text(r.gradiometer));
-                    shell.layout.readings.push((n, text.clone()));
-                    shell.layout.reading_values.push((n, [r.gradiometer, r.lower, r.upper]));
-                    // Each number's every digit under the pointer: the value the engine gave.
-                    let exact = |v: f64| format!("{v:.17e} rad");
-                    ui.label(RichText::new(text).monospace().size(12.0).color(theme::STRONG))
-                        .on_hover_text(exact(r.gradiometer));
-                    ui.label(number(r.lower)).on_hover_text(exact(r.lower));
-                    ui.label(number(r.upper)).on_hover_text(exact(r.upper));
+                    let text = crate::shell::phase_in(v[0], units[0].0);
+                    shell.layout.readings.push((n, format!("{text} {}{mark}", units[0].1)));
+                    shell.layout.reading_values.push((n, v));
+                    for k in 0..3 {
+                        let text = crate::shell::phase_in(v[k], units[k].0);
+                        let colour = if k == 0 { theme::STRONG } else { theme::TEXT };
+                        // Each number's every digit under the pointer: the value the engine gave.
+                        cell(ui, NUMBER_COLUMN, true, number(text, colour))
+                            .on_hover_text(format!("{:.17e} rad", v[k]));
+                    }
                 }
                 None => {
                     shell.layout.readings.push((n, String::new()));
                     for _ in 0..3 {
-                        ui.label(RichText::new("—").color(theme::WEAK));
+                        cell(ui, NUMBER_COLUMN, true, number("—".to_owned(), theme::WEAK));
                     }
                 }
             }
             // The state as the tree's dot, its words under the pointer: the table fits the
             // panel's fixed width (S19's review: the words ran past its edge).
-            let (rect, response) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+            let (rect, response) = ui.allocate_exact_size(vec2(dot_width, theme::HIT), Sense::hover());
             ui.painter().circle_filled(rect.center(), 4.0, dot.colour());
-            let _ = response.on_hover_text(dot.words());
-            ui.end_row();
-        }
-    });
-    ui.add_space(4.0);
-    ui.label(
-        RichText::new(format!(
-            "quadrature: {}",
-            cav_engine::estimate_text(reply.estimate, reply.settled, reply.truncated)
-        ))
-        .size(11.5)
-        .color(theme::WEAK),
-    );
-    for warning in &reply.warnings {
-        ui.label(RichText::new(&warning.text).size(11.0).color(theme::WARN));
+            let mark = if reply.truncated.is_some() { " (◐: of part of the world's matter)" } else { "" };
+            let _ = response.on_hover_text(format!("{}{mark}", dot.words()));
+        });
     }
+    ui.add_space(theme::GRID);
+    ui.label(heading(format!(
+        "quadrature {}",
+        cav_engine::estimate_text(reply.estimate, reply.settled, reply.truncated)
+    )));
+    for warning in &reply.warnings {
+        ui.add(
+            egui::Label::new(RichText::new(&warning.text).size(theme::SMALL_PT).color(theme::WARN)).wrap(),
+        );
+    }
+}
+
+/// The Probe tab (S20; S19's second review, minor 13: the reading was a card over the figure's
+/// top left): the reading of the point last probed, in rows with units, then each tower's
+/// distance and the cell's share of its phase as a table, one unit a column. Only the point's
+/// mark is drawn in the view. With nothing probed it says so in three words. What is drawn is
+/// recorded in the layout ([`crate::Layout::probe`]), the engine's own numbers.
+pub fn probe(shell: &mut Shell, ui: &mut egui::Ui) {
+    theme::dense(ui, 0.0);
+    let Some(probed) = shell.probed.clone() else {
+        ui.label(heading("no point probed"))
+            .on_hover_text("with the Probe tool in hand, click a point of the view");
+        return;
+    };
+    let spec = shell.engine.spec().clone();
+    let [x, y, z] = probed.point;
+    let short = crate::panels::short_number;
+    let g = cav_core::Vec3::from_array(probed.g);
+    let size = g.length();
+    // Nothing counted where something is left out: not known, not zero (S19's second review,
+    // minor 12).
+    let unknown = probed.reads_nothing();
+    let mut rows: Vec<(&str, String)> = vec![
+        ("At", format!("{}, {}, {} m", short(x), short(y), short(z))),
+        ("Gravity", if unknown { "—".to_owned() } else { crate::panels::si(size, "m/s²") }),
+    ];
+    if size > 0.0 {
+        let d = g * (1.0 / size);
+        rows.push(("Towards", format!("{:+.2}, {:+.2}, {:+.2}", d.x, d.y, d.z)));
+    }
+    if !unknown {
+        rows.push(("Of", probed.counted().to_owned()));
+    }
+    match &probed.cell {
+        Some(c) => {
+            let body = spec.bodies.get(c.body).map_or("", |b| b.label.as_str());
+            rows.push(("Cell of", body.to_owned()));
+            rows.push(("Material", c.material.clone().unwrap_or_else(|| "uniform".to_owned())));
+            rows.push(("Cell mass", format!("{} kg", crate::editors::shown(c.mass))));
+            rows.push(("Cell side", format!("{} m", crate::editors::shown(c.side))));
+            if c.block.1 > c.side {
+                rows.push(("In", format!("a block of {}³ cells alike", (c.block.1 / c.side).round())));
+            }
+        }
+        None => rows.push(("Cell", "no body here".to_owned())),
+    }
+    if !probed.not_counted.is_empty() {
+        rows.push(("Not counted", probed.not_counted.join("; ")));
+    }
+    shell.layout.probe_rows = rows.iter().map(|(name, value)| ((*name).to_owned(), value.clone())).collect();
+    crate::inspector::info_rows(shell, ui, &rows);
+    ui.add_space(theme::GRID);
+    let shown = probed.towers.len().min(crate::panels::MAX_OUTLINE_ROWS);
+    let largest = probed.towers[..shown]
+        .iter()
+        .filter_map(|t| t.phase)
+        .map(f64::abs)
+        .filter(|v| v.is_finite())
+        .fold(0.0, f64::max);
+    let (scale, unit) = crate::shell::phase_unit(largest);
+    // Room for its heading ("share of ΔΦ, µrad").
+    let share_width = 100.0;
+    let name_width = (ui.available_width() - NUMBER_COLUMN - share_width - 2.0 * theme::GRID).max(40.0);
+    table_row(ui, 0, |ui| {
+        cell(ui, name_width, false, heading("tower"));
+        cell(ui, NUMBER_COLUMN, true, heading("distance, m"));
+        cell(ui, share_width, true, heading(format!("share of ΔΦ, {unit}")))
+            .on_hover_text("the probed cell's share of each tower's phase");
+    });
+    for (n, t) in probed.towers.iter().take(shown).enumerate() {
+        table_row(ui, n + 1, |ui| {
+            cell(ui, name_width, false, RichText::new(&t.label).size(theme::BODY_PT).color(theme::TEXT));
+            cell(ui, NUMBER_COLUMN, true, number(format!("{:.2}", t.distance), theme::TEXT))
+                .on_hover_text(format!("{:.17e} m", t.distance));
+            let (share, colour) = match (&t.phase, &t.why) {
+                (Some(phase), _) => (crate::shell::phase_in(*phase, scale), theme::STRONG),
+                (None, Some(_)) => ("not read".to_owned(), theme::WEAK),
+                (None, None) => ("—".to_owned(), theme::WEAK),
+            };
+            let label = cell(ui, share_width, true, number(share, colour));
+            match (&t.phase, &t.why) {
+                (Some(phase), _) => label.on_hover_text(format!("{phase:.17e} rad")),
+                (None, Some(why)) => label.on_hover_text(why),
+                (None, None) => label,
+            };
+        });
+    }
+    shell.layout.probe = Some(probed);
 }

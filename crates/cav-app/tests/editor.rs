@@ -1166,6 +1166,12 @@ fn every_starter_has_an_editor_for_every_field() {
         rig.shell.run("load void").unwrap();
         rig.shell.add_starter(&starter.name).unwrap();
         rig.frames(vec![vec![], vec![]]);
+        // (S20: a body that is always there has its Lifetime card folded at first, its two empty
+        // boxes one click away; opened here, so that every field's editor is looked for as before.)
+        if let Some(header) = rig.shell.layout().button("fold inspector/lifetime") {
+            rig.click(header.center());
+            rig.frames(vec![vec![]]);
+        }
         let prefix = Shell::resolve("{selection}", rig.shell.engine.selection());
         assert!(!prefix.is_empty(), "{}: selected", starter.name);
         let leaves =
@@ -1731,18 +1737,21 @@ fn the_inspector_says_when_it_scrolls_and_names_a_point_s_radius() {
     // S18's second review, UX 8 and UX 1. The Instrument layout's inspector runs past the panel's
     // foot (in a window 700 points high): it says so. A body's own radius is the "Point radius",
     // apart from its shape's.
+    // (S20: it says so with its solid scroll bar, which S19 made show whenever there is more; the
+    // "more below: scroll" badge this looked for is gone, as it covered the last row beside a
+    // bar that said the same. So this looks for the bar's place, recorded while there is more.)
     let mut rig = Rig::new();
     rig.size = [1440, 700];
     rig.shell.run("load point").unwrap();
     rig.shell.run("layout instrument").unwrap();
     rig.frames(vec![vec![], vec![], vec![]]);
-    assert!(rig.shell.layout().button("more below").is_some(), "the cut inspector says it scrolls");
-    // Control: an inspector that fits (a point mass selected, in a window tall enough for its six
-    // cards since S19's review) says nothing of the kind.
-    rig.size = [1440, 1100];
+    assert!(rig.shell.layout().button("inspector scroll bar").is_some(), "the cut inspector says it scrolls");
+    // Control: an inspector that fits (a point mass selected; in 900 again since S20's rows of
+    // 20 pt, where S19's needed 1100) says nothing of the kind.
+    rig.size = [1440, 900];
     rig.shell.run("select body 1").unwrap();
     rig.frames(vec![vec![], vec![]]);
-    assert!(rig.shell.layout().button("more below").is_none());
+    assert!(rig.shell.layout().button("inspector scroll bar").is_none());
     assert_eq!(rig.shell.focus_tree().node("field/bodies[0].radius").unwrap().name, "Point radius");
     // The reset is drawn only on a changed field (minor 2): none now, one after an edit.
     assert!(rig.shell.layout().button("reset bodies[0].mass").is_none());
@@ -1797,3 +1806,5 @@ fn the_wizard_offers_its_bodies_as_tiles() {
 /// The tests of S19 (`docs/slices/S19.md` §4), on the same rig.
 #[path = "editor/s19.rs"]
 mod s19;
+#[path = "editor/s20.rs"]
+mod s20;

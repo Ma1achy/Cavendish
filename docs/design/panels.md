@@ -108,15 +108,44 @@ look):
   lead · Sphere" with a ⋮ to move it up or down or remove it, and "+ Add part"), Motion (Kind,
   then its numbers), Lifetime (appears and vanishes behind their boxes), Info. Every card has a ⋮.
 - **A point mass's Material card is called Mass**: it has no material, only its mass.
-- **Lifetime is open at first**, not folded as drawn: S18's E6 asks every field's editor to be in
+- **Lifetime is open at first** (until S20: see below), not folded as drawn: S18's E6 asks every field's editor to be in
   sight, and a card folded at first hides two.
 - **The inspector's width is fixed** (352 pt at first, still draggable): its contents are drawn
   in a child of the panel's width and cut to it, so it does not jump with the selection; rows fit
   that width (drop-downs cut their words).
-- **Targets are 24 pt a side** in both panels (rows, boxes, ticks, drop-downs, eye, lock, +, ⋮),
+- **Targets are 24 pt a side** (20 since S20: see below) in both panels (rows, boxes, ticks, drop-downs, eye, lock, +, ⋮),
   and every text colour is held to 4.5:1 on every ground it is drawn on (`theme::text_pairs`).
 - **Not built, and not drawn as built** (S19's second review): "drag a letter to scrub" (a
   number is dragged in its box, not by its axis letter) and Compare "under Advanced" (it stays
   where S18 put it). Both are S20's, with the dense panels (`docs/design/workspace.md`).
 - **Readings** is a tab in every layout (not docked in two): a tab is one click from the Inspector
   wherever you are.
+
+## As built after S20's density pass (26 Nov 2026)
+
+`docs/design/workspace.md` §0 overrides this document's sizes on desktop (the owner's ruling of
+25 Nov 2026); what the panels are is unchanged. What is different from "As built after S19's
+review" above:
+- **Targets are 20 pt a side** (`theme::HIT`), not 24: rows, boxes, ticks, drop-downs, eye, lock,
+  `+`, ⋮. Icon buttons are 22 (`theme::ICON`), the grid is 4 (`theme::GRID`), text is 12 pt (11
+  small, 12 monospace). Tree rows touch (a pitch of 20); the inspector's rows are 2 pt apart (a
+  pitch of 22), card headers 22, margins and the gap between cards 4. Every size a panel uses is
+  the theme's.
+- **The inspector is 320 pt wide** at first (352 before), its label column a third of it (40 %
+  before). A number is monospace and right-aligned in a box that fills its column, its unit a
+  muted suffix in a place of its own, so the boxes of a card are one width; a drop-down and a text
+  field fill the column too. The reset keeps its place (a target) at the row's end.
+- **The scene's Description** is a box as wide as its card under its name, three lines tall and
+  growing, not a 120 pt box beside empty space.
+- **The scroll bar's width is always kept free**, so a row is as wide with the bar as without
+  (the second review's minor 10). The "more below: scroll" badge is gone: the solid bar says it.
+- **Lifetime is folded at first** on a body that is always there (its title says so), as first
+  drawn; a body with a time has it open. The tests that ask for every field's editor open it.
+- **A uniform body's Material reads "Uniform"** (minor 11).
+- **The Probe reads into the right panel**: a third tab, Probe, beside Inspector and Readings,
+  which comes forward when a point is probed (`tab probe`); only the point's mark is in the view
+  (minor 13). **Readings** and the Probe's towers have one unit a column, in its heading, chosen
+  from the column's largest magnitude; numbers monospace, right-aligned.
+- **No sentences in the chrome**: a tool's hint is the tooltip of its name in the options row,
+  the timeline's caption is its title's tooltip (the head keeps the shot count and 2T), and what
+  an empty scene means is the Bodies group's tooltip.

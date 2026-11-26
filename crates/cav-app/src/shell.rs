@@ -59,7 +59,7 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
         "fly",
         "fly the camera: W A S D, E up, Q down, arrows or a drag to look; again, Enter or Esc to stop (Shift+F)",
     ),
-    ("tab", "the right-hand panel's tab: `tab inspector` or `tab readings`"),
+    ("tab", "the right-hand panel's tab: `tab inspector`, `tab readings` or `tab probe`"),
     (
         "probe-at",
         "the Probe tool's click at a point of the active pane, as fractions from its top left (`probe-at 0.5 0.5`): for scripts and pictures",
@@ -154,8 +154,22 @@ pub struct Layout {
     pub tree_groups: Vec<(String, bool)>,
     /// Each tower's status dot as drawn in the tree: the tower (from 0) and what it says.
     pub dots: Vec<(usize, crate::outliner::Dot)>,
-    /// The Readings tab's rows as drawn: the tower (from 0) and its ΔΦ as written.
+    /// The Readings tab's rows as drawn: the tower (from 0) and its ΔΦ as written, with the
+    /// column's unit after it (the unit is drawn once, in the column's heading).
     pub readings: Vec<(usize, String)>,
+    /// The reading the Probe tab drew its rows and its towers' table from, as the engine gave
+    /// it; `None` while the tab is not shown or nothing is probed.
+    pub probe: Option<cav_sim::probe::Probe>,
+    /// The Probe tab's rows as written: each name and its value.
+    pub probe_rows: Vec<(String, String)>,
+    /// Every text painted in the chrome that the design keeps free of sentences, by where it is:
+    /// `options` (the tool's options row), `timeline` (the timeline's head), `tree` (what the
+    /// scene tree paints besides its rows' names, which are in `row_texts`); and what became a
+    /// tooltip there, as `options tooltip` and `timeline tooltip`.
+    pub chrome: Vec<(&'static str, String)>,
+    /// What each material drop-down of the inspector shows closed: the path it edits and its
+    /// words ("Uniform", "steel").
+    pub choices: Vec<(String, String)>,
 }
 
 impl Default for Layout {
@@ -181,6 +195,10 @@ impl Default for Layout {
             tree_groups: Vec::new(),
             dots: Vec::new(),
             readings: Vec::new(),
+            probe: None,
+            probe_rows: Vec::new(),
+            chrome: Vec::new(),
+            choices: Vec::new(),
         }
     }
 }
@@ -287,8 +305,8 @@ pub struct Shell {
     /// from its top left (`pointer 0.5 0.7`): what shows a tool's hover (the Place tool's ghost)
     /// in the demo's pictures. UI state, read only by [`crate::headless::Headless::screenshot`].
     pub pointer_at: Option<[f32; 2]>,
-    /// What the Probe tool last read, and where (S19): shown as a card in the active pane until
-    /// another probe, another tool, or a new scene. UI state; `probe x y z` is the same reading.
+    /// What the Probe tool last read, and where (S19): shown in the right panel's Probe tab, its
+    /// point marked in the active pane, until another probe, another tool, or a new scene. UI state; `probe x y z` is the same reading.
     pub probed: Option<cav_sim::probe::Probe>,
     /// A probe asked for by `probe-at`, as fractions of the active pane: taken by the next frame
     /// that has the Probe tool in hand.
@@ -373,23 +391,40 @@ pub(crate) struct GizmoDrag {
 /// How near a body's picture the pointer must be to take hold of it, points.
 pub const GRAB_RADIUS: f32 = 16.0;
 
-/// A phase as people read it: in rad, mrad, µrad or nrad, with four figures.
+/// The unit a phase of magnitude `size` (radians) is read in: how many of the unit one radian
+/// is (1, 10³, 10⁶ or 10⁹) and its name (rad, mrad, µrad, nrad). For a column of phases, `size`
+/// is the column's largest magnitude, so the column has one unit (S20).
 #[must_use]
-pub fn phase_text(radians: f64) -> String {
-    let size = radians.abs();
+pub fn phase_unit(size: f64) -> (f64, &'static str) {
+    if size == 0.0 || size >= 1.0 || !size.is_finite() {
+        (1.0, "rad")
+    } else if size >= 1e-3 {
+        (1e3, "mrad")
+    } else if size >= 1e-6 {
+        (1e6, "µrad")
+    } else {
+        (1e9, "nrad")
+    }
+}
+
+/// A phase (`radians`) as a number of a unit of which one radian is `per_radian`
+/// ([`phase_unit`]): signed, three decimals, no unit (the column's heading has it).
+#[must_use]
+pub fn phase_in(radians: f64, per_radian: f64) -> String {
     if !radians.is_finite() {
         return if radians.is_nan() { "not a number".into() } else { "unbounded".into() };
     }
-    let (scaled, unit) = if size == 0.0 || size >= 1.0 {
-        (radians, "rad")
-    } else if size >= 1e-3 {
-        (radians * 1e3, "mrad")
-    } else if size >= 1e-6 {
-        (radians * 1e6, "µrad")
-    } else {
-        (radians * 1e9, "nrad")
-    };
-    format!("{scaled:+.3} {unit}")
+    format!("{:+.3}", radians * per_radian)
+}
+
+/// A phase as people read it: in rad, mrad, µrad or nrad, with four figures.
+#[must_use]
+pub fn phase_text(radians: f64) -> String {
+    if !radians.is_finite() {
+        return phase_in(radians, 1.0);
+    }
+    let (per_radian, unit) = phase_unit(radians.abs());
+    format!("{} {unit}", phase_in(radians, per_radian))
 }
 
 impl Default for Shell {
@@ -1160,8 +1195,9 @@ impl Shell {
             "tab" => match words.next() {
                 Some("inspector") => self.right_tab = crate::outliner::RightTab::Inspector,
                 Some("readings") => self.right_tab = crate::outliner::RightTab::Readings,
+                Some("probe") => self.right_tab = crate::outliner::RightTab::Probe,
                 _ => {
-                    let why = "`tab <inspector|readings>`".to_owned();
+                    let why = "`tab <inspector|readings|probe>`".to_owned();
                     self.engine.note(Level::Error, Subsystem::App, why.clone());
                     return Err(why);
                 }

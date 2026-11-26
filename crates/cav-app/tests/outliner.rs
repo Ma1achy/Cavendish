@@ -84,6 +84,8 @@ fn the_readings_tab_shows_the_engine_s_reading_bit_for_bit() {
     // for bit (the row is drawn from the values recorded, its full value under the pointer), and
     // its text is that value's. Control: another tower's value is another number, so a row drawn
     // from the wrong tower would fail.
+    // (S20: one unit a column, chosen from the column's largest magnitude, so the text is the
+    // value in that unit, not each row in a unit of its own.)
     let mut shell = Shell::new();
     shell.run("load point").unwrap();
     assert!(shell.engine.settle(std::time::Duration::from_secs(60)));
@@ -93,11 +95,15 @@ fn the_readings_tab_shows_the_engine_s_reading_bit_for_bit() {
     let drawn = shell.layout().reading_values.clone();
     assert_eq!(drawn.len(), reply.towers.len(), "a row a tower");
     let bits = |v: [f64; 3]| v.map(f64::to_bits);
+    let largest = reply.towers.iter().map(|t| t.gradiometer.abs()).fold(0.0, f64::max);
+    let (per_radian, unit) = cav_app::shell::phase_unit(largest);
+    assert_eq!(unit, cav_app::shell::phase_text(largest).rsplit(' ').next().unwrap(), "the largest's unit");
     for (n, values) in &drawn {
         let r = &reply.towers[*n];
         assert_eq!(bits(*values), bits([r.gradiometer, r.lower, r.upper]), "tower {}", n + 1);
         let text = &shell.layout().readings.iter().find(|(t, _)| t == n).unwrap().1;
-        assert_eq!(*text, cav_app::shell::phase_text(r.gradiometer), "tower {}", n + 1);
+        let expected = format!("{} {unit}", cav_app::shell::phase_in(r.gradiometer, per_radian));
+        assert_eq!(*text, expected, "tower {}", n + 1);
     }
     // Control: some tower reads another number than the first, so rows drawn from the wrong
     // tower would not match.
