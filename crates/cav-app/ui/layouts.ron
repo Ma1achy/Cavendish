@@ -6,7 +6,9 @@
 //
 //   id     what `layout <id>` names
 //   label  what the top bar's tab says
-//   lines  the console lines it runs, in order
+//   lines  the console lines it runs, in order; the figure's arrangement is a `panes` line or a
+//          `mosaic` line (docs/design/workspace.md §1: a grid of labels as subplot_mosaic
+//          writes it, a repeated label spanning cells; viewport N is the Nth label)
 //   unfold the inspector's folding sections it opens (optional)
 //   about  one line for the tooltip and the palette
 // Its key is the action `layout <id>` of ui/actions.ron (Ctrl+1, 2, 3: not bare digits, which
@@ -29,8 +31,10 @@
         (
             id: "analysis",
             label: "Analysis",
-            lines: ["panes 4", "show signal @1", "show periodogram @2", "show scene @3", "show cadence @4", "pane 1"],
-            about: "reading results: the signal, the periodogram and the cadence's window, with the scene",
+            // The signal wide along the top, the periodogram and the cadence's window under it,
+            // the scene tall beside them.
+            lines: ["mosaic \"AAC;BDC\"", "show signal @1", "show periodogram @2", "show scene @3", "show cadence @4", "pane 1"],
+            about: "reading results: the signal over the periodogram and the cadence's window, with the scene beside them",
         ),
     ],
 )

@@ -3,7 +3,8 @@
 # `slow` is the workspace's `slow_` tests, run by `cargo xtask slow` and by `cargo xtask oracle`.
 # TASK-S19-26: 45 tests moved from quick to slow by name (docs/slices/S19.md §7.10 lists them),
 # to bring quick back within 30 s; quick 683 + 1 new = 684 = 639 + 45. Nothing was deleted.
-quick 645
+# TASK-S20-03 (the mosaic): 9 new quick tests (cav-sim 2, cav-engine 1, cav-render 1, cav-app 5).
+quick 654
 gpu 42
 slow 45
 oracle 58

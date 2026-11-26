@@ -49,6 +49,8 @@ pub enum Needs {
     Tower(usize),
     /// A body of the scene is a voxel shape.
     Shapes,
+    /// The figure has more than one viewport (so one can be closed, or two swapped).
+    Viewports,
 }
 
 /// One action.

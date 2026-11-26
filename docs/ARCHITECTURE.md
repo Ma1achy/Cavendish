@@ -138,6 +138,18 @@ the schema (`paths::Entry::label`: a `title` where one is given, else the name i
 history list says each step in words (`dialogs::step_words`); the console's paths and lines stay
 one hover away.
 
+**The mosaic (S20).** The figure is a mosaic of up to twelve viewports
+(`docs/design/workspace.md` §1). Where they are is a `cav_sim::mosaic::Mosaic` the engine holds:
+view state, set by `ViewCommand::Mosaic` (journalled and replayed, never an edit, never undone;
+`panes 1|2|4` are shorthands for `A`, `AB`, `AB;CD`). A viewport is known by its label: its
+number is its label's rank in the alphabet among those present, and its camera and content go
+with the label through every split, close and swap. The window lays the figure out from
+`Mosaic::rects`, and keeps for itself only what is not the session's: a splitter's drag while it
+lasts (one command when it ends), which viewport is maximised, and which float over the window
+and where (`Shell::floating`: a floating viewport's place in the mosaic stays, empty, with a
+dock button). The keyboard walks the viewports as stops of one scope, `viewport/mosaic`, in the
+labels' order, so neither a swap nor a pop-out changes Tab's or the arrows' order.
+
 Every edit, from the viewport, a panel, a key or the palette, ends in one `Command` through
 `Engine::apply`: the gizmo, the transform session and the inspector's field all issue the same
 `Set` of a body's anchor; a run of them (a drag, a held key, a typed distance) is one undo whatever
@@ -180,8 +192,10 @@ field's reset and the window's unsaved mark.
 | The scene tree (groups, icons, eye and lock, status dots), the Readings tab and the Probe tab; the inspector's header, cards and Info card (`docs/design/panels.md`); the panels' sizes (`cav-app/src/theme.rs`, `docs/design/workspace.md` §0) | `cav-app/src/outliner.rs`, `cav-app/src/inspector.rs` | [the window](extending/a-tool-or-panel.md) |
 | An action: a menu item, a key, a palette entry; the big scopes' order | `cav-app/ui/actions.ron`, read by `cav-app/src/actions.rs`; drawn by `menus.rs`, `palette.rs`, `sheet.rs` | [the window](extending/a-tool-or-panel.md) |
 | The keyboard model: scopes, modes, the ring, the router, held keys | `cav-app/src/keyboard.rs` (pure logic, tested as a state machine); the frame registers into it from `panels.rs` and `editors.rs` | [the window](extending/a-tool-or-panel.md) |
-| A tool (Select, Move, Place, Probe), the gizmo, the transform session | `cav-app/ui/tools.ron`, `cav-app/src/tools.rs`; its pointer handling in `panels.rs` `figure` | [the window](extending/a-tool-or-panel.md) |
+| A tool (Select, Move, Place, Probe), the gizmo, the transform session | `cav-app/ui/tools.ron`, `cav-app/src/tools.rs`; its pointer handling in `panels.rs` `viewport` | [the window](extending/a-tool-or-panel.md) |
 | A layout of the window | `cav-app/ui/layouts.ron`, `cav-app/src/layouts.rs` | [the window](extending/a-tool-or-panel.md) |
+| The mosaic of viewports: the grid of labels and its weights, split, close, swap, resize (pure data and functions) | `cav-sim/src/mosaic.rs` (`Mosaic`); held by the engine (`Engine::mosaic`, `ViewCommand::Mosaic`, views carried with their labels in `engine.rs` `set_mosaic`); `mosaic`, `split`, `close`, `swap` in `console.rs` | [a view or a layout](extending/a-view-or-a-layout.md) |
+| A viewport as drawn: its picture or plot, its pointer, its right-click menu; the splitters; a floating viewport and its empty place | `cav-app/src/panels.rs` (`viewport`, `splitters`, `floating_viewport`, `figure`); the window's own state in `shell.rs` (`Shell::floating`, `Shell::maximised`; `viewport <close\|swap\|pop-out\|dock>`) | [a view or a layout](extending/a-view-or-a-layout.md) |
 | The camera's arithmetic: frame, zoom toward the pointer, fly, look | `cav-app/src/camera.rs`; `ViewCommand::Camera` in `cav-engine/src/command.rs` | — |
 | The editor's windows: history, new-scene wizard, Open, Save | `cav-app/src/dialogs.rs` | [the window](extending/a-tool-or-panel.md) |
 | What Add adds (starters) | `scenes/starters.ron`, `cav-sim/src/starters.rs` (`add <name> [at x y z]`, `duplicate <path>`) | [the window](extending/a-tool-or-panel.md) |

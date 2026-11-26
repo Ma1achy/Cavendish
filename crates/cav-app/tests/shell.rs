@@ -220,6 +220,17 @@ fn every_menu_item_is_an_action_that_runs() {
         if line == "redo" {
             shell.run("undo").unwrap();
         }
+        // (S20: closing a viewport or swapping two needs a second one, as redo needs an undo;
+        // with one they are refused, which the control below holds.)
+        if line.starts_with("viewport ") {
+            let alone = shell.run(line);
+            assert_eq!(
+                alone.is_err(),
+                matches!(line.as_str(), "viewport close" | "viewport swap"),
+                "`{line}`"
+            );
+            shell.run("panes 2").unwrap();
+        }
         let line = Shell::resolve(line, shell.engine.selection());
         // It is either the window's own or one the engine's console parses (S18's review, R4:
         // this parsed a fixed line, so it could not fail).
@@ -490,7 +501,8 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
                 || (*name == "focus" && outcome.as_ref().unwrap_err().contains("focus <"))
                 || (*name == "pointer" && outcome.as_ref().unwrap_err().contains("pointer <"))
                 || (*name == "probe-at" && outcome.as_ref().unwrap_err().contains("probe-at <"))
-                || (*name == "tab" && outcome.as_ref().unwrap_err().contains("tab <")),
+                || (*name == "tab" && outcome.as_ref().unwrap_err().contains("tab <"))
+                || (*name == "viewport" && outcome.as_ref().unwrap_err().contains("viewport <")),
             "{name}: {outcome:?}"
         );
         // `frame` works out a camera and issues it: the journal holds that one camera command
@@ -520,6 +532,7 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
                 || (*name == "tab" && wrong.contains("tab <"))
                 || (*name == "pointer" && wrong.contains("pointer <"))
                 || (*name == "probe-at" && wrong.contains("probe-at <"))
+                || (*name == "viewport" && wrong.contains("viewport <"))
                 || *name == "reset"
                 || *name == "focus",
             "{name}: {wrong}"

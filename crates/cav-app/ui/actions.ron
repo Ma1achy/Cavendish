@@ -14,7 +14,7 @@
 //   scope   where its keys work: a big scope's id or a node's, or "global"
 //   keys    its key chords: "Ctrl+Z", "Shift+F", "?", "Delete"
 //   needs   when it can run: Always, Undo, Redo, Selection, Item (a body or a tower), Body,
-//           Tower(n), Shapes
+//           Tower(n), Shapes, Viewports (the figure has more than one)
 //   rule    a rule above it in its menu
 //   context on the right-click menu of a row of the scene tree and of the view
 //   about   one line for the palette and the ? sheet
@@ -113,8 +113,15 @@
         (id: "layout-scene", label: "Scene", menu: "View/Layout", line: "layout scene", keys: ["Ctrl+1"], about: "building and placing: one big view of the scene"),
         (id: "layout-instrument", label: "Instrument", menu: "View/Layout", line: "layout instrument", keys: ["Ctrl+2"], about: "the array and its timing: the scene beside the flights"),
         (id: "layout-analysis", label: "Analysis", menu: "View/Layout", line: "layout analysis", keys: ["Ctrl+3"], about: "reading results: signal, periodogram, cadence and the scene"),
-        (id: "maximise", label: "Maximise the pane", menu: "View", line: "maximise", keys: ["Ctrl+Space"], rule: true, about: "the active pane fills the window but for the menu bar and the status line; again to restore"),
-        (id: "fullscreen", label: "Full screen", menu: "View", line: "fullscreen", keys: ["F11"], about: "the window fills the screen; again to restore"),
+        // The Viewport submenu is also every viewport's right-click menu (panels.rs, VIEWPORT_MENU).
+        (id: "split-right", label: "Split right", menu: "View/Viewport", line: "split right", about: "split the active viewport in two, side by side: the new one starts as a copy of it"),
+        (id: "split-down", label: "Split down", menu: "View/Viewport", line: "split down", about: "split the active viewport in two, one above the other: the new one starts as a copy of it"),
+        (id: "viewport-close", label: "Close", menu: "View/Viewport", line: "viewport close", needs: Viewports, about: "close the active viewport: a neighbour grows into its place"),
+        (id: "viewport-swap", label: "Swap with the next", menu: "View/Viewport", line: "viewport swap", needs: Viewports, rule: true, about: "exchange the active viewport's place with the next one's; each keeps its camera and what it shows"),
+        (id: "mosaic-even", label: "Even the splitters", menu: "View/Viewport", line: "mosaic even", about: "every column as wide and every row as high as the others (a double click on a splitter evens its two sides)"),
+        (id: "viewport-pop-out", label: "Pop out / dock", menu: "View/Viewport", line: "viewport pop-out", rule: true, about: "float the active viewport over the window, or put it back in its place in the mosaic"),
+        (id: "maximise", label: "Maximise", menu: "View/Viewport", line: "maximise", keys: ["Ctrl+Space"], about: "the active viewport fills the window but for the menu bar and the status line; again to restore"),
+        (id: "fullscreen", label: "Full screen", menu: "View", line: "fullscreen", keys: ["F11"], rule: true, about: "the window fills the screen; again to restore"),
         (id: "gui", label: "Hide the GUI", menu: "View", line: "gui", keys: ["F3"], about: "the scene fills the window; F3 or Esc brings the panels back"),
         (id: "console", label: "Console", menu: "View", line: "console", keys: ["`"], about: "open or close the console: every command, typed"),
 

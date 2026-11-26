@@ -5,6 +5,7 @@
 //! What is fixed already is the shape: state changes only through [`Engine::apply`], every applied
 //! command is journalled, and the journal replayed on a fresh engine gives the same state.
 
+use cav_sim::mosaic::Mosaic;
 use cav_sim::{DrawStyle, NamedView, PaneContent, Projection, SceneSpec, SceneView, Target, ViewSpec};
 use serde::Serialize;
 
@@ -154,8 +155,12 @@ pub struct Engine {
     spec: SceneSpec,
     time: f64,
     selection: Option<Target>,
+    /// How the figure is divided into viewports. A pane's number is its label's rank in it.
+    mosaic: Mosaic,
+    /// How many panes the mosaic has (kept beside it: it is asked for with every command).
     panes: usize,
     active: usize,
+    /// Each pane's view, by number; those past `panes` are kept for when they return.
     views: [ViewSpec; MAX_PANES],
     /// What each pane shows.
     contents: [PaneContent; MAX_PANES],
@@ -225,6 +230,7 @@ struct State<'a> {
     spec: &'a SceneSpec,
     time: f64,
     selection: Option<Target>,
+    mosaic: &'a Mosaic,
     panes: usize,
     active: usize,
     views: &'a [ViewSpec; MAX_PANES],
@@ -259,6 +265,7 @@ impl Engine {
             spec,
             time: 0.0,
             selection: None,
+            mosaic: Mosaic::single(),
             panes: 1,
             active: 0,
             views,
@@ -684,7 +691,7 @@ impl Engine {
             commands.push(Command::Compare(Some(Box::new(instrument.clone()))));
         }
         let view = |change: ViewCommand| Command::View(change);
-        commands.push(view(ViewCommand::Panes(self.panes)));
+        commands.push(view(ViewCommand::Mosaic { layout: self.mosaic.clone(), from: None }));
         for (pane, camera) in self.views.iter().enumerate() {
             commands.extend([
                 // The projection and what is shown first: each may move the camera or forget
@@ -997,8 +1004,11 @@ impl Engine {
             return Err(format!("there is no pane {}; panes are 1 to {MAX_PANES}", pane + 1));
         }
         match *view {
-            ViewCommand::Panes(n) if !matches!(n, 1 | 2 | 4) => {
-                Err(format!("the figure splits into 1, 2 or 4 panes, not {n}"))
+            ViewCommand::Panes(n) if !matches!(n, 1 | 2 | 4) => Err(format!(
+                "`panes` splits the figure into 1, 2 or 4 panes, not {n}; `mosaic` arranges up to {MAX_PANES}"
+            )),
+            ViewCommand::Mosaic { from: Some(label), .. } if self.mosaic.number(label).is_none() => {
+                Err(format!("there is no viewport `{label}` to copy; the figure is {}", self.mosaic.quoted()))
             }
             ViewCommand::Activate(pane) if pane >= self.panes => {
                 Err(format!("pane {} is not shown; the figure has {} pane(s)", pane + 1, self.panes))
@@ -1185,14 +1195,42 @@ impl Engine {
         }
     }
 
+    /// Arranges the figure as `next`, the views carried with their labels
+    /// ([`ViewCommand::Mosaic`] says how). Every one of the [`MAX_PANES`] kept views goes on
+    /// being kept, but those a copy displaces from the far end.
+    fn set_mosaic(&mut self, next: Mosaic, from: Option<char>) {
+        let (old, new) = (self.mosaic.labels(), next.labels());
+        let source = from.and_then(|label| self.mosaic.number(label));
+        let carried: Vec<Option<usize>> =
+            new.iter().map(|label| old.iter().position(|o| o == label)).collect();
+        // The panes whose label is not in the new mosaic, in order: what a label new to the
+        // figure, and every pane past the shown ones, takes its view from.
+        let mut spare = (0..MAX_PANES).filter(|pane| !carried.contains(&Some(*pane)));
+        let picks: Vec<usize> = (0..MAX_PANES)
+            .map(|pane| match (carried.get(pane).copied().flatten(), source) {
+                (Some(kept), _) => kept,
+                (None, Some(copied)) if pane < new.len() => copied,
+                _ => spare.next().expect("as many panes are spare as are not carried"),
+            })
+            .collect();
+        let (views, contents, spans) = (self.views.clone(), self.contents, self.spans);
+        for (pane, pick) in picks.into_iter().enumerate() {
+            self.views[pane] = views[pick].clone();
+            self.contents[pane] = contents[pick];
+            self.spans[pane] = spans[pick];
+        }
+        self.active = old.get(self.active).and_then(|label| next.number(*label)).unwrap_or(0);
+        self.panes = new.len();
+        self.mosaic = next;
+    }
+
     fn perform_view(&mut self, view: &ViewCommand) {
         match *view {
             ViewCommand::Panes(n) => {
-                self.panes = n;
-                if self.active >= n {
-                    self.active = 0;
-                }
+                let layout = Mosaic::panes(n).expect("check_view let through 1, 2 or 4");
+                self.set_mosaic(layout, None);
             }
+            ViewCommand::Mosaic { ref layout, from } => self.set_mosaic(layout.clone(), from),
             ViewCommand::Activate(pane) => self.active = pane,
             ViewCommand::Look { pane, view } => {
                 // A named view is a view of the scene: it looks from there and frames what it sees.
@@ -1747,6 +1785,7 @@ impl Engine {
             spec: &self.spec,
             time: self.time,
             selection: self.selection,
+            mosaic: &self.mosaic,
             panes: self.panes,
             active: self.active,
             views: &self.views,
@@ -1776,6 +1815,7 @@ impl Engine {
             duration: self.spec.duration,
             selection: self.selection,
             panes: self.panes,
+            mosaic: self.mosaic.to_string(),
             active_pane: self.active,
             journal: self.journal.len(),
             journal_whole: self.journal_whole,
@@ -1825,10 +1865,18 @@ impl Engine {
         self.voxels.trees().get(n).and_then(Option::as_ref)
     }
 
-    /// How many panes the figure shows.
+    /// How many panes (viewports) the figure shows: the mosaic's labels, 1 to [`MAX_PANES`].
     #[must_use]
     pub const fn panes(&self) -> usize {
         self.panes
+    }
+
+    /// How the figure is divided into viewports. Pane `n` (from 0) is the viewport of the
+    /// mosaic's label `n` ([`Mosaic::label`]); its rectangle in a figure of some size is
+    /// [`Mosaic::rects`]'s `n`th.
+    #[must_use]
+    pub const fn mosaic(&self) -> &Mosaic {
+        &self.mosaic
     }
 
     /// The pane that keys and unaddressed commands act on, from 0.
@@ -1950,10 +1998,11 @@ impl Engine {
     }
 }
 
-/// A pane's home view: the first pane is the isometric perspective; the others are the plan, the
-/// front and the side, square-on and orthographic, as a drawing's three views.
+/// A pane's home view: the first pane is the isometric perspective; the next three are the plan,
+/// the front and the side, square-on and orthographic, as a drawing's three views; panes past the
+/// fourth go round the same four again.
 fn home_view(spec: &SceneSpec, pane: usize, style: DrawStyle) -> ViewSpec {
-    let (named, projection) = match pane {
+    let (named, projection) = match pane % 4 {
         0 => (NamedView::Iso, Projection::Perspective),
         1 => (NamedView::Top, Projection::Orthographic),
         2 => (NamedView::South, Projection::Orthographic),
@@ -2239,6 +2288,99 @@ mod tests {
     }
 
     #[test]
+    fn a_mosaic_replays_from_the_journal() {
+        // M7. Criterion (written before measuring): a session with a split, a splitter's drag
+        // and a swap replays to the same mosaic and the same views, bit for bit (the digest);
+        // each of them is one journal line and none is an edit. Control: the same journal
+        // without its mosaic lines replays to one pane.
+        use cav_sim::mosaic::Boundary;
+        let mut engine = Engine::new();
+        engine.run_script("load point; view top; split right; orbit 30 20 @2; show periodogram @2").unwrap();
+        // (A split halves the weight of what it splits: the sum is kept, nothing else moves.)
+        assert_eq!(engine.mosaic().to_string(), "AB cols 0.5 0.5");
+        // The new viewport began as a copy of the one split, and then went its own way.
+        assert_eq!(engine.view(1).named(), None);
+        assert_eq!(
+            (engine.view(1).yaw, engine.view(1).pitch, engine.view(0).named()),
+            (30.0, 20.0, Some(NamedView::Top))
+        );
+        assert_eq!(engine.view(1).distance.to_bits(), engine.view(0).distance.to_bits());
+        let lines = engine.journal().len();
+        engine.run_line("split down @2").unwrap();
+        assert_eq!(engine.journal().len(), lines + 1, "a split is one journal line");
+        assert_eq!(engine.mosaic().to_string(), "AB;AC cols 0.5 0.5 rows 0.5 0.5");
+        assert_eq!((engine.view(2), engine.content(2)), (engine.view(1), PaneContent::Periodogram));
+        // A splitter's drag: the one command it ends as.
+        let dragged = engine.mosaic().resize(Boundary::Column(0), 0.25).unwrap();
+        engine.apply(Command::View(ViewCommand::Mosaic { layout: dragged, from: None })).unwrap();
+        engine.run_script("swap A C; pane 3; zoom 7").unwrap();
+        assert_eq!(engine.mosaic().to_string(), "CB;CA cols 0.75 0.25 rows 0.5 0.5");
+        assert_eq!((engine.panes(), engine.active_pane()), (3, 2), "C is still the third viewport");
+        assert_eq!((engine.view(2).distance, engine.view(2).yaw), (7.0, 30.0));
+        assert_eq!(engine.view(0).named(), Some(NamedView::Top), "A kept its camera through the swap");
+        assert_eq!(engine.history(), (true, false));
+        let undo = engine.history_steps().0.len();
+        assert_eq!(undo, 1, "the load is the one edit: no mosaic command is undone");
+
+        let replayed = Engine::replay(engine.journal()).unwrap();
+        assert_eq!(replayed.mosaic(), engine.mosaic());
+        assert_eq!(replayed.digest(), engine.digest());
+        for pane in 0..MAX_PANES {
+            assert_eq!(replayed.view(pane), engine.view(pane), "pane {}", pane + 1);
+            assert_eq!(replayed.content(pane), engine.content(pane));
+        }
+        // Through JSON, as a saved session.
+        let saved = serde_json::to_string(engine.journal()).unwrap();
+        assert!(saved.contains(r#"{"Mosaic":{"layout":"CB;CA cols 0.75 0.25 rows 0.5 0.5"}}"#), "{saved}");
+        let loaded: Vec<Command> = serde_json::from_str(&saved).unwrap();
+        assert_eq!(Engine::replay(&loaded).unwrap().digest(), engine.digest());
+        // Control: without the mosaic's lines (and the activation of a pane they made) the
+        // replay has one pane, and is not this session.
+        let without: Vec<Command> = engine
+            .journal()
+            .iter()
+            .filter(|c| !matches!(c, Command::View(ViewCommand::Mosaic { .. } | ViewCommand::Activate(_))))
+            .cloned()
+            .collect();
+        assert_eq!(without.len(), engine.journal().len() - 5);
+        let other = Engine::replay(&without).unwrap();
+        assert_eq!((other.panes(), other.mosaic().to_string().as_str()), (1, "A"));
+        assert_ne!(other.digest(), engine.digest());
+
+        // Closing: the others keep their cameras with their labels, whatever their numbers
+        // become; the active viewport stays the active one.
+        let (a, c) = (engine.view(0).clone(), engine.view(2).clone());
+        engine.run_line("close @2").unwrap();
+        assert_eq!(engine.mosaic().to_string(), "CA cols 0.75 0.25");
+        assert_eq!((engine.view(0), engine.view(1), engine.active_pane()), (&a, &c, 1));
+        assert_eq!(engine.content(1), PaneContent::Periodogram);
+        // A journal started again from here holds the mosaic, and replays to it.
+        engine.restart_journal().unwrap();
+        assert_eq!(Engine::replay(engine.journal()).unwrap().digest(), engine.digest());
+        assert_eq!(engine.mosaic().to_string(), "CA cols 0.75 0.25");
+        // `panes` is the shorthand it was: the same figure as the mosaic it stands for.
+        let mut short = Engine::new();
+        let mut long = Engine::new();
+        short.run_script("panes 4; pane 3; panes 2").unwrap();
+        long.run_script("mosaic \"AB;CD\"; pane 3; mosaic \"AB\"").unwrap();
+        assert_eq!((short.mosaic(), short.active_pane()), (long.mosaic(), 0));
+        assert_eq!(short.digest(), long.digest());
+        // The cap: twelve viewports are held and the thirteenth is refused with the number,
+        // changing nothing.
+        let mut full = Engine::new();
+        for _ in 1..MAX_PANES {
+            full.run_line("split right").unwrap();
+        }
+        assert_eq!(full.panes(), 12);
+        let before = (full.digest(), full.journal().len());
+        let refused = full.run_line("split down @5").unwrap_err();
+        assert!(refused.contains("at most 12 viewports"), "{refused}");
+        assert_eq!(before, (full.digest(), full.journal().len()));
+        assert!(full.frame(11).is_ok(), "the twelfth pane is drawn from like the first");
+        assert!(Engine::new().run_line("close").unwrap_err().contains("last viewport"));
+    }
+
+    #[test]
     fn repeated_seeks_and_orbits_coalesce_without_changing_the_replay() {
         let mut engine = Engine::new();
         let mut every_command = Vec::new();
@@ -2331,7 +2473,12 @@ mod tests {
             (Command::Seek(f64::NAN), "must be finite"),
             (Command::View(ViewCommand::Panes(3)), "1, 2 or 4"),
             (Command::View(ViewCommand::Activate(1)), "not shown"),
-            (Command::View(ViewCommand::Home { pane: 4 }), "no pane 5"),
+            // (Pane 5 was the first not to exist while a figure held four; S20's mosaic holds twelve.)
+            (Command::View(ViewCommand::Home { pane: MAX_PANES }), "no pane 13"),
+            (
+                Command::View(ViewCommand::Mosaic { layout: Mosaic::panes(2).unwrap(), from: Some('Q') }),
+                "no viewport `Q`",
+            ),
             (Command::View(ViewCommand::Zoom { pane: 0, distance: -1.0 }), "positive"),
             (Command::View(ViewCommand::Orbit { pane: 0, yaw: f64::INFINITY, pitch: 0.0 }), "finite"),
             (Command::load(SceneSpec { duration: -1.0, ..SceneSpec::room() }), "duration"),
@@ -2460,7 +2607,8 @@ mod tests {
         engine.run_script("select none; seek 1; load void").unwrap();
         let after = engine.frame(1).unwrap();
         assert_eq!((after.scene.name.as_str(), after.highlight, after.time), ("void", None, 0.0));
-        assert!(engine.frame(MAX_PANES).unwrap_err().contains("no pane 5"));
+        // (S20: the cap is twelve, so the first pane there is not is the thirteenth.)
+        assert!(engine.frame(MAX_PANES).unwrap_err().contains("no pane 13"));
     }
 
     #[test]
