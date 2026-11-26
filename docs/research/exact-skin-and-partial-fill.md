@@ -412,6 +412,184 @@ numbers are upper bounds:
 | Nagy prism, U only (S3's near kernel) | 370 |
 | one polyhedron triangle, U and g | 55 |
 
+### 3.1 Curved and non-convex shapes: sphere, torus, Utah teapot, Suzanne (25 Nov 2026)
+
+Code and numbers: [`exact-skin-and-partial-fill/shapes/`](exact-skin-and-partial-fill/shapes/)
+(`shapes_lib.py`, `analytic.py`, `sweep.py`, `regimes.py`, `primitives.py`, `figures.py`). Every run
+was one process at a time, below normal priority, under a time limit. The tower and phase are as in §3,
+ρ = 2700 kg/m³, and the lower cloud is 1.5 m or 5 m from the surface along (1, 0.2, −0.3) from the
+body's centre.
+
+**Shapes.**
+- **Analytic sphere and torus.** The sphere has radius 1 m; the torus has R = 1 m and r = 0.4 m. Their
+  references use no mesh. The sphere's is the closed form (shell theorem). The torus's is a sum of thin
+  rings, each in closed form with complete elliptic integrals, over Gauss–Legendre × trapezoid
+  quadrature of the cross-section. Doubling that quadrature moves the phase by 3×10⁻¹⁴ rad.
+- **How the cells are built for them.** Techniques (a)–(e) voxelise a mesh (an icosphere of 5120
+  triangles; a 64 × 32 torus). Techniques (c★) and (d★) take each cell's fill, centroid and second
+  moment from the analytic surface directly. The z-chords are exact, and the (x, y) quadrature is split
+  at every kink. Volume is right to 10⁻¹³–10⁻¹¹ relative.
+- **Teapot and Suzanne.** The teapot is Newell's, 6320 triangles; Suzanne is Blender's, 968
+  triangles. Both are downloaded at run time from a pinned commit of `common-3d-test-models` and
+  checked against a SHA-256. That repository states no licence for either, so neither mesh nor
+  anything derived from it is committed.
+
+**Repairing the open meshes.** Both downloads are open. The first closing re-meshed them with
+marching cubes on a 1/48 m grid, which gave the jagged lid rim, the stray spout fragment and the column
+under Suzanne's chin. It is replaced by a repair that keeps the original triangles:
+1. Weld vertices that agree to 8 decimals.
+2. Drop back-to-back triangle pairs (Suzanne has one, a zero-thickness sheet).
+3. Split into edge-connected parts: the teapot's body, lid, spout and handle; Suzanne's head and two
+   eyes.
+4. Cap each hole with a fan of triangles to its centroid: 6 holes on the teapot, 4 on Suzanne.
+5. Unite the parts with manifold3d in double precision, so a spout or an eye that passes into the body
+   counts once.
+
+**The automatic check** (`python shapes_lib.py` writes `mesh-check.md`). The pass criterion was
+written before measuring:
+- the result is closed;
+- it has the expected number of edge-connected pieces (one for each mesh);
+- every vertex of the result lies within 10⁻⁶ m of the original triangles or the caps;
+- every original vertex that is not inside another part lies within 10⁻⁶ m of the result.
+
+The last two together are a vertex-sampled two-sided Hausdorff distance. The control arm runs the same
+check on the rejected marching-cubes closing, which must fail it:
+
+| mesh | closed | pieces (expected) | result → original (m) | original → result (m) | verdict |
+|---|---|---|---|---|---|
+| teapot, repaired | yes | 1 (1) | 1.5×10⁻¹⁷ | 0 | pass |
+| teapot, marching cubes (control) | yes | **2** (1) | **7.6×10⁻³** | **2.4×10⁻²** | fail |
+| Suzanne, repaired | yes | 1 (1) | 5.4×10⁻¹⁷ | 0 | pass |
+| Suzanne, marching cubes (control) | yes | 1 (1) | **8.6×10⁻³** | **1.8×10⁻²** | fail |
+
+The spout fragment fails on the piece count. Suzanne's column is attached to the head, so it passes
+the count but fails on distance. Front and side renders of the repaired meshes match the raw
+downloads; Suzanne's long muzzle is in the original. The pictures label the left panel "repaired
+mesh" or "analytic" and say what was done:
+[`teapot.png`](exact-skin-and-partial-fill/shapes/teapot.png),
+[`suzanne.png`](exact-skin-and-partial-fill/shapes/suzanne.png),
+[`sphere.png`](exact-skin-and-partial-fill/shapes/sphere.png),
+[`torus.png`](exact-skin-and-partial-fill/shapes/torus.png) and their `-cutaway` versions.
+
+**Resolution sweeps** ([`sweep.png`](exact-skin-and-partial-fill/shapes/sweep.png), full tables
+with cell counts, boundary counts, piece triangles, clip time, cost and memory in
+[`sweep.md`](exact-skin-and-partial-fill/shapes/sweep.md)). Pitches are body size / h = 4 … 128
+(at 128: 77,012 boundary cells on the sphere, 38,399 on Suzanne). Techniques (a)–(e) are measured
+against the mesh (the voxel error); (c★) and (d★) against the analytic shape.
+
+Phase error at 1.5 m (rad) at size/h = 128, and the fitted order in h (size/h ≥ 8):
+| technique | sphere | torus | teapot | Suzanne |
+|---|---|---|---|---|
+| (a) cubes (centre inside) | 5.2×10⁻² (2.0) | 1.6×10⁻¹ (1.7) | 1.8×10⁻² (1.2) | 2.0×10⁻³ (1.4) |
+| (b) sampled fill 4³, renormalised | 4.8×10⁻⁴ (2.2) | 5.4×10⁻⁴ (2.2) | 3.4×10⁻⁴ (0.9) | 1.6×10⁻⁴ (1.9) |
+| (c) exact fill at the centroid | 8.9×10⁻⁸ (3.1) | 1.1×10⁻⁵ (2.6) | 1.2×10⁻⁷ (3.0) | 9.0×10⁻⁸ (3.1) |
+| (d) (c) + second moment | 9.6×10⁻⁸ (3.9) | 2.4×10⁻⁷ (3.8) | 5.9×10⁻¹⁰ (3.8) | 7.8×10⁻¹⁰ (3.8) |
+| (e) clipped pieces | ≤ 10⁻¹¹ at every pitch | ≤ 2×10⁻¹² | ≤ 2×10⁻¹² | ≤ 2×10⁻¹² |
+| (c★) analytic fill at the centroid | 1.8×10⁻⁷ (2.9) | 1.4×10⁻⁵ (2.6) | — | — |
+| (d★) (c★) + second moment | 9.6×10⁻⁸ (3.9) | 2.4×10⁻⁷ (3.8) | — | — |
+
+- **(e) is flat at rounding** at every pitch and shape (shown in
+  [`polyhedra.png`](exact-skin-and-partial-fill/shapes/polyhedra.png)), and its mass error is
+  10⁻¹⁶. (d★) agrees with (d) to two digits at every pitch: the voxel error does not depend on
+  whether the pieces come from the mesh or the analytic surface.
+- **The facet error dominates for the analytic shapes.** The mesh's own error against the analytic
+  shape falls as (triangle count)^−0.99, which is order 2 in the edge length. The 5120-triangle
+  icosphere is off by 0.64 rad at 1.5 m and the 4096-triangle torus by 1.8 rad. At 81,920 and
+  262,144 triangles they are still off by 0.04 and 0.03 rad, which is 10⁵ times the voxel error of
+  (d) at size/h = 128. For an analytic body, the mesh, not the voxels, limits the accuracy. Building
+  the cells from the analytic surface ((c★), (d★)) removes the mesh from the chain.
+- **Measured anomaly: on the sphere, (d) is not better than (c).** The pass criterion was written
+  first: if (d★) beat (c★) in RMS over 26 random tower directions, the one-direction result was a
+  coincidence. It did not. At h = 0.25, 0.125 and 0.0625 m, the RMS of (c★) is 1.7×10⁻³, 5.0×10⁻⁵ and
+  9.0×10⁻⁶ rad, and of (d★) 4.3×10⁻³, 3.1×10⁻⁴ and 2.1×10⁻⁵ rad. (d★) wins in only 1–2 of the 26
+  directions. On the sphere, the pieces' summed quadrupole term (RMS 4.0×10⁻³, 3.5×10⁻⁴, 1.2×10⁻⁵ rad)
+  is largely cancelled by their higher moments, which (c) also leaves out. The two meet at
+  size/h = 128. On the torus, teapot and Suzanne, (d) beats (c) by 10–200× at every pitch. This is not
+  explained; it is listed in §8.
+
+**Error against cost** ([`pareto.png`](exact-skin-and-partial-fill/shapes/pareto.png)). The cost is
+the §3 kernel model for a direct sum per evaluation point: 8.5 ns per cube or point, 17 ns for point
++ quadrupole, 55 ns per triangle. Memory is modelled at 7 bytes per leaf, plus 16 bytes per boundary
+leaf for (c), 40 for (d), or 36 per piece triangle for (e).
+
+Cheapest cost per point (µs) to bring the 1.5 m error below 10⁻⁴ / 10⁻⁶ / 10⁻⁸ rad within
+size/h ≤ 128 (— means not reached):
+| technique | sphere | torus | teapot | Suzanne |
+|---|---|---|---|---|
+| (b) sampled fill | — / — / — | — / — / — | — / — / — | 100 / — / — |
+| (c) fill at centroid | 27 / 510 / — | 324 / — / — | 5.1 / 259 / — | 3.6 / 211 / — |
+| (d) + second moment | 77 / 1890 / — | 49 / 1160 / — | 0.81 / 14 / 286 | 1.3 / 19 / 407 |
+| (e) clipped pieces | 690 at size/h = 4 | 515 | 674 | 218 |
+| the whole mesh, directly (exact) | 282 | 225 | 366 | 63 |
+
+- **(d) is the cheapest route to 10⁻⁴ and 10⁻⁶ rad** on the teapot and Suzanne, by 3–18× over (c).
+- **For these 1,000–7,000-triangle meshes, summing the whole mesh directly is exact and cheaper than
+  (e) everywhere.** It is cheaper than every voxel technique at 10⁻⁸ rad except the teapot's (d), at
+  286 against 366 µs.
+- **The caveat is the cost model.** It has no tree walk. A walk aggregates far cells, so for many
+  bodies, large meshes or far evaluation points the balance moves towards the voxel techniques.
+  What the table settles is the ordering within the voxel techniques: (d) < (c) ≪ (b) < (a) per unit
+  of accuracy.
+
+**Near, mid and far** ([`regimes-distance.png`](exact-skin-and-partial-fill/shapes/regimes-distance.png),
+[`regimes-distance.md`](exact-skin-and-partial-fill/shapes/regimes-distance.md)). Distance is from the
+surface. Each entry is where the technique's error stays below the tolerance for every larger sampled
+distance:
+| technique | sphere (h 1/16 m) 1e-6 / 1e-10 rad | torus (h 0.05 m) | teapot (h 1/32 m) |
+|---|---|---|---|
+| (b) sampled fill | 28 m / 167 m | 28 m / 409 m | 28 m / 261 m |
+| (c) fill at centroid | 3.0 m / 18 m (48 / 286 cells) | 11 m / 68 m | 4.7 m / 44 m |
+| (d) + second moment | 4.7 m / 28 m (75 / 447 cells) | 3.0 m / 18 m (60 / 358 cells) | 1.2 m / 7.3 m (39 / 234 cells) |
+| (e) clipped pieces | from 0.5 cells / from 0.5 cells | same | same |
+| (f) body multipole to l = 3, no voxels | 4.7 m / 18 m | 28 m / 107 m | 7.3 m / 28 m |
+| (g) point mass | 4.7 m / 18 m | 107 m / 639 m | 28 m / 167 m |
+
+(a) reaches 10⁻⁶ rad only beyond 260–640 m and never reaches 10⁻¹⁰ rad in range (to 1000 sizes). On
+the sphere, (f) and (g) measure the icosphere's departure from a sphere.
+
+**Voxel primitives** ([`primitives.png`](exact-skin-and-partial-fill/shapes/primitives.png),
+[`primitives.md`](exact-skin-and-partial-fill/shapes/primitives.md)). Every primitive is given each
+cell's exact piece mass; only its shape and position change. Phase error (rad) at 1, 10 and 100 cells
+from the surface, teapot at h = 1/16 m, with numpy time per (cell, point) pair:
+| primitive | 1 cell | 10 cells | 100 cells | ns per pair (numpy) |
+|---|---|---|---|---|
+| (1) point at the cell centre | 3×10⁻¹ | 9×10⁻³ | 1×10⁻⁵ | 99 |
+| (2) point at the piece's centroid | 2×10⁻¹ | 1×10⁻³ | 1×10⁻⁶ | 95 |
+| (3) uniform sphere at the centre | 3×10⁻¹ | 9×10⁻³ | 1×10⁻⁵ | 96 |
+| (4) uniform cube (prism) | 4×10⁻¹ | 9×10⁻³ | 1×10⁻⁵ | 3832 |
+| (5) cube series, l ≤ 4 | 3×10⁻¹ | 9×10⁻³ | 1×10⁻⁵ | 491 |
+| (6) Gaussian, σ = h/√12 | 3×10⁻¹ | 9×10⁻³ | 1×10⁻⁵ | 210 |
+| (7) trilinear density | 1×10⁰ | 9×10⁻³ | 1×10⁻⁵ | 101,516 |
+| (8) exact clipped piece | 9×10⁻¹³ | 4×10⁻¹³ | 3×10⁻¹³ | 14,298 |
+
+Beyond about two cells, the primitives centred on the cell, (1) and (3)–(7), give the same error to
+the digit. Their shape matters only within a cell or two. Where the mass sits matters at every
+distance: (2), the centroid, is 7–100× better. The sphere and torus rows say the same (`primitives.md`).
+The numpy times compare primitives with each other; they are not engine costs (§3 has those).
+
+**Orientation and motion.**
+- **Static angles** ([`orientation.png`](exact-skin-and-partial-fill/shapes/orientation.png),
+  h = 0.1 m).
+  - Torus turned about its axis: (c) and (d) do not change, at 1.2×10⁻³ and 8.6×10⁻⁵ rad to two
+    digits, while (b) wanders between 5×10⁻⁴ and 3×10⁻² rad.
+  - Box turned about a generic axis: (c) is best aligned (1.9×10⁻⁵) and worst at 10° (1.0×10⁻³). That
+    is §2.3's aligned-face cancellation.
+  - Teapot: (d) stays at 1.0–1.3×10⁻⁵ rad at every angle.
+- **Translation past a tower** ([`translation.png`](exact-skin-and-partial-fill/shapes/translation.png),
+  [`translation-spectrum.png`](exact-skin-and-partial-fill/shapes/translation-spectrum.png)). The
+  torus passes the tower at 1.5 m closest approach, h = 0.1 m, sampled at h/16.
+  - Body-frame voxels, voxelised once and moved rigidly, give a smooth error with no lines.
+  - World-fixed voxels, re-voxelised on a fixed grid, add lines at k/h = 10, 20, 30 per metre (10 Hz
+    per m/s of speed). The amplitude at 1/h is 0.22 rad for (a), 2.3×10⁻⁴ for (b), 3.6×10⁻⁷ for (c)
+    and 1.0×10⁻⁸ for (d).
+  - The largest error of (d) is 2.8×10⁻⁷ rad in either frame.
+- **Spin** ([`spin.png`](exact-skin-and-partial-fill/shapes/spin.png)). The torus spins about its
+  axis, h = 0.1 m.
+  - Body frame: lattice harmonics 4 and 8 of the spin, plus a once-per-turn term (2×10⁻² rad for (a)),
+    because the voxelised mass's centre is off the axis. (d)'s peak-to-peak is 7×10⁻⁸ rad.
+  - World-fixed: the error repeats every 5.625°, the mesh's 64-fold symmetry, so its harmonics are
+    64k of the spin. At harmonic 64, (c) is 6×10⁻⁶ rad and (d) 3×10⁻⁷ rad, on top of a steady offset.
+
 ## 4. Cost at Cavendish's scales (derived)
 
 - **Boundary leaves.** A body of N finest cells has about 6N^(2/3) boundary cells (cube-like):
@@ -565,12 +743,20 @@ cells clipped again. That is a per-edit cost proportional to the cells edited.
   the sphere's volume at order 2.4.
 - **Not measured: clipping cost in compiled code.** The 10⁻⁶–10⁻⁵ s per cell is an estimate. Measure
   it in the slice: a Rust clipper on 10⁶ cells.
-- **Not measured: non-convex meshes and analytic curved shapes.** Every benchmark body is convex.
-  The method for meshes, signed tetrahedra clipped to cells, is described, not built.
+- **Non-convex meshes and analytic curved shapes: now measured (§3.1).** The clipper works for any
+  closed mesh: caps on the cell walls come from lattice lines cast through the mesh. The costs in §3.1
+  are a model, not engine timings, and the Python clipping time (3–70 ms per boundary cell) says
+  nothing about compiled code.
+- **The two meshes' licences.** `common-3d-test-models` states none for the teapot or Suzanne, so they
+  are only downloaded at run time, never committed.
 - **Not measured: the 20 m column, at the 10⁻¹¹ rad floor.** The JSON files hold every distance
   from 1 to 20 m; the tables show 1.5 m and 10 m.
 
 ## 8. Further questions (not chased)
+
+- Why does adding the pieces' second moments make the sphere worse (§3.1), when it helps the torus,
+  teapot and Suzanne by 10–200×? Adding the pieces' third moments would test whether the cancellation
+  is between orders 2 and 3.
 
 - Third moments per boundary leaf: the walk carries them per node. Would exact third moments make
   the order 5, and is it worth 10 more numbers?

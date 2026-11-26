@@ -1,0 +1,451 @@
+{
+ "shape": "torus",
+ "size": 2.8,
+ "mesh": "64 \u00d7 32 quads split into 4096 triangles, vertices on the torus R = 1.0 m, r = 0.4 m",
+ "triangles": 4096,
+ "signal": [
+  -211.97710115041826,
+  -47.379937646153024
+ ],
+ "volume_mesh": 3.132980505803819,
+ "rows": [
+  {
+   "n": 4,
+   "h": 0.7,
+   "interior": 0,
+   "boundary": 40,
+   "piece_tris": 9360,
+   "tris_per_piece": 234.0,
+   "seconds_clip": 0.5855752999195829,
+   "volume_check": 2.220446049250313e-16,
+   "analytic_interior": 0,
+   "analytic_boundary": 40,
+   "seconds_analytic": 0.1174064000369981,
+   "err": {
+    "(a) cubes": [
+     -154.94575443231247,
+     -35.48854051099297
+    ],
+    "(b) sampled fill": [
+     5.618503649959621,
+     0.15302204056999358
+    ],
+    "(c) fill at centroid": [
+     1.6633448888840974,
+     0.0772554830341079
+    ],
+    "(d) + second moment": [
+     0.07327177948809549,
+     0.0004373323728614764
+    ],
+    "(e) clipped pieces": [
+     -5.684341886080801e-13,
+     7.034373084024992e-13
+    ],
+    "(c\u2605) analytic fill": [
+     1.688325659349971,
+     0.07806546375674372
+    ],
+    "(d\u2605) analytic + second": [
+     0.0749164115708254,
+     0.00044655754800970726
+    ]
+   },
+   "mass": {
+    "(a) cubes": 0.7516866095507222,
+    "(b) sampled fill": 0.012693821146511297,
+    "(c) fill at centroid": 2.220446049250313e-16,
+    "(d) + second moment": 2.220446049250313e-16,
+    "(e) clipped pieces": 2.220446049250313e-16,
+    "(c\u2605) analytic fill": 4.775249085042788e-10,
+    "(d\u2605) analytic + second": 4.775249085042788e-10
+   },
+   "cost_ns": {
+    "(a) cubes": 136.0,
+    "(b) sampled fill": 340.0,
+    "(c) fill at centroid": 340.0,
+    "(d) + second moment": 680.0,
+    "(e) clipped pieces": 514800.0,
+    "(c\u2605) analytic fill": 340.0,
+    "(d\u2605) analytic + second": 680.0
+   },
+   "memory_bytes": {
+    "(a) cubes": 112.0,
+    "(b) sampled fill": 280.0,
+    "(c) fill at centroid": 920.0,
+    "(d) + second moment": 1880.0,
+    "(e) clipped pieces": 337240.0,
+    "(c\u2605) analytic fill": 920.0,
+    "(d\u2605) analytic + second": 1880.0
+   }
+  },
+  {
+   "n": 8,
+   "h": 0.35,
+   "interior": 0,
+   "boundary": 200,
+   "piece_tris": 18544,
+   "tris_per_piece": 92.72,
+   "seconds_clip": 1.3119364000158384,
+   "volume_check": -3.3306690738754696e-16,
+   "analytic_interior": 0,
+   "analytic_boundary": 200,
+   "seconds_analytic": 0.7915873000165448,
+   "err": {
+    "(a) cubes": [
+     -25.316640166137375,
+     -4.785806639264166
+    ],
+    "(b) sampled fill": [
+     -0.4798506955234245,
+     -0.027586982202770116
+    ],
+    "(c) fill at centroid": [
+     0.012704650676027995,
+     0.0007745614140972634
+    ],
+    "(d) + second moment": [
+     0.008880866874307003,
+     5.353769098803696e-05
+    ],
+    "(e) clipped pieces": [
+     5.400124791776761e-13,
+     2.1316282072803006e-13
+    ],
+    "(c\u2605) analytic fill": [
+     0.015089988545895494,
+     0.000834384149463574
+    ],
+    "(d\u2605) analytic + second": [
+     0.009027291222508893,
+     5.420670677125372e-05
+    ]
+   },
+   "mass": {
+    "(a) cubes": 0.09480413096920137,
+    "(b) sampled fill": 0.0071342689189333175,
+    "(c) fill at centroid": -3.3306690738754696e-16,
+    "(d) + second moment": -3.3306690738754696e-16,
+    "(e) clipped pieces": -3.3306690738754696e-16,
+    "(c\u2605) analytic fill": 7.37925276439455e-11,
+    "(d\u2605) analytic + second": 7.37925276439455e-11
+   },
+   "cost_ns": {
+    "(a) cubes": 680.0,
+    "(b) sampled fill": 1700.0,
+    "(c) fill at centroid": 1700.0,
+    "(d) + second moment": 3400.0,
+    "(e) clipped pieces": 1019920.0,
+    "(c\u2605) analytic fill": 1700.0,
+    "(d\u2605) analytic + second": 3400.0
+   },
+   "memory_bytes": {
+    "(a) cubes": 560.0,
+    "(b) sampled fill": 1400.0,
+    "(c) fill at centroid": 4600.0,
+    "(d) + second moment": 9400.0,
+    "(e) clipped pieces": 668984.0,
+    "(c\u2605) analytic fill": 4600.0,
+    "(d\u2605) analytic + second": 9400.0
+   }
+  },
+  {
+   "n": 16,
+   "h": 0.175,
+   "interior": 256,
+   "boundary": 760,
+   "piece_tris": 40240,
+   "tris_per_piece": 52.94736842105263,
+   "seconds_clip": 2.8506833999417722,
+   "volume_check": 0.0,
+   "analytic_interior": 256,
+   "analytic_boundary": 760,
+   "seconds_analytic": 2.713259599986486,
+   "err": {
+    "(a) cubes": [
+     -3.6753325009380546,
+     -0.6695814847394317
+    ],
+    "(b) sampled fill": [
+     -0.04339664841354818,
+     -0.0026153464495202172
+    ],
+    "(c) fill at centroid": [
+     0.003453385923677388,
+     0.00031508205988117766
+    ],
+    "(d) + second moment": [
+     0.0005922043209380945,
+     3.782248562345103e-06
+    ],
+    "(e) clipped pieces": [
+     -7.105427357601002e-13,
+     1.9184653865522705e-13
+    ],
+    "(c\u2605) analytic fill": [
+     0.003993062885484733,
+     0.0003344065229597959
+    ],
+    "(d\u2605) analytic + second": [
+     0.0006000697135846167,
+     3.840782667907661e-06
+    ]
+   },
+   "mass": {
+    "(a) cubes": 0.012693821146511297,
+    "(b) sampled fill": 0.0033922626119096133,
+    "(c) fill at centroid": 0.0,
+    "(d) + second moment": 0.0,
+    "(e) clipped pieces": 0.0,
+    "(c\u2605) analytic fill": 9.796607969292381e-12,
+    "(d\u2605) analytic + second": 9.796607969292381e-12
+   },
+   "cost_ns": {
+    "(a) cubes": 5032.0,
+    "(b) sampled fill": 8636.0,
+    "(c) fill at centroid": 8636.0,
+    "(d) + second moment": 15096.0,
+    "(e) clipped pieces": 2215376.0,
+    "(c\u2605) analytic fill": 8636.0,
+    "(d\u2605) analytic + second": 15096.0
+   },
+   "memory_bytes": {
+    "(a) cubes": 4144.0,
+    "(b) sampled fill": 7112.0,
+    "(c) fill at centroid": 19272.0,
+    "(d) + second moment": 37512.0,
+    "(e) clipped pieces": 1455752.0,
+    "(c\u2605) analytic fill": 19272.0,
+    "(d\u2605) analytic + second": 37512.0
+   }
+  },
+  {
+   "n": 32,
+   "h": 0.0875,
+   "interior": 3280,
+   "boundary": 2936,
+   "piece_tris": 106800,
+   "tris_per_piece": 36.37602179836512,
+   "seconds_clip": 7.964517100015655,
+   "volume_check": -3.3306690738754696e-16,
+   "analytic_interior": 3405,
+   "analytic_boundary": 2920,
+   "seconds_analytic": 10.775697199977003,
+   "err": {
+    "(a) cubes": [
+     -2.608034758979713,
+     -0.5474963706870177
+    ],
+    "(b) sampled fill": [
+     -0.02305471104347845,
+     -0.00019415482010742835
+    ],
+    "(c) fill at centroid": [
+     0.0011832282028763075,
+     7.86231203200316e-05
+    ],
+    "(d) + second moment": [
+     4.952331071450544e-05,
+     3.161959227782063e-07
+    ],
+    "(e) clipped pieces": [
+     -1.8189894035458565e-12,
+     -9.379164112033322e-13
+    ],
+    "(c\u2605) analytic fill": [
+     0.0012553915648823022,
+     8.146323551727619e-05
+    ],
+    "(d\u2605) analytic + second": [
+     5.068403709174163e-05,
+     3.224121485345677e-07
+    ]
+   },
+   "mass": {
+    "(a) cubes": 0.010983189691871731,
+    "(b) sampled fill": -0.0010213001841422598,
+    "(c) fill at centroid": -3.3306690738754696e-16,
+    "(d) + second moment": -3.3306690738754696e-16,
+    "(e) clipped pieces": -3.3306690738754696e-16,
+    "(c\u2605) analytic fill": 1.2820855488371308e-12,
+    "(d\u2605) analytic + second": 1.2820855488371308e-12
+   },
+   "cost_ns": {
+    "(a) cubes": 40188.0,
+    "(b) sampled fill": 52836.0,
+    "(c) fill at centroid": 52836.0,
+    "(d) + second moment": 77792.0,
+    "(e) clipped pieces": 5901880.0,
+    "(c\u2605) analytic fill": 53762.5,
+    "(d\u2605) analytic + second": 78582.5
+   },
+   "memory_bytes": {
+    "(a) cubes": 33096.0,
+    "(b) sampled fill": 43512.0,
+    "(c) fill at centroid": 90488.0,
+    "(d) + second moment": 160952.0,
+    "(e) clipped pieces": 3888312.0,
+    "(c\u2605) analytic fill": 90995.0,
+    "(d\u2605) analytic + second": 161075.0
+   }
+  },
+  {
+   "n": 64,
+   "h": 0.04375,
+   "interior": 31577,
+   "boundary": 12184,
+   "piece_tris": 349424,
+   "tris_per_piece": 28.67892317793828,
+   "seconds_clip": 68.40953669999726,
+   "volume_check": 0.0,
+   "analytic_interior": 32003,
+   "analytic_boundary": 12151,
+   "seconds_analytic": 57.94639470009133,
+   "err": {
+    "(a) cubes": [
+     -0.5926155000898063,
+     -0.12796746753833688
+    ],
+    "(b) sampled fill": [
+     -0.008686908702998153,
+     -0.00028342704110162487
+    ],
+    "(c) fill at centroid": [
+     8.27597346031439e-05,
+     5.482332563921943e-06
+    ],
+    "(d) + second moment": [
+     3.5934411641846964e-06,
+     2.2517815168043853e-08
+    ],
+    "(e) clipped pieces": [
+     -2.2737367544323206e-13,
+     7.389644451905042e-13
+    ],
+    "(c\u2605) analytic fill": [
+     8.848839704000966e-05,
+     5.654081853379012e-06
+    ],
+    "(d\u2605) analytic + second": [
+     3.650299873925178e-06,
+     2.28742180752306e-08
+    ]
+   },
+   "mass": {
+    "(a) cubes": 0.0026438613505048725,
+    "(b) sampled fill": -0.0006379115915254863,
+    "(c) fill at centroid": 0.0,
+    "(d) + second moment": 0.0,
+    "(e) clipped pieces": 0.0,
+    "(c\u2605) analytic fill": 1.645350522494482e-13,
+    "(d\u2605) analytic + second": 1.645350522494482e-13
+   },
+   "cost_ns": {
+    "(a) cubes": 318852.0,
+    "(b) sampled fill": 371968.5,
+    "(c) fill at centroid": 371968.5,
+    "(d) + second moment": 475532.5,
+    "(e) clipped pieces": 19486724.5,
+    "(c\u2605) analytic fill": 375309.0,
+    "(d\u2605) analytic + second": 478592.5
+   },
+   "memory_bytes": {
+    "(a) cubes": 262584.0,
+    "(b) sampled fill": 306327.0,
+    "(c) fill at centroid": 501271.0,
+    "(d) + second moment": 793687.0,
+    "(e) clipped pieces": 12885591.0,
+    "(c\u2605) analytic fill": 503494.0,
+    "(d\u2605) analytic + second": 795118.0
+   }
+  },
+  {
+   "n": 128,
+   "h": 0.021875,
+   "interior": 276402,
+   "boundary": 48014,
+   "piece_tris": 1213780,
+   "tris_per_piece": 25.27971008455867,
+   "seconds_clip": 185.35830820002593,
+   "volume_check": 0.0,
+   "analytic_interior": 278755,
+   "analytic_boundary": 48000,
+   "seconds_analytic": 214.202706900076,
+   "err": {
+    "(a) cubes": [
+     0.15882734181131752,
+     0.04337623479293873
+    ],
+    "(b) sampled fill": [
+     -0.000543283150172158,
+     -8.320314433474252e-05
+    ],
+    "(c) fill at centroid": [
+     1.1371668339421603e-05,
+     7.334855602891821e-07
+    ],
+    "(d) + second moment": [
+     2.397075036242313e-07,
+     1.49640566604603e-09
+    ],
+    "(e) clipped pieces": [
+     1.3073986337985843e-12,
+     1.7479351299698465e-12
+    ],
+    "(c\u2605) analytic fill": [
+     1.3820212132031884e-05,
+     8.62739149454228e-07
+    ],
+    "(d\u2605) analytic + second": [
+     2.4116067720569845e-07,
+     1.5064713920764916e-09
+    ]
+   },
+   "mass": {
+    "(a) cubes": -0.0009745251053046022,
+    "(b) sampled fill": 7.619142568682236e-05,
+    "(c) fill at centroid": 0.0,
+    "(d) + second moment": 0.0,
+    "(e) clipped pieces": 0.0,
+    "(c\u2605) analytic fill": 2.0872192862952943e-14,
+    "(d\u2605) analytic + second": 2.0872192862952943e-14
+   },
+   "cost_ns": {
+    "(a) cubes": 2541610.5,
+    "(b) sampled fill": 2757536.0,
+    "(c) fill at centroid": 2757536.0,
+    "(d) + second moment": 3165655.0,
+    "(e) clipped pieces": 69107317.0,
+    "(c\u2605) analytic fill": 2777417.5,
+    "(d\u2605) analytic + second": 3185417.5
+   },
+   "memory_bytes": {
+    "(a) cubes": 2093091.0,
+    "(b) sampled fill": 2270912.0,
+    "(c) fill at centroid": 3039136.0,
+    "(d) + second moment": 4191472.0,
+    "(e) clipped pieces": 45966992.0,
+    "(c\u2605) analytic fill": 3055285.0,
+    "(d\u2605) analytic + second": 4207285.0
+   }
+  }
+ ],
+ "signal_analytic": [
+  -213.75064270942636,
+  -47.76616417922123
+ ],
+ "facet_err": [
+  1.7735415590080947,
+  0.38622653306820354
+ ],
+ "facet_mass": -0.008008458823709375,
+ "multipole_err": [
+  3.9262022734755817,
+  0.03750634162673805
+ ],
+ "point_err": [
+  26.32875814973275,
+  1.825397307447787
+ ],
+ "mesh_cost_ns": 225280.0
+}

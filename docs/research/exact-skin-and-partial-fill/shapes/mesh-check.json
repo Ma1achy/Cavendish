@@ -1,0 +1,193 @@
+{
+ "teapot": {
+  "repaired": {
+   "closed": true,
+   "closed_detail": "6646 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 1,
+   "component_info": [
+    {
+     "triangles": 6646,
+     "volume_m3": 0.09705,
+     "lo": [
+      -0.5,
+      -0.311,
+      -0.245
+     ],
+     "hi": [
+      0.5,
+      0.311,
+      0.245
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 1.4609624274242172e-17,
+   "max_source_to_mesh_m": 0.0,
+   "source_vertices_checked": 3170,
+   "source_vertices_inside_other_parts": 72,
+   "tolerance_m": 1e-06,
+   "passed": true
+  },
+  "control_marching_cubes": {
+   "closed": true,
+   "closed_detail": "8248 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 2,
+   "component_info": [
+    {
+     "triangles": 8232,
+     "volume_m3": 0.096443,
+     "lo": [
+      -0.499,
+      -0.31,
+      -0.245
+     ],
+     "hi": [
+      0.455,
+      0.31,
+      0.244
+     ]
+    },
+    {
+     "triangles": 16,
+     "volume_m3": 1e-06,
+     "lo": [
+      0.477,
+      -0.014,
+      0.133
+     ],
+     "hi": [
+      0.49,
+      0.014,
+      0.139
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 0.007627493264946664,
+   "max_source_to_mesh_m": 0.02409514817599836,
+   "source_vertices_checked": 3170,
+   "source_vertices_inside_other_parts": 72,
+   "tolerance_m": 1e-06,
+   "passed": false
+  },
+  "parts": [
+   {
+    "faces": 3160,
+    "open_edges": 40,
+    "holes": 1,
+    "volume_m3": 0.09113618172994269,
+    "kept": "closed"
+   },
+   {
+    "faces": 800,
+    "open_edges": 40,
+    "holes": 2,
+    "volume_m3": 0.0009675324569716816,
+    "kept": "closed"
+   },
+   {
+    "faces": 800,
+    "open_edges": 40,
+    "holes": 2,
+    "volume_m3": 0.002408631216793365,
+    "kept": "closed"
+   },
+   {
+    "faces": 1560,
+    "open_edges": 40,
+    "holes": 1,
+    "volume_m3": 0.003161774617731126,
+    "kept": "closed"
+   }
+  ]
+ },
+ "suzanne": {
+  "repaired": {
+   "closed": true,
+   "closed_detail": "1136 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 1,
+   "component_info": [
+    {
+     "triangles": 1136,
+     "volume_m3": 0.106045,
+     "lo": [
+      -0.5,
+      -0.311,
+      -0.36
+     ],
+     "hi": [
+      0.5,
+      0.311,
+      0.36
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 5.377642775528102e-17,
+   "max_source_to_mesh_m": 0.0,
+   "source_vertices_checked": 460,
+   "source_vertices_inside_other_parts": 46,
+   "tolerance_m": 1e-06,
+   "passed": true
+  },
+  "control_marching_cubes": {
+   "closed": true,
+   "closed_detail": "10418 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 1,
+   "component_info": [
+    {
+     "triangles": 10418,
+     "volume_m3": 0.10528,
+     "lo": [
+      -0.497,
+      -0.309,
+      -0.358
+     ],
+     "hi": [
+      0.497,
+      0.308,
+      0.359
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 0.008554691430591854,
+   "max_source_to_mesh_m": 0.01772570363076337,
+   "source_vertices_checked": 460,
+   "source_vertices_inside_other_parts": 46,
+   "tolerance_m": 1e-06,
+   "passed": false
+  },
+  "parts": [
+   {
+    "faces": 2,
+    "open_edges": 0,
+    "holes": 0,
+    "volume_m3": 0.0,
+    "kept": "dropped: back-to-back triangles (a zero-thickness sheet)"
+   },
+   {
+    "faces": 56,
+    "open_edges": 8,
+    "holes": 1,
+    "volume_m3": 0.0011281556726921657,
+    "kept": "closed"
+   },
+   {
+    "faces": 56,
+    "open_edges": 8,
+    "holes": 1,
+    "volume_m3": 0.0011281556193289916,
+    "kept": "closed"
+   },
+   {
+    "faces": 854,
+    "open_edges": 26,
+    "holes": 2,
+    "volume_m3": 0.10559978876695249,
+    "kept": "closed"
+   }
+  ]
+ },
+ "as_expected": true
+}
