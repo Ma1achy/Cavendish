@@ -115,7 +115,7 @@ fn reading_words(shell: &mut Shell, n: usize) -> String {
 }
 
 #[test]
-fn a_world_scene_s_towers_show_what_they_read() {
+fn slow_a_world_scene_s_towers_show_what_they_read() {
     // S4's second review J5, third review K2: with no bodies, a world scene still reads
     // something, and the Readings tab says what, marked ◐ when it is of part of the matter only;
     // the tree's status dot says the same. (Until S19 the tree's row carried the number.)

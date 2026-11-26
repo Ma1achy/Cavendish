@@ -26,7 +26,11 @@ fn files_under(dir: &Path, extension: &str, into: &mut Vec<PathBuf>) {
 #[test]
 fn committed_pdfs_are_whole_as_checked_out() {
     let mut pdfs = Vec::new();
-    files_under(&root().join("docs"), "pdf", &mut pdfs);
+    // Only the figures `cav-plot` wrote, which live under `docs/slices`: `pdf::check` reads this
+    // crate's own plain PDFs (uncompressed streams, a classic cross-reference table). PDFs other
+    // tools made (the papers under `docs/papers`, with compressed object streams) are outside what
+    // it can read; they are kept whole by the same `*.pdf binary` line in `.gitattributes`.
+    files_under(&root().join("docs/slices"), "pdf", &mut pdfs);
     assert!(pdfs.len() >= 2, "the S2 demo commits at least two PDFs; found {}", pdfs.len());
     for path in &pdfs {
         let bytes = std::fs::read(path).unwrap();

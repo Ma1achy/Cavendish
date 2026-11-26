@@ -53,7 +53,7 @@ thousand: `quick` parses every library scene, and the application reads the one 
 ## Tests that then hold it
 
 - `cav-sim`, `tests/voxel_bodies.rs`: `a_voxel_body_round_trips_and_edits_by_path` shows the
-  pattern for a scene with a shape; `validation_a_voxel_sphere_reads_as_the_sphere` and
+  pattern for a scene with a shape; `validation_slow_a_voxel_sphere_reads_as_the_sphere` and
   `validation_the_plate_is_the_prism` hold a body's reading to a closed form.
 - `dev::tests::the_s1_scene_files_are_their_builders` holds the file to the builder.
 - `tests/voxel_view.rs`: what a view draws of it (cubes, the legend's range, overlays).

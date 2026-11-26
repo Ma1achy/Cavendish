@@ -93,7 +93,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_missing_interpreter_or_module_fails_the_python_step_by_name() {
+    fn slow_a_missing_interpreter_or_module_fails_the_python_step_by_name() {
         // An interpreter that is not there is said to be missing, not skipped.
         let why = missing("no-such-python-anywhere").expect("a missing interpreter is found missing");
         assert!(why.starts_with(STEP) && why.contains("`no-such-python-anywhere` is not a Python"), "{why}");

@@ -208,7 +208,9 @@ impl Mesh {
         Self::parse(&name, &bytes, scale)
     }
 
-    /// The same mesh moved so that its centroid is at the origin.
+    /// The same mesh moved so that its centroid is at the origin. Not how any mesh is placed
+    /// (that is [`Self::centred_on_box`]): since S19's review only tests use this, as the control
+    /// that the two rules differ for a lopsided mesh.
     #[must_use]
     pub fn centred(self) -> Self {
         let c = self.integrals().1;

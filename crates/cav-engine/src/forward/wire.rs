@@ -368,7 +368,7 @@ mod tests {
     }
 
     #[test]
-    fn a_world_job_through_the_wire_is_the_same_bits() {
+    fn slow_a_world_job_through_the_wire_is_the_same_bits() {
         // The world goes through the wire by its own index (`WORLD`): `world-box` (four chunks),
         // and the same box read only within 1 m of the towers, whose truncation must come back.
         let whole = cav_sim::dev::world_box();
@@ -451,15 +451,18 @@ mod tests {
 
     #[test]
     fn a_held_mesh_travels_with_the_job_that_needs_it() {
-        // S19's review, I4: a body of a held mesh (named by its hash) is read through the wire as
-        // in place, its job's head names the hash, and the mesh sent before the job is kept and
-        // the job answered with the same bits. Control: a scene without one needs nothing, and
-        // an assets message cut short answers nothing.
+        // S19's review, I4, and its second review, J1(a): a worker that starts with an empty
+        // store reads a body of a held mesh only from the bytes sent before its job. The mesh is
+        // NOT held first. Control: the plain request, served before the mesh has come, leaves the
+        // body unread and says so by the mesh's hash; with `serve` no longer keeping what
+        // `with_assets` sent, the second answer would be that one again.
         use cav_core::Vec3;
         use cav_core::voxel::mesh::{box_mesh, to_stl};
-        let (v, t) = box_mesh(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.5, 0.25, 0.75));
+        // Bytes no other test of this crate holds (the store is one static a process).
+        let (v, t) = box_mesh(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.5, 0.25, 0.8125));
         let bytes = to_stl(&v, &t);
-        let (hash, _) = cav_sim::assets::hold("wired.stl", &bytes).unwrap();
+        let hash = cav_sim::assets::hash(&bytes);
+        assert!(cav_sim::assets::held(&hash).is_none(), "the store starts without it");
         let mut spec = cav_sim::dev::point();
         let mut shape = cav_sim::ShapeSpec::new(
             cav_sim::ShapeKind::Mesh { file: "wired.stl".into(), scale: 1.0, hash: Some(hash.clone()) },
@@ -473,15 +476,34 @@ mod tests {
             shape,
             cav_sim::Motion::Static { position: [2.0, 1.0, 1.0] },
         ));
-        assert_eq!(spec.validate(), Ok(()));
         let request = contribution_request(&spec, SourceId::Body(1));
         assert_eq!(needs(&request), std::slice::from_ref(&hash));
         assert!(needs(&contribution_request(&cav_sim::dev::point(), SourceId::Body(0))).is_empty());
-        let _ = same_bits(std::slice::from_ref(&spec));
-        let sent =
-            with_assets(&request, &[(hash, "wired.stl".into(), std::sync::Arc::from(bytes.as_slice()))]);
-        assert_eq!(serve(&sent), serve(&request));
+        // The control: the job alone, the mesh not there. The body is not read, in words.
+        let unread = serve(&request);
+        let Ok(Answer::Contribution(nothing)) = answer(&unread) else { panic!("an answer, unread") };
+        assert!(nothing.warnings.iter().any(|w| w.text.contains(&hash)), "{:?}", nothing.warnings);
+        assert!(nothing.gradiometer.iter().all(|phase| *phase == 0.0), "an unread body reads as nothing");
+        assert!(cav_sim::assets::held(&hash).is_none(), "and serving the job held nothing");
+        // An assets message cut short answers nothing and keeps nothing.
+        let sent = with_assets(
+            &request,
+            &[(hash.clone(), "wired.stl".into(), std::sync::Arc::from(bytes.as_slice()))],
+        );
         assert_eq!(answer(&serve(&sent[..20])), Ok(Answer::Nothing), "cut short");
+        assert!(cav_sim::assets::held(&hash).is_none());
+        // The mesh sent before the job: kept, and the body read.
+        let read = serve(&sent);
+        assert!(cav_sim::assets::held(&hash).is_some(), "the worker keeps what it was sent");
+        let Ok(Answer::Contribution(body)) = answer(&read) else { panic!("an answer, read") };
+        assert!(body.warnings.is_empty(), "{:?}", body.warnings);
+        assert!(body.gradiometer.iter().any(|phase| *phase != 0.0), "the towers read the body");
+        assert_ne!(read, unread);
+        // From then on the plain request gives the same bits, and they are the bits of the read
+        // made in place.
+        assert_eq!(serve(&request), read);
+        assert_eq!(spec.validate(), Ok(()));
+        let _ = same_bits(std::slice::from_ref(&spec));
     }
 
     #[test]

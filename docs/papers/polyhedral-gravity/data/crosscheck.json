@@ -1,0 +1,43 @@
+{
+ "esa_version": "3.4.1",
+ "bodies": {
+  "cube_aligned": {
+   "faces": 12,
+   "max_rel_U": 5.303646410936835e-10,
+   "max_rel_g": 2.2993598040395797e-09,
+   "g_sign_esa_vs_ours": 1.0
+  },
+  "cube": {
+   "faces": 12,
+   "max_rel_U": 7.962923653792586e-10,
+   "max_rel_g": 2.8974314518500226e-09,
+   "g_sign_esa_vs_ours": 1.0
+  },
+  "icosahedron": {
+   "faces": 20,
+   "max_rel_U": 9.061695838141759e-10,
+   "max_rel_g": 4.794742952268596e-09,
+   "g_sign_esa_vs_ours": 1.0
+  },
+  "plate": {
+   "faces": 12,
+   "max_rel_U": 7.65228069798951e-09,
+   "max_rel_g": 3.013217222798579e-08,
+   "g_sign_esa_vs_ours": 1.0
+  },
+  "sphere": {
+   "faces": 1280,
+   "max_rel_U": 4.497544336956594e-09,
+   "max_rel_g": 2.5387405784411118e-08,
+   "g_sign_esa_vs_ours": 1.0
+  },
+  "stellated": {
+   "faces": 60,
+   "max_rel_U": 4.785872809165426e-10,
+   "max_rel_g": 5.4436390984879475e-09,
+   "g_sign_esa_vs_ours": 1.0
+  }
+ },
+ "worst": 3.013217222798579e-08,
+ "pass_1e-12": false
+}

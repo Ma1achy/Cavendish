@@ -351,27 +351,42 @@ fn drawn_targets(rig: &Rig, scope: &str) -> Vec<(String, egui::Rect)> {
 #[test]
 fn every_target_in_the_side_panels_is_big_enough() {
     // docs/design/panels.md and S19's review, I6: every control in the tree and the inspector
-    // (rows, boxes, ticks, drop-downs, eye, lock, +, ⋮) is at least 24 pt a side, for a body, the
-    // scene and a tower, the body's eye and lock among them. Control: the same measure finds
-    // smaller targets where the rule is not asked of them (the menu bar's).
-    for selection in ["select body 1", "select none", "select tower 1"] {
+    // (rows, boxes, ticks, drop-downs, eye, lock, +, ⋮) is at least `theme::HIT` a side, for a
+    // point mass, the scene, a tower and a body of materials with a part (its Parts card's ⋮,
+    // "+ Add part" and the material drop-downs: the second review, minor 7), the body's eye and
+    // lock among them. Control: the same measure finds smaller targets where the rule is not
+    // asked of them (the menu bar's).
+    let least = cav_app::theme::HIT - 0.5;
+    for selection in ["select body 1", "select none", "select tower 1", "select body 2"] {
         let mut rig = Rig::new();
+        rig.size = [1440, 1600];
         rig.shell.run("load point").unwrap();
+        rig.shell.add_starter("cube").unwrap();
+        rig.shell.run("set bodies[1].shape.material steel").unwrap();
+        rig.shell
+            .run(r#"add bodies[1].shape.parts {"mode":"Add","material":"lead","at":[0.45,0,0],"kind":{"Solid":{"shape":{"Sphere":{"radius":0.3}}}}}"#)
+            .unwrap();
         rig.shell.run(selection).unwrap();
         rig.frames(vec![vec![], vec![], vec![]]);
         let mut targets = drawn_targets(&rig, "tree");
         targets.extend(drawn_targets(&rig, "inspector"));
         assert!(targets.len() >= 12, "{selection}: {} targets", targets.len());
         assert!(targets.iter().any(|(id, _)| id.ends_with("/eye")), "the eye is measured");
+        if selection == "select body 2" {
+            for part in ["field/bodies[1].shape.material", "field/bodies[1].shape.parts[0].material", "parts"]
+            {
+                assert!(targets.iter().any(|(id, _)| id.contains(part)), "`{part}` is measured: {targets:?}");
+            }
+        }
         for (id, rect) in &targets {
             assert!(
-                rect.width() >= 23.5 && rect.height() >= 23.5,
+                rect.width() >= least && rect.height() >= least,
                 "{selection}: `{id}` is {:.1} × {:.1}",
                 rect.width(),
                 rect.height()
             );
         }
-        let small = drawn_targets(&rig, "top-bar").into_iter().filter(|(_, r)| r.height() < 23.5).count();
+        let small = drawn_targets(&rig, "top-bar").into_iter().filter(|(_, r)| r.height() < least).count();
         assert!(small > 0, "control: the menu bar's are smaller");
     }
 }
@@ -395,7 +410,9 @@ fn inspector_stops(rig: &Rig) -> Vec<String> {
 fn folding_a_card_keeps_it_a_stop_in_its_place() {
     // keyboard.md §9 and S19's review, I6: a folded card is still a stop, where it was, and the
     // stops inside the inspector keep their order: folded, the walk is the open walk without the
-    // card's own rows. Control: a walk with the folded card's stop taken out is not it.
+    // card's own rows. The control is in the equality itself: a folded card that stopped
+    // registering would be missing from `folded` and present in `expected` (S19's second review,
+    // minor 8: the walk compared with itself less the card was true by arithmetic, and is gone).
     let walk = |fold: bool| {
         let mut rig = Rig::new();
         rig.shell.run("load point").unwrap();
@@ -416,8 +433,6 @@ fn folding_a_card_keeps_it_a_stop_in_its_place() {
     };
     let expected: Vec<String> = open.iter().filter(|id| !inside(id)).cloned().collect();
     assert_eq!(folded, expected, "the folded card in its place, the rest in order");
-    let without: Vec<String> = folded.iter().filter(|id| *id != "inspector/motion").cloned().collect();
-    assert_ne!(without, expected, "control: a folded card that is no stop");
 }
 
 #[test]
@@ -458,6 +473,10 @@ fn a_body_s_cards_come_in_the_design_s_order_each_with_a_menu() {
     assert_eq!(cards[parts - 1], "inspector/material");
     assert_eq!(cards[parts + 1], "inspector/motion");
     assert_eq!(rig.shell.focus_tree().node("inspector/material").map(|n| n.name.as_str()), Some("Material"));
+    // No box anywhere that takes the shape away (the Kind row does that, as a choice); the
+    // lifetime's boxes are there (the control: the measure sees a box).
+    assert!(rig.shell.layout().button("gate bodies[0].shape").is_none(), "no hidden point-mass switch");
+    assert!(rig.shell.layout().button("gate bodies[0].appears").is_some());
 }
 
 #[test]
@@ -548,6 +567,13 @@ fn the_inspector_keeps_its_width_whatever_is_shown() {
     rig.shell.add_starter("cube").unwrap();
     rig.shell.run("set bodies[1].shape.material \"stainless steel\"").unwrap();
     rig.shell.run("set bodies[1].label \"a body with a long name that goes on and on and on\"").unwrap();
+    // Parts too: a solid and a stroke, each under its header.
+    rig.shell
+        .run(r#"add bodies[1].shape.parts {"mode":"Add","material":"lead","at":[0.45,0,0],"kind":{"Solid":{"shape":{"Sphere":{"radius":0.3}}}}}"#)
+        .unwrap();
+    rig.shell
+        .run(r#"add bodies[1].shape.parts {"mode":"Paint","material":"copper","at":[0,0,0.3],"kind":{"Stroke":{"radius":0.1,"points":[[-0.3,-0.3,0],[0.3,0.3,0]]}}}"#)
+        .unwrap();
     let mut widths = Vec::new();
     for selection in ["select body 1", "select body 2", "select none", "select tower 1", "readings"] {
         if selection == "readings" {
@@ -558,16 +584,27 @@ fn the_inspector_keeps_its_width_whatever_is_shown() {
         rig.frames(vec![vec![], vec![], vec![]]);
         let panel = rig.shell.layout().panel("properties").unwrap();
         widths.push((selection, panel.width()));
-        // Nothing in it is cut off at its right edge: what it holds fits the width it keeps.
+        // Nothing in it runs past its margin (10 points), and every card is as wide as the first:
+        // a row too wide for its card widened every card after it (S19's pictures: the cards'
+        // menus were cut at the panel's edge).
         let layout = rig.shell.layout();
+        let edge = panel.right() - 10.0;
         let over: Vec<String> = layout
             .editors
             .iter()
             .chain(&layout.buttons)
-            .filter(|(_, r)| panel.intersects(*r) && r.right() > panel.right() + 0.5)
+            .filter(|(what, r)| what != "more below" && panel.intersects(*r) && r.right() > edge + 0.5)
             .map(|(what, r)| format!("{what} to {}", r.right()))
             .collect();
-        assert!(over.is_empty(), "{selection}: past the panel's edge at {}: {over:?}", panel.right());
+        assert!(over.is_empty(), "{selection}: past the panel's edge at {edge}: {over:?}");
+        let cards: Vec<(String, f32)> = layout
+            .buttons
+            .iter()
+            .filter(|(b, r)| b.starts_with("fold inspector/") && panel.intersects(*r))
+            .map(|(b, r)| (b.clone(), r.right()))
+            .collect();
+        assert!(cards.len() >= 2 || selection == "readings", "{selection}: {cards:?}");
+        assert!(cards.iter().all(|(_, right)| (right - cards[0].1).abs() < 0.5), "{selection}: {cards:?}");
     }
     let first = widths[0].1;
     for (selection, width) in &widths {
@@ -638,4 +675,39 @@ fn a_locked_body_is_not_moved_by_the_gizmo_and_a_hidden_one_is_not_drawn() {
     assert!(reading.towers.first().is_some_and(|t| t.gradiometer != 0.0), "still read");
     rig.click_button("eye mass");
     assert!(rig.shell.engine.view(0).hidden.is_empty(), "control: shown again");
+}
+
+#[test]
+fn a_body_made_uniform_keeps_what_it_weighed() {
+    // S19's second review, minor 6: a body of materials may be saved with mass 0 (the field is
+    // not read), and "none" in its Material drop-down then asked a uniform body to weigh 0, which
+    // was refused. Now choosing none sets the mass to what the body weighed (ρV), one edit, as the
+    // Kind switch does. Control: the plain edit of the material alone is still refused at mass 0.
+    let mut rig = Rig::new();
+    rig.shell.run("load void").unwrap();
+    rig.shell.add_starter("cube").unwrap();
+    rig.shell.run("set bodies[0].shape.material steel").unwrap();
+    rig.shell.run("set bodies[0].mass 0").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let spec = rig.shell.engine.spec().clone();
+    assert_eq!(spec.bodies[0].mass, 0.0);
+    let weighs = spec.bodies[0].mass_in(&spec).unwrap();
+    assert!(weighs > 1.0, "{weighs} kg of steel");
+    assert!(rig.shell.run("set bodies[0].shape.material null").is_err(), "control: mass 0, uniform, refused");
+    let id = "field/bodies[0].shape.material";
+    assert!(rig.shell.focus_tree().node(id).is_some(), "the Material row");
+    rig.shell.keyboard.focus = vec!["inspector".into(), "inspector/material".into(), id.into()];
+    rig.shell.keyboard.nav_on = true;
+    let depth = rig.shell.engine.depth().0;
+    rig.key(Key::Enter, Modifiers::NONE);
+    // Up to the first choice (none), wherever steel is in the list: the arrows stop at the end.
+    for _ in 0..40 {
+        rig.key(Key::ArrowUp, Modifiers::NONE);
+    }
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.frames(vec![vec![], vec![]]);
+    let body = rig.shell.engine.spec().bodies[0].clone();
+    assert!(body.shape.as_ref().is_some_and(|s| s.material.is_none()), "uniform now");
+    assert_eq!(body.mass.to_bits(), weighs.to_bits(), "it weighs what it weighed");
+    assert_eq!(rig.shell.engine.depth().0, depth + 1, "one edit");
 }

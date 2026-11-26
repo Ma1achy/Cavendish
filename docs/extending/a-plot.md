@@ -83,7 +83,7 @@ the steps below name each such place.
    size) goes in its entry, `Built::provenance`.
 9. The words written by hand: the usage line of `figure` in `COMMANDS`; `USAGE` and the refusal
    of an unknown kind in `crates/cav/src/main.rs` (the help line is asserted whole by
-   `cli_figure_writes_a_figure_with_its_data_twice_the_same`); the refusal and the doc of
+   `slow_cli_figure_writes_a_figure_with_its_data_twice_the_same`); the refusal and the doc of
    `FigureArgs::what` (the MCP schema) in `crates/cav/src/mcp.rs`; the module docs of
    `crates/cav-plot/src/lib.rs` and `plots.rs`, and the `cav-plot` row of `docs/ARCHITECTURE.md`.
 10. In `python/cavendish_figures/redraw.py`, a function that draws it from the data file alone,
@@ -126,15 +126,15 @@ which is counted before the level is chosen. The Python redraw does not draw it 
   drawing's items (`a_signal_plot_has_a_key` is the pattern), with a control arm. Add the kind to
   the lists of `a_figure_may_have_no_title` and `the_unit_is_the_vertical_axis_s_label` (and,
   for a plot against the scene's time, `the_playhead_is_one_colour`).
-- `figure.regenerates` (`validation_figure_regenerates` in `crates/cav-plot/tests/figures.rs`):
+- `figure.regenerates` (`validation_slow_figure_regenerates` in `crates/cav-plot/tests/figures.rs`):
   add your kind to the figures `session` writes; the count of files it asserts (three a figure)
   and the case's `against` text then change with it.
 - `figure_data_is_the_plotted_data`: the data file's columns against the engine's numbers, to
   the bit.
-- `a_figure_is_bounded_in_series_and_its_data_is_streamed` (`tests/bounded.rs`, with the
+- `slow_a_figure_is_bounded_in_series_and_its_data_is_streamed` (`tests/bounded.rs`, with the
   counting allocator; a signal's export at 1000 towers): what an export of your kind holds for a
   scene at its caps.
-- `a_figure_is_bounded_in_points_and_pixels`: the scene of 21,000 shots there would make your
+- `slow_a_figure_is_bounded_in_points_and_pixels`: the scene of 21,000 shots there would make your
   plot large; assert the drawing and the table hold what step 4 says.
 - `crates/cav-app/tests/shell.rs`: no test shows every content in a pane (there are four panes
   and more plots). `panes_show_plots_and_the_scene` shows a signal and a periodogram, and
@@ -147,8 +147,8 @@ which is counted before the level is chosen. The Python redraw does not draw it 
   it in `FIGURES` in `xtask/src/python.rs`, which `test_real_figures_are_read_and_redrawn`
   redraws and holds to its record. Without that line nothing tries the redraw on what `cav`
   writes.
-- Kind-independent, needing nothing of a new kind: `a_figures_record_lists_every_format_written_of_it`
-  and `a_figure_is_the_stated_size` (a periodogram's), `svg_and_pdf_are_well_formed` (a drawing
+- Kind-independent, needing nothing of a new kind: `slow_a_figures_record_lists_every_format_written_of_it`
+  and `slow_a_figure_is_the_stated_size` (a periodogram's), `svg_and_pdf_are_well_formed` (a drawing
   made in the test).
 - New tests raise the run count: `quick` then says to raise its floor in `xtask/floors.txt`.
 
@@ -165,7 +165,7 @@ defaults, the zoom extent, the series' columns and the redraw's flight case are 
 catch-all arms a new kind falls into without a word; the usage, help, refusal and schema texts
 are written by hand and did not follow the kind (the two usage lines are now held by a test);
 `panes_show_plots_and_the_scene` does not show every content, and `svg_and_pdf_are_well_formed`
-and `a_figure_is_the_stated_size` do not run over every kind; the Python side needs a synthetic
+and `slow_a_figure_is_the_stated_size` do not run over every kind; the Python side needs a synthetic
 figure and a line in `FIGURES`; and the floor. The recipe check now reads `python/` too, so the
 Python files and tests named here are held to exist.
 

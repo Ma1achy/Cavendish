@@ -29,7 +29,8 @@ materials: [(label: "lead", density: 11000.0, colour: "#5b6572")],
 
 A voxel body's `shape.material` names one; the body then weighs its density times its volume as
 voxelised (`n × (h/k)³`, `n` its sample points inside), and its `mass` field is not used (the
-inspector shows the mass the material gives). With no material the body is uniform and weighs
+inspector shows the mass the material gives; what any body weighs is `BodySpec::mass_in`, which the
+bundle's `source_mass` writes). A body with parts has a material of its own: set it first. With no material the body is uniform and weighs
 its `mass`, as before S19.
 
 `shape.parts` are laid in order after the shape: `Add` puts matter of the part's material where
@@ -41,11 +42,16 @@ sum of their masses (`VoxTree::mixed`; the exact-skin note's "moments add"), its
 `material` the one with most points, for colour.
 
 ```
+set bodies[1].shape.material steel
 add bodies[1].shape.parts {"mode":"Add","material":"copper","at":[0.4,0,0],"kind":{"Solid":{"shape":{"Cuboid":{"size":[0.4,0.4,0.4]}}}}}
 colour material
 ```
 
 ## What holds it
+
+- `materials.shared_cells_are_within_their_dipole_bound` (validation): a body whose interface lies
+  halfway through a layer of cells, against the two closed-form prisms, within the shared cells'
+  dipole bound |Δρ|·v·h/8 (S19's review). `source_mass_is_what_each_body_weighs` (bundle): ρ·V.
 
 - `a_shared_cell_keeps_both_masses` and `the_walk_equals_the_raster` (`cav-core`, layers): a
   cell's mass, and the tree against the point-by-point raster, bit for bit.

@@ -990,7 +990,9 @@ fn properties(shell: &mut Shell, ui: &mut egui::Ui) {
     };
     // Every target in the panel at least 24 points a side (docs/design/panels.md; S19's review,
     // I6): boxes, ticks and drop-downs take their height from this.
-    ui.spacing_mut().interact_size.y = theme::HIT;
+    // The least width of a box is a target's too, not egui's 40: a vector's three boxes share
+    // what the row has (the panel keeps its width).
+    ui.spacing_mut().interact_size = egui::vec2(theme::HIT, theme::HIT);
     crate::inspector::header(shell, ui);
     match selection {
         None => {
@@ -1511,12 +1513,18 @@ fn probe_card(shell: &mut Shell, ui: &mut egui::Ui, pane: usize, rect: Rect) {
             });
             let g = cav_core::Vec3::from_array(probed.g);
             let size = g.length();
-            let mut rows: Vec<(&str, String)> = vec![("Gravity", si(size, "m/s²"))];
+            // Nothing counted where something is left out: not known, not zero (S19's second
+            // review, minor 12).
+            let unknown = probed.reads_nothing();
+            let gravity = if unknown { "—".to_owned() } else { si(size, "m/s²") };
+            let mut rows: Vec<(&str, String)> = vec![("Gravity", gravity)];
             if size > 0.0 {
                 let d = g * (1.0 / size);
                 rows.push(("Towards", format!("{:+.2}, {:+.2}, {:+.2}", d.x, d.y, d.z)));
             }
-            rows.push(("Of", probed.counted().to_owned()));
+            if !unknown {
+                rows.push(("Of", probed.counted().to_owned()));
+            }
             match &probed.cell {
                 Some(c) => {
                     let body = spec.bodies.get(c.body).map_or("", |b| b.label.as_str());

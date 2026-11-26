@@ -112,7 +112,7 @@ fn with_copies(copies: usize) -> cav_sim::SceneSpec {
 }
 
 #[test]
-fn the_kernel_s_work_is_shared_by_the_scene_s_voxel_bodies() {
+fn slow_the_kernel_s_work_is_shared_by_the_scene_s_voxel_bodies() {
     use cav_core::voxel::kernel::MAX_KERNEL_WORK;
     use cav_sim::read::{SourceId, kernel_share};
     let alone = crowdable();

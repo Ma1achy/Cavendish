@@ -74,7 +74,7 @@ fn a_scene_too_large_for_a_signal_is_refused_before_anything_is_allocated() {
 }
 
 #[test]
-fn the_forward_store_stays_within_its_budget() {
+fn slow_the_forward_store_stays_within_its_budget() {
     // The largest signal there is, from one source: a contribution of 96 MiB, summed into a
     // signal of 96 MiB with its 16 MiB of times. Stated in the brief: under 0.6 GiB in all for
     // any scene; for this one, the two and their times.
@@ -168,7 +168,7 @@ fn heavy_scene(tag: usize) -> SceneSpec {
 }
 
 #[test]
-fn the_undo_history_is_bounded_by_bytes() {
+fn slow_the_undo_history_is_bounded_by_bytes() {
     // The mechanism is the engine's own; the size is a sixteenth of the real one, so that filling
     // it three times over is tens of megabytes of scenes and not five hundred.
     const BUDGET: usize = HISTORY_BYTES / 16;
@@ -280,7 +280,7 @@ fn the_journal_is_bounded_and_says_when_it_is_no_longer_whole() {
 }
 
 #[test]
-fn a_long_message_does_not_grow_the_log() {
+fn slow_a_long_message_does_not_grow_the_log() {
     let mut engine = Engine::new();
     let long = "a line of an answer\n".repeat(2_500_000);
     assert_eq!(long.len(), 50_000_000);
@@ -306,7 +306,7 @@ fn a_long_message_does_not_grow_the_log() {
 }
 
 #[test]
-fn files_are_read_up_to_their_cap() {
+fn slow_files_are_read_up_to_their_cap() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp/file caps");
     std::fs::create_dir_all(&dir).unwrap();
     // Twenty megabytes at a scene's path: a path given by an agent may point at anything.
@@ -386,7 +386,7 @@ fn files_are_read_up_to_their_cap() {
 }
 
 #[test]
-fn a_periodogram_and_a_window_are_bounded_in_frequencies() {
+fn slow_a_periodogram_and_a_window_are_bounded_in_frequencies() {
     use cav_sim::schedule::{MAX_FREQUENCIES, window};
     // A window asked for at more frequencies than there are numbers: it is made at the cap. A
     // thousand shots at a million frequencies goes by the non-uniform FFT, whose grid is twice

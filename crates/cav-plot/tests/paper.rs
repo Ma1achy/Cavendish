@@ -138,7 +138,7 @@ fn the_plan_of_world_box_outlines_the_box_at_its_true_size() {
 }
 
 #[test]
-fn a_paper_drawing_is_bounded() {
+fn slow_a_paper_drawing_is_bounded() {
     // About two seconds in `quick`: five drawings of a kilometre, each from up to
     // `MAX_PAPER_BRICKS` bricks; the bound is on what a big world makes, so a big world it is.
     // The kilometre of stress-1e10, plan and section, on the largest preset: within the caps,

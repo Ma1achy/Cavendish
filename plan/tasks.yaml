@@ -664,50 +664,50 @@
   milestone: S18
   title: "Second review, the record: the pictures retaken, the brief's section 7.8, ARCHITECTURE, PROGRESS and the validation report"
 - id: TASK-S19-01
-  milestone: S20
-  title: "Docking: panels as tabs in dock areas, drag to dock, floating panels in the canvas (egui_dock), the Tab order kept (moved to S20 by the S19 record: the panels redesign came first)"
+  milestone: S22
+  title: "Docking: panels as tabs in dock areas, drag to dock, floating panels in the canvas (egui_dock), the Tab order kept (moved to S20 by the S19 record: the panels redesign came first) (moved to S22 by the S20 brief: the workspace came first)"
 - id: TASK-S19-02
-  milestone: S20
-  title: "Pop-out windows (native, egui viewports), keeping each panel's place in the Tab order (moved to S20 by the S19 brief; floating in-page panels are TASK-S19-01's)"
+  milestone: S22
+  title: "Pop-out windows (native, egui viewports), keeping each panel's place in the Tab order (moved to S20 by the S19 brief; floating in-page panels are TASK-S19-01's) (moved to S22 by the S20 brief: the workspace came first)"
 - id: TASK-S19-03
-  milestone: S20
-  title: "The Scale tool: handles on the selection, a typed factor, one edit (re-titled by the S19 brief; Rotate is TASK-S20-01) (moved to S20 by the S19 record: the panels redesign came first)"
+  milestone: S22
+  title: "The Scale tool: handles on the selection, a typed factor, one edit (re-titled by the S19 brief; Rotate is TASK-S20-01) (moved to S20 by the S19 record: the panels redesign came first) (moved to S22 by the S20 brief: the workspace came first)"
 - id: TASK-S19-04
   milestone: S19
   title: "The Probe tool: click a point, read the bodies' gravity there, the voxel cell and its share of each tower's phase (split by S19: Measure, Slice and Paint are TASK-S19-20)"
 - id: TASK-S19-05
-  milestone: S20
-  title: "Camera follow, pointer lock (native and web) and the trackball"
+  milestone: S22
+  title: "Camera follow, pointer lock (native and web) and the trackball (moved to S22 by the S20 brief: the workspace came first)"
 - id: TASK-S19-06
-  milestone: S20
-  title: "Detail tiers: a numerics block in the scene, tier files (preview, standard, reference) measured against the reference, progressive refinement and the footer switch (moved to S20 by the S19 record: the panels redesign came first)"
+  milestone: S22
+  title: "Detail tiers: a numerics block in the scene, tier files (preview, standard, reference) measured against the reference, progressive refinement and the footer switch (moved to S20 by the S19 record: the panels redesign came first) (moved to S22 by the S20 brief: the workspace came first)"
 - id: TASK-S19-07
-  milestone: S20
-  title: "Multi-selection and grouped edits: Select as a set, box select, multi-drag, reorder and templates as one undo step"
+  milestone: S22
+  title: "Multi-selection and grouped edits: Select as a set, box select, multi-drag, reorder and templates as one undo step (moved to S22 by the S20 brief: the workspace came first)"
 - id: TASK-S19-08
-  milestone: S20
-  title: "Units typed with values (2 km, 45 deg) in fields, sessions and the console (moved to S20 by the S19 record: the panels redesign came first)"
+  milestone: S22
+  title: "Units typed with values (2 km, 45 deg) in fields, sessions and the console (moved to S20 by the S19 record: the panels redesign came first) (moved to S22 by the S20 brief: the workspace came first)"
 - id: TASK-S19-09
   milestone: S19
   title: "S18's third review, minors 1-9: a click outside the options ends a session kept; the mouse fly outlives the pointer leaving while held; a Home that changes nothing keeps the run; a sequential legend checked; the history's first row named as drawn; the ghost in the demo; Loss and Seed hints"
 - id: TASK-S19-10
-  milestone: S20
-  title: "Camera bookmarks in the scene: view save, goto, drop; , and . step through them; the header's list (S18's C6) (moved to S20 by the S19 record: the panels redesign came first)"
+  milestone: S22
+  title: "Camera bookmarks in the scene: view save, goto, drop; , and . step through them; the header's list (S18's C6) (moved to S20 by the S19 record: the panels redesign came first) (moved to S22 by the S20 brief: the workspace came first)"
 - id: TASK-S19-11
-  milestone: S20
-  title: "The browser's reserved keys: a web chord for every action on one, on the ? sheet and in the palette in the page (moved to S20 by the S19 record: the panels redesign came first)"
+  milestone: S22
+  title: "The browser's reserved keys: a web chord for every action on one, on the ? sheet and in the palette in the page (moved to S20 by the S19 record: the panels redesign came first) (moved to S22 by the S20 brief: the workspace came first)"
 - id: TASK-S19-12
   milestone: S19
   title: "S19's record: the demo, the validation report against s18-the-editor, ARCHITECTURE, the recipes, PROGRESS"
 - id: TASK-S19-20
-  milestone: S20
-  title: "Measure, the Slice handle in the view and the voxel Paint brush (split from TASK-S19-04) (moved to S20 by the S19 record: the panels redesign came first)"
+  milestone: S22
+  title: "Measure, the Slice handle in the view and the voxel Paint brush (split from TASK-S19-04) (moved to S20 by the S19 record: the panels redesign came first) (moved to S22 by the S20 brief: the workspace came first)"
 - id: TASK-S20-01
-  milestone: S20
-  title: "Rotate: an orientation for bodies (the read turns the arm points into the body's frame), the ring gizmo, typed angles"
+  milestone: S22
+  title: "Rotate: an orientation for bodies (the read turns the arm points into the body's frame), the ring gizmo, typed angles (moved to S22 by the S20 brief: the workspace came first)"
 - id: TASK-S20-02
-  milestone: S20
-  title: "A user keymap file merged over ui/actions.ron's keys, refused with its line when it clashes"
+  milestone: S22
+  title: "A user keymap file merged over ui/actions.ron's keys, refused with its line when it clashes (moved to S22 by the S20 brief: the workspace came first)"
 - id: TASK-S5-08
   milestone: S5
   title: Polyhedral gravity closed form - the oracle for mesh-made bodies and the direct kernel for analytic bodies up to ~1e3 faces (docs/research/exact-skin-and-partial-fill.md)
@@ -754,8 +754,8 @@
   milestone: S21
   title: Looks as data: a beauty look and a data look (identity on colour maps), switchable, with a badge when lighting shifts colours
 - id: TASK-S19-14
-  milestone: S20
-  title: "Phones and tablets in the web build (owner, 25 Nov 2026): touch (tap, one-finger orbit, two-finger pan and pinch, long-press menu, finger-sized handles), drawers and a bottom tool bar on narrow screens, 44 pt targets, nothing hover-only, Safari's WebGPU and memory; screenshots at 390x844, 1024x1366, 1366x1024 (moved to S20 by the S19 brief: S19 is full)"
+  milestone: S22
+  title: "Phones and tablets in the web build (owner, 25 Nov 2026): touch (tap, one-finger orbit, two-finger pan and pinch, long-press menu, finger-sized handles), drawers and a bottom tool bar on narrow screens, 44 pt targets, nothing hover-only, Safari's WebGPU and memory; screenshots at 390x844, 1024x1366, 1366x1024 (moved to S20 by the S19 brief: S19 is full) (moved to S22 by the S20 brief: the workspace came first)"
 - id: TASK-S19-21
   milestone: S19
   title: "S19 review I1-I3: one rule for what a body weighs (BodySpec::mass_in; the bundle's source_mass), the Probe's finest cell, every body and a slab floor counted, a shared-cell validation case (minors 1-3, 6, 11, 14)"
@@ -772,6 +772,9 @@
 - id: TASK-S19-25
   milestone: S19
   title: "S19 after its review: the record (pictures before and after, validation against s18-the-editor, minors 10, 12, 13, 22, ARCHITECTURE, PROGRESS)"
+- id: TASK-S19-26
+  milestone: S19
+  title: "S19 second review: J1 (a held mesh reaches a worker that starts empty, tested with a control; the lane records only the meshes sent), minors 1-9, 12, 14, 18-20, and quick back within 30 s (45 slow tests named slow_, run by the oracle tier)"
 - id: TASK-S5-16
   milestone: S5
   title: Body draw modes as data: voxels (today); partial fill made visible (edge cells shaded by their exact fill fraction, with the clipped piece's outline and centroid on demand, and a legend); the original mesh as triangles; mesh over voxels for comparison
@@ -793,3 +796,30 @@
 - id: TASK-S20-07
   milestone: S20
   title: Scene tree folders - user folders inside the groups, nest, drag, eye and lock for children, saved with the scene (workspace.md 6)
+- id: TASK-S20-08
+  milestone: S20
+  title: A body's drawn path follows its motion - a periodic path is drawn over one period with enough pieces per loop (today 96 straight pieces span the whole timeline, so a fast circle is drawn as a square), a path with breaks piece by piece; the plots' sampling checked the same way
+- id: TASK-S20-09
+  milestone: S20
+  title: "Time without an end - the scene's duration editable from the transport (not only the Scene card) and end behaviour chosen there (loop, stop at the end, or run on: the duration grows as one edit); the live rolling mode split off as TASK-S22-01 by the S20 brief"
+- id: TASK-S20-10
+  milestone: S20
+  title: "The fly camera as a first-person game camera - pointer captured and hidden while flying (raw mouse deltas; pointer lock on the web), mouse-look yaw and pitch with pitch clamped short of straight up and down and no roll, W A S D along the view with Space up and Shift down, Ctrl (or double-tap W) to sprint and the wheel to change speed, movement integrated per frame with frame time and smooth acceleration (keys held, not key-repeat), sensitivity and speed as settings, entered by holding the right button or a toggle key and left by releasing it or Esc, never firing tool or scope shortcuts while flying; orbit and pan given the same per-frame smoothing"
+- id: TASK-S20-11
+  milestone: S20
+  title: "A physical camera - a walk mode with a character controller (a player-sized box with eye height, gravity, jump, step-up over one voxel, sliding along walls) colliding with the voxel world, voxel bodies, floor and room by swept-box tests against occupancy; double-tap Space toggles flying as in a creative-mode game, and the fly camera collides too; in walk mode Space jumps and Shift is free for sneak or slow-walk (not falling off edges), if cheap; noclip is an explicit toggle (off by default) for passing through matter; the camera has no mass and never enters the scene or the gravity read; player size, eye height, walk and fly speeds and jump height as settings"
+- id: TASK-S20-12
+  milestone: S20
+  title: "Carried from S19's second review into the dense panels (docs/design/workspace.md 0; docs/slices/S19-review-2.md): the scroll bar's width reserved so a row is as wide with it as without (minor 10: material densities cut), a uniform body's Material reading Uniform (11), the Probe's reading out of the figure and into the right panel or status line (13), one unit a column in Readings, and the review's list What S20 will have to shrink (theme::HIT and the tests that encode 24 pt)"
+- id: TASK-S20-13
+  milestone: S20
+  title: "S20's brief (docs/slices/S20.md), the task split and the S20 and S22 rows of REBUILD 9"
+- id: TASK-S20-14
+  milestone: S20
+  title: "S20's record: the demo and its pictures against S19's, the validation report against s19-editor-second-half, ARCHITECTURE, the recipes, PROGRESS"
+- id: TASK-S22-01
+  milestone: S22
+  title: "A live mode: time keeps running and the signal, periodogram and timeline show a rolling window, bounded in memory (split from TASK-S20-09 by the S20 brief)"
+- id: TASK-S5-18
+  milestone: S5
+  title: The polyhedral-gravity paper's figures and tables regenerated with Cavendish (docs/papers/polyhedral-gravity/README.md lists the command for each), the shapes study folded in

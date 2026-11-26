@@ -1,0 +1,13 @@
+\begin{tabular}{lrl}
+\toprule
+contribution & phase (rad) & source \\
+\midrule
+boundary cells as sampled fill $4^3$ (Cavendish today) & $1.2\times10^{-1}$ & measured \\
+boundary cells as fill + centroid & $4.2\times10^{-5}$ & measured \\
+boundary cells as fill + centroid + second moment & $4.0\times10^{-7}$ & measured \\
+closed form, whole body or clipped pieces (f64 rounding) & $8.2\times10^{-12}$ & measured \\
+octree far field (S5 walk tolerance) & $1.0\times10^{-10}$ & design \\
+flight quadrature (audited read, \texttt{PHASE\_TOLERANCE}) & $1.0\times10^{-10}$ & design \\
+shot-noise floor, rad\,Hz$^{-1/2}$ (AION-10 baseline, for scale) & $1.0\times10^{-4}$ & reference \\
+\bottomrule
+\end{tabular}

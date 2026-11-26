@@ -180,13 +180,13 @@ fn leave_every_editor(selection: &str) -> (Rig, usize) {
 // here to the visits it made when the test was split (24 Nov 2026), which sum to more than 80.
 
 #[test]
-fn focusing_and_leaving_a_tower_s_editors_changes_nothing() {
+fn slow_focusing_and_leaving_a_tower_s_editors_changes_nothing() {
     let (_, visited) = leave_every_editor("select tower 1");
     assert!(visited >= TOWER_VISITS, "only {visited} visits were made");
 }
 
 #[test]
-fn focusing_and_leaving_the_scene_s_editors_changes_nothing() {
+fn slow_focusing_and_leaving_the_scene_s_editors_changes_nothing() {
     let (_, visited) = leave_every_editor("select none");
     assert!(visited >= SCENE_VISITS, "only {visited} visits were made");
 }
