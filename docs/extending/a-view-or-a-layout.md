@@ -70,6 +70,10 @@ from the canvas's corner.
 
 ## A layout of the figure
 
+(A layout made in the window: the top bar's `+`, or `layout save [name]`, keeps the present
+mosaic and what each viewport shows as a tab for the session; `layout forget <id>` drops it. To
+keep one for good, write it into the file as below.)
+
 1. An entry in `crates/cav-app/ui/layouts.ron`: `id`, `label`, `lines`, `about`. The first line
    arranges the figure: `mosaic "AAC;BDC"` (in the file, `"mosaic \"AAC;BDC\""`; add
    `cols …` and `rows …` for weights), or the shorthands `panes 1`, `panes 2`, `panes 4` for

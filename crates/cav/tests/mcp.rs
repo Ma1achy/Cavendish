@@ -241,10 +241,18 @@ fn gpu_mcp_render_view_returns_a_png() {
         is_error && content[0]["text"].as_str().unwrap().contains("each side is 1 to 4096"),
         "{content:?}"
     );
-    let (is_error, _) = client.call("render_view", json!({ "pane": 9 }));
-    assert!(is_error);
+    // A viewport the figure does not show is refused, saying how many it has. (S20 raised the
+    // engine's cap to twelve kept views, so pane 9 is below the cap; it is still not shown, and
+    // the refusal is `Session::render_png`'s. The number stays 9: below the cap is the case that
+    // was let through.)
+    let (is_error, content) = client.call("render_view", json!({ "pane": 9 }));
+    assert!(is_error && content[0]["text"].as_str().unwrap().contains("the figure has 1"), "{content:?}");
     let log = client.text("log", json!({ "text": "render_view" }));
     assert!(log.contains("400 × 300 px") && log.contains("no pane 9"), "{log}");
+    // Control: a pane the figure does show is drawn, the second of two.
+    client.text("command", json!({ "line": "panes 2" }));
+    let (_, size) = picture(&mut client, json!({ "pane": 2, "width": 64, "height": 48 }));
+    assert_eq!(size, [64, 48]);
     client.finish();
 }
 

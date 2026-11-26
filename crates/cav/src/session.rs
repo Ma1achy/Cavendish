@@ -66,11 +66,20 @@ impl Session {
     /// Draws what a pane shows as a PNG: its view of the engine's scene with the selection
     /// highlighted, or its plot.
     ///
+    /// A viewport that is not in the figure is refused, in words that say how many there are:
+    /// the engine keeps a view for every pane up to its cap ([`cav_engine::MAX_PANES`], so that a
+    /// viewport that comes back has its camera, and [`cav_engine::Engine::frame`] answers for
+    /// each), but a picture is of a viewport that is shown, as `figure view … @N` is.
+    ///
     /// # Errors
-    /// When there is no GPU, no such pane, or the read-back fails.
+    /// When there is no GPU, the figure has no such pane, or the read-back fails.
     pub fn render_png(&mut self, pane: usize, size: [u32; 2]) -> Result<Vec<u8>, String> {
-        // The engine says what the pane shows; refusing a pane that does not exist comes first,
-        // before a device is made for nothing.
+        // Refusing a pane the figure does not show comes first, before a device is made for
+        // nothing; then the engine says what the pane shows.
+        let shown = self.engine.panes();
+        if pane >= shown {
+            return Err(format!("there is no pane {}; the figure has {shown}", pane + 1));
+        }
         let frame = self.engine.frame(pane)?;
         if frame.content != cav_engine::PaneContent::Scene {
             // A plot is drawn by the code the application draws it with, once the signal it
@@ -135,5 +144,27 @@ fn paste(rgba: &mut [u8], size: [u32; 2], pixels: &[u8], [w, h]: [u32; 2], at: [
             }
             rgba[to + 3] = 255;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_viewport_that_is_not_shown_is_not_drawn() {
+        // TASK-S20-06 (found by the GPU tier after S20 raised the engine's cap to twelve kept
+        // views): a picture of a pane the figure does not show is refused before any device is
+        // made, in words that say how many the figure has. Control: the engine itself still
+        // answers for that pane's kept view, which is why the refusal has to be here.
+        let mut session = Session::new();
+        for pane in [1, 8, 11, 12, 40] {
+            let why = session.render_png(pane, [64, 48]).unwrap_err();
+            assert_eq!(why, format!("there is no pane {}; the figure has 1", pane + 1));
+        }
+        assert!(session.gpu.is_none() && session.plots.is_none(), "refused before a device is made");
+        assert!(session.engine.frame(8).is_ok(), "control: the engine keeps a view for pane 9");
+        session.engine.run_line("panes 4").unwrap();
+        assert_eq!(session.render_png(4, [64, 48]).unwrap_err(), "there is no pane 5; the figure has 4");
     }
 }

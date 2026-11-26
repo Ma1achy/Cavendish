@@ -20,8 +20,10 @@ Read `proj-toggle` in `crates/cav-app/ui/actions.ron` beside this.
 2. Add one entry to `crates/cav-app/ui/actions.ron`: `id`, `label`, `menu` (a path such as
    `View/Projection`, or empty), `line` (with `{selection}`, `{body}`, `{tower}` or `{field}` if
    it acts on the selection or the focused field), `scope` (where its keys work: a big scope's
-   id, a scope under one such as `tree/sources`, or `global`), `keys`, `needs` (when it can run),
-   `context` (on the scene tree's right-click menu), `about`.
+   id, a scope under one such as `tree/sources`, or `global`), `keys`, `needs` (when it can run:
+   a variant of `actions::Needs`, whose `why_not` is what a disabled button's tooltip says and
+   whose test is an arm of `Shell::can_run`), `context` (on the scene tree's right-click menu),
+   `about`.
 3. Nothing else: the menu bar (`menus.rs`), the palette (`palette.rs`), the `?` sheet
    (`sheet.rs`) and the router (`Keyboard::route`) read the table.
 
@@ -29,6 +31,22 @@ Tests that then hold it: `actions::tests::the_data_files_are_valid` (the line pa
 and menu exist; the chord is a chord), `no_shortcut_clashes_and_every_one_is_listed` (no two
 actions on one chord where both can be heard; every key on the sheet and in the palette),
 `every_menu_item_is_an_action_that_runs` (it runs).
+
+## A button of the transport
+
+Read `step-forward` in `crates/cav-app/ui/actions.ron` and `crates/cav-app/src/transport.rs`
+beside this (`docs/design/workspace.md` §5).
+
+1. The button is an action first (above): its line, its key in the `timeline` scope, its `needs`.
+2. Add it to `transport::CONTROLS` where it stands in the row (that order is the keyboard's),
+   draw it in `transport::draw` with `button` (its icon is a `icons::Transport` glyph in
+   `crates/cav-app/src/icons.rs`) and run its action on its click. Its tooltip, its key and its
+   disabled state come from the action.
+3. A time it moves the playhead to is one of the engine's: a readout of `Engine::shots`
+   (`transport::place`), the scene's duration, zero. Never a time worked out in the window.
+4. A drop-down of the row (the speed) is the actions of one menu of the table
+   (`transport::SPEED_MENU`): add a row there and it is in the list, the Scene menu and the
+   palette. `s20::each_transport_button_issues_its_command` walks `CONTROLS`.
 
 ## A tool
 

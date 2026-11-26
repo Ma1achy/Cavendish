@@ -178,7 +178,12 @@ pub const COMMANDS: &[CommandDoc] = &[
         about: "select something, or nothing",
         example: "select tower 3",
     },
-    CommandDoc { name: "seek", usage: "seek <seconds>", about: "move the playhead", example: "seek 4.2" },
+    CommandDoc {
+        name: "seek",
+        usage: "seek <seconds|start|end>",
+        about: "move the playhead: to a time, to the start (0), or to the end (the scene's duration)",
+        example: "seek 4.2",
+    },
     CommandDoc {
         name: "view",
         usage: "view <iso|top|bottom|north|south|east|west|home> [@N]",
@@ -838,6 +843,10 @@ impl Engine {
                 let n = n.parse().map_err(|_| format!("`{n}` is not a tower number; {}", usage(name)))?;
                 Ok(Request::Do(Command::Select(Some(Target::Tower(n)))))
             }
+            // `start` and `end` are read here, against the scene as it is: the command (and the
+            // journal's line) is the seek to that time.
+            ("seek", ["start"]) => Ok(Request::Do(Command::Seek(0.0))),
+            ("seek", ["end"]) => Ok(Request::Do(Command::Seek(self.spec().duration))),
             ("seek", [t]) => Ok(Request::Do(Command::Seek(number(t, "seconds", name)?))),
             ("view", ["home"]) => view(ViewCommand::Home { pane }),
             ("view", [direction]) => match NamedView::parse(direction) {
@@ -1703,6 +1712,14 @@ mod tests {
             // And back: the log's description of the command is the line that issues it.
             assert_eq!(describe(command, 0), *line, "{command:?}");
         }
+        // `seek start` and `seek end` are read against the scene and are the seek to that time
+        // (which is what the log and the journal then say: `seek 0`, `seek 12`).
+        assert_eq!(engine.parse("seek start"), Ok(Request::Do(Command::Seek(0.0))));
+        assert_eq!(engine.parse("seek end"), Ok(Request::Do(Command::Seek(engine.spec().duration))));
+        let mut longer = Engine::new();
+        longer.run_line("set duration 20").unwrap();
+        assert_eq!(longer.parse("seek end"), Ok(Request::Do(Command::Seek(20.0))), "the scene's own end");
+        assert!(engine.parse("seek middle").is_err());
         // Control: lines that differ give commands that differ.
         assert_ne!(engine.parse("view top"), engine.parse("view bottom"));
         assert_ne!(engine.parse("view top"), engine.parse("view top @2"));

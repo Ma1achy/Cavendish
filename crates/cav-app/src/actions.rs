@@ -53,6 +53,15 @@ pub enum Needs {
     World,
     /// The figure has more than one viewport (so one can be closed, or two swapped).
     Viewports,
+    /// The playhead is after the start of the timeline.
+    AfterStart,
+    /// The playhead is before the end of the timeline.
+    BeforeEnd,
+    /// A shot of the transport's tower ([`crate::transport::tower`]) is read out before the
+    /// playhead, inside the timeline.
+    ShotBefore,
+    /// A shot of the transport's tower is read out after the playhead, inside the timeline.
+    ShotAfter,
 }
 
 impl Needs {
@@ -71,6 +80,10 @@ impl Needs {
             Self::Shapes => "the scene has no voxel body",
             Self::World => "the scene has no world",
             Self::Viewports => "this is the only viewport",
+            Self::AfterStart => "the playhead is at the start",
+            Self::BeforeEnd => "the playhead is at the end",
+            Self::ShotBefore => "there is no shot before the playhead",
+            Self::ShotAfter => "there is no shot after the playhead",
         }
     }
 }
