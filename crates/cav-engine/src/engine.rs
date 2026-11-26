@@ -1907,8 +1907,14 @@ impl Engine {
     /// and the playhead, together. Every client that draws (the app's panes, `cav render`, MCP
     /// `render_view`) asks here, so their pictures are of the same thing.
     ///
+    /// It answers for every pane the engine keeps a view of, shown or not (1 to [`MAX_PANES`]:
+    /// a viewport that is closed keeps its camera for when it returns, and `view top @3` may be
+    /// said before `panes 4`). Whether a pane is in the figure is [`Self::panes`]; a client that
+    /// draws one picture of a viewport (`cav render`, MCP `render_view`, `figure view … @N`)
+    /// refuses one that is not shown, saying how many there are.
+    ///
     /// # Errors
-    /// When there is no such pane.
+    /// When `pane` is not below [`MAX_PANES`].
     pub fn frame(&self, pane: usize) -> Result<SceneView<'_>, String> {
         let view = self
             .views

@@ -8,7 +8,9 @@
 # H4 in tests/editor/s20.rs, two of navgizmo).
 # TASK-S20-05 (the tool palette, flyouts, the options row): 6 new quick tests (cav-app: P1, P2
 # and the session's row in tests/editor/s20.rs, two of tool_palette, one of tools).
-quick 666
+# TASK-S20-06 (the top bar and the transport): 7 new quick tests (cav-app: T1 to T3 and the top
+# bar's in tests/editor/s20.rs, two of transport; cav: a viewport not shown is not drawn).
+quick 673
 gpu 42
 slow 45
 oracle 58

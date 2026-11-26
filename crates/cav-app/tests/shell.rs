@@ -242,6 +242,13 @@ fn every_menu_item_is_an_action_that_runs() {
             );
             shell.run("panes 2").unwrap();
         }
+        // (TASK-S20-06: a step back needs somewhere before the playhead to go, as redo needs
+        // an undo: at the start it is refused in words, which is held here; then it runs from
+        // the middle of the timeline.)
+        if line.starts_with("step -") {
+            assert!(shell.run(line).is_err_and(|why| why.contains("the playhead")), "`{line}`");
+            shell.run("seek 6").unwrap();
+        }
         let line = Shell::resolve(line, shell.engine.selection());
         // It is either the window's own or one the engine's console parses (S18's review, R4:
         // this parsed a fixed line, so it could not fail).
@@ -519,6 +526,9 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
                 || (*name == "tool-palette" && outcome.as_ref().unwrap_err().contains("tool-palette <"))
                 || (*name == "flyout" && outcome.as_ref().unwrap_err().contains("flyout <"))
                 || (*name == "layout" && outcome.as_ref().unwrap_err().contains("layout <"))
+                // (TASK-S20-06: the transport's two commands take a number each, and say so.)
+                || (*name == "step" && outcome.as_ref().unwrap_err().contains("step <"))
+                || (*name == "speed" && outcome.as_ref().unwrap_err().contains("speed <"))
                 || (*name == "reset" && outcome.as_ref().unwrap_err().contains("reset <"))
                 || (*name == "focus" && outcome.as_ref().unwrap_err().contains("focus <"))
                 || (*name == "pointer" && outcome.as_ref().unwrap_err().contains("pointer <"))
@@ -553,6 +563,8 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
                 || (*name == "tool-palette" && wrong.contains("tool-palette <"))
                 || (*name == "flyout" && wrong.contains("flyout <"))
                 || (*name == "layout" && wrong.contains("layout <"))
+                || (*name == "step" && wrong.contains("step <"))
+                || (*name == "speed" && wrong.contains("speed <"))
                 || (*name == "tab" && wrong.contains("tab <"))
                 || (*name == "pointer" && wrong.contains("pointer <"))
                 || (*name == "probe-at" && wrong.contains("probe-at <"))
@@ -1584,7 +1596,9 @@ fn a_scene_with_no_towers_draws_every_pane_and_the_timeline() {
         can.iter().filter(|c| **c).count() >= 5
             && towers.iter().any(|a| a.line == "select tower 6" && !rig.shell.can_run(a))
     );
-    assert!(rig.shell.can_run(table.action("rewind").unwrap()));
+    // (TASK-S20-06: this was `rewind`, which could always run; the transport's `seek-start`
+    // that replaced it cannot at the start, so the action that needs nothing is `play`.)
+    assert!(rig.shell.can_run(table.action("play").unwrap()));
     // The last tower of a scene can be taken away, and the application goes on.
     rig.shell.run("load point").unwrap();
     for _ in 0..5 {

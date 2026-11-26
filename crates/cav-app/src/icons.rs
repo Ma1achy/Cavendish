@@ -408,3 +408,66 @@ pub fn projection(painter: &Painter, rect: Rect, projection: cav_sim::Projection
     path(painter, rect, &[(0.5 * (top.0 + top.1), 4.0), (10.0, 16.0)], stroke);
     path(painter, rect, &[(0.5 * (top.0 + 3.0), 10.0), (0.5 * (top.1 + 17.0), 10.0)], stroke);
 }
+
+/// A transport button's picture, as a media player draws them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Transport {
+    /// A bar and a triangle pointing at it, leftward: to the start.
+    Start,
+    /// Two triangles leftward: a step back.
+    StepBack,
+    /// A triangle rightward: play.
+    Play,
+    /// Two bars: pause.
+    Pause,
+    /// Two triangles rightward: a step forward.
+    StepForward,
+    /// A triangle rightward and a bar: to the end.
+    End,
+}
+
+/// A transport button's picture ([`Transport`]).
+pub fn transport(painter: &Painter, rect: Rect, glyph: Transport, colour: Color32) {
+    let bar = |x: f32| {
+        painter.rect_filled(Rect::from_min_max(at(rect, x, 4.0), at(rect, x + 2.4, 16.0)), 0.5, colour);
+    };
+    // A triangle from its flat side at `from` to its point at `to`, 12 high.
+    let wedge = |from: f32, to: f32| triangle(painter, rect, [(from, 4.0), (from, 16.0), (to, 10.0)], colour);
+    match glyph {
+        Transport::Start => {
+            bar(3.0);
+            wedge(17.0, 6.5);
+        }
+        Transport::StepBack => {
+            wedge(10.0, 2.0);
+            wedge(18.0, 10.0);
+        }
+        Transport::Play => wedge(5.0, 17.0),
+        Transport::Pause => {
+            bar(5.0);
+            bar(12.6);
+        }
+        Transport::StepForward => {
+            wedge(2.0, 10.0);
+            wedge(10.0, 18.0);
+        }
+        Transport::End => {
+            wedge(3.0, 13.5);
+            bar(14.6);
+        }
+    }
+}
+
+/// A magnifying glass: search.
+pub fn search(painter: &Painter, rect: Rect, colour: Color32) {
+    let stroke = line(rect, colour);
+    painter.circle_stroke(at(rect, 8.5, 8.5), rect.width() * 0.28, stroke);
+    path(painter, rect, &[(12.7, 12.7), (17.5, 17.5)], Stroke::new(stroke.width + 0.6, colour));
+}
+
+/// A plus: add one.
+pub fn plus(painter: &Painter, rect: Rect, colour: Color32) {
+    let stroke = line(rect, colour);
+    path(painter, rect, &[(4.0, 10.0), (16.0, 10.0)], stroke);
+    path(painter, rect, &[(10.0, 4.0), (10.0, 16.0)], stroke);
+}

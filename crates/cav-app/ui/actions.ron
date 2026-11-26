@@ -15,7 +15,8 @@
 //   keys    its key chords: "Ctrl+Z", "Shift+F", "?", "Delete"
 //   needs   when it can run: Always, Undo, Redo, Selection, Item (a body or a tower), Body,
 //           Tower(n), Shapes, World (the scene has a world), Viewports (the figure has more than
-//           one)
+//           one), AfterStart and BeforeEnd (where the playhead is), ShotBefore and ShotAfter (a
+//           shot is read out before or after the playhead)
 //   rule    a rule above it in its menu
 //   context on the right-click menu of a row of the scene tree and of the view
 //   about   one line for the palette and the ? sheet
@@ -126,6 +127,7 @@
         (id: "layout-scene", label: "Scene", menu: "View/Layout", line: "layout scene", keys: ["Ctrl+1"], about: "building and placing: one big view of the scene"),
         (id: "layout-instrument", label: "Instrument", menu: "View/Layout", line: "layout instrument", keys: ["Ctrl+2"], about: "the array and its timing: the scene beside the flights"),
         (id: "layout-analysis", label: "Analysis", menu: "View/Layout", line: "layout analysis", keys: ["Ctrl+3"], about: "reading results: signal, periodogram, cadence and the scene"),
+        (id: "layout-save", label: "Save as a new layout", menu: "View/Layout", line: "layout save", rule: true, about: "keep the figure's present arrangement (the mosaic and what each viewport shows) as a new layout, a tab of the top bar, for this session; `layout save <name>` names it"),
         // The Viewport submenu is also every viewport's right-click menu (panels.rs, VIEWPORT_MENU).
         (id: "split-right", label: "Split right", menu: "View/Viewport", line: "split right", about: "split the active viewport in two, side by side: the new one starts as a copy of it"),
         (id: "split-down", label: "Split down", menu: "View/Viewport", line: "split down", about: "split the active viewport in two, one above the other: the new one starts as a copy of it"),
@@ -140,7 +142,20 @@
 
         // Scene
         (id: "play", label: "Play / pause", menu: "Scene", line: "play", keys: ["Space"], about: "start or stop the playhead"),
-        (id: "rewind", label: "Rewind", menu: "Scene", line: "seek 0", about: "the playhead to the start"),
+        // The transport's buttons (transport.rs, CONTROLS) are these; their keys work in the timeline.
+        (id: "seek-start", label: "To the start", menu: "Scene", line: "seek start", scope: "timeline", keys: ["Alt+["], needs: AfterStart, about: "the playhead to the start of the timeline"),
+        (id: "step-back", label: "Step back", menu: "Scene", line: "step -1", scope: "timeline", keys: ["["], needs: ShotBefore, about: "the playhead to the shot read out before it (the selected tower's shots, else the first tower's); with Shift one cadence cycle back; hold to scrub"),
+        (id: "step-forward", label: "Step forward", menu: "Scene", line: "step 1", scope: "timeline", keys: ["]"], needs: ShotAfter, about: "the playhead to the next shot's readout (the selected tower's shots, else the first tower's); with Shift one cadence cycle on; hold to scrub"),
+        (id: "seek-end", label: "To the end", menu: "Scene", line: "seek end", scope: "timeline", keys: ["Alt+]"], needs: BeforeEnd, about: "the playhead to the end of the timeline"),
+        (id: "step-back-cycle", label: "Back one cycle", menu: "Scene", line: "step -1 cycle", scope: "timeline", keys: ["Shift+[", "{"], needs: AfterStart, about: "the playhead back by one mean cadence cycle"),
+        (id: "step-forward-cycle", label: "On one cycle", menu: "Scene", line: "step 1 cycle", scope: "timeline", keys: ["Shift+]", "}"], needs: BeforeEnd, about: "the playhead on by one mean cadence cycle"),
+        (id: "speed-0.1", label: "0.1×", menu: "Scene/Speed", line: "speed 0.1", about: "play at a tenth of the clock's rate"),
+        (id: "speed-0.25", label: "0.25×", menu: "Scene/Speed", line: "speed 0.25", about: "play at a quarter of the clock's rate"),
+        (id: "speed-0.5", label: "0.5×", menu: "Scene/Speed", line: "speed 0.5", about: "play at half the clock's rate"),
+        (id: "speed-1", label: "1×", menu: "Scene/Speed", line: "speed 1", about: "play at the clock's rate: a second of the scene a second"),
+        (id: "speed-2", label: "2×", menu: "Scene/Speed", line: "speed 2", about: "play at twice the clock's rate"),
+        (id: "speed-5", label: "5×", menu: "Scene/Speed", line: "speed 5", about: "play at five times the clock's rate"),
+        (id: "speed-10", label: "10×", menu: "Scene/Speed", line: "speed 10", about: "play at ten times the clock's rate"),
         (id: "run", label: "Compute again", menu: "Scene", line: "run", rule: true, about: "compute the signal again from nothing"),
 
         // Array

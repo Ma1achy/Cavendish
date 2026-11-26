@@ -4,6 +4,8 @@
 //! scroll bar's width is reserved, the chrome holds no sentences, a uniform body's material
 //! reads "Uniform" and the Probe reads into the right panel. Rows M3 to M6 and K1 are the mosaic's
 //! (TASK-S20-03): more than four viewports, the splitters, the labels' order, pop-out and dock.
+//! Rows T1 to T3 are the transport's (TASK-S20-06): each button its command, a step on a shot's
+//! readout, the speed; with them the top bar's row (the design's §4).
 
 use std::collections::BTreeMap;
 
@@ -1396,4 +1398,462 @@ fn a_press_in_the_session_s_row_keeps_the_session() {
     assert!(rig.shell.session.is_none(), "a press elsewhere ends it");
     rig.frames(vec![vec![]]);
     assert!(rig.shell.layout().options.is_none(), "and the row goes");
+}
+
+/// The transport's control `id` as the last frame drew it.
+fn transport(rig: &Rig, id: &str) -> cav_app::transport::Drawn {
+    rig.shell.layout().transport_control(id).unwrap_or_else(|| panic!("no transport control `{id}`")).clone()
+}
+
+/// A key press (and its release) with the keyboard's focus in the timeline.
+fn timeline_key(rig: &mut Rig, key: Key, modifiers: Modifiers) {
+    rig.shell.keyboard.focus = vec!["timeline".into()];
+    rig.key(key, modifiers);
+}
+
+#[test]
+fn each_transport_button_issues_its_command() {
+    // T1. Criterion (written before measuring): the five buttons stand left to right in the
+    // timeline's head, `theme::ICON` a side, each an action of `ui/actions.ron` whose tooltip
+    // holds its key; a click on end leaves t = duration (bits) by one `seek`, on start t = 0, on
+    // play toggles playing; the keys do the same in the timeline; the keyboard's stops are the
+    // data's order; a time typed in the time field seeks there and a shot's number goes to its
+    // readout. Controls: at the start, step back and start are disabled and say why, and a click
+    // on them changes nothing (no journal line); letters typed as a time are refused, the
+    // playhead where it was.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let duration = rig.shell.engine.spec().duration;
+    assert_eq!(duration, 12.0);
+    let table = cav_app::actions::table();
+    let head = rig.shell.layout().panel("timeline").unwrap();
+    let mut right = head.left();
+    for control in &cav_app::transport::CONTROLS {
+        let drawn = transport(&rig, control.id);
+        assert!(head.contains_rect(drawn.rect), "{}: {:?} in {head:?}", control.id, drawn.rect);
+        assert!(drawn.rect.left() >= right - 0.01, "{}: left to right, none over another", control.id);
+        right = drawn.rect.right();
+        let Some(action) = control.action else { continue };
+        let action = table.action(action).unwrap();
+        assert_eq!(drawn.rect.size(), vec2(theme::ICON, theme::ICON), "{}", control.id);
+        let key = action.shortcut_text();
+        assert!(!key.is_empty() && drawn.tooltip.contains(&format!("({key})")), "{}", drawn.tooltip);
+        assert!(drawn.tooltip.contains(&action.about), "{}", drawn.tooltip);
+        assert_eq!(rig.shell.layout().button(&action.line), Some(drawn.rect), "found by its line");
+    }
+    let stops: Vec<&str> = rig.shell.focus_tree().children("timeline");
+    assert_eq!(
+        stops,
+        [
+            "timeline/start",
+            "timeline/step-back",
+            "timeline/play",
+            "timeline/step-forward",
+            "timeline/end",
+            "timeline/speed",
+            "timeline/time",
+            "timeline/shot",
+            "timeline/scrubber"
+        ],
+        "the order is the data's"
+    );
+
+    // Control: at the start, start and step back cannot be used and say why; a click is nothing.
+    let journal = rig.shell.engine.journal().len();
+    for (id, why) in [("start", "the playhead is at the start"), ("step-back", "there is no shot before")] {
+        let drawn = transport(&rig, id);
+        assert!(!drawn.enabled && drawn.tooltip.contains(why), "{id}: {}", drawn.tooltip);
+        assert!(!rig.shell.focus_tree().node(&format!("timeline/{id}")).unwrap().enabled);
+        rig.click(drawn.rect.center());
+    }
+    assert!(transport(&rig, "end").enabled && transport(&rig, "step-forward").enabled);
+    assert_eq!((rig.shell.engine.time(), rig.shell.engine.journal().len()), (0.0, journal));
+    assert!(!rig.shell.playing && !rig.shell.console_open);
+
+    // End, then start: one seek each, to the bit.
+    rig.click_button("seek end");
+    assert_eq!(rig.shell.engine.time().to_bits(), duration.to_bits());
+    assert_eq!(rig.shell.engine.journal().last(), Some(&Command::Seek(duration)));
+    rig.frames(vec![vec![]]);
+    let end = transport(&rig, "end");
+    assert!(!end.enabled && end.tooltip.contains("the playhead is at the end"), "{}", end.tooltip);
+    assert!(!transport(&rig, "step-forward").enabled);
+    rig.click_button("seek start");
+    assert_eq!(rig.shell.engine.time(), 0.0);
+    assert_eq!(rig.shell.engine.journal().last(), Some(&Command::Seek(0.0)));
+    // Play toggles, and the playhead moves while it plays.
+    rig.click_button("play");
+    assert!(rig.shell.playing);
+    rig.frames(vec![vec![]; 6]);
+    assert!(rig.shell.engine.time() > 0.05);
+    rig.click_button("play");
+    assert!(!rig.shell.playing);
+    let paused = rig.shell.engine.time();
+    rig.frames(vec![vec![]; 6]);
+    assert_eq!(rig.shell.engine.time(), paused);
+    // The step buttons: on to the first readout and back to the start's side of it.
+    let first = rig.shell.engine.shots().unwrap().readout(0, 0);
+    rig.click_button("step 1");
+    assert_eq!(rig.shell.engine.time().to_bits(), first.to_bits());
+    rig.click_button("step 1");
+    rig.click_button("step -1");
+    assert_eq!(rig.shell.engine.time().to_bits(), first.to_bits());
+
+    // The keys, in the timeline: Alt+] and Alt+[ the ends, ] and [ a shot, Space plays.
+    timeline_key(&mut rig, Key::CloseBracket, Modifiers::ALT);
+    assert_eq!(rig.shell.engine.time(), duration);
+    timeline_key(&mut rig, Key::OpenBracket, Modifiers::ALT);
+    assert_eq!(rig.shell.engine.time(), 0.0);
+    timeline_key(&mut rig, Key::CloseBracket, Modifiers::NONE);
+    assert_eq!(rig.shell.engine.time().to_bits(), first.to_bits());
+    timeline_key(&mut rig, Key::OpenBracket, Modifiers::NONE);
+    assert_eq!(rig.shell.engine.time(), first, "control: no shot before the first, so [ does nothing");
+    timeline_key(&mut rig, Key::Space, Modifiers::NONE);
+    assert!(rig.shell.playing);
+    timeline_key(&mut rig, Key::Space, Modifiers::NONE);
+    assert!(!rig.shell.playing);
+    // Enter on a stop is its click.
+    rig.shell.keyboard.focus = vec!["timeline".into(), "timeline/end".into()];
+    rig.shell.keyboard.nav_on = true;
+    rig.key(Key::Enter, Modifiers::NONE);
+    assert_eq!(rig.shell.engine.time(), duration);
+
+    // The time is typed where it is read: Enter on the field, a time, Enter.
+    let typed = |rig: &mut Rig, field: &str, text: &str| {
+        rig.shell.keyboard.focus = vec!["timeline".into(), format!("timeline/{field}")];
+        rig.shell.keyboard.nav_on = true;
+        rig.key(Key::Enter, Modifiers::NONE);
+        rig.frames(vec![vec![]]);
+        rig.typed(text);
+        rig.key(Key::Enter, Modifiers::NONE);
+        rig.frames(vec![vec![]]);
+    };
+    assert_eq!(transport(&rig, "time").text, "12.00");
+    typed(&mut rig, "time", "3.2");
+    assert_eq!(rig.shell.engine.time(), 3.2);
+    assert_eq!(rig.shell.engine.journal().last(), Some(&Command::Seek(3.2)));
+    assert_eq!(transport(&rig, "time").text, "3.20");
+    assert_eq!(transport(&rig, "shot").text, "1", "one shot is read out by 3.2 s");
+    // The shot's number goes to that shot's readout.
+    typed(&mut rig, "shot", "3");
+    let third = rig.shell.engine.shots().unwrap().readout(0, 2);
+    assert_eq!(rig.shell.engine.time().to_bits(), third.to_bits());
+    assert_eq!(transport(&rig, "shot").text, "3");
+    // Control: letters are no time and 9 is no shot of six; each is refused in words.
+    assert!(!rig.shell.console_open);
+    typed(&mut rig, "time", "soon");
+    assert_eq!(rig.shell.engine.time().to_bits(), third.to_bits());
+    assert!(rig.shell.console_open, "the refusal is said");
+    let said = |rig: &Rig| rig.shell.engine.log().iter().next_back().unwrap().message.clone();
+    assert!(said(&rig).contains("`soon` is not a time in seconds"), "{}", said(&rig));
+    typed(&mut rig, "shot", "9");
+    assert_eq!(rig.shell.engine.time().to_bits(), third.to_bits());
+    assert!(said(&rig).contains("shots 1 to 6"), "{}", said(&rig));
+    // Esc leaves a field as it was.
+    rig.shell.keyboard.focus = vec!["timeline".into(), "timeline/time".into()];
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+    rig.typed("7");
+    rig.key(Key::Escape, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+    assert_eq!(rig.shell.engine.time().to_bits(), third.to_bits());
+    // None of it is an edit of the scene.
+    assert_eq!(rig.shell.engine.depth(), (1, 0), "the load alone");
+}
+
+#[test]
+fn a_step_lands_on_a_shot_time() {
+    // T2. Criterion (written before measuring): after `step 1` the time is the next of the
+    // engine's own readouts, bit for bit, and `step -1` the one before; with Shift (or `cycle`)
+    // a step is one mean cadence cycle; the shots are the selected tower's, else the first's; a
+    // step stops playback; a held button repeats on the keyboard's clock (0.5 s, then every
+    // 40 ms). Controls: from between two shots a step back lands on the shot before, not a cycle
+    // back; a tower with its own offset gives other times; a press held 0.3 s is one step.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let readouts: Vec<f64> = {
+        let shots = rig.shell.engine.shots().unwrap();
+        (0..shots.count(0)).map(|k| shots.readout(0, k)).collect()
+    };
+    assert_eq!(readouts.len(), 6);
+    let bits = |rig: &Rig| rig.shell.engine.time().to_bits();
+    rig.shell.run("step 1").unwrap();
+    assert_eq!(bits(&rig), readouts[0].to_bits());
+    rig.shell.run("step 1").unwrap();
+    assert_eq!(bits(&rig), readouts[1].to_bits());
+    rig.shell.run("step 3").unwrap();
+    assert_eq!(bits(&rig), readouts[4].to_bits(), "three shots on");
+    rig.shell.run("step -2").unwrap();
+    assert_eq!(bits(&rig), readouts[2].to_bits());
+    // Between two shots (3.46 s and 5.46 s): back is the one before, on is the one after.
+    let cycle = {
+        let spec = rig.shell.engine.spec();
+        spec.array.schedule.mean_cycle(spec.array.instrument.cycle)
+    };
+    assert_eq!(cycle, 2.0);
+    rig.shell.run("seek 4").unwrap();
+    rig.shell.run("step -1").unwrap();
+    assert_eq!(bits(&rig), readouts[1].to_bits());
+    assert!((rig.shell.engine.time() - (4.0 - cycle)).abs() > 1.0, "control: not one cycle back");
+    rig.shell.run("seek 4").unwrap();
+    rig.shell.run("step 1").unwrap();
+    assert_eq!(bits(&rig), readouts[2].to_bits());
+    // A cycle step is the mean cycle, from wherever the playhead is.
+    rig.shell.run("seek 4").unwrap();
+    rig.shell.run("step -1 cycle").unwrap();
+    assert!((rig.shell.engine.time() - (4.0 - cycle)).abs() <= 1e-12);
+    rig.shell.run("step 2 cycle").unwrap();
+    assert!((rig.shell.engine.time() - (4.0 + cycle)).abs() <= 1e-12);
+    // Shift with the button, and with the key, is the cycle step.
+    rig.frames(vec![vec![]]);
+    let back = transport(&rig, "step-back").rect.center();
+    let shift = |pressed| Event::PointerButton {
+        pos: back,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::SHIFT,
+    };
+    rig.frames(vec![vec![Event::PointerMoved(back)], vec![shift(true)], vec![shift(false)], vec![]]);
+    assert!((rig.shell.engine.time() - 4.0).abs() <= 1e-12, "Shift+click: {}", rig.shell.engine.time());
+    timeline_key(&mut rig, Key::CloseBracket, Modifiers::SHIFT);
+    assert!((rig.shell.engine.time() - (4.0 + cycle)).abs() <= 1e-12);
+    // (A US keyboard sends `{` for Shift+[: the same step.)
+    timeline_key(&mut rig, Key::OpenCurlyBracket, Modifiers::SHIFT);
+    assert!((rig.shell.engine.time() - 4.0).abs() <= 1e-12);
+
+    // The ends: no shot after the last, and the refusal says so; the playhead stays.
+    rig.shell.run("seek end").unwrap();
+    assert!(rig.shell.run("step 1").unwrap_err().contains("no shot after the playhead"));
+    assert_eq!(rig.shell.engine.time(), 12.0);
+    assert!(rig.shell.run("step 1 cycle").unwrap_err().contains("at the end"));
+    assert!(rig.shell.run("step 0").is_err() && rig.shell.run("step").is_err());
+    rig.shell.run("step -1").unwrap();
+    assert_eq!(bits(&rig), readouts[5].to_bits());
+    // A step stops playback.
+    rig.shell.run("seek 0").unwrap();
+    rig.shell.run("play").unwrap();
+    rig.shell.run("step 1").unwrap();
+    assert!(!rig.shell.playing);
+    assert_eq!(bits(&rig), readouts[0].to_bits());
+
+    // A held button scrubs on the keyboard's clock: one step as it goes down, a second after
+    // 0.5 s, then one every 40 ms. Held 0.6 s: 1 + 1 + 2. Control: held 0.3 s, one.
+    rig.shell.run("seek 0").unwrap();
+    rig.frames(vec![vec![]]);
+    let on = transport(&rig, "step-forward").rect.center();
+    let hold = |rig: &mut Rig, frames: usize| {
+        let mut all = vec![vec![Event::PointerMoved(on)], vec![Rig::press(on, PointerButton::Primary, true)]];
+        all.extend(std::iter::repeat_with(Vec::new).take(frames));
+        all.push(vec![Rig::press(on, PointerButton::Primary, false)]);
+        all.push(vec![]);
+        rig.frames(all);
+    };
+    hold(&mut rig, 18);
+    assert_eq!(bits(&rig), readouts[0].to_bits(), "control: 0.3 s is one step");
+    rig.shell.run("seek 0").unwrap();
+    hold(&mut rig, 36);
+    assert_eq!(bits(&rig), readouts[3].to_bits(), "held 0.6 s: four steps");
+    let (delay, every) = (cav_app::keyboard::REPEAT_DELAY, cav_app::keyboard::REPEAT_EVERY);
+    assert_eq!(2 + ((0.6 - delay + 1e-9) / every).floor() as usize, 4, "the keyboard's clock gives four");
+
+    // The shots are the selected tower's: tower 2 with its clock 0.3 s late has other readouts.
+    rig.shell.run("set array.towers[1].timing.offset 0.3").unwrap();
+    assert!(rig.shell.engine.settle(std::time::Duration::from_secs(30)));
+    rig.shell.run("seek 0").unwrap();
+    rig.shell.run("select tower 2").unwrap();
+    rig.shell.run("step 1").unwrap();
+    let late = rig.shell.engine.shots().unwrap().readout(1, 0);
+    assert_eq!(bits(&rig), late.to_bits());
+    assert!((late - readouts[0] - 0.3).abs() < 1e-12 && late != readouts[0], "control: another time");
+    rig.shell.run("select none").unwrap();
+    rig.shell.run("seek 0").unwrap();
+    rig.shell.run("step 1").unwrap();
+    assert_eq!(bits(&rig), readouts[0].to_bits(), "nothing selected: the first tower's");
+}
+
+#[test]
+fn speed_scales_playback() {
+    // T3. Criterion (written before measuring): N frames of dt at 2× advance the playhead
+    // 2·N·dt and at 0.1× a tenth of N·dt, each to 1e-12 of the 1× advance scaled (the control
+    // arm, itself N·dt of the frames' sixtieth of a second to 1e-6); the speed is chosen from
+    // the transport's drop-down, whose rows are the table's; a speed outside 0.1 to 10 is
+    // refused.
+    const N: usize = 30;
+    let played = |speed: &str| {
+        let mut rig = Rig::new();
+        rig.shell.run("load point").unwrap();
+        rig.shell.run(&format!("speed {speed}")).unwrap();
+        rig.shell.run("play").unwrap();
+        rig.frames(vec![vec![]; N]);
+        rig.shell.engine.time()
+    };
+    let once = played("1");
+    assert!((once - N as f64 / 60.0).abs() < 1e-6, "control: 1× is N·dt, {once}");
+    assert!((played("2") - 2.0 * once).abs() <= 1e-12, "{} at 2×", played("2"));
+    assert!((played("0.1") - 0.1 * once).abs() <= 1e-12, "{} at 0.1×", played("0.1"));
+    assert!((played("10") - 10.0 * once).abs() <= 1e-12);
+
+    // The drop-down: its face says the speed; a click opens the list, a row chooses.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert_eq!((rig.shell.speed, transport(&rig, "speed").text.as_str()), (1.0, "1×"));
+    assert!(rig.shell.layout().button("speed menu").is_none(), "closed");
+    rig.click(transport(&rig, "speed").rect.center());
+    rig.frames(vec![vec![]]);
+    let list = rig.shell.layout().button("speed menu").expect("the list is open");
+    let head = transport(&rig, "speed").rect;
+    assert!(list.bottom() <= head.top() + 0.01, "above its opener: {list:?} over {head:?}");
+    for speed in cav_app::transport::SPEEDS {
+        assert!(list.contains_rect(rig.shell.layout().button(&format!("speed {speed}")).unwrap()), "{speed}");
+    }
+    rig.click_button("speed 2");
+    rig.frames(vec![vec![]]);
+    assert_eq!((rig.shell.speed, transport(&rig, "speed").text.as_str()), (2.0, "2×"));
+    assert!(rig.shell.layout().button("speed menu").is_none(), "choosing closes it");
+    // A press elsewhere closes it unchanged; so does its console line.
+    rig.shell.run("speed menu").unwrap();
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.layout().button("speed menu").is_some());
+    rig.click(rig.shell.layout().canvases[0].center());
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.layout().button("speed menu").is_none() && rig.shell.speed == 2.0);
+    // From the keyboard: Enter opens it on the speed in force, ↓ and Enter choose the next.
+    rig.shell.keyboard.focus = vec!["timeline".into(), "timeline/speed".into()];
+    rig.shell.keyboard.nav_on = true;
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+    assert_eq!(rig.shell.speed, 5.0);
+    // Refused in words, the speed as it was.
+    for line in ["speed 11", "speed 0", "speed fast", "speed"] {
+        assert!(rig.shell.run(line).unwrap_err().contains("0.1 to 10"), "{line}");
+    }
+    assert_eq!(rig.shell.speed, 5.0);
+    assert_eq!(rig.shell.engine.journal().len(), 1, "the speed is the window's: nothing journalled");
+}
+
+/// Whether any two of `rects` overlap by more than half a point.
+fn overlapping(rects: &[(String, Rect)]) -> Option<(String, String)> {
+    for (n, (a, first)) in rects.iter().enumerate() {
+        for (b, second) in &rects[n + 1..] {
+            let common = first.intersect(*second);
+            if common.width() > 0.5 && common.height() > 0.5 {
+                return Some((a.clone(), b.clone()));
+            }
+        }
+    }
+    None
+}
+
+#[test]
+fn the_top_bar_is_menus_tabs_search_and_the_scene() {
+    // The design's §4 (TASK-S20-06). Criterion (written before measuring): the top bar paints, in
+    // one row and in this order, the table's menus, the layouts' tabs, the search box and, at
+    // the right, the scene's name (with ` *` once it has an unsaved edit), and nothing else: no
+    // time. `+` keeps the present arrangement as a new tab for the session, which brings it
+    // back; at 900 points wide nothing of the top bar or of the transport lies over anything
+    // else or leaves the window. Controls: the breadcrumb is there only while keyboard
+    // navigation is on; a layout that was forgotten is no tab.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let parts = |rig: &Rig, kind: &str| -> Vec<String> {
+        let bar = &rig.shell.layout().top_bar;
+        bar.iter().filter(|(k, ..)| *k == kind).map(|(_, text, _)| text.clone()).collect()
+    };
+    let kinds = |rig: &Rig| -> Vec<&'static str> {
+        let mut kinds: Vec<&str> = rig.shell.layout().top_bar.iter().map(|(k, ..)| *k).collect();
+        kinds.dedup();
+        kinds
+    };
+    assert_eq!(kinds(&rig), ["menu", "layout", "search", "scene"]);
+    assert_eq!(parts(&rig, "menu"), cav_app::actions::table().menus);
+    assert_eq!(parts(&rig, "layout"), ["Scene", "Instrument", "Analysis"]);
+    assert_eq!(parts(&rig, "scene"), ["point"]);
+    let fits = |rig: &Rig, what: &str| {
+        let layout = rig.shell.layout();
+        let (bar, screen) = (layout.panel("menu").unwrap(), layout.screen);
+        let mut rects: Vec<(String, Rect)> =
+            layout.top_bar.iter().map(|(kind, text, rect)| (format!("{kind} {text}"), *rect)).collect();
+        rects.push(("+".to_owned(), layout.button("layout save").unwrap()));
+        for (name, rect) in &rects {
+            assert!(bar.contains_rect(*rect) && screen.contains_rect(*rect), "{what}: `{name}` at {rect:?}");
+        }
+        assert_eq!(overlapping(&rects), None, "{what}: the top bar");
+        let timeline = layout.panel("timeline").unwrap();
+        let controls: Vec<(String, Rect)> =
+            layout.transport.iter().map(|drawn| (drawn.id.to_owned(), drawn.rect)).collect();
+        assert_eq!(controls.len(), cav_app::transport::CONTROLS.len(), "{what}: each once");
+        for (name, rect) in &controls {
+            assert!(timeline.contains_rect(*rect), "{what}: `{name}` at {rect:?} in {timeline:?}");
+        }
+        assert_eq!(overlapping(&controls), None, "{what}: the transport");
+    };
+    fits(&rig, "1440");
+    let scene = rig.shell.layout().top_bar.iter().find(|(k, ..)| *k == "scene").unwrap().2;
+    let search = rig.shell.layout().button("palette").unwrap();
+    assert!(scene.right() > 1440.0 - 24.0, "the scene's name is at the right: {scene:?}");
+    assert!((search.width() - 168.0).abs() < 0.01 && search.height() == theme::HIT, "{search:?}");
+    // An edit: the unsaved mark.
+    rig.shell.run("set duration 13").unwrap();
+    rig.frames(vec![vec![]]);
+    assert_eq!(parts(&rig, "scene"), ["point *"]);
+    // The breadcrumb, only while keyboard navigation is on.
+    rig.shell.keyboard.nav_on = true;
+    rig.frames(vec![vec![], vec![]]);
+    assert_eq!(kinds(&rig), ["menu", "layout", "search", "scene", "breadcrumb"]);
+    rig.shell.keyboard.nav_on = false;
+    rig.frames(vec![vec![]]);
+    assert_eq!(kinds(&rig).len(), 4, "control: no breadcrumb with navigation off");
+    // The search box opens the palette.
+    rig.click_button("palette");
+    assert!(rig.shell.palette.open);
+    rig.key(Key::Escape, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+
+    // `+`: the present arrangement becomes a tab of this session, and choosing it brings the
+    // arrangement back.
+    let journal = rig.shell.engine.journal().len();
+    rig.shell.run("mosaic \"AB;CB\" cols 2 1").unwrap();
+    rig.shell.run("show periodogram @3").unwrap();
+    let saved = rig.shell.engine.mosaic().clone();
+    rig.frames(vec![vec![]]);
+    rig.click_button("layout save");
+    rig.frames(vec![vec![]]);
+    assert_eq!(parts(&rig, "layout"), ["Scene", "Instrument", "Analysis", "Layout 1"]);
+    assert_eq!(rig.shell.layout_name, "layout-1");
+    assert_eq!(rig.shell.engine.journal().len(), journal + 2, "saving a layout journals nothing");
+    rig.click_button("layout scene");
+    assert_eq!(rig.shell.engine.panes(), 1);
+    rig.frames(vec![vec![]]);
+    rig.click_button("layout layout-1");
+    assert_eq!(rig.shell.engine.mosaic(), &saved, "the mosaic, weights and all");
+    assert_eq!(rig.shell.engine.content(2), cav_engine::PaneContent::Periodogram);
+    // A name can be given; the same name twice is refused; a seventh is refused with the count.
+    rig.shell.run("layout save Two plots").unwrap();
+    assert_eq!(rig.shell.layout_name, "two-plots");
+    assert!(rig.shell.run("layout save Two plots").unwrap_err().contains("taken"));
+    assert!(rig.shell.run("layout save Scene").unwrap_err().contains("taken"));
+    // At 900 points wide, with five tabs: nothing over anything, nothing off the window.
+    rig.size = [900, 700];
+    rig.frames(vec![vec![], vec![], vec![]]);
+    fits(&rig, "900");
+    assert!(rig.shell.layout().button("palette").unwrap().width() >= theme::ICON);
+    rig.size = [1440, 900];
+    // Control: forgotten, it is no tab, and the window is on a built-in layout again.
+    rig.shell.run("layout forget two-plots").unwrap();
+    rig.shell.run("layout forget layout-1").unwrap();
+    rig.frames(vec![vec![]]);
+    assert_eq!(parts(&rig, "layout"), ["Scene", "Instrument", "Analysis"]);
+    assert_eq!(rig.shell.layout_name, "scene");
+    assert!(rig.shell.run("layout forget scene").unwrap_err().contains("not a layout saved"));
+    assert!(rig.shell.run("layout layout-1").is_err(), "and its name is no layout");
+    for _ in 0..6 {
+        rig.shell.run("layout save").unwrap();
+    }
+    assert!(rig.shell.run("layout save").unwrap_err().contains("keeps 6 layouts"));
 }

@@ -99,7 +99,8 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
         let lanes_shown = shell.engine.spec().array.towers.len().min(timeline::MAX_LANES_SHOWN);
         let lanes_height = timeline::height(lanes_shown);
         let panel = Panel::bottom("timeline")
-            .exact_size(lanes_height + 34.0)
+            // The head (the transport's row, an icon button high), the lanes, the margins.
+            .exact_size(lanes_height + theme::ICON + theme::GRID + 8.0)
             .frame(frame(theme::PANEL, 8, 4))
             .show(ui, |ui| timeline_panel(shell, ui));
         shell.layout.panels.push(("timeline", panel.response.rect));
@@ -183,17 +184,24 @@ fn inspector_panel(shell: &mut Shell, ui: &mut egui::Ui) -> bool {
     }
 }
 
+/// The search box's width when the top bar has the room, points.
+const SEARCH_WIDTH: f32 = 168.0;
+
+/// The top bar, one row (`docs/design/workspace.md` §4): the menus, the layouts as tabs with a
+/// `+` that keeps the present arrangement as a new one, the command search, and at the right the
+/// scene's name with its unsaved mark. Nothing else: the time is the transport's. While keyboard
+/// navigation is on, the breadcrumb stands before the scene's name (`docs/design/keyboard.md`
+/// §10). What is painted is recorded in the layout's `top_bar`.
 fn menu_bar(shell: &mut Shell, ui: &mut egui::Ui) {
-    // The brand, the menus and the status share the menu bar's own row, so that the status on the
+    // The menus and the scene's name share the menu bar's own row, so that the name on the
     // right is laid out in what the menus leave and cannot be pushed off the window.
     egui::MenuBar::new().ui(ui, |ui| {
-        ui.label(RichText::new("cavendish · dev").color(theme::STRONG).strong());
-        ui.add_space(6.0);
         for title in crate::menus::titles() {
             let response = ui.menu_button(&title, |ui| crate::menus::draw_items(shell, ui, &title)).response;
             // From the keyboard a menu opens as the palette, filtered to it: its items, searchable.
             let id = format!("top-bar/menu/{title}");
             shell.register("top-bar", &id, &title, Kind::Button, response.rect);
+            shell.layout.top_bar.push(("menu", title.clone(), response.rect));
             if shell.take_click(&id) {
                 shell.palette = crate::palette::Palette {
                     open: true,
@@ -204,9 +212,12 @@ fn menu_bar(shell: &mut Shell, ui: &mut egui::Ui) {
                 shell.keyboard.open_window("palette", "palette/query", true);
             }
         }
-        // The layouts (`ui/layouts.ron`) as tabs: each arranges the figure for a task.
+        // The layouts (`ui/layouts.ron`, then the session's own) as tabs: each arranges the
+        // figure for a task.
         ui.separator();
-        for layout in &crate::layouts::layouts().layouts {
+        let layouts: Vec<crate::layouts::LayoutData> = shell.layouts().cloned().collect();
+        let built_in = crate::layouts::layouts().layouts.len();
+        for (n, layout) in layouts.iter().enumerate() {
             let tab = ui
                 .selectable_label(
                     shell.layout_name == layout.id,
@@ -217,36 +228,82 @@ fn menu_bar(shell: &mut Shell, ui: &mut egui::Ui) {
             let line = format!("layout {}", layout.id);
             shell.register("top-bar", &id, &layout.label, Kind::Button, tab.rect);
             shell.layout.buttons.push((line.clone(), tab.rect));
+            shell.layout.top_bar.push(("layout", layout.label.clone(), tab.rect));
             if tab.clicked() || shell.take_click(&id) {
                 let _ = shell.run(&line);
             }
+            if n >= built_in {
+                // One of the session's own can be dropped again.
+                tab.context_menu(|ui| {
+                    if ui.button("Forget this layout").clicked() {
+                        let _ = shell.run(&format!("layout forget {}", layout.id));
+                        ui.close();
+                    }
+                });
+            }
+        }
+        let tip = crate::header::tooltip("layout-save");
+        let (rect, plus) = ui.allocate_exact_size(vec2(theme::HIT, theme::HIT), Sense::click());
+        let plus = plus.on_hover_text(&tip);
+        if plus.hovered() {
+            ui.painter().rect_filled(rect, 2.0, theme::HOVER);
+        }
+        let colour = if plus.hovered() { Color32::WHITE } else { theme::TEXT };
+        crate::icons::plus(ui.painter(), Rect::from_center_size(rect.center(), vec2(12.0, 12.0)), colour);
+        shell.register("top-bar", "top-bar/layout-save", "Save as a new layout", Kind::Button, rect);
+        shell.layout.buttons.push(("layout save".to_owned(), rect));
+        if plus.clicked() || shell.take_click("top-bar/layout-save") {
+            let _ = shell.run_action("layout-save");
         }
         ui.separator();
-        let search = ui
-            .add(
-                Button::new(RichText::new("search  Ctrl+K").size(theme::SMALL_PT).color(theme::WEAK))
-                    .frame(false),
-            )
-            .on_hover_text("the command palette: every action, starter, scene, command and field");
-        shell.register("top-bar", "top-bar/search", "Search", Kind::Button, search.rect);
-        shell.layout.buttons.push(("palette".to_owned(), search.rect));
+
+        // The scene's name, with `*` while it has edits not saved, at the right; the search box
+        // has what is left, down to its icon alone.
+        let star = if shell.unsaved() { " *" } else { "" };
+        let scene = format!("{}{star}", shell.engine.spec().name);
+        let font = FontId::proportional(theme::BODY_PT);
+        let scene_wide = ui.painter().layout_no_wrap(scene.clone(), font, theme::STRONG).size().x;
+        let room = ui.available_width() - scene_wide.min(240.0) - 3.0 * theme::GRID;
+        let width = room.clamp(theme::ICON, SEARCH_WIDTH);
+        let tip = crate::header::tooltip("palette");
+        let (rect, search) = ui.allocate_exact_size(vec2(width, theme::HIT), Sense::click());
+        let search = search.on_hover_text(&tip);
+        let painter = ui.painter_at(rect);
+        let edge = if search.hovered() { theme::SELECTION_EDGE } else { theme::WIDGET_EDGE };
+        painter.rect(rect, 3.0, theme::BACKGROUND, Stroke::new(1.0, edge), StrokeKind::Inside);
+        let glass = Rect::from_center_size(pos2(rect.left() + 11.0, rect.center().y), vec2(12.0, 12.0));
+        crate::icons::search(&painter, glass, theme::WEAK_ON_WIDGET);
+        if width >= 120.0 {
+            let small = FontId::proportional(theme::SMALL_PT);
+            let at = pos2(rect.left() + 22.0, rect.center().y);
+            painter.text(at, Align2::LEFT_CENTER, "Search", small, theme::WEAK_ON_WIDGET);
+            let key = FontId::monospace(theme::SMALL_PT - 1.0);
+            let at = pos2(rect.right() - 6.0, rect.center().y);
+            painter.text(at, Align2::RIGHT_CENTER, "Ctrl+K", key, theme::WEAK);
+        }
+        shell.register("top-bar", "top-bar/search", "Search", Kind::Button, rect);
+        shell.layout.buttons.push(("palette".to_owned(), rect));
+        shell.layout.top_bar.push(("search", "Search".to_owned(), rect));
         if search.clicked() || shell.take_click("top-bar/search") {
             let _ = shell.run("palette");
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let spec = shell.engine.spec();
-            // The scene's name, with `*` while it has edits not saved.
-            let star = if shell.unsaved() { " *" } else { "" };
-            let status =
-                format!("{}{star} · t {:.2} / {:.0} s", spec.name, shell.engine.time(), spec.duration);
-            ui.add(egui::Label::new(RichText::new(status).monospace().color(theme::TEXT)).truncate());
+            let words = RichText::new(&scene).size(theme::BODY_PT).color(theme::STRONG);
+            let name = ui.add(egui::Label::new(words).truncate()).on_hover_text(if star.is_empty() {
+                "the scene; nothing is unsaved"
+            } else {
+                "the scene; * it has edits that are not saved (Ctrl+S)"
+            });
+            shell.layout.top_bar.push(("scene", scene.clone(), name.rect));
             // Where the keys go, while keyboard navigation is on: the breadcrumb (the spec's §10).
             if let Some(crumb) = shell.breadcrumb() {
                 let colour = match shell.keyboard.mode {
                     crate::keyboard::Mode::Navigation => crate::shell::RING_NAVIGATION,
                     crate::keyboard::Mode::Interaction => crate::shell::RING_INTERACTION,
                 };
-                ui.add(egui::Label::new(RichText::new(crumb).size(theme::SMALL_PT).color(colour)).truncate());
+                let words = RichText::new(&crumb).size(theme::SMALL_PT).color(colour);
+                let crumbs = ui.add(egui::Label::new(words).truncate());
+                shell.layout.top_bar.push(("breadcrumb", crumb, crumbs.rect));
             }
         });
     });
@@ -597,29 +654,13 @@ fn timeline_panel(shell: &mut Shell, ui: &mut egui::Ui) {
     let facts = timeline::facts(shell.engine.shots(), taken);
     ui.horizontal(|ui| {
         // What the lanes are and how they are worked is the title's tooltip (S20: no sentences
-        // in the chrome); the head keeps the facts that are data.
+        // in the chrome). Then the transport (`crate::transport`), and at the row's right the
+        // facts that are data.
         ui.label(RichText::new("Timeline").color(theme::STRONG).strong()).on_hover_text(&caption);
         shell.layout.chrome.push(("timeline", "Timeline".to_owned()));
         shell.layout.chrome.push(("timeline tooltip", caption.clone()));
-        let play =
-            ui.add(Button::new(if shell.playing { "pause" } else { "play" }).min_size(vec2(48.0, 0.0)));
-        shell.register("timeline", "timeline/play", "Play", Kind::Button, play.rect);
-        if play.clicked() || shell.take_click("timeline/play") {
-            let _ = shell.run("play");
-        }
-        let rewind = ui.button("rewind");
-        shell.register("timeline", "timeline/rewind", "Rewind", Kind::Button, rewind.rect);
-        if rewind.clicked() || shell.take_click("timeline/rewind") {
-            let _ = shell.run("seek 0");
-        }
-        let time = format!("t {:.2} s", shell.engine.time());
-        ui.label(RichText::new(&time).monospace().color(theme::STRONG));
-        shell.layout.chrome.push(("timeline", time));
-        for fact in facts {
-            ui.label(RichText::new(&fact).font(FontId::monospace(theme::SMALL_PT)).color(theme::WEAK))
-                .on_hover_text(&caption);
-            shell.layout.chrome.push(("timeline", fact));
-        }
+        ui.add_space(theme::GRID);
+        crate::transport::draw(shell, ui, &facts, &caption);
     });
     let labels: Vec<String> = spec.array.towers.iter().map(|t| t.label.clone()).collect();
     let offsets: Vec<f64> = spec.array.towers.iter().map(|t| t.timing.offset).collect();

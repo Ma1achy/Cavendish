@@ -150,6 +150,22 @@ review" above:
   the timeline's caption is its title's tooltip (the head keeps the shot count and 2T), and what
   an empty scene means is the Bodies group's tooltip.
 
+## As built after S20's top bar and transport (26 Nov 2026)
+
+`docs/design/workspace.md` §4 and §5. What is different from the above:
+- **The top bar holds no time and no brand.** Menus, the layouts' tabs with a `+` (the present
+  arrangement kept as a new tab for the session), the search box (Ctrl+K), and at the right the
+  scene's name with ` *` while it has unsaved edits. The breadcrumb stands before the name while
+  keyboard navigation is on.
+- **The timeline's head is a transport**: start, step back, play/pause, step forward, end as
+  icon buttons (`[` and `]` step a shot in the timeline, Shift a cadence cycle, Alt the ends;
+  Space plays anywhere), the speed (0.1× to 10×), `t [time] / duration s` and `shot [n] / count`,
+  the time and the shot typed to seek. The "play" and "rewind" word buttons are gone. A step is
+  to a readout of the engine's shots (the selected tower's, else tower 1's). The shots' count
+  and 2T stand at the row's right while there is room, and in the title's tooltip always.
+- "As fast as it runs" (the design's §5) is not offered: playing moves a playhead over a signal
+  already computed, so there is no run to be as fast as.
+
 ## As built after S20's viewport header (26 Nov 2026)
 
 `docs/design/workspace.md` §2, the owner's ruling. What is different from the above:

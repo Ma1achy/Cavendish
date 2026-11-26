@@ -17,8 +17,16 @@ use crate::panes::PaneSurface;
 pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("console", "open or close the console"),
     ("gui", "hide or show the panels; the scene fills the window (F3)"),
-    ("play", "start or stop playback"),
+    ("play", "start or stop playback (Space)"),
     ("pause", "stop playback"),
+    (
+        "step",
+        "move the playhead by shots of the engine's own (the selected tower's, else the first tower's), each to a readout: `step 1`, `step -1`, `step 3`; by mean cadence cycles with `cycle`: `step -1 cycle`. Playback stops",
+    ),
+    (
+        "speed",
+        "how fast the playhead moves while playing, as a multiple of the clock's rate, 0.1 to 10: `speed 2`, `speed 0.25`; `speed menu` opens or closes the transport's list of speeds",
+    ),
     ("keys", "the keyboard reference"),
     (
         "palette",
@@ -55,7 +63,7 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("save-scene", "save the scene to the file it came from, or ask for one (Ctrl+S)"),
     (
         "layout",
-        "arrange the window for a task: `layout scene` (Ctrl+1), `layout instrument` (Ctrl+2), `layout analysis` (Ctrl+3); or the figure as a mosaic written out: `layout \"AAB;CDB\"` (as `mosaic`)",
+        "arrange the window for a task: `layout scene` (Ctrl+1), `layout instrument` (Ctrl+2), `layout analysis` (Ctrl+3); or the figure as a mosaic written out: `layout \"AAB;CDB\"` (as `mosaic`); `layout save [name]` keeps the present arrangement as a new layout for this session (the top bar's +), `layout forget <id>` drops one",
     ),
     (
         "viewport",
@@ -218,6 +226,12 @@ pub struct Layout {
     /// What each material drop-down of the inspector shows closed: the path it edits and its
     /// words ("Uniform", "steel").
     pub choices: Vec<(String, String)>,
+    /// The transport's controls as drawn, in the order drawn ([`crate::transport::CONTROLS`]).
+    pub transport: Vec<crate::transport::Drawn>,
+    /// What the top bar painted, by part, left to right: `menu` (each menu's title), `layout`
+    /// (each tab), `search`, `scene` (the scene's name, with its unsaved mark) and, while
+    /// keyboard navigation is on, `breadcrumb`; each with where it is.
+    pub top_bar: Vec<(&'static str, String, Rect)>,
 }
 
 impl Default for Layout {
@@ -257,6 +271,8 @@ impl Default for Layout {
             probe_rows: Vec::new(),
             chrome: Vec::new(),
             choices: Vec::new(),
+            transport: Vec::new(),
+            top_bar: Vec::new(),
         }
     }
 }
@@ -295,6 +311,13 @@ impl Layout {
     #[must_use]
     pub fn button(&self, line: &str) -> Option<Rect> {
         self.buttons.iter().find(|(l, _)| l == line).map(|(_, r)| *r)
+    }
+
+    /// The transport's control `id` (`start`, `step-back`, `play`, `step-forward`, `end`,
+    /// `speed`, `time`, `shot`), if it was drawn.
+    #[must_use]
+    pub fn transport_control(&self, id: &str) -> Option<&crate::transport::Drawn> {
+        self.transport.iter().rev().find(|control| control.id == id)
     }
 }
 
@@ -337,6 +360,18 @@ pub struct Shell {
     pub gui_hidden: bool,
     /// Whether the playhead is advancing with the clock.
     pub playing: bool,
+    /// How fast the playhead moves while playing, as a multiple of the clock's rate (`speed
+    /// <x>`, 0.1 to 10; 1 at the start): seconds of the scene a second. Window state.
+    pub speed: f64,
+    /// The transport's menu that is open by a click or by its console line (`speed`). Window
+    /// state.
+    pub transport_menu: Option<String>,
+    /// The transport's step button held down by the pointer: which, when it went down (the
+    /// frame's clock, seconds) and how many steps it has fired.
+    pub(crate) transport_hold: Option<(&'static str, f64, u32)>,
+    /// The layouts saved in this session (`layout save`, the top bar's `+`), after the built-in
+    /// ones in the top bar. Window state: not saved with the scene, gone when the window closes.
+    pub session_layouts: Vec<crate::layouts::LayoutData>,
     /// Whether the list of keys is shown.
     pub keys_open: bool,
     /// How far the `?` sheet's list is scrolled, points (kept so the keys can scroll it).
@@ -567,6 +602,10 @@ impl Shell {
             focus_console: false,
             gui_hidden: false,
             playing: false,
+            speed: 1.0,
+            transport_menu: None,
+            transport_hold: None,
+            session_layouts: Vec::new(),
             keys_open: false,
             sheet_scroll: 0.0,
             about_open: false,
@@ -958,6 +997,10 @@ impl Shell {
             Needs::Shapes => spec.bodies.iter().any(|b| b.shape.is_some()),
             Needs::World => spec.world.is_some(),
             Needs::Viewports => self.engine.panes() > 1,
+            Needs::AfterStart => self.engine.time() > 0.0,
+            Needs::BeforeEnd => self.engine.time() < spec.duration,
+            Needs::ShotBefore => crate::transport::place_now(self).is_ok_and(|p| p.earlier.is_some()),
+            Needs::ShotAfter => crate::transport::place_now(self).is_ok_and(|p| p.later.is_some()),
         }
     }
 
@@ -1151,9 +1194,21 @@ impl Shell {
         let name = words.next().unwrap_or_default();
         // `layout <id>` runs a layout's lines (view commands): the figure arranged for a task.
         if name == "layout" {
-            let all = crate::layouts::layouts();
-            let ids: Vec<&str> = all.layouts.iter().map(|l| l.id.as_str()).collect();
-            let Some(layout) = words.next().and_then(|id| all.layout(id)).filter(|_| words.next().is_none())
+            let rest: Vec<&str> = words.clone().collect();
+            if matches!(rest.first(), Some(&("save" | "forget"))) {
+                let outcome = self.layout_command(&rest);
+                if let Err(why) = &outcome {
+                    self.engine.note(Level::Error, Subsystem::App, why.clone());
+                    self.console_open = true;
+                }
+                return outcome.map(|()| line.to_owned());
+            }
+            let all: Vec<crate::layouts::LayoutData> = self.layouts().cloned().collect();
+            let ids: Vec<&str> = all.iter().map(|l| l.id.as_str()).collect();
+            let Some(layout) = words
+                .next()
+                .and_then(|id| all.iter().find(|l| l.id == id))
+                .filter(|_| words.next().is_none())
             else {
                 // Not a named layout: a mosaic written out (`layout "AAB;CDB" cols 2 1 1`), which
                 // is the engine's `mosaic` command.
@@ -1184,6 +1239,41 @@ impl Shell {
         }
         if name == "viewport" {
             let outcome = self.viewport_command(&words.collect::<Vec<_>>());
+            if let Err(why) = &outcome {
+                self.engine.note(Level::Error, Subsystem::App, why.clone());
+                self.console_open = true;
+            }
+            return outcome.map(|()| line.to_owned());
+        }
+        // `step <n> [cycle]` and `speed <x>|menu`: the transport's (`crate::transport`).
+        if name == "step" || name == "speed" {
+            let rest: Vec<&str> = words.collect();
+            let outcome = if name == "step" {
+                match rest[..] {
+                    [n] | [n, "cycle"] => match n.parse::<i64>() {
+                        Ok(steps) if steps != 0 => crate::transport::step(self, steps, rest.len() == 2),
+                        _ => Err(format!("`{n}` is not a number of steps; step <n> [cycle], n not 0")),
+                    },
+                    _ => Err(format!("`{line}`: step <n> [cycle]")),
+                }
+            } else {
+                let (least, most) = (crate::transport::SPEEDS[0], crate::transport::SPEEDS[6]);
+                match rest[..] {
+                    ["menu"] => {
+                        let open = self.transport_menu.as_deref() == Some("speed");
+                        self.transport_menu = (!open).then(|| "speed".to_owned());
+                        Ok(())
+                    }
+                    [x] => match x.trim_end_matches(['×', 'x']).parse::<f64>() {
+                        Ok(speed) if (least..=most).contains(&speed) => {
+                            self.speed = speed;
+                            Ok(())
+                        }
+                        _ => Err(format!("`{x}` is not a speed; speed <{least} to {most}>, or `speed menu`")),
+                    },
+                    _ => Err(format!("`{line}`: speed <{least} to {most}>, or `speed menu`")),
+                }
+            };
             if let Err(why) = &outcome {
                 self.engine.note(Level::Error, Subsystem::App, why.clone());
                 self.console_open = true;
@@ -1498,6 +1588,72 @@ impl Shell {
             _ => unreachable!("is_app_command checked the name"),
         }
         Ok(name.to_owned())
+    }
+
+    /// Every layout the top bar offers: the built-in ones (`ui/layouts.ron`), then those saved in
+    /// this session ([`Self::session_layouts`]).
+    pub fn layouts(&self) -> impl Iterator<Item = &crate::layouts::LayoutData> {
+        crate::layouts::layouts().layouts.iter().chain(&self.session_layouts)
+    }
+
+    /// `layout save [name]` and `layout forget <id>`: the session's own layouts. Saving keeps the
+    /// figure's arrangement as it stands (the mosaic with its weights, what each viewport shows,
+    /// which is active) as the lines that make it again, under a new id, and makes it the layout
+    /// chosen now. Nothing is journalled: a layout is the window's.
+    fn layout_command(&mut self, words: &[&str]) -> Result<(), String> {
+        /// The most layouts a session keeps (the top bar is one row).
+        const MOST: usize = 6;
+        match words {
+            ["save", name @ ..] => {
+                if self.session_layouts.len() >= MOST {
+                    return Err(format!(
+                        "a session keeps {MOST} layouts of its own; `layout forget <id>` drops one"
+                    ));
+                }
+                let taken = |id: &str| self.layouts().any(|l| l.id == id) || matches!(id, "save" | "forget");
+                let number = (1..).find(|n| !taken(&format!("layout-{n}"))).expect("a free number");
+                let label = if name.is_empty() { format!("Layout {number}") } else { name.join(" ") };
+                let slug: String =
+                    label.to_lowercase().chars().map(|c| if c.is_alphanumeric() { c } else { '-' }).collect();
+                let id = if name.is_empty() { format!("layout-{number}") } else { slug };
+                if taken(&id) || cav_engine::Mosaic::parse(&id).is_ok() {
+                    return Err(format!(
+                        "`{id}` is taken (a layout, or a mosaic's own writing): give another name"
+                    ));
+                }
+                let mosaic = self.engine.mosaic().quoted();
+                let mut lines = vec![format!("mosaic {mosaic}")];
+                for pane in 0..self.engine.panes() {
+                    lines.push(format!("show {} @{}", self.engine.content(pane).name(), pane + 1));
+                }
+                lines.push(format!("pane {}", self.engine.active_pane() + 1));
+                // The palette's place goes with the arrangement it was set for.
+                if let Some(anchor) = self.tool_anchors.get(&self.layout_name).copied() {
+                    self.tool_anchors.insert(id.clone(), anchor);
+                }
+                self.session_layouts.push(crate::layouts::LayoutData {
+                    id: id.clone(),
+                    label,
+                    lines,
+                    unfold: Vec::new(),
+                    about: format!("saved in this session: {mosaic} (`layout forget {id}` drops it)"),
+                });
+                self.layout_name = id;
+                Ok(())
+            }
+            ["forget", id] => {
+                let Some(at) = self.session_layouts.iter().position(|l| l.id == *id) else {
+                    return Err(format!("`{id}` is not a layout saved in this session"));
+                };
+                self.session_layouts.remove(at);
+                self.tool_anchors.remove(*id);
+                if self.layout_name == *id {
+                    self.layout_name.clone_from(&crate::layouts::layouts().layouts[0].id);
+                }
+                Ok(())
+            }
+            _ => Err("layout save [name] · layout forget <id>".to_owned()),
+        }
     }
 
     /// `viewport <close|swap|pop-out|dock> [N]`: what the View menu and a viewport's right-click
@@ -1816,6 +1972,8 @@ impl Shell {
                     self.history_open = false;
                 } else if self.flyout.is_some() {
                     self.flyout = None;
+                } else if self.transport_menu.is_some() {
+                    self.transport_menu = None;
                 } else if self.console_open {
                     self.console_open = false;
                 } else if self.gui_hidden {
@@ -1899,12 +2057,13 @@ impl Shell {
         self.keyboard.nav_on.then(|| self.tree.breadcrumb(&self.keyboard.focus)).filter(|t| !t.is_empty())
     }
 
-    /// Moves the playhead while playing, by the frame's time step; loops at the end.
+    /// Moves the playhead while playing, by the frame's time step (at most a tenth of a second)
+    /// times the speed ([`Self::speed`]); loops at the end.
     pub(crate) fn advance(&mut self, ctx: &egui::Context) {
         if !self.playing {
             return;
         }
-        let step = f64::from(ctx.input(|i| i.stable_dt)).min(0.1);
+        let step = f64::from(ctx.input(|i| i.stable_dt)).min(0.1) * self.speed;
         let duration = self.engine.spec().duration;
         let next = self.engine.time() + step;
         self.apply(Command::Seek(if next >= duration { 0.0 } else { next }));
