@@ -140,7 +140,7 @@ fn sizes_are_the_dense_design_s() {
         for header in &headers {
             assert!((header.right() - right).abs() < 0.01, "{selection}: cards of two widths: {headers:?}");
         }
-        // Control: the tool strip's icon buttons are larger than a row.
+        // Control: the tool palette's icon buttons are larger than a row.
         let tool = rig.shell.layout().button("tool select").expect("the Select tool's button");
         assert!(tool.height() >= theme::ICON && tool.height() > theme::HIT, "{tool:?}");
     }
@@ -256,6 +256,8 @@ fn the_chrome_holds_no_sentences() {
     // is longer than 32 characters, with each tool in hand, a transform session under way and an
     // empty scene; the hints are tooltips. Control: each hint that S19 painted along the row is
     // recorded as a tooltip and is longer than 32, so the measure would catch it painted.
+    // (TASK-S20-05: the options row is shown only while it applies, so it is measured with
+    // Move or Place in hand and in a session, and with Select or Probe it must paint nothing.)
     const MOST: usize = 32;
     let scripts = [
         "load point; tool select",
@@ -284,7 +286,11 @@ fn the_chrome_holds_no_sentences() {
             for text in painted {
                 assert!(text.chars().count() <= MOST, "{script}{what}: `{text}` is painted");
             }
-            for place in ["options", "timeline"] {
+            let has_row = rig.shell.session.is_some() || rig.shell.behaviour().has_options();
+            if !has_row {
+                assert!(!layout.chrome.iter().any(|(p, _)| p.starts_with("options")), "{script}{what}");
+            }
+            for place in ["options", "timeline"].into_iter().filter(|p| has_row || *p != "options") {
                 assert!(
                     layout.chrome.iter().any(|(p, _)| *p == place),
                     "{script}{what}: {place} is measured"
@@ -1087,4 +1093,307 @@ fn the_gizmo_snaps_to_an_axis_and_orbits() {
     rig.shell.run("gui").unwrap();
     rig.frames(vec![vec![], vec![]]);
     assert!(rig.shell.layout().button("gizmo 1").is_none());
+}
+
+// ---- The tool palette, its flyouts and the options row (TASK-S20-05): P1 and P2 ----
+
+/// What the last frame painted in the tool's options row.
+fn options_texts(rig: &Rig) -> Vec<String> {
+    let chrome = &rig.shell.layout().chrome;
+    chrome.iter().filter(|(place, _)| *place == "options").map(|(_, text)| text.clone()).collect()
+}
+
+#[test]
+fn the_palette_floats_in_the_canvas_and_moves() {
+    // P1. Criterion (written before measuring): the palette's rectangle lies inside the active
+    // scene viewport's canvas, clear of the header and the gizmo, its buttons `theme::ICON` a
+    // side; a viewport's canvas is the same rectangle with the palette in it as without (bit for
+    // bit); after a drag of its grip to the right edge it is anchored there, and still there
+    // after `layout instrument` then `layout scene`. Controls: the same measure sees a docked
+    // thing (the options row takes `theme::HEADER` off the canvas's height); a drag that starts
+    // on a tool's button moves nothing; another layout keeps its own anchor.
+    use cav_app::tool_palette::{Anchor, MARGIN};
+    let mut rig = mosaic_rig("AB");
+    rig.shell.run("pane 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let with = rig.shell.layout().clone();
+    assert_eq!(with.tool_host, Some(0), "the active viewport shows the scene: the palette is its");
+    let palette = with.button("tool palette").expect("drawn");
+    let canvas = with.canvases[0];
+    assert!(canvas.contains_rect(palette), "{palette:?} inside the canvas {canvas:?}");
+    assert!(palette.left() - canvas.left() <= MARGIN + 0.5 && palette.top() - canvas.top() <= MARGIN + 0.5);
+    let (_, header) = with.headers.iter().find(|(pane, _)| *pane == 0).unwrap();
+    assert!(!palette.intersects(*header) && !palette.intersects(with.button("gizmo 1").unwrap()));
+    for tool in &cav_app::tools::strip().tools {
+        let button = with.button(&format!("tool {}", tool.id)).expect("a button a tool");
+        assert_eq!(button.size(), vec2(theme::ICON, theme::ICON), "{}", tool.id);
+        assert!(palette.contains_rect(button));
+    }
+    assert!((palette.width() - (theme::ICON + 2.0 * theme::GRID)).abs() < 0.01, "one column: {palette:?}");
+    // The other viewport active: the palette is in it, and both canvases are as they were.
+    rig.shell.run("pane 2").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let without = rig.shell.layout().clone();
+    assert_eq!(without.tool_host, Some(1));
+    assert!(without.canvases[1].contains_rect(without.button("tool palette").unwrap()));
+    assert_eq!(with.canvases, without.canvases, "the palette changes no canvas");
+    assert_eq!(with.canvases[0].width(), with.panes[0].width(), "the canvas is the viewport's width");
+    // Control: a docked row is seen by the same measure (Move's options row, under the header).
+    rig.shell.run("tool move").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let docked = rig.shell.layout().canvases.clone();
+    assert_eq!(docked[0], without.canvases[0], "not the host: unchanged");
+    assert!((without.canvases[1].height() - docked[1].height() - theme::HEADER).abs() < 0.01);
+    assert_eq!(docked[1].width(), without.canvases[1].width());
+    rig.shell.run("tool select").unwrap();
+    // A plot active: the palette is in the first viewport that shows the scene; none: no palette.
+    rig.shell.run("show signal @2").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert_eq!(rig.shell.layout().tool_host, Some(0), "viewport 2 is a plot");
+    assert!(rig.shell.layout().canvases[0].contains_rect(rig.shell.layout().button("tool palette").unwrap()));
+    rig.shell.run("show periodogram @1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().tool_host.is_none() && rig.shell.layout().button("tool palette").is_none());
+    assert!(!rig.shell.focus_tree().node("toolbar/move").unwrap().enabled, "its stop stays, disabled");
+    rig.key(Key::W, Modifiers::NONE);
+    assert_eq!(rig.shell.tool, "move", "the tools' keys still take a tool");
+
+    // The drag, in the Scene layout's one viewport.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let journal = rig.shell.engine.journal().len();
+    let view = rig.shell.engine.view(0).clone();
+    let canvas = rig.shell.layout().canvases[0];
+    let palette = rig.shell.layout().button("tool palette").unwrap();
+    // Control: a drag from a tool's button moves no palette, and no camera under it.
+    let button = rig.shell.layout().button("tool probe").unwrap().center();
+    rig.drag(button, button + vec2(300.0, 120.0));
+    rig.frames(vec![vec![]]);
+    assert_eq!(rig.shell.layout().button("tool palette"), Some(palette));
+    assert_eq!(rig.shell.tool_anchor(), Anchor::TopLeft);
+    assert_eq!(rig.shell.engine.view(0), &view, "the palette takes the press: the view does not orbit");
+    // By the grip: it follows the pointer while held, and let go snaps to the nearest anchor.
+    let grip = rig.shell.layout().button("tool palette grip").unwrap().center();
+    let to = egui::pos2(canvas.right() - 30.0, canvas.center().y + 20.0);
+    let midway = grip + (to - grip) * 0.5;
+    rig.frames(vec![
+        vec![Event::PointerMoved(grip)],
+        vec![Rig::press(grip, PointerButton::Primary, true)],
+        vec![Event::PointerMoved(midway)],
+        vec![Event::PointerMoved(midway)],
+    ]);
+    let held = rig.shell.layout().button("tool palette").unwrap();
+    let follows = (held.min - palette.min) - (midway - grip);
+    assert!(follows.length() < 0.01, "held, it follows the pointer: off by {follows:?}");
+    rig.frames(vec![
+        vec![Event::PointerMoved(to)],
+        vec![Rig::press(to, PointerButton::Primary, false)],
+        vec![],
+        vec![],
+    ]);
+    assert_eq!(rig.shell.tool_anchor(), Anchor::Right);
+    let at_right = |rig: &Rig| {
+        let canvas = rig.shell.layout().canvases[0];
+        let palette = rig.shell.layout().button("tool palette").unwrap();
+        let off = (canvas.right() - MARGIN - palette.right()).abs();
+        off < 1.0 && (palette.center().y - canvas.center().y).abs() < 1.0 && canvas.contains_rect(palette)
+    };
+    assert!(at_right(&rig), "{:?} in {canvas:?}", rig.shell.layout().button("tool palette"));
+    assert_eq!(rig.shell.layout().canvases[0], canvas, "and the canvas is as it was");
+    assert_eq!(rig.shell.engine.journal().len(), journal, "the palette's place is never journalled");
+    // Another layout has its own place for it (the control); back in this one it is where it was left.
+    rig.shell.run("layout instrument").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert_eq!(rig.shell.tool_anchor(), Anchor::TopLeft);
+    assert!(!at_right(&rig), "control: the Instrument layout's palette is at its own corner");
+    rig.shell.run("layout scene").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert_eq!(rig.shell.tool_anchor(), Anchor::Right);
+    assert!(at_right(&rig), "remembered for the layout");
+    // At every anchor it is inside the canvas and clear of the gizmo (`tool-palette <anchor>`).
+    for anchor in Anchor::ALL {
+        rig.shell.run(&format!("tool-palette {}", anchor.name())).unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        let layout = rig.shell.layout();
+        let palette = layout.button("tool palette").unwrap();
+        assert!(layout.canvases[0].contains_rect(palette), "{anchor:?}: {palette:?}");
+        for (name, rect) in &layout.buttons {
+            let gizmo = name.starts_with("gizmo ") || name.starts_with("proj toggle");
+            assert!(!(gizmo && rect.intersects(palette)), "{anchor:?}: the palette covers `{name}`");
+        }
+    }
+    assert!(rig.shell.run("tool-palette middle").is_err());
+}
+
+#[test]
+fn place_opens_a_flyout_and_options_show_only_when_they_apply() {
+    // P2. Criterion (written before measuring): holding Place 0.4 s opens a flyout that lists
+    // every starter, inside the canvas, and choosing one sets it and takes the tool; the options
+    // row has no height with Select or Probe in hand and is one row (`theme::HEADER`) under the
+    // header with Move or Place. Controls: a click, not a hold, opens no flyout; a press held
+    // 0.2 s has not opened it yet.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let digest = rig.shell.engine.digest();
+    let journal = rig.shell.engine.journal().len();
+    let plain = rig.shell.layout().canvases[0];
+    let header = rig.shell.layout().headers[0].1;
+    assert!(rig.shell.layout().options.is_none() && rig.shell.layout().panel("options").is_none());
+    assert_eq!(plain.top(), header.bottom(), "Select: the canvas begins under the header");
+    let flyout = |rig: &Rig| rig.shell.layout().button("flyout place");
+
+    // Control: a click takes the tool and opens nothing.
+    rig.click_button("tool place");
+    rig.frames(vec![vec![]]);
+    assert_eq!(rig.shell.tool, "place");
+    assert!(rig.shell.flyout.is_none() && flyout(&rig).is_none(), "a click opens no flyout");
+    // Place in hand: one row under the header, the canvas under it; the starter and the ground.
+    let row = rig.shell.layout().options.expect("Place has options");
+    assert_eq!(rig.shell.layout().panel("options"), Some(row));
+    assert!((row.height() - theme::HEADER).abs() < 0.01 && row.top() == header.bottom());
+    assert_eq!((row.left(), row.right()), (header.left(), header.right()), "inside that viewport");
+    let canvas = rig.shell.layout().canvases[0];
+    assert_eq!(canvas.top(), row.bottom());
+    assert!((plain.height() - canvas.height() - theme::HEADER).abs() < 0.01);
+    assert_eq!(options_texts(&rig), ["Sphere", "z 0 m"]);
+    assert!(row.contains_rect(rig.shell.layout().button("place starter").unwrap()));
+    // Move: the snap switch with its step. Probe and Select: no row at all.
+    rig.click_button("tool move");
+    rig.frames(vec![vec![]]);
+    assert_eq!(options_texts(&rig), ["Snap 0.25 m"]);
+    assert!((rig.shell.layout().options.unwrap().height() - theme::HEADER).abs() < 0.01);
+    rig.click_button("snap");
+    rig.frames(vec![vec![]]);
+    assert!(!rig.shell.snap);
+    assert_eq!(options_texts(&rig), ["Snap off"]);
+    rig.shell.run("snap").unwrap();
+    for tool in ["probe", "select"] {
+        rig.click_button(&format!("tool {tool}"));
+        rig.frames(vec![vec![]]);
+        assert_eq!(rig.shell.tool, tool);
+        assert!(rig.shell.layout().options.is_none() && options_texts(&rig).is_empty(), "{tool}");
+        assert_eq!(rig.shell.layout().canvases[0], plain, "{tool}: the canvas has the room");
+    }
+
+    // A hold: 0.2 s is not yet enough (the control); at 0.4 s the flyout opens, the button
+    // still down, and letting go takes no tool.
+    let place = rig.shell.layout().button("tool place").unwrap().center();
+    let mut frames =
+        vec![vec![Event::PointerMoved(place)], vec![Rig::press(place, PointerButton::Primary, true)]];
+    frames.extend(std::iter::repeat_with(Vec::new).take(12));
+    rig.frames(frames);
+    assert!(rig.shell.flyout.is_none(), "control: 0.2 s is no hold");
+    rig.frames(std::iter::repeat_with(Vec::new).take(14).collect());
+    assert_eq!(rig.shell.flyout.as_deref(), Some("place"), "held 0.4 s");
+    rig.frames(vec![vec![Rig::press(place, PointerButton::Primary, false)], vec![], vec![]]);
+    assert_eq!(rig.shell.tool, "select", "the hold's release takes no tool");
+    let list = flyout(&rig).expect("the flyout stays open");
+    let canvas = rig.shell.layout().canvases[0];
+    let palette = rig.shell.layout().button("tool palette").unwrap();
+    assert!(canvas.contains_rect(list), "{list:?} inside the canvas {canvas:?}");
+    assert!(
+        !list.intersects(palette) && list.left() >= palette.right(),
+        "beside the palette, toward the middle"
+    );
+    let starters = cav_sim::starters::starters();
+    assert!(starters.len() >= 10);
+    for starter in starters {
+        let row = rig.shell.layout().button(&format!("tool place {}", starter.name));
+        let row = row.unwrap_or_else(|| panic!("no row for {}", starter.name));
+        assert!(list.contains_rect(row) && (row.height() - theme::HIT).abs() < 0.01, "{}", starter.name);
+    }
+    // Choosing one sets it and takes the tool; the flyout closes.
+    rig.click_button("tool place cube");
+    rig.frames(vec![vec![], vec![]]);
+    assert_eq!((rig.shell.tool.as_str(), rig.shell.place_starter.as_str()), ("place", "cube"));
+    assert!(rig.shell.flyout.is_none() && flyout(&rig).is_none());
+    assert_eq!(options_texts(&rig), ["Cube", "z 0 m"]);
+
+    // A right-click opens it too (and flies no camera); a press elsewhere closes it.
+    rig.shell.run("tool select").unwrap();
+    rig.frames(vec![vec![]]);
+    rig.click_with(place, PointerButton::Secondary);
+    rig.frames(vec![vec![]]);
+    assert!(flyout(&rig).is_some() && rig.shell.mouse_fly.is_none());
+    assert_eq!(rig.shell.tool, "select");
+    rig.click(rig.shell.layout().canvases[0].center() + vec2(0.0, 200.0));
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.flyout.is_none() && flyout(&rig).is_none(), "a press elsewhere closes it");
+    // With the palette at the right edge the flyout opens to its left, still inside the canvas.
+    rig.shell.run("tool-palette right").unwrap();
+    rig.shell.run("flyout place").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let (list, palette) = (flyout(&rig).unwrap(), rig.shell.layout().button("tool palette").unwrap());
+    assert!(rig.shell.layout().canvases[0].contains_rect(list) && list.right() <= palette.left());
+    rig.shell.run("flyout off").unwrap();
+    rig.shell.run("tool-palette top-left").unwrap();
+
+    // From the keyboard: the stop after Place's is its variants, a drop-down (Enter opens the
+    // flyout, the arrows choose, Enter takes the tool with that one).
+    let stops: Vec<&str> = rig.shell.focus_tree().children("toolbar");
+    assert_eq!(
+        stops,
+        [
+            "toolbar/select",
+            "toolbar/move",
+            "toolbar/place",
+            "toolbar/place/variants",
+            "toolbar/probe",
+            "toolbar/snap"
+        ],
+        "the order is the data's"
+    );
+    rig.shell.keyboard.focus = vec!["toolbar".into(), "toolbar/place".into()];
+    rig.shell.keyboard.nav_on = true;
+    rig.key(Key::Enter, Modifiers::NONE);
+    assert!(rig.shell.tool == "place" && flyout(&rig).is_none(), "Enter on the tool takes it, no flyout");
+    rig.shell.run("tool select").unwrap();
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    assert_eq!(rig.shell.keyboard.focused(), "toolbar/place/variants");
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+    assert!(flyout(&rig).is_some(), "Enter on its variants opens the flyout");
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+    let cube = starters.iter().position(|s| s.name == "cube").unwrap();
+    assert_eq!(rig.shell.place_starter, starters[cube + 1].name, "the one after the one chosen");
+    assert_eq!(rig.shell.tool, "place");
+    assert!(flyout(&rig).is_none());
+    // The console's line is the same; a variant that is none of the tool's is refused in words.
+    rig.shell.run("tool place sphere").unwrap();
+    assert_eq!(rig.shell.place_starter, "sphere");
+    assert!(rig.shell.run("tool place brick").unwrap_err().contains("sphere|"));
+    assert!(rig.shell.run("tool move cube").unwrap_err().contains("no variants"));
+    assert_eq!(rig.shell.place_starter, "sphere");
+    // None of it touched the scene.
+    assert_eq!((rig.shell.engine.digest(), rig.shell.engine.journal().len()), (digest, journal));
+}
+
+#[test]
+fn a_press_in_the_session_s_row_keeps_the_session() {
+    // P2, the shell's use of the row (`Shell::keys`): a primary press outside the options row
+    // ends a transform session, its move kept; a press in the row does not (the control).
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("select body 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().options.is_none(), "Select in hand, no session: no row");
+    rig.shell.keyboard.focus = vec!["viewport".into(), "viewport/selection".into()];
+    rig.shell.keyboard.nav_on = true;
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.key(Key::ArrowRight, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.session.is_some());
+    let row = rig.shell.layout().panel("options").expect("a session under way shows its row");
+    assert!(options_texts(&rig).iter().any(|text| text.starts_with('Δ') && text.ends_with(" m")));
+    rig.click(row.right_center() - vec2(40.0, 0.0));
+    assert!(rig.shell.session.is_some(), "control: a press in its own row keeps the session");
+    let outliner = rig.shell.layout().panel("outliner").unwrap();
+    rig.click(outliner.center_bottom() - vec2(0.0, 12.0));
+    assert!(rig.shell.session.is_none(), "a press elsewhere ends it");
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.layout().options.is_none(), "and the row goes");
 }

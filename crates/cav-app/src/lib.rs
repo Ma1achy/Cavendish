@@ -54,6 +54,7 @@ pub use cav_plot::plots;
 pub mod shell;
 pub mod theme;
 pub mod timeline;
+pub mod tool_palette;
 pub mod tools;
 
 pub mod address;

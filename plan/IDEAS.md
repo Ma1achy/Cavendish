@@ -225,3 +225,14 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   design's swap is a drag of a viewport's header onto another (there is `swap <a> <b>` and
   "Swap with the next" until the header exists). The 2 px square where a column's gap crosses a
   row's is no handle: a four-way handle there would resize both at once.
+- **The flyout by one gesture; the chosen variant on the button** (TASK-S20-05): Photoshop
+  takes a variant by press, slide and let go; here the hold opens the flyout and a second click
+  chooses. And the Place button could draw the chosen starter's own icon (a cube, a sphere), so
+  the palette says what a click will add without the options row.
+- **The palette across viewports** (TASK-S20-05): it is dragged within its host's canvas only;
+  dragging it into another scene viewport could make that one the host (today: click there).
+  Its anchor is kept for each layout name, not for each viewport, and not saved with the
+  workspace (nor is any window state yet).
+- **A keyboard-opened flyout stays open after a click elsewhere** (TASK-S20-05): as the
+  header's keyboard menus do (`Keyboard::popup` is closed by keys only). A pointer press should
+  close any keyboard drop-down.

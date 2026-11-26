@@ -230,15 +230,21 @@ fn the_probe_tool_reads_where_it_is_clicked() {
 
 #[test]
 fn the_tool_strip_floats_over_the_view_s_edge() {
-    // S19's panels (docs/design/panels.md): the tool strip is a bar over the view's left edge,
-    // not a column beside the tree, so the figure is as wide as the panels leave it. Control: the
-    // tree's panel ends where the figure begins (no column between).
+    // S19's panels (docs/design/panels.md): the tools are a bar over the view, not a column
+    // beside the tree, so the figure is as wide as the panels leave it. Control: the tree's panel
+    // ends where the figure begins (no column between).
+    // (S20, `docs/design/workspace.md` §3: the expectation changed. The strip was an area fixed
+    // at the figure's top left corner, 30 pt buttons; it is now the palette inside the active
+    // scene viewport's canvas, under that viewport's header, `theme::ICON` buttons, at the
+    // canvas's top left until it is dragged elsewhere. P1 in `s20.rs` holds the rest.)
     let rig = Rig::new();
     let layout = rig.shell.layout();
-    let strip = layout.button("tool strip").expect("drawn");
+    let strip = layout.button("tool palette").expect("drawn");
+    let canvas = layout.canvases[0];
     assert!(layout.figure.contains_rect(strip), "{strip:?} over the figure {:?}", layout.figure);
-    assert!(strip.left() - layout.figure.left() < 16.0, "at its left edge");
-    assert!(strip.width() < 64.0);
+    assert!(canvas.contains_rect(strip), "{strip:?} inside the canvas {canvas:?}, under the header");
+    assert!(strip.left() - canvas.left() < 16.0 && strip.top() - canvas.top() < 16.0, "at its corner");
+    assert!(strip.width() < 40.0, "one column of icon buttons: {}", strip.width());
     let tree = layout.panel("outliner").unwrap();
     assert!((layout.figure.left() - tree.right()).abs() < 2.0, "{tree:?} against {:?}", layout.figure);
 }

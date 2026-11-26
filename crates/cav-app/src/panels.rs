@@ -3,7 +3,8 @@
 //! bar.
 //!
 //! Principia's rules, from the mock-up: the figure is never covered (panels take space beside
-//! it; over a scene's canvas float only the tool strip and the navigation gizmo); status is the
+//! it; over a scene's canvas float only the tool palette, [`crate::tool_palette`], and the
+//! navigation gizmo); status is the
 //! status bar's, never a viewport header's; rarely used things are in windows; F3 hides
 //! everything but the figure.
 
@@ -103,8 +104,8 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
             .show(ui, |ui| timeline_panel(shell, ui));
         shell.layout.panels.push(("timeline", panel.response.rect));
         shell.building.place("timeline", panel.response.rect);
-        // The outliner gives way to the figure on a small window (S18: the tool strip and the
-        // options strip took 72 points from it); the inspector's rows need their 264.
+        // The outliner gives way to the figure on a small window; the inspector's rows need
+        // their 264.
         // Its edge can be dragged (egui keeps the width it is left at); the inspector's too.
         let side = (shell.layout.screen.width() * 0.19).clamp(210.0, 262.0);
         let panel = Panel::left("outliner")
@@ -147,16 +148,9 @@ pub fn draw(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface)
         shell.layout.panels.push(("properties", panel.response.rect));
         shell.building.place("inspector", panel.response.rect);
     }
-    egui::CentralPanel::no_frame().show(ui, |ui| {
-        if !shell.gui_hidden && !shell.maximised {
-            let options = Panel::top("options")
-                .exact_size(24.0)
-                .frame(frame(theme::PANEL, 10, 0))
-                .show(ui, |ui| tool_options(shell, ui));
-            shell.layout.panels.push(("options", options.response.rect));
-        }
-        egui::CentralPanel::no_frame().show(ui, |ui| figure(shell, ui, surface));
-    });
+    // The figure has all the panels leave: the tool's options are a row inside a viewport
+    // (S20; they were a panel above the whole figure).
+    egui::CentralPanel::no_frame().show(ui, |ui| figure(shell, ui, surface));
     windows(shell, &ctx);
     if shell.quit {
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -1096,169 +1090,6 @@ pub(crate) fn scene_rows(shell: &mut Shell) -> Vec<(&'static str, String)> {
     ]
 }
 
-/// The tool strip (`ui/tools.ron`): one button a tool, an icon with its key in the corner, the
-/// one in hand lit; then, apart and drawn as a switch, the snap toggle (S18's review, U2: the
-/// strip was abbreviated text, and snap looked like a fourth tool). Each is a button of the
-/// keyboard's Tools scope; a click and Enter both run its line. The tooltip says the tool's one
-/// name, its key and what it does.
-fn tool_strip(shell: &mut Shell, ui: &mut egui::Ui) {
-    let table = crate::actions::table();
-    ui.spacing_mut().item_spacing.y = theme::GRID;
-    for tool in &crate::tools::strip().tools {
-        let line = format!("tool {}", tool.id);
-        let key = table
-            .actions
-            .iter()
-            .find(|a| a.line == line)
-            .map(crate::actions::Action::shortcut_text)
-            .unwrap_or_default();
-        let held = shell.tool == tool.id;
-        let response = icon_button(ui, held, &key, |painter, rect, colour| {
-            crate::icons::tool(painter, rect, tool.behaviour, colour);
-        })
-        .on_hover_text(format!("{} ({key})\n{}", tool.label, tool.about));
-        let id = format!("toolbar/{}", tool.id);
-        shell.register("toolbar", &id, &tool.label, Kind::Button, response.rect);
-        shell.layout.buttons.push((line.clone(), response.rect));
-        if response.clicked() || shell.take_click(&id) {
-            let _ = shell.run(&line);
-        }
-    }
-}
-
-/// The side of a button of the tool strip, points: an icon ([`theme::ICON`]) and a step of the
-/// grid round it, where its key's letter stands in the corner.
-const TOOL_BUTTON: f32 = theme::ICON + 2.0 * theme::GRID;
-
-/// A square button of the tool strip: an icon drawn by `icon` (in the colour the button's state
-/// gives) and `key` small in its bottom-right corner; lit when `selected`.
-fn icon_button(
-    ui: &mut egui::Ui,
-    selected: bool,
-    key: &str,
-    icon: impl FnOnce(&egui::Painter, Rect, Color32),
-) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(vec2(TOOL_BUTTON, TOOL_BUTTON), Sense::click());
-    let visuals = ui.style().interact_selectable(&response, selected);
-    let painter = ui.painter_at(rect);
-    painter.rect(rect, 3.0, visuals.weak_bg_fill, visuals.bg_stroke, StrokeKind::Inside);
-    let colour = if selected { Color32::WHITE } else { theme::STRONG };
-    icon(&painter, Rect::from_center_size(rect.center() - vec2(2.0, 2.0), vec2(18.0, 18.0)), colour);
-    painter.text(
-        rect.right_bottom() - vec2(2.0, 1.0),
-        Align2::RIGHT_BOTTOM,
-        key,
-        FontId::monospace(9.0),
-        // On the button's ground, not the panel's: the lighter grey (S19's review, I6: the weak
-        // grey there read at 3.3:1).
-        if selected { theme::STRONG } else { theme::WEAK_ON_WIDGET },
-    );
-    response
-}
-
-/// The tool's options, in a strip above the figure (Algodoo's and Blender's): what the tool does
-/// and its settings, and a transform session's state while one is under way.
-fn tool_options(shell: &mut Shell, ui: &mut egui::Ui) {
-    // A strip of fixed width: what is past its end scrolls, never pushing the strip over the
-    // panels beside it.
-    egui::ScrollArea::horizontal()
-        .id_salt("tool options")
-        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-        .show(ui, |ui| tool_options_row(shell, ui));
-}
-
-/// The snap switch, in the tool's options row (S19's panels: beside the hint, not in the strip):
-/// a setting of the Move tool and the transform session, not a tool.
-fn snap_switch(shell: &mut Shell, ui: &mut egui::Ui) {
-    let step = crate::tools::strip().snap_step;
-    let on = shell.snap;
-    let text = if on { format!("Snap {step} m") } else { "Snap off".to_owned() };
-    let colour = if on { theme::GOLD } else { theme::WEAK };
-    shell.layout.chrome.push(("options", text.clone()));
-    let snap = ui
-        .add(Button::new(RichText::new(text).size(theme::SMALL_PT).color(colour)).selected(on))
-        .on_hover_text("snap moves to the step, or not (S)");
-    shell.register("toolbar", "toolbar/snap", "Snap", Kind::Button, snap.rect);
-    shell.layout.buttons.push(("snap".to_owned(), snap.rect));
-    if snap.clicked() || shell.take_click("toolbar/snap") {
-        let _ = shell.run("snap");
-    }
-}
-
-/// What a tool's options row says of how the tool is worked: the tooltip of the tool's name in
-/// the row (S20: it was a sentence painted along the row). `ground` is the height the Place tool
-/// puts things at, metres.
-fn tool_hint(behaviour: Option<crate::tools::Behaviour>, session: bool, ground: f64) -> String {
-    use crate::tools::Behaviour;
-    if session {
-        return "arrows move · X Y Z lock · type a distance, Tab: next axis · Enter keeps · Esc cancels"
-            .to_owned();
-    }
-    match behaviour {
-        Some(Behaviour::Translate) => "drag an arrow to move along it, the square to move freely · Enter on the selection moves it by keys".to_owned(),
-        Some(Behaviour::Place) => format!("click the ground (z = {ground} m) to add one there"),
-        Some(Behaviour::Probe) => "click a point: the gravity there of the bodies (and a slab floor), the cell under it and its share of each tower's phase".to_owned(),
-        _ => "click selects · drag a body to move it in the view's plane · middle-drag pans · hold the right button and W A S D to fly".to_owned(),
-    }
-}
-
-/// The tool's options row: the snap switch, the tool's name (how it is worked is its tooltip),
-/// its settings (the Place tool's starter), and a transform session's numbers while one is
-/// under way. Every text it paints is recorded in the layout's `chrome`, and none is a sentence.
-fn tool_options_row(shell: &mut Shell, ui: &mut egui::Ui) {
-    use crate::tools::Behaviour;
-    ui.horizontal_centered(|ui| {
-        snap_switch(shell, ui);
-        let tool = crate::tools::strip().tool(&shell.tool).cloned();
-        let session = shell.session.clone();
-        let behaviour = tool.as_ref().map(|t| t.behaviour);
-        let hint = tool_hint(behaviour, session.is_some(), shell.ground());
-        if let Some(tool) = &tool {
-            ui.label(RichText::new(&tool.label).color(theme::GOLD).size(theme::BODY_PT)).on_hover_text(&hint);
-            shell.layout.chrome.push(("options", tool.label.clone()));
-        }
-        shell.layout.chrome.push(("options tooltip", hint));
-        let say = |shell: &mut Shell, ui: &mut egui::Ui, text: String| {
-            ui.label(RichText::new(&text).font(theme::mono()).color(crate::shell::RING_INTERACTION));
-            shell.layout.chrome.push(("options", text));
-        };
-        if let Some(session) = session {
-            let [dx, dy, dz] = session.offset;
-            say(shell, ui, format!("Δ {dx:+.3} {dy:+.3} {dz:+.3} m"));
-            if let Some(axis) = session.lock {
-                say(shell, ui, format!("lock {}", ["x", "y", "z"][axis]));
-            }
-            if !session.typed.is_empty() {
-                let axis = ["x", "y", "z"][session.lock.unwrap_or(session.typed_axis)];
-                say(shell, ui, format!("{axis} = {} m", session.typed));
-            }
-            return;
-        }
-        if behaviour == Some(Behaviour::Place) {
-            let starters = cav_sim::starters::starters();
-            let current =
-                starters.iter().find(|s| s.name == shell.place_starter).map_or("?", |s| s.label.as_str());
-            let mut chosen = None;
-            let combo = egui::ComboBox::from_id_salt("place starter")
-                .selected_text(current)
-                .width(150.0)
-                .show_ui(ui, |ui| {
-                    for starter in starters {
-                        if ui.selectable_label(starter.name == shell.place_starter, &starter.label).clicked()
-                        {
-                            chosen = Some(starter.name.clone());
-                        }
-                    }
-                });
-            shell.layout.chrome.push(("options", current.to_owned()));
-            shell.layout.buttons.push(("place starter".to_owned(), combo.response.rect));
-            if let Some(name) = chosen {
-                shell.place_starter = name;
-            }
-        }
-    });
-}
-
 /// The Probe tool's point, marked in the view: a gold ring. Its reading is the right panel's
 /// Probe tab ([`crate::outliner::probe`]); nothing else of it is drawn over the figure (S20; S19's
 /// second review, minor 13).
@@ -1537,6 +1368,10 @@ pub(crate) struct Asked {
     pub dropped: Option<(usize, egui::Pos2)>,
     /// The active viewport's header controls, as the keyboard's stops.
     pub stops: Vec<crate::header::Stop>,
+    /// The tool palette as it was drawn, if it was: the keyboard's stops in the `toolbar` scope.
+    pub tools: Option<crate::tool_palette::Drawn>,
+    /// The snap switch in the tool's options row, where it was drawn (nothing when it was not).
+    pub snap: Rect,
 }
 
 /// A viewport's right-click menu on `response` (its canvas, or its header's empty stretch): what
@@ -1575,13 +1410,18 @@ struct Place {
     generation: u64,
     /// Whether it floats over the window (its header is the bar it is dragged by).
     floating: bool,
+    /// Whether it is the tool palette's host ([`crate::tool_palette::host`]): the palette is
+    /// drawn over its canvas and the tool's options row under its header.
+    tools: bool,
 }
 
 /// Draws one viewport at its place and takes its input: its header ([`crate::header`]) along
 /// its top, its canvas under it ([`canvas`]), a scene's navigation gizmo in the canvas's corner
-/// ([`crate::navgizmo`]) and the active one's edge. With the panels hidden (F3) there is no
-/// header and no gizmo: the canvas is the viewport. Returns what the header's own pointer work
-/// leaves for a floating viewport's frame.
+/// ([`crate::navgizmo`]) and the active one's edge; and, in the tool palette's host, the tool's
+/// options row between the header and the canvas while it applies, and the palette over the
+/// canvas ([`crate::tool_palette`]). With the panels hidden (F3) there is no header, no gizmo
+/// and no palette: the canvas is the viewport. Returns what the header's own pointer work leaves
+/// for a floating viewport's frame.
 fn viewport(
     shell: &mut Shell,
     ui: &mut egui::Ui,
@@ -1589,24 +1429,37 @@ fn viewport(
     asked: &mut Asked,
     place: Place,
 ) -> crate::header::Outcome {
-    let Place { pane, rect, pixels, count, active, floating, .. } = place;
+    let Place { pane, rect, pixels, count, active, floating, tools, .. } = place;
     let scale = ui.ctx().pixels_per_point();
     let mut outcome = crate::header::Outcome::default();
-    // The header's height in whole pixels, so that the canvas is whole pixels too.
-    let head = if shell.gui_hidden { 0 } else { ((theme::HEADER * scale).round() as u32).min(pixels[1]) };
+    // The header's height in whole pixels, so that the canvas is whole pixels too; and the
+    // options row's, which is there only while the tool in hand has something to set.
+    let row = (theme::HEADER * scale).round() as u32;
+    let head = if shell.gui_hidden { 0 } else { row.min(pixels[1]) };
+    let tools = tools && head > 0;
+    let options =
+        if tools && crate::tool_palette::options_apply(shell) { row.min(pixels[1] - head) } else { 0 };
     let split = rect.top() + head as f32 / scale;
-    let inner = Rect::from_min_max(pos2(rect.left(), split), rect.max);
+    let top = split + options as f32 / scale;
+    let inner = Rect::from_min_max(pos2(rect.left(), top), rect.max);
     shell.layout.canvases[pane] = inner;
     if head > 0 {
         let row = Rect::from_min_max(rect.min, pos2(rect.right(), split));
         let head = crate::header::Head { pane, rect: row, active: pane == active, count, floating };
         outcome = crate::header::draw(shell, ui, asked, head);
     }
-    let left = [pixels[0], pixels[1] - head];
+    if options > 0 {
+        let row = Rect::from_min_max(pos2(rect.left(), split), pos2(rect.right(), top));
+        crate::tool_palette::options_row(shell, ui, asked, row);
+    }
+    let left = [pixels[0], pixels[1] - head - options];
     if left[1] > 0 {
         canvas(shell, ui, surface, asked, Place { rect: inner, pixels: left, ..place });
         if head > 0 && shell.engine.content(pane) == cav_engine::PaneContent::Scene {
             crate::navgizmo::draw(shell, ui, asked, pane, inner, pane == active);
+        }
+        if tools {
+            crate::tool_palette::draw(shell, ui, asked, pane, inner, pane == active);
         }
     }
     // The active viewport is marked by its edge (and its header's ground), not by words.
@@ -2006,7 +1859,11 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         lines: Vec::new(),
         dropped: None,
         stops: Vec::new(),
+        tools: None,
+        snap: Rect::NOTHING,
     };
+    // The viewport the tool palette is in, and the tool's options row.
+    let host = crate::tool_palette::host(&shell.engine, shell.maximised);
     let points = |[x, y, width, height]: [u32; 4]| {
         Rect::from_min_size(
             area.min + vec2(x as f32, y as f32) / scale,
@@ -2035,6 +1892,7 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
             active,
             generation,
             floating: false,
+            tools: host == Some(pane),
         };
         shell.layout.slots.push(slot);
         shell.layout.canvases.push(Rect::NOTHING);
@@ -2059,7 +1917,19 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     for (place, label) in floats {
         floating_viewport(shell, ui.ctx(), surface, &mut asked, place, label);
     }
-    let Asked { commands, drags, body_drags, zooms, handle_rect, actions, mut lines, dropped, stops } = asked;
+    let Asked {
+        commands,
+        drags,
+        body_drags,
+        zooms,
+        handle_rect,
+        actions,
+        mut lines,
+        dropped,
+        stops,
+        tools,
+        snap,
+    } = asked;
     // A header dragged over another viewport: while it is held the one under the pointer is
     // marked, and let go there the two swap places (one `swap`, the engine's).
     let other_under = |shell: &Shell, from: usize, at: egui::Pos2| {
@@ -2086,29 +1956,8 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     if !ui.input(|i| i.pointer.any_down()) {
         shell.header_drag = None;
     }
-    // The tool strip: a floating bar over the view's left edge, not a column of its own
-    // (S19, `docs/design/panels.md`: Blender's and Unity's scene toolbars).
-    if !shell.gui_hidden && !shell.maximised {
-        // No fade-in: an unchanged frame must be the same picture (the GPU tests hold it).
-        let strip = egui::Area::new(egui::Id::unique("tool strip"))
-            .fade_in(false)
-            .order(egui::Order::Foreground)
-            // Under the header of the viewport in the figure's corner.
-            .fixed_pos(area.min + vec2(8.0, 8.0 + theme::HEADER))
-            .show(ui.ctx(), |ui| {
-                egui::Frame::new()
-                    .fill(theme::FOOTER.gamma_multiply(0.94))
-                    .stroke(Stroke::new(1.0, theme::WIDGET_EDGE))
-                    .corner_radius(6.0)
-                    .inner_margin(egui::Margin::same(theme::GRID as i8))
-                    .show(ui, |ui| {
-                        ui.set_width(TOOL_BUTTON);
-                        tool_strip(shell, ui);
-                    });
-            });
-        shell.building.place("toolbar", strip.response.rect);
-        shell.layout.buttons.push(("tool strip".to_owned(), strip.response.rect));
-    }
+    // The tool palette's stops, in the order of `ui/tools.ron` whatever was drawn.
+    crate::tool_palette::register(shell, tools.as_ref(), snap);
     // The selection's keyboard handle (Enter starts a transform session): a stop of the
     // viewport whatever is selected and whatever the panes show (order never depends on state:
     // S18's review, minor 5), disabled when there is no body in a scene pane to move.

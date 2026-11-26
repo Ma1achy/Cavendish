@@ -123,7 +123,8 @@ person asked for goes through `cav_engine::files`; code that must not run in a p
 
 The window's *what and where* is data, loaded and checked like scenes: `cav-app/ui/actions.ron`
 (the seven big scopes in Tab order, the menus, every action with its console line, keys, scope and
-when it can run), `ui/tools.ron` (the tool strip), `ui/layouts.ron` (the layouts), and
+when it can run), `ui/tools.ron` (the tool palette: the tools, and where a tool's flyout takes
+its variants from), `ui/layouts.ron` (the layouts), and
 `scenes/starters.ron` (what Add adds, in `cav-sim` so the CLI and MCP add the same). Code holds the
 mechanisms: the router, the widgets, the gizmo's geometry.
 
@@ -168,6 +169,24 @@ selection, the instrument (and the one compared with), the signal's state in the
 what each part says is in `Layout::status_bar`. The keyboard reaches the active viewport's
 header as the scope `viewport/header`, its stops `CONTROLS` in that order whatever is shown.
 
+**The tool palette, its flyouts and the options row (S20).** The tools of `ui/tools.ron` are a
+palette that floats inside the canvas of one scene viewport, its host (`tool_palette::host`: the
+active viewport if it shows the scene, else the first that does; none if none does, when the
+tools' keys still take a tool): `cav-app/src/tool_palette.rs`, `docs/design/workspace.md` §3. It
+is drawn over the picture in the viewport's own layer, so it changes no canvas's size and a
+window or a floating viewport covers it as it covers the picture. Where it stands is one of
+eight anchors of the canvas (`Anchor`), kept for each layout name in the window's state
+(`Shell::tool_anchors`; a drag of its grip, or `tool-palette right`; never journalled);
+`tool_palette::plan` is the layout as a pure function (one lane, two in a short canvas, clear of
+the navigation gizmo). A tool with `variants` in the file has a flyout (a hold of 0.4 s, a
+right-click, or its own keyboard stop) whose rows run `tool <id> <variant>`: Place's are the
+starters. The tool's settings are one row under the host's header, shown only while the tool has
+any (`Behaviour::has_options`) or a transform session is under way (`tool_palette::options_row`;
+its rectangle is `Layout::options`, which `Layout::panel("options")` also gives): it takes its
+height from that viewport's canvas, and with Select or Probe in hand it is not there. The
+keyboard's `toolbar` scope is the tools in the file's order, a tool's variants as a drop-down
+after it, and the snap switch last, disabled while not shown (`tool_palette::register`).
+
 Every edit, from the viewport, a panel, a key or the palette, ends in one `Command` through
 `Engine::apply`: the gizmo, the transform session and the inspector's field all issue the same
 `Set` of a body's anchor; a run of them (a drag, a held key, a typed distance) is one undo whatever
@@ -207,6 +226,7 @@ field's reset and the window's unsaved mark.
 | The scene as a technical drawing on paper (`figure paper`: a plan or a section, ink on cream at a scale 1:N, outlines of the world from coarse bricks, hatching, scale bar, north arrow, dimensions, title block; at most `MAX_PAPER_BRICKS` bricks, `MAX_PAPER_ITEMS` items, `MAX_PAPER_POINTS` points) | `cav-plot/src/paper.rs`; `PaperView` in `cav-engine/src/command.rs`; written by `paper` in `cav-plot/src/figure.rs` | [a plot](extending/a-plot.md) |
 | Redrawing a figure from its data, in Python | `python/cavendish_figures` (matplotlib style sheets, `load`, `redraw`) | [a plot](extending/a-plot.md) |
 | A panel, an editor (the inspector's sections, resets, lists), the timeline | `cav-app/src/panels.rs`, `editors.rs`, `timeline.rs` | [the window](extending/a-tool-or-panel.md) |
+| The tool palette (its place, its flyouts) and a tool's options row (`docs/design/workspace.md` §3) | `cav-app/ui/tools.ron`, `cav-app/src/tools.rs` (`Variants`, `Behaviour::has_options`), `cav-app/src/tool_palette.rs` | [the window](extending/a-tool-or-panel.md) |
 | A viewport's header and its controls; the navigation gizmo; the status bar (`docs/design/workspace.md` §2) | `cav-app/src/header.rs`, `cav-app/src/navgizmo.rs`, `footer` in `cav-app/src/panels.rs` | [a view type's header controls](extending/a-view-or-a-layout.md) |
 | The scene tree (groups, icons, eye and lock, status dots), the Readings tab and the Probe tab; the inspector's header, cards and Info card (`docs/design/panels.md`); the panels' sizes (`cav-app/src/theme.rs`, `docs/design/workspace.md` §0) | `cav-app/src/outliner.rs`, `cav-app/src/inspector.rs` | [the window](extending/a-tool-or-panel.md) |
 | An action: a menu item, a key, a palette entry; the big scopes' order | `cav-app/ui/actions.ron`, read by `cav-app/src/actions.rs`; drawn by `menus.rs`, `palette.rs`, `sheet.rs` | [the window](extending/a-tool-or-panel.md) |

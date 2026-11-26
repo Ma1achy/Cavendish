@@ -153,7 +153,8 @@ already Lock).
   keyboard navigation off. Opening it from the keyboard turns navigation on and shows the ring.
 - **Cavendish:** anything that moves the focus out of a viewport transform session (a click on a
   window's control, a window opened with the mouse), a drag in the view, and any primary click
-  outside the tool's options row (a row of the scene tree, the canvas, a menu) **ends the
+  outside the tool's options row (under the viewport's header while a session is under way;
+  so: a row of the scene tree, the canvas, a menu) **ends the
   session, keeping its move**, as a click outside a move keeps it in Blender. Of the mouse,
   nothing cancels; of the keys, Esc and any global key do (Ctrl+Z being that cancel, §7). A
   click on a window's bare ground lands on its first section, and where windows overlap the one

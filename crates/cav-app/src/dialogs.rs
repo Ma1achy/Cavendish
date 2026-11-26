@@ -477,7 +477,7 @@ fn history(shell: &mut Shell, ctx: &egui::Context) {
     let mut open = true;
     let mut go: Option<(usize, &str)> = None;
     let mut hovered: Option<(bool, usize)> = None;
-    // Inside the outliner, over neither the figure nor the tool strip (S18's reviews, U6 and UX 4).
+    // Inside the outliner, over neither the figure nor the tool palette (S18's reviews, U6 and UX 4).
     let outliner = shell.layout.panel("outliner");
     let left = outliner.map_or(ctx.content_rect().left() + 8.0, |r| r.left() + 4.0);
     let top = outliner.map_or(60.0, |r| r.top() + 30.0);

@@ -1404,11 +1404,13 @@ fn the_right_button_flies_and_holds_the_letters() {
 
 #[test]
 fn the_tool_strip_has_one_name_a_tool_and_snap_apart() {
-    // S18's review, U2: each tool has one name, its action's (Place is Place on the strip, in
-    // the options row and on the sheet); snap is a toggle below the tools, not one of them.
+    // S18's review, U2: each tool has one name, its action's (Place is Place on the palette
+    // and on the sheet); snap is a switch apart from the tools, not one of them.
+    // (S20: the Move tool is in hand here, not Place: the options row, where snap's switch is,
+    // is shown only while it applies, and snap is Move's setting.)
     let mut rig = Rig::new();
     rig.shell.run("load void").unwrap();
-    rig.shell.run("tool place").unwrap();
+    rig.shell.run("tool move").unwrap();
     rig.frames(vec![vec![], vec![]]);
     let table = cav_app::actions::table();
     for tool in &cav_app::tools::strip().tools {
@@ -1419,17 +1421,27 @@ fn the_tool_strip_has_one_name_a_tool_and_snap_apart() {
     }
     let strip: Vec<&str> = rig.shell.focus_tree().children("toolbar");
     assert!(strip.contains(&"toolbar/snap"), "snap is the tool strip's scope's, wherever it is drawn");
-    // Since S19's panels snap is in the tool's options row, beside its hint, apart from the tools.
+    // Since S19's panels snap is in the tool's options row, apart from the tools.
+    // (S20: the row is under the viewport's header, and the tools are the floating palette,
+    // `tool palette`; it was a panel above the figure and the `tool strip`.)
     let snap = rig.shell.layout().button("snap").unwrap();
     let options = rig.shell.layout().panel("options").unwrap();
     assert!(options.contains_rect(snap), "snap {snap:?} in the options row {options:?}");
-    let strip = rig.shell.layout().button("tool strip").unwrap();
-    assert!(!strip.intersects(snap), "and not in the strip");
+    let strip = rig.shell.layout().button("tool palette").unwrap();
+    assert!(!strip.intersects(snap), "and not in the palette");
+    // With a tool that has no use for it the switch is not shown, and its stop stays in the
+    // order, disabled (the control: the order never depends on what is in hand).
+    rig.shell.run("tool select").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().button("snap").is_none());
+    let node = rig.shell.focus_tree().node("toolbar/snap").expect("still a stop");
+    assert!(!node.enabled);
     // On the sheet snap is the tool strip's, and no tool (S18's second review, minor 6: it was
     // listed under "Tools"); its menu is Edit, not Edit › Tool.
     let rows = cav_app::sheet::rows(table);
     let snap = rows.iter().find(|r| r.actions == ["snap"]).expect("snap is on the sheet");
-    assert_eq!((snap.scope.as_str(), snap.label.as_str()), ("Tool strip", "Snap to the step"));
+    // (S20: the scope is named for the palette; it read "Tool strip".)
+    assert_eq!((snap.scope.as_str(), snap.label.as_str()), ("Tool palette", "Snap to the step"));
     let place = rows.iter().find(|r| r.actions == ["tool-place"]).unwrap();
     assert_eq!(place.label, "Tool: Place", "the control: a tool says it is one");
     assert!(!table.action("snap").unwrap().menu.contains("Tool"));
@@ -1529,9 +1541,10 @@ fn the_history_says_what_happened_in_words_beside_the_figure() {
     let window = rig.shell.focus_tree().node("history").and_then(|n| n.rect).expect("drawn");
     let figure = rig.shell.layout().figure;
     assert!(overlap(window, figure) < 1.0, "{window:?} covers the figure {figure:?}");
-    // Inside the outliner: not over the tool strip either (UX 4).
-    let strip = rig.shell.layout().button("tool strip").unwrap();
-    assert!(overlap(window, strip) < 1.0, "{window:?} covers the tool strip {strip:?}");
+    // Inside the outliner: not over the tools either (UX 4). (S20: the floating palette in the
+    // view's canvas; it was the tool strip.)
+    let strip = rig.shell.layout().button("tool palette").unwrap();
+    assert!(overlap(window, strip) < 1.0, "{window:?} covers the tool palette {strip:?}");
     assert_eq!(rig.shell.focus_tree().node("history/done/1").unwrap().name, "Added sphere");
     // The first row says what it goes back to, not something like the load below it, and its
     // node is named with the words drawn (S18's third review, minor 6: it was "the start").

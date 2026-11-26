@@ -1,6 +1,6 @@
 //! The GUI as data (`plan/REBUILD.md` principle 11): the big scopes, the menus and every action
 //! of the window, read from `ui/actions.ron`, which is compiled in (the page has no files to
-//! read). The menu bar, the right-click menus, the palette, the tool strip's tooltips and the `?`
+//! read). The menu bar, the right-click menus, the palette, the tool palette's tooltips and the `?`
 //! sheet are all views of this one table, and every action is a console line, so none of them is
 //! a second path into the engine.
 //!

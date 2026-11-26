@@ -1,6 +1,7 @@
-//! The editor's tools (`docs/slices/S18.md` §1, "Move things in the view"): the strip's data
-//! (`ui/tools.ron`), the tool in hand, and the geometry the Move tool's gizmo and the Place tool
-//! need, as pure functions.
+//! The editor's tools (`docs/slices/S18.md` §1, "Move things in the view"): the palette's data
+//! (`ui/tools.ron`: the tools, and what a tool's flyout offers), the tool in hand, and the
+//! geometry the Move tool's gizmo and the Place tool need, as pure functions. The palette itself
+//! is drawn by [`crate::tool_palette`].
 //!
 //! A tool is UI state, like the draw style: choosing one changes no scene and is never
 //! journalled. What a tool *does* is a command: the gizmo, the transform session and the
@@ -33,13 +34,61 @@ pub enum Behaviour {
     Probe,
 }
 
-/// One tool of the strip.
+impl Behaviour {
+    /// Whether a tool that does this has settings, shown in the options row under its viewport's
+    /// header while it is in hand (`docs/design/workspace.md` §3): Move its snap, Place what it
+    /// places. A tool without them has no row at all. The row is drawn by
+    /// `tool_palette::options_row`.
+    #[must_use]
+    pub const fn has_options(self) -> bool {
+        matches!(self, Self::Translate | Self::Place)
+    }
+}
+
+/// Where a tool's variants come from: what its flyout in the palette lists
+/// (`docs/design/workspace.md` §3). A closed set the code implements; `ui/tools.ron` names one.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+pub enum Variants {
+    /// The tool has no variants: no corner mark, no flyout.
+    #[default]
+    None,
+    /// The starters of `scenes/starters.ron`: what the Place tool puts down
+    /// ([`crate::Shell::place_starter`]).
+    Starters,
+}
+
+/// One variant of a tool, as its flyout lists it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Variant {
+    /// Its name: `tool <id> <name>` takes the tool with it.
+    pub name: String,
+    /// What its row says.
+    pub label: String,
+    /// One line for its tooltip.
+    pub about: String,
+}
+
+impl Variants {
+    /// The variants, in the order the flyout lists them; none for [`Variants::None`].
+    #[must_use]
+    pub fn list(self) -> Vec<Variant> {
+        match self {
+            Self::None => Vec::new(),
+            Self::Starters => cav_sim::starters::starters()
+                .iter()
+                .map(|s| Variant { name: s.name.clone(), label: s.label.clone(), about: s.about.clone() })
+                .collect(),
+        }
+    }
+}
+
+/// One tool of the palette.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ToolData {
     /// Its id: `tool <id>` chooses it.
     pub id: String,
-    /// Its one name, wherever it is shown: the strip's tooltip, the options row, the menus, the
+    /// Its one name, wherever it is shown: the palette's tooltip, the menus, the
     /// `?` sheet (S18's review, U2: the Place tool was "Add" on the strip). Must be the label of
     /// the action that chooses it (`tool <id>`).
     pub label: String,
@@ -47,15 +96,18 @@ pub struct ToolData {
     pub behaviour: Behaviour,
     /// One line for its tooltip.
     pub about: String,
+    /// What its flyout offers, if it has one (`variants: Starters`).
+    #[serde(default)]
+    pub variants: Variants,
 }
 
-/// The strip.
+/// The palette's tools.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Strip {
     /// The Move tool's snap step and the transform session's step, metres.
     pub snap_step: f64,
-    /// The tools, top to bottom.
+    /// The tools, in the palette's order.
     pub tools: Vec<ToolData>,
 }
 
@@ -409,6 +461,26 @@ mod tests {
         // A tool has one name: the strip's and its action's (S18's review, U2).
         let renamed = TOOLS_RON.replace("label: \"Place\"", "label: \"Add\"");
         assert!(Strip::parse(&renamed).unwrap_err().contains("one name"));
+    }
+
+    #[test]
+    fn a_tool_s_variants_come_from_a_source_the_code_knows() {
+        // S20: Place's flyout lists the starters, from data; a tool that names no source has
+        // none. Control: a source the code does not know is refused when the file is read.
+        let strip = Strip::parse(TOOLS_RON).unwrap();
+        let place = strip.tool("place").unwrap();
+        assert_eq!(place.variants, Variants::Starters);
+        let names: Vec<String> = place.variants.list().into_iter().map(|v| v.name).collect();
+        let starters: Vec<String> = cav_sim::starters::starters().iter().map(|s| s.name.clone()).collect();
+        assert_eq!(names, starters);
+        assert!(names.len() >= 10 && names.contains(&"cube".to_owned()));
+        for tool in strip.tools.iter().filter(|t| t.id != "place") {
+            assert_eq!(tool.variants, Variants::None, "{}", tool.id);
+            assert!(tool.variants.list().is_empty());
+        }
+        assert!(Behaviour::Translate.has_options() && Behaviour::Place.has_options());
+        assert!(!Behaviour::Select.has_options() && !Behaviour::Probe.has_options());
+        assert!(Strip::parse(&TOOLS_RON.replace("variants: Starters", "variants: Brushes")).is_err());
     }
 
     #[test]

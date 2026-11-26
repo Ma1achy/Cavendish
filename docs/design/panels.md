@@ -163,5 +163,26 @@ review" above:
 - **Status is the status bar's**: selection, instrument (and comparison), the signal's state,
   the forward stage, warnings and errors, the frame's time, the console. Its "Space play" hint is
   gone (the key is on the `?` sheet and the Scene menu).
-- The tool strip stands under the header of the viewport in the figure's corner until the
-  floating palette replaces it (TASK-S20-05).
+- The tool strip stood under the header of the viewport in the figure's corner until the
+  floating palette replaced it (below).
+
+## As built after S20's tool palette (26 Nov 2026)
+
+`docs/design/workspace.md` §3, the owner's ruling ("the tool palette must overlap the viewport
+like Photoshop or Blender"). What is different from the above:
+- **The tool strip is the tool palette** (`cav-app/src/tool_palette.rs`): icon-only buttons of
+  `theme::ICON` with a grip at its head, inside the canvas of the active scene viewport (a plot
+  active: the first viewport that shows the scene; none: no palette, the keys still take a
+  tool). Dragged by its grip it snaps to one of eight anchors of the canvas (corners and edge
+  middles), remembered for each layout; at a top or bottom middle it lies along the edge; a
+  short canvas gives it two columns; it stands clear of the navigation gizmo. The key's letter
+  in each button's corner is gone (it is in the tooltip). It changes no canvas's size.
+- **Flyouts.** A tool with variants (`variants` in `ui/tools.ron`; Place: the starters) has a
+  corner mark; a hold of 0.4 s or a right-click opens its variants beside the palette, and
+  choosing one takes the tool with it (`tool place cube`). A plain click only takes the tool.
+- **The options panel above the figure is gone.** The tool's options are one row under the
+  palette's viewport's header, there only while they apply: Move, the snap switch with its
+  step; Place, what it places and the ground's height; a transform session, its numbers. With
+  Select or Probe in hand there is no row. The tool's name is no longer written there (the
+  palette shows which is lit); snap stays an action (S, Edit ▸ Snap to the step) when its
+  switch is not shown.
