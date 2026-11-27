@@ -425,14 +425,17 @@ decimated mesh's phase against the full scan's, both summed whole, at 1.5~m. \pr
 \caption{Two of the ten shapes, each cut away at the lattice wall nearest its centre plane, both at
 32 cells across the largest extent. Top: the analytic torus (2.8~m across) at pitch 0.0875~m, whose
 cubes and pieces are made from a 4096-triangle mesh; bottom: the Stanford bunny (1~m; 69\,664
-triangles, all of the scan's kept, five base holes capped) at 1/32~m. Left, the shape; middle, cubes
-full when the centre is inside (grey wholly inside, yellow crossed by the surface); right, the same
-interior cubes and every crossed cell clipped to its piece (orange), which together are the body
-exactly to the mesh. Dotted: the true surface where the cut meets it, which the cubes' staircase
-misses and the pieces follow. The pictures show a lattice four times coarser than the finest one
-measured: the sweep runs from 4 to 128 cells across and the errors this section quotes are at 128,
-where the cells would be too small to see at print size. Lit as the diagrams are, with screen-space ambient occlusion. Rendered by
-the study's \texttt{figures.py}.}
+triangles, all of the scan's kept, five base holes capped) at 1/32~m. Left, the true body (green);
+middle, cubes full when the centre is inside (blue); right, the same interior cubes and every crossed
+cell clipped to its piece (orange), which together are the body exactly to the mesh. Dotted: the true
+surface as a sparse 3-D cage (for the torus, rings around the tube every $15^\circ$ and around the
+axis every $30^\circ$; for the bunny, contours every three cells in height and the silhouette) and
+where the cut meets it. Each dot is depth-tested against the voxels and the true surface, so the cage
+shows only where the true surface lies in front of the voxels or within a hair of them, weaving in
+and out of the cubes' staircase and lying on the pieces. The pictures show a lattice four times
+coarser than the finest one measured: the sweep runs from 4 to 128 cells across and the errors this
+section quotes are at 128, where the cells would be too small to see at print size. Lit as the
+diagrams are, with screen-space ambient occlusion. Rendered by the study's \texttt{figures.py}.}
 \label{fig:shapes-repr}
 \end{figure}
 

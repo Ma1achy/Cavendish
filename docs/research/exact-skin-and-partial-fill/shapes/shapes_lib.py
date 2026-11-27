@@ -1735,10 +1735,14 @@ class Canvas:
         self.alb[sel] = np.asarray(colour, dtype=float)
         self.nrm[sel] = normal / np.linalg.norm(normal)
 
-    def dots(self, lines: list[F64], colour: F64, pitch: float, radius: tuple[float, float]) -> None:
+    def dots(self, lines: list[F64], colour: F64, pitch: float, radius: tuple[float, float],
+             front: F64 | None = None, hair: float = 2.0) -> None:
         """Polylines (each (k, 3)) as round dots every `pitch` output pixels, part of the 3-D picture:
-        each pixel of a dot is depth-tested against what is drawn, so geometry in front covers it.
-        Dot radii taper from radius[0] (far) to radius[1] (near), output pixels."""
+        each pixel of a dot is depth-tested against what is drawn, so geometry in front covers it
+        (a dot within `hair` supersampled pixels of depth behind a surface still shows). With
+        `front`, a depth buffer of the same camera (e.g. the true surface's own render), a dot must
+        also lie in front of it, so a wireframe of a surface hides its own far side. Dot radii taper
+        from radius[0] (far) to radius[1] (near), output pixels."""
         pts = []
         for line in lines:
             q = self.project(line)
@@ -1762,7 +1766,9 @@ class Canvas:
             ok = ((iy + 0.5 - y) ** 2 + (ix + 0.5 - x) ** 2 <= rr * rr) & (iy >= 0) & (iy < self.n) \
                 & (ix >= 0) & (ix < self.n)
             iy, ix = iy[ok], ix[ok]
-            vis = d <= self.z[iy, ix] + 2 * self.depth_bias
+            vis = d <= self.z[iy, ix] + hair * self.depth_bias
+            if front is not None:
+                vis &= d <= front[iy, ix] + hair * self.depth_bias
             mask[iy[vis], ix[vis]] = True
         self.overlays.append((mask, np.asarray(colour, dtype=float), 1.0))
 

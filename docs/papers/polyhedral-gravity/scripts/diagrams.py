@@ -190,7 +190,7 @@ def fig_representations() -> None:
     cells = [(i, j) for i in range(n) for j in range(n)]
     titles = ["true surface", "plain cubes (staircase)", "interior cubes + clipped pieces"]
     for k in range(3):
-        ax = fig.add_subplot(2, 3, k + 1)
+        ax = fig.add_axes((0.035 + 0.33 * k, 0.53, 0.30, 0.41))  # the 2-D row, square panels
         bare(ax)
         for i, j in cells:
             ax.add_patch(Rectangle((g0 + i * h, g0 + j * h), h, h, fill=False, ec=GHOST, lw=0.3))
@@ -248,11 +248,13 @@ def fig_representations() -> None:
         return solid(ijk) & (ijk[:, 2] >= 0)
 
     edges = [np.array([f[i], f[i + 1]]) for f in faces[1:] for i in range(2)]  # base, then lateral
-    bound = np.array([[x, y, z] for x in (-PYR_BASE / 2 - 0.1, PYR_BASE / 2 + 0.1)
-                      for y in (-PYR_BASE / 2 - 0.1, PYR_BASE / 2 + 0.1)
-                      for z in (z0 - 0.02, z0 + PYR_HEIGHT + 0.12)])
+    # the panels' extent: the base with a margin for the contact shadow, and the apex (plus the
+    # plain cubes' top cell), so the pyramid fills its panel
+    bound = np.array([[x, y, z0] for x in (-PYR_BASE / 2 - 0.1, PYR_BASE / 2 + 0.1)
+                      for y in (-PYR_BASE / 2 - 0.1, PYR_BASE / 2 + 0.1)]
+                     + [[0.0, 0.0, z0 + PYR_HEIGHT + 0.12]])
     for k in range(3):
-        ax = fig.add_subplot(2, 3, 4 + k)
+        ax = fig.add_axes((0.035 + 0.33 * k, 0.10, 0.30, 0.36))  # the 3-D row, about as large
         sc = lit.Scene(VIEW)
         sc.add_ground(np.array([0.0, 0.0, z0]), PYR_BASE / 2 + 0.45, tris, ao_r, n=40)
         if k == 0:
@@ -282,13 +284,14 @@ def fig_representations() -> None:
                 sc.add_shaded(f, [f], np.array([a]), ORANGE, edge=VERMILION, lw=0.25)
             sc.wireframe(edges, lit.occluded_by_tris(VIEW, tris, 1e-4))
         sc.draw(ax, bound)
+        ax.set_anchor("N")  # the pyramid just under its title
         ax.set_title(f"({'def'[k]})", fontsize=8)
-    fig.text(0.5, 0.03, f"green: the true body; blue: whole cells; orange (hatched in 2-D): clipped "
+    fig.text(0.5, 0.13, f"green: the true body; blue: whole cells; orange (hatched in 2-D): clipped "
              f"boundary pieces, exact to the polygon or mesh; dotted: the true surface (in (e, f) its edges, "
              f"hidden where the cells cover them). "
              f"(f): the {len(pieces)} clipped pieces, outlined where the lattice cuts the faces "
              f"({len(inner)} whole cubes are inside).",
-             ha="center", fontsize=6.8)
+             ha="center", va="top", fontsize=6.8, wrap=True)
     fig.savefig(FIG / "diag-representations.pdf")
     plt.close(fig)
 
