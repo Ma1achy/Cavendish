@@ -573,6 +573,8 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
                 || (*name == "tool" && wrong.contains("tool <"))
                 || (*name == "tool-palette" && wrong.contains("tool-palette <"))
                 || (*name == "flyout" && wrong.contains("flyout <"))
+                // (TASK-S20-10: the first-person camera's settings take a name and a value.)
+                || (*name == "camera-set" && wrong.contains("camera-set <"))
                 || (*name == "layout" && wrong.contains("layout <"))
                 || (*name == "step" && wrong.contains("step <"))
                 || (*name == "speed" && wrong.contains("speed <"))

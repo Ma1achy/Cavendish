@@ -83,6 +83,77 @@ pub fn dropped(ctx: &egui::Context) -> Vec<(String, Option<Vec<u8>>)> {
     DROPPED.with(|d| std::mem::take(&mut *d.borrow_mut()))
 }
 
+/// The page's pointer lock, for the first-person camera.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Lock {
+    /// Not asked for.
+    Idle,
+    /// Asked for; the browser has not yet said it holds.
+    Asked,
+    /// The canvas holds the pointer.
+    Held,
+    /// The browser took it back (its Esc), with the application still wanting it.
+    Lost,
+}
+
+thread_local! {
+    static LOCK: std::cell::Cell<Lock> = const { std::cell::Cell::new(Lock::Idle) };
+    /// The mouse's motion since the last frame read it, counts right and down.
+    static MOTION: std::cell::Cell<[f64; 2]> = const { std::cell::Cell::new([0.0; 2]) };
+    /// Whether the page's `mousemove` is listened to (once, for the page's life).
+    static LISTENING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Captures and hides the pointer for the first-person camera (`on`), or gives it back: the
+/// page's pointer lock on the canvas. A browser grants it only after a press or a key (which is
+/// what starts a flight) and takes it back itself on Esc ([`capture_lost`]).
+pub fn capture(_ctx: &egui::Context, on: bool) {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else { return };
+    if !on {
+        LOCK.set(Lock::Idle);
+        document.exit_pointer_lock();
+        return;
+    }
+    if !LISTENING.replace(true) {
+        let moved = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|event: web_sys::MouseEvent| {
+            if LOCK.get() != Lock::Idle {
+                let [x, y] = MOTION.get();
+                MOTION.set([x + f64::from(event.movement_x()), y + f64::from(event.movement_y())]);
+            }
+        });
+        if document.add_event_listener_with_callback("mousemove", moved.as_ref().unchecked_ref()).is_ok() {
+            // The listener lives as long as the page.
+            moved.forget();
+        }
+    }
+    MOTION.set([0.0; 2]);
+    LOCK.set(Lock::Asked);
+    if let Some(canvas) = document.get_element_by_id(CANVAS_ID) {
+        canvas.request_pointer_lock();
+    }
+}
+
+/// The mouse's raw motion since the last frame, counts to the right and down: the page's
+/// `movementX` and `movementY`, which go on while the pointer is locked. `None` while no lock is
+/// asked for (the pointer's own motion then stands in).
+#[must_use]
+pub fn motion(_ctx: &egui::Context) -> Option<[f64; 2]> {
+    let held = web_sys::window().and_then(|w| w.document()).and_then(|d| d.pointer_lock_element()).is_some();
+    match (LOCK.get(), held) {
+        (Lock::Asked, true) => LOCK.set(Lock::Held),
+        (Lock::Held, false) => LOCK.set(Lock::Lost),
+        _ => {}
+    }
+    (LOCK.get() != Lock::Idle).then(|| MOTION.replace([0.0; 2]))
+}
+
+/// Whether the browser took a captured pointer back by itself (Esc in a page releases the
+/// lock before the page hears the key): the flight ends with it.
+#[must_use]
+pub fn capture_lost() -> bool {
+    LOCK.get() == Lock::Lost
+}
+
 /// Starts the application on the page's canvas. Returns at once; the application runs from the
 /// browser's frames. If it cannot start, the reason replaces the canvas on the page.
 pub fn start() {

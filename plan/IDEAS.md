@@ -236,3 +236,18 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 - **A keyboard-opened flyout stays open after a click elsewhere** (TASK-S20-05): as the
   header's keyboard menus do (`Keyboard::popup` is closed by keys only). A pointer press should
   close any keyboard drop-down.
+- **Eased orbit and pan from the keyboard** (TASK-S20-10): the task's title asks for "orbit and
+  pan given the same per-frame smoothing". Not done: the keyboard's orbit, pan and zoom are the
+  spec's discrete steps (1°, 2 % of the distance, with DAS/ARR repeat), each landing exactly, and
+  the tests of the keyboard model read the view the frame after a press; mouse orbit is direct
+  manipulation and stays 1:1. A glide could be added as an animation toward the stepped view
+  (the command issued at once, the drawn camera easing to it with `camera::ease`), which keeps
+  every step exact.
+- **A page reserves Ctrl+W** (TASK-S20-10, for TASK-S19-11): in a browser, sprinting forward
+  with Ctrl held is Ctrl+W, which closes the tab before the page hears it. There the double tap
+  of W is the sprint; the keyboard lock API (full screen only) or another sprint key on the web
+  would settle it.
+- **A flight during play journals every frame** (TASK-S20-10): consecutive camera commands are
+  one journal entry, but a seek between them (playing) breaks the run, as it does for an orbit
+  drag during play. The journal's byte budget bounds it; coalescing "seek, camera, seek,
+  camera" pairwise would shrink it.

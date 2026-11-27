@@ -139,6 +139,13 @@ already Lock).
   acts on a body half moved. A global key (Ctrl+Z, Space, ?, …) first ends the session,
   cancelled, then acts; Ctrl+Z after a move is that cancel and nothing more. (Recorded after S18's
   review, R1 and minor 3.)
+- **Cavendish's second local exception** (owner, 25 Nov 2026: "make it work like a fps game
+  camera"): while the camera is *flown* (the right button held over a scene viewport, or `fly`,
+  Shift+F) the flight holds **every key, the globals too**. W A S D, Space, Shift and Ctrl are
+  held to move, so none of them may also act: Space does not play, Ctrl+S (sprinting backwards)
+  does not save, Ctrl+Z does not undo. Only Esc or Enter (stop, the camera kept), `fly`'s own
+  key, F3 and F11 still act (`first_person::WHILE_FLYING`). The flight ends in navigation mode on
+  the canvas; it is never an edit.
 - A mouse click on a text field starts typing immediately (interaction mode), caret at the click,
   ring hidden until the next key press (the first character typed shows the ring blue).
 - A click anywhere else ends typing and leaves the keyboard in navigation mode.

@@ -88,7 +88,7 @@
         (id: "view-home", label: "Home", menu: "View", line: "view home", keys: ["Home"], about: "reset the active pane's camera (undo takes it back)"),
         (id: "frame", label: "Frame the selection", menu: "View", line: "frame", scope: "viewport", keys: ["F"], about: "fit the selection, or the whole scene, into the active pane"),
         (id: "frame-in-tree", label: "Frame the selection", line: "frame", scope: "tree", keys: ["F"], context: true, about: "fit the selection into the active pane"),
-        (id: "fly", label: "Fly", menu: "View", line: "fly", scope: "viewport", keys: ["Shift+F"], about: "fly the camera: W A S D, E up, Q down, arrows or a drag to look; Enter or Esc to stop"),
+        (id: "fly", label: "Fly", menu: "View", line: "fly", scope: "viewport", keys: ["Shift+F"], about: "fly the camera as a first-person game does: the mouse looks, W A S D move, Space up, Shift down, Ctrl or W twice sprints, the wheel sets the speed; Esc stops"),
         (id: "proj-persp", label: "perspective", menu: "View/Projection", line: "proj persp", about: "a perspective camera"),
         (id: "proj-ortho", label: "orthographic", menu: "View/Projection", line: "proj ortho", about: "an orthographic camera"),
         (id: "proj-toggle", label: "toggle", menu: "View/Projection", line: "proj toggle", scope: "viewport", keys: ["O"], about: "swap perspective and orthographic"),

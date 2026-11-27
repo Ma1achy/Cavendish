@@ -29,6 +29,32 @@ impl Rig {
         run_frames(&self.ctx, &mut self.shell, &mut NoSurface, self.size, &mut self.clock, frames);
     }
 
+    /// Runs the frames one at a time and returns what each asked of the window (the root
+    /// viewport's commands: the title, the cursor's grab), in order.
+    fn frames_asking(&mut self, frames: Vec<Vec<Event>>) -> Vec<egui::ViewportCommand> {
+        let mut asked = Vec::new();
+        for events in frames {
+            self.events += events.len();
+            let output = run_frames(
+                &self.ctx,
+                &mut self.shell,
+                &mut NoSurface,
+                self.size,
+                &mut self.clock,
+                vec![events],
+            );
+            if let Some(root) = output.viewport_output.get(&egui::ViewportId::ROOT) {
+                asked.extend(root.commands.iter().cloned());
+            }
+        }
+        asked
+    }
+
+    /// Frames until a flown camera has eased to rest (a second: the easing's 0.08 s many times).
+    fn settle(&mut self) {
+        self.frames(vec![vec![]; 60]);
+    }
+
     fn key(&mut self, key: Key, modifiers: Modifiers) {
         let event = |pressed| Event::Key { key, physical_key: None, pressed, repeat: false, modifiers };
         self.frames(vec![vec![event(true)], vec![event(false)]]);
@@ -766,6 +792,9 @@ fn fly_is_a_session() {
         modifiers: Modifiers::NONE,
     };
     rig.frames(vec![vec![down], vec![], vec![], vec![], vec![up]]);
+    // (TASK-S20-10: the velocity eases, so the camera glides on for a moment after the key is
+    // let go; where it was flown is where it comes to rest.)
+    rig.settle();
     let flown = rig.shell.engine.view(0).clone();
     let (to_eye, _, _) = start.basis();
     let moved = [
@@ -1207,9 +1236,12 @@ fn every_starter_has_an_editor_for_every_field() {
 }
 
 #[test]
-fn fly_speed_takes_shift_and_alt_through_the_frame() {
-    // S18 C5 through the window: the same frames of W held move the camera 10 times as far with
-    // Shift and a tenth as far with Alt (the frame's own use of the modifiers).
+fn fly_speed_takes_sprint_through_the_frame() {
+    // S18 C5 through the window, rewritten for the owner's ruling of 25 Nov 2026 (TASK-S20-10;
+    // it was `fly_speed_takes_shift_and_alt_through_the_frame`: Shift ×10 and Alt ×0.1). Flying
+    // as a first-person game does, Shift is "down" and Ctrl sprints: the same frames of W held
+    // move the camera the sprint factor times as far across the ground with Ctrl, exactly as
+    // far with Shift (which also sinks), and exactly as far with Alt (which is nothing here).
     let flown = |modifiers: Modifiers| {
         let mut rig = Rig::new();
         rig.shell.run("load point").unwrap();
@@ -1225,12 +1257,15 @@ fn fly_speed_takes_shift_and_alt_through_the_frame() {
         frames.push(vec![w(false, false)]);
         rig.frames(frames);
         let end = rig.shell.engine.view(0).target;
-        (end[0] - start[0]).hypot(end[1] - start[1]).hypot(end[2] - start[2])
+        ((end[0] - start[0]).hypot(end[1] - start[1]), end[2] - start[2])
     };
-    let (plain, fast, slow) = (flown(Modifiers::NONE), flown(Modifiers::SHIFT), flown(Modifiers::ALT));
-    assert!(plain > 0.0);
-    assert!((fast / plain - 10.0).abs() < 1e-9, "Shift: {}", fast / plain);
-    assert!((slow / plain - 0.1).abs() < 1e-9, "Alt: {}", slow / plain);
+    let sprint = cav_app::camera::Settings::from_data().sprint;
+    let ((plain, level), (fast, _)) = (flown(Modifiers::NONE), flown(Modifiers::CTRL));
+    let ((sinking, sunk), (alt, _)) = (flown(Modifiers::SHIFT), flown(Modifiers::ALT));
+    assert!(plain > 0.0 && level.abs() < 1e-12, "W alone flies level: {plain} {level}");
+    assert!((fast / plain - sprint).abs() < 1e-9, "Ctrl: {}", fast / plain);
+    assert!((sinking / plain - 1.0).abs() < 1e-9 && sunk < -0.01, "Shift sinks, no faster: {sinking} {sunk}");
+    assert!((alt / plain - 1.0).abs() < 1e-9, "Alt: {}", alt / plain);
 }
 
 #[test]
@@ -1363,11 +1398,15 @@ fn the_right_button_flies_and_holds_the_letters() {
     rig.frames(frames);
     assert!(rig.shell.mouse_fly.is_some(), "the right button is held: flying");
     assert_eq!(rig.shell.tool, "select", "W was the flight's, not the Move tool");
+    // (TASK-S20-10: the camera eases to rest after W is let go; the look is measured from
+    // there, or the glide would be taken for the eye moving in the look.)
+    rig.settle();
     let flown = rig.shell.engine.view(0).clone();
     let (to_eye, _, _) = start.basis();
     let moved: f64 = (0..3).map(|i| -(flown.target[i] - start.target[i]) * to_eye[i]).sum();
     assert!(moved > 0.05, "flew {moved} m forward");
-    // The mouse looks: a drag with the button held turns the view, the eye kept.
+    // The mouse looks: a drag with the button held turns the view, the eye kept. (With no raw
+    // motion from the device, as here, the pointer's own stands in.)
     rig.frames(vec![
         vec![Event::PointerMoved(at + egui::vec2(30.0, 0.0))],
         vec![Event::PointerMoved(at + egui::vec2(60.0, 0.0))],
