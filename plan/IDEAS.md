@@ -289,3 +289,13 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   size, `docs/slices/S5.md` §7.1). Each edge's `L(p₁) − L(p₂)` could be formed as one `log1p` of
   a ratio and each face's `ω` difference as one `atan2`, so that the closed form's difference
   holds as far as its potential does; measure against the moments' read before adopting.
+- **Absolute moments carried exactly at even orders** (TASK-S5-11): a node's `A_4` is exact for a
+  chunk but carried upward by the triangle inequality, so on `town` it is a median 2.6 to 6.2 times
+  the leaves' true `Σ|m|s⁴` above the chunks (worst 21 at level 4), and `A_16` up to 1.9×10⁴
+  (`docs/slices/S5.md` §7.2). Carrying the `|m|`-weighted raw moments to the fourth order (35
+  numbers: `Σ|m|`, `Σ|m|u`, `Σ|m|u⊗u`, … each shifts exactly by the binomial rules) would make
+  `A_2` and `A_4` exact at every level, and odd orders could take Cauchy–Schwarz,
+  `A_l ≤ √(A_{l−1}A_{l+1})`. The walk accepts a node at a distance that goes as the bound's
+  `1/7`th power, so a 3× tighter `A_4` is about 15 % nearer: measure the walk's nodes with and
+  without before paying 280 bytes a node. A chunk's own `A_6 … A_16` could likewise be exact
+  (`cube_even_powers`, about 500 flops a leaf).

@@ -418,4 +418,11 @@ fn slow_the_town_s_octree() {
         tree.bytes(),
         Octree::NODE_BYTES,
     );
+    // stress-1e10, a kilometre of ground at 5 cm (about 4×10⁵ chunks), is past the cap: refused
+    // by the search, naming it, before a chunk is made.
+    let stress = crate::dev::stress_1e10();
+    let start = std::time::Instant::now();
+    let why = Octree::build(&World::new(stress.world.as_ref().unwrap()), &|| false).unwrap_err();
+    assert!(why.contains(&MAX_READ_CHUNKS_WHOLE.to_string()), "{why}");
+    println!("stress-1e10 refused in {:.2} s: {why}", start.elapsed().as_secs_f64());
 }

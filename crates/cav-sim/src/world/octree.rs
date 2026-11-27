@@ -39,12 +39,15 @@ use cav_core::voxel::world::{ChunkKey, WorldGrid};
 use super::{Cube, World};
 
 /// The most chunks a whole-world octree is made from (chunks that may hold matter), and the
-/// most bricks of any one level its search for them keeps. `town` has 5,800 (`docs/slices/S5.md`
-/// §7.2); 2^17 is twenty times that, and its summaries are about 46 MB.
+/// most bricks of any one level its search for them keeps. `town` searches 5,454 and has 5,350
+/// with matter (`docs/slices/S5.md` §7.2); 2^17 is 24 times that. Their summaries, held while
+/// the levels are made, are at most 43 MB (328 bytes each).
 pub const MAX_READ_CHUNKS_WHOLE: usize = 131_072;
-/// The most nodes of all levels a whole-world octree may have: `8/7` of
-/// [`MAX_READ_CHUNKS_WHOLE`] and some room, about 53 MB at [`Octree::NODE_BYTES`] each.
-pub const MAX_WORLD_NODES: usize = 150_000;
+/// The most nodes of all levels a whole-world octree may have. A world that is one layer of
+/// chunks (terrain) has `1 + 1/4 + 1/16 + … = 4/3` nodes a chunk (`town`: 7,064 for 5,350, 1.32),
+/// a solid one `8/7`; so `4/3` of [`MAX_READ_CHUNKS_WHOLE`] (174,763) and some room, at most 63 MB
+/// at [`Octree::NODE_BYTES`] (352) each.
+pub const MAX_WORLD_NODES: usize = 180_000;
 /// Levels are made upward until one has at most this many nodes: the roots.
 pub const MAX_ROOTS: usize = 8;
 /// The coarsest level a node may have: a key's coordinate halved 30 times is 0 or −1.
