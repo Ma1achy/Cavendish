@@ -20,6 +20,10 @@
 //! beyond the radius or the cap is not read, and the read says so: reading a whole 10¹⁰-cell
 //! world is S5's bounded walk.
 //!
+//! **S5's whole world** ([`octree`]): the world's chunks merged upward into one octree of
+//! summaries (raw moments about each node's centre and the bounds on what they leave out), which
+//! S5's walk reads in place of the radius above (TASK-S5-12).
+//!
 //! Frames and units: the world's frame (x east, y north, z up), metres, kilograms, kg/m³, radians.
 
 use cav_core::Vec3;
@@ -806,6 +810,7 @@ pub fn work_share(spec: &crate::SceneSpec) -> u64 {
 }
 
 pub mod clipmap;
+pub mod octree;
 
 #[cfg(test)]
 mod tests;

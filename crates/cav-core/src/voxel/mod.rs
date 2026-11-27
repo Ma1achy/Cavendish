@@ -19,6 +19,8 @@
 //! - [`world`]: the world volume: static matter in chunks of 32³ cells with their palettes, and
 //!   the far field's bricks (S4).
 //! - [`region`]: chunks as bytes, eight cubed to a region file (S4).
+//! - [`summary`]: a node of the world's octree: raw moments about its own centre, the absolute
+//!   moments that bound what the octupole leaves out, and its reach (S5).
 //!
 //! Frames and units: a tree is in its body's own frame, metres, x east, y north, z up when the
 //! body is unrotated; masses are kilograms. Every count that comes from a spec or a file has a
@@ -30,6 +32,7 @@ pub mod mesh;
 pub mod morton;
 pub mod region;
 pub mod shape;
+pub mod summary;
 pub mod tree;
 mod voxeliser;
 pub mod world;
