@@ -5,7 +5,8 @@
 //! reads "Uniform" and the Probe reads into the right panel. Rows M3 to M6 and K1 are the mosaic's
 //! (TASK-S20-03): more than four viewports, the splitters, the labels' order, pop-out and dock.
 //! Rows T1 to T3 are the transport's (TASK-S20-06): each button its command, a step on a shot's
-//! readout, the speed; with them the top bar's row (the design's §4).
+//! readout, the speed; with them the top bar's row (the design's §4). Rows T4 and T5 are
+//! TASK-S20-09's: the duration typed at the transport, and what playing does at the end.
 
 use std::collections::BTreeMap;
 
@@ -1451,8 +1452,10 @@ fn each_transport_button_issues_its_command() {
             "timeline/play",
             "timeline/step-forward",
             "timeline/end",
+            "timeline/at-end",
             "timeline/speed",
             "timeline/time",
+            "timeline/duration",
             "timeline/shot",
             "timeline/scrubber"
         ],
@@ -1856,4 +1859,268 @@ fn the_top_bar_is_menus_tabs_search_and_the_scene() {
         rig.shell.run("layout save").unwrap();
     }
     assert!(rig.shell.run("layout save").unwrap_err().contains("keeps 6 layouts"));
+}
+
+/// Types `text` into the transport's field `field` from the keyboard: Enter on it, the text
+/// (which replaces what was there), Enter.
+fn type_at_transport(rig: &mut Rig, field: &str, text: &str) {
+    rig.shell.keyboard.focus = vec!["timeline".into(), format!("timeline/{field}")];
+    rig.shell.keyboard.nav_on = true;
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+    rig.typed(text);
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+}
+
+#[test]
+fn duration_is_typed_at_the_transport() {
+    // T4. Criterion (written before measuring): 20 typed in the transport's duration box is
+    // the `set duration` the Scene card's editor issues: the same command in the journal (path,
+    // value and all), the same line in words, one step of undo, which takes it back. Controls: a
+    // letter is refused in words and the scene is as it was (no journal line, no step); so is a
+    // length a scene cannot have (the engine's refusal, the console opened).
+    let fresh = || {
+        let mut rig = Rig::new();
+        rig.shell.run("load point").unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        rig
+    };
+    let mut rig = fresh();
+    let (depth, journal) = (rig.shell.engine.depth(), rig.shell.engine.journal().len());
+    assert_eq!(transport(&rig, "duration").text, "12.00");
+    let box_ = transport(&rig, "duration").rect;
+    let time = transport(&rig, "time").rect;
+    assert!(box_.left() > time.right() && (box_.width() - time.width()).abs() < 0.01, "`t [..] / [..] s`");
+    type_at_transport(&mut rig, "duration", "20");
+    assert_eq!(rig.shell.engine.spec().duration, 20.0);
+    assert_eq!(transport(&rig, "duration").text, "20.00");
+    assert_eq!(rig.shell.engine.depth(), (depth.0 + 1, 0), "one step");
+    assert_eq!(rig.shell.engine.journal().len(), journal + 1, "one line");
+    let typed = rig.shell.engine.journal().last().unwrap().clone();
+
+    // The Scene card's own editor, with nothing selected: its box typed into (a double click
+    // makes a dragged number a typed one), 20, Enter.
+    let mut card = fresh();
+    let editor = card.shell.layout().editor("duration").expect("the Scene card's Duration").center();
+    card.frames(vec![
+        vec![Event::PointerMoved(editor)],
+        vec![Rig::press(editor, PointerButton::Primary, true)],
+        vec![Rig::press(editor, PointerButton::Primary, false)],
+        vec![Rig::press(editor, PointerButton::Primary, true)],
+        vec![Rig::press(editor, PointerButton::Primary, false)],
+        vec![],
+    ]);
+    card.frames(vec![vec![Event::Key {
+        key: Key::A,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::COMMAND,
+    }]]);
+    card.typed("20");
+    card.key(Key::Enter, Modifiers::NONE);
+    card.frames(vec![vec![]]);
+    assert_eq!(card.shell.engine.spec().duration, 20.0, "the card's editor set it");
+    let from_card = card.shell.engine.journal().last().unwrap().clone();
+    assert_eq!(typed, from_card, "the same command, to the value's type");
+    assert_eq!(typed, cav_app::editors::command_for("duration", serde_json::json!(20.0), false));
+    assert_eq!(cav_engine::describe(&typed, 0), cav_engine::describe(&from_card, 0), "the same line");
+    assert_eq!(rig.shell.engine.spec(), card.shell.engine.spec());
+    assert_eq!(rig.shell.engine.digest(), card.shell.engine.digest());
+    // One undo takes it back, and the box says so.
+    rig.shell.run("undo").unwrap();
+    rig.frames(vec![vec![]]);
+    assert_eq!((rig.shell.engine.spec().duration, rig.shell.engine.depth()), (12.0, (depth.0, 1)));
+    assert_eq!(transport(&rig, "duration").text, "12.00");
+
+    // Control: a letter is no duration; nothing of the scene changes, and the log says why.
+    let mut rig = fresh();
+    let (digest, depth, journal) =
+        (rig.shell.engine.digest(), rig.shell.engine.depth(), rig.shell.engine.journal().len());
+    let said = |rig: &Rig| rig.shell.engine.log().iter().next_back().unwrap().message.clone();
+    assert!(!rig.shell.console_open);
+    type_at_transport(&mut rig, "duration", "long");
+    assert!(said(&rig).contains("`long` is not a duration in seconds"), "{}", said(&rig));
+    assert!(rig.shell.console_open, "the refusal is shown");
+    // And a length no scene has is the engine's to refuse, as it refuses the card's.
+    for wrong in ["-5", "0", "2000000"] {
+        rig.shell.console_open = false;
+        type_at_transport(&mut rig, "duration", wrong);
+        assert!(said(&rig).contains("refused") && said(&rig).contains("duration"), "{wrong}: {}", said(&rig));
+        assert!(rig.shell.console_open, "{wrong}");
+    }
+    assert_eq!(
+        (rig.shell.engine.digest(), rig.shell.engine.depth(), rig.shell.engine.journal().len()),
+        (digest, depth, journal),
+        "the scene, the history and the journal are as they were"
+    );
+    assert_eq!(transport(&rig, "duration").text, "12.00");
+    // A duration shorter than where the playhead is brings the playhead in with it.
+    rig.shell.run("seek 10").unwrap();
+    type_at_transport(&mut rig, "duration", "5");
+    assert_eq!((rig.shell.engine.spec().duration, rig.shell.engine.time()), (5.0, 5.0));
+    assert_eq!(
+        (transport(&rig, "time").text.as_str(), transport(&rig, "duration").text.as_str()),
+        ("5.00", "5.00")
+    );
+}
+
+#[test]
+fn the_end_loops_stops_or_runs_on() {
+    // T5. Criterion (written before measuring): at the end of the timeline, playing with
+    // `loop` wraps to 0 and goes on; with `stop` leaves t = duration (bits) and playing false;
+    // with `run on` the duration grows by its length at the start of the run each time the end
+    // is reached (12 → 24 → 36, not doubling), playing goes on, the whole run is one step of
+    // undo live and replayed (the seeks between do not end it), and at the schema's longest
+    // timeline playing stops with a message. Controls: with `stop` and with `loop` the duration
+    // never changes and nothing is journalled but seeks; a second run is a step of its own.
+    let fresh = |at_end: &str| {
+        let mut rig = Rig::new();
+        rig.shell.run("load point").unwrap();
+        rig.shell.run(&format!("end {at_end}")).unwrap();
+        rig.frames(vec![vec![], vec![]]);
+        rig
+    };
+    let near_end = |rig: &mut Rig| {
+        // The signal of the scene as it stands is computed first: a run that finds the engine
+        // behind grows by more (`transport::tests::a_run_on_grows_by_whole_blocks_…`), and
+        // these frames take no real time.
+        assert!(rig.shell.engine.settle(std::time::Duration::from_secs(30)));
+        let end = rig.shell.engine.spec().duration;
+        rig.shell.run(&format!("seek {}", end - 0.01)).unwrap();
+        rig.shell.playing = true;
+        rig.frames(vec![vec![]; 3]);
+    };
+    let edits = |rig: &Rig| {
+        rig.shell
+            .engine
+            .journal()
+            .iter()
+            .filter(|c| !matches!(c, Command::Seek(_) | Command::Load(_)))
+            .count()
+    };
+
+    // Loop (how it starts): back to the start, still playing.
+    let mut rig = Rig::new();
+    assert_eq!(rig.shell.at_end, cav_app::transport::AtEnd::Loop, "a window starts looping");
+    rig.shell.run("load point").unwrap();
+    let depth = rig.shell.engine.depth();
+    near_end(&mut rig);
+    assert!(rig.shell.playing && rig.shell.engine.time() < 0.1, "wrapped: {}", rig.shell.engine.time());
+    assert_eq!((rig.shell.engine.spec().duration, edits(&rig), rig.shell.engine.depth()), (12.0, 0, depth));
+
+    // Stop: exactly the end, and playing stops there.
+    let mut rig = fresh("stop");
+    near_end(&mut rig);
+    assert_eq!(rig.shell.engine.time().to_bits(), 12.0f64.to_bits());
+    assert!(!rig.shell.playing);
+    rig.frames(vec![vec![]; 3]);
+    assert_eq!(rig.shell.engine.time(), 12.0, "and stays");
+    assert_eq!(
+        (rig.shell.engine.spec().duration, edits(&rig), rig.shell.engine.depth()),
+        (12.0, 0, depth),
+        "control: stopping changes no duration"
+    );
+    // Play from the end, stopped there: it stops again at once rather than run past it.
+    rig.shell.run("play").unwrap();
+    rig.frames(vec![vec![]; 2]);
+    assert!(!rig.shell.playing && rig.shell.engine.time() == 12.0);
+
+    // Run on: the duration grows by the length it had when the run began.
+    let mut rig = fresh("run-on");
+    near_end(&mut rig);
+    assert_eq!(rig.shell.engine.spec().duration.to_bits(), 24.0f64.to_bits(), "12 and its own length");
+    let time = rig.shell.engine.time();
+    assert!(rig.shell.playing && time > 12.0 && time < 12.1, "the playhead ran on: {time}");
+    assert_eq!(rig.shell.engine.depth(), (depth.0 + 1, 0));
+    rig.frames(vec![vec![]; 30]);
+    assert!(rig.shell.engine.time() > time + 0.4 && rig.shell.engine.spec().duration == 24.0);
+    near_end(&mut rig);
+    assert_eq!(rig.shell.engine.spec().duration, 36.0, "by the starting length again, not doubled");
+    near_end(&mut rig);
+    assert_eq!(rig.shell.engine.spec().duration, 48.0);
+    assert_eq!(rig.shell.engine.depth(), (depth.0 + 1, 0), "one step for the whole run, seeks between");
+    // The journal replays to the same scene and the same one step.
+    let replayed = cav_engine::Engine::replay(rig.shell.engine.journal()).unwrap();
+    assert_eq!((replayed.spec().duration, replayed.depth()), (48.0, (depth.0 + 1, 0)));
+    // Control: a second run (paused, then played again) is its own step, by its own length.
+    rig.shell.run("pause").unwrap();
+    rig.frames(vec![vec![]]);
+    near_end(&mut rig);
+    assert_eq!(rig.shell.engine.spec().duration, 96.0, "48 and the length this run began with");
+    assert_eq!(rig.shell.engine.depth(), (depth.0 + 2, 0));
+    // One undo a run.
+    rig.shell.run("pause").unwrap();
+    rig.shell.run("undo").unwrap();
+    assert_eq!(rig.shell.engine.spec().duration, 48.0);
+    rig.shell.run("undo").unwrap();
+    assert_eq!(rig.shell.engine.spec().duration, 12.0, "one undo takes the whole first run back");
+    assert_eq!(rig.shell.engine.depth().0, depth.0);
+
+    // A frame's step longer than the starting length (0.1 s at 10×): whole blocks, enough to
+    // hold the playhead; still one step.
+    let mut rig = fresh("run-on");
+    rig.shell.run("set duration 0.1").unwrap();
+    rig.shell.run("speed 10").unwrap();
+    let depth = rig.shell.engine.depth();
+    rig.shell.playing = true;
+    rig.frames(vec![vec![]; 6]);
+    let (time, duration) = (rig.shell.engine.time(), rig.shell.engine.spec().duration);
+    assert!((time - 1.0).abs() < 1e-6, "six frames at 10×: {time}");
+    assert!(duration >= time, "{duration} holds {time}");
+    assert!(((duration / 0.1).round() * 0.1 - duration).abs() < 1e-9, "whole blocks: {duration}");
+    assert_eq!(rig.shell.engine.depth(), (depth.0 + 1, 0));
+
+    // The longest timeline: the run goes up to it, then stops there and says so.
+    let limit = cav_sim::spec::limits::DURATION;
+    let mut rig = fresh("run-on");
+    rig.shell.run("set array.instrument.cycle 10000").unwrap();
+    rig.shell.run("set duration 600000").unwrap();
+    near_end(&mut rig);
+    assert_eq!(rig.shell.engine.spec().duration, limit, "600 000 and its length would pass the limit");
+    assert!(rig.shell.playing);
+    near_end(&mut rig);
+    assert_eq!((rig.shell.engine.time(), rig.shell.engine.spec().duration), (limit, limit));
+    assert!(!rig.shell.playing, "at the limit playing stops");
+    let log: Vec<String> = rig.shell.engine.log().iter().map(|e| e.message.clone()).collect();
+    assert!(log.iter().any(|m| m.contains("run on stopped at 1000000 s")), "{log:?}");
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.layout().status_part("warnings").is_some(), "and the status bar counts it");
+
+    // The behaviour is chosen at the transport: its button opens the list, a row chooses.
+    let mut rig = fresh("loop");
+    let journal = rig.shell.engine.journal().len();
+    let button = transport(&rig, "at-end");
+    assert!(button.tooltip.starts_with("At the end: Loop") && button.text == "loop", "{}", button.tooltip);
+    assert!(button.rect.left() >= transport(&rig, "end").rect.right(), "after the end button");
+    assert!(button.rect.right() <= transport(&rig, "speed").rect.left());
+    rig.click(button.rect.center());
+    rig.frames(vec![vec![]]);
+    let list = rig.shell.layout().button("at-end menu").expect("the list is open");
+    for name in ["loop", "stop", "run-on"] {
+        assert!(list.contains_rect(rig.shell.layout().button(&format!("end {name}")).unwrap()), "{name}");
+    }
+    rig.click_button("end run-on");
+    rig.frames(vec![vec![]]);
+    assert_eq!(rig.shell.at_end, cav_app::transport::AtEnd::RunOn);
+    assert!(rig.shell.layout().button("at-end menu").is_none(), "choosing closes it");
+    assert!(transport(&rig, "at-end").tooltip.starts_with("At the end: Run on"));
+    // Its console line opens it too (for a picture); Esc closes it.
+    rig.shell.run("end menu").unwrap();
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.layout().button("at-end menu").is_some());
+    rig.shell.run("end menu").unwrap();
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.layout().button("at-end menu").is_none());
+    // From the keyboard: Enter opens it on the one in force, ↑ and Enter choose the one before.
+    rig.shell.keyboard.focus = vec!["timeline".into(), "timeline/at-end".into()];
+    rig.shell.keyboard.nav_on = true;
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.key(Key::ArrowUp, Modifiers::NONE);
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+    assert_eq!(rig.shell.at_end, cav_app::transport::AtEnd::Stop);
+    assert!(rig.shell.run("end sideways").unwrap_err().contains("end <loop|stop|run-on>"));
+    assert_eq!(rig.shell.engine.journal().len(), journal, "the behaviour is the window's: no journal line");
 }

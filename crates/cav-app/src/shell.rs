@@ -24,6 +24,10 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
         "move the playhead by shots of the engine's own (the selected tower's, else the first tower's), each to a readout: `step 1`, `step -1`, `step 3`; by mean cadence cycles with `cycle`: `step -1 cycle`. Playback stops",
     ),
     (
+        "end",
+        "what playing does at the end of the timeline: `end loop` (back to the start, as it begins), `end stop` (the playhead stops at the end), `end run-on` (the scene's duration grows by its length when playing began: one edit a run, up to the longest timeline); `end menu` opens or closes the transport's list",
+    ),
+    (
         "speed",
         "how fast the playhead moves while playing, as a multiple of the clock's rate, 0.1 to 10: `speed 2`, `speed 0.25`; `speed menu` opens or closes the transport's list of speeds",
     ),
@@ -363,9 +367,15 @@ pub struct Shell {
     /// How fast the playhead moves while playing, as a multiple of the clock's rate (`speed
     /// <x>`, 0.1 to 10; 1 at the start): seconds of the scene a second. Window state.
     pub speed: f64,
-    /// The transport's menu that is open by a click or by its console line (`speed`). Window
-    /// state.
+    /// The transport's menu that is open by a click or by its console line (`speed` or
+    /// `at-end`). Window state.
     pub transport_menu: Option<String>,
+    /// What playing does when the playhead reaches the end of the timeline (`end
+    /// loop|stop|run-on`; it loops at the start). Window state.
+    pub at_end: crate::transport::AtEnd,
+    /// A run on under way (playing with [`crate::transport::AtEnd::RunOn`], the end reached).
+    /// `None` while not playing.
+    pub(crate) run_on: Option<crate::transport::RunOn>,
     /// The transport's step button held down by the pointer: which, when it went down (the
     /// frame's clock, seconds) and how many steps it has fired.
     pub(crate) transport_hold: Option<(&'static str, f64, u32)>,
@@ -604,6 +614,8 @@ impl Shell {
             playing: false,
             speed: 1.0,
             transport_menu: None,
+            at_end: crate::transport::AtEnd::Loop,
+            run_on: None,
             transport_hold: None,
             session_layouts: Vec::new(),
             keys_open: false,
@@ -1245,10 +1257,30 @@ impl Shell {
             }
             return outcome.map(|()| line.to_owned());
         }
-        // `step <n> [cycle]` and `speed <x>|menu`: the transport's (`crate::transport`).
-        if name == "step" || name == "speed" {
+        // `step <n> [cycle]`, `speed <x>|menu` and `end <behaviour>|menu`: the transport's
+        // (`crate::transport`).
+        if matches!(name, "step" | "speed" | "end") {
             let rest: Vec<&str> = words.collect();
-            let outcome = if name == "step" {
+            let outcome = if name == "end" {
+                use crate::transport::AtEnd;
+                match rest[..] {
+                    ["menu"] => {
+                        let open = self.transport_menu.as_deref() == Some("at-end");
+                        self.transport_menu = (!open).then(|| "at-end".to_owned());
+                        Ok(())
+                    }
+                    [word] if AtEnd::parse(word).is_some() => {
+                        self.at_end = AtEnd::parse(word).expect("just parsed");
+                        // A run on in hand ends with the behaviour that made it.
+                        self.run_on = None;
+                        Ok(())
+                    }
+                    _ => {
+                        let names: Vec<&str> = AtEnd::ALL.iter().map(|at_end| at_end.name()).collect();
+                        Err(format!("`{line}`: end <{}>, or `end menu`", names.join("|")))
+                    }
+                }
+            } else if name == "step" {
                 match rest[..] {
                     [n] | [n, "cycle"] => match n.parse::<i64>() {
                         Ok(steps) if steps != 0 => crate::transport::step(self, steps, rest.len() == 2),
@@ -2058,16 +2090,72 @@ impl Shell {
     }
 
     /// Moves the playhead while playing, by the frame's time step (at most a tenth of a second)
-    /// times the speed ([`Self::speed`]); loops at the end.
+    /// times the speed ([`Self::speed`]). At the end of the timeline it does what
+    /// [`Self::at_end`] says: back to the start; or the playhead stops at exactly the duration
+    /// and playing stops; or the run goes on ([`Self::run_on_past`]).
     pub(crate) fn advance(&mut self, ctx: &egui::Context) {
+        use crate::transport::AtEnd;
         if !self.playing {
+            self.run_on = None;
             return;
         }
         let step = f64::from(ctx.input(|i| i.stable_dt)).min(0.1) * self.speed;
         let duration = self.engine.spec().duration;
         let next = self.engine.time() + step;
-        self.apply(Command::Seek(if next >= duration { 0.0 } else { next }));
+        if next < duration {
+            self.apply(Command::Seek(next));
+        } else {
+            match self.at_end {
+                AtEnd::Loop => {
+                    self.apply(Command::Seek(0.0));
+                }
+                AtEnd::Stop => {
+                    self.apply(Command::Seek(duration));
+                    self.playing = false;
+                }
+                AtEnd::RunOn => self.run_on_past(next),
+            }
+        }
         ctx.request_repaint();
+    }
+
+    /// Run on: the playhead is to go to `next` (seconds), at or past the end of the timeline.
+    /// The scene's duration grows by whole blocks of its length when this run first reached the
+    /// end ([`crate::transport::RunOn::extend`]), by the `set` of `duration` an editor issues,
+    /// each extension continuing the one before so that the whole run is one step of undo (the
+    /// seeks between are no edits and do not end it: `cav-engine`'s
+    /// `a_run_of_sets_is_one_step_whatever_comes_between`). Never past the schema's longest
+    /// timeline: there the playhead stops, playing stops, and the log says so.
+    ///
+    /// The cost is the engine's: each extension is an edit of the scene, so the signal is stale
+    /// until its worker has computed it for the longer timeline (off this thread). An extension
+    /// that finds the last one's signal still being computed adds twice the blocks.
+    fn run_on_past(&mut self, next: f64) {
+        let limit = cav_sim::spec::limits::DURATION;
+        let duration = self.engine.spec().duration;
+        let mut run = self.run_on.unwrap_or_else(|| crate::transport::RunOn::new(duration));
+        self.run_on = Some(run);
+        if duration >= limit {
+            self.apply(Command::Seek(duration));
+            self.playing = false;
+            self.engine.note(
+                Level::Warn,
+                Subsystem::App,
+                format!("run on stopped at {limit} s: a timeline is no longer than that"),
+            );
+            return;
+        }
+        let continues = run.extended;
+        let behind = self.engine.signal().0 == cav_engine::SignalState::Stale;
+        let longer = run.extend(duration, next, behind, limit);
+        let set = crate::editors::command_for("duration", serde_json::json!(longer), continues);
+        if self.apply(set) {
+            self.run_on = Some(run);
+            self.apply(Command::Seek(next.min(longer)));
+        } else {
+            // The engine has said why (in the log, the console open).
+            self.playing = false;
+        }
     }
 
     /// The log entries the console shows, oldest first, at most `limit`.

@@ -1,12 +1,21 @@
 //! The transport: the timeline's controls, as a media player's (`docs/design/workspace.md` §5).
 //!
 //! ```text
-//! [start] [step back] [play/pause] [step forward] [end]   1× ▾   t [3.20] / 12.00 s   shot [3] / 6
+//! [start] [step back] [play/pause] [step forward] [end]  [at the end ▾]  1× ▾   t [3.20] / [12.00] s   shot [3] / 6
 //! ```
 //!
 //! Every button is an action of `ui/actions.ron` (its console line, its key, when it can run and
-//! why not), so the buttons, the Scene menu, the palette and the keys are one path. The time and
-//! the shot are fields: typing a time seeks there, typing a shot's number seeks to that shot.
+//! why not), so the buttons, the Scene menu, the palette and the keys are one path. The time,
+//! the duration and the shot are fields: typing a time seeks there, typing a shot's number seeks
+//! to that shot, and typing a duration is the `set duration` the Scene card's editor issues (one
+//! edit, one undo).
+//!
+//! **At the end** ([`AtEnd`], `end loop|stop|run-on`) playing loops to the start (as it begins),
+//! stops with the playhead at exactly the duration, or runs on: the scene's duration grows by
+//! its length at the start of the run, each extension continuing the same `set` so that a whole
+//! run is one undo, up to the schema's limit (`cav_sim::spec::limits::DURATION`), where playing
+//! stops and the log says so ([`crate::Shell::advance`]). Each extension is an edit: the engine
+//! computes the signal again for the longer timeline, off the frame's thread.
 //!
 //! **Which shot times.** A step lands on a time the engine reads the signal at: a *readout* of
 //! the engine's own shots ([`cav_engine::Engine::shots`], `cav_sim::read::Shots::readout`), never
@@ -16,7 +25,8 @@
 //! scene's duration, seconds) can be reached: the playhead cannot leave it.
 //!
 //! Playing, the speed and which menu is open are the window's own state ([`crate::Shell`]):
-//! nothing here is an edit, and the only command issued is the engine's `seek`.
+//! the buttons edit nothing; the commands issued are the engine's `seek` and, for the duration,
+//! its `set`.
 
 use cav_engine::Command;
 use cav_sim::read::Shots;
@@ -51,19 +61,100 @@ pub struct Control {
 
 /// The transport's controls, in the order they stand and the keyboard walks them
 /// (`docs/design/keyboard.md`: the order comes from data, never from what is drawn).
-pub const CONTROLS: [Control; 8] = [
+pub const CONTROLS: [Control; 10] = [
     Control { id: "start", name: "To the start", action: Some("seek-start") },
     Control { id: "step-back", name: "Step back", action: Some("step-back") },
     Control { id: "play", name: "Play", action: Some("play") },
     Control { id: "step-forward", name: "Step forward", action: Some("step-forward") },
     Control { id: "end", name: "To the end", action: Some("seek-end") },
+    Control { id: "at-end", name: "At the end", action: None },
     Control { id: "speed", name: "Speed", action: None },
     Control { id: "time", name: "Time", action: None },
+    Control { id: "duration", name: "Duration", action: None },
     Control { id: "shot", name: "Shot", action: None },
 ];
 
 /// The menu of the table (`ui/actions.ron`) that holds the speeds: the drop-down's rows.
 pub const SPEED_MENU: &str = "Scene/Speed";
+
+/// The menu of the table that holds what playing does at the end: the rows of the `at-end`
+/// control's menu, one for each [`AtEnd`].
+pub const END_MENU: &str = "Scene/At the end";
+
+/// What playing does when the playhead reaches the end of the timeline. The window's state
+/// ([`crate::Shell::at_end`]), chosen at the transport or by `end <name>`; never journalled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum AtEnd {
+    /// The playhead goes back to the start and playing goes on.
+    #[default]
+    Loop,
+    /// The playhead stops at exactly the scene's duration and playing stops.
+    Stop,
+    /// The scene's duration grows by its length at the start of the run (an edit, one undo for
+    /// the whole run) and playing goes on, to the schema's longest timeline.
+    RunOn,
+}
+
+impl AtEnd {
+    /// Every behaviour, in the menu's order.
+    pub const ALL: [Self; 3] = [Self::Loop, Self::Stop, Self::RunOn];
+
+    /// Its word in the console (`end run-on`).
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Loop => "loop",
+            Self::Stop => "stop",
+            Self::RunOn => "run-on",
+        }
+    }
+
+    /// The behaviour of that word.
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|at_end| at_end.name() == name)
+    }
+}
+
+/// A run on under way: playing with [`AtEnd::RunOn`] has reached the end of the timeline.
+///
+/// The timeline grows by whole blocks of the length it had when the run first reached its end.
+/// Each extension is an edit, after which the engine computes the signal again for the longer
+/// timeline (measured on the build PC, release: about 20 µs a shot for point masses, so 1 ms
+/// for `point` at 24 s and 2 s at 10⁵ shots; 12 s for `town` whatever its length, the world's
+/// share). So that a scene slow to compute is not extended faster than it can be read, an
+/// extension asked for while the signal of the one before is still being computed takes twice
+/// as many blocks as the last (the cost of one recompute then buys twice the time).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RunOn {
+    /// The scene's duration when the run first reached the end, seconds: one block.
+    pub block: f64,
+    /// How many blocks the next extension adds at least.
+    pub blocks: f64,
+    /// Whether an extension has been made: the next continues it (one step of undo a run).
+    pub extended: bool,
+}
+
+impl RunOn {
+    /// A run that has just reached the end of a timeline `duration` seconds long.
+    #[must_use]
+    pub const fn new(duration: f64) -> Self {
+        Self { block: duration, blocks: 1.0, extended: false }
+    }
+
+    /// The timeline's new length, seconds, for a playhead that is to go to `next` (at or past
+    /// the end of a timeline `duration` long): whole blocks added, enough to hold `next`, twice
+    /// as many as last time when the engine is `behind` (still computing the signal of the
+    /// extension before); never more than `limit`. Marks the run as extended.
+    pub fn extend(&mut self, duration: f64, next: f64, behind: bool, limit: f64) -> f64 {
+        if self.extended && behind {
+            self.blocks *= 2.0;
+        }
+        self.extended = true;
+        let needed = ((next - duration) / self.block).floor() + 1.0;
+        (duration + needed.max(self.blocks) * self.block).min(limit)
+    }
+}
 
 /// One control of the transport as it was drawn, for tests and the keyboard.
 #[derive(Clone, Debug, PartialEq)]
@@ -285,8 +376,8 @@ fn mono_width(ui: &egui::Ui, text: &str) -> f32 {
     ui.painter().layout_no_wrap(text.to_owned(), theme::mono(), theme::STRONG).size().x
 }
 
-/// A compact field of the row: a number shown monospace and right-aligned in a box `width`
-/// points wide, typed into. Returns what was typed when the field is left with other text than
+/// A compact field of the row: a number shown monospace and right-aligned in a box with room
+/// for text `width` points wide, typed into. Returns what was typed when the field is left with other text than
 /// it showed (Enter, Tab, a click elsewhere); Esc leaves it as it was.
 fn field(
     shell: &mut Shell,
@@ -304,7 +395,8 @@ fn field(
     let edit = egui::TextEdit::singleline(&mut text)
         .font(theme::mono())
         .text_color(theme::STRONG)
-        .desired_width(width)
+        // (A little more than the text's width: a number that fills the box is not cut.)
+        .desired_width(width + 6.0)
         .margin(egui::Margin::symmetric(3, 1))
         .align(egui::Align2::RIGHT_CENTER)
         .min_size(vec2(0.0, theme::HIT));
@@ -362,6 +454,8 @@ struct MenuRow {
     about: String,
     /// Whether it is the one chosen now.
     chosen: bool,
+    /// Its picture, for a row of the end's menu.
+    glyph: Option<AtEnd>,
 }
 
 /// The rows of the table's menu `menu`; `chosen` says which is the one in force.
@@ -375,6 +469,7 @@ fn menu_rows(menu: &str, chosen: impl Fn(&str) -> bool) -> Vec<MenuRow> {
             label: a.label.clone(),
             about: a.about.clone(),
             chosen: chosen(&a.line),
+            glyph: a.line.strip_prefix("end ").and_then(AtEnd::parse),
         })
         .collect()
 }
@@ -405,7 +500,23 @@ fn menu(shell: &mut Shell, ui: &egui::Ui, id: &'static str, opener: Rect, rows: 
                     if lit == Some(n) {
                         text = text.background_color(theme::SELECTION).color(Color32::WHITE);
                     }
-                    let response = ui.radio(row.chosen, text).on_hover_text(&row.about);
+                    let response = match row.glyph {
+                        // A row with a picture: the picture, then its words, lit when chosen.
+                        Some(glyph) => {
+                            let padded = RichText::new(format!("       {}", row.label));
+                            let lit_here = row.chosen || lit == Some(n);
+                            let response = ui.selectable_label(lit_here, padded);
+                            let square = Rect::from_center_size(
+                                pos2(response.rect.left() + 13.0, response.rect.center().y),
+                                vec2(14.0, 14.0),
+                            );
+                            let colour = if lit_here { Color32::WHITE } else { theme::TEXT };
+                            icons::at_end(ui.painter(), square, glyph, colour);
+                            response
+                        }
+                        None => ui.radio(row.chosen, text),
+                    }
+                    .on_hover_text(&row.about);
                     let line = table().action(&row.action).map(|a| a.line.clone()).unwrap_or_default();
                     shell.layout.buttons.push((line, response.rect));
                     if response.clicked() {
@@ -458,8 +569,45 @@ fn opener(shell: &mut Shell, ui: &mut egui::Ui, id: &'static str, text: &str, wi
     rect
 }
 
+/// The end behaviour's button: its picture and a drop-down's mark; a click opens its menu.
+fn at_end_button(shell: &mut Shell, ui: &mut egui::Ui) {
+    let at_end = shell.at_end;
+    let rows = menu_rows(END_MENU, |line| line == format!("end {}", at_end.name()));
+    let label = rows.iter().find(|row| row.chosen).map(|row| row.label.clone()).unwrap_or_default();
+    let tip = format!(
+        "At the end: {label}\nwhat playing does when the playhead reaches the end of the timeline: loop, stop \
+         there, or run on (the duration grows)"
+    );
+    let (rect, response) = ui.allocate_exact_size(vec2(theme::ICON + 10.0, theme::ICON), Sense::click());
+    let response = response.on_hover_text(&tip);
+    let open = shell.transport_menu.as_deref() == Some("at-end");
+    let painter = ui.painter_at(rect);
+    if open || response.hovered() {
+        painter.rect_filled(rect.shrink(1.0), 2.0, theme::HOVER);
+    }
+    let colour = if open || response.hovered() { Color32::WHITE } else { theme::TEXT };
+    let square =
+        Rect::from_center_size(pos2(rect.left() + 0.5 * theme::ICON, rect.center().y), vec2(14.0, 14.0));
+    icons::at_end(&painter, square, at_end, colour);
+    icons::chevron(&painter, pos2(rect.right() - 6.0, rect.center().y), 6.0, theme::WEAK);
+    if response.clicked() {
+        shell.transport_menu = if open { None } else { Some("at-end".to_owned()) };
+    }
+    shell.layout.buttons.push(("at-end".to_owned(), rect));
+    shell.layout.transport.push(Drawn {
+        id: "at-end",
+        rect,
+        tooltip: tip,
+        action: None,
+        enabled: true,
+        text: at_end.name().to_owned(),
+    });
+    menu(shell, ui, "at-end", rect, &rows);
+}
+
 /// Draws the transport into the timeline's head row (after its title) and takes its input:
-/// the five buttons, the speed, the time and the shot. `facts` (the shots' count and 2T, each a
+/// the five buttons, what playing does at the end, the speed, the time, the duration and the
+/// shot. `facts` (the shots' count and 2T, each a
 /// few words) stand at the row's right while there is room for them; `caption` is their tooltip.
 pub(crate) fn draw(shell: &mut Shell, ui: &mut egui::Ui, facts: &[String], caption: &str) {
     ui.spacing_mut().item_spacing.x = theme::ROW_GAP;
@@ -495,6 +643,7 @@ pub(crate) fn draw(shell: &mut Shell, ui: &mut egui::Ui, facts: &[String], capti
     if end.clicked() || shell.take_click("timeline/end") {
         let _ = shell.run_action("seek-end");
     }
+    at_end_button(shell, ui);
     ui.add_space(theme::GRID);
 
     // The speed: a drop-down of the table's speeds.
@@ -507,7 +656,7 @@ pub(crate) fn draw(shell: &mut Shell, ui: &mut egui::Ui, facts: &[String], capti
     ui.spacing_mut().item_spacing.x = theme::GRID;
     ui.add_space(2.0 * theme::GRID);
 
-    // The time, typed to seek; the duration beside it.
+    // The time, typed to seek; the duration beside it, typed to set it.
     let (time, duration) = (shell.engine.time(), shell.engine.spec().duration);
     let (time_text, duration_text) = (format!("{time:.2}"), format!("{duration:.2}"));
     let digits = mono_width(ui, &duration_text).max(mono_width(ui, "00.00"));
@@ -522,9 +671,20 @@ pub(crate) fn draw(shell: &mut Shell, ui: &mut egui::Ui, facts: &[String], capti
         }
     }
     word(shell, ui, "/");
-    ui.label(RichText::new(&duration_text).font(theme::mono()).color(theme::STRONG))
-        .on_hover_text("Duration\nhow long the timeline is, seconds");
-    shell.layout.chrome.push(("timeline", duration_text));
+    let tip = "Duration\nhow long the timeline is, seconds; type a length to set it (an edit of the scene, \
+               as the Scene card's Duration: Ctrl+Z takes it back)";
+    if let Some(typed) = field(shell, ui, "duration", &duration_text, digits, tip) {
+        match typed.trim_end_matches('s').trim().parse::<f64>() {
+            Ok(length) if length.is_finite() => {
+                // The same `set` the Scene card's editor issues; a length the scene cannot
+                // have is refused by the engine, which says why. A run on in hand starts
+                // again from the length typed.
+                shell.run_on = None;
+                shell.apply(crate::editors::command_for("duration", serde_json::json!(length), false));
+            }
+            _ => refuse(shell, format!("`{typed}` is not a duration in seconds")),
+        }
+    }
     word(shell, ui, "s");
     ui.add_space(2.0 * theme::GRID);
 
@@ -612,7 +772,11 @@ fn register(shell: &mut Shell) {
                 let rows = menu_rows(SPEED_MENU, |line| line == format!("speed {speed}"));
                 Kind::Choice { count: rows.len(), current: rows.iter().position(|r| r.chosen).unwrap_or(0) }
             }
-            "time" | "shot" => Kind::Text,
+            "at-end" => {
+                let current = AtEnd::ALL.iter().position(|a| *a == shell.at_end).unwrap_or(0);
+                Kind::Choice { count: AtEnd::ALL.len(), current }
+            }
+            "time" | "duration" | "shot" => Kind::Text,
             _ => Kind::Button,
         };
         shell.register(SCOPE, &id, control.name, kind, drawn.as_ref().map_or(Rect::NOTHING, |d| d.rect));
@@ -671,6 +835,31 @@ mod tests {
     }
 
     #[test]
+    fn a_run_on_grows_by_whole_blocks_and_by_more_when_the_engine_is_behind() {
+        let limit = 1.0e6;
+        // The engine keeping up: one block of the starting length each time.
+        let mut run = RunOn::new(12.0);
+        assert_eq!(run.extend(12.0, 12.01, false, limit), 24.0);
+        assert_eq!(run.extend(24.0, 24.01, false, limit), 36.0, "not doubled");
+        assert_eq!(run.extend(36.0, 36.01, false, limit), 48.0);
+        // Control: behind (the last extension's signal still being computed), twice as many
+        // blocks as the time before; the first extension is one block whatever the signal is.
+        let mut slow = RunOn::new(12.0);
+        assert_eq!(slow.extend(12.0, 12.01, true, limit), 24.0);
+        assert_eq!(slow.extend(24.0, 24.01, true, limit), 48.0);
+        assert_eq!(slow.extend(48.0, 48.01, true, limit), 96.0);
+        assert_eq!(slow.extend(96.0, 96.01, false, limit), 144.0, "caught up: four blocks, as last time");
+        // A step past several blocks: enough of them to hold the playhead.
+        let mut fast = RunOn::new(0.1);
+        let longer = fast.extend(0.1, 0.47, false, limit);
+        assert!((longer - 0.5).abs() < 1e-12 && longer >= 0.47, "{longer}");
+        // Never past the limit.
+        let mut long = RunOn::new(600_000.0);
+        assert_eq!(long.extend(600_000.0, 600_000.01, false, limit), limit);
+        assert!(long.extended && !RunOn::new(1.0).extended);
+    }
+
+    #[test]
     fn the_controls_name_actions_and_the_speeds_are_the_table_s() {
         for control in &CONTROLS {
             if let Some(action) = control.action {
@@ -684,6 +873,12 @@ mod tests {
             table().actions.iter().filter(|a| a.menu == SPEED_MENU).map(|a| a.line.clone()).collect();
         let wanted: Vec<String> = SPEEDS.iter().map(|s| format!("speed {s}")).collect();
         assert_eq!(lines, wanted, "the drop-down's rows are the speeds, in order");
+        let ends: Vec<String> =
+            table().actions.iter().filter(|a| a.menu == END_MENU).map(|a| a.line.clone()).collect();
+        let wanted: Vec<String> = AtEnd::ALL.iter().map(|a| format!("end {}", a.name())).collect();
+        assert_eq!(ends, wanted, "the end's menu is every behaviour, in order");
+        assert_eq!(AtEnd::ALL.map(|a| AtEnd::parse(a.name())), AtEnd::ALL.map(Some));
+        assert_eq!((AtEnd::default(), AtEnd::parse("sideways")), (AtEnd::Loop, None));
         assert_eq!(speed_text(0.25), "0.25×");
         assert_eq!(speed_text(1.0), "1×");
     }
