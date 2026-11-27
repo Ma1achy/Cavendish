@@ -18,7 +18,10 @@
 # 10^4 periods; cav-sim: a motion's period; cav-plot: D2).
 # TASK-S20-10 (the first-person fly camera): 7 new quick tests (cav-app: C1, C2 and the settings in
 # camera.rs, two of first_person, C3 and C4 in tests/editor/s20.rs).
-quick 693
+# TASK-S20-11 (the walk camera, collision, noclip): quick tests in cav-app: W1 and two more of
+# walk.rs, two of occupancy.rs, one more of first_person.rs, W3 and W4 in tests/editor/s20.rs;
+# slow tests: W2, E1's first task and the walker's timing (tests/editor/s20.rs).
+quick 699
 gpu 42
 slow 45
 oracle 58

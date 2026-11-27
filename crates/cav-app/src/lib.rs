@@ -37,6 +37,7 @@ pub mod lane;
 pub mod layouts;
 pub mod menus;
 pub mod navgizmo;
+pub mod occupancy;
 pub mod outliner;
 pub mod palette;
 mod panels;
@@ -58,6 +59,7 @@ pub mod timeline;
 pub mod tool_palette;
 pub mod tools;
 pub mod transport;
+pub mod walk;
 
 pub mod address;
 // The platform seam: the application's entry and what it does around each frame. Natively next

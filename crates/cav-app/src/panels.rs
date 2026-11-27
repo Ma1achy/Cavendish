@@ -1624,6 +1624,7 @@ fn canvas(
         && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary))
     {
         shell.mouse_fly = Some(pane);
+        shell.enter_first_person(pane, true);
         if pane != active {
             asked.commands.push(Command::View(ViewCommand::Activate(pane)));
         }

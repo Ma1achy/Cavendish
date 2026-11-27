@@ -14,4 +14,19 @@
     double_tap: 0.3,
     // How long the speed is shown in the canvas after the wheel changed it, seconds.
     speed_shown: 1.5,
+    // The physical camera (the walker): a player-sized box. Metres, metres per second.
+    walk: (
+        // The box: its side along x and y, its height, and the eye's height above its feet.
+        width: 0.6,
+        height: 1.8,
+        eye_height: 1.62,
+        // The walking speed, and what sprinting and sneaking multiply it by.
+        speed: 4.3,
+        sprint: 1.3,
+        sneak: 0.3,
+        // How high a jump lifts the feet.
+        jump_height: 1.25,
+        // The highest step climbed (a step is one voxel of what is stood on or walked into).
+        step_cap: 0.6,
+    ),
 )

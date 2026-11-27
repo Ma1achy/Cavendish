@@ -62,13 +62,19 @@ pub const MODEL: &[(&str, &str, &str)] = &[
     ("Moving the selection", "0–9 - .", "type a distance, metres"),
     ("Moving the selection", "Tab", "type the next axis's distance"),
     ("Moving the selection", "Enter · Esc", "keep the move · cancel it"),
-    ("Flying", "mouse · arrows", "look (the pointer is captured and hidden)"),
-    ("Flying", "W A S D", "forward, left, back, right, level whatever the look"),
-    ("Flying", "Space · Shift", "up · down (E · Q too)"),
-    ("Flying", "Ctrl · W twice", "sprint while held · until W is let go"),
-    ("Flying", "wheel", "the speed, shown for a moment"),
-    ("Flying", "Esc · Enter · Shift+F", "stop flying, the camera where it is"),
-    ("Flying", "F3 · F11", "the only other keys that act: hide the panels · fill the screen"),
+    ("Flying and walking", "mouse · arrows", "look (the pointer is captured and hidden)"),
+    ("Flying and walking", "W A S D", "forward, left, back, right, level whatever the look"),
+    ("Flying and walking", "Ctrl · W twice", "sprint while held · until W is let go"),
+    ("Flying and walking", "Space twice", "switch between flying and walking"),
+    ("Flying and walking", "Space · Shift", "flying: up · down (E · Q too); walking: jump · sneak"),
+    ("Flying and walking", "wheel", "the flying speed, shown for a moment"),
+    ("Flying and walking", "N", "noclip: pass through matter (it flies), or not"),
+    (
+        "Flying and walking",
+        "Esc · Enter",
+        "stop, the camera where it is (so do Shift+F flying, Shift+G walking)",
+    ),
+    ("Flying and walking", "F3 · F11", "the only other keys that act: hide the panels · fill the screen"),
 ];
 
 /// What an action is called on the sheet: its menu label, with the submenu it sits in when the

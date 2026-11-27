@@ -149,6 +149,8 @@ pub(crate) struct Row {
     rule: bool,
     /// A heading above it.
     heading: Option<&'static str>,
+    /// A switch (`chosen` says whether it is on): it runs when on too, to turn off.
+    switch: bool,
 }
 
 /// Whether `line`, run on pane `pane`, would leave the view as it is: the row that says it is
@@ -187,6 +189,7 @@ fn action_row(shell: &Shell, pane: usize, action: &Action) -> Row {
         why_not: (!shell.can_run(action)).then(|| action.needs.why_not()),
         rule: false,
         heading: None,
+        switch: false,
     }
 }
 
@@ -206,18 +209,29 @@ fn camera_rows(shell: &Shell, pane: usize) -> Vec<Row> {
         }
         rows.append(&mut group);
     }
-    let flying = shell.any_fly();
-    if let Some(fly) = table().action("fly") {
-        let fly = action_row(shell, pane, fly);
+    // The camera's mode: orbit, or one of the two first-person ones; then noclip, a switch.
+    let (first_person, walking) = (shell.any_fly(), shell.walking());
+    if let (Some(fly), Some(walk)) = (table().action("fly"), table().action("walk")) {
+        let (fly, walk) = (action_row(shell, pane, fly), action_row(shell, pane, walk));
         rows.push(Row {
             label: "orbit".to_owned(),
             key: String::new(),
             about: "a drag turns the camera about the point it looks at".to_owned(),
-            chosen: Some(!flying),
+            chosen: Some(!first_person),
             rule: true,
-            ..fly.clone()
+            // The word that ends the session under way.
+            ..if walking { walk.clone() } else { fly.clone() }
         });
-        rows.push(Row { label: "fly".to_owned(), chosen: Some(flying), ..fly });
+        rows.push(Row { label: "fly".to_owned(), chosen: Some(first_person && !walking), ..fly });
+        rows.push(Row { label: "walk".to_owned(), chosen: Some(walking), ..walk });
+    }
+    if let Some(noclip) = table().action("noclip") {
+        rows.push(Row {
+            label: "noclip".to_owned(),
+            chosen: Some(shell.noclip),
+            switch: true,
+            ..action_row(shell, pane, noclip)
+        });
     }
     for (n, id) in ["frame", "view-home"].into_iter().enumerate() {
         if let Some(action) = table().action(id) {
@@ -259,6 +273,7 @@ fn overlay_rows(shell: &Shell, pane: usize) -> Vec<Row> {
             why_not: (!shapes).then_some("the scene has no voxel body"),
             rule: false,
             heading: None,
+            switch: false,
         });
     }
     rows
@@ -281,6 +296,7 @@ fn type_rows(shell: &Shell, pane: usize) -> Vec<Row> {
                 why_not: None,
                 rule: false,
                 heading: None,
+                switch: false,
             }
         })
         .collect()
@@ -462,7 +478,7 @@ pub(crate) fn extra_control(
 /// is already the one chosen, runs nothing.
 fn run_row(asked: &mut Asked, head: Head, row: &Row) {
     activate(asked, head);
-    if row.why_not.is_none() && row.chosen != Some(true) {
+    if row.why_not.is_none() && (row.switch || row.chosen != Some(true)) {
         asked.lines.push(row.line.clone());
     }
 }
@@ -507,7 +523,12 @@ fn rows_ui(
                 if lit {
                     text = text.background_color(theme::SELECTION).color(Color32::WHITE);
                 }
-                ui.add_enabled(row.why_not.is_none(), egui::RadioButton::new(on, text))
+                if row.switch {
+                    let mut on = on;
+                    ui.add_enabled(row.why_not.is_none(), egui::Checkbox::new(&mut on, text))
+                } else {
+                    ui.add_enabled(row.why_not.is_none(), egui::RadioButton::new(on, text))
+                }
             }
             None => {
                 let button = egui::Button::new(&row.label).shortcut_text(&row.key).selected(lit);
