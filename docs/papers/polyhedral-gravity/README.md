@@ -16,6 +16,8 @@ python make.py all                 # tables, far-field, near-edge, cross-check, 
 python make.py bench               # rerun the boundary-cell benchmark (~40 min, one core, below normal)
 python make.py esa <venv-python>   # rerun ESA's oracle in its own venv, then crosscheck + mp
 python make.py render              # Cavendish draws scenes/cube-1.5m.ron (needs a built `cav`)
+python make.py shapes              # the shapes study's figures and tables, from its committed output
+python make.py shapes-study        # rerun the shapes study itself (hours; downloads the meshes)
 ```
 
 `data/` holds the regenerated benchmark output (`<body>.json` with the triple-product numerator, as
@@ -34,7 +36,7 @@ one place. The body's tree is an **octree**; 2-D pictures are cross-sections thr
 "Exact" means the analytic shape (a sphere's closed form, a torus by ring integrals). A triangle mesh
 is already an approximation, and a clipped piece is exact *to the mesh* only. The paper keeps the
 **facet error** (mesh against analytic shape) and the **voxel error** (voxels against mesh) apart
-throughout; everything measured here is voxel error.
+throughout. The shapes section measures both; everything else measured here is voxel error.
 
 ## Every table and figure: where it comes from now, and where it will come from (S5)
 
@@ -54,7 +56,7 @@ Python stays as the independent check (the paper's Appendix B).
 | Octree section's measured numbers (ring widths, interaction counts, bound looseness, baseline help) | quoted from `docs/research/s5-world-octree.md` (its benchmarks) | S5's walk benchmark and ledger on the town scene | the town |
 | Figure "cells stored" | `scripts/octree_diagrams.py` (counts a sphere's octree) | `cav` stats of a voxelised sphere at each pitch (leaf and cut-cell counts) | a sphere scene at N = 8…256 |
 | Figure "the benchmark's turned cube as a Cavendish scene" | `cav render scenes/cube-1.5m.ron --out figures/scene-cube-1.5m.png --view iso --style paper --size 1200x900` (**already Cavendish**) | add S5's draw modes (fill fraction, mesh, clipped pieces) | `scenes/cube-1.5m.ron` |
-| Figure "the shapes study" | **placeholder** (being redone: repaired teapot and Suzanne meshes, analytic sphere and torus references, resolution sweeps, error against cost; the earlier pictures are withdrawn) | the shapes study's commands | — |
+| Section "Curved, scanned and CAD shapes": figures (representations of the torus and bunny, phase error against pitch, against modelled cost, against distance, the moving torus's error spectrum, each mesh as one polyhedron) and tables (sweep, cost, crossover distances, decimation, mesh as one polyhedron) | `make.py shapes` (`scripts/shapes.py`) draws them from the shapes study's committed output, read in place from `docs/research/exact-skin-and-partial-fill/shapes/` (`sweep-*.json`, `regimes-distance.json`, `translation.json`, `exact-*.json`, `mesh-check.json`); the two renders are the study's `<shape>-cutaway.png`, cropped to the panels into `figures/shapes-<shape>.png`. `make.py shapes-study` reruns the study's own scripts first (hours; they download the meshes, pinned by SHA-256) | the sweeps and crossovers: validation cases over S5's representation field on the ten shapes (meshes imported by `cav`, which today refuses the full dragon and Buddha at its caps); the moving-body spectrum: `cav run` of the torus passing a tower, body-frame and world-fixed voxels; each mesh as one polyhedron: the polyhedral kernel on the whole mesh | the ten shapes, to be written by S5 (the meshes are downloaded, never committed) |
 | Diagrams: representations, cut-cell moments, one cell many cuts, closed-form ingredients, octree, layered read | `scripts/diagrams.py`, `scripts/octree_diagrams.py` (explanatory; the 3-D pieces come from the benchmark's own clipper) | could be redrawn from S5's draw modes; not required | — |
 
 Scenes: `scripts/make_scenes.py` writes `scenes/<body>-<D>m.ron` for the benchmark's five bodies at
@@ -66,6 +68,10 @@ benchmark's three directions. All ten load with today's `cav get`.
 
 - The read in the benchmark is the leading-order k_eff T² Δg_z, not the full flight integral; once
   Cavendish computes the table, the flight integral replaces it.
+- The shapes study reports, as measured: the facet error dominating for the analytic shapes; second
+  moments making the sphere (only) worse than without (open); the dragon and Buddha decimations failing
+  their pre-written 1/256 m criterion; the whole-mesh direct sum being competitive for one small body;
+  `cav`'s import caps refusing the full dragon and Buddha.
 - The ESA cross-check failed its pre-written criterion (10⁻¹² to R/s = 100): the 40-digit referee
   shows ESA's line-integral form losing digits as ε(R/s)³–⁴ while ours stays at ε(R/s)², so the
   mismatch is rounding in the other implementation, not an error in either algebra.
