@@ -732,11 +732,31 @@ impl Engine {
         let Some(&name) = words.first() else {
             return Err("an empty line; try `help`".into());
         };
-        // A trailing `@N` addresses pane N (from 1); otherwise the active pane.
+        // A trailing `@N` addresses pane N (from 1), and `@A` the viewport labelled A in the
+        // mosaic; otherwise the active pane.
         let mut pane = self.active_pane();
         if let Some(n) = words.last().and_then(|w| w.strip_prefix('@')) {
-            let n: usize = n.parse().map_err(|_| format!("`@{n}`: a pane is addressed as @1, @2, …"))?;
-            pane = n.checked_sub(1).ok_or("panes are counted from 1")?;
+            pane = match n.parse::<usize>() {
+                Ok(n) => n.checked_sub(1).ok_or("panes are counted from 1")?,
+                Err(_) => {
+                    let mut letters = n.chars();
+                    match (letters.next(), letters.next()) {
+                        (Some(label), None) if label.is_ascii_uppercase() => {
+                            self.mosaic().number(label).ok_or_else(|| {
+                                format!(
+                                    "`@{label}`: there is no viewport {label}; the figure is {}",
+                                    self.mosaic().quoted()
+                                )
+                            })?
+                        }
+                        _ => {
+                            return Err(format!(
+                                "`@{n}`: a pane is addressed as @1, @2, … or by its letter, @A, @B, …"
+                            ));
+                        }
+                    }
+                }
+            };
             words.pop();
         }
         // `compared` at the end of a signal or a periodogram asks for the comparison's.

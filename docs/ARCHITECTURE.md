@@ -205,7 +205,8 @@ skipped at any speed. It is pure: it knows nothing of the engine. What is solid 
 `cav-app/src/occupancy.rs`: `SceneOccupancy`, made each frame by borrowing the engine — the
 world's pieces on the world's lattice (analytic: nothing is streamed or generated), the voxel
 bodies' leaves (`Engine::body_tree`) where each body is at the playhead, spheres, the floor,
-the room's shells, and a net under everything. **It reads the scene and never writes it**: the
+the room's shells (solid only to a camera wholly inside the room, which is drawn as an outline:
+it keeps the camera in, never out), and a net under everything. **It reads the scene and never writes it**: the
 camera has no mass and is in no scene, journal edit, undo step or reading. The settings are
 data (`ui/camera.ron`, `camera::Settings`; `camera-set` changes one for the session).
 
@@ -217,7 +218,8 @@ walking; `noclip` (N, `Shell::noclip`, off by default, marked in the canvas) let
 through matter and implies flying. While it is on, `Shell::keys` hands every press to
 `Shell::fly_keys` and none to the router (only the actions of `first_person::WHILE_FLYING`
 keep their keys); `Shell::fly_frame` reads the held keys, the raw motion and the wheel (the
-flying speed, shown in the canvas for a moment) and `Shell::fly_step` moves the box and issues
+speed in use, walking or flying, `Shell::session_speed`, shown in the canvas for a moment; Ctrl
+sprints only where `platform::CTRL_SPRINTS`, not in a page) and `Shell::fly_step` moves the box and issues
 the frame's one camera command; `Shell::fly_capture` asks the platform seam for the pointer and
 gives it back (`platform::capture`: `CursorGrab` and `CursorVisible` natively, pointer lock in
 a page, where `platform::motion` is the page's `movementX/Y`); a session lays a sheet over the

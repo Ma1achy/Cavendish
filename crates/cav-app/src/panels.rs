@@ -1790,8 +1790,7 @@ fn canvas(
 fn empty_slot(shell: &mut Shell, ui: &mut egui::Ui, asked: &mut Asked, pane: usize, label: char, slot: Rect) {
     ui.painter().rect_filled(slot, 0.0, theme::FOOTER);
     ui.painter().rect_stroke(slot, 0.0, Stroke::new(1.0, theme::RULE), StrokeKind::Inside);
-    let size = vec2(132.0, theme::HIT).min(slot.size());
-    let button = Rect::from_center_size(slot.center(), size);
+    let button = dock_button(slot);
     let response = ui
         .put(button, Button::new(RichText::new("floating — dock").size(theme::SMALL_PT).color(theme::WEAK)))
         .on_hover_text(format!("viewport {} ({label}) floats over the window: put it back here", pane + 1));
@@ -1801,15 +1800,36 @@ fn empty_slot(shell: &mut Shell, ui: &mut egui::Ui, asked: &mut Asked, pane: usi
     }
 }
 
-/// Where a viewport popped out of `slot` first floats in `figure`: over its own place, a
-/// little in from the corner (clear of the tool palette at the canvas's top left), at a size
-/// that leaves the window in sight, and inside the figure. Points.
+/// The button in the middle of a floating viewport's empty slot that docks it back, points.
+pub(crate) fn dock_button(slot: Rect) -> Rect {
+    Rect::from_center_size(slot.center(), vec2(132.0, theme::HIT).min(slot.size()))
+}
+
+/// Where a viewport popped out of `slot` first floats in `figure`, points: smaller than its slot
+/// (half of it, at least [`MIN_FLOAT`], at most nine twentieths of the figure), offset from
+/// it so that it reads as floating, inside the figure, and clear of the slot's dock button
+/// ([`dock_button`]) so that the way back stays in sight (S20's review, minor 7). It is put a
+/// little in from the slot's corner (clear of the tool palette at the canvas's top left) and,
+/// where that would cover the dock button, above the button, else below it.
 pub(crate) fn float_frame(slot: Rect, figure: Rect) -> Rect {
-    let size = slot.size().max(MIN_FLOAT).min(figure.size() * 0.6);
+    let size = (slot.size() * 0.5).max(MIN_FLOAT).min(figure.size() * 0.45);
     // Inside the figure while it fits: a viewport at the figure's right or bottom edge does not
     // open over the side panel or the timeline.
-    let most = (figure.max - size).max(figure.min);
-    Rect::from_min_size((slot.min + vec2(56.0, 24.0)).min(most), size)
+    let inside = |min: egui::Pos2| {
+        Rect::from_min_size(min.min((figure.max - size).max(figure.min)).max(figure.min), size)
+    };
+    // Clear of the button by a grid step where it is put above or below it.
+    let (button, room) = (dock_button(slot), dock_button(slot).expand(theme::GRID));
+    let tucked = inside(slot.min + vec2(56.0, 24.0));
+    if !tucked.intersects(button) {
+        return tucked;
+    }
+    let above = inside(pos2(tucked.min.x, room.top() - size.y));
+    if !above.intersects(button) {
+        return above;
+    }
+    let below = inside(pos2(tucked.min.x, room.bottom()));
+    if below.intersects(button) { tucked } else { below }
 }
 
 /// A viewport floating over the window (`viewport pop-out`): a frame whose header is the bar it
@@ -1844,6 +1864,14 @@ fn floating_viewport(
                 (inside.height() * scale).round().max(1.0) as u32,
             ];
             let inside = Rect::from_min_size(inside.min, vec2(pixels[0] as f32, pixels[1] as f32) / scale);
+            // A shadow under it: it reads as above the mosaic, not in it.
+            let shadow = egui::epaint::Shadow {
+                offset: [0, 4],
+                blur: 16,
+                spread: 0,
+                color: Color32::from_black_alpha(150),
+            };
+            ui.painter().add(shadow.as_shape(frame, 2.0));
             ui.painter().rect_filled(frame, 2.0, theme::BACKGROUND);
             let pane = place.pane;
             shell.layout.panes[pane] = inside;
@@ -2309,4 +2337,55 @@ fn windows(shell: &mut Shell, ctx: &egui::Context) {
         shell.register("about", "about/text", "About", Kind::ReadOnly, window.response.rect);
     }
     shell.about_open = about_open;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_pop_out_floats_offset_and_leaves_its_dock_button_in_sight() {
+        // S20's review, minor 7. Criterion: for every slot of a 1, 2 × 2 and 2 × 3 mosaic of a
+        // 1440 × 900 window's figure (and of a small one), the float opened from it is inside
+        // the figure, at least MIN_FLOAT, smaller than its slot where the slot is larger than
+        // MIN_FLOAT (where the figure has room), not at the slot's corner, and clear of the slot's
+        // dock button. Control: the
+        // rule before (the slot's size, at its corner plus (56, 24), held inside the figure) puts
+        // the bottom-right slot's float exactly over the slot and over its button.
+        let old = |slot: Rect, figure: Rect| {
+            let size = slot.size().max(MIN_FLOAT).min(figure.size() * 0.6);
+            Rect::from_min_size((slot.min + vec2(56.0, 24.0)).min((figure.max - size).max(figure.min)), size)
+        };
+        for figure in [
+            Rect::from_min_size(pos2(262.0, 28.0), vec2(858.0, 718.0)),
+            Rect::from_min_size(pos2(0.0, 0.0), vec2(500.0, 360.0)),
+        ] {
+            for (columns, rows) in [(1, 1), (2, 2), (3, 2)] {
+                let cell = vec2(figure.width() / columns as f32, figure.height() / rows as f32);
+                for (c, r) in (0..columns).flat_map(|c| (0..rows).map(move |r| (c, r))) {
+                    let slot =
+                        Rect::from_min_size(figure.min + vec2(c as f32 * cell.x, r as f32 * cell.y), cell);
+                    let float = float_frame(slot, figure);
+                    let what = format!("{columns}×{rows}, slot ({c}, {r}) of {figure:?}: {float:?}");
+                    assert!(figure.expand(0.01).contains_rect(float), "inside the figure: {what}");
+                    assert!(
+                        float.width() >= MIN_FLOAT.x - 0.01 && float.height() >= MIN_FLOAT.y - 0.01,
+                        "{what}"
+                    );
+                    if slot.width() > MIN_FLOAT.x / 0.5 && slot.height() > MIN_FLOAT.y / 0.5 {
+                        assert!(
+                            float.width() < slot.width() && float.height() < slot.height(),
+                            "smaller: {what}"
+                        );
+                    }
+                    assert!(float.min != slot.min, "offset: {what}");
+                    assert!(!float.intersects(dock_button(slot)), "the dock button in sight: {what}");
+                }
+            }
+        }
+        let figure = Rect::from_min_size(pos2(262.0, 28.0), vec2(858.0, 718.0));
+        let corner = Rect::from_min_max(figure.center(), figure.max);
+        assert_eq!(old(corner, figure), corner, "control: the old rule floats it exactly over its slot");
+        assert!(old(corner, figure).intersects(dock_button(corner)), "control: and over its button");
+    }
 }

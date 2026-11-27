@@ -190,7 +190,8 @@ fn measure(size: [u32; 2]) -> Result<(), String> {
         let steps = 20_000_u32;
         let started = Instant::now();
         for _ in 0..steps {
-            let world = crate::occupancy::SceneOccupancy::new(&shell.engine, ground);
+            let world =
+                crate::occupancy::SceneOccupancy::new(&shell.engine, ground, &walker.bounds(&settings));
             walker.step(1.0 / 60.0, &wish, &world, &settings, env);
         }
         println!(

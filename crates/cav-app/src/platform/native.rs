@@ -4,6 +4,10 @@
 
 use crate::Shell;
 
+/// Whether Ctrl (Cmd on a Mac) held sprints in a first-person session: natively yes (the window
+/// owns its keys); in a browser no (`platform/web.rs`: Ctrl+W closes the tab).
+pub const CTRL_SPRINTS: bool = true;
+
 /// Natively: says that `cav-web` is the browser build and how to build it, and ends the process
 /// unsuccessfully.
 pub fn start() {

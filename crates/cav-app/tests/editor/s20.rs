@@ -1015,6 +1015,15 @@ fn a_viewport_popped_out_before_a_frame_floats_over_its_place() {
     assert!(figure.contains_rect(frame(&early)), "{:?} in {figure:?}", frame(&early));
     assert!(slot.intersects(frame(&early)), "over its own place");
     assert_eq!(frame(&early), frame(&late), "control: as a pop-out after a frame");
+    // S20's review, minor 7: it reads as floating (smaller than its slot, and not at its corner)
+    // and the slot's dock button stays in sight. Control: the button is in the slot, where a
+    // float the size of its slot over it (the rule before) would cover it.
+    let (floating, dock) =
+        (frame(&early), early.shell.layout().button("viewport dock 4").expect("the dock button"));
+    assert!(floating.width() < slot.width() && floating.height() < slot.height(), "{floating:?} {slot:?}");
+    assert!(floating.min != slot.min, "offset from its slot: {floating:?} {slot:?}");
+    assert!(!floating.intersects(dock), "the dock button is in sight: {dock:?} {floating:?}");
+    assert!(slot.contains_rect(dock), "control: the button is in the slot, under a float that filled it");
 }
 
 #[test]
@@ -1640,7 +1649,9 @@ fn each_transport_button_issues_its_command() {
     assert_eq!(rig.shell.engine.time(), 3.2);
     assert_eq!(rig.shell.engine.journal().last(), Some(&Command::Seek(3.2)));
     assert_eq!(transport(&rig, "time").text, "3.20");
-    assert_eq!(transport(&rig, "shot").text, "1", "one shot is read out by 3.2 s");
+    // (S20's review, minor 11: the field shows the shot in flight, the one whose bar is lit; it
+    // was "1", the shots read out by 3.2 s, beside the second shot's lit bar.)
+    assert_eq!(transport(&rig, "shot").text, "2", "the second shot is in flight at 3.2 s");
     // The shot's number goes to that shot's readout.
     typed(&mut rig, "shot", "3");
     let third = rig.shell.engine.shots().unwrap().readout(0, 2);
@@ -2732,8 +2743,13 @@ fn piece_box(rig: &Rig, label: &str) -> ([f64; 3], [f64; 3]) {
 /// Whether the camera's box is inside matter of the scene now.
 fn in_matter(rig: &Rig) -> bool {
     let settings = &rig.shell.camera.walk;
-    let world = cav_app::occupancy::SceneOccupancy::new(&rig.shell.engine, rig.shell.ground());
-    cav_app::walk::Walker::at_eye(eye_of(rig), settings).inside(&world, settings)
+    let walker = cav_app::walk::Walker::at_eye(eye_of(rig), settings);
+    let world = cav_app::occupancy::SceneOccupancy::new(
+        &rig.shell.engine,
+        rig.shell.ground(),
+        &walker.bounds(settings),
+    );
+    walker.inside(&world, settings)
 }
 
 fn run_all(rig: &mut Rig, lines: &[&str]) {
@@ -2810,15 +2826,149 @@ fn slow_walk_through_town_hits_a_wall_and_noclip_passes() {
     assert!((wall - (stopped[0] + half)).abs() < 1e-9, "the wall stops the box: {stopped:?}");
     run_all(&mut rig, &["noclip", "walk-for 1 w"]);
     assert!(eye_of(&rig)[0] > wall + 1.0, "control: noclip passes the wall: {:?}", eye_of(&rig));
-    // Outside the room, noclip off: the room's wall stops the way back in, and the net at the
-    // scene's ground level holds the camera up where there is no floor.
+    // Outside the room, noclip off: the net at the scene's ground level holds the camera up where
+    // there is no floor, and the room, drawn as an outline, does not keep it out (S20's review,
+    // finding 1): walking back west it passes the wall into the room...
     run_all(&mut rig, &["noclip", "walk", "walk-for 1", "walk-for 0.5 s"]);
     let outside = eye_of(&rig);
+    assert!(outside[0] - half > wall + cav_app::occupancy::SHELL, "outside the wall: {outside:?}");
     assert!((outside[2] - eye_height - rig.shell.ground()).abs() < 1e-9, "on the net: {outside:?}");
-    run_all(&mut rig, &["walk-for 3 s"]);
+    run_all(&mut rig, &["walk-for 1.5 s"]);
     let back = eye_of(&rig);
-    let outer = wall + cav_app::occupancy::SHELL;
-    assert!((back[0] - half - outer).abs() < 1e-9, "the wall's outside stops it: {back:?}");
+    assert!(back[0] + half < wall - 1.0 && !in_matter(&rig), "back inside the room: {back:?}");
+    // ... and once inside, the room holds it again (the control: a room that collided with nothing
+    // would let it out here): walking east it stops at the inner face, as before.
+    run_all(&mut rig, &["walk-for 3 w"]);
+    let held = eye_of(&rig);
+    assert!((wall - (held[0] + half)).abs() < 1e-9, "the wall keeps it in: {held:?}");
+}
+
+#[test]
+fn walking_from_outside_the_room_lands_on_the_ground() {
+    // S20's review, finding 1. Criterion (written before measuring): in `point`, Shift+G with the
+    // eye 6 m above the middle of the room (outside it, above its ceiling at 3 m) falls through
+    // the ceiling it sees through and stands on the floor, z = 0; from 6 m above a place east of
+    // the room, on the net at the ground, z = 0. Control: started inside the room, flying up, the
+    // ceiling stops the box (the room is still solid to a camera in it).
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    let walk = rig.shell.camera.walk.clone();
+    let room = rig.shell.engine.spec().room.clone().unwrap();
+    let ceiling = room.origin[2] + room.size[2];
+    for (x, what) in [(0.0, "over the room"), (9.0, "east of the room")] {
+        run_all(
+            &mut rig,
+            &[&format!("eye {x} 0.5 {} 0 0", ceiling + 3.0 + walk.eye_height), "walk", "walk-for 3"],
+        );
+        let landed = eye_of(&rig);
+        assert!(rig.shell.walking() && rig.shell.flight.walker.on_ground, "{what}: standing");
+        assert!(
+            (landed[2] - walk.eye_height - rig.shell.ground()).abs() < 1e-9,
+            "{what}: on the ground: {landed:?}"
+        );
+        assert!((landed[0] - x).abs() < 1e-9 && !in_matter(&rig), "{what}: straight down: {landed:?}");
+        rig.shell.run("walk").unwrap();
+    }
+    // Control: inside, flying up, the ceiling stops it.
+    run_all(&mut rig, &[&format!("eye 0 0.5 {} 0 0", 1.0 + walk.eye_height), "fly", "walk-for 3 space"]);
+    let top = eye_of(&rig)[2] - walk.eye_height + walk.height;
+    assert!((top - ceiling).abs() < 1e-9, "control: the ceiling stops a camera inside: top at {top}");
+}
+
+#[test]
+fn an_orthographic_view_is_orthographic_again_after_a_session() {
+    // S20's review, minor 9. Criterion: an orthographic view flown is perspective while the
+    // session moves it, and orthographic when the session ends, the eye where it was flown to.
+    // Control: a perspective view flown stays perspective (the end does not make it orthographic).
+    use cav_sim::Projection;
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    for (start, what) in [(Projection::Orthographic, "proj ortho"), (Projection::Perspective, "proj persp")] {
+        run_all(&mut rig, &[what, "fly", "walk-for 0.5 w"]);
+        assert_eq!(
+            rig.shell.engine.view(0).projection,
+            Projection::Perspective,
+            "{what}: perspective in flight"
+        );
+        let flown = eye_of(&rig);
+        rig.shell.run("fly").unwrap();
+        assert!(!rig.shell.any_fly());
+        assert_eq!(rig.shell.engine.view(0).projection, start, "{what}: as it was after the session");
+        let after = eye_of(&rig);
+        assert!(
+            (0..3).all(|a| (after[a] - flown[a]).abs() < 1e-6),
+            "{what}: the eye kept: {flown:?} {after:?}"
+        );
+    }
+}
+
+#[test]
+fn the_wheel_while_walking_sets_and_shows_the_walking_speed() {
+    // C3's walking arm (S20's review, finding 2). Criterion (written before measuring): walking,
+    // the wheel changes the walking speed, the canvas shows that speed, and a second of W then
+    // covers the shown speed's eased distance, v·(t − τ(1 − e^(−t/τ))), to 1 %; the flying speed
+    // is untouched. Control: flying, the wheel changes the flying speed and shows it, and the
+    // walking speed is untouched.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    let settings = rig.shell.camera.clone();
+    let (walk, fly) = (settings.walk.speed, rig.shell.fly_speed);
+    run_all(&mut rig, &[&format!("eye -4 -2 {} 0 0", settings.walk.eye_height), "walk", "walk-for 0.3"]);
+    assert!(rig.shell.walking() && rig.shell.flight.walker.on_ground);
+    rig.frames(vec![vec![wheel(120.0)], vec![], vec![]]);
+    let speed = rig.shell.camera.walk.speed;
+    assert!(
+        speed > walk * 1.1 && speed < walk * 2.0,
+        "the wheel raised the walking speed: {walk} -> {speed}"
+    );
+    assert_eq!(rig.shell.fly_speed, fly, "and left the flying speed alone");
+    let shown = rig.shell.fly_speed_shown(0, rig.clock).expect("the speed is shown");
+    assert_eq!(shown, cav_app::first_person::speed_text(speed), "the speed shown is the one in use");
+    let start = eye_of(&rig);
+    rig.shell.run("walk-for 1 w").unwrap();
+    let covered = eye_of(&rig)[0] - start[0];
+    let (t, tau) = (1.0, settings.easing);
+    let expected = speed * (t - tau * (1.0 - (-t / tau).exp()));
+    assert!(
+        (covered / expected - 1.0).abs() < 0.01,
+        "covered {covered} m, the shown speed gives {expected} m"
+    );
+    // Control: flying, the wheel is the flying speed's.
+    run_all(&mut rig, &["fly"]);
+    assert!(rig.shell.any_fly() && !rig.shell.walking());
+    rig.frames(vec![vec![wheel(120.0)], vec![], vec![]]);
+    assert!(rig.shell.fly_speed > fly * 1.1, "flying, the wheel raised the flying speed");
+    assert_eq!(rig.shell.camera.walk.speed, speed, "and left the walking speed alone");
+    let shown = rig.shell.fly_speed_shown(0, rig.clock).expect("shown");
+    assert_eq!(shown, cav_app::first_person::speed_text(rig.shell.fly_speed));
+}
+
+#[test]
+fn ctrl_sprints_natively_and_not_in_a_browser() {
+    // S20's review, finding 3. Criterion: where Ctrl sprints (natively) Ctrl or Cmd held is the
+    // sprint, and the `?` sheet and the `fly` action's tooltip name Ctrl; in a browser
+    // (`CTRL_SPRINTS` false: Ctrl+W closes the tab) Ctrl is not the sprint, and neither text
+    // names Ctrl, only W twice. Control: this build is native and its texts name Ctrl.
+    use cav_app::first_person::sprint_held;
+    for ctrl_sprints in [true, false] {
+        for modifiers in [Modifiers::CTRL, Modifiers::COMMAND] {
+            assert_eq!(sprint_held(modifiers, ctrl_sprints), ctrl_sprints, "{modifiers:?}, {ctrl_sprints}");
+        }
+        assert!(!sprint_held(Modifiers::SHIFT, ctrl_sprints), "Shift is never the sprint");
+        let (keys, what) = cav_app::sheet::sprint_row(ctrl_sprints);
+        let ron = cav_app::actions::for_platform(cav_app::actions::ACTIONS_RON, ctrl_sprints);
+        let table = cav_app::actions::Table::parse(&ron).unwrap();
+        let about = &table.action("fly").unwrap().about;
+        assert!(keys.contains("W twice") && about.contains("W twice sprints"), "{keys} / {about}");
+        assert_eq!(keys.contains("Ctrl"), ctrl_sprints, "the sheet: {keys} {what}");
+        assert_eq!(about.contains("Ctrl"), ctrl_sprints, "the tooltip: {about}");
+        assert!(!about.contains(cav_app::actions::SPRINT_MARK), "the mark is written out: {about}");
+    }
+    // (This build is native: `cav_app::platform::CTRL_SPRINTS` is true.)
+    let sheet = cav_app::sheet::MODEL;
+    assert!(sheet.iter().any(|(_, keys, _)| keys.contains("Ctrl · W twice")), "the native sheet names Ctrl");
+    let about = &cav_app::actions::table().action("fly").unwrap().about;
+    assert!(about.contains("Ctrl or W twice sprints"), "{about}");
 }
 
 #[test]
@@ -3048,7 +3198,8 @@ fn slow_a_walker_step_in_town_is_timed() {
     let steps = 2000;
     let started = std::time::Instant::now();
     for _ in 0..steps {
-        let world = cav_app::occupancy::SceneOccupancy::new(&rig.shell.engine, ground);
+        let world =
+            cav_app::occupancy::SceneOccupancy::new(&rig.shell.engine, ground, &walker.bounds(&settings));
         walker.step(1.0 / 60.0, &wish, &world, &settings, env);
     }
     let each = started.elapsed().as_secs_f64() / f64::from(steps) * 1e6;

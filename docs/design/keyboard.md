@@ -145,7 +145,9 @@ already Lock).
   `walk`, Shift+G) the session holds **every key, the globals too**. W A S D, Space, Shift and
   Ctrl are held to move, so none of them may also act: Space does not play (it rises, or jumps;
   twice, it switches flying and walking), Ctrl+S (sprinting backwards) does not save, Ctrl+Z
-  does not undo. Only Esc or Enter (stop, the camera kept), the session's own keys (Shift+F,
+  does not undo. In a browser Ctrl is not the sprint (Ctrl+W closes the tab, and no page can
+  stop it): there the double tap of W is the only sprint (`platform::CTRL_SPRINTS`; S20's
+  review, finding 3). Only Esc or Enter (stop, the camera kept), the session's own keys (Shift+F,
   Shift+G, N for noclip), F3 and F11 still act (`first_person::WHILE_FLYING`; none of them is a
   chord of a key held to move, which a test holds). A Shift still down from the chord that began
   the session is not "down" until it has been let go. The session ends in navigation mode on

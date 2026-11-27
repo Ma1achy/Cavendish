@@ -1113,8 +1113,9 @@ fn s20(root: &Path) -> Result<(), String> {
              tree-fold clamps; select body 4"
                 .to_owned(),
         ),
-        // 7. On foot in `town` along a wall, the speed's read-out showing; and through it, noclip.
-        ("fly.png", format!("{on_foot}; eye 34.7 -47.5 1.32 100 -8; camera-set fly-speed 4")),
+        // 7. On foot in `town` along a wall, the walking speed's read-out showing (the speed in use);
+        // and through it, noclip (flying: the flying speed's).
+        ("fly.png", format!("{on_foot}; eye 34.7 -47.5 1.32 100 -8; camera-set walk-speed 4.3")),
         ("noclip.png", format!("{on_foot}; noclip; walk-for 0.5 w; camera-set fly-speed 4")),
         // 8. A 5 Hz circle, drawn round.
         ("path.png", format!("load point; mass 5 at 2 0 2; {circle}; orbit -60 50; select body 2")),

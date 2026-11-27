@@ -10,9 +10,13 @@
 //! spec's schema), the timeline with a lane per tower, the panes and the console; and the editor
 //! of S18 around them: the keyboard model of `docs/design/keyboard.md` ([`keyboard`]), the
 //! actions, tools and layouts as data (`ui/*.ron`: [`actions`], [`tools`], [`layouts`]), the
-//! palette, the camera's moves ([`camera`]) and the editor's windows ([`dialogs`]). Lengths on
-//! screen are egui points; times are seconds on the scene's clock; positions in the world are
-//! metres in its frame (x east, y north, z up).
+//! palette, the camera's moves ([`camera`]) and the editor's windows ([`dialogs`]); and the
+//! workspace of S20: the mosaic's window side (splitters, pop-out and dock, maximise: `panels`),
+//! each viewport's header ([`header`]) and navigation gizmo ([`navgizmo`]), the floating tool
+//! palette ([`tool_palette`]), the transport ([`transport`]), and the physical first-person camera
+//! ([`first_person`], [`walk`], [`occupancy`]). Lengths on screen are egui points; times are
+//! seconds on the scene's clock; positions in the world are metres in its frame (x east, y north,
+//! z up).
 //!
 //! ## What it may depend on
 //! Every other library crate of the workspace (`cav-core`, `cav-sim`, `cav-engine`, `cav-gpu`,

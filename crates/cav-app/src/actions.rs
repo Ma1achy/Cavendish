@@ -328,7 +328,23 @@ fn clash(
 /// When the built-in file does not parse or check: `the_data_files_are_valid` fails first.
 pub fn table() -> &'static Table {
     static TABLE: OnceLock<Table> = OnceLock::new();
-    TABLE.get_or_init(|| Table::parse(ACTIONS_RON).expect("ui/actions.ron is valid (a test holds it)"))
+    TABLE.get_or_init(|| {
+        Table::parse(&for_platform(ACTIONS_RON, crate::platform::CTRL_SPRINTS))
+            .expect("ui/actions.ron is valid (a test holds it)")
+    })
+}
+
+/// The mark in `ui/actions.ron`'s texts that stands for the first-person sprint keys, which differ
+/// by platform ([`crate::platform::CTRL_SPRINTS`]): "Ctrl or W twice" natively, "W twice" in a
+/// browser.
+pub const SPRINT_MARK: &str = "{sprint}";
+
+/// `ron` (the text of `ui/actions.ron`) with its platform marks ([`SPRINT_MARK`]) written out for a
+/// platform where Ctrl sprints (`ctrl_sprints`) or not. Lines are kept, so a parse error's line
+/// number is the file's.
+#[must_use]
+pub fn for_platform(ron: &str, ctrl_sprints: bool) -> String {
+    ron.replace(SPRINT_MARK, crate::first_person::sprint_keys(ctrl_sprints))
 }
 
 #[cfg(test)]

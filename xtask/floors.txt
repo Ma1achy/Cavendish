@@ -25,7 +25,11 @@
 # 3 new quick tests (cav-app: a header's menu opened by `viewport type|camera|overlays`; a
 # viewport popped out before a frame floats over its place; the inspector's header keeps its
 # words clear of its buttons).
-quick 704
+# TASK-S20-15 (the S20 review's fixes): 8 new quick tests (cav-app: the room holds a camera inside
+# only, a pop-out's frame, the walk from outside, the orthographic view after a session, the
+# wheel while walking, the sprint by platform; cav-engine: Home's undo by label; cav-plot: terse
+# titles).
+quick 712
 gpu 42
 slow 49
 oracle 58
