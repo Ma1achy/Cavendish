@@ -10,7 +10,9 @@
 //! The numbers and the physics every other crate shares: `f64` vectors and matrices, the physical
 //! constants with their sources, the default array and room, the forward model (flight, arms, the
 //! propagation integral, the channels), spectra of unevenly sampled series, the cadence of a
-//! schedule (keyed random numbers, spectral windows) and `.npy` files.
+//! schedule (keyed random numbers, spectral windows) and `.npy` files; the voxel tree, its shapes
+//! and the cube kernel; the gravity of a uniform polyhedron in closed form and a closed mesh's
+//! exact moments (`polyhedral`).
 //!
 //! ## What it may depend on
 //! No other workspace crate, and no outside crate either (`cav-validate` in its tests only).
@@ -27,6 +29,7 @@ pub mod defaults;
 pub mod forward;
 pub mod maths;
 pub mod npy;
+pub mod polyhedral;
 pub mod spectrum;
 pub mod voxel;
 

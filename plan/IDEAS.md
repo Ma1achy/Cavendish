@@ -281,3 +281,11 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   horizon in `S20/fly.png`. Reverse-Z (depth cleared to 0, compare `Greater`, the projection's
   near and far swapped) spreads float precision evenly in distance and would remove it; measure
   the speckle before and after.
+
+## From S5
+
+- **A cancellation-free closed-form difference** (TASK-S5-08): `Faceted::difference` subtracts
+  two potentials, losing `R/gap` of their digits (1e-9 only to about 30 sizes for a gap of one
+  size, `docs/slices/S5.md` §7.1). Each edge's `L(p₁) − L(p₂)` could be formed as one `log1p` of
+  a ratio and each face's `ω` difference as one `atan2`, so that the closed form's difference
+  holds as far as its potential does; measure against the moments' read before adopting.
