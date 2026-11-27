@@ -18,6 +18,7 @@ beside it, lists the files to touch in order, and says which tests then hold the
 | static matter in the world volume: a kind of piece, or a material | [a-world-piece.md](a-world-piece.md) | `PieceKind::Terrain` in `crates/cav-sim/src/world.rs` |
 | a material (the library or a scene's own), or a body of several | [a-material.md](a-material.md) | `scenes/materials.ron` |
 | anything a browser page cannot do (threads, files, waiting on the GPU) | [the-web-build.md](the-web-build.md) | `crates/cav-engine/src/forward/inline.rs` |
+| something the first-person camera collides with (a new kind of matter) | [something-the-camera-collides-with.md](something-the-camera-collides-with.md) | `SceneOccupancy::sphere` in `crates/cav-app/src/occupancy.rs` |
 | to the window: an action (menu item, key, palette entry), a tool, a layout, a panel or window, a starter | [a-tool-or-panel.md](a-tool-or-panel.md) | `proj-toggle` in `crates/cav-app/ui/actions.ron`; the Place tool |
 
 Whatever you add: every public item documented with its unit and frame; a test with a control

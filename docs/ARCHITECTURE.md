@@ -187,27 +187,44 @@ height from that viewport's canvas, and with Select or Probe in hand it is not t
 keyboard's `toolbar` scope is the tools in the file's order, a tool's variants as a drop-down
 after it, and the snap switch last, disabled while not shown (`tool_palette::register`).
 
-**The first-person camera (S20).** Flying is a first-person game's camera, in two layers. The
-arithmetic is `cav-app/src/camera.rs`: `FirstPerson` is an eye (metres, world frame), a yaw and
-a pitch (degrees) and a velocity (m/s), made from a viewport's `ViewSpec` each frame and written
-back as one `ViewCommand::Camera`; a look is raw pointer counts times a sensitivity, the pitch
-held within ±89°, never any roll; the velocity eases toward the one the held keys ask for with a
-time constant, integrated in closed form for the frame's time (`camera::ease`), so 30 and 144
-frames a second agree; W A S D go along the heading laid flat, Space and Shift along z. The
-settings are data (`ui/camera.ron`, `camera::Settings`; `camera-set` changes one for the
-session). The window's side is `cav-app/src/first_person.rs`: a flight is entered by holding
-the right button over a scene viewport (`Shell::mouse_fly`) or by `fly` (Shift+F, the header's
-camera menu; `keyboard::Session::Fly`) and left by the release, Esc, Enter, `fly` again or the
-window losing its focus. While it is on, `Shell::keys` hands every press to `Shell::fly_keys`
-and none to the router (only the actions of `first_person::WHILE_FLYING` keep their keys);
-`Shell::fly_frame` reads the held keys, the raw motion and the wheel (the speed, shown in the
-canvas for a moment); `Shell::fly_capture` asks the platform seam for the pointer and gives it
-back (`platform::capture`: `CursorGrab` and `CursorVisible` natively, pointer lock in a page,
-where `platform::motion` is the page's `movementX/Y`); a `fly` session lays a sheet over the
-window so that a click acts on nothing under the unseen pointer. A camera command a frame costs
-the journal one entry a run (`Command::overwrites`), as an orbit drag does; while the scene
-plays, each frame's seek comes between and the journal holds both, as it does for an orbit drag
-during play.
+**The first-person camera (S20).** Flying and walking are a first-person game's camera, in
+three layers. The look and the keys' wish are `cav-app/src/camera.rs`: `FirstPerson` is an eye
+(metres, world frame), a yaw and a pitch (degrees) and a velocity (m/s), made from a viewport's
+`ViewSpec` each frame and written back as one `ViewCommand::Camera`; a look is raw pointer
+counts times a sensitivity, the pitch held within ±89°, never any roll; W A S D go along the
+heading laid flat, Space and Shift along z; a velocity eases toward the wanted one with a time
+constant, integrated in closed form for the frame's time (`camera::ease`), so 30 and 144 frames
+a second agree. The body is `cav-app/src/walk.rs`: `Walker`, a player-sized box (0.6 × 0.6 ×
+1.8 m, the eye 1.62 m up) with gravity, a jump, a step up over one voxel, sliding along walls,
+sneaking, and flying with the same box; it moves one axis at a time by swept tests against an
+`Occupancy` (the solid boxes in a region), so it ends touching what stopped it and nothing is
+skipped at any speed. It is pure: it knows nothing of the engine. What is solid in a scene is
+`cav-app/src/occupancy.rs`: `SceneOccupancy`, made each frame by borrowing the engine — the
+world's pieces on the world's lattice (analytic: nothing is streamed or generated), the voxel
+bodies' leaves (`Engine::body_tree`) where each body is at the playhead, spheres, the floor,
+the room's shells, and a net under everything. **It reads the scene and never writes it**: the
+camera has no mass and is in no scene, journal edit, undo step or reading. The settings are
+data (`ui/camera.ron`, `camera::Settings`; `camera-set` changes one for the session).
+
+The window's side is `cav-app/src/first_person.rs`. A session is entered by holding the right
+button over a scene viewport (`Shell::mouse_fly`) or by `fly` (Shift+F) or `walk` (Shift+G),
+also in the header's camera menu (`keyboard::Session::Fly`), and left by the release, Esc,
+Enter, the word again or the window losing its focus; a double tap of Space switches flying and
+walking; `noclip` (N, `Shell::noclip`, off by default, marked in the canvas) lets the camera
+through matter and implies flying. While it is on, `Shell::keys` hands every press to
+`Shell::fly_keys` and none to the router (only the actions of `first_person::WHILE_FLYING`
+keep their keys); `Shell::fly_frame` reads the held keys, the raw motion and the wheel (the
+flying speed, shown in the canvas for a moment) and `Shell::fly_step` moves the box and issues
+the frame's one camera command; `Shell::fly_capture` asks the platform seam for the pointer and
+gives it back (`platform::capture`: `CursorGrab` and `CursorVisible` natively, pointer lock in
+a page, where `platform::motion` is the page's `movementX/Y`); a session lays a sheet over the
+window so that a click acts on nothing under the unseen pointer. The view's near plane is a
+hundredth of its distance to the target, so a session holds the target a metre before the eye
+(`first_person::EYE_DISTANCE`) from its first move and puts the orbit's distance back at its
+end: a wall the box touches (0.3 m from the eye) is never cut away. `eye` and `walk-for` are
+the scripts' way in (the demo's pictures). A camera command a frame costs the journal one entry
+a run (`Command::overwrites`), as an orbit drag does; while the scene plays, each frame's seek
+comes between and the journal holds both, as it does for an orbit drag during play.
 
 **The top bar and the transport (S20).** The top bar is one row (`menu_bar` in
 `cav-app/src/panels.rs`, `docs/design/workspace.md` §4): the menus, the layouts as tabs (the
@@ -290,7 +307,9 @@ field's reset and the window's unsaved mark.
 | The mosaic of viewports: the grid of labels and its weights, split, close, swap, resize (pure data and functions) | `cav-sim/src/mosaic.rs` (`Mosaic`); held by the engine (`Engine::mosaic`, `ViewCommand::Mosaic`, views carried with their labels in `engine.rs` `set_mosaic`); `mosaic`, `split`, `close`, `swap` in `console.rs` | [a view or a layout](extending/a-view-or-a-layout.md) |
 | A viewport as drawn: its picture or plot, its pointer, its right-click menu; the splitters; a floating viewport and its empty place | `cav-app/src/panels.rs` (`viewport`, `splitters`, `floating_viewport`, `figure`); the window's own state in `shell.rs` (`Shell::floating`, `Shell::maximised`; `viewport <close\|swap\|pop-out\|dock>`) | [a view or a layout](extending/a-view-or-a-layout.md) |
 | The camera's arithmetic: frame, zoom toward the pointer, the first-person camera (look, eased movement) and its settings | `cav-app/src/camera.rs`, `cav-app/ui/camera.ron`; `ViewCommand::Camera` in `cav-engine/src/command.rs` | — |
-| A flight in the window: its keys, its frame, the pointer's capture, the speed's read-out | `cav-app/src/first_person.rs`; the platform's half in `cav-app/src/platform/{native,web}.rs` (`capture`, `motion`, `capture_lost`) | — |
+| A first-person session in the window (fly, walk, noclip): its keys, its frame, the pointer's capture, the marks in the canvas | `cav-app/src/first_person.rs`; the platform's half in `cav-app/src/platform/{native,web}.rs` (`capture`, `motion`, `capture_lost`) | — |
+| The physical camera's box: gravity, jump, step-up, sliding, swept collision (pure) | `cav-app/src/walk.rs` (`Walker`, `Occupancy`) | — |
+| What the camera collides with in a scene (read only) | `cav-app/src/occupancy.rs` (`SceneOccupancy`) | [something the camera collides with](extending/something-the-camera-collides-with.md) |
 | The editor's windows: history, new-scene wizard, Open, Save | `cav-app/src/dialogs.rs` | [the window](extending/a-tool-or-panel.md) |
 | What Add adds (starters) | `scenes/starters.ron`, `cav-sim/src/starters.rs` (`add <name> [at x y z]`, `duplicate <path>`) | [the window](extending/a-tool-or-panel.md) |
 | A CLI subcommand, an MCP tool | `cav/src/main.rs`, `mcp.rs` | [a command](extending/a-command.md) |

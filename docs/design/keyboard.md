@@ -140,11 +140,15 @@ already Lock).
   cancelled, then acts; Ctrl+Z after a move is that cancel and nothing more. (Recorded after S18's
   review, R1 and minor 3.)
 - **Cavendish's second local exception** (owner, 25 Nov 2026: "make it work like a fps game
-  camera"): while the camera is *flown* (the right button held over a scene viewport, or `fly`,
-  Shift+F) the flight holds **every key, the globals too**. W A S D, Space, Shift and Ctrl are
-  held to move, so none of them may also act: Space does not play, Ctrl+S (sprinting backwards)
-  does not save, Ctrl+Z does not undo. Only Esc or Enter (stop, the camera kept), `fly`'s own
-  key, F3 and F11 still act (`first_person::WHILE_FLYING`). The flight ends in navigation mode on
+  camera"; "literally copy minecraft creative mode"): while the camera is in *first person*
+  (the right button held over a scene viewport, or a session started by `fly`, Shift+F, or
+  `walk`, Shift+G) the session holds **every key, the globals too**. W A S D, Space, Shift and
+  Ctrl are held to move, so none of them may also act: Space does not play (it rises, or jumps;
+  twice, it switches flying and walking), Ctrl+S (sprinting backwards) does not save, Ctrl+Z
+  does not undo. Only Esc or Enter (stop, the camera kept), the session's own keys (Shift+F,
+  Shift+G, N for noclip), F3 and F11 still act (`first_person::WHILE_FLYING`; none of them is a
+  chord of a key held to move, which a test holds). A Shift still down from the chord that began
+  the session is not "down" until it has been let go. The session ends in navigation mode on
   the canvas; it is never an edit.
 - A mouse click on a text field starts typing immediately (interaction mode), caret at the click,
   ring hidden until the next key press (the first character typed shows the ring blue).

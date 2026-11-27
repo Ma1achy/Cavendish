@@ -797,21 +797,25 @@ fn fly_is_a_session() {
     rig.settle();
     let flown = rig.shell.engine.view(0).clone();
     let (to_eye, _, _) = start.basis();
-    let moved = [
-        flown.target[0] - start.target[0],
-        flown.target[1] - start.target[1],
-        flown.target[2] - start.target[2],
-    ];
+    // (TASK-S20-11: measured at the eye. In a session the view's target is held a metre in
+    // front of the eye, so that the near plane does not cut a wall away, and the orbit's
+    // distance is put back when the session ends; the target is no longer where the eye went.)
+    let (eye_before, eye_flown) = (cav_app::camera::eye(&start), cav_app::camera::eye(&flown));
+    let moved = [eye_flown[0] - eye_before[0], eye_flown[1] - eye_before[1], eye_flown[2] - eye_before[2]];
     let along = -(moved[0] * to_eye[0] + moved[1] * to_eye[1] + moved[2] * to_eye[2]);
     assert!(along > 0.05, "flew {along} m forward");
-    assert_eq!((flown.yaw, flown.pitch, flown.distance), (start.yaw, start.pitch, start.distance));
+    assert_eq!((flown.yaw, flown.pitch), (start.yaw, start.pitch));
+    assert_eq!(flown.distance, cav_app::first_person::EYE_DISTANCE);
     // A viewport letter does nothing mid-flight (O would swap the projection).
     rig.key(Key::O, Modifiers::NONE);
     assert_eq!(rig.shell.engine.view(0).projection, start.projection);
     // Esc stops, the camera kept where it was flown; then O is the projection's again.
     rig.key(Key::Escape, Modifiers::NONE);
     assert!(!rig.shell.flying());
-    assert_eq!(rig.shell.engine.view(0).target, flown.target);
+    let kept = rig.shell.engine.view(0).clone();
+    let eye_kept = cav_app::camera::eye(&kept);
+    assert!(eye_kept.iter().zip(eye_flown).all(|(a, b)| (a - b).abs() < 1e-9), "{eye_kept:?} {eye_flown:?}");
+    assert_eq!(kept.distance, start.distance, "the orbit's distance is put back");
     rig.key(Key::O, Modifiers::NONE);
     assert_ne!(rig.shell.engine.view(0).projection, start.projection);
     // None of it was an edit (S18's review, R3: counted, not `history()`'s two flags).
@@ -1249,14 +1253,15 @@ fn fly_speed_takes_sprint_through_the_frame() {
         rig.shell.keyboard.focus = vec!["viewport".into()];
         rig.key(Key::F, Modifiers::SHIFT);
         assert!(rig.shell.flying());
-        let start = rig.shell.engine.view(0).target;
+        // (TASK-S20-11: at the eye; in a session the target is held a metre in front of it.)
+        let start = cav_app::camera::eye(rig.shell.engine.view(0));
         let w = |pressed, repeat| Event::Key { key: Key::W, physical_key: None, pressed, repeat, modifiers };
         let mut frames = vec![vec![w(true, false)]];
         // A held key repeats in the window's events, carrying the modifiers held with it.
         frames.extend((0..6).map(|_| vec![w(true, true)]));
         frames.push(vec![w(false, false)]);
         rig.frames(frames);
-        let end = rig.shell.engine.view(0).target;
+        let end = cav_app::camera::eye(rig.shell.engine.view(0));
         ((end[0] - start[0]).hypot(end[1] - start[1]), end[2] - start[2])
     };
     let sprint = cav_app::camera::Settings::from_data().sprint;
@@ -1403,7 +1408,9 @@ fn the_right_button_flies_and_holds_the_letters() {
     rig.settle();
     let flown = rig.shell.engine.view(0).clone();
     let (to_eye, _, _) = start.basis();
-    let moved: f64 = (0..3).map(|i| -(flown.target[i] - start.target[i]) * to_eye[i]).sum();
+    // (TASK-S20-11: at the eye; in a session the target is held a metre in front of it.)
+    let (from, to) = (cav_app::camera::eye(&start), cav_app::camera::eye(&flown));
+    let moved: f64 = (0..3).map(|i| -(to[i] - from[i]) * to_eye[i]).sum();
     assert!(moved > 0.05, "flew {moved} m forward");
     // The mouse looks: a drag with the button held turns the view, the eye kept. (With no raw
     // motion from the device, as here, the pointer's own stands in.)

@@ -244,17 +244,27 @@ pub struct Settings {
     pub double_tap: f64,
     /// How long the speed is shown in the canvas after the wheel changed it, seconds.
     pub speed_shown: f64,
+    /// The physical camera: the walker's box, speeds and jump.
+    pub walk: crate::walk::Settings,
 }
 
 /// One setting of [`Settings`] as the console names it: its name, its unit, the least and
 /// greatest value it takes, and what it is.
-pub const SETTINGS: [(&str, &str, f64, f64, &str); 6] = [
+pub const SETTINGS: [(&str, &str, f64, f64, &str); 14] = [
     ("sensitivity", "°/count", 0.001, 10.0, "how far a look turns per count of mouse motion"),
     ("fly-speed", "m/s", FLY_SPEED_RANGE.0, FLY_SPEED_RANGE.1, "the flying speed at first"),
     ("sprint", "×", 1.0, 100.0, "what sprinting multiplies the speed by"),
     ("easing", "s", 0.0, 2.0, "the time constant of the velocity's easing"),
     ("double-tap", "s", 0.05, 1.0, "how close two presses are to be a double tap"),
     ("speed-shown", "s", 0.0, 10.0, "how long the speed is shown after the wheel changed it"),
+    ("walk-speed", "m/s", 0.1, 100.0, "the walking speed"),
+    ("walk-sprint", "×", 1.0, 10.0, "what sprinting multiplies the walking speed by"),
+    ("sneak", "×", 0.05, 1.0, "what sneaking multiplies the walking speed by"),
+    ("jump-height", "m", 0.0, 100.0, "how high a jump lifts the feet"),
+    ("step-height", "m", 0.0, 2.0, "the highest step climbed"),
+    ("player-width", "m", 0.1, 5.0, "the side of the camera's box along x and y"),
+    ("player-height", "m", 0.2, 10.0, "the height of the camera's box"),
+    ("eye-height", "m", 0.1, 10.0, "the eye above the feet, below the box's height"),
 ];
 
 impl Default for Settings {
@@ -281,6 +291,14 @@ impl Settings {
             "easing" => &mut self.easing,
             "double-tap" => &mut self.double_tap,
             "speed-shown" => &mut self.speed_shown,
+            "walk-speed" => &mut self.walk.speed,
+            "walk-sprint" => &mut self.walk.sprint,
+            "sneak" => &mut self.walk.sneak,
+            "jump-height" => &mut self.walk.jump_height,
+            "step-height" => &mut self.walk.step_cap,
+            "player-width" => &mut self.walk.width,
+            "player-height" => &mut self.walk.height,
+            "eye-height" => &mut self.walk.eye_height,
             _ => return None,
         })
     }
@@ -303,7 +321,12 @@ impl Settings {
         if !(lo..=hi).contains(&value) {
             return Err(format!("{name} is from {lo} to {hi} {unit}"));
         }
+        let before = self.clone();
         *self.field(name).expect("every listed setting is a field") = value;
+        if self.walk.eye_height >= self.walk.height {
+            *self = before;
+            return Err("the eye is below the top of the box: eye-height < player-height".to_owned());
+        }
         Ok(())
     }
 }
@@ -357,6 +380,14 @@ impl FirstPerson {
     #[must_use]
     pub fn of(view: &ViewSpec, velocity: [f64; 3]) -> Self {
         Self { eye: eye(view), yaw: view.yaw, pitch: -view.pitch, velocity }
+    }
+
+    /// The first-person camera with its eye at `eye` (metres), looking along `heading` degrees
+    /// (anticlockwise from east, seen from above: 0 east, 90 north) and `pitch` degrees above
+    /// the horizontal, at rest.
+    #[must_use]
+    pub fn looking(eye: [f64; 3], heading: f64, pitch: f64) -> Self {
+        Self { eye, yaw: heading - 180.0, pitch: pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT), velocity: [0.0; 3] }
     }
 
     /// The command that puts pane `pane`'s camera here: `view`'s distance kept, its target
@@ -607,6 +638,13 @@ mod tests {
         assert_eq!(settings, before);
         settings.set("sensitivity", 0.25).unwrap();
         assert!((settings.sensitivity - 0.25).abs() < 1e-15);
+        // The eye stays inside the box.
+        assert!(settings.set("eye-height", 1.9).unwrap_err().contains("eye-height < player-height"));
+        assert!((settings.walk.eye_height - 1.62).abs() < 1e-15);
+        // `looking` is the same camera said by its heading: east is yaw 180 of the view.
+        let camera = FirstPerson::looking([1.0, 2.0, 3.0], 0.0, 100.0);
+        let (heading, _) = camera.heading();
+        assert!((heading[0] - 1.0).abs() < 1e-12 && heading[1].abs() < 1e-12 && camera.pitch == PITCH_LIMIT);
     }
 
     #[test]

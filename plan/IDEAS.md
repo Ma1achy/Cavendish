@@ -256,3 +256,18 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   decimations that fold through themselves. The study's repair (weld, drop non-manifold edges,
   ear-clip holes, cut out and re-close self-crossings) and a decimation to a stated Hausdorff bound
   would let `import` take them, reporting what it changed.
+- **The walker's terrain is the column's middle** (TASK-S20-11): the camera meets terrain as a
+  column a cell, its top from the surface at the column's middle; the voxeliser asks every
+  sample of the column, so with two or more samples a cell the two can differ by one cell where
+  the surface crosses a cell boundary inside a column (a 10 cm lip in `town` at worst, which a
+  step climbs). Asking the corner samples too would make them agree exactly.
+- **A door in the room** (TASK-S20-11): the room's walls are shells with no opening, so a
+  camera outside cannot walk in without noclip (and one inside cannot walk out). A `RoomSpec`
+  has no door; one could be a view-side convenience (a gap the camera passes) or scene data.
+- **Riding and being pushed** (TASK-S20-11): the camera is not carried by a body it stands on
+  nor pushed by one that moves into it (it is lifted out upward). A platform that carries its
+  rider needs the body's velocity at the playhead in `SceneOccupancy`.
+- **The mode's mark in the canvas** (TASK-S20-11): only `noclip` and the speed are marked; a
+  small "walk" or "fly" beside them would say which the double tap left you in.
+- **First-person settings are the session's** (TASK-S20-11): `camera-set` is not saved; a user
+  settings file (with the keymap, TASK-S20-02) would keep sensitivity and speeds.

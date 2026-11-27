@@ -92,7 +92,20 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("snap", "snap the Move tool's moves to the step, or not (S)"),
     (
         "fly",
-        "fly the active viewport's camera as a first-person game does: the pointer is captured, the mouse looks, W A S D move, Space up, Shift down, Ctrl or a double tap of W sprints, the wheel sets the speed; again, Esc or Enter to stop (Shift+F; or hold the right button over the view)",
+        "fly the active viewport's camera as a first-person game does: the pointer is captured, the mouse looks, W A S D move, Space up, Shift down, Ctrl or a double tap of W sprints, the wheel sets the speed; matter stops it unless `noclip`; again, Esc or Enter to stop (Shift+F; or hold the right button over the view)",
+    ),
+    (
+        "walk",
+        "walk the active viewport's camera through the scene: a player-sized box with gravity that the world, voxel bodies, the floor and the room stop; Space jumps, Shift sneaks, a double tap of Space flies; again, Esc or Enter to stop (Shift+G)",
+    ),
+    ("noclip", "whether the first-person camera passes through matter (off at first; on, it flies) (N)"),
+    (
+        "eye",
+        "put the active viewport's eye at a point, looking along a heading (degrees anticlockwise from east) and a pitch (degrees up): `eye <x> <y> <z> [<heading> <pitch>]`; for scripts and pictures",
+    ),
+    (
+        "walk-for",
+        "hold keys down for a time in the `walk` or `fly` session under way, at 60 steps a second: `walk-for <seconds> [w a s d space shift ctrl]`; for scripts and pictures",
     ),
     (
         "camera-set",
@@ -466,8 +479,12 @@ pub struct Shell {
     pub mouse_fly: Option<usize>,
     /// The first-person camera's settings (`ui/camera.ron`; `camera-set`). UI state.
     pub camera: crate::camera::Settings,
-    /// What the flight under way holds between frames ([`crate::first_person`]). UI state.
+    /// What the first-person session under way holds between frames ([`crate::first_person`]).
+    /// UI state.
     pub flight: crate::first_person::Flight,
+    /// Whether the first-person camera passes through matter (`noclip`): off by default, the
+    /// camera being physical. UI state.
+    pub noclip: bool,
     /// Where a picture taken with no window rests its pointer, as fractions of the active pane
     /// from its top left (`pointer 0.5 0.7`): what shows a tool's hover (the Place tool's ghost)
     /// in the demo's pictures. UI state, read only by [`crate::headless::Headless::screenshot`].
@@ -681,6 +698,7 @@ impl Shell {
             mouse_fly: None,
             camera: crate::camera::Settings::from_data(),
             flight: crate::first_person::Flight::default(),
+            noclip: false,
             pointer_at: None,
             probed: None,
             probe_at: None,
@@ -924,14 +942,15 @@ impl Shell {
         !self.tree_folded.contains(&(self.engine.spec().name.clone(), scope.to_owned()))
     }
 
-    /// Whether a fly session started by `fly` is on (until `fly` again, Esc or Enter).
+    /// Whether a first-person session started by `fly` or `walk` is on (until the word again,
+    /// Esc or Enter).
     #[must_use]
     pub fn flying(&self) -> bool {
         self.keyboard.session == Some(crate::keyboard::Session::Fly)
     }
 
-    /// Whether the camera is flown in either way: a fly session (Shift+F) or the right mouse
-    /// button held over a scene pane.
+    /// Whether the camera is in first person in either way: a session (`fly`, `walk`) or the
+    /// right mouse button held over a scene pane.
     #[must_use]
     pub fn any_fly(&self) -> bool {
         self.flying() || self.mouse_fly.is_some()
@@ -1473,7 +1492,9 @@ impl Shell {
                 (Some(setting), Some(Ok(value)), None) => {
                     self.camera.set(setting, value).map_err(|why| format!("`{line}`: {why}")).map(|()| {
                         if setting == "fly-speed" {
+                            // The speed changed: it is shown, as after the wheel.
                             self.fly_speed = value;
+                            self.show_fly_speed();
                         }
                         line.to_owned()
                     })
@@ -1487,6 +1508,45 @@ impl Shell {
                     self.engine.note(Level::Error, Subsystem::App, why.clone());
                     self.console_open = true;
                 }
+            }
+            return outcome;
+        }
+        // `eye x y z [heading pitch]` puts the active viewport's eye somewhere, looking some way;
+        // `walk-for <seconds> [keys]` holds keys down in the first-person session under way.
+        // Both are for scripts and pictures made with no window; neither is an edit.
+        if name == "eye" || name == "walk-for" {
+            let rest: Vec<&str> = words.collect();
+            let outcome = if name == "eye" {
+                let numbers: Result<Vec<f64>, _> = rest.iter().map(|w| w.parse::<f64>()).collect();
+                match numbers.as_deref() {
+                    Ok(&[x, y, z, ref angles @ ..]) if matches!(angles.len(), 0 | 2) => {
+                        let pane = self.engine.active_pane();
+                        let view = self.engine.view(pane).clone();
+                        let mut camera = crate::camera::FirstPerson::of(&view, [0.0; 3]);
+                        camera.eye = [x, y, z];
+                        if let &[heading, pitch] = angles {
+                            camera = crate::camera::FirstPerson::looking([x, y, z], heading, pitch);
+                        }
+                        self.apply(Command::View(camera.command(&view, pane)));
+                        Ok(line.to_owned())
+                    }
+                    _ => Err(format!("`{line}`: eye <x> <y> <z> [<heading> <pitch>] (metres; degrees)")),
+                }
+            } else {
+                let usage = || format!("`{line}`: walk-for <seconds> [w a s d space shift ctrl]");
+                match rest.split_first().map(|(first, keys)| (first.parse::<f64>(), keys)) {
+                    Some((Ok(seconds), keys)) if (0.0..=600.0).contains(&seconds) => {
+                        crate::first_person::Held::of_words(keys.iter().copied())
+                            .and_then(|held| self.walk_for(seconds, held))
+                            .map(|()| line.to_owned())
+                            .map_err(|why| format!("{}: {why}", usage()))
+                    }
+                    _ => Err(usage()),
+                }
+            };
+            if let Err(why) = &outcome {
+                self.engine.note(Level::Error, Subsystem::App, why.clone());
+                self.console_open = true;
             }
             return outcome;
         }
@@ -1640,15 +1700,14 @@ impl Shell {
                 );
                 self.apply(Command::View(command));
             }
-            "fly" => {
-                if self.any_fly() {
-                    self.end_fly();
-                } else if let Err(why) = self.start_fly() {
+            "fly" | "walk" => {
+                if let Err(why) = self.first_person(name == "fly") {
                     self.engine.note(Level::Error, Subsystem::App, why.clone());
                     self.console_open = true;
                     return Err(why);
                 }
             }
+            "noclip" => self.toggle_noclip(),
             "tree-fold" => {
                 // The row's name is the rest of the line, quotes or not.
                 let rest = line.trim_start_matches("tree-fold").trim().trim_matches('"');
@@ -1988,7 +2047,7 @@ impl Shell {
         // the cursor gone though the button is down); egui keeps the button down until its
         // release is seen, as it does for any drag.
         if self.mouse_fly.is_some() && ctx.input(|i| !i.pointer.secondary_down()) {
-            self.mouse_fly = None;
+            self.end_fly();
         }
         // The window's focus lost ends a flight however it was started: the keys and the
         // pointer are another window's now.
