@@ -1,0 +1,86 @@
+
+cube_aligned (12 triangles): worst over 3 directions, relative error of g [U]
+  R     1.0 m  ours_py 9.0e-16 [4.6e-16]  ours_rs 7.5e-16 [6.3e-16]  esa 3.5e-15 [2.9e-15]  harmonica 2.4e-15 [6.0e-16]
+  R     1.5 m  ours_py 2.1e-15 [6.0e-16]  ours_rs 2.1e-15 [3.7e-16]  esa 2.9e-14 [1.5e-15]  harmonica 3.5e-15 [1.7e-15]
+  R     3.0 m  ours_py 6.3e-15 [2.0e-15]  ours_rs 7.8e-15 [1.8e-15]  esa 8.8e-14 [1.7e-14]  harmonica 3.9e-14 [1.5e-14]
+  R    10.0 m  ours_py 8.5e-14 [1.2e-14]  ours_rs 8.5e-14 [1.1e-14]  esa 2.6e-12 [4.7e-13]  harmonica 2.3e-12 [4.3e-13]
+  R    30.0 m  ours_py 4.4e-13 [1.8e-13]  ours_rs 4.4e-13 [1.8e-13]  esa 5.7e-11 [2.0e-11]  harmonica 1.2e-10 [2.9e-11]
+  R   100.0 m  ours_py 9.9e-12 [1.7e-12]  ours_rs 9.9e-12 [1.7e-12]  esa 2.3e-09 [5.3e-10]  harmonica 6.4e-09 [3.4e-10]
+  R   300.0 m  ours_py 6.4e-11 [9.0e-12]  ours_rs 6.4e-11 [9.0e-12]  esa 8.5e-08 [1.9e-08]  harmonica 1.1e-07 [1.5e-08]
+  R  1000.0 m  ours_py 4.9e-10 [1.3e-10]  ours_rs 4.9e-10 [1.3e-10]  esa 1.2e-06 [1.0e-07]  harmonica 5.4e-06 [2.0e-06]
+
+cube (12 triangles): worst over 3 directions, relative error of g [U]
+  R     1.0 m  ours_py 2.1e-15 [4.6e-16]  ours_rs 1.2e-15 [4.1e-16]  esa 3.2e-15 [1.6e-15]
+  R     1.5 m  ours_py 3.0e-15 [1.7e-15]  ours_rs 4.2e-15 [6.2e-16]  esa 1.9e-14 [3.8e-15]
+  R     3.0 m  ours_py 1.1e-14 [4.9e-15]  ours_rs 1.0e-14 [5.1e-15]  esa 6.0e-14 [1.0e-14]
+  R    10.0 m  ours_py 8.5e-14 [6.3e-15]  ours_rs 1.5e-13 [2.0e-14]  esa 1.5e-12 [3.5e-13]
+  R    30.0 m  ours_py 1.6e-12 [4.0e-13]  ours_rs 1.6e-12 [5.2e-13]  esa 7.4e-11 [2.1e-11]
+  R   100.0 m  ours_py 1.4e-11 [3.6e-12]  ours_rs 1.2e-11 [2.2e-12]  esa 2.9e-09 [7.9e-10]
+  R   300.0 m  ours_py 1.1e-10 [3.6e-11]  ours_rs 1.3e-10 [4.2e-11]  esa 6.4e-08 [8.9e-09]
+  R  1000.0 m  ours_py 1.1e-09 [3.4e-10]  ours_rs 1.0e-09 [4.7e-11]  esa 3.8e-06 [1.9e-07]
+
+icosahedron (20 triangles): worst over 3 directions, relative error of g [U]
+  R     1.0 m  ours_py 2.0e-15 [5.1e-16]  ours_rs 1.1e-15 [5.0e-16]  esa 4.1e-15 [1.1e-15]
+  R     1.5 m  ours_py 3.1e-15 [5.9e-16]  ours_rs 2.9e-15 [7.6e-16]  esa 1.1e-14 [5.7e-15]
+  R     3.0 m  ours_py 6.9e-15 [3.1e-15]  ours_rs 1.0e-14 [2.7e-15]  esa 1.3e-13 [1.9e-14]
+  R    10.0 m  ours_py 1.1e-13 [3.4e-14]  ours_rs 9.8e-14 [4.8e-14]  esa 4.2e-12 [1.3e-12]
+  R    30.0 m  ours_py 9.5e-13 [1.2e-13]  ours_rs 8.1e-13 [2.3e-13]  esa 9.2e-11 [2.8e-11]
+  R   100.0 m  ours_py 8.4e-12 [3.2e-12]  ours_rs 7.1e-12 [1.9e-12]  esa 4.8e-09 [9.1e-10]
+  R   300.0 m  ours_py 1.5e-10 [2.3e-11]  ours_rs 1.3e-10 [2.3e-11]  esa 1.2e-07 [1.7e-08]
+  R  1000.0 m  ours_py 7.8e-10 [2.6e-10]  ours_rs 5.1e-10 [2.1e-10]  esa 2.1e-06 [2.3e-07]
+
+plate (12 triangles): worst over 3 directions, relative error of g [U]
+  R     1.0 m  ours_py 1.5e-14 [4.7e-15]  ours_rs 2.0e-14 [8.2e-15]  esa 5.3e-14 [7.6e-15]
+  R     1.5 m  ours_py 3.8e-14 [1.2e-14]  ours_rs 3.0e-14 [1.1e-14]  esa 1.2e-13 [1.8e-14]
+  R     3.0 m  ours_py 1.4e-13 [5.5e-14]  ours_rs 1.1e-13 [4.2e-14]  esa 9.7e-13 [2.6e-13]
+  R    10.0 m  ours_py 1.2e-12 [3.0e-13]  ours_rs 1.2e-12 [9.5e-14]  esa 2.4e-11 [4.5e-12]
+  R    30.0 m  ours_py 7.4e-12 [3.1e-12]  ours_rs 1.3e-11 [5.5e-12]  esa 5.0e-10 [1.7e-10]
+  R   100.0 m  ours_py 1.0e-10 [2.7e-11]  ours_rs 1.6e-10 [3.2e-11]  esa 3.0e-08 [7.7e-09]
+  R   300.0 m  ours_py 1.4e-09 [5.7e-10]  ours_rs 1.9e-09 [7.1e-10]  esa 6.2e-07 [1.9e-07]
+  R  1000.0 m  ours_py 1.8e-08 [2.9e-09]  ours_rs 1.3e-08 [3.1e-09]  esa 1.7e-05 [3.9e-06]
+
+sphere (1280 triangles): worst over 3 directions, relative error of g [U]
+  R     1.0 m  ours_py 2.2e-15 [1.3e-15]  ours_rs 1.5e-15 [1.1e-15]  esa 3.9e-14 [2.1e-14]
+  R     1.5 m  ours_py 3.3e-15 [2.5e-15]  ours_rs 2.1e-15 [2.4e-15]  esa 8.3e-14 [1.1e-14]
+  R     3.0 m  ours_py 9.8e-15 [2.1e-15]  ours_rs 1.0e-14 [1.5e-15]  esa 7.3e-13 [3.6e-13]
+  R    10.0 m  ours_py 1.1e-13 [1.3e-14]  ours_rs 8.3e-14 [3.1e-14]  esa 2.9e-11 [5.7e-12]
+  R    30.0 m  ours_py 7.2e-13 [1.2e-13]  ours_rs 6.4e-13 [3.1e-13]  esa 9.1e-10 [1.5e-10]
+  R   100.0 m  ours_py 6.8e-12 [1.3e-12]  ours_rs 8.6e-12 [3.5e-12]  esa 2.5e-08 [4.5e-09]
+  R   300.0 m  ours_py 4.6e-11 [1.7e-11]  ours_rs 9.5e-11 [3.5e-11]  esa 1.0e-06 [2.1e-07]
+  R  1000.0 m  ours_py 7.2e-10 [2.0e-10]  ours_rs 5.4e-10 [1.2e-10]  esa 3.2e-05 [2.0e-06]
+
+plate_aligned (12 triangles): worst over 3 directions, relative error of g [U]
+  R     1.0 m  ours_py 1.7e-14 [4.2e-15]  ours_rs 9.1e-15 [2.8e-15]  esa 2.9e-14 [8.5e-15]  harmonica 1.5e-14 [1.1e-14]
+  R     1.5 m  ours_py 1.3e-14 [5.0e-15]  ours_rs 1.3e-14 [5.0e-15]  esa 2.0e-13 [2.8e-14]  harmonica 5.9e-14 [5.4e-15]
+  R     3.0 m  ours_py 8.2e-14 [2.1e-14]  ours_rs 8.2e-14 [2.1e-14]  esa 5.5e-13 [1.3e-13]  harmonica 5.8e-13 [1.4e-13]
+  R    10.0 m  ours_py 7.2e-13 [4.2e-14]  ours_rs 7.2e-13 [4.2e-14]  esa 2.6e-11 [2.5e-12]  harmonica 3.9e-11 [1.4e-12]
+  R    30.0 m  ours_py 4.5e-12 [1.2e-12]  ours_rs 4.5e-12 [1.2e-12]  esa 8.8e-10 [1.2e-10]  harmonica 9.9e-10 [1.9e-10]
+  R   100.0 m  ours_py 8.7e-11 [2.8e-11]  ours_rs 8.7e-11 [2.8e-11]  esa 4.3e-08 [3.0e-09]  harmonica 4.5e-08 [7.6e-09]
+  R   300.0 m  ours_py 5.9e-10 [1.6e-10]  ours_rs 5.9e-10 [1.6e-10]  esa 5.3e-07 [4.3e-08]  harmonica 1.3e-06 [1.1e-07]
+  R  1000.0 m  ours_py 1.1e-08 [3.0e-09]  ours_rs 1.1e-08 [3.0e-09]  esa 2.4e-05 [1.4e-06]  harmonica 4.7e-05 [1.2e-05]
+
+stellated (60 triangles): worst over 3 directions, relative error of g [U]
+  R     1.0 m  ours_py 8.4e-16 [3.3e-16]  ours_rs 7.7e-16 [3.5e-16]  esa 1.1e-14 [4.9e-15]
+  R     1.5 m  ours_py 3.4e-15 [6.6e-16]  ours_rs 1.9e-15 [7.9e-16]  esa 2.0e-14 [4.4e-15]
+  R     3.0 m  ours_py 5.9e-15 [3.1e-15]  ours_rs 5.0e-15 [1.7e-15]  esa 1.9e-13 [3.0e-14]
+  R    10.0 m  ours_py 9.3e-14 [3.1e-14]  ours_rs 9.2e-14 [3.2e-14]  esa 3.5e-12 [1.2e-12]
+  R    30.0 m  ours_py 6.1e-13 [2.5e-13]  ours_rs 7.6e-13 [1.7e-13]  esa 6.3e-11 [1.8e-11]
+  R   100.0 m  ours_py 9.4e-12 [2.7e-12]  ours_rs 1.0e-11 [2.8e-12]  esa 5.4e-09 [4.8e-10]
+  R   300.0 m  ours_py 6.6e-11 [2.9e-11]  ours_rs 9.8e-11 [4.3e-11]  esa 7.1e-08 [4.6e-09]
+  R  1000.0 m  ours_py 9.9e-10 [3.9e-10]  ours_rs 7.4e-10 [2.9e-10]  esa 2.0e-06 [7.0e-07]
+
+spot (5856 triangles): worst over 3 directions, relative error of g [U]
+  R     1.5 m  ours_py 6.5e-15 [1.1e-15]  ours_rs 4.8e-15 [3.3e-15]  esa 7.6e-13 [1.9e-13]
+  R     3.0 m  ours_py 2.5e-14 [6.6e-15]  ours_rs 3.4e-14 [9.8e-15]  esa 6.3e-12 [1.6e-12]
+  R   100.0 m  ours_py 2.1e-11 [7.0e-12]  ours_rs 1.6e-11 [4.4e-12]  esa 3.8e-07 [7.1e-08]
+  R  1000.0 m  ours_py 2.9e-09 [1.1e-09]  ours_rs 2.6e-09 [4.0e-10]  esa 1.7e-04 [3.8e-05]
+
+singular points of the aligned 0.8 m cube: relative error of U, |g| (or the value if NaN/inf)
+  face centre             ours_py NONFINITE  ours_rs 1e-16 2e-16  esa 3e-16 4e-16  harmonica 1e-16 3e-17
+  on a face, generic      ours_py 2e-16 1e-16  ours_rs 2e-16 8e-17  esa 3e-17 5e-16  harmonica 2e-16 2e-16
+  on an edge              ours_py NONFINITE  ours_rs 3e-17 2e-16  esa 8e-16 6e-16  harmonica 1e-16 3e-16
+  at a vertex             ours_py NONFINITE  ours_rs 4e-16 4e-16  esa 5e-16 1e-16  harmonica 1e-16 3e-16
+  face plane, outside     ours_py 1e-16 5e-16  ours_rs 1e-16 9e-16  esa 2e-15 3e-15  harmonica 5e-16 6e-16
+  edge line, outside      ours_py 2e-16 4e-16  ours_rs 5e-17 1e-16  esa 6e-16 3e-15  harmonica 3e-16 2e-15
+  1e-9 m off an edge      ours_py NONFINITE  ours_rs 3e-16 4e-16  esa 4e-16 3e-08  harmonica 7e-18 1e-16
+  1e-12 m off a face      ours_py 3e-17 3e-16  ours_rs 3e-17 2e-16  esa 2e-16 4e-16  harmonica 3e-17 2e-16
