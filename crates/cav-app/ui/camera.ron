@@ -4,9 +4,9 @@
 (
     // How far a look turns per count of raw mouse motion, degrees per count.
     sensitivity: 0.1,
-    // The flying speed at first, metres per second (the wheel changes it, 0.05 to 1000).
+    // The flying speed at first, metres per second (the wheel changes it while flying, 0.05 to 1000).
     fly_speed: 4.0,
-    // What sprinting (Ctrl held, or a double tap of W) multiplies the speed by.
+    // What sprinting (a double tap of W, or natively Ctrl held) multiplies the speed by.
     sprint: 2.0,
     // The time constant with which the velocity eases toward the wanted one, seconds.
     easing: 0.08,
@@ -20,7 +20,8 @@
         width: 0.6,
         height: 1.8,
         eye_height: 1.62,
-        // The walking speed, and what sprinting and sneaking multiply it by.
+        // The walking speed (the wheel changes it while walking, 0.1 to 100), and what sprinting
+        // and sneaking multiply it by.
         speed: 4.3,
         sprint: 1.3,
         sneak: 0.3,

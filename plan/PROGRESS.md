@@ -11,9 +11,33 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S4 big scenes | done: TASK-S4-01 to 25 merged; reviewed three times (`docs/slices/S4-review.md`, `-2`, `-3`), nothing important remains; oracle 58/58, validation 113/113 | `s4-big-scenes` | brief and results: `docs/slices/S4.md` (§7.7–§7.8: the fixes); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
 | S18 the editor | done: TASK-S18-01 to 04, 07 to 22 merged; reviewed three times (`docs/slices/S18-review.md`, `-2`, `-3`), nothing important remains | `s18-the-editor` | brief and results: `docs/slices/S18.md` (§7.7–§7.8: the fixes); screenshots: `docs/slices/S18/`; recipe: `docs/extending/a-tool-or-panel.md` |
 | S19 the editor's second half | done: materials, mesh import, the Probe, the side panels redesigned; reviewed twice (`docs/slices/S19-review.md`, `-2`), every important finding fixed (TASK-S19-21 to 26); validation 116/116 | `s19-editor-second-half` | brief and results: `docs/slices/S19.md` (§7.9–§7.10); pictures: `docs/slices/S19/` |
-| S20 the workspace | built, not reviewed, not tagged: TASK-S20-03 to 14 merged (dense panels, the mosaic, viewport headers, the tool palette, the transport, folders, the first-person and walk cameras, the drawn path); validation 116/116 | — | brief and results: `docs/slices/S20.md` (§7); pictures, session and timings: `docs/slices/S20/`; design as built: `docs/design/workspace.md`; recipes: `docs/extending/a-view-or-a-layout.md`, `something-the-camera-collides-with.md` |
+| S20 the workspace | built and reviewed (`docs/slices/S20-review.md`), the review's findings fixed (TASK-S20-15), not tagged: TASK-S20-03 to 15 merged (dense panels, the mosaic, viewport headers, the tool palette, the transport, folders, the first-person and walk cameras, the drawn path); validation 116/116 | — | brief and results: `docs/slices/S20.md` (§7); pictures, session and timings: `docs/slices/S20/`; design as built: `docs/design/workspace.md`; recipes: `docs/extending/a-view-or-a-layout.md`, `something-the-camera-collides-with.md` |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
 
+## S20 after its review (27 Nov 2026) — fixes done (TASK-S20-15)
+
+**Done** (`docs/slices/S20.md` §7.11, each with its test and control). The three important
+findings: the room keeps the camera in and never out (Shift+G from outside lands on the ground,
+not the roof); the wheel changes and shows the speed in use (walking speed walking, flying speed
+flying); in a page Ctrl is not the sprint (the `?` sheet and the fly tooltip say "W twice"
+there) and a `beforeunload` guard asks before a page with unsaved work is left. Minors: Home's
+undo names its viewport by label (and `@A` addresses a viewport); C1's control runs the
+integrator; §7.6 re-measured with the build named; a pop-out opens offset, half its slot, clear
+of the dock button, with a shadow; an orthographic view is orthographic again after a session;
+a split takes the letter after the highest; the shot field shows the shot in flight; `lib.rs`
+names S20's parts; terse plot titles; reverse-Z in IDEAS. Every S20 picture retaken; quick 712,
+slow 49, gpu 42 green.
+
+**Decided.** The room is solid only to a camera wholly inside it (a straddling camera passes);
+the read-out shows the speed without sprint or sneak; the wheel's walking speed is the session's
+setting (as `camera-set walk-speed`), not saved; a pop-out is half its slot (at most 45 % of the
+figure) so the dock button can stay clear even of a single viewport's; past `Z` a split takes the
+first free letter.
+
+**Open.** The `beforeunload` guard and the page's sprint are compiled and linted for wasm32 and
+untried in a browser (this PC's rule). A door in the room (to walk out) is still in IDEAS.
+
+**Next.** The tag for S20 if the owner is content; then S5 or S22.
 ## S20, the workspace (25 to 27 Nov 2026) — built, not reviewed
 
 **Done** (PRs #216, #218 to #226, #228 and the record; `docs/slices/S20.md` §7). **Density**: rows
