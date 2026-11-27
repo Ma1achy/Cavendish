@@ -166,7 +166,7 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 ## From S19 (left, with why)
 
 - **Progressive refinement** (preview while a drag goes on, the chosen tier on idle): the detail
-  tiers' main use. With the tiers (TASK-S19-06), in S20.
+  tiers' main use. With the tiers (TASK-S19-06), in S22.
 - **Mixed cells hold mass, not moments**: a cell two materials share keeps the sum of their masses
   at its centre (`VoxTree::mixed`); S5's exact piece moments (TASK-S5-09) fill the same table with
   centroids and second moments. The table is where that revision goes.
@@ -178,7 +178,7 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   (Done after S19's review: every two at least 15 apart in L*a*b*; colour-blind safety below.)
 - **The label column follows the inspector's first width**, not the width it is dragged to (egui
   widens a panel to its content, and a column that followed it pushed it wider every frame): with
-  docking (S20), take the dock area's own width, which egui_dock does not grow to content. (Since
+  docking (S22), take the dock area's own width, which egui_dock does not grow to content. (Since
   S19's review the panel no longer grows to its content, so the column could follow it now.)
 - **A material's elastic and thermal numbers are read by nothing yet**: rigid dynamics (S7) and
   heat (S13) will; until then the inspector could fold them under "Advanced".

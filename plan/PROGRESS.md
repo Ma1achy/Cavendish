@@ -11,7 +11,50 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S4 big scenes | done: TASK-S4-01 to 25 merged; reviewed three times (`docs/slices/S4-review.md`, `-2`, `-3`), nothing important remains; oracle 58/58, validation 113/113 | `s4-big-scenes` | brief and results: `docs/slices/S4.md` (§7.7–§7.8: the fixes); screenshots, traces and paper drawings: `docs/slices/S4/`; recipe: `docs/extending/a-world-piece.md` |
 | S18 the editor | done: TASK-S18-01 to 04, 07 to 22 merged; reviewed three times (`docs/slices/S18-review.md`, `-2`, `-3`), nothing important remains | `s18-the-editor` | brief and results: `docs/slices/S18.md` (§7.7–§7.8: the fixes); screenshots: `docs/slices/S18/`; recipe: `docs/extending/a-tool-or-panel.md` |
 | S19 the editor's second half | done: materials, mesh import, the Probe, the side panels redesigned; reviewed twice (`docs/slices/S19-review.md`, `-2`), every important finding fixed (TASK-S19-21 to 26); validation 116/116 | `s19-editor-second-half` | brief and results: `docs/slices/S19.md` (§7.9–§7.10); pictures: `docs/slices/S19/` |
+| S20 the workspace | built, not reviewed, not tagged: TASK-S20-03 to 14 merged (dense panels, the mosaic, viewport headers, the tool palette, the transport, folders, the first-person and walk cameras, the drawn path); validation 116/116 | — | brief and results: `docs/slices/S20.md` (§7); pictures, session and timings: `docs/slices/S20/`; design as built: `docs/design/workspace.md`; recipes: `docs/extending/a-view-or-a-layout.md`, `something-the-camera-collides-with.md` |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
+
+## S20, the workspace (25 to 27 Nov 2026) — built, not reviewed
+
+**Done** (PRs #216, #218 to #226, #228 and the record; `docs/slices/S20.md` §7). **Density**: rows
+20 to 22 pt, text 11 to 12 pt, a 4 pt grid, the inspector 320 pt, no sentences in the chrome, the
+Probe in its own tab. **The mosaic**: up to twelve viewports written as `mosaic "AAB;CDB"`; split,
+close, swap, maximise, splitters, a viewport popped out as a floating frame. **A header a
+viewport** (view type, camera, shading, overlays; a warning dot) and a navigation gizmo; status in
+the status bar. **The tool palette** floating in the view, with Place's flyout and an options row.
+**The transport**: start, step, play, end, loop/stop/run on, speed, time, duration and shot typed
+where they are read. **Folders** in the scene tree, saved with the scene, costing nothing unused.
+**The first-person camera** (captured pointer, eased, frame-rate independent) and **the walker**
+(a box with gravity, a jump, a step up, collision with the world, voxel bodies, the floor and the
+room; noclip). **A drawn path** cut by curvature. Before and after pictures side by side in §7.1.
+
+**Numbers.** `quick` 704 in 16 to 23 s warm idle (35 to 70 s at full load from another build);
+`gpu` 42 in 30 s; `slow` 49 in 40 s; `oracle` 58 in 388 s (605 s the tier); `web` green in 312 s
+(the page's pointer lock compiled as written); `strays` clean; validation 116 of 116 against
+`s19-editor-second-half`, the report unchanged to the byte, no case dropped or added, no tolerance
+moved. Release: a frame with six viewports 1.3 ms (budget 4), a walker's step in `town` 2.2 µs
+(budget 50), a path of 10⁴ periods 7.6 µs, 1.24 ms at its cap (budget 2 ms).
+
+**Found by the record and fixed** (§7.7): the inspector's header ran its words under the eye at
+320 pt; a viewport popped out by a script floated over the scene tree; a refusal's test read the
+log's last line and failed once under load. The ground in `town` reported as ending 10 m out was
+measured: it runs to the edge of the 200 m ground (no fault; the scene has no sky).
+
+**Decided (worth a second look)** (§7.8, §7.9). A viewport's number is its label's alphabetical
+rank, not first appearance (a swap must not renumber). Pop-out is a frame inside the window. The
+inspector's row gap is 2 pt (off the 4 pt grid) and its width 320, not 300. Flying collides by
+default; the world's collision is analytic from the spec's pieces. A step counts shots not taken.
+A new folder and its name are two undo steps. "As fast as it runs" is left out. No validation
+case added (no physics; W4 is a bit-for-bit identity held by its test).
+
+**Open.** Nobody has used the workspace in the real window, and the page's pointer lock is
+untried in a real browser. Swapping by dragging a header has no test by events. Home's undo step
+names a pane by number (wrong after a close renumbers; `plan/IDEAS.md`). H2 to H4's and K1's
+controls are arms in their tests, not mutation-checked. The transport menu's lit row is only as
+wide as its words. No folders in Surroundings; a folder is not a selection.
+
+**Next.** A review of S20; then the tag if the owner is content; then S5 or S22 (the editor's
+tools and docking: OS windows, multi-selection, the live mode, the rest of the tools).
 
 ## S19 done (25 Nov 2026) — tagged `s19-editor-second-half`
 The second review's one important finding (a held mesh's hand-off to a web worker) is fixed in #212 with both
