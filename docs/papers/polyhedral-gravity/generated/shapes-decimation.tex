@@ -1,0 +1,11 @@
+\begin{tabular}{lrrrrrrrl}
+\toprule
+mesh & original & used & \multicolumn{2}{c}{original $\to$ used (m)} & vertices & volume & signal & verdict \\
+\cmidrule(lr){4-5}
+ & triangles & triangles & max & RMS & beyond 3.9 mm & change & change, 1.5 m (rad) & \\
+\midrule
+dragon & 871\,414 & 49\,138 & $2.2\times10^{-2}$ & $5.8\times10^{-4}$ & 691 & $-7.1\times10^{-4}$ & $1.1\times10^{-3}$ & \textbf{fail} \\
+Armadillo & 345\,944 & 59\,996 & $3.3\times10^{-3}$ & $2.8\times10^{-4}$ & 0 & $-5.7\times10^{-4}$ & $1.3\times10^{-3}$ & pass \\
+Buddha & 1\,087\,716 & 47\,974 & $1.0\times10^{-2}$ & $5.0\times10^{-4}$ & 1\,912 & $-3.9\times10^{-4}$ & $6.2\times10^{-4}$ & \textbf{fail} \\
+\bottomrule
+\end{tabular}
