@@ -25,6 +25,14 @@ the phase as a floor), `crates/cav-core/src/forward.rs`; the paper's representat
   are; every other mesh then the question is the size of the gap), or the order (d) < (c) ≪ (b) < (a)
   changed. Reported either way.
 
+- **A5 the octree body (added at the owner's request, before measuring).** Interior merged into the
+  largest aligned 2^k blocks wholly inside; each block read by its closed form near and its l ≤ 4
+  series far. (i) Interior blocks grow as N² (fitted exponent of block count against cells across
+  between 2.0 and 2.4 over 16–128), against N³ for the cells. (ii) With the strict switch ((s/2)/d <
+  0.01) the octree interior meets A2. (iii) With S3's switch (closed form within 3 sides) the extra
+  error is reported against 1e-10 rad; if it exceeds it at 1.5 m the rule is not good enough for the
+  oracle and the note says so.
+
 ## B. Single precision
 
 Reference: the same expression in f64 (f64's own error is ≥ 10⁸ times smaller than f32's for the
