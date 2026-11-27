@@ -1,0 +1,5 @@
+# Downloaded mesh (Spot; fetched and hash-checked at run time), fixtures, Python caches, the Rust build.
+.cache/
+__pycache__/
+kernel_bench/target/
+kernel_bench/Cargo.lock
