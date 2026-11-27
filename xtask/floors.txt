@@ -31,7 +31,9 @@
 # titles).
 # TASK-S5-08 (the polyhedral kernel): 14 new quick tests (cav-core: P1 to P7 and their controls,
 # the constructors, the difference, the moments' index order).
-quick 726
+# TASK-S5-11 (the world octree): 11 new quick tests (cav-core: 6 of voxel::summary; cav-sim: O1 to
+# O3, the octree's shape, its caps); 1 new slow test (cav-sim: slow_the_town_s_octree).
+quick 737
 gpu 42
-slow 49
+slow 50
 oracle 58

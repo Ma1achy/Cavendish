@@ -806,6 +806,7 @@ pub fn work_share(spec: &crate::SceneSpec) -> u64 {
 }
 
 pub mod clipmap;
+pub mod octree;
 
 #[cfg(test)]
 mod tests;
