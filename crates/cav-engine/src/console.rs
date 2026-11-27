@@ -111,6 +111,12 @@ pub const COMMANDS: &[CommandDoc] = &[
         example: "remove array.towers[4]",
     },
     CommandDoc {
+        name: "folder",
+        usage: "folder new <name> [in <array|bodies|folder>] | folder move <body N|tower N|folder>… <folder|none> | folder rename <old> <new> | folder remove <name> | folder duplicate <name>",
+        about: "the scene tree's folders, saved with the scene; the towers read the same with or without them. new: an empty folder in the Bodies, or in the Array, or inside another folder (at most 256, nested 8 deep); move: bodies, towers (numbered as on screen) or whole folders into a folder, or `none` for out of every folder; rename: its members follow; remove: the folder only, what it holds moves up to the folder it was in, nothing is deleted; duplicate: a copy of the folder, of the folders in it and of their bodies (half a metre east) or towers (a metre east). Quote a name with spaces (each an edit: one undo)",
+        example: "folder new rig in bodies",
+    },
+    CommandDoc {
         name: "save",
         usage: "save <file.ron>",
         about: "write the scene to a file that `load` reads back; quote a path with spaces",
@@ -360,6 +366,29 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
         Command::Insert { path, index: None, value } => format!("add {path} {value}"),
         Command::Insert { path, index: Some(at), value } => format!("add {path} {at} {value}"),
         Command::Remove { path } => format!("remove {path}"),
+        Command::Folder(change) => {
+            use cav_sim::{FolderEdit, FolderItem};
+            match change {
+                FolderEdit::New { name, within: None } => format!("folder new {}", quoted(name)),
+                FolderEdit::New { name, within: Some(within) } => {
+                    format!("folder new {} in {}", quoted(name), quoted(within))
+                }
+                FolderEdit::Move { items, to } => {
+                    let items: Vec<String> = items
+                        .iter()
+                        .map(|item| match item {
+                            FolderItem::Body(n) => format!("body {n}"),
+                            FolderItem::Tower(n) => format!("tower {n}"),
+                            FolderItem::Folder(label) => quoted(label),
+                        })
+                        .collect();
+                    format!("folder move {} {}", items.join(" "), to.as_deref().map_or("none".into(), quoted))
+                }
+                FolderEdit::Rename { from, to } => format!("folder rename {} {}", quoted(from), quoted(to)),
+                FolderEdit::Remove { name } => format!("folder remove {}", quoted(name)),
+                FolderEdit::Duplicate { name } => format!("folder duplicate {}", quoted(name)),
+            }
+        }
         Command::Export { what: ExportKind::Scene, to } => format!("save {}", quoted(to)),
         Command::Export { what: ExportKind::Journal, to } => format!("journal save {}", quoted(to)),
         Command::Export { what: ExportKind::Bundle, to } => format!("export bundle {}", quoted(to)),
@@ -767,6 +796,41 @@ impl Engine {
             ("duplicate", [path]) => {
                 let (list, value) = cav_sim::starters::duplicate(self.spec(), path)?;
                 Ok(Request::Do(Command::Insert { path: list.to_owned(), index: None, value }))
+            }
+            ("folder", [verb, rest @ ..]) => {
+                use cav_sim::{FolderEdit, FolderItem};
+                let owned = |word: &&str| (*word).to_owned();
+                let change = match (*verb, rest) {
+                    ("new", [new]) => FolderEdit::New { name: owned(new), within: None },
+                    ("new", [new, "in", within]) => {
+                        FolderEdit::New { name: owned(new), within: Some(owned(within)) }
+                    }
+                    ("move", [items @ .., to]) if !items.is_empty() => {
+                        // `body N` and `tower N` are a body and a tower as on screen; any other
+                        // word is a folder's label.
+                        let mut moved = Vec::new();
+                        let mut words = items.iter().peekable();
+                        while let Some(word) = words.next() {
+                            let number = words.peek().and_then(|n| n.parse::<usize>().ok());
+                            match (*word, number) {
+                                ("body", Some(n)) => moved.push(FolderItem::Body(n)),
+                                ("tower", Some(n)) => moved.push(FolderItem::Tower(n)),
+                                _ => {
+                                    moved.push(FolderItem::Folder(owned(word)));
+                                    continue;
+                                }
+                            }
+                            words.next();
+                        }
+                        let to = (!to.eq_ignore_ascii_case("none")).then(|| owned(to));
+                        FolderEdit::Move { items: moved, to }
+                    }
+                    ("rename", [from, to]) => FolderEdit::Rename { from: owned(from), to: owned(to) },
+                    ("remove", [gone]) => FolderEdit::Remove { name: owned(gone) },
+                    ("duplicate", [copied]) => FolderEdit::Duplicate { name: owned(copied) },
+                    _ => return Err(wrong()),
+                };
+                Ok(Request::Do(Command::Folder(change)))
             }
             ("save", [file]) => {
                 Ok(Request::Do(Command::Export { what: ExportKind::Scene, to: (*file).to_owned() }))
@@ -1514,6 +1578,30 @@ mod tests {
             ("load infinite-floor", Command::load(dev::infinite_floor())),
             ("undo", Command::Undo),
             ("redo", Command::Redo),
+            (
+                "folder new \"the rig\" in bodies",
+                Command::Folder(cav_sim::FolderEdit::New {
+                    name: "the rig".into(),
+                    within: Some("bodies".into()),
+                }),
+            ),
+            (
+                "folder move body 2 tower 1 \"the rig\" none",
+                Command::Folder(cav_sim::FolderEdit::Move {
+                    items: vec![
+                        cav_sim::FolderItem::Body(2),
+                        cav_sim::FolderItem::Tower(1),
+                        cav_sim::FolderItem::Folder("the rig".into()),
+                    ],
+                    to: None,
+                }),
+            ),
+            (
+                "folder rename a b",
+                Command::Folder(cav_sim::FolderEdit::Rename { from: "a".into(), to: "b".into() }),
+            ),
+            ("folder remove a", Command::Folder(cav_sim::FolderEdit::Remove { name: "a".into() })),
+            ("folder duplicate a", Command::Folder(cav_sim::FolderEdit::Duplicate { name: "a".into() })),
             ("select tower 3", Command::Select(Some(Target::Tower(3)))),
             ("select room", Command::Select(Some(Target::Room))),
             ("select floor", Command::Select(Some(Target::Floor))),

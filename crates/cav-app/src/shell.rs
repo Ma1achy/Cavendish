@@ -37,7 +37,18 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
         "the command palette: search every action, starter, scene, command and field (Ctrl+K); `palette add` lists what can be added, `palette <menu>` one menu, `palette <words>` opens it with them typed",
     ),
     ("context", "open the right-click menu of the selection's row in the scene tree"),
-    ("rename", "type a new name for the selected body or tower in the scene tree (F2)"),
+    (
+        "rename",
+        "type a new name for the selected body or tower, or the focused folder, in the scene tree (F2)",
+    ),
+    (
+        "new-folder",
+        "make a folder in the scene tree (the engine's `folder new`), beside the selection or inside the folder in focus, and type its name",
+    ),
+    (
+        "tree-fold",
+        "fold or unfold a row of the scene tree, for this scene: `tree-fold <array|bodies|surroundings|folder>` (quote a folder's name with spaces)",
+    ),
     ("frame", "fit the selection (or the whole scene) into the active pane (F)"),
     (
         "tool",
@@ -211,6 +222,11 @@ pub struct Layout {
     pub legends: Vec<(usize, Rect)>,
     /// The scene tree's groups as drawn: each group's scope id and whether it is open.
     pub tree_groups: Vec<(String, bool)>,
+    /// The scene tree's folders as drawn, in the order drawn.
+    pub tree_folders: Vec<crate::outliner::FolderRow>,
+    /// The row a dragged row of the scene tree is over, if it is over one that takes drops (a
+    /// folder's label, or a group's name), and whether a drop there would be taken.
+    pub tree_drop: Option<(String, bool)>,
     /// Each tower's status dot as drawn in the tree: the tower (from 0) and what it says.
     pub dots: Vec<(usize, crate::outliner::Dot)>,
     /// The Readings tab's rows as drawn: the tower (from 0) and its ΔΦ as written, with the
@@ -269,6 +285,8 @@ impl Default for Layout {
             ruler: (Vec::new(), Rect::NOTHING),
             legends: Vec::new(),
             tree_groups: Vec::new(),
+            tree_folders: Vec::new(),
+            tree_drop: None,
             dots: Vec::new(),
             readings: Vec::new(),
             probe: None,
@@ -461,8 +479,17 @@ pub struct Shell {
     seen_selection: Option<Target>,
     /// What the scene tree's filter keeps: rows whose names hold it.
     pub tree_filter: String,
-    /// The scene tree's folded groups, by scene name and group: UI state, kept per scene.
+    /// The scene tree's folded groups and folders, by scene name and row id (`tree/sources`,
+    /// `tree/folder/<label>`): UI state, kept per scene.
     pub tree_folded: std::collections::BTreeSet<(String, String)>,
+    /// The folder in focus in the scene tree, by label: the one a click on its row lit, which
+    /// `rename` (F2) and `new-folder` act on. A folder is never the engine's selection (moving
+    /// everything in one with the gizmo needs multi-selection: S22). UI state.
+    pub tree_focus: Option<String>,
+    /// The folder being renamed in the scene tree, by its label, and the name typed so far.
+    pub renaming_folder: Option<(String, String)>,
+    /// The row of the scene tree being dragged onto a folder or a group, while it is.
+    pub(crate) tree_drag: Option<crate::outliner::TreeDrag>,
     /// The right-hand panel's tab.
     pub right_tab: crate::outliner::RightTab,
     /// The inspector's label column, points: 40 % of its width, at least 96 (S19's panels), so
@@ -651,6 +678,9 @@ impl Shell {
             seen_selection: None,
             tree_filter: String::new(),
             tree_folded: std::collections::BTreeSet::new(),
+            tree_focus: None,
+            renaming_folder: None,
+            tree_drag: None,
             right_tab: crate::outliner::RightTab::Inspector,
             label_width: crate::inspector::LABEL_MIN,
             clipboard: None,
@@ -1004,6 +1034,10 @@ impl Shell {
             Needs::Redo => can_redo,
             Needs::Selection => self.engine.selection().is_some(),
             Needs::Item => matches!(self.engine.selection(), Some(Target::Body(_) | Target::Tower(_))),
+            Needs::Named => {
+                matches!(self.engine.selection(), Some(Target::Body(_) | Target::Tower(_)))
+                    || self.tree_focus.is_some()
+            }
             Needs::Body => matches!(self.engine.selection(), Some(Target::Body(_))),
             Needs::Tower(n) => n >= 1 && n <= spec.array.towers.len(),
             Needs::Shapes => spec.bodies.iter().any(|b| b.shape.is_some()),
@@ -1462,7 +1496,7 @@ impl Shell {
             return Ok(line.to_owned());
         }
         // These take their words below; every other takes none.
-        let takes_words = matches!(name, "pointer" | "tab" | "probe-at" | "import-mesh");
+        let takes_words = matches!(name, "pointer" | "tab" | "probe-at" | "import-mesh" | "tree-fold");
         if !takes_words && words.clone().next().is_some() {
             let why = format!("`{name}` takes no arguments");
             self.engine.note(Level::Error, Subsystem::App, why.clone());
@@ -1599,6 +1633,38 @@ impl Shell {
                     self.keyboard.session = Some(crate::keyboard::Session::Fly);
                     self.keyboard.nav_on |= self.by_keyboard;
                 }
+            }
+            "tree-fold" => {
+                // The row's name is the rest of the line, quotes or not.
+                let rest = line.trim_start_matches("tree-fold").trim().trim_matches('"');
+                let id = match rest.to_lowercase().as_str() {
+                    "array" => Some("tree/array".to_owned()),
+                    "bodies" => Some("tree/sources".to_owned()),
+                    "surroundings" => Some("tree/surroundings".to_owned()),
+                    _ => self.engine.spec().folder(rest).map(|f| crate::outliner::folder_id(&f.label)),
+                };
+                let Some(id) = id else {
+                    let why = format!(
+                        "`tree-fold <array|bodies|surroundings|folder>`: `{rest}` is no row that folds"
+                    );
+                    self.engine.note(Level::Error, Subsystem::App, why.clone());
+                    return Err(why);
+                };
+                let key = (self.engine.spec().name.clone(), id);
+                if !self.tree_folded.remove(&key) {
+                    self.tree_folded.insert(key);
+                }
+                return Ok(line.to_owned());
+            }
+            "new-folder" => {
+                if let Err(why) = crate::outliner::new_folder(self) {
+                    self.engine.note(Level::Error, Subsystem::App, why.clone());
+                    return Err(why);
+                }
+            }
+            "rename" if self.tree_focus.as_ref().is_some_and(|f| self.engine.spec().folder(f).is_some()) => {
+                let label = self.tree_focus.clone().unwrap_or_default();
+                self.renaming_folder = Some((label.clone(), label));
             }
             "rename" => match self.engine.selection() {
                 Some(target @ (Target::Body(n) | Target::Tower(n))) => {
@@ -2229,6 +2295,8 @@ impl Shell {
         if selection != self.seen_selection {
             if selection.is_some() {
                 self.right_tab = crate::outliner::RightTab::Inspector;
+                // Something selected takes the tree's light from a folder.
+                self.tree_focus = None;
             }
             self.seen_selection = selection;
         }

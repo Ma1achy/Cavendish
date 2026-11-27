@@ -56,7 +56,8 @@ fn items(prefix: &str) -> Vec<Item<'static>> {
 }
 
 /// The Add menu: the starters (`scenes/starters.ron`), bodies first, voxel shapes in a submenu,
-/// then the tower. Each adds its starter where the camera looks and selects it.
+/// then the tower. Each adds its starter where the camera looks and selects it. Last, a new
+/// folder of the scene tree.
 pub(crate) fn add_menu(shell: &mut Shell, ui: &mut egui::Ui) {
     let starters = cav_sim::starters::starters();
     let is_shape = |s: &cav_sim::starters::Starter| s.body.as_ref().is_some_and(|b| b.shape.is_some());
@@ -82,6 +83,16 @@ pub(crate) fn add_menu(shell: &mut Shell, ui: &mut egui::Ui) {
     if let Some(name) = chosen {
         let _ = shell.add_starter(name);
         ui.close();
+    }
+    // A folder of the scene tree: the `new-folder` action, here beside what it will hold.
+    if let Some(action) = table().action("new-folder") {
+        ui.separator();
+        let response = ui.button(&action.label).on_hover_text(&action.about);
+        shell.layout.buttons.push(("new-folder".to_owned(), response.rect));
+        if response.clicked() {
+            let _ = shell.run_action(&action.id);
+            ui.close();
+        }
     }
 }
 

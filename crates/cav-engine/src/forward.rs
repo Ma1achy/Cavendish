@@ -246,6 +246,13 @@ fn hash(text: &str) -> u64 {
 /// for each of a thousand sources it was a quarter of a gigabyte of text an edit.)
 fn common(spec: &SceneSpec) -> u64 {
     let json = |value: &dyn erased::Json| value.text();
+    // A tower's folder is the scene tree's, not the read's (`cav_sim::folders`): left out, so
+    // that moving a tower into a folder keeps every contribution.
+    if spec.array.towers.iter().any(|t| t.folder.is_some()) {
+        let mut array = spec.array.clone();
+        array.towers.iter_mut().for_each(|t| t.folder = None);
+        return hash(&format!("{} {} {}", json(&array), spec.duration, read::MAX_SHOTS));
+    }
     hash(&format!("{} {} {}", json(&spec.array), spec.duration, read::MAX_SHOTS))
 }
 
@@ -264,12 +271,23 @@ fn key(common: u64, spec: &SceneSpec, source: SourceId) -> u64 {
         ),
         // A body of materials depends on what they are too (a scene's own lead may change);
         // a uniform body names none, so its key is what it was before materials (S19).
-        SourceId::Body(n) => match spec.bodies[n].shape.as_ref().map(|s| s.materials(&spec.materials, "")) {
-            Some(Ok(materials)) if !materials.is_empty() => {
-                format!("body {} {}", json(&spec.bodies[n]), json(&materials))
+        SourceId::Body(n) => {
+            // The body's folder is the scene tree's, not the read's: left out of the key, so
+            // that a body moved into a folder keeps its contribution.
+            let unfiled;
+            let body = if spec.bodies[n].folder.is_some() {
+                unfiled = cav_sim::BodySpec { folder: None, ..spec.bodies[n].clone() };
+                &unfiled
+            } else {
+                &spec.bodies[n]
+            };
+            match body.shape.as_ref().map(|s| s.materials(&spec.materials, "")) {
+                Some(Ok(materials)) if !materials.is_empty() => {
+                    format!("body {} {}", json(body), json(&materials))
+                }
+                _ => format!("body {}", json(body)),
             }
-            _ => format!("body {}", json(&spec.bodies[n])),
-        },
+        }
     };
     hash(&format!("{common:016x} {this}"))
 }
@@ -642,6 +660,33 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         panic!("the reading worker never took its job");
+    }
+
+    #[test]
+    fn a_folder_changes_no_key_of_the_read() {
+        // Folders are the scene tree's (S20): a body or a tower moved into one keeps every
+        // contribution that was made for it. Control: a change of mass, and of a tower's place,
+        // changes the key.
+        use cav_sim::{FolderEdit, FolderItem};
+        let plain = cav_sim::dev::point();
+        let made = plain.folder_edit(&FolderEdit::New { name: "f".into(), within: None }).unwrap();
+        let made =
+            made.folder_edit(&FolderEdit::New { name: "g".into(), within: Some("array".into()) }).unwrap();
+        let filed = made
+            .folder_edit(&FolderEdit::Move { items: vec![FolderItem::Body(1)], to: Some("f".into()) })
+            .unwrap();
+        let filed = filed
+            .folder_edit(&FolderEdit::Move { items: vec![FolderItem::Tower(2)], to: Some("g".into()) })
+            .unwrap();
+        assert!(filed.bodies[0].folder.is_some() && filed.array.towers[1].folder.is_some());
+        let keys = |spec: &SceneSpec| (common(spec), key(common(spec), spec, SourceId::Body(0)));
+        assert_eq!(keys(&filed), keys(&plain));
+        let mut heavier = filed.clone();
+        heavier.bodies[0].mass = 101.0;
+        assert_ne!(keys(&heavier).1, keys(&plain).1, "control: the body's mass is in its key");
+        let mut moved = filed;
+        moved.array.towers[1].position[0] += 1.0;
+        assert_ne!(keys(&moved).0, keys(&plain).0, "control: a tower's place is in the common key");
     }
 
     #[test]

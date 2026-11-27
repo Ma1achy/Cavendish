@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use super::Rig;
 use cav_app::headless::context;
 use cav_app::{Shell, theme};
-use cav_engine::{Boundary, Command, ViewCommand};
+use cav_engine::{Boundary, Command, Target, ViewCommand};
 use egui::{Event, Key, Modifiers, PointerButton, Rect, vec2};
 
 /// The greatest pitch (top to top, points) of two rows that follow one another in a card: of
@@ -2123,4 +2123,228 @@ fn the_end_loops_stops_or_runs_on() {
     assert_eq!(rig.shell.at_end, cav_app::transport::AtEnd::Stop);
     assert!(rig.shell.run("end sideways").unwrap_err().contains("end <loop|stop|run-on>"));
     assert_eq!(rig.shell.engine.journal().len(), journal, "the behaviour is the window's: no journal line");
+}
+
+/// The row the tree last drew for the folder `label`.
+fn folder_row(rig: &Rig, label: &str) -> cav_app::outliner::FolderRow {
+    let rows = &rig.shell.layout().tree_folders;
+    rows.iter().rev().find(|f| f.label == label).cloned().unwrap_or_else(|| panic!("no row for `{label}`"))
+}
+
+/// The folders the tree last drew, each once, in the order drawn: label and depth.
+fn folder_rows(shell: &Shell) -> Vec<(String, usize)> {
+    let mut rows: Vec<(String, usize)> = Vec::new();
+    for row in &shell.layout().tree_folders {
+        if !rows.iter().any(|(label, _)| *label == row.label) {
+            rows.push((row.label.clone(), row.depth));
+        }
+    }
+    rows
+}
+
+/// Presses on `from`, moves to `to` and stays there with the button down: a drag not yet let go.
+fn drag_over(rig: &mut Rig, from: egui::Pos2, to: egui::Pos2) {
+    rig.frames(vec![
+        vec![Event::PointerMoved(from)],
+        vec![Rig::press(from, PointerButton::Primary, true)],
+        vec![Event::PointerMoved(from + (to - from) * 0.5)],
+        vec![Event::PointerMoved(to)],
+    ]);
+}
+
+#[test]
+fn folders_end_to_end() {
+    // F2 (`docs/slices/S20.md` §4), by input events. Criterion, written before measuring: a
+    // folder is made from the `+` menu and named in place; another is nested in it from its
+    // right-click menu; a body's row dragged onto a folder moves it in (one edit a drag); a drop
+    // that would be refused (a tower onto a folder of bodies) shows no-drop and changes nothing;
+    // folding hides its rows and is no edit and no journal line; the folder's eye hides every
+    // body under it (one `hide` a body: view commands, no edit); the scene saved and opened
+    // again has the same folders and draws the same tree; each step is one undo, back to the
+    // start. Control: removing a folder keeps its bodies.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("mass 5 at 1 1 1").unwrap();
+    rig.shell.run("mass 6 at -1 1 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let start = rig.shell.engine.spec().clone();
+    let (depth, _) = rig.shell.engine.depth();
+    let mut scenes = vec![start.clone()];
+    // Each edit: exactly one more step of undo, and the scene after it kept.
+    let edited = |rig: &Rig, scenes: &mut Vec<cav_sim::SceneSpec>, what: &str| {
+        assert_eq!(rig.shell.engine.depth(), (depth + scenes.len(), 0), "{what}: one edit");
+        scenes.push(rig.shell.engine.spec().clone());
+    };
+
+    // The `+` menu's New folder: a folder in the Bodies, its name typed in place.
+    rig.click_button("add");
+    rig.click_button("new-folder");
+    edited(&rig, &mut scenes, "new folder");
+    assert_eq!(rig.shell.renaming_folder.as_ref().map(|(f, _)| f.as_str()), Some("folder"));
+    rig.key(Key::A, Modifiers::COMMAND);
+    rig.typed("rig");
+    rig.key(Key::Enter, Modifiers::NONE);
+    edited(&rig, &mut scenes, "its name");
+    let spec = rig.shell.engine.spec();
+    assert_eq!(spec.folders.len(), 1);
+    assert_eq!(
+        (spec.folders[0].label.as_str(), spec.folders[0].group),
+        ("rig", cav_sim::FolderGroup::Bodies)
+    );
+    assert_eq!(rig.shell.tree_focus.as_deref(), Some("rig"), "the light followed the name");
+
+    // Nested: New folder from its right-click menu, named `inner`.
+    rig.frames(vec![vec![]]);
+    rig.click_with(folder_row(&rig, "rig").rect.center(), PointerButton::Secondary);
+    rig.click_button("folder menu new");
+    edited(&rig, &mut scenes, "a folder inside");
+    rig.key(Key::A, Modifiers::COMMAND);
+    rig.typed("inner");
+    rig.key(Key::Enter, Modifiers::NONE);
+    edited(&rig, &mut scenes, "its name");
+    assert_eq!(rig.shell.engine.spec().folder("inner").unwrap().parent.as_deref(), Some("rig"));
+    rig.frames(vec![vec![]]);
+    assert_eq!(folder_rows(&rig.shell), [("rig".to_owned(), 2), ("inner".to_owned(), 3)]);
+
+    // A body's row dragged onto a folder: `folder move`, one journal line, one edit.
+    let journal = rig.shell.engine.journal().len();
+    let from = rig.row(Target::Body(2)).center();
+    rig.drag(from, folder_row(&rig, "inner").rect.center());
+    edited(&rig, &mut scenes, "a body dragged in");
+    assert_eq!(rig.shell.engine.spec().bodies[1].folder.as_deref(), Some("inner"));
+    assert_eq!(rig.shell.engine.journal().len(), journal + 1);
+    assert_eq!(
+        cav_engine::describe(rig.shell.engine.journal().last().unwrap(), 0),
+        "folder move body 2 inner"
+    );
+    rig.frames(vec![vec![]]);
+    let from = rig.row(Target::Body(3)).center();
+    rig.drag(from, folder_row(&rig, "rig").rect.center());
+    edited(&rig, &mut scenes, "another");
+    assert_eq!(rig.shell.engine.spec().bodies[2].folder.as_deref(), Some("rig"));
+    rig.frames(vec![vec![]]);
+    // The tree's order is the data's: a folder's folders, then its bodies; then the unfiled.
+    let drawn: Vec<Target> = rig.shell.layout().outline.iter().map(|(t, _)| *t).collect();
+    let bodies: Vec<Target> = drawn.iter().copied().filter(|t| matches!(t, Target::Body(_))).collect();
+    assert_eq!(bodies[..3], [Target::Body(2), Target::Body(3), Target::Body(1)], "{drawn:?}");
+    // Its rows are stops of the keyboard's tree, under the folder, in that order.
+    let tree = rig.shell.focus_tree();
+    let stops = tree.children("tree/sources");
+    let rows: Vec<&str> = stops.iter().copied().filter(|id| !id.ends_with("/eye")).collect();
+    let rows: Vec<&str> = rows.into_iter().filter(|id| !id.ends_with("/lock")).collect();
+    assert_eq!(rows, ["tree/sources/add", "tree/folder/rig", "tree/row/body 1"], "{stops:?}");
+    let inside = tree.children("tree/folder/rig");
+    assert_eq!(inside[0], "tree/folder/inner", "{inside:?}");
+    assert!(inside.contains(&"tree/row/body 3"), "{inside:?}");
+    assert_eq!(tree.children("tree/folder/inner")[0], "tree/row/body 2");
+
+    // Control: a tower onto a folder of bodies is refused: no-drop while over it, nothing done.
+    let (journal, scene) = (rig.shell.engine.journal().len(), rig.shell.engine.spec().clone());
+    let (from, to) = (rig.row(Target::Tower(1)).center(), folder_row(&rig, "rig").rect.center());
+    drag_over(&mut rig, from, to);
+    assert_eq!(rig.shell.layout().tree_drop, Some(("rig".to_owned(), false)), "no drop here");
+    rig.frames(vec![vec![Rig::press(to, PointerButton::Primary, false)], vec![]]);
+    assert_eq!((rig.shell.engine.spec(), rig.shell.engine.journal().len()), (&scene, journal));
+    assert_eq!(rig.shell.engine.depth(), (depth + scenes.len() - 1, 0));
+    // And a body over a folder it is not in is offered the drop (the same gesture, lit).
+    let (from, to) = (rig.row(Target::Body(1)).center(), folder_row(&rig, "inner").rect.center());
+    drag_over(&mut rig, from, to);
+    assert_eq!(rig.shell.layout().tree_drop, Some(("inner".to_owned(), true)));
+    // (Let go off the tree: no drop.)
+    let away = rig.shell.layout().canvases[0].center();
+    rig.frames(vec![
+        vec![Event::PointerMoved(away)],
+        vec![Rig::press(away, PointerButton::Primary, false)],
+        vec![],
+    ]);
+    assert_eq!(rig.shell.engine.spec(), &scene);
+
+    // Folding: the rows under it are not laid out; window state, no edit, no journal line.
+    let journal = rig.shell.engine.journal().len();
+    rig.click_button("fold folder rig");
+    rig.frames(vec![vec![]]);
+    assert!(!folder_row(&rig, "rig").open);
+    assert_eq!(folder_rows(&rig.shell), [("rig".to_owned(), 2)]);
+    let rows: Vec<Target> = rig.shell.layout().outline.iter().map(|(t, _)| *t).collect();
+    assert!(!rows.contains(&Target::Body(2)) && rows.contains(&Target::Body(1)), "{rows:?}");
+    assert_eq!((rig.shell.engine.spec(), rig.shell.engine.journal().len()), (&scene, journal));
+    let tree = rig.shell.focus_tree();
+    assert!(tree.node("tree/folder/inner").is_none(), "a folded folder's rows are no stops");
+    assert!(tree.node("tree/folder/rig").is_some(), "the folder itself is one");
+    rig.click_button("fold folder rig");
+    rig.frames(vec![vec![]]);
+    assert!(folder_row(&rig, "rig").open);
+
+    // The eye: every body under it hidden, one `hide` each; no edit.
+    use cav_app::outliner::Eye;
+    assert_eq!(folder_row(&rig, "rig").eye, Some(Eye::Shown));
+    let journal = rig.shell.engine.journal().len();
+    rig.click_button("eye folder rig");
+    rig.frames(vec![vec![]]);
+    let hidden = rig.shell.engine.view(0).hidden.clone();
+    assert_eq!(hidden.len(), 2, "{hidden:?}");
+    assert!(hidden.contains(&scene.bodies[1].label) && hidden.contains(&scene.bodies[2].label));
+    assert_eq!(rig.shell.engine.journal().len(), journal + 2, "a `hide` a body");
+    assert_eq!((rig.shell.engine.spec(), rig.shell.engine.depth().0), (&scene, depth + scenes.len() - 1));
+    assert_eq!(folder_row(&rig, "rig").eye, Some(Eye::Hidden));
+    assert_eq!(folder_row(&rig, "inner").eye, Some(Eye::Hidden));
+    // One of them shown by its own eye: the folder says mixed, and a click hides the rest.
+    rig.shell.run(&format!("unhide \"{}\"", scene.bodies[2].label)).unwrap();
+    rig.frames(vec![vec![]]);
+    assert_eq!(folder_row(&rig, "rig").eye, Some(Eye::Mixed));
+    rig.click_button("eye folder rig");
+    rig.frames(vec![vec![]]);
+    assert_eq!(folder_row(&rig, "rig").eye, Some(Eye::Hidden));
+    // The lock: every body under it, window state.
+    rig.click_button("lock folder rig");
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.is_locked(1) && rig.shell.is_locked(2) && !rig.shell.is_locked(0));
+    assert!(folder_row(&rig, "rig").locked);
+
+    // The filter keeps a folder whose name matches (and what it holds), and one above a match.
+    rig.shell.tree_filter = "inn".into();
+    rig.frames(vec![vec![], vec![]]);
+    assert_eq!(folder_rows(&rig.shell), [("rig".to_owned(), 2), ("inner".to_owned(), 3)]);
+    let rows: Vec<Target> = rig.shell.layout().outline.iter().map(|(t, _)| *t).collect();
+    assert!(rows.contains(&Target::Body(2)) && !rows.contains(&Target::Body(3)), "{rows:?}");
+    rig.shell.tree_filter = "tower".into();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(folder_rows(&rig.shell).is_empty(), "control: no folder matches");
+    rig.shell.tree_filter.clear();
+    rig.frames(vec![vec![], vec![]]);
+
+    // Saved and opened again: the same folders, the same tree.
+    let file = std::env::temp_dir().join(format!("cavendish-folders-{}.ron", std::process::id()));
+    let path = file.to_string_lossy().replace('\\', "/");
+    rig.shell.run(&format!("save \"{path}\"")).unwrap();
+    let mut again = Rig::new();
+    again.shell.run(&format!("load \"{path}\"")).unwrap();
+    again.frames(vec![vec![], vec![]]);
+    let _ = std::fs::remove_file(&file);
+    assert_eq!(again.shell.engine.spec(), &scene);
+    assert_eq!(folder_rows(&again.shell), folder_rows(&rig.shell));
+    let outline = |shell: &Shell| -> Vec<(Target, String)> {
+        shell.layout().outline_words.iter().map(|(target, label, _)| (*target, label.clone())).collect()
+    };
+    assert_eq!(outline(&again.shell), outline(&rig.shell), "the same rows, in the same order");
+
+    // Control: removing a folder (its menu) keeps its bodies: they move up to `rig`.
+    rig.click_with(folder_row(&rig, "inner").rect.center(), PointerButton::Secondary);
+    rig.click_button("folder menu remove");
+    edited(&rig, &mut scenes, "the folder removed");
+    let spec = rig.shell.engine.spec();
+    assert_eq!(spec.bodies.len(), start.bodies.len(), "its bodies are kept");
+    assert!(spec.folder("inner").is_none());
+    assert_eq!(spec.bodies[1].folder.as_deref(), Some("rig"));
+
+    // One undo a step, back to the start.
+    assert_eq!(scenes.len(), 8);
+    for n in (0..scenes.len() - 1).rev() {
+        rig.shell.run("undo").unwrap();
+        assert_eq!(rig.shell.engine.spec(), &scenes[n], "undo {n}");
+    }
+    assert_eq!(rig.shell.engine.spec(), &start);
+    assert_eq!(rig.shell.engine.depth().0, depth);
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.layout().tree_folders.is_empty() && rig.shell.tree_focus.is_none());
 }

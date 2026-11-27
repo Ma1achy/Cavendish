@@ -206,3 +206,37 @@ like Photoshop or Blender"). What is different from the above:
   Select or Probe in hand there is no row. The tool's name is no longer written there (the
   palette shows which is lit); snap stays an action (S, Edit ▸ Snap to the step) when its
   switch is not shown.
+
+## As built after S20's folders (27 Nov 2026)
+
+`docs/design/workspace.md` §6 and §7. What is different from the above:
+- **Folders are rows of the tree, inside the Array and the Bodies** (the surroundings are three
+  single items and take none): a disclosure triangle, a folder icon, the name, 20 pt rows with an
+  indent guide a level. They are scene data (`SceneSpec.folders`, `cav_sim::folders`), saved
+  with the scene and ignored by the read. A group draws its folders first (the scene's order),
+  each with its folders and then its items under it, then the items in no folder.
+- **Every change is one `folder` command, one undo:** `folder new`, `move`, `rename`,
+  `remove` (the folder only: what it holds moves up a level, nothing is deleted), `duplicate`.
+  The header's `+` menu and the right-click menus have New folder (inside the folder in focus,
+  else beside the selection, else in the Bodies; its name is then typed in place: a second
+  edit if changed); a folder's menu has New folder, Rename, Duplicate, Remove folder and
+  Move to ▸; a body's and a tower's menu has Move to ▸ (the folders of its group, and none).
+- **Drag and drop.** A body's or a tower's row dragged onto a folder of its group moves it in;
+  onto its group's row, out of every folder; a folder onto a folder nests it. The row under the
+  pointer is lit when the drop would be taken; where it would be refused (a tower onto a
+  folder of bodies, a folder into itself, an item where it already is) the pointer is the
+  no-drop one and letting go does nothing.
+- **A folder's eye and lock** (a folder of bodies that holds one) act on every body under it at
+  any depth: the eye issues the existing `hide`/`unhide`, one a body (view commands: journalled,
+  never undone), drawn struck through when all are hidden and dimmed with a dot when only some
+  are; the lock is the window's, as a body's.
+- **A folder is lit, not selected.** A click on a folder's row lights it (window state,
+  `Shell::tree_focus`) and selects nothing: it is what F2 and New folder act on. It never is the
+  engine's selection, so the inspector shows the scene. Moving everything in a folder with the
+  gizmo needs multi-selection, which is S22 (TASK-S19-07) and is not built.
+- **Fold** state is the window's, kept for each scene as the groups' is (`tree-fold <row>` is
+  its console word); a click on the triangle folds, Enter on a folded row opens it. Folder rows
+  are stops of the `tree` scope in the tree's order (which is the data's), a folded folder's
+  rows are not.
+- **The filter** keeps a folder whose name matches (with everything in it) and a folder above
+  anything that matches; while filtering, folders are drawn open.

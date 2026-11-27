@@ -516,6 +516,7 @@ impl Engine {
             | Command::Set { .. }
             | Command::Insert { .. }
             | Command::Remove { .. }
+            | Command::Folder(_)
             | Command::Undo
             | Command::Redo => (Level::Info, Subsystem::Edit),
             Command::Run { .. } | Command::Export { .. } | Command::Compare(_) => {
@@ -796,6 +797,39 @@ impl Engine {
                     Edit::Insert { list: list.to_owned(), index, value: item },
                     Edit::Remove { path: path.clone() },
                 )
+            }
+            Command::Folder(change) => {
+                let spec = self.spec.folder_edit(change)?;
+                let line = console::describe(command, self.active);
+                let (before, after) = (self.spec.membership(), spec.membership());
+                let folders =
+                    |to: cav_sim::folders::Membership| Edit::Folders { line: line.clone(), to: Box::new(to) };
+                let (bodies, towers) = (self.spec.bodies.len(), self.spec.array.towers.len());
+                if spec.bodies.len() == bodies && spec.array.towers.len() == towers {
+                    return edit(spec, folders(before), folders(after));
+                }
+                // A duplicate added bodies or towers at the ends of their lists: the folders
+                // first (the new ones empty), then each copy, which says its folder itself; and
+                // back, the copies out from the last, then the folders as they were.
+                let mut redo = vec![folders(cav_sim::folders::Membership {
+                    folders: after.folders,
+                    bodies: after.bodies[..bodies].to_vec(),
+                    towers: after.towers[..towers].to_vec(),
+                })];
+                let mut undo = Vec::new();
+                for (n, body) in spec.bodies.iter().enumerate().skip(bodies) {
+                    let value = serde_json::to_value(body).expect("a body is JSON");
+                    redo.push(Edit::Insert { list: "bodies".into(), index: n, value });
+                    undo.push(Edit::Remove { path: format!("bodies[{n}]") });
+                }
+                for (n, tower) in spec.array.towers.iter().enumerate().skip(towers) {
+                    let value = serde_json::to_value(tower).expect("a tower is JSON");
+                    redo.push(Edit::Insert { list: "array.towers".into(), index: n, value });
+                    undo.push(Edit::Remove { path: format!("array.towers[{n}]") });
+                }
+                undo.reverse();
+                undo.push(folders(before));
+                edit(spec, Edit::Batch { line: line.clone(), edits: undo }, Edit::Batch { line, edits: redo })
             }
             Command::Export { what, to } => self.prepare_export(what, to),
             Command::Run { .. } | Command::Compare(None) => Ok(Prepared::Plain),
@@ -1117,6 +1151,7 @@ impl Engine {
                 | Command::Set { .. }
                 | Command::Insert { .. }
                 | Command::Remove { .. }
+                | Command::Folder(_)
                 | Command::Export { .. }
                 | Command::Undo
                 | Command::Redo,
@@ -2291,6 +2326,76 @@ mod tests {
         }
         assert_eq!(orbits, 1, "the session has an orbit to nudge");
         assert_ne!(Engine::replay(&nudged).unwrap().digest(), original.digest());
+    }
+
+    #[test]
+    fn a_folder_session_replays_from_its_journal() {
+        // TASK-S20-07. Criterion (written before measuring): each folder command is one journal
+        // line and one step of undo; the session replays from its journal (and from the JSON of
+        // it) to the same scene and the same digest; undoing every step gives the scene before
+        // the first, and redoing them the scene after the last. Control: the journal without
+        // its folder lines replays to a scene with no folders.
+        let mut engine = Engine::new();
+        engine.run_script("load point; mass 5 at 1 1 1; mass 6 at -1 1 1").unwrap();
+        let start = engine.spec().clone();
+        let (lines, depth) = (engine.journal().len(), engine.depth().0);
+        let session = [
+            "folder new rig",
+            "folder new \"the inner one\" in rig",
+            "folder new north in array",
+            "folder move body 1 body 2 \"the inner one\"",
+            "folder move tower 1 north",
+            "folder rename rig frame",
+            "folder duplicate frame",
+            "folder move body 3 frame",
+            "folder remove \"the inner one\"",
+        ];
+        let mut scenes = vec![start.clone()];
+        for (n, line) in session.iter().enumerate() {
+            engine.run_line(line).unwrap();
+            assert_eq!(engine.journal().len(), lines + n + 1, "`{line}` is one journal line");
+            assert_eq!(engine.depth(), (depth + n + 1, 0), "`{line}` is one step of undo");
+            assert_eq!(console::describe(engine.journal().last().unwrap(), 0), *line);
+            scenes.push(engine.spec().clone());
+        }
+        let end = engine.spec().clone();
+        // What the session made: the duplicate copied the two bodies, nothing was deleted.
+        assert_eq!(end.bodies.len(), start.bodies.len() + 2);
+        let folders: Vec<&str> = end.folders.iter().map(|f| f.label.as_str()).collect();
+        assert_eq!(folders, ["frame", "north", "frame 2", "the inner one 2"]);
+        assert_eq!(end.bodies[0].folder.as_deref(), Some("frame"), "removed: its bodies moved up");
+        assert_eq!(end.bodies[2].folder.as_deref(), Some("frame"));
+        assert_eq!(end.bodies[3].folder.as_deref(), Some("the inner one 2"));
+        assert_eq!(end.array.towers[0].folder.as_deref(), Some("north"));
+        // The history says each step in the line that made it.
+        let said = engine.history.said().0;
+        assert_eq!(said[said.len() - session.len()..], session.map(str::to_owned));
+        // A refusal changes nothing and leaves no line.
+        let why = engine.run_line("folder move body 1 north").unwrap_err();
+        assert!(why.contains("a body goes in a folder of the Bodies"), "{why}");
+        assert_eq!((engine.spec(), engine.journal().len()), (&end, lines + session.len()));
+        // The replay, and the replay of the saved journal.
+        let replayed = Engine::replay(engine.journal()).unwrap();
+        assert_eq!((replayed.spec(), replayed.digest()), (&end, engine.digest()));
+        let saved = serde_json::to_string(engine.journal()).unwrap();
+        assert!(saved.contains(r#"{"Folder":{"Rename":{"from":"rig","to":"frame"}}}"#), "{saved}");
+        let loaded: Vec<Command> = serde_json::from_str(&saved).unwrap();
+        assert_eq!(Engine::replay(&loaded).unwrap().digest(), engine.digest());
+        // One undo a step, back to the start; one redo a step, forward to the end.
+        for n in (0..session.len()).rev() {
+            engine.apply(Command::Undo).unwrap();
+            assert_eq!(engine.spec(), &scenes[n], "undo of `{}`", session[n]);
+        }
+        assert_eq!(engine.spec(), &start);
+        for n in 0..session.len() {
+            engine.apply(Command::Redo).unwrap();
+            assert_eq!(engine.spec(), &scenes[n + 1], "redo of `{}`", session[n]);
+        }
+        // Control: without its folder lines the journal replays to a scene with no folders.
+        let without: Vec<Command> =
+            loaded.iter().filter(|c| !matches!(c, Command::Folder(_))).cloned().collect();
+        assert_eq!(without.len(), loaded.len() - session.len());
+        assert_eq!(Engine::replay(&without).unwrap().spec(), &start);
     }
 
     #[test]

@@ -9,7 +9,8 @@
 //! built-in library; motions; edits by path with their units and stages; the schedule of every
 //! tower's shots; presets; the read (the forward model applied to a scene); bundles; the view
 //! spec that says how a scene is looked at; and the mosaic that says how a figure is divided
-//! into viewports ([`mosaic`]: pure data, with split, close, swap and resize as functions).
+//! into viewports ([`mosaic`]: pure data, with split, close, swap and resize as functions); and
+//! the scene tree's folders ([`folders`]: scene data for people, which the read ignores).
 //!
 //! ## What it may depend on
 //! Of the workspace, `cav-core` only (`cav-validate` in its tests).
@@ -22,6 +23,7 @@
 pub mod assets;
 pub mod bundle;
 pub mod dev;
+pub mod folders;
 pub mod import;
 pub mod json_f64;
 pub mod library;
@@ -40,6 +42,7 @@ pub mod view;
 pub mod voxel_view;
 pub mod world;
 
+pub use folders::{FolderEdit, FolderGroup, FolderItem, FolderSpec};
 pub use library::{LIBRARY, LibraryScene, inline, load};
 pub use materials::MaterialSpec;
 pub use motion::{ModeSpec, Motion};
