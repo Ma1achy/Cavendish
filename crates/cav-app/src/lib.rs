@@ -27,6 +27,7 @@ pub mod app;
 pub mod camera;
 pub mod dialogs;
 pub mod editors;
+pub mod first_person;
 pub mod header;
 pub mod headless;
 pub mod icons;

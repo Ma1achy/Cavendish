@@ -504,8 +504,11 @@ pub struct Popup {
 pub enum Session {
     /// Moving the selection (`Kind::Session` in interaction mode).
     Transform,
-    /// Flying the camera: W A S D, E, Q are the session's (held, read by the frame), and every
-    /// other letter does nothing (no tool changes mid-flight).
+    /// Flying the camera: W A S D, Space, E, Q are the session's (held, read by the frame), and
+    /// every other key does nothing (no tool changes mid-flight). In the window the flight takes
+    /// its keys before this router hears them (`first_person`: there not even the global keys
+    /// fire, so that Space never plays and Ctrl+S never saves mid-flight); this is the model's
+    /// own account of the session, which holds wherever the router is used alone.
     Fly,
 }
 
@@ -776,7 +779,7 @@ impl Keyboard {
             }
             Session::Fly => match press.key {
                 // Held keys: the frame reads them each frame; the press itself does nothing more.
-                Key::W | Key::A | Key::S | Key::D | Key::E | Key::Q => Some(Vec::new()),
+                Key::W | Key::A | Key::S | Key::D | Key::E | Key::Q | Key::Space => Some(Vec::new()),
                 Key::Enter | Key::Escape => {
                     // Both keep the camera where it was flown (the spec's Esc rule; Home or the
                     // history's Home step bring it back).

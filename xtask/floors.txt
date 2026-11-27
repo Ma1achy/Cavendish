@@ -16,7 +16,9 @@
 # the folder session's replay, the read's keys; cav-app: F2 in tests/editor/s20.rs).
 # TASK-S20-08 (the drawn path): 5 new quick tests (cav-render: D1, the kinds of motion, the path of
 # 10^4 periods; cav-sim: a motion's period; cav-plot: D2).
-quick 686
+# TASK-S20-10 (the first-person fly camera): 7 new quick tests (cav-app: C1, C2 and the settings in
+# camera.rs, two of first_person, C3 and C4 in tests/editor/s20.rs).
+quick 693
 gpu 42
 slow 45
 oracle 58

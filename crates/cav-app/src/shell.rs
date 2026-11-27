@@ -92,7 +92,11 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("snap", "snap the Move tool's moves to the step, or not (S)"),
     (
         "fly",
-        "fly the camera: W A S D, E up, Q down, arrows or a drag to look; again, Enter or Esc to stop (Shift+F)",
+        "fly the active viewport's camera as a first-person game does: the pointer is captured, the mouse looks, W A S D move, Space up, Shift down, Ctrl or a double tap of W sprints, the wheel sets the speed; again, Esc or Enter to stop (Shift+F; or hold the right button over the view)",
+    ),
+    (
+        "camera-set",
+        "the first-person camera's settings, for this session: `camera-set` lists them; `camera-set <sensitivity|fly-speed|sprint|easing|double-tap|speed-shown> <value>` sets one (defaults in `ui/camera.ron`)",
     ),
     ("tab", "the right-hand panel's tab: `tab inspector`, `tab readings` or `tab probe`"),
     (
@@ -454,11 +458,16 @@ pub struct Shell {
     pub(crate) context_at_row: bool,
     /// The item being renamed in the scene tree (`F2`), and the name typed so far.
     pub renaming: Option<(Target, String)>,
-    /// How fast a fly session moves, metres per second, before Shift and Alt.
+    /// How fast a flight moves, metres per second, before sprinting (the wheel changes it while
+    /// flying, within [`crate::camera::FLY_SPEED_RANGE`]).
     pub fly_speed: f64,
     /// The pane being flown with the right mouse button held (Unity's and Unreal's fly: W A S D
     /// move, the mouse looks, the wheel sets the speed), while it is held. UI state.
     pub mouse_fly: Option<usize>,
+    /// The first-person camera's settings (`ui/camera.ron`; `camera-set`). UI state.
+    pub camera: crate::camera::Settings,
+    /// What the flight under way holds between frames ([`crate::first_person`]). UI state.
+    pub flight: crate::first_person::Flight,
     /// Where a picture taken with no window rests its pointer, as fractions of the active pane
     /// from its top left (`pointer 0.5 0.7`): what shows a tool's hover (the Place tool's ghost)
     /// in the demo's pictures. UI state, read only by [`crate::headless::Headless::screenshot`].
@@ -668,8 +677,10 @@ impl Shell {
             open_context: false,
             context_at_row: false,
             renaming: None,
-            fly_speed: crate::camera::FLY_SPEED,
+            fly_speed: crate::camera::Settings::from_data().fly_speed,
             mouse_fly: None,
+            camera: crate::camera::Settings::from_data(),
+            flight: crate::first_person::Flight::default(),
             pointer_at: None,
             probed: None,
             probe_at: None,
@@ -913,7 +924,7 @@ impl Shell {
         !self.tree_folded.contains(&(self.engine.spec().name.clone(), scope.to_owned()))
     }
 
-    /// Whether a fly session is on: the viewport's canvas holds the keys W A S D E Q.
+    /// Whether a fly session started by `fly` is on (until `fly` again, Esc or Enter).
     #[must_use]
     pub fn flying(&self) -> bool {
         self.keyboard.session == Some(crate::keyboard::Session::Fly)
@@ -934,33 +945,6 @@ impl Shell {
             .get(self.engine.active_pane())
             .filter(|r| r.height() > 0.0)
             .map_or(1.6, |r| f64::from(r.width() / r.height()))
-    }
-
-    /// One frame of a fly session: the held keys push the camera ([`crate::camera::fly`]) at
-    /// [`Self::fly_speed`], Shift ×10 and Alt ×0.1, for the frame's time.
-    pub(crate) fn fly_frame(&mut self, ctx: &egui::Context) {
-        if !self.any_fly() || self.keyboard.typing {
-            return;
-        }
-        let (push, modifiers, dt) = ctx.input(|i| {
-            let axis = |plus: egui::Key, minus: egui::Key| {
-                f64::from(u8::from(i.key_down(plus))) - f64::from(u8::from(i.key_down(minus)))
-            };
-            let push = crate::camera::Push {
-                forward: axis(egui::Key::W, egui::Key::S),
-                right: axis(egui::Key::D, egui::Key::A),
-                up: axis(egui::Key::E, egui::Key::Q),
-            };
-            (push, i.modifiers, f64::from(i.stable_dt).min(0.1))
-        });
-        if push == crate::camera::Push::default() {
-            return;
-        }
-        let speed = self.fly_speed * Press::with(egui::Key::W, modifiers).multiplier();
-        let pane = self.mouse_fly.unwrap_or_else(|| self.engine.active_pane());
-        let command = crate::camera::fly(self.engine.view(pane), pane, push, speed, dt);
-        self.apply(Command::View(command));
-        ctx.request_repaint();
     }
 
     /// The height of the ground under the scene, metres: the floor's top, else the room's floor,
@@ -1471,6 +1455,41 @@ impl Shell {
             }
             return outcome;
         }
+        // `camera-set [<setting> <value>]`: the first-person camera's settings, the window's own.
+        if name == "camera-set" {
+            let (setting, value, more) = (words.next(), words.next(), words.next());
+            let outcome = match (setting, value.map(str::parse::<f64>), more) {
+                (None, _, _) => {
+                    self.console_open = true;
+                    let rows: Vec<String> = crate::camera::SETTINGS
+                        .iter()
+                        .map(|(name, unit, _, _, about)| {
+                            let value = self.camera.get(name).unwrap_or(f64::NAN);
+                            format!("{name} = {value} {unit}  ({about})")
+                        })
+                        .collect();
+                    Ok(rows.join("\n"))
+                }
+                (Some(setting), Some(Ok(value)), None) => {
+                    self.camera.set(setting, value).map_err(|why| format!("`{line}`: {why}")).map(|()| {
+                        if setting == "fly-speed" {
+                            self.fly_speed = value;
+                        }
+                        line.to_owned()
+                    })
+                }
+                _ => Err(format!("`{line}`: {}", self.camera.clone().set("", 0.0).unwrap_err())),
+            };
+            match &outcome {
+                Ok(said) if setting.is_none() => self.engine.note(Level::Info, Subsystem::App, said.clone()),
+                Ok(_) => {}
+                Err(why) => {
+                    self.engine.note(Level::Error, Subsystem::App, why.clone());
+                    self.console_open = true;
+                }
+            }
+            return outcome;
+        }
         // `palette <menu>` opens the palette filtered to a menu (`palette add`: the starters).
         // `palette <menu>` opens the palette filtered to a menu (`palette add`: the starters);
         // `palette <words>` opens it with the words typed, as a search.
@@ -1622,16 +1641,12 @@ impl Shell {
                 self.apply(Command::View(command));
             }
             "fly" => {
-                if self.flying() {
-                    self.keyboard.session = None;
-                    self.keyboard.mode = crate::keyboard::Mode::Navigation;
-                } else {
-                    // The canvas takes the keys, in interaction mode: W A S D E Q fly, the
-                    // arrows look, Enter or Esc stop (the camera kept where it was flown).
-                    self.keyboard.focus = vec!["viewport".into(), "viewport/canvas".into()];
-                    self.keyboard.mode = crate::keyboard::Mode::Interaction;
-                    self.keyboard.session = Some(crate::keyboard::Session::Fly);
-                    self.keyboard.nav_on |= self.by_keyboard;
+                if self.any_fly() {
+                    self.end_fly();
+                } else if let Err(why) = self.start_fly() {
+                    self.engine.note(Level::Error, Subsystem::App, why.clone());
+                    self.console_open = true;
+                    return Err(why);
                 }
             }
             "tree-fold" => {
@@ -1972,8 +1987,13 @@ impl Shell {
         // it (S18's third review, minor 3: a wide look turn reaches the edge, and winit reports
         // the cursor gone though the button is down); egui keeps the button down until its
         // release is seen, as it does for any drag.
-        if self.mouse_fly.is_some() && ctx.input(|i| !i.pointer.secondary_down() || !i.focused) {
+        if self.mouse_fly.is_some() && ctx.input(|i| !i.pointer.secondary_down()) {
             self.mouse_fly = None;
+        }
+        // The window's focus lost ends a flight however it was started: the keys and the
+        // pointer are another window's now.
+        if self.any_fly() && ctx.input(|i| !i.focused) {
+            self.end_fly();
         }
         // A primary press anywhere but the tool's options row ends a transform session, its move
         // kept: a click on a row of the tree, the canvas, a menu (S18's third review, minor 1; as
@@ -2006,12 +2026,16 @@ impl Shell {
             routed.push((press, false));
         }
         routed.extend(self.repeat.due(now).into_iter().map(|press| (press, true)));
-        // While the right button flies the camera, every key but a global is the flight's (W A S D
-        // E Q, read as held keys by `fly_frame`), as in a fly session: W is not the Move tool, A
-        // not Place, 2 selects no tower, Delete deletes nothing (S18's reviews, U3 and minor 3).
+        // While the camera is flown, every key is the flight's (`first_person`): the held keys
+        // are read by `fly_frame`, and no press reaches the router or a widget. W is not the Move
+        // tool, A not Place, 2 selects no tower, Delete deletes nothing, Space does not play,
+        // Ctrl+S (sprinting backwards) does not save (S18's reviews, U3 and minor 3; the owner's
+        // ruling of 25 Nov 2026).
         let shortcuts = crate::actions::table().shortcuts();
-        if self.mouse_fly.is_some() {
-            routed.retain(|(press, _)| crate::keyboard::is_global(&shortcuts, *press));
+        if self.any_fly() {
+            self.fly_keys(&routed, now);
+            routed.clear();
+            ctx.input_mut(|i| i.events.retain(|event| !matches!(event, Event::Key { .. } | Event::Text(_))));
         }
         if self.repeat.any() {
             ctx.request_repaint();
@@ -2315,6 +2339,8 @@ impl Shell {
         crate::panels::draw(self, ui, surface);
         crate::palette::draw(self, &ctx);
         crate::dialogs::draw(self, &ctx);
+        crate::first_person::shield(self, &ctx);
+        self.fly_capture(&ctx);
         self.orphaned_session();
         self.paint_ring(&ctx);
         // What no widget took this frame (a click of something no longer drawn) is dropped; so is
@@ -2363,12 +2389,11 @@ impl Shell {
     }
 
     /// The wheel over a pane: zoom toward the point under the pointer (`pointer`, points from the
-    /// pane's corner, in a pane of `size` points), which stays where it is on screen; in a fly
-    /// session the wheel sets the flying speed instead.
+    /// pane's corner, in a pane of `size` points), which stays where it is on screen. (While
+    /// flying the wheel is the flight's: `fly_frame` takes it and it never comes here.)
     pub(crate) fn zoom_by(&mut self, pane: usize, scroll: f32, pointer: [f64; 2], size: [f64; 2]) {
         let factor = f64::from(-scroll * 0.002).exp();
         if self.any_fly() {
-            self.fly_speed = (self.fly_speed / factor).clamp(0.01, 1000.0);
             return;
         }
         let view = self.engine.view(pane).clone();

@@ -1316,11 +1316,8 @@ fn canvas_keys(shell: &mut Shell, area: Rect) {
     let pane = shell.engine.active_pane();
     for (axis, steps, ctrl, _) in shell.take_adjust("viewport/canvas") {
         let view = shell.engine.view(pane).clone();
-        let command = if shell.flying() {
-            // Flying, the arrows look round from the eye.
-            let (yaw, pitch) = if axis == 0 { (-steps * ORBIT_STEP, 0.0) } else { (0.0, steps * ORBIT_STEP) };
-            crate::camera::look(&view, pane, yaw, pitch)
-        } else if ctrl {
+        // (While flying the arrows look: the flight takes them before they come here.)
+        let command = if ctrl {
             let camera = cav_render::Camera::new(&view, 1.0);
             let along = if axis == 0 { camera.right } else { camera.up };
             let moved = camera.origin + along * (steps * PAN_STEP * view.distance);
@@ -1619,9 +1616,13 @@ fn canvas(
         }
         return;
     }
+    crate::first_person::read_out(shell, ui, pane, rect);
     // The right button pressed over the scene flies its camera while it is held (Unity's and
     // Unreal's: W A S D move, the mouse looks). S18's review, U3.
-    if response.hovered() && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary)) {
+    if response.hovered()
+        && !shell.any_fly()
+        && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary))
+    {
         shell.mouse_fly = Some(pane);
         if pane != active {
             asked.commands.push(Command::View(ViewCommand::Activate(pane)));
@@ -2066,17 +2067,10 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
     }
     for (pane, delta, panning, size) in drags {
         if delta != egui::Vec2::ZERO {
-            if panning {
+            if shell.any_fly() {
+                // Flying, the mouse looks by its raw motion (`Shell::fly_frame`), not by a drag.
+            } else if panning {
                 shell.pan_by(pane, delta, size);
-            } else if shell.any_fly() {
-                // Flying, a drag looks round from the eye, as the arrows do.
-                let command = crate::camera::look(
-                    shell.engine.view(pane),
-                    pane,
-                    -f64::from(delta.x) * 0.2,
-                    -f64::from(delta.y) * 0.2,
-                );
-                shell.apply(Command::View(command));
             } else {
                 shell.orbit_by(pane, delta);
             }

@@ -6,7 +6,9 @@
 //! (TASK-S20-03): more than four viewports, the splitters, the labels' order, pop-out and dock.
 //! Rows T1 to T3 are the transport's (TASK-S20-06): each button its command, a step on a shot's
 //! readout, the speed; with them the top bar's row (the design's §4). Rows T4 and T5 are
-//! TASK-S20-09's: the duration typed at the transport, and what playing does at the end.
+//! TASK-S20-09's: the duration typed at the transport, and what playing does at the end. Rows C3
+//! and C4 are the first-person camera's (TASK-S20-10): the keys of a flight, and the pointer's
+//! capture.
 
 use std::collections::BTreeMap;
 
@@ -2347,4 +2349,262 @@ fn folders_end_to_end() {
     assert_eq!(rig.shell.engine.depth().0, depth);
     rig.frames(vec![vec![]]);
     assert!(rig.shell.layout().tree_folders.is_empty() && rig.shell.tree_focus.is_none());
+}
+
+// ---- The first-person fly camera (TASK-S20-10): C3 and C4 ----
+
+/// A frame's event that says `modifiers` are held and does nothing else (a window reports the
+/// modifiers with every frame; here they ride on a key's repeat, which no one acts on).
+fn holding(modifiers: Modifiers) -> Event {
+    Event::Key { key: Key::F20, physical_key: None, pressed: true, repeat: true, modifiers }
+}
+
+fn key_event(key: Key, pressed: bool, modifiers: Modifiers) -> Event {
+    Event::Key { key, physical_key: None, pressed, repeat: false, modifiers }
+}
+
+/// Holds `keys` with `modifiers` for `frames` frames, lets them go, and lets the camera come to
+/// rest. Returns how far viewport 0's eye moved, metres in the world's frame.
+fn fly_holding(rig: &mut Rig, keys: &[Key], modifiers: Modifiers, frames: usize) -> [f64; 3] {
+    let eye = |rig: &Rig| cav_app::camera::eye(rig.shell.engine.view(0));
+    let start = eye(rig);
+    let mut list = vec![keys.iter().map(|key| key_event(*key, true, modifiers)).collect::<Vec<_>>()];
+    list[0].push(holding(modifiers));
+    list.extend((1..frames).map(|_| vec![holding(modifiers)]));
+    list.push(keys.iter().map(|key| key_event(*key, false, Modifiers::NONE)).collect());
+    rig.frames(list);
+    rig.settle();
+    let end = eye(rig);
+    [end[0] - start[0], end[1] - start[1], end[2] - start[2]]
+}
+
+fn wheel(points: f32) -> Event {
+    Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: vec2(0.0, points),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+        modifiers: Modifiers::NONE,
+    }
+}
+
+fn grabs(asked: &[egui::ViewportCommand]) -> Vec<&egui::ViewportCommand> {
+    asked
+        .iter()
+        .filter(|c| {
+            matches!(c, egui::ViewportCommand::CursorGrab(_) | egui::ViewportCommand::CursorVisible(_))
+        })
+        .collect()
+}
+
+#[test]
+fn flying_takes_the_keys_like_a_game() {
+    // C3. Criterion (written before measuring): with the right button held over the scene,
+    // Space rises and Shift sinks (straight along z); Ctrl and a double tap of W multiply the
+    // speed by the sprint factor; the wheel changes `fly_speed` and the canvas shows it for
+    // 1.5 s; W, A, Q, 2, Delete, Space and Ctrl+S run no action; the release or Esc ends it and
+    // asks for the pointer back. Control: with the button up, W takes the Move tool.
+    use egui::ViewportCommand::{CursorGrab, CursorVisible};
+    let settings = cav_app::camera::Settings::from_data();
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.run("tool select").unwrap();
+    rig.shell.run("select body 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let pane = rig.shell.layout().canvases[0];
+    let at = pane.center() + vec2(0.0, -0.3 * pane.height());
+    // The control first: not flying, W is the Move tool's key.
+    rig.shell.keyboard.focus = vec!["viewport".into()];
+    rig.key(Key::W, Modifiers::NONE);
+    assert_eq!(rig.shell.tool, "move", "control: with the button up, W takes the Move tool");
+    rig.shell.run("tool select").unwrap();
+    let start = rig.shell.engine.view(0).clone();
+    rig.frames(vec![vec![Event::PointerMoved(at)], vec![Rig::press(at, PointerButton::Secondary, true)]]);
+    assert_eq!(rig.shell.fly_pane(), Some(0));
+
+    // Space rises, Shift sinks: straight up and down, the same distance.
+    let up = fly_holding(&mut rig, &[Key::Space], Modifiers::NONE, 12);
+    assert!(up[2] > 0.3 && up[0].abs() < 1e-9 && up[1].abs() < 1e-9, "Space rises: {up:?}");
+    assert!(!rig.shell.playing, "Space did not play");
+    let down = fly_holding(&mut rig, &[], Modifiers::SHIFT, 12);
+    assert!((down[2] + up[2]).abs() < 1e-4 && down[0].abs() < 1e-9, "Shift sinks as far: {down:?}");
+    // W flies level whatever the pitch; Ctrl sprints by the factor, exactly.
+    let level = |d: [f64; 3]| d[0].hypot(d[1]);
+    let plain = fly_holding(&mut rig, &[Key::W], Modifiers::NONE, 12);
+    assert!(level(plain) > 0.3 && plain[2].abs() < 1e-9, "W flies level: {plain:?}");
+    assert!(start.pitch.abs() > 10.0, "though the view looks down ({})", start.pitch);
+    let fast = fly_holding(&mut rig, &[Key::W], Modifiers::CTRL, 12);
+    // (To 1e-4: the glide's last 0.1 mm/s is cut off as rest, a few micrometres either way.)
+    assert!((level(fast) / level(plain) - settings.sprint).abs() < 1e-4, "{}", level(fast) / level(plain));
+    // A double tap of W sprints until W is let go; two presses half a second apart do not.
+    let tap = |rig: &mut Rig, gap: usize| {
+        let mut frames = vec![
+            vec![key_event(Key::W, true, Modifiers::NONE)],
+            vec![key_event(Key::W, false, Modifiers::NONE)],
+        ];
+        frames.extend(vec![vec![]; gap]);
+        frames.push(vec![key_event(Key::W, true, Modifiers::NONE)]);
+        frames.extend(vec![vec![]; 5]);
+        rig.frames(frames);
+        let sprinting = rig.shell.flight.sprinting;
+        rig.frames(vec![vec![key_event(Key::W, false, Modifiers::NONE)], vec![]]);
+        assert!(!rig.shell.flight.sprinting, "letting W go ends the sprint");
+        sprinting
+    };
+    assert!(tap(&mut rig, 4), "two presses of W 0.1 s apart sprint");
+    assert!(!tap(&mut rig, 40), "control: two presses 0.7 s apart do not");
+
+    // The wheel changes the speed, bounded, and the canvas shows it for 1.5 s; it zooms nothing.
+    let (speed, distance) = (rig.shell.fly_speed, rig.shell.engine.view(0).distance);
+    assert!((speed - settings.fly_speed).abs() < 1e-12);
+    assert!(rig.shell.layout().button("fly speed").is_none(), "nothing shown before the wheel");
+    rig.frames(vec![vec![wheel(120.0)], vec![], vec![], vec![], vec![], vec![]]);
+    let faster = rig.shell.fly_speed;
+    assert!(faster > speed * 1.1 && faster < speed * 2.0, "the wheel raised the speed: {faster}");
+    assert_eq!(rig.shell.engine.view(0).distance, distance, "and zoomed nothing");
+    let shown = rig.shell.layout().button("fly speed").expect("the speed is shown");
+    assert!(pane.contains_rect(shown), "in the canvas: {shown:?}");
+    assert_eq!(rig.shell.fly_speed_shown(0, rig.clock), Some(format!("{faster:.1} m/s")));
+    rig.frames(vec![vec![]; 80]);
+    assert!(rig.shell.layout().button("fly speed").is_some(), "still shown 1.4 s after");
+    rig.frames(vec![vec![]; 20]);
+    assert!(rig.shell.layout().button("fly speed").is_none(), "gone after 1.5 s");
+    rig.frames(vec![vec![wheel(-1.0e6)], vec![], vec![], vec![], vec![], vec![], vec![], vec![]]);
+    assert!((rig.shell.fly_speed - 0.05).abs() < 1e-12, "bounded below: {}", rig.shell.fly_speed);
+    rig.frames(vec![vec![wheel(1.0e6)], vec![], vec![], vec![], vec![], vec![], vec![], vec![]]);
+    assert!((rig.shell.fly_speed - 1000.0).abs() < 1e-9, "and above: {}", rig.shell.fly_speed);
+    rig.shell.run("camera-set fly-speed 4").unwrap();
+
+    // No tool, scope, selection, transport or file key fires.
+    let (journal, depth) = (rig.shell.engine.journal().len(), rig.shell.engine.depth());
+    for (key, modifiers) in [
+        (Key::W, Modifiers::NONE),
+        (Key::A, Modifiers::NONE),
+        (Key::Q, Modifiers::NONE),
+        (Key::Num2, Modifiers::NONE),
+        (Key::Delete, Modifiers::NONE),
+        (Key::Space, Modifiers::NONE),
+        (Key::S, Modifiers::CTRL),
+        (Key::Z, Modifiers::CTRL),
+        (Key::Space, Modifiers::CTRL),
+        (Key::Backtick, Modifiers::NONE),
+    ] {
+        rig.key(key, modifiers);
+    }
+    assert_eq!(rig.shell.tool, "select", "W, A and Q took no tool");
+    assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)), "2 selected no tower");
+    assert_eq!(rig.shell.engine.spec().bodies.len(), 1, "Delete deleted nothing");
+    assert!(!rig.shell.playing && !rig.shell.maximised && !rig.shell.console_open, "Space, Ctrl+Space, `");
+    assert!(rig.shell.save_window.is_none(), "Ctrl+S saved nothing");
+    assert_eq!(rig.shell.engine.depth(), depth, "no edit, no undo");
+    // (The journal holds camera moves only: W, A, Space moved the camera.)
+    assert!(
+        rig.shell.engine.journal()[journal..]
+            .iter()
+            .all(|c| matches!(c, Command::View(ViewCommand::Camera { .. }))),
+        "only camera moves were journalled"
+    );
+    // F3 is one of the few that still act (`first_person::WHILE_FLYING`).
+    rig.key(Key::F3, Modifiers::NONE);
+    assert!(rig.shell.gui_hidden, "F3 hides the panels in flight too");
+    rig.key(Key::F3, Modifiers::NONE);
+
+    // The release ends it and asks for the pointer back.
+    let asked =
+        rig.frames_asking(vec![vec![Rig::press(at, PointerButton::Secondary, false)], vec![], vec![]]);
+    assert!(rig.shell.fly_pane().is_none(), "the release ends it");
+    assert_eq!(grabs(&asked), [&CursorGrab(egui::CursorGrab::None), &CursorVisible(true)]);
+    // So does Esc, with the button still held; the press must be made again to fly again.
+    rig.frames(vec![vec![Rig::press(at, PointerButton::Secondary, true)], vec![]]);
+    assert!(rig.shell.fly_pane().is_some());
+    let asked = rig.frames_asking(vec![vec![key_event(Key::Escape, true, Modifiers::NONE)], vec![], vec![]]);
+    assert!(rig.shell.fly_pane().is_none(), "Esc ends it");
+    assert_eq!(grabs(&asked), [&CursorGrab(egui::CursorGrab::None), &CursorVisible(true)]);
+    assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)), "that Esc was the flight's alone");
+    rig.frames(vec![vec![Rig::press(at, PointerButton::Secondary, false)], vec![]]);
+    // Control: not flying, W is the Move tool's again, and Space plays.
+    rig.shell.keyboard.focus = vec!["viewport".into()];
+    rig.key(Key::W, Modifiers::NONE);
+    assert_eq!(rig.shell.tool, "move");
+    rig.key(Key::Space, Modifiers::NONE);
+    assert!(rig.shell.playing, "control: Space plays when not flying");
+}
+
+#[test]
+fn flying_captures_the_pointer() {
+    // C4. Criterion (written before measuring): the frame a flight begins asks the window to
+    // grab the cursor and hide it, the frame it ends to release and show it, and no frame
+    // between asks anything of the cursor; the look then follows the device's raw motion, not
+    // the pointer's. Control: an orbit drag asks for neither.
+    use egui::ViewportCommand::{CursorGrab, CursorVisible};
+    let settings = cav_app::camera::Settings::from_data();
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let pane = rig.shell.layout().canvases[0];
+    let at = pane.center() + vec2(0.0, -0.3 * pane.height());
+    let taken = [
+        &CursorGrab(egui::CursorGrab::Confined),
+        &CursorGrab(egui::CursorGrab::Locked),
+        &CursorVisible(false),
+    ];
+    let given = [&CursorGrab(egui::CursorGrab::None), &CursorVisible(true)];
+    // Control: an orbit drag (the primary button) asks nothing of the cursor.
+    let yaw = rig.shell.engine.view(0).yaw;
+    let asked = rig.frames_asking(vec![
+        vec![Event::PointerMoved(at)],
+        vec![Rig::press(at, PointerButton::Primary, true)],
+        vec![Event::PointerMoved(at + vec2(40.0, 0.0))],
+        vec![Rig::press(at + vec2(40.0, 0.0), PointerButton::Primary, false)],
+        vec![],
+    ]);
+    assert_ne!(rig.shell.engine.view(0).yaw, yaw, "the drag orbited");
+    assert!(grabs(&asked).is_empty(), "control: an orbit drag grabs nothing: {asked:?}");
+    // The right button held: taken on the frame of the press, kept, given back on the release.
+    let asked = rig.frames_asking(vec![
+        vec![Event::PointerMoved(at)],
+        vec![Rig::press(at, PointerButton::Secondary, true)],
+    ]);
+    assert_eq!(grabs(&asked), taken, "the press takes the pointer");
+    assert!(rig.shell.flight.captured);
+    // Raw motion looks, a count at a time, and the pointer's own motion is not added to it.
+    let before = rig.shell.engine.view(0).clone();
+    let asked = rig.frames_asking(vec![
+        vec![Event::MouseMoved(vec2(50.0, 0.0)), Event::PointerMoved(at + vec2(7.0, 3.0))],
+        vec![Event::MouseMoved(vec2(0.0, -20.0))],
+        vec![],
+    ]);
+    assert!(grabs(&asked).is_empty(), "nothing more is asked while flying");
+    let after = rig.shell.engine.view(0).clone();
+    assert!((before.yaw - after.yaw - 50.0 * settings.sensitivity).abs() < 1e-9, "50 counts right");
+    assert!((before.pitch - after.pitch - 20.0 * settings.sensitivity).abs() < 1e-9, "20 counts up");
+    let (a, b) = (cav_app::camera::eye(&before), cav_app::camera::eye(&after));
+    assert!(a.iter().zip(b).all(|(p, q)| (p - q).abs() < 1e-9), "the eye stayed: {a:?} {b:?}");
+    let asked = rig.frames_asking(vec![vec![Rig::press(at, PointerButton::Secondary, false)], vec![]]);
+    assert_eq!(grabs(&asked), given, "the release gives it back");
+    assert!(!rig.shell.flight.captured);
+    // A click of the right button (no hold) still opens the viewport's menu, the pointer back.
+    // The toggle (Shift+F) takes and gives it the same way, and the window losing its focus
+    // gives it back too.
+    rig.key(Key::Escape, Modifiers::NONE);
+    rig.shell.keyboard.focus = vec!["viewport".into()];
+    let shift_f = |pressed| key_event(Key::F, pressed, Modifiers::SHIFT);
+    let asked = rig.frames_asking(vec![vec![shift_f(true)], vec![shift_f(false)]]);
+    assert!(rig.shell.flying(), "Shift+F flies");
+    assert_eq!(grabs(&asked), taken);
+    // While it is on, a click acts on nothing under the unseen pointer (here a row of the tree).
+    rig.shell.run("select none").unwrap();
+    let row = rig.row(Target::Body(1));
+    rig.click(row.center());
+    assert_eq!(rig.shell.engine.selection(), None, "a click in flight selects nothing");
+    let asked = rig.frames_asking(vec![vec![shift_f(true)], vec![shift_f(false)]]);
+    assert!(!rig.shell.flying(), "Shift+F again stops");
+    assert_eq!(grabs(&asked), given);
+    rig.click(row.center());
+    assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)), "control: not flying, the click selects");
+    rig.shell.run("fly").unwrap();
+    rig.frames(vec![vec![]]);
+    let asked = rig.frames_asking(vec![vec![Event::WindowFocused(false)], vec![]]);
+    assert!(!rig.shell.any_fly(), "the focus lost ends the flight");
+    assert_eq!(grabs(&asked), given);
 }
