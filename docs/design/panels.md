@@ -177,6 +177,9 @@ review" above:
   Each viewport has its own header row (`cav-app/src/header.rs`): view type, camera menu, shading
   group, overlays popover (a plot: show all), then a warning dot, maximise, pop out, close. The
   camera's target, angles and distance are read-only rows at the foot of the camera menu.
+  (TASK-S20-11: the camera menu's mode is one of orbit, fly and walk, and `noclip` is a tick
+  box under them; while a first-person session is on, the canvas shows the flying speed for a
+  moment after it changes and `noclip` while that is on, at the middle of its foot.)
 - **Home and Restore are off the figure.** A scene's canvas has the navigation gizmo in its top
   right corner (`cav-app/src/navgizmo.rs`); the Home key and View ▸ Home stay, and maximise and
   restore are the header's button (Ctrl+Space).

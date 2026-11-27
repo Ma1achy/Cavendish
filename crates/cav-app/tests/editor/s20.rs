@@ -8,7 +8,8 @@
 //! readout, the speed; with them the top bar's row (the design's §4). Rows T4 and T5 are
 //! TASK-S20-09's: the duration typed at the transport, and what playing does at the end. Rows C3
 //! and C4 are the first-person camera's (TASK-S20-10): the keys of a flight, and the pointer's
-//! capture.
+//! capture. Rows W2 to W4 and E1's first task are the physical camera's (TASK-S20-11): what in a
+//! scene stops it, the double tap of Space, and that it is never in the scene or the read.
 
 use std::collections::BTreeMap;
 
@@ -2607,4 +2608,354 @@ fn flying_captures_the_pointer() {
     let asked = rig.frames_asking(vec![vec![Event::WindowFocused(false)], vec![]]);
     assert!(!rig.shell.any_fly(), "the focus lost ends the flight");
     assert_eq!(grabs(&asked), given);
+}
+
+// ---- The physical camera (TASK-S20-11): W2, W3, W4, E1's first task, the walker's timing ----
+
+/// The eye of viewport 0, metres.
+fn eye_of(rig: &Rig) -> [f64; 3] {
+    cav_app::camera::eye(rig.shell.engine.view(0))
+}
+
+/// The corners of the world's box piece called `label`, metres.
+fn piece_box(rig: &Rig, label: &str) -> ([f64; 3], [f64; 3]) {
+    let world = rig.shell.engine.spec().world.as_ref().expect("the scene has a world");
+    let piece = world.pieces.iter().find(|p| p.label == label).unwrap_or_else(|| panic!("no piece {label}"));
+    match &piece.kind {
+        cav_sim::world::PieceKind::Box { centre, size } => {
+            ([0, 1, 2].map(|a| centre[a] - 0.5 * size[a]), [0, 1, 2].map(|a| centre[a] + 0.5 * size[a]))
+        }
+        cav_sim::world::PieceKind::Terrain { .. } => panic!("{label} is terrain"),
+    }
+}
+
+/// Whether the camera's box is inside matter of the scene now.
+fn in_matter(rig: &Rig) -> bool {
+    let settings = &rig.shell.camera.walk;
+    let world = cav_app::occupancy::SceneOccupancy::new(&rig.shell.engine, rig.shell.ground());
+    cav_app::walk::Walker::at_eye(eye_of(rig), settings).inside(&world, settings)
+}
+
+fn run_all(rig: &mut Rig, lines: &[&str]) {
+    for line in lines {
+        rig.shell.run(line).unwrap_or_else(|why| panic!("`{line}`: {why}"));
+    }
+}
+
+#[test]
+fn slow_walk_through_town_hits_a_wall_and_noclip_passes() {
+    // W2. Criterion (written before measuring): in `town`, walking at a building, the eye stops
+    // short of its face by half the box's width (0 to 1 mm clear); with noclip on the same walk
+    // passes through. In `point` with a voxel sphere it stops at the sphere's voxels; the room's
+    // wall stops it at half the box's width. Control: each walk again with noclip ends beyond.
+    let mut rig = Rig::new();
+    let half = 0.5 * rig.shell.camera.walk.width;
+    let eye_height = rig.shell.camera.walk.eye_height;
+
+    // `town`: from 6 m west of building 3's west face, at the middle of it, walking east.
+    rig.shell.run("load town").unwrap();
+    let (lo, hi) = piece_box(&rig, "building 3");
+    let (face, y) = (lo[0], 0.5 * (lo[1] + hi[1]));
+    run_all(&mut rig, &[&format!("eye {} {y} 2 0 0", face - 6.0), "walk", "walk-for 2"]);
+    let landed = eye_of(&rig);
+    assert!(rig.shell.walking() && rig.shell.flight.walker.on_ground, "it stands on the ground");
+    assert!(landed[2] - eye_height < 0.0 && landed[2] - eye_height > -0.6, "on the terrain: {landed:?}");
+    let cells = (landed[2] - eye_height) / 0.1;
+    assert!((cells - cells.round()).abs() < 1e-6, "on the top of a 10 cm voxel: {cells} cells up");
+    rig.shell.run("walk-for 4 w").unwrap();
+    let stopped = eye_of(&rig);
+    let clear = face - (stopped[0] + half);
+    assert!((-1e-9..=1e-3).contains(&clear), "the box stops {clear} m from the face ({stopped:?})");
+    assert!(stopped[0] - landed[0] > 5.0, "having walked the 6 m to it, over the ground's steps");
+    assert!(!in_matter(&rig) && rig.shell.flight.walker.velocity[0] == 0.0);
+    // It slides along the wall: W and D together move it south along the face, no nearer.
+    rig.shell.run("walk-for 1 w d").unwrap();
+    let slid = eye_of(&rig);
+    assert!(slid[1] < stopped[1] - 2.0 && (slid[0] - stopped[0]).abs() < 1e-9, "{stopped:?} -> {slid:?}");
+    // Control: noclip on, the same walk passes through the wall.
+    run_all(&mut rig, &["noclip", "walk-for 2 w"]);
+    assert!(rig.shell.noclip && !rig.shell.walking(), "noclip flies");
+    assert!(eye_of(&rig)[0] > face + 2.0 && in_matter(&rig), "inside the building: {:?}", eye_of(&rig));
+    // Noclip off inside it: lifted to the nearest free place above, the roof.
+    run_all(&mut rig, &["noclip", "walk-for 0.1 w"]);
+    assert!(!in_matter(&rig) && (eye_of(&rig)[2] - eye_height - hi[2]).abs() < 1e-6, "{:?}", eye_of(&rig));
+    run_all(&mut rig, &["fly"]);
+    assert!(!rig.shell.any_fly(), "`fly` in a flying session ends it");
+
+    // `point`, with a voxel sphere on the room's floor: walking east from inside the room.
+    rig.shell.run("load point").unwrap();
+    run_all(
+        &mut rig,
+        &["add sphere at 0 -2 0.25", &format!("eye -3 -2 {eye_height} 0 0"), "walk", "walk-for 0.5"],
+    );
+    let body = rig.shell.engine.spec().bodies.last().unwrap().clone();
+    let (radius, pitch) = (cav_sim::starters::reach(&body), body.shape.as_ref().unwrap().pitch);
+    assert!(
+        rig.shell.flight.walker.on_ground && (eye_of(&rig)[2] - eye_height).abs() < 1e-9,
+        "on the room's floor"
+    );
+    rig.shell.run("walk-for 2 w").unwrap();
+    let stopped = eye_of(&rig);
+    let surface = 0.0 - radius;
+    assert!((stopped[0] + half - surface).abs() <= pitch + 1e-9, "at the sphere's voxels: {stopped:?}");
+    assert!(!in_matter(&rig));
+    run_all(&mut rig, &["noclip", "walk-for 1 w"]);
+    assert!(eye_of(&rig)[0] > radius + half, "control: noclip passes the sphere: {:?}", eye_of(&rig));
+    // The room's wall, walking on east: its inner face is at x = 5.
+    run_all(&mut rig, &["noclip", "walk", "walk-for 0.5", "walk-for 3 w"]);
+    assert!(rig.shell.walking());
+    let room = rig.shell.engine.spec().room.clone().unwrap();
+    let wall = room.origin[0] + room.size[0];
+    let stopped = eye_of(&rig);
+    assert!((wall - (stopped[0] + half)).abs() < 1e-9, "the wall stops the box: {stopped:?}");
+    run_all(&mut rig, &["noclip", "walk-for 1 w"]);
+    assert!(eye_of(&rig)[0] > wall + 1.0, "control: noclip passes the wall: {:?}", eye_of(&rig));
+    // Outside the room, noclip off: the room's wall stops the way back in, and the net at the
+    // scene's ground level holds the camera up where there is no floor.
+    run_all(&mut rig, &["noclip", "walk", "walk-for 1", "walk-for 0.5 s"]);
+    let outside = eye_of(&rig);
+    assert!((outside[2] - eye_height - rig.shell.ground()).abs() < 1e-9, "on the net: {outside:?}");
+    run_all(&mut rig, &["walk-for 3 s"]);
+    let back = eye_of(&rig);
+    let outer = wall + cav_app::occupancy::SHELL;
+    assert!((back[0] - half - outer).abs() < 1e-9, "the wall's outside stops it: {back:?}");
+}
+
+#[test]
+fn double_space_toggles_flying_and_flying_collides() {
+    // W3. Criterion (written before measuring): two presses of Space within 0.3 s switch walking
+    // and flying; flying into the room's wall stops at it; flying down onto the floor is walking
+    // again. Control: two presses more than a second apart jump twice and stay walking.
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    let eye_height = rig.shell.camera.walk.eye_height;
+    rig.shell.run(&format!("eye 3 -2 {eye_height} 0 0")).unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    rig.shell.keyboard.focus = vec!["viewport".into()];
+    rig.key(Key::G, Modifiers::SHIFT);
+    rig.frames(vec![vec![]; 3]);
+    assert!(rig.shell.walking() && rig.shell.flight.walker.on_ground, "Shift+G walks, on the floor");
+    let space = |pressed| key_event(Key::Space, pressed, Modifiers::NONE);
+    // One press, and the frames after it; returns the highest the eye rose in them.
+    let press = |rig: &mut Rig, frames: usize| {
+        let mut highest = f64::NEG_INFINITY;
+        let mut list = vec![vec![space(true)], vec![space(false)]];
+        list.extend(vec![vec![]; frames.saturating_sub(2)]);
+        for events in list {
+            rig.frames(vec![events]);
+            highest = highest.max(eye_of(rig)[2]);
+        }
+        highest
+    };
+    // Control: 1.25 s apart, each press is a jump and the camera stays walking.
+    // (The room is 3 m high and the box 1.8 m: the ceiling stops a 1.25 m jump at 1.2 m.)
+    let headroom = rig.shell.engine.spec().room.as_ref().unwrap().size[2] - rig.shell.camera.walk.height;
+    let jump = rig.shell.camera.walk.jump_height.min(headroom);
+    for n in 0..2 {
+        let highest = press(&mut rig, 75);
+        assert!(
+            (highest - eye_height - jump).abs() < 0.03 * jump,
+            "jump {n} rose {} m",
+            highest - eye_height
+        );
+        assert!(rig.shell.walking() && rig.shell.flight.walker.on_ground, "and came down, walking");
+    }
+    assert!(!rig.shell.playing, "Space jumped; it did not play");
+    // Two presses 0.1 s apart: flying. It hovers where the second press found it.
+    press(&mut rig, 6);
+    press(&mut rig, 2);
+    assert!(rig.shell.any_fly() && !rig.shell.walking(), "a double tap of Space flies");
+    // (The second press is also a frame of Space held, flying: a little rise, eased away.)
+    rig.settle();
+    let hovering = eye_of(&rig);
+    rig.frames(vec![vec![]; 20]);
+    assert!(hovering[2] > eye_height + 0.05 && eye_of(&rig) == hovering, "it hovers: {hovering:?}");
+    // Flying east into the wall (its inner face at x = 5) stops with the box at it.
+    let half = 0.5 * rig.shell.camera.walk.width;
+    fly_holding(&mut rig, &[Key::W], Modifiers::NONE, 90);
+    let stopped = eye_of(&rig);
+    assert!((5.0 - (stopped[0] + half)).abs() < 1e-9 && stopped[2] == hovering[2], "{stopped:?}");
+    // Shift sinks, and landing is walking again; a double tap flies again from the ground.
+    fly_holding(&mut rig, &[], Modifiers::SHIFT, 60);
+    assert!(rig.shell.walking() && (eye_of(&rig)[2] - eye_height).abs() < 1e-9, "landed, walking");
+    press(&mut rig, 6);
+    press(&mut rig, 2);
+    assert!(!rig.shell.walking(), "and Space twice flies again");
+    // Esc ends the session; the view's distance to its target is the orbit's again.
+    rig.key(Key::Escape, Modifiers::NONE);
+    assert!(!rig.shell.any_fly());
+}
+
+#[test]
+fn the_camera_never_enters_the_scene_or_the_read() {
+    // W4. Criterion (written before measuring): after a walk and a flight the scene's bytes (and
+    // so its hash), the journal's edits, the undo depth and every tower's reading are identical
+    // to before, bit for bit. Control: a 70 kg body where the walker stands changes the reading.
+    use std::hash::{Hash, Hasher};
+    let long = std::time::Duration::from_secs(60);
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let bytes = |rig: &Rig| serde_json::to_string(rig.shell.engine.spec()).unwrap();
+    let hash = |text: &str| {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut hasher);
+        hasher.finish()
+    };
+    let edits = |rig: &Rig| {
+        let journal = rig.shell.engine.journal();
+        journal
+            .iter()
+            .filter(|c| !matches!(c, Command::View(_) | Command::Seek(_)))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let read = |rig: &mut Rig| {
+        assert!(rig.shell.engine.settle(long) && rig.shell.engine.settle_reading(long));
+        let towers = rig.shell.readings().to_vec();
+        assert_eq!(towers.len(), 5);
+        towers
+            .iter()
+            .map(|t| [t.lower.to_bits(), t.upper.to_bits(), t.gradiometer.to_bits()])
+            .collect::<Vec<_>>()
+    };
+    let before = (bytes(&rig), edits(&rig), rig.shell.engine.depth(), read(&mut rig));
+    assert!(before.3.iter().any(|t| t[2] != 0f64.to_bits()), "the towers read the mass");
+    let journal = rig.shell.engine.journal().len();
+    // A walk inside the room, by the console's words and by events (the right button held).
+    let eye_height = rig.shell.camera.walk.eye_height;
+    run_all(
+        &mut rig,
+        &[&format!("eye -3 -2 {eye_height} 0 0"), "walk", "walk-for 1 w", "noclip", "walk-for 1 w d"],
+    );
+    run_all(&mut rig, &["noclip", "walk"]);
+    let at = rig.shell.layout().canvases[0].center();
+    rig.frames(vec![vec![Event::PointerMoved(at)], vec![Rig::press(at, PointerButton::Secondary, true)]]);
+    fly_holding(&mut rig, &[Key::W, Key::Space], Modifiers::NONE, 20);
+    rig.frames(vec![
+        vec![Event::MouseMoved(vec2(40.0, -15.0))],
+        vec![Rig::press(at, PointerButton::Secondary, false)],
+    ]);
+    let stands = eye_of(&rig);
+    assert!(
+        rig.shell.engine.journal().len() > journal,
+        "the camera's moves were journalled (as view commands)"
+    );
+    let after = (bytes(&rig), edits(&rig), rig.shell.engine.depth(), read(&mut rig));
+    assert_eq!(hash(&after.0), hash(&before.0), "the scene's hash");
+    assert!(
+        after == before,
+        "the scene, the journal's edits, the undo depth and the readings are as they were"
+    );
+    // Control: a 70 kg body where the camera stands is in the scene and in the read.
+    let [x, y, z] = stands;
+    run_all(&mut rig, &[&format!("add point-mass at {x} {y} {z}"), "set bodies[1].mass 70"]);
+    let with_body = (bytes(&rig), edits(&rig), rig.shell.engine.depth(), read(&mut rig));
+    assert_ne!(hash(&with_body.0), hash(&before.0));
+    assert_eq!(with_body.1.len(), before.1.len() + 2, "two edits");
+    assert!(with_body.3 != before.3, "control: a body there changes what the towers read");
+}
+
+#[test]
+fn slow_task_mosaic_periodogram_fly_wall_noclip() {
+    // E1, the first task, by input events alone (the scene is opened and the eye put near a
+    // building first): split the figure into a 2 × 3 mosaic from the viewports' right-click
+    // menus, drag a splitter, set a viewport's type to Periodogram from its header, fly through
+    // `town` with collision and stop at a wall, turn noclip on and pass through it.
+    // The event budget, written before the task was run: 120.
+    const BUDGET: usize = 120;
+    let mut rig = Rig::new();
+    rig.shell.run("load town").unwrap();
+    let (lo, hi) = piece_box(&rig, "building 3");
+    let (face, y) = (lo[0], 0.5 * (lo[1] + hi[1]));
+    rig.shell.run(&format!("eye {} {y} 2.5 0 0", face - 4.0)).unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    rig.events = 0;
+    let depth = rig.shell.engine.depth();
+    // Split: right, right (three columns), then each column down. A right-click opens the
+    // viewport's menu (no flight: the button is not held).
+    let split = |rig: &mut Rig, pane: usize, way: &str| {
+        let at = rig.shell.layout().canvases[pane].center();
+        rig.click_with(at, PointerButton::Secondary);
+        rig.click_button(&format!("viewport menu split-{way}"));
+        rig.frames(vec![vec![]]);
+    };
+    split(&mut rig, 0, "right");
+    split(&mut rig, 1, "right");
+    for pane in 0..3 {
+        split(&mut rig, pane, "down");
+    }
+    let mosaic = rig.shell.engine.mosaic().clone();
+    assert_eq!(rig.shell.engine.panes(), 6);
+    assert_eq!((mosaic.row_weights().len(), mosaic.column_weights().len()), (2, 3), "2 × 3: {mosaic:?}");
+    // Drag the splitter between the first two columns 60 points to the right.
+    let handle = splitter(&rig, Boundary::Column(0)).center();
+    let before = rig.shell.layout().canvases[0].width();
+    rig.drag(handle, handle + vec2(60.0, 0.0));
+    rig.frames(vec![vec![]]);
+    assert!((rig.shell.layout().canvases[0].width() - before - 60.0).abs() < 2.0, "the splitter moved");
+    // Viewport 6 shows the periodogram, chosen in its header.
+    rig.click_button("header type 6");
+    rig.click_button("show periodogram @6");
+    rig.frames(vec![vec![]]);
+    assert_eq!(rig.shell.engine.content(5), cav_engine::PaneContent::Periodogram);
+    // Fly: the right button held over viewport 1, W held. It stops at the building's face.
+    let half = 0.5 * rig.shell.camera.walk.width;
+    let at = rig.shell.layout().canvases[0].center();
+    rig.frames(vec![vec![Event::PointerMoved(at)], vec![Rig::press(at, PointerButton::Secondary, true)]]);
+    let w = |pressed| key_event(Key::W, pressed, Modifiers::NONE);
+    let mut frames = vec![vec![w(true)]];
+    frames.extend(vec![vec![]; 150]);
+    rig.frames(frames);
+    assert_eq!(rig.shell.fly_pane(), Some(0));
+    let stopped = eye_of(&rig);
+    let clear = face - (stopped[0] + half);
+    assert!((-1e-9..=1e-3).contains(&clear), "the wall stops the flight {clear} m from it ({stopped:?})");
+    // N: noclip. Still holding W, it passes through; the canvas says noclip is on.
+    rig.frames(vec![
+        vec![key_event(Key::N, true, Modifiers::NONE)],
+        vec![key_event(Key::N, false, Modifiers::NONE)],
+    ]);
+    assert!(rig.shell.noclip && rig.shell.layout().button("noclip mark").is_some());
+    rig.frames(vec![vec![]; 120]);
+    assert!(eye_of(&rig)[0] > face + 2.0, "through the wall: {:?}", eye_of(&rig));
+    rig.frames(vec![vec![w(false)], vec![Rig::press(at, PointerButton::Secondary, false)], vec![]]);
+    assert!(!rig.shell.any_fly());
+    // None of it edited the scene; the events are within the budget.
+    assert_eq!(rig.shell.engine.depth(), depth);
+    assert!(rig.events <= BUDGET, "{} events, budget {BUDGET}", rig.events);
+    println!("E1 (mosaic, periodogram, fly, wall, noclip): {} events of {BUDGET}", rig.events);
+}
+
+#[test]
+fn slow_a_walker_step_in_town_is_timed() {
+    // §6 (recorded, not gated): a walker step against `town`, walking over the ground and along
+    // a building's wall. The budget is 50 µs in a release build (`cargo xtask test
+    // slow_a_walker_step_in_town_is_timed --release` prints it); a debug build is held only to
+    // a bound that catches a step gone wrong by orders of magnitude.
+    use cav_app::walk::{Env, Walker, Wish};
+    let mut rig = Rig::new();
+    rig.shell.run("load town").unwrap();
+    let (lo, hi) = piece_box(&rig, "building 3");
+    let settings = rig.shell.camera.walk.clone();
+    let env =
+        Env { gravity: rig.shell.engine.spec().array.instrument.gravity, easing: rig.shell.camera.easing };
+    let ground = rig.shell.ground();
+    let mut walker =
+        Walker { flying: false, ..Walker::at_eye([lo[0] - 20.0, 0.5 * (lo[1] + hi[1]), 2.0], &settings) };
+    // North-east: over the ground to the wall, then along it.
+    let wish = Wish { along: [settings.speed, 0.2], ..Wish::default() };
+    let steps = 2000;
+    let started = std::time::Instant::now();
+    for _ in 0..steps {
+        let world = cav_app::occupancy::SceneOccupancy::new(&rig.shell.engine, ground);
+        walker.step(1.0 / 60.0, &wish, &world, &settings, env);
+    }
+    let each = started.elapsed().as_secs_f64() / f64::from(steps) * 1e6;
+    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    println!(
+        "a walker step against town: {each:.1} µs ({profile}, {steps} steps, the occupancy made each step)"
+    );
+    assert!(walker.on_ground && (lo[0] - (walker.feet[0] + 0.5 * settings.width)).abs() < 1e-9, "{walker:?}");
+    assert!(each < if cfg!(debug_assertions) { 5000.0 } else { 500.0 }, "{each} µs a step");
 }

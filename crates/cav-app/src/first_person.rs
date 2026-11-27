@@ -409,7 +409,12 @@ impl Shell {
             walker.step(held.dt, &wish, &world, &settings.walk, env);
         }
         self.flight.walker = walker;
-        camera.eye = walker.eye(&settings.walk);
+        // The eye follows the box where the box moved (more than rounding: the eye's place is
+        // read from the view each frame, and its trip to the feet and back is not exact).
+        let eye = walker.eye(&settings.walk);
+        if !idle && (0..3).any(|a| (eye[a] - camera.eye[a]).abs() > 1e-12) {
+            camera.eye = eye;
+        }
         if (camera.eye, camera.yaw, camera.pitch) != before {
             if self.flight.distance.is_none() {
                 // The session's first move: a perspective view, its target a metre before the
