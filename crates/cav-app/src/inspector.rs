@@ -268,7 +268,6 @@ pub fn header(shell: &mut Shell, ui: &mut egui::Ui) {
                 }
             }
         }
-        ui.label(RichText::new(kind_words(&spec, target)).size(theme::BODY_PT).color(theme::WEAK));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let (at, menu) = ui.allocate_exact_size(vec2(theme::HIT, theme::HIT), Sense::click());
             dots(ui.painter(), at, if menu.hovered() { theme::STRONG } else { theme::TEXT });
@@ -289,6 +288,15 @@ pub fn header(shell: &mut Shell, ui: &mut egui::Ui) {
                     let _ = shell.run(&format!("{word} \"{label}\""));
                 }
             }
+            // What it is, in the room the name and the buttons leave: cut with an ellipsis (the
+            // whole of it in its tooltip) rather than run under the eye (seen in S20's pictures:
+            // "Point mass · circular" at the inspector's 320 pt).
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                let words = kind_words(&spec, target);
+                let text = RichText::new(&words).size(theme::BODY_PT).color(theme::WEAK);
+                let kind = ui.add(egui::Label::new(text).truncate()).on_hover_text(&words);
+                shell.layout.buttons.push(("inspector kind".to_owned(), kind.rect));
+            });
         });
     });
     let rect = Rect::from_min_max(top, pos2(ui.max_rect().right(), ui.cursor().top()));

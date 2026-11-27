@@ -37,6 +37,20 @@ impl Row {
     }
 }
 
+/// The sheet's row of the sprint keys, `(keys, what)`, where Ctrl sprints (`ctrl_sprints`) or not
+/// (in a browser: [`crate::platform::CTRL_SPRINTS`]).
+#[must_use]
+pub const fn sprint_row(ctrl_sprints: bool) -> (&'static str, &'static str) {
+    if ctrl_sprints {
+        ("Ctrl · W twice", "sprint while held · until W is let go")
+    } else {
+        ("W twice", "sprint until W is let go")
+    }
+}
+
+/// This platform's [`sprint_row`].
+const SPRINT: (&str, &str) = sprint_row(crate::platform::CTRL_SPRINTS);
+
 /// The keys of the keyboard model itself (`docs/design/keyboard.md` §3, §6, §7 and Cavendish's
 /// sessions), which are mechanisms, not actions: `(where, keys, what)`.
 pub const MODEL: &[(&str, &str, &str)] = &[
@@ -64,10 +78,10 @@ pub const MODEL: &[(&str, &str, &str)] = &[
     ("Moving the selection", "Enter · Esc", "keep the move · cancel it"),
     ("Flying and walking", "mouse · arrows", "look (the pointer is captured and hidden)"),
     ("Flying and walking", "W A S D", "forward, left, back, right, level whatever the look"),
-    ("Flying and walking", "Ctrl · W twice", "sprint while held · until W is let go"),
+    ("Flying and walking", SPRINT.0, SPRINT.1),
     ("Flying and walking", "Space twice", "switch between flying and walking"),
     ("Flying and walking", "Space · Shift", "flying: up · down (E · Q too); walking: jump · sneak"),
-    ("Flying and walking", "wheel", "the flying speed, shown for a moment"),
+    ("Flying and walking", "wheel", "the speed in use, walking or flying, shown for a moment"),
     ("Flying and walking", "N", "noclip: pass through matter (it flies), or not"),
     (
         "Flying and walking",

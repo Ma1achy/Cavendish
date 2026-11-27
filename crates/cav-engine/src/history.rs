@@ -53,8 +53,10 @@ pub enum Edit {
     /// Put a pane's camera back as it was: what undoes and redoes `Home`, the one camera move
     /// that is an edit (`docs/slices/S18.md` §2). The scene is unchanged.
     View {
-        /// The pane, from 0.
-        pane: usize,
+        /// The viewport, by its label in the mosaic (`A`, `B`, …): a label stays with its viewport
+        /// when another is closed and the numbers move (S20's review, minor 4). The step puts
+        /// nothing back if no viewport has the label any more.
+        label: char,
         /// Its whole view.
         view: Box<cav_sim::ViewSpec>,
     },
@@ -111,7 +113,7 @@ impl Edit {
             }
             Self::Remove { path } => format!("remove {path}"),
             Self::Replace(scene) => format!("load {}", scene.name),
-            Self::View { pane, .. } => format!("view home @{}", pane + 1),
+            Self::View { label, .. } => format!("view home @{label}"),
             Self::Folders { line, .. } | Self::Batch { line, .. } => line.clone(),
         }
     }

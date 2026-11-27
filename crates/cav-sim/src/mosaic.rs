@@ -443,7 +443,10 @@ impl Mosaic {
         format!("there is no viewport `{label}`; the mosaic has {}", labels.join(", "))
     }
 
-    /// The first letter no viewport has.
+    /// The letter a new viewport takes: the one after the highest in use, so that the viewports
+    /// already there keep their numbers (a viewport's number is its label's place in the
+    /// alphabet: a new letter before the others would renumber them all; S20's review, minor 10).
+    /// Past `Z`, the first letter no viewport has.
     fn unused(&self) -> Result<char, String> {
         let labels = self.labels();
         if labels.len() >= MAX_VIEWPORTS {
@@ -451,11 +454,14 @@ impl Mosaic {
                 "a figure holds at most {MAX_VIEWPORTS} viewports: close one before splitting another"
             ));
         }
-        Ok(('A'..='Z').find(|l| !labels.contains(l)).expect("fewer than 26 labels are in use"))
+        let after = labels.last().and_then(|l| char::from_u32(u32::from(*l) + 1)).filter(|l| *l <= 'Z');
+        Ok(after.unwrap_or_else(|| {
+            ('A'..='Z').find(|l| !labels.contains(l)).expect("fewer than 26 labels are in use")
+        }))
     }
 
     /// Splits viewport `label` into a left and a right half: `label` keeps the left, and a new
-    /// viewport with the first unused letter takes the right. A viewport that spans several
+    /// viewport with the next letter (after the highest in use) takes the right. A viewport that spans several
     /// columns is cut at the column boundary nearest its middle; one that spans a single column
     /// has that column made two, each of half its weight (so the widths of everything else are
     /// unchanged, and the sum of the weights is kept). Answers with the new mosaic and the new
@@ -796,9 +802,15 @@ mod tests {
         assert_eq!((tall.to_string().as_str(), new), ("AAB;CDB;EDB cols 2 1 1.5 rows 1 1.5 1.5", 'E'));
         holds(&tall, "split a cell down");
         assert_eq!(tall.close('E').unwrap(), start);
-        // The new label is the first unused letter, wherever the gap in the alphabet is.
+        // The new label is the letter after the highest in use (S20's review, minor 10: the first
+        // unused letter, B here, would come before C and renumber it), so every viewport there
+        // keeps its number; past Z, the first unused letter.
         let gappy = Mosaic::parse("AC").unwrap();
-        assert_eq!(gappy.split_right('C').unwrap().1, 'B');
+        let (split, new) = gappy.split_right('A').unwrap();
+        assert_eq!((split.grid_text().as_str(), new), ("ADC", 'D'));
+        assert_eq!((split.number('A'), split.number('C')), (gappy.number('A'), gappy.number('C')));
+        let (split, new) = Mosaic::parse("AZ").unwrap().split_right('Z').unwrap();
+        assert_eq!((split.grid_text().as_str(), new), ("AZB", 'B'), "past Z: the first free letter");
         // Closing: the left neighbour first, then above, right, below.
         assert_eq!(Mosaic::parse("AB;CD").unwrap().close('D').unwrap().grid_text(), "AB;CC");
         assert_eq!(Mosaic::parse("AB;CD").unwrap().close('A').unwrap().grid_text(), "BB;CD");

@@ -25,6 +25,11 @@ use crate::address::{download_name, exec_commands};
 use crate::app::App;
 use crate::{GpuPanes, Shell, theme};
 
+/// Whether Ctrl (Cmd on a Mac) held sprints in a first-person session: not in a page. Ctrl+W and
+/// Cmd+W close the browser's tab, and no page can stop them, pointer lock or not (S20's review,
+/// finding 3); the double tap of W sprints instead.
+pub const CTRL_SPRINTS: bool = false;
+
 /// The id of the canvas the page gives the application.
 pub const CANVAS_ID: &str = "cavendish";
 
@@ -174,6 +179,30 @@ pub fn start() {
     });
 }
 
+thread_local! {
+    /// Whether the scene has work not saved ([`Shell::unsaved`]), as of the last frame.
+    static UNSAVED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Asks the browser to warn before the page is left (closed, reloaded, navigated away from)
+/// while the scene has work not saved (S20's review, finding 3): the browser's own "leave site?"
+/// question, whose words a page cannot set. With nothing unsaved the page goes without a word.
+fn guard_leaving() {
+    let Some(window) = web_sys::window() else { return };
+    let leaving = Closure::<dyn FnMut(web_sys::Event)>::new(|event: web_sys::Event| {
+        if UNSAVED.get() {
+            // `preventDefault` is the standard's way; `returnValue` set is what older browsers
+            // look for.
+            event.prevent_default();
+            let _ = js_sys::Reflect::set(&event, &"returnValue".into(), &"".into());
+        }
+    });
+    if window.add_event_listener_with_callback("beforeunload", leaving.as_ref().unchecked_ref()).is_ok() {
+        // The listener lives as long as the page.
+        leaving.forget();
+    }
+}
+
 /// Puts a panic's message on the page (the canvas would otherwise freeze on its last frame), then
 /// does what the hook before it did (eframe's: the browser's console).
 fn install_panic_hook() {
@@ -194,6 +223,7 @@ async fn run() -> Result<(), String> {
         .ok_or_else(|| format!("the page has no canvas `#{CANVAS_ID}`"))?;
     let runner = eframe::WebRunner::new();
     install_panic_hook();
+    guard_leaving();
     runner
         .start(
             canvas,
@@ -316,6 +346,7 @@ pub fn after_frame(shell: &mut Shell, ctx: &egui::Context) {
     {
         message.remove();
     }
+    UNSAVED.set(shell.unsaved());
     say_when_whole(shell);
     let from_address = run_exec(shell);
     // A command run here, after the frame was drawn, may have changed what the next one shows

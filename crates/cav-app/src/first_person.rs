@@ -17,8 +17,10 @@
 //!
 //! **While it is on** the pointer is captured and hidden ([`crate::platform::capture`]) and the
 //! mouse looks by its raw motion ([`crate::platform::motion`]). W A S D move along the view's
-//! heading and across it; Ctrl held or a double tap of W sprints; the wheel changes the flying
-//! speed, which is then shown in the canvas for a moment. *Flying*, Space rises and Shift sinks
+//! heading and across it; a double tap of W sprints, and natively so does Ctrl held (not in a
+//! browser, where Ctrl+W closes the tab: [`crate::platform::CTRL_SPRINTS`]); the wheel changes
+//! the speed in use (walking, the walking speed; flying, the flying speed), which is then shown
+//! in the canvas for a moment. *Flying*, Space rises and Shift sinks
 //! (E and Q too), and flying down onto the ground is walking again. *Walking*, Space jumps and
 //! Shift sneaks (slower, and not off an edge). A double tap of Space switches between the two.
 //! Every key is the session's: no tool, scope, selection or transport shortcut fires (W is not
@@ -35,13 +37,14 @@
 //! **The near plane.** The view's near plane is a hundredth of its distance to the target, so
 //! from an orbit's distance a wall at arm's length would be cut away. A session therefore holds
 //! the target [`EYE_DISTANCE`] in front of the eye (the eye where it was) and puts the orbit's
-//! distance back when it ends. An orthographic view is made perspective for it.
+//! distance back when it ends. An orthographic view is made perspective for it, and orthographic
+//! again when it ends (a Top view in a mosaic is not lost to a right-drag).
 
 use cav_engine::{Command, ViewCommand};
 use cav_sim::{Projection, ViewSpec};
 use egui::Key;
 
-use crate::camera::{FLY_SPEED_RANGE, FirstPerson, PITCH_LIMIT, Push};
+use crate::camera::{FLY_SPEED_RANGE, FirstPerson, PITCH_LIMIT, Push, WALK_SPEED_RANGE};
 use crate::keyboard::Press;
 use crate::occupancy::SceneOccupancy;
 use crate::shell::Shell;
@@ -85,6 +88,9 @@ pub struct Flight {
     show_speed: bool,
     /// The view's distance to its target before the session, metres: put back when it ends.
     distance: Option<f64>,
+    /// The view was orthographic before the session made it perspective: it is made
+    /// orthographic again when the session ends (S20's review, minor 9).
+    orthographic: bool,
     /// Shift is still down from the chord that started the session (Shift+F, Shift+G): it is
     /// not "down" or "sneak" until it has been let go once.
     shift_from_chord: bool,
@@ -99,7 +105,7 @@ pub struct Held {
     pub push: Push,
     /// Whether W is held (a double tap's sprint lasts until it is not).
     pub forward_down: bool,
-    /// Whether Ctrl is held: sprint.
+    /// Whether the sprint key is held ([`sprint_held`]).
     pub sprint: bool,
     /// The frame's time, seconds.
     pub dt: f64,
@@ -128,6 +134,21 @@ impl Held {
         held.forward_down = held.push.forward > 0.0;
         Ok(held)
     }
+}
+
+/// Whether `modifiers` hold the sprint key: Ctrl (Cmd on a Mac) where `ctrl_sprints` (natively,
+/// [`crate::platform::CTRL_SPRINTS`]); never in a browser, where Ctrl+W and Cmd+W close the tab
+/// and no page can stop them (S20's review, finding 3). The double tap of W sprints everywhere.
+#[must_use]
+pub const fn sprint_held(modifiers: egui::Modifiers, ctrl_sprints: bool) -> bool {
+    ctrl_sprints && (modifiers.ctrl || modifiers.command)
+}
+
+/// The sprint keys as the `?` sheet and the `fly` action's tooltip write them, where Ctrl sprints
+/// (`ctrl_sprints`) or not.
+#[must_use]
+pub const fn sprint_keys(ctrl_sprints: bool) -> &'static str {
+    if ctrl_sprints { "Ctrl or W twice" } else { "W twice" }
 }
 
 /// A speed as the canvas shows it: `4.0 m/s`, with the digits its size needs.
@@ -174,6 +195,10 @@ impl Shell {
             let view = self.engine.view(pane).clone();
             let far = ViewSpec { distance, ..view.clone() };
             self.apply(Command::View(FirstPerson::of(&view, [0.0; 3]).command(&far, pane)));
+            if self.flight.orthographic {
+                let projection = Projection::Orthographic;
+                self.apply(Command::View(ViewCommand::Project { pane, projection }));
+            }
         }
         self.flight = Flight { captured: self.flight.captured, pane, ..Flight::default() };
     }
@@ -307,7 +332,7 @@ impl Shell {
     }
 
     /// One frame of a session, from the window's input: the mouse's raw motion looks, the held
-    /// keys say where to go ([`Self::fly_step`]), and the wheel changes the flying speed.
+    /// keys say where to go ([`Self::fly_step`]), and the wheel changes the speed in use.
     pub(crate) fn fly_frame(&mut self, ctx: &egui::Context) {
         let Some(pane) = self.fly_pane() else { return };
         if pane >= self.engine.panes()
@@ -333,18 +358,17 @@ impl Shell {
                     up: rise - sink,
                 },
                 forward_down: i.key_down(Key::W),
-                sprint: i.modifiers.ctrl || i.modifiers.command,
+                sprint: sprint_held(i.modifiers, crate::platform::CTRL_SPRINTS),
                 dt: f64::from(i.stable_dt),
             };
             let pointer = [f64::from(i.pointer.delta().x), f64::from(i.pointer.delta().y)];
             (held, f64::from(i.smooth_scroll_delta.y), i.time, pointer)
         });
         // The wheel is the session's wherever the pointer rests: nothing else scrolls or zooms.
+        // It changes the speed in use (walking, the walking speed; flying, the flying speed).
         if scroll != 0.0 {
             ctx.input_mut(|i| i.smooth_scroll_delta = egui::Vec2::ZERO);
-            self.fly_speed =
-                (self.fly_speed * (scroll * 0.002).exp()).clamp(FLY_SPEED_RANGE.0, FLY_SPEED_RANGE.1);
-            self.flight.show_speed = true;
+            self.scale_session_speed((scroll * 0.002).exp());
         }
         if std::mem::take(&mut self.flight.show_speed) {
             self.flight.speed_shown_until = now + self.camera.speed_shown;
@@ -404,8 +428,8 @@ impl Shell {
         // session of no keys never lifts a camera that an orbit left inside matter).
         let idle = walker.flying && walker.velocity == [0.0; 3] && wish == Wish::default();
         if !idle {
-            // The scene is read here, and only read.
-            let world = SceneOccupancy::new(&self.engine, self.ground());
+            // The scene is read here, and only read; the room holds the box only if it is in it.
+            let world = SceneOccupancy::new(&self.engine, self.ground(), &walker.bounds(&settings.walk));
             walker.step(held.dt, &wish, &world, &settings.walk, env);
         }
         self.flight.walker = walker;
@@ -422,6 +446,7 @@ impl Shell {
                 if view.projection == Projection::Orthographic {
                     let projection = Projection::Perspective;
                     self.apply(Command::View(ViewCommand::Project { pane, projection }));
+                    self.flight.orthographic = true;
                 }
                 self.flight.distance = Some(view.distance);
                 view.distance = EYE_DISTANCE;
@@ -449,9 +474,29 @@ impl Shell {
         Ok(())
     }
 
-    /// Shows the flying speed in the canvas for its moment, from the next frame (a command
+    /// Shows the session's speed in the canvas for its moment, from the next frame (a command
     /// changed it).
     pub(crate) fn show_fly_speed(&mut self) {
+        self.flight.show_speed = true;
+    }
+
+    /// The speed the session moves at with no sprint or sneak, metres per second: walking, the
+    /// walking speed (`camera-set walk-speed`); otherwise the flying speed ([`Shell::fly_speed`]).
+    /// What the wheel changes and the canvas shows.
+    #[must_use]
+    pub fn session_speed(&self) -> f64 {
+        if self.walking() { self.camera.walk.speed } else { self.fly_speed }
+    }
+
+    /// Multiplies the session's speed ([`Self::session_speed`]) by `factor`, within its range
+    /// ([`FLY_SPEED_RANGE`] flying, [`WALK_SPEED_RANGE`] walking), and shows it.
+    pub(crate) fn scale_session_speed(&mut self, factor: f64) {
+        if self.walking() {
+            let speed = &mut self.camera.walk.speed;
+            *speed = (*speed * factor).clamp(WALK_SPEED_RANGE.0, WALK_SPEED_RANGE.1);
+        } else {
+            self.fly_speed = (self.fly_speed * factor).clamp(FLY_SPEED_RANGE.0, FLY_SPEED_RANGE.1);
+        }
         self.flight.show_speed = true;
     }
 
@@ -474,11 +519,12 @@ impl Shell {
     }
 
     /// The speed as the canvas of pane `pane` shows it at `now` seconds of the window's clock:
-    /// for a moment after the wheel changed it in a session on that pane.
+    /// for a moment after the wheel changed it in a session on that pane. It is the speed in use
+    /// ([`Self::session_speed`]): walking, the walking speed; flying, the flying speed.
     #[must_use]
     pub fn fly_speed_shown(&self, pane: usize, now: f64) -> Option<String> {
         (self.fly_pane() == Some(pane) && (now < self.flight.speed_shown_until || self.flight.show_speed))
-            .then(|| speed_text(self.fly_speed))
+            .then(|| speed_text(self.session_speed()))
     }
 }
 

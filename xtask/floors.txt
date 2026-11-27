@@ -21,7 +21,15 @@
 # TASK-S20-11 (the walk camera, collision, noclip): quick tests in cav-app: W1 and two more of
 # walk.rs, two of occupancy.rs, one more of first_person.rs, W3 and W4 in tests/editor/s20.rs;
 # slow tests: W2, E1's first task and the walker's timing (tests/editor/s20.rs).
-quick 701
+# TASK-S20-14 (the record): 1 new slow test (cav-app: E1's second task in tests/editor/s20.rs);
+# 3 new quick tests (cav-app: a header's menu opened by `viewport type|camera|overlays`; a
+# viewport popped out before a frame floats over its place; the inspector's header keeps its
+# words clear of its buttons).
+# TASK-S20-15 (the S20 review's fixes): 8 new quick tests (cav-app: the room holds a camera inside
+# only, a pop-out's frame, the walk from outside, the orthographic view after a session, the
+# wheel while walking, the sprint by platform; cav-engine: Home's undo by label; cav-plot: terse
+# titles).
+quick 712
 gpu 42
-slow 48
+slow 49
 oracle 58

@@ -82,7 +82,7 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ),
     (
         "viewport",
-        "act on a viewport (the active one, or number N): `viewport close [N]`; `viewport swap [N]` exchanges its place with the next viewport's; `viewport pop-out [N]` floats it over the window, or docks it if it floats; `viewport dock [N]` puts it back in the mosaic (with no N, every floating one)",
+        "act on a viewport (the active one, or number N): `viewport close [N]`; `viewport swap [N]` exchanges its place with the next viewport's; `viewport pop-out [N]` floats it over the window, or docks it if it floats; `viewport dock [N]` puts it back in the mosaic (with no N, every floating one); `viewport type|camera|overlays [N]` opens that menu of its header",
     ),
     (
         "maximise",
@@ -405,6 +405,10 @@ pub struct Shell {
     /// The transport's menu that is open by a click or by its console line (`speed` or
     /// `at-end`). Window state.
     pub transport_menu: Option<String>,
+    /// A viewport header's menu asked open by `viewport type|camera|overlays [N]`: the pane (from
+    /// 0) and the menu's stop. Taken by the header when it next draws that viewport, which opens
+    /// the menu as a click on its opener does. Window state.
+    pub(crate) header_menu: Option<(usize, String)>,
     /// What playing does when the playhead reaches the end of the timeline (`end
     /// loop|stop|run-on`; it loops at the start). Window state.
     pub at_end: crate::transport::AtEnd,
@@ -518,7 +522,7 @@ pub struct Shell {
     pub(crate) tree_drag: Option<crate::outliner::TreeDrag>,
     /// The right-hand panel's tab.
     pub right_tab: crate::outliner::RightTab,
-    /// The inspector's label column, points: 40 % of its width, at least 96 (S19's panels), so
+    /// The inspector's label column, points: a third of its width, at least 96 (S20's density), so
     /// that every row's value starts at the same x. Set as the panel is drawn.
     pub label_width: f32,
     /// What the inspector's ⋮ Copy took: a body's, a tower's or a part's whole value.
@@ -552,6 +556,7 @@ pub struct Shell {
     /// The viewports that float over the window (`viewport pop-out`), by label, each with its
     /// frame in points. Window state: the mosaic keeps the viewport's place, the engine knows
     /// nothing of it, and nothing is journalled. A label that leaves the mosaic is dropped.
+    /// (A frame of no size is one asked for before the window had drawn: the figure places it.)
     pub floating: std::collections::BTreeMap<char, Rect>,
     /// The viewport (pane, from 0) whose header is being dragged toward another viewport, to
     /// swap places with it when it is let go there. UI state.
@@ -667,6 +672,7 @@ impl Shell {
             playing: false,
             speed: 1.0,
             transport_menu: None,
+            header_menu: None,
             at_end: crate::transport::AtEnd::Loop,
             run_on: None,
             transport_hold: None,
@@ -1495,6 +1501,8 @@ impl Shell {
                             // The speed changed: it is shown, as after the wheel.
                             self.fly_speed = value;
                             self.show_fly_speed();
+                        } else if setting == "walk-speed" {
+                            self.show_fly_speed();
                         }
                         line.to_owned()
                     })
@@ -1828,12 +1836,14 @@ impl Shell {
         }
     }
 
-    /// `viewport <close|swap|pop-out|dock> [N]`: what the View menu and a viewport's right-click
-    /// menu do to one viewport (the active one, or number N from 1). Close and swap are the
-    /// engine's `close @N` and `swap N M` (one `Mosaic` command each, journalled); pop-out and
-    /// dock are the window's own state and journal nothing.
+    /// `viewport <close|swap|pop-out|dock|type|camera|overlays> [N]`: what the View menu and a
+    /// viewport's right-click menu do to one viewport (the active one, or number N from 1). Close
+    /// and swap are the engine's `close @N` and `swap N M` (one `Mosaic` command each,
+    /// journalled); pop-out and dock are the window's own state and journal nothing; `type`,
+    /// `camera` and `overlays` open that menu of the viewport's header, as a click on it does
+    /// (for scripts and pictures made with no window).
     fn viewport_command(&mut self, words: &[&str]) -> Result<(), String> {
-        const USAGE: &str = "viewport <close|swap|pop-out|dock> [N]";
+        const USAGE: &str = "viewport <close|swap|pop-out|dock|type|camera|overlays> [N]";
         let count = self.engine.panes();
         let (verb, pane, named) = match *words {
             [verb] => (verb, self.engine.active_pane(), false),
@@ -1853,12 +1863,10 @@ impl Shell {
                 // Over its own place, a little in from the corner, at a size that leaves the
                 // window in sight; before any frame has been drawn, a default.
                 let frame = match (self.layout.slots.get(pane), self.layout.figure) {
-                    (Some(slot), figure) if figure.is_positive() => {
-                        let size = slot.size().max(crate::panels::MIN_FLOAT).min(figure.size() * 0.6);
-                        // (Clear of the tool palette at the canvas's top left.)
-                        Rect::from_min_size(slot.min + egui::vec2(56.0, 24.0), size)
-                    }
-                    _ => Rect::from_min_size(egui::pos2(120.0, 120.0), egui::vec2(480.0, 360.0)),
+                    (Some(slot), figure) if figure.is_positive() => crate::panels::float_frame(*slot, figure),
+                    // No frame has been drawn (a script's first lines): the figure places it by
+                    // the same rule when it first draws it.
+                    _ => Rect::NOTHING,
                 };
                 self.maximised = false;
                 self.floating.insert(label, frame);
@@ -1870,6 +1878,13 @@ impl Shell {
             }
             "dock" => {
                 self.floating.clear();
+                Ok(())
+            }
+            "camera" | "overlays" if self.engine.content(pane) != cav_engine::PaneContent::Scene => {
+                Err(format!("viewport {} shows a plot: its header has no {verb} menu", pane + 1))
+            }
+            "type" | "camera" | "overlays" => {
+                self.header_menu = Some((pane, verb.to_owned()));
                 Ok(())
             }
             _ => Err(USAGE.to_owned()),

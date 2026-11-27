@@ -166,7 +166,7 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
 ## From S19 (left, with why)
 
 - **Progressive refinement** (preview while a drag goes on, the chosen tier on idle): the detail
-  tiers' main use. With the tiers (TASK-S19-06), in S20.
+  tiers' main use. With the tiers (TASK-S19-06), in S22.
 - **Mixed cells hold mass, not moments**: a cell two materials share keeps the sum of their masses
   at its centre (`VoxTree::mixed`); S5's exact piece moments (TASK-S5-09) fill the same table with
   centroids and second moments. The table is where that revision goes.
@@ -178,7 +178,7 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   (Done after S19's review: every two at least 15 apart in L*a*b*; colour-blind safety below.)
 - **The label column follows the inspector's first width**, not the width it is dragged to (egui
   widens a panel to its content, and a column that followed it pushed it wider every frame): with
-  docking (S20), take the dock area's own width, which egui_dock does not grow to content. (Since
+  docking (S22), take the dock area's own width, which egui_dock does not grow to content. (Since
   S19's review the panel no longer grows to its content, so the column could follow it now.)
 - **A material's elastic and thermal numbers are read by nothing yet**: rigid dynamics (S7) and
   heat (S13) will; until then the inspector could fold them under "Advanced".
@@ -209,6 +209,9 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   with the oracle tier. Where one guards a property a small scene would also show (the probe's
   field on a coarse ball, the wire's world job on one chunk), a cheap twin in `quick` would catch
   a break at the commit and not at the slice's end.
+
+## From S20 (the workspace)
+
 - **Closing a viewport into several neighbours** (TASK-S20-03): `Mosaic::close` lets one
   neighbour that shares a whole edge grow into the closed place, and refuses when none does (`A`
   in `AAB;CDB`, whose lower edge is C's and D's together). Letting the neighbours that tile one
@@ -221,10 +224,11 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   panes never changed number. After a close or a typed mosaic renumbers the viewports, undoing
   a Home made before it puts the camera back in whichever viewport now has that number. Key the
   step by label.
-- **Swap by dragging a header; the splitters' crossings** (TASK-S20-03, for TASK-S20-04): the
-  design's swap is a drag of a viewport's header onto another (there is `swap <a> <b>` and
-  "Swap with the next" until the header exists). The 2 px square where a column's gap crosses a
-  row's is no handle: a four-way handle there would resize both at once.
+- **The splitters' crossings; a test of the header's drag** (TASK-S20-03, TASK-S20-04): the
+  2 px square where a column's gap crosses a row's is no handle: a four-way handle there would
+  resize both at once. And the swap by dragging a viewport's header onto another is built
+  (TASK-S20-04) but no test drives it by events; `swap <a> <b>` and "Swap with the next" are
+  tested.
 - **The flyout by one gesture; the chosen variant on the button** (TASK-S20-05): Photoshop
   takes a variant by press, slide and let go; here the hold opens the flyout and a second click
   chooses. And the Place button could draw the chosen starter's own icon (a cube, a sphere), so
@@ -261,9 +265,9 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   sample of the column, so with two or more samples a cell the two can differ by one cell where
   the surface crosses a cell boundary inside a column (a 10 cm lip in `town` at worst, which a
   step climbs). Asking the corner samples too would make them agree exactly.
-- **A door in the room** (TASK-S20-11): the room's walls are shells with no opening, so a
-  camera outside cannot walk in without noclip (and one inside cannot walk out). A `RoomSpec`
-  has no door; one could be a view-side convenience (a gap the camera passes) or scene data.
+- **A door in the room** (TASK-S20-11; since TASK-S20-15 the room keeps a camera in but never
+  out, so the way in is open): one inside still cannot walk out. A `RoomSpec` has no door; one
+  could be a view-side convenience (a gap the camera passes) or scene data.
 - **Riding and being pushed** (TASK-S20-11): the camera is not carried by a body it stands on
   nor pushed by one that moves into it (it is lifted out upward). A platform that carries its
   rider needs the body's velocity at the playhead in `SceneOccupancy`.
@@ -271,3 +275,9 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   small "walk" or "fly" beside them would say which the double tap left you in.
 - **First-person settings are the session's** (TASK-S20-11): `camera-set` is not saved; a user
   settings file (with the keymap, TASK-S20-02) would keep sensitivity and speeds.
+- **Reverse-Z depth** (S20's review, minor 8): the first-person near plane of 2 cm with a far
+  plane of 5000 m on forward-Z `Depth32Float` (`cav-render/src/camera.rs`, `renderer.rs`) gives
+  about 3 to 7 cm of depth resolution at 100 to 150 m, which may be the speckle at `town`'s
+  horizon in `S20/fly.png`. Reverse-Z (depth cleared to 0, compare `Greater`, the projection's
+  near and far swapped) spreads float precision evenly in distance and would remove it; measure
+  the speckle before and after.

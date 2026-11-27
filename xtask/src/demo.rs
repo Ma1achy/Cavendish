@@ -22,6 +22,7 @@ pub fn run(root: &Path, slice: &str, web: bool) -> Result<(), String> {
         "S17" | "s17" => s17(root),
         "S18" | "s18" => s18(root),
         "S19" | "s19" => s19(root),
+        "S20" | "s20" => s20(root),
         other => Err(format!(
             "no demo for slice `{other}`: the slices with demos are: S0, S1, S2, S3, S4, S17, S18, S19"
         )),
@@ -1038,6 +1039,120 @@ fn s19(root: &Path) -> Result<(), String> {
     )?;
     expect_png(&out, file, [1440, 1500], &mut made)?;
     eprintln!("xtask: demo S19 wrote {} files to {}:", made.len(), out.display());
+    for file in &made {
+        eprintln!("  {file}");
+    }
+    Ok(())
+}
+
+/// S20, the workspace (`docs/slices/S20.md` §5): the dense panels (the same selections and tabs
+/// as S19's `panels-*.png`, to stand beside them), the mosaic, a viewport's header, the tool
+/// palette, the transport, folders, the first-person camera and a fast body's path; the
+/// session's console lines and §6's timings. Release builds, each run within a wall-clock limit
+/// and stopped by its own handle; scenes `point` and `town` only.
+fn s20(root: &Path) -> Result<(), String> {
+    let out = root.join("docs").join("slices").join("S20");
+    std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    step(
+        "build cav and cav-app (release)",
+        cargo(root, &["build", "--quiet", "--release", "-p", "cav", "-p", "cav-app"]),
+    )?;
+    let release = |name: &str| {
+        root.join("target").join("release").join(format!("{name}{}", std::env::consts::EXE_SUFFIX))
+    };
+    let (cav, app) = (release("cav"), release("cav-app"));
+    let path = |name: &str| out.join(name).to_string_lossy().into_owned();
+    let mut made: Vec<String> = Vec::new();
+    let circle = "set bodies[1].motion {\"Circular\": {\"centre\": [0, 0, 2], \"u\": [2, 0, 0], \
+                  \"v\": [0, 2, 0], \"frequency\": 5, \"phase\": 0}}";
+    // A second mass going round a point a metre from the centre tower once in ten seconds, so
+    // that the plots of the mosaic's pictures have something to show (`point` alone is at rest,
+    // and a circle about the tower itself is at one distance from it).
+    let slow = circle.replace("\"frequency\": 5", "\"frequency\": 0.1").replace("[0, 0, 2]", "[1, 0, 2]");
+    // Along the west wall of a building of `town`, on foot: the walker falls to the ground,
+    // walks east, and the eye is then put beside the wall looking along it.
+    let on_foot = "load town; eye 29 -47.5 2 0 0; walk; walk-for 2; walk-for 3 w";
+    let shots: Vec<(&str, String)> = vec![
+        // 1. The panels, as S19's `panels-*.png` were taken.
+        ("dense-body.png", "load point; add sphere at 2 2 0.25; select body 2; tool move; frame".to_owned()),
+        ("dense-scene.png", "load point; layout instrument".to_owned()),
+        ("dense-tower.png", "load town; select tower 2".to_owned()),
+        ("dense-readings.png", "load point; tab readings".to_owned()),
+        // 2. The mosaic: four view types; six viewports; one popped out.
+        (
+            "mosaic.png",
+            format!(
+                "load point; mass 5 at 2 0 2; {slow}; mosaic \"AAB;CDB\"; show flight @2; show signal @3; show periodogram @4"
+            ),
+        ),
+        (
+            "mosaic-six.png",
+            "load town; mosaic \"ABC;DEF\"; pane 1; view iso; pan 0 0 0; zoom 45; show signal @2; \
+             show periodogram @3; pane 4; view top; pan 0 0 0; zoom 25; show flight @5; show cadence @6; pane 1"
+                .to_owned(),
+        ),
+        (
+            "mosaic-float.png",
+            format!(
+                "load point; mass 5 at 2 0 2; {slow}; mosaic \"AB;CD\"; show signal @2; show periodogram @3; show flight @4; viewport pop-out 4"
+            ),
+        ),
+        // 3. A viewport's header, its Overlays popover open, and the navigation gizmo.
+        ("header.png", "load point; add sphere at 2 2 0.25; frame; viewport overlays".to_owned()),
+        // 4. The palette at the right edge, Place's flyout open, the options row under the header.
+        ("palette.png", "load point; tool place; tool-palette right; flyout place".to_owned()),
+        // 5. The transport, the end menu open.
+        ("transport.png", "load point; seek 3.2; end menu".to_owned()),
+        // 6. Folders: nested, one folded, two bodies hidden.
+        (
+            "folders.png",
+            "load point; mass 5 at 1 1 1; mass 6 at -1 1 1; mass 7 at 0 2 1; add sphere at 2 -2 1; \
+             add cube at -2 -2 1; folder new rig; folder new clamps in rig; folder new weights; \
+             folder new north in array; folder move body 2 body 3 clamps; folder move body 4 rig; \
+             folder move body 5 body 6 weights; folder move tower 2 tower 3 north; hide sphere; hide cube; \
+             tree-fold clamps; select body 4"
+                .to_owned(),
+        ),
+        // 7. On foot in `town` along a wall, the walking speed's read-out showing (the speed in use);
+        // and through it, noclip (flying: the flying speed's).
+        ("fly.png", format!("{on_foot}; eye 34.7 -47.5 1.32 100 -8; camera-set walk-speed 4.3")),
+        ("noclip.png", format!("{on_foot}; noclip; walk-for 0.5 w; camera-set fly-speed 4")),
+        // 8. A 5 Hz circle, drawn round.
+        ("path.png", format!("load point; mass 5 at 2 0 2; {circle}; orbit -60 50; select body 2")),
+    ];
+    let mut window_lines = String::new();
+    for (file, script) in &shots {
+        capture_within(
+            &app,
+            &["--screenshot", &path(file), "--size", "1440x900", "--exec", script],
+            180,
+            None,
+        )?;
+        expect_png(&out, file, [1440, 900], &mut made)?;
+        window_lines.push_str(&format!("{file}:\n  $ cav-app --screenshot {file} --exec \"{script}\"\n"));
+    }
+
+    // 9. The session of §1 as console lines. `cav exec` runs the engine's commands (the mosaic,
+    // the folders, the duration: what replays from a journal); the window's own (`step`, `end`,
+    // `speed`, `walk`, `eye`, `walk-for`, `noclip`, `tool`, `tool-palette`, `flyout`,
+    // `viewport`) have no meaning without a window and were run by `cav-app --exec`, as the
+    // lines under each picture's name say.
+    let script = "load point; mosaic \"AAB;CDB\"; show flight @2; show signal @3; show periodogram @4; \
+                  split right @1; swap 1 2; close @2; mosaic even; mass 5 at 1 1 1; folder new rig; \
+                  folder new clamps in rig; folder move body 2 clamps; folder rename clamps grips; \
+                  set duration 20; seek 3.2; stats; undo; undo; undo; undo; undo; journal; reading";
+    let answer = capture_within(&cav, &["exec", script], 300, None)?;
+    let session = format!(
+        "$ cav exec \"{script}\"\n{answer}\n\
+         # The window's own commands (not the engine's: `cav exec` has no window to act on), as run\n\
+         # for each picture by the headless application:\n{window_lines}"
+    );
+    write(&out, "session.txt", &session, &mut made)?;
+
+    // §6's numbers, in the release build, with no window and no GPU.
+    let timings = capture_within(&app, &["--measure"], 600, None)?;
+    write(&out, "timings.txt", &timings, &mut made)?;
+    eprintln!("xtask: demo S20 wrote {} files to {}:", made.len(), out.display());
     for file in &made {
         eprintln!("  {file}");
     }

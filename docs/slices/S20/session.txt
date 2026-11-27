@@ -1,0 +1,83 @@
+$ cav exec "load point; mosaic "AAB;CDB"; show flight @2; show signal @3; show periodogram @4; split right @1; swap 1 2; close @2; mosaic even; mass 5 at 1 1 1; folder new rig; folder new clamps in rig; folder move body 2 clamps; folder rename clamps grips; set duration 20; seek 3.2; stats; undo; undo; undo; undo; undo; journal; reading"
+load point
+mosaic "AAB;CDB"
+show flight @2
+show signal @3
+show periodogram @4
+mosaic "AEB;CDB" from A
+mosaic "BEA;CDA"
+mosaic "EEA;CDA"
+mosaic "EEA;CDA"
+add bodies {"label":"mass 1","mass":5.0,"radius":0.0,"shape":null,"motion":{"Static":{"position":[1.0,1.0,1.0]}},"appears":null,"vanishes":null}
+folder new rig
+folder new clamps in rig
+folder move body 2 clamps
+folder rename clamps grips
+set duration 20
+seek 3.2
+{
+  "engine": "0.0.0",
+  "scene": "point",
+  "towers": 5,
+  "bodies": 2,
+  "room": true,
+  "floor": false,
+  "time": 3.2,
+  "duration": 20.0,
+  "selection": null,
+  "panes": 4,
+  "mosaic": "EEA;CDA",
+  "active_pane": 0,
+  "journal": 16,
+  "journal_whole": true,
+  "undo": 7,
+  "redo": 0,
+  "generation": 16,
+  "digest": "ce9dab3400acc748",
+  "signal": "stale",
+  "compare": null
+}
+undo
+undo
+undo
+undo
+undo
+[{"Load":{"version":1,"name":"point","description":"One mass at rest in the room: 100 kg, 2 m from the centre tower, the static anchor that v1 is run on. Select it and drag it; every tower's phase follows.","duration":12.0,"array":{"instrument":{"tower_height":10.1,"ifo_separation":5.0,"half_sequence":0.73,"launch_velocity":3.86,"cycle":2.0,"atom_mass":1.4431558652473234e-25,"gravity":9.81,"kicks":1000,"launch_floor":true,"sign":"LowerMinusUpper"},"towers":[{"label":"tower 1","position":[0.0,0.0,0.0],"timing":{"offset":0.0},"instrument":null},{"label":"tower 2","position":[4.0,0.0,0.0],"timing":{"offset":0.0},"instrument":null},{"label":"tower 3","position":[-4.0,0.0,0.0],"timing":{"offset":0.0},"instrument":null},{"label":"tower 4","position":[0.0,4.0,0.0],"timing":{"offset":0.0},"instrument":null},{"label":"tower 5","position":[0.0,-4.0,0.0],"timing":{"offset":0.0},"instrument":null}],"schedule":{"jitter":null,"alternate":null,"gaps":null,"window":null,"loss":0.0,"seed":0}},"room":{"origin":[-5.0,-5.0,0.0],"size":[10.0,10.0,3.0]},"floor":null,"bodies":[{"label":"mass","mass":100.0,"radius":0.0,"shape":null,"motion":{"Static":{"position":[2.0,0.0,2.5]}},"appears":null,"vanishes":null}]}},{"View":{"Mosaic":{"layout":"AAB;CDB"}}},{"View":{"Show":{"pane":1,"content":"Flight"}}},{"View":{"Show":{"pane":2,"content":"Signal"}}},{"View":{"Show":{"pane":3,"content":"Periodogram"}}},{"View":{"Mosaic":{"layout":"AEB;CDB","from":"A"}}},{"View":{"Mosaic":{"layout":"BEA;CDA"}}},{"View":{"Mosaic":{"layout":"EEA;CDA"}}},{"View":{"Mosaic":{"layout":"EEA;CDA"}}},{"Insert":{"path":"bodies","index":null,"value":{"label":"mass 1","mass":5.0,"radius":0.0,"shape":null,"motion":{"Static":{"position":[1.0,1.0,1.0]}},"appears":null,"vanishes":null}}},{"Folder":{"New":{"name":"rig"}}},{"Folder":{"New":{"name":"clamps","within":"rig"}}},{"Folder":{"Move":{"items":[{"Body":2}],"to":"clamps"}}},{"Folder":{"Rename":{"from":"clamps","to":"grips"}}},{"Set":{"path":"duration","value":20,"continues":false}},{"Seek":3.2},"Undo","Undo","Undo","Undo","Undo"]
+# a shot read out at 3.2 s · refined · quadrature within 3e-12 rad
+# tower    ΔΦ [rad]  δφ₁ lower [rad]  δφ₂ upper [rad]
+tower 1  -1.8553264221238688e0  -5.773399612582466e-1  1.2779864608656222e0
+tower 2  -1.963858071799445e0  -6.972594353252974e-1  1.2665986364741475e0
+tower 3  -3.821477504366007e-1  -3.4157954057063074e-2  3.4798979637953764e-1
+tower 4  -6.420992960997373e-1  -6.799143449806737e-2  5.741078616016698e-1
+tower 5  -6.538286858211615e-1  -9.115831598834367e-2  5.626703698328177e-1
+
+# The window's own commands (not the engine's: `cav exec` has no window to act on), as run
+# for each picture by the headless application:
+dense-body.png:
+  $ cav-app --screenshot dense-body.png --exec "load point; add sphere at 2 2 0.25; select body 2; tool move; frame"
+dense-scene.png:
+  $ cav-app --screenshot dense-scene.png --exec "load point; layout instrument"
+dense-tower.png:
+  $ cav-app --screenshot dense-tower.png --exec "load town; select tower 2"
+dense-readings.png:
+  $ cav-app --screenshot dense-readings.png --exec "load point; tab readings"
+mosaic.png:
+  $ cav-app --screenshot mosaic.png --exec "load point; mass 5 at 2 0 2; set bodies[1].motion {"Circular": {"centre": [1, 0, 2], "u": [2, 0, 0], "v": [0, 2, 0], "frequency": 0.1, "phase": 0}}; mosaic "AAB;CDB"; show flight @2; show signal @3; show periodogram @4"
+mosaic-six.png:
+  $ cav-app --screenshot mosaic-six.png --exec "load town; mosaic "ABC;DEF"; pane 1; view iso; pan 0 0 0; zoom 45; show signal @2; show periodogram @3; pane 4; view top; pan 0 0 0; zoom 25; show flight @5; show cadence @6; pane 1"
+mosaic-float.png:
+  $ cav-app --screenshot mosaic-float.png --exec "load point; mass 5 at 2 0 2; set bodies[1].motion {"Circular": {"centre": [1, 0, 2], "u": [2, 0, 0], "v": [0, 2, 0], "frequency": 0.1, "phase": 0}}; mosaic "AB;CD"; show signal @2; show periodogram @3; show flight @4; viewport pop-out 4"
+header.png:
+  $ cav-app --screenshot header.png --exec "load point; add sphere at 2 2 0.25; frame; viewport overlays"
+palette.png:
+  $ cav-app --screenshot palette.png --exec "load point; tool place; tool-palette right; flyout place"
+transport.png:
+  $ cav-app --screenshot transport.png --exec "load point; seek 3.2; end menu"
+folders.png:
+  $ cav-app --screenshot folders.png --exec "load point; mass 5 at 1 1 1; mass 6 at -1 1 1; mass 7 at 0 2 1; add sphere at 2 -2 1; add cube at -2 -2 1; folder new rig; folder new clamps in rig; folder new weights; folder new north in array; folder move body 2 body 3 clamps; folder move body 4 rig; folder move body 5 body 6 weights; folder move tower 2 tower 3 north; hide sphere; hide cube; tree-fold clamps; select body 4"
+fly.png:
+  $ cav-app --screenshot fly.png --exec "load town; eye 29 -47.5 2 0 0; walk; walk-for 2; walk-for 3 w; eye 34.7 -47.5 1.32 100 -8; camera-set walk-speed 4.3"
+noclip.png:
+  $ cav-app --screenshot noclip.png --exec "load town; eye 29 -47.5 2 0 0; walk; walk-for 2; walk-for 3 w; noclip; walk-for 0.5 w; camera-set fly-speed 4"
+path.png:
+  $ cav-app --screenshot path.png --exec "load point; mass 5 at 2 0 2; set bodies[1].motion {"Circular": {"centre": [0, 0, 2], "u": [2, 0, 0], "v": [0, 2, 0], "frequency": 5, "phase": 0}}; orbit -60 50; select body 2"

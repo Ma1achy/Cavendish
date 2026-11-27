@@ -1142,8 +1142,8 @@ fn signal(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measu
     };
     let titles = titles(
         style,
-        format!("Signal · {name} of {of} · {}{also} · {}", spec.name, state.name()),
-        format!("Signal · {name} of {of} · {}{also}", spec.name),
+        format!("Signal · {name} · {of} · {}{also} · {}", spec.name, state.name()),
+        format!("Signal · {name} · {of} · {}{also}", spec.name),
         format!("Signal · {name}"),
     );
     let [from, to] = subject.span.unwrap_or([0.0, spec.duration]);
@@ -1412,8 +1412,8 @@ fn cadence(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Meas
     let spec = engine.spec();
     let tower = subject.tower.unwrap_or(1);
     let label_of = spec.array.towers.get(tower.wrapping_sub(1)).map_or("tower", |t| t.label.as_str());
-    let long = format!("Cadence · spectral window |W| of {label_of}'s shots · {}", spec.name);
-    let titles = vec![long, format!("Cadence · |W| of {label_of}'s shots"), "Cadence · |W|".to_owned()];
+    let long = format!("Cadence · |W| · {label_of} · {}", spec.name);
+    let titles = vec![long, format!("Cadence · |W| · {label_of}"), "Cadence · |W|".to_owned()];
     // Four decades, from the peak down: a floor of 1e-4 in amplitude is 1e-8 in power.
     let y = Axis { lo: 1e-4, hi: 1.0, log: true };
     let left: Vec<String> = y.ticks(6).into_iter().map(decade).collect();
@@ -1599,8 +1599,13 @@ pub fn flight_span(engine: &Engine, span: Option<[f64; 2]>) -> [f64; 2] {
 /// interferometer from its launch to its readout, at the tower's own times.
 fn flight(engine: &Engine, subject: &Subject, style: &Style, measure: &dyn Measure, size: [f32; 2]) -> Plot {
     let spec = engine.spec();
-    let long = format!("Flight · the atoms' arms, height against absolute time · {}", spec.name);
-    let titles = vec![long, format!("Flight · the atoms' arms · {}", spec.name), "Flight".to_owned()];
+    // Terse labels, not sentences (the owner's "no prose in the chrome"; S20's review, minor 13):
+    // the axes say height and absolute time.
+    let titles = vec![
+        format!("Flight · arm height · {}", spec.name),
+        "Flight · arm height".to_owned(),
+        "Flight".to_owned(),
+    ];
     let towers = spec.array.towers.len().min(MAX_FLIGHT_ROWS);
     let left: Vec<String> = spec.array.towers.iter().take(towers).map(|t| t.label.clone()).collect();
     let frame = Frame { titles: &titles, titled: subject.title, legend: 0, left: &left, y_label: None };
@@ -1802,8 +1807,8 @@ fn periodogram(
     let name = channel_name(subject.channel);
     let titles = titles(
         style,
-        format!("Periodogram · √S of {name} at {label_of} · {}{also} · {state}", spec.name),
-        format!("Periodogram · √S of {name} at {label_of} · {}{also}", spec.name),
+        format!("Periodogram · √S {name} · {label_of} · {}{also} · {state}", spec.name),
+        format!("Periodogram · √S {name} · {label_of} · {}{also}", spec.name),
         format!("Periodogram · {label_of}"),
     );
     // The tower's own instrument: the array's (or the compared one), with the tower's override.

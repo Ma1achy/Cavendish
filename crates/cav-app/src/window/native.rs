@@ -19,6 +19,8 @@ cav-app [options]
   --screenshot <file.png>      draw the application to a PNG with no window, then exit
   --size 1440x900              the size of the screenshot, or of the window
   --timings                    with --screenshot: also print frame times
+  --measure                    print the workspace's budgets (docs/slices/S20.md §6) measured with
+                               no window and no GPU, then exit
   --minimised                  open the window minimised
   --help                       this text
 ";
@@ -28,6 +30,7 @@ struct Options {
     screenshot: Option<String>,
     size: [u32; 2],
     timings: bool,
+    measure: bool,
     minimised: bool,
     keep_going: bool,
 }
@@ -38,6 +41,7 @@ fn options() -> Result<Option<Options>, String> {
         screenshot: None,
         size: [1440, 900],
         timings: false,
+        measure: false,
         minimised: false,
         keep_going: false,
     };
@@ -58,6 +62,7 @@ fn options() -> Result<Option<Options>, String> {
                     })?;
             }
             "--timings" => options.timings = true,
+            "--measure" => options.measure = true,
             "--minimised" => options.minimised = true,
             "--keep-going" => options.keep_going = true,
             other => return Err(format!("`{other}` is not an option\n\n{USAGE}")),
@@ -98,10 +103,142 @@ fn run(options: &Options) -> Result<(), String> {
             }
         }
     }
+    if options.measure {
+        return measure(options.size);
+    }
     match &options.screenshot {
         Some(path) => screenshot(&mut shell, options, path),
         None => window(shell, options),
     }
+}
+
+/// The workspace's budgets (`docs/slices/S20.md` §6), measured with no window and no GPU and
+/// printed: a frame of the window's own drawing with six viewports, a walker's step against
+/// `town`, and the cutting of a path of 10⁴ periods. Recorded, not gated.
+fn measure(size: [u32; 2]) -> Result<(), String> {
+    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    let median = |mut times: Vec<f64>| {
+        times.sort_by(f64::total_cmp);
+        times[times.len() / 2]
+    };
+    // A frame with six viewports of mixed types and no GPU surface: the layout, the headers,
+    // the panels and the plots, all but the scene's picture.
+    for scene in ["point", "town"] {
+        let mut shell = Shell::new();
+        for line in [
+            &format!("load {scene}"),
+            "mosaic \"ABC;DEF\"",
+            "show signal @2",
+            "show periodogram @3",
+            "show flight @5",
+            "show cadence @6",
+        ] {
+            shell.run(line)?;
+        }
+        if !shell.engine.settle(std::time::Duration::from_secs(SETTLE_S)) {
+            return Err(format!("{scene}: the signal was not whole after {SETTLE_S} s"));
+        }
+        // (And its world resident: a frame that is still streaming also makes chunks, up to
+        // the engine's 6 ms a poll, which is the streaming's cost and not the window's drawing.)
+        shell.engine.settle_world(std::time::Duration::from_secs(60));
+        let ctx = crate::headless::context();
+        let mut clock = 0.0;
+        let mut frame = |shell: &mut Shell| {
+            let started = Instant::now();
+            crate::headless::run_frames(
+                &ctx,
+                shell,
+                &mut crate::NoSurface,
+                size,
+                &mut clock,
+                vec![Vec::new()],
+            );
+            started.elapsed().as_secs_f64() * 1e3
+        };
+        for _ in 0..10 {
+            frame(&mut shell);
+        }
+        let times: Vec<f64> = (0..120).map(|_| frame(&mut shell)).collect();
+        println!(
+            "a frame of the window's own drawing, six viewports (2 scene, 4 plots), no GPU surface, `{scene}`, {} × {}: median {:.2} ms over {} frames ({profile}; budget 4 ms)",
+            size[0],
+            size[1],
+            median(times.clone()),
+            times.len()
+        );
+    }
+    // A walker's step against `town`: over the ground to the first building's wall, then along
+    // it; the scene's occupancy is made anew each step, as a frame makes it.
+    {
+        use crate::walk::{Env, Walker, Wish};
+        let mut shell = Shell::new();
+        shell.run("load town")?;
+        let settings = shell.camera.walk.clone();
+        let env = Env { gravity: shell.engine.spec().array.instrument.gravity, easing: shell.camera.easing };
+        let ground = shell.ground();
+        let wall = shell.engine.spec().world.as_ref().and_then(|world| {
+            world.pieces.iter().find_map(|piece| match &piece.kind {
+                cav_sim::world::PieceKind::Box { centre, size } => {
+                    Some([centre[0] - 0.5 * size[0] - 20.0, centre[1], ground + 2.0])
+                }
+                cav_sim::world::PieceKind::Terrain { .. } => None,
+            })
+        });
+        let eye = wall.ok_or("`town` has no box to walk at")?;
+        let mut walker = Walker { flying: false, ..Walker::at_eye(eye, &settings) };
+        let wish = Wish { along: [settings.speed, 0.2], ..Wish::default() };
+        let steps = 20_000_u32;
+        let started = Instant::now();
+        for _ in 0..steps {
+            let world =
+                crate::occupancy::SceneOccupancy::new(&shell.engine, ground, &walker.bounds(&settings));
+            walker.step(1.0 / 60.0, &wish, &world, &settings, env);
+        }
+        println!(
+            "a walker's step against `town` (the occupancy made each step): {:.2} µs each over {steps} ({profile}; budget 50 µs)",
+            started.elapsed().as_secs_f64() / f64::from(steps) * 1e6
+        );
+    }
+    // The path of a body that goes round 10⁴ times in the timeline: a circle (one period is
+    // drawn) and a motion that never repeats (it meets its cap of pieces and is flagged).
+    {
+        use cav_render::path;
+        use cav_sim::Motion;
+        let ring = Motion::Circular {
+            centre: [0.0; 3],
+            u: [2.0, 0.0, 0.0],
+            v: [0.0, 2.0, 0.0],
+            frequency: 1000.0,
+            phase: 0.0,
+        };
+        let buzz = Motion::Sphere {
+            centre: [0.0; 3],
+            radius: 1.5,
+            tilt: 60.0,
+            tilt_frequency: 1000.0,
+            spin_frequency: 0.37,
+        };
+        for (name, motion) in [("a 1000 Hz circle over 10 s", ring), ("a forced sphere at its cap", buzz)] {
+            let body = cav_sim::BodySpec::moving("b", 1.0, motion);
+            let build = || path::path(&body, 9.81, 10.0, path::PATH_PIECES);
+            let drawn = build();
+            let times: Vec<f64> = (0..201)
+                .map(|_| {
+                    let started = Instant::now();
+                    std::hint::black_box(build());
+                    started.elapsed().as_secs_f64() * 1e6
+                })
+                .collect();
+            println!(
+                "the path of 10^4 periods, {name}: {} pieces{} in a median {:.1} µs over {} builds ({profile}; budget 2000 µs)",
+                drawn.pieces(),
+                if drawn.capped { " (capped, flagged decimated)" } else { "" },
+                median(times.clone()),
+                times.len()
+            );
+        }
+    }
+    Ok(())
 }
 
 /// How long a screenshot waits for the scene's numbers, seconds: the scaffold's 48 members take
@@ -125,7 +262,21 @@ fn screenshot(shell: &mut Shell, options: &Options, path: &str) -> Result<(), St
     if !shell.engine.settle_world(std::time::Duration::from_secs(60)) {
         return Err(format!("{path}: the world was not resident after 60 s, so no picture was taken"));
     }
-    let png = headless.screenshot(shell, options.size)?;
+    let mut png = headless.screenshot(shell, options.size)?;
+    // The frames themselves may have moved a camera (a `walk` session under way settles onto
+    // the ground) and so changed what the world is wanted for: the picture is taken again until
+    // nothing is waiting to be made, so that it is of a whole world (TASK-S20-14).
+    let mut retaken = 0;
+    while shell.engine.streaming().pending() > 0 && retaken < 8 {
+        if !shell.engine.settle_world(std::time::Duration::from_secs(60)) {
+            return Err(format!("{path}: the world was not resident after 60 s, so no picture was taken"));
+        }
+        png = headless.screenshot(shell, options.size)?;
+        retaken += 1;
+    }
+    if retaken > 0 {
+        println!("{path}: taken again {retaken} time(s): the world was still streaming in");
+    }
     std::fs::write(path, &png).map_err(|e| format!("writing {path}: {e}"))?;
     println!(
         "{path}: {} × {} px, {} bytes, {:.2} s",

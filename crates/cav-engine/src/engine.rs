@@ -1114,8 +1114,11 @@ impl Engine {
                 self.schedule(false);
             }
             (Command::Undo, Prepared::Restore(spec)) => {
-                // A step of the view (Home) puts a camera back; any other, the scene.
-                if let Some(Edit::View { pane, view }) = self.history.last().map(|s| s.undo.clone()) {
+                // A step of the view (Home) puts a camera back, the viewport's with that label
+                // wherever it now is; any other, the scene.
+                if let Some(Edit::View { label, view }) = self.history.last().map(|s| s.undo.clone())
+                    && let Some(pane) = self.mosaic.number(label)
+                {
                     self.views[pane] = *view;
                 }
                 self.spec = *spec;
@@ -1125,7 +1128,9 @@ impl Engine {
                 self.schedule(false);
             }
             (Command::Redo, Prepared::Restore(spec)) => {
-                if let Some(Edit::View { pane, view }) = self.history.next().map(|s| s.redo.clone()) {
+                if let Some(Edit::View { label, view }) = self.history.next().map(|s| s.redo.clone())
+                    && let Some(pane) = self.mosaic.number(label)
+                {
                     self.views[pane] = *view;
                 }
                 self.spec = *spec;
@@ -1325,10 +1330,14 @@ impl Engine {
                     ..home_view(&self.spec, pane, before.style)
                 };
                 // The one camera move that is an edit: undo puts the camera back where it was.
-                if before != self.views[pane] {
+                // The step names the viewport by its label, which a close or a split elsewhere
+                // does not change (its number they may).
+                if before != self.views[pane]
+                    && let Some(label) = self.mosaic.label(pane)
+                {
                     self.history.edited(Step {
-                        undo: Edit::View { pane, view: Box::new(before) },
-                        redo: Edit::View { pane, view: Box::new(self.views[pane].clone()) },
+                        undo: Edit::View { label, view: Box::new(before) },
+                        redo: Edit::View { label, view: Box::new(self.views[pane].clone()) },
                     });
                 }
             }
@@ -2182,6 +2191,39 @@ mod tests {
         // Control: an orbit between is no edit, and the run goes on as one step.
         let orbited = homing(Command::View(ViewCommand::Orbit { pane: 0, yaw: 10.0, pitch: 10.0 }));
         assert_eq!(orbited.depth().0, 2);
+    }
+
+    #[test]
+    fn homes_undo_follows_the_viewport_by_its_label() {
+        // S20's review, minor 4. Criterion: Home on viewport B of "AB", then A closed (B becomes
+        // viewport 1): undo puts B's camera back where it was before Home, on the viewport now
+        // numbered 1, and redo homes it again. The step's line names it `@B`, which the console
+        // reads. Control: a Home on a viewport that is then closed puts back nothing shown.
+        let homed = |close: &str| {
+            let mut engine = Engine::new();
+            engine.apply(Command::load(dev::point())).unwrap();
+            engine.run_script("mosaic \"AB\"; orbit 40 25 @2; orbit -30 10 @1").unwrap();
+            let before = engine.view(1).clone();
+            engine.run_line("view home @B").unwrap();
+            let home = engine.view(1).clone();
+            assert_ne!(before, home, "Home moved B's camera");
+            engine.run_line(close).unwrap();
+            (engine, before, home)
+        };
+        let (mut engine, before, home) = homed("close @A");
+        assert_eq!((engine.mosaic().labels(), engine.panes()), (vec!['B'], 1));
+        let (done, _) = engine.history_steps();
+        assert_eq!(done.last().unwrap().redo.line(), "view home @B");
+        engine.apply(Command::Undo).unwrap();
+        assert_eq!(engine.view(0), &before, "undo put B's camera back, B now viewport 1");
+        engine.apply(Command::Redo).unwrap();
+        assert_eq!(engine.view(0), &home, "redo homed it again");
+        // Control: B closed, A is left; undo touches A's camera not at all.
+        let (mut engine, _, _) = homed("close @B");
+        let a = engine.view(0).clone();
+        engine.apply(Command::Undo).unwrap();
+        assert_eq!(engine.view(0), &a, "nothing shown has B's label: nothing is put back");
+        assert!(engine.run_line("view home @C").unwrap_err().contains("no viewport C"));
     }
 
     #[test]
