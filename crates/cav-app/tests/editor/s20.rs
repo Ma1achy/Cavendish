@@ -1495,6 +1495,15 @@ fn a_press_in_the_session_s_row_keeps_the_session() {
     assert!(rig.shell.layout().options.is_none(), "and the row goes");
 }
 
+/// The log's last line, other than the forward worker's note that a signal has arrived: on a
+/// busy machine that note can land after a refusal the test is about (seen once at 99 % load in
+/// TASK-S20-14: `duration_is_typed_at_the_transport` read "signal: 5 tower(s)…" for the refusal).
+fn last_said(rig: &Rig) -> String {
+    let log = rig.shell.engine.log();
+    let last = log.iter().rev().find(|entry| !entry.message.starts_with("signal: "));
+    last.expect("the log holds a line").message.clone()
+}
+
 /// The transport's control `id` as the last frame drew it.
 fn transport(rig: &Rig, id: &str) -> cav_app::transport::Drawn {
     rig.shell.layout().transport_control(id).unwrap_or_else(|| panic!("no transport control `{id}`")).clone()
@@ -1642,7 +1651,7 @@ fn each_transport_button_issues_its_command() {
     typed(&mut rig, "time", "soon");
     assert_eq!(rig.shell.engine.time().to_bits(), third.to_bits());
     assert!(rig.shell.console_open, "the refusal is said");
-    let said = |rig: &Rig| rig.shell.engine.log().iter().next_back().unwrap().message.clone();
+    let said = last_said;
     assert!(said(&rig).contains("`soon` is not a time in seconds"), "{}", said(&rig));
     typed(&mut rig, "shot", "9");
     assert_eq!(rig.shell.engine.time().to_bits(), third.to_bits());
@@ -2032,7 +2041,7 @@ fn duration_is_typed_at_the_transport() {
     let mut rig = fresh();
     let (digest, depth, journal) =
         (rig.shell.engine.digest(), rig.shell.engine.depth(), rig.shell.engine.journal().len());
-    let said = |rig: &Rig| rig.shell.engine.log().iter().next_back().unwrap().message.clone();
+    let said = last_said;
     assert!(!rig.shell.console_open);
     type_at_transport(&mut rig, "duration", "long");
     assert!(said(&rig).contains("`long` is not a duration in seconds"), "{}", said(&rig));
