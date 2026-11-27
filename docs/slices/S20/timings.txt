@@ -1,0 +1,5 @@
+a frame of the window's own drawing, six viewports (2 scene, 4 plots), no GPU surface, `point`, 1440 × 900: median 2.12 ms over 120 frames (release; budget 4 ms)
+a frame of the window's own drawing, six viewports (2 scene, 4 plots), no GPU surface, `town`, 1440 × 900: median 2.51 ms over 120 frames (release; budget 4 ms)
+a walker's step against `town` (the occupancy made each step): 3.04 µs each over 20000 (release; budget 50 µs)
+the path of 10^4 periods, a 1000 Hz circle over 10 s: 32 pieces in a median 7.5 µs over 201 builds (release; budget 2000 µs)
+the path of 10^4 periods, a forced sphere at its cap: 4096 pieces (capped, flagged decimated) in a median 1868.9 µs over 201 builds (release; budget 2000 µs)

@@ -1065,9 +1065,10 @@ fn s20(root: &Path) -> Result<(), String> {
     let mut made: Vec<String> = Vec::new();
     let circle = "set bodies[1].motion {\"Circular\": {\"centre\": [0, 0, 2], \"u\": [2, 0, 0], \
                   \"v\": [0, 2, 0], \"frequency\": 5, \"phase\": 0}}";
-    // A second mass going round the centre tower once in four seconds, so that the plots of the
-    // mosaic's pictures have something to show (`point` alone is at rest).
-    let slow = circle.replace("\"frequency\": 5", "\"frequency\": 0.25");
+    // A second mass going round a point a metre from the centre tower once in ten seconds, so
+    // that the plots of the mosaic's pictures have something to show (`point` alone is at rest,
+    // and a circle about the tower itself is at one distance from it).
+    let slow = circle.replace("\"frequency\": 5", "\"frequency\": 0.1").replace("[0, 0, 2]", "[1, 0, 2]");
     // Along the west wall of a building of `town`, on foot: the walker falls to the ground,
     // walks east, and the eye is then put beside the wall looking along it.
     let on_foot = "load town; eye 29 -47.5 2 0 0; walk; walk-for 2; walk-for 3 w";
