@@ -6,8 +6,10 @@
 Writes `<shape>.png` and `<shape>-cutaway.png` here. Same lattice, camera and light in every panel.
 Colours: the shape blue; cube voxels grey (interior) and yellow (boundary cells whose centre is
 inside); clipped polyhedra grey (interior cubes) and orange (boundary pieces). Cell edges are drawn
-faintly. The cutaway removes every cell whose centre lies beyond the lattice wall nearest the body's
-centre plane y = const, and cuts the shape at the same wall.
+faintly. Lit as the paper's diagrams are: key, fill and ambient light with ambient occlusion (see
+`shapes_lib.Canvas`). The cutaway removes every cell whose centre lies beyond the lattice wall
+nearest the body's centre plane y = const, and cuts the shape at the same wall; the true surface's
+section on that wall is dashed over the voxels.
 """
 
 from __future__ import annotations
@@ -136,6 +138,55 @@ def _clipped(cv: L.Canvas, vox: L.Voxels, removed: np.ndarray) -> None:
     cv.lines(np.concatenate(lines), INK, 0.22)
 
 
+def _section(mesh: L.Mesh, y: float) -> list[np.ndarray]:
+    """Where the plane y = const cuts the mesh, as chained polylines (each (k, 3))."""
+    t = mesh.tris
+    s = t[:, :, 1] - y
+    segs = []
+    for tri, d in zip(t, s):
+        pts = []
+        for i in range(3):
+            j = (i + 1) % 3
+            if (d[i] < 0) != (d[j] < 0):
+                pts.append(tri[i] + d[i] / (d[i] - d[j]) * (tri[j] - tri[i]))
+        if len(pts) == 2:
+            segs.append(pts)
+    key = lambda p: tuple(np.round(p, 9))  # noqa: E731
+    ends: dict[tuple, list[int]] = {}
+    for k, (a, b) in enumerate(segs):
+        ends.setdefault(key(a), []).append(k)
+        ends.setdefault(key(b), []).append(k)
+    used = np.zeros(len(segs), dtype=bool)
+    lines = []
+    for k0 in range(len(segs)):
+        if used[k0]:
+            continue
+        used[k0] = True
+        chain = [segs[k0][0], segs[k0][1]]
+        for grow in (1, 0):  # forwards from the end, then backwards from the start
+            while True:
+                tip = chain[-1] if grow else chain[0]
+                nxt = [k for k in ends.get(key(tip), []) if not used[k]]
+                if not nxt:
+                    break
+                k = nxt[0]
+                used[k] = True
+                a, b = segs[k]
+                far = b if key(a) == key(tip) else a
+                if grow:
+                    chain.append(far)
+                else:
+                    chain.insert(0, far)
+        lines.append(np.array(chain))
+    return lines
+
+
+def _outline(cv: L.Canvas, section: list[np.ndarray]) -> None:
+    """The true surface's section on the cut, dashed, over the voxels (as the paper's 2-D panels)."""
+    for line in section:
+        cv.lines(np.stack([line[:-1], line[1:]], axis=1), INK, 0.9, dash=(4.0, 2.5), width=3)
+
+
 def _analytic_surface(name: str) -> L.Mesh:
     """A fine parametric tessellation used only to draw the analytic surface (256 × 128 quads)."""
     if name == "torus":
@@ -184,6 +235,8 @@ def figure(name: str) -> None:
                 _cubes(cv, vox, removed)
             else:
                 _clipped(cv, vox, removed)
+            if cut and kind != "exact":
+                _outline(cv, _section(drawn, y_cut))
             panels.append(cv.image())
         # Crop empty rows (the same rows in every panel, so the panels stay aligned).
         busy = np.any([np.abs(p - p[0, 0]).sum(axis=2).max(axis=1) > 0.02 for p in panels], axis=0)
@@ -216,7 +269,7 @@ def figure(name: str) -> None:
         caption = (f"{what}, pitch {h} m{cut_txt}. {left} Cube voxels: a cell is solid if its centre is "
                    f"inside (grey: wholly inside; yellow: crossed by the surface, centre inside). Clipped "
                    f"polyhedra: the same grey interior cubes, and every crossed cell cut to its inside piece "
-                   f"(orange).")
+                   f"(orange).{' Dashed: the true surface where the cut meets it.' if cut else ''}")
         height = 5.0 * aspect + 1.6
         fig.text(0.02, 0.08 / height, "\n".join(textwrap.wrap(caption, 190)), fontsize=9, color="#52514e",
                  va="bottom", ha="left")

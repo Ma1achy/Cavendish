@@ -1620,7 +1620,14 @@ def tower(mesh: Mesh, distances: F64, direction: F64 | None = None) -> F64:
 
 
 class Canvas:
-    """An orthographic z-buffered rasteriser with Lambert shading, supersampled 2×.
+    """An orthographic z-buffered rasteriser, supersampled 2x, lit when the picture is taken.
+
+    Faces are stored with their colour and normal; `image()` lights them the way the paper's
+    diagrams are lit (docs/papers/polyhedral-gravity/scripts/lighting.py): Lambert from a key light
+    50 degrees up from the picture's left and a little towards the viewer, a weaker fill from the
+    right and an ambient term, times a screen-space ambient occlusion from the depth buffer (each
+    pixel's neighbours within `ao_radius` that rise above its own tangent plane darken it, by at most
+    `AO_STRENGTH`). Lines are composited over the lit picture.
 
     Args:
         size      (int):   Output width and height, pixels.
@@ -1628,9 +1635,15 @@ class Canvas:
         elevation (float): Camera elevation, degrees.
         centre    (F64):   Point at the image centre, m.
         half      (float): Half the visible width, m.
+        ao_radius (float): The occlusion's reach, m (default 6 % of the half width).
     """
 
-    def __init__(self, size: int, azimuth: float, elevation: float, centre: F64, half: float) -> None:
+    AMBIENT, KEY, FILL = 0.50, 0.55, 0.22  # as lighting.py
+    AO_STRENGTH = 0.30
+    BACKGROUND = np.array([0xFC, 0xFC, 0xFB]) / 255.0
+
+    def __init__(self, size: int, azimuth: float, elevation: float, centre: F64, half: float,
+                 ao_radius: float | None = None) -> None:
         self.n = 2 * size
         az, el = math.radians(azimuth), math.radians(elevation)
         eye = np.array([math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el)])
@@ -1640,10 +1653,18 @@ class Canvas:
         self.up = np.cross(self.right, self.fwd)
         self.centre = np.asarray(centre, dtype=float)
         self.scale = self.n / (2 * half)
-        self.light = 0.8 * eye + 0.5 * self.up - 0.3 * self.right
-        self.light /= np.linalg.norm(self.light)
+        flat = eye * np.array([1.0, 1.0, 0.0])
+        across = -self.right + 0.3 * flat / np.linalg.norm(flat)
+        across /= np.linalg.norm(across)
+        self.key = (math.cos(math.radians(50)) * across
+                    + math.sin(math.radians(50)) * np.array([0.0, 0.0, 1.0]))
+        self.fill = 0.60 * eye + 0.75 * self.right - 0.15 * self.up
+        self.fill /= np.linalg.norm(self.fill)
+        self.ao_radius = 0.06 * half if ao_radius is None else ao_radius
         self.z = np.full((self.n, self.n), np.inf)
-        self.img = np.ones((self.n, self.n, 3)) * np.array([0xFC, 0xFC, 0xFB]) / 255.0
+        self.alb = np.ones((self.n, self.n, 3)) * self.BACKGROUND
+        self.nrm = np.zeros((self.n, self.n, 3))
+        self.overlays: list[tuple[npt.NDArray[np.bool_], F64, float]] = []
         self.depth_bias = 2.0 / self.scale
 
     def project(self, p: F64) -> F64:
@@ -1651,11 +1672,6 @@ class Canvas:
         x = q @ self.right * self.scale + self.n / 2
         y = self.n / 2 - q @ self.up * self.scale
         return np.stack([x, y, q @ self.fwd], axis=-1)
-
-    def shade(self, base: F64, normal: F64) -> F64:
-        lam = max(0.0, float(normal @ self.light))
-        rim = max(0.0, float(-normal @ self.fwd))
-        return np.clip(base * (0.5 + 0.45 * lam + 0.1 * rim), 0, 1)
 
     def __raster(self, s: F64) -> tuple[npt.NDArray[np.intp], npt.NDArray[np.intp], F64, F64] | None:
         x0 = max(int(np.floor(s[:, 0].min())), 0)
@@ -1696,7 +1712,8 @@ class Canvas:
             iy, ix, dep, _ = r
             near = dep < self.z[iy, ix]
             self.z[iy[near], ix[near]] = dep[near]
-            self.img[iy[near], ix[near]] = self.shade(colour, nrm)
+            self.alb[iy[near], ix[near]] = colour
+            self.nrm[iy[near], ix[near]] = nrm
 
     def signed_region(self, tris: F64, normal: F64, colour: F64) -> None:
         """A planar region given as a signed fan (coverage > 0 is inside), e.g. a cap."""
@@ -1715,10 +1732,14 @@ class Canvas:
             dep[iy, ix] = d
         sel = (cov > 0) & (dep < self.z)
         self.z[sel] = dep[sel]
-        self.img[sel] = self.shade(np.asarray(colour, dtype=float), normal)
+        self.alb[sel] = np.asarray(colour, dtype=float)
+        self.nrm[sel] = normal / np.linalg.norm(normal)
 
-    def lines(self, segs: F64, colour: F64, alpha: float) -> None:
-        """Segments (N, 2, 3), depth-tested against what is drawn, blended at `alpha`."""
+    def lines(self, segs: F64, colour: F64, alpha: float, dash: tuple[float, float] | None = None,
+              width: int = 1) -> None:
+        """Segments (N, 2, 3), depth-tested against what is drawn, blended at `alpha` over the lit
+        picture. With `dash` = (on, off) in output pixels the pattern runs on across consecutive
+        segments (so pass a chained polyline); `width` is in supersampled pixels."""
         if len(segs) == 0:
             return
         a, b = self.project(segs[:, 0]), self.project(segs[:, 1])
@@ -1727,15 +1748,68 @@ class Canvas:
         idx = np.repeat(np.arange(len(segs)), k + 1)
         frac = np.concatenate([np.linspace(0, 1, m + 1) for m in k])
         p = a[idx] + (b - a)[idx] * frac[:, None]
+        keep = np.ones(len(p), dtype=bool)
+        if dash is not None:
+            arc = np.concatenate([[0.0], np.cumsum(length)[:-1]])[idx] + frac * length[idx]
+            keep = (arc % (2.0 * (dash[0] + dash[1]))) < 2.0 * dash[0]
         ix, iy = np.floor(p[:, 0]).astype(int), np.floor(p[:, 1]).astype(int)
-        ok = (ix >= 0) & (ix < self.n) & (iy >= 0) & (iy < self.n)
+        ok = keep & (ix >= 0) & (ix < self.n) & (iy >= 0) & (iy < self.n)
         ix, iy, p = ix[ok], iy[ok], p[ok]
         vis = p[:, 2] <= self.z[iy, ix] + self.depth_bias
         ix, iy = ix[vis], iy[vis]
         mask = np.zeros((self.n, self.n), dtype=bool)
-        mask[iy, ix] = True
-        self.img[mask] = (1 - alpha) * self.img[mask] + alpha * np.asarray(colour, dtype=float)
+        for dy in range(width):
+            for dx in range(width):
+                mask[np.clip(iy + dy - width // 2, 0, self.n - 1),
+                     np.clip(ix + dx - width // 2, 0, self.n - 1)] = True
+        self.overlays.append((mask, np.asarray(colour, dtype=float), alpha))
+
+    def occlusion(self) -> F64:
+        """Screen-space ambient occlusion factor per pixel (1 open, 1 - AO_STRENGTH closed)."""
+        n, z, nrm = self.n, self.z, self.nrm
+        hit = np.isfinite(z)
+        zf = np.where(hit, z, 0.0)
+        # the depth change per pixel step right (x) and down (y) on each pixel's tangent plane
+        nf = nrm @ self.fwd
+        nf = np.where(np.abs(nf) > 0.05, nf, -0.05)
+        gx = -(nrm @ self.right) / nf / self.scale
+        gy = (nrm @ self.up) / nf / self.scale
+        reach = 2.0 * self.ao_radius
+        m = 32
+        i = np.arange(m) + 0.5
+        rad = self.ao_radius * self.scale * np.sqrt(i / m)
+        ang = i * math.pi * (3 - math.sqrt(5))
+        occ = np.zeros((n, n))
+        for rr, aa in zip(rad, ang):
+            dx, dy = int(round(rr * math.cos(aa))), int(round(rr * math.sin(aa)))
+            if dx == 0 and dy == 0:
+                continue
+            zs = np.full((n, n), np.inf)
+            ys0, ys1 = max(0, dy), min(n, n + dy)
+            xs0, xs1 = max(0, dx), min(n, n + dx)
+            zs[ys0 - dy:ys1 - dy, xs0 - dx:xs1 - dx] = z[ys0:ys1, xs0:xs1]
+            rise = zf + gx * dx + gy * dy - zs  # > 0: the neighbour is nearer than the tangent plane
+            near = np.isfinite(zs) & (rise > 2 * self.depth_bias) & (rise < reach)
+            occ += np.where(near, 1.0 - rise / reach, 0.0)
+        occ /= m
+        # a small blur over covered pixels hides the sampling pattern
+        w = hit.astype(float)
+        num, den = np.zeros((n, n)), np.zeros((n, n))
+        for dy in range(-2, 3):
+            for dx in range(-2, 3):
+                num += np.roll(np.roll(occ * w, dy, 0), dx, 1)
+                den += np.roll(np.roll(w, dy, 0), dx, 1)
+        occ = np.where(den > 0, num / np.maximum(den, 1e-9), 0.0)
+        return 1.0 - self.AO_STRENGTH * np.clip(2.0 * occ, 0, 1)
 
     def image(self) -> F64:
+        hit = np.isfinite(self.z)
+        k = (self.AMBIENT + self.KEY * np.clip(self.nrm @ self.key, 0, None)
+             + self.FILL * np.clip(self.nrm @ self.fill, 0, None)) * self.occlusion()
+        k = k[..., None]
+        lit = self.alb * np.minimum(k, 1.0) + (1.0 - self.alb) * np.clip(k - 1.0, 0, None) * 0.6
+        img = np.where(hit[..., None], np.clip(lit, 0, 1), self.BACKGROUND)
+        for mask, colour, alpha in self.overlays:
+            img[mask] = (1 - alpha) * img[mask] + alpha * colour
         m = self.n // 2
-        return self.img.reshape(m, 2, m, 2, 3).mean(axis=(1, 3))
+        return img.reshape(m, 2, m, 2, 3).mean(axis=(1, 3))

@@ -25,13 +25,12 @@ import sys
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Circle, Rectangle
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parents[2] / "research" / "exact-skin-and-partial-fill"))
 import diagrams as dg  # noqa: E402
-import skin_bench  # noqa: E402
+import lighting as lit  # noqa: E402
 
 FIG = HERE.parent / "figures"
 DATA = HERE.parent / "data"
@@ -129,25 +128,56 @@ def fig_tree() -> None:
     ncut = sum(1 for lf in leaves if lf[3] == "cut")
     ax.set_title(f"(b) octree, same finest cell:\n{len(leaves)} leaves, {ncut} cut",
                  fontsize=8)
-    ax = fig.add_subplot(1, 3, 3, projection="3d")
-    ax.set_axis_off()
-    ax.set_box_aspect((1, 1, 1))
-    ax.view_init(elev=38, azim=-58)
-    _, _, _, lv = octree_counts(4)
+    ax = fig.add_subplot(1, 3, 3)
+    view = lit.View(38, -58)
+    depth = 4
+    n3 = 2 ** depth
+    h3 = 1.0 / n3
+    _, _, _, lv = octree_counts(depth)
     low = [(o, sz, k) for o, sz, k in lv if o[2] + sz / 2 < 0.5]
-    polys, cols, eds = [], [], []
-    for o, sz, k in low:
-        q = list(skin_bench.cube_quads((o + sz / 2)[None, :], sz))
-        polys += q
-        cols += dg.shaded(q, SOLID if k == "in" else CUT)
-        eds += [dg.BLUE if k == "in" else dg.VERMILION] * len(q)
-    ax.add_collection3d(Poly3DCollection(polys, facecolors=cols, edgecolors=eds, linewidths=0.2))
-    ax.set_xlim(0.1, 0.9)
-    ax.set_ylim(0.1, 0.9)
-    ax.set_zlim(0.1, 0.9)
-    ax.set_title("(c) octree in 3-D, lower half:\neight-way split", fontsize=8, pad=-4)
+    # the drawn leaves on the finest lattice: block id per finest cell (0 empty), and kind
+    ids = np.zeros((n3, n3, n3), dtype=int)
+    cells, kinds = [], []
+    for b, (o, sz, k) in enumerate(low, start=1):
+        i0 = np.rint(o / h3).astype(int)
+        m = int(round(sz / h3))
+        ids[i0[0]:i0[0] + m, i0[1]:i0[1] + m, i0[2]:i0[2] + m] = b
+        g = np.stack(np.meshgrid(*[np.arange(i0[a], i0[a] + m) for a in range(3)], indexing="ij"),
+                     -1).reshape(-1, 3)
+        cells.append(g)
+        kinds += [k] * len(g)
+    ijk = np.concatenate(cells)
+
+    def leaf(q: np.ndarray) -> np.ndarray:
+        ok = np.all((q >= 0) & (q < n3), axis=1)
+        out = np.zeros(len(q), dtype=int)
+        out[ok] = ids[tuple(q[ok].T)]
+        return out
+
+    def solid(q: np.ndarray) -> np.ndarray:
+        return leaf(q) > 0
+
+    sc = lit.Scene(view)
+    lit.add_voxels(sc, ijk, np.zeros(3), h3, solid, [SOLID if k == "in" else CUT for k in kinds],
+                   [dg.BLUE if k == "in" else dg.VERMILION for k in kinds], 0.2, leaf=leaf)
+    # the true surface: where the cut plane z = 0.5 meets the sphere, and the lower half of the
+    # sphere's outline as seen from the eye
+    c, r = np.array([0.503, 0.497, 0.501]), 0.39
+    t = np.linspace(0, 2 * np.pi, 361)
+    rr = math.sqrt(r * r - (0.5 - c[2]) ** 2)
+    rim = c + np.column_stack([rr * np.cos(t), rr * np.sin(t), np.full_like(t, 0.5 - c[2])])
+    e1 = view.right
+    e2 = view.up
+    sil = c + r * (np.cos(t)[:, None] * e1 + np.sin(t)[:, None] * e2)
+    sil = sil[sil[:, 2] < 0.5]
+    order = np.argsort(np.arctan2((sil - c) @ e2, (sil - c) @ e1) % (2 * np.pi))
+    sil = sil[order]
+    sc.wireframe([rim, sil], lit.occluded_by_cells(view, solid, np.zeros(3), h3, 1.5), 0.003)
+    sc.draw(ax, np.array([[x, y, z] for x in (0.1, 0.9) for y in (0.1, 0.9) for z in (0.1, 0.52)]))
+    ax.set_title("(c) octree in 3-D, lower half:\neight-way split", fontsize=8)
     fig.text(0.5, 0.0, "blue: interior, merged into the largest blocks that are wholly inside; "
-             "orange, hatched: cut cells, always at the finest level; dashed: the true surface",
+             "orange, hatched: cut cells, always at the finest level; dashed: the true surface "
+             "(in (c) the sphere's rim at the cut and its outline, grey where hidden)",
              ha="center", fontsize=6.8)
     fig.savefig(FIG / "diag-tree.pdf")
     plt.close(fig)
