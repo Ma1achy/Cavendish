@@ -29,7 +29,9 @@
 # only, a pop-out's frame, the walk from outside, the orthographic view after a session, the
 # wheel while walking, the sprint by platform; cav-engine: Home's undo by label; cav-plot: terse
 # titles).
-quick 712
+# TASK-S5-08 (the polyhedral kernel): 14 new quick tests (cav-core: P1 to P7 and their controls,
+# the constructors, the difference, the moments' index order).
+quick 726
 gpu 42
 slow 49
 oracle 58
