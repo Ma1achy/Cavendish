@@ -124,11 +124,12 @@ shows the three representations side by side.
 
 \begin{figure}[!ht]\centering
 \includegraphics[width=\linewidth]{figures/diag-representations.pdf}
-\caption{Three ways to represent a body. Top, a cross-section; bottom, the same in 3-D (the
-benchmark's turned cube on a coarse lattice). (a, d) the true surface; (b, e) plain cubes, a cell
-full when its centre is inside --- look at the staircase overshooting and undershooting the dashed
-surface, which is the first-order error; (c, f) interior cubes plus the clipped boundary pieces,
-which together are the body exactly (to the mesh).}
+\caption{Three ways to represent a body. Top, a triangle in 2-D; bottom, a square-based
+pyramid in 3-D, both on the grid's axes. (a, d) the true surface; (b, e) plain cubes, a cell full when its centre is inside
+--- look at the staircase overshooting and undershooting the dashed surface, which is the
+first-order error; (c, f) interior cubes plus the clipped boundary pieces, which together are the
+body exactly (to the mesh). In (f) the pieces' outlines show where the lattice cuts the faces; the
+whole cubes are hidden inside.}
 \label{fig:repr}
 \end{figure}
 

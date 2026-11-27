@@ -3,7 +3,7 @@
 One style for all: the Okabe–Ito colour-blind-safe palette, with hatching or line style as a second
 cue so each figure reads in greyscale; thin lines; every element labelled; no decoration.
 
-    a  diag-representations.pdf   a tilted square (2-D) and a tilted cube (3-D): true surface,
+    a  diag-representations.pdf   a triangle (2-D) and a square-based pyramid (3-D): true surface,
                                   staircase voxels, interior cells + clipped boundary pieces
     b  diag-fill-moments.pdf      fill fraction, centroid against cell centre, second moment
     c  diag-cuts.pdf              one cell cut by planes: the clipped piece in each case
@@ -35,6 +35,7 @@ import skin_bench  # noqa: E402
 BLUE, ORANGE, GREEN, VERMILION, SKY, YELLOW, PURPLE = (
     "#0072B2", "#E69F00", "#009E73", "#D55E00", "#56B4E9", "#F0E442", "#CC79A7")
 INK, INK2, GHOST = "#111111", "#555555", "#bbbbbb"
+PALE_GREEN = "#7fcfb9"  # Okabe–Ito green lightened halfway to white, for a filled true body
 
 
 def style() -> None:
@@ -141,90 +142,142 @@ def add_solid(ax, polys, color: str, edge: str | None = None, lw: float = 0.0,
                                          edgecolors=edge if edge else "none", linewidths=lw))
 
 
+PYR_PITCH = 0.11  # m
+PYR_BASE, PYR_HEIGHT = 13 * PYR_PITCH, 1.1  # m: an odd number of cells wide, so the apex is one cell
+PYR_ELEV, PYR_AZIM = 24, -40  # the 3-D row's view, degrees
+
+
+def toward_eye(normals: np.ndarray) -> np.ndarray:
+    """Which faces face the viewer: drawing only those spares matplotlib's depth sort."""
+    e, a = np.radians(PYR_ELEV), np.radians(PYR_AZIM)
+    eye = np.array([np.cos(e) * np.cos(a), np.cos(e) * np.sin(a), np.sin(e)])
+    return normals @ eye > 0
+
+
+def pyramid_faces() -> list[np.ndarray]:
+    """A square-based pyramid on the lattice axes, centroid at the origin: outward anticlockwise faces."""
+    b, z0 = PYR_BASE / 2, -PYR_HEIGHT / 4  # a pyramid's centroid is a quarter of the way up
+    base = [np.array([x, y, z0]) for x, y in ((-b, -b), (b, -b), (b, b), (-b, b))]
+    apex = np.array([0.0, 0.0, z0 + PYR_HEIGHT])
+    return [np.array(base[::-1])] + [np.array([base[i], base[(i + 1) % 4], apex]) for i in range(4)]
+
+
+def pyramid_cells(h: float, off: np.ndarray) -> tuple[np.ndarray, list[tuple[np.ndarray, list]]]:
+    """The interior cell centres, and each boundary cell's centre with its clipped piece's faces.
+
+    The same classification and clipper as the benchmark (`skin_bench.lattice`), kept per piece
+    as polygons so each piece can be drawn with its own edges.
+    """
+    faces = pyramid_faces()
+    tris = skin_bench.fan(faces, 1.0)
+    pn, pd = skin_bench.planes_of(tris)
+    verts = tris.reshape(-1, 3)
+    lo = np.floor((verts.min(0) - off) / h).astype(int)
+    hi = np.floor((verts.max(0) - off) / h).astype(int)
+    g = np.stack(np.meshgrid(*[np.arange(lo[i], hi[i] + 1) for i in range(3)], indexing="ij"),
+                 -1).reshape(-1, 3)
+    centres = off + (g + 0.5) * h
+    sup = 0.5 * h * np.abs(pn).sum(1)
+    dist = centres @ pn.T - pd
+    inner = centres[np.all(dist + sup <= 0, axis=1)]
+    cube0 = list(skin_bench.cube_quads(np.zeros((1, 3)), h))
+    pieces = []
+    for c, d in zip(centres, dist):
+        if np.any(d - sup >= 0) or np.all(d + sup <= 0):
+            continue  # outside, or a whole interior cube
+        piece = [q + c for q in cube0]
+        for p in np.argsort(-d):
+            if d[p] + sup[p] > 0:
+                piece = skin_bench.clip(piece, pn[p], float(pd[p]), h)
+                if not piece:
+                    break
+        if piece:
+            pieces.append((c, piece))
+    return inner, pieces
+
+
 def fig_representations() -> None:
     fig = plt.figure(figsize=(6.8, 4.6))
-    body = (np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]]) * 2.15) @ rot2(0.42).T + [0.13, 0.07]
-    h = 1.0
-    cells = [(i, j) for i in range(-4, 4) for j in range(-4, 4)]
+    # the 2-D row: the pyramid's cross-section on 17 x 17 cells, one cell centred on the origin;
+    # the triangle is 13 cells wide and 13 high, base and apex on grid lines, centred on the paper
+    h, n = 0.5, 17
+    g0 = -n * h / 2
+    body = np.array([[-6.5, -6.5], [6.5, -6.5], [0.0, 6.5]]) * h
+    cells = [(i, j) for i in range(n) for j in range(n)]
     titles = ["true surface", "plain cubes (staircase)", "interior cubes + clipped pieces"]
     for k in range(3):
         ax = fig.add_subplot(2, 3, k + 1)
         bare(ax)
         for i, j in cells:
-            ax.add_patch(Rectangle((i * h, j * h), h, h, fill=False, ec=GHOST, lw=0.4))
+            ax.add_patch(Rectangle((g0 + i * h, g0 + j * h), h, h, fill=False, ec=GHOST, lw=0.3))
         if k == 0:
-            ax.add_patch(Polygon(body, fc=SKY, ec=BLUE, lw=1.2))
+            ax.add_patch(Polygon(body, fc=PALE_GREEN, ec=GREEN, lw=1.2))
         else:
             for i, j in cells:
-                sq = np.array([[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]], float) * h
+                sq = np.array([[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]], float) * h + g0
                 piece = clip_convex(sq, body)
                 a = area(piece) if len(piece) >= 3 else 0.0
                 full = abs(a - h * h) < 1e-9
                 if k == 1:
-                    if inside_convex((np.array([i, j]) + 0.5) * h, body):
-                        ax.add_patch(Rectangle((i * h, j * h), h, h, fc=SKY, ec=BLUE, lw=0.6))
+                    if inside_convex((np.array([i, j]) + 0.5) * h + g0, body):
+                        ax.add_patch(Rectangle((g0 + i * h, g0 + j * h), h, h, fc=SKY, ec=BLUE, lw=0.4))
                 elif full:
-                    ax.add_patch(Rectangle((i * h, j * h), h, h, fc=SKY, ec=BLUE, lw=0.6))
+                    ax.add_patch(Rectangle((g0 + i * h, g0 + j * h), h, h, fc=SKY, ec=BLUE, lw=0.4))
                 elif a > 1e-9:
-                    ax.add_patch(Polygon(piece, fc=ORANGE, ec=VERMILION, lw=0.6, hatch="////"))
+                    ax.add_patch(Polygon(piece, fc=ORANGE, ec=VERMILION, lw=0.4, hatch="////"))
             ax.add_patch(Polygon(body, fill=False, ec=INK, lw=0.8, ls="--"))
-        ax.set_xlim(-4.2, 4.2)
-        ax.set_ylim(-4.2, 4.2)
+        ax.set_xlim(g0, -g0)
+        ax.set_ylim(g0, -g0)
         ax.set_title(f"({'abc'[k]}) {titles[k]}", fontsize=8)
-    # 3-D row: the benchmark's turned cube on a coarse lattice, clipped by the benchmark's own
-    # clipper; (f) shows the lower half, to reveal the interior cubes.
-    tris = skin_bench.body("cube")
-    quads = turned_cube_quads()
-    h3 = 0.2
-    off = lat_off()
-    lat = skin_bench.lattice(tris, h3, off)
-    pn, pd = skin_bench.planes_of(tris)
-    lo = np.floor((tris.reshape(-1, 3).min(0) - off) / h3).astype(int)
-    hi = np.floor((tris.reshape(-1, 3).max(0) - off) / h3).astype(int)
-    g = np.stack(np.meshgrid(*[np.arange(lo[i], hi[i] + 1) for i in range(3)], indexing="ij"),
-                 -1).reshape(-1, 3)
-    cs = off + (g + 0.5) * h3
-    sup = 0.5 * h3 * np.abs(pn).sum(1)
-    front = lambda c: (c[..., 0] > 0) & (c[..., 1] < 0) & (c[..., 2] > -0.1)  # noqa: E731
+    # 3-D row: a square-based pyramid on the lattice's axes, cut by the benchmark's clipper.
+    # (f) draws the whole body as its clipped pieces.
+    # cells centred on the axis, base on a lattice plane
+    h3, off = PYR_PITCH, np.array([-PYR_PITCH / 2, -PYR_PITCH / 2, -PYR_HEIGHT / 4])
+    inner, pieces = pyramid_cells(h3, off)
+
     for k in range(3):
         ax = fig.add_subplot(2, 3, 4 + k, projection="3d")
         ax.set_axis_off()
         ax.set_box_aspect((1, 1, 1))
-        ax.view_init(elev=22, azim=-58)
+        ax.view_init(elev=PYR_ELEV, azim=PYR_AZIM)
         if k == 0:
-            add_solid(ax, quads, SKY, edge=BLUE, lw=0.6)
+            faces = pyramid_faces()
+            nrm = np.array([np.cross(f[1] - f[0], f[2] - f[0]) for f in faces])
+            add_solid(ax, [f for f, v in zip(faces, toward_eye(nrm)) if v], PALE_GREEN, edge=GREEN, lw=0.6)
+            r = 0.62
         elif k == 1:
+            tris = skin_bench.fan(pyramid_faces(), 1.0)
+            pn, pd = skin_bench.planes_of(tris)
+            lo = np.floor((tris.reshape(-1, 3).min(0) - off) / h3).astype(int)
+            hi = np.floor((tris.reshape(-1, 3).max(0) - off) / h3).astype(int)
+            g = np.stack(np.meshgrid(*[np.arange(lo[i], hi[i] + 1) for i in range(3)],
+                                     indexing="ij"), -1).reshape(-1, 3)
+            cs = off + (g + 0.5) * h3
             keep = cs[np.all(cs @ pn.T - pd <= 0, axis=1)]
-            add_solid(ax, skin_bench.cube_quads(keep, h3), SKY, edge=BLUE, lw=0.2)
+            add_solid(ax, skin_bench.cube_quads(keep, h3), SKY, edge=BLUE, lw=0.15)
+            r = 0.62
         else:
-            inner = cs[np.all(cs @ pn.T - pd + sup <= 0, axis=1)]
-            inner = inner[inner[:, 2] < 0.0]
-            pieces = lat["pieces"]
-            cen = pieces.mean(axis=1)
-            cubes = list(skin_bench.cube_quads(inner, h3))
-            low = list(pieces[cen[:, 2] < 0.0])
-            # one collection, so matplotlib sorts cubes and pieces together by depth
-            ax.add_collection3d(Poly3DCollection(
-                cubes + low, facecolors=shaded(cubes, SKY) + shaded(low, ORANGE),
-                edgecolors=[BLUE] * len(cubes) + ["none"] * len(low),
-                linewidths=[0.2] * len(cubes) + [0.0] * len(low)))
-            ax.view_init(elev=40, azim=-58)
-        r = 0.7
+            # the whole body as its clipped pieces: each piece's share of the pyramid's surface,
+            # outlined, so the lattice shows where it cuts the faces (the interior cubes are hidden
+            # inside; drawing the pieces' cell walls as well only adds depth-sorting clutter)
+            pn, pd = skin_bench.planes_of(skin_bench.fan(pyramid_faces(), 1.0))
+            on = [(f, np.all(np.abs(f @ pn.T - pd) < 1e-9, axis=0)) for _, fs in pieces for f in fs]
+            front = toward_eye(pn)
+            outer = [f for f, plane in on if np.any(plane & front)]
+            ax.add_collection3d(Poly3DCollection(outer, facecolors=shaded(outer, ORANGE),
+                                                 edgecolors=VERMILION, linewidths=0.25))
+            r = 0.62
         ax.set_xlim(-r, r)
         ax.set_ylim(-r, r)
         ax.set_zlim(-r, r)
         ax.set_title(f"({'def'[k]})", fontsize=8, pad=-6)
-    fig.text(0.5, 0.03, "blue: the true body, or whole cells; orange (hatched in 2-D): clipped "
-             "boundary pieces, exact to the polygon or mesh; dashed: the true surface. "
-             "(f) shows the lower half only, cut level with the centre.", ha="center", fontsize=6.8)
+    fig.text(0.5, 0.03, f"green: the true body; blue: whole cells; orange (hatched in 2-D): clipped "
+             f"boundary pieces, exact to the polygon or mesh; dashed: the true surface. "
+             f"(f): the {len(pieces)} clipped pieces, outlined where the lattice cuts the faces "
+             f"({len(inner)} whole cubes are inside).",
+             ha="center", fontsize=6.8)
     fig.savefig(FIG / "diag-representations.pdf")
     plt.close(fig)
-
-
-def turned_cube_quads() -> np.ndarray:
-    """The benchmark's turned cube as six quads (for drawing without triangle diagonals)."""
-    q = skin_bench.cube_quads(np.zeros((1, 3)), 1.0) * 0.8
-    return q @ skin_bench.rotation(3).T
 
 
 def lat_off() -> np.ndarray:
