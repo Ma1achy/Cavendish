@@ -148,3 +148,53 @@ owner will meet it, and each is a small change.
 ## gpu tier
 
 `cargo xtask gpu`: **42 of 42 pass** in 12.7 s, at the floor.
+
+## Re-check of the fixes (TASK-S20-15, PR #233)
+
+Fresh re-check on `main` at bea2c5d, in a new worktree. I read the fixes against `S20.md` §7.5 and
+§7.11. `cargo xtask quick` gives **712 of 712**, at the floor (a cold build, 326 s), and `cargo
+xtask gpu` gives **42 of 42**. W2 (`slow_walk_…`, the slow tier) passes. `docs/validation/` is
+byte-identical to `s19-editor-second-half`.
+
+To mutate, I reverted each fix by hand, ran its tests, then restored it:
+
+| Finding | Mutation | Result |
+|---|---|---|
+| 1 | room solid always | the three tests fail: `the_room_holds…` ("outside, east of it"), `walking_from_outside…`, W2 |
+| 2 | the wheel and read-out always the flying speed | `the_wheel_while_walking…` fails |
+| 3 | `sprint_held` ignores the platform | `ctrl_sprints_natively…` fails |
+| 4 | Home's undo by number again (B → slot 1) | `homes_undo_follows…` fails ("B now viewport 1") |
+| 7 | the float ignores the dock button | `a_pop_out_floats…` fails |
+| 7 | the float as big as its slot (×1.0 for ×0.5) | **passes**: see below |
+| 9 | the projection not put back | `an_orthographic_view…` fails |
+| 10 | the first free letter again | `split_close_and_swap…` fails |
+| 11 | `shown` = `read` | `a_place_is_among…` and `each_transport_button…` fail |
+
+**Changed expectations (§7.5).** None is a weakening.
+- W2's last arm now asserts the new rule (walking back in passes the wall) with a control (once
+  inside, the wall holds).
+- The mosaic's split letter (B → D) and the shot field (1 → 2 at 3.2 s) follow the behaviour each
+  finding asked for, and each has its control.
+- The place test's move from 4.0 s to 4.2 s only takes it off the third shot's launch instant. At
+  both times `read`, `earlier` and `later` are the same.
+
+**Pictures.**
+- `mosaic-float.png`: the float is half its slot, offset, and the dock button is visible under it.
+- `transport.png`: shot 2 beside the second lit bar.
+- `fly.png`: 4.3 m/s while walking.
+- `mosaic.png` and `mosaic-six.png`: the terse titles.
+
+**Left (minor, none blocks the tag):**
+- Minor 7's "smaller than its slot" is not held by a test. The 0.45-of-figure cap makes 1 × 1 and
+  2 × 2 slots smaller anyway, and the size guard skips the 3 × 2 cells (286 pt < 400). One more
+  arm with a 2 × 1 or 3 × 1 slot, or a guard of 2 × `MIN_FLOAT` on the *figure*, would hold it.
+- Finding 3's test holds `sprint_held` and the texts but not the call in `Shell::fly_frame`.
+  Reading `i.modifiers.ctrl` there directly would still pass. The `beforeunload` guard is untried
+  in a browser, as recorded.
+- In `mosaic-float.png` the floated Flight plot is cramped (its x label is cut to "absolute
+  time,…"). This is cosmetic.
+
+The S20 review's leftover note (the 22 pt inspector pitch, off the 4 pt grid) is now in
+`docs/design/workspace.md` §0.
+
+**Verdict: ready to tag.**

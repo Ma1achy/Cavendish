@@ -13,6 +13,9 @@ functional; no explanatory prose in the chrome (hints live in tooltips, the `?` 
 - Desktop rows 20 px, controls 18–20 px, icon buttons 20–22 px, 4 px spacing grid, 11–12 px text.
   `panels.md`'s 24 pt minimum is withdrawn for desktop; the 44 pt touch rule stays for the phone and
   tablet layout only.
+- As built (S20): the inspector's rows stand at a 22 pt pitch, a 20 pt row and a 2 pt gap
+  (`theme::ROW_GAP`), off the 4 pt grid on purpose: a whole grid step would put the pitch at the
+  withdrawn 24 pt, and no gap would make the boxes of two rows touch. The tree stays at 20 pt.
 - Contrast stays ≥ 4.5:1. Numbers monospace, right-aligned, with units.
 - A field takes the width it is given: text and description boxes fill their column; no half-width boxes
   beside empty space. No button without an obvious action: each has an icon or a verb, a tooltip with its
