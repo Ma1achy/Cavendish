@@ -221,12 +221,27 @@ def _clean(ax: plt.Axes) -> None:
         ax.spines[s].set_visible(False)
 
 
+FIRST = ("sphere", "torus", "teapot", "suzanne")
+MORE = ("bunny", "spot", "dragon", "armadillo", "buddha", "bracket")  # added 26 Nov 2026: sweep-more.png
+
+
 def plot() -> None:
     _style()
     data = {n: json.loads((L.HERE / f"sweep-{n}.json").read_text())
-            for n in ("sphere", "torus", "teapot", "suzanne") if (L.HERE / f"sweep-{n}.json").exists()}
+            for n in FIRST + MORE if (L.HERE / f"sweep-{n}.json").exists()}
     md: list[str] = []
-    # ---- error against size / pitch, per shape, at 1.5 m (solid) ----
+    # ---- error against size / pitch, per shape, at 1.5 m (solid): sweep.png, sweep-more.png ----
+    for group, out_name in ((FIRST, "sweep"), (MORE, "sweep-more")):
+        sub = {n: d for n, d in data.items() if n in group}
+        if sub:
+            md += _sweep_figure(sub, out_name)
+    md += _polyhedra_figure(data)
+    md += _pareto_and_costs(data)
+    (L.HERE / "sweep.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+
+
+def _sweep_figure(data: dict[str, dict], out_name: str) -> list[str]:
+    md: list[str] = []
     fig, axes = plt.subplots(2, len(data), figsize=(4.2 * len(data), 8.4), squeeze=False)
     for col, (name, d) in enumerate(data.items()):
         ns = np.array([r["n"] for r in d["rows"]])
@@ -269,13 +284,19 @@ def plot() -> None:
              "(b)'s mass is before its renormalisation (after it, 0). (e) and (c)–(d) carry exact mass, so "
              "their mass error is rounding.", fontsize=8.5, color="#52514e")
     fig.subplots_adjust(left=0.06, right=0.99, top=0.92, bottom=0.07, wspace=0.25, hspace=0.15)
-    fig.savefig(L.HERE / "sweep.png", dpi=110)
+    fig.savefig(L.HERE / f"{out_name}.png", dpi=110)
     plt.close(fig)
+    return md
 
+
+def _polyhedra_figure(data: dict[str, dict]) -> list[str]:
+    md: list[str] = []
     # ---- polyhedra: clipped vs mesh, facet error, clip time ----
     fac = json.loads((L.HERE / "sweep-facets.json").read_text()) if (L.HERE / "sweep-facets.json").exists() else {}
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.8))
-    shape_col = {"sphere": "#2a78d6", "torus": "#eb6834", "teapot": "#1baf7a", "suzanne": "#eda100"}
+    shape_col = {"sphere": "#2a78d6", "torus": "#eb6834", "teapot": "#1baf7a", "suzanne": "#eda100",
+                 "bunny": "#e87ba4", "spot": "#008300", "dragon": "#6250d6", "armadillo": "#e34948",
+                 "buddha": "#898781", "bracket": "#0b0b0b"}
     for name, d in data.items():
         ns = np.array([r["n"] for r in d["rows"]])
         e = np.array([r["err"][TECH[4]] for r in d["rows"]])
@@ -312,11 +333,23 @@ def plot() -> None:
             for r in rows:
                 md.append(f"| {name} | {r['triangles']} | {r['phase'][0]:+.2e} | {r['phase'][1]:+.2e} | "
                           f"{r['mass']:+.2e} |")
+        md.append("\nFacet error against triangle count (fitted slope of log|error| against log triangles): "
+                  + "; ".join(f"{name}: phase {np.polyfit(np.log([r['triangles'] for r in rows]), np.log(np.abs([r['phase'][0] for r in rows])), 1)[0]:.2f}, "
+                              f"mass {np.polyfit(np.log([r['triangles'] for r in rows]), np.log(np.abs([r['mass'] for r in rows])), 1)[0]:.2f}"
+                              for name, rows in fac.items()) + " (−1 per triangle count is order 2 in the edge length).")
+    return md
 
-    # ---- Pareto: error against cost per point ----
-    fig, axes = plt.subplots(1, len(data), figsize=(4.2 * len(data), 4.8), squeeze=False, sharey=True)
+
+def _pareto_and_costs(data: dict[str, dict]) -> list[str]:
+    md: list[str] = []
+    # ---- Pareto: error against cost per point (rows of five shapes) ----
+    ncol = min(len(data), 5)
+    nrow = -(-len(data) // ncol)
+    fig, axes = plt.subplots(nrow, ncol, figsize=(4.0 * ncol, 4.3 * nrow + 0.9), squeeze=False, sharey=True)
+    for k in range(len(data), nrow * ncol):
+        axes.flat[k].set_visible(False)
     for col, (name, d) in enumerate(data.items()):
-        ax = axes[0, col]
+        ax = axes.flat[col]
         for tech, colour in zip(TECH, COLOURS):
             if tech not in d["rows"][0]["err"]:
                 continue
@@ -328,16 +361,19 @@ def plot() -> None:
         ax.loglog([1e-3 * NS_SERIES], [max(abs(d["point_err"][0]), 1e-16)], "D", color="#52514e", ms=7,
                   label="(g) point mass")
         ax.loglog([1e-3 * d["mesh_cost_ns"]], [1e-15], "*", color="#0b0b0b", ms=12, label="whole mesh (exact)")
-        ax.set_title(name)
+        ax.set_title(f"{name} ({d['triangles']} triangles)")
         ax.set_xlabel("cost per evaluation point (µs, model)")
         _clean(ax)
-    axes[0, 0].set_ylabel("|phase error| at 1.5 m (rad)")
+    for r in range(nrow):
+        axes[r, 0].set_ylabel("|phase error| at 1.5 m (rad)")
     h_, l_ = axes[0, 0].get_legend_handles_labels()
+    height = 4.3 * nrow + 0.9
     fig.legend(h_, l_, loc="upper center", ncol=5, frameon=False, fontsize=9)
-    fig.text(0.01, 0.01, "Cost: a direct sum with Cavendish's measured kernels (8.5 ns per cube or point, 17 ns "
-             "point + quadrupole, 55 ns per triangle); points along each line are size/pitch 4…128. The whole "
+    fig.text(0.01, 0.12 / height, "Cost: a direct sum with Cavendish's measured kernels (8.5 ns per cube or point, "
+             "17 ns point + quadrupole, 55 ns per triangle); points along each line are size/pitch 4…128. The whole "
              "mesh is exact by definition (plotted at 1e-15).", fontsize=8.5, color="#52514e")
-    fig.subplots_adjust(left=0.06, right=0.99, top=0.8, bottom=0.14, wspace=0.08)
+    fig.subplots_adjust(left=0.06, right=0.99, top=1 - 0.75 / height, bottom=0.75 / height, wspace=0.08,
+                        hspace=0.35)
     fig.savefig(L.HERE / "pareto.png", dpi=110)
     plt.close(fig)
 
@@ -366,12 +402,7 @@ def plot() -> None:
         md.append(f"| {tech} | " + " | ".join(cells) + " |")
     md.append("| whole mesh, direct | " + " | ".join(f"{d['mesh_cost_ns'] * 1e-3:.3g} (exact)"
                                                     for d in data.values()) + " |")
-    if fac:
-        md.append("\nFacet error against triangle count (fitted slope of log|error| against log triangles): "
-                  + "; ".join(f"{name}: phase {np.polyfit(np.log([r['triangles'] for r in rows]), np.log(np.abs([r['phase'][0] for r in rows])), 1)[0]:.2f}, "
-                              f"mass {np.polyfit(np.log([r['triangles'] for r in rows]), np.log(np.abs([r['mass'] for r in rows])), 1)[0]:.2f}"
-                              for name, rows in fac.items()) + " (−1 per triangle count is order 2 in the edge length).")
-    (L.HERE / "sweep.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    return md
 
 
 if __name__ == "__main__":

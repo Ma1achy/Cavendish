@@ -251,6 +251,11 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   one journal entry, but a seek between them (playing) breaks the run, as it does for an orbit
   drag during play. The journal's byte budget bounds it; coalescing "seek, camera, seek,
   camera" pairwise would shrink it.
+- **Mend a mesh on import instead of refusing it** (shapes study §3.2–3.3, 27 Nov 2026): the
+  importer refuses the Stanford bunny (open base), scans past 500,000 triangles or 32 MiB, and
+  decimations that fold through themselves. The study's repair (weld, drop non-manifold edges,
+  ear-clip holes, cut out and re-close self-crossings) and a decimation to a stated Hausdorff bound
+  would let `import` take them, reporting what it changed.
 - **The walker's terrain is the column's middle** (TASK-S20-11): the camera meets terrain as a
   column a cell, its top from the surface at the column's middle; the voxeliser asks every
   sample of the column, so with two or more samples a cell the two can differ by one cell where

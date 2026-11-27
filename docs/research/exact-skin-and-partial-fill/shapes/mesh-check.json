@@ -23,6 +23,7 @@
    "expected_components": 1,
    "max_vertex_to_source_m": 1.4609624274242172e-17,
    "max_source_to_mesh_m": 0.0,
+   "self_crossings": 0,
    "source_vertices_checked": 3170,
    "source_vertices_inside_other_parts": 72,
    "tolerance_m": 1e-06,
@@ -63,8 +64,9 @@
     }
    ],
    "expected_components": 1,
-   "max_vertex_to_source_m": 0.007627493264946664,
-   "max_source_to_mesh_m": 0.02409514817599836,
+   "max_vertex_to_source_m": 0.00762749326494672,
+   "max_source_to_mesh_m": 0.024095148175998362,
+   "self_crossings": 0,
    "source_vertices_checked": 3170,
    "source_vertices_inside_other_parts": 72,
    "tolerance_m": 1e-06,
@@ -75,7 +77,7 @@
     "faces": 3160,
     "open_edges": 40,
     "holes": 1,
-    "volume_m3": 0.09113618172994269,
+    "volume_m3": 0.09113618172994266,
     "kept": "closed"
    },
    {
@@ -96,7 +98,7 @@
     "faces": 1560,
     "open_edges": 40,
     "holes": 1,
-    "volume_m3": 0.003161774617731126,
+    "volume_m3": 0.0031617746177311262,
     "kept": "closed"
    }
   ]
@@ -125,6 +127,7 @@
    "expected_components": 1,
    "max_vertex_to_source_m": 5.377642775528102e-17,
    "max_source_to_mesh_m": 0.0,
+   "self_crossings": 0,
    "source_vertices_checked": 460,
    "source_vertices_inside_other_parts": 46,
    "tolerance_m": 1e-06,
@@ -153,6 +156,7 @@
    "expected_components": 1,
    "max_vertex_to_source_m": 0.008554691430591854,
    "max_source_to_mesh_m": 0.01772570363076337,
+   "self_crossings": 0,
    "source_vertices_checked": 460,
    "source_vertices_inside_other_parts": 46,
    "tolerance_m": 1e-06,
@@ -177,7 +181,7 @@
     "faces": 56,
     "open_edges": 8,
     "holes": 1,
-    "volume_m3": 0.0011281556193289916,
+    "volume_m3": 0.0011281556193289924,
     "kept": "closed"
    },
    {
@@ -189,5 +193,687 @@
    }
   ]
  },
- "as_expected": true
+ "bunny": {
+  "repaired": {
+   "closed": true,
+   "closed_detail": "69664 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 1,
+   "component_info": [
+    {
+     "triangles": 69664,
+     "volume_m3": 0.200016,
+     "lo": [
+      -0.5,
+      -0.388,
+      -0.496
+     ],
+     "hi": [
+      0.5,
+      0.388,
+      0.496
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 0.0,
+   "max_source_to_mesh_m": 0.0,
+   "self_crossings": 0,
+   "source_vertices_checked": 34834,
+   "source_vertices_inside_other_parts": 0,
+   "tolerance_m": 1e-06,
+   "passed": true
+  },
+  "control_marching_cubes": {
+   "closed": true,
+   "closed_detail": "15824 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 1,
+   "component_info": [
+    {
+     "triangles": 15824,
+     "volume_m3": 0.199187,
+     "lo": [
+      -0.5,
+      -0.386,
+      -0.495
+     ],
+     "hi": [
+      0.499,
+      0.387,
+      0.492
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 0.007727816618594317,
+   "max_source_to_mesh_m": 0.014989998782107938,
+   "self_crossings": 0,
+   "source_vertices_checked": 34834,
+   "source_vertices_inside_other_parts": 0,
+   "tolerance_m": 1e-06,
+   "passed": false
+  },
+  "parts": [
+   {
+    "faces": 69451,
+    "open_edges": 223,
+    "holes": 5,
+    "volume_m3": 0.2000157447355603,
+    "holes_ear_clipped": 5,
+    "kept": "closed"
+   }
+  ]
+ },
+ "spot": {
+  "repaired": {
+   "closed": true,
+   "closed_detail": "5856 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 1,
+   "component_info": [
+    {
+     "triangles": 5856,
+     "volume_m3": 0.141671,
+     "lo": [
+      -0.274,
+      -0.5,
+      -0.492
+     ],
+     "hi": [
+      0.274,
+      0.5,
+      0.492
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 0.0,
+   "max_source_to_mesh_m": 0.0,
+   "self_crossings": 0,
+   "source_vertices_checked": 2930,
+   "source_vertices_inside_other_parts": 0,
+   "tolerance_m": 1e-06,
+   "passed": true
+  },
+  "control_marching_cubes": {
+   "closed": true,
+   "closed_detail": "12574 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 1,
+   "component_info": [
+    {
+     "triangles": 12574,
+     "volume_m3": 0.140977,
+     "lo": [
+      -0.27,
+      -0.498,
+      -0.49
+     ],
+     "hi": [
+      0.269,
+      0.499,
+      0.49
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 0.008769789116926427,
+   "max_source_to_mesh_m": 0.011501156272973647,
+   "self_crossings": 0,
+   "source_vertices_checked": 2930,
+   "source_vertices_inside_other_parts": 0,
+   "tolerance_m": 1e-06,
+   "passed": false
+  },
+  "parts": [
+   {
+    "faces": 5856,
+    "open_edges": 0,
+    "holes": 0,
+    "volume_m3": 0.14167084478826733,
+    "holes_ear_clipped": 0,
+    "kept": "closed"
+   }
+  ]
+ },
+ "dragon": {
+  "repaired": {
+   "closed": true,
+   "closed_detail": "49138 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 1,
+   "component_info": [
+    {
+     "triangles": 49138,
+     "volume_m3": 0.055566,
+     "lo": [
+      -0.5,
+      -0.224,
+      -0.353
+     ],
+     "hi": [
+      0.5,
+      0.224,
+      0.353
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 0.0,
+   "max_source_to_mesh_m": 0.0,
+   "self_crossings": 0,
+   "source_vertices_checked": 24563,
+   "source_vertices_inside_other_parts": 0,
+   "tolerance_m": 1e-06,
+   "passed": true
+  },
+  "control_marching_cubes": {
+   "closed": true,
+   "closed_detail": "11286 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 6,
+   "component_info": [
+    {
+     "triangles": 11222,
+     "volume_m3": 0.054452,
+     "lo": [
+      -0.487,
+      -0.219,
+      -0.352
+     ],
+     "hi": [
+      0.482,
+      0.223,
+      0.335
+     ]
+    },
+    {
+     "triangles": 8,
+     "volume_m3": -0.0,
+     "lo": [
+      -0.247,
+      0.012,
+      -0.267
+     ],
+     "hi": [
+      -0.241,
+      0.016,
+      -0.258
+     ]
+    },
+    {
+     "triangles": 24,
+     "volume_m3": 0.0,
+     "lo": [
+      -0.206,
+      0.055,
+      -0.057
+     ],
+     "hi": [
+      -0.201,
+      0.058,
+      -0.013
+     ]
+    },
+    {
+     "triangles": 8,
+     "volume_m3": 0.0,
+     "lo": [
+      -0.077,
+      0.035,
+      -0.326
+     ],
+     "hi": [
+      -0.075,
+      0.036,
+      -0.324
+     ]
+    },
+    {
+     "triangles": 8,
+     "volume_m3": 0.0,
+     "lo": [
+      0.002,
+      -0.134,
+      0.316
+     ],
+     "hi": [
+      0.014,
+      -0.121,
+      0.324
+     ]
+    },
+    {
+     "triangles": 16,
+     "volume_m3": 2e-06,
+     "lo": [
+      0.169,
+      -0.157,
+      0.262
+     ],
+     "hi": [
+      0.196,
+      -0.146,
+      0.285
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 0.008206614637078417,
+   "max_source_to_mesh_m": 0.04047015123804221,
+   "self_crossings": 0,
+   "source_vertices_checked": 24563,
+   "source_vertices_inside_other_parts": 0,
+   "tolerance_m": 1e-06,
+   "passed": false
+  },
+  "parts": [
+   {
+    "faces": 49138,
+    "open_edges": 0,
+    "holes": 0,
+    "volume_m3": 0.05556640897835674,
+    "holes_ear_clipped": 0,
+    "kept": "closed"
+   }
+  ],
+  "decimation": {
+   "volume_original_m3": 0.05560572461036863,
+   "volume_decimated_m3": 0.05556640897835674,
+   "volume_rel": -0.0007070428860945777,
+   "original_vertices_beyond_tol": 691,
+   "far_box_m": [
+    [
+     -0.234,
+     0.02,
+     -0.333
+    ],
+    [
+     0.184,
+     0.104,
+     -0.21
+    ]
+   ],
+   "original_triangles": 871414,
+   "dropped_nonmanifold": 0,
+   "simplified_triangles": 50000,
+   "crossing_triangles_cut": 118,
+   "crossing_rounds": 1,
+   "decimator_triangles": 49138,
+   "decimated_triangles": 49138,
+   "max_decimated_to_original_m": 0.00217635085095876,
+   "max_original_to_decimated_m": 0.02223275014852268,
+   "rms_original_to_decimated_m": 0.000579299848478466,
+   "tolerance_m": 0.00390625,
+   "passed": false
+  }
+ },
+ "armadillo": {
+  "repaired": {
+   "closed": true,
+   "closed_detail": "59996 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 1,
+   "component_info": [
+    {
+     "triangles": 59996,
+     "volume_m3": 0.068641,
+     "lo": [
+      -0.42,
+      -0.381,
+      -0.5
+     ],
+     "hi": [
+      0.42,
+      0.382,
+      0.5
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 0.0,
+   "max_source_to_mesh_m": 0.0,
+   "self_crossings": 0,
+   "source_vertices_checked": 30000,
+   "source_vertices_inside_other_parts": 0,
+   "tolerance_m": 1e-06,
+   "passed": true
+  },
+  "control_marching_cubes": {
+   "closed": true,
+   "closed_detail": "10830 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 4,
+   "component_info": [
+    {
+     "triangles": 10806,
+     "volume_m3": 0.067494,
+     "lo": [
+      -0.418,
+      -0.377,
+      -0.498
+     ],
+     "hi": [
+      0.418,
+      0.361,
+      0.497
+     ]
+    },
+    {
+     "triangles": 8,
+     "volume_m3": 0.0,
+     "lo": [
+      -0.341,
+      0.29,
+      0.398
+     ],
+     "hi": [
+      -0.327,
+      0.298,
+      0.407
+     ]
+    },
+    {
+     "triangles": 8,
+     "volume_m3": 0.0,
+     "lo": [
+      0.337,
+      0.253,
+      0.441
+     ],
+     "hi": [
+      0.337,
+      0.254,
+      0.443
+     ]
+    },
+    {
+     "triangles": 8,
+     "volume_m3": 0.0,
+     "lo": [
+      0.353,
+      0.261,
+      0.39
+     ],
+     "hi": [
+      0.364,
+      0.279,
+      0.405
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 0.011286275010958158,
+   "max_source_to_mesh_m": 0.0338355224184372,
+   "self_crossings": 0,
+   "source_vertices_checked": 30000,
+   "source_vertices_inside_other_parts": 0,
+   "tolerance_m": 1e-06,
+   "passed": false
+  },
+  "parts": [
+   {
+    "faces": 59996,
+    "open_edges": 0,
+    "holes": 0,
+    "volume_m3": 0.06864073505192518,
+    "holes_ear_clipped": 0,
+    "kept": "closed"
+   }
+  ],
+  "decimation": {
+   "volume_original_m3": 0.06867955701245174,
+   "volume_decimated_m3": 0.06864073505192518,
+   "volume_rel": -0.00056526224418596,
+   "original_vertices_beyond_tol": 0,
+   "far_box_m": null,
+   "original_triangles": 345944,
+   "dropped_nonmanifold": 0,
+   "simplified_triangles": 60000,
+   "crossing_triangles_cut": 0,
+   "crossing_rounds": 0,
+   "decimator_triangles": 59996,
+   "decimated_triangles": 59996,
+   "max_decimated_to_original_m": 0.0025957499936902165,
+   "max_original_to_decimated_m": 0.0032685423011895856,
+   "rms_original_to_decimated_m": 0.00028414064782864576,
+   "tolerance_m": 0.00390625,
+   "passed": true
+  }
+ },
+ "buddha": {
+  "repaired": {
+   "closed": true,
+   "closed_detail": "47974 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 1,
+   "component_info": [
+    {
+     "triangles": 47974,
+     "volume_m3": 0.045597,
+     "lo": [
+      -0.206,
+      -0.206,
+      -0.5
+     ],
+     "hi": [
+      0.207,
+      0.205,
+      0.5
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 0.0,
+   "max_source_to_mesh_m": 0.0,
+   "self_crossings": 0,
+   "source_vertices_checked": 23966,
+   "source_vertices_inside_other_parts": 0,
+   "tolerance_m": 1e-06,
+   "passed": true
+  },
+  "control_marching_cubes": {
+   "closed": true,
+   "closed_detail": "8404 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 6,
+   "component_info": [
+    {
+     "triangles": 8284,
+     "volume_m3": 0.044461,
+     "lo": [
+      -0.205,
+      -0.204,
+      -0.499
+     ],
+     "hi": [
+      0.205,
+      0.205,
+      0.499
+     ]
+    },
+    {
+     "triangles": 8,
+     "volume_m3": 0.0,
+     "lo": [
+      -0.121,
+      -0.137,
+      -0.29
+     ],
+     "hi": [
+      -0.104,
+      -0.126,
+      -0.279
+     ]
+    },
+    {
+     "triangles": 48,
+     "volume_m3": 9e-06,
+     "lo": [
+      -0.129,
+      -0.096,
+      0.48
+     ],
+     "hi": [
+      -0.089,
+      -0.029,
+      0.489
+     ]
+    },
+    {
+     "triangles": 48,
+     "volume_m3": 2e-05,
+     "lo": [
+      0.001,
+      -0.096,
+      0.477
+     ],
+     "hi": [
+      0.047,
+      -0.025,
+      0.494
+     ]
+    },
+    {
+     "triangles": 8,
+     "volume_m3": 1e-06,
+     "lo": [
+      0.106,
+      0.049,
+      -0.096
+     ],
+     "hi": [
+      0.118,
+      0.058,
+      -0.066
+     ]
+    },
+    {
+     "triangles": 8,
+     "volume_m3": 0.0,
+     "lo": [
+      0.096,
+      0.05,
+      -0.041
+     ],
+     "hi": [
+      0.115,
+      0.054,
+      -0.035
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 0.008618144928902893,
+   "max_source_to_mesh_m": 0.03144299947263588,
+   "self_crossings": 0,
+   "source_vertices_checked": 23966,
+   "source_vertices_inside_other_parts": 0,
+   "tolerance_m": 1e-06,
+   "passed": false
+  },
+  "parts": [
+   {
+    "faces": 47974,
+    "open_edges": 0,
+    "holes": 0,
+    "volume_m3": 0.045597336539699794,
+    "holes_ear_clipped": 0,
+    "kept": "closed"
+   }
+  ],
+  "decimation": {
+   "volume_original_m3": 0.04561516024370384,
+   "volume_decimated_m3": 0.0455973365396998,
+   "volume_rel": -0.0003907407955778819,
+   "original_vertices_beyond_tol": 1912,
+   "far_box_m": [
+    [
+     -0.056,
+     -0.122,
+     -0.464
+    ],
+    [
+     0.126,
+     0.143,
+     -0.236
+    ]
+   ],
+   "original_triangles": 1087716,
+   "dropped_nonmanifold": 78,
+   "simplified_triangles": 49998,
+   "crossing_triangles_cut": 91,
+   "crossing_rounds": 1,
+   "decimator_triangles": 47974,
+   "decimated_triangles": 47974,
+   "max_decimated_to_original_m": 0.0024514371731059405,
+   "max_original_to_decimated_m": 0.010477575020595691,
+   "rms_original_to_decimated_m": 0.0004998713538390465,
+   "tolerance_m": 0.00390625,
+   "passed": false
+  }
+ },
+ "bracket": {
+  "repaired": {
+   "closed": true,
+   "closed_detail": "5280 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 1,
+   "component_info": [
+    {
+     "triangles": 5280,
+     "volume_m3": 0.068241,
+     "lo": [
+      -0.5,
+      -0.385,
+      -0.156
+     ],
+     "hi": [
+      0.5,
+      0.385,
+      0.156
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 0.0,
+   "max_source_to_mesh_m": 0.0,
+   "self_crossings": 0,
+   "source_vertices_checked": 2628,
+   "source_vertices_inside_other_parts": 0,
+   "tolerance_m": 1e-06,
+   "passed": true
+  },
+  "control_marching_cubes": {
+   "closed": true,
+   "closed_detail": "10268 triangles, 0 repeated directed edges, 0 edges without a twin",
+   "components": 1,
+   "component_info": [
+    {
+     "triangles": 10268,
+     "volume_m3": 0.067421,
+     "lo": [
+      -0.5,
+      -0.385,
+      -0.156
+     ],
+     "hi": [
+      0.5,
+      0.385,
+      0.156
+     ]
+    }
+   ],
+   "expected_components": 1,
+   "max_vertex_to_source_m": 0.008999980131785074,
+   "max_source_to_mesh_m": 0.024424663096507385,
+   "self_crossings": 0,
+   "source_vertices_checked": 2628,
+   "source_vertices_inside_other_parts": 0,
+   "tolerance_m": 1e-06,
+   "passed": false
+  },
+  "parts": [
+   {
+    "faces": 5280,
+    "open_edges": 0,
+    "holes": 0,
+    "volume_m3": 0.06824116655917777,
+    "holes_ear_clipped": 0,
+    "kept": "closed"
+   }
+  ]
+ },
+ "as_expected": true,
+ "decimations_within_tolerance": false
 }

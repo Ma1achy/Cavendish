@@ -1,0 +1,15 @@
+# A stand-alone timing program for the shapes study (not a workspace member): see src/main.rs.
+[package]
+name = "mesh_bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# Cavendish's voxel library, for `src/bin/voxelise.rs` (main.rs uses nothing).
+cav-core = { path = "../../../../../crates/cav-core" }
+
+[profile.release]
+opt-level = 3
+
+[workspace]

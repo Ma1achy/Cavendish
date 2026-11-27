@@ -590,6 +590,300 @@ The numpy times compare primitives with each other; they are not engine costs (�
   - World-fixed: the error repeats every 5.625°, the mesh's 64-fold symmetry, so its harmonics are
     64k of the spin. At harmonic 64, (c) is 6×10⁻⁶ rad and (d) 3×10⁻⁷ rad, on top of a steady offset.
 
+### 3.2 Famous meshes: scans, a cow and a CAD part (26–27 Nov 2026)
+
+The same machinery (`shapes_lib.py`, `sweep.py`, `regimes.py`, `figures.py`) on six more meshes. Every
+run was one process at a time, below normal priority, under a time limit.
+
+**Sources and licences.** Each is downloaded at run time from the URL below and checked against a
+pinned SHA-256 (`shapes_lib.SOURCES`). No mesh file, and nothing made from one but numbers and
+pictures, is committed. The Stanford URLs are not versioned; the hash pins the content.
+
+| mesh | source (file used) | licence, as stated by the source |
+|---|---|---|
+| Stanford Bunny | Stanford 3D Scanning Repository, `bunny.tar.gz` (`bun_zipper.ply`, 69,451 triangles) | research use with credit to the Stanford Computer Graphics Laboratory; "you can do anything you want to the Stanford bunny or the armadillo" |
+| Spot | Keenan Crane's 3D model repository (CMU), `spot.zip` (`spot_triangulated.obj`, 5,856) | CC0 1.0 |
+| Stanford Dragon | Stanford repository, `dragon_recon.tar.gz` (`dragon_vrip.ply`, 871,414) | research use with credit; not for commercial use or products |
+| Armadillo | Stanford repository (Venkat Krishnamurthy), `Armadillo.ply.gz` (345,944) | as the bunny |
+| Happy Buddha | Stanford repository, `happy_recon.tar.gz` (`happy_vrip.ply`, 1,087,716) | as the dragon |
+| mk7 extruder drive (CAD part) | Thingi10K file 44950 (Thingiverse thing 13727, by jag), Hugging Face mirror at a pinned commit | public domain (Thingi10K's metadata) |
+
+Thingi10K has no single canonical part. This one was picked from its metadata: public domain, one
+closed, edge-manifold, oriented component with no self-intersections, about 5,000 triangles, and
+mechanical (flat faces, bolt holes, a fillet). Lucy (Stanford, 28,055,742 triangles in `lucy.ply`,
+read from the archive's header) is in §3.3 only.
+
+**Orientation and size.** Each is turned so its up is +z and its front faces +y (towards the camera)
+and scaled so its largest extent is 1 m, as the teapot and Suzanne.
+
+**Repair, decimation and the check.** The repair of §3.1 keeps the original triangles. Two changes,
+both found by `cav`'s own importer, which refused the first results as crossing themselves:
+- **Holes are ear-clipped**, not fanned to their centroid. The bunny's five base holes are bent, and a
+  fan to the centroid passed through the surface beside one of them. Ear clipping uses only the rim
+  vertices; the fan is the fallback (not needed for any hole here).
+- **The check counts self-crossings** (an edge through a triangle by more than 10⁻⁹ m, the importer's
+  test, all counted: `self_crossings`). Its control arms: it finds none in the meshes `cav` accepts,
+  and 33 in a decimated dragon `cav` refused. The 10⁻⁹ m depth is there because manifold3d's union
+  leaves two sliver touches at Suzanne's eye rims, 10⁻¹² m deep, which `cav` accepts.
+
+The dragon, Armadillo and Buddha are decimated before voxelising (the Python clipper costs grow
+with cells × triangles): quadric-error decimation (`fast_simplification`, MIT) of the welded scan,
+then the repair (it closes the few non-manifold edges the decimator leaves), then the triangles
+around any self-crossing are cut out and the holes closed again, until none is left. manifold3d's
+`simplify(tolerance)` was tried first: it never crosses itself, but it removed thin parts (original
+vertices 1–2 cm from its result at 50,000 and 112,000 triangles).
+
+[`mesh-check.md`](exact-skin-and-partial-fill/shapes/mesh-check.md), the pass criteria written
+before measuring (as §3.1, plus no self-crossings):
+
+| mesh | triangles used | holes capped | pieces | result → original (m) | original → result (m) | self-crossings | control (marching cubes 1/48 m) |
+|---|---|---|---|---|---|---|---|
+| bunny | 69,664 (all 69,451 kept) | 5, ear-clipped | 1 | 0 | 0 | 0 | fails: 7.7×10⁻³ / 1.5×10⁻² m |
+| Spot | 5,856 (closed as downloaded) | 0 | 1 | 0 | 0 | 0 | fails: 8.8×10⁻³ / 1.2×10⁻² m |
+| dragon | 49,138 (decimated) | 0 | 1 | 0 | 0 | 0 | fails: 6 pieces, 8.2×10⁻³ / 4.0×10⁻² m |
+| Armadillo | 59,996 (decimated) | 0 | 1 | 0 | 0 | 0 | fails: 4 pieces, 1.1×10⁻² / 3.4×10⁻² m |
+| Buddha | 47,974 (decimated) | 0 | 1 | 0 | 0 | 0 | fails: 6 pieces, 8.6×10⁻³ / 3.1×10⁻² m |
+| mk7 part | 5,280 (closed as downloaded) | 0 | 1 | 0 | 0 | 0 | fails: 9.0×10⁻³ / 2.4×10⁻² m |
+
+(For a decimated mesh "original" here is the decimated mesh: the repair check and the decimation
+check are separate.) The teapot and Suzanne pass the new criterion as well.
+
+**The decimation against the original download** (same frame, vertex-sampled both ways, exact
+point-to-triangle distances). The pass criterion, written first, was every distance below half the
+finest pitch of the sweep, 1/256 m = 3.9 mm:
+
+| mesh | original | decimated to | cut out where it crossed itself | after repair | decimated → original (m) | original → decimated (m), max / RMS | original vertices beyond 3.9 mm | volume change | verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| dragon | 871,414 | 50,000 | 118 triangles, 1 round | 49,138 | 2.2×10⁻³ | 2.2×10⁻² / 5.8×10⁻⁴ | 691 | −7.1×10⁻⁴ | **fail** |
+| Armadillo | 345,944 | 60,000 | 0 | 59,996 | 2.6×10⁻³ | 3.3×10⁻³ / 2.8×10⁻⁴ | 0 | −5.7×10⁻⁴ | pass |
+| Buddha | 1,087,716 (78 on non-manifold edges dropped) | 50,000 | 91, 1 round | 47,974 | 2.5×10⁻³ | 1.0×10⁻² / 5.0×10⁻⁴ | 1,912 | −3.9×10⁻⁴ | **fail** |
+
+- The Armadillo first missed by 0.1 mm at 50,000 triangles (4.0 mm); 60,000 passes.
+- The dragon and the Buddha fail, and not for want of triangles: at 150,000 triangles the dragon's
+  worst original vertex is still 2.2×10⁻² m away (615 beyond 3.9 mm) and the Buddha's 6.8×10⁻³ m
+  (737), and manifold3d's simplify gave 2.3×10⁻² m for the dragon. The far vertices sit in a few
+  clusters low on each body (the dragon: a fin-like feature 3 cm tall under it; the Buddha: thin
+  walls under the robe, z ≈ −0.3 m). Read: features thinner than a decimated triangle, which any
+  decimation to this size collapses. They carry little mass (volume change 4–7×10⁻⁴). The tolerance
+  was not moved; the meshes are used as they are, as what the voxels are measured against. §3.4
+  measures what the decimation changes in the signal.
+
+**Pictures** (pitch 1/16 m; repaired mesh | cube voxels | cube interiors and clipped pieces, and
+the same cut away at the lattice wall nearest the centre plane):
+[`bunny.png`](exact-skin-and-partial-fill/shapes/bunny.png),
+[`spot.png`](exact-skin-and-partial-fill/shapes/spot.png),
+[`dragon.png`](exact-skin-and-partial-fill/shapes/dragon.png),
+[`armadillo.png`](exact-skin-and-partial-fill/shapes/armadillo.png),
+[`buddha.png`](exact-skin-and-partial-fill/shapes/buddha.png),
+[`bracket.png`](exact-skin-and-partial-fill/shapes/bracket.png), each with its `-cutaway`.
+
+**Resolution sweeps** ([`sweep-more.png`](exact-skin-and-partial-fill/shapes/sweep-more.png);
+tables in [`sweep.md`](exact-skin-and-partial-fill/shapes/sweep.md)). Phase error at 1.5 m at
+size/h = 128 against the mesh, and the fitted order in h (size/h ≥ 8):
+
+| technique | bunny | Spot | dragon | Armadillo | Buddha | mk7 part |
+|---|---|---|---|---|---|---|
+| (a) cubes | 3.1×10⁻⁴ (2.8) | 3.1×10⁻³ (1.4) | 8.7×10⁻⁴ (2.2) | 1.7×10⁻³ (1.7) | 2.9×10⁻⁴ (2.2) | 8.6×10⁻³ (1.6) |
+| (b) sampled fill | 2.5×10⁻⁶ (3.4) | 3.4×10⁻⁵ (2.4) | 6.8×10⁻⁵ (2.6) | 5.0×10⁻⁵ (1.2) | 1.0×10⁻⁴ (1.9) | 2.7×10⁻³ (0.6) |
+| (c) fill at centroid | 4.0×10⁻⁸ (2.9) | 2.1×10⁻⁷ (3.2) | 1.1×10⁻⁷ (2.8) | 8.4×10⁻⁸ (2.7) | 1.3×10⁻⁷ (3.0) | 1.5×10⁻⁷ (3.3) |
+| (d) + second moment | 1.1×10⁻⁹ (3.8) | 9.1×10⁻¹⁰ (3.8) | 3.9×10⁻¹⁰ (3.6) | 4.2×10⁻¹⁰ (3.8) | 2.3×10⁻¹⁰ (2.9) | 7.3×10⁻¹¹ (4.5) |
+| (e) clipped pieces | ≤ 4×10⁻¹² | ≤ 2×10⁻¹² | ≤ 8×10⁻¹³ | ≤ 1×10⁻¹² | ≤ 9×10⁻¹³ | ≤ 1×10⁻¹² |
+
+At size/h = 128: 56,987 boundary cells on the bunny, 32,552 on the Buddha; clipping took 60–128 s
+per shape in Python.
+
+Cheapest cost per evaluation point (µs, model of §3.1) to bring the 1.5 m error below 10⁻⁴ / 10⁻⁶ /
+10⁻⁸ rad within size/h ≤ 128 ([`pareto.png`](exact-skin-and-partial-fill/shapes/pareto.png) now has
+all ten shapes):
+
+| technique | bunny | Spot | dragon | Armadillo | Buddha | mk7 part |
+|---|---|---|---|---|---|---|
+| (b) sampled fill | 844 / — / — | 673 / — / — | 65 / — / — | 883 / — / — | — / — / — | — / — / — |
+| (c) fill at centroid | 1.6 / 160 / — | 9.9 / 555 / — | 2.1 / 151 / — | 1.8 / 157 / — | 2.5 / 133 / — | 7.6 / 280 / — |
+| (d) + second moment | 1.4 / 40 / 893 | 1.4 / 25 / 582 | 0.51 / 7.0 / 175 | 1.2 / 11 / 208 | 0.36 / 1.9 / 116 | 0.59 / 7.0 / 48 |
+| (e) clipped pieces | 5,010 | 594 | 3,740 | 4,330 | 3,280 | 597 |
+| whole mesh, directly (exact) | 3,830 | 322 | 2,700 | 3,300 | 2,640 | 290 |
+
+**Near, mid and far** ([`regimes-distance.png`](exact-skin-and-partial-fill/shapes/regimes-distance.png),
+all nine shapes at h = 1/32 m for the 1 m bodies). Where each technique stays below the tolerance for
+every larger sampled distance, 10⁻⁶ / 10⁻¹⁰ rad:
+
+| technique | bunny | Spot | dragon | Armadillo | Buddha | mk7 part |
+|---|---|---|---|---|---|---|
+| (a) cubes | 167 m / never | 167 m / never | 107 m / never | 107 m / never | 167 m / never | 261 m / never |
+| (b) sampled fill | 11 m / 167 m | 18 m / 261 m | 18 m / 167 m | 18 m / 261 m | 28 m / 261 m | 44 m / 409 m |
+| (c) fill at centroid | 4.7 m / 44 m | 4.7 m / 44 m | 3.0 m / 44 m | 3.0 m / 28 m | 3.0 m / 28 m | 3.0 m / 18 m |
+| (d) + second moment | 1.2 m / 7.3 m | 1.2 m / 7.3 m | 1.2 m / 7.3 m | 1.2 m / 7.3 m | 0.78 m / 7.3 m | 0.78 m / 3.0 m |
+| (f) body multipole, no voxels | 11 m / 44 m | 11 m / 44 m | 11 m / 28 m | 7.3 m / 44 m | 11 m / 28 m | 11 m / 44 m |
+| (g) point mass | 44 m / 261 m | 44 m / 261 m | 44 m / 167 m | 44 m / 261 m | 44 m / 167 m | 44 m / 261 m |
+
+(e) is below both from half a cell out, on every shape.
+
+**What the new shapes say.**
+- **Thin features do not change the ranking.** On the dragon (horns, whiskers, claws) and the Buddha
+  (folds, the gaps by the arms), (d) beats (c) at every pitch, and (c) beats (b) and (b) beats (a)
+  at every pitch but one each (the Armadillo's (b) at size/h = 4; the Buddha's (a) at 16, a lucky
+  cancellation). (d) is the cheapest route to 10⁻⁴, 10⁻⁶ and 10⁻⁸ rad on all six: 1.1–13× cheaper
+  than (c) at 10⁻⁴ rad and 4–70× at 10⁻⁶ rad; only (d) reaches 10⁻⁸ rad within size/h ≤ 128.
+- **What thin features do change is the smoothness.** The Buddha's (d) has a dip at size/h = 16
+  (2.8×10⁻⁸, then 9.2×10⁻⁸ at 32), so its fitted order is 2.9 against 3.6–3.8 on the other organic
+  shapes; (a) and (b) jump about by up to 10× from one pitch to the next on the dragon and the
+  Buddha: a fold is a cell or two across, and whether a centre or a sample lands in it flips with the
+  lattice. (c) and (d) carry the exact mass and do not jump.
+- **The CAD part is where sampling is worst and moments best.** Its large flat faces sit at fixed
+  heights, so the sampled fill's bias does not average out: (b) has order 0.6 and is still at
+  2.7×10⁻³ rad at size/h = 128 (§2.3's aligned-face case). (d) is the best of all ten shapes there
+  (7.3×10⁻¹¹ rad, order 4.5) and reaches 10⁻¹⁰ rad from 3 m.
+- **At 50,000–70,000 triangles the whole mesh is no longer cheap.** A direct sum costs 2.6–3.8 ms per
+  point, against 0.4–1.4 µs per point for (d) at 10⁻⁴ rad: a factor 2,000–7,000. For the small meshes
+  (Spot, the CAD part) the direct sum and (e) cost about the same, as for the teapot.
+
+### 3.3 Full resolution: a performance test (27 Nov 2026)
+
+The scans as downloaded, in the study's frame (1 m largest extent), written as binary STL and as raw
+f64 triangles by [`fullres.py`](exact-skin-and-partial-fill/shapes/fullres.py). Triangle counts are
+read from the files: bunny 69,451 (69,664 once its five holes are capped), Armadillo 345,944, dragon
+871,414 (871,306 after welding drops 108 degenerate ones), Happy Buddha 1,087,716 (1,087,474 after
+welding; 32 edges in more than two triangles), Lucy 28,055,742 (14,027,872 vertices, from the header
+of `lucy.ply` in the 322 MB archive). Lucy was not downloaded whole: as a binary STL it would be
+1.40 GB, and every number below that it needs follows from its triangle count.
+
+**1. Cavendish itself.** [`mesh_bench/src/bin/voxelise.rs`](exact-skin-and-partial-fill/shapes/mesh_bench/src/bin/voxelise.rs)
+calls `cav_core::voxel` (release build, one thread, below normal priority): `Mesh::read` for an STL
+(the importer's path: the 32 MiB byte cap, the 500,000-triangle cap, closed and no-crossing checks)
+or `Mesh::new` for the f64 triangles (the same checks, no byte cap), then `voxelise` with the engine's
+default budget, supersample 2. Peak memory is the process's peak working set. The caps were not
+changed.
+
+| mesh | triangles | import (s) | voxelise at h = 1/32, 1/64, 1/128 m (s) | leaves | partial leaves | peak memory |
+|---|---|---|---|---|---|---|
+| bunny, full (holes capped) | 69,664 | 0.18 | 0.45 / 2.0 / 8.3 | 3,550 / 15,542 / 65,132 | 1,849 / 7,183 / 29,045 | 19 MiB |
+| Armadillo, full | 345,944 | 1.6 | 1.5 / 6.5 / 26.9 | 2,140 / 9,814 / 43,039 | 1,249 / 5,068 / 20,095 | 85 MiB |
+| Armadillo, decimated | 59,996 | 0.15 | 0.29 / 1.3 / 5.4 | 2,086 / 9,798 / 42,665 | 1,223 / 4,955 / 20,188 | 22 MiB |
+| dragon, decimated | 49,138 | 0.13 | 0.24 / 1.0 / 4.7 | 2,056 / 9,887 / 44,200 | 1,246 / 5,158 / 20,980 | 19 MiB |
+| Buddha, decimated | 47,974 | 0.13 | 0.17 / 0.71 / 3.2 | 1,655 / 7,017 / 33,411 | 1,006 / 3,815 / 16,140 | 19 MiB |
+| Spot | 5,856 | 0.02 | 0.04 / 0.19 / 0.79 | 2,787 / 12,146 / 50,228 | 1,352 / 5,667 / 22,240 | 7 MiB |
+| mk7 part | 5,280 | 0.02 | 0.03 / 0.14 / 0.52 | 1,639 / 9,491 / 32,237 | 824 / 4,658 / 13,978 | 6 MiB |
+
+Refused, with the importer's own words:
+- **bunny as downloaded**: "the mesh is not closed and consistently wound: the edge from vertex 250 to
+  vertex 251 is not in exactly two triangles once each way (223 such edges)" (its base holes).
+- **dragon and Buddha as STL** (43.6 and 54.4 MB): "… 33554433 bytes is more than 33554432" — the
+  32 MiB cap, at reading.
+- **dragon and Buddha given as arrays** (no byte cap): "a mesh of 435545 vertices and 871306 triangles
+  is more than 1000000 and 500000", and the same with 543,505 and 1,087,422 for the Buddha (closed).
+- **Lucy**: would be refused at the byte cap (1.40 GB against 32 MiB) and then at the triangle cap
+  (56× it).
+- Two meshes of ours were refused on the way and fixed (§3.2): the bunny with centroid-fan caps and
+  the quadric-decimated dragon and Buddha ("the mesh crosses itself (an edge of triangle 16437 passes
+  through triangle 16440)"). Decimations to 480,000 triangles (to fit under the cap) were refused for
+  the same reason; they were not mended (not needed for anything here).
+
+What it shows: import is 2.6–4.6 µs per triangle (parsing, the checks, the hierarchy, the crossing
+search);
+voxelising grows 4× per halving of the pitch (with the boundary cells) and about in proportion to
+the triangles near each cell — the full Armadillo takes 5× as long as its 60,000-triangle decimation
+for the same leaves (to 1%). Memory stays under 100 MiB. The tree depends on the shape, not the
+triangle count: 43,039 leaves for the full Armadillo at 1/128 m, 42,665 for the decimated one.
+
+**2. The direct whole-mesh sum** ([`mesh_bench/src/main.rs`](exact-skin-and-partial-fill/shapes/mesh_bench/src/main.rs):
+Werner & Scheeres per face, the same per-triangle work as §3's `kbench`, one thread, 8 points
+1.5–2 m away, each triangle's normal and edge data precomputed):
+
+| mesh | triangles | ms per evaluation point | ns per triangle per point |
+|---|---|---|---|
+| mk7 part | 5,280 | 0.29 | 55.5 |
+| Spot | 5,856 | 0.34 | 57.6 |
+| dragon, decimated | 49,138 | 2.7 | 54.1 |
+| Armadillo, decimated | 59,996 | 3.2 | 53.3 |
+| bunny | 69,664 | 3.7 | 53.5 |
+| Armadillo, full | 345,944 | 20.2 | 58.4 |
+| dragon, full | 871,306 | 52–59 | 59–67 |
+| Buddha, full | 1,087,474 | 66–68 | 61–63 |
+| Lucy (extrapolated) | 28,055,742 | ≈ 1,700 | (60) |
+
+The cost per triangle holds at 53–67 ns from 5,000 to a million triangles: about 15% more once the
+triangles (~100 bytes each) no longer fit in cache. So a whole-mesh read is 0.07 s per point for the
+Buddha and 1.7 s for Lucy, and a signal needs it at every sampled time of every cloud of every tower.
+Voxelised once (3–27 s above), the same body read through the tree's far cells and (d)'s cut-cell
+moments costs what its leaves cost, which does not grow with the triangle count: that is why the
+octree and the boundary moments matter at this size.
+
+**3. The Python clipper at full resolution** (`fullres.py clip`, one process, 10-minute cap): it
+finished every run, so nothing is extrapolated.
+
+| mesh | triangles | size/h | boundary cells | piece triangles | seconds | peak memory |
+|---|---|---|---|---|---|---|
+| Armadillo | 345,944 | 32 / 128 | 2,440 / 40,316 | 0.72 M / 2.5 M | 38 / 144 | 214 / 581 MB |
+| dragon | 871,306 | 32 / 128 | 2,459 / 41,677 | 1.46 M / 3.9 M | 75 / 247 | 506 / 910 MB |
+| Buddha | 1,087,474 | 32 | 1,789 | 1.64 M | 85 | 604 MB |
+
+The pieces' volumes add up to the mesh's to 10⁻¹⁵. The clipping is cheap; what the full meshes cost
+in the sweep is the reference field (55–67 ns × 4 M piece triangles per point) and, for (e), the
+piece triangles themselves.
+
+### 3.4 Each mesh as one exact polyhedron: what a gradiometer reads (27 Nov 2026)
+
+No voxels and no clipping: each body is its mesh, and its field is the polyhedral closed form summed
+over every triangle ([`exact.py`](exact-skin-and-partial-fill/shapes/exact.py),
+[`exact.png`](exact-skin-and-partial-fill/shapes/exact.png),
+[`exact.md`](exact-skin-and-partial-fill/shapes/exact.md)). ρ = 2700 kg/m³, 1 m largest extent, the
+tower's lower cloud at the origin and the upper one 5 m above, the body's centre of mass level with
+the lower cloud.
+
+**What is exact and what is not.**
+- Exact to rounding: the field of the mesh at each point (Werner & Scheeres per face with the stable
+  numerator, as `skin_bench.py` and §3.1), and the mass moments, by the divergence theorem over the
+  same triangles (volume, centre of mass, second and third moments, hence the inertia tensor
+  I = ρ(tr M₂ 𝟙 − M₂)).
+- Not exact: the phase is k_eff T² Δg_z at the clouds' mean positions at one instant, not the
+  integral along the atoms' paths over the sequence's 2T; the multipole curves are series cut at
+  l = 2 or 3; and a mesh is an approximation of the object (a scan, its decimation, capped holes).
+
+**Mass moments** (closed form; `exact.md` has all nine, decimated and full):
+
+| mesh | mass (kg) | centre of mass in the box frame (m) | principal moments of inertia (kg m²) |
+|---|---|---|---|
+| bunny | 540.0 | (+0.026, +0.080, −0.149) | 23.5, 43.4, 48.7 |
+| Spot | 382.5 | (0.000, +0.001, −0.069) | 11.7, 34.9, 37.8 |
+| dragon (decimated / full) | 150.03 / 150.14 | (+0.030, −0.023, −0.107) | 4.88, 8.48, 11.99 / 4.88, 8.49, 12.01 |
+| Armadillo (decimated / full) | 185.33 / 185.43 | (−0.013, −0.042, +0.112) | 6.36, 12.03, 14.75 / 6.37, 12.04, 14.76 |
+| Buddha (decimated / full) | 123.11 / 123.16 | (−0.019, −0.020, −0.089) | 1.53, 8.82, 9.02 / 1.54, 8.83, 9.03 |
+| mk7 part | 184.3 | (+0.007, +0.151, −0.019) | 4.73, 19.6, 21.3 |
+
+**Phase against distance** (top two rows of `exact.png`, 0.5–50 m from the centre of mass to the
+tower's axis). Beyond about 2 m every body reads like its mass: the departure of a point mass from
+the exact polyhedron is 3–40% at 1.5 m, 0.05–0.6% at 5 m and 3×10⁻⁵–8×10⁻⁴ at 20 m. Adding the
+second moments brings 20 m to 2–8×10⁻⁶, and the third moments to 0.5–2×10⁻⁷. Inside about 2 m the
+shape takes over: within one body radius of the axis (grey, 0.57–0.81 m) the lower cloud is in or at
+the body, and the bunny, Spot and the dragon show a sign change of the phase near 1 m: a point mass
+level with the lower cloud pulls it sideways only, but the real body's mass sits unevenly above and
+below that level, and close in its vertical pull on the lower cloud outweighs the upper cloud's.
+
+**Decimation, measured as signal.** The decimated dragon, Armadillo and Buddha differ from the full
+scans by a nearly constant 4–7×10⁻⁴ of the signal at every distance (1.1×10⁻³, 1.3×10⁻³ and
+6×10⁻⁴ rad at 1.5 m): that is their mass change (§3.2's volume column). It is about a million times
+the voxel error of (d) at size/h = 128 against the decimated mesh (2–4×10⁻¹⁰ rad). As with the facet error of the
+analytic shapes (§3.1), the mesh, not the voxels, limits the accuracy: a body must be meshed to the
+accuracy wanted before its voxels can deliver it.
+
+**Walking past** (bottom row: the centre of mass 2 m from the axis, 1.4 m/s, three poses of the
+same body). Same mass, different signal:
+
+| mesh | peak phase, upright / turned 90° about z / on its side / point mass (rad) | largest pose difference |
+|---|---|---|
+| bunny | 5.00 / 5.52 / 5.53 / 5.54 | 0.55 rad (10%) |
+| Spot | 3.98 / 4.68 / 4.00 / 3.92 | 0.84 rad (18%) |
+| dragon | 1.49 / 1.50 / 1.54 / 1.54 | 0.06 rad (4%) |
+| Armadillo | 1.92 / 2.03 / 1.93 / 1.90 | 0.13 rad (6%) |
+| Buddha | 1.29 / 1.24 / 1.26 / 1.26 | 0.05 rad (4%) |
+| mk7 part | 1.94 / 1.90 / 2.31 / 1.89 | 0.42 rad (18%) |
+
+At 2 m a 1 m body's shape and pose move the peak by 4–18%, far above any instrument floor: a
+gradiometer that sees a walker-sized body pass at 2 m sees its shape, not just its mass. The bodies
+with a long axis differ most when it turns towards the tower (Spot turned end-on, the CAD part on its
+side); the compact ones least (the Buddha, the dragon).
+
 ## 4. Cost at Cavendish's scales (derived)
 
 - **Boundary leaves.** A body of N finest cells has about 6N^(2/3) boundary cells (cube-like):

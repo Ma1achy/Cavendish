@@ -1,7 +1,7 @@
 """Pictures: each shape analytic or repaired mesh | as cube voxels | as clipped polyhedra, whole and cut.
 
-    python figures.py                 # all four shapes
-    python figures.py sphere torus    # some
+    python figures.py                 # the first four shapes
+    python figures.py sphere bunny    # any (also spot, dragon, armadillo, buddha, bracket)
 
 Writes `<shape>.png` and `<shape>-cutaway.png` here. Same lattice, camera and light in every panel.
 Colours: the shape blue; cube voxels grey (interior) and yellow (boundary cells whose centre is
@@ -25,7 +25,8 @@ sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 import shapes_lib as L  # noqa: E402
 
 # The teapot and Suzanne are ~1 m across: at 0.2 m they have no interior cell, so they are drawn at 0.1 m.
-PITCH = {"sphere": 0.25, "torus": 0.2, "teapot": 0.1, "suzanne": 0.1}
+# The famous meshes (1 m largest extent) likewise, at 0.0625 m so the thin parts get some cells.
+PITCH = {"sphere": 0.25, "torus": 0.2, "teapot": 0.1, "suzanne": 0.1, **{n: 0.0625 for n in L.FAMOUS}}
 BLUE = np.array([0x2A, 0x78, 0xD6]) / 255
 ORANGE = np.array([0xEB, 0x68, 0x34]) / 255
 YELLOW = np.array([0xED, 0xA1, 0x00]) / 255
@@ -191,7 +192,8 @@ def figure(name: str) -> None:
         panels = [p[top:bottom] for p in panels]
         aspect = (bottom - top) / SIZE
         fig, axes = plt.subplots(1, 3, figsize=(15, 5.0 * aspect + 1.6), facecolor="#fcfcfb")
-        titles = ["analytic" if analytic else "repaired mesh (original triangles)",
+        titles = ["analytic" if analytic else "decimated, repaired mesh" if name in L.DECIMATE
+                  else "repaired mesh (original triangles)",
                   f"cube voxels: {len(vox.interior)} interior + {n_on} boundary",
                   f"clipped polyhedra: {len(vox.interior)} cubes + {len(vox.frac)} pieces"]
         for ax, img, title in zip(axes, panels, titles):
@@ -199,13 +201,14 @@ def figure(name: str) -> None:
             ax.set_axis_off()
             ax.set_title(title, fontsize=12, color="#0b0b0b")
         what = {"sphere": "Sphere, radius 1 m", "torus": "Torus, R = 1 m, r = 0.4 m",
-                "teapot": "Utah teapot, 1 m long", "suzanne": "Suzanne, 1 m wide"}[name]
+                "teapot": "Utah teapot, 1 m long", "suzanne": "Suzanne, 1 m wide",
+                **{n: f"{f.title}, 1 m largest extent" for n, f in L.FAMOUS.items()}}[name]
         cut_txt = f", cut away at the lattice wall y = {y_cut:.3f} m" if cut else ""
         if analytic:
             left = ("Left: the analytic surface (drawn from a 256 × 128 parametric tessellation). The voxels "
                     f"and pieces are made from a mesh: {mesh.source}; the pieces are exact to that mesh.")
         else:
-            chk = (L.teapot_repair() if name == "teapot" else L.suzanne_repair()).check
+            chk = L.study_repair(name).check
             left = (f"Left: the repaired mesh. {mesh.source}. Check (pass if within 1e-6 m): closed, "
                     f"{chk['components']} piece; vertices to original triangles or caps, max "
                     f"{chk['max_vertex_to_source_m']:.1e} m; original vertices outside other parts to the "
