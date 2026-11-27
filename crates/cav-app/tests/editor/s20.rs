@@ -960,6 +960,97 @@ fn every_header_control_says_what_it_does() {
     assert!(says_what_it_does(&mute).unwrap_err().contains("no tooltip"));
 }
 
+#[test]
+fn a_header_menu_opens_by_its_command() {
+    // `viewport type|camera|overlays [N]` (TASK-S20-14, for scripts and the demo's pictures):
+    // the menu of that viewport's header opens as a click on its opener opens it, stays open over
+    // the frames after, and is asked for once (a click outside closes it). Controls: before the
+    // command no row of the menu is laid out; a plot has no overlays menu and says so; nothing
+    // is journalled.
+    let mut rig = mosaic_rig("ABC;DEF");
+    rig.shell.run("show signal @2").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let journal = rig.shell.engine.journal().len();
+    let row = |rig: &Rig| rig.shell.layout().button("show periodogram @3");
+    assert!(row(&rig).is_none(), "control: closed, the menu lays out no row");
+    rig.shell.run("viewport type 3").unwrap();
+    rig.frames(vec![vec![]; 12]);
+    assert!(row(&rig).is_some(), "the type menu of viewport 3 is open, and stays open");
+    assert_eq!(rig.shell.engine.journal().len(), journal, "the window's own: no journal line");
+    let outside = rig.shell.layout().canvases[3].center();
+    rig.click(outside);
+    rig.frames(vec![vec![]]);
+    assert!(row(&rig).is_none(), "a click outside closes it: it was asked for once");
+    // (The click made viewport 4 the active one: a view command of its own.)
+    let journal = rig.shell.engine.journal().len();
+    rig.shell.run("viewport overlays 1").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let rows = rig.shell.layout().buttons.iter().filter(|(line, _)| line.starts_with("section off")).count();
+    assert_eq!(rows, 1, "the overlays popover of viewport 1 is open");
+    let refused = rig.shell.run("viewport overlays 2").unwrap_err();
+    assert!(refused.contains("viewport 2 shows a plot"), "{refused}");
+    assert_eq!(rig.shell.engine.journal().len(), journal, "the window's own: no journal line");
+}
+
+#[test]
+fn a_viewport_popped_out_before_a_frame_floats_over_its_place() {
+    // TASK-S20-14 (seen in the demo's picture: a script's pop-out, asked before the window had
+    // drawn, floated over the scene tree). A viewport popped out before any frame floats where
+    // one popped out in the window does: over its own slot, inside the figure. Control: the
+    // same lines with a frame drawn first give the same frame.
+    let lines = ["load point", "mosaic \"AB;CD\""];
+    let mut early = Shell::new();
+    for line in lines.iter().chain(&["viewport pop-out 4"]) {
+        early.run(line).unwrap();
+    }
+    let mut early = Rig { ctx: context(), shell: early, size: [1440, 900], clock: 0.0, events: 0 };
+    early.frames(vec![vec![], vec![]]);
+    let mut late = Rig::new();
+    run_all(&mut late, &lines);
+    late.frames(vec![vec![], vec![]]);
+    late.shell.run("viewport pop-out 4").unwrap();
+    late.frames(vec![vec![], vec![]]);
+    let frame = |rig: &Rig| rig.shell.layout().floating.iter().find(|(pane, _)| *pane == 3).unwrap().1;
+    let (figure, slot) = (early.shell.layout().figure, early.shell.layout().slots[3]);
+    assert!(figure.contains_rect(frame(&early)), "{:?} in {figure:?}", frame(&early));
+    assert!(slot.intersects(frame(&early)), "over its own place");
+    assert_eq!(frame(&early), frame(&late), "control: as a pop-out after a frame");
+}
+
+#[test]
+fn the_inspector_s_header_keeps_its_words_clear_of_its_buttons() {
+    // TASK-S20-14 (seen in the demo's pictures: at the inspector's 320 pt, "Point mass ·
+    // circular" ran under the eye). What the selection is stands between its name and the
+    // header's buttons and overlaps neither, however long its words. Control: the words of a
+    // body in circular motion are wider than the room there is (so the test would see them run
+    // on were they not cut).
+    let mut rig = Rig::new();
+    run_all(
+        &mut rig,
+        &[
+            "load point",
+            "mass 5 at 2 0 2",
+            "set bodies[1].motion {\"Circular\": {\"centre\": [0, 0, 2], \"u\": [2, 0, 0], \"v\": [0, 2, 0], \"frequency\": 5, \"phase\": 0}}",
+            "select body 2",
+        ],
+    );
+    rig.frames(vec![vec![], vec![]]);
+    let layout = rig.shell.layout();
+    let kind = layout.button("inspector kind").expect("the header says what it is");
+    let menu = layout.button("inspector menu").unwrap();
+    let eye = rig.shell.focus_tree().node("inspector/eye").and_then(|n| n.rect).expect("a body has an eye");
+    let name = layout.editor("bodies[1].label").unwrap();
+    assert!(kind.left() >= name.right() - 0.5, "{kind:?} after the name {name:?}");
+    assert!(kind.right() <= eye.left() + 0.5, "{kind:?} ends before the eye {eye:?}");
+    assert!(eye.right() <= menu.left() + 0.5);
+    // Control: uncut, the words are wider than the room between the name and the eye.
+    let font = egui::FontId::proportional(theme::BODY_PT);
+    let painter = rig.ctx.layer_painter(egui::LayerId::background());
+    let whole =
+        painter.layout_no_wrap("Point mass · circular".to_owned(), font, egui::Color32::WHITE).size().x;
+    assert!(whole > eye.left() - name.right(), "the words ({whole} pt) would not fit");
+}
+
 /// Whether the header's stop `id` is enabled in the keyboard's tree.
 fn tree_enabled(rig: &Rig, id: &str) -> bool {
     rig.shell.focus_tree().node(&format!("{}/{id}", cav_app::header::SCOPE)).is_some_and(|n| n.enabled)
@@ -2958,4 +3049,65 @@ fn slow_a_walker_step_in_town_is_timed() {
     );
     assert!(walker.on_ground && (lo[0] - (walker.feet[0] + 0.5 * settings.width)).abs() < 1e-9, "{walker:?}");
     assert!(each < if cfg!(debug_assertions) { 5000.0 } else { 500.0 }, "{each} µs a step");
+}
+
+#[test]
+fn slow_task_transport_and_folders() {
+    // E1, the second task, by input events alone (the scene and its two extra masses are there
+    // first): set the duration at the transport, step to shot 3, make a folder, move a body in,
+    // hide it by the folder's eye, undo back to the start.
+    // The event budget, written before the task was run: 60.
+    const BUDGET: usize = 60;
+    let mut rig = Rig::new();
+    run_all(&mut rig, &["load point", "mass 5 at 1 1 1", "mass 6 at -1 1 1"]);
+    rig.frames(vec![vec![], vec![]]);
+    rig.events = 0;
+    let start = rig.shell.engine.spec().clone();
+    let (depth, journal) = (rig.shell.engine.depth().0, rig.shell.engine.journal().len());
+    let third = rig.shell.engine.shots().unwrap().readout(0, 2);
+
+    // The duration, typed where it is read: a click in its box, 20, Enter. One edit.
+    rig.click(transport(&rig, "duration").rect.center());
+    rig.typed("20");
+    rig.key(Key::Enter, Modifiers::NONE);
+    assert_eq!(rig.shell.engine.spec().duration, 20.0);
+    assert_eq!(rig.shell.engine.depth(), (depth + 1, 0), "the duration is one edit");
+    // Step forward three times: shot 3's readout, bit for bit. Control: after two it is not.
+    for clicks in 1..=3 {
+        rig.click_button("step 1");
+        let there = rig.shell.engine.time().to_bits() == third.to_bits();
+        assert_eq!(there, clicks == 3, "after {clicks} steps t = {}", rig.shell.engine.time());
+    }
+    rig.frames(vec![vec![]]);
+    assert_eq!(transport(&rig, "shot").text, "3");
+    // A folder from the `+` menu, named in place: two edits.
+    rig.click_button("add");
+    rig.click_button("new-folder");
+    rig.key(Key::A, Modifiers::COMMAND);
+    rig.typed("rig");
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.frames(vec![vec![]]);
+    assert!(rig.shell.engine.spec().folder("rig").is_some());
+    // Body 2 dragged onto it: one edit.
+    let from = rig.row(Target::Body(2)).center();
+    rig.drag(from, folder_row(&rig, "rig").rect.center());
+    assert_eq!(rig.shell.engine.spec().bodies[1].folder.as_deref(), Some("rig"));
+    assert_eq!(rig.shell.engine.depth(), (depth + 4, 0), "duration, folder, name, move");
+    rig.frames(vec![vec![]]);
+    // The folder's eye hides what it holds, and only that; hiding is no edit.
+    rig.click_button("eye folder rig");
+    rig.frames(vec![vec![]]);
+    let hidden = rig.shell.engine.view(0).hidden.clone();
+    assert_eq!(hidden.iter().collect::<Vec<_>>(), [&start.bodies[1].label], "control: body 3 is outside it");
+    assert_eq!(rig.shell.engine.depth(), (depth + 4, 0));
+    // Undo, four times, from the keyboard. Control: after three the scene is not yet the start's
+    // (the duration is still 20), so each of the four steps was needed.
+    for n in 1..=4 {
+        rig.key(Key::Z, Modifiers::COMMAND);
+        assert_eq!(rig.shell.engine.spec() == &start, n == 4, "after {n} undos");
+    }
+    assert_eq!(rig.shell.engine.depth().0, depth);
+    assert!(rig.shell.engine.journal().len() > journal && !rig.shell.console_open, "nothing was refused");
+    assert!(rig.events <= BUDGET, "{} events, budget {BUDGET}", rig.events);
+    println!("E1 (transport and folders): {} events of {BUDGET}", rig.events);
 }

@@ -80,7 +80,7 @@ pub const SHADING: [DrawStyle; 4] =
     [DrawStyle::Shaded, DrawStyle::Flat, DrawStyle::XRay, DrawStyle::Wireframe];
 
 /// The menus of `ui/actions.ron` whose actions are the camera menu's rows, in this order, with
-/// a rule between them; then the camera's mode (orbit, fly), Frame and Home.
+/// a rule between them; then the camera's mode (orbit, fly, walk), noclip, Frame and Home.
 pub const CAMERA_MENUS: [&str; 2] = ["View/Projection", "View/Look from"];
 
 /// The menus of `ui/actions.ron` whose actions are the overlays popover's rows, each under its
@@ -199,7 +199,7 @@ fn menu_rows(shell: &Shell, pane: usize, menu: &str) -> Vec<Row> {
 }
 
 /// The camera menu's rows for pane `pane`: the projection, the named views, the camera's mode
-/// (orbit about the target, or fly from the eye), Frame and Home.
+/// (orbit about the target, fly from the eye, or walk), the noclip switch, Frame and Home.
 fn camera_rows(shell: &Shell, pane: usize) -> Vec<Row> {
     let mut rows = Vec::new();
     for menu in CAMERA_MENUS {
@@ -567,7 +567,17 @@ fn menu(
     foot: &dyn Fn(&mut Shell, &mut egui::Ui, &mut Asked),
 ) {
     if let Some(opener) = opener {
-        let toggle = opener.clicked().then_some(egui::SetOpenCommand::Toggle);
+        // Asked open by `viewport <menu> [N]` (a script, a picture): once, as a click opens it.
+        let asked_open =
+            shell.header_menu.as_ref().is_some_and(|(pane, menu)| *pane == head.pane && menu == stop);
+        if asked_open {
+            shell.header_menu = None;
+        }
+        let toggle = if asked_open {
+            Some(egui::SetOpenCommand::Bool(true))
+        } else {
+            opener.clicked().then_some(egui::SetOpenCommand::Toggle)
+        };
         if opener.clicked() {
             activate(asked, head);
         }
