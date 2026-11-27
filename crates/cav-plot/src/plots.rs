@@ -2084,6 +2084,93 @@ mod tests {
     }
 
     #[test]
+    fn a_fast_signal_is_not_aliased_by_the_plot() {
+        use cav_engine::{ChannelName, Command, Query, Reply};
+        // D2 (`docs/slices/S20.md` §4). Criterion, written before measuring: the signal plot of
+        // a 5 Hz oscillator shows every shot: its points are the engine's shots, bit for bit,
+        // not a resampling of them. Control: a line with fewer points than shots is told from
+        // it. Past the plot's stated cap ([`MAX_POINTS`]) the series is thinned, and then every
+        // point drawn is still a shot and the least and the greatest of each stretch are kept
+        // (control: taking every k-th shot loses a peak).
+        //
+        // (A 5 Hz body read once every 2 s is aliased by the instrument's own shots: that is
+        // the physics, and the periodogram's folded comb says it. The plot adds none of its own.)
+        let mut scene = cav_sim::dev::comb();
+        scene.duration = 60.0;
+        let cav_sim::Motion::Linear { frequency, .. } = &mut scene.bodies[0].motion else {
+            panic!("the comb's body is a linear oscillator");
+        };
+        *frequency = 5.0;
+        let towers = scene.array.towers.len();
+        let mut engine = Engine::new();
+        engine.set_patience(std::time::Duration::from_secs(120));
+        engine.apply(Command::load(scene)).unwrap();
+        assert!(engine.settle(std::time::Duration::from_secs(120)), "the signal did not arrive");
+        let query =
+            Query::Signal { tower: 1, channel: ChannelName::Gradiometer, span: None, compared: false };
+        let Ok(Reply::Signal(signal)) = engine.query(&query) else { panic!("no signal") };
+        let shots: Vec<(u64, u64)> = signal
+            .times
+            .iter()
+            .zip(&signal.values)
+            .zip(&signal.taken)
+            .filter(|(_, taken)| **taken)
+            .map(|((t, v), _)| (t.to_bits(), v.to_bits()))
+            .collect();
+        assert!(shots.len() >= 25, "{} shots", shots.len());
+        let bits =
+            |line: &[(f64, f64)]| line.iter().map(|(x, y)| (x.to_bits(), y.to_bits())).collect::<Vec<_>>();
+        let drawn = runs(&signal.times, &signal.values, &signal.taken).concat();
+        assert_eq!(bits(&drawn), shots, "the plot's points are the engine's shots");
+        // The shots do move: a flat line would pass the comparison above for the wrong reason.
+        let (least, most) = signal
+            .values
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| (lo.min(*v), hi.max(*v)));
+        assert!(most - least > 0.0, "the oscillator moves the reading");
+        // The plot as built joins that many points for every tower, and no more.
+        let subject = Subject::new(0, PaneContent::Signal);
+        let style = Style::screen();
+        let plot = build(&engine, &subject, &style, &crate::fonts::Outlines, [900.0, 400.0]).expect("a plot");
+        assert_eq!(plot.drawn.points, towers * shots.len(), "every shot of every tower");
+        // Control: a resampling (every other shot) has fewer points than shots, and is told.
+        let fewer: Vec<(f64, f64)> = drawn.iter().copied().step_by(2).collect();
+        assert!(fewer.len() < shots.len() && bits(&fewer) != shots);
+
+        // Past the cap: thinned to the extremes of each stretch, every point still a shot.
+        let n = 5 * MAX_POINTS;
+        let x: Vec<f64> = (0..n).map(|k| 0.01 * k as f64).collect();
+        let mut y: Vec<f64> = x.iter().map(|t| (std::f64::consts::TAU * 5.0 * t).sin()).collect();
+        // One shot far above the rest and one far below, off any stride of ten.
+        (y[4321], y[7003]) = (9.0, -9.0);
+        let taken = vec![true; n];
+        let thin = runs(&x, &y, &taken).concat();
+        assert!(thin.len() <= MAX_POINTS + 2 && thin.len() >= MAX_POINTS / 2, "{} points", thin.len());
+        let all: std::collections::HashSet<(u64, u64)> =
+            x.iter().zip(&y).map(|(a, b)| (a.to_bits(), b.to_bits())).collect();
+        assert!(bits(&thin).iter().all(|point| all.contains(point)), "a drawn point that is no shot");
+        assert!(thin.contains(&(x[4321], 9.0)) && thin.contains(&(x[7003], -9.0)), "a peak was lost");
+        // Each stretch's own least and greatest are there too: the band of the sine is whole.
+        let stretch = (2 * n).div_ceil(MAX_POINTS);
+        for start in (0..n).step_by(stretch) {
+            let within = &y[start..(start + stretch).min(n)];
+            let (lo, hi) = within
+                .iter()
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| (lo.min(*v), hi.max(*v)));
+            let index = |t: f64| (t / 0.01).round() as usize;
+            let kept: Vec<f64> = thin
+                .iter()
+                .filter(|(t, _)| (start..start + stretch).contains(&index(*t)))
+                .map(|p| p.1)
+                .collect();
+            assert!(kept.contains(&lo) && kept.contains(&hi), "stretch at {start}: {kept:?} of {lo}..{hi}");
+        }
+        // Control: every tenth shot is as few points and loses both peaks.
+        let strided: Vec<f64> = y.iter().copied().step_by(stretch).collect();
+        assert!(!strided.contains(&9.0) && !strided.contains(&-9.0));
+    }
+
+    #[test]
     fn axes_hold_their_data_and_series_are_thinned_without_losing_peaks() {
         let axis = Axis::linear([3.0, -1.0, 2.0]);
         assert!(axis.lo < -1.0 && axis.hi > 3.0 && (axis.hi - axis.lo - 4.0 * 14.0 / 12.0).abs() < 1e-12);

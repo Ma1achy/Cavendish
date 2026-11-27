@@ -146,9 +146,6 @@ pub const BODY_SRGB: [u8; 3] = [0xe8, 0xe2, 0xd0];
 /// The smallest radius a body is drawn at, metres: a point mass has none of its own.
 pub const BODY_RADIUS: f64 = 0.14;
 
-/// How many straight pieces a body's path is drawn in.
-pub const TRAIL_PIECES: u32 = 96;
-
 /// Tower `n`'s colour (from 0; the five colours repeat) in the dark styles, `[red, green, blue]`
 /// as sRGB bytes.
 #[must_use]
@@ -222,6 +219,16 @@ pub fn decimation(scene: &SceneSpec) -> Vec<String> {
     let step = mark_step(tallest);
     if step > 1.0 {
         notes.push(format!("tower ticks every {step} m"));
+    }
+    // A body's path that met its cap of pieces is drawn coarser than its bound (`crate::path`).
+    let pieces = crate::path::allowance(scene);
+    match crate::path::capped(scene).as_slice() {
+        [] => {}
+        [one] => notes.push(format!("the path of `{one}` is drawn coarsely: {pieces} pieces, its cap")),
+        many => notes.push(format!(
+            "the paths of {} bodies are drawn coarsely: {pieces} pieces each, their cap",
+            many.len()
+        )),
     }
     notes
 }
@@ -535,6 +542,7 @@ pub fn drawables_hiding(
     }
 
     let gravity = scene.array.instrument.gravity;
+    let path_pieces = crate::path::allowance(scene);
     for (n, body) in scene.bodies.iter().enumerate() {
         if hidden.contains(&body.label) {
             continue;
@@ -544,15 +552,14 @@ pub fn drawables_hiding(
         let radius = body.radius.max(BODY_RADIUS);
         let (from, until) = body.exists();
         let colour = linear(if selected { palette.selection } else { palette.body }, 1.0);
-        // Its path over the timeline, if it has one: a count of pieces, whatever the numbers.
-        if body.motion.frequency(gravity).is_some() || !body.motion.breaks().is_empty() {
+        // Its path, if it has one: cut by its curvature while the body exists, a repeating
+        // motion over one period, within a cap of pieces (`crate::path`; S20: it was 96 pieces
+        // across the timeline, which drew a quick circle as a square).
+        if crate::path::has_path(body, gravity) {
             let trail = linear(palette.trail, 1.0);
-            let point = |k: u32| {
-                let t = scene.duration.min(1.0e4) * f64::from(k) / f64::from(TRAIL_PIECES);
-                Vec3::from_array(body.motion.position(t, gravity))
-            };
-            for k in 0..TRAIL_PIECES {
-                b.line(point(k), point(k + 1), 1.0, trail);
+            let path = crate::path::path(body, gravity, scene.duration, path_pieces);
+            for piece in path.knots.windows(2) {
+                b.line(piece[0].at, piece[1].at, 1.0, trail);
             }
         }
         // A body that does not exist at this moment is an outline of where it will be.
@@ -730,10 +737,13 @@ mod tests {
             );
             assert_eq!(body(&d).len(), 8 * 16 * 3, "a sphere of 128 faces");
         }
-        // Its path is drawn too: the void's lines, and one piece of trail for each step.
+        // Its path is drawn too: the void's lines, and the pass's one. (Rewritten in S20,
+        // TASK-S20-08: this expected 96 lines, the pieces the old rule cut every path into
+        // across the timeline. A path is now cut by its curvature, and a straight pass from its
+        // start to its stop is one straight line.)
         let lines =
             |scene: &SceneSpec| drawables_at(scene, DrawStyle::Shaded, None, Vec3::ZERO, 0.0).lines.len();
-        assert_eq!(lines(&scene) - lines(&dev::void()), TRAIL_PIECES as usize);
+        assert_eq!(lines(&scene) - lines(&dev::void()), 1);
         // A mass at rest has no trail; selected, it has rings round it and the selection's colour.
         let point = dev::point();
         assert_eq!(lines(&point), lines(&SceneSpec::room()));
@@ -750,6 +760,211 @@ mod tests {
         // Control: with no bodies there is no such part.
         let none = drawables(&dev::void(), DrawStyle::Shaded, None, Vec3::ZERO);
         assert!(!none.parts.iter().any(|(p, ..)| matches!(p, Part::Body(_))));
+    }
+
+    /// The rule a path was drawn by until S20, kept for the control arm of
+    /// `a_drawn_path_follows_its_motion`: 96 straight pieces across the timeline (at most
+    /// 10⁴ s of it), whatever the motion. The pieces' knots.
+    fn old_rule(motion: &cav_sim::Motion, gravity: f64, duration: f64) -> Vec<crate::path::Knot> {
+        (0..=96)
+            .map(|k| {
+                let t = duration.min(1.0e4) * f64::from(k) / 96.0;
+                crate::path::Knot { t, at: Vec3::from_array(motion.position(t, gravity)) }
+            })
+            .collect()
+    }
+
+    /// The largest sag of the chords between `knots`: how far the path's point at the middle of
+    /// each piece's time is from the piece's chord, metres.
+    fn midpoint_sag(motion: &cav_sim::Motion, gravity: f64, knots: &[crate::path::Knot]) -> f64 {
+        knots
+            .windows(2)
+            .map(|w| {
+                let middle = Vec3::from_array(motion.position(0.5 * (w[0].t + w[1].t), gravity));
+                let chord = w[1].at - w[0].at;
+                let along = if chord.dot(chord) > 0.0 {
+                    ((middle - w[0].at).dot(chord) / chord.dot(chord)).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                (middle - (w[0].at + chord * along)).length()
+            })
+            .fold(0.0, f64::max)
+    }
+
+    #[test]
+    fn a_drawn_path_follows_its_motion() {
+        use crate::path;
+        use cav_sim::{BodySpec, Motion};
+        // D1 (`docs/slices/S20.md` §4). Criterion, written before measuring: a circle of radius
+        // 2 m at 0.01, 1 and 50 Hz over 12 s is drawn with every vertex on the path to 1e-9 m
+        // and every chord's sag at most 1 % of the radius; a body that appears at 3 s and
+        // vanishes at 5 s draws no line outside those times. Controls: the old rule (96 pieces
+        // across the timeline) has a sag of over 25 % of the radius at 50 Hz (the square); the
+        // count of lines stays under the cap.
+        let (radius, centre) = (2.0, [1.0, -1.0, 3.0]);
+        let ring = |frequency: f64| Motion::Circular {
+            centre,
+            u: [radius, 0.0, 0.0],
+            v: [0.0, radius, 0.0],
+            frequency,
+            phase: 0.0,
+        };
+        let scene_of = |body: BodySpec| {
+            let mut scene = dev::void();
+            scene.duration = 12.0;
+            scene.bodies = vec![body];
+            assert_eq!(scene.validate(), Ok(()));
+            scene
+        };
+        let gravity = dev::void().array.instrument.gravity;
+        let lines = |scene: &SceneSpec| drawables(scene, DrawStyle::Shaded, None, Vec3::ZERO).lines;
+        let bare = lines(&dev::void()).len();
+        for frequency in [0.01, 1.0, 50.0] {
+            let motion = ring(frequency);
+            let scene = scene_of(BodySpec::moving("ring", 10.0, motion.clone()));
+            let drawn = path::path(&scene.bodies[0], gravity, scene.duration, path::allowance(&scene));
+            assert!(!drawn.capped, "{frequency} Hz: {} pieces", drawn.pieces());
+            // Every vertex on the path: where the motion is at its time, and on the circle.
+            let mut off: f64 = 0.0;
+            for knot in &drawn.knots {
+                assert!((0.0..=12.0).contains(&knot.t), "{frequency} Hz: a vertex at {} s", knot.t);
+                let on = Vec3::from_array(motion.position(knot.t, gravity));
+                let from_centre = (knot.at - Vec3::from_array(centre)).length();
+                off = off.max((knot.at - on).length()).max((from_centre - radius).abs());
+            }
+            assert!(off <= 1e-9, "{frequency} Hz: a vertex {off} m off the path");
+            // Every chord's sag: for a circle, r·(1 − cos(Δθ/2)) exactly; and as measured.
+            let exact = drawn
+                .knots
+                .windows(2)
+                .map(|w| radius * (1.0 - (std::f64::consts::PI * frequency * (w[1].t - w[0].t)).cos()))
+                .fold(0.0, f64::max);
+            let measured = midpoint_sag(&motion, gravity, &drawn.knots);
+            assert!(exact <= 0.01 * radius, "{frequency} Hz: a sag of {exact} m");
+            assert!((measured - exact).abs() < 1e-9, "{measured} against {exact}");
+            // What is drawn: the whole circle once when a turn fits in the timeline, else the
+            // arc the timeline covers.
+            let turned = frequency * (drawn.knots[drawn.pieces()].t - drawn.knots[0].t);
+            assert!((turned - (frequency * 12.0).min(1.0)).abs() < 1e-12, "{frequency} Hz: {turned} turns");
+            // And these pieces are the lines the scene draws for it.
+            let all = lines(&scene);
+            assert_eq!(all.len() - bare, drawn.pieces(), "{frequency} Hz");
+            for knot in &drawn.knots {
+                let at = knot.at.to_f32();
+                assert!(all.iter().any(|l| l.a == at || l.b == at), "{frequency} Hz: a vertex not drawn");
+            }
+            // Controls: the old rule at 50 Hz is the square; the lines are under the cap.
+            let old = midpoint_sag(&motion, gravity, &old_rule(&motion, gravity, 12.0));
+            println!(
+                "{frequency} Hz: {} pieces, sag {:.4} % of the radius (the old rule: 96 pieces, {:.2} %)",
+                drawn.pieces(),
+                100.0 * exact / radius,
+                100.0 * old / radius
+            );
+            if frequency == 50.0 {
+                assert!(old > 0.25 * radius, "control: the old rule's sag is {old} m");
+            }
+            assert!(drawn.pieces() <= path::PATH_PIECES && drawn.pieces() >= 4);
+        }
+        // A body that appears at 3 s and vanishes at 5 s draws nothing outside: on a slow
+        // circle, the arc of those two seconds; on a quick one, one turn from when it appears.
+        for (frequency, until) in [(0.01, 5.0), (1.0, 4.0), (50.0, 3.02)] {
+            let body = BodySpec {
+                appears: Some(3.0),
+                vanishes: Some(5.0),
+                ..BodySpec::moving("ring", 10.0, ring(frequency))
+            };
+            let scene = scene_of(body);
+            let drawn = path::path(&scene.bodies[0], gravity, scene.duration, path::allowance(&scene));
+            let times: Vec<f64> = drawn.knots.iter().map(|k| k.t).collect();
+            assert!(times.iter().all(|t| (3.0..=5.0).contains(t)), "{frequency} Hz: {times:?}");
+            assert_eq!(times[0], 3.0);
+            assert!((times[times.len() - 1] - until).abs() < 1e-12, "{frequency} Hz: to {:?}", times.last());
+            // (Not yet there at the playhead, the body itself is an outline of lines: the same
+            // body at rest draws those and no path.)
+            let mut still = scene.clone();
+            still.bodies[0].motion = Motion::Static { position: centre };
+            assert_eq!(lines(&scene).len() - lines(&still).len(), drawn.pieces());
+        }
+        // A body that is never there in the timeline has no path at all.
+        let late = scene_of(BodySpec { appears: Some(20.0), ..BodySpec::moving("ring", 10.0, ring(1.0)) });
+        let mut still = late.clone();
+        still.bodies[0].motion = Motion::Static { position: centre };
+        assert_eq!(lines(&late).len(), lines(&still).len());
+        // The cap: a thousand quick circles share the scene's pieces and stay under them; a
+        // path that cannot be drawn within its share is reported, never silently coarse.
+        let mut crowd = dev::void();
+        crowd.duration = 12.0;
+        crowd.bodies = (0..1000).map(|n| BodySpec::moving(&format!("ring {n}"), 10.0, ring(50.0))).collect();
+        assert_eq!(path::allowance(&crowd), path::SCENE_PATH_PIECES / 1000);
+        let drawn = lines(&crowd).len() - bare;
+        assert!((1000 * 16..=path::SCENE_PATH_PIECES).contains(&drawn), "{drawn} lines");
+        assert!(decimation(&crowd).is_empty(), "each fits its share: {:?}", decimation(&crowd));
+        let buzz = |tilt_frequency: f64| Motion::Sphere {
+            centre,
+            radius: 1.5,
+            tilt: 60.0,
+            tilt_frequency,
+            spin_frequency: 0.073 * tilt_frequency,
+        };
+        let mut scene = scene_of(BodySpec::moving("buzz", 10.0, buzz(300.0)));
+        assert_eq!(lines(&scene).len() - bare, path::PATH_PIECES, "drawn at its cap");
+        assert_eq!(decimation(&scene), ["the path of `buzz` is drawn coarsely: 4096 pieces, its cap"]);
+        // Control: the same body slow enough is drawn in full, and nothing is reported.
+        scene.bodies[0].motion = buzz(0.3);
+        assert!(lines(&scene).len() - bare < path::PATH_PIECES);
+        assert!(decimation(&scene).is_empty());
+    }
+
+    #[test]
+    fn a_path_of_ten_thousand_periods_is_built_within_its_cap() {
+        use crate::path;
+        use cav_sim::Motion;
+        // S20 §6 (recorded, not gated): the time to cut the path of a body that goes round 10⁴
+        // times in the timeline, within the cap of pieces. Two cases: a circle (one period is
+        // drawn), and a motion that never repeats (it meets its cap). The times are printed;
+        // the count of pieces is what is held.
+        let gravity = 9.81;
+        let ring = Motion::Circular {
+            centre: [0.0; 3],
+            u: [2.0, 0.0, 0.0],
+            v: [0.0, 2.0, 0.0],
+            frequency: 1000.0,
+            phase: 0.0,
+        };
+        let buzz = Motion::Sphere {
+            centre: [0.0; 3],
+            radius: 1.5,
+            tilt: 60.0,
+            tilt_frequency: 1000.0,
+            spin_frequency: 0.37,
+        };
+        for (name, motion, capped) in [("a circle", ring, false), ("a forced sphere", buzz, true)] {
+            let body = cav_sim::BodySpec::moving("b", 1.0, motion);
+            let build = || path::path(&body, gravity, 10.0, path::PATH_PIECES);
+            let drawn = build();
+            assert_eq!(drawn.capped, capped, "{name}");
+            assert!(
+                drawn.pieces() >= 16 && drawn.pieces() <= path::PATH_PIECES,
+                "{name}: {}",
+                drawn.pieces()
+            );
+            // The median of 21 builds.
+            let mut times: Vec<f64> = (0..21)
+                .map(|_| {
+                    let started = std::time::Instant::now();
+                    std::hint::black_box(build());
+                    started.elapsed().as_secs_f64()
+                })
+                .collect();
+            times.sort_by(f64::total_cmp);
+            println!(
+                "path of 10^4 periods, {name}: {} pieces in {:.1} µs (the budget: 2000 µs)",
+                drawn.pieces(),
+                1.0e6 * times[10]
+            );
+        }
     }
 
     #[test]
