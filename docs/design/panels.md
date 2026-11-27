@@ -108,13 +108,14 @@ look):
   lead · Sphere" with a ⋮ to move it up or down or remove it, and "+ Add part"), Motion (Kind,
   then its numbers), Lifetime (appears and vanishes behind their boxes), Info. Every card has a ⋮.
 - **A point mass's Material card is called Mass**: it has no material, only its mass.
-- **Lifetime is open at first** (until S20: see below), not folded as drawn: S18's E6 asks every field's editor to be in
-  sight, and a card folded at first hides two.
-- **The inspector's width is fixed** (352 pt at first, still draggable): its contents are drawn
+- **Lifetime is open at first** (until S20: see below), not folded as drawn: S18's E6 asks every
+  field's editor to be in sight, and a card folded at first hides two.
+- **The inspector's width is fixed** (352 pt at first, 320 since S20; still draggable): its
+  contents are drawn
   in a child of the panel's width and cut to it, so it does not jump with the selection; rows fit
   that width (drop-downs cut their words).
-- **Targets are 24 pt a side** (20 since S20: see below) in both panels (rows, boxes, ticks, drop-downs, eye, lock, +, ⋮),
-  and every text colour is held to 4.5:1 on every ground it is drawn on (`theme::text_pairs`).
+- **Targets are 24 pt a side** (20 since S20: see below) in both panels (rows, boxes, ticks,
+  drop-downs, eye, lock, +, ⋮), and every text colour is held to 4.5:1 on every ground it is drawn on (`theme::text_pairs`).
 - **Not built, and not drawn as built** (S19's second review): "drag a letter to scrub" (a
   number is dragged in its box, not by its axis letter) and Compare "under Advanced" (it stays
   where S18 put it). Both are S20's, with the dense panels (`docs/design/workspace.md`).
@@ -129,8 +130,8 @@ review" above:
 - **Targets are 20 pt a side** (`theme::HIT`), not 24: rows, boxes, ticks, drop-downs, eye, lock,
   `+`, ⋮. Icon buttons are 22 (`theme::ICON`), the grid is 4 (`theme::GRID`), text is 12 pt (11
   small, 12 monospace). Tree rows touch (a pitch of 20); the inspector's rows are 2 pt apart (a
-  pitch of 22), card headers 22, margins and the gap between cards 4. Every size a panel uses is
-  the theme's.
+  pitch of 22: `theme::ROW_GAP`), card headers 22 (`theme::HEADER`), margins and the gap between
+  cards 4. Every size a panel uses is the theme's.
 - **The inspector is 320 pt wide** at first (352 before), its label column a third of it (40 %
   before). A number is monospace and right-aligned in a box that fills its column, its unit a
   muted suffix in a place of its own, so the boxes of a card are one width; a drop-down and a text
@@ -161,12 +162,13 @@ review" above:
   icon buttons (`[` and `]` step a shot in the timeline, Shift a cadence cycle, Alt the ends;
   Space plays anywhere), what playing does at the end (loop, stop at the end, run on: an icon
   button with a menu), the speed (0.1× to 10×), `t [time] / [duration] s` and `shot [n] / count`,
-  the time and the shot typed to seek and the duration typed to set it (the Scene card's edit). The "play" and "rewind" word buttons are gone. A step is
-  to a readout of the engine's shots (the selected tower's, else tower 1's). The shots' count
-  and 2T stand at the row's right while there is room, and in the title's tooltip always.
+  the time and the shot typed to seek and the duration typed to set it (the Scene card's edit).
+  The "play" and "rewind" word buttons are gone. A step is to a readout of the engine's shots
+  (the selected tower's, else tower 1's). The shots' count and 2T stand at the row's right while
+  there is room, and in the title's tooltip always.
 - **Run on** grows the scene's duration by its length when the run began, each time the end is
-  reached, as one edit a run; at the longest timeline (10⁶ s) playing stops and the status bar
-  says so. The live rolling window is not this (TASK-S22-01).
+  reached, as one edit a run; at the longest timeline (10⁶ s) playing stops with a warning in
+  the log (counted in the status bar). The live rolling window is not this (TASK-S22-01).
 - "As fast as it runs" (the design's §5) is not offered: playing moves a playhead over a signal
   already computed, so there is no run to be as fast as.
 

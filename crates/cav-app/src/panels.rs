@@ -1801,6 +1801,17 @@ fn empty_slot(shell: &mut Shell, ui: &mut egui::Ui, asked: &mut Asked, pane: usi
     }
 }
 
+/// Where a viewport popped out of `slot` first floats in `figure`: over its own place, a
+/// little in from the corner (clear of the tool palette at the canvas's top left), at a size
+/// that leaves the window in sight, and inside the figure. Points.
+pub(crate) fn float_frame(slot: Rect, figure: Rect) -> Rect {
+    let size = slot.size().max(MIN_FLOAT).min(figure.size() * 0.6);
+    // Inside the figure while it fits: a viewport at the figure's right or bottom edge does not
+    // open over the side panel or the timeline.
+    let most = (figure.max - size).max(figure.min);
+    Rect::from_min_size((slot.min + vec2(56.0, 24.0)).min(most), size)
+}
+
 /// A viewport floating over the window (`viewport pop-out`): a frame whose header is the bar it
 /// is dragged by (its pop-out button docks it) and a corner to resize it, drawn above the
 /// panels. Where it is and how big is the window's state ([`Shell::floating`]); the engine
@@ -1950,6 +1961,10 @@ fn figure(shell: &mut Shell, ui: &mut egui::Ui, surface: &mut dyn PaneSurface) {
         };
         shell.layout.slots.push(slot);
         shell.layout.canvases.push(Rect::NOTHING);
+        // Popped out before any frame was drawn: placed now, as a pop-out in the window is.
+        if let Some(frame) = shell.floating.get_mut(&labels[pane]).filter(|frame| !frame.is_positive()) {
+            *frame = float_frame(slot, area);
+        }
         match shell.floating.get(&labels[pane]).copied().filter(|_| !shell.maximised) {
             Some(frame) => {
                 shell.layout.panes.push(frame);

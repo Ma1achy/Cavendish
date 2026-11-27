@@ -57,7 +57,9 @@ from the canvas's corner.
 2. A menu's rows are actions too: the camera menu is the actions whose `menu` is one of
    `header::CAMERA_MENUS`, the overlays popover those of `header::OVERLAY_MENUS`. An action added
    to `View/Overlay` in the table is in the popover with no code; which row is the one chosen is
-   worked out by parsing its line and comparing it with the view.
+   worked out by parsing its line and comparing it with the view. A script opens a menu as a
+   click does with `viewport type|camera|overlays [N]` (`Shell::viewport_command`: how a picture
+   made with no window shows one open); a new menu gets its word there.
 3. The keyboard needs nothing more: the active viewport's header is the scope `viewport/header`,
    whose stops are `CONTROLS` in that order whatever the viewport shows (a stop that does not
    apply is disabled, never left out). Push a `Stop` for yours.

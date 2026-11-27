@@ -52,8 +52,13 @@ console, the command line or an agent must be the same `Command`.
 
 9. An action in `crates/cav-app/ui/actions.ron` (its line, its menu, its keys and where they
    work, when it can run): the menu bar, the palette (`Ctrl+K`), the `?` sheet and the keys all
-   read that table, so there is nothing else to wire. A button via `button_row` in `panels.rs`
-   runs a console line too.
+   read that table, so there is nothing else to wire. A button of a panel runs a console line
+   too (`Shell::run`; a viewport's pushes its line to `Asked::lines`) and records where it is in
+   `Layout::buttons`, so that a test can find it.
+10. A word about the window only (where a viewport floats, where the tool palette stands, how
+    fast the playhead plays: not the scene's, never journalled) is not an engine command: it is
+    an entry of `APP_COMMANDS` and an arm of `Shell::run_app_command`
+    (`crates/cav-app/src/shell.rs`), and its action is written the same way.
 
 ## Tests that then hold it
 

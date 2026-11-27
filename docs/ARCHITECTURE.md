@@ -106,7 +106,7 @@ that):
 | Files: `cav-engine` `files/native.rs` / `files/web.rs` | written and read where named (`files::capture` is the test double: writes kept as a page keeps them) | kept as downloads, which the app hands to the browser after each frame (a link's behind a click); reads by path and folders (bundles) refused |
 | The figure exporter's pixels: `cav-plot` `figure/studio.rs` / `studio_web.rs` | its own device | none: PNG and the renderer's view refused, vector figures made |
 | Around each frame: `cav-app` `platform/native.rs` / `platform/web.rs` (`bin/cav-web.rs` calls `platform::start`) | nothing | eframe's `WebRunner` on the page's canvas, `#exec=` in the address (`address.rs`: capped, names made safe), downloads, the Web Workers, a panic's message on the page |
-| The window: `cav-app` `window/native.rs` / `window/web.rs` (`main.rs` calls `window::main`) | eframe's native window, `--exec`, `--screenshot` | none: says so |
+| The window: `cav-app` `window/native.rs` / `window/web.rs` (`main.rs` calls `window::main`) | eframe's native window, `--exec`, `--screenshot`, `--measure` (S20's budgets, printed with no window and no GPU) | none: says so |
 
 What stays the same without a seam: `web_time::Instant` is std's `Instant` natively and
 `performance.now()` in a page, so shipped code reads the clock through it (std's panics on wasm);
@@ -124,8 +124,8 @@ person asked for goes through `cav_engine::files`; code that must not run in a p
 The window's *what and where* is data, loaded and checked like scenes: `cav-app/ui/actions.ron`
 (the seven big scopes in Tab order, the menus, every action with its console line, keys, scope and
 when it can run), `ui/tools.ron` (the tool palette: the tools, and where a tool's flyout takes
-its variants from), `ui/layouts.ron` (the layouts), and
-`scenes/starters.ron` (what Add adds, in `cav-sim` so the CLI and MCP add the same). Code holds the
+its variants from), `ui/layouts.ron` (the layouts), `ui/camera.ron` (the first-person camera's
+settings), and `scenes/starters.ron` (what Add adds, in `cav-sim` so the CLI and MCP add the same). Code holds the
 mechanisms: the router, the widgets, the gizmo's geometry.
 
 Each frame the panels draw and *register* every control in a `FocusTree` (`keyboard.rs`):
@@ -146,9 +146,10 @@ view state, set by `ViewCommand::Mosaic` (journalled and replayed, never an edit
 number is its label's rank in the alphabet among those present, and its camera and content go
 with the label through every split, close and swap. The window lays the figure out from
 `Mosaic::rects`, and keeps for itself only what is not the session's: a splitter's drag while it
-lasts (one command when it ends), which viewport is maximised, and which float over the window
-and where (`Shell::floating`: a floating viewport's place in the mosaic stays, empty, with a
-dock button). The keyboard walks the viewports as stops of one scope, `viewport/mosaic`, in the
+lasts (one command when it ends), whether the active viewport is maximised (`Shell::maximised`),
+and which float over the window and where (`Shell::floating`: a frame inside the window, not a
+window of the system's; a floating viewport's place in the mosaic stays, empty, with a dock
+button). The keyboard walks the viewports as stops of one scope, `viewport/mosaic`, in the
 labels' order, so neither a swap nor a pop-out changes Tab's or the arrows' order.
 
 **The viewport header, the gizmo and the status bar (S20).** Each viewport has one compact row
@@ -157,8 +158,10 @@ along its top (`cav-app/src/header.rs`, `docs/design/workspace.md` §2): the vie
 "show all", and at the right a warning dot, maximise, pop out and close. It is made from data
 (`header::CONTROLS`; the menus' rows are actions of `ui/actions.ron`) and every control runs a
 console line addressed to its own viewport (`show periodogram @3`). A header dragged onto
-another viewport swaps the two (the engine's `swap`); a floating viewport's header is the bar it
-is dragged by. The picture is drawn under it: `Layout::panes` is the viewport, `Layout::canvases`
+another viewport swaps the two (the engine's `swap`), a double click on it maximises, and a
+floating viewport's header is the bar it is dragged by. `viewport type|camera|overlays [N]`
+opens that menu of a header as a click does (`Shell::header_menu`, for scripts and pictures).
+The picture is drawn under it: `Layout::panes` is the viewport, `Layout::canvases`
 the canvas, and pointer arithmetic is the canvas's. A scene's canvas has a navigation gizmo in
 its top right corner (`cav-app/src/navgizmo.rs`): the view's own axes, an end clicked to look
 from it (the named views), a drag to orbit by the view's own `Orbit` command, and zoom, pan and
@@ -247,25 +250,26 @@ or runs on (`Shell::run_on_past`): the duration grows by whole blocks of its len
 first reached the end, each extension a `Set` that continues the one before (the engine folds a
 run of sets of one path into one step of undo whatever seeks come between), up to
 `cav_sim::spec::limits::DURATION`, where playing stops and the log says so. Each extension is an
-edit, so the signal is stale until the forward worker has computed it for the longer timeline. A step lands on a readout of the engine's own shots
-(`Engine::shots`; `transport::place` finds the neighbours by bisection and makes no time of its
-own), those of the selected tower, else the first's; with Shift it moves one mean cadence cycle;
-a held button repeats on the keyboard's clock. `seek start` and `seek end` are the engine's
+edit, so the signal is stale until the forward worker has computed it for the longer timeline. A
+step lands on a readout of the engine's own shots (`Engine::shots`; `transport::place` finds the
+neighbours by bisection and makes no time of its own), those of the selected tower, else the
+first's; with Shift it moves one mean cadence cycle; a held button repeats on the keyboard's
+clock. `seek start` and `seek end` are the engine's
 console's (read against the scene, journalled as the seek to that time); `step` and `speed` are
 the window's, as `end` is. The keyboard's `timeline` scope is `transport::CONTROLS` in that
 order, then the scrubber. What was drawn is in `Layout::transport`.
 
-Every edit, from the viewport, a panel, a key or the palette, ends in one `Command` through
-`Engine::apply`: the gizmo, the transform session and the inspector's field all issue the same
-`Set` of a body's anchor; a run of them (a drag, a held key, a typed distance) is one undo whatever
-comes between its steps (seeks while the scene plays, camera moves: the engine keeps the run's
-path until another edit, Home included: the engine's private `run`), and a run that ends where it began leaves no step
-(`History::continued`). A transform session holds every key that is not a global; a global ends it
-cancelled first, and anything that takes the keyboard out of it (a click in a window, a drag in
-the view) ends it with its move kept. Camera
-moves are `ViewCommand`s, journalled and never undone, but for `Home`, whose `Edit::View` step
-undo takes back. The engine keeps the scene as last opened or saved (`Engine::baseline`) for a
-field's reset and the window's unsaved mark.
+Every edit, from a viewport, a panel, a key or the command palette, ends in one `Command`
+through `Engine::apply`: the Move tool's gizmo, the transform session and the inspector's field
+all issue the same `Set` of a body's anchor; a run of them (a drag, a held key, a typed distance)
+is one undo whatever comes between its steps (seeks while the scene plays, camera moves: the
+engine keeps the run's path until another edit, Home included: the engine's private `run`), and
+a run that ends where it began leaves no step (`History::continued`). A transform session holds
+every key that is not a global; a global ends it cancelled first, and anything that takes the
+keyboard out of it (a click in a window, a drag in the view) ends it with its move kept. Camera
+moves and changes of the mosaic are `ViewCommand`s, journalled and never undone, but for `Home`,
+whose `Edit::View` step undo takes back. The engine keeps the scene as last opened or saved
+(`Engine::baseline`) for a field's reset and the window's unsaved mark.
 
 ## Where each kind of thing lives
 
@@ -302,10 +306,10 @@ field's reset and the window's unsaved mark.
 | The scene tree (groups, folders, icons, eye and lock, status dots), the Readings tab and the Probe tab; the inspector's header, cards and Info card (`docs/design/panels.md`); the panels' sizes (`cav-app/src/theme.rs`, `docs/design/workspace.md` §0) | `cav-app/src/outliner.rs`, `cav-app/src/inspector.rs` | [the window](extending/a-tool-or-panel.md) |
 | An action: a menu item, a key, a palette entry; the big scopes' order | `cav-app/ui/actions.ron`, read by `cav-app/src/actions.rs`; drawn by `menus.rs`, `palette.rs`, `sheet.rs` | [the window](extending/a-tool-or-panel.md) |
 | The keyboard model: scopes, modes, the ring, the router, held keys | `cav-app/src/keyboard.rs` (pure logic, tested as a state machine); the frame registers into it from `panels.rs` and `editors.rs` | [the window](extending/a-tool-or-panel.md) |
-| A tool (Select, Move, Place, Probe), the gizmo, the transform session | `cav-app/ui/tools.ron`, `cav-app/src/tools.rs`; its pointer handling in `panels.rs` `viewport` | [the window](extending/a-tool-or-panel.md) |
+| A tool (Select, Move, Place, Probe), the gizmo, the transform session | `cav-app/ui/tools.ron`, `cav-app/src/tools.rs`; its pointer handling in `panels.rs` `canvas` | [the window](extending/a-tool-or-panel.md) |
 | A layout of the window | `cav-app/ui/layouts.ron`, `cav-app/src/layouts.rs` | [the window](extending/a-tool-or-panel.md) |
 | The mosaic of viewports: the grid of labels and its weights, split, close, swap, resize (pure data and functions) | `cav-sim/src/mosaic.rs` (`Mosaic`); held by the engine (`Engine::mosaic`, `ViewCommand::Mosaic`, views carried with their labels in `engine.rs` `set_mosaic`); `mosaic`, `split`, `close`, `swap` in `console.rs` | [a view or a layout](extending/a-view-or-a-layout.md) |
-| A viewport as drawn: its picture or plot, its pointer, its right-click menu; the splitters; a floating viewport and its empty place | `cav-app/src/panels.rs` (`viewport`, `splitters`, `floating_viewport`, `figure`); the window's own state in `shell.rs` (`Shell::floating`, `Shell::maximised`; `viewport <close\|swap\|pop-out\|dock>`) | [a view or a layout](extending/a-view-or-a-layout.md) |
+| A viewport as drawn: its picture or plot, its pointer, its right-click menu; the splitters; a floating viewport and its empty place | `cav-app/src/panels.rs` (`viewport`, `canvas`, `splitters`, `floating_viewport`, `figure`); the window's own state in `shell.rs` (`Shell::floating`, `Shell::maximised`; `viewport <close\|swap\|pop-out\|dock\|type\|camera\|overlays> [N]` in `Shell::viewport_command`) | [a view or a layout](extending/a-view-or-a-layout.md) |
 | The camera's arithmetic: frame, zoom toward the pointer, the first-person camera (look, eased movement) and its settings | `cav-app/src/camera.rs`, `cav-app/ui/camera.ron`; `ViewCommand::Camera` in `cav-engine/src/command.rs` | — |
 | A first-person session in the window (fly, walk, noclip): its keys, its frame, the pointer's capture, the marks in the canvas | `cav-app/src/first_person.rs`; the platform's half in `cav-app/src/platform/{native,web}.rs` (`capture`, `motion`, `capture_lost`) | — |
 | The physical camera's box: gravity, jump, step-up, sliding, swept collision (pure) | `cav-app/src/walk.rs` (`Walker`, `Occupancy`) | — |
@@ -331,6 +335,7 @@ field's reset and the window's unsaved mark.
 | Something that differs in a browser page (threads, files, the device, waiting) | one module per seam, listed under "The web build and its platform seams" | [the web build](extending/the-web-build.md) |
 | The web page itself, its build and its deployment | `crates/cav-app/web/` (`index.html`, `start.js`, `worker.js`), `cav-app/src/platform/web.rs`, `xtask/src/web.rs`, `.github/workflows/pages.yml` | [the web build](extending/the-web-build.md) |
 | The page's worker lane: which Web Worker holds which job, when a failed one is started again, when the page runs a job itself (never one a worker failed on) | `cav-app/src/lane.rs` (a state machine with native tests; `platform/web.rs` turns its actions into `Worker` calls) | — |
+| A slice's pictures, session and timings (`cargo xtask demo S20` writes `docs/slices/S20/`: release builds, no window, each run within a wall-clock limit); the workspace's budgets of `docs/slices/S20.md` §6 (`cav-app --measure`) | `xtask/src/demo.rs` (a function a slice: `s20`); `measure` in `cav-app/src/window/native.rs` | — |
 | Leftover processes: an agent's `cargo xtask` records itself (id, start, heartbeat) under `target/strays/`; `strays --stop` stops only what such a run started | `xtask/src/strays.rs`, `scripts/strays.ps1`, `scripts/strays.test.ps1` | — |
 
 ## Rules that hold everywhere

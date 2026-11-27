@@ -50,7 +50,8 @@ beside this (`docs/design/workspace.md` §5).
    `transport::AtEnd` (its word, its icon in `icons::at_end`) and an arm of `Shell::advance`.
 5. A field of the row that edits the scene (the duration) issues the command the inspector's
    editor of that path issues (`editors::command_for`), so the two are one edit in the journal
-   and in undo; what the scene cannot have is the engine's to refuse. `s20::each_transport_button_issues_its_command` walks `CONTROLS`.
+   and in undo; what the scene cannot have is the engine's to refuse.
+   `s20::each_transport_button_issues_its_command` walks `CONTROLS`.
 
 ## A tool
 
@@ -107,8 +108,8 @@ Tests that then hold it: `tools::tests::the_tool_strip_is_valid` (its action exi
 Add an entry to `crates/cav-app/ui/layouts.ron` (`id`, `label`, the console `lines` that arrange
 the figure, optionally the inspector's folding sections it opens, `unfold`, and `about`) and an
 action `layout <id>` with its key. How the figure's own arrangement is written (a `mosaic` line)
-is in [a-view-or-a-layout.md](a-view-or-a-layout.md). `the_layouts_are_valid` holds its lines (view commands only:
-never an edit, Home or a selection) and its action;
+is in [a-view-or-a-layout.md](a-view-or-a-layout.md). `the_layouts_are_valid` holds its lines
+(view commands only: never an edit, Home or a selection) and its action;
 `every_layout_keeps_every_scope_and_the_figure_uncovered` holds the window's rules in it.
 
 ## A panel or a window

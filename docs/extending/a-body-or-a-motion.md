@@ -35,7 +35,9 @@ motion must be a function of `t` alone, cheap, and smooth between the times it s
    quickest periods. A period that is too long draws the curve more than once (harmless); one
    that is too short, or a `fastest` that is too low, draws a path that is wrong or coarse
    without saying so, at high frequencies first. Both matches name every kind, so the compiler
-   asks.
+   asks. A path is at most `PATH_PIECES` pieces (a scene's, `SCENE_PATH_PIECES`); one that meets
+   its cap before its bound is named by `decimation()` in `crates/cav-render/src/scene.rs` and
+   shown by the viewport's warning dot.
 7. **Its name** in `Motion::kind()` (the outliner's word) and in `Motion::KINDS`; **what it
    starts as** in `Motion::starter()` (what the editor's drop-down gives when this kind is
    chosen: valid as it stands).
@@ -77,8 +79,9 @@ Nothing else needs touching: paths, `ls`, the schema, the editors, the console's
   can be: add yours to the list it expects.
 
 Followed end to end on 24 Nov 2026 with a made-up kind (`Bounce`, a body rising and falling as
-`|cos|`; the steps were seven then, before the path's): the steps compiled once `validate` and `variant` had their arms, and `quick`
-failed in one place the recipe had not named (the `ls` test above). Two things the first form of
+`|cos|`; the steps were seven then, before the path's): the steps compiled once `validate` and
+`variant` had their arms, and `quick` failed in one place the recipe had not named (the `ls`
+test above). Two things the first form of
 this recipe did not say, and now does: `breaks` had a catch-all arm, so nothing asked about the
 bounce's kinks; and nothing failed for the new kind being absent from the scene the path tests
 walk.
