@@ -29,3 +29,8 @@ from them (the ninth: Kay 1993 for `gradar-inference.md`, Wilson et al. 1973 for
 
 ## World octree (`s5-world-octree.md`)
 - [ ] Salmon 1990, Caltech PhD thesis; Hernquist 1987, Ap. J. Suppl. 64, 715
+
+## The paper's moving bodies with the real phase (`paper-flight-phase.md`)
+- [ ] Storey & Cohen-Tannoudji 1994, J. Phys. II France 4, 1999 (the first-order phase as the action along unperturbed paths; cited through Hogan et al. 2008 §5.2.1): https://doi.org/10.1051/jp2:1994103 (DOI from memory, not resolved)
+- [ ] Cheinet et al. 2008, IEEE Trans. Instrum. Meas. 57, 1141, the published version (the arXiv preprint physics/0510197 was read): https://doi.org/10.1109/TIM.2007.915148
+- [ ] Dimopoulos, Graham, Hogan & Kasevich 2008, Phys. Rev. D 78, 042003 (arXiv:0802.4098; the interferometer's suppressed response to short-wavelength gravity, Hogan et al.'s ref. [34])
