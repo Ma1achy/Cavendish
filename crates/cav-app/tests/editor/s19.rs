@@ -42,7 +42,7 @@ fn the_mouse_fly_outlives_the_pointer_leaving_while_held() {
     let mut rig = Rig::new();
     rig.shell.run("load point").unwrap();
     rig.frames(vec![vec![], vec![]]);
-    let at = rig.shell.layout().panes[0].center();
+    let at = rig.shell.layout().canvases[0].center();
     rig.frames(vec![vec![Event::PointerMoved(at)], vec![Rig::press(at, PointerButton::Secondary, true)]]);
     assert!(rig.shell.mouse_fly.is_some(), "flying");
     rig.frames(vec![vec![Event::PointerGone], vec![], vec![]]);
@@ -197,15 +197,19 @@ fn a_dropped_file_adds_a_body() {
 #[test]
 fn the_probe_tool_reads_where_it_is_clicked() {
     // S19 T1 through the window: with Probe in hand a click on a voxel body reads its cell (the
-    // card is drawn, the reading is `probe x y z`'s), and changes no scene. Control: the same
-    // click with Select in hand reads nothing.
+    // reading is drawn, and is `probe x y z`'s), and changes no scene. Control: the same click
+    // with Select in hand reads nothing.
+    // (S20 changed where it is drawn: the right panel's Probe tab, not a card over the figure,
+    // which S19's second review called out as minor 13. So this looks for the tab's reading where
+    // it looked for the button "probe card"; `s20::the_probe_reads_into_the_right_panel` holds
+    // the rest.)
     let click_body = |tool: &str| {
         let mut rig = Rig::new();
         rig.shell.run("load point").unwrap();
         rig.shell.run("add sphere at 2 2 1").unwrap();
         rig.shell.run(&format!("tool {tool}")).unwrap();
         rig.frames(vec![vec![], vec![]]);
-        let pane = rig.shell.layout().panes[0];
+        let pane = rig.shell.layout().canvases[0];
         let at = rig.shell.body_point(0, 1, pane.size()).expect("the sphere is in view") + pane.min.to_vec2();
         let (spec, depth) = (rig.shell.engine.spec().clone(), rig.shell.engine.depth());
         rig.click(at);
@@ -219,21 +223,28 @@ fn the_probe_tool_reads_where_it_is_clicked() {
     assert_eq!(cell.body, 1);
     assert!(probed.towers[0].phase.is_some_and(|p| p != 0.0), "its share of tower 1");
     assert_eq!(rig.shell.engine.probe(probed.point), probed, "the reading is the console's");
-    assert!(rig.shell.layout().button("probe card").is_some());
+    assert_eq!(rig.shell.layout().probe.as_ref(), Some(&probed), "drawn in the Probe tab");
+    assert!(rig.shell.layout().button("probe card").is_none());
     assert!(click_body("select").shell.probed.is_none(), "control: Select reads nothing");
 }
 
 #[test]
 fn the_tool_strip_floats_over_the_view_s_edge() {
-    // S19's panels (docs/design/panels.md): the tool strip is a bar over the view's left edge,
-    // not a column beside the tree, so the figure is as wide as the panels leave it. Control: the
-    // tree's panel ends where the figure begins (no column between).
+    // S19's panels (docs/design/panels.md): the tools are a bar over the view, not a column
+    // beside the tree, so the figure is as wide as the panels leave it. Control: the tree's panel
+    // ends where the figure begins (no column between).
+    // (S20, `docs/design/workspace.md` §3: the expectation changed. The strip was an area fixed
+    // at the figure's top left corner, 30 pt buttons; it is now the palette inside the active
+    // scene viewport's canvas, under that viewport's header, `theme::ICON` buttons, at the
+    // canvas's top left until it is dragged elsewhere. P1 in `s20.rs` holds the rest.)
     let rig = Rig::new();
     let layout = rig.shell.layout();
-    let strip = layout.button("tool strip").expect("drawn");
+    let strip = layout.button("tool palette").expect("drawn");
+    let canvas = layout.canvases[0];
     assert!(layout.figure.contains_rect(strip), "{strip:?} over the figure {:?}", layout.figure);
-    assert!(strip.left() - layout.figure.left() < 16.0, "at its left edge");
-    assert!(strip.width() < 64.0);
+    assert!(canvas.contains_rect(strip), "{strip:?} inside the canvas {canvas:?}, under the header");
+    assert!(strip.left() - canvas.left() < 16.0 && strip.top() - canvas.top() < 16.0, "at its corner");
+    assert!(strip.width() < 40.0, "one column of icon buttons: {}", strip.width());
     let tree = layout.panel("outliner").unwrap();
     assert!((layout.figure.left() - tree.right()).abs() < 2.0, "{tree:?} against {:?}", layout.figure);
 }
@@ -245,7 +256,11 @@ fn value_lefts(rig: &Rig) -> Vec<(String, f32)> {
         .layout()
         .editors
         .iter()
-        .filter(|(path, rect)| panel.contains_rect(*rect) && !path.ends_with(".label") && path != "name")
+        // (S20: but for the scene's description, which is a box as wide as its card under its
+        // name, not a value in the column: `docs/design/workspace.md` §0.)
+        .filter(|(path, rect)| {
+            panel.contains_rect(*rect) && !path.ends_with(".label") && path != "name" && path != "description"
+        })
         .map(|(path, rect)| (path.clone(), rect.left()))
         .collect()
 }
@@ -304,6 +319,10 @@ fn optional_properties_are_behind_checkboxes() {
     rig.shell.run("load point").unwrap();
     rig.shell.run("select body 1").unwrap();
     rig.frames(vec![vec![], vec![]]);
+    // (S20: the Lifetime card is folded at first on a body that is always there, so it is opened
+    // here by a click on its header before its boxes are looked for.)
+    rig.click_button("fold inspector/lifetime");
+    rig.frames(vec![vec![]]);
     assert!(rig.shell.layout().button("gate bodies[0].mass").is_none(), "control");
     rig.click_button("gate bodies[0].appears");
     rig.frames(vec![vec![]]);
@@ -348,28 +367,44 @@ fn drawn_targets(rig: &Rig, scope: &str) -> Vec<(String, egui::Rect)> {
     out
 }
 
+/// The selections whose side panels' targets are measured: a point mass, the scene, a tower and
+/// a body of materials with a part.
+pub(super) const SELECTIONS: [&str; 4] = ["select body 1", "select none", "select tower 1", "select body 2"];
+
+/// `point` with a steel cube that has a lead part, `selection` made, and every target the
+/// keyboard's tree has under the scene tree and the inspector, as drawn.
+pub(super) fn side_panel_targets(selection: &str) -> (Rig, Vec<(String, egui::Rect)>) {
+    let mut rig = Rig::new();
+    rig.shell.run("load point").unwrap();
+    rig.shell.add_starter("cube").unwrap();
+    rig.shell.run("set bodies[1].shape.material steel").unwrap();
+    rig.shell
+        .run(r#"add bodies[1].shape.parts {"mode":"Add","material":"lead","at":[0.45,0,0],"kind":{"Solid":{"shape":{"Sphere":{"radius":0.3}}}}}"#)
+        .unwrap();
+    rig.shell.run(selection).unwrap();
+    rig.frames(vec![vec![], vec![], vec![]]);
+    let mut targets = drawn_targets(&rig, "tree");
+    targets.extend(drawn_targets(&rig, "inspector"));
+    (rig, targets)
+}
+
 #[test]
 fn every_target_in_the_side_panels_is_big_enough() {
     // docs/design/panels.md and S19's review, I6: every control in the tree and the inspector
     // (rows, boxes, ticks, drop-downs, eye, lock, +, ⋮) is at least `theme::HIT` a side, for a
     // point mass, the scene, a tower and a body of materials with a part (its Parts card's ⋮,
     // "+ Add part" and the material drop-downs: the second review, minor 7), the body's eye and
-    // lock among them. Control: the same measure finds smaller targets where the rule is not
-    // asked of them (the menu bar's).
+    // lock among them.
+    //
+    // Rewritten for S20 (the owner's ruling of 25 Nov 2026 withdrew 24 pt on desktop:
+    // `docs/design/workspace.md` §0). `theme::HIT` is 20, read from the theme as before. The
+    // control was "the menu bar's targets are smaller", which is not so at 20; it is now a tick
+    // box of the same editors drawn with controls of half the theme's side, which the same
+    // measure finds too small: so the size is the theme's doing and the measure can fail. And
+    // the window is 900 high again, not the 1600 that rows of 24 needed.
     let least = cav_app::theme::HIT - 0.5;
-    for selection in ["select body 1", "select none", "select tower 1", "select body 2"] {
-        let mut rig = Rig::new();
-        rig.size = [1440, 1600];
-        rig.shell.run("load point").unwrap();
-        rig.shell.add_starter("cube").unwrap();
-        rig.shell.run("set bodies[1].shape.material steel").unwrap();
-        rig.shell
-            .run(r#"add bodies[1].shape.parts {"mode":"Add","material":"lead","at":[0.45,0,0],"kind":{"Solid":{"shape":{"Sphere":{"radius":0.3}}}}}"#)
-            .unwrap();
-        rig.shell.run(selection).unwrap();
-        rig.frames(vec![vec![], vec![], vec![]]);
-        let mut targets = drawn_targets(&rig, "tree");
-        targets.extend(drawn_targets(&rig, "inspector"));
+    for selection in SELECTIONS {
+        let (_, targets) = side_panel_targets(selection);
         assert!(targets.len() >= 12, "{selection}: {} targets", targets.len());
         assert!(targets.iter().any(|(id, _)| id.ends_with("/eye")), "the eye is measured");
         if selection == "select body 2" {
@@ -386,9 +421,22 @@ fn every_target_in_the_side_panels_is_big_enough() {
                 rect.height()
             );
         }
-        let small = drawn_targets(&rig, "top-bar").into_iter().filter(|(_, r)| r.height() < least).count();
-        assert!(small > 0, "control: the menu bar's are smaller");
     }
+    // Control: a body's Lifetime boxes, drawn with no window at the theme's side and at half of
+    // it. The first passes the measure; the second fails it.
+    let tick = |side: f32| {
+        let mut shell = cav_app::Shell::new();
+        shell.run("load point").unwrap();
+        super::s20::bare_frame(&cav_app::headless::context(), egui::vec2(320.0, 900.0), |ui| {
+            ui.spacing_mut().interact_size = egui::vec2(side, side);
+            cav_app::editors::show(&mut shell, ui, "inspector", "bodies[0]");
+        });
+        let found = shell.layout().buttons.iter().rev().find(|(name, _)| name == "gate bodies[0].appears");
+        found.map(|(_, rect)| *rect).expect("the Appears box is drawn")
+    };
+    let (full, half) = (tick(cav_app::theme::HIT), tick(0.5 * cav_app::theme::HIT));
+    assert!(full.width() >= least && full.height() >= least, "at the theme's side: {full:?}");
+    assert!(half.width() < least, "control: at half the side the box is {half:?}");
 }
 
 /// The ids the keyboard walks inside the inspector, in order, depth first.
@@ -476,6 +524,9 @@ fn a_body_s_cards_come_in_the_design_s_order_each_with_a_menu() {
     // No box anywhere that takes the shape away (the Kind row does that, as a choice); the
     // lifetime's boxes are there (the control: the measure sees a box).
     assert!(rig.shell.layout().button("gate bodies[0].shape").is_none(), "no hidden point-mass switch");
+    // (S20: the Lifetime card is folded at first, so opened here for its boxes to be seen.)
+    rig.click_button("fold inspector/lifetime");
+    rig.frames(vec![vec![]]);
     assert!(rig.shell.layout().button("gate bodies[0].appears").is_some());
 }
 
@@ -483,9 +534,10 @@ fn a_body_s_cards_come_in_the_design_s_order_each_with_a_menu() {
 fn a_body_s_parts_are_a_list_each_under_its_own_header() {
     // S19's review, I5: each part under a header that says what it is, with a ⋮ that moves it
     // or removes it, one edit each; "+ Add part" adds one. Control: before the move the order is
-    // the one added in. (A tall window: the cards of a part need the room.)
+    // the one added in. (A window 1100 high, so that both parts' ⋮ are in sight to be clicked;
+    // 1600 until S20, when rows were 24 pt.)
     let mut rig = Rig::new();
-    rig.size = [1440, 1600];
+    rig.size = [1440, 1100];
     rig.shell.run("load void").unwrap();
     rig.shell.add_starter("cube").unwrap();
     rig.shell.run("set bodies[0].shape.material steel").unwrap();
@@ -584,7 +636,8 @@ fn the_inspector_keeps_its_width_whatever_is_shown() {
         rig.frames(vec![vec![], vec![], vec![]]);
         let panel = rig.shell.layout().panel("properties").unwrap();
         widths.push((selection, panel.width()));
-        // Nothing in it runs past its margin (10 points), and every card is as wide as the first:
+        // Nothing in it runs past its margin (4 points since S20; the 10 asked here is inside
+        // it, where the scroll bar's width is kept), and every card is as wide as the first:
         // a row too wide for its card widened every card after it (S19's pictures: the cards'
         // menus were cut at the panel's edge).
         let layout = rig.shell.layout();
@@ -593,7 +646,11 @@ fn the_inspector_keeps_its_width_whatever_is_shown() {
             .editors
             .iter()
             .chain(&layout.buttons)
-            .filter(|(what, r)| what != "more below" && panel.intersects(*r) && r.right() > edge + 0.5)
+            // (The scroll bar's own place is in the margin's reserve: S20 names it, where the
+            // "more below" badge was.)
+            .filter(|(what, r)| {
+                what != "inspector scroll bar" && panel.intersects(*r) && r.right() > edge + 0.5
+            })
             .map(|(what, r)| format!("{what} to {}", r.right()))
             .collect();
         assert!(over.is_empty(), "{selection}: past the panel's edge at {edge}: {over:?}");
@@ -655,7 +712,7 @@ fn a_locked_body_is_not_moved_by_the_gizmo_and_a_hidden_one_is_not_drawn() {
     rig.click_button("lock mass");
     assert!(rig.shell.is_locked(0));
     rig.frames(vec![vec![]]);
-    let rect = rig.shell.layout().panes[0];
+    let rect = rig.shell.layout().canvases[0];
     let spec = rig.shell.engine.spec().clone();
     let at = spec.bodies[0].motion.position(0.0, spec.array.instrument.gravity);
     let g = cav_app::tools::gizmo(rig.shell.engine.view(0), rect.size(), at).unwrap();

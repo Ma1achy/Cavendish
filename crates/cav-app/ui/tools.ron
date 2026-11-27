@@ -1,13 +1,20 @@
-// The tool strip, as data (docs/slices/S18.md §2). Each tool is a behaviour the code knows
-// (Select, Translate, Place, Probe); its key is the action `tool <id>` in ui/actions.ron, so the keys,
-// the ? sheet and the palette have it from one place. Probe came in S19; Scale, Paint, Measure and
-// Slice come in S20 and Rotate after it (E and R are kept for Rotate and Scale).
+// The tool palette, as data (docs/slices/S18.md §2; docs/design/workspace.md §3). Each tool is a
+// behaviour the code knows (Select, Translate, Place, Probe); its key is the action `tool <id>` in
+// ui/actions.ron, so the keys, the ? sheet and the command palette have it from one place. Probe
+// came in S19; Scale, Paint, Measure, Slice and Rotate come in S22 (E and R are kept for Rotate
+// and Scale).
 //
 //   snap_step  the Move tool's snap and the transform session's step, metres
-//   tools      in the strip's order, top to bottom:
-//              id, label (the tool's one name: strip tooltip, options row, menus, ? sheet),
-//              behaviour (which also picks the button's icon), about
-// Snap is not a tool: it is a toggle drawn apart, below the tools (the action `snap`).
+//   tools      in the palette's order (down a column, or along a row at a top or bottom edge):
+//              id, label (the tool's one name: palette tooltip, menus, ? sheet),
+//              behaviour (which also picks the button's icon), about (its tooltip's second line),
+//              variants (optional): where the tool's flyout takes its choices from. A tool with
+//                variants shows a corner mark; holding its button (0.4 s), a right-click, or its
+//                "variants" stop from the keyboard opens the flyout; choosing one runs
+//                `tool <id> <variant>`. Sources the code knows (`tools::Variants`):
+//                  Starters   the starters of scenes/starters.ron (what Place puts down)
+// Snap is not a tool: it is a setting of Move, a switch in the options row under the viewport's
+// header while Move is in hand (the action `snap`, S, Edit menu).
 (
     snap_step: 0.25,
     tools: [
@@ -27,7 +34,8 @@
             id: "place",
             label: "Place",
             behaviour: Place,
-            about: "click the ground to add the chosen starter there",
+            about: "click the ground to add the chosen starter there; hold or right-click to choose it",
+            variants: Starters,
         ),
         (
             id: "probe",

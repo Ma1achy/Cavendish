@@ -58,6 +58,23 @@ pub enum Edit {
         /// Its whole view.
         view: Box<cav_sim::ViewSpec>,
     },
+    /// Put the scene's folders, and which folder each body and tower is in, as they are here:
+    /// what undoes and redoes a folder edit (`Command::Folder`), however many members it moved.
+    /// A few bytes a body; nothing else of the scene is touched.
+    Folders {
+        /// The console line of the folder edit this is a step of: what the history list shows.
+        line: String,
+        /// The folders and every member's folder.
+        to: Box<cav_sim::folders::Membership>,
+    },
+    /// Several edits as one step, applied in order (each on the scene the one before made):
+    /// what undoes and redoes `folder duplicate`, which makes folders and adds bodies.
+    Batch {
+        /// The console line the whole step is: what the history list shows.
+        line: String,
+        /// The edits, in the order applied.
+        edits: Vec<Self>,
+    },
 }
 
 impl Edit {
@@ -76,6 +93,8 @@ impl Edit {
             Self::Remove { path } => spec.removed(path).map(|(spec, _)| spec),
             Self::Replace(scene) => Ok((**scene).clone()),
             Self::View { .. } => Ok(spec.clone()),
+            Self::Folders { to, .. } => spec.with_membership(to),
+            Self::Batch { edits, .. } => edits.iter().try_fold(spec.clone(), |spec, edit| edit.apply(&spec)),
         }
     }
 
@@ -93,6 +112,7 @@ impl Edit {
             Self::Remove { path } => format!("remove {path}"),
             Self::Replace(scene) => format!("load {}", scene.name),
             Self::View { pane, .. } => format!("view home @{}", pane + 1),
+            Self::Folders { line, .. } | Self::Batch { line, .. } => line.clone(),
         }
     }
 
@@ -107,6 +127,17 @@ impl Edit {
             Self::Remove { path } => own + path.len(),
             Self::Replace(scene) => own + weigh_spec(scene),
             Self::View { .. } => own + std::mem::size_of::<cav_sim::ViewSpec>(),
+            Self::Folders { line, to } => {
+                let text = |label: &Option<String>| label.as_ref().map_or(0, String::len);
+                let slot = std::mem::size_of::<Option<String>>();
+                own + line.len()
+                    + to.folders
+                        .iter()
+                        .map(|f| std::mem::size_of_val(f) + f.label.len() + text(&f.parent))
+                        .sum::<usize>()
+                    + to.bodies.iter().chain(&to.towers).map(|l| slot + text(l)).sum::<usize>()
+            }
+            Self::Batch { line, edits } => own + line.len() + edits.iter().map(Self::weight).sum::<usize>(),
         }
     }
 }

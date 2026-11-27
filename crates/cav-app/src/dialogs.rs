@@ -313,6 +313,32 @@ pub fn step_words(step: &cav_engine::history::Step, spec: &SceneSpec) -> String 
         }
         (_, Edit::Remove { path }) => format!("Removed {}", place(path, spec)),
         (_, Edit::Put { path, value }) => put_words(path, value, spec),
+        (_, Edit::Folders { line, .. } | Edit::Batch { line, .. }) => folder_words(line),
+    }
+}
+
+/// A folder edit in a person's words, from the console line that made it (`folder move body 1
+/// rig`): "Made the folder rig", "Moved 2 items into rig", "Removed the folder rig".
+fn folder_words(line: &str) -> String {
+    let words = cav_engine::console::words(line).unwrap_or_default();
+    let words: Vec<&str> = words.iter().map(String::as_str).collect();
+    match words.as_slice() {
+        ["folder", "new", name] => format!("Made the folder {name}"),
+        ["folder", "new", name, "in", within] => format!("Made the folder {name} in {within}"),
+        ["folder", "move", items @ .., to] => {
+            // `body N` and `tower N` are two words an item; a folder's name is one.
+            let count = items.iter().filter(|w| !matches!(**w, "body" | "tower")).count().max(1);
+            let what = if count == 1 { "1 item".to_owned() } else { format!("{count} items") };
+            if to.eq_ignore_ascii_case("none") {
+                format!("Moved {what} out of its folder")
+            } else {
+                format!("Moved {what} into {to}")
+            }
+        }
+        ["folder", "rename", from, to] => format!("Renamed the folder {from} to {to}"),
+        ["folder", "remove", name] => format!("Removed the folder {name} (its contents kept)"),
+        ["folder", "duplicate", name] => format!("Duplicated the folder {name}"),
+        _ => line.to_owned(),
     }
 }
 
@@ -477,7 +503,7 @@ fn history(shell: &mut Shell, ctx: &egui::Context) {
     let mut open = true;
     let mut go: Option<(usize, &str)> = None;
     let mut hovered: Option<(bool, usize)> = None;
-    // Inside the outliner, over neither the figure nor the tool strip (S18's reviews, U6 and UX 4).
+    // Inside the outliner, over neither the figure nor the tool palette (S18's reviews, U6 and UX 4).
     let outliner = shell.layout.panel("outliner");
     let left = outliner.map_or(ctx.content_rect().left() + 8.0, |r| r.left() + 4.0);
     let top = outliner.map_or(60.0, |r| r.top() + 30.0);

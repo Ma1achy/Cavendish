@@ -424,7 +424,8 @@ fn a_pane_says_what_it_shows_and_which_stretch_of_it() {
     // Control: a span that runs backwards, is empty or is not a number is refused and nothing
     // changes; so is one for a pane that is not there.
     engine.run_line("span 0.1 0.2 @2").unwrap();
-    for line in ["span 3 1 @2", "span 2 2 @2", "span nan 4 @2", "span 0 1 @5"] {
+    // (The pane that is not there was @5 while a figure held four; S20's mosaic holds twelve.)
+    for line in ["span 3 1 @2", "span 2 2 @2", "span nan 4 @2", "span 0 1 @13"] {
         assert!(engine.run_line(line).is_err(), "`{line}` was accepted");
         assert_eq!(engine.frame(1).unwrap().span, Some([0.1, 0.2]));
     }

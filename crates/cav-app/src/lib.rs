@@ -27,6 +27,8 @@ pub mod app;
 pub mod camera;
 pub mod dialogs;
 pub mod editors;
+pub mod first_person;
+pub mod header;
 pub mod headless;
 pub mod icons;
 pub mod inspector;
@@ -34,23 +36,28 @@ pub mod keyboard;
 pub mod lane;
 pub mod layouts;
 pub mod menus;
+pub mod navgizmo;
 pub mod outliner;
 pub mod palette;
 mod panels;
 pub mod sheet;
-pub use panels::MAX_OUTLINE_ROWS;
+pub use panels::{MAX_OUTLINE_ROWS, MIN_FLOAT, MIN_VIEWPORT, VIEWPORT_MENU, splitter_moved};
+pub use shell::HeaderControl;
 /// The outliner's words, for its tests: what a tower's row says, and whether a scene reads
-/// nothing. Not an interface.
+/// nothing; and the side panels' scroll area, with and without its bar's width reserved. Not an
+/// interface.
 #[doc(hidden)]
 pub mod panels_for_tests {
-    pub use crate::panels::{silent, tower_detail};
+    pub use crate::panels::{scrolling, silent, tower_detail};
 }
 pub mod panes;
 pub use cav_plot::plots;
 pub mod shell;
 pub mod theme;
 pub mod timeline;
+pub mod tool_palette;
 pub mod tools;
+pub mod transport;
 
 pub mod address;
 // The platform seam: the application's entry and what it does around each frame. Natively next

@@ -123,7 +123,8 @@ person asked for goes through `cav_engine::files`; code that must not run in a p
 
 The window's *what and where* is data, loaded and checked like scenes: `cav-app/ui/actions.ron`
 (the seven big scopes in Tab order, the menus, every action with its console line, keys, scope and
-when it can run), `ui/tools.ron` (the tool strip), `ui/layouts.ron` (the layouts), and
+when it can run), `ui/tools.ron` (the tool palette: the tools, and where a tool's flyout takes
+its variants from), `ui/layouts.ron` (the layouts), and
 `scenes/starters.ron` (what Add adds, in `cav-sim` so the CLI and MCP add the same). Code holds the
 mechanisms: the router, the widgets, the gizmo's geometry.
 
@@ -137,6 +138,105 @@ The keyboard's state is UI only: never journalled, never undone. The inspector n
 the schema (`paths::Entry::label`: a `title` where one is given, else the name in words) and the
 history list says each step in words (`dialogs::step_words`); the console's paths and lines stay
 one hover away.
+
+**The mosaic (S20).** The figure is a mosaic of up to twelve viewports
+(`docs/design/workspace.md` §1). Where they are is a `cav_sim::mosaic::Mosaic` the engine holds:
+view state, set by `ViewCommand::Mosaic` (journalled and replayed, never an edit, never undone;
+`panes 1|2|4` are shorthands for `A`, `AB`, `AB;CD`). A viewport is known by its label: its
+number is its label's rank in the alphabet among those present, and its camera and content go
+with the label through every split, close and swap. The window lays the figure out from
+`Mosaic::rects`, and keeps for itself only what is not the session's: a splitter's drag while it
+lasts (one command when it ends), which viewport is maximised, and which float over the window
+and where (`Shell::floating`: a floating viewport's place in the mosaic stays, empty, with a
+dock button). The keyboard walks the viewports as stops of one scope, `viewport/mosaic`, in the
+labels' order, so neither a swap nor a pop-out changes Tab's or the arrows' order.
+
+**The viewport header, the gizmo and the status bar (S20).** Each viewport has one compact row
+along its top (`cav-app/src/header.rs`, `docs/design/workspace.md` §2): the view type first
+(`PaneContent::ALL`), then a scene's camera menu, shading group and overlays popover or a plot's
+"show all", and at the right a warning dot, maximise, pop out and close. It is made from data
+(`header::CONTROLS`; the menus' rows are actions of `ui/actions.ron`) and every control runs a
+console line addressed to its own viewport (`show periodogram @3`). A header dragged onto
+another viewport swaps the two (the engine's `swap`); a floating viewport's header is the bar it
+is dragged by. The picture is drawn under it: `Layout::panes` is the viewport, `Layout::canvases`
+the canvas, and pointer arithmetic is the canvas's. A scene's canvas has a navigation gizmo in
+its top right corner (`cav-app/src/navgizmo.rs`): the view's own axes, an end clicked to look
+from it (the named views), a drag to orbit by the view's own `Orbit` command, and zoom, pan and
+projection buttons under it; it took the place of the Home button. No status is drawn in a
+header: the status bar (`footer` in `cav-app/src/panels.rs`) says, in a fixed order, the
+selection, the instrument (and the one compared with), the signal's state in the engine's words
+(`estimate_text`), the forward stage, the counts of warnings and errors and the frame's time;
+what each part says is in `Layout::status_bar`. The keyboard reaches the active viewport's
+header as the scope `viewport/header`, its stops `CONTROLS` in that order whatever is shown.
+
+**The tool palette, its flyouts and the options row (S20).** The tools of `ui/tools.ron` are a
+palette that floats inside the canvas of one scene viewport, its host (`tool_palette::host`: the
+active viewport if it shows the scene, else the first that does; none if none does, when the
+tools' keys still take a tool): `cav-app/src/tool_palette.rs`, `docs/design/workspace.md` §3. It
+is drawn over the picture in the viewport's own layer, so it changes no canvas's size and a
+window or a floating viewport covers it as it covers the picture. Where it stands is one of
+eight anchors of the canvas (`Anchor`), kept for each layout name in the window's state
+(`Shell::tool_anchors`; a drag of its grip, or `tool-palette right`; never journalled);
+`tool_palette::plan` is the layout as a pure function (one lane, two in a short canvas, clear of
+the navigation gizmo). A tool with `variants` in the file has a flyout (a hold of 0.4 s, a
+right-click, or its own keyboard stop) whose rows run `tool <id> <variant>`: Place's are the
+starters. The tool's settings are one row under the host's header, shown only while the tool has
+any (`Behaviour::has_options`) or a transform session is under way (`tool_palette::options_row`;
+its rectangle is `Layout::options`, which `Layout::panel("options")` also gives): it takes its
+height from that viewport's canvas, and with Select or Probe in hand it is not there. The
+keyboard's `toolbar` scope is the tools in the file's order, a tool's variants as a drop-down
+after it, and the snap switch last, disabled while not shown (`tool_palette::register`).
+
+**The first-person camera (S20).** Flying is a first-person game's camera, in two layers. The
+arithmetic is `cav-app/src/camera.rs`: `FirstPerson` is an eye (metres, world frame), a yaw and
+a pitch (degrees) and a velocity (m/s), made from a viewport's `ViewSpec` each frame and written
+back as one `ViewCommand::Camera`; a look is raw pointer counts times a sensitivity, the pitch
+held within ±89°, never any roll; the velocity eases toward the one the held keys ask for with a
+time constant, integrated in closed form for the frame's time (`camera::ease`), so 30 and 144
+frames a second agree; W A S D go along the heading laid flat, Space and Shift along z. The
+settings are data (`ui/camera.ron`, `camera::Settings`; `camera-set` changes one for the
+session). The window's side is `cav-app/src/first_person.rs`: a flight is entered by holding
+the right button over a scene viewport (`Shell::mouse_fly`) or by `fly` (Shift+F, the header's
+camera menu; `keyboard::Session::Fly`) and left by the release, Esc, Enter, `fly` again or the
+window losing its focus. While it is on, `Shell::keys` hands every press to `Shell::fly_keys`
+and none to the router (only the actions of `first_person::WHILE_FLYING` keep their keys);
+`Shell::fly_frame` reads the held keys, the raw motion and the wheel (the speed, shown in the
+canvas for a moment); `Shell::fly_capture` asks the platform seam for the pointer and gives it
+back (`platform::capture`: `CursorGrab` and `CursorVisible` natively, pointer lock in a page,
+where `platform::motion` is the page's `movementX/Y`); a `fly` session lays a sheet over the
+window so that a click acts on nothing under the unseen pointer. A camera command a frame costs
+the journal one entry a run (`Command::overwrites`), as an orbit drag does; while the scene
+plays, each frame's seek comes between and the journal holds both, as it does for an orbit drag
+during play.
+
+**The top bar and the transport (S20).** The top bar is one row (`menu_bar` in
+`cav-app/src/panels.rs`, `docs/design/workspace.md` §4): the menus, the layouts as tabs (the
+built-in ones of `ui/layouts.ron`, then the session's own: `+` runs `layout save`, which keeps
+the mosaic and what each viewport shows as a new `LayoutData` in `Shell::session_layouts`,
+window state, gone with the window), the command search, and at the right the scene's name with
+its unsaved mark; the keyboard's breadcrumb stands before the name while navigation is on. What
+it paints is in `Layout::top_bar`. The time is the transport's: the timeline's head row
+(`cav-app/src/transport.rs`, the design's §5) has start, step back, play/pause, step forward and
+end as icon buttons, each an action of `ui/actions.ron` (`seek start`, `step -1`, `play`,
+`step 1`, `seek end`; their keys work in the `timeline` scope; `needs` says when each is
+disabled and why), the speed (a drop-down whose rows are the actions of the menu `Scene/Speed`;
+`Shell::speed` multiplies the frame's step in `Shell::advance`), what playing does at the end
+(`transport::AtEnd`, `end loop|stop|run-on`, the rows of the menu `Scene/At the end`), and
+`t [time] / [duration] s` and `shot [n] / count` as fields: a time or a shot's number typed
+seeks there, and a duration typed is the `Set` of `duration` the Scene card's editor issues
+(`editors::command_for`: one edit, one undo, refused by the engine as the card's is). At the end
+of the timeline `Shell::advance` loops to 0, or stops with the playhead at exactly the duration,
+or runs on (`Shell::run_on_past`): the duration grows by whole blocks of its length when the run
+first reached the end, each extension a `Set` that continues the one before (the engine folds a
+run of sets of one path into one step of undo whatever seeks come between), up to
+`cav_sim::spec::limits::DURATION`, where playing stops and the log says so. Each extension is an
+edit, so the signal is stale until the forward worker has computed it for the longer timeline. A step lands on a readout of the engine's own shots
+(`Engine::shots`; `transport::place` finds the neighbours by bisection and makes no time of its
+own), those of the selected tower, else the first's; with Shift it moves one mean cadence cycle;
+a held button repeats on the keyboard's clock. `seek start` and `seek end` are the engine's
+console's (read against the scene, journalled as the seek to that time); `step` and `speed` are
+the window's, as `end` is. The keyboard's `timeline` scope is `transport::CONTROLS` in that
+order, then the scrubber. What was drawn is in `Layout::transport`.
 
 Every edit, from the viewport, a panel, a key or the palette, ends in one `Command` through
 `Engine::apply`: the gizmo, the transform session and the inspector's field all issue the same
@@ -166,7 +266,9 @@ field's reset and the window's unsaved mark.
 | A dev scene | `cav-sim/src/dev.rs` and `scenes/dev/*.ron` | [a dev scene](extending/a-dev-scene.md) |
 | The bundle's arrays and manifest | `cav-sim/src/bundle.rs` | — |
 | What a body weighs (its materials' or its `mass`: one rule for the bundle and the inspector; `get bodies[n].mass` answers the field) | `cav-sim/src/spec.rs` (`BodySpec::mass_in`, `mass_with`) | — |
-| The Probe's reading of a point (the field of every body and a slab floor, the finest cell, its share of each tower's phase, what is not counted) | `cav-sim/src/probe.rs`; `probe x y z` in `cav-engine/src/console.rs`, `Engine::probe`; the card in `cav-app/src/panels.rs` (`probe_card`) | — |
+| The Probe's reading of a point (the field of every body and a slab floor, the finest cell, its share of each tower's phase, what is not counted) | `cav-sim/src/probe.rs`; `probe x y z` in `cav-engine/src/console.rs`, `Engine::probe`; the right panel's Probe tab in `cav-app/src/outliner.rs` (`probe`), the point's mark in `panels.rs` (`probe_mark`) | — |
+| The scene tree's folders (`SceneSpec.folders`, a body's and a tower's `folder`): scene data for people, saved with the scene, written only when used (a scene without them serialises to the bytes it did); **the read ignores them** (nothing in `read.rs` looks at them, and the engine's contribution keys leave them out, so filing a body recomputes nothing). Only the Array and the Bodies take folders; at most 256, nested 8 deep. The edits are functions from a scene to a scene (`SceneSpec::folder_edit`) | `cav-sim/src/folders.rs`; `Command::Folder` and `folder new/move/rename/remove/duplicate` in `cav-engine` (one undo each: `history::Edit::Folders`, `Edit::Batch`); the rows, drag and drop, eye and lock in `cav-app/src/outliner.rs` | [a command](extending/a-command.md) |
+| A body's drawn path: cut by its curvature, not by the clock (a chord's sag at most 1 % of the local radius of curvature, or 1 cm), only while the body exists, a repeating motion over one period, at most 4096 pieces a body and 131 072 a scene; a path that meets its cap is reported by `cav_render::decimation`, never silently coarse | `cav-render/src/path.rs`; `Motion::period`, `fastest`, `breaks` in `cav-sim/src/motion.rs`; drawn by `cav-render/src/scene.rs` | [a motion](extending/a-body-or-a-motion.md) |
 | A command, a query, a reply | `cav-engine/src/command.rs`; applied in `engine.rs`; its words in `console.rs` | [a command](extending/a-command.md) |
 | The workers, the cache of contributions | `cav-engine/src/forward.rs` | — |
 | Undo and the journal's budget | `cav-engine/src/history.rs`, `journal.rs` | — |
@@ -176,13 +278,19 @@ field's reset and the window's unsaved mark.
 | A legend of a field or of the tree overlay's depths; a view of voxel bodies as a vector figure | `cav-plot/src/voxels.rs` (`legend`, `tree_legend`); pasted into `cav render` pictures by `cav/src/session.rs` | [a plot](extending/a-plot.md) |
 | The scene as a technical drawing on paper (`figure paper`: a plan or a section, ink on cream at a scale 1:N, outlines of the world from coarse bricks, hatching, scale bar, north arrow, dimensions, title block; at most `MAX_PAPER_BRICKS` bricks, `MAX_PAPER_ITEMS` items, `MAX_PAPER_POINTS` points) | `cav-plot/src/paper.rs`; `PaperView` in `cav-engine/src/command.rs`; written by `paper` in `cav-plot/src/figure.rs` | [a plot](extending/a-plot.md) |
 | Redrawing a figure from its data, in Python | `python/cavendish_figures` (matplotlib style sheets, `load`, `redraw`) | [a plot](extending/a-plot.md) |
-| A panel, an editor (the inspector's sections, resets, lists), the timeline | `cav-app/src/panels.rs`, `editors.rs`, `timeline.rs` | [the window](extending/a-tool-or-panel.md) |
-| The scene tree (groups, icons, eye and lock, status dots) and the Readings tab; the inspector's header, cards and Info card (`docs/design/panels.md`) | `cav-app/src/outliner.rs`, `cav-app/src/inspector.rs` | [the window](extending/a-tool-or-panel.md) |
+| A panel, an editor (the inspector's sections, resets, lists), the timeline's lanes | `cav-app/src/panels.rs`, `editors.rs`, `timeline.rs` | [the window](extending/a-tool-or-panel.md) |
+| The top bar (menus, layout tabs, search, the scene's name) and the transport (the timeline's buttons, what playing does at the end, speed, time, duration and shot; `docs/design/workspace.md` §4, §5) | `menu_bar` in `cav-app/src/panels.rs`; `cav-app/src/transport.rs` (`CONTROLS`, `place`, `step`, `AtEnd`), `Shell::advance` and `Shell::run_on_past` in `shell.rs`, its actions in `cav-app/ui/actions.ron` | [the window](extending/a-tool-or-panel.md) |
+| The tool palette (its place, its flyouts) and a tool's options row (`docs/design/workspace.md` §3) | `cav-app/ui/tools.ron`, `cav-app/src/tools.rs` (`Variants`, `Behaviour::has_options`), `cav-app/src/tool_palette.rs` | [the window](extending/a-tool-or-panel.md) |
+| A viewport's header and its controls; the navigation gizmo; the status bar (`docs/design/workspace.md` §2) | `cav-app/src/header.rs`, `cav-app/src/navgizmo.rs`, `footer` in `cav-app/src/panels.rs` | [a view type's header controls](extending/a-view-or-a-layout.md) |
+| The scene tree (groups, folders, icons, eye and lock, status dots), the Readings tab and the Probe tab; the inspector's header, cards and Info card (`docs/design/panels.md`); the panels' sizes (`cav-app/src/theme.rs`, `docs/design/workspace.md` §0) | `cav-app/src/outliner.rs`, `cav-app/src/inspector.rs` | [the window](extending/a-tool-or-panel.md) |
 | An action: a menu item, a key, a palette entry; the big scopes' order | `cav-app/ui/actions.ron`, read by `cav-app/src/actions.rs`; drawn by `menus.rs`, `palette.rs`, `sheet.rs` | [the window](extending/a-tool-or-panel.md) |
 | The keyboard model: scopes, modes, the ring, the router, held keys | `cav-app/src/keyboard.rs` (pure logic, tested as a state machine); the frame registers into it from `panels.rs` and `editors.rs` | [the window](extending/a-tool-or-panel.md) |
-| A tool (Select, Move, Place, Probe), the gizmo, the transform session | `cav-app/ui/tools.ron`, `cav-app/src/tools.rs`; its pointer handling in `panels.rs` `figure` | [the window](extending/a-tool-or-panel.md) |
+| A tool (Select, Move, Place, Probe), the gizmo, the transform session | `cav-app/ui/tools.ron`, `cav-app/src/tools.rs`; its pointer handling in `panels.rs` `viewport` | [the window](extending/a-tool-or-panel.md) |
 | A layout of the window | `cav-app/ui/layouts.ron`, `cav-app/src/layouts.rs` | [the window](extending/a-tool-or-panel.md) |
-| The camera's arithmetic: frame, zoom toward the pointer, fly, look | `cav-app/src/camera.rs`; `ViewCommand::Camera` in `cav-engine/src/command.rs` | — |
+| The mosaic of viewports: the grid of labels and its weights, split, close, swap, resize (pure data and functions) | `cav-sim/src/mosaic.rs` (`Mosaic`); held by the engine (`Engine::mosaic`, `ViewCommand::Mosaic`, views carried with their labels in `engine.rs` `set_mosaic`); `mosaic`, `split`, `close`, `swap` in `console.rs` | [a view or a layout](extending/a-view-or-a-layout.md) |
+| A viewport as drawn: its picture or plot, its pointer, its right-click menu; the splitters; a floating viewport and its empty place | `cav-app/src/panels.rs` (`viewport`, `splitters`, `floating_viewport`, `figure`); the window's own state in `shell.rs` (`Shell::floating`, `Shell::maximised`; `viewport <close\|swap\|pop-out\|dock>`) | [a view or a layout](extending/a-view-or-a-layout.md) |
+| The camera's arithmetic: frame, zoom toward the pointer, the first-person camera (look, eased movement) and its settings | `cav-app/src/camera.rs`, `cav-app/ui/camera.ron`; `ViewCommand::Camera` in `cav-engine/src/command.rs` | — |
+| A flight in the window: its keys, its frame, the pointer's capture, the speed's read-out | `cav-app/src/first_person.rs`; the platform's half in `cav-app/src/platform/{native,web}.rs` (`capture`, `motion`, `capture_lost`) | — |
 | The editor's windows: history, new-scene wizard, Open, Save | `cav-app/src/dialogs.rs` | [the window](extending/a-tool-or-panel.md) |
 | What Add adds (starters) | `scenes/starters.ron`, `cav-sim/src/starters.rs` (`add <name> [at x y z]`, `duplicate <path>`) | [the window](extending/a-tool-or-panel.md) |
 | A CLI subcommand, an MCP tool | `cav/src/main.rs`, `mcp.rs` | [a command](extending/a-command.md) |

@@ -300,6 +300,31 @@ mod tests {
     }
 
     #[test]
+    fn pane_rects_are_the_mosaic_s_for_one_two_and_four() {
+        // S20 (M1): the figure is laid out by `cav_sim::mosaic`; `A`, `AB` and `AB;CD` are these
+        // rectangles to the pixel, so every picture taken of 1, 2 or 4 panes is as it was.
+        // Control: another mosaic of two (one above the other) is not `pane_rects(2)`.
+        use cav_sim::mosaic::Mosaic;
+        let mut compared = 0;
+        for size in [[1440, 900], [1023, 701], [3, 3], [640, 1], [1, 1], [101, 77]] {
+            for gap in [0, 1, 2, 5] {
+                for panes in [1, 2, 4] {
+                    let mosaic = Mosaic::panes(panes).unwrap();
+                    let ours: Vec<[u32; 4]> =
+                        pane_rects(panes, size, gap).iter().map(|r| [r.x, r.y, r.width, r.height]).collect();
+                    assert_eq!(mosaic.rects(size, gap), ours, "{panes} panes in {size:?}, gap {gap}");
+                    compared += 1;
+                }
+            }
+        }
+        assert_eq!(compared, 72);
+        let stacked = Mosaic::parse("A;B").unwrap().rects([1440, 900], 2);
+        let beside: Vec<[u32; 4]> =
+            pane_rects(2, [1440, 900], 2).iter().map(|r| [r.x, r.y, r.width, r.height]).collect();
+        assert_ne!(stacked, beside);
+    }
+
+    #[test]
     #[should_panic(expected = "1, 2 or 4 panes")]
     fn three_panes_is_not_a_layout() {
         let _ = pane_rects(3, [100, 100], 0);

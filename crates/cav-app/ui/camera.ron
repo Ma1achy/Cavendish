@@ -1,0 +1,17 @@
+// The first-person camera's settings (plan/REBUILD.md principle 11; docs/slices/S20.md §2).
+// Window state, never part of a scene. `camera-set <setting> <value>` in the console changes
+// one for the session; the names there are these with `-` for `_`.
+(
+    // How far a look turns per count of raw mouse motion, degrees per count.
+    sensitivity: 0.1,
+    // The flying speed at first, metres per second (the wheel changes it, 0.05 to 1000).
+    fly_speed: 4.0,
+    // What sprinting (Ctrl held, or a double tap of W) multiplies the speed by.
+    sprint: 2.0,
+    // The time constant with which the velocity eases toward the wanted one, seconds.
+    easing: 0.08,
+    // Two presses of a key within this long are a double tap, seconds.
+    double_tap: 0.3,
+    // How long the speed is shown in the canvas after the wheel changed it, seconds.
+    speed_shown: 1.5,
+)

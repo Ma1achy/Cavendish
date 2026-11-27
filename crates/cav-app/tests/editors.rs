@@ -90,10 +90,10 @@ const AWKWARD: [(&str, &str); 6] = [
 /// review, item 8: as one test it was four seconds on `quick`'s critical path).
 fn leave_every_editor(selection: &str) -> (Rig, usize) {
     let mut rig = Rig::new();
-    // A window tall enough that every field is in sight, so that each click lands on its field
-    // (S19's review made the rows 24 points: in 900 the instrument's last ran under the
-    // timeline, where a click seeks or selects).
-    rig.size = [1440, 1400];
+    // A window tall enough that every field is in sight, so that each click lands on its field:
+    // 1000 since S20's rows of 20 points (1400 while they were 24: in 900 the instrument's last
+    // ran under the timeline, where a click seeks or selects).
+    rig.size = [1440, 1000];
     rig.shell.run("load point").unwrap();
     for (path, value) in AWKWARD {
         rig.shell.run(&format!("set {path} {value}")).unwrap();

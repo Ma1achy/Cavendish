@@ -17,17 +17,48 @@ use crate::panes::PaneSurface;
 pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("console", "open or close the console"),
     ("gui", "hide or show the panels; the scene fills the window (F3)"),
-    ("play", "start or stop playback"),
+    ("play", "start or stop playback (Space)"),
     ("pause", "stop playback"),
+    (
+        "step",
+        "move the playhead by shots of the engine's own (the selected tower's, else the first tower's), each to a readout: `step 1`, `step -1`, `step 3`; by mean cadence cycles with `cycle`: `step -1 cycle`. Playback stops",
+    ),
+    (
+        "end",
+        "what playing does at the end of the timeline: `end loop` (back to the start, as it begins), `end stop` (the playhead stops at the end), `end run-on` (the scene's duration grows by its length when playing began: one edit a run, up to the longest timeline); `end menu` opens or closes the transport's list",
+    ),
+    (
+        "speed",
+        "how fast the playhead moves while playing, as a multiple of the clock's rate, 0.1 to 10: `speed 2`, `speed 0.25`; `speed menu` opens or closes the transport's list of speeds",
+    ),
     ("keys", "the keyboard reference"),
     (
         "palette",
         "the command palette: search every action, starter, scene, command and field (Ctrl+K); `palette add` lists what can be added, `palette <menu>` one menu, `palette <words>` opens it with them typed",
     ),
     ("context", "open the right-click menu of the selection's row in the scene tree"),
-    ("rename", "type a new name for the selected body or tower in the scene tree (F2)"),
+    (
+        "rename",
+        "type a new name for the selected body or tower, or the focused folder, in the scene tree (F2)",
+    ),
+    (
+        "new-folder",
+        "make a folder in the scene tree (the engine's `folder new`), beside the selection or inside the folder in focus, and type its name",
+    ),
+    (
+        "tree-fold",
+        "fold or unfold a row of the scene tree, for this scene: `tree-fold <array|bodies|surroundings|folder>` (quote a folder's name with spaces)",
+    ),
     ("frame", "fit the selection (or the whole scene) into the active pane (F)"),
-    ("tool", "take a tool in hand: `tool select` (Q), `tool move` (W), `tool place` (A)"),
+    (
+        "tool",
+        "take a tool in hand: `tool select` (Q), `tool move` (W), `tool place` (A), `tool probe` (I); with one of its variants: `tool place cube`",
+    ),
+    (
+        "tool-palette",
+        "where the tool palette stands in its view, kept for the layout: `tool-palette <top-left|top|top-right|left|right|bottom-left|bottom|bottom-right>`",
+    ),
+    ("flyout", "open a tool's flyout of variants beside the palette: `flyout place`; `flyout off` closes it"),
     (
         "reset",
         "put a field back as the scene was opened or saved: `reset bodies[0].mass` (Backspace on a field)",
@@ -47,7 +78,11 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("save-scene", "save the scene to the file it came from, or ask for one (Ctrl+S)"),
     (
         "layout",
-        "arrange the window for a task: `layout scene` (Ctrl+1), `layout instrument` (Ctrl+2), `layout analysis` (Ctrl+3)",
+        "arrange the window for a task: `layout scene` (Ctrl+1), `layout instrument` (Ctrl+2), `layout analysis` (Ctrl+3); or the figure as a mosaic written out: `layout \"AAB;CDB\"` (as `mosaic`); `layout save [name]` keeps the present arrangement as a new layout for this session (the top bar's +), `layout forget <id>` drops one",
+    ),
+    (
+        "viewport",
+        "act on a viewport (the active one, or number N): `viewport close [N]`; `viewport swap [N]` exchanges its place with the next viewport's; `viewport pop-out [N]` floats it over the window, or docks it if it floats; `viewport dock [N]` puts it back in the mosaic (with no N, every floating one)",
     ),
     (
         "maximise",
@@ -57,9 +92,13 @@ pub const APP_COMMANDS: &[(&str, &str)] = &[
     ("snap", "snap the Move tool's moves to the step, or not (S)"),
     (
         "fly",
-        "fly the camera: W A S D, E up, Q down, arrows or a drag to look; again, Enter or Esc to stop (Shift+F)",
+        "fly the active viewport's camera as a first-person game does: the pointer is captured, the mouse looks, W A S D move, Space up, Shift down, Ctrl or a double tap of W sprints, the wheel sets the speed; again, Esc or Enter to stop (Shift+F; or hold the right button over the view)",
     ),
-    ("tab", "the right-hand panel's tab: `tab inspector` or `tab readings`"),
+    (
+        "camera-set",
+        "the first-person camera's settings, for this session: `camera-set` lists them; `camera-set <sensitivity|fly-speed|sprint|easing|double-tap|speed-shown> <value>` sets one (defaults in `ui/camera.ron`)",
+    ),
+    ("tab", "the right-hand panel's tab: `tab inspector`, `tab readings` or `tab probe`"),
     (
         "probe-at",
         "the Probe tool's click at a point of the active pane, as fractions from its top left (`probe-at 0.5 0.5`): for scripts and pictures",
@@ -113,12 +152,47 @@ pub struct Layout {
     /// The whole window, points.
     pub screen: Rect,
     /// Each panel that was shown, by name: `menu`, `outliner`, `properties`, `timeline`,
-    /// `console`, `footer`, `header`.
+    /// `console`, `footer`. (The tool's options row is no panel: it is inside a viewport, in
+    /// [`Self::options`].)
     pub panels: Vec<(&'static str, Rect)>,
+    /// The tool's options row, while it is shown: one row under the header of the viewport the
+    /// tool palette is in (`docs/design/workspace.md` §3). `None` while the tool in hand has no
+    /// settings and no transform session is under way: the canvas has the room.
+    pub options: Option<Rect>,
+    /// The viewport (pane, from 0) the tool palette was drawn in; `None` when it was not drawn
+    /// (no viewport shows the scene, the panels are hidden, or the canvas has no room for it).
+    /// Its rectangle is the button `tool palette`.
+    pub tool_host: Option<usize>,
     /// The area the panes share.
     pub figure: Rect,
-    /// Each pane, in order.
+    /// Each pane (viewport), in order: where it is drawn, its header and all. A floating one's is
+    /// where it floats. Not for pointer arithmetic: the picture is in [`Self::canvases`].
     pub panes: Vec<Rect>,
+    /// Each viewport's canvas, in order: its rectangle less its header, where the scene's picture
+    /// or the plot is drawn. A pointer's place in a view is measured from this rectangle's
+    /// corner. The same as its pane's while the headers are hidden (F3); nothing when the
+    /// viewport is not drawn (another is maximised).
+    pub canvases: Vec<Rect>,
+    /// Each viewport's header that was drawn: the pane (from 0) and its row.
+    pub headers: Vec<(usize, Rect)>,
+    /// Every control the viewports' headers and navigation gizmos drew, in the order drawn.
+    pub controls: Vec<HeaderControl>,
+    /// Each header's warning dot that was lit: the pane (from 0), the dot, and the texts its
+    /// tooltip holds (a stale or unsettled signal for a plot, what the renderer thinned or left
+    /// out for a scene).
+    pub warnings: Vec<(usize, Rect, Vec<String>)>,
+    /// What the status bar says, by part, in its order: `selection`, `instrument`, `signal`
+    /// (the engine's own words for the signal's state: [`cav_engine::estimate_text`] of it when
+    /// it is the scene's), `forward`, `warnings`, `errors`, `frame`. Each whole, as its tooltip
+    /// has it; what is painted (cut short when long) is in [`Self::chrome`] under `status`.
+    pub status_bar: Vec<(&'static str, String)>,
+    /// Each pane's place in the mosaic, in order: where it is drawn unless it floats (then the
+    /// place is empty but for its dock button).
+    pub slots: Vec<Rect>,
+    /// The viewports that float over the window: the pane (from 0) and its frame, bar and all.
+    pub floating: Vec<(usize, Rect)>,
+    /// The splitters between the viewports: the boundary each moves and its handle.
+    pub splitters: Vec<(cav_engine::Boundary, Rect)>,
     /// Buttons worth finding from a test, by the console line they run.
     pub buttons: Vec<(String, Rect)>,
     /// What each pane that shows a plot drew.
@@ -132,7 +206,7 @@ pub struct Layout {
     pub shots: Vec<crate::timeline::Bar>,
     /// What the timeline's heading says about the shots.
     pub timeline_caption: String,
-    /// What the outliner says about the forward stage.
+    /// What the status bar says about the forward stage (its `forward` part).
     pub status: String,
     /// Each row the outliner laid out: what a click on it selects, and where it is.
     pub outline: Vec<(cav_engine::Target, Rect)>,
@@ -152,10 +226,36 @@ pub struct Layout {
     pub legends: Vec<(usize, Rect)>,
     /// The scene tree's groups as drawn: each group's scope id and whether it is open.
     pub tree_groups: Vec<(String, bool)>,
+    /// The scene tree's folders as drawn, in the order drawn.
+    pub tree_folders: Vec<crate::outliner::FolderRow>,
+    /// The row a dragged row of the scene tree is over, if it is over one that takes drops (a
+    /// folder's label, or a group's name), and whether a drop there would be taken.
+    pub tree_drop: Option<(String, bool)>,
     /// Each tower's status dot as drawn in the tree: the tower (from 0) and what it says.
     pub dots: Vec<(usize, crate::outliner::Dot)>,
-    /// The Readings tab's rows as drawn: the tower (from 0) and its ΔΦ as written.
+    /// The Readings tab's rows as drawn: the tower (from 0) and its ΔΦ as written, with the
+    /// column's unit after it (the unit is drawn once, in the column's heading).
     pub readings: Vec<(usize, String)>,
+    /// The reading the Probe tab drew its rows and its towers' table from, as the engine gave
+    /// it; `None` while the tab is not shown or nothing is probed.
+    pub probe: Option<cav_sim::probe::Probe>,
+    /// The Probe tab's rows as written: each name and its value.
+    pub probe_rows: Vec<(String, String)>,
+    /// Every text painted in the chrome that the design keeps free of sentences, by where it is:
+    /// `options` (the tool's options row), `timeline` (the timeline's head), `tree` (what the
+    /// scene tree paints besides its rows' names, which are in `row_texts`), `header` (the
+    /// viewports' headers) and `status` (the status bar's parts, as painted); and what became a
+    /// tooltip there, as `options tooltip`, `timeline tooltip` and `status tooltip`.
+    pub chrome: Vec<(&'static str, String)>,
+    /// What each material drop-down of the inspector shows closed: the path it edits and its
+    /// words ("Uniform", "steel").
+    pub choices: Vec<(String, String)>,
+    /// The transport's controls as drawn, in the order drawn ([`crate::transport::CONTROLS`]).
+    pub transport: Vec<crate::transport::Drawn>,
+    /// What the top bar painted, by part, left to right: `menu` (each menu's title), `layout`
+    /// (each tab), `search`, `scene` (the scene's name, with its unsaved mark) and, while
+    /// keyboard navigation is on, `breadcrumb`; each with where it is.
+    pub top_bar: Vec<(&'static str, String, Rect)>,
 }
 
 impl Default for Layout {
@@ -163,8 +263,18 @@ impl Default for Layout {
         Self {
             screen: Rect::NOTHING,
             panels: Vec::new(),
+            options: None,
+            tool_host: None,
             figure: Rect::NOTHING,
             panes: Vec::new(),
+            canvases: Vec::new(),
+            headers: Vec::new(),
+            controls: Vec::new(),
+            warnings: Vec::new(),
+            status_bar: Vec::new(),
+            slots: Vec::new(),
+            floating: Vec::new(),
+            splitters: Vec::new(),
             buttons: Vec::new(),
             plots: Vec::new(),
             editors: Vec::new(),
@@ -179,16 +289,41 @@ impl Default for Layout {
             ruler: (Vec::new(), Rect::NOTHING),
             legends: Vec::new(),
             tree_groups: Vec::new(),
+            tree_folders: Vec::new(),
+            tree_drop: None,
             dots: Vec::new(),
             readings: Vec::new(),
+            probe: None,
+            probe_rows: Vec::new(),
+            chrome: Vec::new(),
+            choices: Vec::new(),
+            transport: Vec::new(),
+            top_bar: Vec::new(),
         }
     }
 }
 
 impl Layout {
-    /// The panel called `name`, if it was shown.
+    /// The status bar's part called `name` (`signal`, `instrument`, …), if it was drawn.
+    #[must_use]
+    pub fn status_part(&self, name: &str) -> Option<&str> {
+        self.status_bar.iter().find(|(n, _)| *n == name).map(|(_, text)| text.as_str())
+    }
+
+    /// The control `id` (`type`, `camera`, `style shaded`, `maximise`, `gizmo/zoom`, …) of pane
+    /// `pane`'s header or gizmo, if it was drawn.
+    #[must_use]
+    pub fn control(&self, pane: usize, id: &str) -> Option<&HeaderControl> {
+        self.controls.iter().find(|c| c.pane == pane && c.id == id)
+    }
+
+    /// The panel called `name`, if it was shown. `options` is the tool's options row
+    /// ([`Self::options`]), which is inside a viewport and so not among [`Self::panels`].
     #[must_use]
     pub fn panel(&self, name: &str) -> Option<Rect> {
+        if name == "options" {
+            return self.options;
+        }
         self.panels.iter().find(|(n, _)| *n == name).map(|(_, r)| *r)
     }
 
@@ -203,6 +338,32 @@ impl Layout {
     pub fn button(&self, line: &str) -> Option<Rect> {
         self.buttons.iter().find(|(l, _)| l == line).map(|(_, r)| *r)
     }
+
+    /// The transport's control `id` (`start`, `step-back`, `play`, `step-forward`, `end`,
+    /// `speed`, `time`, `shot`), if it was drawn.
+    #[must_use]
+    pub fn transport_control(&self, id: &str) -> Option<&crate::transport::Drawn> {
+        self.transport.iter().rev().find(|control| control.id == id)
+    }
+}
+
+/// One control of a viewport's header or of its navigation gizmo, as it was drawn.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HeaderControl {
+    /// The pane it belongs to, from 0.
+    pub pane: usize,
+    /// Which control: `type`, `camera`, `style shaded`, `overlays`, `span`, `maximise`,
+    /// `pop-out`, `close`, `gizmo/zoom`, `gizmo/pan`, `gizmo/projection`.
+    pub id: String,
+    /// Where it is, points.
+    pub rect: Rect,
+    /// What its tooltip says: what it does, with its action's key where it has one; for a
+    /// disabled control, why.
+    pub tooltip: String,
+    /// The action of `ui/actions.ron` it runs, when it runs one (a menu's opener runs none).
+    pub action: Option<String>,
+    /// Whether it can be used now.
+    pub enabled: bool,
 }
 
 /// Every step of the history in words: those done, oldest first, and those undone, the next first.
@@ -225,6 +386,24 @@ pub struct Shell {
     pub gui_hidden: bool,
     /// Whether the playhead is advancing with the clock.
     pub playing: bool,
+    /// How fast the playhead moves while playing, as a multiple of the clock's rate (`speed
+    /// <x>`, 0.1 to 10; 1 at the start): seconds of the scene a second. Window state.
+    pub speed: f64,
+    /// The transport's menu that is open by a click or by its console line (`speed` or
+    /// `at-end`). Window state.
+    pub transport_menu: Option<String>,
+    /// What playing does when the playhead reaches the end of the timeline (`end
+    /// loop|stop|run-on`; it loops at the start). Window state.
+    pub at_end: crate::transport::AtEnd,
+    /// A run on under way (playing with [`crate::transport::AtEnd::RunOn`], the end reached).
+    /// `None` while not playing.
+    pub(crate) run_on: Option<crate::transport::RunOn>,
+    /// The transport's step button held down by the pointer: which, when it went down (the
+    /// frame's clock, seconds) and how many steps it has fired.
+    pub(crate) transport_hold: Option<(&'static str, f64, u32)>,
+    /// The layouts saved in this session (`layout save`, the top bar's `+`), after the built-in
+    /// ones in the top bar. Window state: not saved with the scene, gone when the window closes.
+    pub session_layouts: Vec<crate::layouts::LayoutData>,
     /// Whether the list of keys is shown.
     pub keys_open: bool,
     /// How far the `?` sheet's list is scrolled, points (kept so the keys can scroll it).
@@ -251,8 +430,9 @@ pub struct Shell {
     /// not edited until the field is left.
     pub(crate) typing: Option<(String, String)>,
     /// What the renderer could not draw in the last picture of the scene (the world's caps:
-    /// a far field cut to its budget, meshes or bricks past their caps), shown as badges in the
-    /// header (`docs/slices/S4.md` §7.6, the review's I5) and said once in the log.
+    /// a far field cut to its budget, meshes or bricks past their caps), held in the tooltip of
+    /// each scene viewport's warning dot (`docs/slices/S4.md` §7.6, the review's I5; a badge of
+    /// the header strip until S20) and said once in the log.
     pub render_notes: Vec<String>,
     /// The keyboard model's state (`docs/design/keyboard.md`): UI only, never in the engine.
     pub keyboard: Keyboard,
@@ -278,17 +458,22 @@ pub struct Shell {
     pub(crate) context_at_row: bool,
     /// The item being renamed in the scene tree (`F2`), and the name typed so far.
     pub renaming: Option<(Target, String)>,
-    /// How fast a fly session moves, metres per second, before Shift and Alt.
+    /// How fast a flight moves, metres per second, before sprinting (the wheel changes it while
+    /// flying, within [`crate::camera::FLY_SPEED_RANGE`]).
     pub fly_speed: f64,
     /// The pane being flown with the right mouse button held (Unity's and Unreal's fly: W A S D
     /// move, the mouse looks, the wheel sets the speed), while it is held. UI state.
     pub mouse_fly: Option<usize>,
+    /// The first-person camera's settings (`ui/camera.ron`; `camera-set`). UI state.
+    pub camera: crate::camera::Settings,
+    /// What the flight under way holds between frames ([`crate::first_person`]). UI state.
+    pub flight: crate::first_person::Flight,
     /// Where a picture taken with no window rests its pointer, as fractions of the active pane
     /// from its top left (`pointer 0.5 0.7`): what shows a tool's hover (the Place tool's ghost)
     /// in the demo's pictures. UI state, read only by [`crate::headless::Headless::screenshot`].
     pub pointer_at: Option<[f32; 2]>,
-    /// What the Probe tool last read, and where (S19): shown as a card in the active pane until
-    /// another probe, another tool, or a new scene. UI state; `probe x y z` is the same reading.
+    /// What the Probe tool last read, and where (S19): shown in the right panel's Probe tab, its
+    /// point marked in the active pane, until another probe, another tool, or a new scene. UI state; `probe x y z` is the same reading.
     pub probed: Option<cav_sim::probe::Probe>,
     /// A probe asked for by `probe-at`, as fractions of the active pane: taken by the next frame
     /// that has the Probe tool in hand.
@@ -303,8 +488,17 @@ pub struct Shell {
     seen_selection: Option<Target>,
     /// What the scene tree's filter keeps: rows whose names hold it.
     pub tree_filter: String,
-    /// The scene tree's folded groups, by scene name and group: UI state, kept per scene.
+    /// The scene tree's folded groups and folders, by scene name and row id (`tree/sources`,
+    /// `tree/folder/<label>`): UI state, kept per scene.
     pub tree_folded: std::collections::BTreeSet<(String, String)>,
+    /// The folder in focus in the scene tree, by label: the one a click on its row lit, which
+    /// `rename` (F2) and `new-folder` act on. A folder is never the engine's selection (moving
+    /// everything in one with the gizmo needs multi-selection: S22). UI state.
+    pub tree_focus: Option<String>,
+    /// The folder being renamed in the scene tree, by its label, and the name typed so far.
+    pub renaming_folder: Option<(String, String)>,
+    /// The row of the scene tree being dragged onto a folder or a group, while it is.
+    pub(crate) tree_drag: Option<crate::outliner::TreeDrag>,
     /// The right-hand panel's tab.
     pub right_tab: crate::outliner::RightTab,
     /// The inspector's label column, points: 40 % of its width, at least 96 (S19's panels), so
@@ -316,8 +510,21 @@ pub struct Shell {
     pub tool: String,
     /// Whether the Move tool snaps to the step.
     pub snap: bool,
-    /// The starter the Place tool adds (a name of `scenes/starters.ron`).
+    /// The starter the Place tool adds (a name of `scenes/starters.ron`): the variant of the
+    /// tool chosen in its flyout (`tool place cube`).
     pub place_starter: String,
+    /// Where the tool palette stands in its viewport's canvas, by layout name
+    /// ([`Self::layout_name`]); a layout not here has it at the top left. Window state, never
+    /// journalled.
+    pub tool_anchors: std::collections::BTreeMap<String, crate::tool_palette::Anchor>,
+    /// The palette in hand by its grip: how far the pointer is from the palette's corner,
+    /// points. While it is held the palette follows the pointer.
+    pub(crate) tool_drag: Option<egui::Vec2>,
+    /// The tool (an id of `ui/tools.ron`) whose flyout of variants is open beside the palette.
+    pub flyout: Option<String>,
+    /// Whether the press that opened the flyout (a hold) is still down: its release takes no
+    /// tool.
+    pub(crate) flyout_held: bool,
     /// A drag of the Move tool's gizmo in hand.
     pub(crate) gizmo_drag: Option<GizmoDrag>,
     /// A transform session in hand (the keyboard's Move).
@@ -325,6 +532,15 @@ pub struct Shell {
     /// Whether the active pane is maximised: it fills the window but for the menu bar and the
     /// status line (`Ctrl+Space`). UI state.
     pub maximised: bool,
+    /// The viewports that float over the window (`viewport pop-out`), by label, each with its
+    /// frame in points. Window state: the mosaic keeps the viewport's place, the engine knows
+    /// nothing of it, and nothing is journalled. A label that leaves the mosaic is dropped.
+    pub floating: std::collections::BTreeMap<char, Rect>,
+    /// The viewport (pane, from 0) whose header is being dragged toward another viewport, to
+    /// swap places with it when it is let go there. UI state.
+    pub(crate) header_drag: Option<usize>,
+    /// A splitter's drag in hand: the layout follows the pointer here until the drag ends.
+    pub(crate) splitter: Option<crate::panels::SplitterDrag>,
     /// Whether the window is full screen (`F11`), and what the window was last told.
     pub fullscreen: bool,
     fullscreen_sent: bool,
@@ -373,23 +589,40 @@ pub(crate) struct GizmoDrag {
 /// How near a body's picture the pointer must be to take hold of it, points.
 pub const GRAB_RADIUS: f32 = 16.0;
 
-/// A phase as people read it: in rad, mrad, µrad or nrad, with four figures.
+/// The unit a phase of magnitude `size` (radians) is read in: how many of the unit one radian
+/// is (1, 10³, 10⁶ or 10⁹) and its name (rad, mrad, µrad, nrad). For a column of phases, `size`
+/// is the column's largest magnitude, so the column has one unit (S20).
 #[must_use]
-pub fn phase_text(radians: f64) -> String {
-    let size = radians.abs();
+pub fn phase_unit(size: f64) -> (f64, &'static str) {
+    if size == 0.0 || size >= 1.0 || !size.is_finite() {
+        (1.0, "rad")
+    } else if size >= 1e-3 {
+        (1e3, "mrad")
+    } else if size >= 1e-6 {
+        (1e6, "µrad")
+    } else {
+        (1e9, "nrad")
+    }
+}
+
+/// A phase (`radians`) as a number of a unit of which one radian is `per_radian`
+/// ([`phase_unit`]): signed, three decimals, no unit (the column's heading has it).
+#[must_use]
+pub fn phase_in(radians: f64, per_radian: f64) -> String {
     if !radians.is_finite() {
         return if radians.is_nan() { "not a number".into() } else { "unbounded".into() };
     }
-    let (scaled, unit) = if size == 0.0 || size >= 1.0 {
-        (radians, "rad")
-    } else if size >= 1e-3 {
-        (radians * 1e3, "mrad")
-    } else if size >= 1e-6 {
-        (radians * 1e6, "µrad")
-    } else {
-        (radians * 1e9, "nrad")
-    };
-    format!("{scaled:+.3} {unit}")
+    format!("{:+.3}", radians * per_radian)
+}
+
+/// A phase as people read it: in rad, mrad, µrad or nrad, with four figures.
+#[must_use]
+pub fn phase_text(radians: f64) -> String {
+    if !radians.is_finite() {
+        return phase_in(radians, 1.0);
+    }
+    let (per_radian, unit) = phase_unit(radians.abs());
+    format!("{} {unit}", phase_in(radians, per_radian))
 }
 
 impl Default for Shell {
@@ -415,6 +648,12 @@ impl Shell {
             focus_console: false,
             gui_hidden: false,
             playing: false,
+            speed: 1.0,
+            transport_menu: None,
+            at_end: crate::transport::AtEnd::Loop,
+            run_on: None,
+            transport_hold: None,
+            session_layouts: Vec::new(),
             keys_open: false,
             sheet_scroll: 0.0,
             about_open: false,
@@ -438,8 +677,10 @@ impl Shell {
             open_context: false,
             context_at_row: false,
             renaming: None,
-            fly_speed: crate::camera::FLY_SPEED,
+            fly_speed: crate::camera::Settings::from_data().fly_speed,
             mouse_fly: None,
+            camera: crate::camera::Settings::from_data(),
+            flight: crate::first_person::Flight::default(),
             pointer_at: None,
             probed: None,
             probe_at: None,
@@ -448,15 +689,25 @@ impl Shell {
             seen_selection: None,
             tree_filter: String::new(),
             tree_folded: std::collections::BTreeSet::new(),
+            tree_focus: None,
+            renaming_folder: None,
+            tree_drag: None,
             right_tab: crate::outliner::RightTab::Inspector,
             label_width: crate::inspector::LABEL_MIN,
             clipboard: None,
             tool: "select".to_owned(),
             snap: true,
             place_starter: "sphere".to_owned(),
+            tool_anchors: std::collections::BTreeMap::new(),
+            tool_drag: None,
+            flyout: None,
+            flyout_held: false,
             gizmo_drag: None,
             session: None,
             maximised: false,
+            floating: std::collections::BTreeMap::new(),
+            header_drag: None,
+            splitter: None,
             fullscreen: false,
             fullscreen_sent: false,
             layout_name: crate::layouts::layouts().layouts[0].id.clone(),
@@ -500,6 +751,12 @@ impl Shell {
     #[must_use]
     pub fn behaviour(&self) -> crate::tools::Behaviour {
         crate::tools::strip().tool(&self.tool).map_or(crate::tools::Behaviour::Select, |t| t.behaviour)
+    }
+
+    /// Where the tool palette stands in its canvas under the layout chosen now.
+    #[must_use]
+    pub fn tool_anchor(&self) -> crate::tool_palette::Anchor {
+        self.tool_anchors.get(&self.layout_name).copied().unwrap_or_default()
     }
 
     /// The step a move snaps to, metres, when snapping is on.
@@ -667,7 +924,7 @@ impl Shell {
         !self.tree_folded.contains(&(self.engine.spec().name.clone(), scope.to_owned()))
     }
 
-    /// Whether a fly session is on: the viewport's canvas holds the keys W A S D E Q.
+    /// Whether a fly session started by `fly` is on (until `fly` again, Esc or Enter).
     #[must_use]
     pub fn flying(&self) -> bool {
         self.keyboard.session == Some(crate::keyboard::Session::Fly)
@@ -680,40 +937,14 @@ impl Shell {
         self.flying() || self.mouse_fly.is_some()
     }
 
-    /// The active pane's width over its height, from the last frame (1.6 before there is one).
+    /// The active pane's canvas's width over its height, from the last frame (1.6 before there
+    /// is one).
     fn active_aspect(&self) -> f64 {
         self.layout
-            .panes
+            .canvases
             .get(self.engine.active_pane())
             .filter(|r| r.height() > 0.0)
             .map_or(1.6, |r| f64::from(r.width() / r.height()))
-    }
-
-    /// One frame of a fly session: the held keys push the camera ([`crate::camera::fly`]) at
-    /// [`Self::fly_speed`], Shift ×10 and Alt ×0.1, for the frame's time.
-    pub(crate) fn fly_frame(&mut self, ctx: &egui::Context) {
-        if !self.any_fly() || self.keyboard.typing {
-            return;
-        }
-        let (push, modifiers, dt) = ctx.input(|i| {
-            let axis = |plus: egui::Key, minus: egui::Key| {
-                f64::from(u8::from(i.key_down(plus))) - f64::from(u8::from(i.key_down(minus)))
-            };
-            let push = crate::camera::Push {
-                forward: axis(egui::Key::W, egui::Key::S),
-                right: axis(egui::Key::D, egui::Key::A),
-                up: axis(egui::Key::E, egui::Key::Q),
-            };
-            (push, i.modifiers, f64::from(i.stable_dt).min(0.1))
-        });
-        if push == crate::camera::Push::default() {
-            return;
-        }
-        let speed = self.fly_speed * Press::with(egui::Key::W, modifiers).multiplier();
-        let pane = self.mouse_fly.unwrap_or_else(|| self.engine.active_pane());
-        let command = crate::camera::fly(self.engine.view(pane), pane, push, speed, dt);
-        self.apply(Command::View(command));
-        ctx.request_repaint();
     }
 
     /// The height of the ground under the scene, metres: the floor's top, else the room's floor,
@@ -787,9 +1018,19 @@ impl Shell {
             Needs::Redo => can_redo,
             Needs::Selection => self.engine.selection().is_some(),
             Needs::Item => matches!(self.engine.selection(), Some(Target::Body(_) | Target::Tower(_))),
+            Needs::Named => {
+                matches!(self.engine.selection(), Some(Target::Body(_) | Target::Tower(_)))
+                    || self.tree_focus.is_some()
+            }
             Needs::Body => matches!(self.engine.selection(), Some(Target::Body(_))),
             Needs::Tower(n) => n >= 1 && n <= spec.array.towers.len(),
             Needs::Shapes => spec.bodies.iter().any(|b| b.shape.is_some()),
+            Needs::World => spec.world.is_some(),
+            Needs::Viewports => self.engine.panes() > 1,
+            Needs::AfterStart => self.engine.time() > 0.0,
+            Needs::BeforeEnd => self.engine.time() < spec.duration,
+            Needs::ShotBefore => crate::transport::place_now(self).is_ok_and(|p| p.earlier.is_some()),
+            Needs::ShotAfter => crate::transport::place_now(self).is_ok_and(|p| p.later.is_some()),
         }
     }
 
@@ -983,14 +1224,40 @@ impl Shell {
         let name = words.next().unwrap_or_default();
         // `layout <id>` runs a layout's lines (view commands): the figure arranged for a task.
         if name == "layout" {
-            let all = crate::layouts::layouts();
-            let ids: Vec<&str> = all.layouts.iter().map(|l| l.id.as_str()).collect();
-            let Some(layout) = words.next().and_then(|id| all.layout(id)).filter(|_| words.next().is_none())
+            let rest: Vec<&str> = words.clone().collect();
+            if matches!(rest.first(), Some(&("save" | "forget"))) {
+                let outcome = self.layout_command(&rest);
+                if let Err(why) = &outcome {
+                    self.engine.note(Level::Error, Subsystem::App, why.clone());
+                    self.console_open = true;
+                }
+                return outcome.map(|()| line.to_owned());
+            }
+            let all: Vec<crate::layouts::LayoutData> = self.layouts().cloned().collect();
+            let ids: Vec<&str> = all.iter().map(|l| l.id.as_str()).collect();
+            let Some(layout) = words
+                .next()
+                .and_then(|id| all.iter().find(|l| l.id == id))
+                .filter(|_| words.next().is_none())
             else {
-                let why = format!("`{line}`: layout <{}>", ids.join("|"));
-                self.engine.note(Level::Error, Subsystem::App, why.clone());
-                self.console_open = true;
-                return Err(why);
+                // Not a named layout: a mosaic written out (`layout "AAB;CDB" cols 2 1 1`), which
+                // is the engine's `mosaic` command.
+                let written = line.trim_start_matches("layout").trim();
+                return match cav_engine::Mosaic::parse(written) {
+                    Ok(mosaic) => {
+                        self.maximised = false;
+                        self.run(&format!("mosaic {}", mosaic.quoted()))
+                    }
+                    Err(why) => {
+                        let why = format!(
+                            "`{line}`: layout <{}>, or a mosaic as `\"AAB;CDB\"` ({why})",
+                            ids.join("|")
+                        );
+                        self.engine.note(Level::Error, Subsystem::App, why.clone());
+                        self.console_open = true;
+                        Err(why)
+                    }
+                };
             };
             self.maximised = false;
             self.layout_name.clone_from(&layout.id);
@@ -999,6 +1266,69 @@ impl Shell {
                 self.run(step)?;
             }
             return Ok(line.to_owned());
+        }
+        if name == "viewport" {
+            let outcome = self.viewport_command(&words.collect::<Vec<_>>());
+            if let Err(why) = &outcome {
+                self.engine.note(Level::Error, Subsystem::App, why.clone());
+                self.console_open = true;
+            }
+            return outcome.map(|()| line.to_owned());
+        }
+        // `step <n> [cycle]`, `speed <x>|menu` and `end <behaviour>|menu`: the transport's
+        // (`crate::transport`).
+        if matches!(name, "step" | "speed" | "end") {
+            let rest: Vec<&str> = words.collect();
+            let outcome = if name == "end" {
+                use crate::transport::AtEnd;
+                match rest[..] {
+                    ["menu"] => {
+                        let open = self.transport_menu.as_deref() == Some("at-end");
+                        self.transport_menu = (!open).then(|| "at-end".to_owned());
+                        Ok(())
+                    }
+                    [word] if AtEnd::parse(word).is_some() => {
+                        self.at_end = AtEnd::parse(word).expect("just parsed");
+                        // A run on in hand ends with the behaviour that made it.
+                        self.run_on = None;
+                        Ok(())
+                    }
+                    _ => {
+                        let names: Vec<&str> = AtEnd::ALL.iter().map(|at_end| at_end.name()).collect();
+                        Err(format!("`{line}`: end <{}>, or `end menu`", names.join("|")))
+                    }
+                }
+            } else if name == "step" {
+                match rest[..] {
+                    [n] | [n, "cycle"] => match n.parse::<i64>() {
+                        Ok(steps) if steps != 0 => crate::transport::step(self, steps, rest.len() == 2),
+                        _ => Err(format!("`{n}` is not a number of steps; step <n> [cycle], n not 0")),
+                    },
+                    _ => Err(format!("`{line}`: step <n> [cycle]")),
+                }
+            } else {
+                let (least, most) = (crate::transport::SPEEDS[0], crate::transport::SPEEDS[6]);
+                match rest[..] {
+                    ["menu"] => {
+                        let open = self.transport_menu.as_deref() == Some("speed");
+                        self.transport_menu = (!open).then(|| "speed".to_owned());
+                        Ok(())
+                    }
+                    [x] => match x.trim_end_matches(['×', 'x']).parse::<f64>() {
+                        Ok(speed) if (least..=most).contains(&speed) => {
+                            self.speed = speed;
+                            Ok(())
+                        }
+                        _ => Err(format!("`{x}` is not a speed; speed <{least} to {most}>, or `speed menu`")),
+                    },
+                    _ => Err(format!("`{line}`: speed <{least} to {most}>, or `speed menu`")),
+                }
+            };
+            if let Err(why) = &outcome {
+                self.engine.note(Level::Error, Subsystem::App, why.clone());
+                self.console_open = true;
+            }
+            return outcome.map(|()| line.to_owned());
         }
         // `focus <id>` puts the keyboard's focus on a scope or an element of the last frame's tree,
         // with the ring showing: for scripts, the demo and a person who knows the id.
@@ -1047,21 +1377,118 @@ impl Shell {
             }
             return outcome;
         }
-        // `tool <id>` takes a tool of the strip in hand; nothing is journalled.
+        // `tool <id> [variant]` takes a tool of the palette in hand, with one of its variants
+        // if one is named (`tool place cube`); nothing is journalled.
         if name == "tool" {
-            let ids: Vec<&str> = crate::tools::strip().tools.iter().map(|t| t.id.as_str()).collect();
-            return match (words.next(), words.next()) {
-                (Some(id), None) if ids.contains(&id) => {
-                    self.tool = id.to_owned();
+            let tools = &crate::tools::strip().tools;
+            let ids: Vec<&str> = tools.iter().map(|t| t.id.as_str()).collect();
+            let (id, variant, more) = (words.next(), words.next(), words.next());
+            let tool = id.and_then(|id| tools.iter().find(|t| t.id == id)).filter(|_| more.is_none());
+            let outcome = match (tool, variant) {
+                (Some(tool), None) => {
+                    self.tool.clone_from(&tool.id);
                     Ok(line.to_owned())
                 }
-                _ => {
-                    let why = format!("`{line}`: tool <{}>", ids.join("|"));
+                (Some(tool), Some(variant)) => {
+                    let names: Vec<String> = tool.variants.list().into_iter().map(|v| v.name).collect();
+                    if names.iter().any(|name| name == variant) {
+                        match tool.variants {
+                            crate::tools::Variants::Starters => self.place_starter = variant.to_owned(),
+                            crate::tools::Variants::None => {}
+                        }
+                        self.tool.clone_from(&tool.id);
+                        Ok(line.to_owned())
+                    } else if names.is_empty() {
+                        Err(format!("`{line}`: the {} tool has no variants", tool.label))
+                    } else {
+                        Err(format!("`{line}`: tool {} <{}>", tool.id, names.join("|")))
+                    }
+                }
+                (None, _) => Err(format!("`{line}`: tool <{}> [variant]", ids.join("|"))),
+            };
+            match &outcome {
+                Ok(_) => self.flyout = None,
+                Err(why) => {
                     self.engine.note(Level::Error, Subsystem::App, why.clone());
                     self.console_open = true;
-                    Err(why)
+                }
+            }
+            return outcome;
+        }
+        // `tool-palette <anchor>` stands the palette at an edge or a corner of its view, for
+        // the layout chosen now; `flyout <tool>` opens a tool's variants beside it. Both are
+        // the window's own state.
+        if name == "tool-palette" || name == "flyout" {
+            let word = words.next().filter(|_| words.next().is_none());
+            let outcome = if name == "tool-palette" {
+                let names: Vec<&str> =
+                    crate::tool_palette::Anchor::ALL.iter().map(|anchor| anchor.name()).collect();
+                match word.and_then(crate::tool_palette::Anchor::parse) {
+                    Some(anchor) => {
+                        self.tool_anchors.insert(self.layout_name.clone(), anchor);
+                        Ok(line.to_owned())
+                    }
+                    None => Err(format!("`{line}`: tool-palette <{}>", names.join("|"))),
+                }
+            } else {
+                let with: Vec<&str> = crate::tools::strip()
+                    .tools
+                    .iter()
+                    .filter(|t| t.variants != crate::tools::Variants::None)
+                    .map(|t| t.id.as_str())
+                    .collect();
+                match word {
+                    Some("off") => {
+                        self.flyout = None;
+                        Ok(line.to_owned())
+                    }
+                    Some(id) if with.contains(&id) => {
+                        self.flyout = Some(id.to_owned());
+                        Ok(line.to_owned())
+                    }
+                    _ => Err(format!("`{line}`: flyout <{}|off>", with.join("|"))),
                 }
             };
+            if let Err(why) = &outcome {
+                self.engine.note(Level::Error, Subsystem::App, why.clone());
+                self.console_open = true;
+            }
+            return outcome;
+        }
+        // `camera-set [<setting> <value>]`: the first-person camera's settings, the window's own.
+        if name == "camera-set" {
+            let (setting, value, more) = (words.next(), words.next(), words.next());
+            let outcome = match (setting, value.map(str::parse::<f64>), more) {
+                (None, _, _) => {
+                    self.console_open = true;
+                    let rows: Vec<String> = crate::camera::SETTINGS
+                        .iter()
+                        .map(|(name, unit, _, _, about)| {
+                            let value = self.camera.get(name).unwrap_or(f64::NAN);
+                            format!("{name} = {value} {unit}  ({about})")
+                        })
+                        .collect();
+                    Ok(rows.join("\n"))
+                }
+                (Some(setting), Some(Ok(value)), None) => {
+                    self.camera.set(setting, value).map_err(|why| format!("`{line}`: {why}")).map(|()| {
+                        if setting == "fly-speed" {
+                            self.fly_speed = value;
+                        }
+                        line.to_owned()
+                    })
+                }
+                _ => Err(format!("`{line}`: {}", self.camera.clone().set("", 0.0).unwrap_err())),
+            };
+            match &outcome {
+                Ok(said) if setting.is_none() => self.engine.note(Level::Info, Subsystem::App, said.clone()),
+                Ok(_) => {}
+                Err(why) => {
+                    self.engine.note(Level::Error, Subsystem::App, why.clone());
+                    self.console_open = true;
+                }
+            }
+            return outcome;
         }
         // `palette <menu>` opens the palette filtered to a menu (`palette add`: the starters).
         // `palette <menu>` opens the palette filtered to a menu (`palette add`: the starters);
@@ -1088,7 +1515,7 @@ impl Shell {
             return Ok(line.to_owned());
         }
         // These take their words below; every other takes none.
-        let takes_words = matches!(name, "pointer" | "tab" | "probe-at" | "import-mesh");
+        let takes_words = matches!(name, "pointer" | "tab" | "probe-at" | "import-mesh" | "tree-fold");
         if !takes_words && words.clone().next().is_some() {
             let why = format!("`{name}` takes no arguments");
             self.engine.note(Level::Error, Subsystem::App, why.clone());
@@ -1160,8 +1587,9 @@ impl Shell {
             "tab" => match words.next() {
                 Some("inspector") => self.right_tab = crate::outliner::RightTab::Inspector,
                 Some("readings") => self.right_tab = crate::outliner::RightTab::Readings,
+                Some("probe") => self.right_tab = crate::outliner::RightTab::Probe,
                 _ => {
-                    let why = "`tab <inspector|readings>`".to_owned();
+                    let why = "`tab <inspector|readings|probe>`".to_owned();
                     self.engine.note(Level::Error, Subsystem::App, why.clone());
                     return Err(why);
                 }
@@ -1213,17 +1641,45 @@ impl Shell {
                 self.apply(Command::View(command));
             }
             "fly" => {
-                if self.flying() {
-                    self.keyboard.session = None;
-                    self.keyboard.mode = crate::keyboard::Mode::Navigation;
-                } else {
-                    // The canvas takes the keys, in interaction mode: W A S D E Q fly, the
-                    // arrows look, Enter or Esc stop (the camera kept where it was flown).
-                    self.keyboard.focus = vec!["viewport".into(), "viewport/canvas".into()];
-                    self.keyboard.mode = crate::keyboard::Mode::Interaction;
-                    self.keyboard.session = Some(crate::keyboard::Session::Fly);
-                    self.keyboard.nav_on |= self.by_keyboard;
+                if self.any_fly() {
+                    self.end_fly();
+                } else if let Err(why) = self.start_fly() {
+                    self.engine.note(Level::Error, Subsystem::App, why.clone());
+                    self.console_open = true;
+                    return Err(why);
                 }
+            }
+            "tree-fold" => {
+                // The row's name is the rest of the line, quotes or not.
+                let rest = line.trim_start_matches("tree-fold").trim().trim_matches('"');
+                let id = match rest.to_lowercase().as_str() {
+                    "array" => Some("tree/array".to_owned()),
+                    "bodies" => Some("tree/sources".to_owned()),
+                    "surroundings" => Some("tree/surroundings".to_owned()),
+                    _ => self.engine.spec().folder(rest).map(|f| crate::outliner::folder_id(&f.label)),
+                };
+                let Some(id) = id else {
+                    let why = format!(
+                        "`tree-fold <array|bodies|surroundings|folder>`: `{rest}` is no row that folds"
+                    );
+                    self.engine.note(Level::Error, Subsystem::App, why.clone());
+                    return Err(why);
+                };
+                let key = (self.engine.spec().name.clone(), id);
+                if !self.tree_folded.remove(&key) {
+                    self.tree_folded.insert(key);
+                }
+                return Ok(line.to_owned());
+            }
+            "new-folder" => {
+                if let Err(why) = crate::outliner::new_folder(self) {
+                    self.engine.note(Level::Error, Subsystem::App, why.clone());
+                    return Err(why);
+                }
+            }
+            "rename" if self.tree_focus.as_ref().is_some_and(|f| self.engine.spec().folder(f).is_some()) => {
+                let label = self.tree_focus.clone().unwrap_or_default();
+                self.renaming_folder = Some((label.clone(), label));
             }
             "rename" => match self.engine.selection() {
                 Some(target @ (Target::Body(n) | Target::Tower(n))) => {
@@ -1245,6 +1701,120 @@ impl Shell {
             _ => unreachable!("is_app_command checked the name"),
         }
         Ok(name.to_owned())
+    }
+
+    /// Every layout the top bar offers: the built-in ones (`ui/layouts.ron`), then those saved in
+    /// this session ([`Self::session_layouts`]).
+    pub fn layouts(&self) -> impl Iterator<Item = &crate::layouts::LayoutData> {
+        crate::layouts::layouts().layouts.iter().chain(&self.session_layouts)
+    }
+
+    /// `layout save [name]` and `layout forget <id>`: the session's own layouts. Saving keeps the
+    /// figure's arrangement as it stands (the mosaic with its weights, what each viewport shows,
+    /// which is active) as the lines that make it again, under a new id, and makes it the layout
+    /// chosen now. Nothing is journalled: a layout is the window's.
+    fn layout_command(&mut self, words: &[&str]) -> Result<(), String> {
+        /// The most layouts a session keeps (the top bar is one row).
+        const MOST: usize = 6;
+        match words {
+            ["save", name @ ..] => {
+                if self.session_layouts.len() >= MOST {
+                    return Err(format!(
+                        "a session keeps {MOST} layouts of its own; `layout forget <id>` drops one"
+                    ));
+                }
+                let taken = |id: &str| self.layouts().any(|l| l.id == id) || matches!(id, "save" | "forget");
+                let number = (1..).find(|n| !taken(&format!("layout-{n}"))).expect("a free number");
+                let label = if name.is_empty() { format!("Layout {number}") } else { name.join(" ") };
+                let slug: String =
+                    label.to_lowercase().chars().map(|c| if c.is_alphanumeric() { c } else { '-' }).collect();
+                let id = if name.is_empty() { format!("layout-{number}") } else { slug };
+                if taken(&id) || cav_engine::Mosaic::parse(&id).is_ok() {
+                    return Err(format!(
+                        "`{id}` is taken (a layout, or a mosaic's own writing): give another name"
+                    ));
+                }
+                let mosaic = self.engine.mosaic().quoted();
+                let mut lines = vec![format!("mosaic {mosaic}")];
+                for pane in 0..self.engine.panes() {
+                    lines.push(format!("show {} @{}", self.engine.content(pane).name(), pane + 1));
+                }
+                lines.push(format!("pane {}", self.engine.active_pane() + 1));
+                // The palette's place goes with the arrangement it was set for.
+                if let Some(anchor) = self.tool_anchors.get(&self.layout_name).copied() {
+                    self.tool_anchors.insert(id.clone(), anchor);
+                }
+                self.session_layouts.push(crate::layouts::LayoutData {
+                    id: id.clone(),
+                    label,
+                    lines,
+                    unfold: Vec::new(),
+                    about: format!("saved in this session: {mosaic} (`layout forget {id}` drops it)"),
+                });
+                self.layout_name = id;
+                Ok(())
+            }
+            ["forget", id] => {
+                let Some(at) = self.session_layouts.iter().position(|l| l.id == *id) else {
+                    return Err(format!("`{id}` is not a layout saved in this session"));
+                };
+                self.session_layouts.remove(at);
+                self.tool_anchors.remove(*id);
+                if self.layout_name == *id {
+                    self.layout_name.clone_from(&crate::layouts::layouts().layouts[0].id);
+                }
+                Ok(())
+            }
+            _ => Err("layout save [name] · layout forget <id>".to_owned()),
+        }
+    }
+
+    /// `viewport <close|swap|pop-out|dock> [N]`: what the View menu and a viewport's right-click
+    /// menu do to one viewport (the active one, or number N from 1). Close and swap are the
+    /// engine's `close @N` and `swap N M` (one `Mosaic` command each, journalled); pop-out and
+    /// dock are the window's own state and journal nothing.
+    fn viewport_command(&mut self, words: &[&str]) -> Result<(), String> {
+        const USAGE: &str = "viewport <close|swap|pop-out|dock> [N]";
+        let count = self.engine.panes();
+        let (verb, pane, named) = match *words {
+            [verb] => (verb, self.engine.active_pane(), false),
+            [verb, n] => match n.parse::<usize>().ok().and_then(|n| n.checked_sub(1)) {
+                Some(pane) if pane < count => (verb, pane, true),
+                _ => return Err(format!("there is no viewport {n}; the figure has 1 to {count}")),
+            },
+            _ => return Err(USAGE.to_owned()),
+        };
+        let label = self.engine.mosaic().label(pane).expect("the pane is one of the mosaic's");
+        match verb {
+            "close" => self.run(&format!("close @{}", pane + 1)).map(|_| ()),
+            "swap" if count < 2 => Err("there is no other viewport to swap with".to_owned()),
+            "swap" => self.run(&format!("swap {} {}", pane + 1, (pane + 1) % count + 1)).map(|_| ()),
+            "pop-out" if self.floating.remove(&label).is_some() => Ok(()),
+            "pop-out" => {
+                // Over its own place, a little in from the corner, at a size that leaves the
+                // window in sight; before any frame has been drawn, a default.
+                let frame = match (self.layout.slots.get(pane), self.layout.figure) {
+                    (Some(slot), figure) if figure.is_positive() => {
+                        let size = slot.size().max(crate::panels::MIN_FLOAT).min(figure.size() * 0.6);
+                        // (Clear of the tool palette at the canvas's top left.)
+                        Rect::from_min_size(slot.min + egui::vec2(56.0, 24.0), size)
+                    }
+                    _ => Rect::from_min_size(egui::pos2(120.0, 120.0), egui::vec2(480.0, 360.0)),
+                };
+                self.maximised = false;
+                self.floating.insert(label, frame);
+                Ok(())
+            }
+            "dock" if named => {
+                self.floating.remove(&label);
+                Ok(())
+            }
+            "dock" => {
+                self.floating.clear();
+                Ok(())
+            }
+            _ => Err(USAGE.to_owned()),
+        }
     }
 
     /// A window has opened (`open`) or closed: on opening it takes the keyboard's focus at its
@@ -1417,12 +1987,18 @@ impl Shell {
         // it (S18's third review, minor 3: a wide look turn reaches the edge, and winit reports
         // the cursor gone though the button is down); egui keeps the button down until its
         // release is seen, as it does for any drag.
-        if self.mouse_fly.is_some() && ctx.input(|i| !i.pointer.secondary_down() || !i.focused) {
+        if self.mouse_fly.is_some() && ctx.input(|i| !i.pointer.secondary_down()) {
             self.mouse_fly = None;
+        }
+        // The window's focus lost ends a flight however it was started: the keys and the
+        // pointer are another window's now.
+        if self.any_fly() && ctx.input(|i| !i.focused) {
+            self.end_fly();
         }
         // A primary press anywhere but the tool's options row ends a transform session, its move
         // kept: a click on a row of the tree, the canvas, a menu (S18's third review, minor 1; as
-        // a click outside a move keeps it in Blender). The options row is the session's own.
+        // a click outside a move keeps it in Blender). The options row is the session's own (it
+        // is shown while a session is under way; were it not, any press would end the session).
         if let Some((pos, true)) = clicked
             && self.session.is_some()
             && !self.layout.panel("options").is_some_and(|r| r.contains(pos))
@@ -1450,12 +2026,16 @@ impl Shell {
             routed.push((press, false));
         }
         routed.extend(self.repeat.due(now).into_iter().map(|press| (press, true)));
-        // While the right button flies the camera, every key but a global is the flight's (W A S D
-        // E Q, read as held keys by `fly_frame`), as in a fly session: W is not the Move tool, A
-        // not Place, 2 selects no tower, Delete deletes nothing (S18's reviews, U3 and minor 3).
+        // While the camera is flown, every key is the flight's (`first_person`): the held keys
+        // are read by `fly_frame`, and no press reaches the router or a widget. W is not the Move
+        // tool, A not Place, 2 selects no tower, Delete deletes nothing, Space does not play,
+        // Ctrl+S (sprinting backwards) does not save (S18's reviews, U3 and minor 3; the owner's
+        // ruling of 25 Nov 2026).
         let shortcuts = crate::actions::table().shortcuts();
-        if self.mouse_fly.is_some() {
-            routed.retain(|(press, _)| crate::keyboard::is_global(&shortcuts, *press));
+        if self.any_fly() {
+            self.fly_keys(&routed, now);
+            routed.clear();
+            ctx.input_mut(|i| i.events.retain(|event| !matches!(event, Event::Key { .. } | Event::Text(_))));
         }
         if self.repeat.any() {
             ctx.request_repaint();
@@ -1512,6 +2092,10 @@ impl Shell {
                     self.keys_open = false;
                     self.about_open = false;
                     self.history_open = false;
+                } else if self.flyout.is_some() {
+                    self.flyout = None;
+                } else if self.transport_menu.is_some() {
+                    self.transport_menu = None;
                 } else if self.console_open {
                     self.console_open = false;
                 } else if self.gui_hidden {
@@ -1595,16 +2179,73 @@ impl Shell {
         self.keyboard.nav_on.then(|| self.tree.breadcrumb(&self.keyboard.focus)).filter(|t| !t.is_empty())
     }
 
-    /// Moves the playhead while playing, by the frame's time step; loops at the end.
+    /// Moves the playhead while playing, by the frame's time step (at most a tenth of a second)
+    /// times the speed ([`Self::speed`]). At the end of the timeline it does what
+    /// [`Self::at_end`] says: back to the start; or the playhead stops at exactly the duration
+    /// and playing stops; or the run goes on ([`Self::run_on_past`]).
     pub(crate) fn advance(&mut self, ctx: &egui::Context) {
+        use crate::transport::AtEnd;
         if !self.playing {
+            self.run_on = None;
             return;
         }
-        let step = f64::from(ctx.input(|i| i.stable_dt)).min(0.1);
+        let step = f64::from(ctx.input(|i| i.stable_dt)).min(0.1) * self.speed;
         let duration = self.engine.spec().duration;
         let next = self.engine.time() + step;
-        self.apply(Command::Seek(if next >= duration { 0.0 } else { next }));
+        if next < duration {
+            self.apply(Command::Seek(next));
+        } else {
+            match self.at_end {
+                AtEnd::Loop => {
+                    self.apply(Command::Seek(0.0));
+                }
+                AtEnd::Stop => {
+                    self.apply(Command::Seek(duration));
+                    self.playing = false;
+                }
+                AtEnd::RunOn => self.run_on_past(next),
+            }
+        }
         ctx.request_repaint();
+    }
+
+    /// Run on: the playhead is to go to `next` (seconds), at or past the end of the timeline.
+    /// The scene's duration grows by whole blocks of its length when this run first reached the
+    /// end ([`crate::transport::RunOn::extend`]), by the `set` of `duration` an editor issues,
+    /// each extension continuing the one before so that the whole run is one step of undo (the
+    /// seeks between are no edits and do not end it: `cav-engine`'s
+    /// `a_run_of_sets_is_one_step_whatever_comes_between`). Never past the schema's longest
+    /// timeline: there the playhead stops, playing stops, and the log says so.
+    ///
+    /// The cost is the engine's: each extension is an edit of the scene, so the signal is stale
+    /// until its worker has computed it for the longer timeline (off this thread). An extension
+    /// that finds the last one's signal still being computed adds twice the blocks.
+    fn run_on_past(&mut self, next: f64) {
+        let limit = cav_sim::spec::limits::DURATION;
+        let duration = self.engine.spec().duration;
+        let mut run = self.run_on.unwrap_or_else(|| crate::transport::RunOn::new(duration));
+        self.run_on = Some(run);
+        if duration >= limit {
+            self.apply(Command::Seek(duration));
+            self.playing = false;
+            self.engine.note(
+                Level::Warn,
+                Subsystem::App,
+                format!("run on stopped at {limit} s: a timeline is no longer than that"),
+            );
+            return;
+        }
+        let continues = run.extended;
+        let behind = self.engine.signal().0 == cav_engine::SignalState::Stale;
+        let longer = run.extend(duration, next, behind, limit);
+        let set = crate::editors::command_for("duration", serde_json::json!(longer), continues);
+        if self.apply(set) {
+            self.run_on = Some(run);
+            self.apply(Command::Seek(next.min(longer)));
+        } else {
+            // The engine has said why (in the log, the console open).
+            self.playing = false;
+        }
     }
 
     /// The log entries the console shows, oldest first, at most `limit`.
@@ -1678,6 +2319,8 @@ impl Shell {
         if selection != self.seen_selection {
             if selection.is_some() {
                 self.right_tab = crate::outliner::RightTab::Inspector;
+                // Something selected takes the tree's light from a folder.
+                self.tree_focus = None;
             }
             self.seen_selection = selection;
         }
@@ -1696,6 +2339,8 @@ impl Shell {
         crate::panels::draw(self, ui, surface);
         crate::palette::draw(self, &ctx);
         crate::dialogs::draw(self, &ctx);
+        crate::first_person::shield(self, &ctx);
+        self.fly_capture(&ctx);
         self.orphaned_session();
         self.paint_ring(&ctx);
         // What no widget took this frame (a click of something no longer drawn) is dropped; so is
@@ -1744,12 +2389,11 @@ impl Shell {
     }
 
     /// The wheel over a pane: zoom toward the point under the pointer (`pointer`, points from the
-    /// pane's corner, in a pane of `size` points), which stays where it is on screen; in a fly
-    /// session the wheel sets the flying speed instead.
+    /// pane's corner, in a pane of `size` points), which stays where it is on screen. (While
+    /// flying the wheel is the flight's: `fly_frame` takes it and it never comes here.)
     pub(crate) fn zoom_by(&mut self, pane: usize, scroll: f32, pointer: [f64; 2], size: [f64; 2]) {
         let factor = f64::from(-scroll * 0.002).exp();
         if self.any_fly() {
-            self.fly_speed = (self.fly_speed / factor).clamp(0.01, 1000.0);
             return;
         }
         let view = self.engine.view(pane).clone();

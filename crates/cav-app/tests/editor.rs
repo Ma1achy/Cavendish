@@ -29,6 +29,32 @@ impl Rig {
         run_frames(&self.ctx, &mut self.shell, &mut NoSurface, self.size, &mut self.clock, frames);
     }
 
+    /// Runs the frames one at a time and returns what each asked of the window (the root
+    /// viewport's commands: the title, the cursor's grab), in order.
+    fn frames_asking(&mut self, frames: Vec<Vec<Event>>) -> Vec<egui::ViewportCommand> {
+        let mut asked = Vec::new();
+        for events in frames {
+            self.events += events.len();
+            let output = run_frames(
+                &self.ctx,
+                &mut self.shell,
+                &mut NoSurface,
+                self.size,
+                &mut self.clock,
+                vec![events],
+            );
+            if let Some(root) = output.viewport_output.get(&egui::ViewportId::ROOT) {
+                asked.extend(root.commands.iter().cloned());
+            }
+        }
+        asked
+    }
+
+    /// Frames until a flown camera has eased to rest (a second: the easing's 0.08 s many times).
+    fn settle(&mut self) {
+        self.frames(vec![vec![]; 60]);
+    }
+
     fn key(&mut self, key: Key, modifiers: Modifiers) {
         let event = |pressed| Event::Key { key, physical_key: None, pressed, repeat: false, modifiers };
         self.frames(vec![vec![event(true)], vec![event(false)]]);
@@ -70,7 +96,7 @@ impl Rig {
     /// Drags the Move tool's gizmo on body `body` along `axis` by `metres`, from a point on the
     /// arrow, as a person would (the pointer moves `metres` worth of the arrow on screen).
     fn drag_arrow(&mut self, body: usize, axis: usize, metres: f64) {
-        let rect = self.shell.layout().panes[0];
+        let rect = self.shell.layout().canvases[0];
         let spec = self.shell.engine.spec();
         let at = spec.bodies[body].motion.position(self.shell.engine.time(), spec.array.instrument.gravity);
         let g =
@@ -225,7 +251,7 @@ fn the_place_tool_drops_a_starter_where_the_pointer_is() {
     rig.shell.run("tool place").unwrap();
     rig.shell.place_starter = "cube".into();
     rig.frames(vec![vec![], vec![]]);
-    let rect = rig.shell.layout().panes[0];
+    let rect = rig.shell.layout().canvases[0];
     let pointer = rect.min + egui::vec2(0.62 * rect.width(), 0.7 * rect.height());
     let size = [f64::from(rect.width()), f64::from(rect.height())];
     let within = [f64::from(pointer.x - rect.min.x), f64::from(pointer.y - rect.min.y)];
@@ -263,7 +289,7 @@ fn choosing_a_tool_changes_no_scene() {
     // Control: a tool's action does change the scene (Place), and is journalled.
     rig.shell.run("tool place").unwrap();
     rig.frames(vec![vec![]]);
-    let rect = rig.shell.layout().panes[0];
+    let rect = rig.shell.layout().canvases[0];
     rig.click(rect.center() + egui::vec2(0.0, 0.3 * rect.height()));
     assert_ne!(rig.shell.engine.digest(), digest);
 }
@@ -635,7 +661,7 @@ fn every_layout_keeps_every_scope_and_the_figure_uncovered() {
 /// picture, over points all round the sphere (its silhouette, which in perspective is wider than
 /// its radius at its centre's depth: S18's review, U5).
 fn spans(rig: &Rig, pane: usize, centre: [f64; 3], radius: f64) -> f64 {
-    let rect = rig.shell.layout().panes[pane];
+    let rect = rig.shell.layout().canvases[pane];
     let view = rig.shell.engine.view(pane).clone();
     let camera = cav_render::Camera::new(&view, f64::from(rect.width() / rect.height()));
     let whole = [rect.width().round() as u32, rect.height().round() as u32];
@@ -707,7 +733,7 @@ fn the_wheel_zooms_toward_the_pointer() {
     let mut rig = Rig::new();
     rig.shell.run("load room").unwrap();
     rig.frames(vec![vec![], vec![]]);
-    let pane = rig.shell.layout().panes[0];
+    let pane = rig.shell.layout().canvases[0];
     let pointer = pane.min + egui::vec2(0.8 * pane.width(), 0.25 * pane.height());
     let size = [f64::from(pane.width()), f64::from(pane.height())];
     let within = [f64::from(pointer.x - pane.min.x), f64::from(pointer.y - pane.min.y)];
@@ -766,6 +792,9 @@ fn fly_is_a_session() {
         modifiers: Modifiers::NONE,
     };
     rig.frames(vec![vec![down], vec![], vec![], vec![], vec![up]]);
+    // (TASK-S20-10: the velocity eases, so the camera glides on for a moment after the key is
+    // let go; where it was flown is where it comes to rest.)
+    rig.settle();
     let flown = rig.shell.engine.view(0).clone();
     let (to_eye, _, _) = start.basis();
     let moved = [
@@ -1116,7 +1145,7 @@ fn a_canvas_click_does_not_move_the_keyboard_focus() {
     rig.key(Key::Enter, Modifiers::NONE);
     let focus = rig.shell.keyboard.focus.clone();
     assert!(rig.shell.keyboard.nav_on && focus.len() > 1, "{focus:?}");
-    let pane = rig.shell.layout().panes[0];
+    let pane = rig.shell.layout().canvases[0];
     let at = rig.shell.body_point(0, 0, pane.size()).expect("the mass is in view");
     rig.click(pane.min + at.to_vec2());
     assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)), "the click did its canvas action");
@@ -1166,6 +1195,12 @@ fn every_starter_has_an_editor_for_every_field() {
         rig.shell.run("load void").unwrap();
         rig.shell.add_starter(&starter.name).unwrap();
         rig.frames(vec![vec![], vec![]]);
+        // (S20: a body that is always there has its Lifetime card folded at first, its two empty
+        // boxes one click away; opened here, so that every field's editor is looked for as before.)
+        if let Some(header) = rig.shell.layout().button("fold inspector/lifetime") {
+            rig.click(header.center());
+            rig.frames(vec![vec![]]);
+        }
         let prefix = Shell::resolve("{selection}", rig.shell.engine.selection());
         assert!(!prefix.is_empty(), "{}: selected", starter.name);
         let leaves =
@@ -1201,9 +1236,12 @@ fn every_starter_has_an_editor_for_every_field() {
 }
 
 #[test]
-fn fly_speed_takes_shift_and_alt_through_the_frame() {
-    // S18 C5 through the window: the same frames of W held move the camera 10 times as far with
-    // Shift and a tenth as far with Alt (the frame's own use of the modifiers).
+fn fly_speed_takes_sprint_through_the_frame() {
+    // S18 C5 through the window, rewritten for the owner's ruling of 25 Nov 2026 (TASK-S20-10;
+    // it was `fly_speed_takes_shift_and_alt_through_the_frame`: Shift ×10 and Alt ×0.1). Flying
+    // as a first-person game does, Shift is "down" and Ctrl sprints: the same frames of W held
+    // move the camera the sprint factor times as far across the ground with Ctrl, exactly as
+    // far with Shift (which also sinks), and exactly as far with Alt (which is nothing here).
     let flown = |modifiers: Modifiers| {
         let mut rig = Rig::new();
         rig.shell.run("load point").unwrap();
@@ -1219,12 +1257,15 @@ fn fly_speed_takes_shift_and_alt_through_the_frame() {
         frames.push(vec![w(false, false)]);
         rig.frames(frames);
         let end = rig.shell.engine.view(0).target;
-        (end[0] - start[0]).hypot(end[1] - start[1]).hypot(end[2] - start[2])
+        ((end[0] - start[0]).hypot(end[1] - start[1]), end[2] - start[2])
     };
-    let (plain, fast, slow) = (flown(Modifiers::NONE), flown(Modifiers::SHIFT), flown(Modifiers::ALT));
-    assert!(plain > 0.0);
-    assert!((fast / plain - 10.0).abs() < 1e-9, "Shift: {}", fast / plain);
-    assert!((slow / plain - 0.1).abs() < 1e-9, "Alt: {}", slow / plain);
+    let sprint = cav_app::camera::Settings::from_data().sprint;
+    let ((plain, level), (fast, _)) = (flown(Modifiers::NONE), flown(Modifiers::CTRL));
+    let ((sinking, sunk), (alt, _)) = (flown(Modifiers::SHIFT), flown(Modifiers::ALT));
+    assert!(plain > 0.0 && level.abs() < 1e-12, "W alone flies level: {plain} {level}");
+    assert!((fast / plain - sprint).abs() < 1e-9, "Ctrl: {}", fast / plain);
+    assert!((sinking / plain - 1.0).abs() < 1e-9 && sunk < -0.01, "Shift sinks, no faster: {sinking} {sunk}");
+    assert!((alt / plain - 1.0).abs() < 1e-9, "Alt: {}", alt / plain);
 }
 
 #[test]
@@ -1339,7 +1380,7 @@ fn the_right_button_flies_and_holds_the_letters() {
     rig.shell.run("load point").unwrap();
     rig.shell.run("tool select").unwrap();
     rig.frames(vec![vec![], vec![]]);
-    let pane = rig.shell.layout().panes[0];
+    let pane = rig.shell.layout().canvases[0];
     let at = pane.center() + egui::vec2(0.0, -0.3 * pane.height());
     let start = rig.shell.engine.view(0).clone();
     let w = |pressed, repeat| Event::Key {
@@ -1357,11 +1398,15 @@ fn the_right_button_flies_and_holds_the_letters() {
     rig.frames(frames);
     assert!(rig.shell.mouse_fly.is_some(), "the right button is held: flying");
     assert_eq!(rig.shell.tool, "select", "W was the flight's, not the Move tool");
+    // (TASK-S20-10: the camera eases to rest after W is let go; the look is measured from
+    // there, or the glide would be taken for the eye moving in the look.)
+    rig.settle();
     let flown = rig.shell.engine.view(0).clone();
     let (to_eye, _, _) = start.basis();
     let moved: f64 = (0..3).map(|i| -(flown.target[i] - start.target[i]) * to_eye[i]).sum();
     assert!(moved > 0.05, "flew {moved} m forward");
-    // The mouse looks: a drag with the button held turns the view, the eye kept.
+    // The mouse looks: a drag with the button held turns the view, the eye kept. (With no raw
+    // motion from the device, as here, the pointer's own stands in.)
     rig.frames(vec![
         vec![Event::PointerMoved(at + egui::vec2(30.0, 0.0))],
         vec![Event::PointerMoved(at + egui::vec2(60.0, 0.0))],
@@ -1398,11 +1443,13 @@ fn the_right_button_flies_and_holds_the_letters() {
 
 #[test]
 fn the_tool_strip_has_one_name_a_tool_and_snap_apart() {
-    // S18's review, U2: each tool has one name, its action's (Place is Place on the strip, in
-    // the options row and on the sheet); snap is a toggle below the tools, not one of them.
+    // S18's review, U2: each tool has one name, its action's (Place is Place on the palette
+    // and on the sheet); snap is a switch apart from the tools, not one of them.
+    // (S20: the Move tool is in hand here, not Place: the options row, where snap's switch is,
+    // is shown only while it applies, and snap is Move's setting.)
     let mut rig = Rig::new();
     rig.shell.run("load void").unwrap();
-    rig.shell.run("tool place").unwrap();
+    rig.shell.run("tool move").unwrap();
     rig.frames(vec![vec![], vec![]]);
     let table = cav_app::actions::table();
     for tool in &cav_app::tools::strip().tools {
@@ -1413,17 +1460,27 @@ fn the_tool_strip_has_one_name_a_tool_and_snap_apart() {
     }
     let strip: Vec<&str> = rig.shell.focus_tree().children("toolbar");
     assert!(strip.contains(&"toolbar/snap"), "snap is the tool strip's scope's, wherever it is drawn");
-    // Since S19's panels snap is in the tool's options row, beside its hint, apart from the tools.
+    // Since S19's panels snap is in the tool's options row, apart from the tools.
+    // (S20: the row is under the viewport's header, and the tools are the floating palette,
+    // `tool palette`; it was a panel above the figure and the `tool strip`.)
     let snap = rig.shell.layout().button("snap").unwrap();
     let options = rig.shell.layout().panel("options").unwrap();
     assert!(options.contains_rect(snap), "snap {snap:?} in the options row {options:?}");
-    let strip = rig.shell.layout().button("tool strip").unwrap();
-    assert!(!strip.intersects(snap), "and not in the strip");
+    let strip = rig.shell.layout().button("tool palette").unwrap();
+    assert!(!strip.intersects(snap), "and not in the palette");
+    // With a tool that has no use for it the switch is not shown, and its stop stays in the
+    // order, disabled (the control: the order never depends on what is in hand).
+    rig.shell.run("tool select").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    assert!(rig.shell.layout().button("snap").is_none());
+    let node = rig.shell.focus_tree().node("toolbar/snap").expect("still a stop");
+    assert!(!node.enabled);
     // On the sheet snap is the tool strip's, and no tool (S18's second review, minor 6: it was
     // listed under "Tools"); its menu is Edit, not Edit › Tool.
     let rows = cav_app::sheet::rows(table);
     let snap = rows.iter().find(|r| r.actions == ["snap"]).expect("snap is on the sheet");
-    assert_eq!((snap.scope.as_str(), snap.label.as_str()), ("Tool strip", "Snap to the step"));
+    // (S20: the scope is named for the palette; it read "Tool strip".)
+    assert_eq!((snap.scope.as_str(), snap.label.as_str()), ("Tool palette", "Snap to the step"));
     let place = rows.iter().find(|r| r.actions == ["tool-place"]).unwrap();
     assert_eq!(place.label, "Tool: Place", "the control: a tool says it is one");
     assert!(!table.action("snap").unwrap().menu.contains("Tool"));
@@ -1435,11 +1492,15 @@ fn maximised_there_is_a_way_back_in_sight() {
     let mut rig = Rig::new();
     rig.shell.run("load point").unwrap();
     rig.frames(vec![vec![]]);
-    assert!(rig.shell.layout().button("maximise").is_none(), "the control: not maximised, no Restore");
+    // (S20: the way back is the viewport header's maximise button, which reads Restore while
+    // maximised; it was a button beside Home on the figure.)
+    let tip = |rig: &Rig| rig.shell.layout().control(0, "maximise").expect("in the header").tooltip.clone();
+    assert!(tip(&rig).starts_with("Maximise (Ctrl+Space)"), "the control: not maximised, no Restore");
     rig.key(Key::Space, Modifiers::COMMAND);
     assert!(rig.shell.maximised);
     rig.frames(vec![vec![]]);
-    rig.click_button("maximise");
+    assert!(tip(&rig).starts_with("Restore (Ctrl+Space)"), "{}", tip(&rig));
+    rig.click_button("viewport maximise 1");
     assert!(!rig.shell.maximised, "the button restored it");
     assert!(rig.shell.layout().panel("outliner").is_some());
 }
@@ -1449,7 +1510,7 @@ fn the_session_s_arrows_go_the_way_they_point_on_screen() {
     // S18's review, minor 11: seen from the east, → moves the body right on screen (it moved it
     // along +x, which from the east is to the left).
     let screen_x = |rig: &Rig| {
-        let rect = rig.shell.layout().panes[0];
+        let rect = rig.shell.layout().canvases[0];
         rig.shell.body_point(0, 0, rect.size()).unwrap().x
     };
     for view in ["view east", "view iso", "view north", "view top"] {
@@ -1519,9 +1580,10 @@ fn the_history_says_what_happened_in_words_beside_the_figure() {
     let window = rig.shell.focus_tree().node("history").and_then(|n| n.rect).expect("drawn");
     let figure = rig.shell.layout().figure;
     assert!(overlap(window, figure) < 1.0, "{window:?} covers the figure {figure:?}");
-    // Inside the outliner: not over the tool strip either (UX 4).
-    let strip = rig.shell.layout().button("tool strip").unwrap();
-    assert!(overlap(window, strip) < 1.0, "{window:?} covers the tool strip {strip:?}");
+    // Inside the outliner: not over the tools either (UX 4). (S20: the floating palette in the
+    // view's canvas; it was the tool strip.)
+    let strip = rig.shell.layout().button("tool palette").unwrap();
+    assert!(overlap(window, strip) < 1.0, "{window:?} covers the tool palette {strip:?}");
     assert_eq!(rig.shell.focus_tree().node("history/done/1").unwrap().name, "Added sphere");
     // The first row says what it goes back to, not something like the load below it, and its
     // node is named with the words drawn (S18's third review, minor 6: it was "the start").
@@ -1587,7 +1649,7 @@ fn home_in_the_middle_of_a_drag_keeps_its_own_step() {
         rig.shell.run("orbit 33 20").unwrap();
         rig.frames(vec![vec![], vec![]]);
         let start = anchor(&rig, 0);
-        let rect = rig.shell.layout().panes[0];
+        let rect = rig.shell.layout().canvases[0];
         let spec = rig.shell.engine.spec();
         let at = spec.bodies[0].motion.position(0.0, spec.array.instrument.gravity);
         let g = cav_app::tools::gizmo(rig.shell.engine.view(0), rect.size(), at).unwrap();
@@ -1712,7 +1774,7 @@ fn a_framed_voxel_body_keeps_its_cage_in_the_pane() {
     let selection = rig.shell.engine.selection();
     let (centre, radius) = cav_app::camera::bounds_of(&spec, selection, 0.0);
     let half = cav_app::camera::cage_of(&spec, selection).expect("a voxel body has a cage");
-    let rect = rig.shell.layout().panes[0];
+    let rect = rig.shell.layout().canvases[0];
     let aspect = f64::from(rect.width() / rect.height());
     let view = rig.shell.engine.view(0).clone();
     let cage = cav_app::camera::cage_span(&view, centre, half, aspect);
@@ -1731,18 +1793,21 @@ fn the_inspector_says_when_it_scrolls_and_names_a_point_s_radius() {
     // S18's second review, UX 8 and UX 1. The Instrument layout's inspector runs past the panel's
     // foot (in a window 700 points high): it says so. A body's own radius is the "Point radius",
     // apart from its shape's.
+    // (S20: it says so with its solid scroll bar, which S19 made show whenever there is more; the
+    // "more below: scroll" badge this looked for is gone, as it covered the last row beside a
+    // bar that said the same. So this looks for the bar's place, recorded while there is more.)
     let mut rig = Rig::new();
     rig.size = [1440, 700];
     rig.shell.run("load point").unwrap();
     rig.shell.run("layout instrument").unwrap();
     rig.frames(vec![vec![], vec![], vec![]]);
-    assert!(rig.shell.layout().button("more below").is_some(), "the cut inspector says it scrolls");
-    // Control: an inspector that fits (a point mass selected, in a window tall enough for its six
-    // cards since S19's review) says nothing of the kind.
-    rig.size = [1440, 1100];
+    assert!(rig.shell.layout().button("inspector scroll bar").is_some(), "the cut inspector says it scrolls");
+    // Control: an inspector that fits (a point mass selected; in 900 again since S20's rows of
+    // 20 pt, where S19's needed 1100) says nothing of the kind.
+    rig.size = [1440, 900];
     rig.shell.run("select body 1").unwrap();
     rig.frames(vec![vec![], vec![]]);
-    assert!(rig.shell.layout().button("more below").is_none());
+    assert!(rig.shell.layout().button("inspector scroll bar").is_none());
     assert_eq!(rig.shell.focus_tree().node("field/bodies[0].radius").unwrap().name, "Point radius");
     // The reset is drawn only on a changed field (minor 2): none now, one after an edit.
     assert!(rig.shell.layout().button("reset bodies[0].mass").is_none());
@@ -1759,7 +1824,7 @@ fn the_place_tool_shows_where_a_click_puts_the_starter() {
     rig.shell.run("load void").unwrap();
     rig.shell.run("tool place").unwrap();
     rig.frames(vec![vec![], vec![]]);
-    let rect = rig.shell.layout().panes[0];
+    let rect = rig.shell.layout().canvases[0];
     let pointer = rect.min + egui::vec2(0.55 * rect.width(), 0.7 * rect.height());
     rig.frames(vec![vec![Event::PointerMoved(pointer)], vec![]]);
     let ghost = rig.shell.layout().button("place ghost").expect("a ghost under the pointer");
@@ -1797,3 +1862,5 @@ fn the_wizard_offers_its_bodies_as_tiles() {
 /// The tests of S19 (`docs/slices/S19.md` §4), on the same rig.
 #[path = "editor/s19.rs"]
 mod s19;
+#[path = "editor/s20.rs"]
+mod s20;

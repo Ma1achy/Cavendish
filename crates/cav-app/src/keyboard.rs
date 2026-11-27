@@ -320,7 +320,7 @@ pub struct Chord {
 
 impl Chord {
     /// Reads a chord: modifiers `Ctrl+`, `Shift+`, `Alt+` then one key, by egui's name for it or
-    /// one of `? ` + - = , . / [ ]`.
+    /// one of `? ` + - = , . / [ ] { }`.
     ///
     /// # Errors
     /// What is not a chord.
@@ -352,6 +352,8 @@ impl Chord {
             "/" => Key::Slash,
             "[" => Key::OpenBracket,
             "]" => Key::CloseBracket,
+            "{" => Key::OpenCurlyBracket,
+            "}" => Key::CloseCurlyBracket,
             "Del" => Key::Delete,
             name => Key::from_name(name).ok_or_else(|| format!("`{text}`: `{name}` is not a key"))?,
         };
@@ -372,6 +374,8 @@ impl Chord {
             Key::Slash => "/".to_owned(),
             Key::OpenBracket => "[".to_owned(),
             Key::CloseBracket => "]".to_owned(),
+            Key::OpenCurlyBracket => "{".to_owned(),
+            Key::CloseCurlyBracket => "}".to_owned(),
             key => key.name().to_owned(),
         };
         format!(
@@ -500,8 +504,11 @@ pub struct Popup {
 pub enum Session {
     /// Moving the selection (`Kind::Session` in interaction mode).
     Transform,
-    /// Flying the camera: W A S D, E, Q are the session's (held, read by the frame), and every
-    /// other letter does nothing (no tool changes mid-flight).
+    /// Flying the camera: W A S D, Space, E, Q are the session's (held, read by the frame), and
+    /// every other key does nothing (no tool changes mid-flight). In the window the flight takes
+    /// its keys before this router hears them (`first_person`: there not even the global keys
+    /// fire, so that Space never plays and Ctrl+S never saves mid-flight); this is the model's
+    /// own account of the session, which holds wherever the router is used alone.
     Fly,
 }
 
@@ -772,7 +779,7 @@ impl Keyboard {
             }
             Session::Fly => match press.key {
                 // Held keys: the frame reads them each frame; the press itself does nothing more.
-                Key::W | Key::A | Key::S | Key::D | Key::E | Key::Q => Some(Vec::new()),
+                Key::W | Key::A | Key::S | Key::D | Key::E | Key::Q | Key::Space => Some(Vec::new()),
                 Key::Enter | Key::Escape => {
                     // Both keep the camera where it was flown (the spec's Esc rule; Home or the
                     // history's Home step bring it back).
@@ -962,8 +969,9 @@ pub fn is_global(shortcuts: &[Shortcut], press: Press) -> bool {
     find(shortcuts, GLOBAL, press).is_some()
 }
 
-/// Keys that repeat when held (the spec's DAS/ARR): the arrows, Page Up/Down, `+`, `-` and
-/// Backspace. A reset key (Home) and the shortcuts fire once.
+/// Keys that repeat when held (the spec's DAS/ARR): the arrows, Page Up/Down, `+`, `-`,
+/// Backspace, and the brackets (the transport's steps: a held `[` or `]` scrubs shot by shot).
+/// A reset key (Home) and the other shortcuts fire once.
 #[must_use]
 pub fn repeats(key: Key) -> bool {
     matches!(
@@ -978,6 +986,10 @@ pub fn repeats(key: Key) -> bool {
             | Key::Minus
             | Key::Equals
             | Key::Backspace
+            | Key::OpenBracket
+            | Key::CloseBracket
+            | Key::OpenCurlyBracket
+            | Key::CloseCurlyBracket
     )
 }
 

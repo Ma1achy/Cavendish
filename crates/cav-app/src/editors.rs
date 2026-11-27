@@ -128,38 +128,51 @@ pub fn shown(value: f64) -> String {
     }
 }
 
-/// A drop-down's width in a row: what the row has left after the drop-down's own arrow and
-/// padding and the reset after it, so that a row never runs past the panel's edge (S19's
-/// review: the inspector no longer widens to hold it), at most 180 points.
+/// The gap between the things of a row's value column (a tick, a box, a unit, a reset), points.
+const GAP: f32 = theme::ROW_GAP;
+
+/// What a row's value column has left for its widget, points: all of it but the reset's place
+/// at its end ([`theme::HIT`] and a gap), so that every field fills its column and the resets
+/// stand in one column at the card's right (S20, `docs/design/workspace.md` §0: a field takes
+/// the width it is given).
+#[must_use]
+pub(crate) fn value_room(ui: &egui::Ui) -> f32 {
+    (ui.available_width() - theme::HIT - GAP).max(2.0 * theme::HIT)
+}
+
+/// A drop-down's width in a row: all the row has left before the reset's place, so that it
+/// fills its column and never runs past the panel's edge (S19's review: the inspector no longer
+/// widens to hold it; S20: it was at most 180 points, beside empty space).
 fn combo_width(ui: &egui::Ui) -> f32 {
-    (ui.available_width() - theme::HIT - 40.0).clamp(48.0, 180.0)
+    value_room(ui)
 }
 
 /// Lays `add` out (a drop-down) in a box `width` points wide and a target high, so that what
 /// it shows is cut to the box rather than to the rest of the row.
 fn bounded<R>(ui: &mut egui::Ui, width: f32, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    ui.allocate_ui_with_layout(
-        egui::vec2(width + 34.0, theme::HIT),
-        Layout::left_to_right(Align::Center),
-        |ui| {
-            ui.set_max_width(width + 34.0);
-            add(ui)
-        },
-    )
+    ui.allocate_ui_with_layout(egui::vec2(width, theme::HIT), Layout::left_to_right(Align::Center), |ui| {
+        ui.set_max_width(width);
+        add(ui)
+    })
     .inner
 }
 
-/// The width of one number, and of a vector's component, points.
-const NUMBER_WIDTH: f32 = 88.0;
-const COMPONENT_WIDTH: f32 = 44.0;
+/// The room a number's unit takes after its box, points: the longest the schema has ("kg/m³",
+/// "rad/s") in small text. Kept on every number's row, with a unit or without, so that the boxes
+/// of a card are one width and their right edges stand in a line.
+const UNIT_WIDTH: f32 = 34.0;
 
-/// One number: dragged or typed, `width` points wide. Returns the new value when it changed.
+/// One number: dragged or typed, in a box `width` points wide, monospace and right-aligned
+/// (S20: so the digits of a card's numbers stand in columns); with `unit_room`, its unit after
+/// it as a muted suffix in a place [`UNIT_WIDTH`] wide (a vector's components have none: the
+/// vector's name says the unit once). Returns the new value when it changed.
 fn number(
     ui: &mut egui::Ui,
     value: f64,
     entry: &Entry,
     whole: bool,
     width: f32,
+    unit_room: bool,
 ) -> (Option<f64>, egui::Response) {
     let mut edited = value;
     // An atom's mass is shown and typed in unified atomic mass units (86.9092 u for ⁸⁷Sr, not
@@ -167,7 +180,7 @@ fn number(
     let atomic = entry.unit.as_deref() == Some("kg") && value.abs() < 1e-20;
     let scale = if atomic { cav_core::constants::ATOMIC_MASS_UNIT } else { 1.0 };
     let unit = if atomic { Some("u") } else { entry.unit.as_deref() };
-    let unit = unit.filter(|unit| *unit != "1" && width >= NUMBER_WIDTH).map(str::to_owned);
+    let unit = unit.filter(|unit| *unit != "1" && unit_room).map(str::to_owned);
     let mut drag = egui::DragValue::new(&mut edited)
         .speed(speed(value))
         .range(range(entry))
@@ -187,10 +200,16 @@ fn number(
     if whole {
         drag = drag.max_decimals(0);
     }
-    let response = ui.add_sized([width, 20.0], drag);
+    // Its text at the box's right (a button's and a field's text follow their layout's
+    // alignment), the box as wide as it is given.
+    let layout = Layout::top_down_justified(Align::Max).with_main_align(Align::Center);
+    let response = ui
+        .allocate_ui_with_layout(egui::vec2(width - FIELD_EDGE, theme::HIT), layout, |ui| ui.add(drag))
+        .inner;
     // The unit is a muted word outside the box (S19's panels), not part of the number.
-    if let Some(unit) = unit {
-        ui.label(RichText::new(unit).size(11.5).color(theme::WEAK));
+    if unit_room {
+        let unit = RichText::new(unit.unwrap_or_default()).size(theme::SMALL_PT).color(theme::WEAK);
+        theme::fixed_left(ui, egui::vec2(UNIT_WIDTH, theme::HIT), egui::Label::new(unit).truncate());
     }
     ((edited != value).then_some(edited), response)
 }
@@ -244,7 +263,7 @@ pub fn show_in_cards(
             .filter(|e| !skip.iter().any(|s| e.path == format!("{prefix}.{s}")))
             .collect::<Vec<_>>(),
         Err(why) => {
-            ui.label(RichText::new(why).size(11.0).color(theme::WARN));
+            ui.label(RichText::new(why).size(theme::SMALL_PT).color(theme::WARN));
             return;
         }
     };
@@ -317,7 +336,7 @@ pub fn show_in_cards(
     if entries.len() >= MAX_FIELDS {
         ui.label(
             RichText::new(format!("the first {MAX_FIELDS} fields; `ls {prefix}` lists them all"))
-                .size(11.0)
+                .size(theme::SMALL_PT)
                 .color(theme::WEAK),
         );
     }
@@ -371,7 +390,7 @@ pub fn choice_row(
         theme::fixed_left(
             ui,
             egui::vec2(width, theme::HIT),
-            egui::Label::new(RichText::new(name).size(12.0).color(theme::WEAK)).truncate(),
+            egui::Label::new(RichText::new(name).size(theme::BODY_PT).color(theme::WEAK)).truncate(),
         )
         .on_hover_text(hover);
         let width = combo_width(ui);
@@ -443,7 +462,7 @@ fn gate(
             theme::fixed_left(
                 ui,
                 egui::vec2(shell.label_width, theme::HIT),
-                egui::Label::new(RichText::new(&name).size(12.0).color(theme::WEAK)).truncate(),
+                egui::Label::new(RichText::new(&name).size(theme::BODY_PT).color(theme::WEAK)).truncate(),
             );
             ui.checkbox(&mut on, "")
         });
@@ -499,18 +518,24 @@ fn row(
     let indent = " ".repeat(2 * depth);
     let colour = if differs { theme::GOLD } else { theme::WEAK };
     let text =
-        egui::Label::new(RichText::new(format!("{indent}{name}{unit}")).color(colour).size(12.0)).truncate();
-    let width = shell.label_width;
+        egui::Label::new(RichText::new(format!("{indent}{name}{unit}")).color(colour).size(theme::BODY_PT))
+            .truncate();
+    // A field of prose (the scene's description) has the card's whole width: its name on a row
+    // of its own, its reset at that row's end, and the box below, as wide as the card (S20: it
+    // was a 120 pt box beside empty space).
+    let block = prose(&entry.path);
+    // (Its name has the row but for the reset and the gap before it.)
+    let width = if block { ui.available_width() - theme::HIT - theme::GRID } else { shell.label_width };
     let line = ui.horizontal(|ui| {
         let named = theme::fixed_left(ui, egui::vec2(width, theme::HIT), text).on_hover_text(&hover);
         if differs {
             // Unity's mark for an overridden field: a bar at the edge, beside the gold name.
-            let x = ui.max_rect().left() - 6.0;
+            let x = ui.max_rect().left() - 0.5 * theme::GRID;
             ui.painter().vline(x, named.rect.y_range(), egui::Stroke::new(2.0, theme::GOLD));
         }
         let start = ui.cursor().min;
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 3.0;
+            ui.spacing_mut().item_spacing.x = GAP;
             // An optional value that is there: a ticked box before it, which unticked takes it
             // away (S19's panels).
             if entry.optional
@@ -527,7 +552,9 @@ fn row(
                     commands.push(command_for(&entry.path, Value::Null, false));
                 }
             }
-            edit(shell, ui, spec, scope, name, entry, commands);
+            if !block {
+                edit(shell, ui, spec, scope, name, entry, commands);
+            }
             if matches!(entry.kind, Kind::List) && !entry.whole {
                 list_buttons(shell, ui, spec, scope, name, entry, commands);
             }
@@ -537,7 +564,7 @@ fn row(
             let reset = ui
                 .add_visible(
                     differs,
-                    egui::Button::new(RichText::new("‹").size(12.0).color(theme::GOLD))
+                    egui::Button::new(RichText::new("‹").size(theme::BODY_PT).color(theme::GOLD))
                         .frame(false)
                         .min_size(egui::vec2(theme::HIT, theme::HIT)),
                 )
@@ -556,7 +583,18 @@ fn row(
         });
         egui::Rect::from_min_max(start, egui::pos2(ui.min_rect().right(), ui.min_rect().bottom()))
     });
-    shell.layout.editors.push((entry.path.clone(), line.inner));
+    let place = if block {
+        ui.horizontal(|ui| edit(shell, ui, spec, scope, name, entry, commands)).response.rect
+    } else {
+        line.inner
+    };
+    shell.layout.editors.push((entry.path.clone(), place));
+}
+
+/// Whether the field at `path` holds prose (the scene's description): a box of lines as wide as
+/// its card, under its name, where every other field is one row.
+fn prose(path: &str) -> bool {
+    path == "description"
 }
 
 /// A list's own buttons: `+` adds an item (a copy of the last, so it is valid as the others
@@ -645,7 +683,7 @@ fn edit(
     // A list shown whole (a held mesh's corners, its triangles): how many, not each.
     if entry.whole {
         let count = entry.value.as_array().map_or(0, Vec::len);
-        let label = ui.label(RichText::new(format!("{count} items")).size(12.0).color(theme::TEXT));
+        let label = ui.label(RichText::new(format!("{count} items")).size(theme::BODY_PT).color(theme::TEXT));
         shell.register(scope, &id, name, Focus::ReadOnly, label.rect);
         return;
     }
@@ -656,14 +694,17 @@ fn edit(
             |kg| format!("{} kg, from its materials", shown(kg)),
         );
         // Cut to the row (the panel keeps its width), the whole of it under the pointer.
-        let room = (ui.available_width() - theme::HIT - 8.0).max(48.0);
+        let room = value_room(ui);
         let label = ui
             .allocate_ui_with_layout(
                 egui::vec2(room, theme::HIT),
                 Layout::left_to_right(Align::Center),
                 |ui| {
                     ui.set_max_width(room);
-                    ui.add(egui::Label::new(RichText::new(&text).size(12.0).color(theme::TEXT)).truncate())
+                    ui.add(
+                        egui::Label::new(RichText::new(&text).size(theme::BODY_PT).color(theme::TEXT))
+                            .truncate(),
+                    )
                 },
             )
             .inner
@@ -675,7 +716,11 @@ fn edit(
         Widget::Number | Widget::Integer => {
             let whole = entry.kind == Kind::Integer;
             let now = entry.value.as_f64().unwrap_or_default();
-            let (changed, response) = number(ui, now, entry, whole, NUMBER_WIDTH);
+            // The box fills the column: all of it but the unit's place, the reset's, and (for a
+            // number that may be absent) the × after it.
+            let none_room = if entry.optional { theme::HIT + GAP } else { 0.0 };
+            let width = (value_room(ui) - UNIT_WIDTH - GAP - none_room).max(theme::HIT);
+            let (changed, response) = number(ui, now, entry, whole, width, true);
             shell.register(scope, &id, name, Focus::Adjust, response.rect);
             if let Some(value) = changed {
                 let value = if whole { json!(value as i64) } else { json!(value) };
@@ -697,11 +742,12 @@ fn edit(
             }
         }
         Widget::Vector(n) => {
-            // The components share what the row has left (a letter each, the unit and the reset
-            // after them), so a vector never widens the panel.
-            // (The reset after them is a full target since S19's review: its room is kept.)
-            let room = ui.available_width() - (theme::HIT + 8.0) - if n == 3 { 3.0 * 16.0 } else { 0.0 };
-            let width = (room / n.max(1) as f32 - 4.0).clamp(theme::HIT, 2.0 * COMPONENT_WIDTH);
+            // The components share what the row has left (a letter each, and the reset after
+            // them), so a vector fills its column and never widens the panel.
+            let letter = if n == 3 { LETTER_WIDTH + GAP } else { 0.0 };
+            let width = ((value_room(ui) + GAP) / n.max(1) as f32 - GAP - letter).max(theme::HIT);
+            // A box of six figures has no room for a button's padding at each end.
+            ui.spacing_mut().button_padding.x = 3.0;
             for axis in 0..n {
                 // The axis's letter, in the gizmo's colours (x red, y green, z blue).
                 if n == 3 {
@@ -710,12 +756,14 @@ fn edit(
                         Color32::from_rgb(0x6c, 0xc0, 0x5a),
                         Color32::from_rgb(0x5a, 0x8f, 0xe0),
                     ][axis];
-                    ui.label(RichText::new(["X", "Y", "Z"][axis]).size(11.5).strong().color(colour));
+                    let letter =
+                        RichText::new(["X", "Y", "Z"][axis]).size(theme::SMALL_PT).strong().color(colour);
+                    theme::fixed_left(ui, egui::vec2(LETTER_WIDTH, theme::HIT), egui::Label::new(letter));
                 }
                 let value = entry.value[axis].as_f64().unwrap_or_default();
                 let component = format!("{path}[{axis}]");
                 let component_id = field_id(&component);
-                let (changed, response) = number(ui, value, entry, false, width);
+                let (changed, response) = number(ui, value, entry, false, width, false);
                 let axis_name = format!("{name} {}", ["x", "y", "z", "w"].get(axis).copied().unwrap_or("·"));
                 shell.register(scope, &component_id, &axis_name, Focus::Adjust, response.rect);
                 if let Some(value) = changed {
@@ -733,18 +781,18 @@ fn edit(
                 Some((typing, buffer)) if typing == path => buffer.clone(),
                 _ => current.clone(),
             };
-            // A scene's description is prose: a field of lines that wraps (S19's review, UX); the
-            // rest are one line. Each at least a target's height.
-            let field = if path == "description" {
+            // A scene's description is prose: a field of lines that wraps (S19's review, UX), as
+            // wide as its card and three lines tall, growing with what it holds (S20); the rest
+            // are one line that fills the value column. Each at least a target's height.
+            let field = if prose(path) {
                 // Enter ends the edit as in every other field (the keyboard's rule); Shift+Enter
                 // starts a new line.
                 egui::TextEdit::multiline(&mut text)
                     .desired_rows(3)
-                    .desired_width(ui.available_width() - theme::HIT - 20.0)
+                    .desired_width(ui.available_width())
                     .return_key(Some(egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Enter)))
             } else {
-                egui::TextEdit::singleline(&mut text)
-                    .desired_width((ui.available_width() - theme::HIT - 20.0).clamp(48.0, 160.0))
+                egui::TextEdit::singleline(&mut text).desired_width(value_room(ui))
             };
             let response = ui.add(field.min_size(egui::vec2(0.0, theme::HIT)));
             shell.register(scope, &id, name, Focus::Text, response.rect);
@@ -773,7 +821,9 @@ fn edit(
         }
         Widget::Choice | Widget::Variant => {
             let Kind::Choice(names) = &entry.kind else {
-                ui.label(RichText::new(paths::words(&entry.kind.name())).size(11.0).color(theme::WEAK));
+                ui.label(
+                    RichText::new(paths::words(&entry.kind.name())).size(theme::SMALL_PT).color(theme::WEAK),
+                );
                 return;
             };
             let now = entry.variant.clone().unwrap_or_default();
@@ -854,7 +904,7 @@ fn edit(
 pub fn material_field(path: &str) -> Option<&'static str> {
     let before = path.strip_suffix(".material")?;
     if before.ends_with(".shape") {
-        Some("none: uniform, of its mass")
+        Some("Uniform")
     } else if before.rsplit_once(".parts[").is_some_and(|(owner, _)| owner.ends_with(".shape")) {
         Some("the body's own")
     } else {
@@ -868,6 +918,13 @@ fn materials_set_the_mass(spec: &cav_sim::SceneSpec, path: &str) -> Option<usize
     let n: usize = path.strip_prefix("bodies[")?.strip_suffix("].mass")?.parse().ok()?;
     spec.bodies.get(n)?.shape.as_ref()?.material.as_ref().map(|_| n)
 }
+
+/// What a number's box is wider than the width asked of it, points (measured: a text field and a
+/// drop-down are as wide as asked).
+const FIELD_EDGE: f32 = 2.0;
+
+/// The room an axis's letter takes before its box in a vector's row, points.
+const LETTER_WIDTH: f32 = 8.0;
 
 /// The room a material's swatch takes before its name, points.
 const SWATCH_ROOM: f32 = 14.0;
@@ -918,19 +975,13 @@ fn material_choice(
             job.wrap = egui::text::TextWrapping::truncate_at_width(width);
         }
         let Some(material) = n.checked_sub(1).and_then(|m| every.get(m)) else {
-            let format = egui::TextFormat {
-                font_id: egui::FontId::proportional(12.5),
-                color: theme::STRONG,
-                ..Default::default()
-            };
+            let format =
+                egui::TextFormat { font_id: theme::body(), color: theme::STRONG, ..Default::default() };
             job.append(none, 0.0, format);
             return job.into();
         };
-        let format = |colour| egui::TextFormat {
-            font_id: egui::FontId::proportional(12.5),
-            color: colour,
-            ..Default::default()
-        };
+        let format =
+            |colour| egui::TextFormat { font_id: theme::body(), color: colour, ..Default::default() };
         // Room before the name for its swatch, painted over it ([`swatch`]: the fonts have no
         // filled square). On a button's ground when chosen: its own text colours
         // ([`theme::text_pairs`]).
@@ -966,6 +1017,7 @@ fn material_choice(
             })
     });
     swatch(ui, combo.response.rect, colour(current));
+    shell.layout.choices.push((path.to_owned(), names[current].clone()));
     shell.register(scope, &id, name, Focus::Choice { count: names.len(), current }, combo.response.rect);
     if let Some(popup) = shell.keyboard.popup.as_ref().filter(|p| p.id == id) {
         let at = popup.at;

@@ -51,7 +51,7 @@ pub const MODEL: &[(&str, &str, &str)] = &[
     ("Typing", "Tab", "leave the field and move on"),
     ("The view, adjusting", "arrows", "orbit by 1° (Ctrl: pan)"),
     ("The view, adjusting", "+ · −", "zoom"),
-    ("The view, with the mouse", "right button held", "fly: W A S D, E Q; the mouse looks"),
+    ("The view, with the mouse", "right button held", "fly while it is held: the mouse looks, the keys move"),
     ("The view, with the mouse", "middle drag · wheel", "pan · zoom toward the pointer"),
     (
         "Moving the selection",
@@ -62,9 +62,13 @@ pub const MODEL: &[(&str, &str, &str)] = &[
     ("Moving the selection", "0–9 - .", "type a distance, metres"),
     ("Moving the selection", "Tab", "type the next axis's distance"),
     ("Moving the selection", "Enter · Esc", "keep the move · cancel it"),
-    ("Flying", "W A S D · E Q", "forward, left, back, right · up, down"),
-    ("Flying", "arrows", "look"),
-    ("Flying", "Enter · Esc", "stop flying, the camera where it is"),
+    ("Flying", "mouse · arrows", "look (the pointer is captured and hidden)"),
+    ("Flying", "W A S D", "forward, left, back, right, level whatever the look"),
+    ("Flying", "Space · Shift", "up · down (E · Q too)"),
+    ("Flying", "Ctrl · W twice", "sprint while held · until W is let go"),
+    ("Flying", "wheel", "the speed, shown for a moment"),
+    ("Flying", "Esc · Enter · Shift+F", "stop flying, the camera where it is"),
+    ("Flying", "F3 · F11", "the only other keys that act: hide the panels · fill the screen"),
 ];
 
 /// What an action is called on the sheet: its menu label, with the submenu it sits in when the

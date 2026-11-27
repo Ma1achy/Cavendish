@@ -209,6 +209,48 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   with the oracle tier. Where one guards a property a small scene would also show (the probe's
   field on a coarse ball, the wire's world job on one chunk), a cheap twin in `quick` would catch
   a break at the commit and not at the slice's end.
+- **Closing a viewport into several neighbours** (TASK-S20-03): `Mosaic::close` lets one
+  neighbour that shares a whole edge grow into the closed place, and refuses when none does (`A`
+  in `AAB;CDB`, whose lower edge is C's and D's together). Letting the neighbours that tile one
+  edge between them each grow would close anything; so would Blender's "join areas" by a drag.
+- **Which neighbour grows** (TASK-S20-03): the left one first, then above, right, below, so a
+  split down of a viewport with a neighbour to its left closes into that neighbour and not back
+  into what was split. Remembering the split's parent in the window (not in the mosaic) would
+  make close the exact inverse of split.
+- **Home's undo step names a pane by number** (TASK-S20-03): `Edit::View { pane }` was made when
+  panes never changed number. After a close or a typed mosaic renumbers the viewports, undoing
+  a Home made before it puts the camera back in whichever viewport now has that number. Key the
+  step by label.
+- **Swap by dragging a header; the splitters' crossings** (TASK-S20-03, for TASK-S20-04): the
+  design's swap is a drag of a viewport's header onto another (there is `swap <a> <b>` and
+  "Swap with the next" until the header exists). The 2 px square where a column's gap crosses a
+  row's is no handle: a four-way handle there would resize both at once.
+- **The flyout by one gesture; the chosen variant on the button** (TASK-S20-05): Photoshop
+  takes a variant by press, slide and let go; here the hold opens the flyout and a second click
+  chooses. And the Place button could draw the chosen starter's own icon (a cube, a sphere), so
+  the palette says what a click will add without the options row.
+- **The palette across viewports** (TASK-S20-05): it is dragged within its host's canvas only;
+  dragging it into another scene viewport could make that one the host (today: click there).
+  Its anchor is kept for each layout name, not for each viewport, and not saved with the
+  workspace (nor is any window state yet).
+- **A keyboard-opened flyout stays open after a click elsewhere** (TASK-S20-05): as the
+  header's keyboard menus do (`Keyboard::popup` is closed by keys only). A pointer press should
+  close any keyboard drop-down.
+- **Eased orbit and pan from the keyboard** (TASK-S20-10): the task's title asks for "orbit and
+  pan given the same per-frame smoothing". Not done: the keyboard's orbit, pan and zoom are the
+  spec's discrete steps (1°, 2 % of the distance, with DAS/ARR repeat), each landing exactly, and
+  the tests of the keyboard model read the view the frame after a press; mouse orbit is direct
+  manipulation and stays 1:1. A glide could be added as an animation toward the stepped view
+  (the command issued at once, the drawn camera easing to it with `camera::ease`), which keeps
+  every step exact.
+- **A page reserves Ctrl+W** (TASK-S20-10, for TASK-S19-11): in a browser, sprinting forward
+  with Ctrl held is Ctrl+W, which closes the tab before the page hears it. There the double tap
+  of W is the sprint; the keyboard lock API (full screen only) or another sprint key on the web
+  would settle it.
+- **A flight during play journals every frame** (TASK-S20-10): consecutive camera commands are
+  one journal entry, but a seek between them (playing) breaks the run, as it does for an orbit
+  drag during play. The journal's byte budget bounds it; coalescing "seek, camera, seek,
+  camera" pairwise would shrink it.
 - **Mend a mesh on import instead of refusing it** (shapes study §3.2–3.3, 27 Nov 2026): the
   importer refuses the Stanford bunny (open base), scans past 500,000 triangles or 32 MiB, and
   decimations that fold through themselves. The study's repair (weld, drop non-manifold edges,

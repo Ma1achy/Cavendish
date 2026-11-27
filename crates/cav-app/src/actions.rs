@@ -1,6 +1,6 @@
 //! The GUI as data (`plan/REBUILD.md` principle 11): the big scopes, the menus and every action
 //! of the window, read from `ui/actions.ron`, which is compiled in (the page has no files to
-//! read). The menu bar, the right-click menus, the palette, the tool strip's tooltips and the `?`
+//! read). The menu bar, the right-click menus, the palette, the tool palette's tooltips and the `?`
 //! sheet are all views of this one table, and every action is a console line, so none of them is
 //! a second path into the engine.
 //!
@@ -43,12 +43,53 @@ pub enum Needs {
     /// A body or a tower is selected: an item of a list, which can be duplicated, renamed and
     /// taken out.
     Item,
+    /// A body or a tower is selected, or a folder of the scene tree is in focus: something
+    /// with a name to type.
+    Named,
     /// A body is selected.
     Body,
     /// The scene has a tower n (from 1).
     Tower(usize),
     /// A body of the scene is a voxel shape.
     Shapes,
+    /// The scene has a world (voxel terrain streamed round the array).
+    World,
+    /// The figure has more than one viewport (so one can be closed, or two swapped).
+    Viewports,
+    /// The playhead is after the start of the timeline.
+    AfterStart,
+    /// The playhead is before the end of the timeline.
+    BeforeEnd,
+    /// A shot of the transport's tower ([`crate::transport::tower`]) is read out before the
+    /// playhead, inside the timeline.
+    ShotBefore,
+    /// A shot of the transport's tower is read out after the playhead, inside the timeline.
+    ShotAfter,
+}
+
+impl Needs {
+    /// Why an action with this need cannot run when it cannot, for a disabled control's
+    /// tooltip.
+    #[must_use]
+    pub const fn why_not(self) -> &'static str {
+        match self {
+            Self::Always => "cannot run now",
+            Self::Undo => "there is nothing to undo",
+            Self::Redo => "there is nothing to redo",
+            Self::Selection => "nothing is selected",
+            Self::Item => "no body or tower is selected",
+            Self::Named => "no body, tower or folder is selected",
+            Self::Body => "no body is selected",
+            Self::Tower(_) => "the scene has no such tower",
+            Self::Shapes => "the scene has no voxel body",
+            Self::World => "the scene has no world",
+            Self::Viewports => "this is the only viewport",
+            Self::AfterStart => "the playhead is at the start",
+            Self::BeforeEnd => "the playhead is at the end",
+            Self::ShotBefore => "there is no shot before the playhead",
+            Self::ShotAfter => "there is no shot after the playhead",
+        }
+    }
 }
 
 /// One action.

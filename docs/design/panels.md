@@ -108,15 +108,135 @@ look):
   lead · Sphere" with a ⋮ to move it up or down or remove it, and "+ Add part"), Motion (Kind,
   then its numbers), Lifetime (appears and vanishes behind their boxes), Info. Every card has a ⋮.
 - **A point mass's Material card is called Mass**: it has no material, only its mass.
-- **Lifetime is open at first**, not folded as drawn: S18's E6 asks every field's editor to be in
+- **Lifetime is open at first** (until S20: see below), not folded as drawn: S18's E6 asks every field's editor to be in
   sight, and a card folded at first hides two.
 - **The inspector's width is fixed** (352 pt at first, still draggable): its contents are drawn
   in a child of the panel's width and cut to it, so it does not jump with the selection; rows fit
   that width (drop-downs cut their words).
-- **Targets are 24 pt a side** in both panels (rows, boxes, ticks, drop-downs, eye, lock, +, ⋮),
+- **Targets are 24 pt a side** (20 since S20: see below) in both panels (rows, boxes, ticks, drop-downs, eye, lock, +, ⋮),
   and every text colour is held to 4.5:1 on every ground it is drawn on (`theme::text_pairs`).
 - **Not built, and not drawn as built** (S19's second review): "drag a letter to scrub" (a
   number is dragged in its box, not by its axis letter) and Compare "under Advanced" (it stays
   where S18 put it). Both are S20's, with the dense panels (`docs/design/workspace.md`).
 - **Readings** is a tab in every layout (not docked in two): a tab is one click from the Inspector
   wherever you are.
+
+## As built after S20's density pass (26 Nov 2026)
+
+`docs/design/workspace.md` §0 overrides this document's sizes on desktop (the owner's ruling of
+25 Nov 2026); what the panels are is unchanged. What is different from "As built after S19's
+review" above:
+- **Targets are 20 pt a side** (`theme::HIT`), not 24: rows, boxes, ticks, drop-downs, eye, lock,
+  `+`, ⋮. Icon buttons are 22 (`theme::ICON`), the grid is 4 (`theme::GRID`), text is 12 pt (11
+  small, 12 monospace). Tree rows touch (a pitch of 20); the inspector's rows are 2 pt apart (a
+  pitch of 22), card headers 22, margins and the gap between cards 4. Every size a panel uses is
+  the theme's.
+- **The inspector is 320 pt wide** at first (352 before), its label column a third of it (40 %
+  before). A number is monospace and right-aligned in a box that fills its column, its unit a
+  muted suffix in a place of its own, so the boxes of a card are one width; a drop-down and a text
+  field fill the column too. The reset keeps its place (a target) at the row's end.
+- **The scene's Description** is a box as wide as its card under its name, three lines tall and
+  growing, not a 120 pt box beside empty space.
+- **The scroll bar's width is always kept free**, so a row is as wide with the bar as without
+  (the second review's minor 10). The "more below: scroll" badge is gone: the solid bar says it.
+- **Lifetime is folded at first** on a body that is always there (its title says so), as first
+  drawn; a body with a time has it open. The tests that ask for every field's editor open it.
+- **A uniform body's Material reads "Uniform"** (minor 11).
+- **The Probe reads into the right panel**: a third tab, Probe, beside Inspector and Readings,
+  which comes forward when a point is probed (`tab probe`); only the point's mark is in the view
+  (minor 13). **Readings** and the Probe's towers have one unit a column, in its heading, chosen
+  from the column's largest magnitude; numbers monospace, right-aligned.
+- **No sentences in the chrome**: a tool's hint is the tooltip of its name in the options row,
+  the timeline's caption is its title's tooltip (the head keeps the shot count and 2T), and what
+  an empty scene means is the Bodies group's tooltip.
+
+## As built after S20's top bar and transport (26 Nov 2026)
+
+`docs/design/workspace.md` §4 and §5. What is different from the above:
+- **The top bar holds no time and no brand.** Menus, the layouts' tabs with a `+` (the present
+  arrangement kept as a new tab for the session), the search box (Ctrl+K), and at the right the
+  scene's name with ` *` while it has unsaved edits. The breadcrumb stands before the name while
+  keyboard navigation is on.
+- **The timeline's head is a transport**: start, step back, play/pause, step forward, end as
+  icon buttons (`[` and `]` step a shot in the timeline, Shift a cadence cycle, Alt the ends;
+  Space plays anywhere), what playing does at the end (loop, stop at the end, run on: an icon
+  button with a menu), the speed (0.1× to 10×), `t [time] / [duration] s` and `shot [n] / count`,
+  the time and the shot typed to seek and the duration typed to set it (the Scene card's edit). The "play" and "rewind" word buttons are gone. A step is
+  to a readout of the engine's shots (the selected tower's, else tower 1's). The shots' count
+  and 2T stand at the row's right while there is room, and in the title's tooltip always.
+- **Run on** grows the scene's duration by its length when the run began, each time the end is
+  reached, as one edit a run; at the longest timeline (10⁶ s) playing stops and the status bar
+  says so. The live rolling window is not this (TASK-S22-01).
+- "As fast as it runs" (the design's §5) is not offered: playing moves a playhead over a signal
+  already computed, so there is no run to be as fast as.
+
+## As built after S20's viewport header (26 Nov 2026)
+
+`docs/design/workspace.md` §2, the owner's ruling. What is different from the above:
+- **The header strip above the figure is gone**, with its text chips and its "View ›" popover.
+  Each viewport has its own header row (`cav-app/src/header.rs`): view type, camera menu, shading
+  group, overlays popover (a plot: show all), then a warning dot, maximise, pop out, close. The
+  camera's target, angles and distance are read-only rows at the foot of the camera menu.
+- **Home and Restore are off the figure.** A scene's canvas has the navigation gizmo in its top
+  right corner (`cav-app/src/navgizmo.rs`); the Home key and View ▸ Home stay, and maximise and
+  restore are the header's button (Ctrl+Space).
+- **Status is the status bar's**: selection, instrument (and comparison), the signal's state,
+  the forward stage, warnings and errors, the frame's time, the console. Its "Space play" hint is
+  gone (the key is on the `?` sheet and the Scene menu).
+- The tool strip stood under the header of the viewport in the figure's corner until the
+  floating palette replaced it (below).
+
+## As built after S20's tool palette (26 Nov 2026)
+
+`docs/design/workspace.md` §3, the owner's ruling ("the tool palette must overlap the viewport
+like Photoshop or Blender"). What is different from the above:
+- **The tool strip is the tool palette** (`cav-app/src/tool_palette.rs`): icon-only buttons of
+  `theme::ICON` with a grip at its head, inside the canvas of the active scene viewport (a plot
+  active: the first viewport that shows the scene; none: no palette, the keys still take a
+  tool). Dragged by its grip it snaps to one of eight anchors of the canvas (corners and edge
+  middles), remembered for each layout; at a top or bottom middle it lies along the edge; a
+  short canvas gives it two columns; it stands clear of the navigation gizmo. The key's letter
+  in each button's corner is gone (it is in the tooltip). It changes no canvas's size.
+- **Flyouts.** A tool with variants (`variants` in `ui/tools.ron`; Place: the starters) has a
+  corner mark; a hold of 0.4 s or a right-click opens its variants beside the palette, and
+  choosing one takes the tool with it (`tool place cube`). A plain click only takes the tool.
+- **The options panel above the figure is gone.** The tool's options are one row under the
+  palette's viewport's header, there only while they apply: Move, the snap switch with its
+  step; Place, what it places and the ground's height; a transform session, its numbers. With
+  Select or Probe in hand there is no row. The tool's name is no longer written there (the
+  palette shows which is lit); snap stays an action (S, Edit ▸ Snap to the step) when its
+  switch is not shown.
+
+## As built after S20's folders (27 Nov 2026)
+
+`docs/design/workspace.md` §6 and §7. What is different from the above:
+- **Folders are rows of the tree, inside the Array and the Bodies** (the surroundings are three
+  single items and take none): a disclosure triangle, a folder icon, the name, 20 pt rows with an
+  indent guide a level. They are scene data (`SceneSpec.folders`, `cav_sim::folders`), saved
+  with the scene and ignored by the read. A group draws its folders first (the scene's order),
+  each with its folders and then its items under it, then the items in no folder.
+- **Every change is one `folder` command, one undo:** `folder new`, `move`, `rename`,
+  `remove` (the folder only: what it holds moves up a level, nothing is deleted), `duplicate`.
+  The header's `+` menu and the right-click menus have New folder (inside the folder in focus,
+  else beside the selection, else in the Bodies; its name is then typed in place: a second
+  edit if changed); a folder's menu has New folder, Rename, Duplicate, Remove folder and
+  Move to ▸; a body's and a tower's menu has Move to ▸ (the folders of its group, and none).
+- **Drag and drop.** A body's or a tower's row dragged onto a folder of its group moves it in;
+  onto its group's row, out of every folder; a folder onto a folder nests it. The row under the
+  pointer is lit when the drop would be taken; where it would be refused (a tower onto a
+  folder of bodies, a folder into itself, an item where it already is) the pointer is the
+  no-drop one and letting go does nothing.
+- **A folder's eye and lock** (a folder of bodies that holds one) act on every body under it at
+  any depth: the eye issues the existing `hide`/`unhide`, one a body (view commands: journalled,
+  never undone), drawn struck through when all are hidden and dimmed with a dot when only some
+  are; the lock is the window's, as a body's.
+- **A folder is lit, not selected.** A click on a folder's row lights it (window state,
+  `Shell::tree_focus`) and selects nothing: it is what F2 and New folder act on. It never is the
+  engine's selection, so the inspector shows the scene. Moving everything in a folder with the
+  gizmo needs multi-selection, which is S22 (TASK-S19-07) and is not built.
+- **Fold** state is the window's, kept for each scene as the groups' is (`tree-fold <row>` is
+  its console word); a click on the triangle folds, Enter on a folded row opens it. Folder rows
+  are stops of the `tree` scope in the tree's order (which is the data's), a folded folder's
+  rows are not.
+- **The filter** keeps a folder whose name matches (with everything in it) and a folder above
+  anything that matches; while filtering, folders are drawn open.

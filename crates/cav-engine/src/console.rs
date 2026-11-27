@@ -4,6 +4,7 @@
 //! second path into the engine, only another way to write the first. [`describe`] is the inverse:
 //! the line that would issue a given command, which is also what the log shows.
 
+use cav_sim::mosaic::Mosaic;
 use cav_sim::{DrawStyle, LIBRARY, NamedView, Projection, SceneSpec, Target};
 
 use crate::command::{ChannelName, Command, ExportKind, Query, Reply, Stage, ViewCommand};
@@ -110,6 +111,12 @@ pub const COMMANDS: &[CommandDoc] = &[
         example: "remove array.towers[4]",
     },
     CommandDoc {
+        name: "folder",
+        usage: "folder new <name> [in <array|bodies|folder>] | folder move <body N|tower N|folder>… <folder|none> | folder rename <old> <new> | folder remove <name> | folder duplicate <name>",
+        about: "the scene tree's folders, saved with the scene; the towers read the same with or without them. new: an empty folder in the Bodies, or in the Array, or inside another folder (at most 256, nested 8 deep); move: bodies, towers (numbered as on screen) or whole folders into a folder, or `none` for out of every folder; rename: its members follow; remove: the folder only, what it holds moves up to the folder it was in, nothing is deleted; duplicate: a copy of the folder, of the folders in it and of their bodies (half a metre east) or towers (a metre east). Quote a name with spaces (each an edit: one undo)",
+        example: "folder new rig in bodies",
+    },
+    CommandDoc {
         name: "save",
         usage: "save <file.ron>",
         about: "write the scene to a file that `load` reads back; quote a path with spaces",
@@ -177,7 +184,12 @@ pub const COMMANDS: &[CommandDoc] = &[
         about: "select something, or nothing",
         example: "select tower 3",
     },
-    CommandDoc { name: "seek", usage: "seek <seconds>", about: "move the playhead", example: "seek 4.2" },
+    CommandDoc {
+        name: "seek",
+        usage: "seek <seconds|start|end>",
+        about: "move the playhead: to a time, to the start (0), or to the end (the scene's duration)",
+        example: "seek 4.2",
+    },
     CommandDoc {
         name: "view",
         usage: "view <iso|top|bottom|north|south|east|west|home> [@N]",
@@ -244,7 +256,36 @@ pub const COMMANDS: &[CommandDoc] = &[
         about: "the spectral window of a tower's shots, |W|: its largest lines, one realisation for the scene's seed",
         example: "window 1 to 1.0",
     },
-    CommandDoc { name: "panes", usage: "panes <1|2|4>", about: "split the figure", example: "panes 4" },
+    CommandDoc {
+        name: "panes",
+        usage: "panes <1|2|4>",
+        about: "split the figure into 1, 2 or 4 panes: short for `mosaic \"A\"`, `\"AB\"` and `\"AB;CD\"`",
+        example: "panes 4",
+    },
+    CommandDoc {
+        name: "mosaic",
+        usage: "mosaic <\"AAB;CDB\" [cols <weights>] [rows <weights>] | even>",
+        about: "arrange the figure as a mosaic of up to 12 viewports, as matplotlib's subplot_mosaic writes it: rows of one-letter labels (A to Z) separated by `;` and in quotes, a repeated label spanning cells (each label one rectangle); then a weight a column and a row if they are not all 1. Viewport N is the Nth label of the alphabet present; a viewport keeps its camera and what it shows with its label. `mosaic even` makes every weight 1",
+        example: "mosaic \"AAB;CDB\" cols 2 1 1",
+    },
+    CommandDoc {
+        name: "split",
+        usage: "split <right|down> [@N]",
+        about: "split a viewport in two: it keeps the left (or the top) half, and a new viewport with the first unused letter takes the other, starting as a copy of it (camera, style, what it shows). One `mosaic` command; a 13th viewport is refused",
+        example: "split right",
+    },
+    CommandDoc {
+        name: "close",
+        usage: "close [@N]",
+        about: "close a viewport: a neighbour that shares a whole edge with it grows into its place (left, else above, right, below); the others keep their cameras. The last viewport cannot be closed",
+        example: "close",
+    },
+    CommandDoc {
+        name: "swap",
+        usage: "swap <N|label> <N|label>",
+        about: "exchange the places of two viewports in the mosaic; each keeps its label, so its number, its camera and what it shows",
+        example: "swap 1 3",
+    },
     CommandDoc { name: "pane", usage: "pane <N>", about: "make pane N the active one", example: "pane 1" },
     CommandDoc {
         name: "orbit",
@@ -325,6 +366,29 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
         Command::Insert { path, index: None, value } => format!("add {path} {value}"),
         Command::Insert { path, index: Some(at), value } => format!("add {path} {at} {value}"),
         Command::Remove { path } => format!("remove {path}"),
+        Command::Folder(change) => {
+            use cav_sim::{FolderEdit, FolderItem};
+            match change {
+                FolderEdit::New { name, within: None } => format!("folder new {}", quoted(name)),
+                FolderEdit::New { name, within: Some(within) } => {
+                    format!("folder new {} in {}", quoted(name), quoted(within))
+                }
+                FolderEdit::Move { items, to } => {
+                    let items: Vec<String> = items
+                        .iter()
+                        .map(|item| match item {
+                            FolderItem::Body(n) => format!("body {n}"),
+                            FolderItem::Tower(n) => format!("tower {n}"),
+                            FolderItem::Folder(label) => quoted(label),
+                        })
+                        .collect();
+                    format!("folder move {} {}", items.join(" "), to.as_deref().map_or("none".into(), quoted))
+                }
+                FolderEdit::Rename { from, to } => format!("folder rename {} {}", quoted(from), quoted(to)),
+                FolderEdit::Remove { name } => format!("folder remove {}", quoted(name)),
+                FolderEdit::Duplicate { name } => format!("folder duplicate {}", quoted(name)),
+            }
+        }
         Command::Export { what: ExportKind::Scene, to } => format!("save {}", quoted(to)),
         Command::Export { what: ExportKind::Journal, to } => format!("journal save {}", quoted(to)),
         Command::Export { what: ExportKind::Bundle, to } => format!("export bundle {}", quoted(to)),
@@ -377,6 +441,10 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
         Command::Redo => "redo".into(),
         Command::View(view) => match *view {
             ViewCommand::Panes(n) => format!("panes {n}"),
+            ViewCommand::Mosaic { ref layout, from: None } => format!("mosaic {}", layout.quoted()),
+            ViewCommand::Mosaic { ref layout, from: Some(label) } => {
+                format!("mosaic {} from {label}", layout.quoted())
+            }
             ViewCommand::Activate(pane) => format!("pane {}", pane + 1),
             ViewCommand::Look { pane, view } => format!("view {}{}", view.name(), at(pane)),
             ViewCommand::Home { pane } => format!("view home{}", at(pane)),
@@ -729,6 +797,41 @@ impl Engine {
                 let (list, value) = cav_sim::starters::duplicate(self.spec(), path)?;
                 Ok(Request::Do(Command::Insert { path: list.to_owned(), index: None, value }))
             }
+            ("folder", [verb, rest @ ..]) => {
+                use cav_sim::{FolderEdit, FolderItem};
+                let owned = |word: &&str| (*word).to_owned();
+                let change = match (*verb, rest) {
+                    ("new", [new]) => FolderEdit::New { name: owned(new), within: None },
+                    ("new", [new, "in", within]) => {
+                        FolderEdit::New { name: owned(new), within: Some(owned(within)) }
+                    }
+                    ("move", [items @ .., to]) if !items.is_empty() => {
+                        // `body N` and `tower N` are a body and a tower as on screen; any other
+                        // word is a folder's label.
+                        let mut moved = Vec::new();
+                        let mut words = items.iter().peekable();
+                        while let Some(word) = words.next() {
+                            let number = words.peek().and_then(|n| n.parse::<usize>().ok());
+                            match (*word, number) {
+                                ("body", Some(n)) => moved.push(FolderItem::Body(n)),
+                                ("tower", Some(n)) => moved.push(FolderItem::Tower(n)),
+                                _ => {
+                                    moved.push(FolderItem::Folder(owned(word)));
+                                    continue;
+                                }
+                            }
+                            words.next();
+                        }
+                        let to = (!to.eq_ignore_ascii_case("none")).then(|| owned(to));
+                        FolderEdit::Move { items: moved, to }
+                    }
+                    ("rename", [from, to]) => FolderEdit::Rename { from: owned(from), to: owned(to) },
+                    ("remove", [gone]) => FolderEdit::Remove { name: owned(gone) },
+                    ("duplicate", [copied]) => FolderEdit::Duplicate { name: owned(copied) },
+                    _ => return Err(wrong()),
+                };
+                Ok(Request::Do(Command::Folder(change)))
+            }
             ("save", [file]) => {
                 Ok(Request::Do(Command::Export { what: ExportKind::Scene, to: (*file).to_owned() }))
             }
@@ -804,6 +907,10 @@ impl Engine {
                 let n = n.parse().map_err(|_| format!("`{n}` is not a tower number; {}", usage(name)))?;
                 Ok(Request::Do(Command::Select(Some(Target::Tower(n)))))
             }
+            // `start` and `end` are read here, against the scene as it is: the command (and the
+            // journal's line) is the seek to that time.
+            ("seek", ["start"]) => Ok(Request::Do(Command::Seek(0.0))),
+            ("seek", ["end"]) => Ok(Request::Do(Command::Seek(self.spec().duration))),
             ("seek", [t]) => Ok(Request::Do(Command::Seek(number(t, "seconds", name)?))),
             ("view", ["home"]) => view(ViewCommand::Home { pane }),
             ("view", [direction]) => match NamedView::parse(direction) {
@@ -946,6 +1053,51 @@ impl Engine {
                 }
                 Ok(Request::Ask(Query::Periodogram { tower, channel, compared }))
             }
+            ("mosaic", ["even"]) => view(ViewCommand::Mosaic { layout: self.mosaic().even(), from: None }),
+            ("mosaic", [written @ .., "from", label]) if !written.is_empty() => {
+                let mut letters = label.chars();
+                match (letters.next(), letters.next()) {
+                    (Some(from), None) => view(ViewCommand::Mosaic {
+                        layout: Mosaic::parse(&written.join(" "))?,
+                        from: Some(from),
+                    }),
+                    _ => Err(format!("`{label}` is not a viewport's label (one letter)")),
+                }
+            }
+            ("mosaic", written) if !written.is_empty() => {
+                view(ViewCommand::Mosaic { layout: Mosaic::parse(&written.join(" "))?, from: None })
+            }
+            ("split", [way @ ("right" | "down")]) => {
+                let label = self.viewport(pane)?;
+                let (layout, _) = if *way == "right" {
+                    self.mosaic().split_right(label)?
+                } else {
+                    self.mosaic().split_down(label)?
+                };
+                view(ViewCommand::Mosaic { layout, from: Some(label) })
+            }
+            ("close", []) => {
+                view(ViewCommand::Mosaic { layout: self.mosaic().close(self.viewport(pane)?)?, from: None })
+            }
+            ("swap", [a, b]) => {
+                // A viewport by its number as on screen (from 1) or by its label.
+                let named = |word: &str| -> Result<char, String> {
+                    match word.parse::<usize>() {
+                        Ok(n) => self.viewport(n.checked_sub(1).ok_or("panes are counted from 1")?),
+                        Err(_) => {
+                            let mut letters = word.chars();
+                            match (letters.next(), letters.next()) {
+                                (Some(label), None) => Ok(label),
+                                _ => Err(format!(
+                                    "`{word}` is neither a pane's number nor a label; {}",
+                                    usage(name)
+                                )),
+                            }
+                        }
+                    }
+                };
+                view(ViewCommand::Mosaic { layout: self.mosaic().swap(named(a)?, named(b)?)?, from: None })
+            }
             ("panes", [n]) => match n.parse() {
                 Ok(n) => view(ViewCommand::Panes(n)),
                 Err(_) => Err(wrong()),
@@ -1018,6 +1170,13 @@ impl Engine {
             _ if COMMANDS.iter().any(|c| c.name == name) => Err(wrong()),
             _ => Err(format!("`{name}` is not a command; try `help`")),
         }
+    }
+
+    /// The label of pane `pane` (from 0) in the mosaic.
+    fn viewport(&self, pane: usize) -> Result<char, String> {
+        self.mosaic()
+            .label(pane)
+            .ok_or_else(|| format!("pane {} is not shown; the figure has {} pane(s)", pane + 1, self.panes()))
     }
 
     /// Runs one console line: parses it, applies or answers it, and returns what the console prints.
@@ -1419,6 +1578,30 @@ mod tests {
             ("load infinite-floor", Command::load(dev::infinite_floor())),
             ("undo", Command::Undo),
             ("redo", Command::Redo),
+            (
+                "folder new \"the rig\" in bodies",
+                Command::Folder(cav_sim::FolderEdit::New {
+                    name: "the rig".into(),
+                    within: Some("bodies".into()),
+                }),
+            ),
+            (
+                "folder move body 2 tower 1 \"the rig\" none",
+                Command::Folder(cav_sim::FolderEdit::Move {
+                    items: vec![
+                        cav_sim::FolderItem::Body(2),
+                        cav_sim::FolderItem::Tower(1),
+                        cav_sim::FolderItem::Folder("the rig".into()),
+                    ],
+                    to: None,
+                }),
+            ),
+            (
+                "folder rename a b",
+                Command::Folder(cav_sim::FolderEdit::Rename { from: "a".into(), to: "b".into() }),
+            ),
+            ("folder remove a", Command::Folder(cav_sim::FolderEdit::Remove { name: "a".into() })),
+            ("folder duplicate a", Command::Folder(cav_sim::FolderEdit::Duplicate { name: "a".into() })),
             ("select tower 3", Command::Select(Some(Target::Tower(3)))),
             ("select room", Command::Select(Some(Target::Room))),
             ("select floor", Command::Select(Some(Target::Floor))),
@@ -1541,6 +1724,17 @@ mod tests {
             ),
             ("panes 4", Command::View(ViewCommand::Panes(4))),
             ("pane 2", Command::View(ViewCommand::Activate(1))),
+            (
+                "mosaic \"AAB;CDB\" cols 2 1 1",
+                Command::View(ViewCommand::Mosaic {
+                    layout: Mosaic::parse("AAB;CDB cols 2 1 1").unwrap(),
+                    from: None,
+                }),
+            ),
+            (
+                "mosaic \"AB\" from A",
+                Command::View(ViewCommand::Mosaic { layout: Mosaic::parse("AB").unwrap(), from: Some('A') }),
+            ),
             ("orbit -60 25", Command::View(ViewCommand::Orbit { pane: 0, yaw: -60.0, pitch: 25.0 })),
             ("zoom 0.30000000000000004", Command::View(ViewCommand::Zoom { pane: 0, distance: 0.1 + 0.2 })),
             ("pan 1 -2 0.5 @4", Command::View(ViewCommand::Pan { pane: 3, target: [1.0, -2.0, 0.5] })),
@@ -1606,6 +1800,14 @@ mod tests {
             // And back: the log's description of the command is the line that issues it.
             assert_eq!(describe(command, 0), *line, "{command:?}");
         }
+        // `seek start` and `seek end` are read against the scene and are the seek to that time
+        // (which is what the log and the journal then say: `seek 0`, `seek 12`).
+        assert_eq!(engine.parse("seek start"), Ok(Request::Do(Command::Seek(0.0))));
+        assert_eq!(engine.parse("seek end"), Ok(Request::Do(Command::Seek(engine.spec().duration))));
+        let mut longer = Engine::new();
+        longer.run_line("set duration 20").unwrap();
+        assert_eq!(longer.parse("seek end"), Ok(Request::Do(Command::Seek(20.0))), "the scene's own end");
+        assert!(engine.parse("seek middle").is_err());
         // Control: lines that differ give commands that differ.
         assert_ne!(engine.parse("view top"), engine.parse("view bottom"));
         assert_ne!(engine.parse("view top"), engine.parse("view top @2"));

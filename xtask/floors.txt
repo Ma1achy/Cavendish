@@ -3,7 +3,22 @@
 # `slow` is the workspace's `slow_` tests, run by `cargo xtask slow` and by `cargo xtask oracle`.
 # TASK-S19-26: 45 tests moved from quick to slow by name (docs/slices/S19.md §7.10 lists them),
 # to bring quick back within 30 s; quick 683 + 1 new = 684 = 639 + 45. Nothing was deleted.
-quick 639
+# TASK-S20-03 (the mosaic): 9 new quick tests (cav-sim 2, cav-engine 1, cav-render 1, cav-app 5).
+# TASK-S20-04 (the viewport header, the gizmo, the status bar): 6 new quick tests (cav-app: H1 to
+# H4 in tests/editor/s20.rs, two of navgizmo).
+# TASK-S20-05 (the tool palette, flyouts, the options row): 6 new quick tests (cav-app: P1, P2
+# and the session's row in tests/editor/s20.rs, two of tool_palette, one of tools).
+# TASK-S20-06 (the top bar and the transport): 7 new quick tests (cav-app: T1 to T3 and the top
+# bar's in tests/editor/s20.rs, two of transport; cav: a viewport not shown is not drawn).
+# TASK-S20-09 (the duration and the end behaviour at the transport): 3 new quick tests (cav-app:
+# T4 and T5 in tests/editor/s20.rs, one of transport).
+# TASK-S20-07 (scene-tree folders): 5 new quick tests (cav-sim: F1 and the folder edits; cav-engine:
+# the folder session's replay, the read's keys; cav-app: F2 in tests/editor/s20.rs).
+# TASK-S20-08 (the drawn path): 5 new quick tests (cav-render: D1, the kinds of motion, the path of
+# 10^4 periods; cav-sim: a motion's period; cav-plot: D2).
+# TASK-S20-10 (the first-person fly camera): 7 new quick tests (cav-app: C1, C2 and the settings in
+# camera.rs, two of first_person, C3 and C4 in tests/editor/s20.rs).
+quick 693
 gpu 42
 slow 45
 oracle 58

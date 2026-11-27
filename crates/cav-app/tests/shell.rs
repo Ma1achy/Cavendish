@@ -56,13 +56,19 @@ impl Rig {
         ]);
     }
 
-    /// Clicks the button that runs `line`; one that is in the header's View popover is reached by
-    /// opening the popover first, as a person would.
+    /// Clicks the button that runs `line`; one that is a row of a viewport header's menu (the
+    /// camera's, the overlays') is reached by opening that menu first, as a person would. (The
+    /// owner's ruling of 25 Nov 2026 replaced S17's one "View ›" popover by a header a viewport:
+    /// a line now names its viewport, `view top @1`.)
     fn click_button(&mut self, line: &str) {
-        if self.shell.layout().button(line).is_none()
-            && let Some(popover) = self.shell.layout().button("view menu")
-        {
-            self.click(popover.center());
+        let pane = line.rsplit_once('@').map_or("1", |(_, n)| n).to_owned();
+        for menu in ["camera", "overlays", "type"] {
+            if self.shell.layout().button(line).is_some() {
+                break;
+            }
+            // (A click on the next opener shuts the menu tried before.)
+            let opener = self.shell.layout().button(&format!("header {menu} {pane}")).expect("the header");
+            self.click(opener.center());
         }
         let rect = self.shell.layout().button(line).unwrap_or_else(|| panic!("no button runs `{line}`"));
         self.click(rect.center());
@@ -78,8 +84,11 @@ fn overlap(a: Rect, b: Rect) -> f32 {
     if i.is_positive() { i.area() } else { 0.0 }
 }
 
-/// The panels; the tool strip is not one since S19's panels (it floats over the view's edge).
-const PANELS: [&str; 7] = ["menu", "footer", "timeline", "outliner", "properties", "header", "options"];
+/// The panels; the tool strip is not one since S19's panels (it floats over the view's edge),
+/// nor the header strip since S20 (each viewport has its own header, inside the figure), nor the
+/// tool's options (S20: a row inside a viewport, under its header, shown only while the tool in
+/// hand has settings; it was a panel above the figure).
+const PANELS: [&str; 5] = ["menu", "footer", "timeline", "outliner", "properties"];
 
 #[test]
 fn every_panel_is_laid_out_and_none_covers_the_figure() {
@@ -190,7 +199,9 @@ fn f3_hides_the_panels_and_the_figure_fills_the_window() {
     assert!(rig.shell.gui_hidden);
     assert!(rig.shell.layout().panels.is_empty(), "{:?}", rig.shell.layout().panels);
     assert_eq!(rig.shell.layout().figure, rig.shell.layout().screen);
-    assert_eq!(rig.shell.layout().button("view home"), None, "not even Home is on the figure");
+    // (S20: the headers and the navigation gizmo go with the panels; it was the Home button.)
+    assert!(rig.shell.layout().headers.is_empty() && rig.shell.layout().button("gizmo 1").is_none());
+    assert_eq!(rig.shell.layout().canvases, vec![rig.shell.layout().screen], "nothing but the canvas");
 
     // Escape leaves it, as F3 again would.
     rig.key(Key::Escape, Modifiers::NONE);
@@ -219,6 +230,24 @@ fn every_menu_item_is_an_action_that_runs() {
         shell.run("select tower 2").unwrap();
         if line == "redo" {
             shell.run("undo").unwrap();
+        }
+        // (S20: closing a viewport or swapping two needs a second one, as redo needs an undo;
+        // with one they are refused, which the control below holds.)
+        if line.starts_with("viewport ") {
+            let alone = shell.run(line);
+            assert_eq!(
+                alone.is_err(),
+                matches!(line.as_str(), "viewport close" | "viewport swap"),
+                "`{line}`"
+            );
+            shell.run("panes 2").unwrap();
+        }
+        // (TASK-S20-06: a step back needs somewhere before the playhead to go, as redo needs
+        // an undo: at the start it is refused in words, which is held here; then it runs from
+        // the middle of the timeline.)
+        if line.starts_with("step -") {
+            assert!(shell.run(line).is_err_and(|why| why.contains("the playhead")), "`{line}`");
+            shell.run("seek 6").unwrap();
         }
         let line = Shell::resolve(line, shell.engine.selection());
         // It is either the window's own or one the engine's console parses (S18's review, R4:
@@ -344,22 +373,28 @@ fn keys_issue_engine_commands() {
 fn buttons_and_the_pointer_issue_engine_commands() {
     let mut rig = Rig::new([1440, 900]);
 
-    rig.click_button("view top");
+    // (Rewritten for S20's viewport header, the owner's ruling: the rows are the header's camera
+    // menu and shading group; paper is the View menu's, Home the camera menu's, and the count of
+    // panes is the mosaic's, split from the View menu or a right-click.)
+    rig.click_button("view top @1");
     assert_eq!(rig.last_command(), Some(&Command::View(ViewCommand::Look { pane: 0, view: NamedView::Top })));
-    rig.click_button("proj ortho");
+    rig.click_button("proj ortho @1");
     assert_eq!(rig.shell.engine.view(0).projection, Projection::Orthographic);
-    rig.click_button("style paper");
+    rig.click_button("style flat @1");
+    assert_eq!(rig.shell.engine.view(0).style, cav_sim::DrawStyle::Flat, "the shading group");
+    rig.shell.run_action("style-paper").unwrap();
     assert_eq!(rig.shell.engine.view(0).style, cav_sim::DrawStyle::Paper);
-    rig.click_button("view home");
-    assert_eq!(rig.shell.engine.view(0).named(), Some(NamedView::Iso), "the Home button on the figure");
-    rig.click_button("panes 4");
+    rig.click_button("view home @1");
+    assert_eq!(rig.shell.engine.view(0).named(), Some(NamedView::Iso), "Home in the camera menu");
+    rig.shell.run_action("panes-4").unwrap();
+    rig.frames(vec![vec![], vec![]]);
     assert_eq!(rig.shell.engine.panes(), 4);
 
     // Clicking a pane makes it the active one; the view buttons then act on it.
     let panes = rig.shell.layout().panes.clone();
     rig.click(panes[2].center());
     assert_eq!(rig.last_command(), Some(&Command::View(ViewCommand::Activate(2))));
-    rig.click_button("view west");
+    rig.click_button("view west @3");
     assert_eq!(rig.shell.engine.view(2).named(), Some(NamedView::West));
     assert_eq!(rig.shell.engine.view(0).named(), Some(NamedView::Iso), "the first pane is untouched");
 
@@ -423,8 +458,10 @@ fn buttons_and_the_pointer_issue_engine_commands() {
 
     // Control: a click on a panel that is not a button issues nothing.
     let journal = rig.shell.engine.journal().len();
-    let header = rig.shell.layout().panel("header").unwrap();
-    rig.click(header.right_center() - vec2(30.0, 0.0));
+    // (S20: the menu bar's right end, where the scene's name is written; it was the options
+    // panel above the figure, which is gone.)
+    let menu = rig.shell.layout().panel("menu").unwrap();
+    rig.click(menu.right_center() - vec2(30.0, 0.0));
     assert_eq!(rig.shell.engine.journal().len(), journal);
 }
 
@@ -485,12 +522,23 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
                 || (matches!(*name, "rename" | "context")
                     && outcome.as_ref().unwrap_err().contains("select"))
                 || (*name == "tool" && outcome.as_ref().unwrap_err().contains("tool <"))
+                // (S20: the palette's two commands take a word each, and say which.)
+                || (*name == "tool-palette" && outcome.as_ref().unwrap_err().contains("tool-palette <"))
+                || (*name == "flyout" && outcome.as_ref().unwrap_err().contains("flyout <"))
                 || (*name == "layout" && outcome.as_ref().unwrap_err().contains("layout <"))
+                // (TASK-S20-06: the transport's two commands take a number each, and say so.)
+                || (*name == "step" && outcome.as_ref().unwrap_err().contains("step <"))
+                || (*name == "speed" && outcome.as_ref().unwrap_err().contains("speed <"))
+                // (TASK-S20-09: so does the end behaviour's.)
+                || (*name == "end" && outcome.as_ref().unwrap_err().contains("end <"))
                 || (*name == "reset" && outcome.as_ref().unwrap_err().contains("reset <"))
                 || (*name == "focus" && outcome.as_ref().unwrap_err().contains("focus <"))
                 || (*name == "pointer" && outcome.as_ref().unwrap_err().contains("pointer <"))
                 || (*name == "probe-at" && outcome.as_ref().unwrap_err().contains("probe-at <"))
-                || (*name == "tab" && outcome.as_ref().unwrap_err().contains("tab <")),
+                || (*name == "tab" && outcome.as_ref().unwrap_err().contains("tab <"))
+                // (TASK-S20-07: the tree's fold takes the row's name.)
+                || (*name == "tree-fold" && outcome.as_ref().unwrap_err().contains("tree-fold <"))
+                || (*name == "viewport" && outcome.as_ref().unwrap_err().contains("viewport <")),
             "{name}: {outcome:?}"
         );
         // `frame` works out a camera and issues it: the journal holds that one camera command
@@ -500,6 +548,13 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
             assert!(
                 matches!(journal, [Command::View(ViewCommand::Camera { .. })]),
                 "frame issues one camera command: {journal:?}"
+            );
+        } else if *name == "new-folder" {
+            // (TASK-S20-07: as `frame`, it works out a command and issues it, the engine's
+            // `folder new`, so the session replays; the window's word is not journalled.)
+            assert!(
+                matches!(journal, [Command::Folder(cav_sim::FolderEdit::New { .. })]),
+                "new-folder issues one folder command: {journal:?}"
             );
         } else {
             assert!(journal.is_empty(), "{name} reached the engine");
@@ -516,10 +571,19 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
             wrong.contains("takes no arguments")
                 || (*name == "palette" && wrong.contains("not a menu"))
                 || (*name == "tool" && wrong.contains("tool <"))
+                || (*name == "tool-palette" && wrong.contains("tool-palette <"))
+                || (*name == "flyout" && wrong.contains("flyout <"))
+                // (TASK-S20-10: the first-person camera's settings take a name and a value.)
+                || (*name == "camera-set" && wrong.contains("camera-set <"))
                 || (*name == "layout" && wrong.contains("layout <"))
+                || (*name == "step" && wrong.contains("step <"))
+                || (*name == "speed" && wrong.contains("speed <"))
+                || (*name == "end" && wrong.contains("end <"))
                 || (*name == "tab" && wrong.contains("tab <"))
+                || (*name == "tree-fold" && wrong.contains("tree-fold <"))
                 || (*name == "pointer" && wrong.contains("pointer <"))
                 || (*name == "probe-at" && wrong.contains("probe-at <"))
+                || (*name == "viewport" && wrong.contains("viewport <"))
                 || *name == "reset"
                 || *name == "focus",
             "{name}: {wrong}"
@@ -567,7 +631,8 @@ fn dragging_a_body_moves_it_under_the_pointer() {
         rig.shell.run("load point").unwrap();
         rig.shell.run(&format!("proj {projection}")).unwrap();
         rig.frames(vec![vec![], vec![]]);
-        let pane = rig.shell.layout().panes[0];
+        // The canvas, not the viewport: the pointer's place is measured from under the header (S20).
+        let pane = rig.shell.layout().canvases[0];
         let on_screen = |rig: &Rig| pane.min + rig.shell.body_point(0, 0, pane.size()).unwrap().to_vec2();
         let start = on_screen(&rig);
         assert!(pane.contains(start), "{projection}: the mass is in the picture at {start:?}");
@@ -595,7 +660,7 @@ fn dragging_a_body_moves_it_under_the_pointer() {
         assert_eq!(rig.shell.engine.spec().bodies[0], before);
 
         // Control: a drag that starts on empty picture orbits the camera and moves no body.
-        // (Clear of the tool strip, which floats over the view's left edge since S19.)
+        // (Clear of the tool palette, which floats at the canvas's top left.)
         let empty = pane.left_top() + vec2(120.0, 40.0);
         assert!(rig.shell.body_under(0, (empty - pane.min).to_pos2(), pane.size()).is_none());
         rig.drag(empty, empty + vec2(60.0, 20.0), PointerButton::Primary);
@@ -609,7 +674,7 @@ fn a_click_selects_a_body_and_the_panels_show_what_the_towers_read() {
     let mut rig = Rig::new([1440, 900]);
     rig.shell.run("load point").unwrap();
     rig.frames(vec![vec![], vec![]]);
-    let pane = rig.shell.layout().panes[0];
+    let pane = rig.shell.layout().canvases[0];
     let at = pane.min + rig.shell.body_point(0, 0, pane.size()).unwrap().to_vec2();
     rig.click(at);
     assert_eq!(rig.shell.engine.selection(), Some(Target::Body(1)));
@@ -923,6 +988,12 @@ fn every_schema_field_has_a_widget() {
                 rig.click(header.center());
                 rig.frames(vec![vec![], vec![]]);
             }
+        }
+        // (S20: a body that is always there has its Lifetime card folded at first; opened the
+        // same way, so that the panel is asked for every field as before.)
+        if let Some(header) = rig.shell.layout().button("fold inspector/lifetime") {
+            rig.click(header.center());
+            rig.frames(vec![vec![], vec![]]);
         }
         let shown: Vec<String> = rig.shell.layout().editors.iter().map(|(path, _)| path.clone()).collect();
         for prefix in prefixes {
@@ -1460,59 +1531,53 @@ fn the_last_tick_label_fits() {
 }
 
 #[test]
-fn home_does_not_cover_a_title() {
+fn nothing_on_the_figure_covers_a_plot_s_title() {
+    // S1's review held the Home button clear of a plot's title. S20 (the owner's ruling) took
+    // Home off the figure: a scene's canvas has the navigation gizmo in its corner, a plot's has
+    // nothing over it, and each viewport's header is above its canvas, never on it.
     use cav_engine::PaneContent;
-    let home = |rig: &Rig| rig.shell.layout().button("view home");
-    let title = |rig: &Rig, pane: usize| {
-        let layout = rig.shell.layout();
-        layout.plots.iter().find(|drawn| drawn.pane == pane).map(|drawn| drawn.labels[0].clone())
-    };
-    // One pane showing a plot: there is no camera to send home, and no Home over the title.
+    let gizmo = |rig: &Rig, pane: usize| rig.shell.layout().button(&format!("gizmo {}", pane + 1));
     let mut rig = Rig::new([1440, 900]);
     rig.shell.run("load oscillator-zoo").unwrap();
-    let before = home(&rig).expect("with the scene shown, Home is on the figure");
+    rig.frames(vec![vec![], vec![]]);
+    let before = gizmo(&rig, 0).expect("with the scene shown, the gizmo is in its corner");
+    assert_eq!(rig.shell.layout().button("view home"), None, "no Home button on the figure");
     rig.shell.run("show periodogram").unwrap();
     assert!(rig.shell.engine.settle(std::time::Duration::from_secs(60)));
     rig.frames(vec![vec![], vec![]]);
-    assert_eq!(home(&rig), None);
-    let (text, took) = title(&rig, 0).unwrap();
+    assert_eq!(gizmo(&rig, 0), None, "a plot has no camera and no gizmo");
+    let layout = rig.shell.layout().clone();
+    let (text, took) = layout.plots[0].labels[0].clone();
     assert!(text.starts_with("Periodogram ·"), "{text}");
-    // Control: where Home stood, it would have been on the title's line.
+    // Control: where the gizmo stood, it would have been on the title's line.
     assert!(before.y_range().intersects(took.y_range()), "{before:?} against {took:?}");
-    // Two panes, the plot on the right (under the figure's corner): Home moves to the corner
-    // of the pane that has a camera, and touches no plot's text.
+    // The header is above the canvas, and every word of the plot is in the canvas.
+    let (_, header) = layout.headers[0];
+    assert!((header.bottom() - layout.canvases[0].top()).abs() < 0.01);
+    for (text, took) in &layout.plots[0].labels {
+        assert!(layout.canvases[0].expand(0.5).contains_rect(*took), "`{text}` leaves the canvas");
+        assert!(!took.intersects(header), "`{text}` is under the header");
+    }
+    // Two viewports, the plot on the right: the gizmo is in the scene's canvas only.
     rig.shell.run("show scene").unwrap();
     rig.shell.run("panes 2").unwrap();
     rig.shell.run("show signal @2").unwrap();
     rig.frames(vec![vec![], vec![]]);
     let layout = rig.shell.layout().clone();
-    let button = home(&rig).expect("a pane shows the scene");
-    assert!(
-        layout.panes[0].contains_rect(button),
-        "{button:?} is not in the scene's pane {:?}",
-        layout.panes[0]
-    );
+    let button = gizmo(&rig, 0).expect("a pane shows the scene");
+    assert!(layout.canvases[0].contains_rect(button), "{button:?} in {:?}", layout.canvases[0]);
+    assert_eq!(gizmo(&rig, 1), None);
     for drawn in &layout.plots {
         assert_eq!(drawn.content, PaneContent::Signal);
         for (text, took) in &drawn.labels {
-            assert!(!took.intersects(button), "Home is over `{text}`");
+            assert!(!took.intersects(button), "the gizmo is over `{text}`");
         }
     }
-    // It still resets the camera of the pane it stands in.
+    // The Home key still resets the camera of the active pane.
     rig.shell.run("orbit 10 80").unwrap();
     rig.frames(vec![vec![]]);
-    rig.click_button("view home");
+    rig.key(Key::Home, Modifiers::NONE);
     assert_eq!(rig.shell.engine.view(0).named(), Some(cav_sim::NamedView::Iso));
-    // Control: with the scene in every pane Home is where it has always been, in the figure's
-    // top right corner.
-    rig.shell.run("show scene @2").unwrap();
-    rig.frames(vec![vec![], vec![]]);
-    let figure = rig.shell.layout().figure;
-    let button = home(&rig).unwrap();
-    assert!(
-        (figure.right() - button.right() - 8.0).abs() < 0.5
-            && (button.top() - figure.top() - 8.0).abs() < 0.5
-    );
 }
 
 #[test]
@@ -1546,7 +1611,9 @@ fn a_scene_with_no_towers_draws_every_pane_and_the_timeline() {
         can.iter().filter(|c| **c).count() >= 5
             && towers.iter().any(|a| a.line == "select tower 6" && !rig.shell.can_run(a))
     );
-    assert!(rig.shell.can_run(table.action("rewind").unwrap()));
+    // (TASK-S20-06: this was `rewind`, which could always run; the transport's `seek-start`
+    // that replaced it cannot at the start, so the action that needs nothing is `play`.)
+    assert!(rig.shell.can_run(table.action("play").unwrap()));
     // The last tower of a scene can be taken away, and the application goes on.
     rig.shell.run("load point").unwrap();
     for _ in 0..5 {

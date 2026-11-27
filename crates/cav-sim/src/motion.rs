@@ -349,6 +349,67 @@ impl Motion {
         (frequency > 0.0).then_some(frequency)
     }
 
+    /// The time after which the motion repeats exactly, seconds: `position(t + period) =
+    /// position(t)` for every `t`, and for no shorter time. `None` for a motion that never
+    /// repeats (at rest, a pass), or whose repeat is not one number: a pendulum whose ellipse
+    /// precesses, a forced sphere that both tilts and spins, several modes of different
+    /// frequencies. `gravity` is the site's, metres per second squared (the pendulum's).
+    ///
+    /// What a drawing of the path needs: a motion with a period is drawn over one of them, the
+    /// whole of its closed curve, however many times the timeline goes round it. A new kind of
+    /// motion states its period here, its kinks in [`Self::breaks`] and its quickest part in
+    /// [`Self::fastest`]; with those three its path is drawn right at any frequency.
+    #[must_use]
+    pub fn period(&self, gravity: f64) -> Option<f64> {
+        let frequency = match *self {
+            Self::Static { .. } | Self::Pass { .. } => return None,
+            Self::Linear { frequency, .. } | Self::Circular { frequency, .. } => frequency,
+            // A plane pendulum (or one that does not swing) does not precess; an ellipse does.
+            Self::Pendulum { length, major, minor, .. } if major * minor == 0.0 => {
+                (gravity / length).sqrt() / TAU
+            }
+            Self::Pendulum { .. } => return None,
+            // Tilting in a plane that stands still, or turning at a fixed tilt: one frequency.
+            Self::Sphere { tilt, tilt_frequency, spin_frequency, .. } => {
+                if spin_frequency == 0.0 {
+                    tilt_frequency
+                } else if tilt_frequency == 0.0 || tilt == 0.0 {
+                    spin_frequency
+                } else {
+                    return None;
+                }
+            }
+            Self::Modes { ref modes, .. } => match modes.as_slice() {
+                [first, rest @ ..] if rest.iter().all(|m| m.frequency == first.frequency) => first.frequency,
+                _ => return None,
+            },
+        };
+        (frequency.is_finite() && frequency > 0.0).then(|| 1.0 / frequency)
+    }
+
+    /// The quickest oscillation in the motion, hertz: no part of the path goes round, or to and
+    /// fro, more often than this. Zero for a motion with none (at rest, a pass). An upper
+    /// estimate, for choosing how finely to look at the path before measuring it (a drawing
+    /// starts with four pieces to each of these periods); never read into a signal.
+    #[must_use]
+    pub fn fastest(&self, gravity: f64) -> f64 {
+        match *self {
+            Self::Static { .. } | Self::Pass { .. } => 0.0,
+            Self::Linear { frequency, .. } | Self::Circular { frequency, .. } => frequency,
+            // The bob's height moves at twice the frequency of its swing; the precession is slow.
+            Self::Pendulum { length, major, minor, .. } => {
+                let swing = (gravity / length).sqrt();
+                (2.0 * swing + 0.375 * swing * major * minor / (length * length)) / TAU
+            }
+            // The angle from straight down swings through `tilt` radians each way, so its sine
+            // and cosine hold harmonics of the tilt up to about that many (and one more).
+            Self::Sphere { tilt, tilt_frequency, spin_frequency, .. } => {
+                2.0 * (1.0 + tilt.to_radians().ceil()) * tilt_frequency + spin_frequency
+            }
+            Self::Modes { ref modes, .. } => modes.iter().map(|m| m.frequency).fold(0.0, f64::max),
+        }
+    }
+
     /// One word for what kind of motion it is.
     #[must_use]
     pub const fn kind(&self) -> &'static str {
@@ -466,6 +527,79 @@ mod tests {
 
     fn close(a: [f64; 3], b: [f64; 3]) -> bool {
         distance(a, b) < 1e-12
+    }
+
+    #[test]
+    fn a_period_is_when_the_motion_repeats() {
+        // What a drawn path relies on (S20): after its period a motion is where it was, to the
+        // last few bits, at any time; half a period on it is not. A motion that does not repeat
+        // has none. Control: a precessing pendulum is not back after one swing.
+        let modes = |second: f64| {
+            vec![
+                ModeSpec { frequency: 2.5, scale: 1.0, phase: 0.0 },
+                ModeSpec { frequency: second, scale: 0.5, phase: 90.0 },
+            ]
+        };
+        let line = [0.3, 0.1, 0.0];
+        let repeating = [
+            Motion::Linear { centre: [1.0; 3], amplitude: [0.0, 0.0, 0.5], frequency: 7.0, phase: 30.0 },
+            Motion::Circular {
+                centre: [1.0; 3],
+                u: [2.0, 0.0, 0.0],
+                v: [0.0, 1.0, 0.0],
+                frequency: 50.0,
+                phase: 10.0,
+            },
+            Motion::Pendulum { pivot: [0.0, 0.0, 4.0], length: 2.0, major: 0.6, minor: 0.0, azimuth: 30.0 },
+            Motion::Sphere {
+                centre: [0.0; 3],
+                radius: 1.0,
+                tilt: 40.0,
+                tilt_frequency: 0.7,
+                spin_frequency: 0.0,
+            },
+            Motion::Sphere {
+                centre: [0.0; 3],
+                radius: 1.0,
+                tilt: 40.0,
+                tilt_frequency: 0.0,
+                spin_frequency: 0.3,
+            },
+            Motion::Modes { centre: [0.0; 3], amplitude: line, modes: modes(2.5) },
+        ];
+        for motion in &repeating {
+            let period = motion.period(G).unwrap_or_else(|| panic!("{} repeats", motion.kind()));
+            assert!(motion.fastest(G) >= 1.0 / period, "{}: its quickest part", motion.kind());
+            let mut moved: f64 = 0.0;
+            for t in [0.0, 0.123, 3.7] {
+                let (now, later) = (motion.position(t, G), motion.position(t + period, G));
+                assert!(distance(now, later) < 1e-9, "{}: {now:?} then {later:?}", motion.kind());
+                moved = moved.max(distance(now, motion.position(t + 0.5 * period, G)));
+            }
+            assert!(moved > 1e-3, "{}: half its period is not a period", motion.kind());
+        }
+        let never = [
+            Motion::Static { position: [0.0; 3] },
+            Motion::Pass { from: [0.0; 3], to: [1.0, 0.0, 0.0], start: 0.0, speed: 1.0 },
+            Motion::Pendulum { pivot: [0.0, 0.0, 4.0], length: 2.0, major: 0.6, minor: 0.3, azimuth: 0.0 },
+            Motion::Sphere {
+                centre: [0.0; 3],
+                radius: 1.0,
+                tilt: 40.0,
+                tilt_frequency: 0.7,
+                spin_frequency: 0.3,
+            },
+            Motion::Modes { centre: [0.0; 3], amplitude: line, modes: modes(12.7) },
+            Motion::Linear { centre: [0.0; 3], amplitude: line, frequency: 0.0, phase: 0.0 },
+        ];
+        for motion in &never {
+            assert_eq!(motion.period(G), None, "{}", motion.kind());
+        }
+        assert_eq!((never[0].fastest(G), never[1].fastest(G)), (0.0, 0.0));
+        // Control: the precessing pendulum, one swing on, is beside where it was.
+        let swing = TAU / (G / 2.0_f64).sqrt();
+        let (now, later) = (never[2].position(1.0, G), never[2].position(1.0 + swing, G));
+        assert!(distance(now, later) > 1e-3, "{now:?} then {later:?}");
     }
 
     #[test]
