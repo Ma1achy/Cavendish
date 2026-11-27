@@ -19,6 +19,7 @@
 
 pub mod camera;
 pub mod colour;
+pub mod path;
 pub mod renderer;
 pub mod scene;
 pub mod world;

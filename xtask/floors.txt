@@ -14,7 +14,9 @@
 # T4 and T5 in tests/editor/s20.rs, one of transport).
 # TASK-S20-07 (scene-tree folders): 5 new quick tests (cav-sim: F1 and the folder edits; cav-engine:
 # the folder session's replay, the read's keys; cav-app: F2 in tests/editor/s20.rs).
-quick 681
+# TASK-S20-08 (the drawn path): 5 new quick tests (cav-render: D1, the kinds of motion, the path of
+# 10^4 periods; cav-sim: a motion's period; cav-plot: D2).
+quick 686
 gpu 42
 slow 45
 oracle 58
