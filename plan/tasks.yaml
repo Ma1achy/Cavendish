@@ -317,20 +317,20 @@
   milestone: S4
   title: "Streaming made cheaper, measured: the mesher finds exposed faces as bits (22x), a neighbour's layer only, meshing within 4 ms a frame, the step starts no batch past its time; the bench's trace says where a frame goes"
 - id: TASK-S5-01
-  milestone: S5
-  title: GPU tree walk with float-float accumulation and parity tests
+  milestone: S23
+  title: GPU tree walk with float-float accumulation and parity tests (moved to S23 by the S5 brief)
 - id: TASK-S5-02
-  milestone: S5
-  title: Local frames and differential evaluation (precision-far scene)
+  milestone: S23
+  title: Local frames and differential evaluation (precision-far scene) (moved to S23 by the S5 brief)
 - id: TASK-S5-03
   milestone: S5
-  title: Bounded walk and instrument LOD with error badge
+  title: Bounded walk and instrument LOD with error badge (folded into TASK-S5-12 by the S5 brief)
 - id: TASK-S5-04
   milestone: S5
   title: Error ledger in bundles
 - id: TASK-S5-05
-  milestone: S5
-  title: 'Live read: preview then refine, frame-budget scheduler'
+  milestone: S23
+  title: 'Live read: preview then refine, frame-budget scheduler (moved to S23 by the S5 brief)'
 - id: TASK-S6-01
   milestone: S6
   title: Paths and populations
@@ -555,7 +555,7 @@
   milestone: S5
   title: Analytic bodies - the polyhedron (Platonic solids, flat-faced meshes) with the missing low multipoles as a test
 - id: TASK-S5-07
-  milestone: S5
+  milestone: S6
   title: Analytic bodies - the ellipsoid; sheets, polygons, discs, rods and rings; torus, cylinder and cone by exact 1-D integrals
 - id: TASK-S6-06
   milestone: S6
@@ -826,3 +826,18 @@
 - id: TASK-S5-18
   milestone: S5
   title: The polyhedral-gravity paper's figures and tables regenerated with Cavendish (docs/papers/polyhedral-gravity/README.md lists the command for each), the shapes study folded in
+- id: TASK-S5-19
+  milestone: S5
+  title: "The S5 brief (docs/slices/S5.md): scope, criteria written before measuring, the task split; S23 added to the plan for the GPU read"
+- id: TASK-S5-20
+  milestone: S5
+  title: LOD views per camera, per tower and the union of towers (a common refinement of the towers' cuts), drawn from the read's cuts
+- id: TASK-S5-21
+  milestone: S5
+  title: Ring seams hidden by a dithered cross-fade in the brick march, weighted by the continuous camera distance over a band inset from each snapped ring edge
+- id: TASK-S5-22
+  milestone: S5
+  title: The FMM step - the far nodes' field gathered into a local (Chebyshev) expansion along each tower's line, audited and cached for the static world
+- id: TASK-S5-23
+  milestone: S5
+  title: "S5's record: the demo and its pictures, the validation report against s20-the-workspace, ARCHITECTURE, the recipes, PROGRESS"
