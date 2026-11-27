@@ -112,6 +112,13 @@ pub struct SceneSpec {
     #[schemars(length(max = 255))]
     #[schemars(extend("x-stage" = "forward"))]
     pub materials: Vec<crate::materials::MaterialSpec>,
+    /// The scene tree's folders (S20, `crate::folders`): names that group bodies and towers,
+    /// at most 256, nested at most 8 deep. For people only: nothing reads them into a signal.
+    /// Not written when there are none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 256))]
+    #[schemars(extend("x-stage" = "nothing"))]
+    pub folders: Vec<crate::folders::FolderSpec>,
 }
 
 /// The array of gradiometer towers.
@@ -426,6 +433,13 @@ pub struct BodySpec {
     #[schemars(range(min = -1.0e6, max = 1.0e6))]
     #[schemars(extend("x-unit" = "s"))]
     pub vanishes: Option<f64>,
+    /// The label of the folder of the scene tree it is in (one of the Bodies' folders,
+    /// `folders`); absent (the default) for none. For people only: the read ignores it. Not
+    /// written when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1, max = 200))]
+    #[schemars(extend("x-stage" = "nothing"))]
+    pub folder: Option<String>,
 }
 
 /// One tower's placement.
@@ -447,6 +461,13 @@ pub struct TowerSpec {
     #[serde(default)]
     #[schemars(extend("x-stage" = "forward"))]
     pub instrument: Option<InstrumentOverride>,
+    /// The label of the folder of the scene tree it is in (one of the Array's folders,
+    /// `folders`); absent (the default) for none. For people only: the read ignores it. Not
+    /// written when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1, max = 200))]
+    #[schemars(extend("x-stage" = "nothing"))]
+    pub folder: Option<String>,
 }
 
 /// A tower's own instrument, as the parts in which it differs from the array's: each field is
@@ -559,7 +580,13 @@ impl TowerSpec {
     /// that fires with the array's schedule.
     #[must_use]
     pub fn at(label: &str, position: [f64; 3]) -> Self {
-        Self { label: label.to_owned(), position, timing: TimingSpec::default(), instrument: None }
+        Self {
+            label: label.to_owned(),
+            position,
+            timing: TimingSpec::default(),
+            instrument: None,
+            folder: None,
+        }
     }
 }
 
@@ -717,6 +744,7 @@ impl BodySpec {
             motion,
             appears: None,
             vanishes: None,
+            folder: None,
         }
     }
 
@@ -799,6 +827,7 @@ impl SceneSpec {
             bodies: Vec::new(),
             world: None,
             materials: Vec::new(),
+            folders: Vec::new(),
         }
     }
 
@@ -987,7 +1016,7 @@ impl SceneSpec {
                 return fail(format!("{at}.vanishes: {vanishes} s is not later than `appears`, {appears} s"));
             }
         }
-        Ok(())
+        crate::folders::validate(self)
     }
 
     /// The schedule's own checks: every number in its range, and no shot begun before the one
@@ -1217,6 +1246,93 @@ mod tests {
             size: [9_999.999_999_999_9, 10.0, 2.999_999_999_999_999_6],
         });
         spec
+    }
+
+    /// FNV-1a of every library scene's RON and JSON, as this build writes them.
+    fn library_bytes_hash() -> u64 {
+        let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+        for scene in crate::LIBRARY {
+            let spec = crate::load(scene.name).unwrap();
+            for byte in spec.to_ron().bytes().chain(spec.to_json().bytes()) {
+                hash = (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3);
+            }
+        }
+        hash
+    }
+
+    #[test]
+    fn folders_save_and_cost_nothing_unused() {
+        use crate::folders::{FolderEdit, FolderGroup, FolderItem, FolderSpec};
+        // F1 (`docs/slices/S20.md` §4). Criterion, written before measuring: a scene with nested
+        // folders round-trips RON and JSON to an equal scene; a scene without them serialises to
+        // the bytes it did before folders existed (the hash below was taken of every library
+        // scene's RON and JSON on the commit before the fields were added, and is not to be
+        // regenerated); folders change no bit of what a tower reads. Control: a member of an
+        // unknown folder is refused in words, on the way in from a file too.
+        assert_eq!(library_bytes_hash(), 0xd80e_19ec_a98d_7fc8, "a scene without folders changed its bytes");
+        for scene in crate::LIBRARY {
+            let spec = crate::load(scene.name).unwrap();
+            let (ron, json) = (spec.to_ron(), spec.to_json());
+            assert!(!ron.contains("folder") && !json.contains("folder"), "{}", scene.name);
+        }
+        // Nested folders in both groups, with a body and a tower in them.
+        let plain = crate::dev::oscillator_zoo();
+        let mut spec = plain.clone();
+        let edits = [
+            FolderEdit::New { name: "rig".into(), within: None },
+            FolderEdit::New { name: "inner".into(), within: Some("rig".into()) },
+            FolderEdit::New { name: "north".into(), within: Some("array".into()) },
+            FolderEdit::Move { items: vec![FolderItem::Body(1)], to: Some("inner".into()) },
+            FolderEdit::Move { items: vec![FolderItem::Body(2)], to: Some("rig".into()) },
+            FolderEdit::Move { items: vec![FolderItem::Tower(1)], to: Some("north".into()) },
+        ];
+        for edit in &edits {
+            spec = spec.folder_edit(edit).unwrap();
+        }
+        assert_eq!(spec.folders.len(), 3);
+        assert_eq!(
+            spec.folders[1],
+            FolderSpec { label: "inner".into(), group: FolderGroup::Bodies, parent: Some("rig".into()) }
+        );
+        assert_eq!(SceneSpec::from_ron(&spec.to_ron()).unwrap(), spec, "RON");
+        assert_eq!(SceneSpec::from_json(&spec.to_json()).unwrap(), spec, "JSON");
+        assert_ne!(spec.to_ron(), plain.to_ron(), "control: folders in use are written");
+        // The schema documents each field, and an edit of one invalidates nothing.
+        let schema = SceneSpec::schema();
+        for site in [
+            &schema["properties"]["folders"],
+            &schema["$defs"]["BodySpec"]["properties"]["folder"],
+            &schema["$defs"]["TowerSpec"]["properties"]["folder"],
+        ] {
+            assert!(site["description"].as_str().is_some_and(|d| d.contains("folder")), "{site}");
+            assert_eq!(site["x-stage"], "nothing", "{site}");
+        }
+        for field in ["label", "group", "parent"] {
+            let site = &schema["$defs"]["FolderSpec"]["properties"][field];
+            assert!(site["description"].as_str().is_some_and(|d| !d.is_empty()), "{field}");
+        }
+        assert_eq!(crate::paths::diff(&plain, &spec), crate::paths::Stage::Nothing);
+        // The read ignores folders: every tower's every shot, bit for bit.
+        let bits = |spec: &SceneSpec| -> Vec<u64> {
+            let signal = crate::read::signal(spec).unwrap();
+            signal.lower.iter().chain(&signal.upper).chain(&signal.gradiometer).map(|v| v.to_bits()).collect()
+        };
+        let (with, without) = (bits(&spec), bits(&plain));
+        assert!(with.len() >= 30, "{} values compared", with.len());
+        assert_eq!(with, without, "folders changed what a tower reads");
+        let mut heavier = spec.clone();
+        heavier.bodies[0].mass *= 2.0;
+        assert_ne!(bits(&heavier), with, "control: the comparison sees a change of mass");
+        // Control: a member of an unknown folder is refused in words, from a file too.
+        let mut stray = spec.clone();
+        stray.bodies[2].folder = Some("attic".into());
+        let why = stray.validate().unwrap_err().0;
+        assert_eq!(why, "bodies[2].folder: `attic` is not a folder of this scene");
+        assert!(SceneSpec::from_ron(&stray.to_ron()).unwrap_err().0.contains("`attic` is not a folder"));
+        let mut crossed = spec.clone();
+        crossed.array.towers[1].folder = Some("rig".into());
+        let why = crossed.validate().unwrap_err().0;
+        assert!(why.starts_with("array.towers[1].folder: `rig` is a folder of the Bodies"), "{why}");
     }
 
     #[test]

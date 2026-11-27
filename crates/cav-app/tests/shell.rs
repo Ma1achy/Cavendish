@@ -536,6 +536,8 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
                 || (*name == "pointer" && outcome.as_ref().unwrap_err().contains("pointer <"))
                 || (*name == "probe-at" && outcome.as_ref().unwrap_err().contains("probe-at <"))
                 || (*name == "tab" && outcome.as_ref().unwrap_err().contains("tab <"))
+                // (TASK-S20-07: the tree's fold takes the row's name.)
+                || (*name == "tree-fold" && outcome.as_ref().unwrap_err().contains("tree-fold <"))
                 || (*name == "viewport" && outcome.as_ref().unwrap_err().contains("viewport <")),
             "{name}: {outcome:?}"
         );
@@ -546,6 +548,13 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
             assert!(
                 matches!(journal, [Command::View(ViewCommand::Camera { .. })]),
                 "frame issues one camera command: {journal:?}"
+            );
+        } else if *name == "new-folder" {
+            // (TASK-S20-07: as `frame`, it works out a command and issues it, the engine's
+            // `folder new`, so the session replays; the window's word is not journalled.)
+            assert!(
+                matches!(journal, [Command::Folder(cav_sim::FolderEdit::New { .. })]),
+                "new-folder issues one folder command: {journal:?}"
             );
         } else {
             assert!(journal.is_empty(), "{name} reached the engine");
@@ -569,6 +578,7 @@ fn the_console_shows_answers_and_keeps_window_commands_out_of_the_engine() {
                 || (*name == "speed" && wrong.contains("speed <"))
                 || (*name == "end" && wrong.contains("end <"))
                 || (*name == "tab" && wrong.contains("tab <"))
+                || (*name == "tree-fold" && wrong.contains("tree-fold <"))
                 || (*name == "pointer" && wrong.contains("pointer <"))
                 || (*name == "probe-at" && wrong.contains("probe-at <"))
                 || (*name == "viewport" && wrong.contains("viewport <"))

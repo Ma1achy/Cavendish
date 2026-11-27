@@ -20,6 +20,12 @@ console, the command line or an agent must be the same `Command`.
 3. **Doing it.** In `Engine::perform`. If it changes the scene it must go through `Prepared::Edit`
    with the step that undoes and redoes it (`history::Edit`), so that undo works; if it changes
    what the towers read, call `self.schedule(false)`.
+   An edit that touches several places of the scene at once is still one step: work out the
+   whole new scene as a function of the old one in `cav-sim` (as `SceneSpec::folder_edit` does
+   for `Command::Folder`), and give the history the small thing that puts each side back
+   (`Edit::Folders` holds which folder everything is in, a few bytes a body; `Edit::Batch` is
+   several edits applied in order as one step, for an edit that also adds or removes items).
+   Give such an `Edit` the console line of its command, so the history list can show it.
 4. **Its place in the journal.** `history::weigh` counts it as the bytes of its JSON in a
    journal file, so there is nothing to add there; `Command::overwrites` says whether a run of it
    collapses into its last (a scrub, a drag). If your command holds state the engine must

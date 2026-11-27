@@ -50,6 +50,11 @@ pub enum Command {
         /// The path of the item.
         path: String,
     },
+    /// Change the scene tree's folders (`cav_sim::folders`): make one, move bodies, towers or
+    /// folders into one or out, rename one (its members follow), remove one (what it holds
+    /// moves up: nothing is deleted), duplicate one. An edit: one step of undo, whatever it
+    /// moved. Folders are for people: no tower's reading changes.
+    Folder(cav_sim::FolderEdit),
     /// Write something to a file. Not an edit and not a change of state: it is a command so that
     /// the journal says what a session wrote. Replaying a journal never writes to the paths in
     /// it: the replayer names a directory for exports, or they are skipped

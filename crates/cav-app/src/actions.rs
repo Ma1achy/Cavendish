@@ -43,6 +43,9 @@ pub enum Needs {
     /// A body or a tower is selected: an item of a list, which can be duplicated, renamed and
     /// taken out.
     Item,
+    /// A body or a tower is selected, or a folder of the scene tree is in focus: something
+    /// with a name to type.
+    Named,
     /// A body is selected.
     Body,
     /// The scene has a tower n (from 1).
@@ -75,6 +78,7 @@ impl Needs {
             Self::Redo => "there is nothing to redo",
             Self::Selection => "nothing is selected",
             Self::Item => "no body or tower is selected",
+            Self::Named => "no body, tower or folder is selected",
             Self::Body => "no body is selected",
             Self::Tower(_) => "the scene has no such tower",
             Self::Shapes => "the scene has no voxel body",

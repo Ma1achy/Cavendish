@@ -12,7 +12,9 @@
 # bar's in tests/editor/s20.rs, two of transport; cav: a viewport not shown is not drawn).
 # TASK-S20-09 (the duration and the end behaviour at the transport): 3 new quick tests (cav-app:
 # T4 and T5 in tests/editor/s20.rs, one of transport).
-quick 676
+# TASK-S20-07 (scene-tree folders): 5 new quick tests (cav-sim: F1 and the folder edits; cav-engine:
+# the folder session's replay, the read's keys; cav-app: F2 in tests/editor/s20.rs).
+quick 681
 gpu 42
 slow 45
 oracle 58

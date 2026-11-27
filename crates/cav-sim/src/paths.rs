@@ -704,10 +704,19 @@ pub fn diff(a: &SceneSpec, b: &SceneSpec) -> Stage {
             return;
         }
         match (a, b) {
-            (Value::Object(x), Value::Object(y)) if x.len() == y.len() && x.keys().eq(y.keys()) => {
-                for (key, left) in x {
+            // A field one side does not write (an option left out when absent, as a body's
+            // `folder` is) is that field changed from or to nothing: its own stage, not its
+            // owner's.
+            (Value::Object(x), Value::Object(y)) => {
+                for key in x.keys().chain(y.keys().filter(|key| !x.contains_key(*key))) {
                     segs.push(Seg::Field(key.clone()));
-                    walk(root, segs, left, &y[key], worst);
+                    walk(
+                        root,
+                        segs,
+                        x.get(key).unwrap_or(&Value::Null),
+                        y.get(key).unwrap_or(&Value::Null),
+                        worst,
+                    );
                     segs.pop();
                 }
             }

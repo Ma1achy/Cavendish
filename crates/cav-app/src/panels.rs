@@ -811,6 +811,15 @@ fn context_menu(shell: &mut Shell, ui: &mut egui::Ui) {
             ui.close();
         }
     }
+    // A body or a tower goes into a folder of its group, or out of every folder.
+    let item = match shell.engine.selection() {
+        Some(Target::Body(n)) => Some(cav_sim::FolderItem::Body(n)),
+        Some(Target::Tower(n)) => Some(cav_sim::FolderItem::Tower(n)),
+        _ => None,
+    };
+    if let Some(item) = item {
+        ui.menu_button("Move to", |ui| crate::outliner::move_menu(shell, ui, &item));
+    }
     ui.separator();
     ui.menu_button("Add", |ui| crate::menus::add_menu(shell, ui));
 }
