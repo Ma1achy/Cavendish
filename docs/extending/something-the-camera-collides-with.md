@@ -16,8 +16,11 @@ with a radius, as square columns.
   voxels) that overlaps a region. `Walker::step` asks once for the region a move covers and
   sweeps the box through the answer one axis at a time, so nothing is skipped at any speed.
 - `crates/cav-app/src/occupancy.rs` is the scene's answer, `SceneOccupancy`, made anew each
-  frame by borrowing the engine (`SceneOccupancy::new`). It reads the scene and never writes
-  it: the camera has no mass and is in no scene, edit or reading.
+  frame by borrowing the engine (`SceneOccupancy::new`, given the camera's box). It reads the
+  scene and never writes it: the camera has no mass and is in no scene, edit or reading.
+- Matter that is **drawn as an outline** (the room) must not keep the camera out of it: the
+  room is solid only to a camera wholly inside it (`SceneOccupancy::in_room`). Matter that is
+  drawn solid is solid from both sides. Pick one of the two for a new kind, by how it is drawn.
 
 ## Steps
 

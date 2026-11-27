@@ -21,8 +21,12 @@
 //!   A point (radius 0) is nothing.
 //! - **The floor** ([`cav_sim::FloorSpec`]): solid below its height (a slab: for its thickness).
 //! - **The room** ([`cav_sim::RoomSpec`]): its floor, walls and ceiling as shells [`SHELL`]
-//!   thick, outside the room's own volume. There is no door: with noclip off the camera cannot
-//!   pass a wall.
+//!   thick, outside the room's own volume, **for a camera inside it only**. The room is drawn as
+//!   an outline the eye sees through, so it keeps a camera in the hall and never keeps one out
+//!   (S20's review, finding 1): a camera whose box is not wholly inside the room's volume when
+//!   the occupancy is made passes its walls and ceiling as if they were not there (and so falls
+//!   through the roof onto the floor inside, or walks in through a wall); once wholly inside,
+//!   it cannot leave with noclip off.
 //! - **The net**: below everything, solid under [`SceneOccupancy::net`], so that off the edge
 //!   of the world, or in a scene with no ground at all, the camera never falls for ever.
 //!
@@ -62,6 +66,8 @@ pub struct SceneOccupancy<'a> {
     spec: &'a SceneSpec,
     bodies: Vec<Body<'a>>,
     net: f64,
+    /// Whether the room's shells are solid: the camera was wholly inside the room.
+    room: bool,
 }
 
 /// The block of finest cells along one axis that have a sample point within `lo..=hi`, as its
@@ -74,10 +80,14 @@ fn cells_within(lo: f64, hi: f64, origin: f64, pitch: f64, k: f64) -> Option<(f6
 }
 
 impl<'a> SceneOccupancy<'a> {
-    /// The matter of `engine`'s scene at its playhead. `ground` is the scene's ground level,
-    /// metres (`Shell::ground`): the net is there, or at the world's underside if that is lower.
+    /// The matter of `engine`'s scene at its playhead, as the camera whose box is `camera`
+    /// (metres, the world's frame) meets it. `ground` is the scene's ground level, metres
+    /// (`Shell::ground`): the net is there, or at the world's underside if that is lower.
+    /// `camera` decides only whether the room holds it ([`Self::in_room`]); nothing else depends on
+    /// where the camera is. Make the occupancy anew when the camera has moved (the window does,
+    /// each frame): one made for a camera outside the room never stops it at the room's walls.
     #[must_use]
-    pub fn new(engine: &'a Engine, ground: f64) -> Self {
+    pub fn new(engine: &'a Engine, ground: f64, camera: &Aabb) -> Self {
         let spec = engine.spec();
         let (time, gravity) = (engine.time(), spec.array.instrument.gravity);
         let bodies = spec
@@ -102,7 +112,19 @@ impl<'a> SceneOccupancy<'a> {
             PieceKind::Terrain { bottom, .. } => *bottom,
         });
         let net = underside.fold(ground, f64::min);
-        Self { spec, bodies, net }
+        let room = spec.room.as_ref().is_some_and(|room| {
+            let hi = [0, 1, 2].map(|a| room.origin[a] + room.size[a]);
+            let eps = crate::walk::EPS;
+            (0..3).all(|a| camera.min[a] >= room.origin[a] - eps && camera.max[a] <= hi[a] + eps)
+        });
+        Self { spec, bodies, net, room }
+    }
+
+    /// Whether the room's walls, floor and ceiling are solid for this occupancy: the scene has a
+    /// room and the camera's box was wholly inside its volume (to [`crate::walk::EPS`]).
+    #[must_use]
+    pub const fn in_room(&self) -> bool {
+        self.room
     }
 
     /// The height under which everything is solid, metres: what holds the camera up where the
@@ -267,7 +289,7 @@ impl Occupancy for SceneOccupancy<'_> {
             };
             out.push(slab(bottom, floor.height));
         }
-        if let Some(room) = &self.spec.room {
+        if let Some(room) = self.spec.room.as_ref().filter(|_| self.room) {
             let (lo, hi) = (room.origin, [0, 1, 2].map(|a| room.origin[a] + room.size[a]));
             let outer = Aabb { min: lo, max: hi }.grown([SHELL; 3]);
             if outer.grown([crate::walk::EPS; 3]).overlaps(region) {
@@ -352,7 +374,7 @@ mod tests {
         // neighbours (the slope is gentle). In `point` (a room, no world) it is the room's floor.
         let mut engine = Engine::new();
         engine.run_line("load town").unwrap();
-        let scene = SceneOccupancy::new(&engine, 0.0);
+        let scene = SceneOccupancy::new(&engine, 0.0, &Aabb { min: [0.0; 3], max: [0.0; 3] });
         assert!((scene.net() + 1.55).abs() < 1e-12, "{}", scene.net());
         let mut solids = Vec::new();
         let region = Aabb { min: [10.0, 10.0, -1.0], max: [10.6, 10.6, 0.8] };
@@ -368,6 +390,33 @@ mod tests {
         }
         let mut engine = Engine::new();
         engine.run_line("load point").unwrap();
-        assert!(SceneOccupancy::new(&engine, 0.0).net().abs() < 1e-15);
+        assert!(
+            SceneOccupancy::new(&engine, 0.0, &Aabb { min: [0.0; 3], max: [0.0; 3] }).net().abs() < 1e-15
+        );
+    }
+
+    #[test]
+    fn the_room_holds_a_camera_inside_and_never_keeps_one_out() {
+        // S20's review, finding 1. Criterion: in `point` (a room 10 × 10 × 3 m from (−5, −5, 0)),
+        // a camera wholly inside the room meets the room's six shells; one outside it, or one
+        // straddling a wall or the ceiling, meets none of them. Control: the same region asked
+        // of the two occupancies differs only by the shells.
+        let mut engine = Engine::new();
+        engine.run_line("load point").unwrap();
+        let person = |x: f64, z: f64| Aabb { min: [x - 0.3, -0.3, z], max: [x + 0.3, 0.3, z + 1.8] };
+        let everywhere = Aabb { min: [-20.0; 3], max: [20.0; 3] };
+        let shells = |camera: &Aabb| {
+            let world = SceneOccupancy::new(&engine, 0.0, camera);
+            let mut out = Vec::new();
+            world.solids(&everywhere, &mut out);
+            (world.in_room(), out.len())
+        };
+        // `point` has no world and no body with a size: the net is the one solid; the room adds six.
+        assert_eq!(shells(&person(0.0, 0.0)), (true, 7), "inside, standing on the floor");
+        assert_eq!(shells(&person(4.7, 1.2)), (true, 7), "inside, touching the east wall and the ceiling");
+        assert_eq!(shells(&person(8.0, 0.0)), (false, 1), "outside, east of it");
+        assert_eq!(shells(&person(0.0, 3.1)), (false, 1), "above the ceiling");
+        assert_eq!(shells(&person(5.0, 0.0)), (false, 1), "straddling the east wall");
+        assert_eq!(shells(&person(0.0, 2.0)), (false, 1), "straddling the ceiling");
     }
 }

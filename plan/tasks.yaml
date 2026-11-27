@@ -817,6 +817,9 @@
 - id: TASK-S20-14
   milestone: S20
   title: "S20's record: the demo and its pictures against S19's, the validation report against s19-editor-second-half, ARCHITECTURE, the recipes, PROGRESS"
+- id: TASK-S20-15
+  milestone: S20
+  title: "S20 review fixes: the room keeps the camera in, not out; the wheel's speed while walking; no Ctrl sprint and a leave-site guard on the web; Home's undo by label; the minors"
 - id: TASK-S22-01
   milestone: S22
   title: "A live mode: time keeps running and the signal, periodogram and timeline show a rolling window, bounded in memory (split from TASK-S20-09 by the S20 brief)"

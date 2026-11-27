@@ -1501,6 +1501,8 @@ impl Shell {
                             // The speed changed: it is shown, as after the wheel.
                             self.fly_speed = value;
                             self.show_fly_speed();
+                        } else if setting == "walk-speed" {
+                            self.show_fly_speed();
                         }
                         line.to_owned()
                     })

@@ -227,6 +227,10 @@ pub const PITCH_LIMIT: f64 = 89.0;
 /// The least and greatest flying speed the wheel reaches, metres per second.
 pub const FLY_SPEED_RANGE: (f64, f64) = (0.05, 1000.0);
 
+/// The least and greatest walking speed the wheel (while walking) or `camera-set walk-speed`
+/// reaches, metres per second.
+pub const WALK_SPEED_RANGE: (f64, f64) = (0.1, 100.0);
+
 /// The settings of the first-person camera (`ui/camera.ron`; `camera-set <setting> <value>` in
 /// the console changes one for the session). Window state: never part of a scene.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize)]
@@ -236,7 +240,8 @@ pub struct Settings {
     pub sensitivity: f64,
     /// The flying speed at first, metres per second (the wheel changes the session's).
     pub fly_speed: f64,
-    /// What sprinting multiplies the speed by (Ctrl held, or a double tap of W), dimensionless.
+    /// What sprinting multiplies the speed by (a double tap of W, or natively Ctrl held),
+    /// dimensionless.
     pub sprint: f64,
     /// The time constant with which the velocity eases toward the wanted one, seconds.
     pub easing: f64,
@@ -257,7 +262,7 @@ pub const SETTINGS: [(&str, &str, f64, f64, &str); 14] = [
     ("easing", "s", 0.0, 2.0, "the time constant of the velocity's easing"),
     ("double-tap", "s", 0.05, 1.0, "how close two presses are to be a double tap"),
     ("speed-shown", "s", 0.0, 10.0, "how long the speed is shown after the wheel changed it"),
-    ("walk-speed", "m/s", 0.1, 100.0, "the walking speed"),
+    ("walk-speed", "m/s", WALK_SPEED_RANGE.0, WALK_SPEED_RANGE.1, "the walking speed"),
     ("walk-sprint", "×", 1.0, 10.0, "what sprinting multiplies the walking speed by"),
     ("sneak", "×", 0.05, 1.0, "what sneaking multiplies the walking speed by"),
     ("jump-height", "m", 0.0, 100.0, "how high a jump lifts the feet"),
@@ -489,11 +494,24 @@ mod tests {
     /// Flies from `start()` with `push` held for `seconds` at `fps` frames a second, each frame
     /// made from the view and written back as its one command, as the window does.
     fn flown(push: Push, speed: f64, seconds: f64, fps: f64, easing: f64) -> (ViewSpec, [f64; 3]) {
+        flown_by(push, speed, seconds, fps, easing, 1.0 / fps)
+    }
+
+    /// [`flown`], each frame advanced by `dt` seconds whatever the frame rate: `1/fps` is the
+    /// window's way; anything else is a camera that ignores the frame's time (C1's control).
+    fn flown_by(
+        push: Push,
+        speed: f64,
+        seconds: f64,
+        fps: f64,
+        easing: f64,
+        dt: f64,
+    ) -> (ViewSpec, [f64; 3]) {
         let (mut view, mut velocity) = (start(), [0.0; 3]);
         let frames = (seconds * fps).round() as usize;
         for _ in 0..frames {
             let mut camera = FirstPerson::of(&view, velocity);
-            camera.advance(camera.wanted(push, speed), 1.0 / fps, easing);
+            camera.advance(camera.wanted(push, speed), dt, easing);
             velocity = camera.velocity;
             view = apply(&view, &camera.command(&view, 0));
         }
@@ -582,11 +600,14 @@ mod tests {
         long.advance(long.wanted(w, speed), 5.0, tau);
         capped.advance(capped.wanted(w, speed), MAX_DT, tau);
         assert_eq!(long, capped);
-        // Control: a fixed step a frame, as a camera that ignores the frame's time takes, ends
-        // 144/30 times as far at 144 frames a second.
-        let fixed = |fps: f64| (t * fps).round() * speed * (1.0 / 60.0);
-        assert!((fixed(144.0) / fixed(30.0) - 144.0 / 30.0).abs() < 1e-9);
-        assert!((fixed(144.0) / fixed(30.0) - 1.0).abs() > 0.01, "the control fails the criterion");
+        // Control (S20's review, minor 5: the control was arithmetic on constants and could not
+        // fail): the same flight through the same code, but each frame advanced by a fixed 1/60 s
+        // whatever the frame rate, as a camera that ignores the frame's time would. The
+        // criterion must reject it: 144 frames go much further than 30.
+        let fixed = |fps: f64| along_heading(&flown_by(w, speed, t, fps, tau, 1.0 / 60.0).0);
+        let (few, many) = (fixed(30.0), fixed(144.0));
+        assert!(few > 0.0 && many > 0.0, "the control flies: {few} {many}");
+        assert!((few / many - 1.0).abs() > 0.5, "the criterion fails the control: {few} {many}");
     }
 
     #[test]

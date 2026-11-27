@@ -953,6 +953,40 @@ fn a_figure_may_have_no_title() {
     }
 }
 
+/// Whether a plot's title is a terse label: parts joined by ` · `, each a few words with no
+/// connecting words (the owner's "dense, no prose in the chrome").
+fn terse(title: &str) -> bool {
+    const CONNECTING: [&str; 7] = ["the", "of", "at", "against", "and", "in", "from"];
+    title.split(" · ").all(|part| {
+        let words: Vec<&str> = part.split_whitespace().collect();
+        words.len() <= 3
+            && !words.iter().any(|w| CONNECTING.contains(&w.trim_matches(|c: char| !c.is_alphabetic())))
+    })
+}
+
+#[test]
+fn plot_titles_are_terse_labels() {
+    // S20's review, minor 13. Criterion: every plot's title, at the window's size (the longest
+    // that fits) and in the house style, is a terse label. Control: S20's titles, which read as
+    // sentences, fail the rule.
+    let engine = engine("load comb; set duration 400");
+    for style in [Style::screen(), Style::preset("paper-column").unwrap()] {
+        for content in
+            [PaneContent::Signal, PaneContent::Periodogram, PaneContent::Cadence, PaneContent::Flight]
+        {
+            let plot = build(&engine, &subject(content), &style, [1200.0, 700.0]);
+            assert!(terse(&plot.drawing.title), "{content:?}: `{}`", plot.drawing.title);
+        }
+    }
+    for sentence in [
+        "Flight · the atoms' arms, height against absolute time · comb",
+        "Cadence · spectral window |W| of tower 1's shots · comb",
+        "Periodogram · √S of ΔΦ at tower 1 · comb · refined",
+    ] {
+        assert!(!terse(sentence), "control: `{sentence}` is prose");
+    }
+}
+
 #[test]
 fn the_flight_rows_have_a_height_scale() {
     // Review 29, written first: at the right of the rows a bar for each row from the tower's base

@@ -188,8 +188,12 @@ pub struct Place {
     /// How many shots the tower has on the timeline, taken or not.
     pub count: usize,
     /// How many of them are read out at or before the playhead: the number (from 1) of the last
-    /// shot read out, 0 before the first. What the shot's field shows.
+    /// shot read out, 0 before the first.
     pub read: usize,
+    /// What the shot's field shows: the number (from 1) of the shot in flight at the playhead
+    /// (launched at or before it, read out at or after it: the shot whose bar the timeline
+    /// lights), else [`Self::read`]. So the field and the lit bar agree (S20's review, minor 11).
+    pub shown: usize,
     /// The readout before the playhead that a step back lands on, seconds; `None` at or before
     /// the first one inside the timeline.
     pub earlier: Option<f64>,
@@ -218,9 +222,13 @@ pub fn place(shots: &Shots, tower: usize, time: f64, duration: f64) -> Place {
     let (first, end) = (before(0.0, false), before(duration, true));
     let (below, read) = (before(time, false), before(time, true));
     let (earlier, later) = (below.min(end), read.max(first));
+    // The first shot not read out before the playhead is in flight if it was launched by then
+    // (the timeline's rule for lighting a bar: launch ≤ time ≤ readout).
+    let flying = (below < count && shots.flown(tower, below).launch <= time).then_some(below + 1);
     Place {
         count,
         read,
+        shown: flying.unwrap_or(read),
         earlier: (earlier > first).then(|| shots.readout(tower, earlier - 1)),
         later: (later < end).then(|| shots.readout(tower, later)),
     }
@@ -690,14 +698,14 @@ pub(crate) fn draw(shell: &mut Shell, ui: &mut egui::Ui, facts: &[String], capti
 
     // The shot: the last one read out, typed to go to a shot's readout.
     let place = place_now(shell);
-    let (read, count) = place.as_ref().map_or((0, 0), |p| (p.read, p.count));
-    let shot_text = read.to_string();
+    let (shown, count) = place.as_ref().map_or((0, 0), |p| (p.shown, p.count));
+    let shot_text = shown.to_string();
     let which = tower(shell)
         .and_then(|n| shell.engine.spec().array.towers.get(n).map(|t| t.label.clone()))
         .unwrap_or_else(|| "no tower".to_owned());
     let tip = format!(
-        "Shot\nthe last shot read out at or before the playhead, of {which}'s {count} (the selected tower's \
-         shots, else the first tower's); type a number to go to that shot's readout"
+        "Shot\nthe shot in flight at the playhead (its bar lit), else the last one read out, of {which}'s \
+         {count} (the selected tower's shots, else the first tower's); type a number to go to that shot's readout"
     );
     word(shell, ui, "shot");
     let digits = mono_width(ui, &count.max(10).to_string());
@@ -804,15 +812,27 @@ mod tests {
         let all = shots(12.0, 0.0);
         let readout = |k: usize| all.readout(0, k);
         let at = |time: f64| place(&all, 0, time, 12.0);
-        assert_eq!(at(0.0), Place { count: 6, read: 0, earlier: None, later: Some(readout(0)) });
+        assert_eq!(at(0.0), Place { count: 6, read: 0, shown: 1, earlier: None, later: Some(readout(0)) });
         // On a shot: it is read out; the steps are its neighbours, not itself.
         assert_eq!(
             at(readout(2)),
-            Place { count: 6, read: 3, earlier: Some(readout(1)), later: Some(readout(3)) }
+            Place { count: 6, read: 3, shown: 3, earlier: Some(readout(1)), later: Some(readout(3)) }
         );
         // Between two shots: the one before and the one after.
-        assert_eq!(at(4.0), Place { count: 6, read: 2, earlier: Some(readout(1)), later: Some(readout(2)) });
-        assert_eq!(at(12.0), Place { count: 6, read: 6, earlier: Some(readout(5)), later: None });
+        assert_eq!(
+            at(4.2),
+            Place { count: 6, read: 2, shown: 3, earlier: Some(readout(1)), later: Some(readout(2)) }
+        );
+        assert_eq!(at(12.0), Place { count: 6, read: 6, shown: 6, earlier: Some(readout(5)), later: None });
+        // The field shows the shot whose bar the timeline lights (S20's review, minor 11): at 3.2 s
+        // the second shot is in flight (launched at 2.0, read out at 3.46) though only the first
+        // is read out; in the gap after a readout, the shot read out. Control: `read` is still
+        // the count read out, which is what disagreed with the lit bar.
+        let flying = at(3.2);
+        let second = all.flown(0, 1);
+        assert!(second.launch <= 3.2 && 3.2 <= second.readout, "{second:?}");
+        assert_eq!((flying.shown, flying.read), (2, 1));
+        assert_eq!(at(readout(1) + 0.1).shown, 2, "after its readout, before the next launch");
         // A shot launched before the end and read out after it is counted and cannot be reached.
         let cut = shots(10.5, 0.0);
         assert_eq!(cut.count(0), 6);
