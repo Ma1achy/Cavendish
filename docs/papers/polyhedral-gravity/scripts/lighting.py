@@ -18,9 +18,10 @@ Three things:
   to front onto a plain 2-D axes, in one `PolyCollection` whose order is the painter's order: for
   each face its flat base colour (hides antialiasing seams), its sub-pieces, then its outline.
 
-The true body's edges are drawn over voxels as a hidden-line wireframe (`Scene.wireframe`): each
-edge is sampled, every sample is ray-tested towards the eye, and the runs in front are dashed black,
-the runs behind or inside faint grey.
+The true body's edges are drawn over voxels as fine round dots that belong to the 3-D scene
+(`Scene.wireframe`): a dot hidden behind or inside the voxels (a ray test towards the eye) is left
+out, and every other dot is its own painter item, sorted with the faces, so it passes in front of
+the cells behind it and under the cells in front of it. The dots grow slightly towards the viewer.
 
 Lengths are in whatever unit the caller's geometry uses; angles in degrees.
 """
@@ -42,7 +43,6 @@ VOXEL_AO = np.array([0.74, 0.83, 0.92, 1.0])
 RAY_AO = 0.30
 
 INK = "#111111"
-HIDDEN = "#9a9a9a"
 
 
 def unit(v: np.ndarray) -> np.ndarray:
@@ -293,9 +293,25 @@ def occluded_by_cells(view: View, solid: Callable[[np.ndarray], np.ndarray], ori
     steps = np.arange(0.0, reach, h / 8)
 
     def test(pts: np.ndarray) -> np.ndarray:
-        p = pts[:, None, :] + steps[None, :, None] * view.eye
+        # start a hair towards the eye, so a point on a cell's visible face counts as in front
+        p = pts[:, None, :] + (steps[None, :, None] + 0.01 * h) * view.eye
         ijk = np.floor((p - origin) / h).astype(int).reshape(-1, 3)
         return solid(ijk).reshape(len(pts), len(steps)).any(axis=1)
+    return test
+
+
+def behind_cells(view: View, solid: Callable[[np.ndarray], np.ndarray], origin: np.ndarray, h: float,
+                 reach: float) -> Callable[[np.ndarray], np.ndarray]:
+    """Per point: the largest centre depth of the solid cells behind it on its line of sight (the
+    cells its dot overlaps, which `add_voxels` paints by centre depth), or −inf."""
+    steps = np.arange(0.0, reach, h / 8)
+
+    def test(pts: np.ndarray) -> np.ndarray:
+        p = pts[:, None, :] - steps[None, :, None] * view.eye
+        ijk = np.floor((p - origin) / h).astype(int).reshape(-1, 3)
+        occ = solid(ijk).reshape(len(pts), len(steps))
+        d = view.depth(origin + (ijk + 0.5) * h).reshape(len(pts), len(steps))
+        return np.where(occ, d, -np.inf).max(axis=1)
     return test
 
 
@@ -340,6 +356,7 @@ class Scene:
         self.view = view
         self.items: list[tuple[float, int, list[np.ndarray], list, list, list]] = []
         self.lines: list[tuple[list[np.ndarray], dict]] = []
+        self.wires: list[tuple] = []
         self.pts: list[np.ndarray] = []
 
     def _add(self, depth: float, polys: list[np.ndarray], fcs: list, ecs: list, lws: list) -> None:
@@ -413,14 +430,50 @@ class Scene:
         return vis, hid
 
     def wireframe(self, edges: Sequence[np.ndarray], hidden: Callable[[np.ndarray], np.ndarray],
-                  step: float, show_hidden: bool = True) -> None:
-        """The true body's edges (polylines) as a hidden-line drawing on top of everything painted:
-        dashed black in front, faint grey behind or inside."""
-        vis, hid = self.classify(edges, hidden, step)
-        if show_hidden and hid:
-            self.lines.append((hid, dict(color=HIDDEN, lw=0.45, linestyle=(0, (2.0, 1.6)), zorder=4)))
-        if vis:
-            self.lines.append((vis, dict(color=INK, lw=0.8, linestyle=(0, (3.2, 2.0)), zorder=5)))
+                  behind: Callable[[np.ndarray], np.ndarray] | None = None, pitch: float = 1.9,
+                  size: tuple[float, float] = (0.75, 1.25), color: str = INK) -> None:
+        """The true body's edges (polylines) as fine round dots that are part of the 3-D scene.
+
+        Dots are placed every `pitch` points along each edge as drawn (fixed when the axes' scale is
+        known, in `draw`). A dot that `hidden` says is behind or inside the drawn solid is left out;
+        every other dot is a painter item of its own, sorted with the faces, so cubes in front of
+        it cover it and cubes behind it are painted first. `behind` gives, per point, the painter
+        depth of the farthest-forward item behind it along the line of sight (the dot must come
+        after it); None means nothing drawn ever lies in front of a visible dot (a convex body).
+        Dot diameters taper from size[0] (far) to size[1] (near), points.
+        """
+        self.wires.append((list(edges), hidden, behind, pitch, size, color))
+
+    def _dots(self, dpp: float) -> None:
+        """Turn the wireframes into dot items, `dpp` data units per point."""
+        for edges, hidden, behind, pitch, size, color in self.wires:
+            pts, dirs = [], []
+            for line in edges:
+                line = np.asarray(line, dtype=float)
+                seg2 = np.linalg.norm(np.diff(self.view.project(line), axis=0), axis=1)
+                cum = np.concatenate([[0.0], np.cumsum(seg2)])
+                s = np.arange(0.0, cum[-1] + 1e-12, pitch * dpp)
+                i = np.clip(np.searchsorted(cum, s, side="right") - 1, 0, len(line) - 2)
+                t = (s - cum[i]) / np.maximum(seg2[i], 1e-15)
+                pts.append(line[i] + t[:, None] * (line[i + 1] - line[i]))
+                dirs.append(line[i + 1] - line[i])
+            if not pts:
+                continue
+            p, d = np.vstack(pts), np.vstack(dirs)
+            show = ~hidden(p)
+            p, d = p[show], d[show]
+            if not len(p):
+                continue
+            depth = self.view.depth(p)
+            key = depth if behind is None else np.maximum(depth, behind(p))
+            key = key + 1e-9 if behind is not None else np.full(len(p), 1e9)
+            lo, hi = depth.min(), depth.max()
+            t = (depth - lo) / (hi - lo) if hi > lo else np.ones(len(p))
+            lw = size[0] + (size[1] - size[0]) * t
+            u = unit(d) * 1e-4 * dpp
+            for q, uu, k, w in zip(p, u, key, lw):
+                self.items.append((float(k), len(self.items), [np.array([q - uu, q + uu])],
+                                   ["none"], [color], [float(w)]))
 
     def edges(self, edges: Sequence[np.ndarray], hidden: Callable[[np.ndarray], np.ndarray],
               step: float, zorder: float = 3, **style) -> None:
@@ -436,19 +489,28 @@ class Scene:
     def draw(self, ax: plt.Axes, limits: np.ndarray | None = None) -> None:
         """Paint everything on `ax` (made bare, equal aspect). `limits`: 3-D points that must fit
         (e.g. a bounding box's corners), so panels drawn at the same size share one scale."""
-        polys, fcs, ecs, lws = [], [], [], []
-        for _, _, p, f, e, w in sorted(self.items, key=lambda it: (it[0], it[1])):
-            polys += [self.view.project(q) for q in p]
-            fcs += f
-            ecs += e
-            lws += w
-        ax.add_collection(PolyCollection(polys, facecolors=fcs, edgecolors=ecs, linewidths=lws,
-                                         joinstyle="round", capstyle="round"))
-        for segs, kw in self.lines:
-            ax.add_collection(LineCollection([self.view.project(s) for s in segs], **kw))
         ax.set_aspect("equal")
         ax.set_axis_off()
         box = self.view.project(np.asarray(limits) if limits is not None else np.vstack(self.pts))
         lo, hi = box.min(axis=0), box.max(axis=0)
         ax.set_xlim(lo[0], hi[0])
         ax.set_ylim(lo[1], hi[1])
+        ax.apply_aspect()
+        pos = ax.get_position()
+        w_pt, h_pt = pos.width * ax.figure.get_figwidth() * 72, pos.height * ax.figure.get_figheight() * 72
+        dpp = max((hi[0] - lo[0]) / w_pt, (hi[1] - lo[1]) / h_pt)  # data units per point
+        self._dots(dpp)
+        polys, fcs, ecs, lws = [], [], [], []
+        for _, _, p, f, e, w in sorted(self.items, key=lambda it: (it[0], it[1])):
+            for q, fc in zip(p, f):
+                q2 = self.view.project(q)
+                if isinstance(fc, str) and fc == "none" and len(q2) > 2:
+                    q2 = np.vstack([q2, q2[:1]])  # an outline: close it (the collection is open)
+                polys.append(q2)
+            fcs += f
+            ecs += e
+            lws += w
+        ax.add_collection(PolyCollection(polys, closed=False, facecolors=fcs, edgecolors=ecs,
+                                         linewidths=lws, joinstyle="round", capstyle="round"))
+        for segs, kw in self.lines:
+            ax.add_collection(LineCollection([self.view.project(s) for s in segs], **kw))

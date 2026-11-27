@@ -113,7 +113,8 @@ def fig_tree() -> None:
                 ax.add_patch(Rectangle((-side / 2 + i * s, -side / 2 + j * s), s, s,
                                        fc=SOLID if k == "in" else CUT, ec="white", lw=0.3,
                                        hatch=None if k == "in" else "////"))
-    ax.add_patch(Circle((0.07, -0.05), 1.0, fill=False, ec=dg.INK, lw=0.8, ls="--"))
+    ax.add_patch(Circle((0.07, -0.05), 1.0, fill=False, ec=dg.INK, lw=1.0, ls=dg.DOTS,
+                         capstyle="round"))
     ax.set_xlim(-1.3, 1.3)
     ax.set_ylim(-1.3, 1.3)
     ax.set_title(f"(a) uniform grid:\n{count} cells", fontsize=8)
@@ -122,7 +123,8 @@ def fig_tree() -> None:
     for x0, y0, sz, k in leaves:
         ax.add_patch(Rectangle((x0, y0), sz, sz, fc=SOLID if k == "in" else CUT, ec="white",
                                lw=0.5, hatch=None if k == "in" else "////"))
-    ax.add_patch(Circle((0.07, -0.05), 1.0, fill=False, ec=dg.INK, lw=0.8, ls="--"))
+    ax.add_patch(Circle((0.07, -0.05), 1.0, fill=False, ec=dg.INK, lw=1.0, ls=dg.DOTS,
+                         capstyle="round"))
     ax.set_xlim(-1.3, 1.3)
     ax.set_ylim(-1.3, 1.3)
     ncut = sum(1 for lf in leaves if lf[3] == "cut")
@@ -130,7 +132,7 @@ def fig_tree() -> None:
                  fontsize=8)
     ax = fig.add_subplot(1, 3, 3)
     view = lit.View(38, -58)
-    depth = 4
+    depth = 4  # one level coarser than (a, b): at 5 the walls turn to texture and the split is lost
     n3 = 2 ** depth
     h3 = 1.0 / n3
     _, _, _, lv = octree_counts(depth)
@@ -160,24 +162,19 @@ def fig_tree() -> None:
     sc = lit.Scene(view)
     lit.add_voxels(sc, ijk, np.zeros(3), h3, solid, [SOLID if k == "in" else CUT for k in kinds],
                    [dg.BLUE if k == "in" else dg.VERMILION for k in kinds], 0.2, leaf=leaf)
-    # the true surface: where the cut plane z = 0.5 meets the sphere, and the lower half of the
-    # sphere's outline as seen from the eye
+    # the true surface where the cut plane z = 0.5 meets the sphere (the sphere's own outline
+    # below it lies wholly inside the cut cells, which stick out past the surface, so it never shows)
     c, r = np.array([0.503, 0.497, 0.501]), 0.39
     t = np.linspace(0, 2 * np.pi, 361)
     rr = math.sqrt(r * r - (0.5 - c[2]) ** 2)
     rim = c + np.column_stack([rr * np.cos(t), rr * np.sin(t), np.full_like(t, 0.5 - c[2])])
-    e1 = view.right
-    e2 = view.up
-    sil = c + r * (np.cos(t)[:, None] * e1 + np.sin(t)[:, None] * e2)
-    sil = sil[sil[:, 2] < 0.5]
-    order = np.argsort(np.arctan2((sil - c) @ e2, (sil - c) @ e1) % (2 * np.pi))
-    sil = sil[order]
-    sc.wireframe([rim, sil], lit.occluded_by_cells(view, solid, np.zeros(3), h3, 1.5), 0.003)
+    sc.wireframe([rim], lit.occluded_by_cells(view, solid, np.zeros(3), h3, 1.5),
+                 lit.behind_cells(view, solid, np.zeros(3), h3, 1.5))
     sc.draw(ax, np.array([[x, y, z] for x in (0.1, 0.9) for y in (0.1, 0.9) for z in (0.1, 0.52)]))
     ax.set_title("(c) octree in 3-D, lower half:\neight-way split", fontsize=8)
     fig.text(0.5, 0.0, "blue: interior, merged into the largest blocks that are wholly inside; "
-             "orange, hatched: cut cells, always at the finest level; dashed: the true surface "
-             "(in (c) the sphere's rim at the cut and its outline, grey where hidden)",
+             "orange, hatched: cut cells, always at the finest level; dotted: the true surface "
+             "(in (c) where the cut meets the sphere)",
              ha="center", fontsize=6.8)
     fig.savefig(FIG / "diag-tree.pdf")
     plt.close(fig)
@@ -262,7 +259,8 @@ def fig_read_cut() -> None:
             ax.add_patch(Rectangle((x0, y0), s, s, fc="#dbe7f3", ec=dg.BLUE, lw=0.7, ls="--"))
 
     visit(0.2, 0.0, 8.0)
-    ax.add_patch(Circle(centre, radius, fill=False, ec=dg.INK, lw=0.8, ls="--"))
+    ax.add_patch(Circle(centre, radius, fill=False, ec=dg.INK, lw=1.0, ls=dg.DOTS,
+                         capstyle="round"))
     ax.plot([arm_x, arm_x], [0, top], color=dg.INK, lw=2.2)
     t = np.linspace(0, 1, 50)
     for z0 in (0.0, 5.0):

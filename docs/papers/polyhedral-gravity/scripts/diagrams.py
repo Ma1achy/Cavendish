@@ -3,7 +3,7 @@
 One style for all: the Okabe–Ito colour-blind-safe palette, with hatching or line style as a second
 cue so each figure reads in greyscale; thin lines; every element labelled; no decoration. The 3-D
 panels are painted by lighting.py (key and fill light, ambient occlusion, and the true body's edges
-as a hidden-line wireframe over voxels), shared with octree_diagrams.py.
+as fine dots sorted in depth with the voxels), shared with octree_diagrams.py.
 
     a  diag-representations.pdf   a triangle (2-D) and a square-based pyramid (3-D): true surface,
                                   staircase voxels, interior cells + clipped boundary pieces
@@ -40,6 +40,7 @@ BLUE, ORANGE, GREEN, VERMILION, SKY, YELLOW, PURPLE = (
     "#0072B2", "#E69F00", "#009E73", "#D55E00", "#56B4E9", "#F0E442", "#CC79A7")
 INK, INK2, GHOST = "#111111", "#555555", "#bbbbbb"
 PALE_GREEN = "#7fcfb9"  # Okabe–Ito green lightened halfway to white, for a filled true body
+DOTS = (0, (0.05, 1.9))  # the true surface over cells: fine round dots (with round caps), points
 
 
 def style() -> None:
@@ -208,7 +209,7 @@ def fig_representations() -> None:
                     ax.add_patch(Rectangle((g0 + i * h, g0 + j * h), h, h, fc=SKY, ec=BLUE, lw=0.4))
                 elif a > 1e-9:
                     ax.add_patch(Polygon(piece, fc=ORANGE, ec=VERMILION, lw=0.4, hatch="////"))
-            ax.add_patch(Polygon(body, fill=False, ec=INK, lw=0.8, ls="--"))
+            ax.add_patch(Polygon(body, fill=False, ec=INK, lw=1.0, ls=DOTS, capstyle="round"))
         ax.set_xlim(g0, -g0)
         ax.set_ylim(g0, -g0)
         ax.set_title(f"({'abc'[k]}) {titles[k]}", fontsize=8)
@@ -265,7 +266,8 @@ def fig_representations() -> None:
                 sc.add_shaded(f, parts, ao, PALE_GREEN, edge=GREEN, lw=0.6)
         elif k == 1:
             lit.add_voxels(sc, keep, off, h3, solid, [SKY] * len(keep), [BLUE] * len(keep), 0.15)
-            sc.wireframe(edges, lit.occluded_by_cells(VIEW, above_ground, off, h3, 2.0), 0.004)
+            sc.wireframe(edges, lit.occluded_by_cells(VIEW, above_ground, off, h3, 2.0),
+                         lit.behind_cells(VIEW, above_ground, off, h3, 2.0))
         else:
             # the whole body as its clipped pieces: each piece's share of the pyramid's surface,
             # outlined, so the lattice shows where it cuts the faces (the interior cubes are hidden
@@ -278,12 +280,12 @@ def fig_representations() -> None:
             ao = lit.ray_occlusion(ctr, nrm, occluders, ao_r)
             for f, a in zip(outer, ao):
                 sc.add_shaded(f, [f], np.array([a]), ORANGE, edge=VERMILION, lw=0.25)
-            sc.wireframe(edges, lit.occluded_by_tris(VIEW, tris, 1e-4), 0.004)
+            sc.wireframe(edges, lit.occluded_by_tris(VIEW, tris, 1e-4))
         sc.draw(ax, bound)
         ax.set_title(f"({'def'[k]})", fontsize=8)
     fig.text(0.5, 0.03, f"green: the true body; blue: whole cells; orange (hatched in 2-D): clipped "
-             f"boundary pieces, exact to the polygon or mesh; dashed: the true surface (in (e, f) its edges, "
-             f"grey where hidden). "
+             f"boundary pieces, exact to the polygon or mesh; dotted: the true surface (in (e, f) its edges, "
+             f"hidden where the cells cover them). "
              f"(f): the {len(pieces)} clipped pieces, outlined where the lattice cuts the faces "
              f"({len(inner)} whole cubes are inside).",
              ha="center", fontsize=6.8)
@@ -335,7 +337,7 @@ def fig_fill_moments() -> None:
                 ang = np.degrees(np.arctan2(v[1, 1], v[0, 1]))
                 ax.add_patch(Ellipse(c, 2 * np.sqrt(w[1]), 2 * np.sqrt(w[0]), angle=ang,
                                      fill=False, ec=PURPLE, lw=1.0, ls="-"))
-        ax.plot([a[0], b[0]], [a[1], b[1]], color=INK, lw=0.9, ls="--")
+        ax.plot([a[0], b[0]], [a[1], b[1]], color=INK, lw=1.0, ls=DOTS, dash_capstyle="round")
         ax.set_xlim(-0.15, 3.15)
         ax.set_ylim(-0.12, 1.25)
         ax.set_title(titles[k], fontsize=8)

@@ -1735,11 +1735,40 @@ class Canvas:
         self.alb[sel] = np.asarray(colour, dtype=float)
         self.nrm[sel] = normal / np.linalg.norm(normal)
 
-    def lines(self, segs: F64, colour: F64, alpha: float, dash: tuple[float, float] | None = None,
-              width: int = 1) -> None:
+    def dots(self, lines: list[F64], colour: F64, pitch: float, radius: tuple[float, float]) -> None:
+        """Polylines (each (k, 3)) as round dots every `pitch` output pixels, part of the 3-D picture:
+        each pixel of a dot is depth-tested against what is drawn, so geometry in front covers it.
+        Dot radii taper from radius[0] (far) to radius[1] (near), output pixels."""
+        pts = []
+        for line in lines:
+            q = self.project(line)
+            seg = np.linalg.norm(np.diff(q[:, :2], axis=0), axis=1)
+            cum = np.concatenate([[0.0], np.cumsum(seg)])
+            s = np.arange(0.0, cum[-1] + 1e-9, 2.0 * pitch)
+            i = np.clip(np.searchsorted(cum, s, side="right") - 1, 0, len(q) - 2)
+            t = (s - cum[i]) / np.maximum(seg[i], 1e-12)
+            pts.append(q[i] + t[:, None] * (q[i + 1] - q[i]))
+        if not pts:
+            return
+        p = np.vstack(pts)
+        lo, hi = p[:, 2].min(), p[:, 2].max()
+        near = (hi - p[:, 2]) / (hi - lo) if hi > lo else np.ones(len(p))
+        rad = 2.0 * (radius[0] + (radius[1] - radius[0]) * near)
+        mask = np.zeros((self.n, self.n), dtype=bool)
+        r = int(np.ceil(rad.max()))
+        oy, ox = np.mgrid[-r:r + 1, -r:r + 1]
+        for (x, y, d), rr in zip(p, rad):
+            iy, ix = np.floor(y).astype(int) + oy, np.floor(x).astype(int) + ox
+            ok = ((iy + 0.5 - y) ** 2 + (ix + 0.5 - x) ** 2 <= rr * rr) & (iy >= 0) & (iy < self.n) \
+                & (ix >= 0) & (ix < self.n)
+            iy, ix = iy[ok], ix[ok]
+            vis = d <= self.z[iy, ix] + 2 * self.depth_bias
+            mask[iy[vis], ix[vis]] = True
+        self.overlays.append((mask, np.asarray(colour, dtype=float), 1.0))
+
+    def lines(self, segs: F64, colour: F64, alpha: float) -> None:
         """Segments (N, 2, 3), depth-tested against what is drawn, blended at `alpha` over the lit
-        picture. With `dash` = (on, off) in output pixels the pattern runs on across consecutive
-        segments (so pass a chained polyline); `width` is in supersampled pixels."""
+        picture."""
         if len(segs) == 0:
             return
         a, b = self.project(segs[:, 0]), self.project(segs[:, 1])
@@ -1748,20 +1777,13 @@ class Canvas:
         idx = np.repeat(np.arange(len(segs)), k + 1)
         frac = np.concatenate([np.linspace(0, 1, m + 1) for m in k])
         p = a[idx] + (b - a)[idx] * frac[:, None]
-        keep = np.ones(len(p), dtype=bool)
-        if dash is not None:
-            arc = np.concatenate([[0.0], np.cumsum(length)[:-1]])[idx] + frac * length[idx]
-            keep = (arc % (2.0 * (dash[0] + dash[1]))) < 2.0 * dash[0]
         ix, iy = np.floor(p[:, 0]).astype(int), np.floor(p[:, 1]).astype(int)
-        ok = keep & (ix >= 0) & (ix < self.n) & (iy >= 0) & (iy < self.n)
+        ok = (ix >= 0) & (ix < self.n) & (iy >= 0) & (iy < self.n)
         ix, iy, p = ix[ok], iy[ok], p[ok]
         vis = p[:, 2] <= self.z[iy, ix] + self.depth_bias
         ix, iy = ix[vis], iy[vis]
         mask = np.zeros((self.n, self.n), dtype=bool)
-        for dy in range(width):
-            for dx in range(width):
-                mask[np.clip(iy + dy - width // 2, 0, self.n - 1),
-                     np.clip(ix + dx - width // 2, 0, self.n - 1)] = True
+        mask[iy, ix] = True
         self.overlays.append((mask, np.asarray(colour, dtype=float), alpha))
 
     def occlusion(self) -> F64:

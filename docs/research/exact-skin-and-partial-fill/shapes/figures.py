@@ -2,6 +2,7 @@
 
     python figures.py                 # the first four shapes
     python figures.py sphere bunny    # any (also spot, dragon, armadillo, buddha, bracket)
+    python figures.py torus@0.1       # at another pitch than the study's (m)
 
 Writes `<shape>.png` and `<shape>-cutaway.png` here. Same lattice, camera and light in every panel.
 Colours: the shape blue; cube voxels grey (interior) and yellow (boundary cells whose centre is
@@ -9,7 +10,7 @@ inside); clipped polyhedra grey (interior cubes) and orange (boundary pieces). C
 faintly. Lit as the paper's diagrams are: key, fill and ambient light with ambient occlusion (see
 `shapes_lib.Canvas`). The cutaway removes every cell whose centre lies beyond the lattice wall
 nearest the body's centre plane y = const, and cuts the shape at the same wall; the true surface's
-section on that wall is dashed over the voxels.
+section on that wall is dotted over the voxels.
 """
 
 from __future__ import annotations
@@ -34,7 +35,8 @@ ORANGE = np.array([0xEB, 0x68, 0x34]) / 255
 YELLOW = np.array([0xED, 0xA1, 0x00]) / 255
 GREY = np.array([0xC3, 0xC2, 0xB7]) / 255
 INK = np.array([0x0B, 0x0B, 0x0B]) / 255
-SIZE = 560
+SIZE = 800  # pixels per panel, rendered (supersampled 2x); the PNG is drawn at DPI
+DPI = 160
 AZIMUTH, ELEVATION = 58.0, 24.0
 
 
@@ -182,9 +184,9 @@ def _section(mesh: L.Mesh, y: float) -> list[np.ndarray]:
 
 
 def _outline(cv: L.Canvas, section: list[np.ndarray]) -> None:
-    """The true surface's section on the cut, dashed, over the voxels (as the paper's 2-D panels)."""
-    for line in section:
-        cv.lines(np.stack([line[:-1], line[1:]], axis=1), INK, 0.9, dash=(4.0, 2.5), width=3)
+    """The true surface's section on the cut as fine dots over the voxels (as the paper's diagrams),
+    depth-tested so that anything in front covers them."""
+    cv.dots(section, INK, pitch=SIZE / 150, radius=(SIZE / 620, SIZE / 480))
 
 
 def _analytic_surface(name: str) -> L.Mesh:
@@ -212,11 +214,11 @@ def _analytic_surface(name: str) -> L.Mesh:
     return L.Mesh("sphere", verts, faces.astype(np.int64), "")
 
 
-def figure(name: str) -> None:
+def figure(name: str, pitch: float | None = None) -> None:
     mesh = L.mesh_by_name(name)
     analytic = name in ("sphere", "torus")
     drawn = _analytic_surface(name) if analytic else mesh
-    h = PITCH[name]
+    h = PITCH[name] if pitch is None else pitch
     vox = L.voxelise(mesh, h, keep_drawing=True)
     centre_y = 0.5 * (mesh.verts[:, 1].min() + mesh.verts[:, 1].max())
     k_cut = int(round((centre_y - vox.base[1]) / h))
@@ -269,17 +271,18 @@ def figure(name: str) -> None:
         caption = (f"{what}, pitch {h} m{cut_txt}. {left} Cube voxels: a cell is solid if its centre is "
                    f"inside (grey: wholly inside; yellow: crossed by the surface, centre inside). Clipped "
                    f"polyhedra: the same grey interior cubes, and every crossed cell cut to its inside piece "
-                   f"(orange).{' Dashed: the true surface where the cut meets it.' if cut else ''}")
+                   f"(orange).{' Dotted: the true surface where the cut meets it.' if cut else ''}")
         height = 5.0 * aspect + 1.6
         fig.text(0.02, 0.08 / height, "\n".join(textwrap.wrap(caption, 190)), fontsize=9, color="#52514e",
                  va="bottom", ha="left")
         fig.subplots_adjust(left=0.01, right=0.99, top=1 - 0.42 / height, bottom=0.72 / height, wspace=0.02)
         out = L.HERE / f"{name}{'-cutaway' if cut else ''}.png"
-        fig.savefig(out, dpi=110, facecolor=fig.get_facecolor())
+        fig.savefig(out, dpi=DPI, facecolor=fig.get_facecolor())
         plt.close(fig)
         print(f"wrote {out}", flush=True)
 
 
 if __name__ == "__main__":
-    for shape in sys.argv[1:] or ["sphere", "torus", "teapot", "suzanne"]:
-        figure(shape)
+    for arg in sys.argv[1:] or ["sphere", "torus", "teapot", "suzanne"]:
+        shape, _, pitch = arg.partition("@")
+        figure(shape, float(pitch) if pitch else None)
