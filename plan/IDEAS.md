@@ -209,3 +209,8 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   with the oracle tier. Where one guards a property a small scene would also show (the probe's
   field on a coarse ball, the wire's world job on one chunk), a cheap twin in `quick` would catch
   a break at the commit and not at the slice's end.
+- **Mend a mesh on import instead of refusing it** (shapes study §3.2–3.3, 27 Nov 2026): the
+  importer refuses the Stanford bunny (open base), scans past 500,000 triangles or 32 MiB, and
+  decimations that fold through themselves. The study's repair (weld, drop non-manifold edges,
+  ear-clip holes, cut out and re-close self-crossings) and a decimation to a stated Hausdorff bound
+  would let `import` take them, reporting what it changed.

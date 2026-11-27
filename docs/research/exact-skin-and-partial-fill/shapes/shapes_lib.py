@@ -141,18 +141,88 @@ SOURCES = {
 }
 
 
+# More famous meshes (added 26 Nov 2026). Licences, read on the sources' pages that day:
+# - Stanford 3D Scanning Repository (bunny, dragon, Happy Buddha, Armadillo): "You are welcome to use
+#   the data and models for research purposes ... as long as credit is given to the Stanford Computer
+#   Graphics Laboratory"; not for commercial use; "You can do anything you want to the Stanford bunny
+#   or the armadillo". Credit: Stanford Computer Graphics Laboratory (Armadillo: Venkat Krishnamurthy).
+# - Spot (Keenan Crane, CMU 3D model repository): "dedicated under CC0 1.0 Universal".
+# - Thingi10K file 44950 (Thingiverse thing 13727, "mk7 ball bearing extruder drive" by jag): licence
+#   "Public Domain" in Thingi10K's metadata; from the Thingi10K Hugging Face mirror at a pinned commit.
+# The Stanford URLs are not versioned; the SHA-256 pins the content.
+_HF = "https://huggingface.co/datasets/Thingi10K/Thingi10K/resolve/2d5d3b2f3cd3711028ad75b12788c13b25559ec6"
+SOURCES.update({
+    "bunny": ("https://graphics.stanford.edu/pub/3Dscanrep/bunny.tar.gz",
+              "a5720bd96d158df403d153381b8411a727a1d73cff2f33dc9b212d6f75455b84"),
+    "spot": ("https://www.cs.cmu.edu/~kmcrane/Projects/ModelRepository/spot.zip",
+             "1d4082da4e940f6a4cfdf648fd77e1647ac613c618dbff933f1ba23fad254608"),
+    "dragon": ("https://graphics.stanford.edu/pub/3Dscanrep/dragon/dragon_recon.tar.gz",
+               "74ac1d90989c9b1732edee82d57e9ce71452144cf4355f108d8c9c616d28d02f"),
+    "armadillo": ("https://graphics.stanford.edu/pub/3Dscanrep/armadillo/Armadillo.ply.gz",
+                  "8b9b56cc36e66d54429b1e1e75bd89e833645bfe0dc7c1afd1205877a7356a3f"),
+    "buddha": ("https://graphics.stanford.edu/pub/3Dscanrep/happy/happy_recon.tar.gz",
+               "409cd294efbfd8244e15a382b95a9423f153b7776e736c9b09f19ec9d3c10ed0"),
+    "bracket": (f"{_HF}/raw_meshes/44950.stl",
+                "7cfc8f73f29a61da358c15268971fd8026e0680a2aa6edb4d2a60bb023ad24ce"),
+})
+# The member of each archive that is the mesh (the full-resolution reconstruction).
+MEMBER = {"bunny": "bunny/reconstruction/bun_zipper.ply", "spot": "spot/spot_triangulated.obj",
+          "dragon": "dragon_recon/dragon_vrip.ply", "buddha": "happy_recon/happy_vrip.ply"}
+
+
 def _download(name: str) -> Path:
     url, sha = SOURCES[name]
     CACHE.mkdir(exist_ok=True)
-    path = CACHE / f"{name}.obj"
+    tail = url.rsplit("/", 1)[1]
+    path = CACHE / (f"{name}.obj" if tail.endswith(".obj") else f"{name}-{tail}")
     if not path.exists():
-        with urllib.request.urlopen(url, timeout=60) as r:  # noqa: S310 (pinned https URL)
+        with urllib.request.urlopen(url, timeout=600) as r:  # noqa: S310 (pinned https URL)
             path.write_bytes(r.read())
     got = hashlib.sha256(path.read_bytes()).hexdigest()
     if got != sha:
         path.unlink()
         raise RuntimeError(f"{name}: SHA-256 {got} does not match the pinned {sha}")
     return path
+
+
+def _load(name: str) -> tuple[F64, I64]:
+    """The downloaded mesh as it is (vertices in its own units, triangles), from its archive."""
+    import gzip
+    import io
+    import tarfile
+    import zipfile
+
+    path = _download(name)
+    if path.suffix == ".obj":
+        return _read_obj(path)
+    raw_cache = CACHE / f"{name}-original.npz"
+    if raw_cache.exists():
+        z = np.load(raw_cache)
+        return z["v"], z["f"]
+    import trimesh
+
+    if path.name.endswith(".tar.gz"):
+        with tarfile.open(path) as tar:
+            member = tar.extractfile(MEMBER[name])
+            assert member is not None
+            data, kind = member.read(), MEMBER[name].rsplit(".", 1)[1]
+    elif path.suffix == ".zip":
+        with zipfile.ZipFile(path) as z:
+            data, kind = z.read(MEMBER[name]), MEMBER[name].rsplit(".", 1)[1]
+    elif path.name.endswith(".ply.gz"):
+        data, kind = gzip.decompress(path.read_bytes()), "ply"
+    else:
+        data, kind = path.read_bytes(), path.suffix[1:]
+    if kind == "obj":
+        tmp = CACHE / f"{name}-member.obj"
+        tmp.write_bytes(data)
+        v, f = _read_obj(tmp)
+        tmp.unlink()
+    else:
+        m = trimesh.load(io.BytesIO(data), file_type=kind, process=False, force="mesh")
+        v, f = np.asarray(m.vertices, dtype=np.float64), np.asarray(m.faces, dtype=np.int64)
+    np.savez(raw_cache, v=v, f=f)
+    return v, f
 
 
 def _read_obj(path: Path) -> tuple[F64, I64]:
@@ -186,7 +256,7 @@ def winding(tris: F64, pts: F64) -> F64:
     return out
 
 
-def closed_from_soup(name: str, v: F64, faces: I64, n: int) -> Mesh:
+def closed_from_soup(name: str, v: F64, faces: I64, n: int, inside_tris: F64 | None = None) -> Mesh:
     """Close an open or self-intersecting mesh: the zero set of a signed distance whose sign is the
     generalised winding number's (inside where it exceeds 0.5).
 
@@ -198,11 +268,15 @@ def closed_from_soup(name: str, v: F64, faces: I64, n: int) -> Mesh:
     surface, and marching cubes on it terraces); further out the magnitude is clamped. Marching cubes
     (Lewiner, scikit-image) extracts the zero set, which is closed and consistently wound by
     construction. The result is checked (`check_closed`) and rejected if it is not.
+
+    With `inside_tris` (a closed mesh, e.g. the repaired one) the side comes from casting lattice lines
+    through it (`grid_inside`) instead of the winding number of the soup: the same set away from the
+    surface, and fast for the 50,000-triangle scans.
     """
     from scipy import ndimage
     from skimage import measure
 
-    cache = CACHE / f"{name}-closed-sdf-{n}.npz"
+    cache = CACHE / f"{name}-closed-sdf-{n}{'-cast' if inside_tris is not None else ''}.npz"
     if cache.exists():
         z = np.load(cache)
         mv, mf = z["v"], z["f"]
@@ -212,7 +286,9 @@ def closed_from_soup(name: str, v: F64, faces: I64, n: int) -> Mesh:
         shape = np.ceil((v.max(axis=0) - o) / s).astype(int) + 3
         grid = np.stack(np.meshgrid(*[o[i] + s * np.arange(shape[i]) for i in range(3)], indexing="ij"), -1)
         wn_cache = CACHE / f"{name}-winding-{n}.npy"
-        if wn_cache.exists():
+        if inside_tris is not None:
+            wn = grid_inside(inside_tris, o, s, tuple(int(x) for x in shape)).astype(np.float64)
+        elif wn_cache.exists():
             wn = np.load(wn_cache)
         else:
             wn = winding(v[faces], grid.reshape(-1, 3)).reshape(tuple(shape))
@@ -231,9 +307,7 @@ def closed_from_soup(name: str, v: F64, faces: I64, n: int) -> Mesh:
             edge[tuple(hi_idx)] |= diff
         band = ndimage.binary_dilation(edge, iterations=2)
         dist = np.full(inside.shape, 3.0 * s)
-        tris_raw = v[faces]
-        for idx in np.argwhere(band):
-            dist[tuple(idx)] = distance_to_mesh(tris_raw, grid[tuple(idx)])
+        dist[band] = distances_to_mesh(v[faces], grid[band])
         sdf = np.where(inside, dist, -dist)
         mv, mf, _, _ = measure.marching_cubes(sdf, level=0.0, spacing=(s, s, s), allow_degenerate=False)
         mv = mv + o
@@ -247,12 +321,14 @@ def closed_from_soup(name: str, v: F64, faces: I64, n: int) -> Mesh:
     return Mesh(name, mv, mf, f"marching cubes on a 1/{n} m grid, {len(mf)} triangles")
 
 
-def _raw(name: str, up: tuple[int, int, int]) -> tuple[F64, I64, float, F64]:
+def _raw(name: str, up: tuple[int, int, int], original: bool = False) -> tuple[F64, I64, float, F64]:
     """The downloaded mesh turned so `up` is +z, its bounding box centred and its largest extent 1 m.
 
     Returns (vertices, faces, scale, shift) with v_new = (v_old[:, perm]·sign − shift)·scale.
+    Meshes in `DECIMATE` come back decimated (`decimated`) unless `original`; the frame is always the
+    original's, so the two can be compared point by point.
     """
-    verts, faces = _read_obj(_download(name))
+    verts, faces = _load(name)
     perm = [abs(a) - 1 for a in up]
     sign = np.array([1.0 if a > 0 else -1.0 for a in up])
     v = verts[:, perm] * sign
@@ -261,7 +337,273 @@ def _raw(name: str, up: tuple[int, int, int]) -> tuple[F64, I64, float, F64]:
     lo, hi = v.min(axis=0), v.max(axis=0)
     shift = 0.5 * (lo + hi)
     scale = 1.0 / float((hi - lo).max())
-    return (v - shift) * scale, faces, scale, shift
+    v = (v - shift) * scale
+    if name in DECIMATE and not original:
+        v, faces = decimated(name, v, faces, DECIMATE[name])
+    return v, faces, scale, shift
+
+
+# Scans too big to voxelise in Python at size/h = 128 are decimated first (triangles kept after).
+# At 50,000 triangles the Armadillo missed the 1/256 m check by 0.1 mm (60,000 passes). The dragon
+# and the Buddha miss it at 50,000 and at 150,000 alike, in the same few places (a thin fin under the
+# dragon, ~2 cm; thin walls under the Buddha's robe, ~1 cm) whichever decimator: see the note.
+DECIMATE = {"dragon": 50_000, "armadillo": 60_000, "buddha": 50_000}
+
+
+def decimated(name: str, v: F64, f: I64, target: int) -> tuple[F64, I64]:
+    """The mesh (study frame) decimated to about `target` triangles and made a clean closed mesh.
+
+    1. Weld (8 decimals), drop triangles on non-manifold edges (`drop_nonmanifold`: the Happy
+       Buddha has 32 such edges).
+    2. Quadric-error decimation (Garland & Heckbert 1997, `fast_simplification`, MIT).
+    3. `repair` (ear clipping) the few non-manifold edges and holes it leaves.
+    4. Where the result folds through itself (`self_crossings`, the test `cav`'s importer makes),
+       cut out the crossing triangles' one-ring and close the holes again; repeat until none.
+    manifold3d's `simplify(tolerance)` was tried first: no crossings at the start, but it removes
+    thin parts (the dragon's whiskers): original vertices 1–2 cm from its result at 50,000 and
+    112,000 triangles. Cached in `.cache/`; `decimation_check` measures the result against the
+    original download."""
+    cache = CACHE / f"{name}-decimated-{target}.npz"
+    if cache.exists():
+        z = np.load(cache)
+        return z["v"], z["f"]
+    q = np.round(v, 8)
+    _, first, inv = np.unique(q, axis=0, return_index=True, return_inverse=True)
+    v, f = v[first], inv.reshape(-1)[f]
+    f = f[(f[:, 0] != f[:, 1]) & (f[:, 1] != f[:, 2]) & (f[:, 2] != f[:, 0])]
+    n_bad = len(f)
+    f = drop_nonmanifold(f)
+    n_bad -= len(f)
+    import fast_simplification
+
+    dv, df = fast_simplification.simplify(v.astype(np.float64), f.astype(np.int64),
+                                          target_reduction=1.0 - target / len(f))
+    dv, df = np.asarray(dv, dtype=np.float64), np.asarray(df, dtype=np.int64)
+    n_simplified = len(df)
+    mended = repair(name, (1, 2, 3), source=(dv, df), ear=True).mesh  # its few non-manifold edges
+    dv, df = mended.verts, mended.faces
+    # Where the simplified surface folds through itself (thin parts: the dragon's whiskers and
+    # claws, the Buddha's folds), cut out the crossing triangles and their one-ring and close the
+    # holes again (ear clipping); repeat until `self_crossings` finds none.
+    n_cut = rounds = 0
+    while len(x := self_crossings(dv, df)):
+        if rounds == 8:
+            raise RuntimeError(f"{name}: still {len(x)} self-crossings after 8 rounds of cutting them out")
+        hot = np.zeros(len(dv), dtype=bool)
+        hot[df[np.unique(x)].ravel()] = True
+        cut = hot[df].any(axis=1)
+        n_cut += int(cut.sum())
+        mended = repair(name, (1, 2, 3), source=(dv, df[~cut]), ear=True).mesh
+        dv, df = mended.verts, mended.faces
+        rounds += 1
+    np.savez(cache, v=dv, f=df, dropped_nonmanifold=n_bad, simplified_triangles=n_simplified,
+             crossing_cut=n_cut, crossing_rounds=rounds)
+    return dv, df
+
+
+def _from_manifold(man: object) -> tuple[F64, I64]:
+    """Vertices and triangles of a manifold3d `Manifold`, its split vertices merged again."""
+    out = man.to_mesh64()  # type: ignore[attr-defined]
+    mv = np.array(out.vert_properties)[:, :3].astype(np.float64)
+    mf = np.array(out.tri_verts).astype(np.int64)
+    # manifold3d splits a vertex where properties differ between input meshes; its merge vectors say
+    # which copies are the same point. Apply them so the mesh is one connected surface.
+    to = np.arange(len(mv))
+    mfrom, mto = np.array(out.merge_from_vert, dtype=np.int64), np.array(out.merge_to_vert, dtype=np.int64)
+    to[mfrom] = mto
+    mf = to[mf]
+    used = np.unique(mf)
+    remap = np.full(len(mv), -1, dtype=np.int64)
+    remap[used] = np.arange(len(used))
+    mv, mf = mv[used], remap[mf]
+    return mv, _oriented(mv, mf)
+
+
+def manifold_mask(f: I64) -> npt.NDArray[np.bool_]:
+    """False for every triangle on an edge of more than two triangles, or used twice the same way
+    (the Happy Buddha has 32 such edges; welding can make more); `repair` caps the holes that
+    dropping them opens. Dropping cannot make a new such edge, so one pass is enough."""
+    e = np.concatenate([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]])
+    big = int(f.max()) + 1
+    key = e[:, 0] * big + e[:, 1]
+    undirected = np.minimum(e[:, 0], e[:, 1]) * big + np.maximum(e[:, 0], e[:, 1])
+    _, inv_u, cnt_u = np.unique(undirected, return_inverse=True, return_counts=True)
+    _, inv_d, cnt_d = np.unique(key, return_inverse=True, return_counts=True)
+    bad_edge = (cnt_u[inv_u.reshape(-1)] > 2) | (cnt_d[inv_d.reshape(-1)] > 1)
+    return ~bad_edge.reshape(3, -1).any(axis=0)
+
+
+def drop_nonmanifold(f: I64) -> I64:
+    """`f` without the triangles `manifold_mask` flags."""
+    return f[manifold_mask(f)]
+
+
+def self_crossings(verts: F64, faces: I64, depth: float = 1e-9) -> I64:
+    """Pairs (edge's triangle, triangle) where an edge of the mesh passes through a triangle that
+    shares neither of its ends, by more than `depth` metres: the test `cav`'s importer makes
+    (`Mesh::first_crossing`), here counting them all. Candidates come from a uniform grid of cells
+    about twice the mean edge length; each is tested with signed volumes. Returns (K, 2) triangle
+    indices."""
+    e_all = np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]])
+    owner = np.tile(np.arange(len(faces)), 3)
+    keep = e_all[:, 0] < e_all[:, 1]  # each undirected edge once (closed mesh: the other way is its twin)
+    edges, owner = e_all[keep], owner[keep]
+    cell = 2.0 * float(np.linalg.norm(verts[edges[:, 0]] - verts[edges[:, 1]], axis=1).mean())
+    lo = verts.min(axis=0)
+
+    def boxes(pts: F64) -> tuple[I64, I64]:
+        a = np.floor((pts.min(axis=1) - lo) / cell).astype(np.int64)
+        b = np.floor((pts.max(axis=1) - lo) / cell).astype(np.int64)
+        return a, b
+
+    def cells_of(a: I64, b: I64) -> tuple[I64, I64]:
+        span = b - a + 1
+        cnt = span.prod(axis=1)
+        item = np.repeat(np.arange(len(a)), cnt)
+        local = np.arange(int(cnt.sum())) - np.repeat(np.cumsum(cnt) - cnt, cnt)
+        sy, sz = np.repeat(span[:, 1], cnt), np.repeat(span[:, 2], cnt)
+        c = np.repeat(a, cnt, axis=0) + np.stack([local // (sy * sz), (local // sz) % sy, local % sz], 1)
+        return item, (c[:, 0] * 100_003 + c[:, 1]) * 100_019 + c[:, 2]
+
+    ti, tc = cells_of(*boxes(verts[faces]))
+    ei, ec = cells_of(*boxes(verts[edges]))
+    order = np.argsort(tc, kind="stable")
+    ti, tc = ti[order], tc[order]
+    start = np.searchsorted(tc, ec, "left")
+    stop = np.searchsorted(tc, ec, "right")
+    cnt = stop - start
+    pe = np.repeat(ei, cnt)
+    pt = ti[np.repeat(start, cnt) + (np.arange(int(cnt.sum())) - np.repeat(np.cumsum(cnt) - cnt, cnt))]
+    pairs = np.unique(np.stack([pe, pt], axis=1), axis=0)
+    del pe, pt, ti, tc, ei, ec
+    step = 2_000_000
+    if len(pairs) > step:  # in chunks, so the large scans stay within a few hundred MB
+        return np.concatenate([_crossing_test(verts, faces, edges, owner, pairs[s : s + step], depth)
+                               for s in range(0, len(pairs), step)])
+    return _crossing_test(verts, faces, edges, owner, pairs, depth)
+
+
+def _crossing_test(verts: F64, faces: I64, edges: I64, owner: I64, pairs: I64, depth: float) -> I64:
+    """`self_crossings`' exact test on candidate (edge, triangle) pairs."""
+    f = faces[pairs[:, 1]]
+    ed = edges[pairs[:, 0]]
+    share = (f == ed[:, [0]]).any(axis=1) | (f == ed[:, [1]]).any(axis=1)
+    pairs, f, ed = pairs[~share], f[~share], ed[~share]
+    p, q = verts[ed[:, 0]], verts[ed[:, 1]]
+    a, b, c = verts[f[:, 0]], verts[f[:, 1]], verts[f[:, 2]]
+
+    def vol(w: F64, x: F64, y: F64, z: F64) -> F64:
+        return np.einsum("nk,nk->n", x - w, np.cross(y - w, z - w))
+
+    sp, sq = vol(a, b, c, p), vol(a, b, c, q)
+    s1, s2, s3 = vol(p, q, a, b), vol(p, q, b, c), vol(p, q, c, a)
+    hit = (sp * sq < 0) & (((s1 > 0) & (s2 > 0) & (s3 > 0)) | ((s1 < 0) & (s2 < 0) & (s3 < 0)))
+    # How deep each crossing is: the nearer end's distance from the triangle's plane, and the
+    # crossing point's distance from the triangle's edges. Below `depth` it is a touch at rounding
+    # (manifold3d's union leaves a few such slivers; `cav`'s importer accepts them).
+    p, q, a, b, c, sp, sq = p[hit], q[hit], a[hit], b[hit], c[hit], sp[hit], sq[hit]
+    n = np.cross(b - a, c - a)
+    nl = np.linalg.norm(n, axis=1)
+    x = p + (sp / (sp - sq))[:, None] * (q - p)
+    deep = np.minimum(np.abs(sp), np.abs(sq)) / nl
+    for u, w in ((a, b), (b, c), (c, a)):
+        deep = np.minimum(deep, np.linalg.norm(np.cross(w - u, x - u), axis=1) / np.linalg.norm(w - u, axis=1))
+    keep = deep > depth
+    return np.stack([owner[pairs[hit, 0]], pairs[hit, 1]], axis=1)[keep]
+
+
+def _pt_tri_dist(p: F64, a: F64, b: F64, c: F64) -> F64:
+    """Distance from points to triangles, broadcast over leading axes: the same rule as
+    `distance_to_mesh` (plane if the foot is inside, else the nearest edge)."""
+    with np.errstate(invalid="ignore", divide="ignore"):
+        n = np.cross(b - a, c - a)
+        n = n / np.linalg.norm(n, axis=-1, keepdims=True)
+        h = np.einsum("...k,...k->...", p - a, n)
+        foot = p - h[..., None] * n
+        inside = np.ones(h.shape, dtype=bool)
+        for u, w in ((a, b), (b, c), (c, a)):
+            inside &= np.einsum("...k,...k->...", np.cross(w - u, foot - u), n) >= 0
+        best = np.where(inside, np.abs(h), np.inf)
+        for u, w in ((a, b), (b, c), (c, a)):
+            e = w - u
+            t = np.clip(np.einsum("...k,...k->...", p - u, e) / np.einsum("...k,...k->...", e, e), 0, 1)
+            best = np.minimum(best, np.linalg.norm(p - (u + t[..., None] * e), axis=-1))
+    return np.where(np.isnan(best), np.inf, best)
+
+
+def distances_to_mesh(tris: F64, pts: F64) -> F64:
+    """Exact distance from each point to a triangle soup, as `distance_to_mesh` but for many points.
+
+    Large triangles (circumradius about the centroid > 4× the median, e.g. hole caps) are checked
+    against every point; the rest through a k-d tree on their centroids: with the k nearest
+    centroids, any other small triangle is at least (k-th centroid distance − largest small radius)
+    away, so a point is settled once its best distance is below that; otherwise k grows.
+    """
+    from scipy.spatial import cKDTree
+
+    cen = tris.mean(axis=1)
+    rad = np.linalg.norm(tris - cen[:, None], axis=2).max(axis=1)
+    big = rad > 4 * np.median(rad)
+    out = np.full(len(pts), np.inf)
+    bt = tris[big]
+    step_b = max(1, 1_000_000 // max(len(bt), 1))
+    for s in range(0, len(pts) if len(bt) else 0, step_b):
+        p = pts[s : s + step_b]
+        out[s : s + len(p)] = _pt_tri_dist(p[:, None], bt[None, :, 0], bt[None, :, 1], bt[None, :, 2]).min(axis=1)
+    small = tris[~big]
+    if len(small) == 0:
+        return out
+    r_max = float(rad[~big].max())
+    tree = cKDTree(cen[~big])
+    todo = np.arange(len(pts))
+    k = 16
+    while len(todo):
+        k = min(k, len(small))
+        done = np.zeros(len(todo), dtype=bool)
+        step = max(1, 400_000 // k)
+        for s in range(0, len(todo), step):
+            idx = todo[s : s + step]
+            dk, ik = tree.query(pts[idx], k=k)
+            dk, ik = dk.reshape(len(idx), -1), ik.reshape(len(idx), -1)
+            t = small[ik]
+            d = _pt_tri_dist(pts[idx][:, None], t[:, :, 0], t[:, :, 1], t[:, :, 2]).min(axis=1)
+            out[idx] = np.minimum(out[idx], d)
+            done[s : s + step] = (out[idx] <= dk[:, -1] - r_max) | (k == len(small))
+        todo = todo[~done]
+        k *= 4
+    return out
+
+
+def decimation_check(name: str, up: tuple[int, int, int]) -> dict[str, object]:
+    """The decimated mesh against the original download, in the study's frame (1 m largest extent):
+    two-sided vertex-sampled Hausdorff distance (every decimated vertex to the original triangles,
+    every original vertex to the decimated triangles), and the volume of each (signed sum, the
+    original's holes left open). Pass (written before measuring): both distances below half the
+    finest pitch of the sweep (1/256 m = 3.9e-3 m), so the decimation is finer than every lattice.
+    The decimated mesh measured is the one the study uses: decimated, non-manifold triangles dropped,
+    holes capped (`famous_repair`)."""
+    v0, f0, _, _ = _raw(name, up, original=True)
+    _, f_dec, _, _ = _raw(name, up)
+    z = np.load(CACHE / f"{name}-decimated-{DECIMATE[name]}.npz")
+    m = famous_repair(name).mesh
+    v1, f1 = m.verts, m.faces
+    a = distances_to_mesh(v0[f0], v1)
+    b = distances_to_mesh(v1[f1], np.unique(v0[f0].reshape(-1, 3), axis=0))
+    tol = 1.0 / 256
+    far = np.unique(v0[f0].reshape(-1, 3), axis=0)[b > tol]
+    vol0 = float(sb.volume_centroid(v0[f0], np.zeros(3))[0])
+    vol1 = float(sb.volume_centroid(v1[f1], np.zeros(3))[0])
+    return {"volume_original_m3": vol0, "volume_decimated_m3": vol1, "volume_rel": vol1 / vol0 - 1,
+            "original_vertices_beyond_tol": int(len(far)),
+            "far_box_m": [np.round(far.min(0), 3).tolist(), np.round(far.max(0), 3).tolist()] if len(far) else None,
+            "original_triangles": int(len(f0)), "dropped_nonmanifold": int(z["dropped_nonmanifold"]),
+            "simplified_triangles": int(z["simplified_triangles"]),
+            "crossing_triangles_cut": int(z["crossing_cut"]), "crossing_rounds": int(z["crossing_rounds"]),
+            "decimator_triangles": int(len(f_dec)),
+            "decimated_triangles": int(len(f1)),
+            "max_decimated_to_original_m": float(a.max()), "max_original_to_decimated_m": float(b.max()),
+            "rms_original_to_decimated_m": float(np.sqrt((b**2).mean())),
+            "tolerance_m": tol, "passed": bool(a.max() < tol and b.max() < tol)}
 
 
 def _components(faces: I64) -> list[I64]:
@@ -279,6 +621,93 @@ def _components(faces: I64) -> list[I64]:
     adj = coo_matrix((np.ones(len(same)), (o[same], o[same + 1])), shape=(nf, nf))
     _, lab = connected_components(adj, directed=False)
     return [np.nonzero(lab == c)[0] for c in np.unique(lab)]
+
+
+def _simple_loops(open_e: I64) -> list[list[int]]:
+    """The open (boundary) edges a→b as simple loops of vertices, each edge in exactly one loop.
+
+    Walks the edges; when the walk comes back to a vertex already on its path, the part of the path
+    since then is a loop and is cut off. (A hole is a loop; holes touching at a vertex become separate
+    loops, which a single grouping by shared vertices would merge.)
+    """
+    out: dict[int, list[int]] = {}
+    for a, b in open_e:
+        out.setdefault(int(a), []).append(int(b))
+    loops: list[list[int]] = []
+    for start in list(out):
+        while out[start]:
+            path = [start]
+            pos = {start: 0}
+            while True:
+                cur = path[-1]
+                if not out.get(cur):
+                    raise RuntimeError(f"open edges do not form loops at vertex {cur}")
+                nxt = out[cur].pop()
+                if nxt in pos:
+                    i = pos[nxt]
+                    loops.append(path[i:])
+                    for u in path[i + 1 :]:
+                        del pos[u]
+                    path = path[: i + 1]
+                    if i == 0:
+                        break
+                else:
+                    pos[nxt] = len(path)
+                    path.append(nxt)
+    return loops
+
+
+def _ear_clip(v: F64, loop: list[int], edges: set[tuple[int, int]]) -> list[list[int]] | None:
+    """Triangles over a hole, made of its own vertices: ear clipping of the loop projected on its
+    Newell plane. Each triangle is wound against the loop (as a cap must be). An ear whose new edge
+    is already an edge of the mesh (`edges`, undirected, updated) is skipped, as it would make an
+    edge of three triangles. None if no ear is left (the projected loop folds over itself in that
+    plane); the caller then fans to the centroid."""
+    p = v[np.array(loop)]
+    q = np.roll(p, -1, axis=0)
+    n = np.array([((p[:, 1] - q[:, 1]) * (p[:, 2] + q[:, 2])).sum(), ((p[:, 2] - q[:, 2]) * (p[:, 0] + q[:, 0])).sum(),
+                  ((p[:, 0] - q[:, 0]) * (p[:, 1] + q[:, 1])).sum()])
+    if np.linalg.norm(n) == 0:
+        return None
+    n /= np.linalg.norm(n)
+    a = np.cross(n, [1.0, 0, 0] if abs(n[0]) < 0.9 else [0, 1.0, 0])
+    a /= np.linalg.norm(a)
+    b = np.cross(n, a)
+    xy = np.stack([p @ a, p @ b], axis=1)  # anticlockwise in (a, b), since n is the loop's normal
+    idx = list(range(len(loop)))
+    tris: list[list[int]] = []
+    new_edges: list[tuple[int, int]] = []
+
+    def cross2(o: F64, s: F64, t: F64) -> float:
+        return float((s[0] - o[0]) * (t[1] - o[1]) - (s[1] - o[1]) * (t[0] - o[0]))
+
+    while len(idx) > 3:
+        for k in range(len(idx)):
+            i0, i1, i2 = idx[k - 1], idx[k], idx[(k + 1) % len(idx)]
+            if cross2(xy[i0], xy[i1], xy[i2]) <= 0:
+                continue
+            diag = (min(loop[i0], loop[i2]), max(loop[i0], loop[i2]))
+            if diag in edges or diag in new_edges:
+                continue
+            others = [j for j in idx if j not in (i0, i1, i2)]
+            o = xy[others]
+            if len(o):
+                d0 = (xy[i1][0] - xy[i0][0]) * (o[:, 1] - xy[i0][1]) - (xy[i1][1] - xy[i0][1]) * (o[:, 0] - xy[i0][0])
+                d1 = (xy[i2][0] - xy[i1][0]) * (o[:, 1] - xy[i1][1]) - (xy[i2][1] - xy[i1][1]) * (o[:, 0] - xy[i1][0])
+                d2 = (xy[i0][0] - xy[i2][0]) * (o[:, 1] - xy[i2][1]) - (xy[i0][1] - xy[i2][1]) * (o[:, 0] - xy[i2][0])
+                if np.any((d0 >= 0) & (d1 >= 0) & (d2 >= 0)):
+                    continue
+            tris.append([loop[i2], loop[i1], loop[i0]])
+            new_edges.append(diag)
+            idx.pop(k)
+            break
+        else:
+            return None
+    if cross2(xy[idx[0]], xy[idx[1]], xy[idx[2]]) <= 0:
+        return None
+    tris.append([loop[idx[2]], loop[idx[1]], loop[idx[0]]])
+    edges.update(new_edges)
+    return tris
 
 
 @dataclass
@@ -303,20 +732,25 @@ class Repair:
     check:        dict[str, object] = field(default_factory=dict)
 
 
-def repair(name: str, up: tuple[int, int, int], digits: int = 8) -> Repair:
+def repair(name: str, up: tuple[int, int, int], digits: int = 8,
+           source: tuple[F64, I64] | None = None, ear: bool = False) -> Repair:
     """Close an open mesh while keeping its triangles.
 
     1. Weld vertices equal to `digits` decimals (unwelded patch seams become shared edges).
     2. Split into edge-connected parts. A part of zero volume (a two-sided sheet) is dropped.
     3. Cap every remaining hole of every part: one triangle per open edge, to the hole's centroid,
-       wound against the edge so the part becomes closed and consistently wound.
+       wound against the edge so the part becomes closed and consistently wound. With `ear` (the
+       famous meshes), a hole is first ear-clipped in its own plane, using only its own vertices;
+       a centroid fan through a bent hole can pierce the surface next to it (the bunny's base did:
+       `cav` refused it as crossing itself), ear clipping stays on the rim. The fan is the fallback.
     4. Union the closed parts with manifold3d (Apache-2.0, double precision `Mesh64`), so parts that
        pass through each other (spout and handle into a teapot body, eyes into a head) count once.
-    Then `check_repair` measures the result against the original triangles.
+    Then `check_repair` measures the result against the original triangles. `source` (vertices,
+    triangles in the study's frame) replaces the download, e.g. a decimation of it.
     """
     import manifold3d
 
-    v, f, _, _ = _raw(name, up)
+    v, f = source if source is not None else _raw(name, up)[:2]
     q = np.round(v / 1.0, digits)
     _, first, inv = np.unique(q, axis=0, return_index=True, return_inverse=True)
     inv = inv.reshape(-1)
@@ -331,6 +765,15 @@ def repair(name: str, up: tuple[int, int, int], digits: int = 8) -> Repair:
     dropped_sheet = v[f[sheet]]
     f = f[~sheet]
     parts_info: list[dict[str, object]] = []
+    if ear:
+        # Welding can join two copies of a point that the source kept apart (a pinch in a scan or in
+        # manifold3d's output), making an edge of four triangles: drop those, the holes are capped.
+        mask = manifold_mask(f)
+        if not mask.all():
+            parts_info.append({"faces": int((~mask).sum()), "open_edges": 0, "holes": 0, "volume_m3": 0.0,
+                               "kept": "dropped: on an edge of more than two triangles after welding"})
+            dropped_sheet = np.concatenate([dropped_sheet, v[f[~mask]]])
+            f = f[mask]
     if sheet.any():
         parts_info.append({"faces": int(sheet.sum()), "open_edges": 0, "holes": 0, "volume_m3": 0.0,
                            "kept": "dropped: back-to-back triangles (a zero-thickness sheet)"})
@@ -346,35 +789,40 @@ def repair(name: str, up: tuple[int, int, int], digits: int = 8) -> Repair:
         open_e = e[~np.isin(key, rev)]
         cap_f: list[list[int]] = []
         pv = v.copy()
-        n_holes = 0
+        n_holes = n_ear = 0
         if len(open_e):
-            # Group open edges into holes (connected by shared vertices), cap each to its centroid.
-            from scipy.sparse import coo_matrix
-            from scipy.sparse.csgraph import connected_components
-
-            nodes = np.unique(open_e)
-            idx = {int(x): i for i, x in enumerate(nodes)}
-            a = np.array([idx[int(x)] for x in open_e[:, 0]])
-            b = np.array([idx[int(x)] for x in open_e[:, 1]])
-            ncomp, lab = connected_components(coo_matrix((np.ones(len(a)), (a, b)),
-                                                         shape=(len(nodes), len(nodes))), directed=False)
-            n_holes = ncomp
+            # Split the open edges into simple loops (holes), cap each to its centroid. Two holes that
+            # touch at a vertex are two loops, so no cap edge is made twice.
+            loops = _simple_loops(open_e)
+            n_holes = len(loops)
             extra = []
-            for k in range(ncomp):
-                sel = lab[a] == k
-                ring = np.unique(open_e[sel])
-                c = v[ring].mean(axis=0)
+            part_edges = {(int(min(a, b)), int(max(a, b))) for a, b in e} if ear else set()
+            for loop in loops:
+                if ear:
+                    clipped = _ear_clip(v, loop, part_edges)
+                    if clipped is not None:
+                        cap_f.extend(clipped)
+                        n_ear += 1
+                        continue
+                c = v[np.array(loop)].mean(axis=0)
                 ci = len(v) + len(extra)
                 extra.append(c)
-                for p0, p1 in open_e[sel]:
-                    cap_f.append([int(p1), int(p0), ci])
-            pv = np.concatenate([v, np.array(extra)])
+                for k, p0 in enumerate(loop):
+                    cap_f.append([int(loop[(k + 1) % len(loop)]), int(p0), ci])
+            pv = np.concatenate([v, np.array(extra)]) if extra else v.copy()
         allf = np.concatenate([pf, np.array(cap_f, dtype=np.int64)]) if cap_f else pf
         vol = float(np.einsum("nk,nk->n", pv[allf[:, 0]], np.cross(pv[allf[:, 1]], pv[allf[:, 2]])).sum() / 6)
         info: dict[str, object] = {"faces": int(len(pf)), "open_edges": int(len(open_e)), "holes": int(n_holes),
                                    "volume_m3": abs(vol)}
+        if ear:
+            info["holes_ear_clipped"] = n_ear
         if abs(vol) < 1e-9:
             info["kept"] = "dropped: zero volume (a two-sided sheet)"
+            dropped.append(v[pf])
+        elif ear and abs(vol) < 1e-7 and len(pf) < 1000:
+            # The decimated scans leave a few specks of a few triangles (pinched off where the
+            # decimator folded the surface); under a 4.6 mm cube of a 1 m body, they are dropped.
+            info["kept"] = "dropped: a speck under 1e-7 m³ (decimation debris)"
             dropped.append(v[pf])
         else:
             if vol < 0:
@@ -399,20 +847,7 @@ def repair(name: str, up: tuple[int, int, int], digits: int = 8) -> Repair:
         if part.status() != manifold3d.Error.NoError:
             raise RuntimeError(f"{name}: manifold3d rejected a part: {part.status()}")
         union = union + part
-    out = union.to_mesh64()
-    mv = np.array(out.vert_properties)[:, :3].astype(np.float64)
-    mf = np.array(out.tri_verts).astype(np.int64)
-    # manifold3d splits a vertex where properties differ between input meshes; its merge vectors say
-    # which copies are the same point. Apply them so the mesh is one connected surface.
-    to = np.arange(len(mv))
-    mfrom, mto = np.array(out.merge_from_vert, dtype=np.int64), np.array(out.merge_to_vert, dtype=np.int64)
-    to[mfrom] = mto
-    mf = to[mf]
-    used = np.unique(mf)
-    remap = np.full(len(mv), -1, dtype=np.int64)
-    remap[used] = np.arange(len(used))
-    mv, mf = mv[used], remap[mf]
-    mf = _oriented(mv, mf)
+    mv, mf = _from_manifold(union)
     src = v[f]
     return Repair(Mesh(name, mv, mf, ""), parts_info,
                   np.concatenate(caps) if caps else np.zeros((0, 3, 3)), src,
@@ -443,7 +878,7 @@ def check_repair(rep: Repair, mesh: Mesh, expected_components: int, tol: float =
                           "hi": np.round(t.reshape(-1, 3).max(0), 3).tolist()})
     ref = np.concatenate([rep.source_tris, rep.caps]) if len(rep.caps) else rep.source_tris
     tris_m = mesh.tris
-    to_src = max(distance_to_mesh(ref, p) for p in mesh.verts)
+    to_src = float(distances_to_mesh(ref, mesh.verts).max())
     # Original vertices of each kept part that lie outside every other kept part.
     keep_list = []
     n_inside = 0
@@ -456,11 +891,15 @@ def check_repair(rep: Repair, mesh: Mesh, expected_components: int, tol: float =
         n_inside += int(inside.sum())
         keep_list.append(sv[~inside])
     keep = np.concatenate(keep_list)
-    from_src = max(distance_to_mesh(tris_m, p) for p in keep)
-    passed = bool(ok_closed and n_comp == expected_components and to_src < tol and from_src < tol)
+    from_src = float(distances_to_mesh(tris_m, keep).max())
+    # Added 26 Nov 2026, before measuring: no edge may pass through a triangle (`cav` refuses such a
+    # mesh, and inside is then ambiguous).
+    crossings = int(len(self_crossings(mesh.verts, mesh.faces)))
+    passed = bool(ok_closed and n_comp == expected_components and to_src < tol and from_src < tol and crossings == 0)
     return {"closed": ok_closed, "closed_detail": why, "components": n_comp, "component_info": comp_info,
             "expected_components": expected_components, "max_vertex_to_source_m": float(to_src),
-            "max_source_to_mesh_m": float(from_src), "source_vertices_checked": int(len(keep)),
+            "max_source_to_mesh_m": float(from_src), "self_crossings": crossings,
+            "source_vertices_checked": int(len(keep)),
             "source_vertices_inside_other_parts": n_inside, "tolerance_m": tol,
             "passed": passed}
 
@@ -482,10 +921,10 @@ def suzanne_repair() -> Repair:
 def _cached_repair(name: str, up: tuple[int, int, int], expected: int) -> Repair:
     import pickle
 
-    path = CACHE / f"{name}-repair.pkl"
+    path = CACHE / f"{name}-repair{f'-{DECIMATE[name]}' if name in DECIMATE else ''}.pkl"
     if path.exists():
         return pickle.loads(path.read_bytes())
-    rep = repair(name, up)
+    rep = repair(name, up, ear=name in FAMOUS)
     rep.check = check_repair(rep, rep.mesh, expected)
     if not rep.check["passed"]:
         raise RuntimeError(f"{name}: repaired mesh fails its check: {rep.check}")
@@ -516,38 +955,136 @@ def suzanne_mesh() -> Mesh:
                 f"and eyes united (manifold3d); {len(rep.mesh.faces)} triangles, original triangles kept")
 
 
+@dataclass(frozen=True)
+class Famous:
+    """A famous mesh added on 26 Nov 2026: how to stand it up, how many pieces its repair must give,
+    and the words for captions.
+
+    Attributes:
+        up       (tuple): Source axes that become (x, y, z), 1-based, negative to flip (see `_raw`).
+        expected (int):   Edge-connected pieces the repaired mesh must have.
+        title    (str):   Picture title.
+        credit   (str):   Source and licence, for captions.
+    """
+
+    up:       tuple[int, int, int]
+    expected: int
+    title:    str
+    credit:   str
+
+
+FAMOUS = {
+    "bunny": Famous((-1, 3, 2), 1, "Stanford Bunny",
+                    "Stanford Bunny (Turk & Levoy 1994, Stanford 3D Scanning Repository, bun_zipper.ply)"),
+    "spot": Famous((1, -3, 2), 1, "Spot", "Spot (Keenan Crane, CC0 1.0, spot_triangulated.obj)"),
+    "dragon": Famous((-1, 3, 2), 1, "Stanford Dragon",
+                     "Stanford Dragon (Curless & Levoy 1996, Stanford 3D Scanning Repository, dragon_vrip.ply)"),
+    "armadillo": Famous((1, -3, 2), 1, "Armadillo",
+                        "Armadillo (Krishnamurthy & Levoy 1996, Stanford 3D Scanning Repository, Armadillo.ply)"),
+    "buddha": Famous((-1, 3, 2), 1, "Happy Buddha",
+                     "Happy Buddha (Curless & Levoy 1996, Stanford 3D Scanning Repository, happy_vrip.ply)"),
+    "bracket": Famous((1, 2, 3), 1, "mk7 extruder drive (CAD part)",
+                      "mk7 ball bearing extruder drive by jag (Thingiverse 13727, Thingi10K 44950, public domain)"),
+}
+
+
+def famous_repair(name: str) -> Repair:
+    return _cached_repair(name, FAMOUS[name].up, FAMOUS[name].expected)
+
+
+def famous_mesh(name: str) -> Mesh:
+    rep = famous_repair(name)
+    p = rep.parts
+    kept = [x for x in p if str(x["kept"]).startswith("closed")]
+    holes = sum(int(x["holes"]) for x in kept)
+    n_ear = sum(int(x.get("holes_ear_clipped", 0)) for x in kept)  # type: ignore[call-overload]
+    how = ("" if holes == 0 else " by ear clipping" if n_ear == holes
+           else f" ({n_ear} by ear clipping, {holes - n_ear} by fans to their centroids)")
+    dec = (f"decimated (quadric error, self-crossings cut out and closed) from {len(_load(name)[1])} to "
+           f"{len(rep.source_tris)} triangles, " if name in DECIMATE else "")
+    dropped = len(p) - len(kept)
+    return Mesh(name, rep.mesh.verts, rep.mesh.faces,
+                f"{FAMOUS[name].credit}: {dec}welded, {len(kept)} part{'s' if len(kept) != 1 else ''}"
+                f"{f' ({dropped} zero-volume dropped)' if dropped else ''}, "
+                f"{holes} hole{'s' if holes != 1 else ''} capped{how}"
+                f"{', parts united (manifold3d)' if len(kept) > 1 else ''}; {len(rep.mesh.faces)} triangles, "
+                f"{'the decimated' if name in DECIMATE else 'the original'} triangles kept")
+
+
+def study_repair(name: str) -> Repair:
+    return {"teapot": teapot_repair, "suzanne": suzanne_repair}.get(name, lambda: famous_repair(name))()
+
+
 def remeshed_by_winding(name: str) -> Mesh:
-    """The earlier, rejected closing (marching cubes on a 1/48 m grid), for the check's control arm."""
+    """The earlier, rejected closing (marching cubes on a 1/48 m grid), for the check's control arm.
+    For the famous meshes the side comes from the repaired mesh (see `closed_from_soup`)."""
+    if name in FAMOUS:
+        v, f, _, _ = _raw(name, FAMOUS[name].up)
+        return closed_from_soup(name, v, f, 48, inside_tris=famous_repair(name).mesh.tris)
     up = TEAPOT_UP if name == "teapot" else SUZANNE_UP
     v, f, _, _ = _raw(name, up)
     return closed_from_soup(name, v, f, 48)
 
 
-def mesh_check() -> dict[str, object]:
+CHECKED = ["teapot", "suzanne", *FAMOUS]
+
+
+def mesh_check(names: list[str] | None = None) -> dict[str, object]:
     """Run `check_repair` on each repaired mesh and, as the control arm, on the rejected marching-cubes
     closing of the same download. Pass: every repaired mesh passes and every control fails (the
     teapot's control has a detached spout fragment; both controls sit off the original triangles).
-    Writes mesh-check.json and mesh-check.md here; raises if the verdict is not as expected."""
+    Decimated meshes also get `decimation_check` against the original download.
+    Writes mesh-check.json and mesh-check.md here (`names` updates only those entries, the rest are
+    kept from the json); raises if the verdict is not as expected."""
     import json
 
-    out: dict[str, object] = {}
-    lines = ["| mesh | closed | pieces (expected) | max vertex → original or caps (m) | "
-             "max original vertex → mesh (m) | verdict |", "|---|---|---|---|---|---|"]
-    ok = True
-    for name in ("teapot", "suzanne"):
-        rep = teapot_repair() if name == "teapot" else suzanne_repair()
-        control = check_repair(rep, remeshed_by_winding(name), 1)
+    path = HERE / "mesh-check.json"
+    out: dict[str, object] = json.loads(path.read_text()) if path.exists() and names else {}
+    for name in names or CHECKED:
+        rep = study_repair(name)
+        exp = FAMOUS[name].expected if name in FAMOUS else 1
+        control = check_repair(rep, remeshed_by_winding(name), exp)
         out[name] = {"repaired": rep.check, "control_marching_cubes": control, "parts": rep.parts}
-        for label, c in (("repaired", rep.check), ("control: marching cubes 1/48 m", control)):
+        if name in DECIMATE:
+            out[name]["decimation"] = decimation_check(name, FAMOUS[name].up)  # type: ignore[index]
+        print(name, "checked", flush=True)
+    lines = ["| mesh | closed | pieces (expected) | max vertex → original or caps (m) | "
+             "max original vertex → mesh (m) | self-crossings | verdict |", "|---|---|---|---|---|---|---|"]
+    dec = ["| mesh | original triangles | on non-manifold edges, dropped | decimated to | "
+           "cut out where it crossed itself (rounds) | after repair | "
+           "max decimated vertex → original (m) | max original vertex → decimated (m) | "
+           "RMS original → decimated (m) | original vertices beyond 1/256 m | volume change | "
+           "verdict (< 1/256 m) |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    ok = dec_ok = True
+    for name in [n for n in CHECKED if n in out]:
+        o = out[name]
+        for label, c in (("repaired", o["repaired"]), ("control: marching cubes 1/48 m", o["control_marching_cubes"])):
             lines.append(f"| {name}, {label} | {c['closed']} | {c['components']} ({c['expected_components']}) | "
                          f"{c['max_vertex_to_source_m']:.1e} | {c['max_source_to_mesh_m']:.1e} | "
-                         f"{'pass' if c['passed'] else 'FAIL'} |")
-        ok &= bool(rep.check["passed"]) and not bool(control["passed"])
+                         f"{c['self_crossings']} | {'pass' if c['passed'] else 'FAIL'} |")
+        ok &= bool(o["repaired"]["passed"]) and not bool(o["control_marching_cubes"]["passed"])
+        if "decimation" in o:
+            d = o["decimation"]
+            dec.append(f"| {name} | {d['original_triangles']} | {d['dropped_nonmanifold']} | "
+                       f"{d['simplified_triangles']} | "
+                       f"{d['crossing_triangles_cut']} ({d['crossing_rounds']}) | {d['decimated_triangles']} | "
+                       f"{d['max_decimated_to_original_m']:.1e} | {d['max_original_to_decimated_m']:.1e} | "
+                       f"{d['rms_original_to_decimated_m']:.1e} | {d['original_vertices_beyond_tol']} | "
+                       f"{d['volume_rel']:+.1e} | {'pass' if d['passed'] else 'FAIL'} |")
+            dec_ok &= bool(d["passed"])
+    # A failed decimation is reported (the table says FAIL and the note says where), not raised:
+    # the voxel study measures against the decimated mesh, which passed its own repair check.
     out["as_expected"] = ok
-    (HERE / "mesh-check.json").write_text(json.dumps(out, indent=1, default=str))
-    (HERE / "mesh-check.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out["decimations_within_tolerance"] = dec_ok
+    path.write_text(json.dumps(out, indent=1, default=str))
+    (HERE / "mesh-check.md").write_text("\n".join(lines) + "\n\nDecimation (the decimated mesh against the "
+                                        "original download, same frame, vertex-sampled both ways):\n\n"
+                                        + "\n".join(dec) + "\n", encoding="utf-8")
     if not ok:
         raise RuntimeError("mesh check: a repaired mesh failed, or a control passed")
+    if not dec_ok:
+        print("mesh check: a decimation is beyond 1/256 m of its original (see the table)", flush=True)
     return out
 
 
@@ -555,11 +1092,13 @@ if __name__ == "__main__":
     # Through the module, not __main__, so the cached Repair pickles under `shapes_lib`.
     import shapes_lib
 
-    shapes_lib.mesh_check()
+    shapes_lib.mesh_check(sys.argv[1:] or None)
     print((HERE / "mesh-check.md").read_text(encoding="utf-8"))
 
 
 def mesh_by_name(name: str) -> Mesh:
+    if name in FAMOUS:
+        return famous_mesh(name)
     return {"sphere": sphere_mesh, "torus": torus_mesh, "teapot": teapot_mesh, "suzanne": suzanne_mesh}[name]()
 
 

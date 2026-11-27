@@ -1,2 +1,5 @@
 # Downloaded meshes (not ours to redistribute) and closed meshes made from them.
 .cache/
+# The timing program's build.
+mesh_bench/target/
+mesh_bench/Cargo.lock

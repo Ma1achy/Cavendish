@@ -1,6 +1,7 @@
 """Techniques across distance regimes, grid orientation and motion.
 
     python regimes.py distance      # regimes-distance.png, regimes-distance.json
+    python regimes.py distance bunny dragon   # only these shapes (the rest kept from the json)
     python regimes.py orientation   # orientation.png, orientation.json
     python regimes.py translation   # translation.png, translation-spectrum.png, translation.json
     python regimes.py spin          # spin.json (body frame), then
@@ -84,12 +85,17 @@ def technique_errors(vox: L.Voxels, pts: np.ndarray, g_mesh: np.ndarray, with_ex
 
 # ================================ DISTANCE ================================
 
-DIST_SHAPES = {"sphere": 0.0625, "torus": 0.05, "teapot": 0.03125}
+DIST_SHAPES = {"sphere": 0.0625, "torus": 0.05, "teapot": 0.03125,
+               **{n: 0.03125 for n in L.FAMOUS}}  # the famous meshes (26 Nov 2026), 1 m like the teapot
 
 
-def distance() -> None:
-    res: dict[str, object] = {}
+def distance(names: list[str] | None = None) -> None:
+    """All shapes, or only `names` (the others are kept from regimes-distance.json)."""
+    path = L.HERE / "regimes-distance.json"
+    res: dict[str, object] = json.loads(path.read_text()) if names and path.exists() else {}
     for name, h in DIST_SHAPES.items():
+        if names and name not in names:
+            continue
         mesh = L.mesh_by_name(name)
         size = float((mesh.verts.max(axis=0) - mesh.verts.min(axis=0)).max())
         d = np.unique(np.concatenate([h * np.array([0.5, 1, 1.5, 2, 3, 5]), np.geomspace(0.5, 1000, 18)]))
@@ -103,7 +109,8 @@ def distance() -> None:
                      "err": {k: v.tolist() for k, v in err.items()}, "seconds_voxelise": t1 - t0,
                      "boundary": len(vox.frac)}
         print(name, f"{t1 - t0:.1f}s", flush=True)
-    (L.HERE / "regimes-distance.json").write_text(json.dumps(res))
+        res = {n: res[n] for n in DIST_SHAPES if n in res}
+        path.write_text(json.dumps(res))
     plot_distance()
 
 
@@ -118,10 +125,15 @@ def crossover(d: np.ndarray, err: np.ndarray, tol: float) -> float:
 def plot_distance() -> None:
     _style()
     res = json.loads((L.HERE / "regimes-distance.json").read_text())
-    fig, axes = plt.subplots(1, len(res), figsize=(16, 5.6), sharey=True)
+    ncol = min(len(res), 3)
+    nrow = -(-len(res) // ncol)
+    height = 4.6 * nrow + 1.0
+    fig, axes = plt.subplots(nrow, ncol, figsize=(16, height), sharey=True, squeeze=False)
+    for k in range(len(res), nrow * ncol):
+        axes.flat[k].set_visible(False)
     lines = ["| shape (pitch) | technique | good to 1e-6 rad beyond | good to 1e-10 rad beyond |",
              "|---|---|---|---|"]
-    for ax, (name, r) in zip(axes, res.items()):
+    for ax, (name, r) in zip(axes.flat, res.items()):
         d = np.array(r["d"])
         size, h = r["size"], r["h"]
         x = d / size
@@ -140,18 +152,20 @@ def plot_distance() -> None:
                 cells.append("never (in range)" if not np.isfinite(c) else
                              f"{c:.3g} m = {c / size:.2g} sizes = {c / h:.3g} cells")
             lines.append(f"| {name} ({h} m) | {tech} | {cells[0]} | {cells[1]} |")
-        ax.set_title(f"{name}: size {size:.2g} m, pitch {h} m, {r['boundary']} boundary cells")
+        ax.set_title(f"{name}: size {size:.2g} m, pitch {h} m, {r['boundary']} boundary cells", fontsize=10)
         ax.set_xlabel("distance from surface / body size")
         ax.set_ylim(1e-17, 1e3)
         ax.text(x.min(), 3e1, "≤ 3 cells", fontsize=8.5, color="#52514e")
         _clean(ax)
-    axes[0].set_ylabel("|phase error| (rad)")
-    h_, l_ = axes[0].get_legend_handles_labels()
+    for row in axes:
+        row[0].set_ylabel("|phase error| (rad)")
+    h_, l_ = axes[0, 0].get_legend_handles_labels()
     fig.legend(h_, l_, loc="upper center", ncol=8, frameon=False)
-    fig.text(0.01, 0.01, "Dashed: tolerances 1e-6 and 1e-10 rad; triangles: where each technique stays "
+    fig.text(0.01, 0.1 / height, "Dashed: tolerances 1e-6 and 1e-10 rad; triangles: where each technique stays "
              "below them for every larger distance. Reference: polyhedral closed form on the mesh. "
              "Floor ~1e-14–1e-16 rad is rounding.", fontsize=8.5, color="#52514e")
-    fig.subplots_adjust(left=0.05, right=0.99, top=0.85, bottom=0.13, wspace=0.06)
+    fig.subplots_adjust(left=0.05, right=0.99, top=1 - 0.7 / height, bottom=0.75 / height, wspace=0.06,
+                        hspace=0.32)
     fig.savefig(L.HERE / "regimes-distance.png", dpi=110)
     (L.HERE / "regimes-distance.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -392,6 +406,9 @@ def plot_spin() -> None:
 
 
 if __name__ == "__main__":
+    if sys.argv[1] == "distance" and len(sys.argv) > 2:
+        distance(sys.argv[2:])
+        sys.exit(0)
     {"distance": distance, "orientation": orientation, "translation": translation, "spin": spin,
      "spinworld": spin_world,
      "plot": lambda: (plot_distance(), plot_orientation(), plot_translation(), plot_spin())}[sys.argv[1]]()
