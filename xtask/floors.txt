@@ -10,7 +10,9 @@
 # and the session's row in tests/editor/s20.rs, two of tool_palette, one of tools).
 # TASK-S20-06 (the top bar and the transport): 7 new quick tests (cav-app: T1 to T3 and the top
 # bar's in tests/editor/s20.rs, two of transport; cav: a viewport not shown is not drawn).
-quick 673
+# TASK-S20-09 (the duration and the end behaviour at the transport): 3 new quick tests (cav-app:
+# T4 and T5 in tests/editor/s20.rs, one of transport).
+quick 676
 gpu 42
 slow 45
 oracle 58

@@ -159,10 +159,14 @@ review" above:
   keyboard navigation is on.
 - **The timeline's head is a transport**: start, step back, play/pause, step forward, end as
   icon buttons (`[` and `]` step a shot in the timeline, Shift a cadence cycle, Alt the ends;
-  Space plays anywhere), the speed (0.1× to 10×), `t [time] / duration s` and `shot [n] / count`,
-  the time and the shot typed to seek. The "play" and "rewind" word buttons are gone. A step is
+  Space plays anywhere), what playing does at the end (loop, stop at the end, run on: an icon
+  button with a menu), the speed (0.1× to 10×), `t [time] / [duration] s` and `shot [n] / count`,
+  the time and the shot typed to seek and the duration typed to set it (the Scene card's edit). The "play" and "rewind" word buttons are gone. A step is
   to a readout of the engine's shots (the selected tower's, else tower 1's). The shots' count
   and 2T stand at the row's right while there is room, and in the title's tooltip always.
+- **Run on** grows the scene's duration by its length when the run began, each time the end is
+  reached, as one edit a run; at the longest timeline (10⁶ s) playing stops and the status bar
+  says so. The live rolling window is not this (TASK-S22-01).
 - "As fast as it runs" (the design's §5) is not offered: playing moves a playhead over a signal
   already computed, so there is no run to be as fast as.
 

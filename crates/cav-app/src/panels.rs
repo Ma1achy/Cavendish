@@ -394,7 +394,9 @@ fn footer(shell: &mut Shell, ui: &mut egui::Ui) {
             .log()
             .iter()
             .rev()
-            .find(|e| e.level >= Level::Info && e.subsystem != Subsystem::App)
+            // (The window's own lines are routine, but for a warning of its own: a run on that
+            // stopped at the longest timeline.)
+            .find(|e| e.level >= Level::Info && (e.subsystem != Subsystem::App || e.level == Level::Warn))
             .cloned();
         let (text, colour) = last.map_or(("ready".to_owned(), theme::TEXT), |entry| {
             let colour = match entry.level {

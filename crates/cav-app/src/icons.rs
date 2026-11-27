@@ -458,6 +458,40 @@ pub fn transport(painter: &Painter, rect: Rect, glyph: Transport, colour: Color3
     }
 }
 
+/// What playing does at the end of the timeline ([`crate::transport::AtEnd`]): an arrow that
+/// comes round again (loop), an arrow up to a bar (stop), an arrow on from a bar (run on).
+pub fn at_end(painter: &Painter, rect: Rect, at_end: crate::transport::AtEnd, colour: Color32) {
+    use crate::transport::AtEnd;
+    let stroke = line(rect, colour);
+    match at_end {
+        AtEnd::Loop => {
+            // Most of a circle, clockwise from the upper right round to just left of the top,
+            // and an arrowhead there pointing on round it.
+            let (centre, radius) = (at(rect, 10.0, 10.5), rect.width() * 0.32);
+            let arc: Vec<Pos2> = (0..=20)
+                .map(|k| {
+                    let a = (-45.0 + 300.0 * k as f32 / 20.0).to_radians();
+                    centre + vec2(radius * a.cos(), radius * a.sin())
+                })
+                .collect();
+            painter.add(Shape::line(arc, stroke));
+            triangle(painter, rect, [(11.8, 3.4), (7.6, 1.4), (9.1, 7.2)], colour);
+        }
+        AtEnd::Stop => {
+            // An arrow up to a bar: the end is where it stops.
+            path(painter, rect, &[(2.5, 10.0), (11.0, 10.0)], stroke);
+            triangle(painter, rect, [(14.0, 10.0), (9.5, 6.5), (9.5, 13.5)], colour);
+            painter.rect_filled(Rect::from_min_max(at(rect, 15.0, 4.0), at(rect, 17.2, 16.0)), 0.5, colour);
+        }
+        AtEnd::RunOn => {
+            // A bar and an arrow on from it: past the end.
+            painter.rect_filled(Rect::from_min_max(at(rect, 2.8, 4.0), at(rect, 5.0, 16.0)), 0.5, colour);
+            path(painter, rect, &[(7.0, 10.0), (14.0, 10.0)], stroke);
+            triangle(painter, rect, [(18.0, 10.0), (13.0, 6.5), (13.0, 13.5)], colour);
+        }
+    }
+}
+
 /// A magnifying glass: search.
 pub fn search(painter: &Painter, rect: Rect, colour: Color32) {
     let stroke = line(rect, colour);

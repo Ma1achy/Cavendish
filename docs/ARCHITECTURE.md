@@ -198,14 +198,23 @@ it paints is in `Layout::top_bar`. The time is the transport's: the timeline's h
 end as icon buttons, each an action of `ui/actions.ron` (`seek start`, `step -1`, `play`,
 `step 1`, `seek end`; their keys work in the `timeline` scope; `needs` says when each is
 disabled and why), the speed (a drop-down whose rows are the actions of the menu `Scene/Speed`;
-`Shell::speed` multiplies the frame's step in `Shell::advance`), and the time and the shot as
-fields that seek when typed into. A step lands on a readout of the engine's own shots
+`Shell::speed` multiplies the frame's step in `Shell::advance`), what playing does at the end
+(`transport::AtEnd`, `end loop|stop|run-on`, the rows of the menu `Scene/At the end`), and
+`t [time] / [duration] s` and `shot [n] / count` as fields: a time or a shot's number typed
+seeks there, and a duration typed is the `Set` of `duration` the Scene card's editor issues
+(`editors::command_for`: one edit, one undo, refused by the engine as the card's is). At the end
+of the timeline `Shell::advance` loops to 0, or stops with the playhead at exactly the duration,
+or runs on (`Shell::run_on_past`): the duration grows by whole blocks of its length when the run
+first reached the end, each extension a `Set` that continues the one before (the engine folds a
+run of sets of one path into one step of undo whatever seeks come between), up to
+`cav_sim::spec::limits::DURATION`, where playing stops and the log says so. Each extension is an
+edit, so the signal is stale until the forward worker has computed it for the longer timeline. A step lands on a readout of the engine's own shots
 (`Engine::shots`; `transport::place` finds the neighbours by bisection and makes no time of its
 own), those of the selected tower, else the first's; with Shift it moves one mean cadence cycle;
 a held button repeats on the keyboard's clock. `seek start` and `seek end` are the engine's
 console's (read against the scene, journalled as the seek to that time); `step` and `speed` are
-the window's. The keyboard's `timeline` scope is `transport::CONTROLS` in that order, then the
-scrubber. What was drawn is in `Layout::transport`.
+the window's, as `end` is. The keyboard's `timeline` scope is `transport::CONTROLS` in that
+order, then the scrubber. What was drawn is in `Layout::transport`.
 
 Every edit, from the viewport, a panel, a key or the palette, ends in one `Command` through
 `Engine::apply`: the gizmo, the transform session and the inspector's field all issue the same
@@ -246,7 +255,7 @@ field's reset and the window's unsaved mark.
 | The scene as a technical drawing on paper (`figure paper`: a plan or a section, ink on cream at a scale 1:N, outlines of the world from coarse bricks, hatching, scale bar, north arrow, dimensions, title block; at most `MAX_PAPER_BRICKS` bricks, `MAX_PAPER_ITEMS` items, `MAX_PAPER_POINTS` points) | `cav-plot/src/paper.rs`; `PaperView` in `cav-engine/src/command.rs`; written by `paper` in `cav-plot/src/figure.rs` | [a plot](extending/a-plot.md) |
 | Redrawing a figure from its data, in Python | `python/cavendish_figures` (matplotlib style sheets, `load`, `redraw`) | [a plot](extending/a-plot.md) |
 | A panel, an editor (the inspector's sections, resets, lists), the timeline's lanes | `cav-app/src/panels.rs`, `editors.rs`, `timeline.rs` | [the window](extending/a-tool-or-panel.md) |
-| The top bar (menus, layout tabs, search, the scene's name) and the transport (the timeline's buttons, speed, time and shot; `docs/design/workspace.md` §4, §5) | `menu_bar` in `cav-app/src/panels.rs`; `cav-app/src/transport.rs` (`CONTROLS`, `place`, `step`), its actions in `cav-app/ui/actions.ron` | [the window](extending/a-tool-or-panel.md) |
+| The top bar (menus, layout tabs, search, the scene's name) and the transport (the timeline's buttons, what playing does at the end, speed, time, duration and shot; `docs/design/workspace.md` §4, §5) | `menu_bar` in `cav-app/src/panels.rs`; `cav-app/src/transport.rs` (`CONTROLS`, `place`, `step`, `AtEnd`), `Shell::advance` and `Shell::run_on_past` in `shell.rs`, its actions in `cav-app/ui/actions.ron` | [the window](extending/a-tool-or-panel.md) |
 | The tool palette (its place, its flyouts) and a tool's options row (`docs/design/workspace.md` §3) | `cav-app/ui/tools.ron`, `cav-app/src/tools.rs` (`Variants`, `Behaviour::has_options`), `cav-app/src/tool_palette.rs` | [the window](extending/a-tool-or-panel.md) |
 | A viewport's header and its controls; the navigation gizmo; the status bar (`docs/design/workspace.md` §2) | `cav-app/src/header.rs`, `cav-app/src/navgizmo.rs`, `footer` in `cav-app/src/panels.rs` | [a view type's header controls](extending/a-view-or-a-layout.md) |
 | The scene tree (groups, icons, eye and lock, status dots), the Readings tab and the Probe tab; the inspector's header, cards and Info card (`docs/design/panels.md`); the panels' sizes (`cav-app/src/theme.rs`, `docs/design/workspace.md` §0) | `cav-app/src/outliner.rs`, `cav-app/src/inspector.rs` | [the window](extending/a-tool-or-panel.md) |

@@ -44,9 +44,13 @@ beside this (`docs/design/workspace.md` §5).
    disabled state come from the action.
 3. A time it moves the playhead to is one of the engine's: a readout of `Engine::shots`
    (`transport::place`), the scene's duration, zero. Never a time worked out in the window.
-4. A drop-down of the row (the speed) is the actions of one menu of the table
-   (`transport::SPEED_MENU`): add a row there and it is in the list, the Scene menu and the
-   palette. `s20::each_transport_button_issues_its_command` walks `CONTROLS`.
+4. A drop-down of the row (the speed, what playing does at the end) is the actions of one menu
+   of the table (`transport::SPEED_MENU`, `transport::END_MENU`): add a row there and it is in
+   the list, the Scene menu and the palette. A new end behaviour is also a variant of
+   `transport::AtEnd` (its word, its icon in `icons::at_end`) and an arm of `Shell::advance`.
+5. A field of the row that edits the scene (the duration) issues the command the inspector's
+   editor of that path issues (`editors::command_for`), so the two are one edit in the journal
+   and in undo; what the scene cannot have is the engine's to refuse. `s20::each_transport_button_issues_its_command` walks `CONTROLS`.
 
 ## A tool
 
