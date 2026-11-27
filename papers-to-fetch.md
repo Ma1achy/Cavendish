@@ -44,3 +44,10 @@ Most important first: the first three decide whether the paper's h_f·2A_f rule 
 
 ## World octree (`s5-world-octree.md`)
 - [ ] Salmon 1990, Caltech PhD thesis; Hernquist 1987, Ap. J. Suppl. 64, 715
+
+## Paper: interior boxes and single precision (`docs/research/paper-boxes-and-precision.md`)
+- [ ] Darnell, N. 2011, "Automated occluders for GPU culling", Game Developer Magazine, Sept. 2011 (no DOI; known here only through Fenney, Allen & Aman's summary and Darnell's 2012 AltDevBlogADay reprint)
+- [ ] Fenney, Allen & Aman 2025, "AACBs: BVH Occlusion Micro-Hierarchies for Cost Reduction of Ray Traversal", preprint (ResearchGate 392759770; only the HPG 2025 poster was read)
+- [ ] Joldes, Muller & Popescu 2017, double-word arithmetic error bounds and operation counts: https://doi.org/10.1145/3121432 (HAL copy refused automated access)
+- [ ] Thall 2006, float-float on GPUs: https://doi.org/10.1145/1179622.1179682
+- [ ] Dielissen & Kaldewaij 1991, minimum box partition NP-complete in 3-D: https://doi.org/10.1016/0020-0190(91)90207-X (metadata checked, text not read)

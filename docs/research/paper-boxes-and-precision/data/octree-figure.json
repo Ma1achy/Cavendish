@@ -1,0 +1,20 @@
+{
+ "shape": "bunny",
+ "n_across": 64,
+ "h": 0.015625,
+ "interior_cells": 45637,
+ "boundary_cells": 14180,
+ "octree_blocks": 7487,
+ "free_boxes": 1493,
+ "octree_block_sizes": {
+  "1": 6013,
+  "2": 1209,
+  "4": 236,
+  "8": 29
+ },
+ "drawn_after_cut": {
+  "octree": 2705,
+  "free": 626
+ },
+ "y_cut": 4.54687499999995e-05
+}
