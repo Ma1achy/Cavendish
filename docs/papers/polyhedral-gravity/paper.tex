@@ -124,11 +124,14 @@ shows the three representations side by side.
 
 \begin{figure}[!ht]\centering
 \includegraphics[width=\linewidth]{figures/diag-representations.pdf}
-\caption{Three ways to represent a body. Top, a cross-section; bottom, the same in 3-D (the
-benchmark's turned cube on a coarse lattice). (a, d) the true surface; (b, e) plain cubes, a cell
-full when its centre is inside --- look at the staircase overshooting and undershooting the dashed
-surface, which is the first-order error; (c, f) interior cubes plus the clipped boundary pieces,
-which together are the body exactly (to the mesh).}
+\caption{Three ways to represent a body. Top, a triangle in 2-D; bottom, a square-based
+pyramid in 3-D, both on the grid's axes. (a, d) the true surface; (b, e) plain cubes, a cell full when its centre is inside
+--- look at the staircase overshooting and undershooting the dotted surface, which is the
+first-order error; (c, f) interior cubes plus the clipped boundary pieces, which together are the
+body exactly (to the mesh). In (f) the pieces' outlines show where the lattice cuts the faces; the
+whole cubes are hidden inside. In (e, f) the true pyramid's edges are dotted, in depth with the
+cells: in (e) they pass in front of some steps and behind or inside others. The 3-D panels are lit by a key and a fill light with ambient occlusion, and the bodies stand
+on a faint contact shadow.}
 \label{fig:repr}
 \end{figure}
 
@@ -140,7 +143,7 @@ pixel's coverage, rather than a 0/1 decision, removes the jagged edge (Figure~\r
 
 \begin{figure}[!ht]\centering
 \includegraphics[width=\linewidth]{figures/diag-fill-moments.pdf}
-\caption{\Cutcell{} for three cells cut by a surface (dashed; the body below it). (a) The fill
+\caption{\Cutcell{} for three cells cut by a surface (dotted; the body below it). (a) The fill
 fraction. (b) The mass placed at the centroid of the filled part (dot) rather than the cell centre
 (cross): the arrows are the dipole errors a fill fraction at the centre leaves, the first-order
 term once the monopole is right; putting the mass at the centroid removes them. (c) The second
@@ -235,7 +238,8 @@ nearly equal numbers when $r_0$ is small.}
 \caption{One cell, many cuts: the clipped piece (orange) for a corner cut (tetrahedron removed or
 kept), an edge cut (a wedge), a face-parallel cut (a slab), an oblique cut through the centre (a
 hexagonal section; its face normal $\hat{\mathbf{n}}_f$ and an edge $e$ marked) and two planes meeting
-at a mesh edge (a non-convex piece, which the clipper builds as the union of two convex ones). Each
+at a mesh edge (a non-convex piece, which the clipper builds as the union of two convex ones; drawn
+here as one solid). Each
 is a polyhedron, so eq.~(\ref{eq:result}) gives its field exactly to the mesh.}
 \label{fig:cuts}
 \end{figure} The Laplacian $-G\rho\sum_f\omega_f$ is $0$ outside the body and
@@ -418,12 +422,20 @@ decimated mesh's phase against the full scan's, both summed whole, at 1.5~m. \pr
 \begin{figure}[t]\centering
 \includegraphics[width=\linewidth]{figures/shapes-torus.png}\\[2pt]
 \includegraphics[width=\linewidth]{figures/shapes-bunny.png}
-\caption{Two of the ten shapes, each cut away at the lattice wall nearest its centre plane. Top: the
-analytic torus at pitch 0.2~m, whose cubes and pieces are made from a 4096-triangle mesh; bottom: the
-Stanford bunny (69\,664 triangles, all of the scan's kept, five base holes capped) at 1/16~m. Left,
-the shape; middle, cubes full when the centre is inside (grey wholly inside, yellow crossed by the
-surface); right, the same interior cubes and every crossed cell clipped to its piece (orange), which
-together are the body exactly to the mesh. Rendered by the study's \texttt{figures.py}.}
+\caption{Two of the ten shapes, each cut away at the lattice wall nearest its centre plane, both at
+32 cells across the largest extent. Top: the analytic torus (2.8~m across) at pitch 0.0875~m, whose
+cubes and pieces are made from a 4096-triangle mesh; bottom: the Stanford bunny (1~m; 69\,664
+triangles, all of the scan's kept, five base holes capped) at 1/32~m. Left, the true body (green);
+middle, cubes full when the centre is inside (blue); right, the same interior cubes and every crossed
+cell clipped to its piece (orange), which together are the body exactly to the mesh. Dotted: the true
+surface as a sparse 3-D cage (for the torus, rings around the tube every $15^\circ$ and around the
+axis every $30^\circ$; for the bunny, contours every three cells in height and the silhouette) and
+where the cut meets it. Each dot is depth-tested against the voxels and the true surface, so the cage
+shows only where the true surface lies in front of the voxels or within a hair of them, weaving in
+and out of the cubes' staircase and lying on the pieces. The pictures show a lattice four times
+coarser than the finest one measured: the sweep runs from 4 to 128 cells across and the errors this
+section quotes are at 128, where the cells would be too small to see at print size. Lit as the
+diagrams are, with screen-space ambient occlusion. Rendered by the study's \texttt{figures.py}.}
 \label{fig:shapes-repr}
 \end{figure}
 
@@ -651,7 +663,7 @@ fewer), of which $1.9\times10^{5}$ are cut cells; the ratio doubles with each do
 \caption{The same body as a uniform grid and as an octree with the same finest cell. (a, b) A
 cross-section through each; (c) the octree in 3-D, lower half, showing the eight-way split. Look at
 the interior: one large block where the grid has hundreds of cells; the cut cells (orange) stay at
-the finest level.}
+the finest level. In (c) the sphere's rim at the cut is dotted.}
 \label{fig:tree}
 \end{figure}
 
