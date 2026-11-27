@@ -251,3 +251,8 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   one journal entry, but a seek between them (playing) breaks the run, as it does for an orbit
   drag during play. The journal's byte budget bounds it; coalescing "seek, camera, seek,
   camera" pairwise would shrink it.
+- **Mend a mesh on import instead of refusing it** (shapes study §3.2–3.3, 27 Nov 2026): the
+  importer refuses the Stanford bunny (open base), scans past 500,000 triangles or 32 MiB, and
+  decimations that fold through themselves. The study's repair (weld, drop non-manifold edges,
+  ear-clip holes, cut out and re-close self-crossings) and a decimation to a stated Hausdorff bound
+  would let `import` take them, reporting what it changed.
