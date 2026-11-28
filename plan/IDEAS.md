@@ -395,3 +395,8 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   bodies of the calibration set (a 20:1 rod 1928, a 100:1 plate 1049); compact bodies need 7 to 44.
   A `c` that grows with a body's aspect ratio (fixed on a fresh calibration set, not the six)
   would make the law some 40 times tighter for compact bodies.
+- **A tighter `Pieces` ledger, and `cav run` reporting it** (TASK-S5-26): `TreeBody::ledger` takes
+  each far cut cell's `A_l` as `M e^l` with `e` the cell's far corner, and is about 160 times the
+  read's error (C3b). The pieces' own absolute moments (from their solids, as `cube_even_powers`
+  does for a cube) would tighten it; the audited read could then report it beside the quadrature's
+  estimate, and choose the reach per interferometer from a tolerance.

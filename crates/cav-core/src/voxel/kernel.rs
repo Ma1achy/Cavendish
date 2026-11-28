@@ -528,6 +528,53 @@ struct Quad {
     third: [f64; 10],
     /// The cell's side, metres: within [`PRISM_WITHIN`] of it the piece is read as a cube there.
     side: f64,
+    /// Metres: all of the piece is within this of `centre` (the centroid's distance from the
+    /// cell's centre plus the cell's half-diagonal): what [`moments_bound`] needs.
+    reach: f64,
+}
+
+/// The most the orders from `first` on that a point read of matter leaves out can change
+/// `(V(upper) − V(lower))/G`, kg/m: `mass` kg (its absolute value is taken), all of it within
+/// `reach` metres of the expansion centre, read at two points on a vertical line whose horizontal
+/// offset from the centre is `across` and whose heights over it are `below` and `above` (metres,
+/// as [`cube_difference`] takes them).
+///
+/// With `A_l ≤ |M| e^l` (`e` the reach) the order-`l` term of the potential is at most
+/// `A_l/R^{l+1}` and its gradient at most `(l + 1) A_l/R^{l+2}` (S4's
+/// `the_legendre_gradient_bound_holds`). The bound is the smaller of the two points' potential
+/// bounds added, `Σ_p (M/R_p) q_p^L/(1 − q_p)` with `q_p = e/R_p`, and the gradient's along the
+/// segment, `|above − below| (M/R²) q^L [(L + 1)/(1 − q) + q/(1 − q)²]` with `R` the segment's
+/// least distance from the centre; each is infinite where its series does not converge (`q ≥ 1`).
+/// The left-out orders only: the rounding of the read is not in it.
+#[must_use]
+pub fn moments_bound(mass: f64, reach: f64, first: usize, across: [f64; 2], below: f64, above: f64) -> f64 {
+    let mass = mass.abs();
+    if mass == 0.0 {
+        return 0.0;
+    }
+    let horizontal = across[0].hypot(across[1]);
+    let order = i32::try_from(first).unwrap_or(i32::MAX);
+    let point = |height: f64| {
+        let r = horizontal.hypot(height);
+        let q = reach / r;
+        if q < 1.0 { mass / r * q.powi(order) / (1.0 - q) } else { f64::INFINITY }
+    };
+    let ends = point(below) + point(above);
+    let nearest = if below.min(above) <= 0.0 && below.max(above) >= 0.0 {
+        horizontal
+    } else {
+        horizontal.hypot(below.abs().min(above.abs()))
+    };
+    let q = reach / nearest;
+    let path = if q < 1.0 {
+        let l = first as f64;
+        (above - below).abs() * mass / (nearest * nearest)
+            * q.powi(order)
+            * ((l + 1.0) / (1.0 - q) + q / ((1.0 - q) * (1.0 - q)))
+    } else {
+        f64::INFINITY
+    };
+    ends.min(path)
 }
 
 /// A voxel body as the forward model sees it: every leaf of a tree a uniform cube, the tree's
@@ -602,6 +649,7 @@ impl<P: Fn(f64) -> Vec3 + Sync> TreeBody<P> {
             };
             let mass = tree.leaf_mass(leaf);
             let side = tree.side(0);
+            let cell = tree.block_centre(leaf.key, leaf.level);
             match representation {
                 Representation::Second | Representation::Pieces => body.quads.push(Quad {
                     centre: cut.piece.centroid,
@@ -609,6 +657,7 @@ impl<P: Fn(f64) -> Vec3 + Sync> TreeBody<P> {
                     second: cut.piece.second.map(|s| tree.density * s),
                     third: cut.piece.third.map(|t| tree.density * t),
                     side,
+                    reach: (cut.piece.centroid - cell).length() + 0.5 * side * 3f64.sqrt(),
                 }),
                 _ => cubes.push((cut.piece.centroid, mass, side)),
             }
@@ -674,6 +723,168 @@ impl<P: Fn(f64) -> Vec3 + Sync> TreeBody<P> {
     pub fn cubes(&self) -> usize {
         self.cubes.len() + self.quads.len() + self.solids.len()
     }
+
+    /// The ledger of a `Pieces` read ([`Self::with_pieces`]): a [`Source`] whose "difference" at
+    /// each interferometer is the most that the cut cells read through their moments (those
+    /// beyond the reach) leave out, [`moments_bound`] of each from the first order not read (4
+    /// with the octupole, 3 without), kg/m and never negative. Read through the flight like the
+    /// body (the quadrature's weights are positive) it bounds the read's error in radians at each
+    /// interferometer; the gradiometer's is at most the two added (C3b, `docs/slices/S5.md` §7.20).
+    ///
+    /// Not in it: the rounding of the exact kernels (the cubes and the near pieces; C3a measures
+    /// it at 3.3e-15 of the read). `None` for a body with cut cells read as `Second` (its cube
+    /// near an arm is not bounded); zero for a body with no cut cells.
+    #[must_use]
+    pub fn ledger(&self) -> Option<PiecesLedger<'_, P>> {
+        self.quads.is_empty().then_some(PiecesLedger { body: self, leave_out: None })
+    }
+
+    /// Whether a cut cell is read as its exact piece at this interferometer: its cell's centre
+    /// within the reach (`within` cells) of either arm point.
+    fn is_near(
+        &self,
+        solid: &super::cut::PieceSolid,
+        q: &Quad,
+        offset: Vec3,
+        height: f64,
+        lower: f64,
+        upper: f64,
+    ) -> bool {
+        let at = offset + solid.centre;
+        let (below, above) = (height + lower - at.z, height + upper - at.z);
+        let horizontal = at.x * at.x + at.y * at.y;
+        let nearer = (horizontal + below * below).min(horizontal + above * above).sqrt();
+        nearer < self.within * q.side
+    }
+
+    /// A cut cell's piece by the polyhedral closed form, kg/m.
+    fn piece_exact(
+        &self,
+        solid: &super::cut::PieceSolid,
+        offset: Vec3,
+        height: f64,
+        lower: f64,
+        upper: f64,
+    ) -> f64 {
+        let at = offset + solid.centre;
+        let (below, above) = (height + lower - at.z, height + upper - at.z);
+        solid
+            .parts
+            .iter()
+            .map(|(sign, part)| {
+                part.difference(sign * self.density, [-at.x, -at.y], below, above, lower - upper)
+            })
+            .sum()
+    }
+
+    /// A cut cell's piece through its moments about its centroid: `Second`, with the octupole when
+    /// the body keeps it, kg/m.
+    fn piece_by_moments(&self, q: &Quad, offset: Vec3, height: f64, lower: f64, upper: f64) -> f64 {
+        let at = offset + q.centre;
+        let (below, above) = (height + lower - at.z, height + upper - at.z);
+        let mut sum = quadrupole_difference(q.mass, &q.second, [-at.x, -at.y], below, above, lower - upper);
+        if self.octupole {
+            sum += octupole_difference(&q.third, [-at.x, -at.y], below, above);
+        }
+        sum
+    }
+
+    /// [`moments_bound`] of a cut cell read through its moments, kg/m.
+    fn piece_bound(&self, q: &Quad, offset: Vec3, height: f64, lower: f64, upper: f64) -> f64 {
+        let at = offset + q.centre;
+        let first = if self.octupole { 4 } else { 3 };
+        moments_bound(q.mass, q.reach, first, [-at.x, -at.y], height + lower - at.z, height + upper - at.z)
+    }
+
+    /// Cut cell `k` of a `Pieces` body at one interferometer (arguments as [`Source::difference`]
+    /// for one height): `(as the read takes it, its exact piece, its ledger term)`, the term
+    /// `None` when the read takes the exact piece. For the tests of the ledger, cell by cell.
+    #[cfg(test)]
+    pub(crate) fn piece_terms(
+        &self,
+        k: usize,
+        tower: Vec3,
+        height: f64,
+        lower: f64,
+        upper: f64,
+        time: f64,
+    ) -> (f64, f64, Option<f64>) {
+        let offset = (self.position)(time) - tower;
+        let (solid, q) = &self.solids[k];
+        let exact = self.piece_exact(solid, offset, height, lower, upper);
+        if self.is_near(solid, q, offset, height, lower, upper) {
+            (exact, exact, None)
+        } else {
+            let bound = self.piece_bound(q, offset, height, lower, upper);
+            (self.piece_by_moments(q, offset, height, lower, upper), exact, Some(bound))
+        }
+    }
+
+    /// Cut cell `k`'s centre's distance from the nearer arm point of one interferometer, metres
+    /// (arguments as [`Self::piece_terms`]).
+    #[cfg(test)]
+    pub(crate) fn piece_distance(
+        &self,
+        k: usize,
+        tower: Vec3,
+        height: f64,
+        lower: f64,
+        upper: f64,
+        time: f64,
+    ) -> f64 {
+        let at = (self.position)(time) - tower + self.solids[k].0.centre;
+        let horizontal = at.x.hypot(at.y);
+        horizontal.hypot((height + lower - at.z).abs().min((height + upper - at.z).abs()))
+    }
+
+    /// How many cut cells a `Pieces` body reads as solids or through their moments.
+    #[cfg(test)]
+    pub(crate) fn pieces(&self) -> usize {
+        self.solids.len()
+    }
+}
+
+/// The ledger of a `Pieces` read ([`TreeBody::ledger`]): what the cut cells read through their
+/// moments may leave out, as a [`Source`] (kg/m at each interferometer, never negative).
+pub struct PiecesLedger<'a, P: Fn(f64) -> Vec3 + Sync> {
+    body: &'a TreeBody<P>,
+    /// A control only: one cut cell (by its index in the tree's cuts) whose term is left out of
+    /// the ledger. `None` for every read.
+    leave_out: Option<usize>,
+}
+
+impl<P: Fn(f64) -> Vec3 + Sync> PiecesLedger<'_, P> {
+    /// The same ledger with cut cell `k`'s term left out: a control that must fail, never for a
+    /// read.
+    #[cfg(test)]
+    pub(crate) fn leaving_out(mut self, k: usize) -> Self {
+        self.leave_out = Some(k);
+        self
+    }
+}
+
+impl<P: Fn(f64) -> Vec3 + Sync> Source for PiecesLedger<'_, P> {
+    fn difference(&self, tower: Vec3, heights: [f64; 2], lower: f64, upper: f64, time: f64) -> [f64; 2] {
+        let body = self.body;
+        if !(time >= body.exists.0 && time < body.exists.1) {
+            return [0.0; 2];
+        }
+        let offset = (body.position)(time) - tower;
+        heights.map(|height| {
+            body.solids
+                .iter()
+                .enumerate()
+                .filter(|(k, (solid, q))| {
+                    Some(*k) != self.leave_out && !body.is_near(solid, q, offset, height, lower, upper)
+                })
+                .map(|(_, (_, q))| body.piece_bound(q, offset, height, lower, upper))
+                .sum()
+        })
+    }
+
+    fn breaks(&self, from: f64, to: f64, out: &mut Vec<f64>) {
+        self.body.breaks(from, to, out);
+    }
 }
 
 impl<P: Fn(f64) -> Vec3 + Sync> Source for TreeBody<P> {
@@ -703,24 +914,11 @@ impl<P: Fn(f64) -> Vec3 + Sync> Source for TreeBody<P> {
                 };
             }
             for (solid, q) in &self.solids {
-                let at = offset + solid.centre;
-                let (below, above) = (height + lower - at.z, height + upper - at.z);
-                let across = [-at.x, -at.y];
-                let horizontal = across[0] * across[0] + across[1] * across[1];
-                let nearer = (horizontal + below * below).min(horizontal + above * above).sqrt();
-                if nearer < self.within * q.side {
-                    for (sign, part) in &solid.parts {
-                        sum += part.difference(sign * self.density, across, below, above, lower - upper);
-                    }
+                sum += if self.is_near(solid, q, offset, height, lower, upper) {
+                    self.piece_exact(solid, offset, height, lower, upper)
                 } else {
-                    let at = offset + q.centre;
-                    let (below, above) = (height + lower - at.z, height + upper - at.z);
-                    sum +=
-                        quadrupole_difference(q.mass, &q.second, [-at.x, -at.y], below, above, lower - upper);
-                    if self.octupole {
-                        sum += octupole_difference(&q.third, [-at.x, -at.y], below, above);
-                    }
-                }
+                    self.piece_by_moments(q, offset, height, lower, upper)
+                };
             }
             sum
         })

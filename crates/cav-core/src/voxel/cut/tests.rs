@@ -551,39 +551,88 @@ pub(crate) enum C3Read {
 /// it), one AION-10 shot through Gauss order 6. The worst of the lower, upper and gradiometer
 /// channels' errors against the polyhedral closed form of the whole solid, relative to each.
 pub(crate) fn c3_read(how: C3Read) -> f64 {
+    c3_read_with(how, |_, _| {})
+}
+
+/// C3's geometries (C3a, C3b: `docs/slices/S5.md` §7.20).
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum C3Body {
+    /// C3's own: an icosahedron (edge 0.6 m), the tower's line half a cell from its surface.
+    Icosahedron,
+    /// A torus mesh about the z axis (major radius 0.35 m, tube 0.15 m, 24 × 12 quads: not
+    /// convex, its pieces signed prisms), the tower's line up through its hole 3 cm off its axis.
+    Torus,
+}
+
+/// One of C3's geometries at 1/16 m on a lattice placed off the body's box, ready to read: the
+/// reader (one AION-10 shot through Gauss order 6), the tower's base (below the solid, so that
+/// the arms rise past it), the closed form of the whole solid as a source, the tree and the cut
+/// cells' solids.
+pub(crate) struct C3 {
+    reader: crate::forward::Reader,
+    tower: Vec3,
+    exact: ExactSource,
+    tree: VoxTree,
+    solids: Vec<PieceSolid>,
+}
+
+pub(crate) fn c3(body: C3Body) -> C3 {
     use crate::forward::{Instrument, Quadrature, Reader};
-    use crate::voxel::kernel::TreeBody;
     let reader = Reader::new(Instrument {
         quadrature: Quadrature::Gauss { order: 6, panel: 0.4 },
         ..Instrument::aion10()
     });
-    let ico = Platonic::Icosahedron.solid(0.6);
-    let exact = Faceted::from_polyhedron(&ico).unwrap();
     let h = 1.0 / 16.0;
-    let n = Vec3::new(1.0, 0.23, 0.0).normalised();
-    let (mut inside, mut outside) = (0.0, 2.0);
-    for _ in 0..80 {
-        let mid = 0.5 * (inside + outside);
-        if ico.contains(n * mid) { inside = mid } else { outside = mid }
-    }
-    let line = n * (outside + 0.5 * h);
-    let tower = Vec3::new(line.x, line.y, -0.6);
-    let reference = reader.read(tower, &ExactSource(exact, C2_DENSITY), 10.0);
-    let grid = c2_grid(&ico, h, [0.31, 0.62, 0.17]);
-    let tree = voxelise_cut(&ico, &grid, Weight::Density(C2_DENSITY), 0, Budget::DEFAULT).unwrap();
+    let (shape, exact, line): (Box<dyn Shape>, Faceted, Vec3) = match body {
+        C3Body::Icosahedron => {
+            let ico = Platonic::Icosahedron.solid(0.6);
+            let exact = Faceted::from_polyhedron(&ico).unwrap();
+            let n = Vec3::new(1.0, 0.23, 0.0).normalised();
+            let (mut inside, mut outside) = (0.0, 2.0);
+            for _ in 0..80 {
+                let mid = 0.5 * (inside + outside);
+                if ico.contains(n * mid) { inside = mid } else { outside = mid }
+            }
+            (Box::new(ico), exact, n * (outside + 0.5 * h))
+        }
+        C3Body::Torus => {
+            let (v, t) = torus_mesh(0.35, 0.15, 24, 12);
+            let torus = Mesh::new(v, t).unwrap();
+            let exact = Faceted::from_mesh(&torus).unwrap();
+            (Box::new(torus), exact, Vec3::new(0.03, 0.01, 0.0))
+        }
+    };
+    let grid = c2_grid(shape.as_ref(), h, [0.31, 0.62, 0.17]);
+    let tree = voxelise_cut(shape.as_ref(), &grid, Weight::Density(C2_DENSITY), 0, Budget::DEFAULT).unwrap();
+    let solids = piece_solids(shape.as_ref(), &tree).unwrap();
+    C3 { reader, tower: Vec3::new(line.x, line.y, -0.6), exact: ExactSource(exact, C2_DENSITY), tree, solids }
+}
+
+/// The worst of the lower, upper and gradiometer channels' relative errors of `r` against
+/// `reference`.
+fn c3_channels(r: crate::forward::Reading, reference: crate::forward::Reading) -> f64 {
+    let g = |x: crate::forward::Reading| x.lower - x.upper;
+    ((r.lower - reference.lower) / reference.lower)
+        .abs()
+        .max(((r.upper - reference.upper) / reference.upper).abs())
+        .max(((g(r) - g(reference)) / g(reference)).abs())
+}
+
+/// [`c3_read`] with the cut cells' solids changed by `change` first, given the tower's base (for
+/// C3a's control).
+fn c3_read_with(how: C3Read, change: impl FnOnce(&mut Vec<PieceSolid>, Vec3)) -> f64 {
+    use crate::voxel::kernel::TreeBody;
+    let C3 { reader, tower, exact, tree, mut solids } = c3(C3Body::Icosahedron);
+    change(&mut solids, tower);
+    let reference = reader.read(tower, &exact, 10.0);
     let origin: fn(f64) -> Vec3 = |_| Vec3::ZERO;
     let body = match how {
         C3Read::Pieces(cells, octupole) => {
-            TreeBody::with_pieces_within(&tree, piece_solids(&ico, &tree).unwrap(), cells, octupole, origin)
+            TreeBody::with_pieces_within(&tree, solids, cells, octupole, origin)
         }
         C3Read::Second => TreeBody::read_as(&tree, Representation::Second, origin),
     };
-    let r = reader.read(tower, &body, 10.0);
-    let g = |x: crate::forward::Reading| x.lower - x.upper;
-    let e = ((r.lower - reference.lower) / reference.lower)
-        .abs()
-        .max(((r.upper - reference.upper) / reference.upper).abs())
-        .max(((g(r) - g(reference)) / g(reference)).abs());
+    let e = c3_channels(reader.read(tower, &body, 10.0), reference);
     eprintln!("C3 geometry, {how:?}: {e:.3e} relative ({} cut cells)", tree.cuts.len());
     e
 }
@@ -594,33 +643,198 @@ cav_validate::case! {
     subsystem: "voxel",
     slice: "S5",
     reference: ClosedForm,
-    against: "the polyhedral closed form of an icosahedron (edge 0.6 m), the tower's line half a cell from its surface, one AION-10 shot through Gauss order 6: voxelised at 1/16 m with every cut cell read as its exact piece by the polyhedral kernel and the interior by the cube kernel, the worst of the lower, upper and gradiometer channels, relative",
+    against: "C3a (the owner's ruling of 28 Nov 2026, docs/slices/S5.md 7.20): the polyhedral closed form of an icosahedron (edge 0.6 m), the tower's line half a cell from its surface, one AION-10 shot through Gauss order 6: voxelised at 1/16 m with every cut cell read as its exact piece by the polyhedral kernel and the interior by the cube kernel, the worst of the lower, upper and gradiometer channels, relative",
     unit: Relative,
     tolerance: 1e-11,
     measure: cav_validate::Measured::Error({
         let exact = c3_read(C3Read::Pieces(f64::INFINITY, false));
-        // Control: without the exact pieces it is far off.
+        // Controls: without the exact pieces it is far off; and with one piece (the cut cell
+        // nearest the tower's line) moved by a micrometre it fails, so the measure sees one piece.
         let second = c3_read(C3Read::Second);
         assert!(second > 1e-11, "Second alone is {second:e}");
+        let moved = c3_read_with(C3Read::Pieces(f64::INFINITY, false), |solids, tower| {
+            let line = |s: &PieceSolid| (s.centre.x - tower.x).hypot(s.centre.y - tower.y);
+            let nearest = (0..solids.len()).min_by(|&a, &b| line(&solids[a]).total_cmp(&line(&solids[b]))).unwrap();
+            solids[nearest].centre = solids[nearest].centre + Vec3::new(1e-6, 0.0, 0.0);
+        });
+        assert!(moved > 1e-11, "one piece moved by 1 um reads {moved:e}");
         exact
     }),
 }
 
+/// What C3b measures of one geometry: the production `Pieces` read against the closed form of
+/// the whole solid and against its own ledger ([`crate::voxel::kernel::TreeBody::ledger`]).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct C3b {
+    /// The worst, over every arm point the read evaluates, of the body's error over its ledger
+    /// plus the reference's rounding allowance ([`C3B_ROUNDING`] of the exact difference).
+    pub body: f64,
+    /// The worst of each interferometer's phase error over its ledger read through the flight,
+    /// and of the gradiometer's over the two ledgers added.
+    pub phase: f64,
+    /// The worst, over every cut cell read through its moments and every arm point, of the
+    /// cell's error over its own ledger term plus [`piece_rounding`].
+    pub cells: f64,
+    /// The control: the same for the one cell whose error stands farthest above its rounding
+    /// allowance, with its term left out of the ledger (must exceed 1).
+    pub left_out: f64,
+    /// The relative error of the read, the worst channel (C3 as first written measured this).
+    pub relative: f64,
+    /// The cut cells.
+    pub cut_cells: usize,
+}
+
+/// The rounding allowed the closed form of the whole solid in C3b's body check, relative to its
+/// difference (C3a measures the read's at 3.3e-15).
+pub(crate) const C3B_ROUNDING: f64 = 1e-12;
+
+/// How far from a far cell, in cell diagonals, C3b checks its error against its own term.
+const C3B_CELL_REACH: f64 = 10.0;
+
+/// P8's rounding law's constant (`oracle/tests/polyhedral.rs`, `docs/slices/S5.md` §7.19): the
+/// closed form's potential is within `c ε (R/s)²` of itself.
+const ROUNDING_LAW: f64 = 2000.0;
+
+/// The rounding allowed one piece's closed form at an arm point pair, kg/m: each of its solids'
+/// two potentials within P8's law, `2 c ε (R/s)² ρ|v|/R'`, with `R` the nearer point's distance
+/// from the cell's centre plus the solid's half-size, `R'` less it (so `|V| ≤ ρ|v|/R'`), `s` the
+/// solid's size. (The first allowance, `100 ε (R/s)² (R/gap)` of the piece's difference, scaled
+/// with the difference, which a piece level with the point makes far smaller than its
+/// potentials: §7.20.)
+fn piece_rounding(solid: &PieceSolid, density: f64, distance: f64) -> f64 {
+    solid
+        .parts
+        .iter()
+        .map(|(_, part)| {
+            let size = part.size();
+            let (far, near) = (distance + 0.5 * size, (distance - 0.5 * size).max(1e-300));
+            2.0 * ROUNDING_LAW * f64::EPSILON * (far / size).powi(2) * density * part.volume().abs() / near
+        })
+        .sum()
+}
+
+/// A source that, at every arm point pair the reader asks for, reads the `Pieces` body, its
+/// ledger and the exact solid, and keeps the worst ratios C3b holds below 1.
+struct C3bCheck<'a, P: Fn(f64) -> Vec3 + Sync> {
+    body: &'a crate::voxel::kernel::TreeBody<P>,
+    exact: &'a ExactSource,
+    /// The cut cells' solids, in the tree's order, and their density (kg/m³).
+    solids: &'a [PieceSolid],
+    density: f64,
+    /// A cell's diagonal, metres.
+    diagonal: f64,
+    /// `[body, cells]` worst ratios, and each cell's worst error over its rounding allowance.
+    worst: std::sync::Mutex<([f64; 2], Vec<f64>)>,
+}
+
+impl<P: Fn(f64) -> Vec3 + Sync> crate::forward::Source for C3bCheck<'_, P> {
+    fn difference(&self, tower: Vec3, heights: [f64; 2], lower: f64, upper: f64, time: f64) -> [f64; 2] {
+        let read = self.body.difference(tower, heights, lower, upper, time);
+        let ledger = self
+            .body
+            .ledger()
+            .expect("a Pieces body has a ledger")
+            .difference(tower, heights, lower, upper, time);
+        let exact = self.exact.difference(tower, heights, lower, upper, time);
+        let mut worst = self.worst.lock().unwrap();
+        for i in 0..2 {
+            let allowed = ledger[i] + C3B_ROUNDING * exact[i].abs();
+            let excess = (read[i] - exact[i]).abs();
+            if excess > 0.0 {
+                worst.0[0] = worst.0[0].max(excess / allowed);
+            }
+            for k in 0..self.body.pieces() {
+                let (by_moments, piece, bound) =
+                    self.body.piece_terms(k, tower, heights[i], lower, upper, time);
+                let Some(bound) = bound else { continue };
+                let error = (by_moments - piece).abs();
+                let at = self.body.piece_distance(k, tower, heights[i], lower, upper, time);
+                // Within C3B_CELL_REACH cell diagonals only: beyond, the piece's closed form
+                // rounds above its term, and the body's check covers it (`docs/slices/S5.md` §7.20).
+                if at > C3B_CELL_REACH * self.diagonal {
+                    continue;
+                }
+                let rounding = piece_rounding(&self.solids[k], self.density, at);
+                if error > 0.0 {
+                    worst.0[1] = worst.0[1].max(error / (bound + rounding));
+                    worst.1[k] = worst.1[k].max(error / rounding);
+                }
+            }
+        }
+        read
+    }
+}
+
+/// C3b on one geometry (`docs/slices/S5.md` §7.20): the production `Pieces` read (exact pieces
+/// within `PIECE_WITHIN` cells of an arm, `Second` and the octupole beyond) against the closed
+/// form of the whole solid and against its ledger, at every arm point the read evaluates and in
+/// each phase; each far cell against its own term; and the control with one cell's term left out.
+pub(crate) fn c3b(geometry: C3Body) -> C3b {
+    use crate::voxel::kernel::TreeBody;
+    let C3 { reader, tower, exact, tree, solids } = c3(geometry);
+    let cut_cells = tree.cuts.len();
+    let body = TreeBody::with_pieces(&tree, solids.clone(), |_| Vec3::ZERO);
+    let check = C3bCheck {
+        body: &body,
+        exact: &exact,
+        solids: &solids,
+        density: tree.density,
+        diagonal: tree.side(0) * 3f64.sqrt(),
+        worst: std::sync::Mutex::new(([0.0; 2], vec![0.0; body.pieces()])),
+    };
+    let read = reader.read(tower, &check, 10.0);
+    let reference = reader.read(tower, &exact, 10.0);
+    let ledger = reader.read(tower, &body.ledger().unwrap(), 10.0);
+    let (lower, upper) = (ledger.lower.abs(), ledger.upper.abs());
+    let phase = ((read.lower - reference.lower).abs() / lower)
+        .max((read.upper - reference.upper).abs() / upper)
+        .max(((read.lower - read.upper) - (reference.lower - reference.upper)).abs() / (lower + upper));
+    let (worst, per_cell) = check.worst.into_inner().unwrap();
+    // The control: the cell whose error stands farthest above its rounding allowance, its term
+    // left out of the ledger. Its error over its allowance alone is what the check then sees.
+    let (k, left_out) =
+        per_cell.iter().copied().enumerate().fold((0, 0.0), |a, (k, r)| if r > a.1 { (k, r) } else { a });
+    // The body's ledger with that cell left out still covers the body's error or not: recorded.
+    let without = reader.read(tower, &body.ledger().unwrap().leaving_out(k), 10.0);
+    eprintln!(
+        "C3b {geometry:?}: {cut_cells} cut cells; body/ledger {:.3e}, phase/ledger {phase:.3e}, cell/term {:.3e}; \
+         control cell {k}: error/rounding {left_out:.3e}; ledger lower {lower:.3e} upper {upper:.3e} rad \
+         (without cell {k}: {:.3e}, {:.3e}); errors lower {:.3e} upper {:.3e} rad",
+        worst[0],
+        worst[1],
+        without.lower.abs(),
+        without.upper.abs(),
+        (read.lower - reference.lower).abs(),
+        (read.upper - reference.upper).abs(),
+    );
+    C3b {
+        body: worst[0],
+        phase,
+        cells: worst[1],
+        left_out,
+        relative: c3_channels(read, reference),
+        cut_cells,
+    }
+}
+
 cav_validate::case! {
-    test: validation_slow_pieces_are_the_body,
+    test: validation_pieces_are_the_body,
     name: "cut.pieces_are_the_body",
     subsystem: "voxel",
     slice: "S5",
     reference: ClosedForm,
-    against: "C3 as written: the polyhedral closed form of an icosahedron (edge 0.6 m), the tower's line half a cell from its surface, one AION-10 shot through Gauss order 6, against the same solid voxelised at 1/16 m and read as the engine's Pieces (exact pieces within PIECE_WITHIN = 3 cells of an arm point, Second and the octupole beyond), the worst of the lower, upper and gradiometer channels, relative. In the slow tier only so that a push's quick tier passes while it waits: it fails (1.3e-6 written, 3.4e-7 as built): the owner's ruling is asked (plan/PROGRESS.md, TASK-S5-26)",
+    against: "C3b (C3 restated by the owner's ruling of 28 Nov 2026, docs/slices/S5.md 7.20; as first written, within 1e-11 relative, it measured 1.34e-6): the engine's Pieces read (exact pieces within PIECE_WITHIN = 3 cells of an arm point, Second and the octupole beyond) of an icosahedron (edge 0.6 m, the tower's line half a cell from its surface) and of a torus mesh (the line up its hole), at 1/16 m, one AION-10 shot through Gauss order 6, against the polyhedral closed form of the whole solid: the largest of its error over its own ledger (TreeBody::ledger, the far cells' left-out orders, plus 1e-12 of the reference for its rounding) at every arm point the read evaluates, in each interferometer's phase and the gradiometer's, and of each far cell's error over its own term (plus its closed form's rounding) at every arm point. Control: the cell farthest above its rounding allowance, its term left out, fails",
     unit: Relative,
-    tolerance: 1e-11,
+    tolerance: 1.0,
     measure: cav_validate::Measured::Error({
-        let pieces = c3_read(C3Read::Pieces(PIECE_WITHIN, true));
-        // Control: without the exact pieces near the arm it is farther off.
-        let second = c3_read(C3Read::Second);
-        assert!(second > pieces, "Second {second:e}, Pieces {pieces:e}");
-        pieces
+        let mut worst = 0f64;
+        for geometry in [C3Body::Icosahedron, C3Body::Torus] {
+            let m = c3b(geometry);
+            assert!(m.left_out > 1.0, "{geometry:?}: a cell's term left out is not missed ({:e})", m.left_out);
+            println!("C3b {geometry:?}: {} cut cells, {:.2e} relative (recorded)", m.cut_cells, m.relative);
+            worst = worst.max(m.body).max(m.phase).max(m.cells);
+        }
+        worst
     }),
 }
 
