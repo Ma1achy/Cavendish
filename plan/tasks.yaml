@@ -856,6 +856,9 @@
 - id: TASK-S5-27
   milestone: S5
   title: "The walk goes below the chunk: each opened chunk's own voxel tree's blocks as nodes with summaries and bounds, so that the town's cut is not mostly leaves (docs/slices/S5.md 7.9)"
+- id: TASK-S5-28
+  milestone: S5
+  title: "B3's gradiometer as written: an empty planet's gradiometer against its layers as point masses at 1e-12 of itself (measured 1.35e-12, docs/slices/S5.md 7.12); left open for the owner's ruling"
 - id: TASK-S5-24
   milestone: S5
   title: The cube kernel's switch between closed form and series error-bounded, not 3 sides (docs/research/paper-boxes-and-precision.md)

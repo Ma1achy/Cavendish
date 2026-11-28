@@ -354,3 +354,17 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   hold τ, and a cheaper rings tier; about 80 whole-town leaf-exact reads, minutes in release. The
   errors are linear in the nodes, so one read per node per position, summed from the far end
   inwards, gives every ρ at once.
+- **The world's base in the window** (TASK-S5-13): `world.base` is a scene-file field; the
+  inspector shows and edits the pieces, not the base. A row for it (Patch, Plane, Sphere and their
+  numbers) in the world's inspector, with the refusals' words as its tooltips.
+- **A plane drawn with its ditches cut out** (TASK-S5-13): the plane is the infinite ground, 4 mm
+  under its surface; a ditch of air is drawn as its own top face over it. A ground shader that
+  skips the pixels over pieces of no density would show the ditch as a hole.
+- **A planet drawn filled and lit** (TASK-S5-13): it is a curved grid of lines only.
+- **A layered piece of a planet** (TASK-S5-13): a piece of a planet may not reach below its top
+  layer, since the overlap is taken at one density; one overlap voxelisation per layer it reaches
+  (each layer a ball less the next) would lift that, at a voxelisation per layer.
+- **Compensated flight sums for a gradiometer under a large uniform field** (TASK-S5-28): a planet's
+  interferometers read 5.5e7 rad and their difference 5.5e4 rad, so the gradiometer keeps only
+  about 1e-12 of itself; summing each interferometer's integrand in double-double, or integrating
+  the difference of the two directly, would give the gradiometer its own digits.
