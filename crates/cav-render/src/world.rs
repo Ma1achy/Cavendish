@@ -1049,6 +1049,25 @@ impl WorldGpu {
         pixels: [u32; 2],
         complete: bool,
     ) -> Option<WorldDraw> {
+        self.prepare_list(gpu, pipelines, frame, view, camera, pixels, complete, None)
+    }
+
+    #[allow(clippy::too_many_arguments)] // each is one thing the frame is made from
+    /// [`Self::prepare`] drawing `list` (a LOD view's draw list, `(level, key)`: a chunk's mesh at
+    /// level 0, a brick above; `cav_sim::world::lod_view`) in place of the camera's clipmap when
+    /// it is given. An entry neither resident nor waiting to be made is drawn by the nearest
+    /// coarser brick that is resident, and [`Self::notes`] counts them.
+    pub fn prepare_list(
+        &mut self,
+        gpu: &Gpu,
+        pipelines: &WorldPipelines,
+        frame: &WorldFrame,
+        view: &ViewSpec,
+        camera: &Camera,
+        pixels: [u32; 2],
+        complete: bool,
+        list: Option<&[(u8, ChunkKey)]>,
+    ) -> Option<WorldDraw> {
         let grid = frame.grid?;
         self.notes.clear();
         if self.world != frame.world {
@@ -1080,17 +1099,46 @@ impl WorldGpu {
             })
             .clone();
         let store = &store;
-        // What this camera's clipmap draws of what is resident.
+        // What this camera's clipmap draws of what is resident, or what the LOD view's list names
+        // (with, for an entry not resident and not on its way, its nearest resident ancestor).
         let levels = levels(&grid, lod_centre(view), frame.ring, frame.levels.max(1));
+        let wanted: Option<std::collections::HashSet<(u8, ChunkKey)>> = list.map(|list| {
+            let mut set: std::collections::HashSet<(u8, ChunkKey)> = list.iter().copied().collect();
+            let mut by_ancestor = 0usize;
+            for &(level, key) in list {
+                let resident = if level == 0 {
+                    frame.chunks.contains_key(&key)
+                } else {
+                    frame.bricks.contains_key(&(level, key))
+                };
+                if resident || frame.waiting.contains(&(level, key)) {
+                    continue;
+                }
+                let found = (level + 1..cav_sim::world::clipmap::MAX_LEVELS)
+                    .map(|to| (to, cav_sim::world::clipmap::ancestor(level, key, to)))
+                    .find(|item| frame.bricks.contains_key(item));
+                if let Some(item) = found {
+                    set.insert(item);
+                    by_ancestor += 1;
+                }
+            }
+            if by_ancestor > 0 {
+                self.notes.push(format!(
+                    "LOD view: {by_ancestor} nodes not resident are drawn by a coarser brick that is"
+                ));
+            }
+            set
+        });
+        let selected = |level: u8, key: ChunkKey| match &wanted {
+            Some(set) => set.contains(&(level, key)),
+            None => levels.get(usize::from(level)).is_some_and(|l| l.contains(key)),
+        };
         let near: Vec<(ChunkKey, &Arc<ChunkCells>)> =
-            frame.chunks.iter().filter(|(k, _)| levels[0].contains(**k)).map(|(k, c)| (*k, c)).collect();
+            frame.chunks.iter().filter(|(k, _)| selected(0, **k)).map(|(k, c)| (*k, c)).collect();
         // Nearest the camera first, so that a full brick store keeps the nearest.
         let eye_at = camera.origin + camera.eye;
-        let mut far: Vec<(&(u8, ChunkKey), &Arc<Brick>)> = frame
-            .bricks
-            .iter()
-            .filter(|((level, key), _)| levels.get(usize::from(*level)).is_some_and(|l| l.contains(*key)))
-            .collect();
+        let mut far: Vec<(&(u8, ChunkKey), &Arc<Brick>)> =
+            frame.bricks.iter().filter(|((level, key), _)| *level > 0 && selected(*level, *key)).collect();
         let distance = |k: &(u8, ChunkKey)| (grid.brick_box(k.0, k.1).centre() - eye_at).length();
         far.sort_by(|a, b| distance(a.0).total_cmp(&distance(b.0)).then(a.0.cmp(b.0)));
         // What the streaming no longer holds is kept, retired: drawn only in place of what is not
@@ -1337,8 +1385,7 @@ impl WorldGpu {
             self.meshes.contains_key(key)
                 || self.empty.get(key).is_some_and(|(made, _)| Arc::ptr_eq(made, cells))
         };
-        let selected =
-            |(level, key): (u8, ChunkKey)| levels.get(usize::from(level)).is_some_and(|l| l.contains(key));
+        let selected = |(level, key): (u8, ChunkKey)| selected(level, key);
         let unready: Vec<(u8, ChunkKey)> = frame
             .waiting
             .iter()

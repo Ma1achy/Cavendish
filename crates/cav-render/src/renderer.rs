@@ -280,9 +280,10 @@ impl Renderer {
         let mut world = self.world_gpu.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         // A validation error inside wgpu would otherwise be a panic; here it is an answer.
         gpu.checked(|| {
-            let draw = frame
-                .world
-                .and_then(|w| world.prepare(gpu, &self.world, w, frame.view, camera, target.size, complete));
+            let draw = frame.world.and_then(|w| {
+                let list = frame.lod.and_then(|l| l.list.as_deref());
+                world.prepare_list(gpu, &self.world, w, frame.view, camera, target.size, complete, list)
+            });
             self.draw_things(
                 gpu,
                 target,

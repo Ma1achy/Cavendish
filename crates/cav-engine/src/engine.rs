@@ -619,7 +619,6 @@ impl Engine {
         // What the panes draw of voxel bodies follows the scene, the playhead and the views. What
         // it could not draw is said once, for the scene that has it (a refusal of a tree).
         let voxel_notes = self.voxels.refresh(&self.spec, self.time, &self.views[..self.panes]);
-        self.world.refresh(&self.spec, &self.views[..self.panes], &self.contents[..self.panes]);
         self.refresh_lods();
         // Whatever changed the scene or moved the playhead changes what the towers read under it.
         if !matches!(command, Command::Select(_) | Command::View(_)) {
@@ -1348,13 +1347,15 @@ impl Engine {
                 // are kept.
                 let before = self.views[pane].clone();
                 let (colour, overlay, section) = (before.colour, before.overlay, before.section);
-                let (hidden, body_draw) = (before.hidden.clone(), before.body_draw);
+                let (hidden, body_draw, lod_view) =
+                    (before.hidden.clone(), before.body_draw, before.lod_view.clone());
                 self.views[pane] = ViewSpec {
                     colour,
                     overlay,
                     section,
                     hidden,
                     body_draw,
+                    lod_view,
                     ..home_view(&self.spec, pane, before.style)
                 };
                 // The one camera move that is an edit: undo puts the camera back where it was.
@@ -1373,6 +1374,7 @@ impl Engine {
             ViewCommand::Overlay { pane, overlay } => self.views[pane].overlay = overlay,
             ViewCommand::Section { pane, section } => self.views[pane].section = section,
             ViewCommand::Draw { pane, draw } => self.views[pane].body_draw = draw,
+            ViewCommand::LodView { pane, ref view } => self.views[pane].lod_view = view.clone(),
             ViewCommand::Hide { ref label, hidden } => {
                 for view in &mut self.views {
                     view.hidden.retain(|l| l != label);
@@ -1756,10 +1758,14 @@ impl Engine {
 
     /// Records what has arrived: a signal is announced, and either is a change of what is shown.
     /// Makes each pane's LOD frame again, from the current world read.
+    /// The world's streaming follows: it makes what the panes' draw lists name.
     fn refresh_lods(&mut self) {
         let read = self.forward.world_view();
         let world = self.spec.world.is_some();
         self.lods.refresh(&self.views[..self.panes], &self.contents[..self.panes], read, world);
+        let lists: Vec<Option<&[(u8, cav_core::voxel::world::ChunkKey)]>> =
+            (0..self.panes).map(|pane| self.lods.frame(pane).and_then(|f| f.list.as_deref())).collect();
+        self.world.refresh_with(&self.spec, &self.views[..self.panes], &self.contents[..self.panes], &lists);
     }
 
     fn took(&mut self, (signal, reading): (bool, bool)) -> bool {

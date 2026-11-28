@@ -170,6 +170,19 @@ impl Streaming {
     /// Works out what `spec`'s panes (`views`, those whose `contents` are the scene) and towers
     /// want, drops what is resident and no longer wanted, and queues the rest nearest first.
     pub fn refresh(&mut self, spec: &SceneSpec, views: &[ViewSpec], contents: &[PaneContent]) {
+        self.refresh_with(spec, views, contents, &[]);
+    }
+
+    /// [`Self::refresh`], with the draw list of each pane that draws the world by a tower's or
+    /// towers' cut (`lists[pane]`, `cav_sim::world::lod_view`): those chunks and bricks are wanted
+    /// too, in the order of their distance from the pane's camera in their own level's sides.
+    pub fn refresh_with(
+        &mut self,
+        spec: &SceneSpec,
+        views: &[ViewSpec],
+        contents: &[PaneContent],
+        lists: &[Option<&[(u8, ChunkKey)]>],
+    ) {
         let Some(world_spec) = &spec.world else {
             *self = Self { cache: self.cache.take(), caps: self.caps, ..Self::default() };
             return;
@@ -208,6 +221,15 @@ impl Streaming {
             asked.push(spec.array.instrument_of(n).tower_height.to_bits());
         }
         asked.push(world_spec.stream.tower_radius.to_bits());
+        for list in lists.iter().flatten() {
+            asked.push(list.len() as u64);
+            asked.extend(list.iter().map(|(l, k)| {
+                (u64::from(*l) << 56)
+                    ^ ((k.x as u64 & 0xf_ffff) << 36)
+                    ^ ((k.y as u64 & 0xf_ffff) << 16)
+                    ^ (k.z as u64 & 0xffff)
+            }));
+        }
         if asked == self.asked {
             return;
         }
@@ -229,6 +251,17 @@ impl Streaming {
                     if world.reaches(&boxed) {
                         want((level.level, key), (boxed.centre() - *centre).length() / side);
                     }
+                }
+            }
+        }
+        // The panes that draw a tower's cut: its entries (chunks at level 0, bricks above).
+        for (pane, list) in lists.iter().enumerate() {
+            let (Some(list), Some(view)) = (list, views.get(pane)) else { continue };
+            let centre = lod_centre(view);
+            for &(level, key) in *list {
+                let boxed = grid.brick_box(level, key);
+                if world.reaches(&boxed) {
+                    want((level, key), (boxed.centre() - centre).length() / grid.brick_side(level));
                 }
             }
         }

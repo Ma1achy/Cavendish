@@ -227,6 +227,12 @@ pub const COMMANDS: &[CommandDoc] = &[
         example: "draw fill",
     },
     CommandDoc {
+        name: "lod-view",
+        usage: "lod-view <camera | tower N | towers N M … | towers all> [@N]",
+        about: "which levels of detail the world is drawn at: as the camera's screen-space error wants (the default); as tower N's read takes it (its cut: no new walk); or at the finest level any of several towers reads each region (their common refinement). Drawn once the world is read",
+        example: "lod-view tower 1",
+    },
+    CommandDoc {
         name: "section",
         usage: "section <off | x|y|z <metres>> [@N]",
         about: "a section plane square to an axis at a place along it (the world's frame): seen square-on (top, bottom, north, south, east, west) the bodies are cut to a 2-D section, the material filled by the colour field and empty where hollow, the tree overlay cut to its quadtree; from any other side the half nearer the camera is cut away",
@@ -514,6 +520,18 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
                 format!("overlay {}{}", words.join(" "), at(pane))
             }
             ViewCommand::Draw { pane, draw } => format!("draw {}{}", draw.name(), at(pane)),
+            ViewCommand::LodView { pane, ref view } => {
+                use cav_sim::world::lod_view::LodView;
+                let words = match view {
+                    LodView::Camera => "camera".to_owned(),
+                    LodView::Tower(n) => format!("tower {}", n + 1),
+                    LodView::Towers(towers) => {
+                        let list: Vec<String> = towers.iter().map(|n| (n + 1).to_string()).collect();
+                        format!("towers {}", list.join(" "))
+                    }
+                };
+                format!("lod-view {words}{}", at(pane))
+            }
             ViewCommand::Hide { ref label, hidden } => {
                 format!("{} {}", if hidden { "hide" } else { "unhide" }, quoted(label))
             }
@@ -1051,6 +1069,35 @@ impl Engine {
                     return Err(format!("`{label}` is not a body of the scene; {}", usage(name)));
                 }
                 view(ViewCommand::Hide { label: (*label).to_owned(), hidden: name == "hide" })
+            }
+            ("lod-view", ["camera"]) => {
+                view(ViewCommand::LodView { pane, view: cav_sim::world::lod_view::LodView::Camera })
+            }
+            ("lod-view", ["tower", n]) => match n.parse::<usize>() {
+                Ok(n) if n >= 1 && n <= self.spec().array.towers.len() => {
+                    view(ViewCommand::LodView { pane, view: cav_sim::world::lod_view::LodView::Tower(n - 1) })
+                }
+                _ => Err(format!("`{n}` is not a tower of the scene; {}", usage(name))),
+            },
+            ("lod-view", ["towers", rest @ ..]) if !rest.is_empty() => {
+                use cav_sim::world::lod_view::{LodView, MAX_LOD_TOWERS};
+                let count = self.spec().array.towers.len();
+                let mut towers: Vec<usize> = if rest == ["all"] {
+                    (0..count).collect()
+                } else {
+                    rest.iter()
+                        .map(|w| match w.parse::<usize>() {
+                            Ok(n) if n >= 1 && n <= count => Ok(n - 1),
+                            _ => Err(format!("`{w}` is not a tower of the scene; {}", usage(name))),
+                        })
+                        .collect::<Result<_, _>>()?
+                };
+                towers.sort_unstable();
+                towers.dedup();
+                if towers.is_empty() || towers.len() > MAX_LOD_TOWERS {
+                    return Err(format!("from 1 to {MAX_LOD_TOWERS} towers; {}", usage(name)));
+                }
+                view(ViewCommand::LodView { pane, view: LodView::Towers(towers) })
             }
             ("draw", [word]) => match cav_sim::body_draw::BodyDraw::parse(word) {
                 Some(draw) => view(ViewCommand::Draw { pane, draw }),
