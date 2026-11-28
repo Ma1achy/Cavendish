@@ -1798,12 +1798,12 @@ impl Engine {
         // screenshot shows in the footer) says the same thing every time.
         self.log.push(
             Level::Debug,
-            Subsystem::Engine,
+            Subsystem::Forward,
             format!("the signal was whole {took:.0} ms after the edit"),
         );
         self.log.push(
             Level::Info,
-            Subsystem::Engine,
+            Subsystem::Forward,
             format!(
                 "signal: {} tower(s), {} shot(s) in all, quadrature {}{}",
                 signal.towers,
@@ -1813,7 +1813,7 @@ impl Engine {
             ),
         );
         for warning in &signal.warnings {
-            self.log.push(Level::Warn, Subsystem::Engine, warning.text.clone());
+            self.log.push(Level::Warn, Subsystem::Forward, warning.text.clone());
         }
     }
 

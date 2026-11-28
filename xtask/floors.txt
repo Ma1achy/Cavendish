@@ -35,7 +35,7 @@
 # O3, the octree's shape, its caps); 1 new slow test (cav-sim: slow_the_town_s_octree).
 # TASK-S5-12 (the walk): 5 new quick tests (cav-sim: W1, the cut grows as the tolerance falls, X4,
 # W4, Q_MAX); 4 new slow tests (cav-sim: W2, W3's two cases, W5).
-quick 742
-gpu 42
+# TASK-S5-25 (a flaky test's cause): 1 new quick test (cav-engine: the forward stage's news is tagged).
+quick 743
 slow 54
 oracle 58

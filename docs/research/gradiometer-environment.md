@@ -1,5 +1,25 @@
 # What else an AION-10 gradiometer sees: environment and instrument systematics, and what Cavendish should simulate
 
+> **Updated 27 Nov 2026 from Saulson 1984** (PRD 30, 732, whole paper, equations from the page images). No
+> row or recommendation moves: no number in the table came from Saulson. Two things change in §2's text: the
+> ZAIGA line said ZAIGA used "Saulson's coherence-cell model … and 20 m/s wind"; Saulson's cells are sized by
+> the *acoustic* wavelength and contain no wind, and ZAIGA's pressure spectrum is a tenth of Saulson's
+> low-frequency one (§2, ELGAR and ZAIGA). And the infrasound bullet now says where Saulson's model applies to
+> AION-10, which is nowhere directly: it is a short-wavelength (λ ≪ arm) model, and AION-10 is deep in the
+> long-wavelength regime (§2, Infrasound).
+
+> **Updated 28 Nov 2026 from five more primary sources** (owner's PDFs, not committed): Fiorucci et al. 2018
+> (whole, was abstract only), Junca et al. 2019 (arXiv v1 re-read), Boy, Gegout & Hinderer 2002, Boy & Chao
+> 2005, and Canuel et al. 2020 *Technologies for the ELGAR large scale atom interferometer array*
+> (arXiv:2007.04014), which **is** ELGAR's companion ref. [56] (the ELGAR CQG paper's reference list names it).
+> No row moves. What changes: (i) Fiorucci's sub-Hz case (TOBA, a 10 m gradient sensor) is the one that maps
+> onto AION-10: a building or cavity adds nothing below 1 Hz, and depth suppresses infrasound noise *less* at
+> low frequency (§2, Infrasound); (ii) ELGAR's blackbody acceleration requirement is derived from Haslinger's
+> potential, the same form as row 8a, which closes §8's question (§2, ELGAR); (iii) Boy 2002 gives a measured
+> admittance (−2.71 nm s⁻²/hPa, Strasbourg) and the Bouguer value −4.27, both consistent with §2.1, and both
+> Boy papers work at periods ≥ 12 h, far below AION-10's band (§2.1). Junca 2019 is a Newtonian-noise paper, not
+> the MIGA systematics paper the note wanted; that remains unidentified (§7 item 9).
+
 > **Changed after reading the primary sources (25 Nov 2026).** The owner fetched the sixteen papers this note
 > could not read, and ZAIGA was read from arXiv. Every [snippet], second-hand or from-memory claim below
 > has been checked against them and now cites page, section, table or equation. What moved:
@@ -43,7 +63,8 @@
 > printed prefactors; where I relied on one I re-read it in a second extraction or the page image and say
 > so). Papers marked **[read, primary]** were read from the published PDFs fetched by the owner on
 > 25 Nov 2026. **[derived]** means computed here. **[snippet]** (abstract or summary only) remains only on
-> Fiorucci et al. and Stray et al., which were not in the fetched set.
+> Fiorucci et al. and Stray et al., which were not in the fetched set (Fiorucci was read in full on 28 Nov;
+> only Stray remains a snippet).
 > **Numbers.** Every size that is not a quotation comes from
 > [`gradiometer-environment/sizes.py`](gradiometer-environment/sizes.py) (standard library only; output in
 > [`sizes.out.txt`](gradiometer-environment/sizes.out.txt)), which uses the engine's own arm rules
@@ -184,6 +205,17 @@ time-varying signals.
   through 2πG(ρ₀/p₀)δp·kH/(1+kH) (S14's E5a). Recomputed here: 6.1×10⁻³ rad (10 hPa, λ = 1000 km) and
   9.1×10⁻³ rad (5 hPa, λ = 300 km). Gravimeters see atmospheric effects below ~1 mHz, modelled as pressure
   plus loading ([Harms §5](https://arxiv.org/abs/1507.05850) **[read]**).
+  Boy, Gegout, Hinderer 2002 (GJI 149, 534–545; no DOI printed on the PDF) **[read, primary, 28 Nov]**
+  agree: the direct attraction comes from regional pressure (~1000 km, about 90 % of the loading signal) and
+  the elastic part from wavelengths > 4000 km (about 10 %) (§5.1, Fig. 7 discussion); the Bouguer plate term
+  is −4.27 nm s⁻² hPa⁻¹ (§3.1, thin-layer Green's function); the fitted local admittance at Strasbourg is −2.71 ± 0.03 nm s⁻² hPa⁻¹
+  (Fig. 7 caption), inside Merriam's range; and modelling the air within 0.25–0.5° (~50 km) with the local
+  barometer is optimal (§5.1, Fig. 6). A thin-layer model does *not* beat the local admittance; a
+  pseudo-stratified (hydrostatic, isothermal) atmosphere cuts residual scatter by ~20 % from 12 h to 2 yr (§5.1).
+  All of it assumes hydrostatic equilibrium, "verified for periods larger than 12 hr" (§2), so none of it reaches AION-10's band.
+  [Boy & Chao 2005](https://doi.org/10.1029/2002JB002333) (JGR 110, B08412) **[read, primary, 28 Nov]** show the
+  3-D atmosphere differs from the thin layer above GRACE's sensitivity only to degree 15–20 (wavelengths
+  > 2000–2500 km, ¶[1], ¶[29]): a satellite-geodesy correction, irrelevant to a 10 m baseline.
 - **Infrasound.** With δρ/ρ₀ = δp/(γp₀) and a wave fully reflected at the ground, the gravity perturbation is
   [Harms Eq. (143), (171)](https://arxiv.org/abs/1507.05850) **[read]**; for a detector at depth h,
   [Junca et al. 2019 Eq. (23)–(25)](https://arxiv.org/abs/1902.05337) **[read]** give
@@ -192,12 +224,45 @@ time-varying signals.
   MIGA measured the pressure spectrum on site with a microbarometer (1.75 mPa rms resolution, 0.02–4 Hz),
   compared it with Bowman's low/mid/high noise models, and found infrasound Newtonian noise rising as
   f^−2.2 below 0.1 Hz and detectable by the improved MIGA in windy weather
-  ([Junca §IV, Figs. 7–9](https://arxiv.org/abs/1902.05337)). Fiorucci et al. add the effect of the hosting
-  building and of depth ([abstract](https://arxiv.org/abs/1801.04564) **[snippet]**; the text says the field
-  outside and inside the building differ and models a 6 m hemispherical building **[read, in part]**).
+  ([Junca §IV, Figs. 7–9](https://arxiv.org/abs/1902.05337)). Re-read 28 Nov: the 1.75 mPa / 0.02–4 Hz sensor,
+  the 5 m/s "light wind" period and the f^−2.2 rise below 100 mHz (Fig. 9 text) are as stated; below 0.02 Hz the
+  spectrum is an extrapolation `S_p ∝ ω^−2.2` from the IMS-station model (§IV, Fig. 8), not a measurement, and
+  Junca warn that a single-station pressure record "potentially includes a strong contribution that is
+  non-coherent on the scale of a large detector, and thus cannot be modelled by plane waves" (§IV).
+  [Fiorucci et al. 2018](https://doi.org/10.1103/PhysRevD.97.062003) **[read, primary, 28 Nov]** add the building
+  and depth. Their model is Harms's plane wave reflected at the ground (Eq. (1)–(3)); the building is a 6 m
+  hemisphere with a 1 m vacuum chamber 1.5 m up, and its interior air matters only near c_s/D ≈ 30 Hz (§VII A,
+  Fig. 9). The case that maps onto AION-10 is their *TOBA* (a 10 m gradient sensor below 1 Hz, §IV): there the
+  noise is "correlated over the extent of the detector", so they take the gravity-gradient tensor of the plane
+  wave rather than summing test masses (§IV; spectra Eq. (10), (12)); the building is neglected "since the cavity or building
+  hosting the detector is much smaller than the length of infrasound waves" (§V); even 300 m down the cavity air
+  is "well below" the outside air's contribution (Fig. 13); and "the capability of attenuating the infrasound NN
+  by placing the detector underground decreases significantly at low frequencies" (§VII C, Fig. 12), with
+  infrasound noise "a few orders of magnitude above 10⁻²⁰ /√Hz at 0.1 Hz" (§VIII). So for AION-10 the hall is
+  irrelevant to infrasound and row 19's free-field plane-wave gradient is the right model. They also find sound
+  coherence lengths typically *shorter* than the wavelength (refs. [36, 37], §IV), and that wind on outdoor
+  microphones destroys inter-microphone coherence below 10 Hz (§VI, Fig. 8), which makes Wiener cancellation
+  "very challenging" (§VIII). On advected temperature they agree with Harms: the homogeneous model holds above
+  ~100 mHz, and below a few tens of mHz new models including the ground temperature are needed (§III B).
   Harms warns that sound transmitted into the ground may *raise* the gravity perturbation (transmissivity
   2α₁/α₂ can exceed 1 at soft sites) and that the model is unproven below a few Hz
   ([Harms §5.1, §5.6](https://arxiv.org/abs/1507.05850)).
+  The original estimate, [Saulson 1984](https://doi.org/10.1103/PhysRevD.30.732) **[read, primary]**, fills
+  the half-space with independent cells of size λ/2, λ = v_s/f the *acoustic* wavelength (p. 733), sums
+  cos²θ/r⁴ over them with an inner cut-off r_min = λ/4 (Eq. (5)), so the force is "dominated strongly by the
+  nearest few" cells, and takes |ΔM|² = ½(πv_s)⁶(ρ_a²/p_a²)|Δp|²/ω⁶, the ½ approximating 1/γ² (Eq. (8)–(9)).
+  It is a *short-wavelength* model (λ ≪ L, valid above ~10 Hz for km arms, p. 733); the long-wavelength case
+  (λ ≫ L, a gradient across the arms) is the Appendix, Eq. (25), where the noise grows linearly with baseline
+  in amplitude (p. 736). Saulson checks the independent-cell assumption against one correlated case, a
+  "half-plane wave" by the parallel-plate analogy, ẍ = 2√2 GλΔρ (Eq. (17)) against √(4/3) GλΔρ for
+  independent cells (Eq. (18)), and calls "the difference … small" (p. 734); times k, Eq. (17) is 2√2 × the
+  2πG δp/c² of row 19 [derived], within the crudeness of the slab picture, so row 19 stands. His pressure
+  spectrum (Posmentier; Balachandran) is 3×10³ nbar²/Hz (1 Hz/f)² for ½–3 Hz and 3×10² nbar²/Hz above
+  (p. 734), i.e. 3×10⁻⁵ Pa²/Hz (f/Hz)⁻² and 3×10⁻⁶ Pa²/Hz [derived, 1 nbar = 10⁻⁴ Pa]: nothing below ½ Hz.
+  For AION-10 the sound wavelength at 0.01–1 Hz is 0.34–34 km [derived] against a 10 m tower, so only the
+  long-wavelength form could apply, and Saulson's Appendix is written for the horizontal L-shaped
+  interferometer's (F₀ₓ−F₁ₓ)−(F₀ᵧ−F₂ᵧ), not a vertical gradiometer; the plane-wave forms above (Harms, Junca)
+  remain the ones to use.
 - **Advected temperature in the air.** Creighton's model of quasi-static temperature fields carried past a
   test mass by wind (δρ = −ρ₀δT/T₀, Kolmogorov structure function, Taylor's hypothesis) is reviewed with its
   spectrum in [Harms §5.2, Eq. (145)–(155), (173)](https://arxiv.org/abs/1507.05850) **[read]** and is
@@ -306,12 +371,33 @@ three-loop sequence is (17/3 + 4√2) n k δv_x Ω_y T_zz T⁴; for AION-10's nu
   among others, velocity noise against Earth's rotation (50 nm s⁻¹ Hz^−1/2), gravity-gradient compensation
   to 1 %, pointing jitter, a 25 km wavefront radius, magnetic field 0.1 nT Hz^−1/2 for a 1 nT/m gradient
   and **blackbody radiation 2 mK Hz^−1/2 for a 0.1 K/m temperature gradient, as an acceleration noise**
-  (lines 8–10); the derivations are in its companion paper [56], not read. It also argues that averaging
+  (lines 8–10); the derivations are in its companion paper [56], **read 28 Nov**: Canuel et al.,
+  *Technologies for the ELGAR large scale atom interferometer array*, [arXiv:2007.04014](https://arxiv.org/abs/2007.04014)
+  (63 pp.; §6 and §7.2 read). Its blackbody line is Haslinger's force: `a_x = ∂/∂x [2α_at σ T⁴(x,t)/(m_at c ε₀)]`
+  (§7.2.2, Eq. (32), p. 47, citing Haslinger), linearised for `T = T₀ + δT(t) + τx` to
+  `S_a = (24 α_at σ T₀² τ/(m_at c ε₀))² S_δT` (Eq. (33)), giving ≤ 2×10⁻³ K/√Hz at 1.7 Hz for Rb, 300 K and
+  0.1 K/m. That is U = −½α⟨E²⟩ with ⟨E²⟩ = 4σT⁴/(cε₀) [derived check], the same mechanism and form as row 8a, so
+  row 8a carries to Sr by α_g(Sr); it is ELGAR's *horizontal* gradient, where row 8a is vertical. Its
+  Newtonian-noise section (§6) models seismic and infrasound NN after Junca (its ref. [38]) with Eq. (8)–(9)
+  (infrasound: isotropic adiabatic plane waves with the depth factor e^{−2hk sinθ}, Bowman's mid model), and
+  finds both "well above" 10⁻²¹/√Hz in 0.1–1 Hz for one 16.3 km gradiometer (Fig. 13); the 1/√N averaging
+  rests on the NN correlation being positive for d < λ/2, negative for λ/2 < d < λ and ~0 beyond, with
+  natural seismic anti-correlation limiting the gain factor to K ≳ 0.5 and inhomogeneous ground possibly giving
+  K > 1 (§6.2, p. 39); a single-sensor Wiener filter with correlation 0.5 removes only 13 % (§6.4). It also
+  names advected temperature (citing Fiorucci) as a further NN source (§6.1). It also argues that averaging
   80 gradiometers per arm reduces gravity-gradient noise by ≥ 1/√N (§1.3.2). ZAIGA ([Zhan et al. 2020,
   §2.2.2](https://doi.org/10.1142/S0218271819400054), read from [arXiv:1903.09288](https://arxiv.org/abs/1903.09288))
   is a Newtonian-noise estimate rather than a systematics budget: Saulson's coherence-cell model with
   an assumed pressure spectrum p̃² ≈ 3×10⁻⁶/(f/Hz)² Pa²/Hz and 20 m/s wind, concluding that Newtonian noise
-  "overtakes the shot noise below 1 Hz"; no site measurement yet (Eq. (4)–(9)).
+  "overtakes the shot noise below 1 Hz"; no site measurement yet (Eq. (4)–(9)). Checked against
+  [Saulson 1984](https://doi.org/10.1103/PhysRevD.30.732) on 27 Nov (corrected): ZAIGA's Eq. (8) is Saulson's
+  Eq. (9) with the sound speed v_s replaced by a wind speed v_w ≈ 20 m/s, while ZAIGA still defines its
+  coherence length as the acoustic wavelength λ_c = v_s/f (ZAIGA p. 5); Saulson's model has no wind in it.
+  |ΔM|² ∝ v⁶, so 20 m/s for ≈ 340 m/s lowers it by ≈ 2×10⁷ [derived]; how far that carries into ZAIGA's Fig. 7
+  depends on which speed its λ_c used, which the text does not say. And the spectrum ZAIGA calls "the same
+  estimation as [38]" is Saulson's *above-3 Hz* level, 3×10⁻⁶ Pa²/Hz, given the f⁻² slope of his ½–3 Hz branch,
+  which is 3×10⁻⁵ Pa²/Hz (f/Hz)⁻² (Saulson p. 734, converted [derived]): a tenth of Saulson's, and extrapolated
+  below his ½ Hz limit. Treat ZAIGA's infrasound curve as unsourced in level.
 
 ---
 
@@ -549,7 +635,8 @@ sees what each costs.
    coefficient may differ again. Order of magnitude only.
 4. **Rain on a roof**: the Beecroft roof's size and height above the tower are not in hand; the 2–3 rad is
    illustrative. (Creutzfeldt's near-field shares are now read in both papers.)
-5. **Admittance**: now read in Merriam and Van Camp. Boy et al. (3-D atmospheric models) not read.
+5. **Admittance**: now read in Merriam and Van Camp, and (28 Nov) Boy, Gegout & Hinderer 2002 and Boy & Chao
+   2005 (§2.1): both are for periods ≥ 12 h and change nothing here.
 6. **Carlton Fig. 3 magnitudes** are read off a plot (person on stairs: −6 to +3 rad on the axis; lift
    ~ ±0.75–1.5 rad; foyer ~0.2; car ~ −0.05 to −0.1). Eq. (13) at far-field positions gives 0.09 and −0.03 rad,
    the same order; the near-field values need the integral.
@@ -559,10 +646,14 @@ sees what each costs.
    Haslinger measured Cs, not Sr, and the force on Sr atoms in a gradiometer has not been measured; the
    order of magnitude is safe
    because the ground-state shift is a large fraction of the measured clock shift.
-8. **Thorne & Winstein** read in abstract and introduction only; Fiorucci et al. read in part (its abstract
-   is a snippet; so is the PMC summary of Stray et al.).
-9. **MIGA's systematics paper and ELGAR's companion paper** (ref. [56] of the ELGAR paper, where its
-   Table 2 is derived): not read.
+8. **Thorne & Winstein** read in abstract and introduction only; the PMC summary of Stray et al. is a
+   snippet. Fiorucci et al. read in full on 28 Nov (§2.1).
+9. **ELGAR's companion paper** (ref. [56], arXiv:2007.04014) read on 28 Nov, §6 and §7.2 (§2.4); its §7.1,
+   §7.3–7.5 (rotations, wavefronts, scattered light, interactions) were not read. **MIGA's systematics paper**:
+   still not identified or read. Junca et al. 2019 (fetched for it) is MIGA's Newtonian-noise paper, not a
+   systematics budget; the MIGA instrument paper it cites is Canuel et al., Sci. Rep. 8, 14064 (2018),
+   doi:10.1038/s41598-018-32165-z (Junca ref. [19]; title not printed there), the likeliest candidate, unread.
+   Junca's journal reference (PRD 99, 104026) is not printed on the arXiv v1 read.
 10. **Wind-advected temperature (row 9a)**: an extrapolation of Creighton's order-of-magnitude Eq. (8)
     below its validity (Kolmogorov scaling only for l ≲ 50 × height, i.e. f ≳ 0.2 Hz (v/10 m s⁻¹); Harms
     §5.6 says the model "likely does not hold at low frequencies"), with c_T² at its daytime peak, a
@@ -584,8 +675,8 @@ sees what each costs.
   (the same temperature drives both, with opposite structure: air reads the room, blackbody reads the tube)?
 - Does the building damp advected-temperature noise inside (the stairwell air is still, but the outdoor
   field is within 10–20 m), and does the noise fall with height as c_T² ∝ z^(−4/3) suggests?
-- What does ELGAR's companion paper derive for the blackbody acceleration noise, and does it match row 8a's
-  form when moved to Sr?
+- ~~What does ELGAR's companion paper derive for the blackbody acceleration noise, and does it match row 8a's
+  form when moved to Sr?~~ Answered 28 Nov: Haslinger's force, same form (§2.4, ELGAR and ZAIGA).
 
 ---
 
@@ -599,7 +690,7 @@ sees what each costs.
 - Carlton & McCabe, *From RATs to riches: mitigating anthropogenic and synanthropic noise in atom interferometer searches for ultra-light dark matter*, [arXiv:2308.10731](https://arxiv.org/abs/2308.10731).
 - Junca et al., *Characterizing Earth gravity field fluctuations with the MIGA antenna*, PRD 99, 104026 (2019), [arXiv:1902.05337](https://arxiv.org/abs/1902.05337) — §IV, V.
 - Harms, *Terrestrial gravity fluctuations*, Living Rev. Relativ. 18, 3 (2015), [arXiv:1507.05850](https://arxiv.org/abs/1507.05850) — §5, §6.
-- Fiorucci, Harms, Barsuglia, Fiori, Paoletti, PRD 97, 062003 (2018), [arXiv:1801.04564](https://arxiv.org/abs/1801.04564) — in part.
+- Fiorucci, Harms, Barsuglia, Fiori, Paoletti, PRD 97, 062003 (2018), [arXiv:1801.04564](https://arxiv.org/abs/1801.04564) — in part; the published version read in full on 28 Nov (below).
 - Thorne & Winstein, PRD 60, 082001 (1999), [arXiv:gr-qc/9810016](https://arxiv.org/abs/gr-qc/9810016) — abstract and §I.
 - Stray et al., Nature 602, 590 (2022), [doi:10.1038/s41586-021-04315-3](https://doi.org/10.1038/s41586-021-04315-3) — via PMC, summary of full text.
 - Read from the published PDFs on 25 Nov 2026 (fetched by the owner; not committed):
@@ -622,13 +713,22 @@ sees what each costs.
   - Zhan et al. (ZAIGA), *ZAIGA: Zhaoshan long-baseline atom interferometer gravitation antenna*, IJMPD 29, 1940005 (2020), [doi:10.1142/S0218271819400054](https://doi.org/10.1142/S0218271819400054), read as [arXiv:1903.09288](https://arxiv.org/abs/1903.09288) — §2.2.
   - Not ZAIGA: the file fetched from the from-memory DOI 10.1142/S0218271820500479 is Quiros, De Arcia, García-Salcedo, Gonzalez, Horta-Rangel, *An issue with the classification of the scalar-tensor theories of gravity*, IJMPD 29, 2050047 (2020), unrelated to this note.
   - Harms §5.6 re-read from [arXiv:1507.05850](https://arxiv.org/abs/1507.05850) for the advected-temperature validity warning.
+- Read from the published PDF on 27 Nov 2026 (fetched by the owner; not committed):
+  - Saulson, *Terrestrial gravitational noise on a gravitational wave antenna*, PRD 30, 732 (1984), [doi:10.1103/PhysRevD.30.732](https://doi.org/10.1103/PhysRevD.30.732) — whole paper (pp. 732–736), Eq. (1)–(25) from the page images.
+- Read from the published PDFs on 28 Nov 2026 (fetched by the owner; not committed):
+  - Fiorucci, Harms, Barsuglia, Fiori, Paoletti, *Impact of infrasound atmospheric noise on gravity detectors used for astrophysical and geophysical applications*, PRD 97, 062003 (2018), [doi:10.1103/PhysRevD.97.062003](https://doi.org/10.1103/PhysRevD.97.062003) — whole paper (equations only as far as the text extraction allows).
+  - Boy, Gegout, Hinderer, *Reduction of surface gravity data from global atmospheric pressure loading*, GJI 149, 534–545 (2002) — §1–2, §3.1, §5.1, §6; no DOI printed.
+  - Boy & Chao, *Precise evaluation of atmospheric loading effects on Earth's time-variable gravity field*, JGR 110, B08412 (2005), [doi:10.1029/2002JB002333](https://doi.org/10.1029/2002JB002333) — whole paper.
+  - Canuel et al., *Technologies for the ELGAR large scale atom interferometer array*, [arXiv:2007.04014](https://arxiv.org/abs/2007.04014) (2020) — §6, §7.2 (p. 47 from the page image); ref. [56] of Canuel 2020 CQG.
+  - Junca et al., arXiv:1902.05337v1 — re-read §IV–V and the conclusion.
 - This repository: `crates/cav-core/src/forward.rs`; `plan/REBUILD.md` §9, §9.3; `plan/PROGRESS.md` (For George, rulings);
   `docs/research/s13-heat.md` §5–6, `s14-wider-world.md`, `s15-instruments-anywhere.md`.
 
 ## Papers still unread
 
 Every paper in the earlier "could not read" list has now been read (above). Still unread, and worth
-fetching if a slice leans on them: ELGAR's companion paper (ref. [56] of Canuel 2020, where its Table 2
-is derived); MIGA's systematics paper; Boy et al. on 3-D atmospheric corrections; Saulson 1984 (the infrasound
-model ZAIGA uses). Safronova et al. 2013 and Porsev & Derevianko 2006 (Sr polarizabilities, rows 8 and 8a) were
+fetching if a slice leans on them: MIGA's systematics paper (not identified; candidate Canuel et al., Sci.
+Rep. 8, 14064 (2018), doi:10.1038/s41598-018-32165-z, §7 item 9); the rest of ELGAR's companion paper
+(§7.1, §7.3–7.5). Saulson 1984 was read on 27 Nov; the ELGAR companion (§6, §7.2), Fiorucci et al. and both
+Boy papers on 28 Nov (above). Safronova et al. 2013 and Porsev & Derevianko 2006 (Sr polarizabilities, rows 8 and 8a) were
 read in the third pass.

@@ -8,6 +8,12 @@ and S14 (earthquakes, TASK-S14-04/05). Written 25 Nov 2026.
 bibliographic record only (in this version also: not fetched); **[M]** measured here (scripts in `elastic-solids/`, outputs beside them);
 **[D]** derived here; **[U]** from memory, not checked: treat as a claim to verify.
 
+*Updated 28 Nov 2026 from three more primary sources: Richards 1979 (closed-form Lamb's problem for any
+Poisson's ratio; `lamb_problem` now rests on it, and Pekeris 1955 is restricted to ν = 0.25, §5.1, §7),
+Komatitsch & Vilotte 1998 (the spectral-element method: 5 points per wavelength at degree 8, Lamb and
+Garvin checks within 1 %, §5.1) and Bonet & Wood 2008 (St Venant–Kirchhoff and compressible
+Neo-Hookean forms, Newton–Raphson linearisation, volumetric locking, §3). No recommendation changes.*
+
 ---
 
 ## Changed after reading the primary sources (25 Nov 2026)
@@ -490,11 +496,32 @@ at shot times, or the 10³ suppression is lost; the existing read already integr
   rigid motion from S7, elastic modes in the body's own frame, which is corotation at body level and exactly
   how per-object volumes already work (§5.2 of the plan). Within a body, strains of 10⁻⁴ give an error of
   10⁻⁴ relative in `u`: below the read's tolerance.
-- **Hyperelastic models** (St Venant–Kirchhoff, Neo-Hookean; Bonet & Wood 2008 [A, the fetched file is the front matter only]; Smith, de Goes & Kim
+- **Hyperelastic models** (Bonet & Wood 2008, 2nd ed. [R, read on the rendered pages]; Smith, de Goes & Kim
   2018 for a robust Neo-Hookean [R, Fig. 1, abstract]: a 45,809-element hexahedral lattice at ν = 0.488 took
   on average 13.7 Newton and 5,860 CG iterations, 25.6 s per step, which is the cost of this class of model
   next to a fixed-matrix linear solve, and their comparison shows corotational elasticity failing to preserve
-  volume at that ν) are for rubber, flesh and soft bodies at large strain.
+  volume at that ν) are for rubber, flesh and soft bodies at large strain. The forms, from Bonet & Wood:
+  - *St Venant–Kirchhoff* (Example 6.1, p. 158): `Ψ(E) = ½λ(tr E)² + µ E:E`, `S = λ(tr E)I + 2µE`, i.e.
+    linear elasticity with the Green strain `E = ½(C − I)` in place of the small strain; the book's verdict:
+    "of little practical use beyond the small strain regime".
+  - *Compressible Neo-Hookean* (§6.4.3, Eqs. 6.27–6.29, pp. 162–163): `Ψ = (µ/2)(I_C − 3) − µ ln J +
+    (λ/2)(ln J)²`, `S = µ(I − C⁻¹) + λ(ln J)C⁻¹`, `σ = (µ/J)(b − I) + (λ/J)(ln J)I`; its spatial elasticity
+    tensor has effective moduli `λ' = λ/J`, `µ' = (µ − λ ln J)/J` (Eqs. 6.40–6.41, p. 164), so at J → 1 the
+    linear Lamé tensor is recovered and the same λ, µ serve both models.
+  - *Linearisation*: the Green strain linearised at the reference state is the small strain, `DE₀[u] = ε`
+    (Eq. 4.73, p. 117); this is the term §3's first bullet drops.
+  - *Newton–Raphson* (§8.2 Eq. 8.2, p. 216; §9.6 Eqs. 9.61–9.63 and Box 9.1, pp. 258–259): solve
+    `K u = −R(x_k)`, `x_{k+1} = x_k + u`, in load increments, iterating while ‖R‖/‖F‖ exceeds a tolerance;
+    the tangent `K = ∂R/∂x` (Eq. 9.64) is the constitutive part plus the initial-stress (geometric) part
+    (Eq. 9.60). Their truss example reaches machine precision in six iterations, the quadratic rate of
+    full Newton against the linear rate of a fixed initial stiffness (§1.4.2, p. 21). For a linear
+    material at small strain the tangent is the fixed `K` of §1, which is why the linear core needs one
+    factorisation or hierarchy and no iteration. The initial-stress term is what a heavily pre-stressed
+    slender member (a column near buckling) would add; the linear core omits it.
+  - *Volumetric locking* (§8.6.4, p. 229): "catastrophic artificial stiffening"; the remedies are
+    separate p/J interpolation or under-integrating the volumetric term, and the simplest, constant J and
+    p per element, is the mean-dilatation method (§8.6.5, p. 231; §9.5). That is the family of §1.1's
+    selective integration; the book adds nothing about incompatible modes.
   None of these move enough mass at µrad to need more than linear elasticity in a small-strain frame;
   a soft body that squashes visibly is an animation, and its mass is relocated exactly whatever model moved
   it.
@@ -546,7 +573,7 @@ simulation", while "dynamical simulations are required to represent seismic fiel
 surface topographies" [R, §3.5, pp. 46–48; the kinematic path fails "whenever it is impossible to provide
 analytical expressions for the seismic field"]. Dynamic simulations used COMSOL (Beker et al. 2012, §4 [R]: a
 finite-element sum `a = G Σ r_i/|r_i|³ δρ_i m_i` over nodes, their Eq. 3) and specfem3d, the spectral-element
-code (Komatitsch & Vilotte 1998 [A]; Komatitsch & Tromp 1999 [R]), with Eq. 45 added for gravity (Harms et al.
+code (Komatitsch & Vilotte 1998 [R, below]; Komatitsch & Tromp 1999 [R]), with Eq. 45 added for gravity (Harms et al.
 2015 [R], full-space prompt solution checked against SPECFEM3D). Staggered-grid velocity–stress finite
 differences (Virieux 1986 [R]) and the perfectly matched layer (Bérenger 1994 [R, abstract]: introduced for
 *electromagnetic* FDTD, the elastic versions descend from it; convolutional form: Komatitsch & Martin 2007 [R,
@@ -555,6 +582,21 @@ abstract]: the spectral-element code in *single precision* on GeForce 8800/GTX 2
 [R, summary]: finite differences with convolutional PML, 20–60× a serial CPU).
 
 What the solver papers say about cost, to confirm that deferring a wave solver is right [R]:
+- Komatitsch & Vilotte 1998 (BSSA 88(2), 368–392; read in full from the extracted text): Legendre
+  polynomials with Gauss–Lobatto–Legendre quadrature, so the mass matrix is "diagonal by construction" and
+  the scheme fully explicit (abstract, App. A); energy–momentum-conserving predictor/multi-corrector time
+  stepping, total energy constant over 10⁵ steps in a closed box (Fig. 4). **"Approximately 5 points per
+  minimum wavelength" is "very accurate" at polynomial degree N = 8; "below this value, the solution quickly
+  develops significant numerical oscillations"** (Numerical Implementation, with f_max = 2.5 f₀ for a Ricker
+  source); critical Courant number about 0.60 for N = 8, found empirically (Lamb's problem section). They
+  contrast this with "at least 15 points" per wavelength for second-order centred finite differences
+  (Introduction, citing Kelly et al. and Alford et al.). Validation: 2-D Lamb (line force on a 10°-tilted
+  free surface, v_P 3200, v_S 1847.5 m/s, ρ 2200 kg/m³, 50 × 30 elements, N = 8, Ricker 14.5 Hz,
+  Δt = 0.25 ms, analytic Cagniard–de Hoop solution convolved with the source) and 2-D Garvin (buried
+  explosive line source), each with **maximum relative error below 1 %** (Figs. 2–3). Absorbing boundaries
+  are variational paraxial conditions with "small spurious reflections" (Fig. 3); the largest 3-D run
+  (26 × 26 × 14 elements, N = 8, 4.9 × 10⁶ points, 64-bit) took 1.5 h on 128 CM-5 nodes (conclusions).
+  Their Lamb and Garvin tests are plane strain; no 3-D point-source comparison is in the paper.
 - Komatitsch & Tromp 1999 §6.1: the spectral-element method wants polynomial degree 5–10 and "roughly 5 points
   per minimum wavelength", on hexahedra *deformed* to follow the free surface and interfaces ("mesh design is a
   critical and difficult step", §6.2). It is a different element (Gauss–Lobatto–Legendre, diagonal mass
@@ -574,13 +616,15 @@ What the solver papers say about cost, to confirm that deferring a wave solver i
   and a local source (a pump, a lift) needs its own radiated field, not a Rayleigh train.
 
 Cheapness at *our* scale is a point for a later dynamic solver rather than against it: 10 Hz in 250 m/s ground
-has λ = 25 m, so five points per wavelength is a 5 m node spacing and a 100 m cube is 8,000 nodes [D]. The
+has λ = 25 m, so five points per wavelength (spectral elements at N = 8, Komatitsch & Vilotte) is a 5 m node
+spacing and a 100 m cube is 8,000 nodes; a second-order scheme at their "at least 15" points is 1.7 m and
+about 2 × 10⁵ nodes [D]. The
 reasons to defer remain the ones that follow: the closed forms exist for the flat homogeneous ground the
 instrument first needs, a kinematic voxel sum can be validated against them to 0.06–0.16 % (§5.2), and a
 dynamic solver adds a second element, absorbing boundaries and a source model, none of which has a known-answer
-test at the µrad level except Lamb's problem (Lamb 1904 and Pekeris 1955, below and §7).
+test at the µrad level except Lamb's problem (Lamb 1904, Pekeris 1955 and Richards 1979, below and §7).
 
-**Lamb's problem, as the reference for a dynamic solver [R, Lamb 1904 pp. 1–3, 40–43; Pekeris 1955].** Lamb
+**Lamb's problem, as the reference for a dynamic solver [R, Lamb 1904 pp. 1–3, 40–43; Pekeris 1955; Richards 1979].** Lamb
 treats a half-space with a plane free surface, gravity ignored, forced at a point, chiefly by an *impulse
 applied vertically to the surface* (his Eq. 165 is the type of impulse), after first doing the two-dimensional
 problem of a pressure along a *line* of the surface, whose analysis "can be utilized afterwards for the
@@ -599,10 +643,37 @@ Thorne at ν = 0.33. The minor tremor depends on the time-integral of the impuls
 itself (p. 41). Lamb gives the answer as integrals (Fig. 10 sketches the horizontal and vertical displacement
 histories); it is Pekeris 1955 who reduced it to closed form for a Heaviside surface load (`w(t) = (1/r)f(τ)`,
 his Eqs. 45–48, 66, singular at the Rayleigh arrival) and notes that Lamb's "method is, however, very
-intricate" (§1). So: the *qualitative* test (a P-arrival precursor, a transverse-arrival feature, then a
-solitary Rayleigh pulse of constant shape and r^{−1/2} amplitude, vertical larger than horizontal, speed c_R)
-can be taken from Lamb; the *quantitative* test from Pekeris. I did not extract Lamb's own formulas, and a
-test must not rely on the extracted text of the scan.
+intricate" (§1). **Correction (28 Nov 2026, from Richards 1979, p. 951):** Pekeris's solution is restricted to
+α²/β² = 3 (ν = 0.25), and only the vertical displacement under a vertical force is closed-form; his horizontal
+displacement is a sum of elliptic integrals. Cavendish's default ground (ν = 0.33) and the alluvium of §10 Q3
+(ν ≈ 0.46) are outside it.
+
+**Richards 1979 (BSSA 69(4), 947–956; read in full, equations from the rendered pp. 949–953)** gives the
+general case, source and receiver both on the free surface, any Poisson's ratio. For a unit *step* force at
+the origin (`x₃` positive into the half-space, µ the rigidity, `r` the distance, φ its azimuth, `A = α²/β²`,
+`T = αt/r` so the P wave arrives at T = 1), the surface displacements are (Eq. 3):
+`G₁₁ = [I₁ cos²φ − I₂ sin²φ]/(πµr)`, `G₁₂ = G₂₁ = [I₁ + I₂] cos φ sin φ/(πµr)`,
+`G₂₂ = [I₁ sin²φ − I₂ cos²φ]/(πµr)`, `G₃₃ = I₃(T)/(πµr)`; the cross terms (vertical from horizontal force and
+the reverse) are `±I₄ cos φ/(πµr)`, `±I₄ sin φ/(πµr)` (Eq. 5). I₁, I₂, I₃ are closed forms (Eqs. 9–14): zero
+up to the P arrival; between P and S, three real square roots if ν < 0.263 (A < 3.11, Eq. 10) or one complex
+root `CROOT` (Eq. 11) and one real root if ν > 0.263 (Eq. 12); between S and the Rayleigh arrival
+`I₃ = 2c₄ − 2c₇(R₃ − T²)^{−1/2}` (Eq. 13); after it `I₁ = 0.5`, `I₂ = −2c₄`, `I₃ = 2c₄` (Eq. 14), the static
+values. The constants follow from the roots R₁, R₂, R₃ of the Rayleigh cubic
+`(A − 2P²)⁴ − 16X²Y²P⁴ = 16(1 − A)(P² − R₁)(P² − R₂)(P² − R₃)` (Fig. 1 legend; Eq. 15 for a, b, c, then c₁…c₇,
+C₁…C₃ on p. 953, with `c₄ = A/(8A − 8)`); the Rayleigh arrival is at `T = R₃^{1/2} = α/c_R`, where I₁ and I₃
+are singular. I₄ has no closed form and is given as a one-dimensional integral with a well-behaved integrand
+(Eq. 16), with the Rayleigh singularity of strength ∝ `c₈ = ½cA(A − 2R₃)³/R₃` (Eq. 17); Richards needed up to
+128 Romberg intervals for 1 % (p. 954). The impulse response is the time derivative of the step response
+(p. 948). **A check derived here [D]:** the static values reproduce the classical point-load results:
+`G₃₃ → 2c₄/(πµr) = (1 − ν)/(2πµr)` (Boussinesq) and, along the force (φ = 0), `G₁₁ → 1/(2πµr)`, across it
+`G₂₂ → (1 − ν)/(2πµr)` (Cerruti), using `A/(A − 1) = (λ + 2µ)/(λ + µ) = 2(1 − ν)`.
+
+So: the *qualitative* test (a P-arrival precursor, a transverse-arrival feature, then a solitary Rayleigh pulse
+of constant shape and r^{−1/2} amplitude, vertical larger than horizontal, speed c_R) can be taken from Lamb;
+the *quantitative* test from **Richards** (any ν; Pekeris only at ν = 0.25), convolved with a smooth source
+time function as Komatitsch & Vilotte did for their 2-D Lamb case, because the step response is singular at
+the Rayleigh arrival. I did not extract Lamb's own formulas, and a test must not rely on the extracted text of
+the scan.
 
 For Cavendish this means: **the voxel ground near the towers is moved by a superposition of analytic plane
 waves** (Rayleigh, P, SV; S12's microseism spectrum and S14's teleseismic trains), read by the displaced-body
@@ -830,7 +901,7 @@ kinematic Rayleigh path takes over.
 | `surface_jump` | vertical acceleration across the surface | jump `4πGρ ξ_z` between Eqs. 96 and 97, 12 figures (measured) | omit the surface mass sheet |
 | `rayleigh_shaft_cavity` | the same observer inside a vertical shaft cut out of the voxel ground | the uncut result plus the cavity correction O((ka)²) (Harms §3.3); a *new* result, no published number | — |
 | `hughes_thorne_beta` | the Rayleigh read's reduced transfer function, ν = 0.33 | β′ = 0.86, subsurface term alone 0.17, anisotropy ratio 2.2 (Hughes & Thorne Eqs. 2.6–2.7); measured 0.853, 0.178, 2.21 | drop the surface source: 0.17 instead of 0.86 |
-| `lamb_problem` | surface response to a point load | Pekeris 1955 [R]: closed forms for the vertical and horizontal surface displacement under a Heaviside point load, `w(t) = (1/r) f(τ)`, `τ = c_S t/r` (his Eqs. 45–48 and 66), singular at the Rayleigh arrival; Lamb 1904 [R, pp. 1–3, 40–43]: qualitative reference (minor tremor from the P arrival, transverse-arrival feature, solitary Rayleigh main shock of constant shape and r^(−1/2) amplitude, vertical larger than horizontal); Richards 1979 [A, not fetched] | only if a dynamic solver is built |
+| `lamb_problem` | surface response to a point load, source and receiver on the free surface | **Richards 1979 [R]**: closed forms I₁, I₂, I₃ for any ν (Eqs. 3, 9–15; vertical displacement from a vertical step force is `G₃₃ = I₃/(πµr)`), I₄ by a one-dimensional quadrature (Eq. 16); convolve with a smooth source pulse (the step response is singular at the Rayleigh arrival); the late-time values must equal Boussinesq/Cerruti (§5.1 [D]). Pekeris 1955 [R] is the same vertical result at ν = 0.25 only (horizontal by elliptic integrals). Bar from Komatitsch & Vilotte 1998 [R]: maximum relative error below 1 % at 5 points per wavelength with N = 8 (2-D, Figs. 2–3). Lamb 1904 [R, pp. 1–3, 40–43]: qualitative reference (minor tremor from the P arrival, transverse-arrival feature, solitary Rayleigh main shock of constant shape and r^(−1/2) amplitude, vertical larger than horizontal) | only if a dynamic solver is built; then the wrong ν (A) in the reference moves the Rayleigh arrival `T = R₃^{1/2}` and must fail |
 | S13's expansion rows | free bar, clamped bar, bimetal, gradient beam, sphere | S13 note §3.6 | as there |
 | `macneal_harder` (optional) | straight (L = 6, 0.2 × 0.1, E = 10⁷, ν = 0.3), curved and twisted cantilevers, unit tip load | MacNeal & Harder 1985 Table 3 [R]: straight beam in-plane shear 0.1081, out-of-plane shear 0.4321, twist 0.03208, extension 3.0×10⁻⁵; curved 0.08734 / 0.5022; twisted 0.005424 / 0.001754; a patch test for solids (Fig. 3, Table 7) | HEX20 fully integrated is the failing element on thin plates (0.02 of exact) |
 | `guldberg_circular_cantilever` (optional) | a voxelised *circular* cantilever, the staircase-boundary case | theory; free-end displacement within 1 % and averaged stress under 4 % as the diameter grows (Guldberg et al. 1998 [R]) | a coarse staircase (diameter 2 cells) |
@@ -874,7 +945,8 @@ coarsening and on-the-fly finest level. The read cost of the kinematic ground is
 V-cycle as a single-precision preconditioner, which kept the accuracy and iteration counts of an all-double
 run and was 47–83 % faster on their Poisson tests; they cite Göddeke et al. for the finding that single
 precision throughout fails to reduce the true residual. (Spectral-element *wave* codes run in single precision,
-Komatitsch et al. 2009, but those are explicit time stepping, not a converged static solve.) The read is
+Komatitsch et al. 2009, but those are explicit time stepping, not a converged static solve; the original,
+Komatitsch & Vilotte 1998, ran its 3-D case in 64-bit.) The read is
 linear in `u`, so a relative error ε in `u` is ε in the signal: 10⁻⁶ for µrad on a 1-rad deformation signal;
 the outer residual must be driven to about that, not to Wu et al.'s 10⁻² (topology optimisation does not need
 more). Whether the 1660 SUPER's f64 rate (a small fraction of its f32 rate, 1/32 by my recollection [U]) makes the outer operator the bottleneck is a
@@ -901,6 +973,10 @@ measurement for S7-05b.
   are stiffer, perhaps 2–5× [U]. Resolve with S7-05d's slab model.
 - The residual 0.06–0.16 % in the Rayleigh voxel check is still unexplained (§5.2); it is far inside the
   S14 model error.
+- **Richards's formulas are transcribed, not evaluated.** No script implements Eqs. 9–17 yet; the only check
+  made is the static limit (§5.1 [D]). Before `lamb_problem` uses them, code them and check the ν = 0.25 case
+  against Pekeris and the late-time values against Boussinesq/Cerruti. Komatitsch & Vilotte's < 1 % is a
+  2-D plane-strain result; no 3-D point-source accuracy figure for spectral elements was read.
 - **The sign in Harms Eq. 39** (§5.2): I cannot tell from the page whether it is a misprint or a convention
   (`sin(ωt − k·ϱ)`); the Hassan & Nagy (1998) source he cites was not fetched.
 - The Harms 2019 Living Review (154 pages) was not among the fetched files; I used the copy read for the first
@@ -950,6 +1026,7 @@ first version of the note; the rest after the owner fetched them (25 Nov 2026).
 - Beker et al. 2012, [doi:10.1088/1742-6596/363/1/012004](https://doi.org/10.1088/1742-6596/363/1/012004): §4.
 - Harms et al. 2015, [doi:10.1093/gji/ggv090](https://doi.org/10.1093/gji/ggv090): abstract, §1–3.
 - Carlton & McCabe 2023, [arXiv:2308.10731](https://arxiv.org/abs/2308.10731): §II (Eqs. 10–13, Fig. 3). Carlton et al. 2024, [arXiv:2412.05379](https://arxiv.org/abs/2412.05379): abstract and keyword search only.
+- Read 28 Nov 2026: Komatitsch & Vilotte 1998, BSSA 88(2), 368–392, [doi:10.1785/BSSA0880020368](https://doi.org/10.1785/bssa0880020368) (whole paper, extracted text); Richards 1979, BSSA 69(4), 947–956, [doi:10.1785/BSSA0690040947](https://doi.org/10.1785/bssa0690040947) (whole paper; Eqs. 2–17 and Figs. 1–3 from the rendered pages).
 - Komatitsch & Tromp 1999 (abstract, §6.1–6.2), Komatitsch & Martin 2007 (abstract), Virieux 1986 (Rayleigh-wave discussion), Bérenger 1994 (abstract), Komatitsch et al. 2009 and Michéa & Komatitsch 2010 (abstracts), Pekeris 1955 (§1, §6), Vinh & Ogden 2004 (§1–2, Eq. 1), Lamb 1904 (the three-page Proc. R. Soc. abstract, and the full paper, pp. 1–3 and 40–43), Biot 1956 (§2).
 
 *Finite elements, multigrid, GPUs*
@@ -957,21 +1034,22 @@ first version of the note; the rest after the owner fetched them (25 Nov 2026).
 - Simo & Armero 1992 (summary, §1, §3.4, §4.2.2, conclusions; [doi:10.1002/nme.1620330705](https://doi.org/10.1002/nme.1620330705), DOI from memory [U]: the file carries none); Kozar, Rukavina & Ibrahimbegović 2018, [doi:10.14256/JCE.2078.2017](https://doi.org/10.14256/JCE.2078.2017) (§2–§3, Tables 1–2); Taylor, Beresford & Wilson 1976; Ibrahimbegovic & Wilson 1991 (introduction); Simo & Rifai 1990 (summary, §1, §4 remarks, §6.1); Hughes 1980 (summary, introduction, start of the theory); Flanagan & Belytschko 1981 (summary, introduction); MacNeal & Harder 1985 (Tables 3, 6–13, Figs. 3–4); Guldberg et al. 1998 (abstract, results).
 - Dick, Georgii, Westermann 2011, [doi:10.1016/j.simpat.2010.11.005](https://doi.org/10.1016/j.simpat.2010.11.005) ([TUM PDF](https://www.cs.cit.tum.de/fileadmin/w00cfj/cg/Research/Publications/2011/Real-Time_Multigrid_Finite_Hexahedra_Method/SIMPAT11.pdf)): abstract, §1–3 (first pass), results.
 - Wu, Dick, Westermann 2016 (§5, §7, Figs. 7–8, 12, Table 1); Kronbichler & Kormann 2012 (abstract, §3.1, §5.1); Kronbichler & Ljungkvist 2019 (abstract, §1, §4.2); Ljungkvist 2017 (abstract, results); Adams et al. 2004 (abstract, §5); Arbenz et al. 2008 (abstract); Aage et al. 2017 (abstract, Methods); Knyazev 2001 (abstract, §5); Burstedde et al. 2011 (abstract); Parvizian et al. 2007 (§2.3–2.4); Schillinger & Ruess (abstract, §2.2); de Prenter et al. 2019 (abstract).
+- Bonet & Wood, *Nonlinear Continuum Mechanics for Finite Element Analysis*, 2nd ed., Cambridge University Press 2008, [doi:10.1017/CBO9780511755446](https://doi.org/10.1017/cbo9780511755446): the whole book was fetched (28 Nov 2026); read §1.4.2, §4.10, Ch. 6 §6.3–6.4 (Example 6.1, Eqs. 6.27–6.41), §8.1–8.2, §8.6.4–8.6.5, §9.4–9.6 (Eqs. 9.60–9.64, Box 9.1), equations from the rendered pages; the plasticity chapters (3.5, 7) and the program (Ch. 10) not read.
 - Müller & Gross 2004 ([PDF](https://matthias-research.github.io/pages/publications/GI2004.pdf)): Fig. 1, §1–3 (first pass). Georgii & Westermann 2008 (abstract, §1); Pentland & Williams 1989, James & Pai 2002, Barbič & James 2005 (abstracts); Macklin et al. 2016 (§1–4); Smith et al. 2018 (abstract, Fig. 1); MPM: Sulsky et al. 1993 (abstract), Stomakhin et al. 2013 (abstract), Hu et al. 2018 (§7, Fig. 17), Wolper et al. 2019 (abstract).
 - Repository notes: `docs/research/s13-heat.md` §3.6, `docs/research/s14-wider-world.md` (E1)–(E5), §2.4–2.5, `docs/research/s5-world-octree.md` §3, `docs/slices/S3.md`.
 
 ## Papers still unread, or read only in part
 
 Not fetched, so not read:
-- [https://doi.org/10.1785/bssa0880020368](https://doi.org/10.1785/bssa0880020368) Komatitsch & Vilotte 1998, the spectral-element method (SPECFEM's origin)
-- [https://doi.org/10.1785/bssa0690040947](https://doi.org/10.1785/bssa0690040947) Richards 1979, Lamb's problem for a point source
 - Hassan & Nagy 1998 (cited by Harms for Eq. 39; not on the list)
+- Johnson 1974 (Geophys. J. 37, 99–131; Richards's Eq. 2 is taken from it) and Garvin 1956 (the buried line
+  source of Komatitsch & Vilotte's second test): cited only, not needed unless a dynamic solver is built.
 
 Fetched, opened only in part (the part is named in the Sources):
 - [https://doi.org/10.1007/s41114-019-0022-2](https://doi.org/10.1007/s41114-019-0022-2) Harms 2019: §3.2–3.5 of 154 pages (and §3.3 from the 2015 version)
 - [https://doi.org/10.1103/PhysRevD.58.122002](https://doi.org/10.1103/PhysRevD.58.122002) Hughes & Thorne 1998: §I, §II, Appendix B of 27 pages
 - [https://doi.org/10.1103/PhysRevD.78.042003](https://doi.org/10.1103/PhysRevD.78.042003) Dimopoulos et al. 2008, GR effects in atom interferometry: fetched, not opened (it concerns the interferometer's phase shift, not the elastic solid)
-- [https://doi.org/10.1017/cbo9780511755446](https://doi.org/10.1017/cbo9780511755446) Bonet & Wood 2008: the fetched file is the 8-page front matter
+- [https://doi.org/10.1017/cbo9780511755446](https://doi.org/10.1017/cbo9780511755446) Bonet & Wood 2008: the first fetch was the 8-page front matter; the whole book was fetched on 28 Nov 2026 and the sections named in the Sources are read
 - [https://doi.org/10.48550/arXiv.2412.05379](https://doi.org/10.48550/arXiv.2412.05379) atmospheric GGN (Carlton et al. 2024): abstract and a keyword search only
 - [https://doi.org/10.1145/3322813](https://doi.org/10.1145/3322813) Kronbichler & Ljungkvist 2019; [https://doi.org/10.1145/2994258.2994272](https://doi.org/10.1145/2994258.2994272) XPBD; [https://doi.org/10.1145/3306346.3322949](https://doi.org/10.1145/3306346.3322949) CD-MPM; and the other graphics and MPM papers: the parts named in the Sources, not their numerical sections
 
@@ -991,7 +1069,7 @@ The first fetched folder holds 82 PDFs, `fluids.zip` and a `__MACOSX` folder of 
   Maddock, *Creating animatable non-conforming hexahedral finite element facial soft-tissue models for GPU
   simulation* (p. 317), which would bear on non-conforming hexahedra, but that paper's text is not in the
   volume (I searched for it); no other paper in it concerns this note.
-- **`dimopoulos2008`** and **`frontmatter`** (Bonet & Wood front matter): see above.
+- **`dimopoulos2008`** and **`frontmatter`** (Bonet & Wood front matter, superseded by the whole book on 28 Nov 2026): see above.
 - `__MACOSX/`: resource-fork files, not papers.
 
 Copies already held from the first pass (Harms 2019 and its 2015 arXiv version, Badurina, Carlton & McCabe) were

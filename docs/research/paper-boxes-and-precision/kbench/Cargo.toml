@@ -1,0 +1,13 @@
+# A stand-alone timing program for the box and precision study (not a workspace member): src/main.rs.
+[package]
+name = "kbench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+
+[workspace]

@@ -1,0 +1,16 @@
+# A stand-alone program for docs/research/paper-benchmarks.md (not a workspace member): it runs
+# Cavendish's own kernels (cav-core's polyhedral closed form and cube kernel) on the fixtures the
+# Python scripts write, and times them. See src/main.rs.
+[package]
+name = "kernel_bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+cav-core = { path = "../../../../crates/cav-core" }
+
+[profile.release]
+opt-level = 3
+
+[workspace]

@@ -1,0 +1,39 @@
+{
+ "cpu": "AMD Ryzen 5 3600 6-Core Processor",
+ "python": "3.14.3",
+ "numba_threads": "4",
+ "points": 256,
+ "polyhedra_ns_per_point_per_triangle": {
+  "cube_aligned": {
+   "triangles": 12,
+   "cavendish_faceted": 106.583,
+   "esa_evaluable": 824.4791539861277,
+   "study_numpy": 237.27216102997772
+  },
+  "sphere": {
+   "triangles": 1280,
+   "cavendish_faceted": 74.735,
+   "esa_evaluable": 925.043029909034,
+   "study_numpy": 1097.6486205294123
+  },
+  "spot": {
+   "triangles": 5856,
+   "cavendish_faceted": 96.565,
+   "esa_evaluable": 953.0190056716119,
+   "study_numpy": 889.5721936172916
+  }
+ },
+ "voxels_ns_per_point_per_prism": {
+  "prisms": 2249,
+  "cavendish_cube_potential": 271.155,
+  "cavendish_prism_potential": 730.502,
+  "harmonica_one_thread": {
+   "potential": 672.8770077113917,
+   "g_e": 629.7991816097314,
+   "g_n": 460.319516973931,
+   "g_z": 526.5571157083426
+  },
+  "harmonica_g_z_parallel": 202.3104017761996,
+  "study_numpy_12_triangles_U_and_g": 10602.806108324292
+ }
+}

@@ -4,7 +4,7 @@
 
 Reads the study's committed output in place, in docs/research/exact-skin-and-partial-fill/shapes/
 (`sweep-<shape>.json`, `regimes-distance.json`, `translation.json`, `exact-*.json`,
-`mesh-check.json`, and the rendered `<shape>-cutaway.png`), and writes:
+`mesh-check.json`, and the rendered `<shape>-64-cutaway.png`), and writes:
 
 - figures/shapes-<shape>.png   the study's representation renders, cropped to the panels
 - figures/shapes-sweep.pdf     phase error against pitch, ten shapes
@@ -60,6 +60,8 @@ NAME = {"sphere": "sphere", "torus": "torus", "teapot": "teapot", "suzanne": "Su
         "buddha": "Buddha", "bracket": "mk7 part"}
 INK, INK2, GRID = "#0b0b0b", "#52514e", "#d9d8d4"
 RENDERS = ("torus", "bunny")
+RENDER_DPI = 150  # the renders' resolution at print size
+RENDER_ACROSS = 64  # the renders' fine lattice, cells across (the study's own are 128, as measured)
 
 
 def load(name: str) -> dict:
@@ -135,7 +137,7 @@ def write(name: str, rows: list[str]) -> None:
 
 def crop_render(shape: str) -> None:
     """The study's three-panel render without its caption (the paper gives its own)."""
-    img = np.asarray(Image.open(STUDY / f"{shape}-cutaway.png").convert("RGB")).astype(float)
+    img = np.asarray(Image.open(STUDY / f"{shape}-{RENDER_ACROSS}-cutaway.png").convert("RGB")).astype(float)
     busy = np.abs(img - img[0, 0]).sum(axis=2).max(axis=1) > 30
     rows = np.nonzero(busy)[0]
     # From the bottom: the caption block (lines a few pixels apart), then the first blank run of
@@ -155,7 +157,12 @@ def crop_render(shape: str) -> None:
     if k <= rows[0]:  # no clear gap: keep everything
         k = rows[-1]
     top, bottom = max(rows[0] - 6, 0), min(k + 8, len(img))
-    Image.fromarray(img[top:bottom].astype(np.uint8)).save(FIG / f"shapes-{shape}.png", optimize=True)
+    out = Image.fromarray(img[top:bottom].astype(np.uint8))
+    # Printed at \linewidth (A4, 2.2 cm margins: 16.6 cm), rasterised at RENDER_DPI.
+    width = round(16.6 / 2.54 * RENDER_DPI)
+    if out.width > width:
+        out = out.resize((width, round(out.height * width / out.width)), Image.Resampling.LANCZOS)
+    out.save(FIG / f"shapes-{shape}.png", optimize=True, dpi=(RENDER_DPI, RENDER_DPI))
 
 
 # ------------------------------------------------------------------ sweeps
