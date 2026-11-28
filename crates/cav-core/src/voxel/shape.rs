@@ -41,6 +41,12 @@ pub trait Shape: Sync + Send {
     /// `∫ (x_a − c_a)(x_b − c_b) dV` about the centroid, m⁵, in the order xx, yy, zz, xy, xz, yz:
     /// the second moments of the shape filled at unit density.
     fn second_moments(&self) -> [f64; 6];
+    /// Its cut-cell clipper ([`super::cut::Clip`]): what clips a boundary cell exactly, for every
+    /// representation but `Sampled`. `None` (the default) for a shape that has none, which is then
+    /// read only by its samples.
+    fn clip(&self) -> Option<&dyn super::cut::Clip> {
+        None
+    }
 }
 
 /// The relative margin every shape keeps for rounding.
@@ -77,6 +83,10 @@ pub struct Sphere {
 }
 
 impl Shape for Sphere {
+    fn clip(&self) -> Option<&dyn super::cut::Clip> {
+        Some(self)
+    }
+
     fn bounds(&self) -> Aabb {
         Aabb::new(self.centre, self.centre).grown(self.radius)
     }
@@ -130,6 +140,10 @@ pub struct Shell {
 }
 
 impl Shape for Shell {
+    fn clip(&self) -> Option<&dyn super::cut::Clip> {
+        Some(self)
+    }
+
     fn bounds(&self) -> Aabb {
         Aabb::new(self.centre, self.centre).grown(self.outer)
     }
@@ -183,6 +197,10 @@ pub struct Cuboid {
 }
 
 impl Shape for Cuboid {
+    fn clip(&self) -> Option<&dyn super::cut::Clip> {
+        Some(self)
+    }
+
     fn bounds(&self) -> Aabb {
         Aabb::new(self.centre - self.half, self.centre + self.half)
     }
@@ -246,6 +264,10 @@ impl Cylinder {
 }
 
 impl Shape for Cylinder {
+    fn clip(&self) -> Option<&dyn super::cut::Clip> {
+        Some(self)
+    }
+
     fn bounds(&self) -> Aabb {
         let mut half = [self.radius; 3];
         half[self.axis] = self.half_length;
@@ -313,6 +335,10 @@ pub struct Ellipsoid {
 }
 
 impl Shape for Ellipsoid {
+    fn clip(&self) -> Option<&dyn super::cut::Clip> {
+        Some(self)
+    }
+
     fn bounds(&self) -> Aabb {
         Aabb::new(self.centre - self.radii, self.centre + self.radii)
     }
@@ -481,6 +507,10 @@ impl Polyhedron {
 }
 
 impl Shape for Polyhedron {
+    fn clip(&self) -> Option<&dyn super::cut::Clip> {
+        Some(self)
+    }
+
     fn bounds(&self) -> Aabb {
         let first = Aabb::new(self.vertices[0], self.vertices[0]);
         self.vertices.iter().fold(first, |b, v| b.union(&Aabb::new(*v, *v)))

@@ -243,6 +243,14 @@ pub struct VoxTree {
     /// The cells more than one material shares, by key, with their masses ([`MixedCell`]);
     /// empty for a uniform body. Each is a leaf of level 0 of the same key.
     pub mixed: Vec<MixedCell>,
+    /// The boundary cells' exact pieces, sorted by key, for a tree made by
+    /// [`super::cut::voxelise_cut`] (S5); empty for a tree of sampled counts. Each is a leaf of
+    /// level 0 of the same key, which weighs `density × volume` and whose `count` is then for the
+    /// picture only. Counted in [`Self::bytes`].
+    pub cuts: Vec<super::cut::CutCell>,
+    /// Kilograms per cubic metre of a tree with [`Self::cuts`]: what its full cells and its pieces
+    /// weigh by volume. 0 for a tree of sampled counts.
+    pub density: f64,
 }
 
 impl VoxTree {
@@ -315,9 +323,79 @@ impl VoxTree {
             samples,
             units: Vec::new(),
             mixed: Vec::new(),
+            cuts: Vec::new(),
+            density: 0.0,
         };
         tree.moments = tree.bottom_up();
         Ok(tree)
+    }
+
+    /// The tree of a body whose boundary cells carry their exact pieces
+    /// ([`super::cut::voxelise_cut`]): `leaves` as any tree's, `cuts` the pieces of some of its
+    /// leaves of level 0 (by key), everything at `density` kg/m³. A full leaf weighs its cells'
+    /// volume times the density, a cut leaf its piece's; the node moments are built from the
+    /// pieces' own moments. [`Self::unit`] is then `density (h/k)³`, a full cell's mass over its
+    /// `k³` samples, and [`Self::samples`] counts the cut leaves' quantised counts (the picture's).
+    ///
+    /// # Errors
+    /// As [`Self::build_within`], the cuts' bytes counted with the rest before anything is
+    /// reserved for the nodes; when a cut is not of a leaf of level 0, two cuts share a key, a
+    /// piece's volume is not a positive number below its cell's, or the density is not a positive
+    /// number.
+    pub fn build_cut(
+        grid: Grid,
+        leaves: Vec<Leaf>,
+        mut cuts: Vec<super::cut::CutCell>,
+        density: f64,
+        budget: super::Budget,
+    ) -> Result<Self, VoxelError> {
+        if !(density.is_finite() && density > 0.0) {
+            return Err(VoxelError(format!("density: {density} kg/m³ must be a positive number")));
+        }
+        let cut_bytes = cuts.len() * size_of::<super::cut::CutCell>();
+        let rest = super::Budget { bytes: budget.bytes.saturating_sub(cut_bytes), ..budget };
+        if cut_bytes > budget.bytes {
+            return Err(VoxelError(format!(
+                "the tree's cut cells alone would weigh {cut_bytes} bytes, more than the {} allowed it: use a                  coarser pitch",
+                budget.bytes
+            )));
+        }
+        let mut tree = Self::build_within(grid, leaves, 1.0, rest)?;
+        cuts.sort_unstable_by_key(|c| c.key);
+        let cell = grid.pitch.powi(3);
+        for (i, cut) in cuts.iter().enumerate() {
+            if i > 0 && cuts[i - 1].key == cut.key {
+                return Err(VoxelError(format!("two cut cells share the key {}", cut.key)));
+            }
+            let v = cut.piece.volume;
+            if !(v.is_finite() && v > 0.0 && v < cell) {
+                return Err(VoxelError(format!(
+                    "cut cell {}: a volume of {v} m³ is not within its cell's",
+                    cut.key
+                )));
+            }
+            if tree
+                .leaves
+                .binary_search_by_key(&cut.key, |l| l.key)
+                .map_or(true, |l| tree.leaves[l].level != 0)
+            {
+                return Err(VoxelError(format!("cut cell {} is not a finest leaf of the tree", cut.key)));
+            }
+        }
+        tree.cuts = cuts;
+        tree.density = density;
+        tree.unit = density * (grid.pitch / f64::from(grid.supersample)).powi(3);
+        tree.moments = tree.bottom_up();
+        Ok(tree)
+    }
+
+    /// The piece of `leaf` when it is a cut cell ([`Self::cuts`]).
+    #[must_use]
+    pub fn cut_of(&self, leaf: &Leaf) -> Option<&super::cut::CutCell> {
+        if self.cuts.is_empty() || leaf.level != 0 {
+            return None;
+        }
+        self.cuts.binary_search_by_key(&leaf.key, |c| c.key).ok().map(|i| &self.cuts[i])
     }
 
     /// The tree of a body of several materials ([`super::layers::voxelise_layers`]): each leaf's
@@ -496,6 +574,9 @@ impl VoxTree {
     /// [`Self::mixed`] says.
     #[must_use]
     pub fn leaf_mass(&self, leaf: &Leaf) -> f64 {
+        if let Some(cut) = self.cut_of(leaf) {
+            return self.density * cut.piece.volume;
+        }
         if self.units.is_empty() {
             return leaf.samples() as f64 * self.unit;
         }
@@ -507,9 +588,19 @@ impl VoxTree {
         leaf.samples() as f64 * self.units[usize::from(leaf.material)]
     }
 
-    /// A leaf's moments: a uniform cube.
+    /// A leaf's moments: a uniform cube, or a cut cell's piece ([`Self::cuts`]) at the tree's
+    /// density.
     #[must_use]
     pub fn leaf_moments(&self, leaf: &Leaf) -> Moments {
+        if let Some(cut) = self.cut_of(leaf) {
+            let (rho, p) = (self.density, &cut.piece);
+            return Moments {
+                mass: rho * p.volume,
+                centre: p.centroid,
+                second: p.second.map(|s| rho * s),
+                third: p.third.map(|t| rho * t),
+            };
+        }
         Moments::cube(self.leaf_mass(leaf), self.side(leaf.level), self.block_centre(leaf.key, leaf.level))
     }
 
@@ -557,8 +648,8 @@ impl VoxTree {
                 }
             }
             for (a, b, c) in THIRD {
-                // A cube's own second moment is diagonal: it adds to `aac`-type terms only.
-                third[third_index(a, b, c)] += p.second_at(a, b) * d[c]
+                third[third_index(a, b, c)] += p.third_at(a, b, c)
+                    + p.second_at(a, b) * d[c]
                     + p.second_at(a, c) * d[b]
                     + p.second_at(b, c) * d[a]
                     + p.mass * d[a] * d[b] * d[c];
@@ -606,6 +697,7 @@ impl VoxTree {
             + self.children.len() * size_of::<u32>()
             + self.units.len() * size_of::<f64>()
             + self.mixed.len() * size_of::<MixedCell>()
+            + self.cuts.len() * size_of::<super::cut::CutCell>()
     }
 }
 

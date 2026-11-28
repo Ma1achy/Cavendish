@@ -454,12 +454,63 @@ pub fn cube_shifts<const N: usize>(mass: f64, side: f64, d: Vec3, shifts: &[Vec3
     })
 }
 
+/// `(V(upper) − V(lower))/G` (kg/m) for a point of `mass` kg with the second central moments
+/// `second` (kg m², xx, yy, zz, xy, xz, yz) about it, the two points as [`cube_difference`] takes
+/// them (`across`, `below`, `above` from the point, metres; `gap` = `below − above`). To the
+/// quadrupole: `V/G = −M/R − (3 d·S·d − R² tr S)/(2R⁵)`; the monopole's difference is formed
+/// without cancellation, the quadrupole's (smaller by `(s/R)²`) directly.
+#[must_use]
+pub fn quadrupole_difference(
+    mass: f64,
+    second: &[f64; 6],
+    across: [f64; 2],
+    below: f64,
+    above: f64,
+    gap: f64,
+) -> f64 {
+    if gap == 0.0 {
+        return 0.0;
+    }
+    let horizontal = across[0] * across[0] + across[1] * across[1];
+    let (b2, a2) = (horizontal + below * below, horizontal + above * above);
+    let (b, a) = (b2.sqrt(), a2.sqrt());
+    let monopole = -mass * gap * (below + above) / (a * b * (a + b));
+    let trace = second[0] + second[1] + second[2];
+    let quadrupole = |d: [f64; 3], r2: f64| {
+        let s = &second;
+        let dsd = s[0] * d[0] * d[0]
+            + s[1] * d[1] * d[1]
+            + s[2] * d[2] * d[2]
+            + 2.0 * (s[3] * d[0] * d[1] + s[4] * d[0] * d[2] + s[5] * d[1] * d[2]);
+        (3.0 * dsd - r2 * trace) / (2.0 * r2 * r2 * r2.sqrt())
+    };
+    let upper = quadrupole([across[0], across[1], above], a2);
+    let lower = quadrupole([across[0], across[1], below], b2);
+    monopole - (upper - lower)
+}
+
+/// A cut cell read as a point with its piece's quadrupole ([`super::cut::Representation::Second`]).
+#[derive(Clone, Copy, Debug)]
+struct Quad {
+    /// The piece's centroid, metres, the body's frame.
+    centre: Vec3,
+    /// Kilograms.
+    mass: f64,
+    /// Its second central moments, kg m².
+    second: [f64; 6],
+    /// The cell's side, metres: within [`PRISM_WITHIN`] of it the piece is read as a cube there.
+    side: f64,
+}
+
 /// A voxel body as the forward model sees it: every leaf of a tree a uniform cube, the tree's
 /// frame carried to where the body is.
 pub struct TreeBody<P: Fn(f64) -> Vec3 + Sync> {
     /// The leaves as `(centre in the body's frame, metres; mass, kg; side, metres)`, in Morton
     /// order: the order they are summed in.
     cubes: Vec<(Vec3, f64, f64)>,
+    /// The cut cells read as points with quadrupoles (`Second`), after the cubes; empty
+    /// otherwise.
+    quads: Vec<Quad>,
     /// Where the body's frame is at a time: seconds on the scene's clock in, metres in the world's
     /// frame out. The body does not turn.
     pub position: P,
@@ -480,19 +531,65 @@ impl<P: Fn(f64) -> Vec3 + Sync> TreeBody<P> {
                 (tree.block_centre(leaf.key, leaf.level), tree.leaf_mass(leaf), tree.side(leaf.level))
             })
             .collect();
-        Self { cubes, position, exists: (f64::NEG_INFINITY, f64::INFINITY), breaks: Vec::new() }
+        Self {
+            cubes,
+            quads: Vec::new(),
+            position,
+            exists: (f64::NEG_INFINITY, f64::INFINITY),
+            breaks: Vec::new(),
+        }
+    }
+
+    /// The body of `tree` read as `representation` says for its cut cells
+    /// ([`super::cut::Representation`]); its other leaves are cubes, as [`Self::new`]. For a tree
+    /// with no cuts, or `Sampled` or `Fill`, it is [`Self::new`] exactly (a cut leaf already
+    /// weighs its piece and sits at its cell's centre). `Centroid` moves each cut cell's cube to
+    /// its piece's centroid; `Second` reads it as a point with the piece's quadrupole there, or the
+    /// `Centroid` cube within [`PRISM_WITHIN`] cells of the point asked about.
+    pub fn read_as(tree: &VoxTree, representation: super::cut::Representation, position: P) -> Self {
+        use super::cut::Representation;
+        let mut body = Self::new(tree, position);
+        if tree.cuts.is_empty() || matches!(representation, Representation::Sampled | Representation::Fill) {
+            return body;
+        }
+        let mut cubes = Vec::with_capacity(body.cubes.len());
+        for (leaf, cube) in tree.leaves.iter().zip(&body.cubes) {
+            let Some(cut) = tree.cut_of(leaf) else {
+                cubes.push(*cube);
+                continue;
+            };
+            let mass = tree.leaf_mass(leaf);
+            let side = tree.side(0);
+            match representation {
+                Representation::Second => body.quads.push(Quad {
+                    centre: cut.piece.centroid,
+                    mass,
+                    second: cut.piece.second.map(|s| tree.density * s),
+                    side,
+                }),
+                _ => cubes.push((cut.piece.centroid, mass, side)),
+            }
+        }
+        body.cubes = cubes;
+        body
     }
 
     /// One leaf of `tree` alone, at `position`, always there: what that leaf adds.
     pub fn single(tree: &VoxTree, leaf: &super::Leaf, position: P) -> Self {
         let cube = (tree.block_centre(leaf.key, leaf.level), tree.leaf_mass(leaf), tree.side(leaf.level));
-        Self { cubes: vec![cube], position, exists: (f64::NEG_INFINITY, f64::INFINITY), breaks: Vec::new() }
+        Self {
+            cubes: vec![cube],
+            quads: Vec::new(),
+            position,
+            exists: (f64::NEG_INFINITY, f64::INFINITY),
+            breaks: Vec::new(),
+        }
     }
 
-    /// How many cubes are summed at each point asked about.
+    /// How many cubes and points are summed at each point asked about.
     #[must_use]
     pub fn cubes(&self) -> usize {
-        self.cubes.len()
+        self.cubes.len() + self.quads.len()
     }
 }
 
@@ -509,6 +606,18 @@ impl<P: Fn(f64) -> Vec3 + Sync> Source for TreeBody<P> {
                 let at = offset + centre;
                 let (below, above) = (height + lower - at.z, height + upper - at.z);
                 sum += cube_difference(mass, side, [-at.x, -at.y], below, above, lower - upper);
+            }
+            for q in &self.quads {
+                let at = offset + q.centre;
+                let (below, above) = (height + lower - at.z, height + upper - at.z);
+                let across = [-at.x, -at.y];
+                let horizontal = across[0] * across[0] + across[1] * across[1];
+                let nearer = (horizontal + below * below).min(horizontal + above * above).sqrt();
+                sum += if nearer < PRISM_WITHIN * q.side {
+                    cube_difference(q.mass, q.side, across, below, above, lower - upper)
+                } else {
+                    quadrupole_difference(q.mass, &q.second, across, below, above, lower - upper)
+                };
             }
             sum
         })
