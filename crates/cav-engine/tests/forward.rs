@@ -1429,3 +1429,24 @@ fn slow_a_truncated_world_read_reaches_every_reply() {
     assert!(texts.iter().all(|t| !t.contains("truncated")), "{texts:?}");
     assert_eq!(read::reading(&whole, 1.0, &|| false).unwrap().truncated, None);
 }
+
+#[test]
+fn a_signal_s_news_is_tagged_as_the_forward_stage_s() {
+    // Readers that look for what a command did skip the forward stage's news by its tag
+    // (`Subsystem::Forward`), so every line written when a signal lands must carry it: the
+    // timing, the signal's own line and its warnings. Control: the edit's own line does not.
+    let mut engine = loaded(dev::point());
+    set(&mut engine, "bodies[0].mass", json!(250.0)).unwrap();
+    assert!(engine.settle(LONG), "the signal arrives");
+    let log = engine.log();
+    let news: Vec<_> = log
+        .iter()
+        .filter(|e| e.message.starts_with("signal: ") || e.message.starts_with("the signal was whole"))
+        .collect();
+    assert!(news.len() >= 2, "{log:?}");
+    assert!(news.iter().all(|e| e.subsystem == cav_engine::Subsystem::Forward), "{news:?}");
+    assert!(
+        log.iter().any(|e| e.subsystem != cav_engine::Subsystem::Forward && e.message.contains("mass")),
+        "the edit is not the forward stage's: {log:?}"
+    );
+}
