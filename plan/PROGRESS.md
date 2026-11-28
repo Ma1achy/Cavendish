@@ -140,6 +140,7 @@ the walk's looseness is TASK-S5-27. Worth a second look: near nodes (ellipse par
 are read directly, not gathered (a departure); the series is not kept across reads (the engine's,
 `plan/IDEAS.md`).
 
+**Answered 28 Nov 2026 (below, "Questions for the owner"): C3 split into C3a and C3b (§7.20).**
 **For the owner: C3, `Pieces` against `Exact` (TASK-S5-26, PR open, not merged; `docs/slices/S5.md`
 §7.7).** Written before measuring: an icosahedron at 1/16 m, the tower's line within a cell of it,
 read as `Pieces` (the exact piece within 3 cells of an arm, `Second` beyond), within 1e-11 relative
@@ -1071,6 +1072,12 @@ mutation). Left, all minor:
 - **C3 (TASK-S5-26, 28 Nov 2026):** `Pieces` within 3 cells of an arm and `Second` beyond reads
   1.34e-6 relative against `Exact`, criterion 1e-11; every cell exact reads 3.3e-15. Options (a),
   (b), (c) and the measurements by reach are in "S5 under way" above and `docs/slices/S5.md` §7.7.
+  **Answered 28 Nov 2026: split it** ("do whatever works best, it's a balance between optimisation
+  and accuracy"). C3a, every cut cell exact, within 1e-11 (3.3e-15; a new control moves one piece
+  by 1 µm and fails); C3b, the production read within its own new ledger (`TreeBody::ledger`) at
+  every arm point, in each phase and cell by cell, on the icosahedron and a torus mesh: worst 8.2e-3
+  of the ledger; control (a cell's term left out) fails. The 1.34e-6 stays on record (§7.20).
+  #255 merged with it.
 - **Two non-open British datasets for S26 (28 Nov 2026; nothing waits on them until S26):** BGS's
   Land Gravity Survey points state both the OGL and "BGS Digital Data Licence terms" in one record,
   and BGS Geology 50k vectors are paid (£0.23 per km² commercial; the WMS is free to view). Default:
