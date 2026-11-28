@@ -1,4 +1,4 @@
-﻿# Papers still to fetch
+# Papers still to fetch
 
 Rewritten 28 Nov 2026 after the owner's third batch of the day (`papers 3.zip`, 21 files). Every research
 note it touches has been updated: `s6-density-and-skinning.md` (new), `rigid-bodies.md`,
