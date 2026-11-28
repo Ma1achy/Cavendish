@@ -1,0 +1,14 @@
+# The study's compiled field kernels (not a workspace member): see src/main.rs.
+[package]
+name = "kern"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+
+[workspace]
