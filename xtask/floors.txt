@@ -49,10 +49,13 @@
 # TASK-S5-27 (the walk below the chunk): 2 new quick tests (cav-sim: a chunk's tree is its leaves,
 # W1 into the chunks' trees).
 # TASK-S5-04 (the ledger in bundles): 1 new quick test (cav-sim: W8, the ledger is in the bundle).
+# TASK-S5-14 (measured radii and the rings): 3 new quick tests (cav-sim: the rings' cut is a
+# partition, the stored radii are monotone, a world read by rings reports its ledger); 2 new slow
+# tests (cav-sim: R1 and its control, the radii halved).
 # TASK-S5-06 (Exact bodies): 8 new quick tests (cav-sim: A1, A2, A2's control, A3, X1, exact-solids
 # against platonic-row; cav-engine: the wire; cav-app: the Read row), and 1 for the owner's
 # ruling on A2 (the tetrahedron's octupole unseen level with it, seen at 30°).
-quick 770
+quick 773
 gpu 42
-slow 56
+slow 58
 oracle 58

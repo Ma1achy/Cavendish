@@ -1,0 +1,12 @@
+# town: octree [5350, 1274, 320, 86, 26, 8] nodes per level, every chunk's tree made in 2.4 s
+# 13 positions; radii in each level's own sides, levels -4 (blocks of 2 cells) up
+1e-2 radii  -4: 19.9, -3: 19.0, -2: 24.3, -1: 21.5, 0: 17.7, 1: 17.8
+1e-2 rings at the measured radii: worst error 2.26e-4 rad (0.023 of τ), ledger 1.83e-1, leaves 20849 (the ledger walk's 38161), the most at any position
+1e-2 rings at the stored radii: worst error 1.20e-4 rad (0.012 of τ), ledger 8.51e-2, leaves 19471 (the ledger walk's 38161), the most at any position
+1e-4 radii  -4: 51.0, -3: 44.7, -2: 57.9, -1: 50.9, 0: 60.2
+1e-4 rings at the measured radii: worst error 2.12e-6 rad (0.021 of τ), ledger 7.57e-4, leaves 115989 (the ledger walk's 204378), the most at any position
+1e-4 rings at the stored radii: worst error 2.58e-6 rad (0.026 of τ), ledger 8.07e-4, leaves 105993 (the ledger walk's 204378), the most at any position
+1e-6 radii  -4: 127.0, -3: 111.9, -2: 134.7
+1e-6 rings at the measured radii: worst error 2.35e-8 rad (0.024 of τ), ledger 5.97e-6, leaves 510375 (the ledger walk's 756152), the most at any position
+1e-6 rings at the stored radii: worst error 3.14e-8 rad (0.031 of τ), ledger 8.23e-6, leaves 469653 (the ledger walk's 756152), the most at any position
+# 327.6 s in all

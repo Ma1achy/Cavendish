@@ -35,6 +35,14 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**TASK-S5-14, measured radii and the rings (28 Nov 2026; §7.11).** `cav bench lod-radii --scene
+<s>` measures each level's nearest acceptance by the ledger walk; the stored table (town, eight
+bases) drives `world.read.walk: Rings`. R1: at the stored radii the rings err by at most 0.037 of τ
+on town and world-box at 1e-2, 1e-4, 1e-6; halved, 1.065 of τ somewhere (the control, by 6.5 %);
+radii monotone. The rings read about half the ledger walk's leaves; their ledger (8.5e-2 at 1e-2)
+is far above τ and is reported as it is. Worth a second look: the radii come from the ledger walk,
+not [O] §5's level-by-level protocol (`plan/IDEAS.md`); the control's margin is thin.
+
 **A2, the Platonic solids' fall-off (TASK-S5-06): answered by the owner (28 Nov 2026), (b).** The
 5 m height stays; the tetrahedron's expected slope is `−(l + 4)` = −7, because its octupole is a
 pure `xyz` term, which a vertical gradiometer level with its centroid cannot see; the tolerance stays

@@ -23,6 +23,9 @@ cav <command>
                    [--out <trace.csv>] [--max-frame-ms 250]
                                  fly a scripted camera over a world (stress-1e10, or e.g. town, the loop
                                  scaled to it) offscreen and print (or write) the frame-time trace
+  bench lod-radii [--scene town]  measure each octree level's nearest acceptance by the ledger walk at
+                                 1e-2, 1e-4, 1e-6 rad, and check the rings tier at those radii and the
+                                 stored ones against the leaf-exact read
   scenes                         list the built-in scene library
   schema [path]                  print the JSON Schema of the scene spec, or of the field at a path
   get <scene> [path]             print a scene, or the value at a path of it, as JSON
@@ -397,10 +400,10 @@ fn set(rest: &[String]) -> Result<(), String> {
 }
 
 /// `cav render`: every option becomes a console command, so a render is a short engine session.
-/// `cav bench flythrough`: see `bench.rs`.
+/// `cav bench flythrough` and `cav bench lod-radii`: see `bench.rs`.
 fn bench(rest: &[String]) -> Result<(), String> {
     let mut args = Args::parse(rest, &["scene", "frames", "size", "cache", "out", "speed", "max-frame-ms"])?;
-    let scene = args.option("scene").unwrap_or_else(|| "stress-1e10".to_owned());
+    let asked = args.option("scene");
     let frames = args
         .option("frames")
         .map_or(Ok(600), |f| f.parse::<usize>().map_err(|_| format!("--frames {f} is not a count")))?;
@@ -419,9 +422,15 @@ fn bench(rest: &[String]) -> Result<(), String> {
         .option("max-frame-ms")
         .map_or(Ok(250.0), |v| v.parse::<f64>().map_err(|_| format!("--max-frame-ms {v} is not a number")))?;
     let out = args.option("out");
-    let [what] = args.finish(1)?.try_into().map_err(|_| "bench takes what to run: flythrough")?;
+    let [what] =
+        args.finish(1)?.try_into().map_err(|_| "bench takes what to run: flythrough or lod-radii")?;
+    if what == "lod-radii" {
+        print!("{}", bench::lod_radii(asked.as_deref().unwrap_or("town"))?);
+        return Ok(());
+    }
+    let scene = asked.unwrap_or_else(|| "stress-1e10".to_owned());
     if what != "flythrough" {
-        return Err(format!("`{what}` is not a bench; there is `flythrough`"));
+        return Err(format!("`{what}` is not a bench; there are `flythrough` and `lod-radii`"));
     }
     let trace = bench::flythrough(&scene, frames, size, speed, cache, max_frame_ms)?;
     match out {
