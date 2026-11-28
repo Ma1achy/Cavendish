@@ -30,7 +30,9 @@ a sample point is inside (`contains`), and what it can say about a whole box at 
      is the model); a curved one integrates its chord along one axis exactly and the other two by
      quadrature split at every kink (`cut/analytic.rs`: write the solid as a `Radial`, or scale or
      permute it into one, as `Ellipsoid` and `Cylinder` do). Give it a `work` in the voxeliser's
-     units, calibrated by time (about 13 ns a unit: time it with `clip_time_per_cell`).
+     units, calibrated by time (about 13 ns a unit: time it with `clip_time_per_cell`). A shape
+     whose pieces are polyhedra also gives them as signed convex pieces (`CellClip::convex`), which
+     `Pieces` reads by the polyhedral kernel near an arm; a curved one leaves the default `None`.
 2. A shape that is a polyhedron needs no new type: give `Polyhedron::hull` its vertices (at most
    100). A shape from a file is a mesh (`crate::voxel::mesh`).
 
