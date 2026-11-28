@@ -1273,8 +1273,11 @@ mod tests {
         // `world-box`'s `read.radius` took the walk's default (the bubble, 0), `town`'s read
         // tolerance went from 1e-3 to 1e-2 and its description and `stress-1e10`'s say what the
         // whole-world read does. So the bytes moved from 0xd80e_19ec_a98d_7fc8 (S20's, held to the
-        // commit before folders) to this value, taken with no folder key in any scene (checked
-        // below); a change to a scene's content takes a new value with a line like this one.
+        // commit before folders) to this value. It is anchored to the code before folders, not to
+        // this code: on 2d8add9 (the commit before TASK-S20-07) with only those three scene files
+        // changed to S5's, the same hash gives 0x4008_1bb9_1070_44c6, and with them as they were
+        // there 0xd80e_19ec_a98d_7fc8 (the control). A change to a scene's content takes a new value
+        // the same way: from the old code with the new scene files, never from the code under test.
         assert_eq!(library_bytes_hash(), 0x4008_1bb9_1070_44c6, "a scene without folders changed its bytes");
         for scene in crate::LIBRARY {
             let spec = crate::load(scene.name).unwrap();

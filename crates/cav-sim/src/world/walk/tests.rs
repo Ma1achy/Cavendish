@@ -419,13 +419,17 @@ fn ledgers() -> &'static Ledgers {
                         .max(arm(exact.upper, got.upper, ledger[1]))
                         .max(gradiometer / (ledger[0] + ledger[1] + 1e-13 * (exact.lower.abs() + exact.upper.abs())));
                     out.ledger_over_tolerance = out.ledger_over_tolerance.max((ledger[0] + ledger[1]) / tolerance);
-                    for (phase, e, g, l) in
-                        [(whole.lower, exact.lower, got.lower, ledger[0]), (whole.upper, exact.upper, got.upper, ledger[1])]
-                    {
-                        let error = (g - e).abs();
-                        if error > 1e-12 * phase.abs() {
-                            out.ledger_over_error = out.ledger_over_error.max(l / error);
-                        }
+                    // W3, per read at its worst channel (the owner's ruling of 28 Nov 2026, option (a),
+                    // after measuring: `docs/slices/S5.md` §7.3). The ledger bounds both
+                    // interferometers, so its looseness is judged against the one it must cover
+                    // hardest: the larger ledger over the larger error of the read. A ratio taken
+                    // channel by channel is unbounded at any zero of a signed error (the yard at
+                    // 1e-2, lower interferometer: 2,493, its ~2,600 node errors cancelling), and is
+                    // still printed below.
+                    let errors = [(got.lower - exact.lower).abs(), (got.upper - exact.upper).abs()];
+                    let worst = errors[0].max(errors[1]);
+                    if worst > 1e-12 * whole.lower.abs().max(whole.upper.abs()) {
+                        out.ledger_over_error = out.ledger_over_error.max(ledger[0].max(ledger[1]) / worst);
                     }
                     println!(
                         "{} {b} {tolerance:.0e}: {:?}, {}, {:.2e}, {gradiometer:.2e}, {:.0}; arms {:.0} {:.0}",
@@ -473,7 +477,7 @@ cav_validate::case! {
     subsystem: "world",
     slice: "S5",
     reference: Exact,
-    against: "the same reads: each interferometer's ledger over its error, the loosest where the error is above 1e-12 of the phase",
+    against: "the same reads: at each read its worst channel, the larger interferometer's ledger over the larger interferometer's error (the owner's ruling of 28 Nov 2026, restated after measuring: a channel's own ratio is unbounded at a zero of its signed error), the loosest where that error is above 1e-12 of the phase",
     unit: Relative,
     tolerance: 1000.0,
     measure: cav_validate::Measured::Error(ledgers().ledger_over_error),
