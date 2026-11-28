@@ -14,6 +14,24 @@ The builder updates this after every slice. The owner reads it at checkpoints.
 | S20 the workspace | done, tagged `s20-the-workspace` (reviewed, fixes re-checked in `docs/slices/S20-review.md`): TASK-S20-03 to 15 merged (dense panels, the mosaic, viewport headers, the tool palette, the transport, folders, the first-person and walk cameras, the drawn path); validation 116/116 | — | brief and results: `docs/slices/S20.md` (§7); pictures, session and timings: `docs/slices/S20/`; design as built: `docs/design/workspace.md`; recipes: `docs/extending/a-view-or-a-layout.md`, `something-the-camera-collides-with.md` |
 | S17 in the browser | done: TASK-S17-01 to 10 merged; live at https://ma1achy.github.io/Cavendish/; reviewed twice, nothing important remains | `s17-in-the-browser` | brief and results: `docs/slices/S17.md` (§7.8: the fixes); screenshots: `docs/slices/S17/`; research: `docs/research/web-build-and-pages.md`; site: https://ma1achy.github.io/Cavendish/ |
 
+## S5 under way (28 Nov 2026) — a question for the owner
+
+**Merged:** the brief (#236), the polyhedral kernel (#238), the world octree (#239), the
+forward stage's log lines tagged, which fixes the flaky transport test (#246).
+
+**For the owner: W3, the walk's "not vacuous" criterion (PR #245, the ledger walk, open, not
+merged).** The criterion written before measuring is pointwise: for each read and each
+interferometer, ledger ≤ 1000 × error. It holds at 47 of 48 town reads (≤ 310) and fails at one:
+the yard at τ = 1e-2, lower interferometer, 2,493, where about 2,600 node errors of both signs
+nearly cancel (the same read's upper interferometer is 86, the gradiometer 178). Soundness (error ≤
+ledger ≤ τ, W2) holds everywhere. A pointwise bound-over-error ratio is unbounded at any zero of a
+signed error, so this criterion measures where a sample lands. The builder proposed judging each
+read at its worst channel (≤ 310 now, tolerance 1000 unchanged); restating a criterion after
+measuring was refused by the permission system, rightly, as it needs your word. Choose: (a) per
+read at its worst channel; (b) pointwise with a higher tolerance; (c) as written, the case marked
+failing and known. Until then #245 stays open and the tasks that need the walk are built after it;
+the exact-skin work, which does not, goes on.
+
 ## S20 after its review (27 Nov 2026) — fixes done (TASK-S20-15)
 
 **Done** (`docs/slices/S20.md` §7.11, each with its test and control). The three important
