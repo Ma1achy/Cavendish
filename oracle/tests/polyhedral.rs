@@ -357,9 +357,9 @@ fn the_rounding_law_holds_on_the_calibration_set() {
     assert!(worst <= ROUNDING_LAW, "{body} at R/s {at}: {worst:.3} eps (R/s)^2 (c = {ROUNDING_LAW})");
 }
 
-/// P8 as the owner restated it (28 Nov 2026, `docs/slices/S5.md` §7.19): on the six bodies, every
-/// point within 100 sizes, the relative error of `U` and of `g` at most `c·ε·(R/s)²`, `c` the
-/// calibration set's ([`ROUNDING_LAW`]). As §3 first wrote it (≤ 1e-12) it measured 1.6e-10.
+// P8 as the owner restated it (28 Nov 2026, `docs/slices/S5.md` §7.19): on the six bodies, every
+// point within 100 sizes, the relative error of `U` and of `g` at most `c·ε·(R/s)²`, `c` the
+// calibration set's (`ROUNDING_LAW`). As §3 first wrote it (≤ 1e-12) it measured 1.6e-10.
 cav_validate::case! {
     test: polyhedral_agrees_with_the_40_digit_reference,
     name: "polyhedral.forty_digit_reference",
