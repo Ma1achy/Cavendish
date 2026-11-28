@@ -1040,6 +1040,8 @@ mutation). Left, all minor:
   settles at all three; `docs/slices/S5.md` §7.9). It is a recorded measurement, no test fails.
   Choose: (a) keep it in the record as failed at 1e-6 and move on; (b) ask for a tighter bound or a
   cheaper near kernel to meet it (a task of its own); (c) restate it.
+  **Answered 28 Nov 2026: (a) with (b) later.** The 4.8× at 1e-6 stays in the record as missing the
+  10× target (§7.9); S25's read-speed tasks take it on (TASK-S25-16, beside -06, -07, -09).
 - **C3 (TASK-S5-26, 28 Nov 2026):** `Pieces` within 3 cells of an arm and `Second` beyond reads
   1.34e-6 relative against `Exact`, criterion 1e-11; every cell exact reads 3.3e-15. Options (a),
   (b), (c) and the measurements by reach are in "S5 under way" above and `docs/slices/S5.md` §7.7.

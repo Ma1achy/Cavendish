@@ -1018,9 +1018,12 @@
 - id: TASK-S25-15
   milestone: S25
   title: "S25's record: the measurements against the S5 tag, the validation report, ARCHITECTURE, PROGRESS"
+- id: TASK-S25-16
+  milestone: S25
+  title: "L1 at 1e-6 rad, carried from S5 (the owner's ruling of 28 Nov 2026, docs/slices/S5.md 7.9): town's tower 1 reads 688,799 leaves one by one, 4.8x fewer than the opened chunks' 3,284,512, missing L1's 10x; the read-speed tasks (06, 07, 09) take it on: at least 10x fewer at 1e-6, settled, W2 and W3 unchanged"
 - id: TASK-S5-28
   milestone: S5
-  title: "P8 as written: Faceted within 1e-12 of 40 digits to 100 sizes (fails at 1.6e-10 on the turned plate at 100 m, the eps (R/s)^2 class; docs/slices/S5.md 7.17); left open for the owner's ruling"
+  title: "P8 restated as the rounding law (the owner's ruling of 28 Nov 2026): Faceted's error within c eps (R/s)^2 of 40 digits to 100 sizes, c fixed on an independent body set first (docs/slices/S5.md 7.19)"
 - id: TASK-S5-29
   milestone: S5
   title: "The paper's remaining provisional rows through cav: the flight-phase figure's passes (point masses, Spot, a moving voxel torus), and the ten shapes' scenes for the sweep, cost, crossover, whole-mesh and decimation tables and the cut-away figure"
