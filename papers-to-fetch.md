@@ -4,9 +4,16 @@ Rewritten 28 Nov 2026. The owner has supplied eleven batches in all (the last tw
 `papers-batch1`, `papers 2.zip`, the Komatitsch & Vilotte and Richards BSSA files, and the earlier
 `graphics-refs`, `elastic solids vibration seismic` and `rigid bodies` zips). Every research note in
 `docs/research/` has been updated from them, and everything they covered is removed from this list.
+What is held was confirmed against the owner's local paper library and its index (28 Nov 2026).
 What follows is only what is still missing, by note. DOIs were checked on 28 Nov 2026 against
 `https://api.crossref.org/works/<doi>` unless marked otherwise. PDFs stay outside the repository,
 which is public.
+
+Resolved on 28 Nov and so removed: "Boy et al. on 3-D pressure corrections" is Boy & Chao 2005
+(*JGR* 110, B08412, https://doi.org/10.1029/2002JB002333), which compares the 3-D atmosphere with the
+thin layer (¶[1], ¶[29]); Boy, Gegout & Hinderer 2002 is the companion surface-pressure paper. Both
+are held and read (`gradiometer-environment.md` §2.1). The "ELGAR companion" is arXiv:2007.04014,
+held and read in part.
 
 ## Rigid bodies (`rigid-bodies.md`)
 - [ ] van Zon & Schofield 2007, "Numerical implementation of the exact dynamics of free rigid bodies",
@@ -50,6 +57,9 @@ which is public.
 - [ ] Duff 1989, the printed version of "Polygon scan conversion by exact convolution" (*Raster
   Imaging and Digital Typography*, CUP, pp. 154–168 by a patent's citation; **no DOI**). The copy
   supplied is a 2024 retyping without venue or pages; only the citation needs checking.
+- [ ] Hockney & Eastwood, *Computer Simulation Using Particles*, in full (low priority: cited only as
+  the cloud-in-cell analogy). The copy held is 8 pages of the IOP paperback's front matter. The 1981
+  McGraw-Hill original has no DOI; the CRC reissue is https://doi.org/10.1201/9780367806934.
 
 ## Fluids and elastic solids
 Nothing missing. Johnson 1974 and Garvin 1956 (cited by Richards 1979 and Komatitsch & Vilotte
