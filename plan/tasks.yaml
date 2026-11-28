@@ -973,3 +973,48 @@
 - id: TASK-S28-05
   milestone: S28
   title: "S28's record: the demo, the validation report against the previous tag, ARCHITECTURE, PROGRESS"
+- id: TASK-S25-01
+  milestone: S25
+  title: "S25's brief from docs/research/performance-plan.md: the exits as speed-ups on the build PC against the S5 tag, web budgets, the read unchanged within its ledger"
+- id: TASK-S25-02
+  milestone: S25
+  title: "Profiling kept: the sampling profiler as cargo xtask profile, the flythrough with the gravity read held off and beside it, a 600-frame town baseline with GPU timestamps"
+- id: TASK-S25-03
+  milestone: S25
+  title: "The engine keeps the world's octree, the opened chunks' trees and each tower's world read by the world's hash; the playhead reading composed from it (each chunk voxelised once)"
+- id: TASK-S25-04
+  milestone: S25
+  title: "The octree updated on edit: the chunks an edited piece reaches and their ancestors made again, equal to a fresh build bit for bit"
+- id: TASK-S25-05
+  milestone: S25
+  title: "The cube series in the cubic invariants (exact rational coefficients), within 1e-15 of the monopole; the oracle within its tolerances"
+- id: TASK-S25-06
+  milestone: S25
+  title: "The near leaves' cost: the error-bounded split (17 to 68 us a call within 6.7 cells) measured by depth and bounded by the read's budget"
+- id: TASK-S25-07
+  milestone: S25
+  title: "Each leaf's series order from the read's budget, its truncation bound in the ledger (W2 and W3 unchanged)"
+- id: TASK-S25-08
+  milestone: S25
+  title: "One pool of threads for the read: no thread made per flight node, towers walked and read in parallel, the same bits on any count"
+- id: TASK-S25-09
+  milestone: S25
+  title: "The read's leaves as arrays by regime (series, split, prism), the series loop vectorised; the walk's nodes in Morton order"
+- id: TASK-S25-10
+  milestone: S25
+  title: "Chunks made and meshed off the frame natively (the hand-in budgeted), the handover's stand-ins kept; streaming and meshing p99 recorded"
+- id: TASK-S25-11
+  milestone: S25
+  title: "The world drawn from one buffer: 8-byte quads pulled in the vertex shader, one compacted indirect draw, persistent buffers and bind groups"
+- id: TASK-S25-12
+  milestone: S25
+  title: "Render LOD and read LOD from one cut description, switched within a frame of the data being there"
+- id: TASK-S25-13
+  milestone: S25
+  title: "The shared voxel ray query (brick occupancy bits, the octree's masks above, a hierarchical DDA) for picking the world and bodies and for the walk camera"
+- id: TASK-S25-14
+  milestone: S25
+  title: "Saving off the frame: region files and TASK-S24-06's compressed chunks written behind the frame, an unchanged region not rewritten; no frame past the flythrough's p99 while saving"
+- id: TASK-S25-15
+  milestone: S25
+  title: "S25's record: the measurements against the S5 tag, the validation report, ARCHITECTURE, PROGRESS"
