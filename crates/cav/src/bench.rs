@@ -97,7 +97,7 @@ pub fn flythrough(
     let load = started.elapsed().as_secs_f64();
     let made = (engine.streaming().made, engine.streaming().cached);
     let mut out = String::from(
-        "frame,ms,poll_ms,draw_ms,mesh_ms,meshed,made,chunks,bricks,pending,meshes,bricks_on_gpu,vertices,resident_mb,marched\n",
+        "frame,ms,poll_ms,draw_ms,mesh_ms,meshed,made,chunks,bricks,pending,meshes,bricks_on_gpu,vertices,resident_mb,marched,encode_ms,gpu_cull_ms,gpu_bodies_ms,gpu_chunks_ms,gpu_bricks_ms,gpu_lines_ms\n",
     );
     let mut times = Vec::with_capacity(frames);
     let (mut meshed_before, mut made_before) = (0u64, made.0 + made.1);
@@ -111,8 +111,10 @@ pub fn flythrough(
         let polled = began.elapsed().as_secs_f64() * 1e3;
         let view = engine.frame(0)?;
         renderer.draw(&gpu, &target, view)?;
+        let encoded = began.elapsed().as_secs_f64() * 1e3;
         wait(&gpu)?;
         let ms = began.elapsed().as_secs_f64() * 1e3;
+        let g = renderer.gpu_times().unwrap_or([f64::NAN; 5]);
         let world = engine.frame(0)?.world.cloned().unwrap_or_default();
         let ([meshes, bricks_on_gpu, vertices], notes) = renderer.world_counts();
         let (meshed, mesh_ms) = renderer.world_meshing();
@@ -126,13 +128,19 @@ pub fn flythrough(
         }
         let _ = writeln!(
             out,
-            "{frame},{ms:.3},{polled:.3},{:.3},{mesh_ms:.3},{new_meshes},{new_made},{},{},{},{meshes},{bricks_on_gpu},{vertices},{:.1},{:.2}",
+            "{frame},{ms:.3},{polled:.3},{:.3},{mesh_ms:.3},{new_meshes},{new_made},{},{},{},{meshes},{bricks_on_gpu},{vertices},{:.1},{:.2},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}",
             ms - polled,
             world.chunks.len(),
             world.bricks.len(),
             world.pending,
             engine.streaming().bytes() as f64 / 1048576.0,
-            renderer.world_marched()
+            renderer.world_marched(),
+            encoded - polled,
+            g[0],
+            g[1],
+            g[2],
+            g[3],
+            g[4]
         );
         times.push(ms);
         // A frame this long would hold the owner's desktop (Windows stops answering a busy GPU

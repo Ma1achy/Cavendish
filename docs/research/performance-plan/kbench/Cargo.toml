@@ -1,0 +1,12 @@
+﻿[package]
+name = "kbench"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[dependencies]
+cav-core = { path = "../../../../crates/cav-core" }
+
+[profile.release]
+debug = "line-tables-only"

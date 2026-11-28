@@ -1,0 +1,9 @@
+name	polyhedral.near_edge
+subsystem	polyhedral
+slice	S5
+reference	closed form
+against	points 1e-4 to 1e-8 m across the middle of an edge of a 1/64 m cube: the edge's logarithm against 2·asinh(ℓ/2d), V and g against Nagy's prism and its exact attraction; the worst relative error
+unit	relative
+tolerance	1e-10
+measured	4.217506121625236e-12
+pass	true

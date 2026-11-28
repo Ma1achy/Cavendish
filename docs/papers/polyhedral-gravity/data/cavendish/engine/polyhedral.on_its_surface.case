@@ -1,0 +1,9 @@
+name	polyhedral.on_its_surface
+subsystem	polyhedral
+slice	S5
+reference	closed form
+against	P4: V and g at a point on a face, on an edge, at a vertex and on an edge's extension, against points 1e-9 of the size away on each side, of an aligned box, an icosahedron and a turned box: the worst relative change (finite everywhere)
+unit	relative
+tolerance	1e-7
+measured	4.603651462357389e-8
+pass	true

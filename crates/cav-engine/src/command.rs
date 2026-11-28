@@ -480,6 +480,13 @@ pub enum ViewCommand {
         /// The view.
         view: cav_sim::world::lod_view::LodView,
     },
+    /// How the seams between the world's rings of detail are drawn (S5). A view's: never undone.
+    Seams {
+        /// The pane, from 0.
+        pane: usize,
+        /// Dithered, or cut.
+        seams: cav_sim::world::clipmap::Seams,
+    },
     /// Hide the body of this label from every pane, or show it again (the scene tree's eye, S19).
     /// A view's: the towers still read it, and it is never undone.
     Hide {
@@ -518,7 +525,8 @@ impl ViewCommand {
             | Self::Overlay { pane, .. }
             | Self::Section { pane, .. }
             | Self::Draw { pane, .. }
-            | Self::LodView { pane, .. } => Some(pane),
+            | Self::LodView { pane, .. }
+            | Self::Seams { pane, .. } => Some(pane),
         }
     }
 }

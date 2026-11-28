@@ -9,8 +9,16 @@ struct World {
     eye: vec4<f32>,
     // The direction the camera looks (xyz).
     forward: vec4<f32>,
-    // x: the finest cell, metres; y: 1 to colour by level (the LOD bands); z: 1 when lit.
+    // x: the finest cell, metres; y: 1 to colour by level (the LOD bands); z: 1 when lit; w: a
+    // chunk's side, metres.
     params: vec4<f32>,
+    // The camera's continuous place for the clipmap relative to the target (xyz); w: the seams'
+    // mode (0 cut, 1 dithered, 2 the control: the band on the snapped edge).
+    seams: vec4<f32>,
+    // x, y: the band's start and width in the finer level's bricks; z: the rings' half-width.
+    band: vec4<f32>,
+    // For level k from 1: the snapped middle of level k − 1's box (xyz).
+    rings: array<vec4<f32>, 12>,
 };
 
 @group(0) @binding(0) var<uniform> w: World;
@@ -36,6 +44,15 @@ fn band(level: u32) -> vec3<f32> {
         vec3<f32>(0.83, 0.79, 0.04),
         vec3<f32>(0.62, 0.25, 0.09));
     return colours[level % 8u];
+}
+
+// The 4×4 ordered-dither threshold of pixel `p`, (i + ½)/16: fixed in the screen, so a picture
+// depends on the camera's place alone.
+fn bayer(p: vec2<f32>) -> f32 {
+    var m = array<u32, 16>(0u, 8u, 2u, 10u, 12u, 4u, 14u, 6u, 3u, 11u, 1u, 9u, 15u, 7u, 13u, 5u);
+    let x = u32(p.x) % 4u;
+    let y = u32(p.y) % 4u;
+    return (f32(m[x + 4u * y]) + 0.5) / 16.0;
 }
 
 fn shade(base: vec3<f32>, normal: vec3<f32>) -> vec3<f32> {
@@ -156,6 +173,25 @@ fn fs_brick(in: BrickOut) -> FragOut {
     }
     let at = ray_from + dir * (enter + hit.t);
     let clip = w.view_proj * vec4<f32>(at, 1.0);
+    // The seams' cross-fade (`docs/slices/S5.md` §2 "Seams"): over the band inside the finer
+    // ring's edge this coarser level keeps a pixel by a 4×4 ordered dither on α, its share there,
+    // measured from the camera's continuous place so that a snap changes nothing; the finer level
+    // is drawn whole under it. Outside the finer ring α is 1.
+    let level = u32(in.params.y);
+    if w.seams.w > 0.5 && level >= 1u {
+        let finer = w.params.w * exp2(f32(level - 1u));
+        var centre = w.seams.xyz;
+        var start = w.band.x;
+        if w.seams.w > 1.5 {
+            centre = w.rings[min(level, 11u)].xyz;
+            start = w.band.z - w.band.y;
+        }
+        let d = abs(at - centre) / finer;
+        let alpha = clamp((max(max(d.x, d.y), d.z) - start) / w.band.y, 0.0, 1.0);
+        if bayer(in.clip.xy) >= alpha {
+            discard;
+        }
+    }
     var base_colour = palette[sub_material(base, hit.cell / 8)].rgb;
     if w.params.y > 0.5 {
         base_colour = band(u32(in.params.y));

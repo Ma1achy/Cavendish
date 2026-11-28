@@ -1,0 +1,9 @@
+name	polyhedral.solid_angles
+subsystem	polyhedral
+slice	S5
+reference	closed form
+against	P5: the sum of the faces' solid angles at points outside (0), inside (4 pi) and on a face (2 pi) of the five Platonic solids, a turned box and a torus mesh: the worst difference in steradians (the report has no solid-angle unit: read radians as steradians)
+unit	radians
+tolerance	1e-12
+measured	3.375077994860476e-14
+pass	true
