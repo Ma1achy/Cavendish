@@ -929,7 +929,7 @@ fn s5(root: &Path) -> Result<(), String> {
     let mut made: Vec<String> = Vec::new();
     let shots: [(&str, &str); 2] = [
         ("plane.png", "load plane; view iso; pan 0 3 0; zoom 30"),
-        ("planet.png", "load planet; pan 30 0 0; orbit 200 12; zoom 4"),
+        ("planet.png", "load planet; view iso; pan 40 0 0; zoom 150"),
     ];
     for (file, script) in &shots {
         capture_within(
