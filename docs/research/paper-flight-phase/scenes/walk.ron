@@ -1,0 +1,89 @@
+// Cross-check scene for docs/research/paper-flight-phase (flight.py against cav run).
+(
+    version: 1,
+    name: "xcheck-walk",
+    description: "80 kg walking past at 1.4 m/s, 2 m from the axis, 1 m up",
+    duration: 12.0,
+    array: (
+        instrument: (
+            tower_height: 10.1,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+            atom_mass: 1.4431558652473234e-25,
+            gravity: 9.81,
+            kicks: 1000,
+            launch_floor: true,
+            sign: LowerMinusUpper,
+        ),
+        towers: [
+            (
+                label: "t0",
+                position: (0.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "t1",
+                position: (0.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.4,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "t2",
+                position: (0.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.8,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "t3",
+                position: (0.0, 0.0, 0.0),
+                timing: (
+                    offset: 1.2,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "t4",
+                position: (0.0, 0.0, 0.0),
+                timing: (
+                    offset: 1.6,
+                ),
+                instrument: None,
+            ),
+        ],
+        schedule: (
+            jitter: None,
+            alternate: None,
+            gaps: None,
+            window: None,
+            loss: 0.0,
+            seed: 0,
+        ),
+    ),
+    room: None,
+    floor: None,
+    bodies: [
+        (
+            label: "lift",
+            mass: 80.0,
+            radius: 0.0,
+            shape: None,
+            motion: Pass(
+                from: (2.0, -8.0, 1.0),
+                to: (2.0, 8.0, 1.0),
+                start: 0.5,
+                speed: 1.4,
+            ),
+            appears: None,
+            vanishes: None,
+        ),
+    ],
+)

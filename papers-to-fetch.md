@@ -64,3 +64,8 @@ held and read in part.
 ## Fluids and elastic solids
 Nothing missing. Johnson 1974 and Garvin 1956 (cited by Richards 1979 and Komatitsch & Vilotte
 1998) would matter only if a dynamic elastic solver is built.
+
+## The paper's moving bodies with the real phase (`paper-flight-phase.md`)
+- [ ] Storey & Cohen-Tannoudji 1994, J. Phys. II France 4, 1999 (the first-order phase as the action along unperturbed paths; cited through Hogan et al. 2008 §5.2.1): https://doi.org/10.1051/jp2:1994103 (DOI from memory, not resolved)
+- [ ] Cheinet et al. 2008, IEEE Trans. Instrum. Meas. 57, 1141, the published version (the arXiv preprint physics/0510197 was read): https://doi.org/10.1109/TIM.2007.915148
+- [ ] Dimopoulos, Graham, Hogan & Kasevich 2008, Phys. Rev. D 78, 042003 (arXiv:0802.4098; the interferometer's suppressed response to short-wavelength gravity, Hogan et al.'s ref. [34])
