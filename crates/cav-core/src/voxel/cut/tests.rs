@@ -295,6 +295,10 @@ impl crate::forward::Source for ExactSource {
     }
 }
 
+/// The representations that read a tree alone (C2's ladder): all but `Pieces`.
+const LADDER: [Representation; 4] =
+    [Representation::Sampled, Representation::Fill, Representation::Centroid, Representation::Second];
+
 /// The density of C2's bodies, kg/m³.
 const C2_DENSITY: f64 = 2700.0;
 /// The cells across each body's box at C2's pitches, less the 0.37 that keeps every face off the
@@ -361,8 +365,7 @@ pub(crate) fn c2_errors(shape: &dyn Shape, exact: &Faceted) -> Vec<(Representati
     let tower = c2_tower(shape);
     let reference = reader.read(tower, &ExactSource(exact.clone(), C2_DENSITY), 10.0);
     let mass = C2_DENSITY * exact.volume();
-    let mut out: Vec<(Representation, Vec<(f64, f64)>)> =
-        Representation::ALL.iter().map(|r| (*r, Vec::new())).collect();
+    let mut out: Vec<(Representation, Vec<(f64, f64)>)> = LADDER.iter().map(|r| (*r, Vec::new())).collect();
     for cells in C2_CELLS {
         let h = 0.8 / (f64::from(cells) + 0.37);
         let mut squares = [0.0f64; 4];
@@ -370,7 +373,7 @@ pub(crate) fn c2_errors(shape: &dyn Shape, exact: &Faceted) -> Vec<(Representati
             let grid = c2_grid(shape, h, placement);
             let sampled = crate::voxel::voxelise(shape, &grid, mass, 0).unwrap();
             let cut = voxelise_cut(shape, &grid, Weight::Density(C2_DENSITY), 0, Budget::DEFAULT).unwrap();
-            for (i, representation) in Representation::ALL.iter().enumerate() {
+            for (i, representation) in LADDER.iter().enumerate() {
                 let tree = if *representation == Representation::Sampled { &sampled } else { &cut };
                 let read =
                     reader.read(tower, &TreeBody::read_as(tree, *representation, |_| Vec3::ZERO), 10.0);
@@ -531,4 +534,244 @@ fn analytic_rule_points() {
         }
         eprintln!("{points} points: worst {worst:.2e}");
     }
+}
+
+/// How C3's geometry is read ([`c3_read`]).
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum C3Read {
+    /// `Pieces`: exact within this many cells of an arm point, `Second` beyond, with or without
+    /// the octupole.
+    Pieces(f64, bool),
+    /// `Second`.
+    Second,
+}
+
+/// C3's geometry: an icosahedron (edge 0.6 m) at 1/16 m on a lattice placed off the body's box,
+/// the tower's line half a cell from its surface (the base below the solid, so the arms rise past
+/// it), one AION-10 shot through Gauss order 6. The worst of the lower, upper and gradiometer
+/// channels' errors against the polyhedral closed form of the whole solid, relative to each.
+pub(crate) fn c3_read(how: C3Read) -> f64 {
+    use crate::forward::{Instrument, Quadrature, Reader};
+    use crate::voxel::kernel::TreeBody;
+    let reader = Reader::new(Instrument {
+        quadrature: Quadrature::Gauss { order: 6, panel: 0.4 },
+        ..Instrument::aion10()
+    });
+    let ico = Platonic::Icosahedron.solid(0.6);
+    let exact = Faceted::from_polyhedron(&ico).unwrap();
+    let h = 1.0 / 16.0;
+    let n = Vec3::new(1.0, 0.23, 0.0).normalised();
+    let (mut inside, mut outside) = (0.0, 2.0);
+    for _ in 0..80 {
+        let mid = 0.5 * (inside + outside);
+        if ico.contains(n * mid) { inside = mid } else { outside = mid }
+    }
+    let line = n * (outside + 0.5 * h);
+    let tower = Vec3::new(line.x, line.y, -0.6);
+    let reference = reader.read(tower, &ExactSource(exact, C2_DENSITY), 10.0);
+    let grid = c2_grid(&ico, h, [0.31, 0.62, 0.17]);
+    let tree = voxelise_cut(&ico, &grid, Weight::Density(C2_DENSITY), 0, Budget::DEFAULT).unwrap();
+    let origin: fn(f64) -> Vec3 = |_| Vec3::ZERO;
+    let body = match how {
+        C3Read::Pieces(cells, octupole) => {
+            TreeBody::with_pieces_within(&tree, piece_solids(&ico, &tree).unwrap(), cells, octupole, origin)
+        }
+        C3Read::Second => TreeBody::read_as(&tree, Representation::Second, origin),
+    };
+    let r = reader.read(tower, &body, 10.0);
+    let g = |x: crate::forward::Reading| x.lower - x.upper;
+    let e = ((r.lower - reference.lower) / reference.lower)
+        .abs()
+        .max(((r.upper - reference.upper) / reference.upper).abs())
+        .max(((g(r) - g(reference)) / g(reference)).abs());
+    eprintln!("C3 geometry, {how:?}: {e:.3e} relative ({} cut cells)", tree.cuts.len());
+    e
+}
+
+cav_validate::case! {
+    test: validation_pieces_everywhere_are_the_body,
+    name: "cut.pieces_everywhere_are_the_body",
+    subsystem: "voxel",
+    slice: "S5",
+    reference: ClosedForm,
+    against: "the polyhedral closed form of an icosahedron (edge 0.6 m), the tower's line half a cell from its surface, one AION-10 shot through Gauss order 6: voxelised at 1/16 m with every cut cell read as its exact piece by the polyhedral kernel and the interior by the cube kernel, the worst of the lower, upper and gradiometer channels, relative",
+    unit: Relative,
+    tolerance: 1e-11,
+    measure: cav_validate::Measured::Error({
+        let exact = c3_read(C3Read::Pieces(f64::INFINITY, false));
+        // Control: without the exact pieces it is far off.
+        let second = c3_read(C3Read::Second);
+        assert!(second > 1e-11, "Second alone is {second:e}");
+        exact
+    }),
+}
+
+/// How far `Pieces` must reach, and what the octupole beyond buys (TASK-S5-10, §7.7; the
+/// question TASK-S5-26 puts to the owner). Run by hand: `-- --ignored --nocapture`.
+#[test]
+#[ignore = "a measurement: run by hand"]
+fn pieces_by_reach() {
+    // `Second` (the `Centroid` cube within three cells) against the bare quadrupole everywhere,
+    // which is `Pieces` with no reach and no octupole.
+    c3_read(C3Read::Second);
+    for octupole in [false, true] {
+        for cells in [0.0, 3.0, 6.0, 12.0, 24.0, 48.0, f64::INFINITY] {
+            c3_read(C3Read::Pieces(cells, octupole));
+        }
+    }
+}
+
+#[test]
+fn pieces_are_the_cells_pieces() {
+    // Each cell's solids weigh what its piece does, for a polyhedron and a mesh; a curved solid
+    // has none, in words; the cap is counted first.
+    let ico = Platonic::Icosahedron.solid(0.6);
+    let (v, t) = torus_mesh(0.35, 0.15, 24, 12);
+    let torus = Mesh::new(v, t).unwrap();
+    for shape in [&ico as &dyn Shape, &torus] {
+        let grid = Grid::around(shape.bounds(), 0.6 / 9.3, 2).unwrap();
+        let tree = voxelise_cut(shape, &grid, Weight::Density(1.0), 0, Budget::DEFAULT).unwrap();
+        let solids = piece_solids(shape, &tree).unwrap();
+        let mut worst = 0f64;
+        for (cut, solid) in tree.cuts.iter().zip(&solids) {
+            let v: f64 = solid.parts.iter().map(|(sign, f)| sign * f.volume()).sum();
+            worst = worst.max((v - cut.piece.volume).abs() / grid.pitch.powi(3));
+        }
+        assert!(worst < 1e-13, "{worst:e}");
+    }
+    let sphere = Sphere { centre: Vec3::ZERO, radius: 0.3 };
+    let grid = Grid::around(sphere.bounds(), 0.1, 2).unwrap();
+    let tree = voxelise_cut(&sphere, &grid, Weight::Density(1.0), 0, Budget::DEFAULT).unwrap();
+    assert!(piece_solids(&sphere, &tree).unwrap_err().0.contains("polyhedron or a mesh"));
+}
+
+/// 26 directions from a fixed generator (SplitMix64), uniform over the sphere, each kept only when
+/// a tower's line from `n·(radius + 1.5)` upward misses the ball by 0.25 m or more: the analytic
+/// reference (a point outside the ball) does not hold on a line through it ([X] §3.1's "26 random
+/// tower directions"; the 26 to a cube's faces, edges and corners were the first choice, and the
+/// six beneath the ball put the arms through it).
+fn twenty_six(radius: f64) -> Vec<Vec3> {
+    let mut state = 2626u64;
+    let mut next = || {
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        ((z ^ (z >> 31)) >> 11) as f64 / (1u64 << 53) as f64
+    };
+    let mut out = Vec::new();
+    while out.len() < 26 {
+        let (u, v) = (2.0 * next() - 1.0, 2.0 * std::f64::consts::PI * next());
+        let s = (1.0 - u * u).sqrt();
+        let n = Vec3::new(s * v.cos(), s * v.sin(), u);
+        let base = n * (radius + 1.5);
+        let across = (base.x * base.x + base.y * base.y).sqrt();
+        if across >= radius + 0.25 || base.z >= radius + 0.25 {
+            out.push(n);
+        }
+    }
+    out
+}
+
+/// C6's measurement: for each size/h of 8, 16 and 32, the RMS over 8 random lattice placements and
+/// 26 directions of `Centroid`'s and `Second`'s gradiometer phase error against the analytic
+/// sphere (a point mass outside itself), the tower's base 1.5 m beyond the surface, radians.
+/// `centred`: on the engine's own grid (centred on the ball, the near-symmetric placement) in
+/// place of the eight.
+fn c6_rms(centred: bool) -> Vec<(f64, f64, f64)> {
+    use crate::forward::{Instrument, Mass, Quadrature, Reader};
+    use crate::voxel::kernel::TreeBody;
+    let reader = Reader::new(Instrument {
+        quadrature: Quadrature::Gauss { order: 6, panel: 0.4 },
+        ..Instrument::aion10()
+    });
+    let radius = 0.5;
+    let sphere = Sphere { centre: Vec3::ZERO, radius };
+    let mass = C2_DENSITY * sphere.volume();
+    let directions = twenty_six(radius);
+    let towers: Vec<Vec3> = directions.iter().map(|n| *n * (radius + 1.5)).collect();
+    let point = Mass::point(mass, |_| Vec3::ZERO);
+    let exact: Vec<_> = towers.iter().map(|t| reader.read(*t, &point, 10.0)).collect();
+    // Eight placements from a fixed generator (SplitMix64), each a sub-cell offset along x, y, z.
+    let mut state = 26u64;
+    let mut next = || {
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        ((z ^ (z >> 31)) >> 11) as f64 / (1u64 << 53) as f64
+    };
+    let placements: Vec<[f64; 3]> = (0..8).map(|_| [next(), next(), next()]).collect();
+    [8u32, 16, 32]
+        .into_iter()
+        .map(|cells| {
+            let h = 2.0 * radius / f64::from(cells);
+            let mut sums = [0.0f64; 2];
+            let mut n = 0.0;
+            let grids: Vec<Grid> = if centred {
+                vec![Grid::around(sphere.bounds(), h, 4).unwrap()]
+            } else {
+                placements.iter().map(|p| c2_grid(&sphere, h, *p)).collect()
+            };
+            // One thread a grid, joined in order, so the sums are the same bits however they ran.
+            let parts: Vec<([f64; 2], f64)> = std::thread::scope(|scope| {
+                let handles: Vec<_> = grids
+                    .iter()
+                    .map(|grid| {
+                        let (reader, towers, exact, sphere) = (&reader, &towers, &exact, &sphere);
+                        scope.spawn(move || {
+                            let tree =
+                                voxelise_cut(sphere, grid, Weight::Density(C2_DENSITY), 0, Budget::DEFAULT)
+                                    .unwrap();
+                            let mut sums = [0.0f64; 2];
+                            for (tower, exact) in towers.iter().zip(exact) {
+                                for (i, representation) in
+                                    [Representation::Centroid, Representation::Second].iter().enumerate()
+                                {
+                                    let body = TreeBody::read_as(&tree, *representation, |_| Vec3::ZERO);
+                                    let read = reader.read(*tower, &body, 10.0);
+                                    let e = (read.lower - read.upper) - (exact.lower - exact.upper);
+                                    sums[i] += e * e;
+                                }
+                            }
+                            (sums, towers.len() as f64)
+                        })
+                    })
+                    .collect();
+                handles.into_iter().map(|h| h.join().unwrap()).collect()
+            });
+            for (part, count) in parts {
+                sums[0] += part[0];
+                sums[1] += part[1];
+                n += count;
+            }
+            (h, (sums[0] / n).sqrt(), (sums[1] / n).sqrt())
+        })
+        .collect()
+}
+
+/// C6, the referee's S1 (recorded, not gated): did the paper's sphere anomaly (`Second` no better
+/// than `Centroid` on a sphere, [X] §3.1) come from the near-symmetric placement? Written before
+/// measuring: if `Second` beats `Centroid` at two of the three pitches or more, it did.
+#[test]
+fn slow_the_sphere_anomaly_with_random_placements() {
+    for (h, centroid, second) in c6_rms(true) {
+        eprintln!("C6 centred grid, h {h:.4} m: Centroid RMS {centroid:.3e} rad, Second {second:.3e} rad");
+    }
+    let rows = c6_rms(false);
+    let mut wins = 0;
+    for (h, centroid, second) in &rows {
+        eprintln!("C6 h {h:.4} m: Centroid RMS {centroid:.3e} rad, Second {second:.3e} rad");
+        wins += usize::from(second < centroid);
+    }
+    eprintln!(
+        "C6: Second beats Centroid at {wins} of 3 pitches: {}",
+        if wins >= 2 {
+            "the anomaly was the near-symmetric placement"
+        } else {
+            "the anomaly stands with random placements"
+        }
+    );
+    // Recorded, not gated: only that each number is a number.
+    assert!(rows.iter().all(|(_, a, b)| a.is_finite() && b.is_finite()));
 }

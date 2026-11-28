@@ -194,6 +194,18 @@ impl Stateless for Cuboid {
         }
         box_raw(lo, hi)
     }
+
+    fn convex(&self, b: &Aabb) -> Option<Vec<(f64, Convex)>> {
+        let c = b.centre();
+        let lo = self.centre - self.half;
+        let hi = self.centre + self.half;
+        let lo = Vec3::new(lo.x.max(b.lo.x), lo.y.max(b.lo.y), lo.z.max(b.lo.z)) - c;
+        let hi = Vec3::new(hi.x.min(b.hi.x), hi.y.min(b.hi.y), hi.z.min(b.hi.z)) - c;
+        if lo.x >= hi.x || lo.y >= hi.y || lo.z >= hi.z {
+            return Some(Vec::new());
+        }
+        Some(vec![(1.0, Convex::from_box(lo, hi))])
+    }
 }
 
 impl Clip for Cuboid {
@@ -227,6 +239,11 @@ impl Stateless for Polyhedron {
 
     fn clip(&self, b: &Aabb) -> Raw {
         self.piece_of(b).raw()
+    }
+
+    fn convex(&self, b: &Aabb) -> Option<Vec<(f64, Convex)>> {
+        let piece = self.piece_of(b);
+        Some(if piece.is_empty() { Vec::new() } else { vec![(1.0, piece)] })
     }
 }
 

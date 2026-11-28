@@ -35,6 +35,26 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**For the owner: C3, `Pieces` against `Exact` (TASK-S5-26, PR open, not merged; `docs/slices/S5.md`
+§7.7).** Written before measuring: an icosahedron at 1/16 m, the tower's line within a cell of it,
+read as `Pieces` (the exact piece within 3 cells of an arm, `Second` beyond), within 1e-11 relative
+of the `Exact` read. Measured **1.34e-6** (3.4e-7 with the octupole beyond, as built). The pieces
+themselves are exact: every cut cell exact gives 3.3e-15. What is left is the far cells' moments
+(the arms rise to 10 m, so most of the flight sees every cell from metres away): by reach, 6 cells
+2.7e-7, 12 5.4e-8, 24 and 48 2.1e-9 (with the octupole 3.6e-8, 2.9e-9, 1.6e-10, 1.6e-10). [X]'s own
+regimes table needs about 450 cells for fill + centroid + second moment at 1e-10 rad, so 3 cells was
+never going to reach 1e-11. Choose: (a) judge C3 with every cut cell exact (3.3e-15; that case,
+`cut.pieces_everywhere_are_the_body`, is merged) and record the 3-cell read; (b) set `PIECE_WITHIN`
+and the far read by measurement for a stated tolerance (none tried reaches 1e-11 short of every
+cell); (c) keep C3 as written, failing and known.
+
+**TASK-S5-10, `Pieces` and C6 (28 Nov 2026; §7.7).** `Pieces` built (exact near an arm, `Second` and
+the octupole beyond); every cell exact is the body to 3.3e-15. **C6: the sphere anomaly was the
+near-symmetric placement**: with eight random placements `Second` beats `Centroid` at 3 of 3
+pitches; on the engine's centred grid it loses at 3 of 3. Also measured, not changed: `Second`'s
+`Centroid`-cube fallback within 3 cells of an arm reads 1.5e-4 where the bare quadrupole reads
+6.3e-6; a convergence-radius rule tried with its criterion first did worse (2.4e-4) and was dropped.
+
 **TASK-S5-09, cut-cell moments (28 Nov 2026; `docs/slices/S5.md` §7.6).** Boundary cells clipped
 exactly (convex solids by half-spaces, meshes by the signed vertical-prism decomposition, the
 curved solids by their analytic surface) and read as `Fill`, `Centroid` or `Second`; `Sampled`
@@ -933,7 +953,9 @@ mutation). Left, all minor:
   `surface()` in two test files; a mesh file is resolved against the working directory.
 
 ## Questions for the owner
-None open.
+- **C3 (TASK-S5-26, 28 Nov 2026):** `Pieces` within 3 cells of an arm and `Second` beyond reads
+  1.34e-6 relative against `Exact`, criterion 1e-11; every cell exact reads 3.3e-15. Options (a),
+  (b), (c) and the measurements by reach are in "S5 under way" above and `docs/slices/S5.md` §7.7.
 
 Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
 - **Ubuntu Mono: yes.** `UbuntuMono-Regular.ttf` from the official Ubuntu font family release goes in,

@@ -90,11 +90,16 @@ pub enum Representation {
     /// Each boundary cell a point at its piece's centroid with the piece's quadrupole; within three
     /// cells of an arm, the `Centroid` cube.
     Second,
+    /// Within three cells of an arm each boundary cell its exact piece, read by the polyhedral
+    /// closed form; beyond, `Second` and the piece's octupole. For a polyhedron or a mesh only
+    /// (`Cuboid`, `Platonic`, `Polyhedron`, `Mesh`, `Triangles`): a curved solid's pieces are not
+    /// polyhedra.
+    Pieces,
 }
 
 impl Representation {
     /// Every representation, in the order a choice lists them.
-    pub const ALL: [Self; 4] = [Self::Sampled, Self::Fill, Self::Centroid, Self::Second];
+    pub const ALL: [Self; 5] = [Self::Sampled, Self::Fill, Self::Centroid, Self::Second, Self::Pieces];
 
     /// Whether it is the default ([`Self::Sampled`]): such a shape does not write the field.
     #[must_use]
@@ -110,6 +115,7 @@ impl Representation {
             Self::Fill => cut::Representation::Fill,
             Self::Centroid => cut::Representation::Centroid,
             Self::Second => cut::Representation::Second,
+            Self::Pieces => cut::Representation::Pieces,
         }
     }
 }
@@ -600,6 +606,21 @@ impl ShapeSpec {
                 "{at}.representation: {:?} clips the shape's own boundary cells, so the body has one material and                  no parts; this one has {} parts (read it as Sampled)",
                 self.representation,
                 self.parts.len()
+            ));
+        }
+        if self.representation == Representation::Pieces
+            && matches!(
+                self.kind,
+                ShapeKind::Sphere { .. }
+                    | ShapeKind::Shell { .. }
+                    | ShapeKind::Cylinder { .. }
+                    | ShapeKind::Ellipsoid { .. }
+            )
+        {
+            return Err(format!(
+                "{at}.representation: Pieces reads a polyhedron or a mesh exactly; a {}'s pieces are not \
+                 polyhedra (read it as Second)",
+                self.kind.name()
             ));
         }
         if self.parts.len() > layers::MAX_LAYERS - 1 {

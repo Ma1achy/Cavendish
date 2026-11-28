@@ -324,6 +324,12 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   `±√(A − y²)`, so `∫ y^q (z-moments) dy` is a sum of `∫ y^q (A − y²)^{k/2} dy`, `k ≤ 4`, in closed
   form (arcsines for odd `k`): one quadrature instead of two, about 24× fewer chords. Watch the
   cancellation of the arcsine terms near a tangency; hold it to C1 and to the 48-point rule.
+- **`Second` near an arm** (TASK-S5-10, `docs/slices/S5.md` §7.7): its fallback, the `Centroid`
+  cube within three cells, reads 1.5e-4 relative on C3's geometry where the bare quadrupole reads
+  6.3e-6, and a fallback only within the convergence radius read 2.4e-4. The nearest cells' errors
+  have both signs. A near read that is the piece's shape (PLIC + residual of
+  `docs/research/surface-representation.md`, or `Pieces`) is the principled fix; measure it on C3's
+  geometry against both.
 - **Third moments read near the arm** (TASK-S5-09): the cut cells keep their pieces' third
   moments (they make the node moments exact), but `Second` reads only to the quadrupole. A `Third`
   rung (point + quadrupole + octupole, 12–21 ns) is 20–60× better again at 0.5 m on four of the
