@@ -68,7 +68,7 @@ def fmt(x: float, digits: int = 1) -> str:
     m = x / 10**e
     if round(m, digits) >= 10:
         m, e = m / 10, e + 1
-    return f"{m:.{digits}f}e{e:+d}".replace("e+", "e").replace("e-0", "e-").replace("e0", "e")
+    return f"{m:.{digits}f}e{e}"
 
 
 # ======================================= SWEEP =======================================

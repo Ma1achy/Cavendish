@@ -206,6 +206,28 @@ def r4() -> None:
     print(json.dumps(out, indent = 1, default = R.json_safe))
 
 
+def r4b() -> None:
+    """Added after R4: at 20 m the closed-form residual is at its rounding floor (ε(R/s)² per piece),
+    so R4's residual test there measured rounding. The same test on the moments' residual, which
+    has no such floor (bunny, 1/16 m, every distance)."""
+    R.below_normal()
+    mesh = B.mesh_for("bunny")
+    y0s = [B.track(mesh, d)[0] for d in B.DISTANCES]
+    vox = L.voxelise(mesh, 1 / 16)
+    coef = MO.multipole_coefficients(MO.piece_moments(vox.piece_tris, vox.piece_of, vox.centroid))
+    got = []
+    for order, panel in ((ORDER, PANEL), (2 * ORDER, PANEL / 2)):
+        prs = reads(mesh, y0s, order, panel)
+        pts, sl = all_points(prs)
+        got.append(series_u(prs, sl, R.mpole_field(vox.centroid, coef, pts).sum(axis = 1)))
+    out = {str(d): float(np.abs(got[0][i] - got[1][i]).max() / np.abs(got[1][i]).max())
+           for i, d in enumerate(B.DISTANCES)}
+    res = json.loads((OUT / "budget-r4.json").read_text(encoding = "utf-8"))
+    res["r4b_moments_residual_change_over_max"] = out
+    (OUT / "budget-r4.json").write_text(json.dumps(res, indent = 1), encoding = "utf-8")
+    print("r4b", out, flush = True)
+
+
 def r6() -> None:
     """The analytic Jacobian against 1 mm central differences (and a 30 cm control) on the cube and
     the CAD part, every distance."""
@@ -322,6 +344,8 @@ if __name__ == "__main__":
             run(nm, int(sys.argv[3]))
     elif cmd == "r4":
         r4()
+    elif cmd == "r4b":
+        r4b()
     elif cmd == "r6":
         r6()
     elif cmd == "analyse":

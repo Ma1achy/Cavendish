@@ -4,7 +4,7 @@
   "tri_control_rel": 1.253995642421126e-06,
   "points_quadrupole_rel": 1.4199425614022676e-15,
   "series_g_rel": 2.3868014840888307e-15,
-  "series_u_vs_polyhedral_cubes_rel": 0.006345661266595682,
+  "series_u_vs_polyhedral_cubes_rel": 1.4280107135057772e-11,
   "pass": true
  },
  "R1": {

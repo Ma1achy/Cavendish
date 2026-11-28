@@ -1,0 +1,35 @@
+{
+ "summary": {
+  "1.5": {
+   "signal_change_over_peak": 1.098671270281916e-13,
+   "d_change_over_max": 5.9814645625186165e-06,
+   "c_change_over_max": 1.8660100248094218e-07,
+   "r8_moving_mpole_vs_closed_form": 1.8311850523210025e-05,
+   "engine_rule_6_0.1_vs_fine_signal": 7.137353507670841e-14
+  },
+  "5.0": {
+   "signal_change_over_peak": 1.2670951583725444e-12,
+   "d_change_over_max": 0.0005427058424994099,
+   "c_change_over_max": 8.427906681132123e-07,
+   "r8_moving_mpole_vs_closed_form": 0.0011925251302797358,
+   "engine_rule_6_0.1_vs_fine_signal": 7.208072528539918e-13
+  },
+  "20.0": {
+   "signal_change_over_peak": 8.824415226992701e-12,
+   "d_change_over_max": 0.2855217391839578,
+   "c_change_over_max": 0.0018934874474972898,
+   "r8_moving_mpole_vs_closed_form": 0.23199350078749506,
+   "engine_rule_6_0.1_vs_fine_signal": 1.0822018316192188e-11
+  }
+ },
+ "pass": false,
+ "rule": [
+  8,
+  0.2
+ ],
+ "r4b_moments_residual_change_over_max": {
+  "1.5": 1.670561547317473e-11,
+  "5.0": 6.093042232532622e-15,
+  "20.0": 2.489297679508649e-15
+ }
+}
