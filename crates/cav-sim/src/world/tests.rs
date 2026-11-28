@@ -12,8 +12,8 @@ use octree::Octree;
 use walk::{Aim, Far, LedgerSource, Rule};
 
 /// Tower `n` of `spec` reading `tree` (the octree of `world`) by the walk at `tolerance` radians
-/// with `bubble` metres and `rule`, with no cap on the work, at readout 0: the walk, the chunks it
-/// opened made, and the read.
+/// with `rule`, no bubble and no cap on the work, at readout 0: the walk into the chunks' trees,
+/// the chunks it opened made, and the read.
 pub(crate) fn read_tree(
     spec: &SceneSpec,
     world: &World,
@@ -26,9 +26,9 @@ pub(crate) fn read_tree(
     let readers = read::Readers::new(spec);
     let reader = readers.of(n);
     let aim = aim(spec, n, base, tolerance, rule);
-    let cut = walk::walk(tree, &aim);
-    let opened = open(world, &cut.opened, &|| false).unwrap().unwrap();
-    read_tower(tree, &opened, reader, &aim, 0.0, tolerance, cut, u64::MAX).unwrap()
+    let mut trees = Vec::new();
+    let cut = walk::walk_into(tree, &aim, world, &mut trees, &|| false).unwrap().unwrap();
+    read_tower(tree, &trees, reader, &aim, 0.0, tolerance, cut, u64::MAX).unwrap()
 }
 
 /// The walk's aim for tower `n` of `spec` at `base`: its height, its flight's radians per kg/m
@@ -51,7 +51,7 @@ pub(crate) fn aim(spec: &SceneSpec, n: usize, base: Vec3, tolerance: f64, rule: 
 /// threads, in chunk order.
 pub(crate) fn all_leaves(world: &World, tree: &Octree) -> Vec<Cube> {
     let keys: Vec<ChunkKey> = tree.level(0).map(|id| tree.chunk(id).unwrap()).collect();
-    open(world, &keys, &|| false).unwrap().unwrap().into_iter().flat_map(|(_, c)| c).collect()
+    open(world, &keys, &|| false).unwrap().unwrap().into_iter().flat_map(|t| t.cubes).collect()
 }
 
 /// `leaves` read with the exact kernel by `reader` at `base`, with the first rule of its
@@ -80,7 +80,8 @@ pub(crate) fn leaf_exact(reader: &Reader, base: Vec3, leaves: &[Cube]) -> Readin
     })
 }
 /// Tower `n` of `spec` at `base` reading `tree` (of `world`) by its walk at `tolerance` with
-/// `rule`, with the first rule of its quadrature as [`leaf_exact`] does: the reading, the ledger
+/// `rule` (into the chunks' trees), with the first rule of its quadrature as [`leaf_exact`] does:
+/// the reading, the ledger
 /// of each interferometer (read through the same rule) and the cut.
 pub(crate) fn walked(
     spec: &SceneSpec,
@@ -93,10 +94,16 @@ pub(crate) fn walked(
 ) -> (Reading, [f64; 2], walk::Cut) {
     let readers = read::Readers::new(spec);
     let reader = readers.of(n);
-    let cut = walk::walk(tree, &aim(spec, n, base, tolerance, rule));
-    let opened = open(world, &cut.opened, &|| false).unwrap().unwrap();
-    let cubes = opened.into_iter().flat_map(|(_, c)| c).collect();
-    let source = WorldSource { cubes, far: walk::far_field(tree, &cut, rule).into() };
+    let mut trees = Vec::new();
+    let cut = walk::walk_into(tree, &aim(spec, n, base, tolerance, rule), world, &mut trees, &|| false)
+        .unwrap()
+        .unwrap();
+    let mut cubes = Vec::new();
+    for (key, run) in &cut.runs {
+        let t = &trees[trees.binary_search_by_key(key, |t| t.key).unwrap()];
+        cubes.extend_from_slice(&t.cubes[run.start as usize..run.end as usize]);
+    }
+    let source = WorldSource { cubes, far: walk::far_field(tree, &trees, &cut, rule).into() };
     let reading = reader.read(base, &source, 0.0);
     let ledger = reader.read(base, &LedgerSource { nodes: &source.far.near.nodes, rule }, 0.0);
     (reading, [ledger.lower.abs(), ledger.upper.abs()], cut)

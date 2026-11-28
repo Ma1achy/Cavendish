@@ -4,6 +4,7 @@
 use super::*;
 use crate::SceneSpec;
 use crate::read::{self, SourceId};
+use crate::world::inner::{ChunkTree, InnerKey};
 use crate::world::tests::{aim, all_leaves, leaf_exact, scene, walked};
 use crate::world::{
     Cube, LodSpec, MaterialSpec, PieceKind, PieceSpec, StreamSpec, World, WorldReadSpec, WorldSpec,
@@ -379,7 +380,7 @@ fn ledgers() -> &'static Ledgers {
             let reader = Reader::new(cav_core::forward::Instrument { quadrature: coarse, ..*readers.of(0).instrument() });
             let keys: Vec<ChunkKey> = case.tree.level(0).map(|id| case.tree.chunk(id).unwrap()).collect();
             let made = crate::world::open(&case.world, &keys, &|| false).unwrap().unwrap();
-            let all: Vec<Cube> = made.iter().flat_map(|(_, c)| c.iter().copied()).collect();
+            let all: Vec<Cube> = made.iter().flat_map(|t| t.cubes.iter().copied()).collect();
             let height = case.spec.array.instrument_of(0).tower_height;
             for (b, &base) in case.bases.iter().enumerate() {
                 let whole = leaf_exact(&reader, base, &all);
@@ -394,17 +395,21 @@ fn ledgers() -> &'static Ledgers {
                         max_nodes: MAX_CUT_NODES,
                         rule: Rule::Octupole,
                     };
-                    let cut = walk(&case.tree, &probe);
+                    // The read's walk: into the trees of the chunks it opens (every chunk's is made).
+                    let cut = walk_with(&case.tree, &probe, &made);
                     assert!(cut.settled, "{} base {b}: {:?}", case.name, cut.stopped);
-                    let far = far_field(&case.tree, &cut, Rule::Octupole);
+                    let far = far_field(&case.tree, &made, &cut, Rule::Octupole);
                     let mut under = Vec::new();
                     for key in &cut.accepted {
                         chunks_under(&case.tree, case.tree.find(*key).unwrap(), &mut under);
                     }
-                    let leaves: Vec<Cube> = under
-                        .iter()
-                        .flat_map(|k| made[made.binary_search_by_key(k, |(key, _)| *key).unwrap()].1.iter().copied())
-                        .collect();
+                    let tree_of = |k: &ChunkKey| &made[made.binary_search_by_key(k, |t| t.key).unwrap()];
+                    let mut leaves: Vec<Cube> = under.iter().flat_map(|k| tree_of(k).cubes.iter().copied()).collect();
+                    for key in &cut.inner {
+                        let t = tree_of(&key.chunk);
+                        let r = &t.node(t.find(*key).unwrap()).leaves;
+                        leaves.extend_from_slice(&t.cubes[r.start as usize..r.end as usize]);
+                    }
                     let exact = leaf_exact(&reader, base, &leaves);
                     let got = reader.read(base, &far, 0.0);
                     let bound = reader.read(base, &LedgerSource { nodes: &far.nodes, rule: Rule::Octupole }, 0.0);
@@ -444,9 +449,14 @@ fn ledgers() -> &'static Ledgers {
                 }
             }
         }
+        println!(
+            "worst: error/ledger {:.3}, ledger/tolerance {:.3}, ledger/error {:.0}",
+            out.error_over_ledger, out.ledger_over_tolerance, out.ledger_over_error
+        );
         out
     })
 }
+
 cav_validate::case! {
     test: validation_slow_the_walk_is_within_its_ledger,
     name: "world.walk_within_its_ledger",
@@ -508,7 +518,9 @@ fn slow_the_whole_town_is_read() {
             (1.0 - crate::world::local::LOCAL_SHARE) * spec.world.as_ref().unwrap().read.tolerance;
         let mut probe = aim(&spec, n, base, tolerance, Rule::Octupole);
         probe.bubble = spec.world.as_ref().unwrap().read.radius;
-        let cut = walk(&tree, &probe);
+        // The read's walk, into the trees of the chunks it opens.
+        let cut = walk_into(&tree, &probe, &w, &mut Vec::new(), &|| false).unwrap().unwrap();
+        assert!(cut.settled && cut.whole.is_empty(), "{}", tower.label);
         assert!(is_partition(&tree, &cut.accepted, &cut.opened), "{}", tower.label);
         assert_eq!(cut.accepted.len(), world.towers[n].accepted);
         assert_eq!(cut.opened.len(), world.towers[n].opened);
@@ -546,31 +558,47 @@ fn town_s_walk_measured() {
                 aim(&spec, n, base, (1.0 - crate::world::local::LOCAL_SHARE) * tolerance, Rule::Octupole);
             probe.bubble = world_spec.read.radius;
             probe.max_work = crate::world::max_work(reader, share);
+            let chunked = walk(&tree, &probe).leaves;
             let start = std::time::Instant::now();
-            let cut = walk(&tree, &probe);
+            let mut trees = Vec::new();
+            let cut = walk_into(&tree, &probe, &w, &mut trees, &|| false).unwrap().unwrap();
             let walked = start.elapsed().as_secs_f64();
-            let (per_level, opened, settled) = (cut.per_level.clone(), cut.opened.len(), cut.settled);
-            let start = std::time::Instant::now();
-            let made = crate::world::open(&w, &cut.opened, &|| false).unwrap().unwrap();
-            let making = start.elapsed().as_secs_f64();
+            let (per_level, inner, opened, leaves, settled) =
+                (cut.per_level.clone(), cut.inner_per_level, cut.opened.len(), cut.leaves, cut.settled);
             let start = std::time::Instant::now();
             let read =
-                crate::world::read_tower(&tree, &made, reader, &probe, 0.0, tolerance, cut, share).unwrap();
+                crate::world::read_tower(&tree, &trees, reader, &probe, 0.0, tolerance, cut, share).unwrap();
             let reading = start.elapsed().as_secs_f64();
             println!(
-                "{tolerance:.0e} {}: {per_level:?} accepted, {opened} opened, settled {settled}; walk {:.1} ms, \
-                 chunks made {:.0} ms, read {:.0} ms ({} nodes); ledger {:.2e}, estimate {:.2e}; local {:?}",
+                "{tolerance:.0e} {}: {per_level:?} accepted, blocks {inner:?} (levels 1 to 4), {opened} chunks opened, \
+                 {leaves} leaves read (the chunk walk's {chunked}), settled {settled}; walk and chunks made {:.0} ms, \
+                 read {:.0} ms ({} nodes, settled {}); ledger {:.2e}, estimate {:.2e}; local {:?}",
                 tower.label,
                 1e3 * walked,
-                1e3 * making,
                 1e3 * reading,
                 read.audited.nodes,
+                read.audited.settled,
                 read.ledger[0] + read.ledger[1],
                 read.audited.estimate.unwrap_or(0.0),
                 read.local
             );
         }
     }
+    // What the bubble costs: tower 1 at 1e-2 with no bubble.
+    let base = Vec3::from_array(spec.array.towers[0].position);
+    let mut probe = aim(&spec, 0, base, (1.0 - crate::world::local::LOCAL_SHARE) * 1e-2, Rule::Octupole);
+    probe.max_work = crate::world::max_work(readers.of(0), share);
+    let mut trees = Vec::new();
+    let cut = walk_into(&tree, &probe, &w, &mut trees, &|| false).unwrap().unwrap();
+    let leaves = cut.leaves;
+    let start = std::time::Instant::now();
+    let read = crate::world::read_tower(&tree, &trees, readers.of(0), &probe, 0.0, 1e-2, cut, share).unwrap();
+    println!(
+        "1e-2 tower 1 with no bubble: {leaves} leaves read, read {:.0} ms ({} nodes, settled {})",
+        1e3 * start.elapsed().as_secs_f64(),
+        read.audited.nodes,
+        read.audited.settled
+    );
     let shots = read::Shots::together(&spec, vec![0.0]);
     let start = std::time::Instant::now();
     let c = read::contribution(&spec, SourceId::World, &shots, &|| false).unwrap();
@@ -579,4 +607,124 @@ fn town_s_walk_measured() {
         start.elapsed().as_secs_f64(),
         c.settled
     );
+}
+
+#[test]
+#[ignore = "a measurement for docs/slices/S5.md §7.9: run in release, below normal priority"]
+fn town_s_blocks_tightened() {
+    // The town's tower 1 walked into every chunk's tree, the blocks' summaries made four ways
+    // (about their block's centre or their leaves' box's; far-corner or exact even absolute
+    // moments): the leaves read one by one and the blocks accepted, at 1e-2, 1e-4 and 1e-6 rad.
+    use crate::world::inner::Tightness;
+    let spec = crate::dev::town();
+    let world_spec = spec.world.as_ref().unwrap();
+    let w = World::new(world_spec);
+    let tree = Octree::build(&w, &|| false).unwrap().unwrap();
+    let keys: Vec<ChunkKey> = tree.level(0).map(|id| tree.chunk(id).unwrap()).collect();
+    let chunks: Vec<_> = keys.iter().map(|&k| w.chunk(k).unwrap().unwrap()).collect();
+    let readers = read::Readers::new(&spec);
+    let share = crate::world::work_share(&spec);
+    let base = Vec3::from_array(spec.array.towers[0].position);
+    for (centres, even) in [(false, false), (true, false), (false, true), (true, true)] {
+        let tight = Tightness { centres, even };
+        let trees: Vec<ChunkTree> = chunks.iter().map(|c| ChunkTree::of_with(&w, c, tight)).collect();
+        for tolerance in [1e-2, 1e-4, 1e-6] {
+            let mut probe =
+                aim(&spec, 0, base, (1.0 - crate::world::local::LOCAL_SHARE) * tolerance, Rule::Octupole);
+            probe.bubble = world_spec.read.radius;
+            probe.max_work = crate::world::max_work(readers.of(0), share);
+            let cut = walk_with(&tree, &probe, &trees);
+            println!(
+                "centres {centres}, even {even}, {tolerance:.0e}: {} leaves, blocks {:?}, chunks accepted {}, settled {}",
+                cut.leaves,
+                cut.inner_per_level,
+                cut.accepted.len(),
+                cut.settled
+            );
+        }
+    }
+}
+
+/// How many cut entries cover each leaf of each opened chunk of `cut` (walked into `trees`), and
+/// the mass the cut's blocks and runs hold.
+fn leaf_coverage(trees: &[ChunkTree], cut: &Cut, extra: &[InnerKey]) -> (Vec<Vec<u8>>, f64) {
+    let at = |k: &ChunkKey| trees.binary_search_by_key(k, |t| t.key).unwrap();
+    let mut count: Vec<Vec<u8>> = cut.opened.iter().map(|k| vec![0u8; trees[at(k)].cubes.len()]).collect();
+    let slot = |k: &ChunkKey| cut.opened.binary_search(k).unwrap();
+    let mut mass = 0.0;
+    for key in cut.inner.iter().chain(extra) {
+        let t = &trees[at(&key.chunk)];
+        let node = t.node(t.find(*key).unwrap());
+        mass += node.summary.mass;
+        for i in node.leaves.clone() {
+            count[slot(&key.chunk)][i as usize] += 1;
+        }
+    }
+    for (key, run) in &cut.runs {
+        let t = &trees[at(key)];
+        for i in run.clone() {
+            mass += t.cubes[i as usize].1;
+            count[slot(key)][i as usize] += 1;
+        }
+    }
+    (count, mass)
+}
+
+#[test]
+fn the_cut_into_the_chunks_trees_is_a_partition() {
+    // W1 below the chunk: walked into every chunk's tree, every chunk not opened is under exactly
+    // one accepted node, every leaf of every opened chunk under exactly one accepted block or run,
+    // and the cut's mass is the world's to 1e-12.
+    let mut doubled = None;
+    for case in [world_box(), terrain()] {
+        let keys: Vec<ChunkKey> = case.tree.level(0).map(|id| case.tree.chunk(id).unwrap()).collect();
+        let trees = crate::world::open(&case.world, &keys, &|| false).unwrap().unwrap();
+        let total = whole(&case.tree).0;
+        for (b, &base) in case.bases.iter().enumerate() {
+            for tolerance in [1e-1, 1e-4, 1e-8] {
+                for bubble in [0.0, 5.0] {
+                    let mut probe = aim(&case.spec, 0, base, tolerance, Rule::Octupole);
+                    probe.bubble = bubble;
+                    let cut = walk_with(&case.tree, &probe, &trees);
+                    assert!(cut.settled && cut.whole.is_empty(), "{} base {b}: {:?}", case.name, cut.stopped);
+                    assert!(cut.ledger <= tolerance);
+                    // The chunks: each under one accepted node or opened, once.
+                    let (count, chunk_mass, _) = coverage(&case.tree, &cut.accepted, &cut.opened);
+                    assert!(count.iter().all(|&c| c == 1), "{} base {b}", case.name);
+                    let opened_mass: f64 = cut
+                        .opened
+                        .iter()
+                        .map(|k| case.tree.summary(case.tree.find(NodeKey::chunk(*k)).unwrap()).mass)
+                        .sum();
+                    let (leaves, mass) = leaf_coverage(&trees, &cut, &[]);
+                    assert!(
+                        leaves.iter().flatten().all(|&c| c == 1),
+                        "{} base {b} at {tolerance}",
+                        case.name
+                    );
+                    let cut_mass = chunk_mass - opened_mass + mass;
+                    assert!((cut_mass - total).abs() <= 1e-12 * total.abs(), "{} base {b}", case.name);
+                    let read: u64 = cut.runs.iter().map(|(_, r)| u64::from(r.end - r.start)).sum();
+                    assert_eq!(read, cut.leaves);
+                    assert_eq!(cut.inner_per_level.iter().sum::<usize>(), cut.inner.len());
+                    if doubled.is_none()
+                        && let Some(&key) = cut.inner.iter().find(|k| k.level < 4)
+                    {
+                        // A block's parent block, if it has one with a node.
+                        let t = &trees[trees.binary_search_by_key(&key.chunk, |t| t.key).unwrap()];
+                        let span = 1u32 << (3 * (u32::from(key.level) + 1));
+                        let parent =
+                            InnerKey { chunk: key.chunk, level: key.level + 1, key: key.key / span * span };
+                        if t.find(parent).is_some() {
+                            doubled = Some((case.name, trees.clone(), cut.clone(), parent));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Control: a block and its parent both kept covers the block's leaves twice.
+    let (name, trees, cut, parent) = doubled.expect("some cut accepts a block whose parent is a node");
+    let (leaves, _) = leaf_coverage(&trees, &cut, &[parent]);
+    assert!(leaves.iter().flatten().any(|&c| c == 2), "{name}");
 }

@@ -35,6 +35,15 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**TASK-S5-27, the walk below the chunk (28 Nov 2026; `docs/slices/S5.md` §7.9).** An opened chunk
+is opened into its own tree's blocks (2 to 16 cells, two leaves or more), each a node with its
+summary and bound. The town's tower 1 at 1e-2: 31,155 leaves read instead of 1.6 M, 2.4 s instead
+of 28 s; at 1e-4 and 1e-6 the read now settles (6.4 s, 17.7 s); the town's whole world contribution
+14.4 s, from 126 s. W1 below the chunk, W2 (0.062), W3 (237), W4, W5 pass. Tight centres (−11 %)
+and exact even absolute moments (−2 to −7 %) were measured against a 20 % criterion and not kept;
+carrying `A_4` exactly is moot (nothing above the chunks is accepted at 1e-4 and 1e-6).
+`MAX_CUT_NODES` 2^19 (172 MB of summaries at the cap).
+
 **TASK-S5-22, the local expansion (28 Nov 2026; `docs/slices/S5.md` §7.8).** Each tower's accepted
 nodes are split near (read directly) and far (a Chebyshev series in height on the tower's span,
 audited within 1/16 of the tolerance, the audit in the estimate; the walk takes the other 15/16).
@@ -970,6 +979,11 @@ mutation). Left, all minor:
   `surface()` in two test files; a mesh file is resolved against the working directory.
 
 ## Questions for the owner
+- **L1 at 1e-6 (TASK-S5-27, 28 Nov 2026):** the criterion written first asked for 10× fewer
+  leaves at each of 1e-2, 1e-4, 1e-6 rad on the town; measured 52×, 17.6× and **4.8×** (the read
+  settles at all three; `docs/slices/S5.md` §7.9). It is a recorded measurement, no test fails.
+  Choose: (a) keep it in the record as failed at 1e-6 and move on; (b) ask for a tighter bound or a
+  cheaper near kernel to meet it (a task of its own); (c) restate it.
 - **A2 (TASK-S5-06, 28 Nov 2026):** the tetrahedron's fall-off at the solid's own height is −6.961
   against −6 ± 0.2; options (a), (b), (c) in "S5 under way" above.
 - **C3 (TASK-S5-26, 28 Nov 2026):** `Pieces` within 3 cells of an arm and `Second` beyond reads
