@@ -329,3 +329,8 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   rung (point + quadrupole + octupole, 12–21 ns) is 20–60× better again at 0.5 m on four of the
   five shapes of `docs/research/surface-representation.md` §1.1; so is PLIC + residual, which the
   same note measures best of all near the body.
+- **Free-size boxes with the l ≤ 6 box series** (`docs/research/surface-representation.md` §4,
+  noted by TASK-S5-09): the cube kernel already takes its series to order 16 where it converges, so
+  octree blocks gain nothing; a body's interior as free rectangular boxes read by an l ≤ 6 box
+  series (43 to 80 flops, checked to 40 digits there) is 4 to 33 times cheaper than octree blocks
+  at 20 m and loses near the body. Worth it only with a walk that keeps the far advantage.
