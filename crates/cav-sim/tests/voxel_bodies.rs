@@ -411,3 +411,87 @@ cav_validate::case! {
         cav_validate::Measured::Error(worst)
     },
 }
+
+/// A uniform cube read whole by the cube kernel (exact to rounding, its difference bounded: S5
+/// §7.4): the reference for a voxel cube.
+struct Cube {
+    mass: f64,
+    side: f64,
+    at: Vec3,
+}
+
+impl cav_core::forward::Source for Cube {
+    fn difference(&self, tower: Vec3, heights: [f64; 2], lower: f64, upper: f64, _time: f64) -> [f64; 2] {
+        let d = self.at - tower;
+        heights.map(|h| {
+            cav_core::voxel::kernel::cube_difference(
+                self.mass,
+                self.side,
+                [-d.x, -d.y],
+                h + lower - d.z,
+                h + upper - d.z,
+                lower - upper,
+            )
+        })
+    }
+}
+
+/// S5's representations through a scene (TASK-S5-09): a body's `representation` is data (written
+/// only when not `Sampled`), each one reads through the forward model, the cut ones nearer the
+/// true cube than the sampled count (a 0.8 m cube at 6.37 cells across, so its faces are off the
+/// lattice's planes, where the sampled count is first order: C2), and `Sampled` the same bits as a
+/// scene without the field. (First written against a sphere at r/6.3, which `Fill` did not beat:
+/// a sphere on a centred lattice is where the samples do well; `docs/slices/S5.md` §7.6.)
+#[test]
+fn each_representation_reads_through_the_scene() {
+    use cav_sim::Representation;
+    let at = [1.4, 0.6, 2.2];
+    let read = |representation: Representation| {
+        let shape = ShapeSpec {
+            representation,
+            ..ShapeSpec::new(ShapeKind::Cuboid { size: [0.8; 3] }, 0.8 / 6.37, 4)
+        };
+        let scene = scene_with(BodySpec::shaped("cube", 100.0, shape, Motion::Static { position: at }));
+        let shots = shots(&scene).unwrap();
+        let voxels = contribution(&scene, SourceId::Body(0), &shots, &|| false).unwrap();
+        assert!(voxels.settled, "{representation:?}: {:?}", voxels.warnings);
+        assert!((scene.bodies[0].mass_in(&scene).unwrap() - 100.0).abs() < 1e-12 * 100.0);
+        (scene, shots, voxels)
+    };
+    let (scene, shots, sampled) = read(Representation::Sampled);
+    let text = scene.to_ron();
+    assert!(!text.contains("representation"), "Sampled is not written");
+    let reader = cav_core::forward::Reader::new(scene.array.instrument.instrument());
+    let cube = Cube { mass: 100.0, side: 0.8, at: Vec3::from_array(at) };
+    let exact =
+        reader.read_to(Vec3::ZERO, &cube, shots.times(0)[0], cav_core::forward::PHASE_TOLERANCE).reading;
+    let error = |v: &cav_sim::read::Contribution| {
+        (v.lower[0] - exact.lower).abs().max((v.upper[0] - exact.upper).abs())
+    };
+    let sampled_error = error(&sampled);
+    for representation in [Representation::Fill, Representation::Centroid, Representation::Second] {
+        let (scene, _, cut) = read(representation);
+        let e = error(&cut);
+        eprintln!("{representation:?}: {e:.3e} rad against Sampled's {sampled_error:.3e}");
+        assert!(e < sampled_error, "{representation:?}: {e:e} against {sampled_error:e}");
+        // Data: written, and read back.
+        assert!(scene.to_ron().contains(&format!("representation: {representation:?}")));
+        assert_eq!(SceneSpec::from_ron(&scene.to_ron()).unwrap(), scene);
+    }
+    // Sampled is the same bits as a scene whose file has no such field.
+    let (_, _, again) = read(Representation::Sampled);
+    assert_eq!(again.lower[0].to_bits(), sampled.lower[0].to_bits());
+    assert_eq!(SceneSpec::from_ron(&text).unwrap(), scene);
+    // A body with parts and a cut representation is refused by the field.
+    let mut parts = scene.clone();
+    let shape = parts.bodies[0].shape.as_mut().unwrap();
+    shape.material = Some("steel".into());
+    shape.representation = Representation::Fill;
+    shape.parts = vec![cav_sim::shape::PartSpec {
+        mode: cav_sim::shape::PartMode::Erase,
+        material: None,
+        at: [0.0; 3],
+        kind: cav_sim::shape::PartKind::Solid { shape: ShapeKind::Sphere { radius: 0.1 } },
+    }];
+    assert!(parts.validate().unwrap_err().0.starts_with("bodies[0].shape.representation"));
+}

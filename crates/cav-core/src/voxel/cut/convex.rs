@@ -4,7 +4,7 @@ use crate::Vec3;
 
 use super::super::shape::{Cuboid, Polyhedron};
 use super::super::{Aabb, Grid, VoxelError};
-use super::{Borrowed, CLIP_WORK_PER_PLANE, CellClip, Clip, Raw, Stateless};
+use super::{Borrowed, CLIP_WORK_BASE, CLIP_WORK_PER_PLANE, CellClip, Clip, Raw, Stateless};
 
 /// A convex polyhedron as its corners and its faces, each face a loop of corner indices
 /// anticlockwise seen from outside. Built from a cell's box ([`Self::from_box`]) and cut down by
@@ -179,7 +179,7 @@ pub(crate) fn plane_tolerance(n: Vec3, d: f64, centre: Vec3, side: f64) -> f64 {
 
 impl Stateless for Cuboid {
     fn work(&self, _boxed: &Aabb) -> u64 {
-        CLIP_WORK_PER_PLANE
+        CLIP_WORK_BASE
     }
 
     /// The intersection of two boxes, in closed form.
@@ -222,7 +222,7 @@ impl Polyhedron {
 
 impl Stateless for Polyhedron {
     fn work(&self, _boxed: &Aabb) -> u64 {
-        CLIP_WORK_PER_PLANE * self.planes.len() as u64
+        CLIP_WORK_BASE + CLIP_WORK_PER_PLANE * self.planes.len() as u64
     }
 
     fn clip(&self, b: &Aabb) -> Raw {

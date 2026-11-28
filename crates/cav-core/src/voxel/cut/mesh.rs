@@ -18,7 +18,7 @@ use crate::Vec3;
 use super::super::mesh::Mesh;
 use super::super::{Aabb, Grid, VoxelError};
 use super::convex::{Convex, plane_tolerance};
-use super::{CLIP_WORK_PER_PLANE, CellClip, Clip, Raw};
+use super::{CLIP_WORK_BASE, CLIP_WORK_PER_PLANE, CellClip, Clip, Raw};
 
 /// The most entries (a triangle in a bin) the 2-D bin of a mesh's shadows may hold: 64 MiB of
 /// indices. The bins are made coarser (twice the columns a side, each time) until the count fits.
@@ -139,7 +139,9 @@ impl Binned<'_> {
 
 impl CellClip for Binned<'_> {
     fn work(&self, cell: [u32; 3], _boxed: &Aabb) -> u64 {
-        4 * CLIP_WORK_PER_PLANE * self.bin(cell).len() as u64
+        // Each candidate is a box clipped by four planes (measured: 59 µs a cut cell of a
+        // 16,384-triangle torus at 1/600 m).
+        (CLIP_WORK_BASE / 4 + 4 * CLIP_WORK_PER_PLANE) * self.bin(cell).len() as u64
     }
 
     fn clip(&self, cell: [u32; 3], b: &Aabb) -> Raw {

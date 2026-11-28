@@ -18,27 +18,31 @@ use super::super::shape::{Cylinder, Ellipsoid, Shell, Sphere};
 use super::super::{Aabb, Grid, VoxelError};
 use super::{Borrowed, CellClip, Clip, Raw, Stateless};
 
-/// Gauss–Legendre points a piece, along each of x and y ([X] §3.1's 24).
+/// Gauss–Legendre points a piece, along each of x and y ([X] §3.1's 24). Measured against 48
+/// (`analytic_rule_points`, every crossed cell of a ball at three pitches, each moment over its
+/// cell's scale): 16 points 7.1e-13, 20 8.4e-14, 24 1.9e-14.
 const POINTS: usize = 24;
 
-/// The work of clipping one cell, in the voxeliser's units: about the integrand's evaluations
-/// for a cell crossed by three circles (up to seven x pieces of `POINTS`, each with up to seven y
-/// pieces of `POINTS`), a fair upper bound.
-const ANALYTIC_WORK: u64 = (7 * POINTS * 7 * POINTS) as u64;
+/// The work of clipping one cell, in the voxeliser's units (about 13 ns each, `super::CLIP_WORK_PER_PLANE`):
+/// measured 46 µs a cut cell of a ball (`clip_time_per_cell`), about 2,300 chords.
+const ANALYTIC_WORK: u64 = 4096;
 
-/// The cosine-mapped rule on [0, 1]: nodes `u` and weights.
+/// The cosine-mapped `points`-point Gauss–Legendre rule on [0, 1]: nodes `u` and weights.
+pub(crate) fn cosine_rule(points: usize) -> Vec<(f64, f64)> {
+    crate::forward::gauss_legendre(points)
+        .into_iter()
+        .map(|(x, w)| {
+            let t = 0.5 * (x + 1.0);
+            let pi = std::f64::consts::PI;
+            (0.5 * (1.0 - (pi * t).cos()), 0.5 * w * 0.5 * pi * (pi * t).sin())
+        })
+        .collect()
+}
+
+/// The engine's rule: [`cosine_rule`] of [`POINTS`].
 fn rule() -> &'static [(f64, f64)] {
     static RULE: OnceLock<Vec<(f64, f64)>> = OnceLock::new();
-    RULE.get_or_init(|| {
-        crate::forward::gauss_legendre(POINTS)
-            .into_iter()
-            .map(|(x, w)| {
-                let t = 0.5 * (x + 1.0);
-                let pi = std::f64::consts::PI;
-                (0.5 * (1.0 - (pi * t).cos()), 0.5 * w * 0.5 * pi * (pi * t).sin())
-            })
-            .collect()
-    })
+    RULE.get_or_init(|| cosine_rule(POINTS))
 }
 
 /// A solid of revolution about z through the origin, by its chord.
@@ -97,6 +101,18 @@ fn pieces(a: f64, b: f64, cuts: &mut Vec<f64>) -> Vec<f64> {
 /// The moments of `solid` inside the box from `lo` to `hi` (the solid's frame: its axis z, its
 /// centre the origin), about the box's centre.
 fn radial_raw(solid: &dyn Radial, lo: Vec3, hi: Vec3) -> Raw {
+    radial_raw_by(solid, lo, hi, rule())
+}
+
+/// The moments of a ball of `radius` about the origin inside the box from `lo` to `hi`, about
+/// the box's centre, by the cosine-mapped rule `rule` (for the tests of how many points it needs).
+#[cfg(test)]
+pub(crate) fn ball_raw_by(radius: f64, lo: Vec3, hi: Vec3, rule: &[(f64, f64)]) -> Raw {
+    radial_raw_by(&Ball(radius), lo, hi, rule)
+}
+
+/// [`radial_raw`] by the rule `rule`.
+fn radial_raw_by(solid: &dyn Radial, lo: Vec3, hi: Vec3, rule: &[(f64, f64)]) -> Raw {
     let c = (lo + hi) * 0.5;
     let mut radii = Vec::with_capacity(3);
     solid.kinks(lo.z, hi.z, &mut radii);
@@ -113,7 +129,6 @@ fn radial_raw(solid: &dyn Radial, lo: Vec3, hi: Vec3) -> Raw {
         }
     }
     let xs = pieces(lo.x, hi.x, &mut xcuts);
-    let rule = rule();
     // Σ w x'^p y'^q ∫ z'^r, by p·16 + q·4 + r.
     let mut table = [0.0f64; 64];
     let mut ycuts = Vec::with_capacity(radii.len() * 2);

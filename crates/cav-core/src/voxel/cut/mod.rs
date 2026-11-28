@@ -333,8 +333,14 @@ pub fn voxelise_cut(
     VoxTree::build_cut(*grid, leaves, cuts, density, budget)
 }
 
-/// The clip work a convex piece costs a half-space, in the voxeliser's units.
-pub(crate) const CLIP_WORK_PER_PLANE: u64 = 8;
+/// The clip work a convex piece costs a half-space, in the voxeliser's units. The units are
+/// calibrated by time (`clip_time_per_cell`, release, this PC): S3's voxeliser spends about 13 ns
+/// a unit (a box or a sample test), so [`super::MAX_VOXEL_WORK`] bounds a voxelisation to a few
+/// seconds whichever way its cells are weighed. Measured: 5.0 µs a cut cell of a turned cube (6
+/// planes), 6.4 µs of an icosahedron (20).
+pub(crate) const CLIP_WORK_PER_PLANE: u64 = 16;
+/// The clip work of a cell's box and its piece's moments, whatever clips it.
+pub(crate) const CLIP_WORK_BASE: u64 = 256;
 
 struct Walk<'a> {
     shape: &'a dyn Shape,

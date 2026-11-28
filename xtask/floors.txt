@@ -39,9 +39,10 @@
 # TASK-S5-24 (the cube kernel's switch made error-bounded): 2 new quick tests (cav-core: K1 and its
 # control, S3's fixed switch).
 # TASK-S5-09 (cut-cell moments): 5 new quick tests (cav-core: C1, C5, a box clipped by a plane, a
-# box mesh's pieces are the cuboid's, a sampled tree unchanged and a cut tree's leaves its pieces');
-# 1 new slow test (cav-core: C2, validation_slow_cut_cell_orders).
-quick 750
+# box mesh's pieces are the cuboid's, a sampled tree unchanged and a cut tree's leaves its pieces';
+# cav-sim: each representation reads through the scene); 1 new slow test (cav-core: C2,
+# validation_slow_cut_cell_orders).
+quick 751
 gpu 42
 slow 55
 oracle 58

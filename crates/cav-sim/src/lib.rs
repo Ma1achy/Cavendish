@@ -46,7 +46,7 @@ pub use folders::{FolderEdit, FolderGroup, FolderItem, FolderSpec};
 pub use library::{LIBRARY, LibraryScene, inline, load};
 pub use materials::MaterialSpec;
 pub use motion::{ModeSpec, Motion};
-pub use shape::{Axis, PlatonicSolid, ShapeKind, ShapeSpec};
+pub use shape::{Axis, PlatonicSolid, Representation, ShapeKind, ShapeSpec};
 pub use spec::{
     ArraySpec, BodySpec, FloorKind, FloorSpec, GapSpec, InstrumentOverride, InstrumentSpec, JitterKind,
     JitterModel, JitterSpec, RoomSpec, SPEC_VERSION, SceneSpec, ScheduleSpec, SignSpec, SpecError, Target,

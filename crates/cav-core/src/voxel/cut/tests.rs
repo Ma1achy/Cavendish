@@ -452,3 +452,83 @@ cav_validate::case! {
     tolerance: 0.0,
     measure: cav_validate::Measured::Error(c2_failures()),
 }
+
+/// The clipper's time per boundary cell (`docs/slices/S5.md` §5: over about 10⁶ cells; [X] §7
+/// estimated 1e-6 to 1e-5 s): each shape voxelised with cut cells and with samples (`k = 4`), one
+/// thread, the time over the cut cells. Release: `cargo test -p cav-core --release --lib
+/// clip_time_per_cell -- --ignored --nocapture`.
+#[test]
+#[ignore = "a timing: run by hand in release"]
+fn clip_time_per_cell() {
+    let (v, t) = torus_mesh(0.35, 0.15, 128, 64);
+    let shapes: Vec<(&str, Box<dyn Shape>, f64)> = vec![
+        ("sphere", Box::new(Sphere { centre: Vec3::ZERO, radius: 0.5 }), 1.0 / 500.0),
+        ("icosahedron", Box::new(Platonic::Icosahedron.solid(0.6)), 1.0 / 420.0),
+        ("turned cube", Box::new(turned_cube(0.8)), 1.0 / 330.0),
+        ("torus mesh (16,384 triangles)", Box::new(Mesh::new(v, t).unwrap()), 1.0 / 600.0),
+    ];
+    for (name, shape, h) in shapes {
+        let grid = Grid::around(shape.bounds(), h, 4).unwrap();
+        let start = std::time::Instant::now();
+        let unbounded = Budget { work: u64::MAX, ..Budget::DEFAULT };
+        let cut = voxelise_cut(shape.as_ref(), &grid, Weight::Density(1.0), 0, unbounded).unwrap();
+        let cut_time = start.elapsed().as_secs_f64();
+        let start = std::time::Instant::now();
+        let sampled = crate::voxel::voxelise(shape.as_ref(), &grid, 1.0, 0).unwrap();
+        let sampled_time = start.elapsed().as_secs_f64();
+        let n = cut.cuts.len() as f64;
+        eprintln!(
+            "{name}: h {h:.5} m, {} cut cells, cut {cut_time:.2} s ({:.2} us a cut cell), sampled {sampled_time:.2} s \
+             ({} leaves), cut tree {} leaves, {:.1} MB",
+            cut.cuts.len(),
+            cut_time / n * 1e6,
+            sampled.leaves.len(),
+            cut.leaves.len(),
+            cut.bytes() as f64 / 1e6
+        );
+    }
+}
+
+/// How many points the analytic clipper's rule needs: each crossed cell of a ball, at several
+/// pitches, by rules of 6 to 24 points against 48, the worst difference of any moment relative to
+/// its cell's scale (`h³`, `h⁴`, …). Run by hand: `-- --ignored --nocapture`.
+#[test]
+#[ignore = "a measurement: run by hand"]
+fn analytic_rule_points() {
+    let reference = super::analytic::cosine_rule(48);
+    let ball = Sphere { centre: Vec3::ZERO, radius: 0.5 };
+    for points in [6, 8, 10, 12, 16, 20, 24] {
+        let rule = super::analytic::cosine_rule(points);
+        let mut worst = 0f64;
+        for h in [0.5 / 4.3, 0.5 / 17.7, 0.5 / 63.1] {
+            let grid = Grid::around(ball.bounds(), h, 1).unwrap();
+            for z in 0..grid.cells[2] {
+                for y in 0..grid.cells[1] {
+                    for x in 0..grid.cells[0] {
+                        let b = grid.block_box([x, y, z], 1);
+                        if ball.cover(&b) != Cover::Mixed {
+                            continue;
+                        }
+                        let c = b.centre();
+                        let (lo, hi) = (b.lo, b.hi);
+                        let a = super::analytic::ball_raw_by(0.5, lo, hi, &rule);
+                        let r = super::analytic::ball_raw_by(0.5, lo, hi, &reference);
+                        let _ = c;
+                        let mut e = (a.volume - r.volume).abs() / h.powi(3);
+                        for i in 0..3 {
+                            e = e.max((a.first[i] - r.first[i]).abs() / h.powi(4));
+                        }
+                        for i in 0..6 {
+                            e = e.max((a.second[i] - r.second[i]).abs() / h.powi(5));
+                        }
+                        for i in 0..10 {
+                            e = e.max((a.third[i] - r.third[i]).abs() / h.powi(6));
+                        }
+                        worst = worst.max(e);
+                    }
+                }
+            }
+        }
+        eprintln!("{points} points: worst {worst:.2e}");
+    }
+}
