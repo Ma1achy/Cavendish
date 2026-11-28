@@ -504,7 +504,8 @@ fn slow_the_whole_town_is_read() {
     for (n, tower) in spec.array.towers.iter().enumerate() {
         let base = Vec3::from_array(tower.position);
         // As `read_world` aims it: the walk takes what the local expansion leaves of the tolerance.
-        let tolerance = (1.0 - crate::world::local::LOCAL_SHARE) * spec.world.as_ref().unwrap().read.tolerance;
+        let tolerance =
+            (1.0 - crate::world::local::LOCAL_SHARE) * spec.world.as_ref().unwrap().read.tolerance;
         let mut probe = aim(&spec, n, base, tolerance, Rule::Octupole);
         probe.bubble = spec.world.as_ref().unwrap().read.radius;
         let cut = walk(&tree, &probe);
