@@ -841,3 +841,9 @@
 - id: TASK-S5-23
   milestone: S5
   title: "S5's record: the demo and its pictures, the validation report against s20-the-workspace, ARCHITECTURE, the recipes, PROGRESS"
+- id: TASK-S5-25
+  milestone: S5
+  title: A flaky editor test's cause - the forward stage's log lines tagged Subsystem::Forward, and the tests that look for what a command did skip them by that tag
+- id: TASK-S5-24
+  milestone: S5
+  title: The cube kernel's switch between closed form and series error-bounded, not 3 sides (docs/research/paper-boxes-and-precision.md)

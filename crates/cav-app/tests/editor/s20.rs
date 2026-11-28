@@ -1504,12 +1504,14 @@ fn a_press_in_the_session_s_row_keeps_the_session() {
     assert!(rig.shell.layout().options.is_none(), "and the row goes");
 }
 
-/// The log's last line, other than the forward worker's note that a signal has arrived: on a
-/// busy machine that note can land after a refusal the test is about (seen once at 99 % load in
-/// TASK-S20-14: `duration_is_typed_at_the_transport` read "signal: 5 tower(s)…" for the refusal).
+/// The log's last line, other than the forward stage's news that a signal has arrived (its
+/// timing, the signal, its warnings: every such line is tagged `Subsystem::Forward`): on a busy
+/// machine that news can land after a refusal the test is about (seen at 99 % load in
+/// TASK-S20-14, and again in S5 when the debug line "the signal was whole N ms after the edit",
+/// which a skip by the words "signal: " missed, was read for the refusal).
 fn last_said(rig: &Rig) -> String {
     let log = rig.shell.engine.log();
-    let last = log.iter().rev().find(|entry| !entry.message.starts_with("signal: "));
+    let last = log.iter().rev().find(|entry| entry.subsystem != cav_engine::log::Subsystem::Forward);
     last.expect("the log holds a line").message.clone()
 }
 
