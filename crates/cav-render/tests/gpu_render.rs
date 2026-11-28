@@ -536,6 +536,7 @@ fn gpu_shading_follows_the_light() {
         overlay: Default::default(),
         section: None,
         hidden: Vec::new(),
+        body_draw: Default::default(),
     };
     let camera = camera(&view(DrawStyle::Shaded));
     // Two points on the sphere's face, half its radius out along each axis: up and to the west (towards the key

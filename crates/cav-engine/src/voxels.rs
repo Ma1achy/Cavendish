@@ -11,8 +11,8 @@
 use std::sync::Arc;
 
 use cav_core::voxel::VoxTree;
-use cav_sim::voxel_view::{VoxelFrame, voxel_frame_cut};
-use cav_sim::{SceneSpec, ViewSpec};
+use cav_sim::voxel_view::{BodyDraw, Look, Surface, VoxelFrame, voxel_frame_drawn};
+use cav_sim::{SceneSpec, ShapeSpec, ViewSpec};
 
 use crate::MAX_PANES;
 
@@ -35,7 +35,19 @@ pub struct Voxels {
     said: Vec<String>,
     /// Shapes refused for want of room, with the room there was: not tried again with no more.
     refused: Vec<(String, usize)>,
+    /// Each body's surface for the draw modes that draw it, in the scene's order (None when no
+    /// pane draws surfaces, or it could not be made).
+    surfaces: Vec<Option<Arc<Surface>>>,
+    /// Each body's tree clipped exactly, for the draw modes that shade by the exact fill when the
+    /// body's own tree has no pieces; None otherwise.
+    clipped: Vec<Option<Arc<VoxTree>>>,
+    /// Surfaces made, by the shape's kind as JSON, at most [`KEPT_SURFACES`], oldest first (None
+    /// for one that could not be made: not tried again).
+    kept_surfaces: Vec<(String, Option<Arc<Surface>>)>,
 }
+
+/// The most surfaces kept for drawing (a scene's bodies' and a few from before).
+pub const KEPT_SURFACES: usize = 64;
 
 impl Default for Voxels {
     fn default() -> Self {
@@ -55,6 +67,9 @@ impl Voxels {
             frames: Default::default(),
             said: Vec::new(),
             refused: Vec::new(),
+            surfaces: Vec::new(),
+            clipped: Vec::new(),
+            kept_surfaces: Vec::new(),
         }
     }
 
@@ -137,13 +152,36 @@ impl Voxels {
                 }
             }
         }
-        // The cache's budget: the oldest trees go first, never one in use now. Those in use are
-        // within the budget by construction, so this ends within it.
+        // What the draw modes ask for beyond the trees: the shapes' surfaces, and trees clipped
+        // exactly for a body whose own has no pieces (made once, kept as the trees are).
+        let wants = |test: fn(BodyDraw) -> bool| views.iter().any(|v| test(v.body_draw));
+        self.surfaces.clear();
+        self.clipped.clear();
+        let trees = self.trees.clone();
+        for (body, tree) in spec.bodies.iter().zip(&trees) {
+            let shape = body.shape.as_ref().filter(|_| tree.is_some());
+            let surface = match shape {
+                Some(shape) if wants(BodyDraw::draws_surface) => self.surface(&body.label, shape, &mut notes),
+                _ => None,
+            };
+            self.surfaces.push(surface);
+            let clipped = match (shape, tree) {
+                (Some(shape), Some(tree)) if wants(BodyDraw::wants_cuts) && tree.cuts.is_empty() => {
+                    self.clipped_tree(spec, body, shape, &mut notes)
+                }
+                _ => None,
+            };
+            self.clipped.push(clipped);
+        }
+        // The cache's budget: the oldest trees go first, never one in use now (a body's, or one
+        // clipped for a draw mode). The bodies' own are within the budget by construction; a
+        // clipped one is made within what they leave, so this ends within it.
         let mut bytes: usize = self.cache.iter().map(|(_, t)| t.bytes()).sum();
         while bytes > self.budget {
-            let Some(at) =
-                self.cache.iter().position(|(_, t)| !self.trees.iter().flatten().any(|u| Arc::ptr_eq(t, u)))
-            else {
+            let used = |t: &Arc<VoxTree>| {
+                self.trees.iter().chain(&self.clipped).flatten().any(|u| Arc::ptr_eq(t, u))
+            };
+            let Some(at) = self.cache.iter().position(|(_, t)| !used(t)) else {
                 break;
             };
             bytes -= self.cache.remove(at).1.bytes();
@@ -156,22 +194,112 @@ impl Voxels {
                         section,
                         eye: cav_sim::voxel_view::eye_direction(view.yaw, view.pitch),
                     });
-                    // A body the view hides has no cubes in it either.
-                    let trees: Vec<_> = if view.hidden.is_empty() {
-                        self.trees.clone()
-                    } else {
-                        self.trees
-                            .iter()
-                            .zip(&spec.bodies)
-                            .map(|(t, b)| t.clone().filter(|_| !view.hidden.contains(&b.label)))
-                            .collect()
-                    };
-                    Some(voxel_frame_cut(spec, &trees, view.colour, view.overlay, cutting, time))
+                    // A body the view hides has no cubes in it either. In a mode that wants exact
+                    // pieces, a body's clipped tree stands in for its sampled one.
+                    let trees: Vec<_> = self
+                        .trees
+                        .iter()
+                        .zip(&self.clipped)
+                        .zip(&spec.bodies)
+                        .map(|((t, c), b)| {
+                            let t = if view.body_draw.wants_cuts() {
+                                c.clone().or_else(|| t.clone())
+                            } else {
+                                t.clone()
+                            };
+                            t.filter(|_| !view.hidden.contains(&b.label))
+                        })
+                        .collect();
+                    let look =
+                        Look { colouring: view.colour, overlay: view.overlay, cutting, draw: view.body_draw };
+                    let mut frame = voxel_frame_drawn(spec, &trees, &self.surfaces, look, time);
+                    if view.body_draw.wants_cuts() {
+                        for (n, tree) in trees.iter().enumerate() {
+                            if tree.as_ref().is_some_and(|t| t.cuts.is_empty() && !t.leaves.is_empty())
+                                && !spec.bodies[n].shape.as_ref().is_some_and(|s| s.representation.is_cut())
+                            {
+                                frame.notes.push(format!(
+                                    "`{}` is shaded by its sampled fill: it has no exact pieces to draw",
+                                    spec.bodies[n].label
+                                ));
+                            }
+                        }
+                    }
+                    Some(frame)
                 }
                 _ => None,
             };
         }
         notes
+    }
+
+    /// Body `label`'s surface for drawing, made or taken from the kept ones; None, and said once,
+    /// when it cannot be made.
+    fn surface(&mut self, label: &str, shape: &ShapeSpec, notes: &mut Vec<String>) -> Option<Arc<Surface>> {
+        let key = serde_json::to_string(&shape.kind).unwrap_or_default();
+        if let Some((_, kept)) = self.kept_surfaces.iter().find(|(k, _)| *k == key) {
+            return kept.clone();
+        }
+        let made = match cav_sim::body_draw::surface(&shape.kind) {
+            Ok(surface) => Some(Arc::new(surface)),
+            Err(why) => {
+                notes.push(format!("`{label}` is drawn without its surface: {why}"));
+                None
+            }
+        };
+        // A few kept: the surfaces of the scene's bodies, not of every shape ever drawn.
+        if self.kept_surfaces.len() >= KEPT_SURFACES {
+            self.kept_surfaces.remove(0);
+        }
+        self.kept_surfaces.push((key, made.clone()));
+        made
+    }
+
+    /// Body `body`'s tree clipped exactly ([`cav_sim::Representation::Fill`]), for a mode that
+    /// shades by the exact fill when its own tree has no pieces; made within the trees' budget and
+    /// kept with them. None when the shape cannot be clipped (it has parts, or no clipper): the
+    /// frame then shows its sampled fill and says so.
+    fn clipped_tree(
+        &mut self,
+        spec: &SceneSpec,
+        body: &cav_sim::BodySpec,
+        shape: &ShapeSpec,
+        notes: &mut Vec<String>,
+    ) -> Option<Arc<VoxTree>> {
+        if !shape.parts.is_empty() {
+            return None;
+        }
+        let clipped = ShapeSpec { representation: cav_sim::Representation::Fill, ..shape.clone() };
+        let key = format!(
+            "{}|{}|clipped",
+            serde_json::to_string(&clipped).unwrap_or_default(),
+            body.mass.to_bits()
+        );
+        if let Some(at) = self.cache.iter().position(|(k, _)| *k == key) {
+            let kept = self.cache.remove(at);
+            let tree = Arc::clone(&kept.1);
+            self.cache.push(kept);
+            return Some(tree);
+        }
+        if self.said.contains(&key) {
+            return None;
+        }
+        let in_use: usize = self.trees.iter().flatten().map(|t| t.bytes()).sum();
+        match clipped.tree_within(body.mass, &spec.materials, self.budget.saturating_sub(in_use)) {
+            Ok(tree) => {
+                let tree = Arc::new(tree);
+                self.cache.push((key, Arc::clone(&tree)));
+                Some(tree)
+            }
+            Err(why) => {
+                notes.push(format!(
+                    "`{}` is shaded by its sampled fill: clipping it exactly: {why}",
+                    body.label
+                ));
+                self.said.push(key);
+                None
+            }
+        }
     }
 
     /// Why a kept tree of `bytes` bytes is not used: it does not fit beside `in_use`.
@@ -217,6 +345,35 @@ mod tests {
             Motion::Static { position: [2.0, 0.0, 2.0] },
         ));
         scene
+    }
+
+    #[test]
+    fn a_draw_mode_gets_what_it_draws() {
+        // `draw fill` shades a body read Sampled by a tree clipped for the picture (its read's own
+        // tree unchanged), and `draw mesh` gives each body its surface; `draw voxels` neither.
+        let scene = ball(0.3);
+        let mut view = ViewSpec::home(&scene);
+        let mut voxels = Voxels::default();
+        voxels.refresh(&scene, 0.0, std::slice::from_ref(&view));
+        let own = voxels.frame(0).unwrap();
+        assert!(own.bodies[0].surface.is_none());
+        let sampled = own.bodies[0].cubes.clone();
+        assert!(voxels.trees()[0].as_ref().unwrap().cuts.is_empty(), "the body is read Sampled");
+        view.body_draw = BodyDraw::Fill;
+        let notes = voxels.refresh(&scene, 0.0, std::slice::from_ref(&view));
+        assert!(notes.is_empty(), "{notes:?}");
+        let fill = voxels.frame(0).unwrap();
+        assert!(fill.notes.is_empty(), "{:?}", fill.notes);
+        assert!(voxels.trees()[0].as_ref().unwrap().cuts.is_empty(), "its own tree is the read's");
+        // The clipped tree's cells are not the sampled one's fills.
+        assert!(fill.bodies[0].cubes.iter().any(|c| c.value < 1.0));
+        assert_ne!(fill.bodies[0].cubes, sampled);
+        assert_eq!(voxels.kept(), 2, "the read's tree and the picture's");
+        view.body_draw = BodyDraw::Mesh;
+        voxels.refresh(&scene, 0.0, std::slice::from_ref(&view));
+        let surface = voxels.frame(0).unwrap().bodies[0].surface.clone().expect("a surface");
+        assert!(surface.tessellated);
+        assert!(voxels.frame(0).unwrap().notes.iter().any(|n| n.contains("tessellated")));
     }
 
     #[test]

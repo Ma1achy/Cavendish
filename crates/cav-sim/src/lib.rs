@@ -21,6 +21,7 @@
 #![warn(missing_docs)]
 
 pub mod assets;
+pub mod body_draw;
 pub mod bundle;
 pub mod dev;
 pub mod exact;

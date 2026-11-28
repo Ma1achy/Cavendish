@@ -464,6 +464,14 @@ pub enum ViewCommand {
         /// The plane; None for no section.
         section: Option<cav_sim::voxel_view::Section>,
     },
+    /// How the pane draws bodies with a shape: voxels, fill, mesh, mesh over voxels (S5). A
+    /// view's: journalled, never undone.
+    Draw {
+        /// The pane, from 0.
+        pane: usize,
+        /// The draw mode.
+        draw: cav_sim::body_draw::BodyDraw,
+    },
     /// Hide the body of this label from every pane, or show it again (the scene tree's eye, S19).
     /// A view's: the towers still read it, and it is never undone.
     Hide {
@@ -500,7 +508,8 @@ impl ViewCommand {
             | Self::Home { pane }
             | Self::Colour { pane, .. }
             | Self::Overlay { pane, .. }
-            | Self::Section { pane, .. } => Some(pane),
+            | Self::Section { pane, .. }
+            | Self::Draw { pane, .. } => Some(pane),
         }
     }
 }

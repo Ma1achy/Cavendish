@@ -1344,12 +1344,13 @@ impl Engine {
                 // are kept.
                 let before = self.views[pane].clone();
                 let (colour, overlay, section) = (before.colour, before.overlay, before.section);
-                let hidden = before.hidden.clone();
+                let (hidden, body_draw) = (before.hidden.clone(), before.body_draw);
                 self.views[pane] = ViewSpec {
                     colour,
                     overlay,
                     section,
                     hidden,
+                    body_draw,
                     ..home_view(&self.spec, pane, before.style)
                 };
                 // The one camera move that is an edit: undo puts the camera back where it was.
@@ -1367,6 +1368,7 @@ impl Engine {
             ViewCommand::Colour { pane, colour } => self.views[pane].colour = colour,
             ViewCommand::Overlay { pane, overlay } => self.views[pane].overlay = overlay,
             ViewCommand::Section { pane, section } => self.views[pane].section = section,
+            ViewCommand::Draw { pane, draw } => self.views[pane].body_draw = draw,
             ViewCommand::Hide { ref label, hidden } => {
                 for view in &mut self.views {
                     view.hidden.retain(|l| l != label);

@@ -814,8 +814,44 @@ pub fn exact_solids() -> SceneSpec {
     scene
 }
 
+/// `cut-cells`: an icosahedron and a torus mesh beside tower 1, each read by its exact cut cells
+/// (`Second`): the scene of the draw modes (`draw voxels | fill | mesh | mesh-over-voxels`).
+#[must_use]
+pub fn cut_cells() -> SceneSpec {
+    let mut scene = s3_base(
+        "cut-cells",
+        "An icosahedron (0.6 m an edge, at 1/16 m) and a torus mesh (256 triangles, at 5 cm) beside tower 1, each read \
+         by its exact cut cells (Second): `draw fill`, `draw mesh` and `draw mesh-over-voxels` show their skins.",
+        false,
+    );
+    let mut ico = crate::ShapeSpec::new(
+        crate::ShapeKind::Platonic { solid: crate::PlatonicSolid::Icosahedron, edge: 0.6 },
+        0.0625,
+        4,
+    );
+    ico.representation = crate::Representation::Second;
+    scene.bodies.push(BodySpec::shaped(
+        "icosahedron",
+        200.0,
+        ico,
+        Motion::Static { position: [2.0, -0.7, 2.5] },
+    ));
+    let (vertices, triangles) = cav_core::voxel::mesh::torus_mesh(0.35, 0.15, 16, 8);
+    let mut ring = crate::ShapeSpec::new(
+        crate::ShapeKind::Triangles {
+            vertices: vertices.into_iter().map(|v| crate::shape::Vertex(v.to_array())).collect(),
+            triangles: triangles.into_iter().map(crate::shape::Corners).collect(),
+        },
+        0.05,
+        4,
+    );
+    ring.representation = crate::Representation::Second;
+    scene.bodies.push(BodySpec::shaped("torus", 150.0, ring, Motion::Static { position: [2.0, 0.8, 2.5] }));
+    scene
+}
+
 /// The scenes S5 added, in the order the library lists them.
-pub const S5_SCENES: [fn() -> SceneSpec; 1] = [exact_solids];
+pub const S5_SCENES: [fn() -> SceneSpec; 2] = [exact_solids, cut_cells];
 
 /// The text of a dev scene's file: a comment that says where it comes from, then the builder's RON.
 #[must_use]

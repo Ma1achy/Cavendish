@@ -8,6 +8,7 @@ use std::f64::consts::TAU;
 
 use bytemuck::{Pod, Zeroable};
 use cav_core::Vec3;
+use cav_sim::body_draw::BodyDraw;
 use cav_sim::{DrawStyle, SceneSpec, Target};
 
 /// One thick line segment, drawn as a screen-facing quad. `repr(C)`: this is the instance layout.
@@ -569,17 +570,39 @@ pub fn drawables_hiding(
             let dark = !paper;
             let diverging = frame.colouring.field.diverging();
             let range = frame.range.unwrap_or((0.0, 1.0));
-            for cube in &cubes.cubes {
-                let rgb = cube
-                    .colour
-                    .unwrap_or_else(|| crate::colour::of_value(cube.value, range, diverging, dark));
-                let hex = (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]);
-                let h = 0.5 * cube.side;
-                let d = Vec3::new(h, h, h);
-                if filled {
-                    b.cuboid(cube.centre - d, cube.centre + d, linear(hex, 1.0));
-                } else {
-                    b.box_edges(cube.centre - d, cube.centre + d, 1.0, linear(hex, 1.0));
+            // The draw mode: the voxels solid, as outlines under the surface, or not at all.
+            let draw = frame.draw;
+            let solid_cubes = filled && draw != BodyDraw::MeshOverVoxels;
+            if draw.draws_voxels() {
+                for cube in &cubes.cubes {
+                    let rgb = cube
+                        .colour
+                        .unwrap_or_else(|| crate::colour::of_value(cube.value, range, diverging, dark));
+                    let hex = (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]);
+                    let h = 0.5 * cube.side;
+                    let d = Vec3::new(h, h, h);
+                    if solid_cubes {
+                        b.cuboid(cube.centre - d, cube.centre + d, linear(hex, 1.0));
+                    } else {
+                        b.box_edges(cube.centre - d, cube.centre + d, 1.0, linear(hex, 1.0));
+                    }
+                }
+            }
+            // The shape's own triangles, moved to where the body is: solid and lit by their face
+            // normals, or their edges in the styles that draw edges.
+            if let Some(surface) = &cubes.surface {
+                for t in &surface.triangles {
+                    let corners = t.map(|p| cubes.at + p);
+                    if filled {
+                        let normal = (corners[1] - corners[0]).cross(corners[2] - corners[0]);
+                        if normal.length() > 0.0 {
+                            b.triangle(corners, [normal.normalised(); 3], colour);
+                        }
+                    } else {
+                        for k in 0..3 {
+                            b.line(corners[k], corners[(k + 1) % 3], 1.0, colour);
+                        }
+                    }
                 }
             }
             // What a section plane cuts: clipped blocks, or flat squares on a 2-D section, in the
