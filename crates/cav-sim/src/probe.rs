@@ -178,10 +178,33 @@ pub fn probe(scene: &SceneSpec, trees: &[Option<Arc<VoxTree>>], time: f64, point
             },
         };
         counted += 1;
+        // An `Exact` body's field is its solid's, as the forward model reads it; its tree still
+        // says which cell the point is in.
+        let exact = if shape.representation == crate::Representation::Exact {
+            match shape
+                .kind
+                .faceted()
+                .and_then(|solid| Ok((crate::read::exact_density(scene, n, &solid)?, solid)))
+            {
+                Ok((density, solid)) => {
+                    g = g + solid.attraction(density, p - at) * G;
+                    true
+                }
+                Err(why) => {
+                    not_counted.push(format!("`{}` ({why})", body.label));
+                    counted -= 1;
+                    continue;
+                }
+            }
+        } else {
+            false
+        };
         for (l, leaf) in tree.leaves.iter().enumerate() {
             let centre = at + tree.block_centre(leaf.key, leaf.level);
             let side = tree.side(leaf.level);
-            g = g + cube_field(tree.leaf_mass(leaf), side, p - centre);
+            if !exact {
+                g = g + cube_field(tree.leaf_mass(leaf), side, p - centre);
+            }
             let off = p - centre;
             let reach = 0.5 * side * (1.0 + 1e-6);
             if cell.is_none() && off.x.abs() <= reach && off.y.abs() <= reach && off.z.abs() <= reach {

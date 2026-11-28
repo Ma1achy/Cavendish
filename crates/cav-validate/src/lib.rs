@@ -68,6 +68,8 @@ pub enum Unit {
     Pixels,
     /// A number of things that differ: bytes, fields, commands.
     Count,
+    /// A slope of ln against ln (an order of convergence or of fall-off), dimensionless.
+    Slope,
 }
 
 impl Reference {
@@ -95,6 +97,7 @@ impl Unit {
             Self::Metres => "metres",
             Self::Pixels => "pixels",
             Self::Count => "count",
+            Self::Slope => "slope",
         }
     }
 }
@@ -286,7 +289,7 @@ pub fn run(case: &Case, measured: &Measured) {
 ///     slice: "S0",
 ///     reference: ClosedForm,            // or V1Oracle, Script, Paper, Recording, Exact
 ///     against: "what exactly it is compared with",
-///     unit: Metres,                     // or Radians, Relative, Pixels, Count
+///     unit: Metres,                     // or Radians, Relative, Pixels, Count, Slope
 ///     tolerance: 1e-5,
 ///     order: (2.0, 0.2),                // convergence cases only: expected order, ± allowed
 ///     measure: <an expression of type cav_validate::Measured>,

@@ -772,7 +772,8 @@ impl BodySpec {
     /// What the body weighs in `scene`, kilograms: the one rule every consumer of a body's mass
     /// uses (the bundle's `source_mass`, the inspector). A body of materials weighs
     /// its densities times its volumes as voxelised (the tree's mass, which is what the forward
-    /// model reads); any other body weighs its `mass` field, exactly.
+    /// model reads), or, read `Exact`, its density times its solid's exact volume; any other body
+    /// weighs its `mass` field, exactly.
     ///
     /// This voxelises a body of materials, so where the tree is already made use
     /// [`Self::mass_with`].
@@ -782,6 +783,14 @@ impl BodySpec {
     /// there, too fine), in the voxeliser's words.
     pub fn mass_in(&self, scene: &SceneSpec) -> Result<f64, String> {
         match &self.shape {
+            // An `Exact` body of a material weighs its density times the solid's exact volume.
+            Some(shape)
+                if shape.material.is_some() && shape.representation == crate::Representation::Exact =>
+            {
+                let density =
+                    shape.materials(&scene.materials, "material")?.first().map_or(0.0, |m| m.density);
+                Ok(density * shape.kind.faceted()?.volume())
+            }
             Some(shape) if shape.material.is_some() => {
                 Ok(shape.tree(self.mass, &scene.materials)?.body().mass)
             }
@@ -791,10 +800,17 @@ impl BodySpec {
 
     /// [`Self::mass_in`] given the body's tree when it is already made (`None` for a point or a
     /// sphere, or a tree not made): the tree's mass for a body of materials, else the `mass`
-    /// field. `None` when the body weighs its materials and no tree is given.
+    /// field. `None` when the body weighs its materials and no tree is given, or weighs its
+    /// material read `Exact` (its tree is not its mass: ask [`Self::mass_in`]).
     #[must_use]
     pub fn mass_with(&self, tree: Option<&cav_core::voxel::VoxTree>) -> Option<f64> {
-        if self.weighs_its_materials() { tree.map(|t| t.body().mass) } else { Some(self.mass) }
+        let exact = self.shape.as_ref().is_some_and(|s| s.representation == crate::Representation::Exact);
+        match (self.weighs_its_materials(), exact) {
+            // Its tree is not what it weighs: `mass_in` makes the solid.
+            (true, true) => None,
+            (true, false) => tree.map(|t| t.body().mass),
+            (false, _) => Some(self.mass),
+        }
     }
 }
 
@@ -1248,10 +1264,16 @@ mod tests {
         spec
     }
 
-    /// FNV-1a of every library scene's RON and JSON, as this build writes them.
+    /// Library scenes added after the hash's anchor commit (the one before folders): they had no
+    /// bytes then to be held to, so the hash leaves them out. Each must still write no folder
+    /// (the loop over the whole library in `folders_save_and_cost_nothing_unused`).
+    const ADDED_SINCE_THE_ANCHOR: [&str; 1] = ["exact-solids"];
+
+    /// FNV-1a of every library scene's RON and JSON, as this build writes them, but those in
+    /// [`ADDED_SINCE_THE_ANCHOR`].
     fn library_bytes_hash() -> u64 {
         let mut hash = 0xcbf2_9ce4_8422_2325_u64;
-        for scene in crate::LIBRARY {
+        for scene in crate::LIBRARY.iter().filter(|s| !ADDED_SINCE_THE_ANCHOR.contains(&s.name)) {
             let spec = crate::load(scene.name).unwrap();
             for byte in spec.to_ron().bytes().chain(spec.to_json().bytes()) {
                 hash = (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3);

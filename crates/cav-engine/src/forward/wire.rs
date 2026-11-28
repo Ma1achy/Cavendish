@@ -453,6 +453,15 @@ mod tests {
     }
 
     #[test]
+    fn an_exact_body_through_the_wire_is_the_same_bits() {
+        // S5 (TASK-S5-06, A3): bodies read Exact, no voxels in the read, through the wire as any
+        // source; the scene travels as JSON with `representation` in it.
+        let scene = cav_sim::dev::exact_solids();
+        assert!(contribution_request(&scene, SourceId::Body(0)).windows(5).any(|w| w == b"Exact"));
+        let _ = same_bits(&[scene]);
+    }
+
+    #[test]
     fn slow_a_world_job_through_the_wire_is_the_same_bits() {
         // The world goes through the wire by its own index (`WORLD`): `world-box` (four chunks),
         // read whole with its ledger, and stress-1e10, past the octree's caps and not read, whose

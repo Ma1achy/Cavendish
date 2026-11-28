@@ -43,6 +43,12 @@ radii monotone. The rings read about half the ledger walk's leaves; their ledger
 is far above τ and is reported as it is. Worth a second look: the radii come from the ledger walk,
 not [O] §5's level-by-level protocol (`plan/IDEAS.md`); the control's margin is thin.
 
+**A2, the Platonic solids' fall-off (TASK-S5-06): answered by the owner (28 Nov 2026), (b).** The
+5 m height stays; the tetrahedron's expected slope is `−(l + 4)` = −7, because its octupole is a
+pure `xyz` term, which a vertical gradiometer level with its centroid cannot see; the tolerance stays
+±0.2. Measured −6.961, so A2 passes, and a new test checks that the octupole is unseen there and
+seen at 30° (`docs/slices/S5.md` §7.5).
+
 **TASK-S5-04, the ledger in bundles (28 Nov 2026; §7.10).** Each tower's world ledger (the walk's
 ledger, nodes and blocks by level, leaves, the local expansion's degree and audit) is in the
 manifest as `world`; `BUNDLE_VERSION` 3; the badge's "within" adds the series' audit to the ledger.
@@ -64,14 +70,6 @@ town it changes little: the cut is 99.9 % opened chunks' leaves (tower 1 at 1e-2
 the walk's looseness is TASK-S5-27. Worth a second look: near nodes (ellipse parameter below 1.3)
 are read directly, not gathered (a departure); the series is not kept across reads (the engine's,
 `plan/IDEAS.md`).
-
-**For the owner: A2, the Platonic solids' fall-off (TASK-S5-06, branch local at 208e55e, not
-pushed: the pre-push `quick` fails on it).** Four solids pass (cube −6.960, octahedron −6.962,
-dodecahedron −8.932, icosahedron −8.937) and the control (squashed cube, −5); the tetrahedron gives
-−6.961 against −6 ± 0.2: its octupole is odd in height about its centre, so at the solid's own height
-a vertical gradiometer does not see it. At a fixed elevation of 30° all five pass (tetrahedron
-−5.882). Choose: (a) restate A2 at a fixed 30° elevation, tolerance unchanged; (b) keep 5 m and give
-the tetrahedron `l + 4`, the reason written; (c) as written, failing and known.
 
 **For the owner: C3, `Pieces` against `Exact` (TASK-S5-26, PR open, not merged; `docs/slices/S5.md`
 §7.7).** Written before measuring: an icosahedron at 1/16 m, the tower's line within a cell of it,
@@ -996,8 +994,6 @@ mutation). Left, all minor:
   settles at all three; `docs/slices/S5.md` §7.9). It is a recorded measurement, no test fails.
   Choose: (a) keep it in the record as failed at 1e-6 and move on; (b) ask for a tighter bound or a
   cheaper near kernel to meet it (a task of its own); (c) restate it.
-- **A2 (TASK-S5-06, 28 Nov 2026):** the tetrahedron's fall-off at the solid's own height is −6.961
-  against −6 ± 0.2; options (a), (b), (c) in "S5 under way" above.
 - **C3 (TASK-S5-26, 28 Nov 2026):** `Pieces` within 3 cells of an arm and `Second` beyond reads
   1.34e-6 relative against `Exact`, criterion 1e-11; every cell exact reads 3.3e-15. Options (a),
   (b), (c) and the measurements by reach are in "S5 under way" above and `docs/slices/S5.md` §7.7.

@@ -795,6 +795,28 @@ pub fn town() -> SceneSpec {
 /// The scenes S4 added, in the order the library lists them.
 pub const S4_SCENES: [fn() -> SceneSpec; 3] = [world_box, stress_1e10, town];
 
+/// `exact-solids`: `platonic-row`'s five solids, each read `Exact` (TASK-S5-06): the polyhedral
+/// closed form near, the exact moments far, no voxels in the read (they are still drawn). Its
+/// readings are `platonic-row`'s to the voxels' error (`docs/slices/S5.md` §7.5).
+#[must_use]
+pub fn exact_solids() -> SceneSpec {
+    let mut scene = platonic_row();
+    scene.name = "exact-solids".into();
+    scene.description =
+        "platonic-row's five solids, 100 kg and 0.6 m an edge, read exactly (Exact): the polyhedral \
+                         closed form near and their exact moments far, with no voxels in the read."
+            .into();
+    for body in &mut scene.bodies {
+        if let Some(shape) = body.shape.as_mut() {
+            shape.representation = crate::Representation::Exact;
+        }
+    }
+    scene
+}
+
+/// The scenes S5 added, in the order the library lists them.
+pub const S5_SCENES: [fn() -> SceneSpec; 1] = [exact_solids];
+
 /// The text of a dev scene's file: a comment that says where it comes from, then the builder's RON.
 #[must_use]
 pub fn file_text(scene: &SceneSpec) -> String {
@@ -826,7 +848,8 @@ mod tests {
         // is committed.
         let write = std::env::var_os("CAV_WRITE_SCENES").is_some();
         let rewrite = std::env::var_os("CAV_REWRITE_SCENES").is_some();
-        for build in S1_SCENES.into_iter().chain(S2_SCENES).chain(S3_SCENES).chain(S4_SCENES) {
+        for build in S1_SCENES.into_iter().chain(S2_SCENES).chain(S3_SCENES).chain(S4_SCENES).chain(S5_SCENES)
+        {
             let scene = build();
             assert_eq!(scene.validate(), Ok(()), "{}", scene.name);
             let path = scene_path(&scene.name);

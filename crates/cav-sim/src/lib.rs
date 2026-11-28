@@ -23,6 +23,7 @@
 pub mod assets;
 pub mod bundle;
 pub mod dev;
+pub mod exact;
 pub mod folders;
 pub mod import;
 pub mod json_f64;
