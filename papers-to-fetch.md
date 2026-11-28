@@ -78,3 +78,18 @@ which is held and cites these.
 - [ ] Pilliod & Puckett 2004, "Second-order accurate volume-of-fluid algorithms for tracking material interfaces", *J. Comput. Phys.* 199, 465–502 (LVIRA/ELVIRA normals): https://doi.org/10.1016/j.jcp.2003.12.023 (not resolved)
 - [ ] Wald 2007, "On fast construction of SAH-based bounding volume hierarchies", IEEE/EG Symp. Interactive Ray Tracing, 33–40 (binned SAH): https://doi.org/10.1109/RT.2007.4342588 (not resolved)
 - [ ] MacDonald & Booth 1990, "Heuristics for ray tracing using space subdivision", *The Visual Computer* 6, 153–166 (the surface-area heuristic): https://doi.org/10.1007/BF01911006 (not resolved)
+
+## Worlds (`worlds.md`)
+DOIs from the research agents' reading on 28 Nov 2026, not resolved against Crossref.
+- [ ] Perlin 1985, "An Image Synthesizer", SIGGRAPH '85: https://doi.org/10.1145/325165.325247
+- [ ] Cook & DeRose 2005, "Wavelet Noise", *ACM TOG* 24(3), 803–811 (read only through Lagae et al. 2010): https://doi.org/10.1145/1073204.1073264
+- [ ] Musgrave, Kolb & Mace 1989, "The synthesis and rendering of eroded fractal terrains", SIGGRAPH '89: https://doi.org/10.1145/74334.74337
+- [ ] Mei, Decaudin & Hu 2007, "Fast Hydraulic Erosion Simulation and Visualization on GPU", Pacific Graphics (HAL inria-00402079): https://doi.org/10.1109/PG.2007.15
+- [ ] Cordonnier et al. 2016, "Large Scale Terrain Generation from Tectonic Uplift and Fluvial Erosion", *CGF* 35(2) (HAL hal-01262376): https://doi.org/10.1111/cgf.12820
+- [ ] Smelik, Tutenel, Bidarra & Benes 2014, "A Survey on Procedural Modelling for Virtual Worlds", *CGF* 33(6), 31–50 (open PDFs exist, over 10 MB): https://doi.org/10.1111/cgf.12276
+- [ ] Tobler 1979, "Smooth Pycnophylactic Interpolation for Geographical Regions", *JASA* 74: https://doi.org/10.1080/01621459.1979.10481647
+- [ ] Boneva, Kendall & Stefanov 1971, "Spline Transformations", *JRSS B* 33(1), 1–71: https://doi.org/10.1111/j.2517-6161.1971.tb00855.x
+- [ ] Ronchi, Iacono & Paolucci 1996, "The Cubed Sphere", *J. Comput. Phys.* 124, 93–114: https://doi.org/10.1006/jcph.1996.0047
+- [ ] Chan & O'Neill 1975, quadrilateralised spherical cube (NTIS ADA010232), and O'Neill & Laubscher 1976 (DTIC ADA026294): no DOI
+- [ ] Forsberg 1984, Ohio State Univ. Dept. Geodetic Science report 355, terrain reductions (DTIC ADA150788, refused automated fetch): no DOI
+- [ ] Ebert, Musgrave, Peachey, Perlin & Worley, *Texturing and Modeling: A Procedural Approach*, 3rd ed., 2003, ISBN 1-55860-848-6 (Musgrave's chapters 14–20; read only through Blender's port)
