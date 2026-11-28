@@ -55,7 +55,11 @@
 # TASK-S5-06 (Exact bodies): 8 new quick tests (cav-sim: A1, A2, A2's control, A3, X1, exact-solids
 # against platonic-row; cav-engine: the wire; cav-app: the Read row), and 1 for the owner's
 # ruling on A2 (the tetrahedron's octupole unseen level with it, seen at 30°).
-quick 773
-gpu 42
-slow 58
+# TASK-S5-13 (plane and sphere bases): 8 new quick tests (cav-sim: B1, B2, B3, the merge is the
+# cells added, the walk within its ledger on signed masses, a base refused where its closed form
+# does not hold, a patch not written; cav-render: a world's base is drawn); 1 new slow test (cav-sim:
+# B3's sunk box falls as 1/R); 1 new gpu test (cav-render: a world's base is drawn).
+quick 781
+gpu 43
+slow 59
 oracle 58

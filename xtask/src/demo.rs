@@ -19,12 +19,13 @@ pub fn run(root: &Path, slice: &str, web: bool) -> Result<(), String> {
         "S2" | "s2" => s2(root),
         "S3" | "s3" => s3(root),
         "S4" | "s4" => s4(root, web),
+        "S5" | "s5" => s5(root),
         "S17" | "s17" => s17(root),
         "S18" | "s18" => s18(root),
         "S19" | "s19" => s19(root),
         "S20" | "s20" => s20(root),
         other => Err(format!(
-            "no demo for slice `{other}`: the slices with demos are: S0, S1, S2, S3, S4, S17, S18, S19"
+            "no demo for slice `{other}`: the slices with demos are: S0, S1, S2, S3, S4, S5, S17, S18, S19, S20"
         )),
     }
 }
@@ -906,6 +907,46 @@ fn s4(root: &Path, web: bool) -> Result<(), String> {
     write(&out, "web.txt", &log, &mut made)?;
 
     eprintln!("xtask: demo S4 wrote {} files to {}:", made.len(), out.display());
+    for file in &made {
+        eprintln!("  {file}");
+    }
+    Ok(())
+}
+
+/// S5 (`docs/slices/S5.md` §4), items 2 and 3 so far (TASK-S5-13; the rest is TASK-S5-23's):
+/// the infinite plane with a building and a ditch, its readings; the layered planet with hills.
+fn s5(root: &Path) -> Result<(), String> {
+    let out = root.join("docs").join("slices").join("S5");
+    std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    step("build cav and cav-app", cargo(root, &["build", "--quiet", "-p", "cav"]))?;
+    step(
+        "build cav-app (release, for the pictures)",
+        cargo(root, &["build", "--quiet", "--release", "-p", "cav-app"]),
+    )?;
+    let app = root.join("target").join("release").join(format!("cav-app{}", std::env::consts::EXE_SUFFIX));
+    let cav = binary(root, "cav");
+    let path = |name: &str| out.join(name).to_string_lossy().into_owned();
+    let mut made: Vec<String> = Vec::new();
+    let shots: [(&str, &str); 2] = [
+        ("plane.png", "load plane; view iso; pan 0 3 0; zoom 30"),
+        ("planet.png", "load planet; pan 30 0 0; orbit 200 12; zoom 4"),
+    ];
+    for (file, script) in &shots {
+        capture_within(
+            &app,
+            &["--screenshot", &path(file), "--size", "1440x900", "--exec", script],
+            120,
+            None,
+        )?;
+        expect_png(&out, file, [1440, 900], &mut made)?;
+    }
+    let mut session = String::new();
+    for script in ["load plane; reading 1; reading 2; reading 4", "load planet; reading 1; reading 2"] {
+        let answer = capture_within(&cav, &["exec", script], 300, None)?;
+        session.push_str(&format!("$ cav exec \"{script}\"\n{answer}\n"));
+    }
+    write(&out, "bases.txt", &session, &mut made)?;
+    eprintln!("xtask: demo S5 wrote {} files to {}:", made.len(), out.display());
     for file in &made {
         eprintln!("  {file}");
     }

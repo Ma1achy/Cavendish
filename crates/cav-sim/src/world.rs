@@ -41,6 +41,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::spec::{SpecError, limits};
+pub use base::{BaseSpec, LayerSpec};
 use octree::Octree;
 
 /// The most pieces a world may have.
@@ -88,6 +89,11 @@ pub struct WorldSpec {
     /// How the picture coarsens with distance.
     #[serde(default)]
     pub lod: LodSpec,
+    /// What lies under the pieces: nothing (`Patch`, the default, not written to a file), an
+    /// infinite plane or a layered planet, read in closed form with the pieces as departures
+    /// from it ([`base`]).
+    #[serde(default, skip_serializing_if = "BaseSpec::is_patch")]
+    pub base: BaseSpec,
 }
 
 const fn default_supersample() -> u8 {
@@ -304,6 +310,16 @@ impl WorldSpec {
         crate::spec::within("world.read.radius", self.read.radius, (0.0, MAX_READ_RADIUS))?;
         crate::spec::within("world.read.tolerance", self.read.tolerance, (0.0, 1.0))?;
         crate::spec::within("world.lod.error_px", self.lod.error_px, (0.5, 64.0))?;
+        if !self.base.is_patch() {
+            let world = World::new(self);
+            let boxes: Vec<(String, Aabb)> = self
+                .pieces
+                .iter()
+                .zip(&world.solids)
+                .map(|(p, (s, _))| (p.label.clone(), s.bounds()))
+                .collect();
+            self.base.validate(&boxes)?;
+        }
         Ok(())
     }
 
@@ -349,6 +365,8 @@ pub struct World {
     pub densities: Vec<f64>,
     /// Each material's colour, sRGB.
     pub colours: Vec<[u8; 3]>,
+    /// The base under the pieces, `None` for a patch ([`base`]).
+    pub base: Option<base::Base>,
     solids: Vec<(Box<dyn Solid>, u8)>,
 }
 
@@ -384,8 +402,38 @@ impl World {
             grid: spec.grid(),
             densities: spec.materials.iter().map(|m| m.density).collect(),
             colours: spec.materials.iter().map(|m| parse_colour(&m.colour).unwrap_or([128; 3])).collect(),
+            base: base::Base::of(&spec.base),
             solids,
         }
+    }
+
+    /// Chunk `key`'s matter as the instrument reads it: its leaves (Morton key of the first
+    /// finest cell, level) and each as a uniform cube, in Morton order; `None` when it holds no
+    /// matter. On a patch, the pieces' leaves ([`Chunk::cubes`], every leaf, bit for bit). On a
+    /// base, the departures: the pieces' leaves and their overlap with the base at minus its
+    /// density, added cell by cell ([`base::merge`]; signed masses, none zero).
+    ///
+    /// # Errors
+    /// When voxelising the pieces or their overlap passes its caps.
+    pub fn read_leaves(&self, key: ChunkKey) -> Result<Option<ReadLeaves>, String> {
+        let Some(chunk) = self.chunk(key)? else { return Ok(None) };
+        let Some(base) = &self.base else {
+            let cubes = chunk.cubes(&self.grid, &self.densities);
+            let leaves = chunk.tree.leaves.iter().map(|l| (l.key, l.level)).collect();
+            return Ok(Some(ReadLeaves { key, leaves, cubes }));
+        };
+        let overlap = base::Overlap {
+            pieces: self.solids.iter().map(|(s, _)| s.as_ref()).collect(),
+            base: base.solid(),
+        };
+        let piece = [Piece { solid: &overlap, material: 0 }];
+        let under = voxelise_chunk(&piece, &self.grid, key).map_err(|e| e.0)?;
+        let merged = base::merge(&self.grid, &chunk, under.as_ref(), &self.densities, base.density());
+        if merged.is_empty() {
+            return Ok(None);
+        }
+        let (leaves, cubes) = merged.into_iter().map(|(k, level, cube)| ((k, level), cube)).unzip();
+        Ok(Some(ReadLeaves { key, leaves, cubes }))
     }
 
     /// The pieces, in order, for the voxeliser.
@@ -467,8 +515,20 @@ pub(crate) fn box_to_segment(b: &Aabb, base: Vec3, height: f64) -> f64 {
     dx.hypot(dy).hypot(dz)
 }
 
-/// A leaf as a uniform cube: `(centre, m, the world's frame; mass, kg; side, m)`.
+/// A leaf as a uniform cube: `(centre, m, the world's frame; mass, kg, signed on a base; side, m)`.
 pub type Cube = (Vec3, f64, f64);
+
+/// One chunk's matter as the instrument reads it ([`World::read_leaves`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReadLeaves {
+    /// The chunk.
+    pub key: ChunkKey,
+    /// Each leaf's Morton key (of its first finest cell, in the chunk's own cells) and level, in
+    /// Morton order.
+    pub leaves: Vec<(u32, u8)>,
+    /// Each leaf as a uniform cube, in the same order.
+    pub cubes: Vec<Cube>,
+}
 
 /// The world as one tower reads it: the opened chunks leaf by leaf, and the far field of its cut.
 pub struct WorldSource {
@@ -572,9 +632,11 @@ pub fn open(
                 break;
             }
             let key = keys[at];
-            let made = world.chunk(key).map(|chunk| {
-                chunk
-                    .map_or_else(|| inner::ChunkTree::empty(key), |chunk| inner::ChunkTree::of(world, &chunk))
+            let made = world.read_leaves(key).map(|read| {
+                read.map_or_else(
+                    || inner::ChunkTree::empty(key),
+                    |read| inner::ChunkTree::of_leaves(&world.grid, read, inner::Tightness::default()),
+                )
             });
             if made.is_err() {
                 stop.store(true, AtomicOrdering::Relaxed);
@@ -604,8 +666,15 @@ pub fn open(
 
 /// What reading the world at one tower found.
 pub struct TowerRead {
-    /// The reading, with the quadrature's audit.
+    /// The reading, with the quadrature's audit: the departures' and, on a base, the base's added
+    /// (estimates added, settled when both are).
     pub audited: Audited,
+    /// The pieces' part alone (on a patch, the same as `audited`): what the walk, its ledger and
+    /// the local expansion are of. On a base the pieces are departures from it, signed.
+    pub departures: Audited,
+    /// The base's closed form read alone ([`base::Base::source`], audited to the phase
+    /// tolerance), or `None` on a patch.
+    pub base: Option<Audited>,
     /// The ledger for each interferometer, radians: the accepted nodes' bounds read through the
     /// flight ([`walk::LedgerSource`]); 0 when the cut accepted nothing.
     pub ledger: [f64; 2],
@@ -698,7 +767,7 @@ pub fn read_tower(
             ledger[1] += b.upper.abs();
         }
     }
-    Ok(TowerRead { audited, ledger, cut, local: source.far.found })
+    Ok(TowerRead { audited, departures: audited, base: None, ledger, cut, local: source.far.found })
 }
 
 /// The whole world read at every tower of `spec`: the octree ([`Octree::build`]), each tower's walk
@@ -760,7 +829,7 @@ pub fn read_world(
         if cancelled() {
             return Ok(None);
         }
-        let read = read_tower(
+        let mut read = read_tower(
             &octree,
             &trees,
             readers.of(at),
@@ -770,9 +839,31 @@ pub fn read_world(
             cut,
             share,
         )?;
+        if let Some(base) = &world.base {
+            // The base in closed form, read on its own and added: the departures' walk, ledger and
+            // expansion are not of it, and its phase (a planet's, 10⁴ rad and more) would take the
+            // departures' digits if it were summed into the same quadrature.
+            let own = readers.of(at).read_to(aim.base, &base.source(), readouts[at], PHASE_TOLERANCE);
+            read.audited = add(read.departures, own);
+            read.base = Some(own);
+        }
         out.push(read);
     }
     Ok(Some(out))
+}
+
+/// Two audited reads of one shot added: readings and estimates added, settled when both are.
+fn add(a: Audited, b: Audited) -> Audited {
+    Audited {
+        reading: a.reading + b.reading,
+        estimate: match (a.estimate, b.estimate) {
+            (None, None) => None,
+            (x, y) => Some(x.unwrap_or(0.0) + y.unwrap_or(0.0)),
+        },
+        halvings: a.halvings.max(b.halvings),
+        settled: a.settled && b.settled,
+        nodes: a.nodes + b.nodes,
+    }
 }
 
 /// The share of [`MAX_KERNEL_WORK`] the world's read may use: the world counts as one voxel body
@@ -782,6 +873,7 @@ pub fn work_share(spec: &crate::SceneSpec) -> u64 {
     crate::read::kernel_share(spec).min(MAX_KERNEL_WORK)
 }
 
+pub mod base;
 pub mod clipmap;
 pub mod inner;
 pub mod local;

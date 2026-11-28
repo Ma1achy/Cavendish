@@ -986,6 +986,21 @@ impl SceneSpec {
         }
         if let Some(world) = &self.world {
             world.validate()?;
+            // A base's closed form holds on and above its surface only.
+            if let Some(base) = crate::world::base::Base::of(&world.base)
+                && let Some(tower) = self
+                    .array
+                    .towers
+                    .iter()
+                    .find(|t| !base.stands_above(cav_core::Vec3::from_array(t.position)))
+            {
+                return Err(SpecError(format!(
+                    "array.towers: `{}` at {:?} m stands below {}; every tower stands on or above the world's base",
+                    tower.label,
+                    tower.position,
+                    base.surface_words()
+                )));
+            }
         }
         crate::materials::validate(&self.materials)?;
         self.validate_schedule()?;
@@ -1267,7 +1282,7 @@ mod tests {
     /// Library scenes added after the hash's anchor commit (the one before folders): they had no
     /// bytes then to be held to, so the hash leaves them out. Each must still write no folder
     /// (the loop over the whole library in `folders_save_and_cost_nothing_unused`).
-    const ADDED_SINCE_THE_ANCHOR: [&str; 1] = ["exact-solids"];
+    const ADDED_SINCE_THE_ANCHOR: [&str; 3] = ["exact-solids", "plane", "planet"];
 
     /// FNV-1a of every library scene's RON and JSON, as this build writes them, but those in
     /// [`ADDED_SINCE_THE_ANCHOR`].

@@ -53,6 +53,8 @@ pub enum Part {
     Overlay,
     /// The tree overlay: every node of the voxel bodies' trees, by depth.
     Tree,
+    /// The world's base when it is a planet: its curved grid.
+    Base,
 }
 
 /// An infinite horizontal floor, drawn as a grid that fades towards the horizon.
@@ -691,7 +693,94 @@ pub fn drawables_hiding(
             },
         });
     }
+    // The world's base (`world.base`, TASK-S5-13): the plane as the infinite floor is, a hair
+    // below its surface so that what is cut flush into it (a ditch's top) wins the depth test;
+    // the planet as a curved grid out to its equator. A scene's own floor, when it has one, is
+    // the ground drawn.
+    match scene.world.as_ref().map(|w| &w.base) {
+        Some(cav_sim::world::BaseSpec::Plane { surface, .. }) if b.out.ground.is_none() => {
+            let period = 100.0;
+            b.out.ground = Some(Ground {
+                height: (surface - origin.z - PLANE_BELOW) as f32,
+                phase: [origin.x.rem_euclid(period) as f32, origin.y.rem_euclid(period) as f32],
+                surface: linear(palette.ground, 1.0),
+                line: linear(palette.ground_line, 1.0),
+            });
+        }
+        Some(cav_sim::world::BaseSpec::Sphere { radius, .. }) => {
+            planet_grid(&mut b, *radius, linear(palette.ground_line, 1.0));
+        }
+        _ => {}
+    }
     b.out
+}
+
+/// How far below a plane base's surface its ground is drawn, metres.
+pub const PLANE_BELOW: f64 = 0.004;
+/// Segments a planet's grid draws each of its circles of latitude with.
+pub const PLANET_RING_SEGMENTS: u32 = 96;
+/// Meridians a planet's grid draws.
+pub const PLANET_MERIDIANS: u32 = 24;
+
+/// The arc distances from the pole, metres, of a planet's circles of latitude: 1 to 9 times each
+/// power of ten from 10 m up to a quarter of its circumference (the equator), so the grid is fine
+/// near the array and reaches the horizon in about forty circles.
+#[must_use]
+pub fn planet_rings(radius: f64) -> Vec<f64> {
+    let quarter = 0.5 * std::f64::consts::PI * radius;
+    let mut out = Vec::new();
+    let mut decade = 10.0;
+    while decade < quarter && out.len() < 200 {
+        for k in 1..10 {
+            let arc = decade * f64::from(k);
+            if arc >= quarter {
+                break;
+            }
+            out.push(arc);
+        }
+        decade *= 10.0;
+    }
+    out.push(quarter);
+    out
+}
+
+/// The point of a planet of `radius` (centre `(0, 0, −radius)`) at arc `arc` metres from its pole
+/// towards the azimuth `phi` radians (from east, anticlockwise), the world's frame. Its height
+/// below the pole is formed as `2R sin²(θ/2)`, without the cancellation of `R − R cos θ`.
+#[must_use]
+pub fn on_planet(radius: f64, arc: f64, phi: f64) -> Vec3 {
+    let theta = arc / radius;
+    let (s, c) = phi.sin_cos();
+    let across = radius * theta.sin();
+    let half = (0.5 * theta).sin();
+    Vec3::new(across * c, across * s, -2.0 * radius * half * half)
+}
+
+/// A planet's grid: its circles of latitude ([`planet_rings`]) and [`PLANET_MERIDIANS`]
+/// meridians, as lines of `colour`.
+fn planet_grid(b: &mut Builder, radius: f64, colour: [f32; 4]) {
+    let rings = planet_rings(radius);
+    let azimuth = |k: u32, n: u32| std::f64::consts::TAU * f64::from(k) / f64::from(n);
+    for &arc in &rings {
+        for k in 0..PLANET_RING_SEGMENTS {
+            let (p, q) = (azimuth(k, PLANET_RING_SEGMENTS), azimuth(k + 1, PLANET_RING_SEGMENTS));
+            b.line(on_planet(radius, arc, p), on_planet(radius, arc, q), 1.0, colour);
+        }
+    }
+    for m in 0..PLANET_MERIDIANS {
+        let phi = azimuth(m, PLANET_MERIDIANS);
+        let mut from = 0.0;
+        for &arc in &rings {
+            // Each piece at most a twentieth of a radian of arc, so its chord stays on the sphere.
+            let pieces = ((arc - from) / (0.05 * radius)).ceil().max(1.0) as u32;
+            for p in 0..pieces {
+                let at = |q: u32| from + (arc - from) * f64::from(q) / f64::from(pieces);
+                b.line(on_planet(radius, at(p), phi), on_planet(radius, at(p + 1), phi), 1.0, colour);
+            }
+            from = arc;
+        }
+    }
+    b.end_part(Part::Base);
 }
 
 #[cfg(test)]
@@ -1104,6 +1193,44 @@ mod tests {
         assert!(room.lines.iter().all(|l| l.a.iter().chain(&l.b).all(|v| v.is_finite())));
         assert!(room.triangles.iter().all(|v| v.position.iter().chain(&v.normal).all(|c| c.is_finite())));
         assert_eq!(room.triangles.len() % 3, 0);
+    }
+
+    #[test]
+    fn a_world_s_base_is_drawn() {
+        let origin = Vec3::new(1.0, 2.0, 5.0);
+        let part = |d: &Drawables, p: Part| d.parts.iter().any(|(q, ..)| *q == p);
+        // The plane: the ground a hair under its surface, and nothing else added.
+        let plane = drawables(&dev::plane(), DrawStyle::Shaded, None, origin);
+        let ground = plane.ground.expect("the plane is the ground");
+        assert!((f64::from(ground.height) - (0.0 - 5.0 - PLANE_BELOW)).abs() < 1e-6);
+        assert!(!part(&plane, Part::Base));
+        // The planet: its grid, every line on the sphere (to the f32 of the target-relative
+        // ends), the rings out to the equator, no flat ground.
+        let planet = drawables(&dev::planet(), DrawStyle::Shaded, None, origin);
+        assert!(planet.ground.is_none() && part(&planet, Part::Base));
+        let radius = 2.0e4;
+        let rings = planet_rings(radius);
+        assert!(
+            rings.len() < 60 && (rings[rings.len() - 1] - 0.5 * std::f64::consts::PI * radius).abs() < 1e-6
+        );
+        let grid: Vec<&Line> = planet.lines.iter().filter(|l| l.width == 1.0).collect();
+        assert!(grid.len() >= rings.len() * PLANET_RING_SEGMENTS as usize);
+        for line in &grid {
+            for end in [line.a, line.b] {
+                let p = origin + Vec3::new(f64::from(end[0]), f64::from(end[1]), f64::from(end[2]));
+                let off = (p - Vec3::new(0.0, 0.0, -radius)).length() - radius;
+                // f32 keeps 24 bits: 2e4 m to about 1 mm.
+                assert!(off.abs() < 5e-3 * (1.0 + p.length() / 1e3), "{off} at {p:?}");
+            }
+        }
+        // The pole is on the surface and a ring 10 m out drops by its sagitta.
+        assert_eq!(on_planet(radius, 0.0, 0.3).z, 0.0);
+        assert!((on_planet(radius, 10.0, 0.0).z + 100.0 / (2.0 * radius)).abs() < 1e-9);
+        // Control: a patch draws neither.
+        let mut patch = dev::planet();
+        patch.world.as_mut().unwrap().base = cav_sim::world::BaseSpec::Patch;
+        let patch = drawables(&patch, DrawStyle::Shaded, None, origin);
+        assert!(patch.ground.is_none() && !part(&patch, Part::Base));
     }
 
     #[test]

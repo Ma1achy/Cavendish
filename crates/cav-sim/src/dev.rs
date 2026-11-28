@@ -647,6 +647,7 @@ pub fn world_box() -> SceneSpec {
             stream: crate::world::StreamSpec::default(),
             read: crate::world::WorldReadSpec::default(),
             lod: crate::world::LodSpec::default(),
+            base: crate::world::BaseSpec::Patch,
         }),
         ..SceneSpec::room()
     }
@@ -730,6 +731,7 @@ pub fn stress_1e10() -> SceneSpec {
                 walk: crate::world::WalkKind::Ledger,
             },
             lod: crate::world::LodSpec::default(),
+            base: crate::world::BaseSpec::Patch,
         }),
         ..SceneSpec::room()
     }
@@ -814,8 +816,85 @@ pub fn exact_solids() -> SceneSpec {
     scene
 }
 
+/// `plane`: the array on an infinite plane of rock (2000 kg/m³, 8 m thick, its top at z = 0), a
+/// concrete building east of it with a 2 m foundation, and a ditch of air west of it, 2.5 m deep:
+/// the base read in closed form (no gradient), the pieces as departures from it (TASK-S5-13).
+#[must_use]
+pub fn plane() -> SceneSpec {
+    SceneSpec {
+        name: "plane".into(),
+        description: "The array on an infinite plane of rock, 8 m thick: a concrete building east of it (2 m of \
+                      foundation) and a ditch of air west of it. The plane reads uniform g and no gradient; the \
+                      building and the ditch are read as departures from it."
+            .into(),
+        room: None,
+        floor: None,
+        duration: 10.0,
+        world: Some(crate::world::WorldSpec {
+            pitch: 0.25,
+            supersample: 2,
+            origin: [0.0; 3],
+            materials: vec![material("concrete", 2400.0, "#b2b0a8"), material("air", 0.0, "#2c3e58")],
+            pieces: vec![
+                block("building", 0, [8.0, 3.0, -2.0], [16.0, 10.0, 9.0]),
+                block("ditch", 1, [-16.0, -4.0, -2.5], [-8.0, 3.0, 0.0]),
+            ],
+            stream: crate::world::StreamSpec::default(),
+            read: crate::world::WorldReadSpec::default(),
+            lod: crate::world::LodSpec::default(),
+            base: crate::world::BaseSpec::Plane { surface: 0.0, density: 2000.0, thickness: 8.0 },
+        }),
+        ..SceneSpec::room()
+    }
+}
+
+/// `planet`: the array on the north pole of a planet 20 km in radius in three layers (crust,
+/// mantle, core), with rolling hills east of it: the layers read as one point mass at the centre,
+/// the hills as departures from the reference sphere (TASK-S5-13).
+#[must_use]
+pub fn planet() -> SceneSpec {
+    let layer = |thickness, density| crate::world::LayerSpec { thickness, density };
+    SceneSpec {
+        name: "planet".into(),
+        description: "The array on the north pole of a planet 20 km in radius: a crust of 4 km, a mantle of 10 km and \
+                      a core. Hills rise east of the array. The layers read as one point mass at the centre (the \
+                      shell theorem); the hills as departures from the sphere."
+            .into(),
+        room: None,
+        floor: None,
+        duration: 10.0,
+        world: Some(crate::world::WorldSpec {
+            pitch: 0.25,
+            supersample: 2,
+            origin: [0.0; 3],
+            materials: vec![material("ground", 2700.0, "#8a7458")],
+            pieces: vec![crate::world::PieceSpec {
+                label: "hills".into(),
+                material: 0,
+                kind: crate::world::PieceKind::Terrain {
+                    lo: [12.0, -30.0],
+                    hi: [72.0, 30.0],
+                    bottom: -1.5,
+                    level: 1.5,
+                    relief: 2.5,
+                    wavelength: 40.0,
+                    seed: 5,
+                },
+            }],
+            stream: crate::world::StreamSpec::default(),
+            read: crate::world::WorldReadSpec { tolerance: 1e-6, ..crate::world::WorldReadSpec::default() },
+            lod: crate::world::LodSpec::default(),
+            base: crate::world::BaseSpec::Sphere {
+                radius: 2.0e4,
+                layers: vec![layer(4.0e3, 2700.0), layer(1.0e4, 4500.0), layer(6.0e3, 9000.0)],
+            },
+        }),
+        ..SceneSpec::room()
+    }
+}
+
 /// The scenes S5 added, in the order the library lists them.
-pub const S5_SCENES: [fn() -> SceneSpec; 1] = [exact_solids];
+pub const S5_SCENES: [fn() -> SceneSpec; 3] = [exact_solids, plane, planet];
 
 /// The text of a dev scene's file: a comment that says where it comes from, then the builder's RON.
 #[must_use]

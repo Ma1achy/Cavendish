@@ -45,6 +45,7 @@ pub(crate) fn terrain_world() -> WorldSpec {
         stream: StreamSpec::default(),
         read: WorldReadSpec::default(),
         lod: LodSpec::default(),
+        base: crate::world::BaseSpec::Patch,
     }
 }
 

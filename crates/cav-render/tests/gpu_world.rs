@@ -286,6 +286,7 @@ fn hills_frame(v: &ViewSpec) -> WorldFrame {
         stream: Default::default(),
         read: Default::default(),
         lod: cav_sim::world::LodSpec { error_px: 32.0 },
+        base: Default::default(),
     };
     let world = World::new(&spec);
     let grid = world.grid;

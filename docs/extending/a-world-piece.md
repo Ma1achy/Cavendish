@@ -56,3 +56,25 @@ changes. A world holds at most 255 (`MAX_MATERIALS`).
 - The whole world is read (S5): far matter through the octree's nodes, within the walk's ledger,
   so a piece needs nothing for the read beyond its chunks. A world whose chunks are past the
   octree's cap (`MAX_READ_CHUNKS_WHOLE`) is not read at all; the read says so.
+
+## A kind of base (`world.base`)
+
+**Example to read:** `BaseSpec::Sphere` in `crates/cav-sim/src/world/base.rs`; the scenes
+`plane()` and `planet()` in `crates/cav-sim/src/dev.rs`.
+
+A base is matter under the pieces that the read takes in closed form, never as cells; the pieces
+are departures from it (S5, TASK-S5-13). A new kind needs:
+
+1. **The spec.** A variant of `BaseSpec`, its fields with units, its ranges in
+   `BaseSpec::validate`, and any rule on the pieces (a planet's may not reach below its top
+   layer: the overlap is taken at one density).
+2. **The solid and the density.** A `BaseSolid` variant (a conservative `cover`, with no
+   cancellation near the surface: `ball_excess` is the example) and `Base::density`, the density
+   the pieces' overlap with it is taken at, with a minus sign. `World::read_leaves` then makes the
+   departures with no new code (`merge`).
+3. **The closed form.** A `BaseSource` variant, read for every tower beside the departures
+   (`read_world`), valid where `Base::stands_above` says; towers below are refused in words by
+   `SceneSpec::validate`.
+4. **The drawing.** A match arm in `drawables_hiding` (`cav-render/src/scene.rs`).
+5. **Tests.** Its closed form against an independent one (B1, B3), departures against prisms
+   (B2), `the_merge_is_the_cells_added` with it as a base, and the signed walk test.

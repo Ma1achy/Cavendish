@@ -628,3 +628,62 @@ fn gpu_a_body_appears_at_its_projected_pixel() {
     assert!(!late.has_near(centre(1.0), 2, cav_render::BODY_SRGB, 6));
     assert!((centre(9.0)[1] - centre(1.0)[1]).abs() > 50.0, "the two places are well apart in the picture");
 }
+
+#[test]
+fn gpu_a_world_s_base_is_drawn() {
+    // TASK-S5-13: a planet's curved grid and a plane's ground are in the picture where the camera
+    // puts them; the same scenes as patches have neither.
+    let (gpu, renderer) = setup();
+    let planet = dev::planet();
+    let mut patch = planet.clone();
+    patch.world.as_mut().unwrap().base = cav_sim::world::BaseSpec::Patch;
+    let view = ViewSpec {
+        distance: 120.0,
+        ..ViewSpec::framing(&planet, NamedView::Iso, Projection::Perspective, DrawStyle::Shaded)
+    };
+    let (with, without) = (render(&gpu, &renderer, &planet, &view), render(&gpu, &renderer, &patch, &view));
+    let camera = camera(&view);
+    // Where a circle of latitude crosses a meridian, 50 m out along each of four meridians.
+    let mut seen = 0;
+    for m in [0u32, 6, 12, 18] {
+        let phi = std::f64::consts::TAU * f64::from(m) / f64::from(cav_render::scene::PLANET_MERIDIANS);
+        let Some(pixel) = camera.pixel(cav_render::scene::on_planet(2.0e4, 50.0, phi), SIZE) else {
+            continue;
+        };
+        if pixel[0] < 2.0
+            || pixel[1] < 2.0
+            || pixel[0] > f64::from(SIZE[0]) - 3.0
+            || pixel[1] > f64::from(SIZE[1]) - 3.0
+        {
+            continue;
+        }
+        let drawn = |p: &Picture| {
+            (-2i64..=2).any(|dy| {
+                (-2i64..=2).any(|dx| {
+                    !close(
+                        p.at((pixel[0] as i64 + dx) as u32, (pixel[1] as i64 + dy) as u32),
+                        BACKGROUND_SRGB,
+                        2,
+                    )
+                })
+            })
+        };
+        assert!(drawn(&with), "the planet's grid at {pixel:?}");
+        assert!(!drawn(&without), "the patch has no grid at {pixel:?}");
+        seen += 1;
+    }
+    assert!(seen >= 2, "the crossings are in the picture: {seen}");
+    // The plane: its ground fills the picture's lower rows; the patch's leaves them background.
+    let plane = dev::plane();
+    let mut flat = plane.clone();
+    flat.world.as_mut().unwrap().base = cav_sim::world::BaseSpec::Patch;
+    let view = ViewSpec::framing(&plane, NamedView::Iso, Projection::Perspective, DrawStyle::Shaded);
+    let rows = SIZE[1] - 40..SIZE[1];
+    let (on, off) = (render(&gpu, &renderer, &plane, &view), render(&gpu, &renderer, &flat, &view));
+    assert!(
+        on.drawn_fraction(rows.clone(), BACKGROUND_SRGB) > 0.9,
+        "{}",
+        on.drawn_fraction(rows.clone(), BACKGROUND_SRGB)
+    );
+    assert!(off.drawn_fraction(rows, BACKGROUND_SRGB) < 0.2);
+}
