@@ -122,6 +122,9 @@ pub struct Renderer {
     world: crate::world::WorldPipelines,
     /// The world's GPU copies (chunk meshes, the brick store), kept between frames.
     world_gpu: std::sync::Mutex<crate::world::WorldGpu>,
+    /// Profiling only: the last frame's GPU times, ms (cull, ground and bodies, chunks, bricks,
+    /// lines), when the device has timestamp queries (`CAV_GPU_TIMING`).
+    gpu_times: std::sync::Mutex<Option<[f64; 5]>>,
 }
 
 impl Renderer {
@@ -219,6 +222,7 @@ impl Renderer {
             ground: pipeline("ground", "vs_ground", "fs_ground", None, false),
             world: crate::world::WorldPipelines::new(gpu, COLOUR_FORMAT, SAMPLES, DEPTH_FORMAT),
             world_gpu: std::sync::Mutex::new(crate::world::WorldGpu::default()),
+            gpu_times: std::sync::Mutex::new(None),
             globals_layout,
         }
     }
@@ -383,8 +387,21 @@ impl Renderer {
 
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pane") });
+        let queries = device.features().contains(wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES).then(|| {
+            device.create_query_set(&wgpu::QuerySetDescriptor {
+                label: Some("timing"),
+                ty: wgpu::QueryType::Timestamp,
+                count: 6,
+            })
+        });
+        if let Some(q) = &queries {
+            encoder.write_timestamp(q, 0);
+        }
         if let Some((gpu_world, draw)) = world {
             gpu_world.cull(&self.world, &mut encoder, draw);
+        }
+        if let Some(q) = &queries {
+            encoder.write_timestamp(q, 1);
         }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -423,17 +440,65 @@ impl Renderer {
                 pass.set_vertex_buffer(0, triangles.slice(..));
                 pass.draw(0..things.triangles.len() as u32, 0..1);
             }
+            if let Some(q) = &queries {
+                pass.write_timestamp(q, 2);
+            }
             if let Some((gpu_world, draw)) = world {
-                gpu_world.draw(&self.world, &mut pass, draw);
+                gpu_world.draw(&self.world, &mut pass, draw, queries.as_ref());
                 pass.set_bind_group(0, &bind_group, &[]);
+            }
+            if let Some(q) = &queries {
+                pass.write_timestamp(q, 4);
             }
             if let Some(lines) = &lines {
                 pass.set_pipeline(if xray { &self.line_xray } else { &self.line });
                 pass.set_vertex_buffer(0, lines.slice(..));
                 pass.draw(0..6, 0..things.lines.len() as u32);
             }
+            if let Some(q) = &queries {
+                pass.write_timestamp(q, 5);
+            }
         }
+        let readback = queries.as_ref().map(|q| {
+            let resolve = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("timing resolve"),
+                size: 48,
+                usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            let read = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("timing read"),
+                size: 48,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            });
+            encoder.resolve_query_set(q, 0..6, &resolve, 0);
+            encoder.copy_buffer_to_buffer(&resolve, 0, &read, 0, 48);
+            read
+        });
         gpu.queue.submit([encoder.finish()]);
+        if let Some(read) = readback {
+            let slice = read.slice(..);
+            slice.map_async(wgpu::MapMode::Read, |_| {});
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            if let Ok(data) = slice.get_mapped_range() {
+                let t: &[u64] = bytemuck::cast_slice(&data);
+                let period = f64::from(gpu.queue.get_timestamp_period()) * 1e-6;
+                let d = |a: usize, b: usize| t[b].saturating_sub(t[a]) as f64 * period;
+                // Index 3 is written between the chunks and the bricks by the world's draw.
+                let chunks = if world.is_some() { d(2, 3) } else { 0.0 };
+                let bricks = if world.is_some() { d(3, 4) } else { 0.0 };
+                *self.gpu_times.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+                    Some([d(0, 1), d(1, 2), chunks, bricks, d(4, 5)]);
+            }
+        }
+    }
+
+    /// Profiling only: the last frame's GPU times, ms: the cull pass, the ground and bodies, the
+    /// chunks, the bricks and the lines. `None` without timestamp queries (`CAV_GPU_TIMING`).
+    #[must_use]
+    pub fn gpu_times(&self) -> Option<[f64; 5]> {
+        *self.gpu_times.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Draws `frame` at `size` pixels (`[width, height]`) and reads the picture back:

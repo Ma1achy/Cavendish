@@ -1581,6 +1581,7 @@ impl WorldGpu {
         pipelines: &'a WorldPipelines,
         pass: &mut wgpu::RenderPass<'a>,
         draw: &'a WorldDraw,
+        timing: Option<&wgpu::QuerySet>,
     ) {
         pass.set_bind_group(0, &draw.bind_group, &[]);
         if let Some(indirect) = &draw.indirect {
@@ -1591,6 +1592,9 @@ impl WorldGpu {
                 pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed_indirect(indirect, (i * 20) as u64);
             }
+        }
+        if let Some(q) = timing {
+            pass.write_timestamp(q, 3);
         }
         if let Some(instances) = &draw.instances {
             pass.set_pipeline(&pipelines.brick);
