@@ -19,8 +19,8 @@
 //! is not asked for). The result is the same bits whatever the number of threads: each chunk's
 //! summary depends on its key alone, and everything above is made in key order.
 //!
-//! **What it keeps.** Summaries only (about 350 bytes a node, [`Octree::bytes`]); no chunk's
-//! cells. The walk (TASK-S5-12) makes again the chunks it opens, by key ([`chunk_cubes`]).
+//! **What it keeps.** Summaries and leaf counts only (360 bytes a node, [`Octree::bytes`]); no chunk's
+//! cells. The walk ([`super::walk`]) makes again the chunks it opens, by key ([`chunk_cubes`]).
 //!
 //! **Caps** (`docs/slices/S5.md` §3.1, X3), counted before anything is reserved: at most
 //! [`MAX_READ_CHUNKS_WHOLE`] chunks that may hold matter (and as many bricks at any level of the
@@ -45,8 +45,8 @@ use super::{Cube, World};
 pub const MAX_READ_CHUNKS_WHOLE: usize = 131_072;
 /// The most nodes of all levels a whole-world octree may have. A world that is one layer of
 /// chunks (terrain) has `1 + 1/4 + 1/16 + … = 4/3` nodes a chunk (`town`: 7,064 for 5,350, 1.32),
-/// a solid one `8/7`; so `4/3` of [`MAX_READ_CHUNKS_WHOLE`] (174,763) and some room, at most 63 MB
-/// at [`Octree::NODE_BYTES`] (352) each.
+/// a solid one `8/7`; so `4/3` of [`MAX_READ_CHUNKS_WHOLE`] (174,763) and some room, at most 65 MB
+/// at [`Octree::NODE_BYTES`] (360) each.
 pub const MAX_WORLD_NODES: usize = 180_000;
 /// Levels are made upward until one has at most this many nodes: the roots.
 pub const MAX_ROOTS: usize = 8;
@@ -105,6 +105,9 @@ pub struct OctNode {
     pub mask: u8,
     /// Where its children start in the octree's child list; as many as bits in `mask`.
     pub first_child: u32,
+    /// How many leaf cubes its chunks hold in all: what opening every chunk under it would cost
+    /// the kernel (the walk's work cap counts it before a chunk is made).
+    pub leaves: u64,
 }
 
 /// The world's octree: nodes level by level from the chunks up, each level sorted by key.
@@ -146,26 +149,28 @@ impl Octree {
         Self::from_chunks(world.grid, chunks).map(Some)
     }
 
-    /// The octree over the chunk summaries `chunks` (each about its chunk's centre; empty ones
-    /// dropped; any order, each key once) on `grid`: what [`Self::build`] makes once the chunks
-    /// are summarised, and how a test or a base (TASK-S5-13) makes one from its own.
+    /// The octree over the chunk summaries `chunks` (each `(key, summary about the chunk's
+    /// centre, how many leaf cubes it has)`; empty ones dropped; any order, each key once) on
+    /// `grid`: what [`Self::build`] makes once the chunks are summarised, and how a test or a base
+    /// (TASK-S5-13) makes one from its own.
     ///
     /// # Errors
     /// When a key comes twice or there would be more than [`MAX_WORLD_NODES`] nodes.
-    pub fn from_chunks(grid: WorldGrid, mut chunks: Vec<(ChunkKey, Summary)>) -> Result<Self, String> {
-        chunks.retain(|(_, s)| !s.is_empty());
-        chunks.sort_by_key(|(key, _)| *key);
+    pub fn from_chunks(grid: WorldGrid, mut chunks: Vec<Counted>) -> Result<Self, String> {
+        chunks.retain(|(_, s, _)| !s.is_empty());
+        chunks.sort_by_key(|(key, _, _)| *key);
         if let Some(twice) = chunks.windows(2).find(|w| w[0].0 == w[1].0) {
             return Err(format!("chunk {:?} is given twice", twice[0].0.to_array()));
         }
-        let keys: Vec<ChunkKey> = chunks.iter().map(|(k, _)| *k).collect();
+        let keys: Vec<ChunkKey> = chunks.iter().map(|(k, _, _)| *k).collect();
         let total = check_nodes(&keys)?;
         let mut nodes = Vec::with_capacity(total);
-        nodes.extend(chunks.into_iter().map(|(key, summary)| OctNode {
+        nodes.extend(chunks.into_iter().map(|(key, summary, leaves)| OctNode {
             key: NodeKey::chunk(key),
             summary,
             mask: 0,
             first_child: 0,
+            leaves,
         }));
         let mut starts = vec![0, nodes.len()];
         let mut children = Vec::with_capacity(total.saturating_sub(keys.len()));
@@ -186,8 +191,9 @@ impl Octree {
                 let centre = grid.brick_box(key.level, key.key).centre();
                 let first_child = children.len() as u32;
                 let mask = order[at..end].iter().fold(0u8, |m, o| m | 1 << o.1);
+                let leaves = order[at..end].iter().map(|o| nodes[o.2 as usize].leaves).sum();
                 children.extend(order[at..end].iter().map(|o| o.2));
-                nodes.push(OctNode { key, summary: Summary::sum(centre, &parts), mask, first_child });
+                nodes.push(OctNode { key, summary: Summary::sum(centre, &parts), mask, first_child, leaves });
                 at = end;
             }
             starts.push(nodes.len());
@@ -319,13 +325,16 @@ pub fn chunk_cubes(world: &World, key: ChunkKey) -> Result<Vec<Cube>, String> {
     Ok(world.chunk(key)?.map(|c| c.cubes(&world.grid, &world.densities)).unwrap_or_default())
 }
 
-/// Chunk `key`'s summary about its centre (empty when it holds nothing).
+/// Chunk `key`'s summary about its centre (empty when it holds nothing), and how many leaf cubes
+/// it has.
 ///
 /// # Errors
 /// As [`chunk_cubes`].
-pub fn chunk_summary(world: &World, key: ChunkKey) -> Result<Summary, String> {
+pub fn chunk_summary(world: &World, key: ChunkKey) -> Result<(Summary, u64), String> {
     let centre = world.grid.chunk_box(key).centre();
-    Ok(Summary::of_cubes(centre, chunk_cubes(world, key)?))
+    let cubes = chunk_cubes(world, key)?;
+    let leaves = cubes.len() as u64;
+    Ok((Summary::of_cubes(centre, cubes), leaves))
 }
 
 /// The keys, sorted, of the chunks of `world` that may hold matter: found top-down from the
@@ -426,8 +435,11 @@ fn check_nodes(keys: &[ChunkKey]) -> Result<usize, String> {
     Ok(total)
 }
 
-/// One chunk's summary or why it could not be made, by the key's index.
-type Found = (usize, Result<Summary, String>);
+/// A chunk's key, its summary about its centre and how many leaf cubes it has.
+pub type Counted = (ChunkKey, Summary, u64);
+
+/// One chunk's summary and leaf count, or why it could not be made, by the key's index.
+type Found = (usize, Result<(Summary, u64), String>);
 
 /// The summaries of the chunks `keys` that hold matter, in key order, made on `threads` threads;
 /// `Ok(None)` when cancelled. Keys are handed out in order, so when one fails every earlier key
@@ -438,7 +450,7 @@ fn summaries(
     world: &World,
     keys: &[ChunkKey],
     cancelled: &(dyn Fn() -> bool + Sync),
-) -> Result<Option<Vec<(ChunkKey, Summary)>>, String> {
+) -> Result<Option<Vec<Counted>>, String> {
     let next = AtomicUsize::new(0);
     let stop = AtomicBool::new(false);
     let was_cancelled = AtomicBool::new(false);
@@ -477,9 +489,9 @@ fn summaries(
     found.sort_by_key(|(at, _)| *at);
     let mut out = Vec::with_capacity(found.len());
     for (at, made) in found {
-        let summary = made.map_err(|why| format!("chunk {:?}: {why}", keys[at].to_array()))?;
+        let (summary, leaves) = made.map_err(|why| format!("chunk {:?}: {why}", keys[at].to_array()))?;
         if !summary.is_empty() {
-            out.push((keys[at], summary));
+            out.push((keys[at], summary, leaves));
         }
     }
     Ok(Some(out))

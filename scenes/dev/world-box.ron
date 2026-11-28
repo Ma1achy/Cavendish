@@ -98,7 +98,7 @@
             tower_radius: 8.0,
         ),
         read: (
-            radius: 100.0,
+            radius: 0.0,
             tolerance: 1e-10,
         ),
         lod: (

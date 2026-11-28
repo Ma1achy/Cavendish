@@ -1024,13 +1024,14 @@ fn a_figure_export_goes_through_the_files_seam() {
 
 #[test]
 fn slow_a_figures_record_says_how_far_its_numbers_go() {
-    // S4's second review, J4: a figure of a world read only within 1 m of the towers says so in
-    // its record (settled, truncated, the warnings), as the bundle does.
+    // S4's second review, J4: a figure of a world that was not read (stress-1e10, past the
+    // octree's caps since S5 reads worlds whole) says so in its record (settled, truncated, the
+    // warnings), as the bundle does.
     let dir = scratch("record truncated");
-    let mut part = engine("load world-box; set world.read.radius 1");
+    let mut part = engine("load stress-1e10");
     part.run_line(&format!("figure signal tower 1 to {}", word(&dir.join("part.svg")))).unwrap();
     let record = record_of(&dir, "part");
-    assert_eq!((&record["signal"]["settled"], &record["signal"]["truncated"]), (&false.into(), &1.0.into()));
+    assert_eq!((&record["signal"]["settled"], &record["signal"]["truncated"]), (&false.into(), &0.0.into()));
     let warnings = record["signal"]["warnings"].as_array().unwrap();
     assert!(warnings.iter().any(|w| w.as_str().unwrap().contains("is not read")), "{warnings:?}");
     // Control: the whole box is settled and whole.

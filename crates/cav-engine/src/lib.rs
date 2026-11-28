@@ -47,6 +47,7 @@ pub use command::{
 pub use console::{COMMANDS, CommandDoc, Request, describe, help, render, value_of};
 pub use engine::{
     Engine, Exports, FigureExporter, MAX_DROPPED_BYTES, REPLAY_PATIENCE, TYPED_LINE_PATIENCE, estimate_text,
+    world_text,
 };
 pub use forward::{FORWARD_STORE_BYTES, SignalState};
 pub use history::{HISTORY_BYTES, JOURNAL_BYTES};

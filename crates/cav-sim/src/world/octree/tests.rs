@@ -140,8 +140,10 @@ cav_validate::case! {
             }
             worst = worst.max(worst_raw(&tree, &leaves));
             // Control: one chunk's third moments zeroed, carried up, are seen at once.
-            let mut chunks: Vec<(ChunkKey, Summary)> =
-                tree.level(0).map(|id| (tree.chunk(id).unwrap(), *tree.summary(id))).collect();
+            let mut chunks: Vec<(ChunkKey, Summary, u64)> = tree
+                .level(0)
+                .map(|id| (tree.chunk(id).unwrap(), *tree.summary(id), tree.node(id).leaves))
+                .collect();
             chunks[0].1.third = [0.0; 10];
             let broken = Octree::from_chunks(world.grid, chunks).unwrap();
             assert!(worst_raw(&broken, &leaves) > 1e-6, "{name}: the control passed");
@@ -218,7 +220,7 @@ fn bits(tree: &Octree) -> Vec<u64> {
     for id in 0..tree.len() {
         let n = tree.node(id);
         let s = &n.summary;
-        out.extend([u64::from(n.key.level), u64::from(n.mask), u64::from(n.first_child)]);
+        out.extend([u64::from(n.key.level), u64::from(n.mask), u64::from(n.first_child), n.leaves]);
         out.extend(n.key.key.to_array().map(|k| u64::from(k as u32)));
         out.extend(s.centre.to_array().map(f64::to_bits));
         out.push(s.mass.to_bits());
@@ -319,11 +321,11 @@ fn the_octree_is_bounded() {
     // Chunks spread so that none shares a parent make more nodes than the cap: refused before
     // anything is reserved, naming the number.
     let grid = World::new(&terrain_world()).grid;
-    let spread: Vec<(ChunkKey, Summary)> = (0..MAX_WORLD_NODES as i32 / 4)
+    let spread: Vec<(ChunkKey, Summary, u64)> = (0..MAX_WORLD_NODES as i32 / 4)
         .map(|i| {
             let key = ChunkKey::new(64 * i, 0, 0);
             let centre = grid.chunk_box(key).centre();
-            (key, Summary::of_cubes(centre, [(centre, 1.0, 0.5)]))
+            (key, Summary::of_cubes(centre, [(centre, 1.0, 0.5)]), 1)
         })
         .collect();
     let why = Octree::from_chunks(grid, spread).unwrap_err();
@@ -331,7 +333,7 @@ fn the_octree_is_bounded() {
     // A key given twice is refused.
     let key = ChunkKey::new(0, 0, 0);
     let one = Summary::of_cubes(Vec3::ZERO, [(Vec3::ZERO, 1.0, 0.5)]);
-    assert!(Octree::from_chunks(grid, vec![(key, one), (key, one)]).is_err());
+    assert!(Octree::from_chunks(grid, vec![(key, one, 1), (key, one, 1)]).is_err());
 }
 
 #[test]

@@ -6,31 +6,32 @@
 //! overlap. Chunks of 32³ cells are made from the pieces when they are wanted (by the read here,
 //! by the engine's streaming for the picture) and are never part of the spec.
 //!
-//! **How it is read** ([`contribute`], source `World`). The world is static, so each tower's
-//! reading is made once and holds for every shot. For each tower: the chunks within
-//! `read.radius` of its atoms' path, nearest first, at most [`MAX_READ_CHUNKS`] in all. A chunk is
-//! read through its mass moments (the octupole expansion about its centre of mass) when the bound
-//! on what that leaves out is within its share of `read.tolerance` radians; otherwise leaf by
-//! leaf, each leaf a uniform cube with the exact kernel. The bound (`docs/slices/S4.md` §2): the
-//! remainder after the octupole has a gradient at most `Σ_{l≥4} (l+1) Σ m s^l / R^{l+2}`, `s`
-//! the distance of the chunk's matter from its centre of mass (all within `a`) and `R` the
-//! distance to the interferometer's arms ([`Multipole::bound`]); times the arms' separation it
-//! bounds the remainder's share of `V(upper) − V(lower)`. That bound is itself read through the flight ([`BoundSource`]) and added
-//! to the read's error estimate, so the error the read reports covers the approximation. Matter
-//! beyond the radius or the cap is not read, and the read says so: reading a whole 10¹⁰-cell
-//! world is S5's bounded walk.
-//!
-//! **S5's whole world** ([`octree`]): the world's chunks merged upward into one octree of
-//! summaries (raw moments about each node's centre and the bounds on what they leave out), which
-//! S5's walk reads in place of the radius above (TASK-S5-12).
+//! **How it is read** ([`read_world`], source `World`; `docs/slices/S5.md` §2). The world is
+//! static, so each tower's reading is made once and holds for every shot. The whole world is
+//! read: its chunks merged upward into one octree of summaries ([`octree`], made anew for each
+//! read: this crate keeps nothing between calls), and each tower's walk ([`walk`]) picks the cut
+//! it reads by phase error on one global ledger: the node whose bound is largest is opened first,
+//! until the bounds of the nodes it accepts sum to `read.tolerance` radians. An accepted node is
+//! read through its expansion to the octupole about its centre; an opened chunk leaf by leaf,
+//! each leaf a uniform cube with the exact kernel; every chunk within `read.radius` (the bubble)
+//! of the atoms' path is opened. The bound (S4's, `docs/slices/S4.md` §2): the remainder after the
+//! octupole has a gradient at most `Σ_{l≥4} (l+1) A_l / R^{l+2}` ([`Summary::bound`]); the accepted
+//! nodes' bounds are read through the flight ([`walk::LedgerSource`]) and the ledger so made is
+//! added to the read's error estimate, so the error the read reports covers the approximation. A
+//! walk stopped by its caps says so and by how much its ledger is over (it is not settled); a
+//! world past the octree's caps is not read, and says why.
 //!
 //! Frames and units: the world's frame (x east, y north, z up), metres, kilograms, kg/m³, radians.
+
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering};
+use std::sync::{Mutex, PoisonError};
 
 use cav_core::Vec3;
 use cav_core::forward::{Audited, PHASE_TOLERANCE, Reader, Source};
 use cav_core::voxel::kernel::{MAX_KERNEL_WORK, cube_difference};
 use cav_core::voxel::shape::Cuboid;
-use cav_core::voxel::tree::Moments;
+#[cfg(doc)]
+use cav_core::voxel::summary::Summary;
 use cav_core::voxel::world::{
     Brick, Chunk, ChunkKey, MAX_MATERIALS, Piece, Solid, Terrain, WorldGrid, brick_of_pieces, voxelise_chunk,
 };
@@ -39,15 +40,12 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::spec::{SpecError, limits};
+use octree::Octree;
 
 /// The most pieces a world may have.
 pub const MAX_PIECES: usize = 256;
-/// The most chunks one read of a world makes and reads, over all its towers, nearest first.
-pub const MAX_READ_CHUNKS: usize = 4096;
-/// The most chunk keys a read looks at to find the ones within its radius (the boxes around the
-/// towers, clipped to the world): what bounds the search itself.
-pub const MAX_READ_SCAN: u64 = 4_000_000;
-/// The widest read radius, metres.
+/// The widest bubble (`world.read.radius`), metres. A bubble that opens more than the read's work
+/// allows stops the walk, which says so ([`walk`]).
 pub const MAX_READ_RADIUS: f64 = 1.0e4;
 /// The finest pitch a world may have, metres: a chunk is then 3.2 cm, and a world a kilometre
 /// across is 3×10⁷ chunks along a side, inside the keys' range.
@@ -170,15 +168,16 @@ impl Default for StreamSpec {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WorldReadSpec {
-    /// Chunks within this distance of a tower's atoms' path are read; farther matter is not (the
-    /// read says so). Metres, 0 to 1e4; default 100.
+    /// The bubble: every chunk within this distance of a tower's atoms' path is read leaf by leaf,
+    /// whatever its bound. The whole world is read either way; farther matter goes by the walk.
+    /// Metres, 0 to 1e4; default 0 (only what the path passes through or touches).
     #[schemars(range(min = 0.0, max = 1.0e4))]
     #[schemars(extend("x-unit" = "m"))]
     pub radius: f64,
-    /// The world's error budget, radians: the reading through chunks' moments may be off by this
-    /// in all (a chunk goes by its moments only when its bound fits its share), and the
-    /// quadrature is audited to it when it is looser than the phase tolerance. Default 1e-10
-    /// (the phase tolerance); larger is a cheaper read, as far off as said.
+    /// The world's error budget, radians: the walk accepts nodes through their expansion until
+    /// the bounds on what they leave out (the ledger) sum to this, and the quadrature is audited
+    /// to it when it is looser than the phase tolerance. Default 1e-10 (the phase tolerance);
+    /// larger is a cheaper read, as far off as said.
     #[schemars(range(min = 0.0, max = 1.0))]
     #[schemars(extend("x-unit" = "rad"))]
     pub tolerance: f64,
@@ -186,7 +185,7 @@ pub struct WorldReadSpec {
 
 impl Default for WorldReadSpec {
     fn default() -> Self {
-        Self { radius: 100.0, tolerance: PHASE_TOLERANCE }
+        Self { radius: 0.0, tolerance: PHASE_TOLERANCE }
     }
 }
 
@@ -294,11 +293,15 @@ impl WorldSpec {
     /// colours, the streaming, the read or the level of detail, which change no chunk.
     #[must_use]
     pub fn hash(&self) -> u64 {
-        let densities: Vec<u64> = self.materials.iter().map(|m| m.density.to_bits()).collect();
-        let text =
-            serde_json::to_string(&(self.pitch, self.supersample, self.origin, densities, &self.pieces))
-                .unwrap_or_default();
+        let text = self.chunk_text();
         text.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3))
+    }
+
+    /// The JSON of everything that decides the world's chunks: what [`Self::hash`] hashes.
+    fn chunk_text(&self) -> String {
+        let densities: Vec<u64> = self.materials.iter().map(|m| m.density.to_bits()).collect();
+        serde_json::to_string(&(self.pitch, self.supersample, self.origin, densities, &self.pieces))
+            .unwrap_or_default()
     }
 }
 
@@ -419,7 +422,7 @@ impl World {
 }
 
 /// The least distance from `p` to the vertical segment from `base` up `height` metres.
-fn to_segment(p: Vec3, base: Vec3, height: f64) -> f64 {
+pub(crate) fn to_segment(p: Vec3, base: Vec3, height: f64) -> f64 {
     let dz = if p.z < base.z {
         base.z - p.z
     } else if p.z > base.z + height {
@@ -431,7 +434,7 @@ fn to_segment(p: Vec3, base: Vec3, height: f64) -> f64 {
 }
 
 /// The least distance from the box `b` to the vertical segment from `base` up `height` metres.
-fn box_to_segment(b: &Aabb, base: Vec3, height: f64) -> f64 {
+pub(crate) fn box_to_segment(b: &Aabb, base: Vec3, height: f64) -> f64 {
     let gap = |v: f64, lo: f64, hi: f64| (lo - v).max(v - hi).max(0.0);
     let dx = gap(base.x, b.lo.x, b.hi.x);
     let dy = gap(base.y, b.lo.y, b.hi.y);
@@ -439,167 +442,60 @@ fn box_to_segment(b: &Aabb, base: Vec3, height: f64) -> f64 {
     dx.hypot(dy).hypot(dz)
 }
 
-/// The orders `l` from 4 whose `Σ m s^l` a [`Multipole`] keeps one by one; past them the bound
-/// goes geometrically from the last (`Σ m s^l ≤ a^{l−L} Σ m s^L`).
-pub const BOUND_ORDERS: usize = 13;
+/// A leaf as a uniform cube: `(centre, m, the world's frame; mass, kg; side, m)`.
+pub type Cube = (Vec3, f64, f64);
 
-/// A chunk read through its moments: mass, centre of mass, second and third central moments,
-/// its radius `a` about the centre (everything of it is within `a`) and bounds on its moments of
-/// order 4 to `3 + BOUND_ORDERS`, which together bound what the octupole expansion leaves out.
-#[derive(Clone, Copy, Debug)]
-pub struct Multipole {
-    /// The moments, in the world's frame.
-    pub moments: Moments,
-    /// The radius about the centre of mass holding all the chunk's matter, metres.
-    pub radius: f64,
-    /// `powers[i]` bounds `Σ m s^(4+i)` over the chunk's matter from above, `s` the distance from
-    /// the centre of mass, kg m^(4+i): for `l = 4` each leaf's exact `∫ s⁴ dm` (a uniform cube of
-    /// side `h` whose centre is `d` from the centre of mass: `m (d⁴ + 5d²h²/6 + 19h⁴/240)`); for
-    /// higher orders each leaf's mass at its farthest point, `d + h√3/2`.
-    pub powers: [f64; BOUND_ORDERS],
-}
-
-/// `l + 1` for `l` from 4: the most the gradient of `P_l(cos γ)/R^{l+1}` can be, in units of
-/// `1/R^{l+2}`. Its square is `(l+1)² P_l² + (1 − x²) P_l'²`, and since
-/// `P_l² + (1 − x²) P_l'²/(l(l+1)) ≤ 1` on `[−1, 1]` (checked in
-/// `the_legendre_gradient_bound_holds`) that is at most `l(l+1) + (l+1) P_l² ≤ (l+1)²`; it is
-/// reached on the axis.
-fn gradient_factor(l: u32) -> f64 {
-    f64::from(l + 1)
-}
-
-impl Multipole {
-    /// The chunk's multipole: its moments, and its radius and moment bounds from its leaves.
-    #[must_use]
-    pub fn of(chunk: &Chunk, grid: &WorldGrid, densities: &[f64]) -> Self {
-        let moments = chunk.moments(grid, densities);
-        let (mut radius, mut powers) = (0f64, [0f64; BOUND_ORDERS]);
-        for (centre, mass, side) in chunk.cubes(grid, densities) {
-            let d = (centre - moments.centre).length();
-            let far = d + 0.5 * side * 3f64.sqrt();
-            radius = radius.max(far);
-            let (d2, h2) = (d * d, side * side);
-            powers[0] += mass * (d2 * d2 + 5.0 * d2 * h2 / 6.0 + 19.0 * h2 * h2 / 240.0);
-            let mut power = mass * far.powi(4);
-            for p in &mut powers[1..] {
-                power *= far;
-                *p += power;
-            }
-        }
-        Self { moments, radius, powers }
-    }
-
-    /// `−V/G` at offset `d` from the centre of mass, kg/m, to the octupole, without the monopole
-    /// (which the caller forms differentially): `Σ S_ab (3 d_a d_b − δ_ab R²)/(2R⁵) +
-    /// [5 Σ T_abc d_a d_b d_c − 3R² Σ T_aac d_c]/(2R⁷)`.
-    fn higher(&self, d: Vec3) -> f64 {
-        let m = &self.moments;
-        let d = [d.x, d.y, d.z];
-        let r2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
-        let r = r2.sqrt();
-        let mut quad = 0.0;
-        let mut cube = 0.0;
-        let mut trace = 0.0;
-        for a in 0..3 {
-            for b in 0..3 {
-                let delta = if a == b { r2 } else { 0.0 };
-                quad += m.second_at(a, b) * (3.0 * d[a] * d[b] - delta);
-                for c in 0..3 {
-                    cube += m.third_at(a, b, c) * d[a] * d[b] * d[c];
-                }
-                trace += m.third_at(a, a, b) * d[b];
-            }
-        }
-        quad / (2.0 * r2 * r2 * r) + (5.0 * cube - 3.0 * r2 * trace) / (2.0 * r2 * r2 * r2 * r)
-    }
-
-    /// `(V(upper) − V(lower))/G`, kg/m, at two points on a vertical line: `across` the horizontal
-    /// offset from the centre of mass, `below` and `above` the heights over it, `gap = below −
-    /// above` as the caller knows it exactly (as [`cube_difference`] takes them).
-    #[must_use]
-    pub fn difference(&self, across: [f64; 2], below: f64, above: f64, gap: f64) -> f64 {
-        let horizontal = across[0] * across[0] + across[1] * across[1];
-        let (b, a) = ((horizontal + below * below).sqrt(), (horizontal + above * above).sqrt());
-        let monopole = -self.moments.mass * gap * (below + above) / (a * b * (a + b));
-        let du = Vec3::new(across[0], across[1], above);
-        let dl = Vec3::new(across[0], across[1], below);
-        monopole - (self.higher(du) - self.higher(dl))
-    }
-
-    /// The most the remainder after the octupole can change `V/G` between two points `separation`
-    /// metres apart on a line all of whose points are at least `distance` (`R`) from the centre of
-    /// mass, kg/m. The remainder's gradient is at most `Σ_{l≥4} (l+1) Σ m s^l / R^{l+2}`, each
-    /// `Σ m s^l` from [`Multipole::powers`] to order `3 + BOUND_ORDERS` and past it
-    /// `powers[last] · a^{l−L}`; times the separation. Infinite when `q = a/R ≥ 1`.
-    #[must_use]
-    pub fn bound(&self, distance: f64, separation: f64) -> f64 {
-        let q = self.radius / distance;
-        if q >= 1.0 {
-            return f64::INFINITY;
-        }
-        let mut sum = 0.0;
-        let mut scale = 1.0 / distance.powi(6);
-        let mut l = 4u32;
-        for p in &self.powers {
-            sum += gradient_factor(l) * p * scale;
-            scale /= distance;
-            l += 1;
-        }
-        // The tail, from the last kept order on geometrically: Σ_{l>L} (l+1) P_L a^{l−L}/R^{l+2},
-        // to where its terms are below 1e-17 of its first.
-        let last = self.powers[BOUND_ORDERS - 1] / distance.powi(BOUND_ORDERS as i32 + 5);
-        let mut power = q;
-        while power > 1e-17 && l < 4000 {
-            sum += gradient_factor(l) * last * power;
-            power *= q;
-            l += 1;
-        }
-        separation.abs() * sum
-    }
-}
-
-/// The world as one tower reads it: some chunks leaf by leaf, others through their moments.
+/// The world as one tower reads it: the opened chunks leaf by leaf, and the far field of its cut.
 pub struct WorldSource {
-    /// Leaves as `(centre, m, the world's frame; mass, kg; side, m)`.
-    pub cubes: Vec<(Vec3, f64, f64)>,
-    /// Chunks read through their moments.
-    pub far: Vec<Multipole>,
+    /// The opened chunks' leaves.
+    pub cubes: Vec<Cube>,
+    /// The accepted nodes, read through their expansion ([`walk::far_field`]).
+    pub far: walk::Far,
+}
+
+/// Leaves a [`WorldSource`] sums on one thread: past this, its leaves are summed in blocks of
+/// this many on [`crate::read::threads`] threads and the blocks' sums added in order, so the bits
+/// do not depend on the number of threads.
+pub const LEAF_BLOCK: usize = 1 << 16;
+
+/// `(V(upper) − V(lower))/G` of `cubes` at the line through `tower`, kg/m, in order.
+fn leaves_at(cubes: &[Cube], tower: Vec3, height: f64, lower: f64, upper: f64) -> f64 {
+    let mut sum = 0.0;
+    for &(centre, mass, side) in cubes {
+        let at = centre - tower;
+        let (below, above) = (height + lower - at.z, height + upper - at.z);
+        sum += cube_difference(mass, side, [-at.x, -at.y], below, above, lower - upper);
+    }
+    sum
 }
 
 impl Source for WorldSource {
     fn difference(&self, tower: Vec3, heights: [f64; 2], lower: f64, upper: f64, _time: f64) -> [f64; 2] {
         heights.map(|height| {
-            let mut sum = 0.0;
-            for &(centre, mass, side) in &self.cubes {
-                let at = centre - tower;
-                let (below, above) = (height + lower - at.z, height + upper - at.z);
-                sum += cube_difference(mass, side, [-at.x, -at.y], below, above, lower - upper);
-            }
-            for far in &self.far {
-                let at = far.moments.centre - tower;
-                let (below, above) = (height + lower - at.z, height + upper - at.z);
-                sum += far.difference([-at.x, -at.y], below, above, lower - upper);
-            }
-            sum
-        })
-    }
-}
-
-/// The bound on what reading [`WorldSource::far`] through moments leaves out: at each instant,
-/// for each interferometer, the sum of each chunk's [`Multipole::bound`] between the two arm
-/// points. Read through the flight like any source; the quadrature's weights are positive, so its
-/// reading bounds the error of the far chunks' reading, in radians.
-pub struct BoundSource<'a> {
-    /// The chunks read through their moments.
-    pub far: &'a [Multipole],
-}
-
-impl Source for BoundSource<'_> {
-    fn difference(&self, tower: Vec3, heights: [f64; 2], lower: f64, upper: f64, _time: f64) -> [f64; 2] {
-        heights.map(|height| {
-            let (z0, z1) = (tower.z + height + lower.min(upper), (upper - lower).abs());
-            let base = Vec3::new(tower.x, tower.y, z0);
-            self.far.iter().map(|far| far.bound(to_segment(far.moments.centre, base, z1), z1)).sum()
+            let leaves = if self.cubes.len() <= LEAF_BLOCK {
+                leaves_at(&self.cubes, tower, height, lower, upper)
+            } else {
+                let blocks: Vec<&[Cube]> = self.cubes.chunks(LEAF_BLOCK).collect();
+                let next = AtomicUsize::new(0);
+                let sums: Vec<Mutex<f64>> = blocks.iter().map(|_| Mutex::new(0.0)).collect();
+                let work = || {
+                    loop {
+                        let at = next.fetch_add(1, AtomicOrdering::Relaxed);
+                        let Some(block) = blocks.get(at) else { break };
+                        *sums[at].lock().unwrap_or_else(PoisonError::into_inner) =
+                            leaves_at(block, tower, height, lower, upper);
+                    }
+                };
+                let workers = crate::read::threads().clamp(1, blocks.len());
+                std::thread::scope(|scope| {
+                    for _ in 1..workers {
+                        scope.spawn(work);
+                    }
+                    work();
+                });
+                sums.into_iter().map(|s| s.into_inner().unwrap_or_else(PoisonError::into_inner)).sum()
+            };
+            leaves + self.far.at(tower, height, lower, upper)
         })
     }
 }
@@ -613,193 +509,207 @@ impl Source for Unit {
     }
 }
 
-/// The chunks a read of the world takes ([`read_keys`]), and what it leaves out.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct ReadKeys {
-    /// The chunks to read, nearest first.
-    pub keys: Vec<ChunkKey>,
-    /// What was left out, in words, for the read's warnings.
-    pub said: Vec<String>,
-    /// `Some(r)` when matter was left out: every chunk within `r` metres of some tower's atoms'
-    /// path is read, and some farther matter is not (the read radius, or the distance of the
-    /// nearest chunk past [`MAX_READ_CHUNKS`]). `None` when the whole world is read.
-    pub within: Option<f64>,
+/// Radians the flight of `reader` at `base` makes of 1 kg/m held at every instant, the two
+/// interferometers' added: the walk's [`walk::Aim::per`].
+#[must_use]
+pub fn radians_per_kg_m(reader: &Reader, base: Vec3, readout: f64) -> f64 {
+    let per = reader.read(base, &Unit, readout);
+    per.lower.abs() + per.upper.abs()
 }
 
-/// The world's chunks a read takes, nearest first: within `read.radius` of some tower's atoms'
-/// path, at most [`MAX_READ_CHUNKS`]. Returns the keys, what was left out in words, and the
-/// distance within which everything was read when something was left out.
+/// The leaves of the chunks `keys` (sorted, each once), made from the pieces on
+/// [`crate::read::threads`] threads, in key order. `Ok(None)` when cancelled.
 ///
 /// # Errors
-/// When the search itself would look at more than [`MAX_READ_SCAN`] keys.
-pub fn read_keys(spec: &crate::SceneSpec, world: &World) -> Result<ReadKeys, String> {
-    let Some(w) = &spec.world else { return Ok(ReadKeys::default()) };
-    let Some(extent) = world.extent() else { return Ok(ReadKeys::default()) };
-    let radius = w.read.radius;
-    let mut found: std::collections::BTreeMap<ChunkKey, f64> = std::collections::BTreeMap::new();
-    let mut scanned = 0u64;
-    for n in 0..spec.array.towers.len() {
-        let base = Vec3::from_array(spec.array.towers[n].position);
-        let height = spec.array.instrument_of(n).tower_height;
-        let reach = Aabb::new(base, base + Vec3::new(0.0, 0.0, height)).grown(radius);
-        if !reach.overlaps(&extent) {
-            continue;
-        }
-        let clipped = Aabb::new(
-            Vec3::new(reach.lo.x.max(extent.lo.x), reach.lo.y.max(extent.lo.y), reach.lo.z.max(extent.lo.z)),
-            Vec3::new(reach.hi.x.min(extent.hi.x), reach.hi.y.min(extent.hi.y), reach.hi.z.min(extent.hi.z)),
-        );
-        let (lo, hi) = world.grid.bricks_of(0, &clipped);
-        let span = |a: i32, b: i32| u64::from((i64::from(b) - i64::from(a) + 1).max(0) as u32);
-        scanned += span(lo.x, hi.x) * span(lo.y, hi.y) * span(lo.z, hi.z);
-        if scanned > MAX_READ_SCAN {
-            return Err(format!(
-                "the world's chunks within {radius} m of the towers are more than {MAX_READ_SCAN} to look at; \
-                 use a smaller world.read.radius or a coarser pitch"
-            ));
-        }
-        for x in lo.x..=hi.x {
-            for y in lo.y..=hi.y {
-                for z in lo.z..=hi.z {
-                    let key = ChunkKey::new(x, y, z);
-                    let distance = box_to_segment(&world.grid.chunk_box(key), base, height);
-                    if distance <= radius {
-                        let entry = found.entry(key).or_insert(distance);
-                        *entry = entry.min(distance);
-                    }
-                }
+/// When a chunk cannot be voxelised: the first such by key, whatever the threads.
+pub fn open(
+    world: &World,
+    keys: &[ChunkKey],
+    cancelled: &(dyn Fn() -> bool + Sync),
+) -> Result<Option<Vec<OpenedChunk>>, String> {
+    type Made = (usize, Result<Vec<Cube>, String>);
+    let next = AtomicUsize::new(0);
+    let stop = AtomicBool::new(false);
+    let was_cancelled = AtomicBool::new(false);
+    let found: Mutex<Vec<Made>> = Mutex::new(Vec::with_capacity(keys.len()));
+    let work = || {
+        let mut mine: Vec<Made> = Vec::new();
+        while !stop.load(AtomicOrdering::Relaxed) {
+            let at = next.fetch_add(1, AtomicOrdering::Relaxed);
+            if at >= keys.len() {
+                break;
             }
+            if cancelled() {
+                was_cancelled.store(true, AtomicOrdering::Relaxed);
+                stop.store(true, AtomicOrdering::Relaxed);
+                break;
+            }
+            let made = octree::chunk_cubes(world, keys[at]);
+            if made.is_err() {
+                stop.store(true, AtomicOrdering::Relaxed);
+            }
+            mine.push((at, made));
         }
-    }
-    let mut keys: Vec<(ChunkKey, f64)> = found.into_iter().collect();
-    keys.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
-    let mut said = Vec::new();
-    let mut within = None;
-    if keys.len() > MAX_READ_CHUNKS {
-        // Every chunk nearer than the first left out is read.
-        within = Some(keys[MAX_READ_CHUNKS].1);
-        said.push(format!(
-            "the world has {} chunks within {radius} m of the towers; the nearest {MAX_READ_CHUNKS} (to {:.1} m) are \
-             read and the rest are not",
-            keys.len(),
-            keys[MAX_READ_CHUNKS - 1].1
-        ));
-        keys.truncate(MAX_READ_CHUNKS);
-    }
-    let beyond = spec.array.towers.iter().enumerate().any(|(n, t)| {
-        let base = Vec3::from_array(t.position);
-        let h = spec.array.instrument_of(n).tower_height;
-        (0..8).any(|c| to_segment(extent.corner(c), base, h) > radius)
+        found.lock().unwrap_or_else(PoisonError::into_inner).extend(mine);
+    };
+    let workers = crate::read::threads().clamp(1, keys.len().max(1));
+    std::thread::scope(|scope| {
+        for _ in 1..workers {
+            scope.spawn(work);
+        }
+        work();
     });
-    if beyond {
-        within = Some(within.map_or(radius, |w: f64| w.min(radius)));
-        said.push(format!(
-            "world matter farther than {radius} m from a tower's atoms is not read (S5 reads the rest)"
-        ));
+    if was_cancelled.load(AtomicOrdering::Relaxed) {
+        return Ok(None);
     }
-    Ok(ReadKeys { keys: keys.into_iter().map(|(k, _)| k).collect(), said, within })
+    let mut found = found.into_inner().unwrap_or_else(PoisonError::into_inner);
+    found.sort_by_key(|(at, _)| *at);
+    let mut out = Vec::with_capacity(found.len());
+    for (at, made) in found {
+        let cubes = made.map_err(|why| format!("chunk {:?}: {why}", keys[at].to_array()))?;
+        out.push((keys[at], cubes));
+    }
+    Ok(Some(out))
 }
+
+/// An opened chunk: its key and its leaves.
+pub type OpenedChunk = (ChunkKey, Vec<Cube>);
 
 /// What reading the world at one tower found.
 pub struct TowerRead {
     /// The reading, with the quadrature's audit.
     pub audited: Audited,
-    /// The bound on the moments' approximation for each interferometer, radians; 0 when no chunk
-    /// went by its moments.
-    pub bound: [f64; 2],
-    /// Chunks read leaf by leaf, and through their moments.
-    pub counts: [usize; 2],
+    /// The ledger for each interferometer, radians: the accepted nodes' bounds read through the
+    /// flight ([`walk::LedgerSource`]); 0 when the cut accepted nothing.
+    pub ledger: [f64; 2],
+    /// The tower's cut.
+    pub cut: walk::Cut,
 }
 
-/// A leaf as a uniform cube: `(centre, m, the world's frame; mass, kg; side, m)`.
-pub type Cube = (Vec3, f64, f64);
-
-/// The world's chunks made for a read, each with its leaves as cubes and its multipole.
-pub struct Made {
-    /// For each chunk with matter: its cubes and its multipole.
-    pub chunks: Vec<(Vec<Cube>, Multipole)>,
+/// The most work one flight node of `reader` may do for one point pair, from the read's share of
+/// the kernel's work (`share` cube evaluations, [`work_share`]): each node evaluates every leaf
+/// and every accepted node (four leaves' worth) at two points for each of two interferometers.
+#[must_use]
+pub fn max_work(reader: &Reader, share: u64) -> u64 {
+    share.checked_div(4 * reader.instrument().node_count(&[])).unwrap_or(u64::MAX)
 }
 
-/// Makes the chunks of `keys` (empty ones dropped). `cancelled` is asked between chunks.
+/// Reads the world at the tower whose base is `base` and whose height is `height`, with
+/// `reader`, at `readout`: the leaves of `cut`'s opened chunks (from `opened`, which holds at
+/// least those, sorted by key) with the exact kernel, and its accepted nodes by `rule`; the
+/// quadrature audited to the larger of the phase tolerance and `tolerance` (radians), within
+/// `share` cube evaluations in all.
 ///
 /// # Errors
-/// When a chunk cannot be voxelised, with why.
-pub fn make(
-    world: &World,
-    keys: &[ChunkKey],
-    cancelled: &(dyn Fn() -> bool + Sync),
-) -> Result<Option<Made>, String> {
-    let mut chunks = Vec::new();
-    for key in keys {
-        if cancelled() {
-            return Ok(None);
-        }
-        if let Some(chunk) = world.chunk(*key)? {
-            let cubes = chunk.cubes(&world.grid, &world.densities);
-            let multipole = Multipole::of(&chunk, &world.grid, &world.densities);
-            if multipole.moments.mass > 0.0 {
-                chunks.push((cubes, multipole));
-            }
-        }
-    }
-    Ok(Some(Made { chunks }))
-}
-
-/// Reads the world's `made` chunks at the tower whose base is `base` and whose height is
-/// `height`, with `reader`, at `readout`: each chunk through its moments when its bound fits a
-/// `tolerance / chunks` share (radians), else leaf by leaf; within `max_work` cube evaluations.
-///
-/// # Errors
-/// When even the first rule of the read would pass `max_work`, with the numbers.
+/// When even the first rule of the read would pass `share`, with the numbers; or a chunk the cut
+/// opened is not in `opened`.
+#[allow(clippy::too_many_arguments)]
 pub fn read_tower(
-    made: &Made,
+    octree: &Octree,
+    opened: &[(ChunkKey, Vec<Cube>)],
     reader: &Reader,
     base: Vec3,
-    height: f64,
     readout: f64,
     tolerance: f64,
-    max_work: u64,
+    cut: walk::Cut,
+    rule: walk::Rule,
+    share: u64,
 ) -> Result<TowerRead, String> {
-    // Radians a kilogram per metre held through the whole flight is: the scale of a bound.
-    let per = reader.read(base, &Unit, readout);
-    let scale = per.lower.abs().max(per.upper.abs());
-    let share = tolerance / made.chunks.len().max(1) as f64;
-    let mut source = WorldSource { cubes: Vec::new(), far: Vec::new() };
-    for (cubes, multipole) in &made.chunks {
-        let distance = to_segment(multipole.moments.centre, base, height);
-        // The arms are never farther apart than the tower is tall.
-        let worst = multipole.bound(distance, height) * scale;
-        if worst <= share && multipole.radius < 0.5 * distance {
-            source.far.push(*multipole);
-        } else {
-            source.cubes.extend_from_slice(cubes);
-        }
+    let mut cubes = Vec::with_capacity(usize::try_from(cut.leaves).unwrap_or(0));
+    for key in &cut.opened {
+        let at = opened
+            .binary_search_by_key(key, |(k, _)| *k)
+            .map_err(|_| format!("chunk {:?} was opened but not made", key.to_array()))?;
+        cubes.extend_from_slice(&opened[at].1);
     }
-    let counts = [made.chunks.len() - source.far.len(), source.far.len()];
-    // Each flight node evaluates every cube, or a multipole (counted as four cubes), at two
+    let source = WorldSource { cubes, far: walk::far_field(octree, &cut, rule) };
+    // Each flight node evaluates every cube, or an accepted node (counted as four cubes), at two
     // points for each of two interferometers.
-    let per_node = 4 * (source.cubes.len() as u64 + 4 * source.far.len() as u64);
+    let per_node = 4 * (source.cubes.len() as u64 + 4 * source.far.nodes.len() as u64);
     let first = reader.instrument().node_count(&[]);
-    if per_node > 0 && first * per_node > max_work {
+    if per_node > 0 && first * per_node > share {
         return Err(format!(
-            "{} cubes and {} chunks by their moments × {first} flight nodes is more than the {max_work} \
-             evaluations one read of the world may make; use a smaller world.read.radius, a coarser pitch or a \
-             larger world.read.tolerance",
+            "{} cubes and {} nodes by their moments × {first} flight nodes is more than the {share} evaluations \
+             one read of the world may make; use a smaller world.read.radius, a coarser pitch or a larger \
+             world.read.tolerance",
             source.cubes.len(),
-            source.far.len()
+            source.far.nodes.len()
         ));
     }
-    let max_nodes = max_work.checked_div(per_node).unwrap_or(u64::MAX);
+    let max_nodes = share.checked_div(per_node).unwrap_or(u64::MAX);
     // The quadrature is audited to the world's own budget when it is looser than the phase
     // tolerance: a scene that asks for its world within 1e-3 rad does not pay for 1e-10.
     let audited = reader.read_to_within(base, &source, readout, PHASE_TOLERANCE.max(tolerance), max_nodes);
-    let bound = if source.far.is_empty() {
+    let ledger = if source.far.nodes.is_empty() {
         [0.0; 2]
     } else {
-        let b = reader.read(base, &BoundSource { far: &source.far }, readout);
+        let b = reader.read(base, &walk::LedgerSource { nodes: &source.far.nodes, rule }, readout);
         [b.lower.abs(), b.upper.abs()]
     };
-    Ok(TowerRead { audited, bound, counts })
+    Ok(TowerRead { audited, ledger, cut })
+}
+
+/// The whole world read at every tower of `spec`: the octree ([`Octree::build`]), each tower's walk
+/// ([`walk::walk`]), the chunks any tower opened made once ([`open`]), then each tower read
+/// ([`read_tower`]) at `readouts[n]`. `Ok(None)` when cancelled.
+///
+/// # Errors
+/// When the octree is refused (its caps), a chunk cannot be voxelised, or a tower's read would
+/// pass the kernel's share, with why.
+pub fn read_world(
+    spec: &crate::SceneSpec,
+    readers: &crate::read::Readers,
+    readouts: &[f64],
+    cancelled: &(dyn Fn() -> bool + Sync),
+) -> Result<Option<Vec<TowerRead>>, String> {
+    let Some(world_spec) = &spec.world else { return Ok(Some(Vec::new())) };
+    let world = World::new(world_spec);
+    let Some(octree) = Octree::build(&world, cancelled)? else { return Ok(None) };
+    let share = work_share(spec);
+    let mut cuts = Vec::with_capacity(spec.array.towers.len());
+    for (at, tower) in spec.array.towers.iter().enumerate() {
+        if cancelled() {
+            return Ok(None);
+        }
+        let reader = readers.of(at);
+        let base = Vec3::from_array(tower.position);
+        let aim = walk::Aim {
+            base,
+            height: spec.array.instrument_of(at).tower_height,
+            per: radians_per_kg_m(reader, base, readouts[at]),
+            tolerance: world_spec.read.tolerance,
+            bubble: world_spec.read.radius,
+            max_work: max_work(reader, share),
+            max_nodes: walk::MAX_CUT_NODES,
+            rule: walk::Rule::Octupole,
+        };
+        cuts.push(walk::walk(&octree, &aim));
+    }
+    let mut keys: Vec<ChunkKey> = cuts.iter().flat_map(|c| c.opened.iter().copied()).collect();
+    keys.sort_unstable();
+    keys.dedup();
+    let Some(opened) = open(&world, &keys, cancelled)? else { return Ok(None) };
+    let mut out = Vec::with_capacity(cuts.len());
+    for (at, (tower, cut)) in spec.array.towers.iter().zip(cuts).enumerate() {
+        if cancelled() {
+            return Ok(None);
+        }
+        let base = Vec3::from_array(tower.position);
+        let rule = walk::Rule::Octupole;
+        let read = read_tower(
+            &octree,
+            &opened,
+            readers.of(at),
+            base,
+            readouts[at],
+            world_spec.read.tolerance,
+            cut,
+            rule,
+            share,
+        )?;
+        out.push(read);
+    }
+    Ok(Some(out))
 }
 
 /// The share of [`MAX_KERNEL_WORK`] the world's read may use: the world counts as one voxel body
@@ -811,6 +721,7 @@ pub fn work_share(spec: &crate::SceneSpec) -> u64 {
 
 pub mod clipmap;
 pub mod octree;
+pub mod walk;
 
 #[cfg(test)]
 mod tests;

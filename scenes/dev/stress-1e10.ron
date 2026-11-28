@@ -4,7 +4,7 @@
 (
     version: 1,
     name: "stress-1e10",
-    description: "A square kilometre of rolling ground at a 5 cm pitch, forty buildings and a road, around the array: about 10^10 finest cells. Fly over it; the instrument reads only the 2 m around each tower: its numbers are of that matter alone.",
+    description: "A square kilometre of rolling ground at a 5 cm pitch, forty buildings and a road, around the array: about 10^10 finest cells. Fly over it. The instrument does not read it: its chunks are past the whole-world read\'s cap, and its readings say so.",
     duration: 10.0,
     array: (
         instrument: (

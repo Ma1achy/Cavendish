@@ -785,9 +785,13 @@ pub struct SignalReply {
     /// matter only: not a bound that was met.
     pub settled: bool,
     /// Present when matter was left out: the world was read only within this many metres of each
-    /// tower's atoms' path, and these values are of that matter alone.
+    /// tower's atoms' path, and these values are of that matter alone (0: the world was refused,
+    /// past its octree's caps).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub truncated: Option<f64>,
+    /// Present when the scene has a world and it was read: each tower's ledger and cut.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub world: Option<cav_sim::read::WorldLedger>,
     /// What a person should know about these readings, each with the tower it is about (from 0).
     pub warnings: Vec<cav_sim::read::Warning>,
 }
@@ -812,9 +816,13 @@ pub struct ReadingReply {
     /// matter only: not a bound that was met.
     pub settled: bool,
     /// Present when matter was left out: the world was read only within this many metres of each
-    /// tower's atoms' path, and these numbers are of that matter alone.
+    /// tower's atoms' path, and these numbers are of that matter alone (0: the world was refused,
+    /// past its octree's caps).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub truncated: Option<f64>,
+    /// Present when the scene has a world and it was read: each tower's ledger and cut.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub world: Option<cav_sim::read::WorldLedger>,
     /// What a person should know about these numbers: a reading that did not settle, a body in
     /// the atoms' path, an unbounded floor. Each with the tower it is about (from 0).
     pub warnings: Vec<cav_sim::read::Warning>,
