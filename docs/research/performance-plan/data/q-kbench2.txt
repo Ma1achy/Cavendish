@@ -1,0 +1,9 @@
+terms per Q_l, l = 4..16: [10, 20, 35, 56, 84, 120, 165]; invariant terms: [2, 3, 4, 5, 7, 8, 10]
+compact (powers once a point) bit-for-bit equal to the kernel: true
+invariant form: worst |difference| relative to the monopole: 5.23e-18
+  6.7-10    sides: mean order 15.2; correction ns/point: kernel  587.1, powers once  785.4 (0.7x), invariants   80.8 (7.3x); cube_difference 1308.7 ns
+   10-30    sides: mean order 11.1; correction ns/point: kernel  479.2, powers once  352.7 (1.4x), invariants   57.4 (8.4x); cube_difference  947.3 ns
+   30-100   sides: mean order  7.7; correction ns/point: kernel  197.3, powers once  151.2 (1.3x), invariants   34.7 (5.7x); cube_difference  300.4 ns
+  100-400   sides: mean order  6.0; correction ns/point: kernel   79.3, powers once   70.3 (1.1x), invariants   18.4 (4.3x); cube_difference  166.6 ns
+  0.6-3     sides: cube_difference 67071 ns
+    3-6.7   sides: cube_difference 19821 ns

@@ -373,3 +373,21 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   capping the cut) would make the mesh modes agree with the section.
 - **Mesh over voxels with order-independent transparency** (TASK-S5-16): the voxels are drawn as
   outlines round the solid surface; weighted blended OIT would let both be solid and see-through.
+- **Seams: a time fade for late bricks and mass-weighted drawn bits** (TASK-S5-21,
+  `docs/research/s5-world-octree.md` §7b items 3 and 4): the dithered cross-fade covers ring snaps;
+  a brick the streaming delivers after the camera passed its band still pops, and the coarse level's
+  superset halo stays.
+- **The far field's budget and the seams' layers** (TASK-S5-21): the cross-fade marches the hole's
+  outer layers, which can take a frame to the march's cap where the cut rings did not; an early-depth
+  pass for bricks (already in this file from S4) would cut what a hidden hole brick costs.
+- **A leading read in the engine, for comparison only** (TASK-S5-18): the paper's Figure "against
+  pitch" draws the research scripts' leading read dotted beside Cavendish's flight read, as
+  Cavendish has none; a `Reading::leading` from each source's `g_z` at the two launch points would
+  let the figure come wholly from Cavendish (never to be used as the signal).
+- **The 40-digit reference in the oracle as a Rust test of its own** (TASK-S5-18): the fixture holds
+  the mpmath values; a double-double evaluation of the face form in the oracle crate would let new
+  bodies be added without Python.
+- **P8's floor, if wanted** (TASK-S5-18): the closed form's far-field error is `eps (R/s)^2`
+  (1.6e-10 on the turned plate at 100 m); the face terms formed and summed in double-double would
+  take it down by about 16 digits at some ten times the cost, for a `Faceted::field_exact` used by
+  references only.

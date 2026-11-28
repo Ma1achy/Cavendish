@@ -246,7 +246,8 @@ impl Streaming {
             for level in levels(&grid, *centre, n, count) {
                 let range = grid.bricks_of(level.level, &extent);
                 let side = grid.brick_side(level.level);
-                for key in level.keys(range) {
+                // With the bricks of each hole's outer layers that the seams' cross-fade draws.
+                for key in level.keys_with(range, n, true) {
                     let boxed = grid.brick_box(level.level, key);
                     if world.reaches(&boxed) {
                         want((level.level, key), (boxed.centre() - *centre).length() / side);

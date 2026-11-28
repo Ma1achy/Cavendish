@@ -360,7 +360,7 @@ cav_validate::case! {
         let want = layers_read(&spec, 1.0e4, &layers);
         // Each interferometer. The gradiometer, a thousandth of either and their difference, is
         // held to this relative to itself by `validation_a_planet_s_gradiometer_reads_as_its_layers`
-        // (TASK-S5-28, `docs/slices/S5.md` §7.16: two reads of the same 5.5e7 rad agree to some
+        // (TASK-S5-28, `docs/slices/S5.md` §7.18: two reads of the same 5.5e7 rad agree to some
         // ulps of it, 1.3e-12 of their difference); here it is printed.
         let (mut error, mut own) = (0f64, 0f64);
         for (read, want) in reads(&spec).iter().zip(&want) {

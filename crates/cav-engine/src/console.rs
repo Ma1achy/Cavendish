@@ -233,6 +233,12 @@ pub const COMMANDS: &[CommandDoc] = &[
         example: "lod-view tower 1",
     },
     CommandDoc {
+        name: "seams",
+        usage: "seams <dither|off> [@N]",
+        about: "how the world's rings of detail meet: cross-faded by an ordered dither over a band inside each finer ring, by the camera's place (no pop when a ring snaps), or cut at each ring's edge",
+        example: "seams off",
+    },
+    CommandDoc {
         name: "section",
         usage: "section <off | x|y|z <metres>> [@N]",
         about: "a section plane square to an axis at a place along it (the world's frame): seen square-on (top, bottom, north, south, east, west) the bodies are cut to a 2-D section, the material filled by the colour field and empty where hollow, the tree overlay cut to its quadtree; from any other side the half nearer the camera is cut away",
@@ -520,6 +526,7 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
                 format!("overlay {}{}", words.join(" "), at(pane))
             }
             ViewCommand::Draw { pane, draw } => format!("draw {}{}", draw.name(), at(pane)),
+            ViewCommand::Seams { pane, seams } => format!("seams {}{}", seams.name(), at(pane)),
             ViewCommand::LodView { pane, ref view } => {
                 use cav_sim::world::lod_view::LodView;
                 let words = match view {
@@ -1099,6 +1106,10 @@ impl Engine {
                 }
                 view(ViewCommand::LodView { pane, view: LodView::Towers(towers) })
             }
+            ("seams", [word]) => match cav_sim::world::clipmap::Seams::parse(word) {
+                Some(seams) => view(ViewCommand::Seams { pane, seams }),
+                None => Err(format!("`{word}` is not a way to draw seams; {}", usage(name))),
+            },
             ("draw", [word]) => match cav_sim::body_draw::BodyDraw::parse(word) {
                 Some(draw) => view(ViewCommand::Draw { pane, draw }),
                 None => Err(format!("`{word}` is not a draw mode; {}", usage(name))),
