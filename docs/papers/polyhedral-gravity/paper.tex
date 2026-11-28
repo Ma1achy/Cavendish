@@ -421,16 +421,18 @@ decimated mesh's phase against the full scan's, both summed whole, at 1.5~m. \pr
 
 \begin{figure}[t]\centering
 \includegraphics[width=\linewidth]{figures/shapes-torus.png}\\[2pt]
-\includegraphics[width=\linewidth]{figures/shapes-bunny.png}
+\includegraphics[width=0.74\linewidth]{figures/shapes-bunny.png}
 \caption{Two of the ten shapes, each cut away at the lattice wall nearest its centre plane. Top: the
 analytic torus (2.8~m across), whose cubes and pieces are made from a 4096-triangle mesh; bottom: the
-Stanford bunny (1~m; 69\,664 triangles, all of the scan's kept, five base holes capped). Left to
-right: the true body (green); cubes full when the centre is inside (blue) at 16 cells across the
-largest extent (pitch 0.175~m and 1/16~m), to show what a cell is; the same at 64 cells across
-(0.04375~m and 1/64~m); and at 64 across the same interior cubes with every crossed cell clipped to
-its piece (orange), which together are the body exactly to the mesh. Both lattices are the sweep's;
-the errors this section quotes are measured at 128 cells across, twice as fine as drawn here, where
-the steps would be too small to see at print size. Voxel faces
+Stanford bunny (1~m; 69\,664 triangles, all of the scan's kept, five base holes capped). Left: the true
+body (green). Right, a grid of the same lattices, rows by pitch and columns by representation: top row
+16 cells across the largest extent (pitch 0.175~m and 1/16~m), to show what a cell is; bottom row 64
+across (0.04375~m and 1/64~m). Left column: cubes full when the centre is inside (blue). Right column:
+the same interior cubes with every crossed cell clipped to its piece (orange, thin vermilion piece
+outlines), which together are the body exactly to the mesh. At the same coarse pitch the pieces have
+exactly the mesh's shape and mass, while the cubes are off by first order in the pitch. Both lattices
+are the sweep's; the errors this section quotes are measured at 128 cells across, twice as fine as
+drawn here, where the steps would be too small to see at print size. Voxel faces
 are flat-shaded with a per-corner ambient occlusion, so a staircase reads as a stepped surface; cell
 edges are drawn only on the coarse lattice. Dotted: the true surface as a sparse 3-D cage (for the
 torus, rings around the tube every $15^\circ$ and around the axis every $30^\circ$; for the bunny,
