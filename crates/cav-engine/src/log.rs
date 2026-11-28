@@ -46,6 +46,10 @@ pub enum Subsystem {
     Render,
     /// The MCP server.
     Mcp,
+    /// The forward stage's own news: a signal has arrived, how long it took, its warnings.
+    /// Written by the engine when a signal lands, whenever that is, so a reader looking for what a
+    /// command did skips these by this tag, never by their words.
+    Forward,
 }
 
 impl Subsystem {
@@ -59,6 +63,7 @@ impl Subsystem {
             Self::View => "view",
             Self::Render => "render",
             Self::Mcp => "mcp",
+            Self::Forward => "forward",
         }
     }
 }
