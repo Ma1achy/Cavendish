@@ -327,7 +327,7 @@ STUDY_RUNS = (
        ["regimes.py", "orientation"], ["regimes.py", "translation"], ["regimes.py", "spin"],
        ["regimes.py", "spinworld"], ["primitives.py"], ["exact.py", "moments"],
        ["exact.py", "distance"], ["exact.py", "passby"], ["exact.py", "plot"],
-       ["figures.py", "torus", "bunny"]]  # 32 cells across their largest extent (2.8 m, 1 m)
+       ["figures.py", "torus@64", "bunny@64"]]  # 16 and 64 cells across their largest extent (2.8 m, 1 m)
 )
 
 
