@@ -234,5 +234,8 @@ fn forty_digits_for_the_paper() {
 #[test]
 fn polyhedral_agrees_with_the_40_digit_reference() {
     let (worst, body, r) = worst_within(100.0);
-    assert!(worst <= 1e-12, "P8: {worst:e} relative on the {body} at {r} m (criterion 1e-12 within 100 sizes)");
+    assert!(
+        worst <= 1e-12,
+        "P8: {worst:e} relative on the {body} at {r} m (criterion 1e-12 within 100 sizes)"
+    );
 }
