@@ -1,0 +1,9 @@
+name	polyhedral.attraction_is_the_gradient
+subsystem	polyhedral
+slice	S5
+reference	closed form
+against	P6: g against minus a central difference of V (step 1e-5 of the size) at 48 points outside and inside the five Platonic solids, a turned box and a torus mesh: the worst relative difference
+unit	relative
+tolerance	1e-7
+measured	4.325465769883519e-9
+pass	true

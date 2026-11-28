@@ -108,7 +108,16 @@ def conv() -> None:
 
 
 def engine() -> None:
-    """Table "Cavendish's polyhedral kernel" from the validation report (scripts/engine_table.py)."""
+    """Table "Cavendish's polyhedral kernel": the kernel's validation cases run alone, each writing its
+    record to data/cavendish/engine/ as `cargo xtask validate` has it do, then scripts/engine_table.py."""
+    records = CAV / "engine"
+    shutil.rmtree(records, ignore_errors=True)
+    records.mkdir(parents=True)
+    os.environ["CAV_VALIDATION_DIR"] = str(records)
+    try:
+        cargo(["test", "-p", "cav-core", "--lib", "polyhedral::tests::validation_"])
+    finally:
+        del os.environ["CAV_VALIDATION_DIR"]
     print(run([sys.executable, str(HERE / "scripts" / "engine_table.py")]))
 
 

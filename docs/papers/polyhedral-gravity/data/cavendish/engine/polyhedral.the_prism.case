@@ -1,0 +1,9 @@
+name	polyhedral.the_prism
+subsystem	polyhedral
+slice	S5
+reference	closed form
+against	Nagy's prism (V) and its exact attraction (g, Nagy's corner term differentiated) for a 0.62×0.94×0.46 m box at a non-dyadic centre, 64 general points from 0.15 to 3 sides, inside included: the worst relative error of V and of g
+unit	relative
+tolerance	1e-13
+measured	5.549180632267962e-14
+pass	true
