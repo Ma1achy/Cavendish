@@ -335,6 +335,17 @@ fn the_rounding_law_s_constant_measured() {
     }
     let worst = measured.iter().map(|(_, m)| m.law()).fold(0.0, f64::max);
     println!("calibration: c >= {worst:.4}");
+    // P8 and its control, against the constant fixed above (printed after it was fixed).
+    for (who, esa) in [("Cavendish", false), ("ESA", true)] {
+        for body in WITH_ESA {
+            let (law, r, ratio) = the_six(esa)
+                .into_iter()
+                .filter(|(b, _, _)| *b == body)
+                .map(|(_, r, m)| (m.law(), r, m.ratio))
+                .fold((0.0, 0.0, 0.0), |a, b| if b.0 > a.0 { b } else { a });
+            println!("{who:9} {body:13} worst e/(eps (R/s)^2) {law:.3} at {r} m (R/s {ratio:.2})");
+        }
+    }
 }
 
 #[test]
@@ -349,16 +360,18 @@ fn the_rounding_law_holds_on_the_calibration_set() {
 /// P8 as the owner restated it (28 Nov 2026, `docs/slices/S5.md` §7.19): on the six bodies, every
 /// point within 100 sizes, the relative error of `U` and of `g` at most `c·ε·(R/s)²`, `c` the
 /// calibration set's ([`ROUNDING_LAW`]). As §3 first wrote it (≤ 1e-12) it measured 1.6e-10.
-#[test]
-fn polyhedral_agrees_with_the_40_digit_reference() {
-    let (worst, body, r) = the_six(false)
-        .into_iter()
-        .map(|(b, r, m)| (m.law(), b, r))
-        .fold((0.0, "", 0.0), |a, b| if b.0 > a.0 { b } else { a });
-    assert!(
-        worst <= ROUNDING_LAW,
-        "P8: {worst:.3} eps (R/s)^2 on the {body} at {r} m (c = {ROUNDING_LAW})"
-    );
+cav_validate::case! {
+    test: polyhedral_agrees_with_the_40_digit_reference,
+    name: "polyhedral.forty_digit_reference",
+    subsystem: "polyhedral",
+    slice: "S5",
+    reference: Recording,
+    against: "P8 restated by the owner's ruling of 28 Nov 2026 (docs/slices/S5.md 7.19; as first written, 1e-12 relative to 100 sizes, it measured 1.6e-10): Faceted::field against a 40-digit evaluation of the same face form on the same f64 vertices (docs/papers/polyhedral-gravity's mp_reference, oracle/fixtures/paper/polyhedral), the six bodies, every point within 100 sizes, U and g: the largest relative error over the rounding law's allowance c eps (R/s)^2, c = 2000 fixed first on nine other bodies (oracle/fixtures/paper/polyhedral_calibration). Control: ESA's values exceed it",
+    unit: Relative,
+    tolerance: 1.0,
+    measure: cav_validate::Measured::Error(
+        the_six(false).into_iter().map(|(_, _, m)| m.law() / ROUNDING_LAW).fold(0.0, f64::max)
+    ),
 }
 
 #[test]
