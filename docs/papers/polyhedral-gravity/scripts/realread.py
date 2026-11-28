@@ -134,8 +134,16 @@ def table_conv(conv: dict) -> dict[str, float]:
         rows.append(r"\midrule")
         rows.append(r"\multicolumn{6}{l}{\textit{tower axis " + dist.rstrip("0").rstrip(".")
                     + r" m from the centre}} \\")
-        sig = " & ".join(f"{conv[b][dist]['real']['signal']:.3g}" for b in BODIES)
-        rows.append(f"signal (rad) & {sig} \\\\")
+        def signed(b: str, read: str) -> str:
+            # The signal of the direction with the largest flight read, with its sign (referee,
+            # draft 4: the flight read changes sign between 1.5 m and 10 m; the leading does not).
+            by = conv[b][dist]["real"]["signal_by_direction"]
+            k = max(range(len(by)), key=lambda i: abs(by[i]))
+            x = conv[b][dist][read]["signal_by_direction"][k]
+            return f"{x:+#.3g}".replace("+", "$+$").replace("-", "$-$")
+
+        sig = " & ".join(f"{signed(b, 'real')} ({signed(b, 'leading')})" for b in BODIES)
+        rows.append(f"signal, flight (leading) read (rad) & {sig} \\\\")
         for rep, label in REPS:
             cells = []
             for b in BODIES:
@@ -364,6 +372,7 @@ def table_thresholds() -> None:
     sig_m = {(r[0], r[1]): r[3].split("(")[0].strip() for r in crb[1:]}
     peak = {(r[0], r[1]): r[2].split("(")[0].strip() for r in crb[1:]}
     body_name = {"cube": "aligned cube", "bunny": "bunny", "bracket": "CAD part"}
+    budget = json.loads((RR / "data" / "budget.json").read_text(encoding="utf-8"))
     rows = [r"\begin{tabular}{llrrr}", r"\toprule",
             r"body & & 1.5 m & 5 m & 20 m \\", r"\midrule"]
     for b in ("cube", "bunny", "bracket"):
@@ -390,6 +399,16 @@ def table_thresholds() -> None:
                     pass
                 return s + ("$^*$" if star else "")
             rows.append(f" & {tech} & " + " & ".join(cell(x) for x in r[2:5]) + r" \\")
+        # The parametrisation-free criterion ||dphi||/sigma < 0.1 (referee, draft 4, S6), which
+        # bounds every |bias_i|/sigma_i for any parameter set (Cauchy-Schwarz).
+        for tech, label in (("(c) fill + centroid", r"(c), $\|\Delta\phi\|/\sigma$"),
+                            ("(d) + second moment", r"(d), $\|\Delta\phi\|/\sigma$")):
+            thr = budget["voxel"][b][tech]["threshold"]
+            cells = []
+            for t_ in thr:
+                h, how = t_["norm"]
+                cells.append((r"$\geq$ " if how == "coarsest" else "") + f"{h * 1000:.0f}")
+            rows.append(f" & {label} & " + " & ".join(cells) + r" \\")
         rows.append(r"\midrule" if b != "bracket" else r"\bottomrule")
     rows += [r"\end{tabular}"]
     write("rr-thresholds.tex", rows, "docs/research/paper-real-read/tables-budget.md (analyse_real.py budget)")
