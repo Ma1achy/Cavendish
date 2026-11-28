@@ -472,6 +472,14 @@ pub enum ViewCommand {
         /// The draw mode.
         draw: cav_sim::body_draw::BodyDraw,
     },
+    /// Which levels of detail the pane draws the world at: its camera's clipmap, the cut tower `n`
+    /// reads, or the common refinement of several towers' cuts (S5). A view's: never undone.
+    LodView {
+        /// The pane, from 0.
+        pane: usize,
+        /// The view.
+        view: cav_sim::world::lod_view::LodView,
+    },
     /// Hide the body of this label from every pane, or show it again (the scene tree's eye, S19).
     /// A view's: the towers still read it, and it is never undone.
     Hide {
@@ -509,7 +517,8 @@ impl ViewCommand {
             | Self::Colour { pane, .. }
             | Self::Overlay { pane, .. }
             | Self::Section { pane, .. }
-            | Self::Draw { pane, .. } => Some(pane),
+            | Self::Draw { pane, .. }
+            | Self::LodView { pane, .. } => Some(pane),
         }
     }
 }

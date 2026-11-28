@@ -606,7 +606,7 @@ pub fn lod_legend(
                 let (a, b) = (shares.0.log10(), shares.1.log10());
                 for k in 0..=4 {
                     let e = a + (b - a) * f64::from(k) / 4.0;
-                    keys.push((format!("{e:.0}"), colour(&LodBox { share: 10f64.powf(e), ..any })));
+                    keys.push((format!("{e:.1}"), colour(&LodBox { share: 10f64.powf(e), ..any })));
                 }
             }
             if lod.boxes.iter().any(|b| b.share == 0.0) {

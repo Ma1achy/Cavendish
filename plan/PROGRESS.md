@@ -35,6 +35,13 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**TASK-S5-20, LOD views (28 Nov 2026; §7.15).** `lod-view camera | tower N | towers … | towers
+all`: the world drawn at the levels the camera wants, at tower N's cut (no new walk: the read's), or
+at the towers' common refinement (a partition, finer than each cut, minimal; the naive union
+double-covers). The streaming makes what a view names; a node not resident is drawn by its nearest
+resident ancestor, said. The blocks below the chunk are drawn merged into their chunk and outlined
+by the overlays. Worth a second look: L1/L2 measured at 1e-2 (at 1e-4 every tower opens everything).
+
 **TASK-S5-15, the octree overlay and the read-LOD overlay (28 Nov 2026; §7.14).** The world's
 contribution now carries what the views draw of the read (the octree's nodes, each tower's cut with
 every accepted node's bound), through the page's wire too; `overlay octree` outlines the octree by
