@@ -1,0 +1,14 @@
+{
+ "octree": {
+  "boxes": 12621,
+  "volume": 2.781585693359375,
+  "cells": 91147,
+  "partition_ok": true
+ },
+ "sweep": {
+  "boxes": 1824,
+  "volume": 2.781585693359375,
+  "cells": 91147,
+  "partition_ok": true
+ }
+}

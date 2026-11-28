@@ -1,0 +1,80 @@
+{
+ "shape": "bracket",
+ "triangles": 5280,
+ "volume": 0.06824116655917778,
+ "origin": [
+  0.00017125,
+  0.00036375,
+  9.125e-05
+ ],
+ "pitches": [
+  0.125,
+  0.0625,
+  0.03125,
+  0.015625
+ ],
+ "tower_points": [
+  408,
+  408,
+  408
+ ],
+ "tower_bases": [
+  [
+   1.8373895927355102,
+   0.36747791854710204,
+   -0.551216877820653
+  ],
+  [
+   5.1464527779806195,
+   1.0292905555961238,
+   -1.5439358333941855
+  ],
+  [
+   19.262688948860834,
+   3.8525377897721667,
+   -5.7788066846582495
+  ]
+ ],
+ "levels": [
+  {
+   "level": 0,
+   "h": 0.125,
+   "boundary": 130,
+   "interior": 4,
+   "piece_triangles": 20779,
+   "seconds": 1.3844153881072998,
+   "volume_rel_error": -4.440892098500626e-16,
+   "node_disagreements": 0
+  },
+  {
+   "level": 1,
+   "h": 0.0625,
+   "boundary": 534,
+   "interior": 76,
+   "piece_triangles": 42707,
+   "seconds": 3.447197437286377,
+   "volume_rel_error": -2.220446049250313e-16,
+   "node_disagreements": 0
+  },
+  {
+   "level": 2,
+   "h": 0.03125,
+   "boundary": 2243,
+   "interior": 1263,
+   "piece_triangles": 106203,
+   "seconds": 7.674628496170044,
+   "volume_rel_error": 0.0,
+   "node_disagreements": 0
+  },
+  {
+   "level": 3,
+   "h": 0.015625,
+   "boundary": 9187,
+   "interior": 14058,
+   "piece_triangles": 310831,
+   "seconds": 24.185324668884277,
+   "volume_rel_error": -2.220446049250313e-16,
+   "node_disagreements": 0
+  }
+ ]
+}

@@ -69,3 +69,12 @@ Nothing missing. Johnson 1974 and Garvin 1956 (cited by Richards 1979 and Komati
 - [ ] Storey & Cohen-Tannoudji 1994, J. Phys. II France 4, 1999 (the first-order phase as the action along unperturbed paths; cited through Hogan et al. 2008 §5.2.1): https://doi.org/10.1051/jp2:1994103 (DOI from memory, not resolved)
 - [ ] Cheinet et al. 2008, IEEE Trans. Instrum. Meas. 57, 1141, the published version (the arXiv preprint physics/0510197 was read): https://doi.org/10.1109/TIM.2007.915148
 - [ ] Dimopoulos, Graham, Hogan & Kasevich 2008, Phys. Rev. D 78, 042003 (arXiv:0802.4098; the interferometer's suppressed response to short-wavelength gravity, Hogan et al.'s ref. [34])
+
+## Surface representation (`surface-representation.md`)
+DOIs below are from memory and not resolved (marked so); the PLIC side rests on Weymouth & Yue 2010,
+which is held and cites these.
+- [ ] Scardovelli & Zaleski 2000, "Analytical relations connecting linear interfaces and volume fractions in rectangular grids", *J. Comput. Phys.* 164, 228–237 (the closed-form volume ↔ plane offset of a cube cut by a plane): https://doi.org/10.1006/jcph.2000.6567 (not resolved)
+- [ ] Dyadechko & Shashkov 2008, "Reconstruction of multi-material interfaces from moment data", *J. Comput. Phys.* 227, 5361–5384 (moment of fluid: the plane fitted to the fill and centroid): https://doi.org/10.1016/j.jcp.2007.12.029
+- [ ] Pilliod & Puckett 2004, "Second-order accurate volume-of-fluid algorithms for tracking material interfaces", *J. Comput. Phys.* 199, 465–502 (LVIRA/ELVIRA normals): https://doi.org/10.1016/j.jcp.2003.12.023 (not resolved)
+- [ ] Wald 2007, "On fast construction of SAH-based bounding volume hierarchies", IEEE/EG Symp. Interactive Ray Tracing, 33–40 (binned SAH): https://doi.org/10.1109/RT.2007.4342588 (not resolved)
+- [ ] MacDonald & Booth 1990, "Heuristics for ray tracing using space subdivision", *The Visual Computer* 6, 153–166 (the surface-area heuristic): https://doi.org/10.1007/BF01911006 (not resolved)

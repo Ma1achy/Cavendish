@@ -1,0 +1,2182 @@
+{
+ "adaptive": {
+  "0.5m/1e-06": {
+   "cost_ns_per_point": 32035.04,
+   "memory_bytes": 62478.0,
+   "leaves": {
+    "L0 centroid": 3,
+    "L0 second": 15,
+    "L0 third": 25,
+    "L0 mof_fill8_residual_common": 1,
+    "L1 centroid": 8,
+    "L1 second": 74,
+    "L1 third": 230,
+    "L1 mof_fill8_residual_common": 6,
+    "L2 centroid": 17,
+    "L2 second": 170,
+    "L2 third": 321,
+    "L2 mof_fill8_residual_common": 4,
+    "L3 centroid": 8,
+    "L3 second": 68,
+    "L3 third": 23
+   },
+   "new_full_blocks": 723,
+   "error_at_towers": [
+    8.9840662652009e-08,
+    1.8879757431598465e-08,
+    -5.311087065577615e-09,
+    -2.016070750345826e-11
+   ],
+   "design_tower": 0
+  },
+  "0.5m/1e-08": {
+   "cost_ns_per_point": 657932.73,
+   "memory_bytes": 373426.0,
+   "leaves": {
+    "L0 second": 3,
+    "L0 third": 10,
+    "L1 centroid": 2,
+    "L1 second": 25,
+    "L1 third": 70,
+    "L1 mof_fill8_residual_common": 25,
+    "L2 centroid": 17,
+    "L2 second": 175,
+    "L2 third": 807,
+    "L2 mof_fill8_residual_common": 376,
+    "L2 exact": 7,
+    "L3 centroid": 44,
+    "L3 second": 611,
+    "L3 third": 2309,
+    "L3 mof_fill8_residual_common": 518,
+    "L3 exact": 13
+   },
+   "new_full_blocks": 2173,
+   "error_at_towers": [
+    5.321947617813985e-10,
+    2.313060472996776e-10,
+    5.455679962540199e-12,
+    -2.1221440464253617e-13
+   ],
+   "design_tower": 0
+  },
+  "0.5m/1e-10": {
+   "cost_ns_per_point": 6830551.43,
+   "memory_bytes": 1061664.0,
+   "leaves": {
+    "L0 third": 1,
+    "L0 exact": 81,
+    "L1 second": 2,
+    "L1 third": 7,
+    "L1 exact": 15,
+    "L2 centroid": 1,
+    "L2 second": 6,
+    "L2 third": 78,
+    "L2 mof_fill8_residual_common": 49,
+    "L2 exact": 29,
+    "L3 centroid": 2,
+    "L3 second": 86,
+    "L3 third": 722,
+    "L3 mof_fill8_residual_common": 887,
+    "L3 exact": 140
+   },
+   "new_full_blocks": 711,
+   "error_at_towers": [
+    -7.626779228140845e-13,
+    6.830192018253574e-13,
+    1.032686362354592e-13,
+    -2.2466709477581446e-13
+   ],
+   "design_tower": 0
+  },
+  "1.5m/1e-06": {
+   "cost_ns_per_point": 7647.08,
+   "memory_bytes": 16724.0,
+   "leaves": {
+    "L0 centroid": 4,
+    "L0 second": 38,
+    "L0 third": 60,
+    "L0 mof_fill8_residual_common": 2,
+    "L1 centroid": 3,
+    "L1 second": 58,
+    "L1 third": 79,
+    "L2 centroid": 1,
+    "L2 second": 31,
+    "L2 third": 2,
+    "L3 centroid": 2,
+    "L3 second": 1
+   },
+   "new_full_blocks": 165,
+   "error_at_towers": [
+    2.2878466866878616e-06,
+    5.218610802410174e-08,
+    -6.496031336741734e-09,
+    -1.6724074683944707e-11
+   ],
+   "design_tower": 1
+  },
+  "1.5m/1e-08": {
+   "cost_ns_per_point": 101825.18,
+   "memory_bytes": 122982.0,
+   "leaves": {
+    "L0 centroid": 1,
+    "L0 second": 6,
+    "L0 third": 17,
+    "L0 mof_fill8_residual_common": 2,
+    "L1 centroid": 6,
+    "L1 second": 45,
+    "L1 third": 179,
+    "L1 mof_fill8_residual_common": 50,
+    "L1 exact": 1,
+    "L2 centroid": 17,
+    "L2 second": 201,
+    "L2 third": 779,
+    "L2 mof_fill8_residual_common": 31,
+    "L2 exact": 3,
+    "L3 centroid": 2,
+    "L3 second": 139,
+    "L3 third": 266
+   },
+   "new_full_blocks": 1546,
+   "error_at_towers": [
+    -7.34460254516212e-07,
+    9.906268912218656e-10,
+    1.3171639774930529e-11,
+    -4.1487569766024803e-13
+   ],
+   "design_tower": 1
+  },
+  "1.5m/1e-10": {
+   "cost_ns_per_point": 2525069.9,
+   "memory_bytes": 676754.0,
+   "leaves": {
+    "L0 second": 1,
+    "L0 third": 3,
+    "L1 second": 4,
+    "L1 third": 37,
+    "L1 mof_fill8_residual_common": 8,
+    "L1 exact": 9,
+    "L2 centroid": 1,
+    "L2 second": 51,
+    "L2 third": 489,
+    "L2 mof_fill8_residual_common": 557,
+    "L2 exact": 82,
+    "L3 centroid": 3,
+    "L3 second": 307,
+    "L3 third": 3133,
+    "L3 mof_fill8_residual_common": 1790,
+    "L3 exact": 365
+   },
+   "new_full_blocks": 2272,
+   "error_at_towers": [
+    -2.3687750639385507e-09,
+    4.95414832031955e-12,
+    3.26169125708958e-12,
+    -2.9203472703363143e-13
+   ],
+   "design_tower": 1
+  },
+  "5.0m/1e-06": {
+   "cost_ns_per_point": 1190.6200000000001,
+   "memory_bytes": 4744.0,
+   "leaves": {
+    "L0 centroid": 24,
+    "L0 second": 97,
+    "L0 third": 4,
+    "L1 centroid": 10
+   },
+   "new_full_blocks": 0,
+   "error_at_towers": [
+    -6.202042271510083e-05,
+    6.533485650527409e-06,
+    -2.9349207255567817e-08,
+    -2.675802334423146e-09
+   ],
+   "design_tower": 2
+  },
+  "5.0m/1e-08": {
+   "cost_ns_per_point": 4012.870000000001,
+   "memory_bytes": 13120.0,
+   "leaves": {
+    "L0 centroid": 3,
+    "L0 second": 31,
+    "L0 third": 82,
+    "L1 centroid": 2,
+    "L1 second": 22,
+    "L1 third": 51,
+    "L2 second": 7
+   },
+   "new_full_blocks": 57,
+   "error_at_towers": [
+    1.018651798996538e-06,
+    4.351942702197171e-07,
+    1.1927965073351996e-09,
+    -3.106838292604207e-12
+   ],
+   "design_tower": 2
+  },
+  "5.0m/1e-10": {
+   "cost_ns_per_point": 96310.42,
+   "memory_bytes": 92352.0,
+   "leaves": {
+    "L0 second": 3,
+    "L0 third": 22,
+    "L1 centroid": 2,
+    "L1 second": 28,
+    "L1 third": 270,
+    "L1 mof_fill8_residual_common": 49,
+    "L1 exact": 7,
+    "L2 centroid": 2,
+    "L2 second": 93,
+    "L2 third": 596,
+    "L2 mof_fill8_residual_common": 3,
+    "L2 exact": 10,
+    "L3 second": 48,
+    "L3 third": 59,
+    "L3 mof_fill8_residual_common": 2
+   },
+   "new_full_blocks": 909,
+   "error_at_towers": [
+    3.163419001630767e-07,
+    2.9261354192223467e-09,
+    4.7737624913920846e-12,
+    -1.4974488922365792e-13
+   ],
+   "design_tower": 2
+  },
+  "20.0m/1e-06": {
+   "cost_ns_per_point": 630.5000000000001,
+   "memory_bytes": 2056.0,
+   "leaves": {
+    "L0 fill": 2,
+    "L0 centroid": 128
+   },
+   "new_full_blocks": 0,
+   "error_at_towers": [
+    -0.0017266544211635036,
+    -0.00032242823412011434,
+    -1.840601160378462e-05,
+    2.9971049529586866e-08
+   ],
+   "design_tower": 3
+  },
+  "20.0m/1e-08": {
+   "cost_ns_per_point": 1129.85,
+   "memory_bytes": 4456.0,
+   "leaves": {
+    "L0 centroid": 29,
+    "L0 second": 95,
+    "L1 centroid": 12
+   },
+   "new_full_blocks": 0,
+   "error_at_towers": [
+    -0.00013488610254734374,
+    -3.2120176320932028e-06,
+    -3.4572620192232443e-07,
+    2.7813866963754187e-10
+   ],
+   "design_tower": 3
+  },
+  "20.0m/1e-10": {
+   "cost_ns_per_point": 3408.4299999999994,
+   "memory_bytes": 8296.0,
+   "leaves": {
+    "L0 second": 50,
+    "L0 third": 73,
+    "L0 exact": 1,
+    "L1 centroid": 1,
+    "L1 second": 5
+   },
+   "new_full_blocks": 0,
+   "error_at_towers": [
+    4.952070378119652e-06,
+    8.800309866912407e-07,
+    2.869526630883056e-09,
+    -1.517985062288592e-12
+   ],
+   "design_tower": 3
+  },
+  "uniform_finest_exact": {
+   "cost_ns_per_point": 45848275.56,
+   "memory_bytes": 6873672.0,
+   "pieces": 10252,
+   "piece_triangles": 552522.0
+  },
+  "whole_mesh": {
+   "cost_ns_per_point": 4077471.24,
+   "memory_bytes": 1768968.0,
+   "triangles": 49138
+  }
+ },
+ "interior": {
+  "octree/0.5m/1e-06/l2": {
+   "boxes": 4092,
+   "cost_ns_per_point": 1870696.56,
+   "error": 3.068673443606604e-10,
+   "used": {
+    "l2": 2115,
+    "closed": 1977
+   }
+  },
+  "octree/0.5m/1e-06/l4": {
+   "boxes": 4092,
+   "cost_ns_per_point": 38737.71,
+   "error": 3.1821285851555553e-10,
+   "used": {
+    "l2": 2115,
+    "l4": 1959,
+    "closed": 18
+   }
+  },
+  "octree/0.5m/1e-06/l6": {
+   "boxes": 4092,
+   "cost_ns_per_point": 22076.19,
+   "error": 3.190956315369045e-10,
+   "used": {
+    "l2": 2115,
+    "l4": 1959,
+    "l6": 18,
+    "closed": 0
+   }
+  },
+  "octree/0.5m/1e-08/l2": {
+   "boxes": 4092,
+   "cost_ns_per_point": 3852536.16,
+   "error": 0.0,
+   "used": {
+    "l2": 0,
+    "closed": 4092
+   }
+  },
+  "octree/0.5m/1e-08/l4": {
+   "boxes": 4092,
+   "cost_ns_per_point": 294290.41000000003,
+   "error": -1.7491531226904167e-13,
+   "used": {
+    "l2": 0,
+    "l4": 3805,
+    "closed": 287
+   }
+  },
+  "octree/0.5m/1e-08/l6": {
+   "boxes": 4092,
+   "cost_ns_per_point": 38813.770000000004,
+   "error": 4.9244137413639866e-14,
+   "used": {
+    "l2": 0,
+    "l4": 3805,
+    "l6": 276,
+    "closed": 11
+   }
+  },
+  "octree/0.5m/1e-10/l2": {
+   "boxes": 4092,
+   "cost_ns_per_point": 3852536.16,
+   "error": 0.0,
+   "used": {
+    "l2": 0,
+    "closed": 4092
+   }
+  },
+  "octree/0.5m/1e-10/l4": {
+   "boxes": 4092,
+   "cost_ns_per_point": 2436719.06,
+   "error": 3.0412304619087394e-14,
+   "used": {
+    "l2": 0,
+    "l4": 1514,
+    "closed": 2578
+   }
+  },
+  "octree/0.5m/1e-10/l6": {
+   "boxes": 4092,
+   "cost_ns_per_point": 137429.3,
+   "error": -2.8930417089734206e-14,
+   "used": {
+    "l2": 0,
+    "l4": 1514,
+    "l6": 2484,
+    "closed": 94
+   }
+  },
+  "octree/1.5m/1e-06/l2": {
+   "boxes": 4092,
+   "cost_ns_per_point": 60335.28,
+   "error": 2.5067739608397458e-09,
+   "used": {
+    "l2": 4047,
+    "closed": 45
+   }
+  },
+  "octree/1.5m/1e-06/l4": {
+   "boxes": 4092,
+   "cost_ns_per_point": 18253.53,
+   "error": 2.5047865696853225e-09,
+   "used": {
+    "l2": 4047,
+    "l4": 45,
+    "closed": 0
+   }
+  },
+  "octree/1.5m/1e-06/l6": {
+   "boxes": 4092,
+   "cost_ns_per_point": 18253.53,
+   "error": 2.5047865696853225e-09,
+   "used": {
+    "l2": 4047,
+    "l4": 45,
+    "l6": 0,
+    "closed": 0
+   }
+  },
+  "octree/1.5m/1e-08/l2": {
+   "boxes": 4092,
+   "cost_ns_per_point": 3800061.9200000004,
+   "error": 7.411459954868166e-13,
+   "used": {
+    "l2": 56,
+    "closed": 4036
+   }
+  },
+  "octree/1.5m/1e-08/l4": {
+   "boxes": 4092,
+   "cost_ns_per_point": 37953.47,
+   "error": -6.616698291703194e-13,
+   "used": {
+    "l2": 56,
+    "l4": 4023,
+    "closed": 13
+   }
+  },
+  "octree/1.5m/1e-08/l6": {
+   "boxes": 4092,
+   "cost_ns_per_point": 25920.149999999998,
+   "error": -6.624157602649894e-13,
+   "used": {
+    "l2": 56,
+    "l4": 4023,
+    "l6": 13,
+    "closed": 0
+   }
+  },
+  "octree/1.5m/1e-10/l2": {
+   "boxes": 4092,
+   "cost_ns_per_point": 3852536.16,
+   "error": 0.0,
+   "used": {
+    "l2": 0,
+    "closed": 4092
+   }
+  },
+  "octree/1.5m/1e-10/l4": {
+   "boxes": 4092,
+   "cost_ns_per_point": 284003.76,
+   "error": -6.59713454112705e-13,
+   "used": {
+    "l2": 0,
+    "l4": 3816,
+    "closed": 276
+   }
+  },
+  "octree/1.5m/1e-10/l6": {
+   "boxes": 4092,
+   "cost_ns_per_point": 28527.12,
+   "error": -5.994834213459213e-13,
+   "used": {
+    "l2": 0,
+    "l4": 3816,
+    "l6": 276,
+    "closed": 0
+   }
+  },
+  "octree/5.0m/1e-06/l2": {
+   "boxes": 4092,
+   "cost_ns_per_point": 18168.480000000003,
+   "error": 6.905753609741643e-11,
+   "used": {
+    "l2": 4092,
+    "closed": 0
+   }
+  },
+  "octree/5.0m/1e-06/l4": {
+   "boxes": 4092,
+   "cost_ns_per_point": 18168.480000000003,
+   "error": 6.905753609741643e-11,
+   "used": {
+    "l2": 4092,
+    "l4": 0,
+    "closed": 0
+   }
+  },
+  "octree/5.0m/1e-06/l6": {
+   "boxes": 4092,
+   "cost_ns_per_point": 18168.480000000003,
+   "error": 6.905753609741643e-11,
+   "used": {
+    "l2": 4092,
+    "l4": 0,
+    "l6": 0,
+    "closed": 0
+   }
+  },
+  "octree/5.0m/1e-08/l2": {
+   "boxes": 4092,
+   "cost_ns_per_point": 46279.68000000001,
+   "error": 7.698519705295719e-12,
+   "used": {
+    "l2": 4062,
+    "closed": 30
+   }
+  },
+  "octree/5.0m/1e-08/l4": {
+   "boxes": 4092,
+   "cost_ns_per_point": 18225.180000000004,
+   "error": 7.65263279990918e-12,
+   "used": {
+    "l2": 4062,
+    "l4": 30,
+    "closed": 0
+   }
+  },
+  "octree/5.0m/1e-08/l6": {
+   "boxes": 4092,
+   "cost_ns_per_point": 18225.180000000004,
+   "error": 7.65263279990918e-12,
+   "used": {
+    "l2": 4062,
+    "l4": 30,
+    "l6": 0,
+    "closed": 0
+   }
+  },
+  "octree/5.0m/1e-10/l2": {
+   "boxes": 4092,
+   "cost_ns_per_point": 3852536.16,
+   "error": 0.0,
+   "used": {
+    "l2": 0,
+    "closed": 4092
+   }
+  },
+  "octree/5.0m/1e-10/l4": {
+   "boxes": 4092,
+   "cost_ns_per_point": 25902.36,
+   "error": -6.309390875969094e-14,
+   "used": {
+    "l2": 0,
+    "l4": 4092,
+    "closed": 0
+   }
+  },
+  "octree/5.0m/1e-10/l6": {
+   "boxes": 4092,
+   "cost_ns_per_point": 25902.36,
+   "error": -6.309390875969094e-14,
+   "used": {
+    "l2": 0,
+    "l4": 4092,
+    "l6": 0,
+    "closed": 0
+   }
+  },
+  "octree/20.0m/1e-06/l2": {
+   "boxes": 4092,
+   "cost_ns_per_point": 18168.480000000003,
+   "error": 1.1796530532325001e-13,
+   "used": {
+    "l2": 4092,
+    "closed": 0
+   }
+  },
+  "octree/20.0m/1e-06/l4": {
+   "boxes": 4092,
+   "cost_ns_per_point": 18168.480000000003,
+   "error": 1.1796530532325001e-13,
+   "used": {
+    "l2": 4092,
+    "l4": 0,
+    "closed": 0
+   }
+  },
+  "octree/20.0m/1e-06/l6": {
+   "boxes": 4092,
+   "cost_ns_per_point": 18168.480000000003,
+   "error": 1.1796530532325001e-13,
+   "used": {
+    "l2": 4092,
+    "l4": 0,
+    "l6": 0,
+    "closed": 0
+   }
+  },
+  "octree/20.0m/1e-08/l2": {
+   "boxes": 4092,
+   "cost_ns_per_point": 18168.480000000003,
+   "error": 1.1796530532325001e-13,
+   "used": {
+    "l2": 4092,
+    "closed": 0
+   }
+  },
+  "octree/20.0m/1e-08/l4": {
+   "boxes": 4092,
+   "cost_ns_per_point": 18168.480000000003,
+   "error": 1.1796530532325001e-13,
+   "used": {
+    "l2": 4092,
+    "l4": 0,
+    "closed": 0
+   }
+  },
+  "octree/20.0m/1e-08/l6": {
+   "boxes": 4092,
+   "cost_ns_per_point": 18168.480000000003,
+   "error": 1.1796530532325001e-13,
+   "used": {
+    "l2": 4092,
+    "l4": 0,
+    "l6": 0,
+    "closed": 0
+   }
+  },
+  "octree/20.0m/1e-10/l2": {
+   "boxes": 4092,
+   "cost_ns_per_point": 46279.68000000001,
+   "error": 1.8046893715079016e-13,
+   "used": {
+    "l2": 4062,
+    "closed": 30
+   }
+  },
+  "octree/20.0m/1e-10/l4": {
+   "boxes": 4092,
+   "cost_ns_per_point": 18225.180000000004,
+   "error": 1.8719868845562494e-13,
+   "used": {
+    "l2": 4062,
+    "l4": 30,
+    "closed": 0
+   }
+  },
+  "octree/20.0m/1e-10/l6": {
+   "boxes": 4092,
+   "cost_ns_per_point": 18225.180000000004,
+   "error": 1.8719868845562494e-13,
+   "used": {
+    "l2": 4062,
+    "l4": 30,
+    "l6": 0,
+    "closed": 0
+   }
+  },
+  "octree/aspect": {
+   "median": 1.0,
+   "max": 1.0000000000000018
+  },
+  "octree/series_error": {
+   "0.5m": {
+    "l0": 1.8704816255794322e-07,
+    "l2": 1.8704816255794322e-07,
+    "l4": 1.241798893531973e-10,
+    "l6": 3.033032158761273e-12
+   },
+   "1.5m": {
+    "l0": 2.4144728594626395e-08,
+    "l2": 2.4144728594626395e-08,
+    "l4": 6.379335495726619e-12,
+    "l6": 4.52724244540386e-12
+   },
+   "5.0m": {
+    "l0": 7.179681474995744e-11,
+    "l2": 7.179681474995744e-11,
+    "l4": 4.425977627068667e-12,
+    "l6": 4.425607758273787e-12
+   },
+   "20.0m": {
+    "l0": 5.48341670091317e-12,
+    "l2": 5.48341670091317e-12,
+    "l4": 5.464785561564041e-12,
+    "l6": 5.464786428925779e-12
+   }
+  },
+  "sweep/0.5m/1e-06/l2": {
+   "boxes": 908,
+   "cost_ns_per_point": 790208.08,
+   "error": -1.6082783379795657e-11,
+   "used": {
+    "l2": 69,
+    "closed": 839
+   }
+  },
+  "sweep/0.5m/1e-06/l4": {
+   "boxes": 908,
+   "cost_ns_per_point": 396509.93,
+   "error": 1.1559750276142824e-10,
+   "used": {
+    "l2": 69,
+    "l4": 421,
+    "closed": 418
+   }
+  },
+  "sweep/0.5m/1e-06/l6": {
+   "boxes": 908,
+   "cost_ns_per_point": 143810.21,
+   "error": 5.36974211460834e-10,
+   "used": {
+    "l2": 69,
+    "l4": 421,
+    "l6": 273,
+    "closed": 145
+   }
+  },
+  "sweep/0.5m/1e-08/l2": {
+   "boxes": 908,
+   "cost_ns_per_point": 854863.84,
+   "error": 0.0,
+   "used": {
+    "l2": 0,
+    "closed": 908
+   }
+  },
+  "sweep/0.5m/1e-08/l4": {
+   "boxes": 908,
+   "cost_ns_per_point": 645390.2400000001,
+   "error": 2.8365114077000264e-14,
+   "used": {
+    "l2": 0,
+    "l4": 224,
+    "closed": 684
+   }
+  },
+  "sweep/0.5m/1e-08/l6": {
+   "boxes": 908,
+   "cost_ns_per_point": 343631.60000000003,
+   "error": 3.685456453905722e-12,
+   "used": {
+    "l2": 0,
+    "l4": 224,
+    "l6": 326,
+    "closed": 358
+   }
+  },
+  "sweep/0.5m/1e-10/l2": {
+   "boxes": 908,
+   "cost_ns_per_point": 854863.84,
+   "error": 0.0,
+   "used": {
+    "l2": 0,
+    "closed": 908
+   }
+  },
+  "sweep/0.5m/1e-10/l4": {
+   "boxes": 908,
+   "cost_ns_per_point": 820263.2899999999,
+   "error": 1.0709749059811813e-15,
+   "used": {
+    "l2": 0,
+    "l4": 37,
+    "closed": 871
+   }
+  },
+  "sweep/0.5m/1e-10/l6": {
+   "boxes": 908,
+   "cost_ns_per_point": 582373.8099999999,
+   "error": 7.036363679213675e-15,
+   "used": {
+    "l2": 0,
+    "l4": 37,
+    "l6": 257,
+    "closed": 614
+   }
+  },
+  "sweep/1.5m/1e-06/l2": {
+   "boxes": 908,
+   "cost_ns_per_point": 606548.24,
+   "error": -7.998033666427448e-10,
+   "used": {
+    "l2": 265,
+    "closed": 643
+   }
+  },
+  "sweep/1.5m/1e-06/l4": {
+   "boxes": 908,
+   "cost_ns_per_point": 95021.19,
+   "error": -3.6873524249025685e-09,
+   "used": {
+    "l2": 265,
+    "l4": 547,
+    "closed": 96
+   }
+  },
+  "sweep/1.5m/1e-06/l6": {
+   "boxes": 908,
+   "cost_ns_per_point": 6159.75,
+   "error": -3.869271808539638e-09,
+   "used": {
+    "l2": 265,
+    "l4": 547,
+    "l6": 96,
+    "closed": 0
+   }
+  },
+  "sweep/1.5m/1e-08/l2": {
+   "boxes": 908,
+   "cost_ns_per_point": 854863.84,
+   "error": 0.0,
+   "used": {
+    "l2": 0,
+    "closed": 908
+   }
+  },
+  "sweep/1.5m/1e-08/l4": {
+   "boxes": 908,
+   "cost_ns_per_point": 396640.34,
+   "error": -1.7296797661151518e-11,
+   "used": {
+    "l2": 0,
+    "l4": 490,
+    "closed": 418
+   }
+  },
+  "sweep/1.5m/1e-08/l6": {
+   "boxes": 908,
+   "cost_ns_per_point": 84699.66,
+   "error": -2.1482945834045385e-11,
+   "used": {
+    "l2": 0,
+    "l4": 490,
+    "l6": 337,
+    "closed": 81
+   }
+  },
+  "sweep/1.5m/1e-10/l2": {
+   "boxes": 908,
+   "cost_ns_per_point": 854863.84,
+   "error": 0.0,
+   "used": {
+    "l2": 0,
+    "closed": 908
+   }
+  },
+  "sweep/1.5m/1e-10/l4": {
+   "boxes": 908,
+   "cost_ns_per_point": 651001.14,
+   "error": -3.093704491804322e-14,
+   "used": {
+    "l2": 0,
+    "l4": 218,
+    "closed": 690
+   }
+  },
+  "sweep/1.5m/1e-10/l6": {
+   "boxes": 908,
+   "cost_ns_per_point": 240942.62,
+   "error": -2.0899882031185507e-13,
+   "used": {
+    "l2": 0,
+    "l4": 218,
+    "l6": 443,
+    "closed": 247
+   }
+  },
+  "sweep/5.0m/1e-06/l2": {
+   "boxes": 908,
+   "cost_ns_per_point": 125846.72000000002,
+   "error": -3.6769279862804128e-09,
+   "used": {
+    "l2": 778,
+    "closed": 130
+   }
+  },
+  "sweep/5.0m/1e-06/l4": {
+   "boxes": 908,
+   "cost_ns_per_point": 4277.22,
+   "error": -3.735081066450743e-09,
+   "used": {
+    "l2": 778,
+    "l4": 130,
+    "closed": 0
+   }
+  },
+  "sweep/5.0m/1e-06/l6": {
+   "boxes": 908,
+   "cost_ns_per_point": 4277.22,
+   "error": -3.735081066450743e-09,
+   "used": {
+    "l2": 778,
+    "l4": 130,
+    "l6": 0,
+    "closed": 0
+   }
+  },
+  "sweep/5.0m/1e-08/l2": {
+   "boxes": 908,
+   "cost_ns_per_point": 603737.12,
+   "error": -3.2023141259486694e-12,
+   "used": {
+    "l2": 268,
+    "closed": 640
+   }
+  },
+  "sweep/5.0m/1e-08/l4": {
+   "boxes": 908,
+   "cost_ns_per_point": 23944.12,
+   "error": -2.4200171387493436e-11,
+   "used": {
+    "l2": 268,
+    "l4": 620,
+    "closed": 20
+   }
+  },
+  "sweep/5.0m/1e-08/l6": {
+   "boxes": 908,
+   "cost_ns_per_point": 5431.320000000001,
+   "error": -2.4171829583763144e-11,
+   "used": {
+    "l2": 268,
+    "l4": 620,
+    "l6": 20,
+    "closed": 0
+   }
+  },
+  "sweep/5.0m/1e-10/l2": {
+   "boxes": 908,
+   "cost_ns_per_point": 854863.84,
+   "error": 0.0,
+   "used": {
+    "l2": 0,
+    "closed": 908
+   }
+  },
+  "sweep/5.0m/1e-10/l4": {
+   "boxes": 908,
+   "cost_ns_per_point": 188101.89,
+   "error": -1.4155454355880247e-13,
+   "used": {
+    "l2": 0,
+    "l4": 713,
+    "closed": 195
+   }
+  },
+  "sweep/5.0m/1e-10/l6": {
+   "boxes": 908,
+   "cost_ns_per_point": 7602.09,
+   "error": -1.224496002370009e-13,
+   "used": {
+    "l2": 0,
+    "l4": 713,
+    "l6": 195,
+    "closed": 0
+   }
+  },
+  "sweep/20.0m/1e-06/l2": {
+   "boxes": 908,
+   "cost_ns_per_point": 4031.5200000000004,
+   "error": 9.058233561069594e-11,
+   "used": {
+    "l2": 908,
+    "closed": 0
+   }
+  },
+  "sweep/20.0m/1e-06/l4": {
+   "boxes": 908,
+   "cost_ns_per_point": 4031.5200000000004,
+   "error": 9.058233561069594e-11,
+   "used": {
+    "l2": 908,
+    "l4": 0,
+    "closed": 0
+   }
+  },
+  "sweep/20.0m/1e-06/l6": {
+   "boxes": 908,
+   "cost_ns_per_point": 4031.5200000000004,
+   "error": 9.058233561069594e-11,
+   "used": {
+    "l2": 908,
+    "l4": 0,
+    "l6": 0,
+    "closed": 0
+   }
+  },
+  "sweep/20.0m/1e-08/l2": {
+   "boxes": 908,
+   "cost_ns_per_point": 59316.88,
+   "error": 1.7608463941466473e-11,
+   "used": {
+    "l2": 849,
+    "closed": 59
+   }
+  },
+  "sweep/20.0m/1e-08/l4": {
+   "boxes": 908,
+   "cost_ns_per_point": 4143.030000000001,
+   "error": 1.7531605188272155e-11,
+   "used": {
+    "l2": 849,
+    "l4": 59,
+    "closed": 0
+   }
+  },
+  "sweep/20.0m/1e-08/l6": {
+   "boxes": 908,
+   "cost_ns_per_point": 4143.030000000001,
+   "error": 1.7531605188272155e-11,
+   "used": {
+    "l2": 849,
+    "l4": 59,
+    "l6": 0,
+    "closed": 0
+   }
+  },
+  "sweep/20.0m/1e-10/l2": {
+   "boxes": 908,
+   "cost_ns_per_point": 478173.76,
+   "error": 6.958116046095744e-14,
+   "used": {
+    "l2": 402,
+    "closed": 506
+   }
+  },
+  "sweep/20.0m/1e-10/l4": {
+   "boxes": 908,
+   "cost_ns_per_point": 4987.860000000001,
+   "error": -1.1455714798129383e-13,
+   "used": {
+    "l2": 402,
+    "l4": 506,
+    "closed": 0
+   }
+  },
+  "sweep/20.0m/1e-10/l6": {
+   "boxes": 908,
+   "cost_ns_per_point": 4987.860000000001,
+   "error": -1.1455714798129383e-13,
+   "used": {
+    "l2": 402,
+    "l4": 506,
+    "l6": 0,
+    "closed": 0
+   }
+  },
+  "sweep/aspect": {
+   "median": 7.0,
+   "max": 27.0
+  },
+  "sweep/series_error": {
+   "0.5m": {
+    "l0": 0.038780181381625006,
+    "l2": 0.00014031443068375466,
+    "l4": 5.791105157753381e-06,
+    "l6": 2.7185532934449926e-07
+   },
+   "1.5m": {
+    "l0": 0.007126268007406687,
+    "l2": 2.833738368041457e-05,
+    "l4": 1.1853099455204038e-07,
+    "l6": 2.2697673730494913e-10
+   },
+   "5.0m": {
+    "l0": 3.956243648028739e-05,
+    "l2": 8.46406036476575e-08,
+    "l4": 5.992973972914167e-11,
+    "l6": 2.1658450891309886e-12
+   },
+   "20.0m": {
+    "l0": 1.16080483471096e-06,
+    "l2": 9.123938911453889e-11,
+    "l4": 2.1470176410024876e-12,
+    "l6": 2.1485601676205347e-12
+   }
+  }
+ },
+ "walks": {
+  "octree/bvh/tight/0.5m/1e-06": {
+   "visits": 27261,
+   "cost_ns_per_point": 5766259.509999999,
+   "error": 4.3292755085043325e-10,
+   "bound_sum": 2.1111557564064232e-07,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 705,
+    "cell second": 0,
+    "cell third": 3858,
+    "cell plic": 4819,
+    "cell exact": 648,
+    "box l2": 1301,
+    "box l4": 2279,
+    "box l6": 21,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.18037999304806904,
+   "nodes_over_bound": 0,
+   "nodes": 28687
+  },
+  "octree/bvh/tight/0.5m/1e-08": {
+   "visits": 28687,
+   "cost_ns_per_point": 35965910.22999998,
+   "error": -1.1856749482700367e-12,
+   "bound_sum": 1.3407840610453845e-09,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 0,
+    "cell second": 0,
+    "cell third": 2,
+    "cell plic": 2845,
+    "cell exact": 7405,
+    "box l2": 0,
+    "box l4": 3725,
+    "box l6": 352,
+    "box exact": 15
+   },
+   "worst_error_over_bound": 0.4147288607091337,
+   "nodes_over_bound": 0,
+   "nodes": 28687
+  },
+  "octree/bvh/tight/0.5m/1e-10": {
+   "visits": 28687,
+   "cost_ns_per_point": 44991672.52999999,
+   "error": -3.4614509609315336e-14,
+   "bound_sum": 9.0891724048337e-12,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 0,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 446,
+    "cell exact": 9806,
+    "box l2": 0,
+    "box l4": 1305,
+    "box l6": 2664,
+    "box exact": 123
+   },
+   "worst_error_over_bound": 0.06909087267017426,
+   "nodes_over_bound": 0,
+   "nodes": 28687
+  },
+  "octree/bvh/tight/1.5m/1e-06": {
+   "visits": 8491,
+   "cost_ns_per_point": 72358.40000000001,
+   "error": 2.1605105094813545e-09,
+   "bound_sum": 4.723837691515299e-07,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 3408,
+    "cell second": 1,
+    "cell third": 301,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 370,
+    "box l4": 166,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.15361125470470022,
+   "nodes_over_bound": 0,
+   "nodes": 28687
+  },
+  "octree/bvh/tight/1.5m/1e-08": {
+   "visits": 28685,
+   "cost_ns_per_point": 10182520.489999998,
+   "error": -1.7460845704776388e-12,
+   "bound_sum": 7.078599954613027e-10,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 1,
+    "cell second": 0,
+    "cell third": 187,
+    "cell plic": 8897,
+    "cell exact": 1166,
+    "box l2": 0,
+    "box l4": 4071,
+    "box l6": 21,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.6499043151088055,
+   "nodes_over_bound": 0,
+   "nodes": 28687
+  },
+  "octree/bvh/tight/1.5m/1e-10": {
+   "visits": 28687,
+   "cost_ns_per_point": 42003450.79,
+   "error": -7.151734802247685e-13,
+   "bound_sum": 1.2486531712770953e-11,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 0,
+    "cell second": 0,
+    "cell third": 1,
+    "cell plic": 1288,
+    "cell exact": 8963,
+    "box l2": 0,
+    "box l4": 3749,
+    "box l6": 343,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.2539442063767907,
+   "nodes_over_bound": 0,
+   "nodes": 28687
+  },
+  "octree/bvh/tight/1.5m/1e-08/control": {
+   "visits": 10609,
+   "cost_ns_per_point": 91642.29999999999,
+   "error": 1.29868225163965e-09,
+   "bound_sum": 4.160085676892352e-09,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 4010,
+    "cell second": 2,
+    "cell third": 701,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 316,
+    "box l4": 276,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 2.503958753555748,
+   "nodes_over_bound": 145
+  },
+  "octree/bvh/tight/5.0m/1e-06": {
+   "visits": 457,
+   "cost_ns_per_point": 4300.620000000001,
+   "error": 2.686696674581286e-10,
+   "bound_sum": 5.870359766041284e-07,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 229,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 0,
+    "box l4": 0,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.03091508772943923,
+   "nodes_over_bound": 0,
+   "nodes": 28687
+  },
+  "octree/bvh/tight/5.0m/1e-08": {
+   "visits": 7523,
+   "cost_ns_per_point": 62891.759999999995,
+   "error": 1.1745047018901803e-11,
+   "bound_sum": 5.2797824403327155e-09,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 3143,
+    "cell second": 0,
+    "cell third": 74,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 515,
+    "box l4": 30,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.2971022164428281,
+   "nodes_over_bound": 0,
+   "nodes": 28687
+  },
+  "octree/bvh/tight/5.0m/1e-10": {
+   "visits": 28687,
+   "cost_ns_per_point": 8862043.68,
+   "error": 5.6341676408743965e-14,
+   "bound_sum": 4.984446337907135e-12,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 0,
+    "cell second": 0,
+    "cell third": 18,
+    "cell plic": 9378,
+    "cell exact": 856,
+    "box l2": 0,
+    "box l4": 4092,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.8099307067815997,
+   "nodes_over_bound": 0,
+   "nodes": 28687
+  },
+  "octree/bvh/tight/20.0m/1e-06": {
+   "visits": 7,
+   "cost_ns_per_point": 75.12,
+   "error": -6.036550599664015e-11,
+   "bound_sum": 5.774459283362735e-07,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 4,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 0,
+    "box l4": 0,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.00033279644584999,
+   "nodes_over_bound": 0,
+   "nodes": 28687
+  },
+  "octree/bvh/tight/20.0m/1e-08": {
+   "visits": 185,
+   "cost_ns_per_point": 1746.54,
+   "error": -1.5776311904265334e-12,
+   "bound_sum": 5.7894745257272275e-09,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 93,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 0,
+    "box l4": 0,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.01701471028962092,
+   "nodes_over_bound": 0,
+   "nodes": 28687
+  },
+  "octree/bvh/tight/20.0m/1e-10": {
+   "visits": 3195,
+   "cost_ns_per_point": 29479.2,
+   "error": 3.759072980225236e-13,
+   "bound_sum": 5.126978848390767e-11,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 1557,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 11,
+    "box l4": 30,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.5028213366162336,
+   "nodes_over_bound": 0,
+   "nodes": 28687
+  },
+  "octree/octree/tight/0.5m/1e-06": {
+   "visits": 17387,
+   "cost_ns_per_point": 5771810.970000001,
+   "error": 4.895491085042849e-10,
+   "bound_sum": 1.7582524969919428e-07,
+   "accepted": {
+    "node p2": 1,
+    "node p3": 149,
+    "cell second": 0,
+    "cell third": 4593,
+    "cell plic": 4819,
+    "cell exact": 648,
+    "box l2": 1792,
+    "box l4": 2279,
+    "box l6": 21,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.18037999304806904,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/tight/0.5m/1e-08": {
+   "visits": 17594,
+   "cost_ns_per_point": 35965910.230000004,
+   "error": -1.1856749483560635e-12,
+   "bound_sum": 1.3407840610453843e-09,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 2,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 2845,
+    "cell exact": 7405,
+    "box l2": 0,
+    "box l4": 3725,
+    "box l6": 352,
+    "box exact": 15
+   },
+   "worst_error_over_bound": 0.4147288607091337,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/tight/0.5m/1e-10": {
+   "visits": 17601,
+   "cost_ns_per_point": 44991672.529999994,
+   "error": -3.4614509609315336e-14,
+   "bound_sum": 9.089172404833701e-12,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 0,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 446,
+    "cell exact": 9806,
+    "box l2": 0,
+    "box l4": 1305,
+    "box l6": 2664,
+    "box exact": 123
+   },
+   "worst_error_over_bound": 0.06909087267017426,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/tight/1.5m/1e-06": {
+   "visits": 9713,
+   "cost_ns_per_point": 125285.10000000002,
+   "error": 2.8458714680069265e-09,
+   "bound_sum": 3.193058635065448e-07,
+   "accepted": {
+    "node p2": 2,
+    "node p3": 1531,
+    "cell second": 1,
+    "cell third": 4681,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 1699,
+    "box l4": 166,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.307341456614453,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/tight/1.5m/1e-08": {
+   "visits": 17577,
+   "cost_ns_per_point": 10182539.27,
+   "error": -1.7460774343425275e-12,
+   "bound_sum": 7.078565566308262e-10,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 18,
+    "cell second": 0,
+    "cell third": 171,
+    "cell plic": 8897,
+    "cell exact": 1166,
+    "box l2": 0,
+    "box l4": 4071,
+    "box l6": 21,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.6499043151088055,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/tight/1.5m/1e-10": {
+   "visits": 17599,
+   "cost_ns_per_point": 42003450.79000001,
+   "error": -7.151734802164967e-13,
+   "bound_sum": 1.248653171277095e-11,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 1,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 1288,
+    "cell exact": 8963,
+    "box l2": 0,
+    "box l4": 3749,
+    "box l6": 343,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.2539442063767907,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/tight/1.5m/1e-08/control": {
+   "visits": 11769,
+   "cost_ns_per_point": 149042.58000000002,
+   "error": 1.8219277589407833e-09,
+   "bound_sum": 2.543279449320371e-09,
+   "accepted": {
+    "node p2": 14,
+    "node p3": 1213,
+    "cell second": 34,
+    "cell third": 6090,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 2179,
+    "box l4": 276,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 1.9966279943275385,
+   "nodes_over_bound": 142
+  },
+  "octree/octree/tight/5.0m/1e-06": {
+   "visits": 672,
+   "cost_ns_per_point": 8912.480000000001,
+   "error": 2.3966221005839693e-10,
+   "bound_sum": 1.7411550080610125e-07,
+   "accepted": {
+    "node p2": 22,
+    "node p3": 456,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 30,
+    "box l4": 0,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.15571925870742295,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/tight/5.0m/1e-08": {
+   "visits": 7567,
+   "cost_ns_per_point": 105146.20000000001,
+   "error": 1.5172549493793133e-11,
+   "bound_sum": 4.860640541801244e-09,
+   "accepted": {
+    "node p2": 2,
+    "node p3": 1851,
+    "cell second": 0,
+    "cell third": 3544,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 815,
+    "box l4": 30,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.49725797685149703,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/tight/5.0m/1e-10": {
+   "visits": 17593,
+   "cost_ns_per_point": 8862043.68,
+   "error": 5.6341676410601487e-14,
+   "bound_sum": 4.984446337907136e-12,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 3,
+    "cell second": 0,
+    "cell third": 15,
+    "cell plic": 9378,
+    "cell exact": 856,
+    "box l2": 0,
+    "box l4": 4092,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.8099307067815997,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/tight/20.0m/1e-06": {
+   "visits": 9,
+   "cost_ns_per_point": 150.24,
+   "error": -9.290503002329364e-11,
+   "bound_sum": 4.556188886671794e-07,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 8,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 0,
+    "box l4": 0,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.0008491035072810102,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/tight/20.0m/1e-08": {
+   "visits": 244,
+   "cost_ns_per_point": 2725.5600000000004,
+   "error": -3.4709379344350286e-12,
+   "bound_sum": 4.8924474961285545e-09,
+   "accepted": {
+    "node p2": 6,
+    "node p3": 142,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 0,
+    "box l4": 0,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.38391331537747125,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/tight/20.0m/1e-10": {
+   "visits": 3640,
+   "cost_ns_per_point": 47364.64,
+   "error": 3.592042552131238e-13,
+   "bound_sum": 1.520978992758382e-11,
+   "accepted": {
+    "node p2": 2,
+    "node p3": 2379,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 558,
+    "box l4": 30,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.8255684938551741,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/geometric/0.5m/1e-06": {
+   "visits": 17601,
+   "cost_ns_per_point": 5772599.73,
+   "error": 4.901573556645436e-10,
+   "bound_sum": 1.7570583643915176e-07,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 0,
+    "cell second": 1,
+    "cell third": 4784,
+    "cell plic": 4819,
+    "cell exact": 648,
+    "box l2": 1792,
+    "box l4": 2279,
+    "box l6": 21,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.18037999304806904,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/geometric/0.5m/1e-08": {
+   "visits": 17601,
+   "cost_ns_per_point": 35965910.230000004,
+   "error": -1.1856749482700367e-12,
+   "bound_sum": 1.3407840610453843e-09,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 0,
+    "cell second": 0,
+    "cell third": 2,
+    "cell plic": 2845,
+    "cell exact": 7405,
+    "box l2": 0,
+    "box l4": 3725,
+    "box l6": 352,
+    "box exact": 15
+   },
+   "worst_error_over_bound": 0.4147288607091337,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/geometric/0.5m/1e-10": {
+   "visits": 17601,
+   "cost_ns_per_point": 44991672.529999994,
+   "error": -3.4614509609315336e-14,
+   "bound_sum": 9.089172404833701e-12,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 0,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 446,
+    "cell exact": 9806,
+    "box l2": 0,
+    "box l4": 1305,
+    "box l6": 2664,
+    "box exact": 123
+   },
+   "worst_error_over_bound": 0.06909087267017426,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/geometric/1.5m/1e-06": {
+   "visits": 12555,
+   "cost_ns_per_point": 159710.74,
+   "error": 2.817456993218617e-09,
+   "bound_sum": 3.057333851566722e-07,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 655,
+    "cell second": 5,
+    "cell third": 7377,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 1750,
+    "box l4": 166,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.3078425739600375,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/geometric/1.5m/1e-08": {
+   "visits": 17601,
+   "cost_ns_per_point": 10182539.27,
+   "error": -1.7460774718121452e-12,
+   "bound_sum": 7.078565566308262e-10,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 0,
+    "cell second": 0,
+    "cell third": 189,
+    "cell plic": 8897,
+    "cell exact": 1166,
+    "box l2": 0,
+    "box l4": 4071,
+    "box l6": 21,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.6499043151088055,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/geometric/1.5m/1e-10": {
+   "visits": 17601,
+   "cost_ns_per_point": 42003450.79000001,
+   "error": -7.151734802247685e-13,
+   "bound_sum": 1.2486531712770951e-11,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 0,
+    "cell second": 0,
+    "cell third": 1,
+    "cell plic": 1288,
+    "cell exact": 8963,
+    "box l2": 0,
+    "box l4": 3749,
+    "box l6": 343,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.2539442063767907,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/geometric/1.5m/1e-08/control": {
+   "visits": 14434,
+   "cost_ns_per_point": 180159.96000000002,
+   "error": 1.7768260807117644e-09,
+   "bound_sum": 2.3329284653994958e-09,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 398,
+    "cell second": 153,
+    "cell third": 8488,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 2260,
+    "box l4": 276,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 1.166945922895387,
+   "nodes_over_bound": 116
+  },
+  "octree/octree/geometric/5.0m/1e-06": {
+   "visits": 890,
+   "cost_ns_per_point": 11175.84,
+   "error": 2.6369274681178023e-10,
+   "bound_sum": 1.7880314897518326e-07,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 588,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 30,
+    "box l4": 0,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.1443946385849697,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/geometric/5.0m/1e-08": {
+   "visits": 11717,
+   "cost_ns_per_point": 158304.6,
+   "error": 1.4793560243626447e-11,
+   "bound_sum": 4.384450383737285e-09,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 736,
+    "cell second": 3,
+    "cell third": 7451,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 976,
+    "box l4": 30,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.5171174529685986,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/geometric/5.0m/1e-10": {
+   "visits": 17601,
+   "cost_ns_per_point": 8862043.68,
+   "error": 5.6341676408743965e-14,
+   "bound_sum": 4.984446337907136e-12,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 0,
+    "cell second": 0,
+    "cell third": 18,
+    "cell plic": 9378,
+    "cell exact": 856,
+    "box l2": 0,
+    "box l4": 4092,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.8099307067815997,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/geometric/20.0m/1e-06": {
+   "visits": 96,
+   "cost_ns_per_point": 563.4000000000001,
+   "error": -3.9157263016806475e-11,
+   "bound_sum": 2.2223997980823838e-07,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 30,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 0,
+    "box l4": 0,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.05833813069232251,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/geometric/20.0m/1e-08": {
+   "visits": 527,
+   "cost_ns_per_point": 6366.420000000001,
+   "error": -3.3592824407789504e-12,
+   "bound_sum": 4.83253442951248e-09,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 339,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 0,
+    "box l4": 0,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.416363809088918,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "octree/octree/geometric/20.0m/1e-10": {
+   "visits": 4717,
+   "cost_ns_per_point": 56191.240000000005,
+   "error": 3.587315529538456e-13,
+   "bound_sum": 1.816557895621276e-11,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 1979,
+    "cell second": 2,
+    "cell third": 870,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 558,
+    "box l4": 30,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.7692283346323062,
+   "nodes_over_bound": 0,
+   "nodes": 17601
+  },
+  "sweep/bvh/tight/0.5m/1e-06": {
+   "visits": 21571,
+   "cost_ns_per_point": 5895469.170000001,
+   "error": 5.882647159911761e-10,
+   "bound_sum": 1.944292570802504e-07,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 368,
+    "cell second": 0,
+    "cell third": 4058,
+    "cell plic": 4819,
+    "cell exact": 648,
+    "box l2": 41,
+    "box l4": 411,
+    "box l6": 287,
+    "box exact": 154
+   },
+   "worst_error_over_bound": 0.18037999304806904,
+   "nodes_over_bound": 0,
+   "nodes": 22319
+  },
+  "sweep/bvh/tight/0.5m/1e-08": {
+   "visits": 22319,
+   "cost_ns_per_point": 36283125.92999999,
+   "error": 1.609242235704973e-12,
+   "bound_sum": 9.908640188599302e-10,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 0,
+    "cell second": 0,
+    "cell third": 2,
+    "cell plic": 2845,
+    "cell exact": 7405,
+    "box l2": 0,
+    "box l4": 203,
+    "box l6": 329,
+    "box exact": 376
+   },
+   "worst_error_over_bound": 0.4147288607091337,
+   "nodes_over_bound": 0,
+   "nodes": 22319
+  },
+  "sweep/bvh/tight/0.5m/1e-10": {
+   "visits": 22319,
+   "cost_ns_per_point": 45418005.97000001,
+   "error": 1.7471918009603904e-16,
+   "bound_sum": 1.7917014885699082e-12,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 0,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 446,
+    "cell exact": 9806,
+    "box l2": 0,
+    "box l4": 33,
+    "box l6": 250,
+    "box exact": 625
+   },
+   "worst_error_over_bound": 0.06909087267017426,
+   "nodes_over_bound": 0,
+   "nodes": 22319
+  },
+  "sweep/bvh/tight/1.5m/1e-06": {
+   "visits": 8419,
+   "cost_ns_per_point": 70553.09,
+   "error": -2.491545709795862e-09,
+   "bound_sum": 3.066457688815067e-07,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 2902,
+    "cell second": 1,
+    "cell third": 553,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 95,
+    "box l4": 547,
+    "box l6": 112,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.15004885740891236,
+   "nodes_over_bound": 0,
+   "nodes": 22319
+  },
+  "sweep/bvh/tight/1.5m/1e-08": {
+   "visits": 22315,
+   "cost_ns_per_point": 10248789.72,
+   "error": -1.3719365363802828e-11,
+   "bound_sum": 1.1423088090647142e-09,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 2,
+    "cell second": 0,
+    "cell third": 185,
+    "cell plic": 8897,
+    "cell exact": 1166,
+    "box l2": 0,
+    "box l4": 460,
+    "box l6": 359,
+    "box exact": 89
+   },
+   "worst_error_over_bound": 0.6499043151088055,
+   "nodes_over_bound": 0,
+   "nodes": 22319
+  },
+  "sweep/bvh/tight/1.5m/1e-10": {
+   "visits": 22319,
+   "cost_ns_per_point": 42248780.40000001,
+   "error": -2.6925573630575473e-13,
+   "bound_sum": 8.421497270804836e-12,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 0,
+    "cell second": 0,
+    "cell third": 1,
+    "cell plic": 1288,
+    "cell exact": 8963,
+    "box l2": 0,
+    "box l4": 194,
+    "box l6": 431,
+    "box exact": 283
+   },
+   "worst_error_over_bound": 0.2539442063767907,
+   "nodes_over_bound": 0,
+   "nodes": 22319
+  },
+  "sweep/bvh/tight/1.5m/1e-08/control": {
+   "visits": 10161,
+   "cost_ns_per_point": 120512.80999999998,
+   "error": -6.195252953608828e-10,
+   "bound_sum": 2.6684725218250103e-09,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 3230,
+    "cell second": 1,
+    "cell third": 1059,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 101,
+    "box l4": 499,
+    "box l6": 155,
+    "box exact": 36
+   },
+   "worst_error_over_bound": 4.910375873118094,
+   "nodes_over_bound": 191
+  },
+  "sweep/bvh/tight/5.0m/1e-06": {
+   "visits": 1143,
+   "cost_ns_per_point": 7932.8200000000015,
+   "error": -2.4411744687707286e-09,
+   "bound_sum": 4.375733223026793e-07,
+   "accepted": {
+    "node p2": 11,
+    "node p3": 347,
+    "cell second": 9,
+    "cell third": 0,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 41,
+    "box l4": 164,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.04015051108890215,
+   "nodes_over_bound": 0,
+   "nodes": 22319
+  },
+  "sweep/bvh/tight/5.0m/1e-08": {
+   "visits": 7619,
+   "cost_ns_per_point": 62320.61999999999,
+   "error": -1.2847676923988599e-11,
+   "bound_sum": 2.6702687614824896e-09,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 2817,
+    "cell second": 0,
+    "cell third": 240,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 85,
+    "box l4": 636,
+    "box l6": 32,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.3871138211083252,
+   "nodes_over_bound": 0,
+   "nodes": 22319
+  },
+  "sweep/bvh/tight/5.0m/1e-10": {
+   "visits": 22319,
+   "cost_ns_per_point": 8844104.790000003,
+   "error": 6.59205077349633e-14,
+   "bound_sum": 1.4936151040836585e-11,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 0,
+    "cell second": 0,
+    "cell third": 18,
+    "cell plic": 9378,
+    "cell exact": 856,
+    "box l2": 0,
+    "box l4": 675,
+    "box l6": 233,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.8099307067815997,
+   "nodes_over_bound": 0,
+   "nodes": 22319
+  },
+  "sweep/bvh/tight/20.0m/1e-06": {
+   "visits": 9,
+   "cost_ns_per_point": 93.9,
+   "error": -3.63022775902444e-11,
+   "bound_sum": 5.0445285174405e-07,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 5,
+    "cell second": 0,
+    "cell third": 0,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 0,
+    "box l4": 0,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.0004676527203585789,
+   "nodes_over_bound": 0,
+   "nodes": 22319
+  },
+  "sweep/bvh/tight/20.0m/1e-08": {
+   "visits": 537,
+   "cost_ns_per_point": 3736.2600000000016,
+   "error": 1.0342191211581186e-11,
+   "bound_sum": 4.9880698725078364e-09,
+   "accepted": {
+    "node p2": 4,
+    "node p3": 165,
+    "cell second": 2,
+    "cell third": 0,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 22,
+    "box l4": 76,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.3789846127913429,
+   "nodes_over_bound": 0,
+   "nodes": 22319
+  },
+  "sweep/bvh/tight/20.0m/1e-10": {
+   "visits": 4051,
+   "cost_ns_per_point": 29971.319999999992,
+   "error": 2.846927465726653e-14,
+   "bound_sum": 2.3310093924508832e-11,
+   "accepted": {
+    "node p2": 0,
+    "node p3": 1338,
+    "cell second": 0,
+    "cell third": 52,
+    "cell plic": 0,
+    "cell exact": 0,
+    "box l2": 84,
+    "box l4": 552,
+    "box l6": 0,
+    "box exact": 0
+   },
+   "worst_error_over_bound": 0.646415330362561,
+   "nodes_over_bound": 0,
+   "nodes": 22319
+  }
+ }
+}

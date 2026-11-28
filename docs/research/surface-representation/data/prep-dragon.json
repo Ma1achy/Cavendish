@@ -1,0 +1,80 @@
+{
+ "shape": "dragon",
+ "triangles": 49138,
+ "volume": 0.05556640897835674,
+ "origin": [
+  0.00017125,
+  0.00036375,
+  9.125e-05
+ ],
+ "pitches": [
+  0.125,
+  0.0625,
+  0.03125,
+  0.015625
+ ],
+ "tower_points": [
+  408,
+  408,
+  408
+ ],
+ "tower_bases": [
+  [
+   1.8229694769644857,
+   0.36465184303687037,
+   -0.5466971806622543
+  ],
+  [
+   5.129374559219168,
+   1.025932859487807,
+   -1.5386187053386589
+  ],
+  [
+   19.24566820432328,
+   3.8491915885086296,
+   -5.773506798869892
+  ]
+ ],
+ "levels": [
+  {
+   "level": 0,
+   "h": 0.125,
+   "boundary": 130,
+   "interior": 0,
+   "piece_triangles": 88554,
+   "seconds": 6.368736743927002,
+   "volume_rel_error": 0.0,
+   "node_disagreements": 0
+  },
+  {
+   "level": 1,
+   "h": 0.0625,
+   "boundary": 568,
+   "interior": 30,
+   "piece_triangles": 131566,
+   "seconds": 10.229143142700195,
+   "volume_rel_error": 0.0,
+   "node_disagreements": 0
+  },
+  {
+   "level": 2,
+   "h": 0.03125,
+   "boundary": 2463,
+   "interior": 798,
+   "piece_triangles": 242774,
+   "seconds": 20.407798051834106,
+   "volume_rel_error": 0.0,
+   "node_disagreements": 0
+  },
+  {
+   "level": 3,
+   "h": 0.015625,
+   "boundary": 10252,
+   "interior": 9888,
+   "piece_triangles": 552522,
+   "seconds": 49.16129684448242,
+   "volume_rel_error": 0.0,
+   "node_disagreements": 0
+  }
+ ]
+}
