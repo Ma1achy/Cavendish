@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::SceneSpec;
 pub use crate::body_draw::{BodyDraw, MAX_DRAWN_TRIANGLES, Surface};
+pub use cav_core::voxel::cut::PieceSurface;
 
 /// The most leaf cubes drawn in one view.
 pub const MAX_DRAWN_CUBES: usize = 20_000;
@@ -153,6 +154,10 @@ pub struct Overlay {
     /// materials: level 0's meshes, then each ray-marched level.
     #[serde(default)]
     pub bands: bool,
+    /// A small cross at the centroid of each cut cell's piece (S5): where `Centroid` and `Second`
+    /// put a boundary cell's mass. Only for a tree with exact pieces, drawn leaf by leaf.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub centroids: bool,
 }
 
 /// How the tree overlay fades with depth: which end is drawn faint.
@@ -429,6 +434,9 @@ pub struct BodyCubes {
     /// draws it ([`BodyDraw::draws_surface`]); None otherwise, and for a body whose surface could
     /// not be made or did not fit (the frame's notes say why).
     pub surface: Option<Arc<Surface>>,
+    /// Its cut cells drawn as their pieces in [`BodyDraw::Pieces`] (those not drawn as
+    /// [`Self::cubes`]); None in the other modes and when they could not be drawn (said).
+    pub pieces: Option<DrawnPieces>,
     /// The cubes, in Morton order.
     pub cubes: Vec<Cube>,
     /// With a section: the leaves (or cut entries) the plane cuts, clipped to the half the view
@@ -454,6 +462,9 @@ pub struct VoxelFrame {
     /// What a person should know: a cut drawn in place of the leaves, a field that could not be
     /// made, and why.
     pub notes: Vec<String>,
+    /// With [`Overlay::centroids`]: each drawn cut cell's piece's centroid, metres, the world's
+    /// frame, and its cell's side, metres (the mark's size); at most [`MAX_OVERLAY_BOXES`].
+    pub centroids: Vec<(Vec3, f64)>,
     /// The tree overlay's nodes, every body's, shallowest first; at most [`MAX_TREE_BOXES`].
     pub tree: Vec<TreeBox>,
     /// The section the frame was cut by, if any.
@@ -475,6 +486,27 @@ pub struct VoxelFrame {
     /// their surface alone ([`BodyDraw`]). In [`BodyDraw::Fill`] the colouring is the exact fill
     /// whatever the view's `colour` says.
     pub draw: BodyDraw,
+}
+
+/// What a body's draw mode needs beyond its tree, made and kept by the engine: its surface and
+/// its cut cells' pieces, each in the body's frame.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Extras {
+    /// The shape's surface, for [`BodyDraw::Mesh`] and [`BodyDraw::MeshOverVoxels`].
+    pub surface: Option<Arc<Surface>>,
+    /// The pieces of the cut cells of the tree drawn, in the order of its `cuts` (so by key), for
+    /// [`BodyDraw::Pieces`].
+    pub pieces: Option<Arc<Vec<PieceSurface>>>,
+}
+
+/// A body's cut cells drawn as their pieces: which of its pieces, each with its value of the
+/// field (its exact fill).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DrawnPieces {
+    /// Every piece of the body's tree ([`Extras::pieces`]).
+    pub surfaces: Arc<Vec<PieceSurface>>,
+    /// The pieces drawn: an index into `surfaces` and the value, in the field's unit.
+    pub drawn: Vec<(usize, f64)>,
 }
 
 /// How one view looks at the voxel bodies: the field, the overlays, the section and the draw
@@ -595,26 +627,30 @@ pub fn voxel_frame_cut(
     voxel_frame_drawn(scene, trees, &[], Look { colouring, overlay, cutting, draw: BodyDraw::Voxels }, time)
 }
 
-/// [`voxel_frame_cut`] in a draw mode ([`Look::draw`]), with `surfaces[n]` body `n`'s surface
-/// (None, or a shorter slice, for a body whose surface is not drawn). In [`BodyDraw::Fill`] the
+/// [`voxel_frame_cut`] in a draw mode ([`Look::draw`]), with `extras[n]` what body `n`'s draw mode
+/// needs beyond its tree (a shorter slice for bodies with none). In [`BodyDraw::Fill`] and
+/// [`BodyDraw::Pieces`] the
 /// leaves are coloured by their fill ([`LeafField::Fill`]), which is exact for a tree with cut
 /// cells (a cut leaf weighs `ρ ×` its piece's volume, so its mass over a full cell's is the
 /// piece's share of the cell). The surfaces of the bodies drawn together have at most
-/// [`MAX_DRAWN_TRIANGLES`] triangles: a body whose surface would pass it is drawn without it, and
-/// the frame says so.
+/// [`MAX_DRAWN_TRIANGLES`] triangles, and so have their pieces: a body whose surface or pieces
+/// would pass it is drawn without them, and the frame says so. Pieces are drawn only when every
+/// leaf is (the cut at level 0) and with no section (which does not cut them); the frame says so
+/// otherwise.
 #[must_use]
 pub fn voxel_frame_drawn(
     scene: &SceneSpec,
     trees: &[Option<Arc<VoxTree>>],
-    surfaces: &[Option<Arc<Surface>>],
+    extras: &[Extras],
     look: Look,
     time: f64,
 ) -> VoxelFrame {
     let Look { overlay, cutting, draw, .. } = look;
     let colouring =
-        if draw == BodyDraw::Fill { Colouring { field: LeafField::Fill, tower: 0 } } else { look.colouring };
+        if draw.shades_by_fill() { Colouring { field: LeafField::Fill, tower: 0 } } else { look.colouring };
     let mut frame = VoxelFrame { colouring, section: cutting, draw, ..VoxelFrame::default() };
     let mut triangles = 0usize;
+    let mut piece_triangles = 0usize;
     let present: Vec<(usize, &Arc<VoxTree>)> = trees
         .iter()
         .enumerate()
@@ -682,6 +718,38 @@ pub fn voxel_frame_drawn(
         }
         let mut cubes = Vec::new();
         let mut cells = Vec::new();
+        let label = &scene.bodies[n].label;
+        let pieces = if draw.draws_pieces() {
+            let given = extras.get(n).and_then(|e| e.pieces.clone());
+            match given {
+                _ if tree.cuts.is_empty() => None,
+                None => {
+                    frame.notes.push(format!("`{label}` has no pieces to draw: it is shaded by its fill"));
+                    None
+                }
+                Some(_) if level > 0 || cutting.is_some() => {
+                    frame.notes.push(format!(
+                        "`{label}`'s pieces are drawn only with every leaf and no section: it is shaded by its fill"
+                    ));
+                    None
+                }
+                Some(p) => {
+                    let more: usize = p.iter().map(|s| s.triangles.len()).sum();
+                    if piece_triangles + more > MAX_DRAWN_TRIANGLES {
+                        frame.notes.push(format!(
+                            "`{label}`'s pieces are not drawn: their {more} triangles would take the view past the                              {MAX_DRAWN_TRIANGLES} it draws"
+                        ));
+                        None
+                    } else {
+                        piece_triangles += more;
+                        Some(p)
+                    }
+                }
+            }
+        } else {
+            None
+        };
+        let mut drawn_pieces = Vec::new();
         for entry in tree.cut(level) {
             let whole = box_of(tree, at, block(tree, entry));
             let placed = cutting.map(|c| c.place(whole.0, whole.1));
@@ -728,11 +796,30 @@ pub fn voxel_frame_drawn(
                 LeafField::Phase => phases.as_ref().map_or(0.0, |p| p[leaves].iter().sum()),
             };
             let colour = palette.get(usize::from(material)).or(palette.first()).map(|(_, rgb)| *rgb);
+            // A cut cell whose piece is drawn is not a cube.
+            if let (Some(p), CutEntry::Leaf(_)) = (&pieces, entry)
+                && let Ok(i) = p.binary_search_by_key(&key, |s| s.key)
+                && lvl == 0
+            {
+                drawn_pieces.push((i, value));
+                continue;
+            }
             match placed {
                 Some(Some(cell)) if cell != whole => {
                     cells.push(Cell { lo: cell.0, hi: cell.1, value, level: lvl, colour });
                 }
                 _ => cubes.push(Cube { centre, side, value, level: lvl, colour }),
+            }
+        }
+        if overlay.centroids && level == 0 {
+            for cut in &tree.cuts {
+                if frame.centroids.len() >= MAX_OVERLAY_BOXES {
+                    break;
+                }
+                let c = at + cut.piece.centroid;
+                if cutting.is_none_or(|k| k.place(c, c).is_some()) {
+                    frame.centroids.push((c, tree.grid.pitch));
+                }
             }
         }
         if overlay.leaves || overlay.cut.is_some() {
@@ -753,7 +840,7 @@ pub fn voxel_frame_drawn(
             }
         }
         let surface = if draw.draws_surface() {
-            match surfaces.get(n).cloned().flatten() {
+            match extras.get(n).and_then(|e| e.surface.clone()) {
                 Some(s) if triangles + s.triangles.len() > MAX_DRAWN_TRIANGLES => {
                     frame.notes.push(format!(
                         "`{}` is drawn without its surface: its {} triangles would take the view past the \
@@ -778,10 +865,14 @@ pub fn voxel_frame_drawn(
         } else {
             None
         };
-        frame.bodies.push(BodyCubes { body: n, at, surface, cubes, cells, cut: level });
+        let pieces = pieces.map(|surfaces| DrawnPieces { surfaces, drawn: drawn_pieces });
+        frame.bodies.push(BodyCubes { body: n, at, surface, pieces, cubes, cells, cut: level });
     }
     if frame.boxes.len() >= MAX_OVERLAY_BOXES {
         frame.notes.push(format!("the overlay stops at {MAX_OVERLAY_BOXES} boxes"));
+    }
+    if frame.centroids.len() >= MAX_OVERLAY_BOXES {
+        frame.notes.push(format!("the centroids overlay stops at {MAX_OVERLAY_BOXES}"));
     }
     if overlay.tree.is_some_and(|t| t.alone) {
         for body in &mut frame.bodies {
@@ -791,7 +882,10 @@ pub fn voxel_frame_drawn(
     let values = frame
         .bodies
         .iter()
-        .flat_map(|b| b.cubes.iter().map(|c| c.value).chain(b.cells.iter().map(|c| c.value)))
+        .flat_map(|b| {
+            let pieces = b.pieces.iter().flat_map(|p| p.drawn.iter().map(|(_, v)| *v));
+            b.cubes.iter().map(|c| c.value).chain(b.cells.iter().map(|c| c.value)).chain(pieces)
+        })
         .filter(|v| v.is_finite());
     frame.range =
         values.fold(None, |r: Option<(f64, f64)>, v| Some(r.map_or((v, v), |(a, b)| (a.min(v), b.max(v)))));

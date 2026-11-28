@@ -58,7 +58,9 @@
 # TASK-S5-16 (body draw modes): 6 new quick tests (cav-sim: D1, the surfaces' cap, a surface
 # encloses its shape, a past-the-cap count refused, the modes named; cav-engine: a draw mode gets
 # what it draws); 1 new gpu test (cav-render: each draw mode draws).
-quick 779
+# TASK-S5-17 (the clipped-piece view): 2 new quick tests (cav-core: a piece's surface is its
+# piece; cav-sim: pieces are drawn as the boundary cells).
+quick 781
 gpu 43
 slow 58
 oracle 58

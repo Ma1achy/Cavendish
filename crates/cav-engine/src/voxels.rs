@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use cav_core::voxel::VoxTree;
-use cav_sim::voxel_view::{BodyDraw, Look, Surface, VoxelFrame, voxel_frame_drawn};
+use cav_sim::voxel_view::{BodyDraw, Extras, Look, PieceSurface, Surface, VoxelFrame, voxel_frame_drawn};
 use cav_sim::{SceneSpec, ShapeSpec, ViewSpec};
 
 use crate::MAX_PANES;
@@ -35,9 +35,12 @@ pub struct Voxels {
     said: Vec<String>,
     /// Shapes refused for want of room, with the room there was: not tried again with no more.
     refused: Vec<(String, usize)>,
-    /// Each body's surface for the draw modes that draw it, in the scene's order (None when no
-    /// pane draws surfaces, or it could not be made).
-    surfaces: Vec<Option<Arc<Surface>>>,
+    /// What each body's draw modes need beyond its tree, in the scene's order: its surface when a
+    /// pane draws surfaces, its cut cells' pieces when one draws pieces.
+    extras: Vec<Extras>,
+    /// Pieces made, by the tree they are of (at most [`KEPT_SURFACES`], oldest first; None for a
+    /// tree whose pieces could not be made: not tried again).
+    kept_pieces: Vec<(Arc<VoxTree>, Option<Pieces>)>,
     /// Each body's tree clipped exactly, for the draw modes that shade by the exact fill when the
     /// body's own tree has no pieces; None otherwise.
     clipped: Vec<Option<Arc<VoxTree>>>,
@@ -45,6 +48,9 @@ pub struct Voxels {
     /// for one that could not be made: not tried again).
     kept_surfaces: Vec<(String, Option<Arc<Surface>>)>,
 }
+
+/// A tree's cut cells' pieces, as drawn.
+type Pieces = Arc<Vec<PieceSurface>>;
 
 /// The most surfaces kept for drawing (a scene's bodies' and a few from before).
 pub const KEPT_SURFACES: usize = 64;
@@ -67,7 +73,8 @@ impl Voxels {
             frames: Default::default(),
             said: Vec::new(),
             refused: Vec::new(),
-            surfaces: Vec::new(),
+            extras: Vec::new(),
+            kept_pieces: Vec::new(),
             clipped: Vec::new(),
             kept_surfaces: Vec::new(),
         }
@@ -155,7 +162,7 @@ impl Voxels {
         // What the draw modes ask for beyond the trees: the shapes' surfaces, and trees clipped
         // exactly for a body whose own has no pieces (made once, kept as the trees are).
         let wants = |test: fn(BodyDraw) -> bool| views.iter().any(|v| test(v.body_draw));
-        self.surfaces.clear();
+        self.extras.clear();
         self.clipped.clear();
         let trees = self.trees.clone();
         for (body, tree) in spec.bodies.iter().zip(&trees) {
@@ -164,14 +171,23 @@ impl Voxels {
                 Some(shape) if wants(BodyDraw::draws_surface) => self.surface(&body.label, shape, &mut notes),
                 _ => None,
             };
-            self.surfaces.push(surface);
             let clipped = match (shape, tree) {
                 (Some(shape), Some(tree)) if wants(BodyDraw::wants_cuts) && tree.cuts.is_empty() => {
                     self.clipped_tree(spec, body, shape, &mut notes)
                 }
                 _ => None,
             };
+            // The pieces of the tree a pieces mode draws (the clipped one, or the body's own when
+            // it has pieces).
+            let drawn = clipped.clone().or_else(|| tree.clone().filter(|t| !t.cuts.is_empty()));
+            let pieces = match (shape, drawn) {
+                (Some(shape), Some(drawn)) if wants(BodyDraw::draws_pieces) => {
+                    self.pieces(&body.label, shape, &drawn, &mut notes)
+                }
+                _ => None,
+            };
             self.clipped.push(clipped);
+            self.extras.push(Extras { surface, pieces });
         }
         // The cache's budget: the oldest trees go first, never one in use now (a body's, or one
         // clipped for a draw mode). The bodies' own are within the budget by construction; a
@@ -212,7 +228,7 @@ impl Voxels {
                         .collect();
                     let look =
                         Look { colouring: view.colour, overlay: view.overlay, cutting, draw: view.body_draw };
-                    let mut frame = voxel_frame_drawn(spec, &trees, &self.surfaces, look, time);
+                    let mut frame = voxel_frame_drawn(spec, &trees, &self.extras, look, time);
                     if view.body_draw.wants_cuts() {
                         for (n, tree) in trees.iter().enumerate() {
                             if tree.as_ref().is_some_and(|t| t.cuts.is_empty() && !t.leaves.is_empty())
@@ -252,6 +268,43 @@ impl Voxels {
             self.kept_surfaces.remove(0);
         }
         self.kept_surfaces.push((key, made.clone()));
+        made
+    }
+
+    /// The pieces of `tree`'s cut cells (body `label`'s, of `shape`), for drawing, made or taken
+    /// from the kept ones, at most [`cav_sim::body_draw::MAX_DRAWN_TRIANGLES`] triangles; None,
+    /// and said once, when they cannot be made (a curved solid's, or too many).
+    fn pieces(
+        &mut self,
+        label: &str,
+        shape: &ShapeSpec,
+        tree: &Arc<VoxTree>,
+        notes: &mut Vec<String>,
+    ) -> Option<Pieces> {
+        if let Some((_, kept)) = self.kept_pieces.iter().find(|(t, _)| Arc::ptr_eq(t, tree)) {
+            return kept.clone();
+        }
+        let all: Vec<usize> = (0..tree.cuts.len()).collect();
+        let made = shape.kind.solid().and_then(|solid| {
+            cav_core::voxel::cut::piece_surfaces(
+                solid.as_ref(),
+                tree,
+                &all,
+                cav_sim::body_draw::MAX_DRAWN_TRIANGLES,
+            )
+            .map_err(|e| e.0)
+        });
+        let made = match made {
+            Ok(pieces) => Some(Arc::new(pieces)),
+            Err(why) => {
+                notes.push(format!("`{label}` is drawn by its fill, not its pieces: {why}"));
+                None
+            }
+        };
+        if self.kept_pieces.len() >= KEPT_SURFACES {
+            self.kept_pieces.remove(0);
+        }
+        self.kept_pieces.push((Arc::clone(tree), made.clone()));
         made
     }
 
@@ -374,6 +427,12 @@ mod tests {
         let surface = voxels.frame(0).unwrap().bodies[0].surface.clone().expect("a surface");
         assert!(surface.tessellated);
         assert!(voxels.frame(0).unwrap().notes.iter().any(|n| n.contains("tessellated")));
+        // A ball's pieces are not polyhedra: `draw pieces` shades it by its fill, and says why once.
+        view.body_draw = BodyDraw::Pieces;
+        let said = voxels.refresh(&scene, 0.0, std::slice::from_ref(&view));
+        assert!(said.iter().any(|n| n.contains("not polyhedra")), "{said:?}");
+        assert!(voxels.frame(0).unwrap().bodies[0].pieces.is_none());
+        assert!(voxels.refresh(&scene, 0.0, std::slice::from_ref(&view)).is_empty(), "said once");
     }
 
     #[test]

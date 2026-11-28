@@ -3,10 +3,11 @@
 
 use std::sync::Arc;
 
+use cav_core::voxel::cut::piece_surfaces;
 use cav_gpu::Gpu;
 use cav_render::{Frame, Renderer};
-use cav_sim::body_draw::{BodyDraw, surface};
-use cav_sim::voxel_view::{Look, VoxelFrame, voxel_frame_drawn};
+use cav_sim::body_draw::{BodyDraw, MAX_DRAWN_TRIANGLES, surface};
+use cav_sim::voxel_view::{Extras, Look, VoxelFrame, voxel_frame_drawn};
 use cav_sim::{DrawStyle, NamedView, Projection, SceneSpec, ViewSpec, dev};
 
 const SIZE: [u32; 2] = [640, 480];
@@ -18,8 +19,20 @@ fn frame(scene: &SceneSpec, view: &ViewSpec) -> VoxelFrame {
         .iter()
         .map(|b| b.shape.as_ref().map(|s| Arc::new(s.tree(b.mass, &scene.materials).unwrap())))
         .collect();
-    let surfaces: Vec<_> =
-        scene.bodies.iter().map(|b| b.shape.as_ref().map(|s| Arc::new(surface(&s.kind).unwrap()))).collect();
+    let surfaces: Vec<Extras> = scene
+        .bodies
+        .iter()
+        .zip(&trees)
+        .map(|(b, tree)| {
+            let (Some(shape), Some(tree)) = (&b.shape, tree) else { return Extras::default() };
+            let all: Vec<usize> = (0..tree.cuts.len()).collect();
+            let solid = shape.kind.solid().unwrap();
+            Extras {
+                surface: Some(Arc::new(surface(&shape.kind).unwrap())),
+                pieces: piece_surfaces(solid.as_ref(), tree, &all, MAX_DRAWN_TRIANGLES).ok().map(Arc::new),
+            }
+        })
+        .collect();
     let look = Look { colouring: view.colour, overlay: view.overlay, cutting: None, draw: view.body_draw };
     voxel_frame_drawn(scene, &trees, &surfaces, look, 0.0)
 }

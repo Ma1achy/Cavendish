@@ -6,6 +6,7 @@ use crate::polyhedral::Faceted;
 
 use super::super::shape::Shape;
 use super::super::{Grid, VoxTree, VoxelError, morton};
+
 use super::Convex;
 
 /// Within this many cells of an arm point (from the cell's centre) a cut cell is read as its exact
@@ -28,7 +29,7 @@ pub struct PieceSolid {
 }
 
 /// A convex piece's triangles: a fan on each face, in the piece's frame.
-fn triangles(piece: &Convex) -> Vec<[Vec3; 3]> {
+pub(super) fn triangles(piece: &Convex) -> Vec<[Vec3; 3]> {
     let mut out = Vec::new();
     for face in &piece.faces {
         let first = piece.vertices[face[0] as usize];
@@ -87,4 +88,58 @@ pub fn piece_solids(shape: &dyn Shape, tree: &VoxTree) -> Result<Vec<PieceSolid>
             Ok(PieceSolid { centre, parts })
         })
         .collect()
+}
+
+/// One cut cell's piece as the triangles of its boundary, for drawing (`draw pieces`): closed,
+/// anticlockwise seen from outside the piece, in the frame of the cell's centre (metres).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PieceSurface {
+    /// The cell's Morton key (as [`super::CutCell::key`]).
+    pub key: u32,
+    /// The cell's centre, metres, the body's frame.
+    pub centre: Vec3,
+    /// The piece's boundary.
+    pub triangles: Vec<[Vec3; 3]>,
+}
+
+/// The pieces of the cut cells `which` of `tree` (indices into [`VoxTree::cuts`], in their order)
+/// as closed surfaces, clipped again from `shape` on the tree's grid, at most `most` triangles in
+/// all.
+///
+/// # Errors
+/// When the shape has no clipper or its pieces are not polyhedra (a curved solid); when the
+/// triangles would pass `most`, with the count so far (each cell's counted before it is kept).
+pub fn piece_surfaces(
+    shape: &dyn Shape,
+    tree: &VoxTree,
+    which: &[usize],
+    most: usize,
+) -> Result<Vec<PieceSurface>, VoxelError> {
+    let Some(clip) = shape.clip() else {
+        return Err(VoxelError("this shape has no cut-cell clipper".into()));
+    };
+    let grid: &Grid = &tree.grid;
+    let clipper = clip.prepare(grid)?;
+    let mut out = Vec::with_capacity(which.len());
+    let mut count = 0usize;
+    for &i in which {
+        let cut = &tree.cuts[i];
+        let corner = morton::decode(cut.key);
+        let boxed = grid.block_box(corner, 1);
+        let Some(triangles) = clipper.surface(corner, &boxed) else {
+            return Err(VoxelError(
+                "this shape's pieces are not polyhedra: they are drawn by their fill".into(),
+            ));
+        };
+        count += triangles.len();
+        if count > most {
+            return Err(VoxelError(format!(
+                "the pieces would have more than {most} triangles ({count} by the {}th of {})",
+                out.len() + 1,
+                which.len()
+            )));
+        }
+        out.push(PieceSurface { key: cut.key, centre: boxed.centre(), triangles });
+    }
+    Ok(out)
 }

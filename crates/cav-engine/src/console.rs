@@ -216,14 +216,14 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "overlay",
-        usage: "overlay <none | [leaves] [cut <level>] [tree [depth <a>..<b>] [fade deep|shallow] [faces] [alone]] [bands]> [@N]",
-        about: "draw over voxel bodies: each leaf's bounds by level, the cut a level of detail would take, and the whole octree (every node from the root down, coloured by depth; `fade` makes one end faint, `faces` adds see-through faces in x-ray, `alone` hides the bodies' cubes); `bands` colours the world's clipmap by level",
+        usage: "overlay <none | [leaves] [cut <level>] [tree [depth <a>..<b>] [fade deep|shallow] [faces] [alone]] [bands] [centroids]> [@N]",
+        about: "draw over voxel bodies: each leaf's bounds by level, the cut a level of detail would take, and the whole octree (every node from the root down, coloured by depth; `fade` makes one end faint, `faces` adds see-through faces in x-ray, `alone` hides the bodies' cubes); `bands` colours the world's clipmap by level; `centroids` marks each cut cell's piece's centroid",
         example: "overlay tree depth 0..4 fade deep",
     },
     CommandDoc {
         name: "draw",
-        usage: "draw <voxels|fill|mesh|mesh-over-voxels> [@N]",
-        about: "how bodies with a shape are drawn: their voxels coloured by the field; their voxels shaded by their exact fill (each boundary cell's clipped share of it, with a legend); their own triangles (a curved solid tessellated); or the triangles inside the voxels' outlines",
+        usage: "draw <voxels|fill|mesh|mesh-over-voxels|pieces> [@N]",
+        about: "how bodies with a shape are drawn: their voxels coloured by the field; their voxels shaded by their exact fill (each boundary cell's clipped share of it, with a legend); their own triangles (a curved solid tessellated); the triangles inside the voxels' outlines; or each boundary cell as its exact clipped piece, shaded by its fill (a polyhedron or a mesh)",
         example: "draw fill",
     },
     CommandDoc {
@@ -501,6 +501,9 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
                 }
                 if overlay.bands {
                     words.push("bands".to_owned());
+                }
+                if overlay.centroids {
+                    words.push("centroids".to_owned());
                 }
                 if words.is_empty() {
                     words.push("none".to_owned());
@@ -986,6 +989,7 @@ impl Engine {
                         ("none", []) if words.len() == 1 => {}
                         ("leaves", _) => overlay.leaves = true,
                         ("bands", _) => overlay.bands = true,
+                        ("centroids", _) => overlay.centroids = true,
                         ("tree", _) => overlay.tree = Some(overlay.tree.unwrap_or_default()),
                         ("depth" | "fade" | "faces" | "alone", _) if overlay.tree.is_none() => {
                             return Err(format!("`{first}` follows `tree`; {}", usage(name)));
@@ -1686,6 +1690,7 @@ mod tests {
                         cut: Some(3),
                         tree: None,
                         bands: false,
+                        centroids: false,
                     },
                 }),
             ),
@@ -1720,8 +1725,24 @@ mod tests {
                             alone: false,
                         }),
                         bands: false,
+                        centroids: false,
                     },
                 }),
+            ),
+            (
+                "overlay bands centroids",
+                Command::View(ViewCommand::Overlay {
+                    pane: 0,
+                    overlay: cav_sim::voxel_view::Overlay {
+                        bands: true,
+                        centroids: true,
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "draw pieces @2",
+                Command::View(ViewCommand::Draw { pane: 1, draw: cav_sim::body_draw::BodyDraw::Pieces }),
             ),
             (
                 "overlay tree",
