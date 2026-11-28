@@ -289,7 +289,10 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   size, `docs/slices/S5.md` §7.1). Each edge's `L(p₁) − L(p₂)` could be formed as one `log1p` of
   a ratio and each face's `ω` difference as one `atan2`, so that the closed form's difference
   holds as far as its potential does; measure against the moments' read before adopting.
-- **Absolute moments carried exactly at even orders** (TASK-S5-11): a node's `A_4` is exact for a
+- **Absolute moments carried exactly at even orders** (TASK-S5-11; measured moot in TASK-S5-27, §7.9:
+  once the walk goes below the chunk, no node above the chunks is accepted on the town at 1e-4 or
+  1e-6 rad, and a chunk's `A_4` is already exact; exact `A_6 … A_16` for the blocks read 2 to 7 %
+  fewer leaves, under the 20 % asked): a node's `A_4` is exact for a
   chunk but carried upward by the triangle inequality, so on `town` it is a median 2.6 to 6.2 times
   the leaves' true `Σ|m|s⁴` above the chunks (worst 21 at level 4), and `A_16` up to 1.9×10⁴
   (`docs/slices/S5.md` §7.2). Carrying the `|m|`-weighted raw moments to the fourth order (35
@@ -314,7 +317,9 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   opened chunks read leaf by leaf: 31 s a tower, and past 1e-3 the audited read exceeds the kernel's
   share and does not settle (`docs/slices/S5.md` §7.3). Opening a chunk into its own voxel tree's
   nodes, each with a summary, would let the walk go on below level 0 instead of reading every leaf;
-  so would a tighter bound (the exact `A_4` above) or reading the towers in parallel.
+  so would a tighter bound (the exact `A_4` above) or reading the towers in parallel. **Done in
+  TASK-S5-27** (§7.9): the blocks below the chunk. What is left of the idea: reading the towers in
+  parallel, and a cheaper near kernel for the leaves next to the arm, which are now the read's cost.
 - **`cube_shift`'s closed form near a cube, error-bounded as the arms' difference is** (TASK-S5-24):
   a body's small motions are read as `V(d − shift) − V(d)`, and near a cube that is two closed-form
   potentials subtracted, which loses `ε·(the terms' size)/|change|`. Split the cube as

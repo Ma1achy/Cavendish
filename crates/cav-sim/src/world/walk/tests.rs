@@ -449,9 +449,14 @@ fn ledgers() -> &'static Ledgers {
                 }
             }
         }
+        println!(
+            "worst: error/ledger {:.3}, ledger/tolerance {:.3}, ledger/error {:.0}",
+            out.error_over_ledger, out.ledger_over_tolerance, out.ledger_over_error
+        );
         out
     })
 }
+
 cav_validate::case! {
     test: validation_slow_the_walk_is_within_its_ledger,
     name: "world.walk_within_its_ledger",
@@ -513,7 +518,9 @@ fn slow_the_whole_town_is_read() {
             (1.0 - crate::world::local::LOCAL_SHARE) * spec.world.as_ref().unwrap().read.tolerance;
         let mut probe = aim(&spec, n, base, tolerance, Rule::Octupole);
         probe.bubble = spec.world.as_ref().unwrap().read.radius;
-        let cut = walk(&tree, &probe);
+        // The read's walk, into the trees of the chunks it opens.
+        let cut = walk_into(&tree, &probe, &w, &mut Vec::new(), &|| false).unwrap().unwrap();
+        assert!(cut.settled && cut.whole.is_empty(), "{}", tower.label);
         assert!(is_partition(&tree, &cut.accepted, &cut.opened), "{}", tower.label);
         assert_eq!(cut.accepted.len(), world.towers[n].accepted);
         assert_eq!(cut.opened.len(), world.towers[n].opened);
