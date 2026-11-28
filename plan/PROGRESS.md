@@ -1033,6 +1033,11 @@ mutation). Left, all minor:
 - **C3 (TASK-S5-26, 28 Nov 2026):** `Pieces` within 3 cells of an arm and `Second` beyond reads
   1.34e-6 relative against `Exact`, criterion 1e-11; every cell exact reads 3.3e-15. Options (a),
   (b), (c) and the measurements by reach are in "S5 under way" above and `docs/slices/S5.md` §7.7.
+- **Two non-open British datasets for S26 (28 Nov 2026; nothing waits on them until S26):** BGS's
+  Land Gravity Survey points state both the OGL and "BGS Digital Data Licence terms" in one record,
+  and BGS Geology 50k vectors are paid (£0.23 per km² commercial; the WMS is free to view). Default:
+  geology from the open 625k map (OGL), the gravity comparison only if the points are OGL
+  (`docs/research/worlds.md` §6). Say if either should be bought or licensed.
 
 Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
 - **Ubuntu Mono: yes.** `UbuntuMono-Regular.ttf` from the official Ubuntu font family release goes in,
@@ -1172,6 +1177,42 @@ Answered 21 Nov 2026 (through the owner). The defaults below replace v1's conven
    there until the next sequence starts.
 5. **Floor:** the arms never go below launch. There is a floor, coded as the Python scripts code the
    sequence; copy that.
+
+## Owner's rulings (28 Nov 2026): the order after S5, Worlds, Space, bending and rotation
+Four rulings the same day, each superseding the order of the one before; `plan/REBUILD.md` §9 holds
+the result (rows in run order, the ruling under the table).
+- **The order (final).** S5 (with TASK-S5-18, the paper's figures by Cavendish); **S25, the engine
+  core** — in the owner's words, "basically just having the octree + LODs + chunks etc work first":
+  the octree, its LODs and the chunks working well and fast, saving chunks included (the compressed
+  chunk format and the recipe + edit-delta save, pulled from S24), its speed items from the
+  performance-plan note scoped to what this path hits (the engine octree cache, read time per tower
+  in town, town rendering, the shared ray query for the walk camera and picking; the rest to a later
+  speed slice, S21 or S23); S6 at town scale (populations, walkers, skinned animation, density
+  functions, and TASK-S6-09 body rotation); S11; S12; the paper finalised with Cavendish's numbers
+  and moving sources; then **the physics block**: S7 with destruction (fracture with exact mass
+  bookkeeping, `docs/research/rigid-bodies.md`), **S28 "Things that bend"** (elastic deformation,
+  `docs/research/elastic-solids.md`; a new row, TASK-S7-05 moved there), S8–S10, S13; then S21 and
+  S22 (no dependency pulls them earlier; S22's brushes write S25's save format); then **the bigger
+  world**: S24 the Worlds core, S26 "Worlds: the Earth", S14, S15, S27 Space. S16 and S23 were not
+  named: S16 stays last, S23 sits with S21/S22 and comes forward if S6's populations overrun the CPU read.
+- **Planet-ready from the start (Track B).** Only the cheap choices that are hard to change later:
+  `f64` positions with local frames, 64-bit chunk and octree keys, chunk addressing that can wrap a
+  cube-sphere, a recipe-based generation format. Folded into S25 as TASK-S24-02 to -05 (milestone
+  S25; S24 ids so as not to clash with the performance-plan note's S25 ids). Until the bigger world,
+  **scenes are capped at town size** for content and validation; the architecture stays planet-ready.
+- **Worlds split.** S24 (core: recipes, generation, mass-consistent LOD, Minecraft-style worlds,
+  flat worlds, planets, prefabs) and S26 "Worlds: the Earth" (the Earth-data pipeline and offline
+  cache, OSM buildings and roads, land cover and geology, the real AION-10 site, the credits file).
+  Design: `docs/research/worlds.md`. Density functions: S6-07 now runs before S24, which uses it.
+- **Space (S27), KSP-style**: orbits on rails (patched conics, then n-body) with time warp, a
+  floating origin, Worlds planets from orbit to voxels, rigid spacecraft, harmonics far and crust
+  near, a gradiometer in orbit. Tasks kept coarse (TASK-S27-01 to -09).
+- **Exits.** Every engine slice that touches mass has the exit "the gravity read is unchanged
+  within its ledger".
+- **Rotation.** Bodies get an orientation (TASK-S6-09): fixed, spin, precession and nutation,
+  tumbling, offset-axis rotors; S22's Rotate sets the fixed orientation through the same pose field.
+- **Licences (Worlds).** Use open data freely and credit every source; a credits file (source,
+  licence, link) notes share-alike terms such as ODbL for information only.
 
 ## Owner's ruling (25 Nov 2026): the world is an LOD octree, read with LODs
 The world is one octree with levels of detail, and the gravity read uses them: a full-precision bubble
