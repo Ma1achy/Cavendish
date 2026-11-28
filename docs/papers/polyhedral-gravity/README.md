@@ -3,7 +3,8 @@
 Malachy Doherty (affiliation to be filled in). **Draft for comments, not submitted. Whether, where
 and with whom to publish is the author's decision.**
 
-`paper.tex` + `refs.bib` → `paper.pdf` (built with tectonic). Draft 4 (28 Nov 2026) covers the
+`paper.tex` + `refs.bib` → `paper.pdf` (built with tectonic). Draft 5 (28 Nov 2026) answers the
+referee's report on draft 4 ([`REVIEW-draft-4.md`](REVIEW-draft-4.md), with the response at its end). It covers the
 polyhedral closed form, its numerics and its Lean proof, the boundary-cell representations, and the
 signal the interferometer actually reads; the world octree, the layered read and the tree walk are
 left to a short future-work section until more of Cavendish is built. The measurements are from the
@@ -16,13 +17,15 @@ research notes [`paper-real-read.md`](../../research/paper-real-read.md),
 [`exact-skin-and-partial-fill.md`](../../research/exact-skin-and-partial-fill.md) §3, and from
 Cavendish's own S5 results ([`docs/slices/S5.md`](../../slices/S5.md) §7); the derivation is
 machine-checked in [`proofs/polyhedral-gravity/`](../../../proofs/polyhedral-gravity/). The referee's
-report on draft 3 is [`REVIEW-draft-3.md`](REVIEW-draft-3.md).
+reports are [`REVIEW-draft-3.md`](REVIEW-draft-3.md) and [`REVIEW-draft-4.md`](REVIEW-draft-4.md).
 
 ## Rebuilding
 
 ```text
 python make.py all                 # summaries, far-field, near-edge, cross-check, 40-digit reference,
                                    # scenes, diagrams, renders, real-read tables and figures, PDF
+python make.py omitted             # sizes of the effects the first-order model leaves out
+                                   # (scripts/omitted.py -> data/omitted.txt; seconds)
 python make.py level               # rerun the benchmark with the tower beside each body (~10 min;
                                    # needs `cargo build --release` in docs/research/paper-real-read/kern)
 python make.py realread-rerun      # rerun the real-read and flight-phase notes' analysis and figures
@@ -31,7 +34,7 @@ python make.py esa <venv-python>   # rerun ESA's oracle in its own venv, then cr
 python make.py shapes-study        # rerun the shapes study itself (hours; downloads the meshes)
 ```
 
-Every phase in draft 4 is the flight-integral read (the static axis-weight form for bodies at rest,
+Every phase in drafts 4 and 5 is the flight-integral read (the static axis-weight form for bodies at rest,
 the flight nodes for moving ones), unless the text says "leading read".
 
 `data/level/` holds the benchmark with the tower beside each body (`scripts/conv_level.py`, which is
@@ -65,6 +68,7 @@ the independent check (Appendix B). Names, not numbers, because numbers move.
 | Table "what a boundary cell carries" | derived | — | — |
 | Fig. "three ways to represent a body", "cut-cell moments", "closed form's ingredients", "one cell, many cuts" | `diagrams` → `scripts/diagrams.py` (explanatory; the 3-D pieces from the benchmark's clipper) | could be redrawn from S5's draw modes; not required | — |
 | Fig. "the flight-integral read against the leading read" | `realread` copies `docs/research/paper-flight-phase/flight-phase.pdf`; `realread-rerun` → that note's `fig_paper.py` | `cav run` of the passes (point masses, Spot, the torus) with `scenes/` like the note's `paper-flight-phase/scenes/` | the note's scenes |
+| Table "effects the model leaves out" | `omitted` → `scripts/omitted.py` (point-mass stand-ins, derived; `data/omitted.txt`) | Earth's rotation and finite pulses in the engine's arms (not yet modelled) | — |
 | Fig. far field and near edge | `farfield`, `nearedge` → the benchmark's `farfield.py`, `nearedge.py`; drawn by `figures` | the kernel diagnostics `far_field_by_distance`, `near_edge_by_distance` in `cav-core` (S5.md §7.1) | none |
 | Table "four codes against 40 digits" | `realread` from `docs/research/paper-benchmarks/accuracy.json` (`bench_accuracy.py`) | `cargo xtask oracle` with `data/esa_fixtures.json` and `data/mp_reference.json` as fixtures | the bodies' triangles are in `esa_fixtures.json` |
 | Fig. "against a 40-digit evaluation" | `crosscheck`, `mp` → `scripts/crosscheck.py`, `scripts/mp_reference.py`; drawn by `figures` | as above | as above |

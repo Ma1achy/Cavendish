@@ -38,7 +38,7 @@ atom-interferometer gravity gradiometers}
 \small\textcolor{gray}{[affiliation --- placeholder, to be filled in by the author]}\\[4pt]
 \small\textcolor{red!60!black}{\textbf{Draft for comments, not submitted.}}\\
 \small\textcolor{red!60!black}{Whether, where and with whom to publish is the author's decision.}}
-\date{28 November 2026 (draft 4)}
+\date{28 November 2026 (draft 5)}
 
 \begin{document}
 \maketitle
@@ -55,18 +55,21 @@ product gives $\varepsilon(R/s)^3$, and Holstein and Ketteridge's accurate edge 
 40-digit evaluation the form, in Python and in the Cavendish engine, loses
 $7\times10^{-12}$--$2\times10^{-11}$ of $g$ at 100 body sizes (up to $1.6\times10^{-10}$ for a 5~cm
 plate), while ESA's line-integral and Harmonica's prism implementations lose
-$2\times10^{-9}$--$5\times10^{-8}$ on the same bodies. The phase is read as AION-10 reads it, by the flight integral of
-the potential along both interferometers' arms, which separate by 4.8~m: within a few metres this is
-not a gradient read. A static 1~m body 1.5~m from a tower gives a phase that differs from
-$k_\mathrm{eff}T^2\Delta g_z$ by a factor 1.5--3.3, larger or smaller with the geometry, and of the
-opposite sign; a body walking past at 2~m gives 1.6--1.9 times more; the two reads agree to 1\% only
-beyond about 640~m along our tower ray (94~m for a source level with the launch). Storing each cut cell's mass, centroid and second moment, computed
+$2\times10^{-9}$--$5\times10^{-8}$ on the same bodies. The phase is read in Cavendish's model of
+AION-10's goal configuration (assumed: $^{87}$Sr, $n=1000$ photon kicks, $T=0.73$~s), by the flight
+integral of the potential along both interferometers' arms, which separate by 4.8~m. Against
+$k_\mathrm{eff}T^2\Delta g_z$ taken between the two launch points, a static 1~m body 1.5~m from a tower
+gives a phase 1.6--2.8 times smaller or larger with the geometry, and of the opposite sign; the
+gradient at the arms' mean height comes closer but is still 22--25\% high for a body walking past
+at 2~m, whose read is 1.4--1.9 times the launch-point read's magnitude. The two reads agree to 1\% only beyond
+about 640~m along our tower ray (94~m for a source level with the launch). These near-field
+figures scale with the arm separation, which is proportional to $n$. Storing each cut cell's mass, centroid and second moment, computed
 from its clipped piece (\cutcell, after embedded-boundary methods and Powell and Abel's exact
 voxelisation), gives measured orders of about 4 in the pitch, against 1--2 for a sampled fill; on eight
 meshes with 128 cells across they reach $1.7\times10^{-11}$--$2.9\times10^{-10}$~rad 1.5~m from the
 surface. Judged by the bias they put on a fitted mass, position and speed, \cutcell{} are adequate
-(below $0.1\,\sigma$) at the coarsest pitch tried, 22--25~cm, fill + centroid at 4.6--6.4~cm, and a
-sampled fill only below a millimetre; a 1\% density error, 1~mm of position or a mesh's facets
+(below $0.1\,\sigma$) at 22~cm or coarser, fill + centroid at 4.6--6.4~cm, and a sampled fill only at
+0.1--4.4~mm, extrapolated because it does not converge in the range run; a 1\% density error, 1~mm of position or a mesh's facets
 bias the same fit by 4--800~$\sigma$. The chain from the volume integral to faces and edges is
 formalised in Lean~4: the edge integral, the numerator identity, the divergence identities and the
 superposition of pieces are proven; the divergence theorem for a general polyhedron is a hypothesis;
@@ -81,15 +84,19 @@ theorem.
 own measurements are quoted where they exist (\S\ref{sec:engine}). Results are labelled
 \tagM, \tagMo{} (measured parts times counts) or \tagD. Every phase is the flight-integral read of
 \S\ref{sec:read} unless the text says \emph{leading read}. Explanatory diagrams and Tables
-\ref{tab:orders} and \ref{tab:lean} are not measurements.}}
+\ref{tab:orders}, \ref{tab:omitted} and \ref{tab:lean} are not measurements.}}
 
 \section{The problem}\label{sec:problem}
 
-AION-10 \citep{badurina2020} stacks two strontium atom interferometers $\Delta r = 5$~m apart in a
-10~m tower. Each splits a cloud into two arms with $n=1000$ photon kicks at the clock wavelength
-$\lambda = 698$~nm, reverses them at $T=0.73$~s and recombines them at $2T = 1.46$~s; the
-gradiometer reads the difference of the two interferometers' phases, one shot every 2~s. Its goal
-noise, $10^{-4}$~rad\,Hz$^{-1/2}$, is $\sigma = 5\times10^{-5}$~rad per shot at that cycle. A
+AION-10 \citep{badurina2020} stacks two strontium atom interferometers in a 10~m tower, and the
+gradiometer reads the difference of their phases. The numbers used here are \emph{Cavendish's model}
+of its goal configuration, not published hardware values: $^{87}$Sr atoms; $n=1000$ photon kicks at
+the clock wavelength $\lambda = 698$~nm, the goal order of \citet[Table~1]{badurina2020}, whose initial
+configuration has $n=100$; the interferometers $\Delta r = 5$~m apart, launched at 3.86~m\,s$^{-1}$,
+with the arms reversed at $T=0.73$~s and recombined at $2T = 1.46$~s and one shot every 2~s, which are
+the choices of \citet{carlton2023} (Badurina et al.\ take $T=1.4$~s). The goal noise,
+$10^{-4}$~rad\,Hz$^{-1/2}$, is $\sigma = 5\times10^{-5}$~rad per shot at that cycle (one-sided,
+$\sigma = S/\sqrt{2\Delta t}$; the two-sided convention gives $7\times10^{-5}$). A
 simulator must turn every mass near the instrument into this phase, and Cavendish, the engine this
 work belongs to, represents matter as a sparse voxel tree. A leaf deep inside a body is a full cube,
 whose field is known in closed form \citep{nagy1966} and, beyond a few sides, by its multipole series.
@@ -106,7 +113,7 @@ $d\gg h$,
  +O\!\left(\frac{\rho h^6}{d^4}\right),\qquad d=|\mathbf{c}-\mathbf{p}|,
 \label{eq:taylor}
 \end{equation}
-with the gradients taken with respect to $\mathbf{c}$, and summing over the $\sim A/h^2$ boundary
+with the gradients taken with respect to $\mathbf{c}$ and the remainder per cell, and summing over the $\sim A/h^2$ boundary
 cells of a surface of area $A$, gives the orders of Table~\ref{tab:orders} \tagD: a cell full or
 empty misplaces up to $\rho h^3$ per cell, $\rho A h$ in all --- first order; a sampled fill does the
 same at the sampling pitch $h/k$, still first order; a fill fraction placed at the centre errs in the
@@ -130,10 +137,10 @@ boundary cell carries & numbers & error term & order\\\midrule
 \end{tabular}
 \end{table}
 
-The clipped piece is a polyhedron (a cube clipped by the body's planes; Figure~\ref{fig:cuts}), so
-its field is the closed form of \S\ref{sec:closed}. That form is also the reference for any body made
-from a mesh: a voxelised mesh must converge to it at the measured order. Figure~\ref{fig:repr}
-shows the representations side by side.
+Figure~\ref{fig:repr} shows the representations side by side. The clipped piece is a polyhedron (a
+cube clipped by the body's planes), so its field is the closed form of \S\ref{sec:closed}. That form
+is also the reference for any body made from a mesh: a voxelised mesh must converge to it at the
+measured order.
 
 \begin{figure}[tbp]\centering
 \includegraphics[width=\linewidth]{figures/diag-representations.pdf}
@@ -149,7 +156,7 @@ are lit by a key and a fill light with ambient occlusion, on a faint contact sha
 \end{figure}
 
 \paragraph{\Cutcell.} A boundary cell that the surface cuts is a \emph{cut cell}, as in the
-embedded-boundary methods of computational fluid dynamics. Its scalar \emph{fill fraction} $f$ is
+embedded-boundary methods of computational fluid dynamics \citep{aftosmis1998,colella2006}. Its scalar \emph{fill fraction} $f$ is
 the share of the cell inside the body; its \emph{\cutcell} are the mass, centroid and second moment
 of that filled part, computed from the clipped piece (Figure~\ref{fig:fill}). None of this
 construction is new: per-cut-cell volume moments of any order, with coarse cells carrying the sums of
@@ -187,17 +194,19 @@ curved, scanned and CAD shapes.
 
 The field of a uniform polyhedron is classical: in face--edge form \citep{okabe1979,werner1994,werner1997},
 as line integrals \citep{petrovic1996,tsoulis2012}, with its singular points treated by
-\citet{tsoulis2001} and \citet{durso2014}, and from vector potentials \citep{conway2015}, with the
-rectangular prism \citep{nagy1966,nagy2000,fukushima2020} as its axis-aligned case.
+\citet{tsoulis2001} and \citet{durso2013,durso2014}, from vector potentials \citep{conway2015}, and as
+spherical-harmonic coefficients \citep{werner1997sh}, with the polygonal prism \citep{plouff1976} and
+the rectangular prism \citep{nagy1966,banerjee1977,nagy2000,fukushima2020} as special cases; \citet{li1998}
+review the forms for all space.
 \citet{werner2017} shows the solid angle hidden in all of these. That the forms lose accuracy with
 distance, and how to recover it, goes back to \citet{holstein1996}, including the accurate edge
-logarithm used here; \citet{holstein2002} uses the identity ``triple product $=$ twice an area'' per
-edge against far-field cancellation in his surface method, and \citet{fukushima2020} measures the
+logarithm used here; \citet[App.~B]{holstein2002} gives the identity ``triple product $=$ twice an
+area'' per edge, and uses it against far-field cancellation in his surface method (his eqs.~42--43), and \citet{fukushima2020} measures the
 prism's error growing as the cube of distance. Representing a body by cells expanded about their
-centres is the basis of mascon models \citep{muller1968,werner1997,rathinam2019} and of tesseroid
-modelling \citep{grombein2013,uieda2016,soler2019}, at accuracy targets of $10^{-3}$ or looser;
-hierarchical evaluation with error-controlled acceptance follows \citet{barnes1986},
-\citet{salmon1994} and \citet{dehnen2014}.
+centres is the basis of mascon models \citep{muller1968,werner1997,rathinam2019,wittick2019} and of
+tesseroid modelling \citep{grombein2013,uieda2016,soler2019}, at accuracy targets of $10^{-3}$ or
+looser; hierarchical evaluation with error-controlled acceptance follows \citet{barnes1986},
+\citet{greengard1987}, \citet{salmon1994}, \citet{springel2005} and \citet{dehnen2014}.
 
 We claim only the following as new. (i) The numerator identity $N = h_f\,2A_f$ --- Werner's
 (\citeyear{werner1994}, eq.~3.4), written there for precomputation in a per-vertex form --- placed in
@@ -218,13 +227,27 @@ phase of interferometer $k$ is the action of $V$ along its two unperturbed arms
 \qquad \Delta\Phi = \delta\phi_1-\delta\phi_2,
 \label{eq:phase}
 \end{equation}
-with the source evaluated at the same instant as the atoms. The laser and separation phases change
-only at second order in the source, so eq.~(\ref{eq:phase}) is the whole first-order phase, not only
-its propagation part; Carlton and McCabe use the same integral for moving masses at the AION site
-\citep[eq.~11]{carlton2023}. In Cavendish's model of AION-10 the kicks are instantaneous, the
-launch speed is 3.86~m\,s$^{-1}$ and the kick $v_\mathrm{kick} = n\hbar k/m_A = 6.58$~m\,s$^{-1}$, so
-each interferometer's arms rise up to 5.01~m above its launch point and separate by up to
-$v_\mathrm{kick}T = 4.8$~m --- as much as the baseline. The engine integrates eq.~(\ref{eq:phase}) by
+with the source evaluated at the same instant as the atoms. The source moves the arms by $\delta\vr(t)$
+at first order, so the laser phase, $k$ times the arm's height at each kick, and the separation phase
+both change at first order too; these changes cancel the end terms of the propagation phase, so for a
+closed unperturbed interferometer eq.~(\ref{eq:phase}) on the unperturbed arms is the whole
+first-order phase \citep[\S5.2.1]{hogan2008}. (A uniform $\delta g$ shows the split: there the whole
+$k_\mathrm{eff}\,\delta g\,T^2$ is laser phase and the propagation phase is zero.) Carlton and McCabe use
+the same integral for moving masses at the AION site \citep[eq.~11 of the arXiv version]{carlton2023}.
+
+\emph{Sign convention.} Interferometer 1 is the lower one, and $\delta\phi_k$ is written with
+$V(\text{upper})-V(\text{lower})$: with $L=\frac12m_Av^2-m_AV$ it is the propagation phase of the
+interferometer's lower arm minus its upper arm. So $\Delta\Phi$ is positive when the lower interferometer's arms see the larger
+potential difference. The headline signs below are \emph{relative} signs of two reads that both
+follow from eq.~(\ref{eq:phase}), so they do not depend on this choice.
+
+In Cavendish's model the kicks are instantaneous and $v_\mathrm{kick} = n\hbar k/m_A =
+6.58$~m\,s$^{-1}$ for $^{87}$Sr, so each interferometer's arms rise up to 5.01~m above its launch point
+and separate by up to $v_\mathrm{kick}T = 4.8$~m --- as much as the baseline. Every near-field result
+of this paper (the signs, the factors between reads, the distances at which they agree, the
+Cram\'er--Rao bounds of \S\ref{sec:budget}) scales with that separation, which is proportional to $n$:
+with the initial $n=100$ the arms separate by 0.48~m, and the leading read of eq.~(\ref{eq:leading})
+holds much closer to the tower. The engine integrates eq.~(\ref{eq:phase}) by
 Gauss panels, and a Python port of it agrees with \texttt{cav run} to $1.8\times10^{-15}$~rad
 \tagM\ \citep[C1]{paperflight}.
 
@@ -251,34 +274,48 @@ $\Gamma = \partial g_z/\partial z$, eq.~(\ref{eq:axisread}) gives
 4.80\times10^{9}~\text{rad per m\,s}^{-2},
 \label{eq:leading}
 \end{equation}
-with $\Delta g_z = \Gamma\Delta r$, which draft~3 of this paper took between the two launch points.
-That is the \emph{leading read}. It holds only where the source's potential is close to quadratic over
+with $\Delta g_z = \Gamma\Delta r$; taking $\Delta g_z$ between the two launch points is the
+\emph{leading read}. It holds only where the source's potential is close to quadratic over
 the 10~m the arms span \tagM: for a static point mass level with the lower launch the two reads agree
 to 10\% beyond 29~m and to 1\% beyond 94~m (15~m and 48~m for one at mid-tower); along the ray used for
 the shapes of \S\ref{sec:shapes}, whose lower launch point sits $17^\circ$ below the body, to 10\% only
 beyond 44--68~m and to 1\% beyond about 640~m, the difference falling as $1/d$ (5.5\% at 100~m, 1.5\%
-at 400~m) \citep[\S4]{paperrealread}. Inside a few metres it is not the leading term of anything: a
-static 1~m body 1.5~m from the lower launch gives a real phase 1.5--3.3 times smaller than
-eq.~(\ref{eq:leading}) on that ray (the bunny $+10.4$~rad against $-17.4$), and with the body level
-with the launch, the geometry of \S\ref{sec:moments}, 1.7--2.8 times larger (the icosahedron
-$+46.4$~rad against $-16.7$); in both, of the opposite sign \tagM. Taking the gradient at the arms' $\Delta z$-weighted mean height, 2.17~m above each launch
-point, is exact for a quadratic potential and within 1\% beyond 11--24~m, but still 22--25\% high
-for a walker at 2~m \citep[\S3.1]{paperflight}.
+at 400~m) \citep[\S4]{paperrealread}. Inside a few metres the launch-point gradient is a poor
+stand-in for the read: a static 1~m body 1.5~m from the lower launch gives a real phase 1.6--2.3
+times smaller than eq.~(\ref{eq:leading}) on that ray (the Buddha 1.6, the Armadillo 2.3; the bunny
+$+10.4$~rad against $-17.4$), and 3.3 times for the 2~m sphere and 4.3 for the 2.8~m torus; with the
+body level with the launch, the geometry of \S\ref{sec:moments}, it is 1.7--2.8 times larger in the
+worst direction (the icosahedron $+46.4$~rad against $-16.7$; up to 5.1 in one direction for the
+plate). In both it is of the opposite sign to the launch-point read \tagM; with the body level with
+the lower launch, $g_z$ there is near zero by symmetry, so the sign and the size of the factor are
+partly a property of where the leading read is taken. A better reference is the gradient at the
+arms' $\Delta z$-weighted mean height, 2.17~m above each launch point: it is exact for a quadratic
+potential and within 1\% beyond 11--24~m, but still 22--25\% high for a walker at 2~m
+\citep[\S3.1]{paperflight}. At 1.5--2~m the instrument therefore reads something within about 25\%
+of a gradient read, but not of the launch-point one, and no gradient read is good to the
+$10^{-8}$~rad this paper resolves.
 
 \paragraph{Moving sources.} The source moves during the 1.46~s shot. For a uniform gradient varying at
-frequency $f$, eq.~(\ref{eq:phase}) gives the textbook response \citep[eq.~9]{cheinet2008}
+frequency $f$, eq.~(\ref{eq:phase}) gives the arms' separation $\Delta z(t) = v_\mathrm{kick}(T-|t-T|)$
+as a triangular weight, and its Fourier transform is the textbook response:
 \begin{equation}
+\Delta\Phi = k_\mathrm{eff}\Delta r\int_0^{2T}(T-|t-T|)\,\Gamma(t)\,dt,\qquad
 |H(f)| = k_\mathrm{eff}T^2\Delta r\,\operatorname{sinc}^2(\pi fT),
 \label{eq:transfer}
 \end{equation}
+the phase response $|G(\omega)| = (4/\omega)\sin^2(\omega T/2)$ of \citet{cheinet2008} turned into an
+acceleration response (their eqs.~6, 9 and 20 in the arXiv numbering, physics/0510197),
 reproduced by the arms of eq.~(\ref{eq:phase}) to $8.9\times10^{-16}$ (the engine's arms, with the floor they stop at, to $1.1\times10^{-5}$) \tagM: down 1\% at 0.076~Hz, 10\% at
 0.24~Hz, half at 0.61~Hz, zero at $1/T = 1.37$~Hz, $1.2\times10^{-3}$ at 10~Hz. Near a source the
 same thresholds hold to about a factor 1.5 in frequency, not in shape. Freezing a point source at the
 $\pi$ pulse is within 1\% of the flight integral for $vT/d\lesssim0.2$ and within 10\% for
 $vT/d\lesssim0.8$, at closest approach $d$ and speed $v$ (measured on passes at 1--20~m,
 Figure~\ref{fig:flight}a): 3--5\% for a walker at 2~m, 8--10\% for a car at 10~m\,s$^{-1}$ and
-10~m. Above $1/T$ a line is read at $\lesssim10^{-2}$ of its instantaneous size, and the 2~s cycle
-folds everything above 0.25~Hz into the shot series \citep{cheinet2008}.
+10~m. Above $1/T$ a line is read at $\lesssim0.05$ of its instantaneous size (the first sidelobe
+of sinc$^2$, 0.047 at 1.96~Hz), falling as $(\pi fT)^{-2}$; sinc$^2$ stays below $10^{-2}$ only above 3.7~Hz and its envelope
+$(\pi fT)^{-2}$ above 4.4~Hz \tagD; near a source the response departs from sinc$^2$ by factors of 0.3--3 above 0.3~Hz (flight
+over frozen 0.154 at 2~Hz, against 0.047) \citep[\S3.3]{paperflight}. The 2~s cycle folds everything
+above 0.25~Hz into the shot series \citep{cheinet2008}.
 
 At the paper's distances the spatial error of the leading read dominates the temporal one. Spot, the
 cow, walking past at 1.4~m\,s$^{-1}$ with its centre of mass 2~m from the tower's axis and level with
@@ -288,17 +325,70 @@ potential difference between them is large and positive, whereas $g_z$ at the la
 the body, nearly vanishes. Averaging over the shot then lowers the peak by 5\% (0.944--0.951 of the
 frozen read) and widens it from 2.4 to 2.6~s at half maximum \tagM.
 
+\paragraph{What the model leaves out.} Eq.~(\ref{eq:phase}) is first order in the source, on arms
+with instantaneous kicks in a uniform $g$ on a non-rotating Earth. Table~\ref{tab:omitted} sizes what
+that leaves out, for point masses standing in for the bodies of \S\S\ref{sec:moments} and
+\ref{sec:budget} at 1.5~m (\texttt{scripts/omitted.py}). \emph{Second order in the source}: with
+$\vr_1'' = \mathbf{a}(\vr_0(t))$ the source's displacement of an arm from its unperturbed path
+$\vr_0$ (laser and kick terms cancel, as at first order),
+\begin{equation}
+\Delta\phi^{(2)} = \mp\frac{m_A}{2\hbar}\Bigl[\int_0^{2T}\!\bigl(\mathbf{a}_\mathrm{u}\cdot\vr_{1\mathrm{u}}
+ - \mathbf{a}_\mathrm{l}\cdot\vr_{1\mathrm{l}}\bigr)dt + \bigl(\dot\vr_{1\mathrm{u}}\cdot\vr_{1\mathrm{l}}
+ - \dot\vr_{1\mathrm{l}}\cdot\vr_{1\mathrm{u}}\bigr)_{2T}\Bigr],
+\label{eq:second}
+\end{equation}
+per interferometer, the upper sign in the convention of eq.~(\ref{eq:phase}); it vanishes for a
+uniform field, and for the gradiometer it is $2$--$4\times10^{-7}$~rad, below a hundredth of one shot's
+noise. \emph{Earth's rotation} deflects each arm sideways by the Coriolis acceleration
+$-2\boldsymbol\Omega\times\mathbf{v}$, up to 0.39~mm at 51.8$^\circ$N; the read along the deflected
+arms moves by $10^{-3}$~rad with the body east or west of the tower, and only at second order,
+about $10^{-6}$~rad, with it north or south. That is the phase of moving the body by about 0.1~mm (the position rows of
+\S\ref{sec:budget}), so a model without it would bias a fitted position by about that. Without
+rotation compensation the deflection also leaves the arms 0.32~mm apart at $2T$, and the separation
+phase of that gap depends on how the real sequence closes the arms; the estimate is of the term
+along the arms only. \emph{Earth's gradient} $2g/R_\oplus$ moves the arms vertically and leaves them
+7.9~$\mu$m apart; along the arms it moves the read by $5\times10^{-5}$~rad, about one shot's noise.
+\emph{Finite pulses}: an LMT train ramped over $\tau$ at the start of each half shortens the arm
+separation's integral by about $\tau/T$, $1.4\times10^{-3}$ to $6.7\times10^{-2}$ for 1--50~ms
+\citep[\S1]{paperflight}, so every signal changes by that fraction, 0.06--3~rad on 44~rad.
+
+Each of these is a property of the instrument and the body's whole field, not of how the body is
+represented: a representation's error enters them only multiplied by its own relative size (at
+1/64~m about $10^{-6}$ for fill + centroid and $5\times10^{-10}$ for \cutcell, Table~\ref{tab:conv}),
+so their effect on the comparisons of \S\S\ref{sec:moments}--\ref{sec:budget} is below
+$10^{-9}$ and $10^{-12}$~rad, or, for finite pulses, a change of the representation error by the same
+0.1--7\% as the signal. The errors this paper compares are therefore \emph{representation errors
+against the first-order model}, and they are common to every representation. The absolute claims of
+\S\ref{sec:budget} (Cram\'er--Rao bounds of micrometres, knowing a body to better than a millimetre)
+hold only once the model also carries Earth's rotation and the real pulse sequence.
+
+\begin{table}[tbp]\centering\small
+\caption{Effects the first-order, instantaneous-kick read leaves out, for point masses standing in
+for the 2.7~t cube 1.5~m from the tower (\S\ref{sec:budget}; centre 2~m from the axis, 1~m below the
+lower launch) and the 1.4~t cube of \S\ref{sec:moments} (1.5~m, level with it). First-order signals
+of these stand-ins: $+42.4$ and $+43.3$~rad. \tagD, \texttt{scripts/omitted.py}, except the finite
+pulses.}\label{tab:omitted}
+\begin{tabular}{>{\raggedright}p{0.2\linewidth}>{\raggedright}p{0.22\linewidth}>{\raggedright\arraybackslash}p{0.48\linewidth}}\toprule
+effect & size (rad) & how\\\midrule
+second order in the source & $2.3$, $3.9\times10^{-7}$ & eq.~(\ref{eq:second}) on Cavendish's arms\\
+Earth's rotation & $1.0\times10^{-3}$ (body east or west); $\sim10^{-6}$ (north or south, second order) & read along the Coriolis-deflected arms, Oxford's latitude; the separation phase of an uncompensated sequence not included\\
+Earth's gradient & $4.5$, $4.3\times10^{-5}$ & read along arms moved by $2g/R_\oplus$; the 7.9~$\mu$m gap's separation phase not included\\
+finite pulses & 0.06--3 & arm separation shortened by $\tau/T$, 1--50~ms ramps \citep[\S1]{paperflight}\\\bottomrule
+\end{tabular}
+\end{table}
+
 \begin{figure}[tbp]\centering
 \includegraphics[width=\linewidth]{figures/flight-phase.pdf}
 \caption{The flight-integral read against the leading read. (a) Where freezing a passing point source
 is within 1\% and 10\% of the flight integral, in speed and closest approach (solid: source level
 with the lower launch; dashed: mid-tower). (b) Spot walking past at 2~m in three poses: the flight
-read (solid) is positive and 1.6 times the leading read's magnitude (dotted). (c) A torus passing at
-1.5~m, $h=0.1$~m, voxels in the body's frame: (c) fill + centroid and (d) \cutcell{} errors over the
+read (solid) is positive and 1.4--1.6 times the leading read's magnitude (dotted). (c) A torus passing at
+1.5~m, $h=0.1$~m, voxels in the body's frame: the fill + centroid and \cutcell{} errors over the
 pass; look at how much larger the flight read's errors are --- the leading read sat on the torus's
 mirror plane. (d) The torus's lines from world-fixed voxels: flight against leading, with
-$\operatorname{sinc}^2(\pi fT)$; above $1/T$ the instrument reads them at $\lesssim10^{-2}$ of
-their instantaneous size. \tagM, \texttt{paper-flight-phase/fig\_paper.py}. \provisional}
+$\operatorname{sinc}^2(\pi fT)$; above $1/T$ the instrument reads them at $\lesssim0.05$ of their
+instantaneous size (sinc$^2$'s first sidelobe), and at $\lesssim10^{-2}$ only above about 4~Hz; near
+the torus the response departs from sinc$^2$ by factors of 0.3--3. \tagM, \texttt{paper-flight-phase/fig\_paper.py}. \provisional}
 \label{fig:flight}
 \end{figure}
 
@@ -368,6 +458,8 @@ which is their eqs.~(10) and (15); Figure~\ref{fig:cf} shows the ingredients. Th
 $-G\rho\sum_f\omega_f$ is $0$ outside the body and $-4\pi G\rho$ inside (their eq.~17): a free check,
 at every point, that the point is where the scene says it is. Applied to the field $\vr/r^3$, whose
 divergence is zero away from $\mathbf{p}$, the same divergence-theorem step proves the outside half.
+Every clipped piece of a cut cell is such a polyhedron (Figure~\ref{fig:cuts}), so eq.~(\ref{eq:result})
+gives its field exactly to the mesh.
 
 \begin{figure}[tbp]\centering
 \includegraphics[width=\linewidth]{figures/diag-closed-form.pdf}
@@ -409,9 +501,14 @@ absolute error $\varepsilon R^3$ and makes the face term vertex-sized. But $N = 
 exactly, the face's height times twice its area, with $2A_f =
 |(\mathbf{v}_2-\mathbf{v}_1)\times(\mathbf{v}_3-\mathbf{v}_1)|$ formed from the face's own edge
 vectors. The identity is Werner's (\citeyear{werner1994}, eq.~3.4), who wrote it for precomputation;
-\citet[App.~B]{holstein2002} uses the same identity per edge against cancellation in his surface
-method. Written so in eq.~(\ref{eq:vos}), the face term stays in the line class (machine-checked as
-\texttt{numerator\_rule}, \S\ref{sec:lean}). Figure~\ref{fig:far} shows the three variants on a
+\citet{holstein2002} gives it per edge (his App.~B, eq.~B-2) and uses it against cancellation in his
+surface method (his eqs.~42--43). Written so in
+eq.~(\ref{eq:vos}), the face term stays in the edge class: the identity $N = h_f\,2A_f$ is
+machine-checked as \texttt{numerator\_rule} (\S\ref{sec:lean}); the rounding class is measured
+(Figure~\ref{fig:far}). The analysis holds per face; a sum over $F$ faces adds their roundings,
+typically as $\sqrt F$. Measured, the face count is not the main factor at these sizes: at 100 body
+sizes the 5856-triangle Spot is at $2.1\times10^{-11}$ and the 12- to 60-face bodies at
+$0.8$--$1.4\times10^{-11}$, but the 1280-face icosphere at $6.8\times10^{-12}$ \citep[Table~A]{paperbench}. Figure~\ref{fig:far} shows the three variants on a
 1/64~m cube at a non-dyadic position.
 
 \begin{figure}[tbp]\centering
@@ -460,10 +557,12 @@ vanishing factor.
 tools (ESA's is GPL-3.0 and is not linked) on the benchmark bodies, a non-convex stellated icosahedron
 and the 5856-triangle Spot, against eq.~(\ref{eq:result}) evaluated at 40 significant digits on the
 same f64 vertices (Table~\ref{tab:codes}, Figure~\ref{fig:cross}). The pass criterion written
-beforehand was agreement to $10^{-12}$ at $R/s\le100$. Near the body ($R\le1.5$~m) our form, in
-Python and in Cavendish, is within $1.5\times10^{-14}$ of the 40-digit values on every body, Harmonica
-within $6\times10^{-14}$, and ESA within $5\times10^{-14}$ on the benchmark bodies but
-$2\times10^{-13}$ on an axis-aligned plate and $7.6\times10^{-13}$ on Spot.
+beforehand was agreement to $10^{-12}$ at $R/s\le100$. Near the body ($R\le1.5$~m, worst of three
+directions) our form, in Python and in Cavendish, is within $4\times10^{-14}$ of the 40-digit values on
+every body ($3.8\times10^{-14}$ on the turned plate, the value Table~\ref{tab:budget} uses; within
+$1.7\times10^{-14}$ on every other), Harmonica within $6\times10^{-14}$, and ESA within
+$1.2\times10^{-13}$ on the benchmark bodies, $2\times10^{-13}$ on the axis-aligned plate and
+$7.6\times10^{-13}$ on Spot.
 Beyond $R/s\approx30$ both our form and the others exceed $10^{-12}$ (ours $1.6\times10^{-12}$ on the
 cube, $7.4\times10^{-12}$ on the plate at $R/s=30$), but at different rates: from 10 to 100 body sizes
 ours grows $\times116$ per decade, the $\varepsilon(R/s)^2$ class, while ESA grows $\times880$ and
@@ -502,7 +601,10 @@ Cavendish's slice S5 put eq.~(\ref{eq:result}) with these rules into the engine
 (Table~\ref{tab:engine}; \texttt{docs/slices/S5.md} \S7.1, release build, one thread). Each edge's
 logarithm and each vertex's distance are computed once per point and shared by the edge's two faces;
 the potential, with $\mathbf{g}$ and $\sum_f\omega_f$, costs 48.5~ns per face per point on 4096 faces
-\tagM. On the same machine ESA's evaluable costs 824--953~ns per triangle (it also returns the
+in the kernel's own timing diagnostic \tagM. Called through the public \texttt{Faceted::field} on
+12--5856 triangles, which allocates two vectors per call, at below-normal priority on a working
+desktop, it costs 75--107~ns per triangle \citep[Table~D]{paperbench}; the 48.5~ns is the figure to
+quote for the kernel. On the same machine ESA's evaluable costs 824--953~ns per triangle (it also returns the
 full tensor) and Harmonica's prism 460--673~ns per field component \citep[Table~D]{paperbench}. One
 result matters for the read: the \emph{difference} $V(\text{upper})-V(\text{lower})$ formed from two
 closed-form values keeps its digits much less far than $V$ itself, with an error of about
@@ -553,11 +655,11 @@ over boundary cells only, against the pieces. Every arm point must stay outside 
 the body, so that the read is of the body from outside and ``1.5~m'' is the read's closest approach,
 not only the launch point's. The tower therefore stands beside the body: its lower launch point is
 level with the body's centre, 1.5~m (or 10~m) from it horizontally, in three directions, so every
-arm point is at least 1.5~m from the centre, more than twice the largest circumradius (0.71~m, the
-plate); the nearest arm passes \ArmClearance~m from a surface \tagM. (Draft~3 put the lower point
-1.5~m from the centre along directions up to $60^\circ$ below the horizontal; in the steepest the
-arms rose past the body 0.19--0.26~m from its surface, which the leading read, taken at the launch
-point, did not see.) The read is eq.~(\ref{eq:axisread}); Table~\ref{tab:conv} and
+arm point is at least 1.5~m from the centre, outside the circumsphere (1.5~m against 0.71~m, the
+plate's circumradius, the largest); the nearest arm passes \ArmClearance~m from a surface (sampled
+every 0.25~m in height) \tagM. A tower 1.5~m from the centre along a direction well below the
+horizontal would let the rising arms pass within a quarter of a metre of the surface, which a read
+taken at the launch point does not see. The read is eq.~(\ref{eq:axisread}); Table~\ref{tab:conv} and
 Figure~\ref{fig:conv} give the result (\texttt{scripts/conv\_level.py}, which is the real-read
 note's \texttt{conv\_real.py} with only the tower moved).
 
@@ -565,7 +667,9 @@ note's \texttt{conv\_real.py} with only the tower moved).
 \caption{Phase error (rad) at $h=1/64$~m, RMS over four lattice placements of the worst of three
 tower directions, with the least-squares order over $h=1/8$ to $1/64$~m in brackets; the spread of
 the orders over placements is about $\pm0.3$ \citep[Q2]{paperrealread}. The tower stands beside the
-body, its lower launch point level with the centre; static flight-integral read. A point mass at the
+body, its lower launch point level with the centre; static flight-integral read. The signal row gives
+the worst direction's flight read with its sign, and the leading read of the same direction in
+brackets. A point mass at the
 centroid gives the fill + centroid row to every printed digit. \tagM, \texttt{scripts/conv\_level.py}.
 \provisional}\label{tab:conv}
 \setlength{\tabcolsep}{3pt}
@@ -594,7 +698,9 @@ curvature leaves a residue. The reason \tagD: let a plane of normal $\vn$ cut a 
 offset $s$ from its centre, the piece being $\{\mathbf{x}: \vn\cdot(\mathbf{x}-\mathbf{c})\le s\}$.
 The dipole that a fill at the centre leaves out is $\mathbf{D}(s)=\int_\mathrm{cube}(\mathbf{x}-\mathbf{c})
 \,H\bigl(s-\vn\cdot(\mathbf{x}-\mathbf{c})\bigr)\,dV$. The plane cuts the cube for
-$|s|\le a = \tfrac h2\|\vn\|_1$, and averaged over that range
+$|s|\le a = \tfrac h2\|\vn\|_1$, and averaged over that range --- which assumes the offsets are
+equidistributed over patches many cells wide, i.e.\ the surface is flat on the cell scale and its
+normal not commensurate with the lattice, the assumption aligned faces and curvature break ---
 \begin{equation}
 \langle\mathbf{D}\rangle = \frac1{2a}\int_\mathrm{cube}(\mathbf{x}-\mathbf{c})\bigl(a-\vn\cdot(\mathbf{x}-\mathbf{c})\bigr)\,dV
 = -\frac1{2a}\,\frac{h^5}{12}\,\vn = -\frac{h^4}{12\,\|\vn\|_1}\,\vn,
@@ -613,13 +719,15 @@ at the centre on the turned cube and the plate, but robust; with the second mome
 up to 1.1 (Figure~\ref{fig:conv}, dotted): its lower point sits on the bodies' mid-plane, where many
 error terms' $g_z$ vanish; the flight read samples the arms' whole height and has no such plane.
 
-At 10~m the signal is 50 times smaller and the errors 50--6000 times, the higher rungs falling
-faster; the orders are much as at 1.5~m, except the aligned cube's
-\cutcell, which stops at $1.2\times10^{-12}$~rad between 1/32 and 1/64~m: the rounding floor of the
-pieces' closed form at that distance, so its fitted 3.0 is not the representation's. The 10~m rows need
-the numerator rule of \S\ref{sec:stability}: in draft~3's leading-read benchmark with the triple
-product, the second-moment row had come out at $10^{-11}$--$10^{-10}$~rad with orders 2.2--3.7, set by
-the reference's rounding, and at 3.8--4.3 with $h_f\,2A_f$ (\texttt{data/summary.md},
+At 10~m the signal is 50 times smaller and of the other sign ($-0.83$~rad against $+43$; the
+leading read keeps its sign, Table~\ref{tab:conv}), and the errors are 60--13\,000 times smaller, the
+higher rungs falling faster (59 for 0/1 on the turned cube, 13\,200 for the plate's second moment); the
+orders are much as at 1.5~m, except the aligned cube's \cutcell, which stops at
+$1.2\times10^{-12}$~rad between 1/32 and 1/64~m: the rounding floor of the pieces' closed form at that
+distance, so its fitted 3.0 is not the representation's. The 10~m rows need the numerator rule of
+\S\ref{sec:stability}: in an earlier leading-read run of this benchmark with the triple product, the
+second-moment row came out at $10^{-11}$--$10^{-10}$~rad with orders 2.2--3.7, set by the
+reference's rounding, and at 3.8--4.3 with $h_f\,2A_f$ (\texttt{data/summary.md},
 \texttt{summary-edges.md}); every row here uses $h_f\,2A_f$.
 
 \section{Curved, scanned and CAD shapes}\label{sec:shapes}
@@ -643,7 +751,8 @@ voxeliser, pieces and moments are the shapes study's
 (b) the sampled fill, $4^3$ points, renormalised to the body's mass (Cavendish before S5); (c) the
 fill fraction at the piece's centroid; (d) \cutcell{}, i.e.\ (c) plus the piece's second moment;
 (e) the clipped piece itself, exact to the mesh. For the sphere and torus, (c$^\star$) and (d$^\star$)
-take each cell's fill, centroid and second moment from the analytic surface directly (the $z$-chords
+take each cell's fill, centroid and second moment from the analytic surface directly, as quadrature
+on implicitly defined domains does \citep{muller2013,saye2015} (the $z$-chords
 in closed form, the $(x,y)$ quadrature split at every kink; volumes right to
 $10^{-13}$--$10^{-11}$), so no mesh enters at all. Techniques (a)--(e) are measured against the mesh,
 the voxel error; (c$^\star$) and (d$^\star$) against the analytic shape --- the sphere's closed form
@@ -726,10 +835,9 @@ Armadillo, Buddha decimated). \tagM, \texttt{paper-real-read/tables-sweep.md}. \
 \resizebox{\linewidth}{!}{\input{generated/rr-sweep.tex}}
 \end{table}
 
-\paragraph{The sphere, and the placement.} Draft~3 reported that on the sphere, and only there,
-adding the second moment made (d) worse than (c) at every pitch, and left it open. It was the lattice
-placement. The study's placement put a lattice node within $3\times10^{-3}$ of a cell of the sphere's
-centre, so the cut pattern had cubic symmetry to that accuracy, and there (c) was between 3.6 and 5600
+\paragraph{The sphere, and the placement.} On the study's original placement, and on the sphere
+only, adding the second moment made (d) worse than (c) at every pitch. It is the lattice placement:
+that placement put a lattice node within $3\times10^{-3}h$ of the sphere's centre, so the cut pattern had cubic symmetry to that accuracy, and there (c) was between 3.6 and 5600
 times better than on random placements (e.g.\ $4.3\times10^{-7}$ against 1.8--2.6$\times10^{-3}$~rad
 at 8 across). Over three random placements (d) beats (c) by 1.4--3.5 times from 4 to 64 cells across,
 (d$^\star$) beats (c$^\star$) at every pitch, and at 128 across the two meet ((c)
@@ -753,7 +861,11 @@ across.
 
 \paragraph{Error against cost.} Table~\ref{tab:cost} puts a cost on the sweep: a direct sum per
 evaluation point at measured kernel costs (8.5~ns per cube series or point, 17~ns per point and
-quadrupole, 55~ns per triangle; S5's engine measures 48.5~ns per face). This is a \emph{model}
+quadrupole, and 55~ns per triangle, the shapes study's compiled \texttt{mesh\_bench} with each
+triangle's data precomputed, one thread, 53--67~ns from 5\,000 to a million triangles). The engine's
+kernel measures 48.5~ns (\S\ref{sec:engine}) and its public call 75--107~ns; at any of these the
+verdicts below are unchanged (Suzanne's whole mesh, the one that beats (d) at $10^{-8}$~rad, would
+cost 121~$\mu$s at 107~ns against (d)'s 154). This is a \emph{model}
 \tagMo, and a pessimistic one for the voxels: it sums every interior cell individually, with no
 octree merging and no tree walk. Within it, (d) is the cheapest voxel route to $10^{-4}$ and
 $10^{-6}$~rad on every shape, including now the sphere: 2.8--11 times cheaper than (c) at
@@ -783,7 +895,10 @@ cube series (8.5~ns), with no octree merging; merging lowers the voxel columns b
 
 \paragraph{Near, middle and far.} Table~\ref{tab:regimes} moves the tower out from the surface to a
 thousand body sizes at a fixed pitch, and adds two representations with no voxels at all: (f) the
-body's own multipole series to $l = 3$ and (g) a point mass. For each, it gives the distance beyond
+body's own multipole series to $l = 3$ (for a polyhedron in closed form, \citealp{werner1997sh}) and
+(g) a point mass. The body series converges only outside the body's circumsphere, which at the
+nearest grid points the arms can enter for the 1~m meshes; there row (f) is a divergent series, though its
+crossings lie far out. For each, it gives the distance beyond
 which the error stays below $10^{-6}$ and $10^{-10}$~rad. The clipped pieces are below both
 everywhere. On the 1~m bodies at 1/32~m, \cutcell{} are below $10^{-6}$~rad from 0.5--0.78~m and
 $10^{-10}$~rad from 4.7--7.3~m; fill + centroid needs 1.2--3.0~m and 18--44~m, the body multipole
@@ -837,7 +952,7 @@ body must be meshed to the accuracy wanted before its voxels can deliver it. Wal
 1.4~m\,s$^{-1}$ and 2~m from the axis, the flight read integrated over each shot (Gauss order 6,
 panels $\le0.1$~s), the same body in three poses gives peaks differing by 1.2--4.4\%, 0.03--0.29~rad,
 600--6000 times one shot's noise: a gradiometer that sees a walker-sized body pass at 2~m sees its
-shape, not only its mass \tagM. (The leading read had put this at 4--18\%: $g_z$ at the launch point,
+shape, not only its mass \tagM. (The leading read puts this at 4--18\%: $g_z$ at the launch point,
 level with the body, is near its zero and very sensitive to pose.)
 
 \begin{table}[tbp]\centering\scriptsize
@@ -887,8 +1002,8 @@ tower meets $10^{-8}$~rad at 1.5~m for 60--1550~$\mu$s of surface work per point
 the CAD part and the 50\,000--70\,000-triangle scans; for the 4000--5000-triangle sphere and torus the
 whole mesh is 3.5--5 times cheaper within 1.5~m. A design for one tower is not valid for a nearer
 one (the control: a 20~m design read at 0.5~m is wrong by $4\times10^{-5}$--$10^{-3}$~rad).
-\item \tagM/\tagMo\ An axis-aligned box's series to $l=6$ costs 11--22~ns per point (checked against
-Nagy's prism at 40 digits, slopes 4.0, 6.0 and 8.0 for $l\le2,4,6$); with it, octree blocks are 20--110
+\item \tagM\ An axis-aligned box's series to $l=6$ costs 11--22~ns per point (checked against
+Nagy's prism at 40 digits, slopes 4.0, 6.0 and 8.0 for $l\le2,4,6$). \tagMo\ With it, octree blocks are 20--110
 times cheaper near the body than with $l\le2$, and free boxes win far away (4--33 times at 20~m) but
 lose near it, where their elongated shapes force the closed form.
 \end{itemize}
@@ -905,7 +1020,11 @@ $\delta\boldsymbol\theta = F^{-1}J^{\mathsf T}\Delta\boldsymbol\phi/\sigma^2$, w
 and $F = J^{\mathsf T}J/\sigma^2$ the Fisher matrix \citep[eq.~13]{cutler2007}. By Cauchy--Schwarz
 $|\delta\theta_i|/\sigma_i\le\|\Delta\boldsymbol\phi\|/\sigma$ for every parameter and every
 parametrisation; \citet[eq.~5]{lindblom2008} call two models indistinguishable when that norm is below
-1. We call a representation adequate when the largest $|\delta\theta_i|/\sigma_i$ is below 0.1.
+1. We call a representation adequate when the largest $|\delta\theta_i|/\sigma_i$ over the four
+parameters below is below 0.1, and report beside it the parametrisation-free $\|\Delta\boldsymbol\phi\|/\sigma$,
+which bounds the bias for any parameter set (pose, shape, more towers) and is the number to compare
+with Lindblom et al.'s criterion. Both grow as the square root of the data: these are one tower, one
+pass and 61 shots, and the five-tower array or repeated passes tighten every threshold below.
 
 \paragraph{The scene.} Three bodies 1~m across, $\rho=2700$~kg\,m$^{-3}$: the aligned cube (2.7~t),
 the bunny (540~kg) and the CAD part (184~kg), each on a straight track at 1~m\,s$^{-1}$ whose closest
@@ -931,26 +1050,32 @@ sampled two and the leading read left mass and range degenerate ($\sigma(M)/M$ =
 \caption{One AION-10 tower, a body passing at 1~m\,s$^{-1}$, 61 shots, $\sigma=5\times10^{-5}$~rad
 per shot: the peak phase, the Cram\'er--Rao bound on the mass, and the pitch (mm) at which each
 representation's largest bias over (ln $M$, $x_0$, $y_0$, $v$) stays below $0.1\,\sigma_\mathrm{CRB}$,
-worst of three placements, at closest approach 1.5, 5 and 20~m from the surface. $^*$: extrapolated
+and (rows marked $\|\Delta\phi\|/\sigma$) at which the parametrisation-free norm of its residual
+stays below 0.1, worst of three placements, at closest approach 1.5, 5 and 20~m from the surface. $^*$: extrapolated
 beyond 1/128~m with the fitted order, i.e.\ not converging in range; $\geq250$: already at the coarsest
 pitch run. Flight read throughout. \tagM, \texttt{paper-real-read/tables-budget.md}.
 \provisional}\label{tab:thresholds}
 \input{generated/rr-thresholds.tex}
 \end{table}
 
-\paragraph{Thresholds.} \Cutcell{} are adequate at 1.5~m at the coarsest pitch run, 220--250~mm;
-fill + centroid needs 46--64~mm at 1.5~m and 72--118~mm at 5~m; the sampled fill, at orders 1--2,
-does not converge in range, its extrapolated pitches 0.1--4.4~mm at 1.5~m; plain cubes would need
-6~$\mu$m--0.5~mm \tagM\ (Table~\ref{tab:thresholds}, Figure~\ref{fig:bias}). With the leading read these
-pitches were 21--37~mm for (c) and 129--151~mm for (d): the flight read is smaller and less degenerate
-at 1.5~m, so the bounds widen 2.5--3 times faster than the residuals grow. At $10^{-5}$~rad\,Hz$^{-1/2}$
-every ratio grows tenfold.
+\paragraph{Thresholds.} \Cutcell{} are adequate at 1.5~m at 220~mm or coarser: the cube and the CAD
+part pass the coarsest pitch run, 250~mm, at 0.049 and $0.090\,\sigma$, and the bunny fails it at
+$0.18\,\sigma$ and passes from 220~mm. Fill + centroid needs 46--64~mm at 1.5~m and 72--118~mm at
+5~m; the sampled fill, at orders 1--2, does not converge in range, its extrapolated pitches
+0.1--4.4~mm at 1.5~m; plain cubes would need 6~$\mu$m--0.5~mm \tagM\ (Table~\ref{tab:thresholds},
+Figure~\ref{fig:bias}). By the parametrisation-free $\|\Delta\boldsymbol\phi\|/\sigma<0.1$ the
+pitches tighten to 21--62~mm for (c) and 161--189~mm for (d) at 1.5~m, and at 1/64~m that norm is
+$2\times10^{-3}$--$4\times10^{-2}$ for (c) and $1$--$14\times10^{-6}$ for (d). With the leading read
+the four-parameter pitches were 21--37~mm for (c) and 129--151~mm for (d): at 1.5~m the flight read's
+signal is smaller (44 against 65~rad for the cube) and differently shaped, so the bounds widen 2.5--3
+times while the residuals shrink. (At 20~m the flight read is the \emph{less degenerate} one, as above.)
+At $10^{-5}$~rad\,Hz$^{-1/2}$ every ratio grows tenfold.
 
 \begin{figure}[tbp]\centering
 \includegraphics[width=0.86\linewidth]{figures/bias.pdf}
 \caption{Largest $|$bias$|/\sigma_\mathrm{CRB}$ over the four parameters, worst of three placements,
 against pitch (bracket: the CAD part); solid the flight read, dotted the leading read; dashed, 0.1. Look at (d): below 0.1 at
-every pitch at 1.5~m. \tagM, \texttt{paper-real-read/analyse\_real.py budget}. \provisional}
+every pitch at 1.5~m except the bunny's coarsest, 250~mm, at 0.18. \tagM, \texttt{paper-real-read/analyse\_real.py budget}. \provisional}
 \label{fig:bias}
 \end{figure}
 
@@ -961,7 +1086,8 @@ a 10\% denser tenth of the body by 56--1800~$\sigma$, and the 5120-triangle icos
 sphere by 640~$\sigma$; against these, (c) and (d) at 1/64~m are at $1.6\times10^{-3}$ and
 $1.5\times10^{-6}$~$\sigma$ on the bunny \tagM. With \cutcell{} the voxel pitch is not the limit at
 any distance studied; knowing the body is --- its mesh, its density, and its pose to better than a
-millimetre and a degree. The sampled fill used before S5 is not: at 1/64~m it biases the fit by
+millimetre and a degree --- and, for such absolute claims, modelling the instrument: Earth's rotation
+alone moves the read by about as much as 0.1~mm of position (Table~\ref{tab:omitted}). The sampled fill used before S5 is not: at 1/64~m it biases the fit by
 0.7--710~$\sigma$ at 1.5~m.
 
 \begin{figure}[tbp]\centering
@@ -974,9 +1100,11 @@ dashed, 0.1. Look at the gap between (d) and every physical row. Flight read. \t
 \end{figure}
 
 \begin{table}[tbp]\centering\small
-\caption{The static phase errors behind the budget: a tonne-scale body with the tower beside it, axis
-1.5~m from the centre, $h=1/64$~m, worst body of \S\ref{sec:moments} (RMS over placements); static
-flight-integral read. Measured rows are from Table~\ref{tab:conv} and Figure~\ref{fig:cross}
+\caption{The static phase errors behind the budget: \emph{representation error only}, against the
+first-order, instantaneous-kick model; the effects that model leaves out (Table~\ref{tab:omitted}) are
+common to every representation. Tower beside the body, axis 1.5~m from the centre, $h=1/64$~m, the
+worst of the five bodies of \S\ref{sec:moments} for each row (the 1.4~t aligned cube for the sampled fill, the turned one for \cutcell, the
+135~kg plate for fill + centroid; RMS over placements); static flight-integral read. Measured rows are from Table~\ref{tab:conv} and Figure~\ref{fig:cross}
 (relative error of $\mathbf{g}$ at $\le1.5$~m, \ClosedRel, times the largest signal, \SignalMax~rad).
 \tagM\ unless marked. \provisional}\label{tab:budget}
 \begin{tabular}{lrl}\toprule
@@ -994,7 +1122,8 @@ one shot's noise, AION-10 goal & $5\times10^{-5}$ & reference\\\bottomrule
 
 The derivation of \S\ref{sec:closed} is formalised in Lean~4 \citep{moura2021} with Mathlib
 \citep{mathlib2020} (\texttt{proofs/polyhedral-gravity/}, Lean v4.36.0, Mathlib v4.36.0). There is no
-\texttt{sorry} and no \texttt{axiom}: \texttt{\#print axioms} on every main theorem lists only Lean's
+\texttt{sorry} and no \texttt{axiom}: \texttt{\#print axioms} on the 17 theorems listed in
+\texttt{PolyhedralGravity.lean} (which use the others of Table~\ref{tab:lean}) lists only Lean's
 standard three (\texttt{propext}, \texttt{Classical.choice}, \texttt{Quot.sound}), and what is not
 proven is an explicit hypothesis of the theorem that uses it. Table~\ref{tab:lean} lists the
 statements.
@@ -1005,7 +1134,7 @@ statements.
 statement (Lean name) & status\\\midrule
 edge integral (\ref{eq:edge}), any real inner-product space (\texttt{edge\_integral}) & proven, by FTC
 from the antiderivative; point off the edge's line\\
-log1p form and near-edge form (\ref{eq:hk}) (\texttt{edge\_integral\_log1p}, \texttt{gap\_near\_edge\_vec}) & proven\\
+log1p form and near-edge form (\ref{eq:hk}) (\texttt{edge\_integral\_log1p}, \texttt{gap\_near\_edge\_vec}) & proven; the closed form below uses the ratio form (\texttt{edgeLog}), which \texttt{edge\_integral\_log1p} proves equal to the log1p form\\
 numerator rule $N = h_f\,2A_f$; height the same from every vertex (\texttt{numerator\_rule}, \texttt{height\_const}) & proven\\
 $D^2+N^2 = 2\prod(r_ir_j+\vr_i\cdot\vr_j)$, factors $\ge0$; $(D,N)\neq(0,0)$ when every factor is positive (\texttt{vos\_modulus}, \texttt{vos\_ne\_zero}) & proven; that a factor vanishes only on a closed edge is \textbf{not proven}\\
 Van Oosterom--Strackee formula (\ref{eq:vos}) itself & \textbf{cited, not proven}; $\omega_f$ is
@@ -1029,8 +1158,9 @@ rectangular box --- Nagy's prism, the cube kernel of every interior voxel --- ea
 to faces and from a face to edges needs no hypothesis; the steps are not yet composed into one
 face-and-edge theorem for the box (index bookkeeping only). The general polyhedron needs the
 divergence theorem as a hypothesis, stated as a theorem quantified over all fields differentiable on a
-neighbourhood of the body, so that it is the classical statement and not something tailored to these
-fields. And Mathlib's norm on $\mathrm{Fin}\,n\to\mathbb{R}$ is the supremum norm, so every distance
+neighbourhood of the body with integrable divergence, as Mathlib's box version is, so that it is not
+something tailored to these fields. It does not ask for $C^1$, which makes it slightly stronger than
+the textbook statement, but it is still true (the Gauss--Green theorem for differentiable fields). And Mathlib's norm on $\mathrm{Fin}\,n\to\mathbb{R}$ is the supremum norm, so every distance
 in the formalisation is written out as $\sqrt{\sum_j(q_j-p_j)^2}$; the edge integral is stated in an
 arbitrary real inner-product space and so covers $\mathbb{R}^3$ with its Euclidean norm directly.
 
@@ -1041,10 +1171,12 @@ arbitrary real inner-product space and so covers $\mathbb{R}^3$ with its Euclide
 provisional until TASK-S5-18 regenerates them. Where Cavendish has measured the same thing
 (Table~\ref{tab:engine}; the orders and the sphere test of \S\S\ref{sec:moments}--\ref{sec:shapes})
 it agrees.
-\item The read is Cavendish's model of AION-10: $n=1000$, $T=0.73$~s, launch at 3.86~m\,s$^{-1}$,
-instantaneous kicks, a 2~s cycle. The real sequence is not public in that detail; finite pulses,
-not modelled, low-pass every signal by 0.14--7\% for 1--50~ms trains. Effects of second order in the
-source, and Earth's gradient during the flight, are not included.
+\item The read is Cavendish's model of AION-10's goal configuration: $^{87}$Sr, $n=1000$,
+$T=0.73$~s, launch at 3.86~m\,s$^{-1}$, instantaneous kicks, a 2~s cycle. The real sequence is not
+public in that detail, and the near-field results scale with the arm separation, $\propto n$. Second
+order in the source ($\sim4\times10^{-7}$~rad), Earth's rotation ($\sim10^{-3}$~rad),
+Earth's gradient ($\sim5\times10^{-5}$~rad) and finite pulses (0.14--7\% of every signal) are
+bounded in Table~\ref{tab:omitted}, not modelled; they are common to every representation.
 \item The costs are models (measured kernel times times counts), with no tree walk, cache or GPU. The
 whole-mesh direct sum is competitive for one small body.
 \item The shapes are ten and the inference bodies three; one tower, white noise, the track's direction
@@ -1053,7 +1185,7 @@ absorbs was not computed.
 \item The dragon and Buddha decimations fail their own criterion; the full scans enter only through
 the decimation rows. Curved analytic shapes have no clipped pieces here; near a tower their stand-in
 is a mesh, whose facet error dominates, unless the moments come from the surface.
-\item Some draft~3 numbers were not recomputed with the flight read and are dropped, not quoted: the
+\item Some leading-read results were not recomputed with the flight read and are not quoted: the
 26-direction sphere test, the primitives comparison, the spin harmonics and the (a), (b), (d)
 world-frame lines.
 \item In Lean: the divergence and Green theorems for general polyhedra are hypotheses; the
@@ -1083,10 +1215,22 @@ measured error within 5~m, since the cells' errors cancel and the bounds add \ci
 \tagMo. Whether the layered read holds the representation error near the values of
 Table~\ref{tab:budget} is therefore a projection, to be measured once the walk is complete.
 
+\section*{Data and code availability}
+\sloppy Everything behind this paper is in the Cavendish repository,
+\url{https://github.com/Ma1achy/Cavendish}, at the commit this PDF was built from: the paper's source
+and scripts (\texttt{docs/papers/polyhedral-gravity/}), the research notes cited as reports
+\citep{paperrealread,paperflight,paperbench,paperboxes,papersurface} with their scripts, data and
+pre-written criteria (\texttt{docs/research/}), the engine (\texttt{crates/}), its slice records
+(\texttt{docs/slices/S5.md}) and the Lean proofs (\texttt{proofs/polyhedral-gravity/}). Every table
+and figure is regenerated from the committed data by \texttt{python make.py} (Appendix~\ref{app:repro}).
+The meshes are not redistributed: they are downloaded at run time from their pinned sources and
+checked against pinned SHA-256 hashes (Appendix~\ref{app:meshes}).\par\fussy
+
 \appendix
 \section{Reproducing this paper}\label{app:repro}
 \texttt{python make.py all} redraws every table and figure from the committed output of the research
-notes and the benchmark, and builds the PDF; \texttt{python make.py level} reruns the benchmark of
+notes and the benchmark, and builds the PDF (\texttt{python make.py omitted} alone reruns the sizes of
+Table~\ref{tab:omitted}); \texttt{python make.py level} reruns the benchmark of
 \S\ref{sec:moments} with the tower beside each body (about ten minutes; it needs the real-read note's
 compiled kernels, \texttt{cargo build --release} in its \texttt{kern/});
 \texttt{python make.py realread-rerun} reruns the analysis and figure steps of the real-read and
@@ -1136,5 +1280,6 @@ The Stanford models are courtesy of the Stanford Computer Graphics Laboratory. T
 Figure~\ref{fig:shapes-repr} show only the analytic torus and the bunny; the dragon and the Buddha
 appear only as numbers.
 
+\renewcommand{\bibfont}{\small}
 \bibliography{refs}
 \end{document}

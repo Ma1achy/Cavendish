@@ -1,0 +1,6 @@
+v_kick 6.5779 m/s, m/hbar 1.3685e+09 s/m^2, k_eff T^2 4.797e+09
+budget cube 2.7 t, centre 2.0 m off, 1 m below, east: first +42.35 rad; second order +2.30e-07; rotation +1.04e-03; Earth gradient +4.55e-05; Coriolis deflection max 0.387 mm, arms' end gap 0.316 mm; gradient end gap 7.88 um
+budget cube 2.7 t, centre 2.0 m off, 1 m below, north: first +42.35 rad; second order +2.30e-07; rotation +0.00e+00; Earth gradient +4.55e-05; Coriolis deflection max 0.387 mm, arms' end gap 0.316 mm; gradient end gap 7.88 um
+benchmark cube 1.38 t, 1.5 m off, level, east: first +43.33 rad; second order +3.92e-07; rotation +1.03e-03; Earth gradient +4.29e-05; Coriolis deflection max 0.387 mm, arms' end gap 0.316 mm; gradient end gap 7.88 um
+benchmark cube 1.38 t, 1.5 m off, level, north: first +43.33 rad; second order +3.92e-07; rotation +0.00e+00; Earth gradient +4.29e-05; Coriolis deflection max 0.387 mm, arms' end gap 0.316 mm; gradient end gap 7.88 um
+bunny 540 kg, centre ~1.9 m off, 1 m below, east: first +9.087 rad; second order +1.06e-08; rotation +2.05e-04; Earth gradient +9.53e-06; Coriolis deflection max 0.387 mm, arms' end gap 0.316 mm; gradient end gap 7.88 um
