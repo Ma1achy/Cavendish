@@ -322,7 +322,7 @@ whose `Edit::View` step undo takes back. The engine keeps the scene as last open
 | A validation case | beside the test of what it checks, with `cav_validate::case!` | [a validation case](extending/a-validation-case.md) |
 | A shape a body can be made of; `cover`; meshes | `cav-core/src/voxel/shape.rs`, `mesh.rs` | [a shape](extending/a-shape.md) |
 | The voxel tree, its moments and cuts; the voxeliser and the raster oracle | `cav-core/src/voxel/tree.rs`, `voxeliser.rs` | — |
-| The potential of a uniform cube (series, octants, prism); a voxel body as a source | `cav-core/src/voxel/kernel.rs` | — |
+| The potential of a uniform cube (series, octants, prism; near an arm the prism's difference only where its rounding is bounded, else octants: S5 §7.4); a voxel body as a source | `cav-core/src/voxel/kernel.rs` | — |
 | The gravity of a uniform polyhedron in closed form (Werner & Scheeres' face form, [X] §1.1's rounding rules: potential, attraction, `Σω`, the arms' difference) and a closed mesh's exact moments; `EXACT_WITHIN` | `cav-core/src/polyhedral.rs` (`Faceted`) | — |
 | A body made of voxels (`BodySpec.shape`) | `cav-sim/src/shape.rs`; read in `read.rs` (`voxel_body`) | [a voxel body](extending/a-voxel-body.md) |
 | A material (density, colour, elastic and thermal properties); the library; a scene's own | `scenes/materials.ron`, `cav-sim/src/materials.rs` | [a material](extending/a-material.md) |

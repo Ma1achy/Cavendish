@@ -20,6 +20,15 @@
 //! closed-form prism ([`prism_potential`], Nagy's formula), which holds inside and on the cube
 //! too. Between two arm points the monopole is differenced without cancellation (as
 //! `forward::Mass` does), so a far cube's tiny difference keeps its digits.
+//!
+//! **The closed form's difference** (TASK-S5-24). Near a cube the arms' difference is the
+//! difference of two closed-form potentials, whose rounding (a few `ε` of the size of their terms)
+//! does not shrink with the gap. A large block (an octree's merged interior) beside an arm, at a
+//! moment when the arms are close together, loses digits that way. So [`cube_difference`] takes
+//! the closed form only where that rounding, estimated from the terms themselves, is within
+//! [`DIFFERENCE_EPSILON`] of the difference's scale; otherwise it splits the cube into its eight
+//! halves (exact) and takes each the same way, so the parts near the arms get small and the rest
+//! go to the series. Measured in `docs/slices/S5.md` §7.4.
 
 use crate::Vec3;
 use crate::forward::Source;
@@ -183,8 +192,10 @@ pub fn cube_series(order: usize, mass: f64, side: f64, d: Vec3) -> f64 {
     -mass * (1.0 / r + correction(order, side, d, r))
 }
 
-/// Nagy's term for one corner of a prism at offset `(x, y, z)` from the point, m².
-fn corner(x: f64, y: f64, z: f64) -> f64 {
+/// Nagy's term for one corner of a prism at offset `(x, y, z)` from the point, m², and the size
+/// its rounding scales with, m²: the sum of its six terms' magnitudes and `r²` (what rounding the
+/// logarithm's argument `u + r` can cost where it nearly cancels, at most about `2εr²`).
+fn corner(x: f64, y: f64, z: f64) -> (f64, f64) {
     let r = (x * x + y * y + z * z).sqrt();
     // A term whose coefficient is zero is zero, whatever its logarithm or angle would be.
     // `u + r` cancels when `u` is negative and nearly `−r` (the point beside an edge, past its
@@ -201,10 +212,36 @@ fn corner(x: f64, y: f64, z: f64) -> f64 {
     };
     let angle = |p: f64, q: f64, w: f64| if p == 0.0 { 0.0 } else { 0.5 * p * p * (q * w / (p * r)).atan() };
     let (xx, yy, zz) = (x * x, y * y, z * z);
-    log(x * y, z, xx + yy) + log(y * z, x, yy + zz) + log(z * x, y, zz + xx)
-        - angle(x, y, z)
-        - angle(y, z, x)
-        - angle(z, x, y)
+    let terms = [
+        log(x * y, z, xx + yy),
+        log(y * z, x, yy + zz),
+        log(z * x, y, zz + xx),
+        angle(x, y, z),
+        angle(y, z, x),
+        angle(z, x, y),
+    ];
+    // The same sum, in the same order, as before the magnitude was kept: the same bits.
+    let value = terms[0] + terms[1] + terms[2] - terms[3] - terms[4] - terms[5];
+    (value, terms.iter().map(|t| t.abs()).sum::<f64>() + xx + yy + zz)
+}
+
+/// [`prism_potential`] and the size its rounding scales with, kg/m: `density` times the sum over
+/// the corners of each corner term's magnitude (see `corner`). The value's rounding is a few
+/// `f64::EPSILON` of that size; the value itself may be far smaller, which is how the closed form
+/// loses digits far away.
+fn prism_terms(density: f64, lo: Vec3, hi: Vec3) -> (f64, f64) {
+    let (mut total, mut size) = (0.0, 0.0);
+    for (i, x) in [lo.x, hi.x].into_iter().enumerate() {
+        for (j, y) in [lo.y, hi.y].into_iter().enumerate() {
+            for (k, z) in [lo.z, hi.z].into_iter().enumerate() {
+                let sign = if (i + j + k) % 2 == 0 { -1.0 } else { 1.0 };
+                let (value, magnitude) = corner(x, y, z);
+                total += sign * value;
+                size += magnitude;
+            }
+        }
+    }
+    (-density * total, density.abs() * size)
 }
 
 /// The potential of a uniform rectangular prism of `density` kg/m³ spanning `lo` to `hi` (its
@@ -212,16 +249,7 @@ fn corner(x: f64, y: f64, z: f64) -> f64 {
 /// finite inside and on the prism. Far away its terms cancel: the kernel uses it only near.
 #[must_use]
 pub fn prism_potential(density: f64, lo: Vec3, hi: Vec3) -> f64 {
-    let mut total = 0.0;
-    for (i, x) in [lo.x, hi.x].into_iter().enumerate() {
-        for (j, y) in [lo.y, hi.y].into_iter().enumerate() {
-            for (k, z) in [lo.z, hi.z].into_iter().enumerate() {
-                let sign = if (i + j + k) % 2 == 0 { -1.0 } else { 1.0 };
-                total += sign * corner(x, y, z);
-            }
-        }
-    }
-    -density * total
+    prism_terms(density, lo, hi).0
 }
 
 /// Closer than this many sides the prism is taken; between here and where the series converges
@@ -248,30 +276,101 @@ fn octants(side: f64) -> [Vec3; 8] {
 /// eight halves the same way; or, nearer still (within [`PRISM_WITHIN`] sides), the prism.
 #[must_use]
 pub fn cube_potential(mass: f64, side: f64, d: Vec3) -> f64 {
+    potential_and_size(mass, side, d).0
+}
+
+/// [`cube_potential`] (the same bits) and the size its rounding scales with, kg/m: `|M|/r` where
+/// the series is taken (its monopole), the prism's terms where the prism is (`prism_terms`), the
+/// sum of the halves' where the cube is split.
+fn potential_and_size(mass: f64, side: f64, d: Vec3) -> (f64, f64) {
     let r = d.length();
     match order_needed(side, r) {
-        Some(order) => -mass * (1.0 / r + correction(order, side, d, r)),
+        Some(order) => (-mass * (1.0 / r + correction(order, side, d, r)), mass.abs() / r),
         None if r >= PRISM_WITHIN * side => {
-            octants(side).iter().map(|c| cube_potential(0.125 * mass, 0.5 * side, d - *c)).sum()
+            let (mut value, mut size) = (0.0, 0.0);
+            for c in octants(side) {
+                let (v, s) = potential_and_size(0.125 * mass, 0.5 * side, d - c);
+                value += v;
+                size += s;
+            }
+            (value, size)
         }
         None => {
             let h = 0.5 * side;
             let half = Vec3::new(h, h, h);
-            prism_potential(mass / side.powi(3), -d - half, -d + half)
+            prism_terms(mass / side.powi(3), -d - half, -d + half)
         }
     }
 }
+
+/// How much of the difference's scale the closed form's rounding may cost before the cube is
+/// split instead: the closed form `V(upper) − V(lower)` of [`cube_difference`] is taken only where
+/// its estimated rounding is at most this fraction of the scale `S = |M|·min(|gap|/ρ², 1/ρ)`,
+/// `ρ = max(r, side)`, `r` the nearer point's distance from the cube's centre (`S` is the size of
+/// the difference when nothing cancels by symmetry). TASK-S5-24.
+pub const DIFFERENCE_EPSILON: f64 = 1e-12;
+
+/// The closed form's estimated rounding over `f64::EPSILON` times the size of its terms
+/// (`prism_terms`, at both points): the ratio measured, with room (`closed_form_rounding` in the
+/// tests; docs/slices/S5.md §7.4).
+pub const CLOSED_FORM_ROUNDING: f64 = 1.0;
+
+/// The most times [`cube_difference`] halves a cube to keep the closed form's difference within
+/// [`DIFFERENCE_EPSILON`]: past it (a gap of nanometres beside a large block) the closed form is
+/// taken as it is. Splitting stops long before for any gap the flight has (§7.4).
+pub const MAX_SPLIT_DEPTH: u32 = 16;
 
 /// `(V(upper) − V(lower))/G` (kg/m) for a uniform cube of `mass` kg and side `side` m, the two
 /// points on a vertical line `across` (horizontal offset from the cube's centre, metres) at
 /// heights `below` and `above` metres over the centre. `gap` is `below − above` as the caller
 /// knows it exactly (the arms' rise, lower minus upper), so the monopole's difference is formed
 /// without cancellation.
+///
+/// Where the series converges to rounding at the nearer point it is taken, differenced without
+/// cancellation. Nearer, the cube is split into its eight halves (exact) until each half's series
+/// converges, or, within [`PRISM_WITHIN`] sides, until the difference of the two closed-form
+/// potentials keeps its digits: its rounding, estimated from the size of its terms, within
+/// [`DIFFERENCE_EPSILON`] of the difference's scale (at most [`MAX_SPLIT_DEPTH`] halvings).
 #[must_use]
 pub fn cube_difference(mass: f64, side: f64, across: [f64; 2], below: f64, above: f64, gap: f64) -> f64 {
+    difference_within(mass, side, across, below, above, gap, DIFFERENCE_EPSILON, 0)
+}
+
+/// [`cube_difference`] with the closed form's allowance `epsilon` (a fraction of the scale;
+/// infinite for S3's fixed switch, the closed form for every cube within [`PRISM_WITHIN`] sides),
+/// `depth` the halvings so far.
+#[allow(clippy::too_many_arguments)]
+fn difference_within(
+    mass: f64,
+    side: f64,
+    across: [f64; 2],
+    below: f64,
+    above: f64,
+    gap: f64,
+    epsilon: f64,
+    depth: u32,
+) -> f64 {
     let horizontal = across[0] * across[0] + across[1] * across[1];
     let (b, a) = ((horizontal + below * below).sqrt(), (horizontal + above * above).sqrt());
     let nearer = a.min(b);
+    let halves = || -> f64 {
+        octants(side)
+            .iter()
+            .map(|c| {
+                let across = [across[0] - c.x, across[1] - c.y];
+                difference_within(
+                    0.125 * mass,
+                    0.5 * side,
+                    across,
+                    below - c.z,
+                    above - c.z,
+                    gap,
+                    epsilon,
+                    depth + 1,
+                )
+            })
+            .sum()
+    };
     match order_needed(side, nearer) {
         Some(order) => {
             // 1/a − 1/b = (b² − a²)/(ab(a + b)), b² − a² = (below − above)(below + above).
@@ -280,16 +379,19 @@ pub fn cube_difference(mass: f64, side: f64, across: [f64; 2], below: f64, above
             let dl = Vec3::new(across[0], across[1], below);
             monopole - mass * (correction(order, side, du, a) - correction(order, side, dl, b))
         }
-        None if nearer >= PRISM_WITHIN * side => octants(side)
-            .iter()
-            .map(|c| {
-                let across = [across[0] - c.x, across[1] - c.y];
-                cube_difference(0.125 * mass, 0.5 * side, across, below - c.z, above - c.z, gap)
-            })
-            .sum(),
+        None if nearer >= PRISM_WITHIN * side => halves(),
         None => {
-            cube_potential(mass, side, Vec3::new(across[0], across[1], above))
-                - cube_potential(mass, side, Vec3::new(across[0], across[1], below))
+            let (upper, upper_size) = potential_and_size(mass, side, Vec3::new(across[0], across[1], above));
+            let (lower, lower_size) = potential_and_size(mass, side, Vec3::new(across[0], across[1], below));
+            let rho = nearer.max(side);
+            let scale = mass.abs() * (gap.abs() / (rho * rho)).min(1.0 / rho);
+            let rounding = CLOSED_FORM_ROUNDING * f64::EPSILON * (upper_size + lower_size);
+            if epsilon.is_infinite() || gap == 0.0 || depth >= MAX_SPLIT_DEPTH || rounding <= epsilon * scale
+            {
+                upper - lower
+            } else {
+                halves()
+            }
         }
     }
 }
@@ -660,6 +762,309 @@ mod tests {
         // Control: the cases reach the closed form, reuse the correction at `d`, and change order
         // after one was kept (where a stale correction would be wrong).
         assert!(closed > 0 && reused > 0 && changed > 0, "{closed} {reused} {changed}");
+    }
+
+    /// Neumaier's compensated sum.
+    #[derive(Default)]
+    struct Compensated {
+        sum: f64,
+        carry: f64,
+    }
+
+    impl Compensated {
+        fn add(&mut self, term: f64) {
+            let t = self.sum + term;
+            self.carry +=
+                if self.sum.abs() >= term.abs() { (self.sum - t) + term } else { (term - t) + self.sum };
+            self.sum = t;
+        }
+        fn value(&self) -> f64 {
+            self.sum + self.carry
+        }
+    }
+
+    /// The reference difference for K1 (S5 §7.4): the cube split exactly into octants,
+    /// recursively, until every part's series converges to rounding at the nearer point, each
+    /// part's difference then the series' (no cancellation in the monopole), summed with
+    /// compensation. No closed form anywhere, so the points must be outside the cube.
+    fn series_reference(mass: f64, side: f64, across: [f64; 2], below: f64, above: f64, gap: f64) -> f64 {
+        fn add(
+            sum: &mut Compensated,
+            mass: f64,
+            side: f64,
+            across: [f64; 2],
+            below: f64,
+            above: f64,
+            gap: f64,
+        ) {
+            let horizontal = across[0] * across[0] + across[1] * across[1];
+            let nearer = (horizontal + below * below).sqrt().min((horizontal + above * above).sqrt());
+            if order_needed(side, nearer).is_some() {
+                // The kernel's series branch (nothing else is taken where the series converges).
+                sum.add(difference_within(mass, side, across, below, above, gap, 0.0, 0));
+            } else {
+                assert!(side > 1e-6, "the reference needs the points outside the cube");
+                for c in octants(side) {
+                    let across = [across[0] - c.x, across[1] - c.y];
+                    add(sum, 0.125 * mass, 0.5 * side, across, below - c.z, above - c.z, gap);
+                }
+            }
+        }
+        let mut sum = Compensated::default();
+        add(&mut sum, mass, side, across, below, above, gap);
+        sum.value()
+    }
+
+    /// The difference's scale `S` of §7.4 (and of [`DIFFERENCE_EPSILON`]).
+    fn difference_scale(mass: f64, side: f64, across: [f64; 2], below: f64, above: f64, gap: f64) -> f64 {
+        let horizontal = across[0] * across[0] + across[1] * across[1];
+        let nearer = (horizontal + below * below).sqrt().min((horizontal + above * above).sqrt());
+        let rho = nearer.max(side);
+        mass.abs() * (gap.abs() / (rho * rho)).min(1.0 / rho)
+    }
+
+    /// K1's cases: `(mass, side, across, below, above, gap)` for blocks of side 1, 4, 16 m at
+    /// 2,000 kg/m³, the line 0.1 m and 1.5 m from a face, five heights over the block's span, gaps
+    /// of 1 mm to 3 m (the upper point above the lower).
+    fn large_block_cases() -> Vec<(f64, f64, [f64; 2], f64, f64, f64)> {
+        let mut out = Vec::new();
+        for side in [1.0, 4.0, 16.0] {
+            let mass = 2000.0 * side * side * side;
+            for face in [0.1, 1.5] {
+                // Non-dyadic offsets, so that rounding is seen.
+                let across = [-(0.5 * side + face), 0.137 * side];
+                for height in [-0.61, -0.27, 0.031, 0.29, 0.58] {
+                    for rise in [1e-3, 1e-2, 0.1, 1.0, 3.0] {
+                        let below = height * side;
+                        out.push((mass, side, across, below, below + rise, -rise));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// The worst `|difference − reference| / S` over K1's cases with the closed form's allowance
+    /// `epsilon` (infinite: S3's fixed switch).
+    fn large_block_error(epsilon: f64) -> f64 {
+        // The reference, once a process (the control asks twice).
+        static REFERENCE: std::sync::OnceLock<Vec<f64>> = std::sync::OnceLock::new();
+        let reference = REFERENCE.get_or_init(|| {
+            large_block_cases()
+                .into_iter()
+                .map(|(m, s, across, below, above, gap)| series_reference(m, s, across, below, above, gap))
+                .collect()
+        });
+        large_block_cases()
+            .into_iter()
+            .zip(reference)
+            .map(|((m, s, across, below, above, gap), want)| {
+                let got = difference_within(m, s, across, below, above, gap, epsilon, 0);
+                (got - want).abs() / difference_scale(m, s, across, below, above, gap)
+            })
+            .fold(0.0, f64::max)
+    }
+
+    cav_validate::case! {
+        test: validation_the_difference_near_a_large_block_keeps_its_digits,
+        name: "kernel.difference_near_a_large_block",
+        subsystem: "voxel",
+        slice: "S5",
+        reference: ClosedForm,
+        against: "blocks of side 1, 4, 16 m 0.1 and 1.5 m from the line, five heights, gaps 1 mm to 3 m: cube_difference against the block split into octants until every part's series converges (no closed form), relative to the difference's scale S = M·min(|gap|/ρ², 1/ρ)",
+        unit: Relative,
+        tolerance: 1e-12,
+        measure: cav_validate::Measured::Error(large_block_error(DIFFERENCE_EPSILON)),
+    }
+
+    #[test]
+    fn s3_s_fixed_switch_loses_the_difference_s_digits() {
+        // Control for K1: the closed form for every cube within PRISM_WITHIN sides fails it.
+        let s3 = large_block_error(f64::INFINITY);
+        assert!(s3 > 1e-12, "S3's switch kept the digits: {s3:.3e}");
+        // And the kernel's own allowance does better than S3's on the same cases.
+        let now = large_block_error(DIFFERENCE_EPSILON);
+        assert!(now < s3, "{now:.3e} {s3:.3e}");
+    }
+
+    #[test]
+    #[ignore = "a diagnostic: K1's error and its cost by the closed form's allowance"]
+    fn large_block_error_by_allowance() {
+        for epsilon in [f64::INFINITY, 1e-11, 3e-12, 1e-12, 3e-13, 1e-13] {
+            let started = std::time::Instant::now();
+            let error = large_block_error(epsilon);
+            let reference = std::time::Instant::now();
+            for (m, s, across, below, above, gap) in large_block_cases() {
+                std::hint::black_box(difference_within(m, s, across, below, above, gap, epsilon, 0));
+            }
+            println!(
+                "allowance {epsilon:.0e}: K1 error {error:.3e} of S; the kernel's {} cases in {:.3} ms (with the reference {:.3} s)",
+                large_block_cases().len(),
+                reference.elapsed().as_secs_f64() * 1e3,
+                (reference - started).as_secs_f64()
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "a diagnostic: the closed form's difference error over the size of its terms"]
+    fn closed_form_rounding() {
+        // For cubes within PRISM_WITHIN sides (the closed form taken whole), the error of the
+        // closed-form difference against the series reference over ε × (the two points' term
+        // sizes): what CLOSED_FORM_ROUNDING must be at least.
+        let mut worst = 0f64;
+        let mut by_case = Vec::new();
+        for side in [0.05, 0.4, 1.0, 4.0, 16.0, 64.0] {
+            let mass = 2000.0 * side * side * side;
+            for face in [0.02, 0.1, 0.5, 1.0, 1.5] {
+                for lateral in [0.137, 0.41] {
+                    let across = [-(0.5 * side + face * side), lateral * side];
+                    for height in [-0.61, -0.27, 0.031, 0.29, 0.58] {
+                        for rise in [1e-3, 1e-2, 0.1, 1.0, 3.0] {
+                            let below = height * side;
+                            let above = below + rise;
+                            let du = Vec3::new(across[0], across[1], above);
+                            let dl = Vec3::new(across[0], across[1], below);
+                            if order_needed(side, du.length().min(dl.length())).is_some() {
+                                continue;
+                            }
+                            let (u, us) = potential_and_size(mass, side, du);
+                            let (l, ls) = potential_and_size(mass, side, dl);
+                            let want = series_reference(mass, side, across, below, above, -rise);
+                            let ratio = ((u - l) - want).abs() / (f64::EPSILON * (us + ls));
+                            worst = worst.max(ratio);
+                            by_case.push((ratio, side, face, rise));
+                        }
+                    }
+                }
+            }
+        }
+        by_case.sort_by(|a, b| b.0.total_cmp(&a.0));
+        for (ratio, side, face, rise) in by_case.iter().take(12) {
+            println!("ratio {ratio:.3} side {side} face {face}·s rise {rise}");
+        }
+        let mean = by_case.iter().map(|c| c.0).sum::<f64>() / by_case.len() as f64;
+        println!("worst {worst:.3}, mean {mean:.3} over {} cases", by_case.len());
+    }
+
+    /// A block as a source of the forward model, by a difference rule.
+    struct Block {
+        mass: f64,
+        side: f64,
+        centre: Vec3,
+        rule: Rule,
+    }
+
+    type Rule = fn(f64, f64, [f64; 2], f64, f64, f64) -> f64;
+
+    impl Source for Block {
+        fn difference(&self, tower: Vec3, heights: [f64; 2], lower: f64, upper: f64, _: f64) -> [f64; 2] {
+            let at = self.centre - tower;
+            heights.map(|height| {
+                let (below, above) = (height + lower - at.z, height + upper - at.z);
+                (self.rule)(self.mass, self.side, [-at.x, -at.y], below, above, lower - upper)
+            })
+        }
+    }
+
+    /// A voxel tree's leaves as a source, by a difference rule.
+    struct Leaves {
+        cubes: Vec<(Vec3, f64, f64)>,
+        rule: Rule,
+    }
+
+    impl Source for Leaves {
+        fn difference(&self, tower: Vec3, heights: [f64; 2], lower: f64, upper: f64, _: f64) -> [f64; 2] {
+            heights.map(|height| {
+                let mut sum = 0.0;
+                for &(centre, mass, side) in &self.cubes {
+                    let at = centre - tower;
+                    let (below, above) = (height + lower - at.z, height + upper - at.z);
+                    sum += (self.rule)(mass, side, [-at.x, -at.y], below, above, lower - upper);
+                }
+                sum
+            })
+        }
+    }
+
+    #[test]
+    #[ignore = "a diagnostic: K3, the time of a voxel sphere's read by S3's switch and the new one (release)"]
+    fn sphere_read_time() {
+        use crate::forward::{Instrument, PHASE_TOLERANCE, Reader};
+        use crate::voxel::shape::{Shape, Sphere};
+        use crate::voxel::{Grid, voxelise};
+        let reader = Reader::new(Instrument::aion10());
+        let s3: Rule = |m, s, a, b, u, g| difference_within(m, s, a, b, u, g, f64::INFINITY, 0);
+        for (cells, gap) in [(16.0, 0.1), (32.0, 0.1), (32.0, 1.0), (64.0, 0.1)] {
+            // A 0.5 m sphere of 100 kg, its surface `gap` from the tower's line, its centre 2.2 m up.
+            let sphere = Sphere { centre: Vec3::new(0.5 + gap, 0.0, 2.2), radius: 0.5 };
+            let grid = Grid::around(sphere.bounds(), 0.5 / cells, 4).unwrap();
+            let tree = voxelise(&sphere, &grid, 100.0, 0).unwrap();
+            let cubes: Vec<_> = tree
+                .leaves
+                .iter()
+                .map(|leaf| {
+                    (tree.block_centre(leaf.key, leaf.level), tree.leaf_mass(leaf), tree.side(leaf.level))
+                })
+                .collect();
+            let time = |rule: Rule| {
+                let source = Leaves { cubes: cubes.clone(), rule };
+                let started = std::time::Instant::now();
+                let audited = reader.read_to(Vec3::ZERO, &source, 1.46, PHASE_TOLERANCE);
+                (started.elapsed().as_secs_f64(), audited.reading)
+            };
+            // Interleaved, the best of three each: the PC is shared.
+            let (mut old, mut new) = (f64::INFINITY, f64::INFINITY);
+            let (mut a, mut b) = (None, None);
+            for _ in 0..3 {
+                let (t, r) = time(s3);
+                old = old.min(t);
+                a = Some(r);
+                let (t, r) = time(cube_difference);
+                new = new.min(t);
+                b = Some(r);
+            }
+            let (a, b) = (a.unwrap(), b.unwrap());
+            println!(
+                "r/{cells}, surface {gap} m: {} leaves; S3 {old:.3} s, now {new:.3} s ({:+.0} %); gradiometer {:.15e} against {:.15e} rad",
+                cubes.len(),
+                100.0 * (new / old - 1.0),
+                b.lower - b.upper,
+                a.lower - a.upper
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "a diagnostic: K2, the AION-10 read of a large block by S3's switch and the new one"]
+    fn large_block_by_flight() {
+        use crate::forward::{Channel, Instrument, Reader};
+        let reader = Reader::new(Instrument::aion10());
+        let s3: Rule = |m, s, a, b, u, g| difference_within(m, s, a, b, u, g, f64::INFINITY, 0);
+        for side in [1.0, 4.0, 16.0] {
+            for face in [0.1, 1.5] {
+                // The block's near face `face` from the tower's line, its centre at 3.3 m.
+                let centre = Vec3::new(0.5 * side + face, 0.137 * side, 3.3);
+                let block = |rule: Rule| Block { mass: 2000.0 * side * side * side, side, centre, rule };
+                let read = |rule: Rule| {
+                    let started = std::time::Instant::now();
+                    let reading = reader.read(Vec3::ZERO, &block(rule), 1.46);
+                    (reading, started.elapsed().as_secs_f64())
+                };
+                let (reference, _) = read(series_reference);
+                let (old, old_time) = read(s3);
+                let (new, new_time) = read(cube_difference);
+                let sign = reader.instrument().sign;
+                for channel in Channel::ALL {
+                    let r = reference.channel(channel, sign);
+                    println!(
+                        "side {side} face {face} {channel:?}: phase {r:.6e} rad; S3 {:.2e} rad, now {:.2e} rad (times {old_time:.3} s, {new_time:.3} s)",
+                        (old.channel(channel, sign) - r).abs(),
+                        (new.channel(channel, sign) - r).abs()
+                    );
+                }
+            }
+        }
     }
 
     #[test]

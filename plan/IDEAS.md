@@ -313,3 +313,8 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   share and does not settle (`docs/slices/S5.md` §7.3). Opening a chunk into its own voxel tree's
   nodes, each with a summary, would let the walk go on below level 0 instead of reading every leaf;
   so would a tighter bound (the exact `A_4` above) or reading the towers in parallel.
+- **`cube_shift`'s closed form near a cube, error-bounded as the arms' difference is** (TASK-S5-24):
+  a body's small motions are read as `V(d − shift) − V(d)`, and near a cube that is two closed-form
+  potentials subtracted, which loses `ε·(the terms' size)/|change|`. Split the cube as
+  `cube_difference` now does when that is above `DIFFERENCE_EPSILON` of the change's scale; measure
+  on the scaffold (micrometre shifts) before adopting.

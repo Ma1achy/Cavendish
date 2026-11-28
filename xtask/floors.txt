@@ -36,7 +36,9 @@
 # TASK-S5-12 (the walk): 5 new quick tests (cav-sim: W1, the cut grows as the tolerance falls, X4,
 # W4, Q_MAX); 4 new slow tests (cav-sim: W2, W3's two cases, W5).
 # TASK-S5-25 (a flaky test's cause): 1 new quick test (cav-engine: the forward stage's news is tagged).
-quick 743
+# TASK-S5-24 (the cube kernel's switch made error-bounded): 2 new quick tests (cav-core: K1 and its
+# control, S3's fixed switch).
+quick 745
 gpu 42
 slow 54
 oracle 58

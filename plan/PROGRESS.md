@@ -35,6 +35,12 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**Seen while building TASK-S5-24 (28 Nov 2026):** the oracle's
+`validation_cylinder_vs_point_mass` passes nextest's two-minute watchdog neither with the new cube
+kernel nor with main's, run alone on this PC while another agent was building, so
+`cargo xtask validate` reports it missing here. Not this task's change. Worth timing on a quiet PC:
+if it really takes over two minutes, its watchdog or its size needs a look.
+
 ## S20 after its review (27 Nov 2026) — fixes done (TASK-S20-15)
 
 **Done** (`docs/slices/S20.md` §7.11, each with its test and control). The three important
