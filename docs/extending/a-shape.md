@@ -44,6 +44,12 @@ a sample point is inside (`contains`), and what it can say about a whole box at 
 3. `ShapeKind::solid`: the core shape, centred on the origin (the body's position).
 4. `ShapeKind::validate`: each number in its range, the field named in the refusal
    (`{at}.YourShape.field: …`).
+5. Its drawn surface, for `draw mesh` and `draw mesh-over-voxels` (S5): an arm of
+   `cav_sim::body_draw::surface` giving its triangles in the body's frame, anticlockwise seen from
+   outside, counted against `MAX_DRAWN_TRIANGLES` before any is made. A polyhedron gives its own
+   faces (`Surface::tessellated` false); a curved solid a tessellation (`true`: the frame then
+   says so). `a_surface_encloses_its_shape` holds the triangles to the shape's volume (add a
+   line, with the tessellation's tolerance).
 
 ## 3. The tests that then hold it
 

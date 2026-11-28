@@ -35,6 +35,14 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**TASK-S5-16, body draw modes (28 Nov 2026; `docs/slices/S5.md` §7.12).** `draw voxels | fill |
+mesh | mesh-over-voxels` (console and the overlays popover; a view setting, journalled, never
+undone). `fill` shades each voxel by its exact fill (worst 1.1e-16 off over 2,232 boundary cells; a
+body read `Sampled` is clipped for the picture, its read unchanged); `mesh` draws the shape's own
+triangles (a curved solid tessellated, said); `mesh-over-voxels` the voxels as outlines round the
+solid surface. New scene `cut-cells`. Worth a second look: outlines rather than translucency for
+mesh over voxels; the triangle cap held in `cav-sim`, not `cav-render`.
+
 **TASK-S5-14, measured radii and the rings (28 Nov 2026; §7.11).** `cav bench lod-radii --scene
 <s>` measures each level's nearest acceptance by the ledger walk; the stored table (town, eight
 bases) drives `world.read.walk: Rings`. R1: at the stored radii the rings err by at most 0.037 of τ

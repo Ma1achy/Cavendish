@@ -354,3 +354,8 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   hold τ, and a cheaper rings tier; about 80 whole-town leaf-exact reads, minutes in release. The
   errors are linear in the nodes, so one read per node per position, summed from the far end
   inwards, gives every ρ at once.
+- **A section that cuts a drawn surface** (TASK-S5-16): `draw mesh` with a section plane cuts the
+  voxels' cells as before but draws the whole surface; clipping its triangles by the plane (and
+  capping the cut) would make the mesh modes agree with the section.
+- **Mesh over voxels with order-independent transparency** (TASK-S5-16): the voxels are drawn as
+  outlines round the solid surface; weighted blended OIT would let both be solid and see-through.

@@ -22,6 +22,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::SceneSpec;
+pub use crate::body_draw::{BodyDraw, MAX_DRAWN_TRIANGLES, Surface};
 
 /// The most leaf cubes drawn in one view.
 pub const MAX_DRAWN_CUBES: usize = 20_000;
@@ -421,6 +422,13 @@ pub fn section_span(scene: &SceneSpec, axis: crate::shape::Axis, time: f64) -> O
 pub struct BodyCubes {
     /// The body, from 0 in the scene's order.
     pub body: usize,
+    /// Where the body is at the frame's time: its tree's origin and its surface's, metres, the
+    /// world's frame.
+    pub at: Vec3,
+    /// Its shape's surface, in the body's frame (add [`Self::at`]), when the view's draw mode
+    /// draws it ([`BodyDraw::draws_surface`]); None otherwise, and for a body whose surface could
+    /// not be made or did not fit (the frame's notes say why).
+    pub surface: Option<Arc<Surface>>,
     /// The cubes, in Morton order.
     pub cubes: Vec<Cube>,
     /// With a section: the leaves (or cut entries) the plane cuts, clipped to the half the view
@@ -463,6 +471,24 @@ pub struct VoxelFrame {
     /// With [`LeafField::Material`]: each material drawn, its label and colour, in the order
     /// first met (a uniform body as "uniform"), for the legend. Empty for the other fields.
     pub materials: Vec<(String, [u8; 3])>,
+    /// How the bodies are drawn: their voxels solid, or as outlines under their surface, or
+    /// their surface alone ([`BodyDraw`]). In [`BodyDraw::Fill`] the colouring is the exact fill
+    /// whatever the view's `colour` says.
+    pub draw: BodyDraw,
+}
+
+/// How one view looks at the voxel bodies: the field, the overlays, the section and the draw
+/// mode, as its [`crate::ViewSpec`] says.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct Look {
+    /// What colours the leaves (overridden by [`BodyDraw::Fill`]).
+    pub colouring: Colouring,
+    /// What is drawn over the bodies.
+    pub overlay: Overlay,
+    /// The section, if any.
+    pub cutting: Option<Cutting>,
+    /// The draw mode.
+    pub draw: BodyDraw,
 }
 
 /// The world position of body `n` at `time` (its tree's origin), metres.
@@ -566,7 +592,29 @@ pub fn voxel_frame_cut(
     cutting: Option<Cutting>,
     time: f64,
 ) -> VoxelFrame {
-    let mut frame = VoxelFrame { colouring, section: cutting, ..VoxelFrame::default() };
+    voxel_frame_drawn(scene, trees, &[], Look { colouring, overlay, cutting, draw: BodyDraw::Voxels }, time)
+}
+
+/// [`voxel_frame_cut`] in a draw mode ([`Look::draw`]), with `surfaces[n]` body `n`'s surface
+/// (None, or a shorter slice, for a body whose surface is not drawn). In [`BodyDraw::Fill`] the
+/// leaves are coloured by their fill ([`LeafField::Fill`]), which is exact for a tree with cut
+/// cells (a cut leaf weighs `ρ ×` its piece's volume, so its mass over a full cell's is the
+/// piece's share of the cell). The surfaces of the bodies drawn together have at most
+/// [`MAX_DRAWN_TRIANGLES`] triangles: a body whose surface would pass it is drawn without it, and
+/// the frame says so.
+#[must_use]
+pub fn voxel_frame_drawn(
+    scene: &SceneSpec,
+    trees: &[Option<Arc<VoxTree>>],
+    surfaces: &[Option<Arc<Surface>>],
+    look: Look,
+    time: f64,
+) -> VoxelFrame {
+    let Look { overlay, cutting, draw, .. } = look;
+    let colouring =
+        if draw == BodyDraw::Fill { Colouring { field: LeafField::Fill, tower: 0 } } else { look.colouring };
+    let mut frame = VoxelFrame { colouring, section: cutting, draw, ..VoxelFrame::default() };
+    let mut triangles = 0usize;
     let present: Vec<(usize, &Arc<VoxTree>)> = trees
         .iter()
         .enumerate()
@@ -704,7 +752,33 @@ pub fn voxel_frame_cut(
                 }
             }
         }
-        frame.bodies.push(BodyCubes { body: n, cubes, cells, cut: level });
+        let surface = if draw.draws_surface() {
+            match surfaces.get(n).cloned().flatten() {
+                Some(s) if triangles + s.triangles.len() > MAX_DRAWN_TRIANGLES => {
+                    frame.notes.push(format!(
+                        "`{}` is drawn without its surface: its {} triangles would take the view past the \
+                         {MAX_DRAWN_TRIANGLES} it draws",
+                        scene.bodies[n].label,
+                        s.triangles.len()
+                    ));
+                    None
+                }
+                Some(s) => {
+                    triangles += s.triangles.len();
+                    if s.tessellated {
+                        frame.notes.push(format!(
+                            "`{}` is a curved solid: its surface is drawn tessellated",
+                            scene.bodies[n].label
+                        ));
+                    }
+                    Some(s)
+                }
+                None => None,
+            }
+        } else {
+            None
+        };
+        frame.bodies.push(BodyCubes { body: n, at, surface, cubes, cells, cut: level });
     }
     if frame.boxes.len() >= MAX_OVERLAY_BOXES {
         frame.notes.push(format!("the overlay stops at {MAX_OVERLAY_BOXES} boxes"));
@@ -726,6 +800,10 @@ pub fn voxel_frame_cut(
             let m = a.abs().max(b.abs());
             (-m, m)
         });
+    }
+    // Drawn by their surfaces alone, the voxels' field has nothing to show: no legend.
+    if draw == BodyDraw::Mesh {
+        frame.range = None;
     }
     // Leaves by depth and the tree's nodes on one map: each range takes in the other.
     if colouring.field == LeafField::Depth

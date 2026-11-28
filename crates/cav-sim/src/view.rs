@@ -157,6 +157,11 @@ pub struct ViewSpec {
     /// body is still read by the towers: hiding is a view's, not the scene's.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hidden: Vec<String>,
+    /// How bodies with a shape are drawn: their voxels (the default, not written), shaded by their
+    /// exact fill, their own triangles, or the triangles inside the voxels' outlines
+    /// ([`crate::body_draw::BodyDraw`]). A view's, like the colouring: never undone.
+    #[serde(default, skip_serializing_if = "crate::body_draw::BodyDraw::is_voxels")]
+    pub body_draw: crate::body_draw::BodyDraw,
 }
 
 /// What a pane shows.
@@ -244,6 +249,7 @@ impl ViewSpec {
             overlay: crate::voxel_view::Overlay::default(),
             section: None,
             hidden: Vec::new(),
+            body_draw: crate::body_draw::BodyDraw::Voxels,
         };
         view.frame(scene);
         view

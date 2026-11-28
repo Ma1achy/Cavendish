@@ -221,6 +221,12 @@ pub const COMMANDS: &[CommandDoc] = &[
         example: "overlay tree depth 0..4 fade deep",
     },
     CommandDoc {
+        name: "draw",
+        usage: "draw <voxels|fill|mesh|mesh-over-voxels> [@N]",
+        about: "how bodies with a shape are drawn: their voxels coloured by the field; their voxels shaded by their exact fill (each boundary cell's clipped share of it, with a legend); their own triangles (a curved solid tessellated); or the triangles inside the voxels' outlines",
+        example: "draw fill",
+    },
+    CommandDoc {
         name: "section",
         usage: "section <off | x|y|z <metres>> [@N]",
         about: "a section plane square to an axis at a place along it (the world's frame): seen square-on (top, bottom, north, south, east, west) the bodies are cut to a 2-D section, the material filled by the colour field and empty where hollow, the tree overlay cut to its quadtree; from any other side the half nearer the camera is cut away",
@@ -493,11 +499,15 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
                         words.push("alone".to_owned());
                     }
                 }
+                if overlay.bands {
+                    words.push("bands".to_owned());
+                }
                 if words.is_empty() {
                     words.push("none".to_owned());
                 }
                 format!("overlay {}{}", words.join(" "), at(pane))
             }
+            ViewCommand::Draw { pane, draw } => format!("draw {}{}", draw.name(), at(pane)),
             ViewCommand::Hide { ref label, hidden } => {
                 format!("{} {}", if hidden { "hide" } else { "unhide" }, quoted(label))
             }
@@ -1031,6 +1041,10 @@ impl Engine {
                 }
                 view(ViewCommand::Hide { label: (*label).to_owned(), hidden: name == "hide" })
             }
+            ("draw", [word]) => match cav_sim::body_draw::BodyDraw::parse(word) {
+                Some(draw) => view(ViewCommand::Draw { pane, draw }),
+                None => Err(format!("`{word}` is not a draw mode; {}", usage(name))),
+            },
             ("section", ["off"]) => view(ViewCommand::Section { pane, section: None }),
             ("section", [axis, offset]) => {
                 let axis = match *axis {

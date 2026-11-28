@@ -55,7 +55,10 @@
 # TASK-S5-06 (Exact bodies): 8 new quick tests (cav-sim: A1, A2, A2's control, A3, X1, exact-solids
 # against platonic-row; cav-engine: the wire; cav-app: the Read row), and 1 for the owner's
 # ruling on A2 (the tetrahedron's octupole unseen level with it, seen at 30°).
-quick 773
-gpu 42
+# TASK-S5-16 (body draw modes): 6 new quick tests (cav-sim: D1, the surfaces' cap, a surface
+# encloses its shape, a past-the-cap count refused, the modes named; cav-engine: a draw mode gets
+# what it draws); 1 new gpu test (cav-render: each draw mode draws).
+quick 779
+gpu 43
 slow 58
 oracle 58
