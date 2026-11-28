@@ -39,6 +39,22 @@ points and the weights change.
   differences of the exact mesh to 1e-5 relative, for every parameter. Control: a 30 cm step
   disagrees by more than 1e-3 somewhere.
 
+**Amendment, same day, before any sweep or budget number was computed (only R1 and R2 had been
+run).** The compiled triangle kernel runs at
+86 ns per triangle and point on one thread, so the passes' exact pieces (2×10⁶ triangles at 128
+across, ~2×10⁴ points per pass) would take about an hour per body and placement. The budget's
+residuals are therefore taken from each piece's exact moments instead of its closed form: (d)'s
+residual is the pieces' l = 3, 4, 5 multipole terms (raw moments from the piece triangles by an
+exact degree-5 rule on the tetrahedra from the centroid), and the other techniques' residuals are
+(d)'s plus closed-form point, quadrupole and cube terms. Two checks are added:
+- **R7, the moments are the pieces.** Each piece's order-0 and order-2 moments from the rule equal
+  the voxeliser's `frac` and `second` to 1e-12 relative.
+- **R8, the truncation is small.** At the sweep's static points (1.5 m), the l ≤ 5 residual of (d)
+  equals the closed-form (d) residual (pieces minus point minus quadrupole) to ≤ 5 % at 4 cells
+  across and ≤ 1 % at 16 and finer, on every shape and placement where the closed-form residual is
+  above its rounding floor (10× the (e) error). The l = 5 term's share is reported as the estimate
+  of what l ≥ 6 leaves.
+
 ## Questions with a stated test (the answer is the finding; reported either way)
 
 - **Q1, ranking.** At 128 cells across and 1.5 m, (d) < (c) < (b) < (a) in the real read on the nine
