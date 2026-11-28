@@ -75,4 +75,6 @@
 quick 798
 gpu 46
 slow 62
-oracle 62
+# TASK-S5-28 (P8 restated as the rounding law): 3 new oracle tests (oracle: P8, its ESA control,
+# the calibration set within the law).
+oracle 65

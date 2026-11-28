@@ -391,3 +391,7 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   (1.6e-10 on the turned plate at 100 m); the face terms formed and summed in double-double would
   take it down by about 16 digits at some ten times the cost, for a `Faceted::field_exact` used by
   references only.
+- **A rounding law per aspect ratio** (TASK-S5-28): P8's constant `c = 2000` is set by the thin
+  bodies of the calibration set (a 20:1 rod 1928, a 100:1 plate 1049); compact bodies need 7 to 44.
+  A `c` that grows with a body's aspect ratio (fixed on a fresh calibration set, not the six)
+  would make the law some 40 times tighter for compact bodies.

@@ -18,6 +18,8 @@ Each task in plan/tasks.yaml is in one of three states:
                without `"isCrossRepository": false` is skipped, since anyone can open one from a fork's
                `task/...` branch);
   not started  otherwise.
+A task whose status is `open` is never done, whatever main's history says: for a task whose branch name was
+used by a PR that merged other work. The PR that does the task removes the line.
 
 Progress is counted by task, not by size: each task weighs the same.
 
@@ -145,7 +147,11 @@ def states(tasks, merged, in_review):
     out = {}
     for t in tasks:
         tid = t["id"]
-        if t.get("status") == "done" or tid in merged:
+        if t.get("status") == "open":
+            # A PR from the task's branch merged work that was not the task (TASK-S5-23's branch
+            # carried W3's held-out read, #265): the task is not done until this line goes.
+            out[tid] = REVIEW if tid in in_review else TODO
+        elif t.get("status") == "done" or tid in merged:
             out[tid] = DONE
         elif tid in in_review:
             out[tid] = REVIEW

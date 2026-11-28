@@ -1066,6 +1066,8 @@ mutation). Left, all minor:
   settles at all three; `docs/slices/S5.md` §7.9). It is a recorded measurement, no test fails.
   Choose: (a) keep it in the record as failed at 1e-6 and move on; (b) ask for a tighter bound or a
   cheaper near kernel to meet it (a task of its own); (c) restate it.
+  **Answered 28 Nov 2026: (a) with (b) later.** The 4.8× at 1e-6 stays in the record as missing the
+  10× target (§7.9); S25's read-speed tasks take it on (TASK-S25-16, beside -06, -07, -09).
 - **C3 (TASK-S5-26, 28 Nov 2026):** `Pieces` within 3 cells of an arm and `Second` beyond reads
   1.34e-6 relative against `Exact`, criterion 1e-11; every cell exact reads 3.3e-15. Options (a),
   (b), (c) and the measurements by reach are in "S5 under way" above and `docs/slices/S5.md` §7.7.
@@ -1084,6 +1086,10 @@ mutation). Left, all minor:
   class beyond" and merge TASK-S5-28 with it; (b) keep 1e-12 to 100 sizes and ask for a
   double-double reference evaluation (`plan/IDEAS.md`); (c) keep it in the record as failed and
   close TASK-S5-28.
+  **Answered 28 Nov 2026: judge it against the rounding law.** P8 is restated (S5.md §7.19): the
+  relative error at most `c·ε·(R/s)²` with `c` fixed first on nine other bodies (`c = 2000`, set by
+  a 20:1 rod; compact bodies need 7 to 44). The six measure 178 at worst (0.089 of the allowance);
+  ESA's values exceed it (control). The 1.61e-10 stays on record. TASK-S5-28 merged with it.
 
 Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
 - **Ubuntu Mono: yes.** `UbuntuMono-Regular.ttf` from the official Ubuntu font family release goes in,
