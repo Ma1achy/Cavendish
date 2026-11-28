@@ -8,7 +8,9 @@
 The scene (single-instant phase, as the shapes study; see the note §1 for what that leaves out):
 
     body (1 m, rho = 2700 kg/m^3, its own frame, voxels fixed in it) moves along +x at v = 1 m/s,
-    bounding-box centre level with the lower cloud; the tower's lower cloud at the world origin, the
+    bounding-box centre 1 m below the lower cloud (level with it, a point mass's M, range and speed
+    are exactly degenerate for one tower: the lower cloud then sees no g_z, and the upper cloud's
+    M a^-3 g(vt/a) fixes only M/a^3 and v/a); the tower's lower cloud at the world origin, the
     upper one 5 m above; closest approach at t = 0 puts the lower cloud d = 1.5, 5 or 20 m from the
     body's surface; shots every 2 s for t = -60 ... 60 s (61 shots), one at closest approach.
 
@@ -54,6 +56,7 @@ CYCLE = 2.0                             # s between shots (plan/VALIDATION-AND-R
 TIMES = np.arange(-60.0, 60.0 + 1e-9, CYCLE)
 ASD = 1e-4                              # rad/sqrt(Hz), AION-10 goal (Badurina et al. 2020, Table 1)
 SIGMA = ASD / np.sqrt(2.0 * CYCLE)      # rad per shot, white noise sampled every CYCLE s: 5e-5
+Z_BODY = -1.0                           # m, body's bounding-box centre relative to the lower cloud
 STEP = 1e-3                             # m, central-difference step for the Jacobian
 TECH = ["(a) cubes", "(b) sampled fill", "(c) fill + centroid", "(d) + second moment"]
 PARAMS = ["ln M", "x0", "y0", "v"]
@@ -87,15 +90,14 @@ def track(mesh: L.Mesh, d: float) -> tuple[float, F64]:
     lo, hi = float(c[1] - v[:, 1].min()), float(c[1] - v[:, 1].min()) + d + 2.0
 
     def gap(y0: float) -> float:
-        return L.distance_to_mesh(mesh.tris, c - np.array([0.0, y0, 0.0])) - d
+        return L.distance_to_mesh(mesh.tris, c - np.array([0.0, y0, Z_BODY])) - d
 
     assert gap(lo) < 0 < gap(hi), (gap(lo), gap(hi))
     for _ in range(60):
         mid = 0.5 * (lo + hi)
         lo, hi = (mid, hi) if gap(mid) < 0 else (lo, mid)
     y0 = 0.5 * (lo + hi)
-    lower = c[None] - np.stack([SPEED * TIMES, np.full_like(TIMES, y0), np.zeros_like(TIMES)], axis = 1)
-    return y0, lower
+    return y0, track_from(mesh, y0)
 
 
 def tower_points(lowers: list[F64]) -> F64:
@@ -189,8 +191,8 @@ def _sphere_facet() -> None:
     mesh, ball = L.mesh_by_name("sphere"), A.Ball(1.0)
     lowers = []
     for d in DISTANCES:
-        y0 = 1.0 + d
-        lowers.append(-np.stack([SPEED * TIMES, np.full_like(TIMES, y0), np.zeros_like(TIMES)], axis = 1))
+        y0 = float(np.sqrt((1.0 + d) ** 2 - Z_BODY**2))
+        lowers.append(-np.stack([SPEED * TIMES, np.full_like(TIMES, y0), np.full_like(TIMES, Z_BODY)], axis = 1))
     pts = tower_points(lowers)
     exact = series(ball.g_ref(pts))
     grad = []
@@ -199,7 +201,7 @@ def _sphere_facet() -> None:
         e[k] = STEP
         grad.append((series(ball.g_ref(pts - e)) - series(ball.g_ref(pts + e))) / (2 * STEP))
     out = {"shape": "sphere", "triangles": len(mesh.faces), "volume_m3": ball.volume,
-           "mass_kg": ball.volume * L.RHO, "y0": [1.0 + d for d in DISTANCES], "t": TIMES.tolist(),
+           "mass_kg": ball.volume * L.RHO, "y0": [float(np.sqrt((1.0 + d) ** 2 - Z_BODY**2)) for d in DISTANCES], "t": TIMES.tolist(),
            "phi": exact.tolist(), "dphi_dx": grad[0].tolist(), "dphi_dy": grad[1].tolist(),
            "dphi_dz": grad[2].tolist(),
            "physical": {"facet: 5120-triangle icosphere": (series(L.g_mesh(mesh.tris, pts)) - exact).tolist()}}
@@ -262,7 +264,7 @@ def run(name: str, seed: int) -> None:
 def track_from(mesh: L.Mesh, y0: float) -> F64:
     v = mesh.verts
     c = 0.5 * (v.min(axis = 0) + v.max(axis = 0))
-    return c[None] - np.stack([SPEED * TIMES, np.full_like(TIMES, y0), np.zeros_like(TIMES)], axis = 1)
+    return c[None] - np.stack([SPEED * TIMES, np.full_like(TIMES, y0), np.full_like(TIMES, Z_BODY)], axis = 1)
 
 
 # ======================================= INFERENCE =======================================
@@ -277,14 +279,29 @@ def jacobian(tr: dict[str, object], i: int, with_z: bool = False) -> F64:
     return np.stack(cols, axis = 1)
 
 
+def _svd(j: F64) -> tuple[F64, F64, F64, F64]:
+    """SVD of J with its columns scaled to unit norm (the columns differ by ~10^6 in size)."""
+    s = np.linalg.norm(j, axis = 0)
+    u, w, vt = np.linalg.svd(j / s, full_matrices = False)
+    return s, u, w, vt
+
+
 def crb(j: F64, sigma: float = SIGMA) -> F64:
-    """sqrt(diag(F^-1)), F = J^T J / sigma^2 (white noise)."""
-    return np.sqrt(np.diag(np.linalg.inv(j.T @ j / sigma**2)))
+    """sqrt(diag(F^-1)), F = J^T J / sigma^2 (white noise), via the SVD for conditioning."""
+    s, _, w, vt = _svd(j)
+    return sigma * np.sqrt(((vt.T / w) ** 2).sum(axis = 1)) / s
 
 
 def bias(j: F64, resid: F64) -> F64:
     """F^-1 J^T Sigma^-1 resid for white noise: the least-squares projection (sigma cancels)."""
-    return np.linalg.solve(j.T @ j, j.T @ resid)
+    s, u, w, vt = _svd(j)
+    return (vt.T @ ((u.T @ resid) / w)) / s
+
+
+def condition(j: F64) -> float:
+    """Condition number of J with unit-norm columns."""
+    w = _svd(j)[2]
+    return float(w[0] / w[-1])
 
 
 def ratios(j: F64, resid: F64, sigma: float = SIGMA) -> tuple[F64, float]:
