@@ -3,7 +3,9 @@
 Malachy Doherty (affiliation to be filled in). **Draft for comments, not submitted. Whether, where
 and with whom to publish is the author's decision.**
 
-`paper.tex` + `refs.bib` → `paper.pdf` (built with tectonic). Draft 5 (28 Nov 2026) answers the
+`paper.tex` + `refs.bib` → `paper.pdf` (built with tectonic). Draft 6 (28 Nov 2026) reorders draft 5 into one line of argument
+(question, read, closed form, representations, error budget, cost; see
+[`STRUCTURE-draft-6.md`](STRUCTURE-draft-6.md)) without changing a number or claim. Draft 5 answered the
 referee's report on draft 4 ([`REVIEW-draft-4.md`](REVIEW-draft-4.md), with the response at its end). It covers the
 polyhedral closed form, its numerics and its Lean proof, the boundary-cell representations, and the
 signal the interferometer actually reads; the world octree, the layered read and the tree walk are
@@ -46,7 +48,7 @@ the flight nodes for moving ones), unless the text says "leading read".
 `docs/research/paper-real-read/conv_real.py` with the tower moved: lower launch point level with the
 body's centre, 1.5 m and 10 m from it horizontally, so every arm point stays outside the sphere that
 holds the body). `data/` also holds draft 3's leading-read benchmark (`<body>.json`, triple-product
-numerator; `<body>-edges.json`, h_f·2A_f) and its summaries, which §5 cites for the numerator's effect;
+numerator; `<body>-edges.json`, h_f·2A_f) and its summaries, which §4.3 cites for the numerator's effect;
 `esa_fixtures.json` (numbers from ESA's GPL-3.0 tool), `crosscheck.json`, `mp_reference.json`.
 `generated/` holds the LaTeX tables and `numbers.tex` that the scripts write.
 
@@ -67,8 +69,8 @@ analytic shape) and the **voxel error** (voxels against mesh) apart throughout.
 TASK-S5-18 wired the rows marked **Cavendish** to Cavendish's own tests, which write
 `data/cavendish/`; the paper's figures are drawn from that by the same Python and in the same style
 as before, and their *provisional* mark is gone. The rows still marked *provisional* come from the
-research scripts, with one line on why. The Python stays as the independent check (Appendix B).
-Names, not numbers, because numbers move; `docs/slices/S5.md` §7.15 lists every number that
+research scripts, with one line on why. The Python stays as the independent check (Appendix A).
+Names, not numbers, because numbers move; `docs/slices/S5.md` §7.16 lists every number that
 changed.
 
 | item | source (`make.py` target → what runs) | state | scene(s) |
@@ -80,7 +82,7 @@ changed.
 | Fig. far field and near edge | `farfield`, `nearedge` → `cargo test -p cav-core --lib far_field_by_distance` / `near_edge_by_distance -- --ignored` (`src/polyhedral/tests.rs`) → `data/cavendish/farfield.txt`, `nearedge.txt`; drawn by `figures` | **Cavendish** | none |
 | Table "four codes against 40 digits" | `forty` → the oracle crate's `forty_digits_for_the_paper` (`oracle/tests/polyhedral.rs`) → `data/cavendish/forty-digits.json`; `realread` | **Cavendish** column from it (Spot's cells excepted: its mesh is downloaded, so they stay the benchmark harness's run of the same kernel); Python, ESA and Harmonica from `docs/research/paper-benchmarks/accuracy.json` (other codes) | the fixture `oracle/fixtures/paper/polyhedral/` (`scripts/oracle_fixtures.py` from `esa_fixtures.json`, `mp_reference.json`) |
 | Fig. "against a 40-digit evaluation" | `forty`, then `figures` | **Cavendish** ("this form"); ESA from `mp_reference.json` | as above |
-| P8 (≤ 1e-12 to 100 sizes) and the rounding class | `cargo xtask oracle`: `validation_polyhedral_forty_digit_class` (and P8 as written, TASK-S5-28) | **Cavendish**; P8 as written fails (S5.md §7.15) | as above |
+| P8 (≤ 1e-12 to 100 sizes) and the rounding class | `cargo xtask oracle`: `validation_polyhedral_forty_digit_class` (and P8 as written, TASK-S5-28) | **Cavendish**; P8 as written fails (S5.md §7.16) | as above |
 | Table "Cavendish's polyhedral kernel" (P1–P7) | `engine` → `scripts/engine_table.py` from `docs/validation/report.json` → `generated/rr-engine.tex` | **Cavendish** (the report's `polyhedral.*` cases) | — |
 | Table "phase error at h = 1/64 m" and Fig. "against pitch" | `conv` → the oracle crate's `the_benchmark_for_the_paper` (`oracle/tests/benchmark.rs`, case `cut.benchmark_bodies`) → `data/cavendish/conv.json`; `realread` | **Cavendish** (the flight read); the dotted leading read and the arms' clearance from `data/level/conv.json` (`level` → `scripts/conv_level.py`), as Cavendish has no leading read | the bodies from the fixture; `scenes/` holds the same bodies for `cav` |
 | Table "static phase errors behind the budget" | `realread` (`generated/numbers.tex`) | **Cavendish** (`data/cavendish/conv.json`, `forty-digits.json`) | as above |

@@ -467,3 +467,6 @@ pub fn lod_frame(view: &LodView, overlay: WorldOverlay, read: Option<&ReadView>)
     frame.boxes = boxes;
     frame
 }
+
+#[cfg(test)]
+mod tests;

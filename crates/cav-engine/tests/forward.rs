@@ -1496,3 +1496,36 @@ fn slow_the_octree_overlay_comes_with_the_world_s_read() {
     // The journal's line reads back as the command.
     assert!(engine.journal().iter().any(|c| cav_engine::console::describe(c, 0) == "overlay octree"));
 }
+
+#[test]
+fn slow_a_tower_s_lod_view_is_the_read_s_cut() {
+    // L1 through the engine: `lod-view tower 2` draws the cut tower 2's read made (no walk of its
+    // own), and the streaming makes what it names; `lod-view towers all` their common refinement;
+    // `lod-view camera` no list. The lines read back as their commands.
+    let mut engine = loaded(dev::world_box());
+    assert!(engine.settle(LONG));
+    engine.run_line("lod-view tower 2").unwrap();
+    let lod = engine.frame(0).unwrap().lod.unwrap().clone();
+    let list = lod.list.expect("a tower's view has a list");
+    assert!(!list.is_empty());
+    assert!(engine.settle_world(LONG));
+    let world = engine.frame(0).unwrap().world.unwrap();
+    for (level, key) in &list {
+        let resident = if *level == 0 {
+            world.chunks.contains_key(key)
+        } else {
+            world.bricks.contains_key(&(*level, *key))
+        };
+        assert!(resident, "{level} {key:?} is streamed for the view");
+    }
+    engine.run_line("lod-view towers all").unwrap();
+    assert!(engine.frame(0).unwrap().lod.unwrap().list.is_some());
+    engine.run_line("lod-view camera").unwrap();
+    assert!(engine.frame(0).unwrap().lod.unwrap().list.is_none());
+    let lines: Vec<String> = engine.journal().iter().map(|c| cav_engine::console::describe(c, 0)).collect();
+    for line in ["lod-view tower 2", "lod-view towers 1 2 3 4 5", "lod-view camera"] {
+        assert!(lines.iter().any(|l| l == line), "{line}: {lines:?}");
+    }
+    // Control: a tower the scene has not is refused in words.
+    assert!(engine.run_line("lod-view tower 9").unwrap_err().contains("not a tower"));
+}

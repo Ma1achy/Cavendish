@@ -35,7 +35,14 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
-**TASK-S5-18, the paper regenerated with Cavendish (28 Nov 2026; §7.15).** The polyhedral-gravity
+**TASK-S5-20, LOD views (28 Nov 2026; §7.15).** `lod-view camera | tower N | towers … | towers
+all`: the world drawn at the levels the camera wants, at tower N's cut (no new walk: the read's), or
+at the towers' common refinement (a partition, finer than each cut, minimal; the naive union
+double-covers). The streaming makes what a view names; a node not resident is drawn by its nearest
+resident ancestor, said. The blocks below the chunk are drawn merged into their chunk and outlined
+by the overlays. Worth a second look: L1/L2 measured at 1e-2 (at 1e-4 every tower opens everything).
+
+**TASK-S5-18, the paper regenerated with Cavendish (28 Nov 2026; §7.16).** The polyhedral-gravity
 paper's kernel figures (far field, near edge), its 40-digit comparison (table and figure), the
 engine's P1–P7 table (now all from the validation report) and the benchmark (Table "phase error at
 h = 1/64 m", Figure "against pitch", the static numbers) come from Cavendish's tests and lost their
@@ -43,7 +50,7 @@ h = 1/64 m", Figure "against pitch", the static numbers) come from Cavendish's t
 Cavendish's exact signals agree with the research scripts' to 5e-11). The moving-body figure, the
 ten shapes' rows and the error budget stay provisional (TASK-S5-29: their meshes are downloaded,
 and the budget is Gradar-side). P8 as written fails (1.6e-10 at 100 sizes; question below,
-TASK-S5-28 open). Every changed number of the paper is listed in §7.15 for its author.
+TASK-S5-28 open). Every changed number of the paper is listed in §7.16 for its author.
 
 **TASK-S5-15, the octree overlay and the read-LOD overlay (28 Nov 2026; §7.14).** The world's
 contribution now carries what the views draw of the read (the octree's nodes, each tower's cut with
