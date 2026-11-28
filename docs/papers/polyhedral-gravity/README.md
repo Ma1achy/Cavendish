@@ -3,7 +3,9 @@
 Malachy Doherty (affiliation to be filled in). **Draft for comments, not submitted. Whether, where
 and with whom to publish is the author's decision.**
 
-`paper.tex` + `refs.bib` → `paper.pdf` (built with tectonic). Draft 5 (28 Nov 2026) answers the
+`paper.tex` + `refs.bib` → `paper.pdf` (built with tectonic). Draft 6 (28 Nov 2026) reorders draft 5 into one line of argument
+(question, read, closed form, representations, error budget, cost; see
+[`STRUCTURE-draft-6.md`](STRUCTURE-draft-6.md)) without changing a number or claim. Draft 5 answered the
 referee's report on draft 4 ([`REVIEW-draft-4.md`](REVIEW-draft-4.md), with the response at its end). It covers the
 polyhedral closed form, its numerics and its Lean proof, the boundary-cell representations, and the
 signal the interferometer actually reads; the world octree, the layered read and the tree walk are
@@ -41,7 +43,7 @@ the flight nodes for moving ones), unless the text says "leading read".
 `docs/research/paper-real-read/conv_real.py` with the tower moved: lower launch point level with the
 body's centre, 1.5 m and 10 m from it horizontally, so every arm point stays outside the sphere that
 holds the body). `data/` also holds draft 3's leading-read benchmark (`<body>.json`, triple-product
-numerator; `<body>-edges.json`, h_f·2A_f) and its summaries, which §5 cites for the numerator's effect;
+numerator; `<body>-edges.json`, h_f·2A_f) and its summaries, which §4.3 cites for the numerator's effect;
 `esa_fixtures.json` (numbers from ESA's GPL-3.0 tool), `crosscheck.json`, `mp_reference.json`.
 `generated/` holds the LaTeX tables and `numbers.tex` that the scripts write.
 
@@ -61,7 +63,7 @@ analytic shape) and the **voxel error** (voxels against mesh) apart throughout.
 
 Every measured result is from research scripts and is marked *provisional* in the PDF.
 TASK-S5-18 wires each row's Cavendish command, regenerates, and drops the mark; the Python stays as
-the independent check (Appendix B). Names, not numbers, because numbers move.
+the independent check (Appendix A). Names, not numbers, because numbers move.
 
 | item | now (`make.py` target → script) | after S5 (Cavendish) — to be wired | scene(s) |
 |---|---|---|---|
