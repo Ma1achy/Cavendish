@@ -1,0 +1,19 @@
+﻿[package]
+name = "sampler"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_System_Diagnostics_Debug",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Threading",
+  "Win32_System_Kernel",
+  "Win32_System_SystemInformation", "Win32_System_WindowsProgramming",
+] }
+
+[profile.release]
+debug = false
