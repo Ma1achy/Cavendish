@@ -1,0 +1,9 @@
+.work/
+bench/target/
+bench/Cargo.lock
+gpu/target/
+gpu/Cargo.lock
+__pycache__/
+bench/target-gpu/
+bench/target-v2/
+data/*.err
