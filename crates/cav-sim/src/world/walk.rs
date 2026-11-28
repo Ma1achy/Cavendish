@@ -153,6 +153,10 @@ pub struct Cut {
     pub inner_per_level: [usize; 4],
     /// The leaves read one by one, in all.
     pub leaves: u64,
+    /// Each accepted node's bound `B`, radians, in the order of [`Self::accepted`] then
+    /// [`Self::inner`] (infinite for one a stopped walk could not accept): what the ledger is made
+    /// of, kept for drawing each node's share of it (`super::lod_view`).
+    pub bounds: Vec<f64>,
 }
 
 impl Cut {
@@ -375,16 +379,19 @@ pub fn walk_with(octree: &Octree, aim: &Aim, trees: &[ChunkTree]) -> Cut {
             }
         }
     }
-    let mut accepted: Vec<NodeKey> = Vec::new();
-    let mut inner: Vec<InnerKey> = Vec::new();
+    let mut accepted: Vec<(NodeKey, f64)> = Vec::new();
+    let mut inner: Vec<(InnerKey, f64)> = Vec::new();
     for e in &queue {
         match e.key {
-            Key::Node(k) => accepted.push(k),
-            Key::Inner(k) => inner.push(k),
+            Key::Node(k) => accepted.push((k, e.bound)),
+            Key::Inner(k) => inner.push((k, e.bound)),
         }
     }
-    accepted.sort_unstable();
-    inner.sort_unstable();
+    accepted.sort_unstable_by_key(|(k, _)| *k);
+    inner.sort_unstable_by_key(|(k, _)| *k);
+    let bounds = accepted.iter().map(|(_, b)| *b).chain(inner.iter().map(|(_, b)| *b)).collect();
+    let accepted: Vec<NodeKey> = accepted.into_iter().map(|(k, _)| k).collect();
+    let inner: Vec<InnerKey> = inner.into_iter().map(|(k, _)| k).collect();
     opened.sort_unstable();
     whole.sort_unstable();
     runs.sort_unstable_by_key(|(k, r)| (*k, r.start));
@@ -401,7 +408,20 @@ pub fn walk_with(octree: &Octree, aim: &Aim, trees: &[ChunkTree]) -> Cut {
     if !settled && stopped.is_none() {
         stopped = Some("the walk ran out of nodes above its tolerance".to_owned());
     }
-    Cut { accepted, inner, opened, whole, runs, ledger, settled, stopped, per_level, inner_per_level, leaves }
+    Cut {
+        accepted,
+        inner,
+        opened,
+        whole,
+        runs,
+        ledger,
+        settled,
+        stopped,
+        per_level,
+        inner_per_level,
+        leaves,
+        bounds,
+    }
 }
 
 /// What popping an entry opens.

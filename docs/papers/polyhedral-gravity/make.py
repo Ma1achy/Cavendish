@@ -6,7 +6,7 @@
     python make.py bench               # the leading-read benchmark (~40 min, below-normal priority)
     python make.py esa <venv-python>   # ESA fixtures (GPL tool, own venv), then crosscheck + mp
     python make.py shapes-study        # rerun the shapes study's own scripts (hours; downloads)
-    python make.py <target> ...        # tables | farfield | nearedge | crosscheck | mp | scenes |
+    python make.py <target> ...        # tables | farfield | nearedge | crosscheck | mp | omitted | scenes |
                                        # render | diagrams | shapes | realread | figures | pdf
 
 Every measured figure and table of the draft comes from the research scripts (Python and compiled
@@ -90,6 +90,11 @@ def crosscheck() -> None:
 
 def mp() -> None:
     run([sys.executable, str(HERE / "scripts" / "mp_reference.py")], DATA / "mp_reference.txt")
+
+
+def omitted() -> None:
+    """Sizes of the effects the first-order, instantaneous-kick model leaves out (paper §2, S3)."""
+    run([sys.executable, str(HERE / "scripts" / "omitted.py")], DATA / "omitted.txt")
 
 
 def scenes() -> None:
@@ -275,7 +280,7 @@ def pdf() -> None:
 
 
 TARGETS = {"bench": bench, "tables": tables, "farfield": farfield, "nearedge": nearedge,
-           "crosscheck": crosscheck, "mp": mp, "scenes": scenes, "render": render,
+           "crosscheck": crosscheck, "mp": mp, "omitted": omitted, "scenes": scenes, "render": render,
            "figures": figures, "diagrams": diagrams, "shapes": shapes, "shapes-study": shapes_study,
            "level": level, "realread": realread, "realread-rerun": realread_rerun, "pdf": pdf}
 
@@ -286,7 +291,7 @@ def main() -> None:
         esa(args[1])
         return
     if args == ["all"]:
-        args = ["tables", "farfield", "nearedge", "crosscheck", "mp", "scenes", "diagrams", "shapes",
+        args = ["tables", "farfield", "nearedge", "crosscheck", "mp", "omitted", "scenes", "diagrams", "shapes",
                 "figures", "realread", "pdf"]
     for t in args:
         print("==", t)

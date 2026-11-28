@@ -8,6 +8,7 @@ use std::f64::consts::TAU;
 
 use bytemuck::{Pod, Zeroable};
 use cav_core::Vec3;
+use cav_sim::body_draw::BodyDraw;
 use cav_sim::{DrawStyle, SceneSpec, Target};
 
 /// One thick line segment, drawn as a screen-facing quad. `repr(C)`: this is the instance layout.
@@ -399,6 +400,14 @@ fn inset(lo: Vec3, hi: Vec3) -> (Vec3, Vec3) {
     (lo + step, hi - step)
 }
 
+/// How much of its size a cut cell's piece is drawn at in `draw pieces`, about the mean of its
+/// corners: shrunk a little so that neighbouring pieces stand apart.
+pub const PIECE_SHRINK: f64 = 0.88;
+
+/// The half-length of the cross marking a piece's centroid (`overlay centroids`), in its cell's
+/// sides: long enough to show through the piece drawn round it.
+pub const CENTROID_MARK: f64 = 0.45;
+
 /// The gap round a flat section cell, as a fraction of its side.
 const SECTION_GAP: f64 = 0.04;
 
@@ -571,17 +580,66 @@ pub fn drawables_hiding(
             let dark = !paper;
             let diverging = frame.colouring.field.diverging();
             let range = frame.range.unwrap_or((0.0, 1.0));
-            for cube in &cubes.cubes {
-                let rgb = cube
-                    .colour
-                    .unwrap_or_else(|| crate::colour::of_value(cube.value, range, diverging, dark));
-                let hex = (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]);
-                let h = 0.5 * cube.side;
-                let d = Vec3::new(h, h, h);
-                if filled {
-                    b.cuboid(cube.centre - d, cube.centre + d, linear(hex, 1.0));
-                } else {
-                    b.box_edges(cube.centre - d, cube.centre + d, 1.0, linear(hex, 1.0));
+            // The draw mode: the voxels solid, as outlines under the surface, or not at all.
+            let draw = frame.draw;
+            let solid_cubes = filled && draw != BodyDraw::MeshOverVoxels;
+            if draw.draws_voxels() {
+                for cube in &cubes.cubes {
+                    let rgb = cube
+                        .colour
+                        .unwrap_or_else(|| crate::colour::of_value(cube.value, range, diverging, dark));
+                    let hex = (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]);
+                    let h = 0.5 * cube.side;
+                    let d = Vec3::new(h, h, h);
+                    if solid_cubes {
+                        b.cuboid(cube.centre - d, cube.centre + d, linear(hex, 1.0));
+                    } else {
+                        b.box_edges(cube.centre - d, cube.centre + d, 1.0, linear(hex, 1.0));
+                    }
+                }
+            }
+            // Each cut cell's piece, a little shrunk about its corners' mean so that each stands
+            // apart, in the field's colour of its value (its fill).
+            if let Some(pieces) = &cubes.pieces {
+                for &(i, value) in &pieces.drawn {
+                    let piece = &pieces.surfaces[i];
+                    let rgb = crate::colour::of_value(value, range, diverging, dark);
+                    let hex = (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]);
+                    let tint = linear(hex, 1.0);
+                    let count = (3 * piece.triangles.len()).max(1) as f64;
+                    let mean =
+                        piece.triangles.iter().flatten().fold(Vec3::ZERO, |m, p| m + *p) * (1.0 / count);
+                    let place = |p: Vec3| cubes.at + piece.centre + mean + (p - mean) * PIECE_SHRINK;
+                    for t in &piece.triangles {
+                        let corners = t.map(place);
+                        if filled {
+                            let normal = (corners[1] - corners[0]).cross(corners[2] - corners[0]);
+                            if normal.length() > 0.0 {
+                                b.triangle(corners, [normal.normalised(); 3], tint);
+                            }
+                        } else {
+                            for k in 0..3 {
+                                b.line(corners[k], corners[(k + 1) % 3], 1.0, tint);
+                            }
+                        }
+                    }
+                }
+            }
+            // The shape's own triangles, moved to where the body is: solid and lit by their face
+            // normals, or their edges in the styles that draw edges.
+            if let Some(surface) = &cubes.surface {
+                for t in &surface.triangles {
+                    let corners = t.map(|p| cubes.at + p);
+                    if filled {
+                        let normal = (corners[1] - corners[0]).cross(corners[2] - corners[0]);
+                        if normal.length() > 0.0 {
+                            b.triangle(corners, [normal.normalised(); 3], colour);
+                        }
+                    } else {
+                        for k in 0..3 {
+                            b.line(corners[k], corners[(k + 1) % 3], 1.0, colour);
+                        }
+                    }
                 }
             }
             // What a section plane cuts: clipped blocks, or flat squares on a 2-D section, in the
@@ -647,6 +705,19 @@ pub fn drawables_hiding(
         for overlay in &frame.boxes {
             let colour = linear(LEVEL_COLOURS[usize::from(overlay.level) % LEVEL_COLOURS.len()], 1.0);
             b.box_edges(overlay.lo, overlay.hi, 1.0, colour);
+        }
+        b.end_part(Part::Overlay);
+    }
+
+    // Each cut cell's piece's centroid: a cross of [`CENTROID_MARK`] cells each way, in the
+    // selection's colour.
+    if let Some(frame) = voxels.filter(|v| !v.centroids.is_empty()) {
+        let colour = linear(palette.selection, 1.0);
+        for &(c, side) in &frame.centroids {
+            let reach = CENTROID_MARK * side;
+            for axis in [Vec3::X, Vec3::Y, Vec3::Z] {
+                b.line(c - axis * reach, c + axis * reach, 1.5, colour);
+            }
         }
         b.end_part(Part::Overlay);
     }
@@ -781,6 +852,62 @@ fn planet_grid(b: &mut Builder, radius: f64, colour: [f32; 4]) {
         }
     }
     b.end_part(Part::Base);
+}
+
+/// The colour of a world overlay's box (`overlay octree|level|tower|ledger`, linear light): by its
+/// level on the sequential map over `levels` (the levels drawn); by its tower's colour; or by its
+/// share of the ledger on the sequential map of its base-10 logarithm over `shares` (the least
+/// and greatest drawn), an opened chunk (no share: read leaf by leaf) grey.
+#[must_use]
+pub fn lod_box_colour(
+    b: &cav_sim::world::lod_view::LodBox,
+    overlay: cav_sim::world::lod_view::WorldOverlay,
+    levels: (i8, i8),
+    shares: (f64, f64),
+    dark: bool,
+) -> [f32; 4] {
+    use cav_sim::world::lod_view::WorldOverlay;
+    let rgb = match overlay {
+        WorldOverlay::Tower => b.tower.map_or([0x80; 3], tower_srgb),
+        WorldOverlay::Ledger if b.share > 0.0 => {
+            crate::colour::of_value(b.share.log10(), (shares.0.log10(), shares.1.log10()), false, dark)
+        }
+        WorldOverlay::Ledger => [0x6a; 3],
+        _ => crate::colour::of_value(
+            f64::from(b.level),
+            (f64::from(levels.0), f64::from(levels.1)),
+            false,
+            dark,
+        ),
+    };
+    linear((u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]), 1.0)
+}
+
+/// `things` with a world overlay's boxes (`lod`'s, [`cav_sim::world::lod_view::LodFrame`]) added as
+/// outlines, relative to `origin`, as one more part.
+#[must_use]
+pub fn with_lod(
+    mut things: Drawables,
+    lod: Option<&cav_sim::world::lod_view::LodFrame>,
+    origin: Vec3,
+    style: DrawStyle,
+) -> Drawables {
+    let Some(lod) = lod.filter(|l| !l.boxes.is_empty()) else { return things };
+    let dark = style != DrawStyle::Paper;
+    let levels = (lod.levels.first().copied().unwrap_or(0), lod.levels.last().copied().unwrap_or(0));
+    let shares = lod
+        .boxes
+        .iter()
+        .map(|b| b.share)
+        .filter(|s| *s > 0.0)
+        .fold((f64::INFINITY, 0f64), |(a, b), s| (a.min(s), b.max(s)));
+    let mut b = Builder { origin, out: std::mem::take(&mut things) };
+    for item in &lod.boxes {
+        let colour = lod_box_colour(item, lod.overlay, levels, shares, dark);
+        b.box_edges(item.boxed.lo, item.boxed.hi, 1.0, colour);
+    }
+    b.end_part(Part::Overlay);
+    b.out
 }
 
 #[cfg(test)]

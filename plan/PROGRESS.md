@@ -35,7 +35,7 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
-**TASK-S5-13, plane and sphere bases (28 Nov 2026; `docs/slices/S5.md` §7.12).** `world.base:
+**TASK-S5-13, plane and sphere bases (28 Nov 2026; `docs/slices/S5.md` §7.16).** `world.base:
 Patch | Plane | Sphere` (Patch the default, not written: every older scene's bytes unchanged). The
 plane is S1's slab and the planet its layers as one point mass, read beside the departures; a
 chunk's read matter is its pieces' leaves plus their overlap with the base at minus its density,
@@ -49,7 +49,7 @@ pictures. Worth a second look: a plane's piece may reach below the slab (exact b
 the brief forbade it); a planet is one point mass of its layers; the sunk-box series is a slow case
 of its own.
 
-**For the owner: B3's gradiometer (TASK-S5-28, PR open, not merged; §7.12).** Written before
+**For the owner: B3's gradiometer (TASK-S5-28, PR open, not merged; §7.16).** Written before
 measuring: an empty planet's channels within 1e-12 relative of its layers read as point masses.
 Each interferometer is (9.4e-16); the gradiometer is 1.35e-12 of itself. It is a thousandth of
 either interferometer (5.5e4 against 5.5e7 rad), so the few ulps in which any two `f64` reads of
@@ -57,6 +57,34 @@ either interferometer (5.5e4 against 5.5e7 rad), so the few ulps in which any tw
 interferometers' phase (as W2 allows 1e-13 of the phase): 1.4e-15; (b) make the flight sum
 compensated (double-double) so the gradiometer keeps its own digits (changes every reading's last
 bits; `plan/IDEAS.md`); (c) keep it as written, failing and known.
+**TASK-S5-20, LOD views (28 Nov 2026; §7.15).** `lod-view camera | tower N | towers … | towers
+all`: the world drawn at the levels the camera wants, at tower N's cut (no new walk: the read's), or
+at the towers' common refinement (a partition, finer than each cut, minimal; the naive union
+double-covers). The streaming makes what a view names; a node not resident is drawn by its nearest
+resident ancestor, said. The blocks below the chunk are drawn merged into their chunk and outlined
+by the overlays. Worth a second look: L1/L2 measured at 1e-2 (at 1e-4 every tower opens everything).
+
+**TASK-S5-15, the octree overlay and the read-LOD overlay (28 Nov 2026; §7.14).** The world's
+contribution now carries what the views draw of the read (the octree's nodes, each tower's cut with
+every accepted node's bound), through the page's wire too; `overlay octree` outlines the octree by
+level (at most 20,000 nodes, whole levels dropped finest first, said; legend of the levels drawn),
+`overlay level` tints the world by level, `overlay tower | ledger` outline a tower's view's nodes
+(TASK-S5-20 gives the view). No walk or build of its own: the overlay appears when the read arrives.
+
+**TASK-S5-17, the clipped-piece view (28 Nov 2026; §7.13).** `draw pieces` draws each boundary
+cell as its exact clipped piece (a convex piece's faces; for a mesh, the mesh clipped to the cell
+and the caps on its walls), shaded by fill, shrunk a little so each stands apart; `overlay
+centroids` marks each piece's centroid. Each drawn piece encloses its piece's volume and centroid to
+4.8e-15 of a cell, a box mesh with faces on the cells' walls included (the first cap rule failed that
+case at 1/6 of a cell and was replaced, §7.13).
+
+**TASK-S5-16, body draw modes (28 Nov 2026; `docs/slices/S5.md` §7.12).** `draw voxels | fill |
+mesh | mesh-over-voxels` (console and the overlays popover; a view setting, journalled, never
+undone). `fill` shades each voxel by its exact fill (worst 1.1e-16 off over 2,232 boundary cells; a
+body read `Sampled` is clipped for the picture, its read unchanged); `mesh` draws the shape's own
+triangles (a curved solid tessellated, said); `mesh-over-voxels` the voxels as outlines round the
+solid surface. New scene `cut-cells`. Worth a second look: outlines rather than translucency for
+mesh over voxels; the triangle cap held in `cav-sim`, not `cav-render`.
 
 **TASK-S5-14, measured radii and the rings (28 Nov 2026; §7.11).** `cav bench lod-radii --scene
 <s>` measures each level's nearest acceptance by the ledger walk; the stored table (town, eight
@@ -1014,7 +1042,7 @@ mutation). Left, all minor:
 ## Questions for the owner
 - **B3's gradiometer (TASK-S5-28, 28 Nov 2026):** an empty planet's gradiometer reads 1.35e-12 of
   itself against its layers (criterion 1e-12); each interferometer 9.4e-16. Options (a), (b), (c)
-  are in "S5 under way" above and `docs/slices/S5.md` §7.12.
+  are in "S5 under way" above and `docs/slices/S5.md` §7.16.
 - **L1 at 1e-6 (TASK-S5-27, 28 Nov 2026):** the criterion written first asked for 10× fewer
   leaves at each of 1e-2, 1e-4, 1e-6 rad on the town; measured 52×, 17.6× and **4.8×** (the read
   settles at all three; `docs/slices/S5.md` §7.9). It is a recorded measurement, no test fails.

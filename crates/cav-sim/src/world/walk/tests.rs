@@ -371,14 +371,26 @@ pub(crate) fn chunks_under(tree: &Octree, id: usize, out: &mut Vec<ChunkKey>) {
 fn ledgers() -> &'static Ledgers {
     static FOUND: std::sync::OnceLock<Ledgers> = std::sync::OnceLock::new();
     FOUND.get_or_init(|| {
-        use cav_core::forward::{Quadrature, Reader};
         let town = case("town", crate::dev::town(), TOWN_BASES.to_vec());
+        measure_ledgers(vec![world_box(), town])
+    })
+}
+
+/// The measurement behind [`ledgers`], over any `cases`.
+fn measure_ledgers(cases: Vec<Case>) -> Ledgers {
+    {
+        use cav_core::forward::{Quadrature, Reader};
         let mut out = Ledgers { error_over_ledger: 0.0, ledger_over_tolerance: 0.0, ledger_over_error: 0.0 };
-        println!("world base tolerance: accepted per level, opened, ledger (rad), gradiometer error (rad), ledger/error");
-        for case in [world_box(), town] {
+        println!(
+            "world base tolerance: accepted per level, opened, ledger (rad), gradiometer error (rad), ledger/error"
+        );
+        for case in cases {
             let readers = read::Readers::new(&case.spec);
             let coarse = Quadrature::Gauss { order: 3, panel: 0.5 };
-            let reader = Reader::new(cav_core::forward::Instrument { quadrature: coarse, ..*readers.of(0).instrument() });
+            let reader = Reader::new(cav_core::forward::Instrument {
+                quadrature: coarse,
+                ..*readers.of(0).instrument()
+            });
             let keys: Vec<ChunkKey> = case.tree.level(0).map(|id| case.tree.chunk(id).unwrap()).collect();
             let made = crate::world::open(&case.world, &keys, &|| false).unwrap().unwrap();
             let all: Vec<Cube> = made.iter().flat_map(|t| t.cubes.iter().copied()).collect();
@@ -405,7 +417,8 @@ fn ledgers() -> &'static Ledgers {
                         chunks_under(&case.tree, case.tree.find(*key).unwrap(), &mut under);
                     }
                     let tree_of = |k: &ChunkKey| &made[made.binary_search_by_key(k, |t| t.key).unwrap()];
-                    let mut leaves: Vec<Cube> = under.iter().flat_map(|k| tree_of(k).cubes.iter().copied()).collect();
+                    let mut leaves: Vec<Cube> =
+                        under.iter().flat_map(|k| tree_of(k).cubes.iter().copied()).collect();
                     for key in &cut.inner {
                         let t = tree_of(&key.chunk);
                         let r = &t.node(t.find(*key).unwrap()).leaves;
@@ -413,7 +426,8 @@ fn ledgers() -> &'static Ledgers {
                     }
                     let exact = leaf_exact(&reader, base, &leaves);
                     let got = reader.read(base, &far, 0.0);
-                    let bound = reader.read(base, &LedgerSource { nodes: &far.nodes, rule: Rule::Octupole }, 0.0);
+                    let bound =
+                        reader.read(base, &LedgerSource { nodes: &far.nodes, rule: Rule::Octupole }, 0.0);
                     let ledger = [bound.lower.abs(), bound.upper.abs()];
                     // Each with an allowance of 1e-13 of the accepted part's phase for the order
                     // its leaves are added in.
@@ -423,8 +437,12 @@ fn ledgers() -> &'static Ledgers {
                         .error_over_ledger
                         .max(arm(exact.lower, got.lower, ledger[0]))
                         .max(arm(exact.upper, got.upper, ledger[1]))
-                        .max(gradiometer / (ledger[0] + ledger[1] + 1e-13 * (exact.lower.abs() + exact.upper.abs())));
-                    out.ledger_over_tolerance = out.ledger_over_tolerance.max((ledger[0] + ledger[1]) / tolerance);
+                        .max(
+                            gradiometer
+                                / (ledger[0] + ledger[1] + 1e-13 * (exact.lower.abs() + exact.upper.abs())),
+                        );
+                    out.ledger_over_tolerance =
+                        out.ledger_over_tolerance.max((ledger[0] + ledger[1]) / tolerance);
                     // W3, per read at its worst channel (the owner's ruling of 28 Nov 2026, option (a),
                     // after measuring: `docs/slices/S5.md` §7.3). The ledger bounds both
                     // interferometers, so its looseness is judged against the one it must cover
@@ -455,7 +473,36 @@ fn ledgers() -> &'static Ledgers {
             out.error_over_ledger, out.ledger_over_tolerance, out.ledger_over_error
         );
         out
-    })
+    }
+}
+
+#[test]
+#[ignore = "a held-out check of W3 as restated, run once in release (S5 §7.3.1: its reads and expected outcome written before it was run)"]
+fn held_out_w3() {
+    let town = vec![
+        [20.0, -20.0, 0.0],
+        [-30.0, 40.0, 0.0],
+        [60.0, 60.0, 0.0],
+        [-100.0, -20.0, 0.0],
+        [10.0, 90.0, 0.0],
+    ];
+    let boxed = vec![[3.0, -4.0, 0.0], [12.0, 2.0, 1.0], [25.0, 25.0, 0.0], [-60.0, 30.0, 0.0]];
+    let ground = vec![[5.0, -6.0, 1.2], [30.0, 20.0, 1.2], [-60.0, 40.0, 1.2], [90.0, -80.0, 1.2]];
+    let found = measure_ledgers(vec![
+        case("town", crate::dev::town(), town),
+        case("world-box", crate::dev::world_box(), boxed),
+        case("terrain", scene(terrain_world()), ground),
+    ]);
+    // Reported whatever it is; the criteria as written before the run.
+    println!(
+        "held out: W2 error/ledger {:.3} (<= 1), ledger/tolerance {:.3} (<= 1); W3 ledger/error {:.0} (<= 1000)",
+        found.error_over_ledger, found.ledger_over_tolerance, found.ledger_over_error
+    );
+    assert!(
+        found.error_over_ledger <= 1.0
+            && found.ledger_over_tolerance <= 1.0
+            && found.ledger_over_error <= 1000.0
+    );
 }
 
 cav_validate::case! {

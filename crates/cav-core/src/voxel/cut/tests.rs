@@ -775,3 +775,93 @@ fn slow_the_sphere_anomaly_with_random_placements() {
     // Recorded, not gated: only that each number is a number.
     assert!(rows.iter().all(|(_, a, b)| a.is_finite() && b.is_finite()));
 }
+
+/// The volume and first moments of a closed surface's triangles (anticlockwise seen from
+/// outside), by the divergence theorem: `Σ a·(b × c)/6` and `Σ (a + b + c) a·(b × c)/24`.
+fn surface_moments(triangles: &[[Vec3; 3]]) -> (f64, Vec3) {
+    triangles.iter().fold((0.0, Vec3::ZERO), |(v, m), [a, b, c]| {
+        let six = a.dot(b.cross(*c));
+        (v + six / 6.0, m + (*a + *b + *c) * (six / 24.0))
+    })
+}
+
+/// The worst, over the cut cells of `shape` at `pitch`, of a piece surface's volume and first
+/// moment against the piece's (each over a cell's volume, the moment also over its side), with the
+/// surfaces made by `make`.
+fn piece_surface_error(shape: &dyn Shape, pitch: f64, origin: Option<Vec3>) -> (f64, usize) {
+    let grid = match origin {
+        None => Grid::around(shape.bounds(), pitch, 2).unwrap(),
+        Some(lo) => {
+            let mut g = Grid::around(shape.bounds(), pitch, 2).unwrap();
+            g.origin = lo;
+            g
+        }
+    };
+    let tree = voxelise_cut(shape, &grid, Weight::Density(1.0), 0, Budget::DEFAULT).unwrap();
+    let all: Vec<usize> = (0..tree.cuts.len()).collect();
+    let surfaces = piece_surfaces(shape, &tree, &all, usize::MAX).unwrap();
+    let cell = pitch.powi(3);
+    let mut worst = 0f64;
+    for (cut, s) in tree.cuts.iter().zip(&surfaces) {
+        assert_eq!(cut.key, s.key);
+        let (v, m) = surface_moments(&s.triangles);
+        let centroid = s.centre + m * (1.0 / v);
+        worst = worst
+            .max((v - cut.piece.volume).abs() / cell)
+            .max((centroid - cut.piece.centroid).length() * cut.piece.volume / (cell * pitch));
+    }
+    (worst, tree.cuts.len())
+}
+
+#[test]
+fn a_piece_s_surface_is_its_piece() {
+    // D1's pieces (criterion in `docs/slices/S5.md` §7.13, written before measuring): each cut
+    // cell's drawn surface encloses its piece: volume and first moment within 1e-12 of a cell's,
+    // for an icosahedron (one convex piece a cell), a torus mesh (the mesh clipped and its caps)
+    // and a box mesh whose faces lie on the lattice's planes (faces on the cells' walls).
+    let ico = Platonic::Icosahedron.solid(0.6);
+    let (v, t) = torus_mesh(0.35, 0.15, 24, 12);
+    let torus = Mesh::new(v, t).unwrap();
+    let (v, t) = box_mesh(Vec3::new(-0.3, -0.2, -0.15), Vec3::new(0.3, 0.2, 0.15));
+    let block = Mesh::new(v, t).unwrap();
+    for (name, shape, origin) in [
+        ("icosahedron", &ico as &dyn Shape, None),
+        ("torus", &torus, None),
+        // A grid on which the box's faces at x = ±0.3 and z = ±0.15 lie on cell walls and those at
+        // y = ±0.2 cut through cells.
+        ("aligned box", &block, Some(Vec3::new(-0.35, -0.375, -0.2))),
+    ] {
+        let (worst, cells) = piece_surface_error(shape, 0.05, origin);
+        eprintln!("{name}: {cells} cut cells, worst {worst:.2e} of a cell");
+        assert!(cells > 20, "{name}: {cells}");
+        assert!(worst <= 1e-12, "{name}: {worst:e}");
+    }
+    // Control: a mesh piece's surface without its caps is not closed: its volume is off.
+    let grid = Grid::around(torus.bounds(), 0.05, 2).unwrap();
+    let tree = voxelise_cut(&torus, &grid, Weight::Density(1.0), 0, Budget::DEFAULT).unwrap();
+    let clipper = Clip::prepare(&torus, &grid).unwrap();
+    let mut off = 0f64;
+    for cut in &tree.cuts {
+        let corner = morton::decode(cut.key);
+        let b = grid.block_box(corner, 1);
+        let all = clipper.surface(corner, &b).unwrap();
+        // The caps are the triangles lying in a wall of the cell.
+        let h = 0.5 * grid.pitch;
+        let in_wall = |t: &[Vec3; 3]| {
+            (0..3).any(|a| [-h, h].iter().any(|w| t.iter().all(|p| (p.to_array()[a] - w).abs() < 1e-12)))
+        };
+        let skin: Vec<[Vec3; 3]> = all.into_iter().filter(|t| !in_wall(t)).collect();
+        off = off.max((surface_moments(&skin).0 - cut.piece.volume).abs() / grid.pitch.powi(3));
+    }
+    assert!(off > 1e-2, "without its caps a piece is off by {off:e} only");
+    // A curved solid's pieces are not polyhedra: refused in words. The cap is counted first.
+    let sphere = Sphere { centre: Vec3::ZERO, radius: 0.3 };
+    let grid = Grid::around(sphere.bounds(), 0.1, 2).unwrap();
+    let tree = voxelise_cut(&sphere, &grid, Weight::Density(1.0), 0, Budget::DEFAULT).unwrap();
+    assert!(piece_surfaces(&sphere, &tree, &[0], usize::MAX).unwrap_err().0.contains("not polyhedra"));
+    let grid = Grid::around(ico.bounds(), 0.05, 2).unwrap();
+    let tree = voxelise_cut(&ico, &grid, Weight::Density(1.0), 0, Budget::DEFAULT).unwrap();
+    let all: Vec<usize> = (0..tree.cuts.len()).collect();
+    let refused = piece_surfaces(&ico, &tree, &all, 30).unwrap_err().0;
+    assert!(refused.contains("more than 30 triangles"), "{refused}");
+}

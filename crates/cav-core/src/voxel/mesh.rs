@@ -303,7 +303,7 @@ impl Mesh {
     }
 
     /// Calls `visit` with every triangle whose box might pass `keep`.
-    fn each_triangle(&self, keep: &dyn Fn(&Aabb) -> bool, visit: &mut dyn FnMut(usize)) {
+    pub(crate) fn each_triangle(&self, keep: &dyn Fn(&Aabb) -> bool, visit: &mut dyn FnMut(usize)) {
         let mut stack = vec![0usize];
         while let Some(n) = stack.pop() {
             let node = self.nodes[n];

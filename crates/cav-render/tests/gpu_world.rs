@@ -501,6 +501,7 @@ fn gpu_a_world_is_drawn_near_and_far() {
             span: None,
             voxels: None,
             world,
+            lod: None,
         };
         renderer.render_rgba(&gpu, frame, size).unwrap()
     };
@@ -570,6 +571,7 @@ fn gpu_the_world_near_the_eye_and_at_the_ring_is_drawn() {
             span: None,
             voxels: None,
             world,
+            lod: None,
         };
         renderer.render_rgba(&gpu, frame, size).unwrap()
     };
@@ -613,4 +615,106 @@ fn gpu_the_world_near_the_eye_and_at_the_ring_is_drawn() {
     let side = Vec3::from_array(persp.basis().1) * 40.0;
     let (beside, _) = chunk_at(eye + side);
     assert_eq!(draw(&persp, Some(&beside)), draw(&persp, None), "a chunk outside the frustum is not drawn");
+}
+
+#[test]
+fn gpu_a_tower_s_lod_view_draws_its_list() {
+    // L1's drawing (`docs/slices/S5.md` §7.15): given a LOD view's list (chunks at level 0, bricks
+    // above) the renderer draws exactly its entries, none of the camera's clipmap, and an entry not
+    // resident (nor on its way) by its nearest resident ancestor, said. Control: drawn by the
+    // camera, what is drawn is not the list.
+    let gpu = gpu();
+    let renderer = Renderer::new(&gpu);
+    let mut v = view([0.0, 0.0, 0.0], 0.0, 90.0, 400.0);
+    v.projection = Projection::Orthographic;
+    let source = hills_frame(&v);
+    let spec_world = {
+        let spec = WorldSpec {
+            pitch: 0.5,
+            supersample: 1,
+            origin: [0.0; 3],
+            materials: vec![MaterialSpec::plain("grass", 1800.0, "#40c040")],
+            pieces: vec![PieceSpec {
+                label: "hills".into(),
+                material: 0,
+                kind: PieceKind::Terrain {
+                    lo: [-120.0, -120.0],
+                    hi: [120.0, 120.0],
+                    bottom: -3.0,
+                    level: -1.0,
+                    relief: 1.5,
+                    wavelength: 60.0,
+                    seed: 3,
+                },
+            }],
+            stream: Default::default(),
+            read: Default::default(),
+            lod: cav_sim::world::LodSpec { error_px: 32.0 },
+            base: Default::default(),
+        };
+        World::new(&spec)
+    };
+    let grid = source.grid.unwrap();
+    let extent = spec_world.extent().unwrap();
+    // A list: the world's level-2 bricks, but the one holding the origin opened into its level-1
+    // bricks, and one of those into its chunks.
+    let (lo, hi) = grid.bricks_of(2, &extent);
+    let mut list: Vec<(u8, ChunkKey)> = Vec::new();
+    let mut frame = WorldFrame { chunks: Default::default(), bricks: Default::default(), ..source.clone() };
+    let add = |level: u8, key: ChunkKey, list: &mut Vec<(u8, ChunkKey)>, frame: &mut WorldFrame| {
+        if level == 0 {
+            if let Some(chunk) = spec_world.chunk(key).unwrap() {
+                frame.chunks.insert(key, Arc::new(ChunkCells::of(&chunk)));
+                list.push((0, key));
+            }
+        } else if let Some(brick) = spec_world.brick(level, key) {
+            frame.bricks.insert((level, key), Arc::new(brick));
+            list.push((level, key));
+        }
+    };
+    for x in lo.x..=hi.x {
+        for y in lo.y..=hi.y {
+            for z in lo.z..=hi.z {
+                let key = ChunkKey::new(x, y, z);
+                if key != ChunkKey::new(0, 0, -1) && key != ChunkKey::new(0, 0, 0) {
+                    add(2, key, &mut list, &mut frame);
+                }
+            }
+        }
+    }
+    for z in [-1, 0] {
+        for octant in 0..8 {
+            let child = ChunkKey::new(octant & 1, (octant >> 1) & 1, 2 * z + (octant >> 2));
+            if child == ChunkKey::new(0, 0, -1) {
+                for c in 0..8 {
+                    add(0, ChunkKey::new(c & 1, (c >> 1) & 1, -2 + (c >> 2)), &mut list, &mut frame);
+                }
+            } else {
+                add(1, child, &mut list, &mut frame);
+            }
+        }
+    }
+    list.sort_unstable();
+    assert!(list.iter().any(|e| e.0 == 0) && list.iter().any(|e| e.0 == 1) && list.iter().any(|e| e.0 == 2));
+    let (pipelines, store) = renderer.world_parts();
+    let camera = Camera::new(&v, 480.0 / 270.0);
+    let mut world = store.lock().unwrap();
+    let drawn = |world: &mut WorldGpu, frame: &WorldFrame, list: Option<&[(u8, ChunkKey)]>| {
+        world.prepare_list(&gpu, pipelines, frame, &v, &camera, [480, 270], true, list).expect("a frame");
+        let mut d = world.drawn.clone();
+        d.sort_unstable();
+        d
+    };
+    assert_eq!(drawn(&mut world, &frame, Some(&list)), list, "the list, no more and no fewer");
+    // An entry gone from the resident world and not waiting: its nearest resident ancestor.
+    let gone = *list.iter().find(|e| e.0 == 1).unwrap();
+    let mut missing = frame.clone();
+    missing.bricks.remove(&gone);
+    let parent = (2, cav_sim::world::clipmap::ancestor(1, gone.1, 2));
+    missing.bricks.insert(parent, Arc::new(spec_world.brick(2, parent.1).unwrap()));
+    let d = drawn(&mut world, &missing, Some(&list));
+    assert!(d.contains(&parent) && !d.contains(&gone));
+    assert!(world.notes.iter().any(|n| n.contains("1 nodes not resident")), "{:?}", world.notes);
+    // Control: the camera's own clipmap of the same resident world is not the list.
+    assert_ne!(drawn(&mut world, &frame, None), list);
 }

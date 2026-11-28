@@ -310,6 +310,7 @@ fn size_of(contribution: &Contribution) -> usize {
         contribution.lower.capacity() + contribution.upper.capacity() + contribution.gradiometer.capacity();
     values * std::mem::size_of::<f64>()
         + contribution.warnings.iter().map(|warning| warning.text.capacity()).sum::<usize>()
+        + contribution.view.as_ref().map_or(0, |view| view.bytes())
         + std::mem::size_of::<Contribution>()
 }
 
@@ -594,6 +595,16 @@ impl Forward {
             read |= r;
         }
         (signal, read)
+    }
+
+    /// What the views draw of the current scene's world read (its octree's nodes and the towers'
+    /// cuts), once its contribution is here; None before, and for a scene with no world.
+    #[must_use]
+    pub fn world_view(&self) -> Option<Arc<cav_sim::world::lod_view::ReadView>> {
+        self.wanted
+            .iter()
+            .filter_map(|key| self.kept.get(key))
+            .find_map(|kept| kept.contribution.view.clone())
     }
 
     /// The last whole signal, which is the current scene's only when the state is `Refined`.

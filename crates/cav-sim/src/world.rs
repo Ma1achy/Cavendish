@@ -772,7 +772,8 @@ pub fn read_tower(
 
 /// The whole world read at every tower of `spec`: the octree ([`Octree::build`]), each tower's walk
 /// into the trees of the chunks it opens ([`walk::walk_into`]; a chunk any tower opened is made
-/// once), then each tower read ([`read_tower`]) at `readouts[n]`. `Ok(None)` when cancelled.
+/// once), then each tower read ([`read_tower`]) at `readouts[n]`, with what the views draw of it.
+/// `Ok(None)` when cancelled.
 ///
 /// # Errors
 /// When the octree is refused (its caps), a chunk cannot be voxelised, or a tower's read would
@@ -782,8 +783,8 @@ pub fn read_world(
     readers: &crate::read::Readers,
     readouts: &[f64],
     cancelled: &(dyn Fn() -> bool + Sync),
-) -> Result<Option<Vec<TowerRead>>, String> {
-    let Some(world_spec) = &spec.world else { return Ok(Some(Vec::new())) };
+) -> Result<Option<WorldRead>, String> {
+    let Some(world_spec) = &spec.world else { return Ok(Some(WorldRead::default())) };
     let world = World::new(world_spec);
     let Some(octree) = Octree::build(&world, cancelled)? else { return Ok(None) };
     let share = work_share(spec);
@@ -849,7 +850,22 @@ pub fn read_world(
         }
         out.push(read);
     }
-    Ok(Some(out))
+    let view = lod_view::ReadView {
+        grid: Some(*octree.grid()),
+        nodes: (0..octree.levels()).flat_map(|l| octree.level(l)).map(|id| octree.node(id).key).collect(),
+        towers: out.iter().map(|t| lod_view::TowerCut::of(&t.cut)).collect(),
+    };
+    Ok(Some(WorldRead { towers: out, view }))
+}
+
+/// What reading the world found ([`read_world`]): each tower's read, and what the views draw of
+/// it (the octree's nodes and the cuts, [`lod_view::ReadView`]).
+#[derive(Default)]
+pub struct WorldRead {
+    /// Each tower's, in the towers' order.
+    pub towers: Vec<TowerRead>,
+    /// The octree's nodes and each tower's cut, for drawing.
+    pub view: lod_view::ReadView,
 }
 
 /// Two audited reads of one shot added: readings and estimates added, settled when both are.
@@ -877,6 +893,7 @@ pub mod base;
 pub mod clipmap;
 pub mod inner;
 pub mod local;
+pub mod lod_view;
 pub mod octree;
 pub mod rings;
 pub mod walk;

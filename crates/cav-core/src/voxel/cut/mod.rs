@@ -42,7 +42,7 @@ mod pieces;
 mod tests;
 
 pub use convex::Convex;
-pub use pieces::{MAX_PIECE_TRIANGLES, PIECE_WITHIN, PieceSolid, piece_solids};
+pub use pieces::{MAX_PIECE_TRIANGLES, PIECE_WITHIN, PieceSolid, PieceSurface, piece_solids, piece_surfaces};
 
 use crate::Vec3;
 
@@ -252,6 +252,18 @@ pub trait CellClip {
     /// whose pieces are not polyhedra (a curved solid).
     fn convex(&self, _cell: [u32; 3], _boxed: &Aabb) -> Option<Vec<(f64, Convex)>> {
         None
+    }
+    /// The boundary of the shape's part of `boxed` as triangles in the frame of `boxed`'s centre,
+    /// anticlockwise seen from outside the piece: for drawing it (`draw pieces`). The default
+    /// fans the faces of [`Self::convex`]'s pieces when every one is positive (a convex solid's
+    /// one piece); a clipper whose pieces are signed (a mesh's prisms) gives its own; `None` for
+    /// a shape whose pieces are not polyhedra.
+    fn surface(&self, cell: [u32; 3], boxed: &Aabb) -> Option<Vec<[Vec3; 3]>> {
+        let parts = self.convex(cell, boxed)?;
+        if parts.iter().any(|(sign, _)| *sign < 0.0) {
+            return None;
+        }
+        Some(parts.iter().flat_map(|(_, p)| pieces::triangles(p)).collect())
     }
 }
 

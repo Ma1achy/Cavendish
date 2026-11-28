@@ -1282,7 +1282,7 @@ mod tests {
     /// Library scenes added after the hash's anchor commit (the one before folders): they had no
     /// bytes then to be held to, so the hash leaves them out. Each must still write no folder
     /// (the loop over the whole library in `folders_save_and_cost_nothing_unused`).
-    const ADDED_SINCE_THE_ANCHOR: [&str; 3] = ["exact-solids", "plane", "planet"];
+    const ADDED_SINCE_THE_ANCHOR: [&str; 4] = ["exact-solids", "cut-cells", "plane", "planet"];
 
     /// FNV-1a of every library scene's RON and JSON, as this build writes them, but those in
     /// [`ADDED_SINCE_THE_ANCHOR`].

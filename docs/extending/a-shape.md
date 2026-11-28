@@ -33,6 +33,9 @@ a sample point is inside (`contains`), and what it can say about a whole box at 
      units, calibrated by time (about 13 ns a unit: time it with `clip_time_per_cell`). A shape
      whose pieces are polyhedra also gives them as signed convex pieces (`CellClip::convex`), which
      `Pieces` reads by the polyhedral kernel near an arm; a curved one leaves the default `None`.
+     `draw pieces` draws each cut cell by `CellClip::surface`: the default fans a convex shape's
+     one positive piece; a shape whose pieces are signed (a mesh's prisms) must give the closed
+     boundary itself (`cut/mesh.rs` is the model), held by `a_piece_s_surface_is_its_piece`.
 2. A shape that is a polyhedron needs no new type: give `Polyhedron::hull` its vertices (at most
    100). A shape from a file is a mesh (`crate::voxel::mesh`).
 
@@ -44,6 +47,12 @@ a sample point is inside (`contains`), and what it can say about a whole box at 
 3. `ShapeKind::solid`: the core shape, centred on the origin (the body's position).
 4. `ShapeKind::validate`: each number in its range, the field named in the refusal
    (`{at}.YourShape.field: …`).
+5. Its drawn surface, for `draw mesh` and `draw mesh-over-voxels` (S5): an arm of
+   `cav_sim::body_draw::surface` giving its triangles in the body's frame, anticlockwise seen from
+   outside, counted against `MAX_DRAWN_TRIANGLES` before any is made. A polyhedron gives its own
+   faces (`Surface::tessellated` false); a curved solid a tessellation (`true`: the frame then
+   says so). `a_surface_encloses_its_shape` holds the triangles to the shape's volume (add a
+   line, with the tessellation's tolerance).
 
 ## 3. The tests that then hold it
 
