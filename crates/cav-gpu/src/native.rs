@@ -21,10 +21,20 @@ impl Gpu {
             ..Default::default()
         }))
         .map_err(|e| format!("no GPU adapter (Vulkan or DX12) was found: {e}"))?;
-        let (device, queue) = pollster::block_on(
-            adapter
-                .request_device(&wgpu::DeviceDescriptor { label: Some("cavendish"), ..Default::default() }),
-        )
+        // Profiling only: `CAV_GPU_TIMING` asks for timestamp queries where the adapter has them.
+        let timing = wgpu::Features::TIMESTAMP_QUERY
+            | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
+            | wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES;
+        let required_features = if std::env::var_os("CAV_GPU_TIMING").is_some() {
+            adapter.features() & timing
+        } else {
+            wgpu::Features::empty()
+        };
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("cavendish"),
+            required_features,
+            ..Default::default()
+        }))
         .map_err(|e| format!("the adapter `{}` refused a device: {e}", adapter.get_info().name))?;
         Ok(Self { instance, adapter, device, queue })
     }

@@ -1,0 +1,9 @@
+name	polyhedral.far_field
+subsystem	polyhedral
+slice	S5
+reference	closed form
+against	the cube series (order 16) and its five-point gradient, a 1/64 m cube at a non-dyadic centre, 16 general directions at R/s = 10, 30, 100, 300, 1000: the worst relative error of V and of g
+unit	relative
+tolerance	1e-9
+measured	7.974143111222492e-10
+pass	true

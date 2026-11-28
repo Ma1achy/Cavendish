@@ -610,6 +610,50 @@ fn the_kind_is_a_choice_of_a_point_or_a_shape_and_keeps_the_weight() {
 }
 
 #[test]
+fn the_shape_s_read_is_a_choice_the_schema_lists() {
+    // S5 (TASK-S5-06): a shape's `representation` is not written while it is `Sampled`, so the
+    // rows walked from the scene's value do not hold it; the Shape card draws it as a Read row,
+    // its choices the schema's variants. Choosing Exact is one edit; the console sets it too.
+    let mut rig = Rig::new();
+    rig.shell.run("load void").unwrap();
+    rig.shell.add_starter("cube").unwrap();
+    rig.frames(vec![vec![], vec![]]);
+    let id = "field/bodies[0].shape.representation";
+    assert!(rig.shell.focus_tree().node(id).is_some(), "the Read row");
+    let schema = cav_sim::paths::schema_at("bodies[0].shape.representation").unwrap();
+    assert_eq!(
+        schema["oneOf"].as_array().map(Vec::len),
+        Some(cav_sim::Representation::ALL.len()),
+        "{schema}"
+    );
+    let depth = rig.shell.engine.depth().0;
+    rig.shell.keyboard.focus = vec!["inspector".into(), "inspector/shape".into(), id.into()];
+    rig.shell.keyboard.nav_on = true;
+    rig.key(Key::Enter, Modifiers::NONE);
+    // Down from Sampled (the first) to Exact, wherever the list puts it.
+    let steps =
+        cav_sim::Representation::ALL.iter().position(|r| *r == cav_sim::Representation::Exact).unwrap();
+    for _ in 0..steps {
+        rig.key(Key::ArrowDown, Modifiers::NONE);
+    }
+    rig.key(Key::Enter, Modifiers::NONE);
+    rig.frames(vec![vec![], vec![]]);
+    let shape = rig.shell.engine.spec().bodies[0].shape.clone().unwrap();
+    assert_eq!(shape.representation, cav_sim::Representation::Exact);
+    assert_eq!(rig.shell.engine.depth().0, depth + 1, "one edit");
+    // Control: the console's `set` back to the default, and the field is not written again.
+    rig.shell.run("set bodies[0].shape.representation Sampled").unwrap();
+    let spec = rig.shell.engine.spec().clone();
+    assert_eq!(spec.bodies[0].shape.as_ref().unwrap().representation, cav_sim::Representation::Sampled);
+    assert!(!spec.to_ron().contains("representation"));
+    rig.shell.run("set bodies[0].shape.representation Exact").unwrap();
+    assert_eq!(
+        rig.shell.engine.spec().bodies[0].shape.as_ref().unwrap().representation,
+        cav_sim::Representation::Exact
+    );
+}
+
+#[test]
 fn the_inspector_keeps_its_width_whatever_is_shown() {
     // S19's review, UX: the inspector was 352 pt for a body, 317 for the scene, 325 for a tower
     // and 390 for the Readings, so the view re-centred at each click in the tree. Now one width;

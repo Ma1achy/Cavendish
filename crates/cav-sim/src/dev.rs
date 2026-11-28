@@ -724,7 +724,11 @@ pub fn stress_1e10() -> SceneSpec {
             ],
             pieces,
             stream: crate::world::StreamSpec::default(),
-            read: crate::world::WorldReadSpec { radius: 2.0, tolerance: 1e-3 },
+            read: crate::world::WorldReadSpec {
+                radius: 2.0,
+                tolerance: 1e-3,
+                walk: crate::world::WalkKind::Ledger,
+            },
             lod: crate::world::LodSpec::default(),
         }),
         ..SceneSpec::room()
@@ -791,6 +795,64 @@ pub fn town() -> SceneSpec {
 /// The scenes S4 added, in the order the library lists them.
 pub const S4_SCENES: [fn() -> SceneSpec; 3] = [world_box, stress_1e10, town];
 
+/// `exact-solids`: `platonic-row`'s five solids, each read `Exact` (TASK-S5-06): the polyhedral
+/// closed form near, the exact moments far, no voxels in the read (they are still drawn). Its
+/// readings are `platonic-row`'s to the voxels' error (`docs/slices/S5.md` §7.5).
+#[must_use]
+pub fn exact_solids() -> SceneSpec {
+    let mut scene = platonic_row();
+    scene.name = "exact-solids".into();
+    scene.description =
+        "platonic-row's five solids, 100 kg and 0.6 m an edge, read exactly (Exact): the polyhedral \
+                         closed form near and their exact moments far, with no voxels in the read."
+            .into();
+    for body in &mut scene.bodies {
+        if let Some(shape) = body.shape.as_mut() {
+            shape.representation = crate::Representation::Exact;
+        }
+    }
+    scene
+}
+
+/// `cut-cells`: an icosahedron and a torus mesh beside tower 1, each read by its exact cut cells
+/// (`Second`): the scene of the draw modes (`draw voxels | fill | mesh | mesh-over-voxels`).
+#[must_use]
+pub fn cut_cells() -> SceneSpec {
+    let mut scene = s3_base(
+        "cut-cells",
+        "An icosahedron (0.6 m an edge, at 1/16 m) and a torus mesh (256 triangles, at 5 cm) beside tower 1, each read \
+         by its exact cut cells (Second): `draw fill`, `draw mesh` and `draw mesh-over-voxels` show their skins.",
+        false,
+    );
+    let mut ico = crate::ShapeSpec::new(
+        crate::ShapeKind::Platonic { solid: crate::PlatonicSolid::Icosahedron, edge: 0.6 },
+        0.0625,
+        4,
+    );
+    ico.representation = crate::Representation::Second;
+    scene.bodies.push(BodySpec::shaped(
+        "icosahedron",
+        200.0,
+        ico,
+        Motion::Static { position: [2.0, -0.7, 2.5] },
+    ));
+    let (vertices, triangles) = cav_core::voxel::mesh::torus_mesh(0.35, 0.15, 16, 8);
+    let mut ring = crate::ShapeSpec::new(
+        crate::ShapeKind::Triangles {
+            vertices: vertices.into_iter().map(|v| crate::shape::Vertex(v.to_array())).collect(),
+            triangles: triangles.into_iter().map(crate::shape::Corners).collect(),
+        },
+        0.05,
+        4,
+    );
+    ring.representation = crate::Representation::Second;
+    scene.bodies.push(BodySpec::shaped("torus", 150.0, ring, Motion::Static { position: [2.0, 0.8, 2.5] }));
+    scene
+}
+
+/// The scenes S5 added, in the order the library lists them.
+pub const S5_SCENES: [fn() -> SceneSpec; 2] = [exact_solids, cut_cells];
+
 /// The text of a dev scene's file: a comment that says where it comes from, then the builder's RON.
 #[must_use]
 pub fn file_text(scene: &SceneSpec) -> String {
@@ -822,7 +884,8 @@ mod tests {
         // is committed.
         let write = std::env::var_os("CAV_WRITE_SCENES").is_some();
         let rewrite = std::env::var_os("CAV_REWRITE_SCENES").is_some();
-        for build in S1_SCENES.into_iter().chain(S2_SCENES).chain(S3_SCENES).chain(S4_SCENES) {
+        for build in S1_SCENES.into_iter().chain(S2_SCENES).chain(S3_SCENES).chain(S4_SCENES).chain(S5_SCENES)
+        {
             let scene = build();
             assert_eq!(scene.validate(), Ok(()), "{}", scene.name);
             let path = scene_path(&scene.name);

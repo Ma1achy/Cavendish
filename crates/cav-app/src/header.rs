@@ -85,8 +85,12 @@ pub const CAMERA_MENUS: [&str; 2] = ["View/Projection", "View/Look from"];
 
 /// The menus of `ui/actions.ron` whose actions are the overlays popover's rows, each under its
 /// heading; then the section plane across x, y or z.
-pub const OVERLAY_MENUS: [(&str, &str); 2] =
-    [("Colour voxels by", "View/Colour voxels by"), ("Overlay", "View/Overlay")];
+pub const OVERLAY_MENUS: [(&str, &str); 4] = [
+    ("Draw bodies", "View/Draw bodies"),
+    ("Colour voxels by", "View/Colour voxels by"),
+    ("Overlay", "View/Overlay"),
+    ("World LOD", "View/World LOD"),
+];
 
 /// The keyboard's scope for the active viewport's header.
 pub const SCOPE: &str = "viewport/header";
@@ -168,6 +172,9 @@ fn chosen(shell: &Shell, pane: usize, line: &str) -> Option<bool> {
             ViewCommand::Style { style, .. } => Some(view.style == style),
             ViewCommand::Colour { colour, .. } => Some(view.colour == colour),
             ViewCommand::Overlay { overlay, .. } => Some(view.overlay == overlay),
+            ViewCommand::Draw { draw, .. } => Some(view.body_draw == draw),
+            ViewCommand::LodView { view: ref lod, .. } => Some(view.lod_view == *lod),
+            ViewCommand::Seams { seams, .. } => Some(view.seams == seams),
             ViewCommand::Section { section, .. } => {
                 Some(view.section.map(|s| s.axis) == section.map(|s| s.axis))
             }

@@ -97,7 +97,7 @@ pub fn flythrough(
     let load = started.elapsed().as_secs_f64();
     let made = (engine.streaming().made, engine.streaming().cached);
     let mut out = String::from(
-        "frame,ms,poll_ms,draw_ms,mesh_ms,meshed,made,chunks,bricks,pending,meshes,bricks_on_gpu,vertices,resident_mb,marched\n",
+        "frame,ms,poll_ms,draw_ms,mesh_ms,meshed,made,chunks,bricks,pending,meshes,bricks_on_gpu,vertices,resident_mb,marched,encode_ms,gpu_cull_ms,gpu_bodies_ms,gpu_chunks_ms,gpu_bricks_ms,gpu_lines_ms\n",
     );
     let mut times = Vec::with_capacity(frames);
     let (mut meshed_before, mut made_before) = (0u64, made.0 + made.1);
@@ -111,8 +111,10 @@ pub fn flythrough(
         let polled = began.elapsed().as_secs_f64() * 1e3;
         let view = engine.frame(0)?;
         renderer.draw(&gpu, &target, view)?;
+        let encoded = began.elapsed().as_secs_f64() * 1e3;
         wait(&gpu)?;
         let ms = began.elapsed().as_secs_f64() * 1e3;
+        let g = renderer.gpu_times().unwrap_or([f64::NAN; 5]);
         let world = engine.frame(0)?.world.cloned().unwrap_or_default();
         let ([meshes, bricks_on_gpu, vertices], notes) = renderer.world_counts();
         let (meshed, mesh_ms) = renderer.world_meshing();
@@ -126,13 +128,19 @@ pub fn flythrough(
         }
         let _ = writeln!(
             out,
-            "{frame},{ms:.3},{polled:.3},{:.3},{mesh_ms:.3},{new_meshes},{new_made},{},{},{},{meshes},{bricks_on_gpu},{vertices},{:.1},{:.2}",
+            "{frame},{ms:.3},{polled:.3},{:.3},{mesh_ms:.3},{new_meshes},{new_made},{},{},{},{meshes},{bricks_on_gpu},{vertices},{:.1},{:.2},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}",
             ms - polled,
             world.chunks.len(),
             world.bricks.len(),
             world.pending,
             engine.streaming().bytes() as f64 / 1048576.0,
-            renderer.world_marched()
+            renderer.world_marched(),
+            encoded - polled,
+            g[0],
+            g[1],
+            g[2],
+            g[3],
+            g[4]
         );
         times.push(ms);
         // A frame this long would hold the owner's desktop (Windows stops answering a busy GPU
@@ -162,6 +170,109 @@ pub fn flythrough(
     for (kind, count) in &cuts {
         let _ = writeln!(out, "# not drawn in {count} of {} frames: {kind}", times.len());
     }
+    Ok(out)
+}
+
+/// The tolerances `cav bench lod-radii` measures at, radians: the stored table's
+/// (`cav_sim::world::rings::RINGS`).
+pub const RADII_TOLERANCES: [f64; 3] = [1e-2, 1e-4, 1e-6];
+
+/// `cav bench lod-radii --scene <s>` (`docs/slices/S5.md` §2 "Measured radii", §7.11): the world's
+/// octree and every chunk's tree; at each of the scene's towers and at eight points round the
+/// world's middle (a quarter and a half of its half-width out, on the first tower's height), the
+/// ledger walk at each tolerance, and each level's nearest acceptance in its own sides, the least
+/// over the positions; then the rings at those radii and at the stored table's (when it has the
+/// tolerance), each with its worst error against the leaf-exact read of what it accepts (through
+/// Gauss order 3 on 0.5 s panels, as W2) and its leaves read beside the ledger walk's. A text
+/// table; times are the machine's.
+///
+/// # Errors
+/// When the scene does not load, has no world or no tower, or its octree is refused.
+pub fn lod_radii(scene: &str) -> Result<String, String> {
+    use cav_core::forward::{Instrument, Quadrature, Reader};
+    use cav_sim::world::{octree::Octree, rings, walk};
+    let spec = cav_sim::load(scene).map_err(|e| e.0)?;
+    let world_spec = spec.world.as_ref().ok_or_else(|| format!("{scene} has no world to read"))?;
+    let first = spec.array.towers.first().ok_or_else(|| format!("{scene} has no tower"))?;
+    let world = cav_sim::world::World::new(world_spec);
+    let started = Instant::now();
+    let octree = Octree::build(&world, &|| false)?.ok_or("cancelled")?;
+    let keys: Vec<_> = octree.level(0).map(|id| octree.chunk(id).expect("a chunk")).collect();
+    let trees = cav_sim::world::open(&world, &keys, &|| false)?.ok_or("cancelled")?;
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "# {scene}: octree {:?} nodes per level, every chunk's tree made in {:.1} s",
+        octree.per_level(),
+        started.elapsed().as_secs_f64()
+    );
+    let mut bases: Vec<cav_core::Vec3> =
+        spec.array.towers.iter().map(|t| cav_core::Vec3::from_array(t.position)).collect();
+    if let Some(extent) = world.extent() {
+        let (middle, half) =
+            (extent.centre(), 0.5 * (extent.hi.x - extent.lo.x).min(extent.hi.y - extent.lo.y));
+        for k in 0..8 {
+            let (r, angle) =
+                (if k % 2 == 0 { 0.25 } else { 0.5 } * half, f64::from(k) * std::f64::consts::FRAC_PI_4);
+            bases.push(cav_core::Vec3::new(
+                middle.x + r * angle.cos(),
+                middle.y + r * angle.sin(),
+                first.position[2],
+            ));
+        }
+    }
+    let readers = cav_sim::read::Readers::new(&spec);
+    let coarse = Reader::new(Instrument {
+        quadrature: Quadrature::Gauss { order: 3, panel: 0.5 },
+        ..*readers.of(0).instrument()
+    });
+    let height = spec.array.instrument_of(0).tower_height;
+    let aims: Vec<walk::Aim> = bases
+        .iter()
+        .map(|&base| walk::Aim {
+            base,
+            height,
+            per: cav_sim::world::radians_per_kg_m(&coarse, base, 0.0),
+            tolerance: 1.0,
+            bubble: 0.0,
+            max_work: u64::MAX,
+            max_nodes: walk::MAX_CUT_NODES,
+            rule: walk::Rule::Octupole,
+        })
+        .collect();
+    let _ = writeln!(
+        out,
+        "# {} positions; radii in each level's own sides, levels -4 (blocks of 2 cells) up",
+        aims.len()
+    );
+    for tolerance in RADII_TOLERANCES {
+        let radii = rings::measured(&octree, &trees, &aims, tolerance);
+        let shown: Vec<String> = (0..rings::LEVELS)
+            .filter(|&i| radii.sides[i].is_finite())
+            .map(|i| format!("{}: {:.1}", i as i64 + i64::from(rings::LOWEST), radii.sides[i]))
+            .collect();
+        let _ = writeln!(out, "{tolerance:.0e} radii  {}", shown.join(", "));
+        let stored = rings::RINGS.iter().find(|r| r.tolerance == tolerance);
+        for (name, table) in [("measured", Some(&radii)), ("stored", stored)] {
+            let Some(table) = table else { continue };
+            let (mut error, mut ledger, mut leaves, mut walked) = (0f64, 0f64, 0u64, 0u64);
+            for aim in &aims {
+                let cut = rings::rings_with(&octree, aim, &trees, table);
+                error = error.max(rings::cut_error(&octree, &trees, &cut, &coarse, aim.base));
+                ledger = ledger.max(cut.ledger);
+                leaves = leaves.max(cut.leaves);
+                walked =
+                    walked.max(walk::walk_with(&octree, &walk::Aim { tolerance, ..*aim }, &trees).leaves);
+            }
+            let _ = writeln!(
+                out,
+                "{tolerance:.0e} rings at the {name} radii: worst error {error:.2e} rad ({:.3} of τ), ledger {ledger:.2e}, \
+                 leaves {leaves} (the ledger walk's {walked}), the most at any position",
+                error / tolerance
+            );
+        }
+    }
+    let _ = writeln!(out, "# {:.1} s in all", started.elapsed().as_secs_f64());
     Ok(out)
 }
 

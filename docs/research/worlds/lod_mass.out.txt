@@ -1,0 +1,44 @@
+R=   250 S=   64 t0 standard        m +6.081e+08 kg dm/m +6.4e-05 dx/S 8.7e-04 | dphase +5.0e-03 (mass+xy +5.3e-03, z -2.5e-04) ring x25
+R=   250 S=   64 t0 mass-preserving m +6.258e+08 kg dm/m +0.0e+00 dx/S 6.7e-04 | dphase +7.0e-03 (mass+xy +7.5e-03, z -5.5e-04) ring x25
+R=   250 S=   64 t0 mass+dipole     m +6.529e+08 kg dm/m +1.8e-16 dx/S 0.0e+00 | dphase -2.1e-04 (mass+xy +9.2e-14, z -2.1e-04) ring x25
+R=   250 S=   64 t1 standard        m +4.798e+08 kg dm/m -3.8e-03 dx/S 1.4e-02 | dphase +2.2e-01 (mass+xy +2.6e-01, z -3.9e-02) ring x25
+R=   250 S=   64 t1 mass-preserving m +4.872e+08 kg dm/m -1.2e-16 dx/S 2.1e-04 | dphase -2.1e-03 (mass+xy -1.5e-03, z -6.7e-04) ring x25
+R=   250 S=   64 t1 mass+dipole     m +5.348e+08 kg dm/m +0.0e+00 dx/S 0.0e+00 | dphase -5.0e-04 (mass+xy +0.0e+00, z -5.0e-04) ring x25
+R=   250 S=   64 t2 standard        m +4.103e+08 kg dm/m +3.2e-03 dx/S 1.3e-02 | dphase -9.8e-02 (mass+xy -1.0e-01, z +6.1e-03) ring x25
+R=   250 S=   64 t2 mass-preserving m +4.118e+08 kg dm/m +0.0e+00 dx/S 1.4e-03 | dphase -2.1e-02 (mass+xy -2.1e-02, z +3.9e-04) ring x25
+R=   250 S=   64 t2 mass+dipole     m +4.205e+08 kg dm/m +0.0e+00 dx/S 7.1e-17 | dphase -1.2e-04 (mass+xy +0.0e+00, z -1.2e-04) ring x25
+R=  1000 S=  256 t0 standard        m +9.337e+09 kg dm/m -6.1e-03 dx/S 2.5e-02 | dphase +6.9e-02 (mass+xy +7.2e-02, z -2.2e-03) ring x25
+R=  1000 S=  256 t0 mass-preserving m +9.138e+09 kg dm/m -6.3e-16 dx/S 3.3e-03 | dphase -4.8e-02 (mass+xy -4.7e-02, z -4.8e-04) ring x25
+R=  1000 S=  256 t0 mass+dipole     m +9.573e+09 kg dm/m -2.0e-16 dx/S 8.2e-16 | dphase -6.8e-05 (mass+xy +4.6e-14, z -6.8e-05) ring x25
+R=  1000 S=  256 t1 standard        m +7.211e+09 kg dm/m +1.8e-02 dx/S 7.1e-02 | dphase -1.9e-01 (mass+xy -1.9e-01, z +1.6e-03) ring x25
+R=  1000 S=  256 t1 mass-preserving m +7.198e+09 kg dm/m -1.3e-16 dx/S 5.6e-03 | dphase +3.1e-02 (mass+xy +3.1e-02, z -4.9e-05) ring x25
+R=  1000 S=  256 t1 mass+dipole     m +8.470e+09 kg dm/m -1.1e-16 dx/S 1.9e-15 | dphase -7.5e-05 (mass+xy +5.5e-14, z -7.5e-05) ring x25
+R=  1000 S=  256 t2 standard        m -1.405e+09 kg dm/m +4.3e-02 dx/S 1.7e-01 | dphase -9.8e-02 (mass+xy -9.8e-02, z +1.3e-04) ring x25
+R=  1000 S=  256 t2 mass-preserving m -7.149e+08 kg dm/m +5.0e-16 dx/S 4.5e-02 | dphase -3.3e-02 (mass+xy -3.3e-02, z +1.3e-04) ring x25
+R=  1000 S=  256 t2 mass+dipole     m +1.769e+09 kg dm/m +0.0e+00 dx/S 1.6e-15 | dphase -4.5e-07 (mass+xy +2.4e-15, z -4.5e-07) ring x25
+R=  4000 S= 1024 t0 standard        m -8.219e+10 kg dm/m -1.7e-02 dx/S 6.7e-02 | dphase +2.9e-02 (mass+xy +2.9e-02, z +5.0e-06) ring x25
+R=  4000 S= 1024 t0 mass-preserving m -9.014e+10 kg dm/m +0.0e+00 dx/S 1.4e-02 | dphase -2.3e-02 (mass+xy -2.3e-02, z +7.6e-05) ring x25
+R=  4000 S= 1024 t0 mass+dipole     m -4.894e+10 kg dm/m +0.0e+00 dx/S 1.9e-15 | dphase +9.1e-05 (mass+xy -4.0e-15, z +9.1e-05) ring x25
+R=  4000 S= 1024 t1 standard        m +1.664e+11 kg dm/m -8.9e-03 dx/S 3.9e-02 | dphase +2.7e-02 (mass+xy +2.7e-02, z -1.7e-05) ring x25
+R=  4000 S= 1024 t1 mass-preserving m +1.277e+11 kg dm/m -1.2e-16 dx/S 9.6e-03 | dphase +4.5e-03 (mass+xy +4.5e-03, z -5.7e-06) ring x25
+R=  4000 S= 1024 t1 mass+dipole     m +6.045e+10 kg dm/m +3.8e-16 dx/S 3.2e-15 | dphase +2.4e-08 (mass+xy -2.2e-15, z +2.4e-08) ring x25
+R=  4000 S= 1024 t2 standard        m +6.201e+10 kg dm/m +2.2e-02 dx/S 1.1e-01 | dphase -1.6e-02 (mass+xy -1.6e-02, z +3.6e-06) ring x25
+R=  4000 S= 1024 t2 mass-preserving m +7.441e+10 kg dm/m -2.1e-16 dx/S 1.5e-02 | dphase +7.0e-03 (mass+xy +6.9e-03, z +1.5e-06) ring x25
+R=  4000 S= 1024 t2 mass+dipole     m +3.907e+10 kg dm/m -3.9e-16 dx/S 7.0e-15 | dphase -2.8e-06 (mass+xy -2.3e-15, z -2.8e-06) ring x25
+
+C1 worst |dm/m|, mass-preserving kinds = 6.26e-16 (pass if <= 1e-12): PASS
+C2 least |dm/m|, standard              = 6.43e-05 (pass if >= 1e-6):  PASS
+C2b worst |d first moment|/(m S), mass+dipole = 7.04e-15 (pass if <= 1e-12): PASS
+C3 standard        R=  250: worst node |dphase| 2.2e-01 rad, its mass+xy part 2.6e-01, z part 3.9e-02
+C3 standard        R= 1000: worst node |dphase| 1.9e-01 rad, its mass+xy part 1.9e-01, z part 2.2e-03
+C3 standard        R= 4000: worst node |dphase| 2.9e-02 rad, its mass+xy part 2.9e-02, z part 1.7e-05
+C3 mass-preserving R=  250: worst node |dphase| 2.1e-02 rad, its mass+xy part 2.1e-02, z part 6.7e-04
+C3 mass-preserving R= 1000: worst node |dphase| 4.8e-02 rad, its mass+xy part 4.7e-02, z part 4.8e-04
+C3 mass-preserving R= 4000: worst node |dphase| 2.3e-02 rad, its mass+xy part 2.3e-02, z part 7.6e-05
+C3 mass+dipole     R=  250: worst node |dphase| 5.0e-04 rad, its mass+xy part 9.2e-14, z part 5.0e-04
+C3 mass+dipole     R= 1000: worst node |dphase| 7.5e-05 rad, its mass+xy part 5.5e-14, z part 7.5e-05
+C3 mass+dipole     R= 4000: worst node |dphase| 9.1e-05 rad, its mass+xy part 4.0e-15, z part 9.1e-05
+numpy, 10 octaves, standard: 3936 ns a column (tables per 1 km tile)
+numpy, 10 octaves, mass-preserving: 6850 ns a column (tables per 1 km tile)
+numpy, 10 octaves, mass+dipole: 4104 ns a column (tables per 1 km tile)
+elapsed 73.5 s

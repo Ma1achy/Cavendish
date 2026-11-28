@@ -533,6 +533,7 @@ pub fn body(shell: &mut Shell, ui: &mut egui::Ui, n: usize) {
     card(shell, ui, "inspector", "inspector/shape", "Shape", "body", true, Some(&menu), |shell, ui| {
         kind_row(shell, ui, n);
         if body.shape.is_some() {
+            representation_row(shell, ui, n);
             crate::editors::draw_rows(shell, ui, "inspector/shape", &shape_path, &shape_fields);
         } else {
             // A point's radius (a sphere's), which a voxel body has no use for (minor 21).
@@ -637,6 +638,45 @@ fn kind_row(shell: &mut Shell, ui: &mut egui::Ui, n: usize) {
     }
     if let Ok(value) = serde_json::to_value(&changed) {
         shell.apply(Command::set(&format!("bodies[{n}]"), value));
+    }
+}
+
+/// The Shape card's Read row: how the forward model reads the shape, a choice of the variants the
+/// scene's schema lists for `shape.representation` (S5: `Sampled`, its voxels; `Exact`, the solid
+/// itself). Drawn as its own row because a shape that keeps the default does not write the field,
+/// so the rows walked from the scene's value would not hold it. Choosing is one edit of the shape;
+/// a choice the shape cannot take is refused by the scene's check, in its words.
+fn representation_row(shell: &mut Shell, ui: &mut egui::Ui, n: usize) {
+    let spec = shell.engine.spec().clone();
+    let Some(shape) = spec.bodies.get(n).and_then(|b| b.shape.as_ref()) else { return };
+    let path = format!("bodies[{n}].shape.representation");
+    let schema = cav_sim::paths::schema_at(&path).unwrap_or(serde_json::Value::Null);
+    let choices: Vec<String> = schema
+        .get("oneOf")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|option| option.get("const").or_else(|| option.get("enum").and_then(|e| e.get(0))))
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect();
+    let current = format!("{:?}", shape.representation);
+    let Some(at) = choices.iter().position(|c| *c == current) else { return };
+    let item = |i: usize| egui::WidgetText::from(choices[i].clone());
+    let id = crate::editors::field_id(&path);
+    let hover = "how the reading takes the shape: by its voxels (Sampled), or as the solid itself (Exact: polyhedra and meshes)";
+    let Some(chosen) =
+        crate::editors::choice_row(shell, ui, "inspector/shape", &id, "Read", hover, &choices, at, &item)
+    else {
+        return;
+    };
+    let mut changed = shape.clone();
+    changed.representation = cav_sim::Representation::ALL
+        .into_iter()
+        .find(|r| format!("{r:?}") == choices[chosen])
+        .unwrap_or_default();
+    if let Ok(value) = serde_json::to_value(&changed) {
+        shell.apply(Command::set(&format!("bodies[{n}].shape"), value));
     }
 }
 

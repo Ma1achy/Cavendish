@@ -216,9 +216,27 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "overlay",
-        usage: "overlay <none | [leaves] [cut <level>] [tree [depth <a>..<b>] [fade deep|shallow] [faces] [alone]] [bands]> [@N]",
-        about: "draw over voxel bodies: each leaf's bounds by level, the cut a level of detail would take, and the whole octree (every node from the root down, coloured by depth; `fade` makes one end faint, `faces` adds see-through faces in x-ray, `alone` hides the bodies' cubes); `bands` colours the world's clipmap by level",
+        usage: "overlay <none | [leaves] [cut <level>] [tree [depth <a>..<b>] [fade deep|shallow] [faces] [alone]] [bands] [centroids] [octree|level|tower|ledger]> [@N]",
+        about: "draw over voxel bodies: each leaf's bounds by level, the cut a level of detail would take, and the whole octree (every node from the root down, coloured by depth; `fade` makes one end faint, `faces` adds see-through faces in x-ray, `alone` hides the bodies' cubes); `bands` colours the world's clipmap by level; `centroids` marks each cut cell's piece's centroid; over the world (once it is read), `octree` outlines the world's octree by level, `level` tints the world by level (and, in a tower's LOD view, outlines the blocks it reads below the chunk), `tower` and `ledger` outline a tower's LOD view's nodes by the tower that set them and by their share of its ledger",
         example: "overlay tree depth 0..4 fade deep",
+    },
+    CommandDoc {
+        name: "draw",
+        usage: "draw <voxels|fill|mesh|mesh-over-voxels|pieces> [@N]",
+        about: "how bodies with a shape are drawn: their voxels coloured by the field; their voxels shaded by their exact fill (each boundary cell's clipped share of it, with a legend); their own triangles (a curved solid tessellated); the triangles inside the voxels' outlines; or each boundary cell as its exact clipped piece, shaded by its fill (a polyhedron or a mesh)",
+        example: "draw fill",
+    },
+    CommandDoc {
+        name: "lod-view",
+        usage: "lod-view <camera | tower N | towers N M … | towers all> [@N]",
+        about: "which levels of detail the world is drawn at: as the camera's screen-space error wants (the default); as tower N's read takes it (its cut: no new walk); or at the finest level any of several towers reads each region (their common refinement). Drawn once the world is read",
+        example: "lod-view tower 1",
+    },
+    CommandDoc {
+        name: "seams",
+        usage: "seams <dither|off> [@N]",
+        about: "how the world's rings of detail meet: cross-faded by an ordered dither over a band inside each finer ring, by the camera's place (no pop when a ring snaps), or cut at each ring's edge",
+        example: "seams off",
     },
     CommandDoc {
         name: "section",
@@ -493,10 +511,33 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
                         words.push("alone".to_owned());
                     }
                 }
+                if overlay.bands {
+                    words.push("bands".to_owned());
+                }
+                if overlay.centroids {
+                    words.push("centroids".to_owned());
+                }
+                if !overlay.world.is_none() {
+                    words.push(overlay.world.name().to_owned());
+                }
                 if words.is_empty() {
                     words.push("none".to_owned());
                 }
                 format!("overlay {}{}", words.join(" "), at(pane))
+            }
+            ViewCommand::Draw { pane, draw } => format!("draw {}{}", draw.name(), at(pane)),
+            ViewCommand::Seams { pane, seams } => format!("seams {}{}", seams.name(), at(pane)),
+            ViewCommand::LodView { pane, ref view } => {
+                use cav_sim::world::lod_view::LodView;
+                let words = match view {
+                    LodView::Camera => "camera".to_owned(),
+                    LodView::Tower(n) => format!("tower {}", n + 1),
+                    LodView::Towers(towers) => {
+                        let list: Vec<String> = towers.iter().map(|n| (n + 1).to_string()).collect();
+                        format!("towers {}", list.join(" "))
+                    }
+                };
+                format!("lod-view {words}{}", at(pane))
             }
             ViewCommand::Hide { ref label, hidden } => {
                 format!("{} {}", if hidden { "hide" } else { "unhide" }, quoted(label))
@@ -976,6 +1017,11 @@ impl Engine {
                         ("none", []) if words.len() == 1 => {}
                         ("leaves", _) => overlay.leaves = true,
                         ("bands", _) => overlay.bands = true,
+                        ("centroids", _) => overlay.centroids = true,
+                        ("octree" | "level" | "tower" | "ledger", _) => {
+                            overlay.world =
+                                cav_sim::world::lod_view::WorldOverlay::parse(first).unwrap_or_default();
+                        }
                         ("tree", _) => overlay.tree = Some(overlay.tree.unwrap_or_default()),
                         ("depth" | "fade" | "faces" | "alone", _) if overlay.tree.is_none() => {
                             return Err(format!("`{first}` follows `tree`; {}", usage(name)));
@@ -1031,6 +1077,43 @@ impl Engine {
                 }
                 view(ViewCommand::Hide { label: (*label).to_owned(), hidden: name == "hide" })
             }
+            ("lod-view", ["camera"]) => {
+                view(ViewCommand::LodView { pane, view: cav_sim::world::lod_view::LodView::Camera })
+            }
+            ("lod-view", ["tower", n]) => match n.parse::<usize>() {
+                Ok(n) if n >= 1 && n <= self.spec().array.towers.len() => {
+                    view(ViewCommand::LodView { pane, view: cav_sim::world::lod_view::LodView::Tower(n - 1) })
+                }
+                _ => Err(format!("`{n}` is not a tower of the scene; {}", usage(name))),
+            },
+            ("lod-view", ["towers", rest @ ..]) if !rest.is_empty() => {
+                use cav_sim::world::lod_view::{LodView, MAX_LOD_TOWERS};
+                let count = self.spec().array.towers.len();
+                let mut towers: Vec<usize> = if rest == ["all"] {
+                    (0..count).collect()
+                } else {
+                    rest.iter()
+                        .map(|w| match w.parse::<usize>() {
+                            Ok(n) if n >= 1 && n <= count => Ok(n - 1),
+                            _ => Err(format!("`{w}` is not a tower of the scene; {}", usage(name))),
+                        })
+                        .collect::<Result<_, _>>()?
+                };
+                towers.sort_unstable();
+                towers.dedup();
+                if towers.is_empty() || towers.len() > MAX_LOD_TOWERS {
+                    return Err(format!("from 1 to {MAX_LOD_TOWERS} towers; {}", usage(name)));
+                }
+                view(ViewCommand::LodView { pane, view: LodView::Towers(towers) })
+            }
+            ("seams", [word]) => match cav_sim::world::clipmap::Seams::parse(word) {
+                Some(seams) => view(ViewCommand::Seams { pane, seams }),
+                None => Err(format!("`{word}` is not a way to draw seams; {}", usage(name))),
+            },
+            ("draw", [word]) => match cav_sim::body_draw::BodyDraw::parse(word) {
+                Some(draw) => view(ViewCommand::Draw { pane, draw }),
+                None => Err(format!("`{word}` is not a draw mode; {}", usage(name))),
+            },
             ("section", ["off"]) => view(ViewCommand::Section { pane, section: None }),
             ("section", [axis, offset]) => {
                 let axis = match *axis {
@@ -1672,6 +1755,8 @@ mod tests {
                         cut: Some(3),
                         tree: None,
                         bands: false,
+                        centroids: false,
+                        world: Default::default(),
                     },
                 }),
             ),
@@ -1706,8 +1791,25 @@ mod tests {
                             alone: false,
                         }),
                         bands: false,
+                        centroids: false,
+                        world: Default::default(),
                     },
                 }),
+            ),
+            (
+                "overlay bands centroids",
+                Command::View(ViewCommand::Overlay {
+                    pane: 0,
+                    overlay: cav_sim::voxel_view::Overlay {
+                        bands: true,
+                        centroids: true,
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "draw pieces @2",
+                Command::View(ViewCommand::Draw { pane: 1, draw: cav_sim::body_draw::BodyDraw::Pieces }),
             ),
             (
                 "overlay tree",

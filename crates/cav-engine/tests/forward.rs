@@ -560,14 +560,22 @@ fn an_unsettled_reading_says_so() {
         accepted: 400,
         opened: 12,
         per_level: vec![300, 100],
+        blocks: 88,
+        blocks_per_level: vec![8, 30, 50, 0],
+        leaves: 9000,
+        degree: 16,
+        far: 480,
+        near: 8,
+        audit: 1e-5,
         settled,
     };
     let settled = read::WorldLedger { tolerance: 1e-3, towers: vec![tower(3e-4, true), tower(1e-4, true)] };
-    assert_eq!(cav_engine::world_text(&settled), "world within 3e-4 rad (ledger, 412 nodes)");
+    // Within the ledger and the series' audit together, and the cut's nodes and blocks.
+    assert_eq!(cav_engine::world_text(&settled), "world within 3e-4 rad (ledger and series, 500 nodes)");
     let stopped = read::WorldLedger { tolerance: 1e-3, towers: vec![tower(3e-3, false), tower(1e-4, true)] };
     assert_eq!(
         cav_engine::world_text(&stopped),
-        "world not settled: ledger 3e-3 rad, 2e-3 over τ (412 nodes)"
+        "world not settled: ledger 3e-3 rad, 2e-3 over τ (500 nodes)"
     );
     // A point mass on a tower's axis does not settle. The reading that comes back is the one
     // asked for (`refined`), and its heading must not pass the estimate off as a bound.
@@ -1466,4 +1474,58 @@ fn a_signal_s_news_is_tagged_as_the_forward_stage_s() {
         log.iter().any(|e| e.subsystem != cav_engine::Subsystem::Forward && e.message.contains("mass")),
         "the edit is not the forward stage's: {log:?}"
     );
+}
+
+#[test]
+fn slow_the_octree_overlay_comes_with_the_world_s_read() {
+    // `overlay octree` before the world is read says so and draws nothing; once the read is in,
+    // the pane draws the read's octree, with no walk or build of its own (the boxes are the
+    // contribution's nodes). Control: `overlay none` draws none.
+    let mut engine = loaded(dev::world_box());
+    engine.run_line("overlay octree").unwrap();
+    let before = engine.frame(0).unwrap().lod.expect("a world's pane has a LOD frame").clone();
+    assert!(before.boxes.is_empty());
+    assert!(engine.settle(LONG), "the read arrives");
+    let after = engine.frame(0).unwrap().lod.unwrap().clone();
+    assert!(!after.boxes.is_empty() && after.notes.is_empty(), "{:?}", after.notes);
+    let nodes = engine.frame(0).unwrap().lod.unwrap().boxes.len();
+    engine.run_line("overlay none").unwrap();
+    assert!(engine.frame(0).unwrap().lod.unwrap().boxes.is_empty());
+    engine.run_line("overlay octree").unwrap();
+    assert_eq!(engine.frame(0).unwrap().lod.unwrap().boxes.len(), nodes);
+    // The journal's line reads back as the command.
+    assert!(engine.journal().iter().any(|c| cav_engine::console::describe(c, 0) == "overlay octree"));
+}
+
+#[test]
+fn slow_a_tower_s_lod_view_is_the_read_s_cut() {
+    // L1 through the engine: `lod-view tower 2` draws the cut tower 2's read made (no walk of its
+    // own), and the streaming makes what it names; `lod-view towers all` their common refinement;
+    // `lod-view camera` no list. The lines read back as their commands.
+    let mut engine = loaded(dev::world_box());
+    assert!(engine.settle(LONG));
+    engine.run_line("lod-view tower 2").unwrap();
+    let lod = engine.frame(0).unwrap().lod.unwrap().clone();
+    let list = lod.list.expect("a tower's view has a list");
+    assert!(!list.is_empty());
+    assert!(engine.settle_world(LONG));
+    let world = engine.frame(0).unwrap().world.unwrap();
+    for (level, key) in &list {
+        let resident = if *level == 0 {
+            world.chunks.contains_key(key)
+        } else {
+            world.bricks.contains_key(&(*level, *key))
+        };
+        assert!(resident, "{level} {key:?} is streamed for the view");
+    }
+    engine.run_line("lod-view towers all").unwrap();
+    assert!(engine.frame(0).unwrap().lod.unwrap().list.is_some());
+    engine.run_line("lod-view camera").unwrap();
+    assert!(engine.frame(0).unwrap().lod.unwrap().list.is_none());
+    let lines: Vec<String> = engine.journal().iter().map(|c| cav_engine::console::describe(c, 0)).collect();
+    for line in ["lod-view tower 2", "lod-view towers 1 2 3 4 5", "lod-view camera"] {
+        assert!(lines.iter().any(|l| l == line), "{line}: {lines:?}");
+    }
+    // Control: a tower the scene has not is refused in words.
+    assert!(engine.run_line("lod-view tower 9").unwrap_err().contains("not a tower"));
 }

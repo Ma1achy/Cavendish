@@ -71,6 +71,7 @@ fn render(gpu: &Gpu, renderer: &Renderer, scene: &SceneSpec, view: &ViewSpec) ->
         span: None,
         voxels: None,
         world: None,
+        lod: None,
     };
     Picture { rgba: renderer.render_rgba(gpu, frame, SIZE).expect("render") }
 }
@@ -430,6 +431,7 @@ fn gpu_the_largest_valid_scene_renders() {
             span: None,
             voxels: None,
             world: None,
+            lod: None,
         };
         let rgba = renderer.render_rgba(&gpu, frame, SIZE).expect("the largest valid scene must draw");
         let picture = Picture { rgba };
@@ -536,6 +538,9 @@ fn gpu_shading_follows_the_light() {
         overlay: Default::default(),
         section: None,
         hidden: Vec::new(),
+        body_draw: Default::default(),
+        lod_view: Default::default(),
+        seams: Default::default(),
     };
     let camera = camera(&view(DrawStyle::Shaded));
     // Two points on the sphere's face, half its radius out along each axis: up and to the west (towards the key
@@ -610,6 +615,7 @@ fn gpu_a_body_appears_at_its_projected_pixel() {
             span: None,
             voxels: None,
             world: None,
+            lod: None,
         };
         Picture { rgba: renderer.render_rgba(&gpu, frame, SIZE).expect("render") }
     };

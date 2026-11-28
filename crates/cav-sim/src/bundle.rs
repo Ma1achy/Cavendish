@@ -27,11 +27,14 @@
 //! | `source_mass.npy` | `(S,)` | each body's mass, kilograms |
 //! | `error_estimate.npy` | `(D,)` | the largest quadrature estimate of any shot of the tower, radians |
 //! | `scene.ron` | | the scene, as `load` reads it |
-//! | `manifest.json` | | the arrays' names, shapes, dtypes and units; the numerics; the scene; the sign; `settled` and `truncated` |
+//! | `manifest.json` | | the arrays' names, shapes, dtypes and units; the numerics; the scene; the sign; `settled`, `truncated` and `world` |
 //!
 //! **Versions.** `cavendish_bundle` 1 counted the bodies as `sources` and had no `truncated`;
 //! 2 (S4) counts every source (floor, world, bodies) as `sources`, the bodies as `bodies`, and says
-//! `truncated` (null, or the metres within which the world was read).
+//! `truncated` (null, or the metres within which the world was read). 3 (S5, TASK-S5-04) adds
+//! `world`: how the world was read at each tower (its walk's ledger, its cut's nodes by level,
+//! chunks opened, blocks by level, leaves read, its local expansion's degree, nodes and audit;
+//! [`crate::read::WorldLedger`]), null for a scene with no world or a world not read.
 //!
 //! **Sign.** ΔΦ is lower minus upper (δφ₁ − δφ₂) unless the scene's instrument says otherwise;
 //! v1's bundles were upper minus lower. The manifest says which this one is.
@@ -64,8 +67,9 @@ use crate::{SceneSpec, SignSpec};
 
 /// The version of the bundle's layout this build writes. 2 (S4's second review, minor 8): the
 /// manifest says `truncated` (and what it means), and `sources` counts every source (the floor,
-/// the world and the bodies), with `bodies` the bodies alone.
-pub const BUNDLE_VERSION: u32 = 2;
+/// the world and the bodies), with `bodies` the bodies alone. 3 (S5): the manifest says `world`,
+/// each tower's ledger of the world's read (and what it means).
+pub const BUNDLE_VERSION: u32 = 3;
 
 /// Who made a bundle: the engine's version and the revision of its source. These are the
 /// build's, fixed when the engine was compiled (`cav_engine::build`); nothing here is found out
@@ -554,6 +558,16 @@ fn manifest_of(
         "truncated_means": "null when every source's matter was read; a number r (metres) when the world was read only \
                             within r of each tower's atoms' path: the arrays are of that matter alone, and `settled` is false \
                             (since S5 the world is read whole, so r is 0: a world past its octree's caps, not read at all)",
+        "world": signal.world,
+        "world_means": "null when the scene has no world or its world was not read; else world.read.tolerance (radians) \
+                        and for each tower in order: ledger, the walk's bound on what its accepted nodes leave out read \
+                        through the flight (radians, both interferometers added; \"inf\" when a cap stopped the walk); \
+                        accepted and per_level, the octree's nodes read by their expansion, from the chunks (level 0) \
+                        up; opened, the chunks opened; blocks and blocks_per_level, the blocks of 2, 4, 8 and 16 cells \
+                        of opened chunks read by their expansion; leaves, read one by one; degree, far and near, the \
+                        local expansion along the tower's line (degree 0: none) and the accepted nodes in it and \
+                        beside it; audit, the expansion's audit (radians, not a bound); settled, whether the walk \
+                        reached the tolerance. The tower's estimate (error_estimate.npy) includes ledger and audit",
         "warnings": signal.warnings.iter().map(|warning| warning.text.clone()).collect::<Vec<_>>(),
         "comparison": comparison,
         "numerics": numerics(spec, build),
@@ -773,7 +787,7 @@ mod tests {
         write(&dir, &scene, &signal, &build(), None).unwrap();
         let manifest: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join("manifest.json")).unwrap()).unwrap();
-        assert_eq!(manifest["cavendish_bundle"], 2);
+        assert_eq!(manifest["cavendish_bundle"], 3);
         assert_eq!(
             (&manifest["scene"], &manifest["towers"], &manifest["bodies"]),
             (&"staggered".into(), &5.into(), &2.into())
@@ -944,6 +958,52 @@ mod tests {
         let said = manifest(&dir);
         assert_eq!((&said["truncated"], &said["settled"]), (&0.0.into(), &false.into()));
         assert!(said["truncated_means"].as_str().unwrap().contains("of that matter alone"));
+    }
+
+    #[test]
+    fn the_ledger_is_in_the_bundle() {
+        // W8 (TASK-S5-04): each tower's ledger of the world's read (the walk's ledger, its nodes
+        // by level, its blocks, its leaves, the local expansion's degree and audit) is in the
+        // manifest, the same as the signal has it, and each tower's estimate covers its ledger and
+        // its audit. Two blocks at a 0.5 m pitch (chunks of 16 m) held to 1e-4 rad.
+        use crate::world::tests::{boxed, scene, world_of};
+        let mut world = world_of(
+            0.5,
+            vec![boxed([30.0, 2.0, -1.0], [40.0, 8.0, 3.0]), boxed([-12.0, -30.0, -2.0], [-4.0, -20.0, 6.0])],
+        );
+        world.read.tolerance = 1e-4;
+        let scene = scene(world);
+        let signal = read::signal(&scene).unwrap();
+        let ledger = signal.world.clone().expect("the world's ledger");
+        let dir = scratch("ledger");
+        write(&dir, &scene, &signal, &build(), None).unwrap();
+        let manifest: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("manifest.json")).unwrap()).unwrap();
+        let back: read::WorldLedger = serde_json::from_value(manifest["world"].clone()).unwrap();
+        assert_eq!(back, ledger);
+        assert_eq!(back.towers.len(), scene.array.towers.len());
+        assert!(manifest["world_means"].as_str().unwrap().contains("audit"));
+        let (_, estimates) = array(&dir, "error_estimate").into_f64().unwrap();
+        for (tower, estimate) in back.towers.iter().zip(estimates) {
+            assert_eq!(tower.per_level.iter().sum::<usize>(), tower.accepted);
+            assert_eq!(tower.blocks_per_level.iter().sum::<usize>(), tower.blocks);
+            assert!(tower.settled && tower.ledger + tower.audit <= back.tolerance);
+            assert!(estimate >= tower.ledger + tower.audit, "{estimate} {tower:?}");
+            assert_eq!(
+                tower.far + tower.near,
+                if tower.degree > 0 { tower.accepted + tower.blocks } else { 0 }
+            );
+        }
+        // Something was read through the expansion, by a series, and leaf by leaf.
+        assert!(back.towers.iter().any(|t| t.degree > 0 && t.audit > 0.0 && t.leaves > 0), "{back:?}");
+        // Control: a scene with no world says null, and its words say what null means.
+        let point = dev::point();
+        let dir = scratch("ledger, none");
+        write(&dir, &point, &read::signal(&point).unwrap(), &build(), None).unwrap();
+        let manifest: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("manifest.json")).unwrap()).unwrap();
+        assert!(manifest["world"].is_null());
+        assert!(manifest["world_means"].as_str().unwrap().starts_with("null when the scene has no world"));
     }
 
     #[test]

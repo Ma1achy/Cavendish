@@ -286,12 +286,9 @@ def fig_representations() -> None:
         sc.draw(ax, bound)
         ax.set_anchor("N")  # the pyramid just under its title
         ax.set_title(f"({'def'[k]})", fontsize=8)
-    fig.text(0.5, 0.13, f"green: the true body; blue: whole cells; orange (hatched in 2-D): clipped "
-             f"boundary pieces, exact to the polygon or mesh; dotted: the true surface (in (e, f) its edges, "
-             f"hidden where the cells cover them). "
-             f"(f): the {len(pieces)} clipped pieces, outlined where the lattice cuts the faces "
-             f"({len(inner)} whole cubes are inside).",
-             ha="center", va="top", fontsize=6.8, wrap=True)
+    # The key is in the paper's caption, at print size (referee, layout item 3); the counts are
+    # printed here for it.
+    print(f"diag-representations: (f) {len(pieces)} clipped pieces, {len(inner)} whole cubes inside")
     fig.savefig(FIG / "diag-representations.pdf")
     plt.close(fig)
 
@@ -465,9 +462,7 @@ def fig_cuts() -> None:
             ax.text(*view.project(0.5 * (e0 + e1) + u(0, 0, -0.18)), "$e$", color=VERMILION,
                     fontsize=8)
         ax.set_title(title, fontsize=7)
-    fig.text(0.5, 0.01, "orange: the clipped piece (the part of the cell inside the body); "
-             "grey: the part removed. Each piece is a polyhedron, so eq. (7) applies to it.",
-             ha="center", fontsize=7)
+    # The key (orange piece, grey removed part) is in the paper's caption, at print size.
     fig.savefig(FIG / "diag-cuts.pdf")
     plt.close(fig)
 
@@ -524,14 +519,16 @@ def fig_closed_form() -> None:
     ax.plot([q[0], q[0]], [q[1], 0], color=INK2, lw=0.6, ls=":")
     ax.scatter(*q, color=INK, s=12, zorder=3)
     ax.text(q[0] + 0.05, q[1] + 0.08, "$\\mathbf{p}$", fontsize=9)
-    ax.text(0.35, 0.72, "$r_1$", fontsize=9)
-    ax.text(2.15, 0.72, "$r_2$", fontsize=9)
-    ax.text(1.5, -0.22, "edge $e$, length $L$", ha="center", color=VERMILION, fontsize=8)
+    ax.text(0.35, 0.72, "$a$", fontsize=9)
+    ax.text(2.15, 0.72, "$b$", fontsize=9)
+    ax.text(1.5, -0.22, "edge $e$, length $\\ell$", ha="center", color=VERMILION, fontsize=8)
     ax.text(q[0] + 0.05, 0.45, "$r_0$", fontsize=8, color=INK2)
-    ax.text(1.5, -0.62, "$L_e = \\int_0^L dt/r = \\ln\\dfrac{r_1+r_2+L}{r_1+r_2-L}$", ha="center",
+    ax.text(1.5, -0.62, "$L_e = \\int_0^\\ell dt/r = \\ln\\dfrac{a+b+\\ell}{a+b-\\ell}$", ha="center",
             fontsize=9)
-    ax.text(1.5, -1.05, "near the edge: $r_1+r_2-L = \\dfrac{r_0^2}{r_1-\\ell_1}+\\dfrac{r_0^2}{r_2+\\ell_2}$",
-            ha="center", fontsize=8)
+    # Written inline, not as \dfrac: the subscripts of a fraction's denominator are unreadable at
+    # print size (referee, draft 4).
+    ax.text(1.5, -1.05, "near the edge: $a+b-\\ell = r_0^2/(a-\\ell_1)+r_0^2/(b+\\ell_2)$",
+            ha="center", fontsize=9.5)
     ax.set_xlim(-0.3, 3.3)
     ax.set_ylim(-1.3, 1.6)
     ax.set_title("(b) an edge: the logarithm $L_e$", fontsize=8)

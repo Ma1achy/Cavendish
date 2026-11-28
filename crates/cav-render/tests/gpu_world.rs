@@ -500,6 +500,7 @@ fn gpu_a_world_is_drawn_near_and_far() {
             span: None,
             voxels: None,
             world,
+            lod: None,
         };
         renderer.render_rgba(&gpu, frame, size).unwrap()
     };
@@ -569,6 +570,7 @@ fn gpu_the_world_near_the_eye_and_at_the_ring_is_drawn() {
             span: None,
             voxels: None,
             world,
+            lod: None,
         };
         renderer.render_rgba(&gpu, frame, size).unwrap()
     };
@@ -612,4 +614,302 @@ fn gpu_the_world_near_the_eye_and_at_the_ring_is_drawn() {
     let side = Vec3::from_array(persp.basis().1) * 40.0;
     let (beside, _) = chunk_at(eye + side);
     assert_eq!(draw(&persp, Some(&beside)), draw(&persp, None), "a chunk outside the frustum is not drawn");
+}
+
+#[test]
+fn gpu_a_tower_s_lod_view_draws_its_list() {
+    // L1's drawing (`docs/slices/S5.md` §7.15): given a LOD view's list (chunks at level 0, bricks
+    // above) the renderer draws exactly its entries, none of the camera's clipmap, and an entry not
+    // resident (nor on its way) by its nearest resident ancestor, said. Control: drawn by the
+    // camera, what is drawn is not the list.
+    let gpu = gpu();
+    let renderer = Renderer::new(&gpu);
+    let mut v = view([0.0, 0.0, 0.0], 0.0, 90.0, 400.0);
+    v.projection = Projection::Orthographic;
+    let source = hills_frame(&v);
+    let spec_world = {
+        let spec = WorldSpec {
+            pitch: 0.5,
+            supersample: 1,
+            origin: [0.0; 3],
+            materials: vec![MaterialSpec::plain("grass", 1800.0, "#40c040")],
+            pieces: vec![PieceSpec {
+                label: "hills".into(),
+                material: 0,
+                kind: PieceKind::Terrain {
+                    lo: [-120.0, -120.0],
+                    hi: [120.0, 120.0],
+                    bottom: -3.0,
+                    level: -1.0,
+                    relief: 1.5,
+                    wavelength: 60.0,
+                    seed: 3,
+                },
+            }],
+            stream: Default::default(),
+            read: Default::default(),
+            lod: cav_sim::world::LodSpec { error_px: 32.0 },
+        };
+        World::new(&spec)
+    };
+    let grid = source.grid.unwrap();
+    let extent = spec_world.extent().unwrap();
+    // A list: the world's level-2 bricks, but the one holding the origin opened into its level-1
+    // bricks, and one of those into its chunks.
+    let (lo, hi) = grid.bricks_of(2, &extent);
+    let mut list: Vec<(u8, ChunkKey)> = Vec::new();
+    let mut frame = WorldFrame { chunks: Default::default(), bricks: Default::default(), ..source.clone() };
+    let add = |level: u8, key: ChunkKey, list: &mut Vec<(u8, ChunkKey)>, frame: &mut WorldFrame| {
+        if level == 0 {
+            if let Some(chunk) = spec_world.chunk(key).unwrap() {
+                frame.chunks.insert(key, Arc::new(ChunkCells::of(&chunk)));
+                list.push((0, key));
+            }
+        } else if let Some(brick) = spec_world.brick(level, key) {
+            frame.bricks.insert((level, key), Arc::new(brick));
+            list.push((level, key));
+        }
+    };
+    for x in lo.x..=hi.x {
+        for y in lo.y..=hi.y {
+            for z in lo.z..=hi.z {
+                let key = ChunkKey::new(x, y, z);
+                if key != ChunkKey::new(0, 0, -1) && key != ChunkKey::new(0, 0, 0) {
+                    add(2, key, &mut list, &mut frame);
+                }
+            }
+        }
+    }
+    for z in [-1, 0] {
+        for octant in 0..8 {
+            let child = ChunkKey::new(octant & 1, (octant >> 1) & 1, 2 * z + (octant >> 2));
+            if child == ChunkKey::new(0, 0, -1) {
+                for c in 0..8 {
+                    add(0, ChunkKey::new(c & 1, (c >> 1) & 1, -2 + (c >> 2)), &mut list, &mut frame);
+                }
+            } else {
+                add(1, child, &mut list, &mut frame);
+            }
+        }
+    }
+    list.sort_unstable();
+    assert!(list.iter().any(|e| e.0 == 0) && list.iter().any(|e| e.0 == 1) && list.iter().any(|e| e.0 == 2));
+    let (pipelines, store) = renderer.world_parts();
+    let camera = Camera::new(&v, 480.0 / 270.0);
+    let mut world = store.lock().unwrap();
+    let drawn = |world: &mut WorldGpu, frame: &WorldFrame, list: Option<&[(u8, ChunkKey)]>| {
+        world.prepare_list(&gpu, pipelines, frame, &v, &camera, [480, 270], true, list).expect("a frame");
+        let mut d = world.drawn.clone();
+        d.sort_unstable();
+        d
+    };
+    assert_eq!(drawn(&mut world, &frame, Some(&list)), list, "the list, no more and no fewer");
+    // An entry gone from the resident world and not waiting: its nearest resident ancestor.
+    let gone = *list.iter().find(|e| e.0 == 1).unwrap();
+    let mut missing = frame.clone();
+    missing.bricks.remove(&gone);
+    let parent = (2, cav_sim::world::clipmap::ancestor(1, gone.1, 2));
+    missing.bricks.insert(parent, Arc::new(spec_world.brick(2, parent.1).unwrap()));
+    let d = drawn(&mut world, &missing, Some(&list));
+    assert!(d.contains(&parent) && !d.contains(&gone));
+    assert!(world.notes.iter().any(|n| n.contains("1 nodes not resident")), "{:?}", world.notes);
+    // Control: the camera's own clipmap of the same resident world is not the list.
+    assert_ne!(drawn(&mut world, &frame, None), list);
+}
+
+/// The world of the seams' test: rolling ground of 16 m chunks, wide enough for its path.
+fn seam_world() -> (World, u64) {
+    let spec = WorldSpec {
+        pitch: 0.5,
+        supersample: 1,
+        origin: [0.0; 3],
+        materials: vec![MaterialSpec::plain("grass", 1800.0, "#40c040")],
+        pieces: vec![PieceSpec {
+            label: "hills".into(),
+            material: 0,
+            kind: PieceKind::Terrain {
+                lo: [-700.0, -700.0],
+                hi: [2300.0, 700.0],
+                bottom: -4.0,
+                level: -1.0,
+                relief: 2.5,
+                wavelength: 45.0,
+                seed: 5,
+            },
+        }],
+        stream: Default::default(),
+        read: Default::default(),
+        lod: cav_sim::world::LodSpec { error_px: 4.0 },
+    };
+    (World::new(&spec), spec.hash())
+}
+
+/// What a chunk or brick of the seams' test was made as (None: it has no matter).
+type Made = Option<(Option<Arc<ChunkCells>>, Option<Arc<Brick>>)>;
+
+/// What the camera of `v` wants of `world` (with the seams' outer hole layers), made or taken
+/// from `made`.
+fn seam_frame(
+    world: &World,
+    hash: u64,
+    v: &ViewSpec,
+    made: &mut std::collections::HashMap<(u8, ChunkKey), Made>,
+) -> WorldFrame {
+    let grid = world.grid;
+    let extent = world.extent().unwrap();
+    let n = ring(4.0);
+    let centre = lod_centre(v);
+    let count = level_count(&grid, &extent, centre, n);
+    let mut frame = WorldFrame {
+        grid: Some(grid),
+        colours: world.colours.clone(),
+        ring: n,
+        levels: count,
+        extent: Some(extent),
+        world: hash,
+        ..WorldFrame::default()
+    };
+    for level in levels(&grid, centre, n, count) {
+        for key in level.keys_with(grid.bricks_of(level.level, &extent), n, true) {
+            let got = made.entry((level.level, key)).or_insert_with(|| {
+                if level.level == 0 {
+                    world.chunk(key).unwrap().map(|c| (Some(Arc::new(ChunkCells::of(&c))), None))
+                } else {
+                    world.brick(level.level, key).map(|b| (None, Some(Arc::new(b))))
+                }
+            });
+            match got {
+                Some((Some(cells), _)) => {
+                    frame.chunks.insert(key, Arc::clone(cells));
+                }
+                Some((_, Some(brick))) => {
+                    frame.bricks.insert((level.level, key), Arc::clone(brick));
+                }
+                _ => {}
+            }
+        }
+    }
+    frame
+}
+
+/// The seams' test camera: its eye at `x` east, 14 m up, looking east 20° down (the near ring's
+/// edge, 256 m ahead, in the picture; the horizon not).
+fn seam_view(x: f64, seams: cav_sim::world::clipmap::Seams, style: DrawStyle) -> ViewSpec {
+    let (y, p) = (180f64.to_radians(), 20f64.to_radians());
+    let dir = Vec3::new(p.cos() * y.cos(), p.cos() * y.sin(), p.sin());
+    let eye = Vec3::new(x, 0.3, 14.0);
+    let mut v = view((eye - dir * 60.0).to_array(), 180.0, 20.0, 60.0);
+    v.style = style;
+    v.seams = seams;
+    v
+}
+
+/// Marks every pixel within 6 of one whose colour differs from its left or upper neighbour in
+/// `picture` (`size` pixels).
+fn near_changes(picture: &[u8], size: [u32; 2], mask: &mut [bool]) {
+    let (w, h) = (i64::from(size[0]), i64::from(size[1]));
+    let at = |x: i64, y: i64| {
+        let i = 4 * (y * w + x) as usize;
+        [picture[i], picture[i + 1], picture[i + 2]]
+    };
+    for y in 0..h {
+        for x in 1..w {
+            if at(x, y) != at(x - 1, y) || (y > 0 && at(x, y) != at(x, y - 1)) {
+                for dy in -6..=6 {
+                    for dx in -6..=6 {
+                        let (u, v) = (x + dx, y + dy);
+                        if u >= 0 && v >= 0 && u < w && v < h {
+                            mask[(v * w + u) as usize] = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The mean over `mask` of the channels' absolute difference between two pictures, 0 to 255.
+fn masked_difference(a: &[u8], b: &[u8], mask: &[bool]) -> f64 {
+    let (mut sum, mut count) = (0.0, 0usize);
+    for i in (0..mask.len()).filter(|&i| mask[i]) {
+        sum += (0..3).map(|c| f64::from(a[4 * i + c].abs_diff(b[4 * i + c]))).sum::<f64>() / 3.0;
+        count += 1;
+    }
+    if count == 0 { 0.0 } else { sum / count as f64 }
+}
+
+#[test]
+fn gpu_ring_seams_are_hidden() {
+    // SE1 (criterion in `docs/slices/S5.md` §7.16, written before measuring): over a path across 50
+    // snaps of the near ring (the eye 1 mm before and 1 mm after each), the mean frame difference in
+    // the bands (pixels within 6 of a change of level) with the dithered cross-fade is at most half
+    // of it with the rings cut; control: with the band measured from the snapped ring and ending on
+    // its edge, at least 0.8 of the cut rings' at the snap frames.
+    use cav_sim::world::clipmap::Seams;
+    let gpu = gpu();
+    let renderer = Renderer::new(&gpu);
+    let (world, hash) = seam_world();
+    let scene = SceneSpec { world: None, ..SceneSpec::room() };
+    let size = [320u32, 180u32];
+    let chunk = world.grid.chunk_side();
+    let mut made = std::collections::HashMap::new();
+    let (_, store) = renderer.world_parts();
+    let render = |v: &ViewSpec, frame: &WorldFrame, snapped: bool, bands: bool| {
+        store.lock().unwrap().seams_on_the_snapped_edge = snapped;
+        let mut v = v.clone();
+        v.overlay.bands = bands;
+        let f = Frame {
+            scene: &scene,
+            view: &v,
+            highlight: None,
+            time: 0.0,
+            content: PaneContent::Scene,
+            span: None,
+            voxels: None,
+            world: Some(frame),
+            lod: None,
+        };
+        renderer.render_rgba(&gpu, f, size).unwrap()
+    };
+    let (mut cut, mut dithered, mut control) = (0.0, 0.0, 0.0);
+    let (mut cut_ms, mut dither_ms) = (0.0, 0.0);
+    let started = std::time::Instant::now();
+    for j in 1..=50 {
+        let x = 2.0 * chunk * f64::from(j);
+        let eyes = [x - 1e-3, x + 1e-3];
+        let frames: Vec<WorldFrame> = eyes
+            .iter()
+            .map(|&e| seam_frame(&world, hash, &seam_view(e, Seams::Dither, DrawStyle::Shaded), &mut made))
+            .collect();
+        // The bands: near where the flat, level-tinted picture changes colour, before or after.
+        let mut mask = vec![false; (size[0] * size[1]) as usize];
+        for (k, &e) in eyes.iter().enumerate() {
+            let tinted = render(&seam_view(e, Seams::Off, DrawStyle::Flat), &frames[k], false, true);
+            near_changes(&tinted, size, &mut mask);
+        }
+        let pair = |seams: Seams, snapped: bool, ms: &mut f64| {
+            let timed = std::time::Instant::now();
+            let a = render(&seam_view(eyes[0], seams, DrawStyle::Shaded), &frames[0], snapped, false);
+            let b = render(&seam_view(eyes[1], seams, DrawStyle::Shaded), &frames[1], snapped, false);
+            *ms += timed.elapsed().as_secs_f64() * 1e3 / 2.0;
+            masked_difference(&a, &b, &mask)
+        };
+        cut += pair(Seams::Off, false, &mut cut_ms);
+        dithered += pair(Seams::Dither, false, &mut dither_ms);
+        control += pair(Seams::Dither, true, &mut 0.0);
+    }
+    store.lock().unwrap().seams_on_the_snapped_edge = false;
+    let (cut, dithered, control) = (cut / 50.0, dithered / 50.0, control / 50.0);
+    eprintln!(
+        "SE1: mean difference in the bands over 50 snaps: cut {cut:.3}, dithered {dithered:.3} ({:.3} of cut), \
+         control {control:.3} ({:.3} of cut); a frame (render and read back, 320x180): cut {:.1} ms, dithered {:.1} ms; {:.1} s",
+        dithered / cut,
+        control / cut,
+        cut_ms / 50.0,
+        dither_ms / 50.0,
+        started.elapsed().as_secs_f64()
+    );
+    assert!(cut > 0.0, "the cut rings pop at their snaps");
+    assert!(dithered <= 0.5 * cut, "dithered {dithered} against cut {cut}");
+    assert!(control >= 0.8 * cut, "the control {control} against cut {cut}");
 }

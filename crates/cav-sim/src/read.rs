@@ -12,6 +12,9 @@ use cav_core::Vec3;
 use cav_core::forward::{Channel, Mass, PHASE_TOLERANCE, Reader, Sign, Slab};
 use cav_core::voxel::kernel::{MAX_KERNEL_WORK, TreeBody};
 
+use crate::exact::{ExactBody, ExactBound};
+use crate::shape::Representation;
+
 use crate::{FloorKind, SceneSpec};
 
 /// The most shots a signal is computed for. A scene with more is refused, with the count.
@@ -474,8 +477,9 @@ impl std::fmt::Display for Warning {
     }
 }
 
-/// How the world was read at one tower: its walk's ledger and the size of its cut
-/// (`docs/slices/S5.md` §2 "The walk").
+/// How the world was read at one tower: its walk's ledger, the size of its cut and its local
+/// expansion (`docs/slices/S5.md` §2 "The walk", "The local expansion"; in a bundle's manifest,
+/// TASK-S5-04).
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct TowerLedger {
     /// The ledger, radians: the bounds of the nodes read through their expansion, read through
@@ -485,12 +489,29 @@ pub struct TowerLedger {
     #[serde(with = "crate::json_f64")]
     #[schemars(schema_with = "crate::json_f64::schema")]
     pub ledger: f64,
-    /// Nodes read through their expansion.
+    /// The octree's nodes read through their expansion.
     pub accepted: usize,
-    /// Chunks read leaf by leaf.
+    /// Chunks the walk opened (into their own trees' blocks and leaves).
     pub opened: usize,
-    /// Nodes accepted at each level, from the chunks (level 0) up.
+    /// The octree's nodes accepted at each level, from the chunks (level 0) up.
     pub per_level: Vec<usize>,
+    /// Blocks of the opened chunks' trees read through their expansion.
+    pub blocks: usize,
+    /// Those blocks by level, `[1, 2, 3, 4]`: 2, 4, 8 and 16 finest cells a side.
+    pub blocks_per_level: Vec<usize>,
+    /// Leaves read one by one with the exact cube kernel.
+    pub leaves: u64,
+    /// The local expansion's degree; 0 when the far field was read node by node.
+    pub degree: usize,
+    /// Accepted nodes gathered into the local expansion.
+    pub far: usize,
+    /// Accepted nodes read directly beside it.
+    pub near: usize,
+    /// The local expansion's audit, radians (0 with none): added to the read's estimate beside
+    /// the ledger. An audit, not a bound (`world::local`).
+    #[serde(with = "crate::json_f64")]
+    #[schemars(schema_with = "crate::json_f64::schema")]
+    pub audit: f64,
     /// Whether the walk reached `world.read.tolerance` (false when a cap stopped it).
     pub settled: bool,
 }
@@ -505,16 +526,17 @@ pub struct WorldLedger {
 }
 
 impl WorldLedger {
-    /// The largest ledger of any tower, radians.
+    /// The largest of any tower's ledger and its local expansion's audit added, radians: what the
+    /// world's part of the read is said to be within, beside the quadrature's estimate.
     #[must_use]
     pub fn worst(&self) -> f64 {
-        self.towers.iter().map(|t| t.ledger).fold(0.0, f64::max)
+        self.towers.iter().map(|t| t.ledger + t.audit).fold(0.0, f64::max)
     }
 
-    /// The most entries of any tower's cut (nodes accepted and chunks opened).
+    /// The most entries of any tower's cut (octree nodes and blocks accepted, chunks opened).
     #[must_use]
     pub fn nodes(&self) -> usize {
-        self.towers.iter().map(|t| t.accepted + t.opened).max().unwrap_or(0)
+        self.towers.iter().map(|t| t.accepted + t.blocks + t.opened).max().unwrap_or(0)
     }
 
     /// Whether every tower's walk reached the tolerance.
@@ -563,6 +585,9 @@ pub struct Contribution {
     pub world: Option<WorldLedger>,
     /// What a person should know about this source's readings.
     pub warnings: Vec<Warning>,
+    /// For the world: the octree's nodes and each tower's cut, for the views that draw them
+    /// (`crate::world::lod_view`); not in a bundle. `None` for every other source.
+    pub view: Option<std::sync::Arc<crate::world::lod_view::ReadView>>,
 }
 
 /// Two truncations together: the nearer radius, when either left matter out.
@@ -760,6 +785,7 @@ pub fn contribution_on(
         settled: true,
         truncated: None,
         world: None,
+        view: None,
         warnings: Vec::new(),
     };
     // Each tower's own sign: the gradiometer is differenced as its instrument says.
@@ -1002,8 +1028,8 @@ fn world_contribution(
     let readouts: Vec<f64> = (0..spec.array.towers.len())
         .map(|at| if shots.count(at) > 0 { shots.readout(at, 0) } else { 0.0 })
         .collect();
-    let reads = match crate::world::read_world(spec, readers, &readouts, cancelled) {
-        Ok(Some(reads)) => reads,
+    let (reads, view) = match crate::world::read_world(spec, readers, &readouts, cancelled) {
+        Ok(Some(read)) => (read.towers, read.view),
         Ok(None) => return None,
         Err(why) => {
             for channel in [&mut out.lower, &mut out.upper, &mut out.gradiometer] {
@@ -1023,7 +1049,8 @@ fn world_contribution(
         let count = shots.count(at);
         let (lower, upper) = (read.audited.reading.lower, read.audited.reading.upper);
         let ledger = read.ledger[0] + read.ledger[1];
-        let estimate = read.audited.estimate.unwrap_or(0.0) + ledger;
+        // The local expansion's audit (radians) joins the ledger in the estimate.
+        let estimate = read.audited.estimate.unwrap_or(0.0) + ledger + read.local.audit;
         out.estimates[at] = estimate;
         out.estimate = out.estimate.max(estimate);
         if !read.audited.settled {
@@ -1053,6 +1080,13 @@ fn world_contribution(
             accepted: cut.accepted.len(),
             opened: cut.opened.len(),
             per_level: cut.per_level.clone(),
+            blocks: cut.inner.len(),
+            blocks_per_level: cut.inner_per_level.to_vec(),
+            leaves: cut.leaves,
+            degree: read.local.degree,
+            far: read.local.far,
+            near: read.local.near,
+            audit: read.local.audit,
             settled: cut.settled,
         });
         let value = |v: f64| (0..count).map(move |k| if shots.taken(at, k) { v } else { 0.0 });
@@ -1061,27 +1095,56 @@ fn world_contribution(
         out.gradiometer.extend(value(signed(at, lower, upper)));
     }
     out.world = Some(WorldLedger { tolerance, towers });
+    out.view = Some(std::sync::Arc::new(view));
     Some(())
 }
-/// A body made of voxels, ready to read: its leaves as uniform cubes where the body is, the work
-/// one read may do, and (for a body that never moves and is always there) each tower's reading
-/// once it has been made.
+/// A body with a shape, ready to read: its leaves as uniform cubes where the body is (or, for an
+/// `Exact` body, the solid itself), the work one read may do, and (for a body that never moves
+/// and is always there) each tower's reading once it has been made.
 struct VoxelBody<'a> {
-    source: TreeBody<Box<dyn Fn(f64) -> Vec3 + Sync + 'a>>,
+    source: Shaped<'a>,
     /// The most flight nodes one read of this body may evaluate: its share of
-    /// [`MAX_KERNEL_WORK`] ([`kernel_share`]) over the cubes a node costs.
+    /// [`MAX_KERNEL_WORK`] ([`kernel_share`]) over the cubes (or triangles) a node costs.
     max_nodes: u64,
     /// For a still body: the reading at each tower (by its position's bits). It does not depend
     /// on the readout time, so every shot has the same bits; it is made once.
     still: Option<std::sync::Mutex<StillReadings>>,
 }
 
+/// Where a shaped body is at a time: seconds on the scene's clock in, metres (the world's frame)
+/// out.
+type Place<'a> = Box<dyn Fn(f64) -> Vec3 + Sync + 'a>;
+
+/// How a shaped body is read: by its voxels, or exactly ([`crate::shape::Representation`]).
+enum Shaped<'a> {
+    /// Leaf by leaf, each a uniform cube.
+    Leaves(TreeBody<Place<'a>>),
+    /// The solid itself ([`crate::exact`]).
+    Exact(Box<ExactBody<Place<'a>>>),
+}
 /// Each tower's reading of a still body, by the bits of the tower's position and its instrument's key.
 type StillReadings = Vec<(Vec<u64>, cav_core::forward::Audited)>;
 
 impl VoxelBody<'_> {
     fn read(&self, reader: &Reader, tower: Vec3, readout: f64) -> cav_core::forward::Audited {
-        let read = || reader.read_to_within(tower, &self.source, readout, PHASE_TOLERANCE, self.max_nodes);
+        let read = || match &self.source {
+            Shaped::Leaves(source) => {
+                reader.read_to_within(tower, source, readout, PHASE_TOLERANCE, self.max_nodes)
+            }
+            Shaped::Exact(source) => {
+                let mut audited =
+                    reader.read_to_within(tower, source.as_ref(), readout, PHASE_TOLERANCE, self.max_nodes);
+                // What reading it through its moments far away leaves out, bounded (S4's bound,
+                // rigorous for a polyhedron) and read through the same flight: added to the
+                // estimate, as the world's far chunks' bound is.
+                let bound = reader.read(tower, &ExactBound(source.as_ref()), readout);
+                let bound = bound.lower.abs() + bound.upper.abs();
+                if bound > 0.0 {
+                    audited.estimate = Some(audited.estimate.unwrap_or(0.0) + bound);
+                }
+                audited
+            }
+        };
         let Some(still) = &self.still else { return read() };
         // By the tower's place and its instrument: two towers at one place may fly two.
         let mut key: Vec<u64> = tower.to_array().map(f64::to_bits).to_vec();
@@ -1109,46 +1172,84 @@ pub fn kernel_share(spec: &SceneSpec) -> u64 {
     MAX_KERNEL_WORK / voxel.max(1) as u64
 }
 
-/// Body `n` as voxels, if it has a shape: `Ok(None)` for a point or a sphere.
+/// Body `n` as voxels (or, for an `Exact` body, as its solid), if it has a shape: `Ok(None)` for a
+/// point or a sphere.
 ///
 /// # Errors
-/// When the shape cannot be voxelised, or when even the first rule of one read would cost more
-/// than the body's share of [`MAX_KERNEL_WORK`] ([`kernel_share`]), with the numbers.
+/// When the shape cannot be voxelised (or its solid made), or when even the first rule of one read
+/// would cost more than the body's share of [`MAX_KERNEL_WORK`] ([`kernel_share`]), with the
+/// numbers.
 fn voxel_body<'a>(spec: &'a SceneSpec, n: usize, readers: &Readers) -> Result<Option<VoxelBody<'a>>, String> {
     let body = &spec.bodies[n];
     let Some(shape) = &body.shape else { return Ok(None) };
-    let tree = shape.tree(body.mass, &spec.materials)?;
     let gravity = spec.array.instrument.gravity;
-    let position: Box<dyn Fn(f64) -> Vec3 + Sync + 'a> =
-        Box::new(move |t| Vec3::from_array(body.motion.position(t, gravity)));
-    let mut source = if shape.representation == crate::Representation::Pieces {
-        let solid = shape.kind.solid()?;
-        let solids = cav_core::voxel::cut::piece_solids(solid.as_ref(), &tree).map_err(|e| e.0)?;
-        TreeBody::with_pieces(&tree, solids, position)
+    let position: Place<'a> = Box::new(move |t| Vec3::from_array(body.motion.position(t, gravity)));
+    // Each flight node evaluates every cube (or triangle) at two points for each of two
+    // interferometers.
+    let (source, per_node, what) = if shape.representation == Representation::Exact {
+        let solid = shape.kind.faceted()?;
+        let density = exact_density(spec, n, &solid)?;
+        // The narrowest of the instruments' widest arm separations: the closed form is held to it.
+        let separation = readers
+            .readers
+            .iter()
+            .map(|reader| {
+                let instrument = reader.instrument();
+                instrument.kick_velocity().abs() * instrument.half_sequence
+            })
+            .fold(f64::INFINITY, f64::min);
+        let mut source = ExactBody::new(solid, density, separation, position);
+        source.exists = body.exists();
+        source.breaks = body.motion.breaks();
+        let faces = source.faces();
+        (Shaped::Exact(Box::new(source)), 4 * faces as u64, format!("{faces} triangles"))
     } else {
-        TreeBody::read_as(&tree, shape.representation.core(), position)
+        let tree = shape.tree(body.mass, &spec.materials)?;
+        let mut source = if shape.representation == Representation::Pieces {
+            let solid = shape.kind.solid()?;
+            let solids = cav_core::voxel::cut::piece_solids(solid.as_ref(), &tree).map_err(|e| e.0)?;
+            TreeBody::with_pieces(&tree, solids, position)
+        } else {
+            TreeBody::read_as(&tree, shape.representation.core(), position)
+        };
+        source.exists = body.exists();
+        source.breaks = body.motion.breaks();
+        let cubes = source.cubes();
+        (Shaped::Leaves(source), 4 * cubes as u64, format!("{cubes} leaves"))
     };
-    source.exists = body.exists();
-    source.breaks = body.motion.breaks();
-    // Each flight node evaluates every cube at two points for each of two interferometers.
-    let per_node = 4 * source.cubes() as u64;
     // The longest flight of any tower's instrument sets the work of a read.
     let first = readers.readers.iter().map(|reader| reader.instrument().node_count(&[])).max().unwrap_or(0);
     let share = kernel_share(spec);
     if first * per_node > share {
         return Err(format!(
-            "{} leaves × {first} flight nodes is more than the {share} cube evaluations one read may make of \
-             this body ({MAX_KERNEL_WORK} a read, shared by the scene's voxel bodies); use a coarser pitch",
-            source.cubes()
+            "{what} × {first} flight nodes is more than the {share} cube evaluations one read may make of \
+             this body ({MAX_KERNEL_WORK} a read, shared by the scene's voxel bodies); use a coarser pitch"
         ));
     }
     let still = (matches!(body.motion, crate::Motion::Static { .. })
         && body.appears.is_none()
         && body.vanishes.is_none())
     .then(|| std::sync::Mutex::new(Vec::new()));
-    Ok(Some(VoxelBody { source, max_nodes: share / per_node, still }))
+    Ok(Some(VoxelBody { source, max_nodes: share / per_node.max(1), still }))
 }
 
+/// The uniform density of `Exact` body `n` whose solid is `solid`, kg/m³: its material's, or its
+/// `mass` over the solid's volume when it has none.
+///
+/// # Errors
+/// When its material is found neither in the scene nor in the library.
+pub(crate) fn exact_density(
+    spec: &SceneSpec,
+    n: usize,
+    solid: &cav_core::polyhedral::Faceted,
+) -> Result<f64, String> {
+    let body = &spec.bodies[n];
+    let shape = body.shape.as_ref().ok_or("not a shaped body")?;
+    match shape.materials(&spec.materials, "material")?.first() {
+        Some(material) => Ok(material.density),
+        None => Ok(body.mass / solid.volume()),
+    }
+}
 /// A body watched while it is read: it is the body as a [`Source`], and it notes whether its
 /// surface (or, for a point, a millimetre about it) came between the two arms of an
 /// interferometer at any node the read evaluated.

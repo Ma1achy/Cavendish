@@ -157,6 +157,20 @@ pub struct ViewSpec {
     /// body is still read by the towers: hiding is a view's, not the scene's.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hidden: Vec<String>,
+    /// How bodies with a shape are drawn: their voxels (the default, not written), shaded by their
+    /// exact fill, their own triangles, or the triangles inside the voxels' outlines
+    /// ([`crate::body_draw::BodyDraw`]). A view's, like the colouring: never undone.
+    #[serde(default, skip_serializing_if = "crate::body_draw::BodyDraw::is_voxels")]
+    pub body_draw: crate::body_draw::BodyDraw,
+    /// Which levels of detail the world is drawn at: the camera's clipmap (the default, not
+    /// written), the cut tower `n` reads, or the finest any of several towers reads
+    /// ([`crate::world::lod_view::LodView`]). A view's: never undone.
+    #[serde(default, skip_serializing_if = "crate::world::lod_view::LodView::is_camera")]
+    pub lod_view: crate::world::lod_view::LodView,
+    /// How the seams between the world's rings of detail are drawn: cross-faded by a dither (the
+    /// default, not written), or cut at each ring's snapped edge.
+    #[serde(default, skip_serializing_if = "crate::world::clipmap::Seams::is_dither")]
+    pub seams: crate::world::clipmap::Seams,
 }
 
 /// What a pane shows.
@@ -226,6 +240,9 @@ pub struct SceneView<'a> {
     pub voxels: Option<&'a crate::voxel_view::VoxelFrame>,
     /// The resident world (S4) the pane draws its clipmap from, when the scene has a world.
     pub world: Option<&'a crate::world::clipmap::WorldFrame>,
+    /// What the pane draws of the world's levels: its LOD view's draw list and its world
+    /// overlay's boxes ([`crate::world::lod_view::LodFrame`]), when the scene has a world.
+    pub lod: Option<&'a crate::world::lod_view::LodFrame>,
 }
 
 impl ViewSpec {
@@ -244,6 +261,9 @@ impl ViewSpec {
             overlay: crate::voxel_view::Overlay::default(),
             section: None,
             hidden: Vec::new(),
+            body_draw: crate::body_draw::BodyDraw::Voxels,
+            lod_view: crate::world::lod_view::LodView::Camera,
+            seams: crate::world::clipmap::Seams::Dither,
         };
         view.frame(scene);
         view

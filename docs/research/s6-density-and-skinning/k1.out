@@ -1,0 +1,37 @@
+Part A: volume after skinning (n = 8: 2,304 cubes, 13,824 tets)
+case        method  V_total/V0 - 1   min detA   max detA  inverted
+bend 45     LBS        -6.7276e-03     0.3343     1.4080         0
+bend 45     DQS        -4.7800e-04     0.4082     1.5812         0
+bend 90     LBS        -2.2970e-02    -0.2344     1.5780        96
+bend 90     DQS        -1.9415e-03    -0.2345     2.1892        72
+bend 135    LBS        -3.9211e-02    -0.3728     1.5335       192
+bend 135    DQS        -4.4957e-03    -0.9649     2.8513       360
+bend 170    LBS        -4.5590e-02    -0.1199     1.3265       168
+bend 170    DQS        -7.3838e-03    -1.6214     3.4180       456
+twist 90    LBS        -4.3883e-02     0.5000     1.0000         0
+twist 90    DQS        -1.2943e-03     0.9548     1.0000         0
+twist 135   LBS        -7.4912e-02     0.1464     1.0000         0
+twist 135   DQS        -2.9972e-03     0.8864     1.0000         0
+twist 180   LBS        -8.7765e-02    -0.0000     1.0000       128
+twist 180   DQS        -5.5890e-03     0.7624     1.0000         0
+
+Part B: convergence as the cage refines, DQS bend 90 deg, rest mass 1 kg/m^3 x volume
+n=1   |com - com_16| = 2.018e-03 m   |M2 - M2_16|/|M2_16| = 1.532e-02
+n=2   |com - com_16| = 6.915e-04 m   |M2 - M2_16|/|M2_16| = 5.828e-03
+n=4   |com - com_16| = 1.655e-04 m   |M2 - M2_16|/|M2_16| = 1.417e-03
+n=8   |com - com_16| = 3.273e-05 m   |M2 - M2_16|/|M2_16| = 2.823e-04
+
+Part C: rigid limit, weights exactly (1, 0) on bone 1, f64, 100,000 random points and 1,000 random poses
+LBS (sum of w_i (R_i p + t_i)) differs from R p + t in 0 of 100000 points
+DQS (Algorithm 1)              differs from R p + t in 96900 of 100000 points; max |diff| = 2.22e-15 m (|p| <= 1.7 m)
+
+Part D: inverted tets against blend-region width (n = 8), bar 0.1 m thick
+width 0.05 m: LBS 90:  192 inv, min detA -0.875 | DQS 90:  240 inv, min detA -1.257 | LBS 135:  240 inv, min detA -0.826 | DQS 135:  384 inv, min detA -2.383
+width 0.10 m: LBS 90:   96 inv, min detA -0.234 | DQS 90:   72 inv, min detA -0.234 | LBS 135:  192 inv, min detA -0.373 | DQS 135:  360 inv, min detA -0.965
+width 0.20 m: LBS 90:    0 inv, min detA +0.127 | DQS 90:    0 inv, min detA +0.374 | LBS 135:  168 inv, min detA -0.117 | DQS 135:   24 inv, min detA -0.012
+width 0.30 m: LBS 90:    0 inv, min detA +0.251 | DQS 90:    0 inv, min detA +0.583 | LBS 135:   48 inv, min detA -0.030 | DQS 135:    0 inv, min detA +0.324
+
+Part E: how far apart LBS and DQS put the mass (n = 8, blend width 0.1 m, rest density 1)
+bend 90: |com_LBS - com_DQS| = 8.693e-05 m, |M2_LBS - M2_DQS|/|M2| = 4.242e-04
+bend 135: |com_LBS - com_DQS| = 2.636e-04 m, |M2_LBS - M2_DQS|/|M2| = 2.595e-03
+twist 180: |com_LBS - com_DQS| = 2.444e-19 m, |M2_LBS - M2_DQS|/|M2| = 8.077e-04

@@ -658,6 +658,15 @@ struct WorldUniform {
     eye: [f32; 4],
     forward: [f32; 4],
     params: [f32; 4],
+    /// The camera's continuous place for the clipmap relative to the target (xyz, metres); w: the
+    /// seams' mode (0 cut, 1 dithered, 2 the control's band on the snapped edge).
+    seams: [f32; 4],
+    /// The band (`seam_band`): x its start and y its width, in the finer level's bricks; z the
+    /// ring's half-width `n`.
+    band: [f32; 4],
+    /// For each level k from 1, the snapped middle of level k − 1's box relative to the target
+    /// (xyz, metres): where the control measures from.
+    rings: [[f32; 4]; 12],
 }
 
 /// What the cull shader reads.
@@ -891,6 +900,10 @@ pub struct WorldGpu {
     /// `meshes` and `bricks`), and for how many prepares each has not stood in for anything
     /// ([`stand_ins`]).
     retired: HashMap<(u8, ChunkKey), u32>,
+    /// True to measure the seams' band from each finer ring's snapped middle and end it at the
+    /// snapped edge: the control arm of `gpu_ring_seams_are_hidden` (the band then jumps when the
+    /// ring snaps). Never set it otherwise.
+    pub seams_on_the_snapped_edge: bool,
     /// True to draw no stand-ins: the handover as it was before TASK-S4-26, for the control arm
     /// of the test that holds it (`gpu_a_moving_camera_never_loses_what_it_drew`). Never set it
     /// otherwise.
@@ -1049,6 +1062,25 @@ impl WorldGpu {
         pixels: [u32; 2],
         complete: bool,
     ) -> Option<WorldDraw> {
+        self.prepare_list(gpu, pipelines, frame, view, camera, pixels, complete, None)
+    }
+
+    #[allow(clippy::too_many_arguments)] // each is one thing the frame is made from
+    /// [`Self::prepare`] drawing `list` (a LOD view's draw list, `(level, key)`: a chunk's mesh at
+    /// level 0, a brick above; `cav_sim::world::lod_view`) in place of the camera's clipmap when
+    /// it is given. An entry neither resident nor waiting to be made is drawn by the nearest
+    /// coarser brick that is resident, and [`Self::notes`] counts them.
+    pub fn prepare_list(
+        &mut self,
+        gpu: &Gpu,
+        pipelines: &WorldPipelines,
+        frame: &WorldFrame,
+        view: &ViewSpec,
+        camera: &Camera,
+        pixels: [u32; 2],
+        complete: bool,
+        list: Option<&[(u8, ChunkKey)]>,
+    ) -> Option<WorldDraw> {
         let grid = frame.grid?;
         self.notes.clear();
         if self.world != frame.world {
@@ -1057,6 +1089,7 @@ impl WorldGpu {
                 store: self.store.take(),
                 caps: self.caps,
                 without_stand_ins: self.without_stand_ins,
+                seams_on_the_snapped_edge: self.seams_on_the_snapped_edge,
                 ..Self::default()
             };
         }
@@ -1080,17 +1113,56 @@ impl WorldGpu {
             })
             .clone();
         let store = &store;
-        // What this camera's clipmap draws of what is resident.
+        // What this camera's clipmap draws of what is resident, or what the LOD view's list names
+        // (with, for an entry not resident and not on its way, its nearest resident ancestor).
         let levels = levels(&grid, lod_centre(view), frame.ring, frame.levels.max(1));
+        // The seams' cross-fade: the camera's rings (not a LOD view's list), a ring wide enough.
+        let blend = list.is_none()
+            && view.seams == cav_sim::world::clipmap::Seams::Dither
+            && cav_sim::world::clipmap::seam_band(frame.ring).is_some();
+        let centre_at = lod_centre(view);
+        let wanted: Option<std::collections::HashSet<(u8, ChunkKey)>> = list.map(|list| {
+            let mut set: std::collections::HashSet<(u8, ChunkKey)> = list.iter().copied().collect();
+            let mut by_ancestor = 0usize;
+            for &(level, key) in list {
+                let resident = if level == 0 {
+                    frame.chunks.contains_key(&key)
+                } else {
+                    frame.bricks.contains_key(&(level, key))
+                };
+                if resident || frame.waiting.contains(&(level, key)) {
+                    continue;
+                }
+                let found = (level + 1..cav_sim::world::clipmap::MAX_LEVELS)
+                    .map(|to| (to, cav_sim::world::clipmap::ancestor(level, key, to)))
+                    .find(|item| frame.bricks.contains_key(item));
+                if let Some(item) = found {
+                    set.insert(item);
+                    by_ancestor += 1;
+                }
+            }
+            if by_ancestor > 0 {
+                self.notes.push(format!(
+                    "LOD view: {by_ancestor} nodes not resident are drawn by a coarser brick that is"
+                ));
+            }
+            set
+        });
+        let selected = |level: u8, key: ChunkKey| match &wanted {
+            Some(set) => set.contains(&(level, key)),
+            None => levels.get(usize::from(level)).is_some_and(|l| {
+                l.contains(key)
+                    || (blend
+                        && l.blends(key, frame.ring)
+                        && l.reaches_band(&grid, key, centre_at, frame.ring))
+            }),
+        };
         let near: Vec<(ChunkKey, &Arc<ChunkCells>)> =
-            frame.chunks.iter().filter(|(k, _)| levels[0].contains(**k)).map(|(k, c)| (*k, c)).collect();
+            frame.chunks.iter().filter(|(k, _)| selected(0, **k)).map(|(k, c)| (*k, c)).collect();
         // Nearest the camera first, so that a full brick store keeps the nearest.
         let eye_at = camera.origin + camera.eye;
-        let mut far: Vec<(&(u8, ChunkKey), &Arc<Brick>)> = frame
-            .bricks
-            .iter()
-            .filter(|((level, key), _)| levels.get(usize::from(*level)).is_some_and(|l| l.contains(*key)))
-            .collect();
+        let mut far: Vec<(&(u8, ChunkKey), &Arc<Brick>)> =
+            frame.bricks.iter().filter(|((level, key), _)| *level > 0 && selected(*level, *key)).collect();
         let distance = |k: &(u8, ChunkKey)| (grid.brick_box(k.0, k.1).centre() - eye_at).length();
         far.sort_by(|a, b| distance(a.0).total_cmp(&distance(b.0)).then(a.0.cmp(b.0)));
         // What the streaming no longer holds is kept, retired: drawn only in place of what is not
@@ -1337,8 +1409,7 @@ impl WorldGpu {
             self.meshes.contains_key(key)
                 || self.empty.get(key).is_some_and(|(made, _)| Arc::ptr_eq(made, cells))
         };
-        let selected =
-            |(level, key): (u8, ChunkKey)| levels.get(usize::from(level)).is_some_and(|l| l.contains(key));
+        let selected = |(level, key): (u8, ChunkKey)| selected(level, key);
         let unready: Vec<(u8, ChunkKey)> = frame
             .waiting
             .iter()
@@ -1440,11 +1511,35 @@ impl WorldGpu {
         let forward = camera.forward.to_f32();
         let ortho = f32::from(u8::from(view.projection == cav_sim::Projection::Orthographic));
         let lit = f32::from(u8::from(view.style == cav_sim::DrawStyle::Shaded));
+        // The world tinted by level: `overlay bands`, or `overlay level` (S5).
+        let by_level =
+            view.overlay.bands || view.overlay.world == cav_sim::world::lod_view::WorldOverlay::Level;
+        // The seams' band (`seam_band`, in the finer level's bricks) and where it is measured from:
+        // the camera's continuous place, or (the control) each finer ring's snapped middle.
+        let band = cav_sim::world::clipmap::seam_band(frame.ring).unwrap_or((0.0, 1.0));
+        let mode = match (blend, self.seams_on_the_snapped_edge) {
+            (false, _) => 0.0,
+            (true, false) => 1.0,
+            (true, true) => 2.0,
+        };
+        let centre = (lod_centre(view) - origin).to_f32();
+        let mut rings = [[0f32; 4]; 12];
+        for (k, ring) in rings.iter_mut().enumerate().skip(1) {
+            if let Some(finer) = levels.get(k - 1) {
+                let side = grid.brick_side(finer.level);
+                let mid = |a: usize| 0.5 * (finer.lo[a] + finer.hi[a]) as f64 * side;
+                let at = grid.origin + cav_core::Vec3::new(mid(0), mid(1), mid(2)) - origin;
+                *ring = [at.x as f32, at.y as f32, at.z as f32, 0.0];
+            }
+        }
         let uniform = WorldUniform {
             view_proj: camera.view_proj.to_f32(),
             eye: [eye[0], eye[1], eye[2], ortho],
             forward: [forward[0], forward[1], forward[2], 0.0],
-            params: [grid.pitch as f32, f32::from(u8::from(view.overlay.bands)), lit, 0.0],
+            params: [grid.pitch as f32, f32::from(u8::from(by_level)), lit, grid.chunk_side() as f32],
+            seams: [centre[0], centre[1], centre[2], mode],
+            band: [band.0 as f32, band.1 as f32, frame.ring as f32, 0.0],
+            rings,
         };
         let mut palette = [[0f32; 4]; 256];
         for (i, c) in frame.colours.iter().enumerate().take(256) {
@@ -1531,6 +1626,7 @@ impl WorldGpu {
         pipelines: &'a WorldPipelines,
         pass: &mut wgpu::RenderPass<'a>,
         draw: &'a WorldDraw,
+        timing: Option<&wgpu::QuerySet>,
     ) {
         pass.set_bind_group(0, &draw.bind_group, &[]);
         if let Some(indirect) = &draw.indirect {
@@ -1541,6 +1637,9 @@ impl WorldGpu {
                 pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed_indirect(indirect, (i * 20) as u64);
             }
+        }
+        if let Some(q) = timing {
+            pass.write_timestamp(q, 3);
         }
         if let Some(instances) = &draw.instances {
             pass.set_pipeline(&pipelines.brick);

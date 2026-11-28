@@ -20,6 +20,23 @@
 > Boy papers work at periods ≥ 12 h, far below AION-10's band (§2.1). Junca 2019 is a Newtonian-noise paper, not
 > the MIGA systematics paper the note wanted; that remains unidentified (§7 item 9).
 
+> **Updated 28 Nov 2026 (third batch) from three more primary sources** (owner-supplied PDFs, not
+> committed): Neumeyer, Hagedoorn, Leitloff & Schmidt 2004 (*J. Geodyn.* 38, 437–450, whole paper), Abe,
+> Kroner, Neumeyer & Chen, *Assessment of atmospheric reductions for terrestrial gravity observations*
+> (Bull. Inf. Marées Terrestres, whole paper), and Canuel et al. 2018, *Exploring gravity with the MIGA
+> large scale atom interferometer* (*Sci. Rep.* 8, 14064, read as arXiv:1703.02490v3, whole paper). What
+> changes: (i) **new row 13a**, the *surface-pressure-independent* (SPI) air-mass signal: air moving aloft
+> at constant surface pressure changes surface gravity by ~2 µGal (Neumeyer §6, Fig. 7–8) to 4.5 µGal peak
+> to peak from within 0.5° (Abe §3-1, Fig. 6a), which no barometer-driven model (row 13) can see. Carried to
+> the gradiometer by [`spi.py`](gradiometer-environment/spi.py) it is 3×10⁻³–3×10⁻² rad (D) depending on its
+> unpublished horizontal scale, up to ~3× row 13; the pass criterion written first (≤ row 13) was **not
+> met**, so it is a row, not a remark (§2.1). (ii) The zone that matters: 3-D air data out to 5° and 2-D
+> beyond (Abe §3-1, §4); the attraction Green's function changes sign near 1.1° (Neumeyer §3). (iii) The
+> MIGA paper is an instrument and site paper, **not** a systematics budget: it gives a Coriolis requirement
+> (1 µrad launch-direction stability for 1 mrad, Eq. (20)), detection noise (1 mrad/√Hz at 10⁶ atoms/s,
+> §3.2) and LSBB's site numbers (§5.1), but no environmental error budget; the MIGA line in §7 item 9 is
+> closed as "read, not what was wanted" (§2.4). No recommendation changes.
+
 > **Changed after reading the primary sources (25 Nov 2026).** The owner fetched the sixteen papers this note
 > could not read, and ZAIGA was read from arXiv. Every [snippet], second-hand or from-memory claim below
 > has been checked against them and now cites page, section, table or equation. What moved:
@@ -161,6 +178,7 @@ spectrum tests).
 | 11 | Air in a 5 m × 6 m hall, per K of mean temperature | 2.2×10⁻² | D | planned (S8, S13) | slab: 4πG δρ Δz | s13 §5.2 (`docs/research/s13-heat.md`) |
 | 12 | Gravity gradient × launch jitter, per IFO: per µm height / per µm/s velocity | 1.5×10⁻² / 1.1×10⁻² | N | no | k_eff Γ T²(δz + δv T) | [Roura Eq. 4](https://arxiv.org/abs/1509.08098); 7/12 term verified in s15 (`docs/research/s15-instruments-anywhere.md`) |
 | 13 | Pressure systems (10 hPa at 1000 km; 5 hPa at 300 km) | 6×10⁻³–9×10⁻³ | D | planned (S14) | 2πG(ρ₀/p₀)δp·kH/(1+kH) | s14 §2.3 (`docs/research/s14-wider-world.md`), recomputed [derived]; gravimeter admittance [Merriam 1992 p. 495](https://doi.org/10.1111/j.1365-246X.1992.tb00112.x) [read, primary] |
+| 13a | Air moving aloft at constant surface pressure (SPI part), 2–2.25 µGal amplitude, horizontal scale 100–1000 km | 3×10⁻³–3×10⁻² | D | no (needs a 3-D air density field) | Γ_zz = k·δg for a lateral harmonic of wavenumber k (exact below any source above the sensor) | [derived] in `spi.py`; amplitude from [Neumeyer et al. 2004 §6, Fig. 7–8](https://doi.org/10.1016/j.jog.2004.07.006) and Abe et al. (BIM, §3-1, Fig. 6a) [read, primary]; the horizontal scale is **not** in either paper |
 | 14 | AC Stark, wavefront × kinematics, pointing × wavefront, at MAGIS's reference parameters scaled to n = 1000 | 5–6×10⁻³ rad/√Hz each | N | no | MAGIS scalings (§4) | [MAGIS §5.2, 5.4, 5.5](https://arxiv.org/abs/2104.02835) |
 | 15 | Solid-Earth tide (Moon + Sun, Love factor 0.97) | 3.6×10⁻³ | D | planned (S14) | (GM/d³)(3cos²ψ − 1)(1 + 6k₂ − 3h₂) | s14 §2.1 (`docs/research/s14-wider-world.md`) |
 | 16 | Linear Zeeman noise, 1 µG/√Hz differential at 0.1 Hz, simple sequence | 1.0×10⁻³ rad/√Hz | N | no | 2π c₁ δB (4/ω) sin²(ωT/2) | [derived]; requirement from [TDR §2.3](https://arxiv.org/abs/2508.03491) |
@@ -174,7 +192,7 @@ spectrum tests).
 | 24 | Laser frequency noise (single-photon gradiometer) | ~10⁻¹³ rad/√Hz | N | no | N Δv δk Δτ: MAGIS §5.1; [Graham 2013 Table I term 3](https://doi.org/10.1103/PhysRevLett.110.171102) [read, primary] | [MAGIS §5.1](https://arxiv.org/abs/2104.02835) |
 | — | Finite kick (LMT train) duration τ: relative change of *every* signal | 1.4×10⁻³ (τ = 1 ms) … 6.7×10⁻² (50 ms) | — | no | separation integral with a ramp | [derived]; "a substantial fraction of a second" for large n: [MAGIS §5.2](https://arxiv.org/abs/2104.02835) |
 
-Rows 8a and 9a were added on 25 Nov 2026; the other numbers are kept so earlier references stay valid.
+Rows 8a and 9a were added on 25 Nov 2026 and row 13a on 28 Nov (third batch); the other numbers are kept so earlier references stay valid.
 Read the table with three cautions. (a) Rows 3, 4, 8 and 16 use my single-kick model of which arm is excited
 when; real LMT sequences keep both arms in the ground state for most of the flight (MAGIS §5.8), which
 shrinks them by roughly the excited-state dwell fraction. (b) Rows 14 and 17 are *requirements in disguise*:
@@ -216,6 +234,41 @@ time-varying signals.
   [Boy & Chao 2005](https://doi.org/10.1029/2002JB002333) (JGR 110, B08412) **[read, primary, 28 Nov]** show the
   3-D atmosphere differs from the thin layer above GRACE's sensitivity only to degree 15–20 (wavelengths
   > 2000–2500 km, ¶[1], ¶[29]): a satellite-geodesy correction, irrelevant to a 10 m baseline.
+- **3-D air density, and the part a barometer cannot see** (added 28 Nov, third batch).
+  [Neumeyer, Hagedoorn, Leitloff & Schmidt 2004](https://doi.org/10.1016/j.jog.2004.07.006) (*J. Geodyn.* 38,
+  437–450) **[read, primary]** split the effect into attraction and elastic deformation (§1) and show the
+  attraction cannot be modelled from surface pressure with a standard density profile: at one ground pressure
+  (911.5 ± 0.5 hPa) the density profile differs by up to ~0.1 kg/m³ at a given height (§2, Fig. 1–2), and a
+  test density change up to 16 km over 5 h moves gravity by ~3 µGal (§4.1, Fig. 5). Their attraction is a sum
+  over spherical air segments from ECMWF 3-D fields (0.5° grid, 60 levels to 60 km, 6 h), as point masses
+  (Eq. (3)) or by the exact potential of a spherical segment (Eq. (4)–(6)); the two agree within ±0.2 µGal on a
+  ~1 km interpolated grid (§6). Density is the moist ideal gas ρ = p/(R_L T (1 − q + q/ε)) (Eq. (1)). The
+  troposphere (~11 km) holds ~90 % of the air, 30 km ~99 % (§2). Merriam's attraction Green's function
+  changes most within 0–0.5° (the local zone, where attraction dominates), attraction and deformation cancel
+  at 1.1°, and beyond that deformation dominates (§3, Fig. 3); for deformation a 2-D grid to ~10° suffices
+  (§3). At Vienna the 3-D attraction against a single admittance of −0.43 µGal/hPa leaves a **surface-pressure-
+  independent (SPI) part of ~2 µGal maximum**, seasonal (air rises in summer, so attraction falls) with shorter
+  excursions (§6, Fig. 7–8); the fitted local admittance there is −0.29 µGal/hPa and the deformation term was
+  taken as +0.14 µGal/hPa (§7). Abe, Kroner, Neumeyer & Chen (*Bull. Inf. Marées Terrestres*, pp. 11825–11845;
+  no DOI found) **[read, primary]** extend this at Moxa over 4 years: the innermost zone (0–0.5°) gives ~20 µGal
+  maximum attraction, RMS 3.19 µGal; 0.5–1.5° about 1/7 of it, 1.5–3° about 1/30, 3–5° 0.3 µGal p-p, and beyond
+  5° the sign reverses because Earth's curvature puts the air below the sensor (§3-1, Fig. 4). The 3-D minus
+  2-D (with temperature) difference is 4.5, 3, 0.8 and 0.26 µGal p-p for 0–0.5°, 0.5–1.5°, 1.5–3°, 3–5°, and
+  < 0.2 µGal beyond 5° (§3-1, Fig. 6; §4), so their recommendation is 3-D data to 5° and 2-D beyond. The whole
+  3-D+2-D reduction differs from 2-D by 0.5 µGal p-p (RMS 0.1, seasonal 0.15) and from a single admittance
+  (−0.3649 µGal/hPa) by ~3 µGal p-p (RMS 0.4) (§3-2, Fig. 8); the admittance over-reduces long periods by
+  11–12 % because larger air masses load the Earth more and so have a smaller admittance (§3-3). Air in
+  ECMWF levels above 64 km changed gravity by 8.4×10⁻⁴ µGal (§2-1). **All of this is at ≥ 6 h sampling**, below
+  AION-10's band, like Boy's. **For the gradiometer** the SPI part matters as lateral structure: below any
+  source above the sensor, a horizontal harmonic of wavenumber k gives Γ_zz = k δg exactly, and a laterally
+  uniform part gives none. Neither paper states the SPI field's horizontal scale; at 100 km (about Abe's
+  innermost zone), 300 km and 1000 km, the 2–2.25 µGal amplitude gives 3.0–3.4×10⁻², 1.0–1.1×10⁻² and
+  3.0–3.4×10⁻³ rad ([`spi.py`](gradiometer-environment/spi.py), output
+  [`spi.out.txt`](gradiometer-environment/spi.out.txt); its control recovers row 13's formula to the
+  factor 1/(1+kH)). That is row 13a: a slow drift up to ~3× the barometer-driven row 13, which S14's E5a
+  (surface pressure only) will miss. It is an upper bound for a given amplitude (the measured δg includes a
+  uniform part that has no gradient), and ≪ 1 rad in any case, so it is a drift a twin needs, not a search
+  limit. A 3-D density field (ECMWF-like, 0.5°, 6 h) driving the far-field air source would carry it.
 - **Infrasound.** With δρ/ρ₀ = δp/(γp₀) and a wave fully reflected at the ground, the gravity perturbation is
   [Harms Eq. (143), (171)](https://arxiv.org/abs/1507.05850) **[read]**; for a detector at depth h,
   [Junca et al. 2019 Eq. (23)–(25)](https://arxiv.org/abs/1902.05337) **[read]** give
@@ -398,6 +451,28 @@ three-loop sequence is (17/3 + 4√2) n k δv_x Ω_y T_zz T⁴; for AION-10's nu
   estimation as [38]" is Saulson's *above-3 Hz* level, 3×10⁻⁶ Pa²/Hz, given the f⁻² slope of his ½–3 Hz branch,
   which is 3×10⁻⁵ Pa²/Hz (f/Hz)⁻² (Saulson p. 734, converted [derived]): a tenth of Saulson's, and extrapolated
   below his ½ Hz limit. Treat ZAIGA's infrasound curve as unsourced in level.
+- **MIGA** (added 28 Nov, third batch): [Canuel et al. 2018](https://doi.org/10.1038/s41598-018-32165-z),
+  *Sci. Rep.* 8, 14064, read whole as arXiv:1703.02490v3 **[read, primary]**. This is the instrument and site
+  paper, not an environmental systematics budget, so the note's long-standing request (§7 item 9) is answered
+  "read, and there is no such budget in it". What it gives: three ⁸⁷Rb Bragg interferometers in a 200 m
+  cavity (finesse 100, 780 nm, 2T = 500 ms), 500 m under LSBB (§3.2, §1); detection noise 1 mrad/√Hz at
+  10⁶ atoms/s (§3.2, p. 12), dominant at n = 1 everywhere in band; Newtonian noise from seismic and air below
+  10⁻¹⁶/√Hz in strain above 0.1 Hz, quoted from its ref. [47] (§3.2, p. 10). **Coriolis**: the gradiometric
+  phase cancels if the launch directions do not change between runs; a change δθ in relative launch direction
+  gives φ_C = −2Ω_E sin φ_lat k T² v_l δθ ≈ 470 δθ for n = 1 at 43.9°, so 1 mrad needs 1 µrad launch stability
+  (Eq. (20), §4.2, p. 17; v_l is not stated in the text read, so 470 was not recomputed). The AION-10 form
+  is row 7 with v_⊥ = u₀ δθ: 0.43 rad per µm/s × 3.86 µm/s per µrad = **1.7 rad per µrad** of relative
+  launch-direction change, uncompensated [derived]. Vacuum below 10⁻⁹ mbar in the interferometer regions,
+  magnetic shielding > 10⁴ (§4.3, p. 17–18). **Site** (§5–5.1): passive temperature stability better than
+  0.1 °C in the galleries, air pressure and circulation controlled by airlocks (p. 18); seismic noise near
+  Peterson's low-noise model on quiet days (Fig. 9); an iOSG superconducting gravimeter at 1.8 nm s⁻²/√Hz at
+  1 mHz (Fig. 10, p. 21); residual magnetic noise ~2 fT/√Hz above 40 Hz in the shielded capsule, and no
+  magnetic signal above 0.2 nT correlated with groundwater flow (p. 22–23); the sloping main gallery (5 %) was
+  rejected because it projects g into the measurement (§5.2). Its geophysics plan (§5.3): a gradient
+  sensitivity of ~10⁻³ E at 1 s, calibration on heavy source masses at up to 150 m, and karst-aquifer
+  (hydrology) monitoring. For scale, AION-10's goal 10⁻⁴ rad/√Hz over C = 2.4×10¹⁰ rad/s⁻² is 4×10⁻⁶ E/√Hz
+  [derived], ~250× below MIGA's stated figure. The known-mass calibration at up to 150 m is the same kind of
+  case as §5.1's `vancamp_boy`.
 
 ---
 
@@ -549,6 +624,7 @@ second" ([§5.2](https://arxiv.org/abs/2104.02835)). AION-10's pulse durations a
 |---|---|---|---|
 | Moving masses (people, lift, cars, animals) | **source, core** | an oracle case on Carlton & McCabe | it is the same integral; the paper is the published anchor for this site |
 | Weather, infrasound, Lamb wave | planned S14 | far-field source (E5a) | closed form; data-driven later |
+| Air redistributed aloft at constant surface pressure (row 13a) | no | the same far-field air source fed a **3-D density field** (moist ideal gas, Neumeyer Eq. (1)) to 5°, surface pressure beyond (Abe §4) | E5a from surface pressure alone misses up to ~3×10⁻² rad of slow drift (added 28 Nov) |
 | Air temperature in the room | planned S8/S13 | scene source | S13 |
 | Rain, roof water, soil moisture near the tower | not planned as such | **scene source** (S10 water: a sheet with a fill level) | 1/a: near water dominates (2–3 rad) |
 | Tides, ocean loading, rotation | planned S14 | far-field source; Coriolis optional in the arms | S14 |
@@ -636,7 +712,13 @@ sees what each costs.
 4. **Rain on a roof**: the Beecroft roof's size and height above the tower are not in hand; the 2–3 rad is
    illustrative. (Creutzfeldt's near-field shares are now read in both papers.)
 5. **Admittance**: now read in Merriam and Van Camp, and (28 Nov) Boy, Gegout & Hinderer 2002 and Boy & Chao
-   2005 (§2.1): both are for periods ≥ 12 h and change nothing here.
+   2005 (§2.1): both are for periods ≥ 12 h and change nothing here. (28 Nov, third batch) Neumeyer et al.
+   2004 and Abe et al. read whole: they add row 13a. **Not verified:** the SPI field's horizontal scale,
+   which sets row 13a within a factor of 10 (100–1000 km swept); the amplitudes are read from the papers'
+   text and figure captions, not digitised from the plots. Resolve with a 3-D reanalysis field (ECMWF or
+   ERA5) at the site: compute Γ_zz directly from the density cells and compare with row 13's surface-pressure
+   value. Abe et al.'s PDF prints neither volume nor year; "BIM 146" is from the file name only, the page
+   numbers (11825–11845) are printed, and Crossref has no record of it.
 6. **Carlton Fig. 3 magnitudes** are read off a plot (person on stairs: −6 to +3 rad on the axis; lift
    ~ ±0.75–1.5 rad; foyer ~0.2; car ~ −0.05 to −0.1). Eq. (13) at far-field positions gives 0.09 and −0.03 rad,
    the same order; the near-field values need the integral.
@@ -650,10 +732,12 @@ sees what each costs.
    snippet. Fiorucci et al. read in full on 28 Nov (§2.1).
 9. **ELGAR's companion paper** (ref. [56], arXiv:2007.04014) read on 28 Nov, §6 and §7.2 (§2.4); its §7.1,
    §7.3–7.5 (rotations, wavefronts, scattered light, interactions) were not read. **MIGA's systematics paper**:
-   still not identified or read. Junca et al. 2019 (fetched for it) is MIGA's Newtonian-noise paper, not a
-   systematics budget; the MIGA instrument paper it cites is Canuel et al., Sci. Rep. 8, 14064 (2018),
-   doi:10.1038/s41598-018-32165-z (Junca ref. [19]; title not printed there), the likeliest candidate, unread.
-   Junca's journal reference (PRD 99, 104026) is not printed on the arXiv v1 read.
+   closed 28 Nov (third batch). The candidate, Canuel et al., *Exploring gravity with the MIGA large scale atom
+   interferometer*, Sci. Rep. 8, 14064 (2018), doi:10.1038/s41598-018-32165-z (Crossref-checked), was read whole
+   as arXiv:1703.02490v3 (§2.4): it has a Coriolis requirement and site numbers but no environmental
+   systematics budget. No other MIGA paper is known to me that has one; I did not search further. The arXiv
+   v3 was read, not the Sci. Rep. typeset version. Junca's journal reference (PRD 99, 104026) is not printed
+   on the arXiv v1 read.
 10. **Wind-advected temperature (row 9a)**: an extrapolation of Creighton's order-of-magnitude Eq. (8)
     below its validity (Kolmogorov scaling only for l ≲ 50 × height, i.e. f ≳ 0.2 Hz (v/10 m s⁻¹); Harms
     §5.6 says the model "likely does not hold at low frequencies"), with c_T² at its daytime peak, a
@@ -721,14 +805,19 @@ sees what each costs.
   - Boy & Chao, *Precise evaluation of atmospheric loading effects on Earth's time-variable gravity field*, JGR 110, B08412 (2005), [doi:10.1029/2002JB002333](https://doi.org/10.1029/2002JB002333) — whole paper.
   - Canuel et al., *Technologies for the ELGAR large scale atom interferometer array*, [arXiv:2007.04014](https://arxiv.org/abs/2007.04014) (2020) — §6, §7.2 (p. 47 from the page image); ref. [56] of Canuel 2020 CQG.
   - Junca et al., arXiv:1902.05337v1 — re-read §IV–V and the conclusion.
+- Read from owner-supplied PDFs on 28 Nov 2026, third batch (not committed):
+  - Neumeyer, Hagedoorn, Leitloff, Schmidt, *Gravity reduction with three-dimensional atmospheric pressure data for precise ground gravity measurements*, J. Geodyn. 38, 437–450 (2004), [doi:10.1016/j.jog.2004.07.006](https://doi.org/10.1016/j.jog.2004.07.006) (Crossref-checked) — whole paper.
+  - Abe, Kroner, Neumeyer, Chen, *Assessment of atmospheric reductions for terrestrial gravity observations*, Bulletin d'Information des Marées Terrestres, pp. 11825–11845 (volume 146 by the file name; year not printed, after 2009 by its references; no DOI found in Crossref) — whole paper.
+  - Canuel et al. (MIGA), *Exploring gravity with the MIGA large scale atom interferometer*, Sci. Rep. 8, 14064 (2018), [doi:10.1038/s41598-018-32165-z](https://doi.org/10.1038/s41598-018-32165-z) (Crossref-checked), read as [arXiv:1703.02490v3](https://arxiv.org/abs/1703.02490) — whole paper (appendices A–B skimmed).
 - This repository: `crates/cav-core/src/forward.rs`; `plan/REBUILD.md` §9, §9.3; `plan/PROGRESS.md` (For George, rulings);
   `docs/research/s13-heat.md` §5–6, `s14-wider-world.md`, `s15-instruments-anywhere.md`.
 
 ## Papers still unread
 
 Every paper in the earlier "could not read" list has now been read (above). Still unread, and worth
-fetching if a slice leans on them: MIGA's systematics paper (not identified; candidate Canuel et al., Sci.
-Rep. 8, 14064 (2018), doi:10.1038/s41598-018-32165-z, §7 item 9); the rest of ELGAR's companion paper
-(§7.1, §7.3–7.5). Saulson 1984 was read on 27 Nov; the ELGAR companion (§6, §7.2), Fiorucci et al. and both
+fetching if a slice leans on them: the rest of ELGAR's companion paper (§7.1, §7.3–7.5); Neumeyer, Schmidt &
+Stoeber 2006 (IAG Symposia 130, 541–548, the improved 3-D attraction both atmospheric papers build on; not
+supplied, no DOI checked). MIGA's paper (Canuel et al. 2018) was read on 28 Nov (third batch) and is not a
+systematics budget (§7 item 9). Saulson 1984 was read on 27 Nov; the ELGAR companion (§6, §7.2), Fiorucci et al. and both
 Boy papers on 28 Nov (above). Safronova et al. 2013 and Porsev & Derevianko 2006 (Sr polarizabilities, rows 8 and 8a) were
 read in the third pass.

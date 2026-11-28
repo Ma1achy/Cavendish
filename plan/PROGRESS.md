@@ -35,6 +35,88 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**TASK-S5-21, seams (28 Nov 2026; §7.16).** `seams dither | off`: over a band inside each finer
+ring's edge the coarser level keeps a pixel by a 4×4 ordered dither on the camera's continuous
+distance; the finer is drawn whole under it. SE1: at 50 snaps the bands change by 0.048 of the cut
+rings' (≤ ½); the control (band on the snapped edge) 1.07 (≥ 0.8). The first run failed (the extra
+hole bricks took the far field to its cap and its farthest bricks flickered): hole bricks short of the
+band are no longer marched. `cargo xtask demo S5` now takes the pictures of §4 items 1, 4 and 5.
+
+**TASK-S5-20, LOD views (28 Nov 2026; §7.15).** `lod-view camera | tower N | towers … | towers
+all`: the world drawn at the levels the camera wants, at tower N's cut (no new walk: the read's), or
+at the towers' common refinement (a partition, finer than each cut, minimal; the naive union
+double-covers). The streaming makes what a view names; a node not resident is drawn by its nearest
+resident ancestor, said. The blocks below the chunk are drawn merged into their chunk and outlined
+by the overlays. Worth a second look: L1/L2 measured at 1e-2 (at 1e-4 every tower opens everything).
+
+**TASK-S5-18, the paper regenerated with Cavendish (28 Nov 2026; §7.17).** The polyhedral-gravity
+paper's kernel figures (far field, near edge), its 40-digit comparison (table and figure), the
+engine's P1–P7 table (now all from the validation report) and the benchmark (Table "phase error at
+h = 1/64 m", Figure "against pitch", the static numbers) come from Cavendish's tests and lost their
+*provisional* mark; the benchmark is a new oracle case on the paper's five bodies (B1–B3 pass;
+Cavendish's exact signals agree with the research scripts' to 5e-11). The moving-body figure, the
+ten shapes' rows and the error budget stay provisional (TASK-S5-29: their meshes are downloaded,
+and the budget is Gradar-side). P8 as written fails (1.6e-10 at 100 sizes; question below,
+TASK-S5-28 open). Every changed number of the paper is listed in §7.17 for its author.
+
+**TASK-S5-15, the octree overlay and the read-LOD overlay (28 Nov 2026; §7.14).** The world's
+contribution now carries what the views draw of the read (the octree's nodes, each tower's cut with
+every accepted node's bound), through the page's wire too; `overlay octree` outlines the octree by
+level (at most 20,000 nodes, whole levels dropped finest first, said; legend of the levels drawn),
+`overlay level` tints the world by level, `overlay tower | ledger` outline a tower's view's nodes
+(TASK-S5-20 gives the view). No walk or build of its own: the overlay appears when the read arrives.
+
+**TASK-S5-17, the clipped-piece view (28 Nov 2026; §7.13).** `draw pieces` draws each boundary
+cell as its exact clipped piece (a convex piece's faces; for a mesh, the mesh clipped to the cell
+and the caps on its walls), shaded by fill, shrunk a little so each stands apart; `overlay
+centroids` marks each piece's centroid. Each drawn piece encloses its piece's volume and centroid to
+4.8e-15 of a cell, a box mesh with faces on the cells' walls included (the first cap rule failed that
+case at 1/6 of a cell and was replaced, §7.13).
+
+**TASK-S5-16, body draw modes (28 Nov 2026; `docs/slices/S5.md` §7.12).** `draw voxels | fill |
+mesh | mesh-over-voxels` (console and the overlays popover; a view setting, journalled, never
+undone). `fill` shades each voxel by its exact fill (worst 1.1e-16 off over 2,232 boundary cells; a
+body read `Sampled` is clipped for the picture, its read unchanged); `mesh` draws the shape's own
+triangles (a curved solid tessellated, said); `mesh-over-voxels` the voxels as outlines round the
+solid surface. New scene `cut-cells`. Worth a second look: outlines rather than translucency for
+mesh over voxels; the triangle cap held in `cav-sim`, not `cav-render`.
+
+**TASK-S5-14, measured radii and the rings (28 Nov 2026; §7.11).** `cav bench lod-radii --scene
+<s>` measures each level's nearest acceptance by the ledger walk; the stored table (town, eight
+bases) drives `world.read.walk: Rings`. R1: at the stored radii the rings err by at most 0.037 of τ
+on town and world-box at 1e-2, 1e-4, 1e-6; halved, 1.065 of τ somewhere (the control, by 6.5 %);
+radii monotone. The rings read about half the ledger walk's leaves; their ledger (8.5e-2 at 1e-2)
+is far above τ and is reported as it is. Worth a second look: the radii come from the ledger walk,
+not [O] §5's level-by-level protocol (`plan/IDEAS.md`); the control's margin is thin.
+
+**A2, the Platonic solids' fall-off (TASK-S5-06): answered by the owner (28 Nov 2026), (b).** The
+5 m height stays; the tetrahedron's expected slope is `−(l + 4)` = −7, because its octupole is a
+pure `xyz` term, which a vertical gradiometer level with its centroid cannot see; the tolerance stays
+±0.2. Measured −6.961, so A2 passes, and a new test checks that the octupole is unseen there and
+seen at 30° (`docs/slices/S5.md` §7.5).
+
+**TASK-S5-04, the ledger in bundles (28 Nov 2026; §7.10).** Each tower's world ledger (the walk's
+ledger, nodes and blocks by level, leaves, the local expansion's degree and audit) is in the
+manifest as `world`; `BUNDLE_VERSION` 3; the badge's "within" adds the series' audit to the ledger.
+
+**TASK-S5-27, the walk below the chunk (28 Nov 2026; `docs/slices/S5.md` §7.9).** An opened chunk
+is opened into its own tree's blocks (2 to 16 cells, two leaves or more), each a node with its
+summary and bound. The town's tower 1 at 1e-2: 31,155 leaves read instead of 1.6 M, 2.4 s instead
+of 28 s; at 1e-4 and 1e-6 the read now settles (6.4 s, 17.7 s); the town's whole world contribution
+14.4 s, from 126 s. W1 below the chunk, W2 (0.062), W3 (237), W4, W5 pass. Tight centres (−11 %)
+and exact even absolute moments (−2 to −7 %) were measured against a 20 % criterion and not kept;
+carrying `A_4` exactly is moot (nothing above the chunks is accepted at 1e-4 and 1e-6).
+`MAX_CUT_NODES` 2^19 (172 MB of summaries at the cap).
+
+**TASK-S5-22, the local expansion (28 Nov 2026; `docs/slices/S5.md` §7.8).** Each tower's accepted
+nodes are split near (read directly) and far (a Chebyshev series in height on the tower's span,
+audited within 1/16 of the tolerance, the audit in the estimate; the walk takes the other 15/16).
+W6 passes (worst audit 1.1e-11 rad against a share of 6.25e-4; degree 4 misses its share). On the
+town it changes little: the cut is 99.9 % opened chunks' leaves (tower 1 at 1e-2: 28 s, from 31 s);
+the walk's looseness is TASK-S5-27. Worth a second look: near nodes (ellipse parameter below 1.3)
+are read directly, not gathered (a departure); the series is not kept across reads (the engine's,
+`plan/IDEAS.md`).
+
 **For the owner: C3, `Pieces` against `Exact` (TASK-S5-26, PR open, not merged; `docs/slices/S5.md`
 §7.7).** Written before measuring: an icosahedron at 1/16 m, the tower's line within a cell of it,
 read as `Pieces` (the exact piece within 3 cells of an arm, `Second` beyond), within 1e-11 relative
@@ -953,9 +1035,29 @@ mutation). Left, all minor:
   `surface()` in two test files; a mesh file is resolved against the working directory.
 
 ## Questions for the owner
+- **L1 at 1e-6 (TASK-S5-27, 28 Nov 2026):** the criterion written first asked for 10× fewer
+  leaves at each of 1e-2, 1e-4, 1e-6 rad on the town; measured 52×, 17.6× and **4.8×** (the read
+  settles at all three; `docs/slices/S5.md` §7.9). It is a recorded measurement, no test fails.
+  Choose: (a) keep it in the record as failed at 1e-6 and move on; (b) ask for a tighter bound or a
+  cheaper near kernel to meet it (a task of its own); (c) restate it.
 - **C3 (TASK-S5-26, 28 Nov 2026):** `Pieces` within 3 cells of an arm and `Second` beyond reads
   1.34e-6 relative against `Exact`, criterion 1e-11; every cell exact reads 3.3e-15. Options (a),
   (b), (c) and the measurements by reach are in "S5 under way" above and `docs/slices/S5.md` §7.7.
+- **Two non-open British datasets for S26 (28 Nov 2026; nothing waits on them until S26):** BGS's
+  Land Gravity Survey points state both the OGL and "BGS Digital Data Licence terms" in one record,
+  and BGS Geology 50k vectors are paid (£0.23 per km² commercial; the WMS is free to view). Default:
+  geology from the open 625k map (OGL), the gravity comparison only if the points are OGL
+  (`docs/research/worlds.md` §6). Say if either should be bought or licensed.
+  **Answered 28 Nov 2026: no paid data.** Nothing is bought; S26 uses the open 625k geology map (OGL)
+  and the BGS gravity points only where they are OGL, otherwise no gravity comparison.
+- **P8 (TASK-S5-28, 28 Nov 2026):** `Faceted` against 40 digits reads 1.6e-10 relative at 100
+  sizes (the turned plate; 1.2e-12 at 10 sizes, 1.1e-13 within 3), criterion 1e-12 to 100 sizes.
+  The error is the `ε(R/s)²` rounding the paper claims (`2.2e-12` at 100 sizes before constants), so
+  no f64 evaluation of the form meets it; the class itself is gated (`polyhedral.forty_digit_class`,
+  ESA's values fail it). Choose: (a) restate P8 as "≤ 1e-12 within 3 sizes, and the `ε(R/s)²`
+  class beyond" and merge TASK-S5-28 with it; (b) keep 1e-12 to 100 sizes and ask for a
+  double-double reference evaluation (`plan/IDEAS.md`); (c) keep it in the record as failed and
+  close TASK-S5-28.
 
 Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
 - **Ubuntu Mono: yes.** `UbuntuMono-Regular.ttf` from the official Ubuntu font family release goes in,
@@ -968,6 +1070,24 @@ Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
   tag>`; for S1 that is `s0-shell`.
 
 ## For George
+
+**Added 28 Nov 2026 (`docs/research/paper-real-read.md`): AION-10's real sequence numbers.** Every
+phase in the polyhedral-gravity paper is now the flight integral along Cavendish's model of the
+arms, so the numbers rest on that model. Could you give the real values?
+- Momentum transfer per pulse (LMT order): the model has n = 1000 ħk at 698 nm, so v_kick = 6.58 m/s.
+- T: the model has 0.73 s (2T = 1.46 s).
+- The launch velocity: the model has u₀ = 3.86 m/s for the lower arm, so the arms rise 0–5.0 m.
+- Pulse durations: the model's kicks are instantaneous.
+- The shot cadence: the model has one shot per 2 s.
+
+What depends on them: the arms separate by v_kick·T = 4.8 m, the same size as the 5 m baseline, so
+within ~10–50 m the instrument does not read a gradient. The real signals at 1.5–2 m have the
+opposite sign to k_eff T² Δg_z and are 1.5–3 times smaller (static, 1.5 m) or 1.6–1.9 times larger
+(walking past at 2 m). The voxel errors move by factors 0.05–2 (mostly 0.25–0.5) and the pitch needed for a bias below
+0.1 σ by about 2; their orders in the pitch and their ranking do not move.
+n·T² sets every phase's scale; v_kick·T and u₀ set where the arms sample the field. Finite pulses
+low-pass every signal (0.14–7 % for 1–50 ms trains, `gradiometer-environment.md`). The cadence sets
+the noise per shot (5×10⁻⁵ rad at 2 s) and so every bias/σ.
 
 **Added 25 Nov 2026 (from the research round):**
 - AION-10's LMT pulse sequence: which arm is excited when, pulse durations, cloud temperature, bias field, and
@@ -1077,6 +1197,42 @@ Answered 21 Nov 2026 (through the owner). The defaults below replace v1's conven
    there until the next sequence starts.
 5. **Floor:** the arms never go below launch. There is a floor, coded as the Python scripts code the
    sequence; copy that.
+
+## Owner's rulings (28 Nov 2026): the order after S5, Worlds, Space, bending and rotation
+Four rulings the same day, each superseding the order of the one before; `plan/REBUILD.md` §9 holds
+the result (rows in run order, the ruling under the table).
+- **The order (final).** S5 (with TASK-S5-18, the paper's figures by Cavendish); **S25, the engine
+  core** — in the owner's words, "basically just having the octree + LODs + chunks etc work first":
+  the octree, its LODs and the chunks working well and fast, saving chunks included (the compressed
+  chunk format and the recipe + edit-delta save, pulled from S24), its speed items from the
+  performance-plan note scoped to what this path hits (the engine octree cache, read time per tower
+  in town, town rendering, the shared ray query for the walk camera and picking; the rest to a later
+  speed slice, S21 or S23); S6 at town scale (populations, walkers, skinned animation, density
+  functions, and TASK-S6-09 body rotation); S11; S12; the paper finalised with Cavendish's numbers
+  and moving sources; then **the physics block**: S7 with destruction (fracture with exact mass
+  bookkeeping, `docs/research/rigid-bodies.md`), **S28 "Things that bend"** (elastic deformation,
+  `docs/research/elastic-solids.md`; a new row, TASK-S7-05 moved there), S8–S10, S13; then S21 and
+  S22 (no dependency pulls them earlier; S22's brushes write S25's save format); then **the bigger
+  world**: S24 the Worlds core, S26 "Worlds: the Earth", S14, S15, S27 Space. S16 and S23 were not
+  named: S16 stays last, S23 sits with S21/S22 and comes forward if S6's populations overrun the CPU read.
+- **Planet-ready from the start (Track B).** Only the cheap choices that are hard to change later:
+  `f64` positions with local frames, 64-bit chunk and octree keys, chunk addressing that can wrap a
+  cube-sphere, a recipe-based generation format. Folded into S25 as TASK-S24-02 to -05 (milestone
+  S25; S24 ids so as not to clash with the performance-plan note's S25 ids). Until the bigger world,
+  **scenes are capped at town size** for content and validation; the architecture stays planet-ready.
+- **Worlds split.** S24 (core: recipes, generation, mass-consistent LOD, Minecraft-style worlds,
+  flat worlds, planets, prefabs) and S26 "Worlds: the Earth" (the Earth-data pipeline and offline
+  cache, OSM buildings and roads, land cover and geology, the real AION-10 site, the credits file).
+  Design: `docs/research/worlds.md`. Density functions: S6-07 now runs before S24, which uses it.
+- **Space (S27), KSP-style**: orbits on rails (patched conics, then n-body) with time warp, a
+  floating origin, Worlds planets from orbit to voxels, rigid spacecraft, harmonics far and crust
+  near, a gradiometer in orbit. Tasks kept coarse (TASK-S27-01 to -09).
+- **Exits.** Every engine slice that touches mass has the exit "the gravity read is unchanged
+  within its ledger".
+- **Rotation.** Bodies get an orientation (TASK-S6-09): fixed, spin, precession and nutation,
+  tumbling, offset-axis rotors; S22's Rotate sets the fixed orientation through the same pose field.
+- **Licences (Worlds).** Use open data freely and credit every source; a credits file (source,
+  licence, link) notes share-alike terms such as ODbL for information only.
 
 ## Owner's ruling (25 Nov 2026): the world is an LOD octree, read with LODs
 The world is one octree with levels of detail, and the gravity read uses them: a full-precision bubble

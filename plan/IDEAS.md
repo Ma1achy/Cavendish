@@ -289,7 +289,10 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   size, `docs/slices/S5.md` §7.1). Each edge's `L(p₁) − L(p₂)` could be formed as one `log1p` of
   a ratio and each face's `ω` difference as one `atan2`, so that the closed form's difference
   holds as far as its potential does; measure against the moments' read before adopting.
-- **Absolute moments carried exactly at even orders** (TASK-S5-11): a node's `A_4` is exact for a
+- **Absolute moments carried exactly at even orders** (TASK-S5-11; measured moot in TASK-S5-27, §7.9:
+  once the walk goes below the chunk, no node above the chunks is accepted on the town at 1e-4 or
+  1e-6 rad, and a chunk's `A_4` is already exact; exact `A_6 … A_16` for the blocks read 2 to 7 %
+  fewer leaves, under the 20 % asked): a node's `A_4` is exact for a
   chunk but carried upward by the triangle inequality, so on `town` it is a median 2.6 to 6.2 times
   the leaves' true `Σ|m|s⁴` above the chunks (worst 21 at level 4), and `A_16` up to 1.9×10⁴
   (`docs/slices/S5.md` §7.2). Carrying the `|m|`-weighted raw moments to the fourth order (35
@@ -306,13 +309,17 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   keeps contributions apart; it could keep the world's `Octree` and the world contribution by the
   world's hash and compose a playhead reading from the kept one (any shot of a static world reads
   the same), so that scrubbing a town costs what it did in S4. Needs `read::reading` to take the
-  kept world part.
+  kept world part. Since TASK-S5-22 each tower's local expansion (`world::local::Series`, keyed by
+  the world's hash, the tower's line and span and the tolerance) is worth keeping too: a change of
+  the instrument's flight alone needs only the near part and the series read again.
 - **Levels below the chunk for opened chunks** (TASK-S5-12): on `town` the walk accepts a 3.2 m chunk
   only from about 90 m at 1e-2 rad (the bound is 100 to 900 times the error), so the cut is mostly
   opened chunks read leaf by leaf: 31 s a tower, and past 1e-3 the audited read exceeds the kernel's
   share and does not settle (`docs/slices/S5.md` §7.3). Opening a chunk into its own voxel tree's
   nodes, each with a summary, would let the walk go on below level 0 instead of reading every leaf;
-  so would a tighter bound (the exact `A_4` above) or reading the towers in parallel.
+  so would a tighter bound (the exact `A_4` above) or reading the towers in parallel. **Done in
+  TASK-S5-27** (§7.9): the blocks below the chunk. What is left of the idea: reading the towers in
+  parallel, and a cheaper near kernel for the leaves next to the arm, which are now the read's cost.
 - **`cube_shift`'s closed form near a cube, error-bounded as the arms' difference is** (TASK-S5-24):
   a body's small motions are read as `V(d − shift) − V(d)`, and near a cube that is two closed-form
   potentials subtracted, which loses `ε·(the terms' size)/|change|`. Split the cube as
@@ -340,3 +347,33 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   octree blocks gain nothing; a body's interior as free rectangular boxes read by an l ≤ 6 box
   series (43 to 80 flops, checked to 40 digits there) is 4 to 33 times cheaper than octree blocks
   at 20 m and loses near the body. Worth it only with a walk that keeps the far advantage.
+- **LOD radii by [O] §5's level-by-level protocol** (TASK-S5-14): the stored radii are the ledger
+  walk's nearest acceptances, at which the rings err by 1 to 4 % of τ on town. The protocol of
+  `docs/research/s5-world-octree.md` §5 (each level alone by its moments beyond ρ, leaf-exact
+  nearer, the error worst over positions, with a safety factor) would give the smallest radii that
+  hold τ, and a cheaper rings tier; about 80 whole-town leaf-exact reads, minutes in release. The
+  errors are linear in the nodes, so one read per node per position, summed from the far end
+  inwards, gives every ρ at once.
+- **A section that cuts a drawn surface** (TASK-S5-16): `draw mesh` with a section plane cuts the
+  voxels' cells as before but draws the whole surface; clipping its triangles by the plane (and
+  capping the cut) would make the mesh modes agree with the section.
+- **Mesh over voxels with order-independent transparency** (TASK-S5-16): the voxels are drawn as
+  outlines round the solid surface; weighted blended OIT would let both be solid and see-through.
+- **Seams: a time fade for late bricks and mass-weighted drawn bits** (TASK-S5-21,
+  `docs/research/s5-world-octree.md` §7b items 3 and 4): the dithered cross-fade covers ring snaps;
+  a brick the streaming delivers after the camera passed its band still pops, and the coarse level's
+  superset halo stays.
+- **The far field's budget and the seams' layers** (TASK-S5-21): the cross-fade marches the hole's
+  outer layers, which can take a frame to the march's cap where the cut rings did not; an early-depth
+  pass for bricks (already in this file from S4) would cut what a hidden hole brick costs.
+- **A leading read in the engine, for comparison only** (TASK-S5-18): the paper's Figure "against
+  pitch" draws the research scripts' leading read dotted beside Cavendish's flight read, as
+  Cavendish has none; a `Reading::leading` from each source's `g_z` at the two launch points would
+  let the figure come wholly from Cavendish (never to be used as the signal).
+- **The 40-digit reference in the oracle as a Rust test of its own** (TASK-S5-18): the fixture holds
+  the mpmath values; a double-double evaluation of the face form in the oracle crate would let new
+  bodies be added without Python.
+- **P8's floor, if wanted** (TASK-S5-18): the closed form's far-field error is `eps (R/s)^2`
+  (1.6e-10 on the turned plate at 100 m); the face terms formed and summed in double-double would
+  take it down by about 16 digits at some ten times the cost, for a `Faceted::field_exact` used by
+  references only.

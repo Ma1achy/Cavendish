@@ -33,6 +33,7 @@ pub mod files;
 pub mod forward;
 pub mod history;
 pub mod journal;
+pub mod lod;
 pub mod log;
 pub mod voxels;
 pub mod world;

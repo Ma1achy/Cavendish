@@ -44,9 +44,31 @@
 # validation_slow_cut_cell_orders).
 # TASK-S5-10 (Pieces): 2 new quick tests (cav-core: every cut cell exact is the body, a cell's
 # solids weigh its piece); 1 new slow test (cav-core: C6, slow_the_sphere_anomaly_with_random_placements).
-# TASK-S5-26 (C3 as written, failing until the owner rules): 1 new slow test (cav-core:
-# validation_slow_pieces_are_the_body).
-quick 753
-gpu 42
-slow 57
-oracle 58
+# TASK-S5-22 (the local expansion): 5 new quick tests (cav-sim: W6 and its two validation cases,
+# the series reads what it interpolates, a point off the line is read directly).
+# TASK-S5-27 (the walk below the chunk): 2 new quick tests (cav-sim: a chunk's tree is its leaves,
+# W1 into the chunks' trees).
+# TASK-S5-04 (the ledger in bundles): 1 new quick test (cav-sim: W8, the ledger is in the bundle).
+# TASK-S5-14 (measured radii and the rings): 3 new quick tests (cav-sim: the rings' cut is a
+# partition, the stored radii are monotone, a world read by rings reports its ledger); 2 new slow
+# tests (cav-sim: R1 and its control, the radii halved).
+# TASK-S5-06 (Exact bodies): 8 new quick tests (cav-sim: A1, A2, A2's control, A3, X1, exact-solids
+# against platonic-row; cav-engine: the wire; cav-app: the Read row), and 1 for the owner's
+# ruling on A2 (the tetrahedron's octupole unseen level with it, seen at 30°).
+# TASK-S5-16 (body draw modes): 6 new quick tests (cav-sim: D1, the surfaces' cap, a surface
+# encloses its shape, a past-the-cap count refused, the modes named; cav-engine: a draw mode gets
+# what it draws); 1 new gpu test (cav-render: each draw mode draws).
+# TASK-S5-17 (the clipped-piece view): 2 new quick tests (cav-core: a piece's surface is its
+# piece; cav-sim: pieces are drawn as the boundary cells).
+# TASK-S5-15 (the octree overlay): 1 new quick test (cav-sim: L3); 2 new slow tests (cav-sim: the
+# read gives the views its octree and cuts; cav-engine: the octree overlay comes with the read).
+# TASK-S5-20 (LOD views): 3 new quick tests (cav-sim: L1, L2, the draw list's cap), 1 slow (cav-engine:
+# a tower's LOD view is the read's cut), 1 gpu (cav-render: a tower's LOD view draws its list).
+# TASK-S5-21 (seams): 1 new quick test (cav-sim: the band is drawn by both levels), 1 gpu (SE1).
+# TASK-S5-18 (the paper with Cavendish): 4 new quick tests (cav-core: the cases P2 at 1e4, P4, P5,
+# P6); 4 new oracle tests (the 40-digit fixture's check, the rounding class and its ESA control,
+# the paper's benchmark bodies).
+quick 790
+gpu 45
+slow 61
+oracle 62

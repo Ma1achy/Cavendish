@@ -1,77 +1,111 @@
 # Exact gravity of polyhedral boundary cells (draft paper)
 
-Malachy Doherty (affiliation to be filled in). **A draft for comments. Not submitted anywhere;
-whether, where and with whom to publish is the author's decision.**
+Malachy Doherty (affiliation to be filled in). **Draft for comments, not submitted. Whether, where
+and with whom to publish is the author's decision.**
 
-`paper.tex` + `refs.bib` → `paper.pdf` (built with tectonic). The method and the measurements are
-from the research notes [`exact-skin-and-partial-fill.md`](../../research/exact-skin-and-partial-fill.md)
-and [`s5-world-octree.md`](../../research/s5-world-octree.md); the derivation is machine-checked in
-[`proofs/polyhedral-gravity/`](../../../proofs/polyhedral-gravity/).
+`paper.tex` + `refs.bib` → `paper.pdf` (built with tectonic). Draft 6 (28 Nov 2026) reorders draft 5 into one line of argument
+(question, read, closed form, representations, error budget, cost; see
+[`STRUCTURE-draft-6.md`](STRUCTURE-draft-6.md)) without changing a number or claim. Draft 5 answered the
+referee's report on draft 4 ([`REVIEW-draft-4.md`](REVIEW-draft-4.md), with the response at its end). It covers the
+polyhedral closed form, its numerics and its Lean proof, the boundary-cell representations, and the
+signal the interferometer actually reads; the world octree, the layered read and the tree walk are
+left to a short future-work section until more of Cavendish is built. The measurements are from the
+research notes [`paper-real-read.md`](../../research/paper-real-read.md),
+[`paper-flight-phase.md`](../../research/paper-flight-phase.md),
+[`paper-error-budget.md`](../../research/paper-error-budget.md),
+[`paper-benchmarks.md`](../../research/paper-benchmarks.md),
+[`paper-boxes-and-precision.md`](../../research/paper-boxes-and-precision.md),
+[`surface-representation.md`](../../research/surface-representation.md) and
+[`exact-skin-and-partial-fill.md`](../../research/exact-skin-and-partial-fill.md) §3, and from
+Cavendish's own S5 results ([`docs/slices/S5.md`](../../slices/S5.md) §7); the derivation is
+machine-checked in [`proofs/polyhedral-gravity/`](../../../proofs/polyhedral-gravity/). The referee's
+reports are [`REVIEW-draft-3.md`](REVIEW-draft-3.md) and [`REVIEW-draft-4.md`](REVIEW-draft-4.md).
 
 ## Rebuilding
 
 ```text
-python make.py all                 # tables, far-field, near-edge, cross-check, 40-digit reference,
-                                   # scenes, diagrams, figures, PDF (minutes; stored benchmark output)
-python make.py bench               # rerun the boundary-cell benchmark (~40 min, one core, below normal)
+python make.py all                 # summaries, far-field and near-edge (Cavendish), Cavendish against
+                                   # 40 digits, cross-check, scenes, diagrams, the engine's table,
+                                   # real-read tables and figures, PDF
+python make.py conv                # Cavendish reads the benchmark bodies (oracle/tests/benchmark.rs;
+                                   # minutes) -> data/cavendish/conv.json; then `realread pdf`
+python scripts/oracle_fixtures.py  # the oracle's 40-digit fixture from esa_fixtures.json (a minute;
+                                   # only if that file changes, never to pass a test)
+python make.py omitted             # sizes of the effects the first-order model leaves out
+                                   # (scripts/omitted.py -> data/omitted.txt; seconds)
+python make.py level               # rerun the benchmark with the tower beside each body (~10 min;
+                                   # needs `cargo build --release` in docs/research/paper-real-read/kern)
+python make.py realread-rerun      # rerun the real-read and flight-phase notes' analysis and figures
+python make.py bench               # rerun draft 3's leading-read benchmark (~40 min)
 python make.py esa <venv-python>   # rerun ESA's oracle in its own venv, then crosscheck + mp
-python make.py render              # Cavendish draws scenes/cube-1.5m.ron (needs a built `cav`)
-python make.py shapes              # the shapes study's figures and tables, from its committed output
 python make.py shapes-study        # rerun the shapes study itself (hours; downloads the meshes)
 ```
 
-`data/` holds the regenerated benchmark output (`<body>.json` with the triple-product numerator, as
-the research note's `results/`; `<body>-edges.json` with the h_f·2A_f numerator), the summaries,
-`esa_fixtures.json` (numbers from ESA's GPL-3.0 tool; tool and version inside the file),
-`crosscheck.json`, `mp_reference.json` and `storage.json`. `generated/` holds the LaTeX tables and
-numbers `make.py` writes.
+Every phase in drafts 4 and 5 is the flight-integral read (the static axis-weight form for bodies at rest,
+the flight nodes for moving ones), unless the text says "leading read".
+
+`data/level/` holds the benchmark with the tower beside each body (`scripts/conv_level.py`, which is
+`docs/research/paper-real-read/conv_real.py` with the tower moved: lower launch point level with the
+body's centre, 1.5 m and 10 m from it horizontally, so every arm point stays outside the sphere that
+holds the body). `data/` also holds draft 3's leading-read benchmark (`<body>.json`, triple-product
+numerator; `<body>-edges.json`, h_f·2A_f) and its summaries, which §4.3 cites for the numerator's effect;
+`esa_fixtures.json` (numbers from ESA's GPL-3.0 tool), `crosscheck.json`, `mp_reference.json`.
+`generated/` holds the LaTeX tables and `numbers.tex` that the scripts write.
 
 ## Naming
 
 The technique is called **cut-cell moments** for now (a boundary cell cut by the surface is a *cut
 cell*; it stores the mass, centroid and second moment of its filled part); its scalar is the **fill
-fraction**. The name is the macro `\cutcell` / `\Cutcell` at the top of `paper.tex`, so it changes in
-one place. The body's tree is an **octree**; 2-D pictures are cross-sections through it.
+fraction**. The name is the macro `\cutcell` / `\Cutcell` at the top of `paper.tex`. The body's tree is
+an **octree**.
 
-"Exact" means the analytic shape (a sphere's closed form, a torus by ring integrals). A triangle mesh
-is already an approximation, and a clipped piece is exact *to the mesh* only. The paper keeps the
-**facet error** (mesh against analytic shape) and the **voxel error** (voxels against mesh) apart
-throughout. The shapes section measures both; everything else measured here is voxel error.
+"Exact" means an analytic shape (a sphere's closed form, a torus by ring integrals, a polyhedron by
+the closed form). A triangle mesh standing in for a curved shape is already an approximation, and a
+clipped piece of a mesh is exact *to the mesh* only. The paper keeps the **facet error** (mesh against
+analytic shape) and the **voxel error** (voxels against mesh) apart throughout.
 
-## Every table and figure: where it comes from now, and where it will come from (S5)
+## Every table and figure: where it comes from (TASK-S5-18)
 
-Until S5 lands, every measured result is from the research scripts and is marked *provisional* in
-the PDF. The S5 builder should wire each row's Cavendish command, regenerate, and drop the mark; the
-Python stays as the independent check (the paper's Appendix B).
+TASK-S5-18 wired the rows marked **Cavendish** to Cavendish's own tests, which write
+`data/cavendish/`; the paper's figures are drawn from that by the same Python and in the same style
+as before, and their *provisional* mark is gone. The rows still marked *provisional* come from the
+research scripts, with one line on why. The Python stays as the independent check (Appendix A).
+Names, not numbers, because numbers move; `docs/slices/S5.md` §7.17 lists every number that
+changed.
 
-| item (by name; numbers move) | now | after S5 (Cavendish) — to be wired | scene(s) |
+| item | source (`make.py` target → what runs) | state | scene(s) |
 |---|---|---|---|
-| Table "what a boundary cell carries" (orders) | derived | — | — |
-| Table "phase error at h = 1/64 m" (convergence, 1.5 m and 10 m) | `make.py bench`, `make.py tables` (`skin_bench.py run`, `tables.py`) | `cav run scenes/<body>-<D>m.ron --out … --exec "set bodies.0.shape.representation <rep>; set bodies.0.shape.pitch <h>"` per representation (sampled fill, fill fraction, cut-cell moments with and without the second moment, clipped pieces) and pitch 1/8…1/64, four lattice offsets; the error is the gradiometer channel against the clipped-piece representation. Needs S5's representation and lattice-offset fields (names for S5 to fix). Better: a validation case `polyhedral.boundary_convergence` in `cargo xtask validate` that writes the table | `scenes/<body>-1.5m.ron`, `scenes/<body>-10m.ron` |
-| Figure "phase error at 1.5 m against pitch" | `make.py figures` from `data/convergence.json` | the validation case emits the data; `make.py figures` keeps drawing it | as above |
-| Figure far-field rounding (left) | `farfield.py` | kernel validation case `polyhedral.farfield`: the polyhedral kernel against the cube series at R/s = 10…3×10⁵ | none |
-| Figure near-edge (right) | `nearedge.py` | kernel validation case `polyhedral.near_edge` | none |
-| Figure "against a 40-digit evaluation" | `scripts/esa_fixtures.py` (ESA tool), `scripts/crosscheck.py`, `scripts/mp_reference.py` | `cargo xtask oracle` with `data/esa_fixtures.json` and `data/mp_reference.json` as fixtures against the Rust kernel | the six bodies' triangles are in `esa_fixtures.json` |
-| Table "error budget" | `make.py figures` (`budget()`) | the same rows from the validation report (`docs/validation/`) and the S5 walk's ledger | `scenes/<body>-1.5m.ron` |
-| Octree section's measured numbers (ring widths, interaction counts, bound looseness, baseline help) | quoted from `docs/research/s5-world-octree.md` (its benchmarks) | S5's walk benchmark and ledger on the town scene | the town |
-| Figure "cells stored" | `scripts/octree_diagrams.py` (counts a sphere's octree) | `cav` stats of a voxelised sphere at each pitch (leaf and cut-cell counts) | a sphere scene at N = 8…256 |
-| Figure "the benchmark's turned cube as a Cavendish scene" | `cav render scenes/cube-1.5m.ron --out figures/scene-cube-1.5m.png --view iso --style paper --size 1200x900` (**already Cavendish**) | add S5's draw modes (fill fraction, mesh, clipped pieces) | `scenes/cube-1.5m.ron` |
-| Section "Curved, scanned and CAD shapes": figures (representations of the torus and bunny, phase error against pitch, against modelled cost, against distance, the moving torus's error spectrum, each mesh as one polyhedron) and tables (sweep, cost, crossover distances, decimation, mesh as one polyhedron) | `make.py shapes` (`scripts/shapes.py`) draws them from the shapes study's committed output, read in place from `docs/research/exact-skin-and-partial-fill/shapes/` (`sweep-*.json`, `regimes-distance.json`, `translation.json`, `exact-*.json`, `mesh-check.json`); the two renders are the study's `<shape>-cutaway.png`, cropped to the panels into `figures/shapes-<shape>.png`. `make.py shapes-study` reruns the study's own scripts first (hours; they download the meshes, pinned by SHA-256) | the sweeps and crossovers: validation cases over S5's representation field on the ten shapes (meshes imported by `cav`, which today refuses the full dragon and Buddha at its caps); the moving-body spectrum: `cav run` of the torus passing a tower, body-frame and world-fixed voxels; each mesh as one polyhedron: the polyhedral kernel on the whole mesh | the ten shapes, to be written by S5 (the meshes are downloaded, never committed) |
-| Diagrams: representations, cut-cell moments, one cell many cuts, closed-form ingredients, octree, layered read | `scripts/diagrams.py`, `scripts/octree_diagrams.py` (explanatory; the 3-D pieces come from the benchmark's own clipper) | could be redrawn from S5's draw modes; not required | — |
+| Table "what a boundary cell carries" | derived | — | — |
+| Fig. "three ways to represent a body", "cut-cell moments", "closed form's ingredients", "one cell, many cuts" | `diagrams` → `scripts/diagrams.py` (explanatory; the 3-D pieces from the benchmark's clipper) | explanatory, not measured; could be redrawn from S5's draw modes | — |
+| Fig. "the flight-integral read against the leading read" | `realread` copies `docs/research/paper-flight-phase/flight-phase.pdf`; `realread-rerun` → that note's `fig_paper.py` | *provisional*: needs `cav run` sweeps of moving point masses (panel a, hundreds of passes), Spot (a downloaded mesh, panel b) and a moving voxel torus (c, d); not wired in S5-18 (TASK-S5-29) | the note's scenes |
+| Table "effects the model leaves out" | `omitted` → `scripts/omitted.py` (point-mass stand-ins, derived; `data/omitted.txt`) | *provisional*: Earth's rotation and finite pulses are not in the engine's arms | — |
+| Fig. far field and near edge | `farfield`, `nearedge` → `cargo test -p cav-core --lib far_field_by_distance` / `near_edge_by_distance -- --ignored` (`src/polyhedral/tests.rs`) → `data/cavendish/farfield.txt`, `nearedge.txt`; drawn by `figures` | **Cavendish** | none |
+| Table "four codes against 40 digits" | `forty` → the oracle crate's `forty_digits_for_the_paper` (`oracle/tests/polyhedral.rs`) → `data/cavendish/forty-digits.json`; `realread` | **Cavendish** column from it (Spot's cells excepted: its mesh is downloaded, so they stay the benchmark harness's run of the same kernel); Python, ESA and Harmonica from `docs/research/paper-benchmarks/accuracy.json` (other codes) | the fixture `oracle/fixtures/paper/polyhedral/` (`scripts/oracle_fixtures.py` from `esa_fixtures.json`, `mp_reference.json`) |
+| Fig. "against a 40-digit evaluation" | `forty`, then `figures` | **Cavendish** ("this form"); ESA from `mp_reference.json` | as above |
+| P8 (≤ 1e-12 to 100 sizes) and the rounding class | `cargo xtask oracle`: `validation_polyhedral_forty_digit_class` (and P8 as written, TASK-S5-28) | **Cavendish**; P8 as written fails (S5.md §7.17) | as above |
+| Table "Cavendish's polyhedral kernel" (P1–P7) | `engine` → the `polyhedral.*` validation cases of `cav-core` run alone, their records in `data/cavendish/engine/`, → `scripts/engine_table.py` → `generated/rr-engine.tex` | **Cavendish** (the same records `cargo xtask validate` collects) | — |
+| Table "phase error at h = 1/64 m" and Fig. "against pitch" | `conv` → the oracle crate's `the_benchmark_for_the_paper` (`oracle/tests/benchmark.rs`, case `cut.benchmark_bodies`) → `data/cavendish/conv.json`; `realread` | **Cavendish** (the flight read); the dotted leading read and the arms' clearance from `data/level/conv.json` (`level` → `scripts/conv_level.py`), as Cavendish has no leading read | the bodies from the fixture; `scenes/` holds the same bodies for `cav` |
+| Table "static phase errors behind the budget" | `realread` (`generated/numbers.tex`) | **Cavendish** (`data/cavendish/conv.json`, `forty-digits.json`) | as above |
+| Fig. "the shapes, cut away" (torus, bunny) | `shapes` → `scripts/shapes.py` crops the study's renders | *provisional*: S5's piece view exists, but the ten shapes' meshes are downloaded by the study and not in the repository (TASK-S5-29) | the ten shapes |
+| Fig. "phase error against cells across" and Table "sweep" | `realread` copies `paper-real-read/fig-sweep.pdf`, parses `tables-sweep.md` (`analyse_real.py sweep`) | *provisional*: as above, the ten shapes' scenes are not written (TASK-S5-29) | the ten shapes, to be written |
+| Table "cost" | `realread` from `tables-sweep.md` (a model) | *provisional*: needs the ten shapes and the walk's cost per point | as above |
+| Table "crossover distances" | `realread` from `tables-regimes.md` (`analyse_real.py regimes`) | *provisional*: as above | as above |
+| Table "each mesh as one polyhedron" | `realread` from `tables-regimes.md`, `paper-real-read/data/walkpast.json` | *provisional*: as above (the meshes) | the six meshes |
+| Table "decimation" | `realread` from the study's `mesh-check.json` and `paper-real-read/data/exact-distance.json` | *provisional*: as above (the scans) | the three scans, full and decimated |
+| Table "thresholds", Fig. "bias against pitch", Fig. "the bunny's budget" | `realread` from `tables-budget.md`, copies `fig-bias.pdf`, draws `budget.pdf` (`analyse_real.py budget`) | *provisional*: a Gradar-side inference over `cav` passes, not Cavendish's | the three bodies' passes |
+| Table "what is machine-checked" | `proofs/polyhedral-gravity` (`lake build`) | — | — |
 
-Scenes: `scripts/make_scenes.py` writes `scenes/<body>-<D>m.ron` for the benchmark's five bodies at
-1.5 m and 10 m. Each holds the body's triangles (`Triangles`, the same as `skin_bench.body(name)`),
-ρ = 2700 kg/m³, pitch 1/64 m, supersample 4, and three towers whose bases sit at D along the
-benchmark's three directions. All ten load with today's `cav get`.
+Retired with draft 3: the octree figures (`scripts/octree_diagrams.py` still draws them, for the paper
+that will carry the world octree), the scene render, and the leading-read shapes figures (pareto,
+regimes, motion, each mesh as one polyhedron).
 
 ## Notes for the reader
 
-- The read in the benchmark is the leading-order k_eff T² Δg_z, not the full flight integral; once
-  Cavendish computes the table, the flight integral replaces it.
-- The shapes study reports, as measured: the facet error dominating for the analytic shapes; second
-  moments making the sphere (only) worse than without (open); the dragon and Buddha decimations failing
-  their pre-written 1/256 m criterion; the whole-mesh direct sum being competitive for one small body;
-  `cav`'s import caps refusing the full dragon and Buddha.
+- The leading read k_eff T² Δg_z at the launch points is not the instrument's read within a few metres:
+  the arms separate by 4.8 m and span 10 m. Draft 4 quotes it only where it holds or for comparison.
+- The shapes study reports, as measured: the facet error dominating for the analytic shapes; the
+  dragon and Buddha decimations failing their pre-written 1/256 m criterion; the whole-mesh direct sum
+  being competitive for one small body. Draft 3's "sphere open question" was the lattice placement.
 - The ESA cross-check failed its pre-written criterion (10⁻¹² to R/s = 100): the 40-digit referee
-  shows ESA's line-integral form losing digits as ε(R/s)³–⁴ while ours stays at ε(R/s)², so the
-  mismatch is rounding in the other implementation, not an error in either algebra.
+  shows ESA's and Harmonica's forms losing digits as ε(R/s)³ while ours stays at ε(R/s)², so the
+  mismatch is rounding in the other implementations, not an error in any algebra.

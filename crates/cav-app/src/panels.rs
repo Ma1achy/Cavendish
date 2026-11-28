@@ -1551,14 +1551,15 @@ fn canvas(
                 ui.painter().image(texture, rect, uv, Color32::WHITE);
                 // The legend of what colours the voxel bodies, made from what is drawn, in
                 // the pane's bottom right corner: never over the middle of the figure.
-                if let Some(voxels) = frame.voxels {
+                if frame.voxels.is_some() || frame.lod.is_some() {
                     let painter = ui.painter_at(rect);
                     let measure = cav_plot::paint::EguiMeasure(&painter);
                     let style = cav_plot::style::Style::screen();
-                    // The field's legend, and the tree overlay's above it.
+                    // The field's legend, the tree overlay's above it, the world overlay's above.
                     let keys = [
-                        cav_plot::voxels::legend(voxels, frame.scene, &style, &measure),
-                        cav_plot::voxels::tree_legend(voxels, &style, &measure),
+                        frame.voxels.and_then(|v| cav_plot::voxels::legend(v, frame.scene, &style, &measure)),
+                        frame.voxels.and_then(|v| cav_plot::voxels::tree_legend(v, &style, &measure)),
+                        frame.lod.and_then(|l| cav_plot::voxels::lod_legend(l, &style, &measure)),
                     ];
                     let mut bottom = rect.bottom();
                     for key in keys.into_iter().flatten() {
