@@ -64,10 +64,11 @@
 # read gives the views its octree and cuts; cav-engine: the octree overlay comes with the read).
 # TASK-S5-20 (LOD views): 3 new quick tests (cav-sim: L1, L2, the draw list's cap), 1 slow (cav-engine:
 # a tower's LOD view is the read's cut), 1 gpu (cav-render: a tower's LOD view draws its list).
+# TASK-S5-21 (seams): 1 new quick test (cav-sim: the band is drawn by both levels), 1 gpu (SE1).
 # TASK-S5-18 (the paper with Cavendish): 4 new quick tests (cav-core: the cases P2 at 1e4, P4, P5,
 # P6); 4 new oracle tests (the 40-digit fixture's check, the rounding class and its ESA control,
 # the paper's benchmark bodies).
-quick 789
-gpu 44
+quick 790
+gpu 45
 slow 61
 oracle 62

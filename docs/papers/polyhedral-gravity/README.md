@@ -70,7 +70,7 @@ TASK-S5-18 wired the rows marked **Cavendish** to Cavendish's own tests, which w
 `data/cavendish/`; the paper's figures are drawn from that by the same Python and in the same style
 as before, and their *provisional* mark is gone. The rows still marked *provisional* come from the
 research scripts, with one line on why. The Python stays as the independent check (Appendix A).
-Names, not numbers, because numbers move; `docs/slices/S5.md` §7.16 lists every number that
+Names, not numbers, because numbers move; `docs/slices/S5.md` §7.17 lists every number that
 changed.
 
 | item | source (`make.py` target → what runs) | state | scene(s) |
@@ -82,7 +82,7 @@ changed.
 | Fig. far field and near edge | `farfield`, `nearedge` → `cargo test -p cav-core --lib far_field_by_distance` / `near_edge_by_distance -- --ignored` (`src/polyhedral/tests.rs`) → `data/cavendish/farfield.txt`, `nearedge.txt`; drawn by `figures` | **Cavendish** | none |
 | Table "four codes against 40 digits" | `forty` → the oracle crate's `forty_digits_for_the_paper` (`oracle/tests/polyhedral.rs`) → `data/cavendish/forty-digits.json`; `realread` | **Cavendish** column from it (Spot's cells excepted: its mesh is downloaded, so they stay the benchmark harness's run of the same kernel); Python, ESA and Harmonica from `docs/research/paper-benchmarks/accuracy.json` (other codes) | the fixture `oracle/fixtures/paper/polyhedral/` (`scripts/oracle_fixtures.py` from `esa_fixtures.json`, `mp_reference.json`) |
 | Fig. "against a 40-digit evaluation" | `forty`, then `figures` | **Cavendish** ("this form"); ESA from `mp_reference.json` | as above |
-| P8 (≤ 1e-12 to 100 sizes) and the rounding class | `cargo xtask oracle`: `validation_polyhedral_forty_digit_class` (and P8 as written, TASK-S5-28) | **Cavendish**; P8 as written fails (S5.md §7.16) | as above |
+| P8 (≤ 1e-12 to 100 sizes) and the rounding class | `cargo xtask oracle`: `validation_polyhedral_forty_digit_class` (and P8 as written, TASK-S5-28) | **Cavendish**; P8 as written fails (S5.md §7.17) | as above |
 | Table "Cavendish's polyhedral kernel" (P1–P7) | `engine` → the `polyhedral.*` validation cases of `cav-core` run alone, their records in `data/cavendish/engine/`, → `scripts/engine_table.py` → `generated/rr-engine.tex` | **Cavendish** (the same records `cargo xtask validate` collects) | — |
 | Table "phase error at h = 1/64 m" and Fig. "against pitch" | `conv` → the oracle crate's `the_benchmark_for_the_paper` (`oracle/tests/benchmark.rs`, case `cut.benchmark_bodies`) → `data/cavendish/conv.json`; `realread` | **Cavendish** (the flight read); the dotted leading read and the arms' clearance from `data/level/conv.json` (`level` → `scripts/conv_level.py`), as Cavendish has no leading read | the bodies from the fixture; `scenes/` holds the same bodies for `cav` |
 | Table "static phase errors behind the budget" | `realread` (`generated/numbers.tex`) | **Cavendish** (`data/cavendish/conv.json`, `forty-digits.json`) | as above |

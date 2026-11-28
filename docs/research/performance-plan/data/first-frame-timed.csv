@@ -1,0 +1,4 @@
+frame,ms,poll_ms,draw_ms,mesh_ms,meshed,made,chunks,bricks,pending,meshes,bricks_on_gpu,vertices,resident_mb,marched,encode_ms,gpu_cull_ms,gpu_bodies_ms,gpu_chunks_ms,gpu_bricks_ms,gpu_lines_ms
+0,423.457,0.076,423.380,323.640,64,0,1243,854,0,64,173,5804,9.0,3.53,423.357,0.043,0.246,0.104,11.715,0.019
+# stopped at frame 0: 423 ms is over the 250 ms a frame may take
+# town: about 7.71e7 finest cells; the loop 408 m; 1280x720 px at 15 m/s; first view resident in 21.56 s (854 made, 1243 from the cache); 1 frames of the 600 asked: mean 423.5 ms (2 fps), median 423.5 ms, 99th percentile 423.5 ms, worst 423.5 ms

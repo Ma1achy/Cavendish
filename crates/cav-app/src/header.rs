@@ -174,6 +174,7 @@ fn chosen(shell: &Shell, pane: usize, line: &str) -> Option<bool> {
             ViewCommand::Overlay { overlay, .. } => Some(view.overlay == overlay),
             ViewCommand::Draw { draw, .. } => Some(view.body_draw == draw),
             ViewCommand::LodView { view: ref lod, .. } => Some(view.lod_view == *lod),
+            ViewCommand::Seams { seams, .. } => Some(view.seams == seams),
             ViewCommand::Section { section, .. } => {
                 Some(view.section.map(|s| s.axis) == section.map(|s| s.axis))
             }
