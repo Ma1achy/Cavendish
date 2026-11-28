@@ -503,7 +503,9 @@ fn slow_the_whole_town_is_read() {
     assert_eq!(tree.level(0).len(), 5350, "the town's chunks");
     for (n, tower) in spec.array.towers.iter().enumerate() {
         let base = Vec3::from_array(tower.position);
-        let mut probe = aim(&spec, n, base, spec.world.as_ref().unwrap().read.tolerance, Rule::Octupole);
+        // As `read_world` aims it: the walk takes what the local expansion leaves of the tolerance.
+        let tolerance = (1.0 - crate::world::local::LOCAL_SHARE) * spec.world.as_ref().unwrap().read.tolerance;
+        let mut probe = aim(&spec, n, base, tolerance, Rule::Octupole);
         probe.bubble = spec.world.as_ref().unwrap().read.radius;
         let cut = walk(&tree, &probe);
         assert!(is_partition(&tree, &cut.accepted, &cut.opened), "{}", tower.label);

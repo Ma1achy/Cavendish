@@ -35,6 +35,15 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**TASK-S5-22, the local expansion (28 Nov 2026; `docs/slices/S5.md` §7.8).** Each tower's accepted
+nodes are split near (read directly) and far (a Chebyshev series in height on the tower's span,
+audited within 1/16 of the tolerance, the audit in the estimate; the walk takes the other 15/16).
+W6 passes (worst audit 1.1e-11 rad against a share of 6.25e-4; degree 4 misses its share). On the
+town it changes little: the cut is 99.9 % opened chunks' leaves (tower 1 at 1e-2: 28 s, from 31 s);
+the walk's looseness is TASK-S5-27. Worth a second look: near nodes (ellipse parameter below 1.3)
+are read directly, not gathered (a departure); the series is not kept across reads (the engine's,
+`plan/IDEAS.md`).
+
 **For the owner: A2, the Platonic solids' fall-off (TASK-S5-06, branch local at 208e55e, not
 pushed: the pre-push `quick` fails on it).** Four solids pass (cube −6.960, octahedron −6.962,
 dodecahedron −8.932, icosahedron −8.937) and the control (squashed cube, −5); the tetrahedron gives

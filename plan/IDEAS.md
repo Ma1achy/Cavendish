@@ -306,7 +306,9 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   keeps contributions apart; it could keep the world's `Octree` and the world contribution by the
   world's hash and compose a playhead reading from the kept one (any shot of a static world reads
   the same), so that scrubbing a town costs what it did in S4. Needs `read::reading` to take the
-  kept world part.
+  kept world part. Since TASK-S5-22 each tower's local expansion (`world::local::Series`, keyed by
+  the world's hash, the tower's line and span and the tolerance) is worth keeping too: a change of
+  the instrument's flight alone needs only the near part and the series read again.
 - **Levels below the chunk for opened chunks** (TASK-S5-12): on `town` the walk accepts a 3.2 m chunk
   only from about 90 m at 1e-2 rad (the bound is 100 to 900 times the error), so the cut is mostly
   opened chunks read leaf by leaf: 31 s a tower, and past 1e-3 the audited read exceeds the kernel's
