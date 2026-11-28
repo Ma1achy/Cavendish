@@ -560,6 +560,12 @@
 - id: TASK-S6-06
   milestone: S6
   title: Shapes from 2-D profiles - extrude, revolve, sweep - with a recipe
+- id: TASK-S6-07
+  milestone: S6
+  title: 'Density as a function, not only a constant - a material or layer may carry rho(x) in the body''s frame as data: polynomials (exact cut-cell moments; Ren et al. 2018 and D''Urso & Trotta 2017 closed forms for mesh bodies), and any function - noise (Perlin/simplex/value), integer hash, piecewise, a sampled 3-D texture, sums and products of these - read by per-cell quadrature whose error is bounded against the phase tolerance; deterministic across platforms (integer hashes, no platform transcendental in the noise); oracles: a linearly graded slab and sphere in closed form, mass and moments of a polynomial body exact, quadrature control arm'
+- id: TASK-S6-08
+  milestone: S6
+  title: 'Skinned deformation - a body embedded in a cage of tetrahedra, each carrying a fixed mass (mass conserved by construction), the cage driven by a skeleton and skin weights (linear blend and dual-quaternion), each deformed tetrahedron read by its exact polyhedral field near and its affine-mapped moments far; glTF import of skeleton, skin weights and clips; the same elements S7''s elastic solids deform; oracles: the rigid limit equals per-bone trees bit for bit, mass constant through every pose, a bent arm converges as the cage refines'
 - id: TASK-S14-12
   milestone: S14
   title: The solar system - bodies of the ephemeris with their own LOD trees; a detector on any of them
@@ -841,3 +847,9 @@
 - id: TASK-S5-23
   milestone: S5
   title: "S5's record: the demo and its pictures, the validation report against s20-the-workspace, ARCHITECTURE, the recipes, PROGRESS"
+- id: TASK-S5-25
+  milestone: S5
+  title: A flaky editor test's cause - the forward stage's log lines tagged Subsystem::Forward, and the tests that look for what a command did skip them by that tag
+- id: TASK-S5-24
+  milestone: S5
+  title: The cube kernel's switch between closed form and series error-bounded, not 3 sides (docs/research/paper-boxes-and-precision.md)

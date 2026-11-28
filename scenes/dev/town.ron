@@ -4,7 +4,7 @@
 (
     version: 1,
     name: "town",
-    description: "stress-1e10 scaled down: 200 m of rolling ground at 10 cm, 8 buildings and the road, around the array: about 5x10^7 finest cells. For pictures on a modest GPU. The instrument reads only the 2 m around each tower: its numbers are of that matter alone.",
+    description: "stress-1e10 scaled down: 200 m of rolling ground at 10 cm, 8 buildings and the road, around the array: about 5x10^7 finest cells. For pictures on a modest GPU. The instrument reads the whole world: what is within 2 m of each tower leaf by leaf, the rest through the octree within 1e-2 rad.",
     duration: 10.0,
     array: (
         instrument: (
@@ -191,7 +191,7 @@
         ),
         read: (
             radius: 2.0,
-            tolerance: 0.001,
+            tolerance: 0.01,
         ),
         lod: (
             error_px: 4.0,

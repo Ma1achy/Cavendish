@@ -35,6 +35,10 @@ pub const REPLAY_PATIENCE: std::time::Duration = std::time::Duration::from_secs(
 /// whatever the quadrature did ("not settled: of the matter within 2 m only, estimate 1e-8 rad").
 #[must_use]
 pub fn estimate_text(estimate: f64, settled: bool, truncated: Option<f64>) -> String {
+    if truncated == Some(0.0) {
+        // Since S5 the world is read whole or, past its caps, not at all.
+        return "not settled: the world is not read".to_owned();
+    }
     if let Some(radius) = truncated {
         // A truncated read is never settled; the estimate is the quadrature's, on what was read.
         let quadrature = if estimate.is_finite() {
@@ -54,6 +58,24 @@ pub fn estimate_text(estimate: f64, settled: bool, truncated: Option<f64>) -> St
         "exact".to_owned()
     } else {
         format!("within {estimate:.0e} rad")
+    }
+}
+
+/// How the world was read, as people read it (S5's badge): "world within 3e-4 rad (ledger, 412
+/// nodes)" when every tower's walk reached `world.read.tolerance`, the ledger the largest of any
+/// tower and the nodes the largest cut (nodes accepted and chunks opened); otherwise "world not
+/// settled: ledger 2e-3 rad, 1e-3 over τ (412 nodes)", the ledger then the walk's and by how much
+/// it is over the tolerance (infinite when a node near the atoms could not be opened).
+#[must_use]
+pub fn world_text(world: &cav_sim::read::WorldLedger) -> String {
+    let (ledger, nodes) = (world.worst(), world.nodes());
+    if world.settled() {
+        format!("world within {ledger:.0e} rad (ledger, {nodes} nodes)")
+    } else {
+        format!(
+            "world not settled: ledger {ledger:.0e} rad, {:.0e} over τ ({nodes} nodes)",
+            ledger - world.tolerance
+        )
     }
 }
 
@@ -1441,6 +1463,7 @@ impl Engine {
                     estimate: signal.map_or(0.0, |s| s.estimate),
                     settled: signal.is_none_or(|s| s.settled),
                     truncated: signal.and_then(|s| s.truncated),
+                    world: signal.and_then(|s| s.world.clone()),
                     warnings: signal.map_or_else(Vec::new, |s| s.warnings.clone()),
                 }))
             }
@@ -1608,6 +1631,7 @@ impl Engine {
                     estimate: held.map_or(0.0, |reading| reading.estimate),
                     settled: held.is_none_or(|reading| reading.settled),
                     truncated: held.and_then(|reading| reading.truncated),
+                    world: held.and_then(|reading| reading.world.clone()),
                     warnings: held.map_or_else(Vec::new, |reading| reading.warnings.clone()),
                 }))
             }
@@ -1774,21 +1798,22 @@ impl Engine {
         // screenshot shows in the footer) says the same thing every time.
         self.log.push(
             Level::Debug,
-            Subsystem::Engine,
+            Subsystem::Forward,
             format!("the signal was whole {took:.0} ms after the edit"),
         );
         self.log.push(
             Level::Info,
-            Subsystem::Engine,
+            Subsystem::Forward,
             format!(
-                "signal: {} tower(s), {} shot(s) in all, quadrature {}",
+                "signal: {} tower(s), {} shot(s) in all, quadrature {}{}",
                 signal.towers,
                 signal.clock.len(),
-                estimate_text(signal.estimate, signal.settled, signal.truncated)
+                estimate_text(signal.estimate, signal.settled, signal.truncated),
+                signal.world.as_ref().map_or_else(String::new, |w| format!(", {}", world_text(w)))
             ),
         );
         for warning in &signal.warnings {
-            self.log.push(Level::Warn, Subsystem::Engine, warning.text.clone());
+            self.log.push(Level::Warn, Subsystem::Forward, warning.text.clone());
         }
     }
 

@@ -127,15 +127,16 @@ fn slow_a_world_scene_s_towers_show_what_they_read() {
     // the tree's status dot says the same. (Until S19 the tree's row carried the number.)
     let mut shell = Shell::new();
     shell.engine.set_patience(std::time::Duration::from_secs(60));
-    shell.run("load world-box").unwrap();
-    shell.run("set world.read.radius 1").unwrap();
+    // Since S5 the world is read whole: the only world read in part is one past the octree's
+    // caps, stress-1e10, which is not read at all (truncated at 0 m).
+    shell.run("load stress-1e10").unwrap();
     assert!(shell.engine.settle(std::time::Duration::from_secs(60)));
     let words = reading_words(&mut shell, 0);
     assert!(words.contains("rad") && words.contains('◐'), "{words}");
     let dot = shell.layout().dots.iter().find(|(t, _)| *t == 0).map(|(_, d)| *d);
     assert_eq!(dot, Some(cav_app::outliner::Dot::Partial));
     let reply = shell.reading().clone();
-    assert_eq!(reply.truncated, Some(1.0));
+    assert_eq!(reply.truncated, Some(0.0));
     assert!(!cav_app::panels_for_tests::silent(shell.engine.spec()));
     // Control: `point` with its body taken away reads nothing: no number, a silent dot.
     let mut empty = cav_sim::dev::point();

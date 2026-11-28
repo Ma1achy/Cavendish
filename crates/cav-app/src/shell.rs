@@ -1928,6 +1928,7 @@ impl Shell {
                     estimate: 0.0,
                     settled: true,
                     truncated: None,
+                    world: None,
                     warnings: Vec::new(),
                 },
             };

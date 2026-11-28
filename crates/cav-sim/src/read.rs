@@ -474,6 +474,56 @@ impl std::fmt::Display for Warning {
     }
 }
 
+/// How the world was read at one tower: its walk's ledger and the size of its cut
+/// (`docs/slices/S5.md` §2 "The walk").
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+pub struct TowerLedger {
+    /// The ledger, radians: the bounds of the nodes read through their expansion, read through
+    /// the flight, the two interferometers' added (so it bounds the gradiometer's share, and each
+    /// interferometer's). Infinite when the walk stopped with a node it could not accept: in
+    /// JSON the string `"inf"`.
+    #[serde(with = "crate::json_f64")]
+    #[schemars(schema_with = "crate::json_f64::schema")]
+    pub ledger: f64,
+    /// Nodes read through their expansion.
+    pub accepted: usize,
+    /// Chunks read leaf by leaf.
+    pub opened: usize,
+    /// Nodes accepted at each level, from the chunks (level 0) up.
+    pub per_level: Vec<usize>,
+    /// Whether the walk reached `world.read.tolerance` (false when a cap stopped it).
+    pub settled: bool,
+}
+
+/// How the world was read: the tolerance its walks were held to and each tower's ledger.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+pub struct WorldLedger {
+    /// `world.read.tolerance`, radians.
+    pub tolerance: f64,
+    /// Each tower's, in the towers' order.
+    pub towers: Vec<TowerLedger>,
+}
+
+impl WorldLedger {
+    /// The largest ledger of any tower, radians.
+    #[must_use]
+    pub fn worst(&self) -> f64 {
+        self.towers.iter().map(|t| t.ledger).fold(0.0, f64::max)
+    }
+
+    /// The most entries of any tower's cut (nodes accepted and chunks opened).
+    #[must_use]
+    pub fn nodes(&self) -> usize {
+        self.towers.iter().map(|t| t.accepted + t.opened).max().unwrap_or(0)
+    }
+
+    /// Whether every tower's walk reached the tolerance.
+    #[must_use]
+    pub fn settled(&self) -> bool {
+        self.towers.iter().all(|t| t.settled)
+    }
+}
+
 /// One tower's three phases from one shot, radians. Interferometer 1 is the lower one.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Phases {
@@ -502,10 +552,15 @@ pub struct Contribution {
     /// When false, `estimate` is not a bound on the error: it is how far the worst read was from
     /// settling, or (with [`Self::truncated`]) the quadrature's error on part of the matter only.
     pub settled: bool,
-    /// `Some(r)` when matter was left out: the world's read takes only what is within `r` metres
-    /// of each tower's atoms' path, so these numbers are of that matter, not of the whole scene
-    /// (and `settled` is false). `None` when everything was read.
+    /// `Some(r)` when matter was left out: only what is within `r` metres of each tower's atoms'
+    /// path was read, so these numbers are of that matter, not of the whole scene (and `settled`
+    /// is false). Since S5 the world is read whole, so this is `Some(0.0)` only for a world that
+    /// was refused (past the octree's caps: the warnings say why). `None` when everything was
+    /// read.
     pub truncated: Option<f64>,
+    /// For the world: how its walks read it at each tower. `None` for every other source, and for
+    /// a world that was not read.
+    pub world: Option<WorldLedger>,
     /// What a person should know about this source's readings.
     pub warnings: Vec<Warning>,
 }
@@ -704,6 +759,7 @@ pub fn contribution_on(
         estimates: vec![0.0; towers.len()],
         settled: true,
         truncated: None,
+        world: None,
         warnings: Vec::new(),
     };
     // Each tower's own sign: the gradiometer is differenced as its instrument says.
@@ -929,10 +985,11 @@ pub fn contribution_on(
     Some(out)
 }
 
-/// The world's contribution (S4): each tower reads the world once, since it does not move, and
-/// that reading holds for every shot it takes. What the read leaves out (matter past its radius
-/// or its cap) and the bound on reading far chunks through their moments are said; the bound is
-/// added to each tower's estimate. `None` when cancelled.
+/// The world's contribution (S5): each tower reads the whole world once, since it does not move,
+/// and that reading holds for every shot it takes ([`crate::world::read_world`]). Each tower's
+/// ledger is added to its estimate; a walk stopped by its caps is not settled and says by how much
+/// its ledger is over the tolerance; a world that cannot be read (past the octree's caps) reads
+/// nothing and says why. `None` when cancelled.
 fn world_contribution(
     spec: &SceneSpec,
     shots: &Shots,
@@ -942,67 +999,31 @@ fn world_contribution(
     cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Option<()> {
     let world_spec = spec.world.as_ref()?;
-    let world = crate::world::World::new(world_spec);
-    let refuse = |out: &mut Contribution, why: String| {
-        for channel in [&mut out.lower, &mut out.upper, &mut out.gradiometer] {
-            channel.clear();
-            channel.resize(shots.total(), 0.0);
-        }
-        out.settled = false;
-        // Nothing of the world was read: within 0 m.
-        out.truncated = Some(0.0);
-        out.warnings.push(Warning::general(format!("the world is not read: {why}")));
-    };
-    let crate::world::ReadKeys { keys, said, within } = match crate::world::read_keys(spec, &world) {
-        Ok(found) => found,
-        Err(why) => {
-            refuse(out, why);
-            return Some(());
-        }
-    };
-    out.warnings.extend(said.into_iter().map(Warning::general));
-    // Matter left out: the numbers are of the matter within `within` only, and never settled.
-    if within.is_some() {
-        out.truncated = within;
-        out.settled = false;
-    }
-    let made = match crate::world::make(&world, &keys, cancelled) {
-        Ok(Some(made)) => made,
+    let readouts: Vec<f64> = (0..spec.array.towers.len())
+        .map(|at| if shots.count(at) > 0 { shots.readout(at, 0) } else { 0.0 })
+        .collect();
+    let reads = match crate::world::read_world(spec, readers, &readouts, cancelled) {
+        Ok(Some(reads)) => reads,
         Ok(None) => return None,
         Err(why) => {
-            refuse(out, why);
+            for channel in [&mut out.lower, &mut out.upper, &mut out.gradiometer] {
+                channel.clear();
+                channel.resize(shots.total(), 0.0);
+            }
+            out.settled = false;
+            // Nothing of the world was read: within 0 m.
+            out.truncated = Some(0.0);
+            out.warnings.push(Warning::general(format!("the world is not read: {why}")));
             return Some(());
         }
     };
-    let share = crate::world::work_share(spec);
-    let mut bounds = 0.0f64;
-    for (at, tower) in spec.array.towers.iter().enumerate() {
-        if cancelled() {
-            return None;
-        }
+    let tolerance = world_spec.read.tolerance;
+    let mut towers = Vec::with_capacity(reads.len());
+    for (at, (tower, read)) in spec.array.towers.iter().zip(reads).enumerate() {
         let count = shots.count(at);
-        let readout = if count > 0 { shots.readout(at, 0) } else { 0.0 };
-        let height = spec.array.instrument_of(at).tower_height;
-        let read = crate::world::read_tower(
-            &made,
-            readers.of(at),
-            base(tower.position),
-            height,
-            readout,
-            world_spec.read.tolerance,
-            share,
-        );
-        let read = match read {
-            Ok(read) => read,
-            Err(why) => {
-                refuse(out, why);
-                return Some(());
-            }
-        };
         let (lower, upper) = (read.audited.reading.lower, read.audited.reading.upper);
-        let bound = read.bound[0] + read.bound[1];
-        bounds = bounds.max(bound);
-        let estimate = read.audited.estimate.unwrap_or(0.0) + bound;
+        let ledger = read.ledger[0] + read.ledger[1];
+        let estimate = read.audited.estimate.unwrap_or(0.0) + ledger;
         out.estimates[at] = estimate;
         out.estimate = out.estimate.max(estimate);
         if !read.audited.settled {
@@ -1012,19 +1033,36 @@ fn world_contribution(
                 format!("the world at {} did not settle; its estimate is {estimate:.1e} rad", tower.label),
             ));
         }
+        let cut = &read.cut;
+        if !cut.settled {
+            out.settled = false;
+            let why = cut.stopped.as_deref().unwrap_or("it stopped short");
+            out.warnings.push(Warning::about(
+                at,
+                format!(
+                    "the world at {}: the walk stopped ({why}); its bounds sum to {:.1e} rad, {:.1e} over \
+                     world.read.tolerance ({tolerance:.0e}); the ledger read through the flight is {ledger:.1e} rad",
+                    tower.label,
+                    cut.ledger,
+                    cut.ledger - tolerance
+                ),
+            ));
+        }
+        towers.push(TowerLedger {
+            ledger,
+            accepted: cut.accepted.len(),
+            opened: cut.opened.len(),
+            per_level: cut.per_level.clone(),
+            settled: cut.settled,
+        });
         let value = |v: f64| (0..count).map(move |k| if shots.taken(at, k) { v } else { 0.0 });
         out.lower.extend(value(lower));
         out.upper.extend(value(upper));
         out.gradiometer.extend(value(signed(at, lower, upper)));
     }
-    if bounds > PHASE_TOLERANCE {
-        out.warnings.push(Warning::general(format!(
-            "the world's far chunks are read through their moments, within {bounds:.1e} rad (world.read.tolerance)"
-        )));
-    }
+    out.world = Some(WorldLedger { tolerance, towers });
     Some(())
 }
-
 /// A body made of voxels, ready to read: its leaves as uniform cubes where the body is, the work
 /// one read may do, and (for a body that never moves and is always there) each tower's reading
 /// once it has been made.
@@ -1191,6 +1229,8 @@ pub struct Signal {
     /// `Some(r)` when some source's matter was left out: the world read only within `r` metres
     /// of the towers' atoms ([`Contribution::truncated`]). `None` when everything was read.
     pub truncated: Option<f64>,
+    /// How the world was read, when the scene has one and it was read ([`Contribution::world`]).
+    pub world: Option<WorldLedger>,
     /// What a person should know about these readings.
     pub warnings: Vec<Warning>,
 }
@@ -1216,6 +1256,7 @@ impl Signal {
             estimates: vec![0.0; towers],
             settled: true,
             truncated: None,
+            world: None,
             warnings: shots.warnings.clone(),
         }
     }
@@ -1239,6 +1280,9 @@ impl Signal {
         }
         self.settled &= contribution.settled;
         self.truncated = nearer(self.truncated, contribution.truncated);
+        if contribution.world.is_some() {
+            self.world.clone_from(&contribution.world);
+        }
         self.warnings.extend(contribution.warnings.iter().cloned());
     }
 
@@ -1344,6 +1388,8 @@ pub struct ReadingAt {
     pub settled: bool,
     /// `Some(r)` when the world was read only within `r` metres of the towers ([`Signal::truncated`]).
     pub truncated: Option<f64>,
+    /// How the world was read ([`Signal::world`]).
+    pub world: Option<WorldLedger>,
     /// What a person should know about these numbers: a reading that did not settle, a body in
     /// the atoms' path, an unbounded floor.
     pub warnings: Vec<Warning>,
@@ -1368,6 +1414,7 @@ pub fn reading(spec: &SceneSpec, time: f64, cancelled: &(dyn Fn() -> bool + Sync
         estimate: total.estimate,
         settled: total.settled,
         truncated: total.truncated,
+        world: total.world,
         warnings: total.warnings,
     })
 }
