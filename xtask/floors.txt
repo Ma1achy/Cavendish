@@ -48,7 +48,8 @@
 # the series reads what it interpolates, a point off the line is read directly).
 # TASK-S5-27 (the walk below the chunk): 2 new quick tests (cav-sim: a chunk's tree is its leaves,
 # W1 into the chunks' trees).
-quick 760
+# TASK-S5-04 (the ledger in bundles): 1 new quick test (cav-sim: W8, the ledger is in the bundle).
+quick 761
 gpu 42
 slow 56
 oracle 58

@@ -560,14 +560,22 @@ fn an_unsettled_reading_says_so() {
         accepted: 400,
         opened: 12,
         per_level: vec![300, 100],
+        blocks: 88,
+        blocks_per_level: vec![8, 30, 50, 0],
+        leaves: 9000,
+        degree: 16,
+        far: 480,
+        near: 8,
+        audit: 1e-5,
         settled,
     };
     let settled = read::WorldLedger { tolerance: 1e-3, towers: vec![tower(3e-4, true), tower(1e-4, true)] };
-    assert_eq!(cav_engine::world_text(&settled), "world within 3e-4 rad (ledger, 412 nodes)");
+    // Within the ledger and the series' audit together, and the cut's nodes and blocks.
+    assert_eq!(cav_engine::world_text(&settled), "world within 3e-4 rad (ledger and series, 500 nodes)");
     let stopped = read::WorldLedger { tolerance: 1e-3, towers: vec![tower(3e-3, false), tower(1e-4, true)] };
     assert_eq!(
         cav_engine::world_text(&stopped),
-        "world not settled: ledger 3e-3 rad, 2e-3 over τ (412 nodes)"
+        "world not settled: ledger 3e-3 rad, 2e-3 over τ (500 nodes)"
     );
     // A point mass on a tower's axis does not settle. The reading that comes back is the one
     // asked for (`refined`), and its heading must not pass the estimate off as a bound.
