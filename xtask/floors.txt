@@ -37,5 +37,6 @@
 # W4, Q_MAX); 4 new slow tests (cav-sim: W2, W3's two cases, W5).
 # TASK-S5-25 (a flaky test's cause): 1 new quick test (cav-engine: the forward stage's news is tagged).
 quick 743
+gpu 42
 slow 54
 oracle 58
