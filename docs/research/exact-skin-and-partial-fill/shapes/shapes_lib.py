@@ -29,6 +29,7 @@ import hashlib
 import math
 import sys
 import urllib.request
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -1664,6 +1665,7 @@ class Canvas:
         self.z = np.full((self.n, self.n), np.inf)
         self.alb = np.ones((self.n, self.n, 3)) * self.BACKGROUND
         self.nrm = np.zeros((self.n, self.n, 3))
+        self.vao = np.ones((self.n, self.n))  # the voxels' per-corner occlusion, interpolated
         self.overlays: list[tuple[npt.NDArray[np.bool_], F64, float]] = []
         self.depth_bias = 2.0 / self.scale
 
@@ -1673,67 +1675,101 @@ class Canvas:
         y = self.n / 2 - q @ self.up * self.scale
         return np.stack([x, y, q @ self.fwd], axis=-1)
 
-    def __raster(self, s: F64) -> tuple[npt.NDArray[np.intp], npt.NDArray[np.intp], F64, F64] | None:
-        x0 = max(int(np.floor(s[:, 0].min())), 0)
-        x1 = min(int(np.ceil(s[:, 0].max())), self.n - 1)
-        y0 = max(int(np.floor(s[:, 1].min())), 0)
-        y1 = min(int(np.ceil(s[:, 1].max())), self.n - 1)
-        if x1 < x0 or y1 < y0:
-            return None
-        xs, ys = np.meshgrid(np.arange(x0, x1 + 1) + 0.5, np.arange(y0, y1 + 1) + 0.5)
-        a, b, c = s[0], s[1], s[2]
-        area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
-        if abs(area) < 1e-12:
-            return None
-        w0 = ((b[0] - xs) * (c[1] - ys) - (b[1] - ys) * (c[0] - xs)) / area
-        w1 = ((c[0] - xs) * (a[1] - ys) - (c[1] - ys) * (a[0] - xs)) / area
-        w2 = 1 - w0 - w1
-        inside = (w0 >= 0) & (w1 >= 0) & (w2 >= 0)
-        if not inside.any():
-            return None
-        depth = w0 * a[2] + w1 * b[2] + w2 * c[2]
-        iy, ix = np.nonzero(inside)
-        return iy + y0, ix + x0, depth[inside], np.sign(area)
+    CHUNK = 1 << 21  # candidate pixels rasterised at once (bounds the memory, ~200 MB)
 
-    def triangles(self, tris: F64, colour: F64, cull: bool = True) -> None:
-        """Opaque triangles, outward normals from their winding; back faces culled."""
-        colour = np.asarray(colour, dtype=float)
-        for t in tris:
-            nrm = np.cross(t[1] - t[0], t[2] - t[0])
-            ln = np.linalg.norm(nrm)
-            if ln == 0:
-                continue
-            nrm /= ln
-            if cull and nrm @ self.fwd > 0:
-                continue
-            r = self.__raster(self.project(t))
-            if r is None:
-                continue
-            iy, ix, dep, _ = r
-            near = dep < self.z[iy, ix]
-            self.z[iy[near], ix[near]] = dep[near]
-            self.alb[iy[near], ix[near]] = colour
-            self.nrm[iy[near], ix[near]] = nrm
+    def _covered(self, tris: F64) -> Iterator[tuple[I64, I64, F64, F64]]:
+        """Every pixel centre inside each triangle, all triangles at once (numpy, no per-triangle
+        loop): yields chunks of (triangle index, flat pixel index, depth, barycentric weights (k, 3)).
+        A pixel centre on an edge counts as inside (both neighbours get it)."""
+        if len(tris) == 0:
+            return
+        s = self.project(tris.reshape(-1, 3)).reshape(-1, 3, 3)
+        a, b, c = s[:, 0], s[:, 1], s[:, 2]
+        area = (b[:, 0] - a[:, 0]) * (c[:, 1] - a[:, 1]) - (b[:, 1] - a[:, 1]) * (c[:, 0] - a[:, 0])
+        x0 = np.maximum(np.floor(s[:, :, 0].min(axis=1)), 0).astype(np.int64)
+        x1 = np.minimum(np.ceil(s[:, :, 0].max(axis=1)), self.n - 1).astype(np.int64)
+        y0 = np.maximum(np.floor(s[:, :, 1].min(axis=1)), 0).astype(np.int64)
+        y1 = np.minimum(np.ceil(s[:, :, 1].max(axis=1)), self.n - 1).astype(np.int64)
+        w = np.maximum(x1 - x0 + 1, 0)
+        cnt = w * np.maximum(y1 - y0 + 1, 0)
+        cnt[np.abs(area) < 1e-12] = 0
+        ends = np.cumsum(cnt)
+        start = 0
+        while start < len(tris):
+            base = ends[start - 1] if start else 0
+            stop = max(int(np.searchsorted(ends, base + self.CHUNK, side="right")), start + 1)
+            idx = np.arange(start, stop)
+            k = cnt[idx]
+            tri = np.repeat(idx, k)
+            local = np.arange(int(k.sum())) - np.repeat(np.cumsum(k) - k, k)
+            px = x0[tri] + local % w[tri]
+            py = y0[tri] + local // w[tri]
+            xs, ys = px + 0.5, py + 0.5
+            ar = area[tri]
+            ta, tb, tc = a[tri], b[tri], c[tri]
+            w0 = ((tb[:, 0] - xs) * (tc[:, 1] - ys) - (tb[:, 1] - ys) * (tc[:, 0] - xs)) / ar
+            w1 = ((tc[:, 0] - xs) * (ta[:, 1] - ys) - (tc[:, 1] - ys) * (ta[:, 0] - xs)) / ar
+            w2 = 1 - w0 - w1
+            ins = (w0 >= 0) & (w1 >= 0) & (w2 >= 0)
+            wts = np.stack([w0[ins], w1[ins], w2[ins]], axis=1)
+            depth = wts[:, 0] * ta[ins, 2] + wts[:, 1] * tb[ins, 2] + wts[:, 2] * tc[ins, 2]
+            yield tri[ins], py[ins] * self.n + px[ins], depth, wts
+            start = stop
+
+    def triangles(self, tris: F64, colour: F64, cull: bool = True, ao: F64 | None = None) -> None:
+        """Opaque triangles, outward normals from their winding; back faces culled.
+
+        Args:
+            tris   (F64):        Triangles, (N, 3, 3), m.
+            colour (F64):        One albedo (3,) or one per triangle (N, 3), 0..1.
+            cull   (bool):       Skip triangles facing away from the eye.
+            ao     (F64 | None): A light factor per triangle corner (N, 3), 0..1, interpolated across
+                                 the triangle and multiplied into its lighting (the voxels' per-corner
+                                 occlusion); None for 1.
+        """
+        tris = np.asarray(tris, dtype=float).reshape(-1, 3, 3)
+        nrm = np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0])
+        ln = np.linalg.norm(nrm, axis=1)
+        keep = ln > 0
+        if cull:
+            keep &= nrm @ self.fwd <= 0
+        cols = np.broadcast_to(np.asarray(colour, dtype=float), (len(tris), 3))[keep]
+        nrm = nrm[keep] / ln[keep, None]
+        corner = None if ao is None else np.asarray(ao, dtype=float)[keep]
+        zf, alb, nf, vf = self.z.reshape(-1), self.alb.reshape(-1, 3), self.nrm.reshape(-1, 3), \
+            self.vao.reshape(-1)
+        for tri, pix, depth, wts in self._covered(tris[keep]):
+            order = np.lexsort((depth, pix))
+            p_s = pix[order]
+            first = np.ones(len(p_s), dtype=bool)
+            first[1:] = p_s[1:] != p_s[:-1]
+            sel = order[first]
+            sel = sel[depth[sel] < zf[pix[sel]]]
+            p = pix[sel]
+            zf[p] = depth[sel]
+            alb[p] = cols[tri[sel]]
+            nf[p] = nrm[tri[sel]]
+            vf[p] = 1.0 if corner is None else np.einsum("kc,kc->k", wts[sel], corner[tri[sel]])
 
     def signed_region(self, tris: F64, normal: F64, colour: F64) -> None:
-        """A planar region given as a signed fan (coverage > 0 is inside), e.g. a cap."""
+        """A planar region given as a signed fan (coverage > 0 is inside), e.g. a cap. Every
+        triangle must lie in the one plane (several cells' fans on one wall add)."""
         normal = np.asarray(normal, dtype=float)
         if normal @ self.fwd > 0 or len(tris) == 0:
             return
-        cov = np.zeros((self.n, self.n), dtype=np.int32)
-        dep = np.full((self.n, self.n), np.inf)
-        for t in tris:
-            sign = 1 if np.cross(t[1] - t[0], t[2] - t[0]) @ normal > 0 else -1
-            r = self.__raster(self.project(t))
-            if r is None:
-                continue
-            iy, ix, d, _ = r
-            cov[iy, ix] += sign
-            dep[iy, ix] = d
-        sel = (cov > 0) & (dep < self.z)
+        tris = np.asarray(tris, dtype=float).reshape(-1, 3, 3)
+        sign = np.where(np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0]) @ normal > 0, 1.0, -1.0)
+        cov = np.zeros(self.n * self.n)
+        dep = np.full(self.n * self.n, np.inf)
+        for tri, pix, depth, _ in self._covered(tris):
+            cov += np.bincount(pix, weights=sign[tri], minlength=self.n * self.n)
+            dep[pix] = depth
+        sel = ((cov > 0.5) & (dep < self.z.reshape(-1))).reshape(self.n, self.n)
+        dep = dep.reshape(self.n, self.n)
         self.z[sel] = dep[sel]
         self.alb[sel] = np.asarray(colour, dtype=float)
         self.nrm[sel] = normal / np.linalg.norm(normal)
+        self.vao[sel] = 1.0
 
     def dots(self, lines: list[F64], colour: F64, pitch: float, radius: tuple[float, float],
              front: F64 | None = None, hair: float = 2.0) -> None:
@@ -1833,7 +1869,7 @@ class Canvas:
     def image(self) -> F64:
         hit = np.isfinite(self.z)
         k = (self.AMBIENT + self.KEY * np.clip(self.nrm @ self.key, 0, None)
-             + self.FILL * np.clip(self.nrm @ self.fill, 0, None)) * self.occlusion()
+             + self.FILL * np.clip(self.nrm @ self.fill, 0, None)) * self.occlusion() * self.vao
         k = k[..., None]
         lit = self.alb * np.minimum(k, 1.0) + (1.0 - self.alb) * np.clip(k - 1.0, 0, None) * 0.6
         img = np.where(hit[..., None], np.clip(lit, 0, 1), self.BACKGROUND)
