@@ -365,4 +365,4 @@ impl Source for LedgerSource<'_> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
