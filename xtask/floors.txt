@@ -38,7 +38,9 @@
 # TASK-S5-25 (a flaky test's cause): 1 new quick test (cav-engine: the forward stage's news is tagged).
 # TASK-S5-24 (the cube kernel's switch made error-bounded): 2 new quick tests (cav-core: K1 and its
 # control, S3's fixed switch).
-quick 745
+# TASK-S5-06 (Exact bodies): 8 new quick tests (cav-sim: A1, A2, A2's control, A3, X1, exact-solids
+# against platonic-row; cav-engine: the wire; cav-app: the Read row).
+quick 753
 gpu 42
 slow 54
 oracle 58

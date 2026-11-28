@@ -11,6 +11,7 @@
 //! not turn), metres.
 
 use cav_core::Vec3;
+use cav_core::polyhedral::Faceted;
 use cav_core::voxel::layers::{self, Layer, Mode, Moved, Region, Stroke, Whole};
 use cav_core::voxel::shape::{Cuboid, Cylinder, Ellipsoid, Platonic, Polyhedron, Shape, Shell, Sphere};
 use cav_core::voxel::{Aabb, Budget, Grid, VoxTree, mesh::Mesh, voxelise_within};
@@ -56,10 +57,44 @@ pub struct ShapeSpec {
     #[serde(default)]
     #[schemars(length(max = 255))]
     pub parts: Vec<PartSpec>,
+    /// How the forward model reads it: by its voxels (`Sampled`, the default, not written) or as
+    /// the solid itself (`Exact`: a polyhedron or a mesh, of one material, with no parts).
+    #[serde(default, skip_serializing_if = "Representation::is_sampled")]
+    pub representation: Representation,
 }
 
 const fn default_supersample() -> u8 {
     4
+}
+/// How the forward model reads a body's shape (`docs/slices/S5.md` §1, §2). Written in a scene
+/// file only when it is not [`Representation::Sampled`], so files and bundles made before it keep
+/// their bytes.
+///
+/// TASK-S5-09 adds what a voxel body's boundary cells carry: `Fill` (the exact fill fraction at
+/// the cell's centre), `Centroid` (and the piece's centroid), `Second` (and its second moment) and
+/// `Pieces` (the clipped piece itself near an arm). They will sit between `Sampled` and `Exact`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum Representation {
+    /// Voxels, each boundary cell weighed by how many of its `supersample³` sample points lie
+    /// inside (S3): the default, read leaf by leaf with the cube kernel.
+    #[default]
+    Sampled,
+    /// No voxels: the solid itself, by the polyhedral closed form near and its exact moments far
+    /// ([`crate::exact`]). For a polyhedron (`Cuboid`, `Platonic`, `Polyhedron`) or a closed mesh
+    /// (`Mesh`, `Triangles`) of at most 10,000 triangles, of one material and with no parts. It is
+    /// still drawn as voxels at `pitch`.
+    Exact,
+}
+
+impl Representation {
+    /// Every representation, in the order a choice lists them.
+    pub const ALL: [Self; 2] = [Self::Sampled, Self::Exact];
+
+    /// Whether it is the default ([`Self::Sampled`]): such a shape does not write the field.
+    #[must_use]
+    pub fn is_sampled(&self) -> bool {
+        *self == Self::Sampled
+    }
 }
 
 /// What a part does where it lies.
@@ -325,6 +360,11 @@ pub const MAX_INLINE_TRIANGLES: usize = 10_000;
 /// The most corners a mesh held in a scene may have.
 pub const MAX_INLINE_VERTICES: usize = 30_000;
 
+/// The most triangles the solid of an [`Representation::Exact`] body may have (`docs/slices/S5.md`
+/// §3.1, X1): S19's held-mesh limit. A mesh's triangles are counted when it is read, before the
+/// solid is made from them; one with more is refused in words.
+pub const MAX_EXACT_FACES: usize = MAX_INLINE_TRIANGLES;
+
 /// A triangle of a held mesh: its three corners by index into the mesh's `vertices`,
 /// anticlockwise seen from outside.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -400,6 +440,70 @@ impl ShapeKind {
                 .map_err(|e| e.0)?,
             ),
         })
+    }
+
+    /// Whether the polyhedral kernel can read it as it is: a polyhedron (`Cuboid`, `Platonic`,
+    /// `Polyhedron`) or a closed mesh (`Mesh`, `Triangles`), not a curved solid.
+    #[must_use]
+    pub const fn is_polyhedral(&self) -> bool {
+        matches!(
+            self,
+            Self::Cuboid { .. }
+                | Self::Platonic { .. }
+                | Self::Polyhedron { .. }
+                | Self::Mesh { .. }
+                | Self::Triangles { .. }
+        )
+    }
+
+    /// The solid as the polyhedral kernel reads it, centred on the origin as [`Self::solid`]
+    /// centres it (the body's frame, metres). A mesh is read from its file here, and its triangles
+    /// counted against [`MAX_EXACT_FACES`] before anything is made of them.
+    ///
+    /// # Errors
+    /// For a curved solid; a mesh past [`MAX_EXACT_FACES`] triangles, with the count; a mesh that
+    /// cannot be read; a solid the kernel refuses (not closed, no volume), in its words.
+    pub fn faceted(&self) -> Result<Faceted, String> {
+        let within = |n: usize| {
+            if n > MAX_EXACT_FACES {
+                Err(format!(
+                    "{n} triangles is more than the {MAX_EXACT_FACES} an Exact body may have; read it by its voxels \
+                     (Sampled) or simplify the mesh"
+                ))
+            } else {
+                Ok(())
+            }
+        };
+        let made = match self {
+            Self::Cuboid { size } => {
+                Faceted::from_cuboid(&Cuboid { centre: Vec3::ZERO, half: Vec3::from_array(*size) * 0.5 })
+            }
+            Self::Platonic { solid, edge } => Faceted::platonic(platonic(*solid), *edge),
+            Self::Polyhedron { vertices } => {
+                let points: Vec<Vec3> = vertices.iter().map(|v| Vec3::from_array(v.0)).collect();
+                let hull = Polyhedron::hull(&points).map_err(|e| e.0)?;
+                within(hull.faces.iter().map(|f| f.len().saturating_sub(2)).sum())?;
+                Faceted::from_polyhedron(&hull)
+            }
+            Self::Mesh { file, scale, hash } => {
+                let mesh = crate::assets::mesh(file, hash.as_deref())?.scaled(*scale);
+                within(mesh.triangles.len())?;
+                Faceted::from_mesh(&mesh)
+            }
+            Self::Triangles { vertices, triangles } => {
+                within(triangles.len())?;
+                let mesh = Mesh::new(
+                    vertices.iter().map(|v| Vec3::from_array(v.0)).collect(),
+                    triangles.iter().map(|t| t.0).collect(),
+                )
+                .map_err(|e| e.0)?;
+                Faceted::from_mesh(&mesh)
+            }
+            _ => {
+                return Err(format!("a {} is not a polyhedron or a mesh: Exact cannot read it", self.name()));
+            }
+        };
+        made.map_err(|e| e.0)
     }
 
     /// Its box about the body's position when it is known without reading a file or making the
@@ -511,7 +615,14 @@ impl ShapeSpec {
     /// material, no parts.
     #[must_use]
     pub const fn new(kind: ShapeKind, pitch: f64, supersample: u8) -> Self {
-        Self { kind, pitch, supersample, material: None, parts: Vec::new() }
+        Self {
+            kind,
+            pitch,
+            supersample,
+            material: None,
+            parts: Vec::new(),
+            representation: Representation::Sampled,
+        }
     }
 
     /// Checks the shape, its parts, and that its pitch fits one tree (at most 1024 voxels
@@ -545,6 +656,21 @@ impl ShapeSpec {
         }
         for (n, part) in self.parts.iter().enumerate() {
             part.validate(&format!("{at}.parts[{n}]"))?;
+        }
+        if self.representation == Representation::Exact {
+            if !self.kind.is_polyhedral() {
+                return Err(format!(
+                    "{at}.representation: Exact reads a polyhedron or a mesh (Cuboid, Platonic, Polyhedron, Mesh, \
+                     Triangles), not a {}; a curved solid is read by its voxels (Sampled)",
+                    self.kind.name()
+                ));
+            }
+            if !self.parts.is_empty() {
+                return Err(format!(
+                    "{at}.representation: an Exact body is of one material with no parts; this one has {} parts",
+                    self.parts.len()
+                ));
+            }
         }
         // A leaf's material is a byte: the body's own and its parts' distinct materials together
         // fit one (the voxeliser would refuse more only when the body is made).

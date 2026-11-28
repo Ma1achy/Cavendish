@@ -869,6 +869,20 @@ impl SceneSpec {
     /// refused by [`Self::validate`]; the message names the field.
     pub fn edited(&self, path: &str, value: &Value) -> Result<(Self, Value), String> {
         let mut whole = self.to_value();
+        // A field the schema has that the value does not write (one left out while it holds its
+        // default, as a shape's `representation`) is a place too: it holds what the schema's
+        // template says, which is that default.
+        let segs = parse(path)?;
+        if let Some((Seg::Field(name), parent)) = segs.split_last()
+            && site_at(Self::schema_ref(), &segs).is_ok()
+            && let Ok(Value::Object(map)) = get_mut(&mut whole, parent)
+            && !map.contains_key(name.as_str())
+        {
+            map.insert(
+                name.clone(),
+                template(path).ok_or_else(|| format!("`{path}` has no default to start from"))?,
+            );
+        }
         let before = set(&mut whole, path, value.clone())?;
         let spec = Self::from_edited(whole).map_err(|why| match why {
             Refused::Shape(e) => format!("`{path}` cannot be set to {value}: {e}"),

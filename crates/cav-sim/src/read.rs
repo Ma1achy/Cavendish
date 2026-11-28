@@ -12,6 +12,9 @@ use cav_core::Vec3;
 use cav_core::forward::{Channel, Mass, PHASE_TOLERANCE, Reader, Sign, Slab};
 use cav_core::voxel::kernel::{MAX_KERNEL_WORK, TreeBody};
 
+use crate::exact::{ExactBody, ExactBound};
+use crate::shape::Representation;
+
 use crate::{FloorKind, SceneSpec};
 
 /// The most shots a signal is computed for. A scene with more is refused, with the count.
@@ -1063,25 +1066,53 @@ fn world_contribution(
     out.world = Some(WorldLedger { tolerance, towers });
     Some(())
 }
-/// A body made of voxels, ready to read: its leaves as uniform cubes where the body is, the work
-/// one read may do, and (for a body that never moves and is always there) each tower's reading
-/// once it has been made.
+/// A body with a shape, ready to read: its leaves as uniform cubes where the body is (or, for an
+/// `Exact` body, the solid itself), the work one read may do, and (for a body that never moves
+/// and is always there) each tower's reading once it has been made.
 struct VoxelBody<'a> {
-    source: TreeBody<Box<dyn Fn(f64) -> Vec3 + Sync + 'a>>,
+    source: Shaped<'a>,
     /// The most flight nodes one read of this body may evaluate: its share of
-    /// [`MAX_KERNEL_WORK`] ([`kernel_share`]) over the cubes a node costs.
+    /// [`MAX_KERNEL_WORK`] ([`kernel_share`]) over the cubes (or triangles) a node costs.
     max_nodes: u64,
     /// For a still body: the reading at each tower (by its position's bits). It does not depend
     /// on the readout time, so every shot has the same bits; it is made once.
     still: Option<std::sync::Mutex<StillReadings>>,
 }
 
+/// Where a shaped body is at a time: seconds on the scene's clock in, metres (the world's frame)
+/// out.
+type Place<'a> = Box<dyn Fn(f64) -> Vec3 + Sync + 'a>;
+
+/// How a shaped body is read: by its voxels, or exactly ([`crate::shape::Representation`]).
+enum Shaped<'a> {
+    /// Leaf by leaf, each a uniform cube.
+    Leaves(TreeBody<Place<'a>>),
+    /// The solid itself ([`crate::exact`]).
+    Exact(Box<ExactBody<Place<'a>>>),
+}
 /// Each tower's reading of a still body, by the bits of the tower's position and its instrument's key.
 type StillReadings = Vec<(Vec<u64>, cav_core::forward::Audited)>;
 
 impl VoxelBody<'_> {
     fn read(&self, reader: &Reader, tower: Vec3, readout: f64) -> cav_core::forward::Audited {
-        let read = || reader.read_to_within(tower, &self.source, readout, PHASE_TOLERANCE, self.max_nodes);
+        let read = || match &self.source {
+            Shaped::Leaves(source) => {
+                reader.read_to_within(tower, source, readout, PHASE_TOLERANCE, self.max_nodes)
+            }
+            Shaped::Exact(source) => {
+                let mut audited =
+                    reader.read_to_within(tower, source.as_ref(), readout, PHASE_TOLERANCE, self.max_nodes);
+                // What reading it through its moments far away leaves out, bounded (S4's bound,
+                // rigorous for a polyhedron) and read through the same flight: added to the
+                // estimate, as the world's far chunks' bound is.
+                let bound = reader.read(tower, &ExactBound(source.as_ref()), readout);
+                let bound = bound.lower.abs() + bound.upper.abs();
+                if bound > 0.0 {
+                    audited.estimate = Some(audited.estimate.unwrap_or(0.0) + bound);
+                }
+                audited
+            }
+        };
         let Some(still) = &self.still else { return read() };
         // By the tower's place and its instrument: two towers at one place may fly two.
         let mut key: Vec<u64> = tower.to_array().map(f64::to_bits).to_vec();
@@ -1109,40 +1140,78 @@ pub fn kernel_share(spec: &SceneSpec) -> u64 {
     MAX_KERNEL_WORK / voxel.max(1) as u64
 }
 
-/// Body `n` as voxels, if it has a shape: `Ok(None)` for a point or a sphere.
+/// Body `n` as voxels (or, for an `Exact` body, as its solid), if it has a shape: `Ok(None)` for a
+/// point or a sphere.
 ///
 /// # Errors
-/// When the shape cannot be voxelised, or when even the first rule of one read would cost more
-/// than the body's share of [`MAX_KERNEL_WORK`] ([`kernel_share`]), with the numbers.
+/// When the shape cannot be voxelised (or its solid made), or when even the first rule of one read
+/// would cost more than the body's share of [`MAX_KERNEL_WORK`] ([`kernel_share`]), with the
+/// numbers.
 fn voxel_body<'a>(spec: &'a SceneSpec, n: usize, readers: &Readers) -> Result<Option<VoxelBody<'a>>, String> {
     let body = &spec.bodies[n];
     let Some(shape) = &body.shape else { return Ok(None) };
-    let tree = shape.tree(body.mass, &spec.materials)?;
     let gravity = spec.array.instrument.gravity;
-    let position: Box<dyn Fn(f64) -> Vec3 + Sync + 'a> =
-        Box::new(move |t| Vec3::from_array(body.motion.position(t, gravity)));
-    let mut source = TreeBody::new(&tree, position);
-    source.exists = body.exists();
-    source.breaks = body.motion.breaks();
-    // Each flight node evaluates every cube at two points for each of two interferometers.
-    let per_node = 4 * source.cubes() as u64;
+    let position: Place<'a> = Box::new(move |t| Vec3::from_array(body.motion.position(t, gravity)));
+    // Each flight node evaluates every cube (or triangle) at two points for each of two
+    // interferometers.
+    let (source, per_node, what) = if shape.representation == Representation::Exact {
+        let solid = shape.kind.faceted()?;
+        let density = exact_density(spec, n, &solid)?;
+        // The narrowest of the instruments' widest arm separations: the closed form is held to it.
+        let separation = readers
+            .readers
+            .iter()
+            .map(|reader| {
+                let instrument = reader.instrument();
+                instrument.kick_velocity().abs() * instrument.half_sequence
+            })
+            .fold(f64::INFINITY, f64::min);
+        let mut source = ExactBody::new(solid, density, separation, position);
+        source.exists = body.exists();
+        source.breaks = body.motion.breaks();
+        let faces = source.faces();
+        (Shaped::Exact(Box::new(source)), 4 * faces as u64, format!("{faces} triangles"))
+    } else {
+        let tree = shape.tree(body.mass, &spec.materials)?;
+        let mut source = TreeBody::new(&tree, position);
+        source.exists = body.exists();
+        source.breaks = body.motion.breaks();
+        let cubes = source.cubes();
+        (Shaped::Leaves(source), 4 * cubes as u64, format!("{cubes} leaves"))
+    };
     // The longest flight of any tower's instrument sets the work of a read.
     let first = readers.readers.iter().map(|reader| reader.instrument().node_count(&[])).max().unwrap_or(0);
     let share = kernel_share(spec);
     if first * per_node > share {
         return Err(format!(
-            "{} leaves × {first} flight nodes is more than the {share} cube evaluations one read may make of \
-             this body ({MAX_KERNEL_WORK} a read, shared by the scene's voxel bodies); use a coarser pitch",
-            source.cubes()
+            "{what} × {first} flight nodes is more than the {share} cube evaluations one read may make of \
+             this body ({MAX_KERNEL_WORK} a read, shared by the scene's voxel bodies); use a coarser pitch"
         ));
     }
     let still = (matches!(body.motion, crate::Motion::Static { .. })
         && body.appears.is_none()
         && body.vanishes.is_none())
     .then(|| std::sync::Mutex::new(Vec::new()));
-    Ok(Some(VoxelBody { source, max_nodes: share / per_node, still }))
+    Ok(Some(VoxelBody { source, max_nodes: share / per_node.max(1), still }))
 }
 
+/// The uniform density of `Exact` body `n` whose solid is `solid`, kg/m³: its material's, or its
+/// `mass` over the solid's volume when it has none.
+///
+/// # Errors
+/// When its material is found neither in the scene nor in the library.
+pub(crate) fn exact_density(
+    spec: &SceneSpec,
+    n: usize,
+    solid: &cav_core::polyhedral::Faceted,
+) -> Result<f64, String> {
+    let body = &spec.bodies[n];
+    let shape = body.shape.as_ref().ok_or("not a shaped body")?;
+    match shape.materials(&spec.materials, "material")?.first() {
+        Some(material) => Ok(material.density),
+        None => Ok(body.mass / solid.volume()),
+    }
+}
 /// A body watched while it is read: it is the body as a [`Source`], and it notes whether its
 /// surface (or, for a point, a millimetre about it) came between the two arms of an
 /// interferometer at any node the read evaluated.

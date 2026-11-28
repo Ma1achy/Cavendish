@@ -35,6 +35,18 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**For the owner: A2, the Platonic solids' fall-off (TASK-S5-06, its PR open, not merged).** The
+criterion written before measuring puts each 10 m solid's centroid at 5 m up and asks the
+gradiometer's departure from a point mass to fall as `R^−(l+3)` over 30 to 240 m, ±0.2. Four
+solids pass (cube −6.960, octahedron −6.962, dodecahedron −8.932, icosahedron −8.937), and so does
+the control (a squashed cube, −5). The tetrahedron gives −6.961, not −6: its octupole is odd in
+height about its centre, so at the solid's own height a vertical gradiometer does not see it, and
+its `l = 4` part is what is left. At a fixed elevation of 30° all five pass (tetrahedron −5.882,
+cube −6.972, octahedron −6.974, dodecahedron −8.983, icosahedron −8.810). Choose: (a) restate A2 at a fixed
+elevation of 30°, the tolerance unchanged; (b) keep 5 m and give the tetrahedron `l + 4`, with the reason
+written; (c) as written, the case failing and known. Until then `validation_platonic_solids_miss_their_low_multipoles`
+fails, so `quick` fails on the branch (`docs/slices/S5.md` §7.5).
+
 **Seen while building TASK-S5-24 (28 Nov 2026):** the oracle's
 `validation_cylinder_vs_point_mass` passes nextest's two-minute watchdog neither with the new cube
 kernel nor with main's, run alone on this PC while another agent was building, so
