@@ -525,8 +525,10 @@ def fig_closed_form() -> None:
     ax.text(q[0] + 0.05, 0.45, "$r_0$", fontsize=8, color=INK2)
     ax.text(1.5, -0.62, "$L_e = \\int_0^\\ell dt/r = \\ln\\dfrac{a+b+\\ell}{a+b-\\ell}$", ha="center",
             fontsize=9)
-    ax.text(1.5, -1.05, "near the edge: $a+b-\\ell = \\dfrac{r_0^2}{a-\\ell_1}+\\dfrac{r_0^2}{b+\\ell_2}$",
-            ha="center", fontsize=8)
+    # Written inline, not as \dfrac: the subscripts of a fraction's denominator are unreadable at
+    # print size (referee, draft 4).
+    ax.text(1.5, -1.05, "near the edge: $a+b-\\ell = r_0^2/(a-\\ell_1)+r_0^2/(b+\\ell_2)$",
+            ha="center", fontsize=9.5)
     ax.set_xlim(-0.3, 3.3)
     ax.set_ylim(-1.3, 1.6)
     ax.set_title("(b) an edge: the logarithm $L_e$", fontsize=8)
