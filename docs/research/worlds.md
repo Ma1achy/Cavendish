@@ -4,7 +4,11 @@ Research note for **S24 "Worlds"** (the core), **S26 "Worlds: the Earth"** (open
 planet-ready parts of **S25** (the engine core), 28 Nov 2026. It cites S4's chunks and region files
 ([S4](../slices/S4.md) §2), S5's world octree, walk, ledger and bases ([S5](../slices/S5.md) §2;
 [s5-world-octree.md](s5-world-octree.md), here [O]), and S6-07's density functions
-(`plan/tasks.yaml`; its note `s6-density-and-skinning.md` has not landed).
+([s6-density-and-skinning.md](s6-density-and-skinning.md), merged while this note was written). That
+note agrees on the two points this one builds on: value and improved Perlin noise are polynomials
+inside each lattice cell (degree ≤ 6 per axis), so Gauss–Legendre on cells split at the lattice planes
+gives their moments exactly; and noise is deterministic with integer hashing and `+ − × floor` only.
+§3 adds the constraint that makes a *coarse* node's moments exact without visiting the fine cells.
 
 Markers: **[R]** primary text read (by me or by a research agent whose page and section are given);
 **[S]** abstract or secondary source only; **[M]** measured here (scripts in [`worlds/`](worlds/));
