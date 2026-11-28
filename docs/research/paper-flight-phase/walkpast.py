@@ -2,6 +2,8 @@
 
     python walkpast.py map               # map.json: point-mass passes over speed × distance (C4)
     python walkpast.py bodies [names]    # walkpast-<name>.json: Spot, the CAD part, the bunny, 3 poses
+    python walkpast.py pose <name> <i>   # one pose into walkpast-<name>-pose<i>.json; then
+    python walkpast.py merge <name>      # folds the three into walkpast-<name>.json
     python walkpast.py effheight [names] # adds the read at the arms' effective height to those jsons
     python walkpast.py plot              # walkpast.pdf/.png, map.pdf/.png, walkpast.md
 
@@ -143,6 +145,40 @@ def bodies(names: list[str]) -> None:
         (HERE / f"walkpast-{name}.json").write_text(json.dumps(res))
 
 
+def one_pose(name: str, index: int) -> None:
+    """One pose of one body into walkpast-<name>-pose<index>.json (to run poses in parallel);
+    `merge` folds them into walkpast-<name>.json."""
+    mesh = L.mesh_by_name(name)
+    vol, cen, _, _ = L.body_moments(mesh.tris)
+    tris = mesh.tris - cen[None, None, :]
+    path = F.straight(np.array([OFFSET, 0.0, 0.0]), np.array([0.0, SPEED, 0.0]))
+    times = TIMES_FOR.get(name, TIMES)
+    pose, rot = list(POSES.items())[index]
+    pot, fld = _mesh_sources(tris, rot, path)
+    fl, fr, le = _three_reads(pot, fld, times)
+    out = {"t": times.tolist(), "mass_kg": L.RHO * vol, "triangles": len(mesh.faces), "pose": pose,
+           "reads": {"flight": fl.tolist(), "frozen": fr.tolist(), "leading": le.tolist()}}
+    (HERE / f"walkpast-{name}-pose{index}.json").write_text(json.dumps(out))
+    print(f"{name} {pose}: peak flight {np.abs(fl).max():.4f}, frozen {np.abs(fr).max():.4f}, "
+          f"leading {np.abs(le).max():.4f} rad", flush = True)
+
+
+def merge(name: str) -> None:
+    """walkpast-<name>.json from its per-pose files (and the point mass, computed here)."""
+    parts = [json.loads((HERE / f"walkpast-{name}-pose{i}.json").read_text(encoding = "utf-8"))
+             for i in range(len(POSES))]
+    times = np.array(parts[0]["t"])
+    res: dict[str, object] = {"t": parts[0]["t"], "mass_kg": parts[0]["mass_kg"],
+                              "triangles": parts[0]["triangles"], "poses": {p["pose"]: p["reads"] for p in parts}}
+    path = F.straight(np.array([OFFSET, 0.0, 0.0]), np.array([0.0, SPEED, 0.0]))
+    pot, fld = F.point_potential(parts[0]["mass_kg"], path), F.point_field(parts[0]["mass_kg"], path)
+    fl, fr, le = _three_reads(pot, fld, times)
+    res["poses"]["point mass"] = {"flight": fl.tolist(), "frozen": fr.tolist(), "leading": le.tolist()}
+    (HERE / f"walkpast-{name}.json").write_text(json.dumps(res))
+    for i in range(len(POSES)):
+        (HERE / f"walkpast-{name}-pose{i}.json").unlink()
+
+
 def effheight(names: list[str]) -> None:
     """Adds `leading_eff` to each walkpast-<name>.json: the paper's read at the arms' effective
     height (flight.effective_height), cheap (two points per shot)."""
@@ -238,9 +274,10 @@ def plot_map(md: list[str]) -> None:
         c = ax.contour(v, d, err, levels = [0.01, 0.1], colors = [S.ORANGE, S.VERMILION], linewidths = 1.2)
         ax.clabel(c, fmt = {0.01: "1 %", 0.1: "10 %"}, fontsize = 6.5)
         vv = np.geomspace(v.min(), v.max(), 50)
-        ax.plot(vv, vv * 0.73, color = S.SKY, lw = 0.8, ls = "--")  # d = vT
+        ax.plot(vv, vv * 0.73, color = S.SKY, lw = 0.8, ls = "--", label = "d = vT")
         ax.set_xscale("log")
         ax.set_yscale("log")
+        ax.set_ylim(d.min(), d.max())
         ax.set_xlabel("speed (m/s)")
         ax.set_title(f"point source {'level with the lower launch' if z == '0' else 'at mid-tower (5 m)'}",
                      fontsize = 8)
@@ -275,6 +312,10 @@ if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "map":
         point_map()
+    elif cmd == "pose":
+        one_pose(sys.argv[2], int(sys.argv[3]))
+    elif cmd == "merge":
+        merge(sys.argv[2])
     elif cmd == "effheight":
         effheight(sys.argv[2:] or BODIES)
     elif cmd == "bodies":

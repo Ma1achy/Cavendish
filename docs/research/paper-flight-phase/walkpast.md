@@ -8,6 +8,10 @@
 | bracket | leading_eff | 4.0181 / 3.9479 / 4.1114 | 3.9562 | 1.706e-01 | 4.1 % |
 | bracket | frozen | 3.4717 / 3.3655 / 3.4938 | 3.3563 | 1.719e-01 | 4.9 % |
 | bracket | flight | 3.2827 / 3.1963 / 3.2994 | 3.1835 | 1.444e-01 | 4.4 % |
+| bunny | leading | 4.9955 / 5.5083 / 5.5304 | 5.5358 | 5.468e-01 | 9.9 % |
+| bunny | leading_eff | 11.5583 / 11.4714 / 11.6641 | 11.5957 | 1.944e-01 | 1.7 % |
+| bunny | frozen | 9.9351 / 9.6719 / 9.9958 | 9.8374 | 3.401e-01 | 3.4 % |
+| bunny | flight | 9.4068 / 9.1925 / 9.4688 | 9.3308 | 2.890e-01 | 3.1 % |
 
 Point-mass passes: speed at which the temporal error (max over the pass, over the peak) reaches 1 % and 10 %, by closest approach (z = 0 / z = 5 m).
 

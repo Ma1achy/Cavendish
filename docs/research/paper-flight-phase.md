@@ -19,9 +19,20 @@ Every number below comes from one of those scripts and its JSON.
   the leading term of anything at those distances. For Spot walking past at 2 m:
   - the instrument reads **+6.5 rad**, where the paper's read gives **−4.0 rad**;
   - the time-averaging effect the referee asked about is a **−5 %** correction on top of that.
-- **The pose difference shrinks.** The "4–18 % between poses" (Table 7) becomes **4.2–4.4 %** for
-  Spot and the CAD part. The 18 % was an artefact of reading g_z at the launch point, level with the
-  body. The pose effect itself is real, at about 0.3 rad, far above the noise.
+- **The pose difference shrinks.** The "4–18 % between poses" (Table 7) becomes **3.1–4.4 %** for
+  Spot, the CAD part and the bunny. The 18 % was an artefact of reading g_z at the launch point,
+  level with the body. The pose effect itself is real, at 0.14–0.29 rad, far above the noise.
+- **The cut-cell error on the moving torus is 9–49 times the paper's (C7 fails).** In the real read
+  the body-frame errors at 1.5 m are:
+
+  | technique | real read | paper's read | ratio |
+  |---|---|---|---|
+  | (c) fill at the centroid | 4.6×10⁻⁴ rad | 4.9×10⁻⁵ rad | 9 |
+  | (d) cut-cell moments | 1.3×10⁻⁵ rad | 2.6×10⁻⁷ rad | 49 |
+
+  The signal is about the same size (70 rad against −69 rad). The paper's read put the lower point
+  on the torus's mirror plane, where every error term's g_z nearly vanishes. Time-averaging changes
+  these errors by only 2–12 %.
 - **Transfer function.** For a slow, uniform gradient the transfer function is the textbook
   sinc²(πfT) (Cheinet et al. 2008):
   - down 1 % at 0.076 Hz, 10 % at 0.24 Hz and half at 0.61 Hz;
@@ -42,6 +53,21 @@ Every number below comes from one of those scripts and its JSON.
   integral, which is `cav run` or `flight.py`. Only that read can be validated against a known answer
   (C1). Do not apply a transfer function to the paper's instantaneous numbers: at the paper's
   distances the result would still be wrong in sign.
+
+**The criteria, against what was measured** (written before measuring, `CRITERIA.md`):
+
+| criterion | result | where |
+|---|---|---|
+| C1, the Python is `cav` to ≤ 1e-10 rad | **pass** (≤ 1.8×10⁻¹⁵) | §1 |
+| C2, the arms' transfer is sinc² to 1e-9 | **pass** (8.9×10⁻¹⁶) | §2 |
+| C3, far-field response is sinc² to 1 % for f ≤ 2 Hz | **fail as written**: relative difference at the 1.37 Hz null; absolute ≤ 5.8×10⁻³ | §2 |
+| C4, −φ''T²/12 predicts the time error to a factor 1.5 | **fail**: 0.49–1.73 | §3.2 |
+| C5, pose difference within a factor 2 of the paper's | **fail**: 3.2–4.3 times smaller | §3.1 |
+| C6, world-frame line = leading × \|H\| to a factor 2 | **fail**: 2.9 times larger | §3.3 |
+| C7, (d)'s relative error within a factor 2 of the paper's | **fail**: 48 times larger | §3.4 |
+
+None was moved. The failures are the findings: the paper's read is not a good proxy for the real one
+at its distances.
 
 ## 1. What the instrument reads, and what Cavendish computes
 
@@ -183,11 +209,13 @@ at any one time over the peak:
 |---|---|---|---|---|
 | Spot | −3.98 / −4.68 / −4.00 | 6.81 / 7.14 / 6.81 | **6.48 / 6.75 / 6.47** | 18.0 % → **4.2 %** |
 | CAD part (mk7) | −1.94 / −1.90 / −2.31 | 3.47 / 3.37 / 3.49 | **3.28 / 3.20 / 3.30** | 17.9 % → **4.4 %** |
-| bunny | BUNNY_LEAD | BUNNY_FROZEN | **BUNNY_FLIGHT** | BUNNY_SPREAD |
+| bunny | −5.00 / −5.51 / −5.53 | 9.94 / 9.67 / 10.00 | **9.41 / 9.19 / 9.47** | 9.9 % → **3.1 %** |
 
 (The paper prints the leading peaks as magnitudes. Its sign is negative: Fig. 13c–d.)
 
-- **Sign and size.** The real read is positive and 1.6–1.7 times the paper's magnitude. With the body
+The bunny was read every 0.2 s over ±5 s, the others every 0.1 s over ±6 s.
+
+- **Sign and size.** The real read is positive and 1.6–1.9 times the paper's magnitude. With the body
   level with the lower launch, g_z(0) ≈ 0. The lower interferometer's arms, however, span 0–5 m:
   - its lower arm stays near the body;
   - its upper arm climbs away from it;
@@ -195,22 +223,23 @@ at any one time over the peak:
 
   At this distance the arms do not sample a gradient at all.
 - **Time (the referee's S2).** Flight against frozen is −5 % at the peak (0.944–0.951 of the frozen
-  peak on every pose and the point mass). The largest temporal error over the pass is 4.9 % (Spot)
-  and 5.5 % (CAD part) of the peak. The real curve is broader: its full width at half maximum is
-  2.6 s, against 2.4 s frozen, at 0.1 s sampling. The leading curve's width (4.8–5.8 s) belongs to a
+  peak on every pose and the point mass, for all three bodies). The largest temporal error over the
+  pass is 4.9 % (Spot), 5.5 % (CAD part) and 5.3 % (bunny) of the peak. The real curve is broader:
+  for Spot and the CAD part its full width at half maximum is 2.6 s, against 2.4 s frozen, at 0.1 s
+  sampling. The leading curve's width (4.8–5.8 s) belongs to a
   different function, g_z at 5 m.
 - **C5 fails.** The criterion was "pose difference within a factor 2 of the paper's"; it is a factor
-  4. The "4–18 %" becomes 4.2–4.4 % (BUNNY_SPREAD for the bunny).
+  3.2–4.3. The "4–18 %" becomes 3.1–4.4 % on these three bodies; the bunny goes from 9.9 % to 3.1 %.
   - The paper's largest differences, 18 % for Spot and the CAD part, came from where the leading
     read is taken: g_z at the launch point, level with the body, is close to its zero crossing, so
     it is very sensitive to pose.
-  - What survives: a walker-sized body at 2 m still reads its pose at 0.28 rad (Spot) and 0.14 rad
-    (CAD part). That is 10³–10⁴ times the 5×10⁻⁵ rad per-shot noise.
+  - What survives: a walker-sized body at 2 m still reads its pose at 0.28 rad (Spot), 0.29 rad
+    (bunny) and 0.14 rad (CAD part). That is 10³–10⁴ times the 5×10⁻⁵ rad per-shot noise.
 - **A better instantaneous read exists but is not good enough here.** For a potential quadratic in z
   the flight integral equals a gradient read at the arms' Δz-weighted mean height. That height is
   z_eff = 2.17 m above each launch point (`flight.effective_height`).
-  - At z_eff the instant read gives Spot's peak 8.11 rad and the CAD part's 4.02 rad: still +25 %,
-    because the field is not quadratic over 5 m at 2 m distance.
+  - At z_eff the instant read gives peaks of 8.11 rad (Spot), 4.02 rad (CAD part) and 11.56 rad
+    (bunny): still 22–25 % high, because the field is not quadratic over 5 m at 2 m distance.
   - For a static point source ([`spatial.py`](paper-flight-phase/spatial.py),
     [`spatial.json`](paper-flight-phase/spatial.json)), compared with the frozen read:
 
@@ -312,7 +341,38 @@ Largest envelope over the track, in rad:
 
 ### 3.4 Cut-cell moments on a moving body (C7)
 
-TORUS_BODY
+The paper's torus pass ([`torus.py body`](paper-flight-phase/torus.py),
+[`torus-body.json`](paper-flight-phase/torus-body.json)):
+- h = 0.1 m, body-frame voxels;
+- 1 m/s, positions every 0.25 m over ±4 m;
+- 2204 cut cells, whose exact pieces have 85 904 triangles.
+
+The errors are against the exact clipped pieces. Every read is linear, so each part (mesh, pieces,
+points, quadrupoles) is read once and the techniques are sums of parts. Largest over the pass:
+
+| read | signal | (c) error | (d) error | (c)/signal | (d)/signal |
+|---|---|---|---|---|---|
+| leading (paper) | −68.9 rad | 4.9×10⁻⁵ | 2.6×10⁻⁷ | 7.0×10⁻⁷ | 3.8×10⁻⁹ |
+| frozen | 71.5 | 4.7×10⁻⁴ | 1.5×10⁻⁵ | 6.5×10⁻⁶ | 2.0×10⁻⁷ |
+| **flight (real)** | **70.3** | **4.6×10⁻⁴** | **1.3×10⁻⁵** | 6.5×10⁻⁶ | 1.8×10⁻⁷ |
+
+- **The leading row reproduces the paper.** Its (d) maximum is 2.6×10⁻⁷ rad, against the paper's
+  2.8×10⁻⁷ "in either frame".
+- **The quadrature is converged.** At the peak (x = 0) the frozen (d) error is unchanged to 1×10⁻⁸
+  relative from the engine's rule (order 6, panels of 0.1 s) to order 12 with panels of 0.025 s
+  ([`torus_qcheck.py`](paper-flight-phase/torus_qcheck.py), [`torus-qcheck.json`](paper-flight-phase/torus-qcheck.json)).
+- **C7 fails.** The criterion was "relative error within a factor 2 of the paper's". The real read's
+  relative error is 9 times the paper's for (c) and 48 times for (d).
+- **Why.** The torus is symmetric about its mid-plane, z = 0, which is the lower launch height. On
+  that plane g_z vanishes for the body and nearly for every cell's error. The paper's read therefore
+  sees only the upper point, 5 m up. The lower interferometer's arms instead sweep 0–5 m, 1.5 m from
+  the surface, where the cut cells' residual higher moments are strongest.
+- **Time is the small part.** Flight against frozen changes the errors by 2 % for (c) and 12 % for
+  (d) at the peak.
+- **What carries over.** The ranking (d) ≪ (c), by 36 times in the real read against 190 times in the
+  paper's read, and the smoothness of body-frame errors. The figure of a few 10⁻⁷ rad at 1.5 m for
+  (d) does not carry over: on this body it is 1.3×10⁻⁵ rad.
+- **Not checked.** Whether the measured *orders* in h survive was not tested: one pitch only.
 
 ## 4. Where the instantaneous approximation holds, in one place
 
@@ -332,9 +392,13 @@ column is from `spatial.json`, for a static point source. Read at the arms' effe
 1. **§1, eq. 1 and the leading-order sentence.** Say that k_eff T² Δg_z is the limit for a potential
    quadratic over the arms (0–10 m here), and that the arms separate by v_kick T = 4.8 m. Within
    ~10 m of the tower, and certainly at 1.5–2 m, the gradiometer does not read a gradient. The
-   paper's measured *error orders* in h are properties of the representation and should carry over
-   (C7 tests this on the torus). The *phase values* at 1.5 m do not, and §9's "the prefactors
-   slightly do" is wrong: the prefactor is 1.6–1.7 and of opposite sign at 2 m.
+   paper's error *ranking* carries over. Its error *sizes* at 1.5 m do not, and neither do its phase
+   values:
+   - the torus's (d) error is 1.3×10⁻⁵ rad, not 2.8×10⁻⁷ rad (§3.4);
+   - the walk-past signals are 1.6–1.9 times larger and of opposite sign.
+
+   §9's "the orders do not depend on this, the prefactors slightly do" is wrong on the prefactors and
+   untested on the orders.
 2. **Orientation and motion, Fig. 12.** Replace "10 Hz per m s⁻¹" amplitudes with the flight read:
    - at 1 m/s the (c) line at 1/h is 1.9×10⁻⁹ rad, not 3.6×10⁻⁷ rad;
    - (d)'s line is estimated at ~5×10⁻¹¹ rad;
@@ -344,22 +408,29 @@ column is from `spatial.json`, for a static point source. Read at the arms' effe
 
    Keep the conclusion: body-frame storage has no lines.
 3. **Walking past, Table 7, Fig. 13c–d.** Replace the peaks with the flight read and the pose
-   difference with 4.2–4.4 % (BUNNY_SPREAD_SHORT). Keep "a gradiometer that sees a walker-sized body
-   at 2 m sees its shape", now as a 0.14–0.28 rad pose effect. Add that time-averaging over the shot
+   difference with 3.1–4.4 %. Keep "a gradiometer that sees a walker-sized body
+   at 2 m sees its shape", now as a 0.14–0.29 rad pose effect. Add that time-averaging over the shot
    lowers the peak by 5 % and widens it from 2.4 s to 2.6 s (FWHM).
 4. **A sentence on when the instant read holds:** vT/d ≲ 0.2 for 1 %, ≲ 0.8 for 10 %, and
    |H(f)| = k_eff T² Δr sinc²(πfT) for a uniform gradient (Cheinet et al. 2008).
 5. **S13.** Give per-shot noise: 10⁻⁴ rad/√Hz at a 2 s cycle is 5×10⁻⁵ rad per shot
    (`gradiometer-environment.md` §0). The 0.1-rad error then compares with it as 2000 times, not
    "three orders above a spectral density".
-6. **Table 8's caption.** Say that its measured rows are leading-order and static, as the referee
+6. **§5 and Table 8: rerun at 1.5 m with the flight read before quoting sizes.** The (d) row
+   "a few 10⁻⁷ rad" is a launch-point number. On the torus the real (d) error is 50 times larger
+   (§3.4).
+7. **Table 8's caption.** Say that its measured rows are leading-order and static, as the referee
    asks.
 
 **Proposed replacement figure:** [`flight-phase.pdf`](paper-flight-phase/flight-phase.pdf)
 (paper style, Okabe–Ito):
-- (a) where the instant read is within 1 % / 10 % in speed × distance, with walker, lift and car;
-- (b) Spot walking past in three poses, flight read against the paper's;
-- (c) the torus's world-fixed lines against frequency, leading against flight, with sinc².
+- (a) where the instant read is within 1 % / 10 % in speed × distance (solid: source level with the
+  lower launch; dashed: mid-tower), with a walker, a 2.5 m/s pass at 10 m and a car;
+- (b) Spot walking past in three poses, flight read (solid) against the paper's (dotted);
+- (c) the torus's body-frame (c) and (d) errors over the pass, flight against leading;
+- (d) the torus's world-fixed lines against frequency, leading against flight, with sinc².
+
+It replaces Fig. 12 and Fig. 13c–d.
 
 **Proposed replacement table:** the §3.1 table (leading / frozen / flight peaks and pose
 difference), with a column for the arms' effective-height read if the paper wants to show why the

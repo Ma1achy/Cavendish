@@ -5,7 +5,8 @@
 
 (a) where the instantaneous read is within 1 % and 10 % (point-mass passes, temporal error only);
 (b) Spot walking past at 1.4 m/s, 2 m: the real phase (flight) against the paper's leading read;
-(c) the world-fixed torus lines: leading against flight, with the textbook sinc² envelope.
+(c) the torus's body-frame (c) and (d) errors over the pass, leading against flight;
+(d) the world-fixed torus lines: leading against flight, with the textbook sinc² envelope.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ HERE = Path(__file__).resolve().parent
 
 def main() -> None:
     S.apply()
-    fig, (a, b, c) = plt.subplots(1, 3, figsize = (6.8, 2.35))
+    fig, ((a, b), (tp, c)) = plt.subplots(2, 2, figsize = (6.8, 4.8))
     m = json.loads((HERE / "map.json").read_text(encoding = "utf-8"))
     v, d = np.array(m["speeds_m_s"]), np.array(m["distances_m"])
     for z, ls in (("0", "-"), ("5", "--")):
@@ -32,7 +33,7 @@ def main() -> None:
                        linewidths = 1.1)
         if z == "0":
             a.clabel(cs, fmt = {0.01: "1 %", 0.1: "10 %"}, fontsize = 6.5)
-    for (vv, dd, lab) in ((1.4, 2.0, "walker"), (2.5, 10.0, "lift"), (10.0, 10.0, "car")):
+    for (vv, dd, lab) in ((1.4, 2.0, "walker"), (2.5, 10.0, "2.5 m/s"), (10.0, 10.0, "car")):
         a.plot([vv], [dd], marker = "o", color = S.BLUE, ms = 3)
         a.annotate(lab, (vv, dd), textcoords = "offset points", xytext = (3, 3), fontsize = 6.5, color = S.BLUE)
     a.set_xscale("log")
@@ -68,8 +69,20 @@ def main() -> None:
         c.loglog(ff, lead1 * np.sinc(ff * 0.73) ** 2, color = S.INK2, lw = 0.6, ls = ":", label = r"$\times$sinc$^2(\pi fT)$")
         c.set_xlabel("line frequency kv/h (Hz)")
         c.set_ylabel("line amplitude (rad)")
-        c.set_title("(c) torus lines, world voxels", fontsize = 8)
         c.legend(fontsize = 5.5, loc = "lower left")
+    body = HERE / "torus-body.json"
+    if body.exists():
+        r = json.loads(body.read_text(encoding = "utf-8"))
+        x = np.array(r["x"])
+        for kind, colour in (("c", S.GREEN), ("d", S.VERMILION)):
+            for read, ls in (("leading", ":"), ("flight", "-")):
+                tp.semilogy(x, np.maximum(np.abs(r[kind][read]), 1e-14), color = colour, ls = ls, lw = 1.0,
+                           label = f"({kind}) {read}")
+        tp.set_xlabel("torus centre along the track (m), 1 m/s")
+        tp.set_ylabel("|phase error| (rad)")
+        tp.set_title("(c) torus, body-frame voxels, h = 0.1 m", fontsize = 8)
+        tp.legend(fontsize = 6, ncol = 2, loc = "lower center")
+    c.set_title("(d) torus lines, world-fixed voxels, (c)", fontsize = 8)
     fig.tight_layout()
     fig.savefig(HERE / "flight-phase.pdf")
     fig.savefig(HERE / "flight-phase.png", dpi = 200)
