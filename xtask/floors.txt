@@ -44,7 +44,9 @@
 # validation_slow_cut_cell_orders).
 # TASK-S5-10 (Pieces): 2 new quick tests (cav-core: every cut cell exact is the body, a cell's
 # solids weigh its piece); 1 new slow test (cav-core: C6, slow_the_sphere_anomaly_with_random_placements).
-quick 753
+# TASK-S5-22 (the local expansion): 5 new quick tests (cav-sim: W6 and its two validation cases,
+# the series reads what it interpolates, a point off the line is read directly).
+quick 758
 gpu 42
 slow 56
 oracle 58

@@ -1023,7 +1023,8 @@ fn world_contribution(
         let count = shots.count(at);
         let (lower, upper) = (read.audited.reading.lower, read.audited.reading.upper);
         let ledger = read.ledger[0] + read.ledger[1];
-        let estimate = read.audited.estimate.unwrap_or(0.0) + ledger;
+        // The local expansion's audit (radians) joins the ledger in the estimate.
+        let estimate = read.audited.estimate.unwrap_or(0.0) + ledger + read.local.audit;
         out.estimates[at] = estimate;
         out.estimate = out.estimate.max(estimate);
         if !read.audited.settled {

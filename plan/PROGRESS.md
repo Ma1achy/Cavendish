@@ -35,6 +35,14 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**For the owner: A2, the Platonic solids' fall-off (TASK-S5-06, branch local at 208e55e, not
+pushed: the pre-push `quick` fails on it).** Four solids pass (cube −6.960, octahedron −6.962,
+dodecahedron −8.932, icosahedron −8.937) and the control (squashed cube, −5); the tetrahedron gives
+−6.961 against −6 ± 0.2: its octupole is odd in height about its centre, so at the solid's own height
+a vertical gradiometer does not see it. At a fixed elevation of 30° all five pass (tetrahedron
+−5.882). Choose: (a) restate A2 at a fixed 30° elevation, tolerance unchanged; (b) keep 5 m and give
+the tetrahedron `l + 4`, the reason written; (c) as written, failing and known.
+
 **For the owner: C3, `Pieces` against `Exact` (TASK-S5-26, PR open, not merged; `docs/slices/S5.md`
 §7.7).** Written before measuring: an icosahedron at 1/16 m, the tower's line within a cell of it,
 read as `Pieces` (the exact piece within 3 cells of an arm, `Second` beyond), within 1e-11 relative
@@ -953,6 +961,8 @@ mutation). Left, all minor:
   `surface()` in two test files; a mesh file is resolved against the working directory.
 
 ## Questions for the owner
+- **A2 (TASK-S5-06, 28 Nov 2026):** the tetrahedron's fall-off at the solid's own height is −6.961
+  against −6 ± 0.2; options (a), (b), (c) in "S5 under way" above.
 - **C3 (TASK-S5-26, 28 Nov 2026):** `Pieces` within 3 cells of an arm and `Second` beyond reads
   1.34e-6 relative against `Exact`, criterion 1e-11; every cell exact reads 3.3e-15. Options (a),
   (b), (c) and the measurements by reach are in "S5 under way" above and `docs/slices/S5.md` §7.7.

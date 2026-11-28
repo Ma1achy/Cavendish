@@ -12,7 +12,7 @@ use cav_core::forward::Reading;
 
 /// The small terrain world of the octree's tests: 96 × 80 m of rolling ground at 0.45 m (chunks
 /// of 14.4 m) with a building, 84 chunks in three levels, its pitch and origin not dyadic.
-fn terrain_world() -> WorldSpec {
+pub(crate) fn terrain_world() -> WorldSpec {
     WorldSpec {
         pitch: 0.45,
         supersample: 2,
@@ -48,16 +48,16 @@ fn terrain_world() -> WorldSpec {
 }
 
 /// A scene, its world and its octree.
-struct Case {
-    name: &'static str,
-    spec: SceneSpec,
-    world: World,
-    tree: Octree,
+pub(crate) struct Case {
+    pub(crate) name: &'static str,
+    pub(crate) spec: SceneSpec,
+    pub(crate) world: World,
+    pub(crate) tree: Octree,
     /// Tower bases to read from, metres.
-    bases: Vec<Vec3>,
+    pub(crate) bases: Vec<Vec3>,
 }
 
-fn case(name: &'static str, spec: SceneSpec, bases: Vec<[f64; 3]>) -> Case {
+pub(crate) fn case(name: &'static str, spec: SceneSpec, bases: Vec<[f64; 3]>) -> Case {
     let world = World::new(spec.world.as_ref().expect("a world"));
     let tree = Octree::build(&world, &|| false).unwrap().unwrap();
     Case { name, spec, world, tree, bases: bases.into_iter().map(Vec3::from_array).collect() }
@@ -65,7 +65,7 @@ fn case(name: &'static str, spec: SceneSpec, bases: Vec<[f64; 3]>) -> Case {
 
 /// `world-box` (a box over four chunks, one level) at eight bases: in the open, beside a wall, on
 /// the roof, under it, and from 40 to 200 m off, where the walk accepts its chunks.
-fn world_box() -> Case {
+pub(crate) fn world_box() -> Case {
     let bases = vec![
         [0.0, 0.0, 0.0],
         [5.5, 7.0, 0.0],
@@ -83,7 +83,7 @@ fn world_box() -> Case {
 /// the building's wall, on its roof, and from 100 to 400 m off and above, where the walk accepts
 /// nodes of every level (its chunks are 14.4 m: nearer, every bound is far above any tolerance
 /// and everything is opened).
-fn terrain() -> Case {
+pub(crate) fn terrain() -> Case {
     let bases = vec![
         [0.0, 0.0, 1.2],
         [9.6, 8.5, 1.2],
@@ -338,7 +338,7 @@ struct Ledgers {
 
 /// The town's eight bases: the yard by the array, beside a wall, between two buildings, on a
 /// roof, on the road, by a building's corner, at the world's edge and beyond it.
-const TOWN_BASES: [[f64; 3]; 8] = [
+pub(crate) const TOWN_BASES: [[f64; 3]; 8] = [
     [0.0, 0.0, 0.0],
     [-59.5, -55.0, 0.0],
     [75.0, 10.0, 0.0],
@@ -538,7 +538,9 @@ fn town_s_walk_measured() {
         for (n, tower) in spec.array.towers.iter().enumerate().take(1) {
             let base = Vec3::from_array(tower.position);
             let reader = readers.of(n);
-            let mut probe = aim(&spec, n, base, tolerance, Rule::Octupole);
+            // As `read_world` aims it: the walk takes what the local expansion leaves of τ.
+            let mut probe =
+                aim(&spec, n, base, (1.0 - crate::world::local::LOCAL_SHARE) * tolerance, Rule::Octupole);
             probe.bubble = world_spec.read.radius;
             probe.max_work = crate::world::max_work(reader, share);
             let start = std::time::Instant::now();
@@ -549,29 +551,20 @@ fn town_s_walk_measured() {
             let made = crate::world::open(&w, &cut.opened, &|| false).unwrap().unwrap();
             let making = start.elapsed().as_secs_f64();
             let start = std::time::Instant::now();
-            let read = crate::world::read_tower(
-                &tree,
-                &made,
-                reader,
-                base,
-                0.0,
-                tolerance,
-                cut,
-                Rule::Octupole,
-                share,
-            )
-            .unwrap();
+            let read =
+                crate::world::read_tower(&tree, &made, reader, &probe, 0.0, tolerance, cut, share).unwrap();
             let reading = start.elapsed().as_secs_f64();
             println!(
                 "{tolerance:.0e} {}: {per_level:?} accepted, {opened} opened, settled {settled}; walk {:.1} ms, \
-                 chunks made {:.0} ms, read {:.0} ms ({} nodes); ledger {:.2e}, estimate {:.2e}",
+                 chunks made {:.0} ms, read {:.0} ms ({} nodes); ledger {:.2e}, estimate {:.2e}; local {:?}",
                 tower.label,
                 1e3 * walked,
                 1e3 * making,
                 1e3 * reading,
                 read.audited.nodes,
                 read.ledger[0] + read.ledger[1],
-                read.audited.estimate.unwrap_or(0.0)
+                read.audited.estimate.unwrap_or(0.0),
+                read.local
             );
         }
     }

@@ -449,8 +449,9 @@ pub type Cube = (Vec3, f64, f64);
 pub struct WorldSource {
     /// The opened chunks' leaves.
     pub cubes: Vec<Cube>,
-    /// The accepted nodes, read through their expansion ([`walk::far_field`]).
-    pub far: walk::Far,
+    /// The accepted nodes: near ones directly, the rest through the tower's local expansion
+    /// ([`local::Local`]).
+    pub far: local::Local,
 }
 
 /// Leaves a [`WorldSource`] sums on one thread: past this, its leaves are summed in blocks of
@@ -584,6 +585,9 @@ pub struct TowerRead {
     pub ledger: [f64; 2],
     /// The tower's cut.
     pub cut: walk::Cut,
+    /// What the local expansion of its far field found: its degree, its nodes, its audit
+    /// (radians, added to the read's estimate beside the ledger).
+    pub local: local::LocalAudit,
 }
 
 /// The most work one flight node of `reader` may do for one point pair, from the read's share of
@@ -594,11 +598,12 @@ pub fn max_work(reader: &Reader, share: u64) -> u64 {
     share.checked_div(4 * reader.instrument().node_count(&[])).unwrap_or(u64::MAX)
 }
 
-/// Reads the world at the tower whose base is `base` and whose height is `height`, with
+/// Reads the world at the tower `aim` describes (its base, height and flight's scale), with
 /// `reader`, at `readout`: the leaves of `cut`'s opened chunks (from `opened`, which holds at
-/// least those, sorted by key) with the exact kernel, and its accepted nodes by `rule`; the
-/// quadrature audited to the larger of the phase tolerance and `tolerance` (radians), within
-/// `share` cube evaluations in all.
+/// least those, sorted by key) with the exact kernel, and its accepted nodes by `aim.rule`, the
+/// far ones through the tower's local expansion ([`local::Local::gather`], its audit within
+/// [`local::LOCAL_SHARE`] of `tolerance`); the quadrature audited to the larger of the phase
+/// tolerance and `tolerance` (radians, the world's), within `share` cube evaluations in all.
 ///
 /// # Errors
 /// When even the first rule of the read would pass `share`, with the numbers; or a chunk the cut
@@ -608,11 +613,10 @@ pub fn read_tower(
     octree: &Octree,
     opened: &[(ChunkKey, Vec<Cube>)],
     reader: &Reader,
-    base: Vec3,
+    aim: &walk::Aim,
     readout: f64,
     tolerance: f64,
     cut: walk::Cut,
-    rule: walk::Rule,
     share: u64,
 ) -> Result<TowerRead, String> {
     let mut cubes = Vec::with_capacity(usize::try_from(cut.leaves).unwrap_or(0));
@@ -622,31 +626,41 @@ pub fn read_tower(
             .map_err(|_| format!("chunk {:?} was opened but not made", key.to_array()))?;
         cubes.extend_from_slice(&opened[at].1);
     }
-    let source = WorldSource { cubes, far: walk::far_field(octree, &cut, rule) };
-    // Each flight node evaluates every cube, or an accepted node (counted as four cubes), at two
-    // points for each of two interferometers.
-    let per_node = 4 * (source.cubes.len() as u64 + 4 * source.far.nodes.len() as u64);
+    let rule = aim.rule;
+    let nodes = walk::far_field(octree, &cut, rule).nodes;
+    let along = local::Along {
+        base: aim.base,
+        height: aim.height,
+        per: aim.per,
+        share: local::LOCAL_SHARE * tolerance,
+        most: local::MAX_LOCAL_DEGREE,
+        forced: None,
+    };
+    let source = WorldSource { cubes, far: local::Local::gather(&nodes, rule, &along) };
+    // Each flight node evaluates every cube, and the far field (an accepted node read directly
+    // counted as four cubes, the series by its terms), at two points for each of two
+    // interferometers.
+    let per_node = 4 * (source.cubes.len() as u64 + source.far.work());
     let first = reader.instrument().node_count(&[]);
     if per_node > 0 && first * per_node > share {
         return Err(format!(
-            "{} cubes and {} nodes by their moments × {first} flight nodes is more than the {share} evaluations \
-             one read of the world may make; use a smaller world.read.radius, a coarser pitch or a larger \
-             world.read.tolerance",
+            "{} cubes and {} nodes by their moments × {first} flight nodes is more than the {share} evaluations              one read of the world may make; use a smaller world.read.radius, a coarser pitch or a larger              world.read.tolerance",
             source.cubes.len(),
-            source.far.nodes.len()
+            nodes.len()
         ));
     }
     let max_nodes = share.checked_div(per_node).unwrap_or(u64::MAX);
     // The quadrature is audited to the world's own budget when it is looser than the phase
     // tolerance: a scene that asks for its world within 1e-3 rad does not pay for 1e-10.
-    let audited = reader.read_to_within(base, &source, readout, PHASE_TOLERANCE.max(tolerance), max_nodes);
-    let ledger = if source.far.nodes.is_empty() {
+    let audited =
+        reader.read_to_within(aim.base, &source, readout, PHASE_TOLERANCE.max(tolerance), max_nodes);
+    let ledger = if nodes.is_empty() {
         [0.0; 2]
     } else {
-        let b = reader.read(base, &walk::LedgerSource { nodes: &source.far.nodes, rule }, readout);
+        let b = reader.read(aim.base, &walk::LedgerSource { nodes: &nodes, rule }, readout);
         [b.lower.abs(), b.upper.abs()]
     };
-    Ok(TowerRead { audited, ledger, cut })
+    Ok(TowerRead { audited, ledger, cut, local: source.far.found })
 }
 
 /// The whole world read at every tower of `spec`: the octree ([`Octree::build`]), each tower's walk
@@ -667,6 +681,7 @@ pub fn read_world(
     let Some(octree) = Octree::build(&world, cancelled)? else { return Ok(None) };
     let share = work_share(spec);
     let mut cuts = Vec::with_capacity(spec.array.towers.len());
+    let mut aims = Vec::with_capacity(spec.array.towers.len());
     for (at, tower) in spec.array.towers.iter().enumerate() {
         if cancelled() {
             return Ok(None);
@@ -677,34 +692,33 @@ pub fn read_world(
             base,
             height: spec.array.instrument_of(at).tower_height,
             per: radians_per_kg_m(reader, base, readouts[at]),
-            tolerance: world_spec.read.tolerance,
+            // The walk's ledger takes what the local expansion's audit leaves of the tolerance.
+            tolerance: (1.0 - local::LOCAL_SHARE) * world_spec.read.tolerance,
             bubble: world_spec.read.radius,
             max_work: max_work(reader, share),
             max_nodes: walk::MAX_CUT_NODES,
             rule: walk::Rule::Octupole,
         };
         cuts.push(walk::walk(&octree, &aim));
+        aims.push(aim);
     }
     let mut keys: Vec<ChunkKey> = cuts.iter().flat_map(|c| c.opened.iter().copied()).collect();
     keys.sort_unstable();
     keys.dedup();
     let Some(opened) = open(&world, &keys, cancelled)? else { return Ok(None) };
     let mut out = Vec::with_capacity(cuts.len());
-    for (at, (tower, cut)) in spec.array.towers.iter().zip(cuts).enumerate() {
+    for (at, (aim, cut)) in aims.iter().zip(cuts).enumerate() {
         if cancelled() {
             return Ok(None);
         }
-        let base = Vec3::from_array(tower.position);
-        let rule = walk::Rule::Octupole;
         let read = read_tower(
             &octree,
             &opened,
             readers.of(at),
-            base,
+            aim,
             readouts[at],
             world_spec.read.tolerance,
             cut,
-            rule,
             share,
         )?;
         out.push(read);
@@ -720,6 +734,7 @@ pub fn work_share(spec: &crate::SceneSpec) -> u64 {
 }
 
 pub mod clipmap;
+pub mod local;
 pub mod octree;
 pub mod walk;
 
