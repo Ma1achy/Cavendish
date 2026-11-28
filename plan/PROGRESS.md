@@ -35,6 +35,29 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**TASK-S5-13, plane and sphere bases (28 Nov 2026; `docs/slices/S5.md` §7.18).** `world.base:
+Patch | Plane | Sphere` (Patch the default, not written: every older scene's bytes unchanged). The
+plane is S1's slab and the planet its layers as one point mass, read beside the departures; a
+chunk's read matter is its pieces' leaves plus their overlap with the base at minus its density,
+merged into signed leaves. B1: an empty plane's gradiometer is exactly 0 (the same slab as a 200 m
+patch: 1,432 rad). B2: a box, a building with a foundation and a ditch of air against their prisms
+≤ 1.1e-13. B3: each interferometer against the layers 9.4e-16; a box above the surface 1.7e-13; a
+box sunk into planets of 400 m to 3.2 km against the plane falls as 1/R (ratios 1.98, 1.96, 2.03).
+The walk on signed masses: error/ledger 0.091, ledger/τ 0.226. Drawn: the plane as the ground, the
+planet as a curved grid; dev scenes `plane` and `planet`; `cargo xtask demo S5` makes their
+pictures. Worth a second look: a plane's piece may reach below the slab (exact by construction;
+the brief forbade it); a planet is one point mass of its layers; the sunk-box series is a slow case
+of its own.
+
+**For the owner: B3's gradiometer (TASK-S5-28, PR open, not merged; §7.18).** Written before
+measuring: an empty planet's channels within 1e-12 relative of its layers read as point masses.
+Each interferometer is (9.4e-16); the gradiometer is 1.35e-12 of itself. It is a thousandth of
+either interferometer (5.5e4 against 5.5e7 rad), so the few ulps in which any two `f64` reads of
+5.5e7 rad differ are 1.35e-12 of it. Choose: (a) judge the gradiometer relative to the
+interferometers' phase (as W2 allows 1e-13 of the phase): 1.4e-15; (b) make the flight sum
+compensated (double-double) so the gradiometer keeps its own digits (changes every reading's last
+bits; `plan/IDEAS.md`); (c) keep it as written, failing and known.
+
 **TASK-S5-21, seams (28 Nov 2026; §7.16).** `seams dither | off`: over a band inside each finer
 ring's edge the coarser level keeps a pixel by a 4×4 ordered dither on the camera's continuous
 distance; the finer is drawn whole under it. SE1: at 50 snaps the bands change by 0.048 of the cut
@@ -1035,6 +1058,9 @@ mutation). Left, all minor:
   `surface()` in two test files; a mesh file is resolved against the working directory.
 
 ## Questions for the owner
+- **B3's gradiometer (TASK-S5-28, 28 Nov 2026):** an empty planet's gradiometer reads 1.35e-12 of
+  itself against its layers (criterion 1e-12); each interferometer 9.4e-16. Options (a), (b), (c)
+  are in "S5 under way" above and `docs/slices/S5.md` §7.18.
 - **L1 at 1e-6 (TASK-S5-27, 28 Nov 2026):** the criterion written first asked for 10× fewer
   leaves at each of 1e-2, 1e-4, 1e-6 rad on the town; measured 52×, 17.6× and **4.8×** (the read
   settles at all three; `docs/slices/S5.md` §7.9). It is a recorded measurement, no test fails.

@@ -1,0 +1,130 @@
+// Dev scene `planet` (REBUILD §9.1), written from its builder in crates/cav-sim/src/dev.rs; a test
+// holds the two together. Frame: metres, x east, y north, z up; seconds; angles in degrees.
+// `cav schema` describes every field.
+(
+    version: 1,
+    name: "planet",
+    description: "The array on the north pole of a planet 20 km in radius: a crust of 4 km, a mantle of 10 km and a core. Hills rise east of the array. The layers read as one point mass at the centre (the shell theorem); the hills as departures from the sphere.",
+    duration: 10.0,
+    array: (
+        instrument: (
+            tower_height: 10.1,
+            ifo_separation: 5.0,
+            half_sequence: 0.73,
+            launch_velocity: 3.86,
+            cycle: 2.0,
+            atom_mass: 1.4431558652473234e-25,
+            gravity: 9.81,
+            kicks: 1000,
+            launch_floor: true,
+            sign: LowerMinusUpper,
+        ),
+        towers: [
+            (
+                label: "tower 1",
+                position: (0.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "tower 2",
+                position: (4.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "tower 3",
+                position: (-4.0, 0.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "tower 4",
+                position: (0.0, 4.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+            (
+                label: "tower 5",
+                position: (0.0, -4.0, 0.0),
+                timing: (
+                    offset: 0.0,
+                ),
+                instrument: None,
+            ),
+        ],
+        schedule: (
+            jitter: None,
+            alternate: None,
+            gaps: None,
+            window: None,
+            loss: 0.0,
+            seed: 0,
+        ),
+    ),
+    room: None,
+    floor: None,
+    bodies: [],
+    world: Some((
+        pitch: 0.25,
+        supersample: 2,
+        origin: (0.0, 0.0, 0.0),
+        materials: [
+            (
+                label: "ground",
+                density: 2700.0,
+                colour: "#8a7458",
+            ),
+        ],
+        pieces: [
+            (
+                label: "hills",
+                material: 0,
+                kind: Terrain(
+                    lo: (12.0, -30.0),
+                    hi: (72.0, 30.0),
+                    bottom: -1.5,
+                    level: 1.5,
+                    relief: 2.5,
+                    wavelength: 40.0,
+                    seed: 5,
+                ),
+            ),
+        ],
+        stream: (
+            tower_radius: 8.0,
+        ),
+        read: (
+            radius: 0.0,
+            tolerance: 1e-6,
+        ),
+        lod: (
+            error_px: 4.0,
+        ),
+        base: Sphere(
+            radius: 20000.0,
+            layers: [
+                (
+                    thickness: 4000.0,
+                    density: 2700.0,
+                ),
+                (
+                    thickness: 10000.0,
+                    density: 4500.0,
+                ),
+                (
+                    thickness: 6000.0,
+                    density: 9000.0,
+                ),
+            ],
+        ),
+    )),
+)
