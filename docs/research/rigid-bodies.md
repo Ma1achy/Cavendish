@@ -25,6 +25,23 @@ scenes judged visually and by wall-clock time, not a numeric benchmark; §6's "d
 stands. Silcowitz et al. 2009 and Tonge's supplement are still missing. The JCP paper's DOI given from memory
 (10.1016/j.jcp.2006.11.020) was wrong; it is 10.1016/j.jcp.2006.11.019 (Papers, below).
 
+**Updated 28 Nov 2026 (third batch)** from three more owner-supplied PDFs, all read whole: **van Zon & Schofield
+2007, *J. Comput. Phys.* 225, 145–164** (the exact free asymmetric top), **Tonge, Benevolenski & Voroshilov 2012,
+the supplement** ("Proofs for 'Mass Splitting for Jitter-Free Parallel Rigid Body Simulation'", 2 pp.), and
+**Silcowitz, Niebe & Erleben 2009**, VRIPHYS (the Fischer–Newton contact solver). §9 7a and 7b are closed and a
+benchmark was added (**B10**, `b10_exact_rotor.py`, `b10.out`). What changed: (i) the exact free-rotation solution
+is now implemented from the JCP paper's §3.3 and §4.2 and agrees with B2's reference to 2.9e-9 rad (the
+reference's own floor) and with the fourth-order splitting at h = 1/240 to 3.5e-11 rad, so the Yoshida row of
+B2's table was limited by the RK4 reference, not by the splitting; (ii) the paper says nothing about the
+separatrix, and B10 finds its algorithm loses accuracy in `f64` as `2E → L²/I₂`: 1.5e-8 rad at 20 s for a
+relative distance of 1e-8, 2.2e-5 rad at 1e-12, while the splitting stays self-consistent to 1e-11 there; (iii)
+the supplement's proofs hold for frictionless contact only and do not touch mass ratios. **No decision moves**:
+the portable 1,2,3,2,1 splitting stays the flight integrator (the exact form needs `sn`, `cn`, `dn`, an
+incomplete elliptic integral, `exp`, `cosh`, `sinh`, `sin`, `cos` and `atan2`, none of them bit-portable, §1.1),
+and the exact solution becomes the free-top *oracle* in the S7 tests, away from the separatrix (§6). B8's
+conclusion on mass splitting stands, and Silcowitz et al. support §7's exact island solve for heavy-on-light
+stacks while warning that their Newton method struggles once friction is large (§6).
+
 **Changed after reading the primary sources (25 Nov 2026).** The owner supplied twelve PDFs the first draft
 could not open (not copied into the repository). Read from the PDF text or page images: McNeely et al. 1999
 (all 8 pages), Tonge et al. 2012 (all 8; the supplement with the convergence proofs is not in the PDF), Macklin
@@ -215,6 +232,38 @@ native-versus-wasm trajectory hash settles it).
   propagator is obtained (Refs. 5 and 8 of van Zon et al.), a flight segment needs no integrator at all for
   attitude, like the quadratic for position, and the splitting becomes the test oracle's opponent rather than the
   implementation; that is the one thing in this section worth a follow-up read.
+  **Read 28 Nov (third batch): the exact propagator.** [van Zon, Schofield 2007](https://doi.org/10.1016/j.jcp.2006.11.019),
+  *J. Comput. Phys.* 225, 145–164. The attitude matrix `A` (lab → body) is `A = P A(0)` with
+  `P = T₁′ T₂′ T₁′ᵀ(0)` (Eq. (3.15)): `T₁′` is built from the body-frame angular momentum `L̃(t)` alone (Eq. (3.13)),
+  `T₂′` is a rotation about z by `ψ`, `ψ̇ = Ω = L(2E − I₃ω̃₃²)/(L² − I₃²ω̃₃²)` (Eq. (3.20)). Spherical top `P = U(−ωt)`
+  (Eq. (3.25)); symmetric top a product of two constant-rate rotations (Eq. (3.31)). Asymmetric top (§3.3): with the
+  "Jacobi ordering" (`I₁ > I₂ > I₃` if `2E > L²/I₂`, else `I₁ < I₂ < I₃`, Eq. (3.32); otherwise relabel axes by the
+  fixed matrix of Eq. (4.10), x ↔ z and y reversed), `ω̃₁ = ω₁ₘ cn`, `ω̃₂ = ω₂ₘ sn`, `ω̃₃ = ω₃ₘ dn` of `(ω_p t + ε | m)`
+  (Eqs. (3.33)–(3.35)), amplitudes, precession rate, parameter `m` and phase `ε` in Eqs. (3.36)–(3.42). The angle is
+  closed: `ψ = A₁ + A₂t − arg ϑ₁(π(ω_p t + ε − iη)/(2K) | m)` (Eq. (3.54)), `ϑ₁` the first Jacobi theta function,
+  evaluated by its `q`-series in real arithmetic (Eqs. (4.3)–(4.4)), `A₁` by Eq. (4.5), `A₂` by a second series
+  (Eqs. (4.8)–(4.9)). §4.2 gives the whole algorithm as pseudo-code, an initialisation (pre-computes `m`, `K`, `K′`,
+  `q`, `η`, `A₁`, `A₂`, the series coefficients) and an evaluation at any `t` (pp. 159–161). Accuracy claimed:
+  "rarely needs more than three or four terms to get to machine precision" (p. 158), "up to machine precision, the
+  results in Fig. 3 are exact" (§5). **Validation in the paper: one example only** (§5, Fig. 3: six unit point
+  masses at ±3, ±2, ±1 on the axes, `I = (10, 20, 26)`, `ω(0) = (1, 15, 1)`), shown as plots with no error numbers,
+  no comparison against an integrator, no cost figure, and **nothing on the separatrix** `2E = L²/I₂`, where
+  `m → 1`, `K → ∞` and `q → 1`. **B10** (`b10_exact_rotor.py`, my port of §4.2 using SciPy's `ellipj`, `ellipkinc`,
+  `ellipk`; criteria written first): on B2's case (`m = 0.998`) it agrees with B2's RK4 reference to **2.9e-9 rad** at
+  20 s (that reference's floor) and with the Yoshida splitting to **3.5e-11** (h = 1/240), **1.6e-12** (1/960) and
+  6.0e-12 rad (1/1920, rounding); over 10⁴ s `|L|` and `E` hold to 1.9e-14 and 3.8e-14 and `‖AAᵀ − 1‖` to 2.7e-14;
+  the residual of `Ȧ + W(ω̃)A` by central difference is 1e-10. The paper's term count `N_T = log ε/log q` is very
+  conservative (33 terms at `q = 0.33`; `q^{n(n+1)}` needs about five). **Towards the separatrix** (relative
+  distance δ of `2E` from `L²/I₂`, 20 s, against Yoshida at h = 1/1920, which agrees with h = 1/3840 to ≤ 4e-11
+  throughout): 3e-12 rad at δ = 1e-2, 4.5e-12 at 1e-4, 4.7e-11 at 1e-6, **1.5e-8 at 1e-8, 2.1e-8 at 1e-10 and
+  2.2e-5 at 1e-12**, where the exact form's own ODE residual has grown to 1.3e-3; so the error is the exact form's
+  (cancellation in `L² − 2EI₁` and in the theta arguments as `K` grows), not the splitting's. Cost: ~50–80 µs per
+  evaluation in Python/NumPy, not indicative of Rust. **Decision:** unchanged for the implementation, the
+  splitting stays (it is portable and the exact form needs a dozen platform transcendentals, see the next item);
+  the exact form joins the S7 tests as the asymmetric-top oracle, used only for δ ≥ 1e-6 (where B10 puts it
+  within 5e-11 rad of a converged splitting). The Celledoni & Säfström 2006 integrator, which "uses the exact
+  solution of the Euler equations but uses an approximate expression for the attitude matrix" (p. 161, their
+  Ref. [12]), is still unread.
   **v2 already has it**: `crates/source/src/integrator.rs` at tag `v2-prototype` ("McLachlan/Reich free-rigid-body
   Strang splitting … order 1,2,3,2,1"), which I read. **B2** (inertia 1, 2, 3; spin about the unstable intermediate
   axis; 20 s; reference RK4 at 1/8192 s):
@@ -266,7 +315,7 @@ Candidates and what the primary sources say:
 | Sequential impulses / PGS with Baumgarte | velocity-level Gauss–Seidel, warm started, position error fed back as velocity bias | [Catto 2006](https://box2d.org/files/ErinCatto_SequentialImpulses_GDC2006.pdf): "accept penetration, remember the past, apply impulses early and often, pursue the true impulse, update position last". [Solver2D](https://box2d.org/posts/2024/02/solver2d/): Baumgarte "can lead to energy creation and jitter if not tuned carefully". |
 | Soft step (TGS_Soft) | substeps, one sweep each, soft constraints, warm start, relax sweep | Catto's Box2D v3 choice: "smaller sub-steps beat extra iterations because they reduce non-linear effects"; relaxation "is expensive, but it improves the simulation quality dramatically" ([Solver2D](https://box2d.org/posts/2024/02/solver2d/), via fetch summary). |
 | PBD / XPBD | positions projected, velocity = Δx/h | [PBD 2007](https://doi.org/10.1016/j.jvcir.2007.01.005); [XPBD 2016](https://doi.org/10.1145/2994258.2994272) (compliance makes stiffness step- and iteration-independent); [Small steps 2019](https://doi.org/10.1145/3309486.3340247): "a single large time step with n iterations is less effective than n smaller time steps, each with a single iteration"; their capsule stack under a heavy mass "collapses" with 1 substep × 100 iterations and stays stable with 100 × 1 (Fig. 9); [Müller 2020](https://doi.org/10.1111/cgf.14105): 20 substeps × 1 iteration for every example in Table 1, and "the best choice is to replace all solver iterations by substeps". |
-| Parallel / Jacobi with mass splitting | each body's mass divided by its contact count *in the effective mass only* (Eq. 15), full mass to apply the impulse; blocks by body pair solved by PGS inside, Jacobi between (Eq. 16, §4.1) | [Tonge et al. 2012](https://doi.org/10.1145/2185520.2185601), *ACM Trans. Graph.* 31(4), 105 (read). Purpose: a parallel solve whose residual does not depend on contact order, so near-rest bodies do not jitter at low iteration counts (abstract, §1). Convergence proved by showing the method is PGS on a *split system* (each body cut into one sub-body per contact block, mass shared equally, fixed joints rejoining them whose exact solve is a velocity average; §5, Fig. 4, Eq. 38); the scalar-method proof and the proof that the split system's solution solves the original LCP are in the supplement (not read). Tests (§7, Table 1, Fig. 6): 5,160 boxes on a mesh (15.7 ms/frame, 64 fps, GTX 580, against 17.7 ms for parallel PGS), 25-link chain, 1,000 chess pieces, card house (48 cards in five levels, §7; 58 bodies in Table 1), 277-piece fracture (665 contacts, greedy colouring needs 15 colours, Fig. 3); jitter judged by kinetic energy with 30 mass-split iterations against 5 PGS iterations. **Its own limitation (§7):** "convergence of our method is worse than PGS in all the tests", showing as extra contact compliance; Jacobi with line search converges better beyond ~50 iterations. No mass-ratio or stack-penetration measurement. |
+| Parallel / Jacobi with mass splitting | each body's mass divided by its contact count *in the effective mass only* (Eq. 15), full mass to apply the impulse; blocks by body pair solved by PGS inside, Jacobi between (Eq. 16, §4.1) | [Tonge et al. 2012](https://doi.org/10.1145/2185520.2185601), *ACM Trans. Graph.* 31(4), 105 (read). Purpose: a parallel solve whose residual does not depend on contact order, so near-rest bodies do not jitter at low iteration counts (abstract, §1). Convergence proved by showing the method is PGS on a *split system* (each body cut into one sub-body per contact block, mass shared equally, fixed joints rejoining them whose exact solve is a velocity average; §5, Fig. 4, Eq. 38); the scalar-method proof, the exact fixed-joint solve and the proof that the split system's solution solves the original LCP are in the [supplement](https://doi.org/10.1145/2185520.2185601) (read 28 Nov; §9 7b: all three rest on Murty's 1988 iterative-LCP conditions applied to `JM⁻¹Jᵀ`, so they cover the frictionless normal problem only and prove convergence, not a rate, with nothing on mass ratios). Tests (§7, Table 1, Fig. 6): 5,160 boxes on a mesh (15.7 ms/frame, 64 fps, GTX 580, against 17.7 ms for parallel PGS), 25-link chain, 1,000 chess pieces, card house (48 cards in five levels, §7; 58 bodies in Table 1), 277-piece fracture (665 contacts, greedy colouring needs 15 colours, Fig. 3); jitter judged by kinetic energy with 30 mass-split iterations against 5 PGS iterations. **Its own limitation (§7):** "convergence of our method is worse than PGS in all the tests", showing as extra contact compliance; Jacobi with line search converges better beyond ~50 iterations. No mass-ratio or stack-penetration measurement. |
 | Non-smooth Newton, NCP | Newton on a minimum-map or Fischer–Burmeister form of the complementarity conditions; each Newton step is a symmetric linear system | [Macklin et al. 2019](https://doi.org/10.1145/3338695), *ACM Trans. Graph.* 38(5), 140 (read in part). Smooth isotropic Coulomb friction as NCP functions (§4.3), a complementarity preconditioner scaled by step and effective mass (§7), line search or damped Newton (§8.1, damped used for frictional runs), preconditioned conjugate *residual* for the linear solves (§8.2: monotone residual, usable with early termination). Table 2: 4–8 Newton iterations per step (40 PCR iterations per Newton iteration in the beam test, §10.2; 40 linear iterations in §10.4), `h = 0.0083 s`, **fp32 on a GTX 1070**, zero initial iterate and no warm start. **Stacks with extreme mass ratios**: a 4,096:1 stack (8 … 32,768 kg, μ = 0.5) is stable and does not interpenetrate with Krylov or direct solves, while relaxation methods "struggle to reduce error" and interpenetrate significantly on it (§10.1.5, Fig. 14 middle), and "eventually collapse even with hundreds of iterations" on the arch (Fig. 14 top); Jacobi and Gauss–Seidel stagnate on ill-conditioned cases (§10.4, Fig. 18). Its fp32 accuracy floor follows Tisseur's bound (Eq. 91, §10.5), so `f64` would lower it. Heavier per step than one soft-step sweep; the only family in the table with a demonstrated answer at 4,096:1. |
 | Direct LCP solves | pivoting (Lemke, Keller) or incremental pivoting on the island's LCP | Bender, Erleben, Trinkle, Coumans 2012 STAR §4.2 ([10.2312/conf/EG2012/stars/095-134](https://doi.org/10.2312/conf/EG2012/stars/095-134)): "computational heavy … Therefore … not preferred for interactive simulation. However, their ability to deliver accurate solutions make them ideal to handle problems such as large mass ratios. Thus, for some applications direct methods are the only option." The 2014 CGF version ([10.1111/cgf.12272](https://doi.org/10.1111/cgf.12272)) §4.1 says the same; its §4.2 says PGS "is very robust … can deal gracefully with ill-conditioned problems (due to many redundant constraints)". |
 | Gustafsson's new engine | "substepping instead of solver iteration … 'Temporal Gauss Seidel' … a parallel solver that can solve large piles … improvements to contact generation and broad phase" | [Voxagon 2024 summary](https://blog.voxagon.se/2024/12/29/year-summary.html); [80.lv](https://80.lv/articles/see-what-s-new-in-teardown-creator-s-custom-voxel-physics-engine): ~5 ms step on 32 threads (scene size not stated). No algorithm detail is public that I could find. |
@@ -603,7 +652,7 @@ exists:
 | case | known answer | S7 test (suggested id) | tolerance / control |
 |---|---|---|---|
 | free fall, projectile | `x = x₀+v₀t+½gt²` | `free_fall_matches_closed_form` | 1e-10 m over 100 s. **Control:** stepped symplectic Euler, which must fail (B1: 0.2 m at 10 s) |
-| torque-free asymmetric top | |L| constant, E constant, Euler equations | `free_rotation_conserves_l_and_e` | |L| 1e-13 relative, E 1e-6 at h = 1/240 (B2: 1.2e-7) or 1e-10 with 4th order. **Control:** explicit Euler (B2: 2.5e-3) |
+| torque-free asymmetric top | |L| constant, E constant, Euler equations; attitude against the exact solution of [van Zon & Schofield 2007](https://doi.org/10.1016/j.jcp.2006.11.019) (Eqs. (3.33)–(3.54), §4.2; B10) | `free_rotation_conserves_l_and_e`, `free_rotation_matches_exact_top` | |L| 1e-13 relative, E 1e-6 at h = 1/240 (B2: 1.2e-7) or 1e-10 with 4th order; attitude ≤ 1e-9 rad at 20 s for 4th order at h = 1/240 (B10: 3.5e-11), cases kept to δ ≥ 1e-6 from the separatrix. **Control:** explicit Euler (B2: 2.5e-3; attitude 2.7e-2 rad) |
 | bounce | apex after k impacts `e^{2k} h₀`; impact time `t_k = t₀(1+2e(1−e^{k−1})/(1−e))` | `bounce_height_follows_restitution` | time 1e-12 s with TOI (B4: 1e-15 s). **Control:** detect-and-project (B4: 36 ms late at 1/240 s) |
 | two-body collision | `v₁′ = ((m₁−e m₂)v₁ + (1+e)m₂v₂)/(m₁+m₂)`; momentum conserved exactly; for e = 1, energy | `two_spheres_exchange_momentum` | 1e-12. Control: wrong mass ratio |
 | Newton's cradle | sequential collisions of three equal balls, e = 1: `(0, 0, 1)`; simultaneous restitution gives `(−⅓, ⅔, ⅔)` (B7) | `cradle_with_gaps_passes_the_impulse` | balls with gaps ≥ `v h` so collisions are sequential; **control:** touching balls must give `(−⅓,⅔,⅔)`, documenting the model. I could not find a primary source for the cradle as a *benchmark*; the numbers above are my derivation, checked by B7 |
@@ -635,8 +684,29 @@ amount of iterations won't help"), rattleback and tippe top for gyroscopic terms
 momentum and constraint-error plots, and "compare against a noninteractive but very high-fidelity simulator".
 SNE09 is Silcowitz, Niebe, Erleben, *Nonsmooth Newton method for Fischer function reformulation of contact force
 problems for interactive rigid body simulation*, VRIPHYS 2009, and "dense structured stacks" cites Erleben,
-*Velocity-based shock propagation for multibody dynamics animation*, ACM Trans. Graph. 26(2), 2007; SNE09 was not
-read. **Erleben 2007 was read on 28 Nov** (ACM TOG 26(2), Article 12, 20 pp., doi:10.1145/1243980.1243986): its
+*Velocity-based shock propagation for multibody dynamics animation*, ACM Trans. Graph. 26(2), 2007. **SNE09 was
+read on 28 Nov (third batch)**, [Silcowitz, Niebe, Erleben 2009](https://doi.org/10.2312/PE/vriphys/vriphys09/105-114),
+VRIPHYS 2009, pp. 105–114 (10 pp.). Method: the velocity-level contact problem with a friction box whose bounds
+are `±μλₙ` (Coulomb's law per tangent direction, Eqs. (12)–(19)), written as roots of the Fischer–Burmeister
+function `φ(a, b) = √(a² + b²) − a − b` (Eq. (21)) in a bounded form with variable bounds (Eqs. (23)–(29)) and
+solved by a generalised (nonsmooth) Newton method, `H_k Δλ = −Φ(λ_k)` with `H_k` from the B-subdifferential
+(Eqs. (30)–(32)), quadratic near a solution by Qi and Sun's theorem (Thm 3.1); the Newton system is solved
+approximately by a finite-difference nonlinear CG, globalised by an Armijo line search on `½‖Φ‖²`
+(Eqs. (35)–(39)), and warm-started "semi-staggered": normal forces first with friction off, then the full problem
+(§3, Fig. 4). Its tests are **the three box scenes**, judged by eye and by the merit function (§4, Fig. 5):
+a heavy box on a light box on a floor, a sparse stack of equal boxes, and a dense structured stack. Results:
+quadratic convergence to ~1e-25 in 7 iterations on a 6 × 6 problem in 3.3 ms (Fig. 2, §3); on the heavy-on-light
+case the merit function falls "several orders of magnitude" further than PGS at equal cost (Fig. 8(a), costs in
+PGS-iteration units), and PGS "fails to support the upper heavy box" "even with a 150 iterations per frame"
+while FN with 10 Newton iterations holds it (Fig. 10); on the sparse stack PGS almost catches up given enough
+iterations (Fig. 8(b)); on the dense stack both stall at local minima and FN's is *less* accurate (Fig. 8(c)); a
+~280-contact scene runs at 6 ms per frame in Java on one 2.1 GHz core (Fig. 9). **No mass ratio is given as a
+number** anywhere in the paper, and no penetration is measured. Its own limits (§4.1, §5): `A_ncp` has ~60 % zero
+eigenvalues in all three scenes, so solutions are non-unique; the method "proved to have convergence problems"
+with large friction forces, attributed to over-determinacy; damping cures it only by damping the solution.
+*For this note:* it is the published heavy-on-light case Bender cites, and it supports §7's rule that such
+islands need a solve that converges (Newton or direct), not more PGS sweeps; it also warns that the frictional
+NCP is where a Newton method breaks, which is exactly the open item §9 7 leaves to S7's contact task. **Erleben 2007 was read on 28 Nov** (ACM TOG 26(2), Article 12, 20 pp., doi:10.1145/1243980.1243986): its
 "dense structured stacks" are *scenes*, scored by eye ("an observer would immediately notice any misalignment",
 §1) and by wall-clock time (Fig. 27), with no penetration or force numbers: a 25-box stack on which plain PGS "not
 even 100,000 iterations will work" (§4, Fig. 9, citing Erleben's 2005 thesis), a 200-brick wall, a 320-brick tower,
@@ -738,6 +808,16 @@ the integer moments can run in parallel to (ii) as they are independent.
   trivial), and any solver at a realistic frame time (D's cost is a dense solve of ≤ 10×10 here).
 - **B9 `b9_cayley.py`** (output `b9.out`). B2's case and RK4 reference with the Cayley rotation of Dullweber et al.
   App. A in place of `sin`/`cos`; Strang at three step sizes and Yoshida at two. Same floor as B2 (3e-9 rad).
+- **B10 `b10_exact_rotor.py`** (output `b10.out`, ~1 min). Added 28 Nov (third batch). A port of van Zon & Schofield
+  2007 §4.2 (initialisation and evolution) with SciPy's elliptic functions; B2's case (`I = (1, 2, 3)`,
+  `L̃(0) = (0.05, 2, 0.04)`, so `m = 0.998` and the axes are relabelled by Eq. (4.10)). Criteria written first:
+  (a) ≤ 1e-8 rad against B2's RK4 reference at 20 s: **2.9e-9**, pass; (b) ≤ 1e-9 rad against Yoshida-4 at
+  h = 1/1920: **6.0e-12**, pass (3.5e-11 at 1/240, 1.6e-12 at 1/960); (c) `|L|`, `E` drift ≤ 1e-13 over 10⁴ s:
+  **1.9e-14, 3.8e-14**, pass, orthogonality 2.7e-14; (d) towards the separatrix, a measurement: within 5e-11 rad of
+  Yoshida for δ ≥ 1e-6, then 1.5e-8 (δ = 1e-8), 2.1e-8 (1e-10), 2.2e-5 (1e-12); (e) Yoshida at 1/1920 and 1/3840
+  agree to ≤ 4e-11 rad at δ = 1e-8 and 1e-12, while the exact form's `Ȧ + W(ω̃)A` residual grows from 1.7e-10 to
+  1.3e-3, so the separatrix error is the exact form's. Also corrects B2's reading: its Yoshida row (2.9e-9 rad)
+  was the RK4 reference's error; the splitting itself is at ~3e-11 rad at h = 1/240.
 
 ---
 
@@ -774,7 +854,40 @@ the integer moments can run in parallel to (ii) as they are independent.
    1 and the PRE says nothing. The ~10⁸ gain in attitude-error time over the 1,2,3,2,1 splitting at equal step
    (§V A) makes this worth finishing. `L̃(t)` is also textbook (Landau–Lifshitz §37), so B2's test can be built
    without the JCP paper if it stays missing; the JCP paper would add the numerically robust form.
-7b. **Tonge's supplement** is not in the PDF; the paper states the results (§1.1, §5) and I have used only those.
+   **Closed 28 Nov (third batch).** The JCP paper is read whole and ported (§1.1, B10). It gives `L̃(t)` in
+   `cn`, `sn`, `dn` (Eqs. (3.33)–(3.42)) and the attitude in closed form through a theta function (Eq. (3.54)),
+   with an algorithm (§4.2). It is accurate to the reference's floor on B2's case and to ~1e-11 rad against a
+   converged splitting, and it has **no separatrix treatment**: in `f64` it degrades from δ ≈ 1e-8 (1.5e-8 rad at
+   20 s) to 2.2e-5 rad at δ = 1e-12 (B10 (d), (e)). Settled: oracle, not implementation, and only for δ ≥ 1e-6.
+   Not settled: whether a reformulation (e.g. evaluating `L² − 2EI₁` and the theta arguments with compensated
+   sums, or switching to the separatrix limit, where the functions become `tanh` and `sech`) recovers accuracy
+   near δ = 0. That matters only if the oracle has to cover a body set spinning about its middle axis, which a
+   test can simply avoid. Celledoni & Säfström 2006 remains unread and is no longer needed for this item.
+7b. **Tonge's supplement: read 28 Nov (third batch)**, Tonge, Benevolenski, Voroshilov, "Proofs for 'Mass
+   Splitting for Jitter-Free Parallel Rigid Body Simulation'" (2 pp., NVIDIA; no DOI of its own, it supplements
+   [10.1145/2185520.2185601](https://doi.org/10.1145/2185520.2185601)). It holds four results, all for the
+   frictionless LCP: (§2) a **lemma**, `(Σᵢ vᵢ)·(Σᵢ vᵢ) ≤ n Σᵢ vᵢ·vᵢ` for `vᵢ ∈ ℝᵐ` (Eq. (1), by induction from
+   `2xy ≤ x² + y²`, Eq. (2)), and the **theorem** that the scalar mass-splitting iteration
+   `z^{r+1} = (z^r − E(q + Nz^r))₊` with `Eᵢᵢ = (Σⱼ Jᵢⱼ (n_j M_j⁻¹) Jᵢⱼᵀ)⁻¹` (Eq. (3), i.e. the paper's Eq. 15)
+   converges. Proof: Murty 1988's conditions (Eqs. 9.8, 9.10 of his ch. 9) reduce to `2E⁻¹ − N` positive definite;
+   it suffices that `E⁻¹ − N` is positive semi-definite, which follows by factoring each `Mᵢ⁻¹ = QᵢQᵢᵀ`, grouping
+   the Jacobian blocks by body (`C(k)`, Eq. (5), `|C(k)| = n_k`) and applying the lemma term by term (Eqs. (6)–(9)).
+   Assumptions stated: each `Mᵢ⁻¹` positive definite, each row touches two bodies, every split count `n > 0`
+   (p. 1); a static body (zero inverse mass) is not discussed. (§3) **Convergence of the block method with exact
+   joints**: Murty's iteration (9.9) with unit relaxation, `E = diag(D_CC⁻¹, N_FF⁻¹)` and the projection applied to
+   the contact part `z_C` only (Eqs. (10)–(12)) is the paper's block iteration; it converges because
+   `(z_P − z)ᵀE⁻¹(z_P − y) ≥ 0` for all `y ≥ 0` (Eqs. (13)–(14), Murty's Theorem 9.8). (§4) **The exact fixed-joint
+   solve**: with `F = [S(n−1, 1)  −I(n−1)]` (Eq. (15)), `I − Fᵀ(FWFᵀ)⁻¹FW = n⁻¹S(n)` (Eq. (17), proof Eqs. (18)–(20)),
+   so solving a body's joints sets every sub-body velocity to their mean (Eq. (21)), the paper's Eq. 38. (§5) **The
+   split solution solves the original problem**: if `(z_C, z_F)` solves the split MLCP, then `z_C =
+   LCP(JM⁻¹Jᵀ, q)` (Eq. (22)), because the impulse `z_C` applied to the unsplit bodies gives the first sub-body's
+   velocity (Eqs. (24)–(26)) and those velocities satisfy the unsplit constraints (Eqs. (27)–(28)). **What it does
+   not give**: a rate, any bound in terms of mass ratio or contact count, or anything on friction (the paper's
+   friction is one staggered BLCP sweep, §6, and is not claimed to converge). **Effect on this note:** none on the
+   decisions. It confirms mass splitting as a *convergent, order-independent* parallel scheme (§7 item 4) and
+   leaves B8's measured slowness at large mass ratios, and Tonge's own "worse than PGS in all the tests" (§7),
+   untouched. The previous text of this item, kept for the record:
+   the paper states the results (§1.1, §5) and I have used only those.
    Re-checked 27 Nov against a second copy (`tonge2012.pdf`, again the 8-page main paper): what the main text
    *does* contain is the block method's argument, that Algorithm 1 is PGS on the split system with an exact
    fixed-joint (averaging) solve, PGS "unconditionally converges", so the block method converges (§5 opening,
@@ -796,7 +909,8 @@ the integer moments can run in parallel to (ii) as they are independent.
 - Continuous collision for fast thin bodies; speculative margins sized by the read.
 - Rolling resistance and contact-patch physics for voxel wheels; whether to smooth normals with an SDF.
 - Articulated bodies/joints (v2 had none for rigid dynamics; skinned bodies are kinematic in S4).
-- Exact Jacobi-elliptic free rotation vs high-order splitting for *very* long flights (now concrete: §9 7a).
+- Exact Jacobi-elliptic free rotation vs high-order splitting for *very* long flights: measured by B10 (§9 7a);
+  open only near the separatrix, where the published algorithm loses accuracy in `f64`.
 - A distance transform of an octree body plus Macklin 2020's local optimisation, for sub-cell contact depth and
   smooth normals on a curved voxel body (the rolling-sphere decision); and SDF-against-SDF contact, which that
   paper names as future work.
@@ -820,13 +934,14 @@ the integer moments can run in parallel to (ii) as they are independent.
 - Bender, Erleben, Trinkle, Coumans 2012 (STAR): §4.2 and §7.3 (pp. 127–129). https://doi.org/10.2312/conf/EG2012/stars/095-134 ; Bender, Erleben, Trinkle 2014 (CGF 33(1), 246–270): §4.1–4.2; its §7.3 equivalent does not exist (six sections). https://doi.org/10.1111/cgf.12272
 - Tarjan 1975, *Efficiency of a good but not linear set union algorithm*, J. ACM 22(2), 215–225: abstract, introduction, Theorems 4, 13, 16, conclusion. https://doi.org/10.1145/321879.321884
 - Read 28 Nov 2026 (owner's PDFs, not copied): van Zon, Schofield 2007, *Symplectic algorithms for simulations of rigid-body systems using the exact solution of free motion*, Phys. Rev. E 75, 056701: whole paper, Eq. (5)–(11) and §V A from page images. https://doi.org/10.1103/PhysRevE.75.056701 — Erleben 2007, *Velocity-based shock propagation for multibody dynamics animation*, ACM TOG 26(2), Article 12, 20 pp.: §1–5 read, §6 skimmed. https://doi.org/10.1145/1243980.1243986
+- Read 28 Nov 2026, third batch (owner-supplied PDFs, not copied):
+  van Zon, Schofield 2007, *Numerical implementation of the exact dynamics of free rigid bodies*, J. Comput. Phys. 225, 145–164: whole paper (§1–6, Eqs. (2.1)–(4.10), the §4.2 pseudo-code), ported as B10. https://doi.org/10.1016/j.jcp.2006.11.019 (printed on p. 145; Crossref confirms title, authors, volume 225 and pages 145–164, checked 28 Nov 2026). (The DOI given earlier from memory, 10.1016/j.jcp.2006.11.020, is Yue, Zhou, Feng 2007, the drop-shrinkage paper.)
+  — Tonge, Benevolenski, Voroshilov 2012, *Proofs for "Mass Splitting for Jitter-Free Parallel Rigid Body Simulation"*, the 2-page supplement (NVIDIA): whole (§9 7b). No DOI of its own; the main paper's https://doi.org/10.1145/2185520.2185601 is Crossref-confirmed with the same three authors (the supplement prints the same three names).
+  — Silcowitz, Niebe, Erleben 2009, *Nonsmooth Newton method for Fischer function reformulation of contact force problems for interactive rigid body simulation*, VRIPHYS 2009 (Eurographics), pp. 105–114: whole (§1–5, Figs. 2–10). https://doi.org/10.2312/PE/vriphys/vriphys09/105-114 (not in Crossref; found in DataCite with this title, the three authors and 2009, checked 28 Nov 2026; doi.org redirects to the Eurographics Digital Library).
 - Earlier: Macklin et al. 2019 *Small steps* https://doi.org/10.1145/3309486.3340247; Müller et al. 2020 https://doi.org/10.1111/cgf.14105; Macklin et al. 2016 *XPBD* https://doi.org/10.1145/2994258.2994272; Müller et al. 2007 *PBD* https://doi.org/10.1016/j.jvcir.2007.01.005; Catto 2006 slides; McNeely et al. 2006 (follow-up); Rust and WebAssembly documentation. Blog posts by Catto and Gustafsson, the Gaffer article and the 80.lv article were read through a summarising fetch tool, so treat quotations as the tool's.
 
 **Still unread, with what each would settle:**
 
-- Van Zon, Schofield 2007, *Numerical implementation of the exact dynamics of free rigid bodies*, J. Comput. Phys. 225, 145–164 (2007), https://doi.org/10.1016/j.jcp.2006.11.019 (journal, volume, page and year confirmed by Ref. 8 of the 2008 note; title, page range and DOI Crossref-checked by the coordinating agent on 28 Nov, not by me. **Corrected 28 Nov:** the DOI given here earlier from memory, 10.1016/j.jcp.2006.11.020, is Yue, Zhou, Feng, *Spontaneous shrinkage of drops and mass conservation in phase-field simulations*, J. Comput. Phys. 223, 1–9 (2007), which I confirmed on the PDF that DOI fetched. The PRE paper cites it only as "J. Comput. Phys. (to be published)", its Ref. 10): the elliptic-function solution for the body-frame `L̃(t)` and the separatrix handling that the PRE paper defers to it (§9 7a). Not supplied by the 27 or 28 Nov fetches. (The PRE companion was read on 28 Nov, above.)
-- Celledoni, Säfström 2006, J. Phys. A 39, 5463 (Ref. 8 of the PRE paper; title not printed there, no DOI checked): the other cited source for the free Euler solution, if the JCP paper stays missing.
-- Tonge et al. 2012 supplement (proofs (i)–(iv) of §9 7b): via the ACM page of https://doi.org/10.1145/2185520.2185601. Not supplied by the 27 Nov fetch, which returned the main paper again, nor on 28 Nov.
+- Celledoni, Säfström 2006, *Efficient time-symmetric simulation of torqued rigid bodies using Jacobi elliptic functions*, J. Phys. A: Math. Gen. 39, 5463–5478, https://doi.org/10.1088/0305-4470/39/19/S08 (title and pages from Ref. [12] of the JCP paper; DOI Crossref-confirmed 28 Nov 2026). Still missing, and now optional: §9 7a is closed without it; it would show a torqued integrator built on the exact Euler solution with an approximate attitude (JCP paper p. 161).
 - Fassò 2003, *Comparison of splitting algorithms for the rigid body*, J. Comput. Phys. 189 (HLW's pointer; no DOI checked): which splitting of the kinetic energy is best.
-- Silcowitz, Niebe, Erleben, VRIPHYS 2009, *Nonsmooth Newton method for Fischer function reformulation of contact force problems for interactive rigid body simulation* (no DOI checked): the heavy-box-on-light-box case Bender et al. cite for mass ratios. Not supplied on 28 Nov.
 - McNeely, Puterbaugh, Troy 2006 is the follow-up and was read; Harada 2007 (GPU Gems 3 ch. 29, no DOI) only through a fetch summary: https://developer.nvidia.com/gpugems/gpugems3/part-v-physics-simulation/chapter-29-real-time-rigid-body-simulation-gpus
