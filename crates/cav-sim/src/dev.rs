@@ -724,7 +724,11 @@ pub fn stress_1e10() -> SceneSpec {
             ],
             pieces,
             stream: crate::world::StreamSpec::default(),
-            read: crate::world::WorldReadSpec { radius: 2.0, tolerance: 1e-3 },
+            read: crate::world::WorldReadSpec {
+                radius: 2.0,
+                tolerance: 1e-3,
+                walk: crate::world::WalkKind::Ledger,
+            },
             lod: crate::world::LodSpec::default(),
         }),
         ..SceneSpec::room()

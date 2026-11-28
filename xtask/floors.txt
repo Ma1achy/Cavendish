@@ -49,7 +49,10 @@
 # TASK-S5-27 (the walk below the chunk): 2 new quick tests (cav-sim: a chunk's tree is its leaves,
 # W1 into the chunks' trees).
 # TASK-S5-04 (the ledger in bundles): 1 new quick test (cav-sim: W8, the ledger is in the bundle).
-quick 761
+# TASK-S5-14 (measured radii and the rings): 3 new quick tests (cav-sim: the rings' cut is a
+# partition, the stored radii are monotone, a world read by rings reports its ledger); 2 new slow
+# tests (cav-sim: R1 and its control, the radii halved).
+quick 764
 gpu 42
-slow 56
+slow 58
 oracle 58

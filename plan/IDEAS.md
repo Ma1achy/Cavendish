@@ -347,3 +347,10 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   octree blocks gain nothing; a body's interior as free rectangular boxes read by an l ≤ 6 box
   series (43 to 80 flops, checked to 40 digits there) is 4 to 33 times cheaper than octree blocks
   at 20 m and loses near the body. Worth it only with a walk that keeps the far advantage.
+- **LOD radii by [O] §5's level-by-level protocol** (TASK-S5-14): the stored radii are the ledger
+  walk's nearest acceptances, at which the rings err by 1 to 4 % of τ on town. The protocol of
+  `docs/research/s5-world-octree.md` §5 (each level alone by its moments beyond ρ, leaf-exact
+  nearer, the error worst over positions, with a safety factor) would give the smallest radii that
+  hold τ, and a cheaper rings tier; about 80 whole-town leaf-exact reads, minutes in release. The
+  errors are linear in the nodes, so one read per node per position, summed from the far end
+  inwards, gives every ρ at once.
