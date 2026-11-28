@@ -359,8 +359,8 @@
   milestone: S7
   title: Structural support pass
 - id: TASK-S7-05
-  milestone: S7
-  title: 'Voxel FE modal analysis: cantilever and plate modes'
+  milestone: S28
+  title: 'Voxel FE modal analysis: cantilever and plate modes - the elastic mesh and operator (Q1 with incompatible modes, selective integration for nu >= 0.4, hanging nodes, sparse f64 on the CPU), patch test, cantilever and plate against the CPU shift-invert oracle, MacNeal-Harder beams (docs/research/elastic-solids.md 8, its S7-05a; moved to S28 by the owner''s ruling of 28 Nov 2026)'
 - id: TASK-S7-06
   milestone: S7
   title: contact-gallery and million-bodies scenes
@@ -566,6 +566,9 @@
 - id: TASK-S6-08
   milestone: S6
   title: 'Skinned deformation - a body embedded in a cage of tetrahedra, each carrying a fixed mass (mass conserved by construction), the cage driven by a skeleton and skin weights (linear blend and dual-quaternion), each deformed tetrahedron read by its exact polyhedral field near and its affine-mapped moments far; glTF import of skeleton, skin weights and clips; the same elements S7''s elastic solids deform; oracles: the rigid limit equals per-bone trees bit for bit, mass constant through every pose, a bent arm converges as the cage refines'
+- id: TASK-S6-09
+  milestone: S6
+  title: 'Body orientation and rotation - a body''s pose is position plus orientation (unit quaternion) as closed-form functions of time: fixed orientation, spin about an axis, precession and nutation, tumbling, and spin about an offset axis (rotors, fans, turbines, centrifuges, a rotating machine part); the read rotates the body-frame tree exactly (moments rotated as tensors, clipped/exact pieces transformed); the drawn path and the periodogram show the rotation lines; oracles: a spinning axisymmetric body reads constant, a spinning dumbbell gives lines at 2f, an offset rotor at f, voxels fixed in the body vs the world as in the shapes study (docs/research/exact-skin-and-partial-fill.md)'
 - id: TASK-S14-12
   milestone: S14
   title: The solar system - bodies of the ephemeris with their own LOD trees; a detector on any of them
@@ -859,3 +862,114 @@
 - id: TASK-S5-24
   milestone: S5
   title: The cube kernel's switch between closed form and series error-bounded, not 3 sides (docs/research/paper-boxes-and-precision.md)
+- id: TASK-S24-01
+  milestone: S24
+  title: "The S24 brief (docs/slices/S24.md) from docs/research/worlds.md: scope, criteria written before measuring, the task split"
+- id: TASK-S24-02
+  milestone: S25
+  title: "Planet-ready keys - 64-bit chunk and octree keys (level plus 3 x 21-bit or wider signed coordinates, or an i64 triple), region files and caches keyed by them, the old i32 ChunkKey read and converted; a key at the planet's edge round-trips; control: an i32 key overflows at 6.4e6 m and 1 cm (docs/research/worlds.md 7)"
+- id: TASK-S24-03
+  milestone: S25
+  title: "f64 world positions with local frames for the render and the read, audited - every chunk origin and node centre from integer keys times a dyadic pitch, every GPU number an offset formed in f64 on the CPU; precision-far grows to 1e7 m on the CPU: town reads and draws the same there as at the origin (S23 ports it to the GPU)"
+- id: TASK-S24-04
+  milestone: S25
+  title: "Chunk addressing that can wrap a cube-sphere - a 64-bit surface tile key (face, level, i, j) beside the Cartesian chunk key, the map from a tile to the chunks under it and back, neighbours across face edges; the plane is the one-face case; generation, streaming and caches keyed by it (docs/research/worlds.md 7)"
+- id: TASK-S24-05
+  milestone: S25
+  title: "The recipe format and deterministic chunk generation - a world as layers written as data (base, shape, strata, features, structures, detail, edits), versioned and hashed; chunk = f(seed, recipe hash, key) on integer cell coordinates; integer-hash noise (pcg3d) and only IEEE basic operations, with a lint refusing platform transcendentals in generators; today's Terrain ported as its first layer (its sin replaced); oracles: the same bytes on 1, 2, 6 threads and in the page, every shared face of neighbours bit-equal, controls: chunk-local float coordinates and a sin call (docs/research/worlds.md 2, 4)"
+- id: TASK-S24-06
+  milestone: S25
+  title: "A compressed chunk format - palette, leaves and exact-skin side tables packed (bit-packed palette indices, run lengths over Morton order, then a general compressor if one earns its place), versioned, every count checked before it is reserved; round-trip to the bit, ratio and speed recorded on town and a noise terrain"
+- id: TASK-S24-07
+  milestone: S25
+  title: "Saved worlds as recipe + sparse edit delta - a world file is its recipe, seed and the chunks that differ from what the recipe makes (as compressed chunks, or as per-cell deltas when small); loading regenerates and applies; the delta is canonical (same edits in any order, same bytes); oracles: reload = the edited world bit for bit, an unedited world saves as its recipe alone, delta size proportional to the edit"
+- id: TASK-S24-08
+  milestone: S24
+  title: "Mass-consistent LOD from the generator - octaves made mass- and dipole-preserving on aligned blocks (docs/research/worlds.md 3), a coarse node generated straight from the recipe with exact mass and horizontal first moments and its vertical and higher moments within a stated bound carried into the ledger as a generation line; the walk opens a node whose line is too big and the generator makes its children; level-0 columns carry their exact column integral as partial fill; oracles: generated node = summed children (mass <= 1e-12, first moments <= 1e-12), bound >= measured residual, control: plain fBm misses mass by >= 1e-6"
+- id: TASK-S24-09
+  milestone: S24
+  title: "The Minecraft-style generator - fBm, ridged and billow octaves, domain warp, biomes from climate noise (temperature, humidity, continentalness, erosion, weirdness) with real-density strata, 3-D density for overhangs and caves (cheese, spaghetti and noodle in the Minecraft sense), rivers and lakes, a mass-conserving erosion stage computed per region tile with a halo, settlement placement with procedural buildings and roads; each stage data in the recipe; the stages' speed per chunk recorded"
+- id: TASK-S24-10
+  milestone: S24
+  title: "Infinite flat worlds - the plane base with generated departures over an unbounded key space, the read's horizon and the tail bound 2 pi G sigma / R with sigma from the recipe's amplitude bound in the ledger; oracles: an empty plane reads zero gradient, a generated plateau converges to the Bouguer slab, the tail bound >= the measured change as the horizon grows"
+- id: TASK-S24-11
+  milestone: S24
+  title: "Planets - a cube-sphere surface (TASK-S24-04's tiles) generating a crust of departures on the layered sphere, local frames on the CPU, drawn from orbit to the surface and read; oracles: an empty planet = its layers, a generated hill on a planet against the same hill on the plane falls as 1/R, no seam across a face edge (bit-equal shared faces)"
+- id: TASK-S24-12
+  milestone: S24
+  title: "Prefabs and instancing - a prefab (a body or a set of world pieces) placed many times by the recipe or by hand: one tree and its moments shared, many poses; deduplicated chunks; oracles: an instance reads as the same body placed alone bit for bit, mass of n instances = n times one"
+- id: TASK-S24-13
+  milestone: S24
+  title: "Generated terrain against terrain corrections - the same column heights as an independent prism sum (Nagy prisms in the oracle, Harmonica's prism_layer as a cross-check in a script) at >= 8 tower positions within the ledger at 1e-6 rad; Hammer-zone and Bouguer checks; the gravity read unchanged within its ledger on every S5 scene"
+- id: TASK-S24-14
+  milestone: S24
+  title: "S24's record: the demo (a seeded Minecraft-style world, an infinite plane, a planet from orbit), the validation report against the previous tag, ARCHITECTURE, a recipe for a new world layer (docs/extending/a-world-layer.md), PROGRESS"
+- id: TASK-S22-02
+  milestone: S22
+  title: "World-editing brushes at scale - raise, dig, smooth, flatten, paint and place-a-prefab along a stroke, over 10^6 cells as one undoable edit written as S25's saved-world delta (TASK-S24-07), the summaries updated along the edit's path; oracles: the stroke reloads the same bytes, mass changes by exactly what was added or dug, the gravity read unchanged within its ledger outside the stroke"
+- id: TASK-S26-01
+  milestone: S26
+  title: "The S26 brief (docs/slices/S26.md): Worlds - the Earth; sources, licences and credits from docs/research/worlds.md 6"
+- id: TASK-S26-02
+  milestone: S26
+  title: "The Earth-data pipeline and an offline tile cache - range reads of cloud-optimised GeoTIFFs (Copernicus GLO-30 via a CORS-enabled mirror, the EA LiDAR WCS, ETOPO and GEBCO), terrarium PNG tiles, PMTiles; datums to one vertical reference (EGM2008 or ODN, said); a content-addressed cache outside the repo that works with the network off; the page's cache in browser storage, said"
+- id: TASK-S26-03
+  milestone: S26
+  title: "Mean-preserving upsampling of elevation data - a smooth interpolant whose mean over each data cell is the datum (area-to-point, Kyriakidis 2004; Tobler 1979) plus mass- and dipole-preserving fractal detail; oracles: each data cell's mean <= 1e-12 relative, control: unconstrained detail moves it"
+- id: TASK-S26-04
+  milestone: S26
+  title: "OSM buildings and roads - footprints, height, levels, min_height and roof shapes (Simple 3D Buildings), Overture where OSM is thin, extruded with floors and walls of plausible density and a stated default storey height; roads, rail and water as features; oracles: a building's mass = its floors and walls by construction, a footprint with a hole keeps it"
+- id: TASK-S26-05
+  milestone: S26
+  title: "Land cover, geology and densities - ESA WorldCover classes to surface materials, BGS Geology and Macrostrat units to strata with densities from a cited table, uncertainty kept as a range; oracles: every class and unit mapped or said unmapped"
+- id: TASK-S26-06
+  milestone: S26
+  title: "The real AION-10 site from data - Oxford's terrain, buildings and geology around the array; its terrain read against an independent prism sum of the DEM within the ledger; its terrain effect beside BGS's published gravity recorded, not gated"
+- id: TASK-S26-07
+  milestone: S26
+  title: "A credits file and in-app attribution - every source with its licence, link and credit line (share-alike terms noted for information), the sources in use named on screen and in bundles"
+- id: TASK-S26-08
+  milestone: S26
+  title: "S26's record: the demo, the validation report against the previous tag, ARCHITECTURE, PROGRESS"
+- id: TASK-S27-01
+  milestone: S27
+  title: "The S27 brief (docs/slices/S27.md): Space - its research note first (orbits, frames, harmonics, the orbiting gradiometer)"
+- id: TASK-S27-02
+  milestone: S27
+  title: "Orbits on rails - Kepler propagation and patched conics with time warp; oracles: an orbit returns to its start <= 1e-12 after 1e4 orbits, the same bits at every warp rate, hand-overs continuous"
+- id: TASK-S27-03
+  milestone: S27
+  title: "N-body propagation and the ephemeris - an integrator for close approaches, against a published ephemeris within its stated error"
+- id: TASK-S27-04
+  milestone: S27
+  title: "A floating origin and frames from planet-centred to local, for the render, the dynamics and the read; the same phase and motion at the origin and 1e8 m away"
+- id: TASK-S27-05
+  milestone: S27
+  title: "Worlds planets from orbit down to voxels - S24's planets streamed and drawn across the whole range of scale, the read's rings to the coarsest node"
+- id: TASK-S27-06
+  milestone: S27
+  title: "Rigid spacecraft - S7's bodies in orbit, docking and contact with the ground"
+- id: TASK-S27-07
+  milestone: S27
+  title: "A planet's gravity - spherical harmonics far (EGM2008 for the Earth) and the voxel crust near with no double counting; against ICGEM's calculation service; a mass moved across the boundary makes no step"
+- id: TASK-S27-08
+  milestone: S27
+  title: "A gradiometer in orbit (with S15) - against the gravity model's tensor along the orbit"
+- id: TASK-S27-09
+  milestone: S27
+  title: "S27's record: the demo, the validation report against the previous tag, ARCHITECTURE, PROGRESS"
+- id: TASK-S28-01
+  milestone: S28
+  title: "The S28 brief (docs/slices/S28.md): Things that bend, from docs/research/elastic-solids.md 8 (TASK-S7-05 is its first part)"
+- id: TASK-S28-02
+  milestone: S28
+  title: "Multigrid and modes on the GPU - Galerkin geometric multigrid preconditioning CG on the graded mesh, LOBPCG, matching the CPU oracle; memory per element measured first (elastic-solids.md 8, S7-05b)"
+- id: TASK-S28-03
+  milestone: S28
+  title: "Modal playback through the read - mode weights per tower, damping, harmonic forcing, the flight's time weighting, node-moment deltas for the walk; oracles: the modal read = the displaced re-read with the difference proportional to amplitude squared, a mode at f = 1/T reads the sinc^2 null (elastic-solids.md 8, S7-05c)"
+- id: TASK-S28-04
+  milestone: S28
+  title: "Quasi-static loads - gravity sag and moving loads (a person on a floor, a vehicle on a road slab) (elastic-solids.md 8, S7-05d)"
+- id: TASK-S28-05
+  milestone: S28
+  title: "S28's record: the demo, the validation report against the previous tag, ARCHITECTURE, PROGRESS"
