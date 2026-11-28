@@ -196,14 +196,39 @@ should carry these numbers when it prices the clipped-piece layer.
 ## 2. The literature, and how the paper's methods relate
 
 Reading status per item is in [`literature-notes.md`](paper-benchmarks/literature-notes.md):
-FULL, PART, ABS or NONE. SEG, Springer and Wiley refused automated fetches, so **several sources
-the draft already cites were not read here**:
-- Werner & Scheeres 1997: its eqs 10, 15 and 17, and its Castalia mascon numbers;
-- Holstein & Ketteridge 1996: its Tables 2–5;
-- Okabe 1979: its eq. 45;
-- Salmon & Warren 1994: the bound.
+FULL, PART, ABS or NONE. On 27 Nov 2026 the owner supplied the PDFs the first pass could not fetch;
+**the draft's citations were checked against them**:
 
-They are listed in `papers-to-fetch.md`. What is stated below comes from the parts that were read.
+| Draft's citation | Verdict | Source location |
+|---|---|---|
+| W&S eqs (10), (15) as eq. (result) | **Confirmed**, term for term (F_f·r_f = n̂_f h_f; E_e split between faces) | W&S 1997 pp. 325, 333 |
+| W&S eq. (17): −Gρ Σω_f is 0 outside, −4πGρ inside | **Confirmed** | W&S 1997 pp. 328, 334 |
+| W&S's Δz = h_f | **Confirmed** | W&S 1997 p. 332 |
+| H&K Tables 2–5 for εγ⁻² (edge) and εγ⁻³ (vertex) | **Confirmed, with a precision**: those exponents are Table 4 (inclined track, direction cosine fixed); Table 3 (horizontal track, vertical component) is one power worse (γ⁻³, γ⁻⁴), and Table 5's measured slopes 3.02 and 4.01 are for that track. "or worse" covers it; better to name Table 4 | H&K 1996 pp. 360, 363 |
+| H&K's r − \|ℓ\| = r₀²/(r+\|ℓ\|) | **Confirmed verbatim** ("Replacing differences of the form r − \|ℓ\| by r₀²/(r + \|ℓ\|)", leading to eqs 27–28) | H&K 1996 p. 362 |
+| "Okabe's eq. 45 makes the same move" | **Stands**: eq. (45) swaps ln[ξ + r] for −ln[r − ξ] when ξ ≤ 0 and η, Z → 0; it is in the gradient-tensor section and is framed as avoiding a singularity | Okabe 1979 p. 736 |
+| S&W's bound on a cube, 109–4800× | **Stands**: the bound is S&W eq. (9) = (62) with exact B_(n) (eq. 60); the ratios are Cavendish's measurement. S&W report the bound tight on particle sets (mean actual/bound 0.22, Fig. 7) | S&W 1994 pp. 142–143, 154 |
+| Castalia mascon numbers | The draft quotes none; they are recorded in the notes (1–10 % surface attraction error at 59 m, first order in pitch) | W&S 1997 pp. 338–339 |
+
+Two of the draft's claims change (details in literature-notes §(d)):
+- **h_f·2A_f is published as an identity.** Werner 1994 (eq. 3.4, p. 261) writes the spherical
+  vertex angle's numerator as Δz times a bracket that "is twice the area of the planar triangle",
+  "invariant for a rigid face"; W&S 1997 (§2.5.4, p. 332) use r₁·(r₂×r₃) = r₁·n_f for the sign.
+  Holstein 2002 (App. B, eq. B-2; eqs 42–43) uses the same identity per edge, "h_ij L_ij is twice the
+  area of the patch ij", summed to 2A_i, to cancel far-field terms analytically in his surface method.
+  Nobody read uses it in the van Oosterom–Strackee form, and Werner 2017 (§16) says the numerics of
+  the solid-angle formulas "have not been analyzed". §3 must cite Werner 1994 for the identity and
+  Holstein 2002 for the anti-cancellation use, and claim only its placement in the W&S solid angle,
+  the rounding analysis and the measurement.
+- **Two more measured far-field laws** (batch 2): Ren et al. 2018 (§3.4, Table 4: tensor of a
+  tetrahedron, κ = 3.2–4.2, total loss at 5×10³–7×10⁴ sizes) and Li & Chouteau 1998 (§5, Table I:
+  double-precision vertex codes break at 10⁴–10⁵ sizes, with the verdict that nobody cares below
+  1 µGal, p. 359, which the draft can answer).
+- **The log1p edge rule is H&K's.** Their eq. (24) is L_e = 2·artanh(ℓ/(a+b)) with the edge length
+  formed directly, and p. 361 warns that ½ln((1+t)/(1−t)) loses accuracy for t ≈ γ ≪ 1. Cite H&K
+  for it.
+
+What is stated below comes from the parts that were read.
 
 - **Prisms (Nagy 1966; Nagy, Papp & Benedek 2000; Plouff 1976; Banerjee & Das Gupta 1977;
   Fukushima 2020).** These compute the closed-form field of a right rectangular prism (Plouff: of
@@ -229,21 +254,30 @@ They are listed in `papers-to-fetch.md`. What is stated below comes from the par
   Ketteridge 1996; Tsoulis 2012; D'Urso 2013/2014; Conway 2015; Werner 2017).** These are the same
   closed-form field, written in face–edge (Werner), line-integral (Petrović, Tsoulis) or
   vector-potential (Conway) form.
-  - Holstein & Ketteridge's abstract already analyses error growing with distance and gives
-    remedies.
-  - Werner 2017 is about the solid angle hidden in all these formulations. **Whether h_f·2A_f is
-    already in it, or in Holstein & Ketteridge, is unverified**; both are on the fetch list.
+  - Holstein & Ketteridge (read in full) analyse error growing with distance (Tables 2–5), and give
+    the remedies: facet area as an observation-independent quantity (eq. 22), edge length formed
+    directly and an accurate artanh for the edge log (eq. 24, p. 361), and r − |ℓ| = r₀²/(r+|ℓ|)
+    (p. 362).
+  - Werner 2017 shows the solid angle hidden in all these formulations and needs one atan2 per face;
+    it gives no h·2A form for the triangle formula (eq. 37) and says its numerics "have not been
+    analyzed" (§16). **Werner 1994 eq. (3.4) already has the numerator as height × twice the
+    triangle's area** (for precomputation, not rounding).
   - **Relation:** the draft rightly claims no new kernel. Its numerical rules should be framed as
     "a specific, measured fix for the Werner–Scheeres solid-angle form", citing Holstein &
-    Ketteridge and Fukushima for the rounding classes.
+    Ketteridge for the rounding classes and the edge rule, Werner 1994 for the identity, and
+    Fukushima for the prism.
   - ESA's code is a Tsoulis implementation; Table A confirms the paper's ε(R/s)³ attribution for it
     independently.
 - **Mascons (Muller & Sjogren 1968; Werner & Scheeres 1997; Wittick & Russell 2019; Rathinam &
   Dempster 2019).** These are point masses filling a shape model.
   - The one recent number read: a cubified 100³ mascon model of Eros has a relative acceleration
     error of 2.6×10⁻⁴ (MasconCube, arXiv:2509.08607, Table 3).
-  - Rathinam & Dempster put mascons on an octree, the closest analogue to the paper's tree, but
-    were **not read**.
+  - Werner & Scheeres's Castalia (§3.2, pp. 338–339): ~3300 mascons at 59 m give 1–10 % attraction
+    error over most of the surface, 0.1–1 % away from it; error ∝ mascon size.
+  - Rathinam & Dempster (read in full) put mascons on an octree, but only to size the leaves: each
+    leaf is a point mass at its centroid and the field is a direct sum over all leaves (eqs 2–9),
+    with no node moments or acceptance test. About 1 % surface acceleration error at ~10⁵ mascons
+    (§V.C).
   - **Relation:** mascons are the paper's row (a), plain cubes. The paper's order ladder quantifies
     what mascon work reports as a single number.
 - **Cut cells and embedded boundaries (Johansen & Colella 1998; Aftosmis, Berger & Melton 1998;
@@ -301,8 +335,11 @@ They are listed in `papers-to-fetch.md`. What is stated below comes from the par
 > gradiometer, at a tolerance (10⁻⁷ of the signal) four orders tighter than geophysical forward
 > modelling usually targets.
 
-(Before submission: check this paragraph against the fetched papers. In particular, check Werner
-2017 and Holstein & Ketteridge 1996 for h_f·2A_f. If either has it, the paper's §3 must say "as in …".)
+(Checked against the fetched papers, 27 Nov 2026. The paragraph stands; one sentence should be
+added after "goes back to Holstein & Ketteridge (1996)": "including the accurate form of the edge
+logarithm we use; the solid angle's numerator as the face's height times twice its area is Werner's
+(1994, eq. 3.4)". The paper's §3 must say "as in Werner (1994)" for N = h_f·2A_f and "as in Holstein
+& Ketteridge (1996, eq. 24)" for the log1p rule.)
 
 ### Proposed bib entries
 
@@ -314,7 +351,7 @@ DOI checked against `api.crossref.org`. Four were re-checked here by hand: Schwa
 - `johansen1998`, `schwartz2006`, `schwartz2015`, `mirtich1996`;
 - `powell2015` (already in `refs.bib`) and `tsoulis2001` (already there).
 
-`werner2017` and `holstein1996` belong in it once they are read.
+`werner2017` and `holstein1996` (already in `refs.bib`) belong in it too, now that both are read.
 
 ## 3. What the paper should change
 
@@ -349,14 +386,18 @@ DOI checked against `api.crossref.org`. Four were re-checked here by hand: Schwa
 
 ## 4. Could not verify, and further questions
 
-**Not verified:**
-- Whether h_f·2A_f (or the near-edge form) appears in Werner 2017 or Holstein & Ketteridge 1996.
-- The draft's citations to W&S eqs 10/15/17, H&K Tables 2–5, Okabe eq. 45 and the Salmon–Warren
-  bound.
-- The Castalia mascon numbers.
-- Rathinam & Dempster's octree mascons.
+**Resolved on 27 Nov 2026** (owner's PDFs; see the table in §2): h_f·2A_f (Werner 1994 has the
+identity; nobody read uses it against rounding), the edge-log rule (H&K eq. 24), W&S eqs 10/15/17,
+H&K Tables 2–5 and p. 362, Okabe eq. 45, the Salmon–Warren bound, the Castalia numbers and
+Rathinam & Dempster.
 
-All are in `papers-to-fetch.md`.
+**Not verified:**
+- Works not supplied, so not checked for the numerator: Strakhov et al. 1986 and Strakhov & Lapina
+  1990 (Werner 2017 §13.3 says they accumulate gores' half-angle tangents with a numerator built from
+  h_ef(s₂−s₁), the same height-times-area shape), Götze & Lahmeyer 1988, Barnett 1976, Pohanka 1988.
+  The Russian papers are the likeliest place for an earlier rounding remark; they are not in English
+  libraries online.
+- H&K's figures were read as page images; their scatter values were not digitised.
 
 **Not measured:**
 - Tesseroids. Harmonica has them, but they are spherical cells and irrelevant at metre scale.
