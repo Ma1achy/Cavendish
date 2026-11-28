@@ -123,7 +123,17 @@ def rms_order(cell: str) -> tuple[float, float, str]:
 # ------------------------------------------------------------------ the benchmark, tower beside the body
 
 def level() -> dict:
-    return json.loads((DATA / "level" / "conv.json").read_text(encoding="utf-8"))
+    """The benchmark as Cavendish reads it (data/cavendish/conv.json, `make.py conv`: the flight
+    read, under "real"), with what Cavendish does not compute taken from the research run
+    (data/level/conv.json, scripts/conv_level.py): the leading read, drawn for comparison only, and
+    the arms' clearance from the surface (geometry: the same towers)."""
+    cav = json.loads((DATA / "cavendish" / "conv.json").read_text(encoding="utf-8"))
+    research = json.loads((DATA / "level" / "conv.json").read_text(encoding="utf-8"))
+    for b in BODIES:
+        cav[b]["clearance"] = research[b]["clearance"]
+        for dist in ("1.5", "10.0"):
+            cav[b][dist]["leading"] = research[b][dist]["leading"]
+    return cav
 
 
 def table_conv(conv: dict) -> dict[str, float]:
@@ -151,7 +161,8 @@ def table_conv(conv: dict) -> dict[str, float]:
                 cells.append(f"{sci(r['err'][-1])} ({r['order']:.1f})")
             rows.append(f"{label} & " + " & ".join(cells) + r" \\")
     rows += [r"\bottomrule", r"\end{tabular}"]
-    write("rr-conv.tex", rows, "data/level/conv.json (scripts/conv_level.py)")
+    write("rr-conv.tex", rows, "data/cavendish/conv.json (oracle/tests/benchmark.rs, make.py conv); "
+          "the leading read in brackets from data/level/conv.json (scripts/conv_level.py)")
 
     def worst(rep: str, dist: str = "1.5") -> tuple[float, str]:
         vals = [(conv[b][dist]["real"]["reps"][rep]["err"][-1], b) for b in BODIES]
@@ -194,7 +205,7 @@ def fig_convergence(conv: dict) -> None:
     axes[0].set_ylabel("phase error, tower 1.5 m off (rad)")
     handles, labels = axes[0].get_legend_handles_labels()
     handles.append(plt.Line2D([], [], color=INK2, ls=":", lw=0.9))
-    labels.append("leading read, same placements")
+    labels.append("leading read (research run)")
     fig.legend(handles, labels, loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.15), fontsize=7)
     fig.subplots_adjust(wspace=0.08)
     fig.savefig(FIG / "convergence.pdf")
@@ -461,7 +472,16 @@ def fig_budget() -> None:
 # ------------------------------------------------------------------ four codes against 40 digits
 
 def table_codes() -> None:
+    """The other codes from the benchmark's record (docs/research/paper-benchmarks/accuracy.json);
+    the Cavendish column from Cavendish's oracle run against the same 40 digits
+    (data/cavendish/forty-digits.json, `make.py forty`), except Spot, whose mesh is downloaded and
+    not in the repository: its Cavendish cells stay the benchmark harness's run of the same kernel."""
     acc = json.loads((BM / "accuracy.json").read_text(encoding="utf-8"))["far_and_near"]
+    cav = json.loads((DATA / "cavendish" / "forty-digits.json").read_text(encoding="utf-8"))["bodies"]
+    for key, b in acc.items():
+        if key in cav:
+            assert cav[key]["triangles"] == b["triangles"], key
+            b["codes"]["ours_rs"] = {"R": cav[key]["R"], "g": cav[key]["g"]}
     show = (("cube_aligned", "aligned cube"), ("plate_aligned", "plate, aligned"), ("sphere", "icosphere"),
             ("spot", "Spot"))
     codes = (("ours_py", "this form, Python"), ("ours_rs", "this form, Cavendish"), ("esa", "ESA"),
@@ -483,14 +503,18 @@ def table_codes() -> None:
             head = f"{label} ({b['triangles']:,})".replace(",", "\\,") if k == 0 else ""
             rows.append(f"{head} & {R:g} & " + " & ".join(cells) + r" \\")
     rows += [r"\bottomrule", r"\end{tabular}"]
-    write("rr-codes.tex", rows, "docs/research/paper-benchmarks/accuracy.json (bench_accuracy.py)")
+    write("rr-codes.tex", rows, "docs/research/paper-benchmarks/accuracy.json (bench_accuracy.py); "
+          "the Cavendish column but Spot's from data/cavendish/forty-digits.json (oracle/tests/polyhedral.rs)")
 
 
 # ------------------------------------------------------------------ numbers the text quotes
 
 def numbers(c: dict, dec: dict[str, float], sw: dict[str, object]) -> None:
-    ref = json.loads((DATA / "mp_reference.json").read_text(encoding="utf-8"))
-    rel = max(r["ours_g"] for rows in ref["bodies"].values() for r in rows if r["R"] <= 1.5 + 1e-9)
+    # The closed form's own error near the bodies: Cavendish's against 40 digits (the six bodies
+    # with ESA's values, R <= 1.5 m).
+    cav = json.loads((DATA / "cavendish" / "forty-digits.json").read_text(encoding="utf-8"))["bodies"]
+    six = ("cube_aligned", "cube", "icosahedron", "plate", "sphere", "stellated")
+    rel = max(g for n in six for r, g in zip(cav[n]["R"], cav[n]["g"]) if r <= 1.5 + 1e-9)
     lines = [
         f"\\newcommand{{\\SignalMax}}{{{c['sig_max']:.0f}}}",
         f"\\newcommand{{\\SignalMin}}{{{c['sig_min']:.0f}}}",

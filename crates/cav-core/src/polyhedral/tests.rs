@@ -244,6 +244,18 @@ cav_validate::case! {
     ),
 }
 
+cav_validate::case! {
+    test: validation_polyhedral_far_field_at_ten_thousand,
+    name: "polyhedral.far_field_at_ten_thousand",
+    subsystem: "polyhedral",
+    slice: "S5",
+    reference: ClosedForm,
+    against: "P2 at R/s = 1e4: the cube series (order 16) and its five-point gradient, a 1/64 m cube at a non-dyadic centre, 16 general directions: the worst relative error of V and of g (the triple-product numerator is the control, in the_far_field_at_ten_thousand_and_the_triple_product_control)",
+    unit: Relative,
+    tolerance: 1e-7,
+    measure: cav_validate::Measured::Error(far_field_error(1e4).0),
+}
+
 #[test]
 fn the_far_field_at_ten_thousand_and_the_triple_product_control() {
     let (kernel, control) = far_field_error(1e4);
@@ -252,13 +264,83 @@ fn the_far_field_at_ten_thousand_and_the_triple_product_control() {
     assert!(control >= 10.0 * kernel, "the triple product is not worse: {control:e} against {kernel:e}");
 }
 
-#[test]
-#[ignore = "a diagnostic: the far-field error by distance, the kernel and the triple product"]
-fn far_field_by_distance() {
-    for ratio in [10.0, 30.0, 100.0, 300.0, 1e3, 3e3, 1e4, 3e4, 1e5] {
-        let (kernel, control) = far_field_error(ratio);
-        println!("R/s {ratio:8.0e}: kernel {kernel:.1e}, triple product {control:.1e}");
+/// `V` and `g` by the kernel's face form (`h_f·2A_f` numerator) with each edge's logarithm the
+/// naive ratio `ln((a + b + ℓ)/(a + b − ℓ))` in place of [`edge_log`]: the paper's third variant
+/// (`docs/papers/polyhedral-gravity`, Figure "far field"). Not the kernel; for the figure only.
+fn naive_log_field(solid: &Faceted, density: f64, point: Vec3) -> (f64, Vec3) {
+    let r: Vec<(Vec3, f64)> = solid.vertices.iter().map(|v| (*v - point, (*v - point).length())).collect();
+    let (mut u, mut g) = (0.0, Vec3::ZERO);
+    for f in &solid.faces {
+        let [(r1, l1), (r2, l2), (r3, l3)] = f.corners.map(|c| r[c as usize]);
+        let h = f.normal.dot(r1);
+        let den = l1 * l2 * l3 + l1 * r2.dot(r3) + l2 * r3.dot(r1) + l3 * r1.dot(r2);
+        let w = 2.0 * (h * f.twice_area).atan2(den);
+        let mut s = 0.0;
+        for k in 0..3 {
+            let e = solid.edges[f.edges[k] as usize];
+            let (a, b) = (r[e.ends[0] as usize].1, r[e.ends[1] as usize].1);
+            let log = ((a + b + e.length) / (a + b - e.length)).ln();
+            s += f.edge_normals[k].dot(r[f.corners[k] as usize].0) * log;
+        }
+        let b = s - h * w;
+        u += 0.5 * h * b;
+        g = g - f.normal * b;
     }
+    (-density * u, g * density)
+}
+
+/// The far-field columns of the paper's figure at `R/s = ratio`, the worst over 16 general
+/// directions: `[A:V, A:g, B:V, B:g, C:V, C:g]`, relative, for (A) the triple-product numerator,
+/// (B) the kernel and (C) the kernel's numerator with the naive logarithm.
+fn far_field_columns(ratio: f64) -> [f64; 6] {
+    let cube =
+        Faceted::from_cuboid(&Cuboid { centre: ODD, half: Vec3::new(0.5, 0.5, 0.5) * FAR_SIDE }).unwrap();
+    let mass = DENSITY * FAR_SIDE.powi(3);
+    let mut out = [0f64; 6];
+    for n in directions(16) {
+        let d = n * (ratio * FAR_SIDE);
+        let (v, g) = series_field(mass, d);
+        let field = cube.field(DENSITY, ODD + d);
+        let variants = [
+            triple_product_field(&cube, DENSITY, ODD + d),
+            (field.potential, field.attraction),
+            naive_log_field(&cube, DENSITY, ODD + d),
+        ];
+        for (k, (tv, tg)) in variants.into_iter().enumerate() {
+            out[2 * k] = out[2 * k].max(relative(tv, v));
+            out[2 * k + 1] = out[2 * k + 1].max(relative_vec(tg, g));
+        }
+    }
+    out
+}
+
+/// Where the paper's data files go: `docs/papers/polyhedral-gravity/data/cavendish/`.
+fn paper_data() -> std::path::PathBuf {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/papers/polyhedral-gravity/data/cavendish");
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// The far-field error by distance, printed and written as the paper's `farfield.txt`
+/// (`make.py farfield`).
+#[test]
+#[ignore = "a diagnostic: the far-field error by distance; writes the paper's data/cavendish/farfield.txt"]
+fn far_field_by_distance() {
+    let mut text = String::from("R/s       A:U rel    A:g rel    B:U rel    B:g rel    C:U rel    C:g rel\n");
+    for ratio in [10.0, 30.0, 100.0, 300.0, 1e3, 3e3, 1e4, 3e4, 1e5, 3e5] {
+        let c = far_field_columns(ratio);
+        println!(
+            "R/s {ratio:8.0e}: kernel {:.1e}, triple product {:.1e}, naive log {:.1e}",
+            c[3], c[1], c[5]
+        );
+        text += &format!("{ratio:8.0e}");
+        for x in c {
+            text += &format!("   {x:8.1e}");
+        }
+        text += "\n";
+    }
+    std::fs::write(paper_data().join("farfield.txt"), text).unwrap();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -323,13 +405,24 @@ fn beside_an_edge_the_direct_form_loses_its_digits() {
     assert!(direct >= 1e-7, "the direct form kept its digits: {direct:e} (kernel {kernel:e})");
 }
 
+/// The near-edge errors by distance, printed and written as the paper's `nearedge.txt`
+/// (`make.py nearedge`): `d`, the exact `L`, the direct form's and the kernel's relative error, and
+/// `|p|`, the point's distance from the origin (the input-rounding floor `ε|p|/(d·L)` is drawn from
+/// it). A direct form that divides by zero is written `inf`.
 #[test]
-#[ignore = "a diagnostic: the near-edge errors by distance"]
+#[ignore = "a diagnostic: the near-edge errors by distance; writes the paper's data/cavendish/nearedge.txt"]
 fn near_edge_by_distance() {
-    for d in [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10] {
+    let mut text = String::from("d          L exact      naive rel    hk rel       |p|\n");
+    for d in [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-12, 1e-14] {
         let (l, direct, v, g) = near_edge(d);
         println!("d {d:6.0e}: L {l:.1e} (direct {direct:.1e}), V {v:.1e}, g {g:.1e}");
+        let h = 0.5 * FAR_SIDE;
+        let p = NEAR_CENTRE + Vec3::new(h, h, 0.0) + Vec3::new(0.8, 0.6, 0.0) * d;
+        let exact = 2.0 * (0.5 * FAR_SIDE / d).asinh();
+        let direct = if direct.is_finite() { format!("{direct:9.1e}") } else { format!("{:>9}", "inf") };
+        text += &format!("{d:8.0e}   {exact:10.4}   {direct}    {l:9.1e}    {:.6}\n", p.length());
     }
+    std::fs::write(paper_data().join("nearedge.txt"), text).unwrap();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -409,6 +502,18 @@ fn the_polyhedron_is_finite_on_its_surface() {
     assert!(at_vertex.is_infinite() && (0.0 * at_vertex).is_nan(), "{at_vertex}");
     let h = f.normal.dot(solid.vertices[f.corners[0] as usize] - places[0].1);
     assert!(h.abs() <= PLANE_ROUNDING * (places[0].1.length() + solid.reach), "{h:e}");
+}
+
+cav_validate::case! {
+    test: validation_polyhedral_on_its_surface,
+    name: "polyhedral.on_its_surface",
+    subsystem: "polyhedral",
+    slice: "S5",
+    reference: ClosedForm,
+    against: "P4: V and g at a point on a face, on an edge, at a vertex and on an edge's extension, against points 1e-9 of the size away on each side, of an aligned box, an icosahedron and a turned box: the worst relative change (finite everywhere)",
+    unit: Relative,
+    tolerance: 1e-7,
+    measure: cav_validate::Measured::Error(surface_bodies().iter().map(surface_continuity).fold(0.0, f64::max)),
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -514,6 +619,18 @@ fn the_solid_angles_say_inside_or_out() {
     assert!(broken_worst > 1e-12, "a flipped face still reads right: {broken_worst:e}");
 }
 
+cav_validate::case! {
+    test: validation_polyhedral_solid_angles,
+    name: "polyhedral.solid_angles",
+    subsystem: "polyhedral",
+    slice: "S5",
+    reference: ClosedForm,
+    against: "P5: the sum of the faces' solid angles at points outside (0), inside (4 pi) and on a face (2 pi) of the five Platonic solids, a turned box and a torus mesh: the worst difference in steradians (the report has no solid-angle unit: read radians as steradians)",
+    unit: Radians,
+    tolerance: 1e-12,
+    measure: cav_validate::Measured::Error(solid_angle_error(&angle_bodies()).0),
+}
+
 // ---------------------------------------------------------------------------------------------
 // P6: the attraction is the gradient.
 
@@ -554,6 +671,20 @@ fn the_attraction_is_the_gradient() {
     let (_, solid, convex) = &angle_bodies()[4];
     let broken = gradient_error(&flipped(solid), *convex);
     assert!(broken > 1e-7, "a flipped face's attraction is still the gradient: {broken:e}");
+}
+
+cav_validate::case! {
+    test: validation_polyhedral_attraction_is_the_gradient,
+    name: "polyhedral.attraction_is_the_gradient",
+    subsystem: "polyhedral",
+    slice: "S5",
+    reference: ClosedForm,
+    against: "P6: g against minus a central difference of V (step 1e-5 of the size) at 48 points outside and inside the five Platonic solids, a turned box and a torus mesh: the worst relative difference",
+    unit: Relative,
+    tolerance: 1e-7,
+    measure: cav_validate::Measured::Error(
+        angle_bodies().iter().map(|(_, s, convex)| gradient_error(s, *convex)).fold(0.0, f64::max)
+    ),
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -1,0 +1,9 @@
+name	polyhedral.mesh_moments
+subsystem	polyhedral
+slice	S5
+reference	closed form
+against	volume, centroid, second and third central moments by the divergence theorem over the triangles of the five Platonic solids (edge 0.9 m, non-dyadic centre) and a turned 0.62×0.94×0.46 m box, against the textbook closed forms and Polyhedron's integrals: the worst error (mass relative, centre over the size, moments over m·s² and m·s³)
+unit	relative
+tolerance	1e-13
+measured	7.490215130175567e-16
+pass	true

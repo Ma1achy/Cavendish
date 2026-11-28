@@ -32,3 +32,10 @@ slow-timeout = { period = "60s", terminate-after = 3 }
 filter = 'test(validation_slow_the_rings_reproduce_their_tolerance) | test(slow_the_rings_miss_their_tolerance_at_half_the_radii)'
 test-group = 'whole-machine'
 slow-timeout = { period = "60s", terminate-after = 3 }
+# The paper's benchmark (TASK-S5-18): five bodies on 16 lattices each, 192 flight reads a body
+# (what its criteria use; the paper's diagnostic reads 480), over every core but two. One at a time
+# among its group, up to three minutes.
+[[profile.default.overrides]]
+filter = 'test(validation_the_benchmark_bodies_converge)'
+test-group = 'whole-machine'
+slow-timeout = { period = "60s", terminate-after = 3 }

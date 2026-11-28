@@ -49,6 +49,16 @@ double-covers). The streaming makes what a view names; a node not resident is dr
 resident ancestor, said. The blocks below the chunk are drawn merged into their chunk and outlined
 by the overlays. Worth a second look: L1/L2 measured at 1e-2 (at 1e-4 every tower opens everything).
 
+**TASK-S5-18, the paper regenerated with Cavendish (28 Nov 2026; §7.17).** The polyhedral-gravity
+paper's kernel figures (far field, near edge), its 40-digit comparison (table and figure), the
+engine's P1–P7 table (now all from the validation report) and the benchmark (Table "phase error at
+h = 1/64 m", Figure "against pitch", the static numbers) come from Cavendish's tests and lost their
+*provisional* mark; the benchmark is a new oracle case on the paper's five bodies (B1–B3 pass;
+Cavendish's exact signals agree with the research scripts' to 5e-11). The moving-body figure, the
+ten shapes' rows and the error budget stay provisional (TASK-S5-29: their meshes are downloaded,
+and the budget is Gradar-side). P8 as written fails (1.6e-10 at 100 sizes; question below,
+TASK-S5-28 open). Every changed number of the paper is listed in §7.17 for its author.
+
 **TASK-S5-15, the octree overlay and the read-LOD overlay (28 Nov 2026; §7.14).** The world's
 contribution now carries what the views draw of the read (the octree's nodes, each tower's cut with
 every accepted node's bound), through the page's wire too; `overlay octree` outlines the octree by
@@ -1040,6 +1050,14 @@ mutation). Left, all minor:
   (`docs/research/worlds.md` §6). Say if either should be bought or licensed.
   **Answered 28 Nov 2026: no paid data.** Nothing is bought; S26 uses the open 625k geology map (OGL)
   and the BGS gravity points only where they are OGL, otherwise no gravity comparison.
+- **P8 (TASK-S5-28, 28 Nov 2026):** `Faceted` against 40 digits reads 1.6e-10 relative at 100
+  sizes (the turned plate; 1.2e-12 at 10 sizes, 1.1e-13 within 3), criterion 1e-12 to 100 sizes.
+  The error is the `ε(R/s)²` rounding the paper claims (`2.2e-12` at 100 sizes before constants), so
+  no f64 evaluation of the form meets it; the class itself is gated (`polyhedral.forty_digit_class`,
+  ESA's values fail it). Choose: (a) restate P8 as "≤ 1e-12 within 3 sizes, and the `ε(R/s)²`
+  class beyond" and merge TASK-S5-28 with it; (b) keep 1e-12 to 100 sizes and ask for a
+  double-double reference evaluation (`plan/IDEAS.md`); (c) keep it in the record as failed and
+  close TASK-S5-28.
 
 Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
 - **Ubuntu Mono: yes.** `UbuntuMono-Regular.ttf` from the official Ubuntu font family release goes in,

@@ -1,0 +1,9 @@
+name	polyhedral.far_field_at_ten_thousand
+subsystem	polyhedral
+slice	S5
+reference	closed form
+against	P2 at R/s = 1e4: the cube series (order 16) and its five-point gradient, a 1/64 m cube at a non-dyadic centre, 16 general directions: the worst relative error of V and of g (the triple-product numerator is the control, in the_far_field_at_ten_thousand_and_the_triple_product_control)
+unit	relative
+tolerance	1e-7
+measured	7.707945313469215e-8
+pass	true

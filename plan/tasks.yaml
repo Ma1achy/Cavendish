@@ -1018,3 +1018,9 @@
 - id: TASK-S25-15
   milestone: S25
   title: "S25's record: the measurements against the S5 tag, the validation report, ARCHITECTURE, PROGRESS"
+- id: TASK-S5-28
+  milestone: S5
+  title: "P8 as written: Faceted within 1e-12 of 40 digits to 100 sizes (fails at 1.6e-10 on the turned plate at 100 m, the eps (R/s)^2 class; docs/slices/S5.md 7.17); left open for the owner's ruling"
+- id: TASK-S5-29
+  milestone: S5
+  title: "The paper's remaining provisional rows through cav: the flight-phase figure's passes (point masses, Spot, a moving voxel torus), and the ten shapes' scenes for the sweep, cost, crossover, whole-mesh and decimation tables and the cut-away figure"
