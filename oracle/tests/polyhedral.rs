@@ -227,3 +227,12 @@ fn forty_digits_for_the_paper() {
         decade_slope(&esa_g, &WITH_ESA, f64::min)
     );
 }
+
+/// P8 as `docs/slices/S5.md` §3 writes it: ≤ 1e-12 relative at `R/s ≤ 100` against the 40-digit
+/// reference, `U` and `g`, every point of the six bodies. TASK-S5-28: it fails (1.6e-10 on the
+/// turned plate at 100 m, the `ε(R/s)²` class; §7.16), and its PR is left open for the owner's ruling.
+#[test]
+fn polyhedral_agrees_with_the_40_digit_reference() {
+    let (worst, body, r) = worst_within(100.0);
+    assert!(worst <= 1e-12, "P8: {worst:e} relative on the {body} at {r} m (criterion 1e-12 within 100 sizes)");
+}

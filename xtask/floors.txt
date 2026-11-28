@@ -70,4 +70,5 @@
 quick 789
 gpu 44
 slow 61
-oracle 62
+# TASK-S5-28 (P8 as written; fails, left open): 1 new oracle test.
+oracle 63
