@@ -765,6 +765,62 @@ pub fn drawables_hiding(
     b.out
 }
 
+/// The colour of a world overlay's box (`overlay octree|level|tower|ledger`, linear light): by its
+/// level on the sequential map over `levels` (the levels drawn); by its tower's colour; or by its
+/// share of the ledger on the sequential map of its base-10 logarithm over `shares` (the least
+/// and greatest drawn), an opened chunk (no share: read leaf by leaf) grey.
+#[must_use]
+pub fn lod_box_colour(
+    b: &cav_sim::world::lod_view::LodBox,
+    overlay: cav_sim::world::lod_view::WorldOverlay,
+    levels: (i8, i8),
+    shares: (f64, f64),
+    dark: bool,
+) -> [f32; 4] {
+    use cav_sim::world::lod_view::WorldOverlay;
+    let rgb = match overlay {
+        WorldOverlay::Tower => b.tower.map_or([0x80; 3], tower_srgb),
+        WorldOverlay::Ledger if b.share > 0.0 => {
+            crate::colour::of_value(b.share.log10(), (shares.0.log10(), shares.1.log10()), false, dark)
+        }
+        WorldOverlay::Ledger => [0x6a; 3],
+        _ => crate::colour::of_value(
+            f64::from(b.level),
+            (f64::from(levels.0), f64::from(levels.1)),
+            false,
+            dark,
+        ),
+    };
+    linear((u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]), 1.0)
+}
+
+/// `things` with a world overlay's boxes (`lod`'s, [`cav_sim::world::lod_view::LodFrame`]) added as
+/// outlines, relative to `origin`, as one more part.
+#[must_use]
+pub fn with_lod(
+    mut things: Drawables,
+    lod: Option<&cav_sim::world::lod_view::LodFrame>,
+    origin: Vec3,
+    style: DrawStyle,
+) -> Drawables {
+    let Some(lod) = lod.filter(|l| !l.boxes.is_empty()) else { return things };
+    let dark = style != DrawStyle::Paper;
+    let levels = (lod.levels.first().copied().unwrap_or(0), lod.levels.last().copied().unwrap_or(0));
+    let shares = lod
+        .boxes
+        .iter()
+        .map(|b| b.share)
+        .filter(|s| *s > 0.0)
+        .fold((f64::INFINITY, 0f64), |(a, b), s| (a.min(s), b.max(s)));
+    let mut b = Builder { origin, out: std::mem::take(&mut things) };
+    for item in &lod.boxes {
+        let colour = lod_box_colour(item, lod.overlay, levels, shares, dark);
+        b.box_edges(item.boxed.lo, item.boxed.hi, 1.0, colour);
+    }
+    b.end_part(Part::Overlay);
+    b.out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

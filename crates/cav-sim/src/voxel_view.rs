@@ -158,6 +158,11 @@ pub struct Overlay {
     /// put a boundary cell's mass. Only for a tree with exact pieces, drawn leaf by leaf.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub centroids: bool,
+    /// An overlay of the world's levels (S5): its octree by level, or the view's entries by
+    /// level, by the tower that set them or by their share of the ledger
+    /// ([`crate::world::lod_view::WorldOverlay`]).
+    #[serde(default, skip_serializing_if = "crate::world::lod_view::WorldOverlay::is_none")]
+    pub world: crate::world::lod_view::WorldOverlay,
 }
 
 /// How the tree overlay fades with depth: which end is drawn faint.

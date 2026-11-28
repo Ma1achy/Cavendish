@@ -500,6 +500,7 @@ fn gpu_a_world_is_drawn_near_and_far() {
             span: None,
             voxels: None,
             world,
+            lod: None,
         };
         renderer.render_rgba(&gpu, frame, size).unwrap()
     };
@@ -569,6 +570,7 @@ fn gpu_the_world_near_the_eye_and_at_the_ring_is_drawn() {
             span: None,
             voxels: None,
             world,
+            lod: None,
         };
         renderer.render_rgba(&gpu, frame, size).unwrap()
     };

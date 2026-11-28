@@ -48,6 +48,7 @@ fn picture(gpu: &Gpu, renderer: &Renderer, scene: &SceneSpec, view: &ViewSpec) -
         span: None,
         voxels: Some(&voxels),
         world: None,
+        lod: None,
     };
     let started = std::time::Instant::now();
     let rgba = renderer.render_rgba(gpu, frame, SIZE).expect("render");

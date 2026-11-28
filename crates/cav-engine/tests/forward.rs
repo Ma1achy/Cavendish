@@ -1475,3 +1475,24 @@ fn a_signal_s_news_is_tagged_as_the_forward_stage_s() {
         "the edit is not the forward stage's: {log:?}"
     );
 }
+
+#[test]
+fn slow_the_octree_overlay_comes_with_the_world_s_read() {
+    // `overlay octree` before the world is read says so and draws nothing; once the read is in,
+    // the pane draws the read's octree, with no walk or build of its own (the boxes are the
+    // contribution's nodes). Control: `overlay none` draws none.
+    let mut engine = loaded(dev::world_box());
+    engine.run_line("overlay octree").unwrap();
+    let before = engine.frame(0).unwrap().lod.expect("a world's pane has a LOD frame").clone();
+    assert!(before.boxes.is_empty());
+    assert!(engine.settle(LONG), "the read arrives");
+    let after = engine.frame(0).unwrap().lod.unwrap().clone();
+    assert!(!after.boxes.is_empty() && after.notes.is_empty(), "{:?}", after.notes);
+    let nodes = engine.frame(0).unwrap().lod.unwrap().boxes.len();
+    engine.run_line("overlay none").unwrap();
+    assert!(engine.frame(0).unwrap().lod.unwrap().boxes.is_empty());
+    engine.run_line("overlay octree").unwrap();
+    assert_eq!(engine.frame(0).unwrap().lod.unwrap().boxes.len(), nodes);
+    // The journal's line reads back as the command.
+    assert!(engine.journal().iter().any(|c| cav_engine::console::describe(c, 0) == "overlay octree"));
+}

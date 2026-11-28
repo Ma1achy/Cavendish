@@ -234,6 +234,8 @@ pub struct Engine {
     patience: std::time::Duration,
     /// The voxel bodies' trees, made when a shape or a mass changes, for drawing.
     voxels: crate::voxels::Voxels,
+    /// Each pane's LOD view and world overlay, from the world read's octree and cuts.
+    lods: crate::lod::Lods,
     /// The world volume's resident chunks and bricks, streamed around the cameras and towers.
     world: crate::world::Streaming,
     /// Files dropped on the window, by name, newest last: what `import <name>` reads first (in a
@@ -316,6 +318,7 @@ impl Engine {
             compare: None,
             patience: TYPED_LINE_PATIENCE,
             voxels: crate::voxels::Voxels::default(),
+            lods: crate::lod::Lods::default(),
             world: crate::world::Streaming::default(),
             dropped: Vec::new(),
             loads: 0,
@@ -617,6 +620,7 @@ impl Engine {
         // it could not draw is said once, for the scene that has it (a refusal of a tree).
         let voxel_notes = self.voxels.refresh(&self.spec, self.time, &self.views[..self.panes]);
         self.world.refresh(&self.spec, &self.views[..self.panes], &self.contents[..self.panes]);
+        self.refresh_lods();
         // Whatever changed the scene or moved the playhead changes what the towers read under it.
         if !matches!(command, Command::Select(_) | Command::View(_)) {
             self.forward.request_reading(&self.spec, self.time);
@@ -1751,9 +1755,21 @@ impl Engine {
     }
 
     /// Records what has arrived: a signal is announced, and either is a change of what is shown.
+    /// Makes each pane's LOD frame again, from the current world read.
+    fn refresh_lods(&mut self) {
+        let read = self.forward.world_view();
+        let world = self.spec.world.is_some();
+        self.lods.refresh(&self.views[..self.panes], &self.contents[..self.panes], read, world);
+    }
+
     fn took(&mut self, (signal, reading): (bool, bool)) -> bool {
         if signal {
             self.announce();
+        }
+        // A world read that has arrived gives the views its octree and cuts.
+        if self.lods.stale(self.forward.world_view().as_ref()) {
+            self.refresh_lods();
+            self.generation += 1;
         }
         if reading {
             self.generation += 1;
@@ -2001,6 +2017,7 @@ impl Engine {
             span: self.spans[pane],
             voxels: self.voxels.frame(pane),
             world: self.world.frame(),
+            lod: self.lods.frame(pane),
         })
     }
 

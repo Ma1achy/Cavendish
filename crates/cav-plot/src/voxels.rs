@@ -556,6 +556,116 @@ pub fn view(
     (drawing, drawn)
 }
 
+/// The world overlay's legend (`overlay octree|level|tower|ledger`, S5): a heading and one swatch
+/// for each level drawn (−4 … −1 the blocks below the chunk, 0 a chunk), each tower drawn, or the
+/// ledger's shares (base-10 exponents, least to greatest, and "leaves" for an opened chunk), in the
+/// colours the renderer draws them in ([`cav_render::scene::lod_box_colour`]). `None` when no box
+/// is drawn.
+#[must_use]
+pub fn lod_legend(
+    lod: &cav_sim::world::lod_view::LodFrame,
+    style: &Style,
+    measure: &dyn Measure,
+) -> Option<Drawing> {
+    use cav_sim::world::lod_view::{LodBox, WorldOverlay};
+    if lod.boxes.is_empty() {
+        return None;
+    }
+    let dark = is_dark(style);
+    let levels = (lod.levels.first().copied().unwrap_or(0), lod.levels.last().copied().unwrap_or(0));
+    let shares = lod
+        .boxes
+        .iter()
+        .map(|b| b.share)
+        .filter(|s| *s > 0.0)
+        .fold((f64::INFINITY, 0f64), |(a, b), s| (a.min(s), b.max(s)));
+    let colour = |b: &LodBox| {
+        let c = cav_render::scene::lod_box_colour(b, lod.overlay, levels, shares, dark);
+        let byte = |v: f32| {
+            let v = v.clamp(0.0, 1.0);
+            let s = if v <= 0.003_130_8 { 12.92 * v } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 };
+            (s * 255.0).round() as u8
+        };
+        Colour([byte(c[0]), byte(c[1]), byte(c[2])])
+    };
+    let any = lod.boxes[0];
+    let (title, keys): (&str, Vec<(String, Colour)>) = match lod.overlay {
+        WorldOverlay::Tower => {
+            let mut towers: Vec<usize> = lod.boxes.iter().filter_map(|b| b.tower).collect();
+            towers.sort_unstable();
+            towers.dedup();
+            let keys = towers
+                .iter()
+                .map(|&t| (format!("{}", t + 1), colour(&LodBox { tower: Some(t), ..any })))
+                .collect();
+            ("read by tower", keys)
+        }
+        WorldOverlay::Ledger => {
+            let mut keys = Vec::new();
+            if shares.1 > 0.0 {
+                let (a, b) = (shares.0.log10(), shares.1.log10());
+                for k in 0..=4 {
+                    let e = a + (b - a) * f64::from(k) / 4.0;
+                    keys.push((format!("{e:.0}"), colour(&LodBox { share: 10f64.powf(e), ..any })));
+                }
+            }
+            if lod.boxes.iter().any(|b| b.share == 0.0) {
+                keys.push(("leaves".to_owned(), colour(&LodBox { share: 0.0, ..any })));
+            }
+            ("share of ledger, log10", keys)
+        }
+        _ => {
+            let keys =
+                lod.levels.iter().map(|&l| (l.to_string(), colour(&LodBox { level: l, ..any }))).collect();
+            ("world level", keys)
+        }
+    };
+    let size = style.text_size;
+    let pad = 0.5 * size;
+    let [title_w, title_h] = measure.size(title, Face::Sans, size);
+    let label_w = keys.iter().map(|(l, _)| measure.size(l, Face::Mono, size)[0]).fold(0.0, f32::max);
+    let swatch = (1.6 * size).max(label_w + 0.3 * size);
+    let width = (swatch * keys.len() as f32).max(title_w) + 2.0 * pad;
+    let (bar_h, label_h) = (0.9 * size, measure.size("0", Face::Mono, size)[1]);
+    let height = title_h + bar_h + label_h + 4.0 * pad;
+    let mut drawing = Drawing::new([width, height], format!("legend · {title}"));
+    drawing.items.push(Item::Rect {
+        min: [0.0, 0.0],
+        max: [width, height],
+        fill: Some(style.background),
+        stroke: Some((style.rule_width, style.rule)),
+    });
+    let text = |at, anchor, text: String, face, size, colour| Item::Text {
+        at,
+        anchor,
+        text,
+        face,
+        size,
+        colour,
+        turned: false,
+    };
+    drawing.items.push(text([pad, pad], Anchor::LEFT_TOP, title.to_owned(), Face::Sans, size, style.text));
+    let top = 2.0 * pad + title_h;
+    for (k, (label, fill)) in keys.into_iter().enumerate() {
+        let x = pad + swatch * k as f32;
+        drawing.items.push(Item::Rect {
+            min: [x + 0.08 * swatch, top],
+            max: [x + 0.92 * swatch, top + bar_h],
+            fill: Some(fill),
+            stroke: Some((style.rule_width, style.rule)),
+        });
+        drawing.items.push(text(
+            [x + 0.5 * swatch, top + bar_h + pad],
+            Anchor::CENTRE_TOP,
+            label,
+            Face::Mono,
+            size,
+            style.text,
+        ));
+    }
+    Some(drawing)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

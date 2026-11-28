@@ -585,6 +585,9 @@ pub struct Contribution {
     pub world: Option<WorldLedger>,
     /// What a person should know about this source's readings.
     pub warnings: Vec<Warning>,
+    /// For the world: the octree's nodes and each tower's cut, for the views that draw them
+    /// (`crate::world::lod_view`); not in a bundle. `None` for every other source.
+    pub view: Option<std::sync::Arc<crate::world::lod_view::ReadView>>,
 }
 
 /// Two truncations together: the nearer radius, when either left matter out.
@@ -782,6 +785,7 @@ pub fn contribution_on(
         settled: true,
         truncated: None,
         world: None,
+        view: None,
         warnings: Vec::new(),
     };
     // Each tower's own sign: the gradiometer is differenced as its instrument says.
@@ -1024,8 +1028,8 @@ fn world_contribution(
     let readouts: Vec<f64> = (0..spec.array.towers.len())
         .map(|at| if shots.count(at) > 0 { shots.readout(at, 0) } else { 0.0 })
         .collect();
-    let reads = match crate::world::read_world(spec, readers, &readouts, cancelled) {
-        Ok(Some(reads)) => reads,
+    let (reads, view) = match crate::world::read_world(spec, readers, &readouts, cancelled) {
+        Ok(Some(read)) => (read.towers, read.view),
         Ok(None) => return None,
         Err(why) => {
             for channel in [&mut out.lower, &mut out.upper, &mut out.gradiometer] {
@@ -1091,6 +1095,7 @@ fn world_contribution(
         out.gradiometer.extend(value(signed(at, lower, upper)));
     }
     out.world = Some(WorldLedger { tolerance, towers });
+    out.view = Some(std::sync::Arc::new(view));
     Some(())
 }
 /// A body with a shape, ready to read: its leaves as uniform cubes where the body is (or, for an

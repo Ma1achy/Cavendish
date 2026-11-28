@@ -20,8 +20,12 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use cav_core::voxel::world::{ChunkKey, WorldGrid};
 use cav_sim::SceneSpec;
 use cav_sim::read::{self, Contribution, Phases, ReadingAt, SourceId, TowerLedger, Warning, WorldLedger};
+use cav_sim::world::inner::InnerKey;
+use cav_sim::world::lod_view::{ReadView, TowerCut};
+use cav_sim::world::octree::NodeKey;
 
 /// Somewhere jobs run off the caller's thread: in a page, the application's Web Workers.
 pub trait Remote {
@@ -175,6 +179,7 @@ pub fn serve(request: &[u8]) -> Vec<u8> {
                     out.maybe(contribution.truncated);
                     out.world(contribution.world.as_ref());
                     out.warnings(&contribution.warnings);
+                    out.view(contribution.view.as_deref());
                 }
                 None => out.byte(NOTHING),
             }
@@ -227,6 +232,7 @@ pub fn answer(bytes: &[u8]) -> Result<Answer, String> {
             truncated: reader.maybe()?,
             world: reader.world()?,
             warnings: reader.warnings()?,
+            view: reader.view()?.map(std::sync::Arc::new),
         }),
         READING => {
             let time = reader.float()?;
@@ -314,6 +320,52 @@ impl Writer {
             self.count(tower.near);
             self.float(tower.audit);
             self.byte(u8::from(tower.settled));
+        }
+    }
+
+    fn key(&mut self, level: u8, key: ChunkKey) {
+        self.byte(level);
+        for v in key.to_array() {
+            self.0.extend(v.to_le_bytes());
+        }
+    }
+
+    /// What the views draw of the world's read, when there is one: a byte (0 or 1), then the grid
+    /// (origin, pitch, supersample), the octree's nodes (level, key), and each tower's cut (its
+    /// ledger; accepted nodes with their bounds; blocks with theirs; opened chunks).
+    fn view(&mut self, view: Option<&ReadView>) {
+        self.byte(u8::from(view.is_some()));
+        let Some(view) = view else { return };
+        self.byte(u8::from(view.grid.is_some()));
+        if let Some(grid) = view.grid {
+            for v in grid.origin.to_array() {
+                self.float(v);
+            }
+            self.float(grid.pitch);
+            self.byte(grid.supersample);
+        }
+        self.count(view.nodes.len());
+        for n in &view.nodes {
+            self.key(n.level, n.key);
+        }
+        self.count(view.towers.len());
+        for t in &view.towers {
+            self.float(t.ledger);
+            self.count(t.accepted.len());
+            for (k, b) in &t.accepted {
+                self.key(k.level, k.key);
+                self.float(*b);
+            }
+            self.count(t.inner.len());
+            for (k, b) in &t.inner {
+                self.key(k.level, k.chunk);
+                self.0.extend(k.key.to_le_bytes());
+                self.float(*b);
+            }
+            self.count(t.opened.len());
+            for k in &t.opened {
+                self.key(0, *k);
+            }
         }
     }
 
@@ -420,6 +472,60 @@ impl Reader<'_> {
             });
         }
         Ok(Some(WorldLedger { tolerance, towers }))
+    }
+
+    fn key(&mut self) -> Result<(u8, ChunkKey), String> {
+        let level = self.byte()?;
+        let mut v = [0i32; 3];
+        for a in &mut v {
+            *a = i32::from_le_bytes(self.take(4)?.try_into().map_err(|_| "a key")?);
+        }
+        Ok((level, ChunkKey::new(v[0], v[1], v[2])))
+    }
+
+    /// A count of items of at least `each` bytes, refused when larger than what is left.
+    fn items(&mut self, each: usize) -> Result<usize, String> {
+        let count = self.count()?;
+        if count > (self.bytes.len() - self.at) / each {
+            return Err("an answer cut short".into());
+        }
+        Ok(count)
+    }
+
+    fn view(&mut self) -> Result<Option<ReadView>, String> {
+        match self.byte()? {
+            0 => return Ok(None),
+            1 => {}
+            other => return Err(format!("a flag of {other}")),
+        }
+        let grid = match self.byte()? {
+            0 => None,
+            _ => {
+                let origin = cav_core::Vec3::new(self.float()?, self.float()?, self.float()?);
+                Some(WorldGrid { origin, pitch: self.float()?, supersample: self.byte()? })
+            }
+        };
+        let nodes = (0..self.items(13)?)
+            .map(|_| self.key().map(|(level, key)| NodeKey { level, key }))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut towers = Vec::new();
+        for _ in 0..self.items(32)? {
+            let ledger = self.float()?;
+            let accepted = (0..self.items(21)?)
+                .map(|_| Ok((self.key().map(|(level, key)| NodeKey { level, key })?, self.float()?)))
+                .collect::<Result<Vec<_>, String>>()?;
+            let inner = (0..self.items(25)?)
+                .map(|_| {
+                    let (level, chunk) = self.key()?;
+                    let key = u32::from_le_bytes(self.take(4)?.try_into().map_err(|_| "a key")?);
+                    Ok((InnerKey { chunk, level, key }, self.float()?))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            let opened =
+                (0..self.items(13)?).map(|_| self.key().map(|(_, k)| k)).collect::<Result<Vec<_>, _>>()?;
+            towers.push(TowerCut { accepted, inner, opened, ledger });
+        }
+        Ok(Some(ReadView { grid, nodes, towers }))
     }
 
     fn warnings(&mut self) -> Result<Vec<Warning>, String> {
