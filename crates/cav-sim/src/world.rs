@@ -182,11 +182,35 @@ pub struct WorldReadSpec {
     #[schemars(range(min = 0.0, max = 1.0))]
     #[schemars(extend("x-unit" = "rad"))]
     pub tolerance: f64,
+    /// How each tower's cut is chosen: `Ledger` (the default) opens nodes by their bounds until
+    /// those it accepts sum to the tolerance; `Rings` accepts by distance alone, at radii measured
+    /// for 1e-2, 1e-4 and 1e-6 rad (the table for the largest of those at most the tolerance), a
+    /// cheaper cut whose ledger is reported the same way. Rings below 1e-6 rad are refused.
+    #[serde(default, skip_serializing_if = "WalkKind::is_ledger")]
+    pub walk: WalkKind,
+}
+
+/// How a world read chooses each tower's cut (`world.read.walk`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum WalkKind {
+    /// The ledger walk ([`walk::walk_into`]).
+    #[default]
+    Ledger,
+    /// The rings at the measured radii ([`rings::rings_into`], [`rings::RINGS`]).
+    Rings,
+}
+
+impl WalkKind {
+    /// Whether it is the default, `Ledger` (so that a file that does not say it is unchanged).
+    #[must_use]
+    pub fn is_ledger(&self) -> bool {
+        *self == Self::Ledger
+    }
 }
 
 impl Default for WorldReadSpec {
     fn default() -> Self {
-        Self { radius: 0.0, tolerance: PHASE_TOLERANCE }
+        Self { radius: 0.0, tolerance: PHASE_TOLERANCE, walk: WalkKind::Ledger }
     }
 }
 
@@ -714,9 +738,20 @@ pub fn read_world(
             max_nodes: walk::MAX_CUT_NODES,
             rule: walk::Rule::Octupole,
         };
-        let Some(cut) = walk::walk_into(&octree, &aim, &world, &mut trees, cancelled)? else {
-            return Ok(None);
+        let cut = match world_spec.read.walk {
+            WalkKind::Ledger => walk::walk_into(&octree, &aim, &world, &mut trees, cancelled)?,
+            WalkKind::Rings => {
+                let tolerance = world_spec.read.tolerance;
+                let radii = rings::row(tolerance).ok_or_else(|| {
+                    format!(
+                        "world.read.walk Rings has radii for 1e-2, 1e-4 and 1e-6 rad only, not for {tolerance:.0e} \
+                         (docs/slices/S5.md §7.11); use Ledger or a larger world.read.tolerance"
+                    )
+                })?;
+                rings::rings_into(&octree, &aim, &world, &mut trees, radii, cancelled)?
+            }
         };
+        let Some(cut) = cut else { return Ok(None) };
         cuts.push(cut);
         aims.push(aim);
     }
@@ -751,6 +786,7 @@ pub mod clipmap;
 pub mod inner;
 pub mod local;
 pub mod octree;
+pub mod rings;
 pub mod walk;
 
 #[cfg(test)]

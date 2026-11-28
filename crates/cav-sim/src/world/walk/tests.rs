@@ -351,7 +351,7 @@ pub(crate) const TOWN_BASES: [[f64; 3]; 8] = [
 ];
 
 /// The chunks under node `id`, pushed to `out`.
-fn chunks_under(tree: &Octree, id: usize, out: &mut Vec<ChunkKey>) {
+pub(crate) fn chunks_under(tree: &Octree, id: usize, out: &mut Vec<ChunkKey>) {
     match tree.chunk(id) {
         Some(key) => out.push(key),
         None => tree.children(id).iter().for_each(|&c| chunks_under(tree, c as usize, out)),
