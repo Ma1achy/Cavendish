@@ -35,6 +35,17 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**TASK-S5-09, cut-cell moments (28 Nov 2026; `docs/slices/S5.md` §7.6).** Boundary cells clipped
+exactly (convex solids by half-spaces, meshes by the signed vertical-prism decomposition, the
+curved solids by their analytic surface) and read as `Fill`, `Centroid` or `Second`; `Sampled`
+unchanged (114 of the 116 earlier validation values the same to the last digit, the other two
+TASK-S5-24's). C1 2.1e-15 (1e-12); C2's orders as written (aligned cube 0.95, 1.99, 2.96, 4.92)
+after the test's lattice placement was changed to [X]'s random sub-cell offsets: the first run, on
+the engine's centred grid, failed two rows for measured reasons (§7.6). Clip time 5 to 6 µs a cell
+for convex solids, 46 µs for a ball, 59 µs for a 16,384-triangle mesh. Worth a second look: the
+clip-work units calibrated by time cap a ball at about 120,000 cut cells (r/80); a body with parts
+stays `Sampled`.
+
 **Seen while building TASK-S5-24 (28 Nov 2026):** the oracle's
 `validation_cylinder_vs_point_mass` passes nextest's two-minute watchdog neither with the new cube
 kernel nor with main's, run alone on this PC while another agent was building, so
