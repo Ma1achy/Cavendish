@@ -713,23 +713,37 @@ fn c6_rms(centred: bool) -> Vec<(f64, f64, f64)> {
             } else {
                 placements.iter().map(|p| c2_grid(&sphere, h, *p)).collect()
             };
-            for grid in &grids {
-                let tree =
-                    voxelise_cut(&sphere, grid, Weight::Density(C2_DENSITY), 0, Budget::DEFAULT).unwrap();
-                for (tower, exact) in towers.iter().zip(&exact) {
-                    for (i, representation) in
-                        [Representation::Centroid, Representation::Second].iter().enumerate()
-                    {
-                        let read = reader.read(
-                            *tower,
-                            &TreeBody::read_as(&tree, *representation, |_| Vec3::ZERO),
-                            10.0,
-                        );
-                        let e = (read.lower - read.upper) - (exact.lower - exact.upper);
-                        sums[i] += e * e;
-                    }
-                    n += 1.0;
-                }
+            // One thread a grid, joined in order, so the sums are the same bits however they ran.
+            let parts: Vec<([f64; 2], f64)> = std::thread::scope(|scope| {
+                let handles: Vec<_> = grids
+                    .iter()
+                    .map(|grid| {
+                        let (reader, towers, exact, sphere) = (&reader, &towers, &exact, &sphere);
+                        scope.spawn(move || {
+                            let tree =
+                                voxelise_cut(sphere, grid, Weight::Density(C2_DENSITY), 0, Budget::DEFAULT)
+                                    .unwrap();
+                            let mut sums = [0.0f64; 2];
+                            for (tower, exact) in towers.iter().zip(exact) {
+                                for (i, representation) in
+                                    [Representation::Centroid, Representation::Second].iter().enumerate()
+                                {
+                                    let body = TreeBody::read_as(&tree, *representation, |_| Vec3::ZERO);
+                                    let read = reader.read(*tower, &body, 10.0);
+                                    let e = (read.lower - read.upper) - (exact.lower - exact.upper);
+                                    sums[i] += e * e;
+                                }
+                            }
+                            (sums, towers.len() as f64)
+                        })
+                    })
+                    .collect();
+                handles.into_iter().map(|h| h.join().unwrap()).collect()
+            });
+            for (part, count) in parts {
+                sums[0] += part[0];
+                sums[1] += part[1];
+                n += count;
             }
             (h, (sums[0] / n).sqrt(), (sums[1] / n).sqrt())
         })
