@@ -37,10 +37,12 @@
 mod analytic;
 mod convex;
 mod mesh;
+mod pieces;
 #[cfg(test)]
 mod tests;
 
 pub use convex::Convex;
+pub use pieces::{MAX_PIECE_TRIANGLES, PIECE_WITHIN, PieceSolid, piece_solids};
 
 use crate::Vec3;
 
@@ -69,11 +71,15 @@ pub enum Representation {
     /// within [`super::kernel::PRISM_WITHIN`] cells of the point asked about, the `Centroid` cube
     /// (which is finite inside). Order about four.
     Second,
+    /// Within [`PIECE_WITHIN`] cells of an arm point the exact piece, read by the polyhedral
+    /// closed form ([`piece_solids`]); `Second` beyond. For polyhedra and meshes only: a curved
+    /// solid's pieces are integrals of its surface, not polyhedra.
+    Pieces,
 }
 
 impl Representation {
     /// Every one, in the order of the ladder.
-    pub const ALL: [Self; 4] = [Self::Sampled, Self::Fill, Self::Centroid, Self::Second];
+    pub const ALL: [Self; 5] = [Self::Sampled, Self::Fill, Self::Centroid, Self::Second, Self::Pieces];
 
     /// Whether the body's tree must carry exact pieces ([`voxelise_cut`]): every one but `Sampled`.
     #[must_use]
@@ -241,6 +247,12 @@ pub trait CellClip {
     fn work(&self, cell: [u32; 3], boxed: &Aabb) -> u64;
     /// The moments of the shape's part of `boxed` about `boxed`'s centre ([`Raw`]).
     fn clip(&self, cell: [u32; 3], boxed: &Aabb) -> Raw;
+    /// The shape's part of `boxed` as signed convex polyhedra in the frame of `boxed`'s centre,
+    /// whose signed sum it is (for [`Representation::Pieces`]); `None` (the default) for a shape
+    /// whose pieces are not polyhedra (a curved solid).
+    fn convex(&self, _cell: [u32; 3], _boxed: &Aabb) -> Option<Vec<(f64, Convex)>> {
+        None
+    }
 }
 
 /// A clipper that needs nothing prepared: the shape itself.
@@ -252,6 +264,10 @@ pub(crate) trait Stateless: Sync {
     fn work(&self, boxed: &Aabb) -> u64;
     /// As [`CellClip::clip`].
     fn clip(&self, boxed: &Aabb) -> Raw;
+    /// As [`CellClip::convex`].
+    fn convex(&self, _boxed: &Aabb) -> Option<Vec<(f64, Convex)>> {
+        None
+    }
 }
 
 impl<T: Stateless> CellClip for Borrowed<'_, T> {
@@ -260,6 +276,9 @@ impl<T: Stateless> CellClip for Borrowed<'_, T> {
     }
     fn clip(&self, _cell: [u32; 3], boxed: &Aabb) -> Raw {
         self.0.clip(boxed)
+    }
+    fn convex(&self, _cell: [u32; 3], boxed: &Aabb) -> Option<Vec<(f64, Convex)>> {
+        self.0.convex(boxed)
     }
 }
 

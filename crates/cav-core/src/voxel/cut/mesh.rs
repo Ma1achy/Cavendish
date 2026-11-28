@@ -145,9 +145,25 @@ impl CellClip for Binned<'_> {
     }
 
     fn clip(&self, cell: [u32; 3], b: &Aabb) -> Raw {
+        let mut out = Raw::default();
+        for (sign, piece) in self.prisms_of(cell, b) {
+            out = out.plus(sign, &piece.raw());
+        }
+        out
+    }
+
+    fn convex(&self, cell: [u32; 3], b: &Aabb) -> Option<Vec<(f64, Convex)>> {
+        Some(self.prisms_of(cell, b))
+    }
+}
+
+impl Binned<'_> {
+    /// The cell `b` (finest cell `cell`) clipped by each candidate triangle's prism: `(sign,
+    /// piece)` in the frame of the cell's centre, the empty ones left out.
+    fn prisms_of(&self, cell: [u32; 3], b: &Aabb) -> Vec<(f64, Convex)> {
         let c = b.centre();
         let side = b.size().x.max(b.size().y).max(b.size().z);
-        let mut out = Raw::default();
+        let mut out = Vec::new();
         for &t in self.bin(cell) {
             let p = &self.prisms[t as usize];
             if p.top <= b.lo.z
@@ -185,7 +201,7 @@ impl CellClip for Binned<'_> {
             let d = m.dot(a);
             piece.clip(m, d - m.dot(c), plane_tolerance(m, d, c, side));
             if !piece.is_empty() {
-                out = out.plus(p.sign, &piece.raw());
+                out.push((p.sign, piece));
             }
         }
         out

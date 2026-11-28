@@ -469,7 +469,9 @@ fn each_representation_reads_through_the_scene() {
         (v.lower[0] - exact.lower).abs().max((v.upper[0] - exact.upper).abs())
     };
     let sampled_error = error(&sampled);
-    for representation in [Representation::Fill, Representation::Centroid, Representation::Second] {
+    for representation in
+        [Representation::Fill, Representation::Centroid, Representation::Second, Representation::Pieces]
+    {
         let (scene, _, cut) = read(representation);
         let e = error(&cut);
         eprintln!("{representation:?}: {e:.3e} rad against Sampled's {sampled_error:.3e}");
@@ -494,4 +496,12 @@ fn each_representation_reads_through_the_scene() {
         kind: cav_sim::shape::PartKind::Solid { shape: ShapeKind::Sphere { radius: 0.1 } },
     }];
     assert!(parts.validate().unwrap_err().0.starts_with("bodies[0].shape.representation"));
+    // Pieces of a curved solid are refused by the field; of a polyhedron they are not.
+    let mut ball = scene.clone();
+    let shape = ball.bodies[0].shape.as_mut().unwrap();
+    shape.kind = ShapeKind::Sphere { radius: 0.4 };
+    shape.representation = Representation::Pieces;
+    assert!(ball.validate().unwrap_err().0.contains("Pieces reads a polyhedron"));
+    ball.bodies[0].shape.as_mut().unwrap().representation = Representation::Second;
+    assert_eq!(ball.validate(), Ok(()));
 }

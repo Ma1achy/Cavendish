@@ -42,7 +42,9 @@
 # box mesh's pieces are the cuboid's, a sampled tree unchanged and a cut tree's leaves its pieces';
 # cav-sim: each representation reads through the scene); 1 new slow test (cav-core: C2,
 # validation_slow_cut_cell_orders).
-quick 751
+# TASK-S5-10 (Pieces): 2 new quick tests (cav-core: every cut cell exact is the body, a cell's
+# solids weigh its piece); 1 new slow test (cav-core: C6, slow_the_sphere_anomaly_with_random_placements).
+quick 753
 gpu 42
-slow 55
+slow 56
 oracle 58
