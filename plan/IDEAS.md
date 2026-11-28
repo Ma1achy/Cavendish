@@ -299,6 +299,20 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   `1/7`th power, so a 3× tighter `A_4` is about 15 % nearer: measure the walk's nodes with and
   without before paying 280 bytes a node. A chunk's own `A_6 … A_16` could likewise be exact
   (`cube_even_powers`, about 500 flops a leaf).
+- **The engine keeps the world's octree and each tower's world reading** (TASK-S5-12): `cav-sim`
+  keeps nothing between calls, so every world contribution, and every reading under the playhead
+  (`read::reading` reads every source again), builds the octree anew (the town's: 0.8 s on 8
+  threads) and walks and reads each tower again, though the world is static. The engine already
+  keeps contributions apart; it could keep the world's `Octree` and the world contribution by the
+  world's hash and compose a playhead reading from the kept one (any shot of a static world reads
+  the same), so that scrubbing a town costs what it did in S4. Needs `read::reading` to take the
+  kept world part.
+- **Levels below the chunk for opened chunks** (TASK-S5-12): on `town` the walk accepts a 3.2 m chunk
+  only from about 90 m at 1e-2 rad (the bound is 100 to 900 times the error), so the cut is mostly
+  opened chunks read leaf by leaf: 31 s a tower, and past 1e-3 the audited read exceeds the kernel's
+  share and does not settle (`docs/slices/S5.md` §7.3). Opening a chunk into its own voxel tree's
+  nodes, each with a summary, would let the walk go on below level 0 instead of reading every leaf;
+  so would a tighter bound (the exact `A_4` above) or reading the towers in parallel.
 - **`cube_shift`'s closed form near a cube, error-bounded as the arms' difference is** (TASK-S5-24):
   a body's small motions are read as `V(d − shift) − V(d)`, and near a cube that is two closed-form
   potentials subtracted, which loses `ε·(the terms' size)/|change|`. Split the cube as

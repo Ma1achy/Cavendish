@@ -421,21 +421,24 @@ decimated mesh's phase against the full scan's, both summed whole, at 1.5~m. \pr
 
 \begin{figure}[t]\centering
 \includegraphics[width=\linewidth]{figures/shapes-torus.png}\\[2pt]
-\includegraphics[width=\linewidth]{figures/shapes-bunny.png}
-\caption{Two of the ten shapes, each cut away at the lattice wall nearest its centre plane, both at
-32 cells across the largest extent. Top: the analytic torus (2.8~m across) at pitch 0.0875~m, whose
-cubes and pieces are made from a 4096-triangle mesh; bottom: the Stanford bunny (1~m; 69\,664
-triangles, all of the scan's kept, five base holes capped) at 1/32~m. Left, the true body (green);
-middle, cubes full when the centre is inside (blue); right, the same interior cubes and every crossed
-cell clipped to its piece (orange), which together are the body exactly to the mesh. Dotted: the true
-surface as a sparse 3-D cage (for the torus, rings around the tube every $15^\circ$ and around the
-axis every $30^\circ$; for the bunny, contours every three cells in height and the silhouette) and
-where the cut meets it. Each dot is depth-tested against the voxels and the true surface, so the cage
-shows only where the true surface lies in front of the voxels or within a hair of them, weaving in
-and out of the cubes' staircase and lying on the pieces. The pictures show a lattice four times
-coarser than the finest one measured: the sweep runs from 4 to 128 cells across and the errors this
-section quotes are at 128, where the cells would be too small to see at print size. Lit as the
-diagrams are, with screen-space ambient occlusion. Rendered by the study's \texttt{figures.py}.}
+\includegraphics[width=0.74\linewidth]{figures/shapes-bunny.png}
+\caption{Two of the ten shapes, each cut away at the lattice wall nearest its centre plane. Top: the
+analytic torus (2.8~m across), whose cubes and pieces are made from a 4096-triangle mesh; bottom: the
+Stanford bunny (1~m; 69\,664 triangles, all of the scan's kept, five base holes capped). Left: the true
+body (green). Right, a grid of the same lattices, rows by pitch and columns by representation: top row
+16 cells across the largest extent (pitch 0.175~m and 1/16~m), to show what a cell is; bottom row 64
+across (0.04375~m and 1/64~m). Left column: cubes full when the centre is inside (blue). Right column:
+the same interior cubes with every crossed cell clipped to its piece (orange, thin vermilion piece
+outlines), which together are the body exactly to the mesh. At the same coarse pitch the pieces have
+exactly the mesh's shape and mass, while the cubes are off by first order in the pitch. Both lattices
+are the sweep's; the errors this section quotes are measured at 128 cells across, twice as fine as
+drawn here, where the steps would be too small to see at print size. Voxel faces
+are flat-shaded with a per-corner ambient occlusion, so a staircase reads as a stepped surface; cell
+edges are drawn only on the coarse lattice. Dotted: the true surface as a sparse 3-D cage (for the
+torus, rings around the tube every $15^\circ$ and around the axis every $30^\circ$; for the bunny,
+contours about a tenth of its size apart in height, and the silhouette) and where the cut meets it, each dot depth-tested
+against the voxels and the true surface (within half a cell at 64 across). Lit as the diagrams are,
+with screen-space ambient occlusion. Rendered by the study's \texttt{figures.py}.}
 \label{fig:shapes-repr}
 \end{figure}
 

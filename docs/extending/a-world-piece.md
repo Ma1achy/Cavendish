@@ -53,5 +53,6 @@ changes. A world holds at most 255 (`MAX_MATERIALS`).
   raster does not, and the chunk oracle fails at that cell.
 - Overlapping pieces: the earlier in `world.pieces` holds the shared matter. A cell two materials
   share takes the one with more of its sample points.
-- A piece far larger than the read radius is read only within the radius of each tower; the
-  read says so.
+- The whole world is read (S5): far matter through the octree's nodes, within the walk's ledger,
+  so a piece needs nothing for the read beyond its chunks. A world whose chunks are past the
+  octree's cap (`MAX_READ_CHUNKS_WHOLE`) is not read at all; the read says so.

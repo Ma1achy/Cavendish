@@ -254,8 +254,11 @@ impl Summary {
         self.difference_to(3, across, below, above, gap)
     }
 
-    /// [`Self::difference`] with the expansion kept to `order` (0 the monopole … 3 the octupole).
-    fn difference_to(&self, order: usize, across: [f64; 2], below: f64, above: f64, gap: f64) -> f64 {
+    /// [`Self::difference`] with the expansion kept to `order` (0 the monopole … 3 the octupole;
+    /// more is the octupole): for controls that leave orders out, and for measuring what each
+    /// order is worth.
+    #[must_use]
+    pub fn difference_to(&self, order: usize, across: [f64; 2], below: f64, above: f64, gap: f64) -> f64 {
         let horizontal = across[0] * across[0] + across[1] * across[1];
         let (b, a) = ((horizontal + below * below).sqrt(), (horizontal + above * above).sqrt());
         // 1/a − 1/b, from b² − a² = (below − above)(below + above).
@@ -313,6 +316,20 @@ impl Summary {
 
     /// [`Self::bound`] for the orders from `first` on.
     fn bound_from(&self, first: usize, distance: f64, separation: f64) -> f64 {
+        self.bound_by(first, &|l| (l + 1) as f64, distance, separation)
+    }
+
+    /// [`Self::bound`] for the orders from `first` on, with `factor(l)` in place of the gradient's
+    /// `l + 1`: for controls that break the bound on purpose (a factor of 1, an order too few),
+    /// never for a read.
+    #[must_use]
+    pub fn bound_by(
+        &self,
+        first: usize,
+        factor: &dyn Fn(usize) -> f64,
+        distance: f64,
+        separation: f64,
+    ) -> f64 {
         if self.is_empty() {
             return 0.0;
         }
@@ -323,14 +340,14 @@ impl Summary {
         let mut sum = 0.0;
         let mut scale = distance.powi(-(first as i32 + 2));
         for (l, a) in self.absolute.iter().enumerate().skip(first) {
-            sum += (l + 1) as f64 * a * scale;
+            sum += factor(l) * a * scale;
             scale /= distance;
         }
         // The tail: (l + 1) A_16 e^{l−16} / R^{l+2} for l > 16, that is A_16/R^18 (l + 1) q^{l−16}.
         let last = self.absolute[ABSOLUTE_ORDERS - 1] * distance.powi(-(ABSOLUTE_ORDERS as i32 + 1));
         let (mut power, mut l) = (q, ABSOLUTE_ORDERS);
         while power > 1e-17 && l < 4000 {
-            sum += (l + 1) as f64 * last * power;
+            sum += factor(l) * last * power;
             power *= q;
             l += 1;
         }

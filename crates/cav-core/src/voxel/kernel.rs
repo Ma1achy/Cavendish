@@ -28,7 +28,7 @@
 //! the closed form only where that rounding, estimated from the terms themselves, is within
 //! [`DIFFERENCE_EPSILON`] of the difference's scale; otherwise it splits the cube into its eight
 //! halves (exact) and takes each the same way, so the parts near the arms get small and the rest
-//! go to the series. Measured in `docs/slices/S5.md` §7.3.
+//! go to the series. Measured in `docs/slices/S5.md` §7.4.
 
 use crate::Vec3;
 use crate::forward::Source;
@@ -308,16 +308,16 @@ fn potential_and_size(mass: f64, side: f64, d: Vec3) -> (f64, f64) {
 /// its estimated rounding is at most this fraction of the scale `S = |M|·min(|gap|/ρ², 1/ρ)`,
 /// `ρ = max(r, side)`, `r` the nearer point's distance from the cube's centre (`S` is the size of
 /// the difference when nothing cancels by symmetry). TASK-S5-24.
-pub const DIFFERENCE_EPSILON: f64 = 1e-13;
+pub const DIFFERENCE_EPSILON: f64 = 1e-12;
 
 /// The closed form's estimated rounding over `f64::EPSILON` times the size of its terms
 /// (`prism_terms`, at both points): the ratio measured, with room (`closed_form_rounding` in the
-/// tests; docs/slices/S5.md §7.3).
+/// tests; docs/slices/S5.md §7.4).
 pub const CLOSED_FORM_ROUNDING: f64 = 1.0;
 
 /// The most times [`cube_difference`] halves a cube to keep the closed form's difference within
 /// [`DIFFERENCE_EPSILON`]: past it (a gap of nanometres beside a large block) the closed form is
-/// taken as it is. Splitting stops long before for any gap the flight has (§7.3).
+/// taken as it is. Splitting stops long before for any gap the flight has (§7.4).
 pub const MAX_SPLIT_DEPTH: u32 = 16;
 
 /// `(V(upper) − V(lower))/G` (kg/m) for a uniform cube of `mass` kg and side `side` m, the two
@@ -783,7 +783,7 @@ mod tests {
         }
     }
 
-    /// The reference difference for K1 (S5 §7.3): the cube split exactly into octants,
+    /// The reference difference for K1 (S5 §7.4): the cube split exactly into octants,
     /// recursively, until every part's series converges to rounding at the nearer point, each
     /// part's difference then the series' (no cancellation in the monopole), summed with
     /// compensation. No closed form anywhere, so the points must be outside the cube.
@@ -815,7 +815,7 @@ mod tests {
         sum.value()
     }
 
-    /// The difference's scale `S` of §7.3 (and of [`DIFFERENCE_EPSILON`]).
+    /// The difference's scale `S` of §7.4 (and of [`DIFFERENCE_EPSILON`]).
     fn difference_scale(mass: f64, side: f64, across: [f64; 2], below: f64, above: f64, gap: f64) -> f64 {
         let horizontal = across[0] * across[0] + across[1] * across[1];
         let nearer = (horizontal + below * below).sqrt().min((horizontal + above * above).sqrt());

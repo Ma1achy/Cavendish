@@ -552,6 +552,23 @@ fn an_unsettled_reading_says_so() {
     );
     assert_eq!(cav_engine::estimate_text(1e-8, true, Some(2.0)), part);
     assert!(cav_engine::estimate_text(1e-8, false, Some(0.03)).contains("within 0.03 m only"));
+    // A world that was not read at all (past the octree's caps, S5) says so in those words.
+    assert_eq!(cav_engine::estimate_text(0.0, false, Some(0.0)), "not settled: the world is not read");
+    // S5's badge: the world's ledger, its largest cut, and the words for a walk that stopped.
+    let tower = |ledger: f64, settled: bool| read::TowerLedger {
+        ledger,
+        accepted: 400,
+        opened: 12,
+        per_level: vec![300, 100],
+        settled,
+    };
+    let settled = read::WorldLedger { tolerance: 1e-3, towers: vec![tower(3e-4, true), tower(1e-4, true)] };
+    assert_eq!(cav_engine::world_text(&settled), "world within 3e-4 rad (ledger, 412 nodes)");
+    let stopped = read::WorldLedger { tolerance: 1e-3, towers: vec![tower(3e-3, false), tower(1e-4, true)] };
+    assert_eq!(
+        cav_engine::world_text(&stopped),
+        "world not settled: ledger 3e-3 rad, 2e-3 over τ (412 nodes)"
+    );
     // A point mass on a tower's axis does not settle. The reading that comes back is the one
     // asked for (`refined`), and its heading must not pass the estimate off as a bound.
     let mut engine = loaded(dev::point());
@@ -1384,9 +1401,9 @@ fn a_scene_with_no_towers_answers_every_query() {
 fn slow_a_truncated_world_read_reaches_every_reply() {
     // S4's second review, J4: the truncation and `settled` as the API and MCP serve them, in the
     // signal, the reading under a playhead and the periodogram, and in their JSON; and in
-    // `read::reading` itself. world-box read only within 1 m of the towers (it is farther).
-    let mut part = dev::world_box();
-    part.world.as_mut().unwrap().read.radius = 1.0;
+    // `read::reading` itself. Since S5 the world is read whole, so the only world left out is one
+    // past the octree's caps: stress-1e10's kilometre, not read at all (truncated at 0 m).
+    let part = dev::stress_1e10();
     let replies = |scene: SceneSpec| {
         let mut engine = loaded(scene);
         engine.set_patience(LONG);
@@ -1419,9 +1436,9 @@ fn slow_a_truncated_world_read_reaches_every_reply() {
         )
     };
     let (signal, reading, periodogram, texts) = replies(part.clone());
-    assert_eq!((signal, reading, periodogram), ((Some(1.0), false), (Some(1.0), false), Some(1.0)));
-    assert!(texts.iter().all(|t| t.contains("\"truncated\":1.0")), "{texts:?}");
-    assert_eq!(read::reading(&part, 1.0, &|| false).unwrap().truncated, Some(1.0));
+    assert_eq!((signal, reading, periodogram), ((Some(0.0), false), (Some(0.0), false), Some(0.0)));
+    assert!(texts.iter().all(|t| t.contains("\"truncated\":0.0")), "{texts:?}");
+    assert_eq!(read::reading(&part, 1.0, &|| false).unwrap().truncated, Some(0.0));
     // Control: the whole box is read whole: no truncation, settled, and no key in the JSON.
     let whole = dev::world_box();
     let (signal, reading, periodogram, texts) = replies(whole.clone());
