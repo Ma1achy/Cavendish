@@ -108,7 +108,7 @@ pub struct Moments {
 }
 
 /// The position of the moment `ab` in [`Moments::second`].
-const fn second_index(a: usize, b: usize) -> usize {
+pub(crate) const fn second_index(a: usize, b: usize) -> usize {
     let (lo, hi) = if a < b { (a, b) } else { (b, a) };
     match (lo, hi) {
         (0, 0) => 0,
@@ -121,7 +121,7 @@ const fn second_index(a: usize, b: usize) -> usize {
 }
 
 /// The position of the moment `abc` in [`Moments::third`].
-const fn third_index(a: usize, b: usize, c: usize) -> usize {
+pub(crate) const fn third_index(a: usize, b: usize, c: usize) -> usize {
     // Sort the three axes.
     let (mut x, mut y, mut z) = (a, b, c);
     if x > y {
@@ -206,7 +206,7 @@ impl Moments {
 }
 
 /// The ten distinct third moments, as axis triples in the order of [`Moments::third`].
-const THIRD: [(usize, usize, usize); 10] = [
+pub(crate) const THIRD: [(usize, usize, usize); 10] = [
     (0, 0, 0),
     (1, 1, 1),
     (2, 2, 2),

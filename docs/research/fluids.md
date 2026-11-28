@@ -5,6 +5,11 @@
 sources. Scripts and raw output: `fluids/` (`python fluids/cavity.py RA N`,
 `python fluids/signals.py`, `python fluids/compare_refs.py`; numpy only).*
 
+*Updated 28 Nov 2026 from four more primary papers: Tric, Labrosse & Betrouni 2000 (the 3-D cube
+reference; Fusegi is 0.6–2.2 % high, so `heated_cube_3d` moves to Tric at 1 %, §11–12), Morton,
+Taylor & Turner 1956 (plume laws and α, §11), Johnson & Patel 1999 (sphere-wake numbers, §7, §11) and
+Yue, Zhou & Feng 2007 (phase-field drop shrinkage, a new row in §6).*
+
 ## Changed after reading the primary sources (25 Nov 2026)
 
 The owner fetched 31 of the papers the first version could not open. I read them (page, section, table
@@ -391,11 +396,15 @@ fixed resolution on a uniform grid. Neither is a current need (§3).
 | **Geometric VOF, PLIC** (Weymouth & Yue 2010; Basilisk) | **exact** for a discretely divergence-free face velocity with Δt Σ_d \|u_d/Δx_d\| < ½ (eq. 21), no clipping, explicit sweeps. 1.3 × 10⁻¹² of the volume per step in a 3-D breaking-wave test (Table 4) [P]. Basilisk: "guarantees exact mass conservation for the multi-dimensional advection scheme (provided the advection velocity field is exactly non-divergent)" ([`vof.h`](http://basilisk.fr/src/vof.h) [S]) | Cartesian grids in the paper; the tree version is Basilisk's |
 | Gerris-style VOF (Popinet 2009, §3.2) | **not exact**: each direction sweep resets over- and under-shoots, "which will lead to loss of exact mass conservation"; under 10⁻² % in the §6 tests with the divergence tolerance at 10⁻³ (§6.4), 0.02 % through jet breakup (§6.5) [P] | adaptive quad/octree, balanced-force surface tension, height functions |
 | CLSVOF / VOF-derived level set | as VOF | a distance field from VOF for normals, if ever needed |
+| Phase field, Cahn–Hilliard (Yue, Zhou & Feng 2007) | **total conserved, drops not**: ∫φ dΩ is constant (eq. 2), but a drop shrinks while the bulk φ shifts off ±1, by δr/r₀ = −(√2/18)(V/V_d)(ε/r₀) and δφ = (√2/3)(ε/r₀) in 3-D (eqs. 12–13, p. 4; ε the capillary width, V the domain, V_d the drop); every drop below r_c = (2^{1/6} V ε/(3π))^{1/4} eventually vanishes (eq. 18, p. 7, checked against FE runs in Fig. 5). Their own elongational-flow example lost 1.4 % of the drop's volume in five flow times at Cn = ε/r₀ = 0.01 (§3, p. 8) [P] | the lost water reappears spread through the other phase over all of V, a distribution error the read would see. A 1 m³ tank in an 8,000 m³ fluid domain with ε = 5 cm is under r_c ≈ 2.6 m [D, eq. 18] |
 
 **Choose VOF.**
 - Of the Eulerian schemes here it is the only one that conserves water to the gram (§3) *if* the
   Weymouth–Yue conditions hold. The Gerris-style scheme and the original VOF clip and lose 10⁻⁴ or
   more; that is 100 g in a cubic metre (§3). A free-surface LBM also conserves the total (§4.3).
+  A Cahn–Hilliard phase field conserves the total too, but moves water out of each drop or tank
+  into the whole domain (Yue et al., row above), so "total conserved" is not the property the read
+  needs; it is not a candidate.
 - Its unknown, the fill fraction, is exactly what the gravity read needs: cell mass = ρ_w(T) · f · h³.
 - It matches the world volume's "volume fraction exact" stamping (`REBUILD.md` §5.2).
 
@@ -443,6 +452,17 @@ Test it (§12).
     (§3.4, pp. 8813–8814). They also find the rasterised solution not L∞-convergent, and Batty's
     solution with O(1) maximum-norm errors at the boundary (§1, §4, Table 2). Validated by flow
     past a sphere against Johnson & Patel up to Re 300 (§7.2).
+  - *Johnson & Patel 1999* [P, read in full; figures from rendered pages]. Body-fitted O-O grid
+    (101 × 42 × 101, outer radius 15 D), observed order about 1.7 (§2.2). Regimes: steady
+    axisymmetric from separation (Re ≈ 20) to Re ≈ 210; steady non-axisymmetric with a fixed symmetry
+    plane from **Re 211** (§5; literature 210–212); still steady at Re 270, periodic at 280 (§6, p. 40).
+    At **Re 300: mean C_D = 0.656** (oscillation amplitude 3.5 × 10⁻³), **C_L = −0.069** (amplitude
+    1.6 × 10⁻²), **St = 0.137** (§6.1, p. 41–42); Tomboulides's spectral elements give 0.671 and 0.136,
+    Roos & Willmarth's experiment C_D 0.629, the authors' own dye experiments St 0.148–0.165
+    (conclusions). The steady-regime separation angle, bubble length and C_D exist **only as
+    figures** (Figs. 4–5); read by eye from the rendered pages: Θ_s ≈ 127° and x_s ≈ 0.9 D at Re 100,
+    Θ_s ≈ 117° and x_s ≈ 1.45 D at Re 200, C_D ≈ 1.1 (Re 100) and ≈ 0.8 (Re 200). These are not
+    tabulated values and must not be used as tight tolerances. An optional S8 case built on them is in §11.
   So the cut-cell weights **replace the staircase's O(1) boundary error with a first-order one in
   3-D**, not a second-order one. The first version, "a well-behaved pressure at the boundary",
   overstated it. For Cavendish the read is a volume integral (cell volume fractions, which are
@@ -578,6 +598,12 @@ in S8 on the build PC (a correctness-only GPU, per the owner's ruling).
   discrete energy equation (§3, p. 199). Their Nu is Q/Q_cond with Q the flux through any x = const line,
   equal to the wall flux by conservation (§3). Ra 10³ is not covered.
   (Gjesdal et al. 2003, the first version's secondhand source, rounded these to 2.245 / 4.522 / 8.825.)
+- **Tric, Labrosse & Betrouni 2000, Tables 1–2 (p. 4046), 2-D runs (Chebyshev, 51² and finer):** wall
+  Nu 2.245 / 4.522 / 8.825 at Ra 10⁴ / 10⁵ / 10⁶, an independent spectral confirmation of Hortmann's
+  values (and against de Vahl Davis's 8.800). At Ra 10³ their 51² run gives **1.116** at the wall and
+  the mid-plane, 0.16 % below the extrapolation measured here (1.1178) and 0.18 % below de Vahl Davis's
+  1.118. Inside the 1 % exit, but it means the Ra 10³ reference is good to about 0.2 %, not 0.1 %; not
+  measured further (open question 9).
 
 | Ra | N | Nu (hot = cold) | error vs de Vahl Davis | error vs Hortmann | u_max, v_max (N = 128) | wall time |
 |---|---|---|---|---|---|---|
@@ -635,14 +661,15 @@ in S8 on the build PC (a correctness-only GPU, per the owner's ruling).
 | Case | Published numbers | Status here | Use in |
 |---|---|---|---|
 | Differentially heated cavity, 2-D (de Vahl Davis 1983; Hortmann et al. 1990) | Nu 1.118 / 2.243 / 4.519 / 8.800 at Ra 10³–10⁶, Pr 0.71, accurate to 0.1 / 0.2 / 0.3 / 1 % (de Vahl Davis Tables V, VII); Hortmann: 2.24475 / 4.52164 / 8.82513 at Ra 10⁴–10⁶, 0.01 % (Table IV). Velocity maxima in §10 | all [P]; reproduced [M] (§10) | S8, S9 |
-| Cubic cavity, 3-D, Pr 0.71 (Fusegi et al. 1991) | Overall Nu at the isothermal walls **1.085 / 2.100 / 4.361 / 8.770** for Ra 10³–10⁶ (Table 1, p. 1554), 3-D lower than 2-D by 4.5 / 8.3 / 4.8 / 1.9 %. Symmetry-plane (z = ½) values in Table 2: mean Nu 1.105 / 2.302 / 4.646 / 9.012 | [P]. **Not a 1 % reference**: 62³ grid (32³ at Ra 10³), QUICK, SIMPLE; doubling the x-grid at Ra 10⁶ moved Nu by < 0.2 % and the maximum velocities by about 2 %; their own 2-D runs sit within 1.5 % of de Vahl Davis at Ra 10⁶ (p. 1546) | S8 (3-D): pass at **2 %** on the overall Nu, until a tighter 3-D reference is read (§"Further questions") |
+| Cubic cavity, 3-D, Pr 0.71, adiabatic side walls (**Tric, Labrosse & Betrouni 2000**) | Benchmark Table 9 (p. 4053): wall-averaged **Nu_3D,W = 1.070 / 2.054 / 4.337 / 8.640 / 16.342** and mid-plane Nu_mp = 1.087 / 2.250 / 4.612 / 8.877 / 16.547 for Ra 10³–10⁷; velocity maxima (scaled by κ/H) at Ra 10⁶: u 126.97, v 25.56, w 236.72, with locations. Chebyshev pseudo-spectral, up to 81³ (111³ at Ra 10⁷), projection–diffusion Stokes solver; accuracy "better than (0.03, 0.05) %" over Ra (10³, 10⁷) (abstract), 0.02 % at Ra 10⁶–10⁷ and 0.002 % at 10³–10⁴ by the grid sequences (p. 4050); Table 8 gives the Ra 10⁷ grid sequence 21³–111³. 3-D is below 2-D (Hortmann; de Vahl Davis at Ra 10³) by 4.3 / 8.5 / 4.1 / 2.1 % [D], the gap largest near Ra 10⁴ (their Fig. 3 text: 9 %). Steady up to Ra 10⁷; unsteady just beyond, with hysteresis at Ra ≈ 3.2–3.5 × 10⁷ (§1, citing their ref. [2]). **Fusegi et al. 1991** (Table 1, p. 1554): 1.085 / 2.100 / 4.361 / 8.770, i.e. **+1.40 / +2.24 / +0.55 / +1.50 %** above Tric [D]; their mid-plane 1.105 / 2.302 / 4.646 / 9.012 is +1.7 / +2.3 / +0.7 / +1.5 % | Both [P]; Tric is a born-digital PDF, Table 9 read from the rendered page. Fusegi: 62³ grid (32³ at Ra 10³), QUICK, SIMPLE. Tric's comparison Tables 10–12 print Fusegi's numbers under "Ref. [13]" (Janssen et al. 1993 in their list; Fusegi is [12]), with a 32³ grid also at Ra 10⁴; a citation slip or a coincidence, not resolved | S8 (3-D): **within 1 % of Tric** on the finest grid, three-grid extrapolation within 0.3 % (as the 2-D exit). **Changed:** the old "2 % of Fusegi" would have failed an exact code at Ra 10⁴ (Fusegi is 2.24 % high) |
 | Lid-driven cavity, Re 1000 | **Botella & Peyret 1998** (spectral, N up to 160): ψ = 0.1189366, ω = 2.067753 at (0.4692, 0.5652) in their frame, where the lid moves in −x (Table 6, p. 425; Table 9, p. 426, has u(y = 1) = −1); in the usual frame with the lid moving +x that is **(0.5308, 0.5652)**. Centreline extrema (Table 11, p. 428): u_max 0.3885698 at y = 0.1717; v_max 0.3769447 at x = 0.8422; v_min −0.5270771 at x = 0.0908 (their frame). Full centreline profiles at Ghia's points, with pressure and vorticity, in Tables 9–10. The seventh digit of ω at N = 160 is "questionable" (rounding, p. 426). **Ghia et al. 1982** (129², Table V p. 408; Tables I–II pp. 398–399): ψ_min −0.117929, ω 2.04968 at (0.5313, 0.5625); u_min −0.38289 at y = 0.1719; v_max 0.37095 at x = 0.1563; v_min −0.51550 at x = 0.9063 | Both [P]. **Ghia's values are 0.85 % (ψ), 1.5 % (u), 1.6 % (v_max) and 2.2 % (v_min) from Botella's**, and, by Botella's p. 432, up to 4 % off in the vorticity along the lid (Table 19); Botella's Table 6 prints Ghia's ω as 2.0677 where Ghia's own Table V says 2.04968 (a transcription slip in one of them) | S8 (tests momentum advection, which the cavity does not stress): ψ within **1 %** and the centreline extrema within **1 %** of **Botella**; Ghia only as the historical line, tolerance 3 % |
 | Rayleigh–Bénard onset | Ra_c = 1707.762, k_c = 3.1163 for rigid plates | [M] in [`s13-heat.md`](s13-heat.md) | S8: growth-rate sign change within 1 % |
 | Dam break (Martin & Moyce 1952, Part IV) | Rectangular column of base semi-length a and height n²a, collapsing in plane symmetry. **Z = z/a, T = n t (g/a)^½, τ = t (g/a)^½, H = η/(a n²)** (p. 313); the first version's T = t√(2g/a) was wrong. **Times are normalised so that every record agrees at Z = 1.44** (footnote to Tables 1–2, p. 316): "it was not found possible … to record the exact time of beginning of motion" (p. 314); the diaphragm was waxed paper burnt through by a heater strip. Surge-front mean T at Z for **n² = 1** (Table 1, a = 2¼ in): Z 1.44 → 0.80, 2.11 → 1.29, 3.00 → 1.93, 4.11 → 2.71, 5.0 → 3.32, 7.0 → 4.49, 10.0 → 6.70, 13.0 → 9.53. **n² = 2** (Table 2, a = 1⅛ in): Z 1.44 → 1.19, 1.89 → 1.58, 2.33 → 1.91, 3.22 → 2.58, 4.11 → 3.26, 5.00 → 3.92, 6.33 → 4.95. Maximum front speed U = dZ/dT of 1.62–1.71 (p. 320), i.e. about 1.6–1.7 √(g h₀), against 2 for shallow-water theory without vertical acceleration. Column height H(τ) in Table 6 (p. 320): n² = 2, a = 2¼ in: H 0.50 at τ = 2.00, 0.22 at 3.44 | [P], read from the scanned tables (rotated pages; the values above are those I could read unambiguously, to the last digit shown). Hirt & Nichols's case is n² = 2 with a = 1, 40 columns, and "the greatest deviation from the experimental results is everywhere less than one cell width" ("Broken Dam Problem", pp. 217–219, Figs. 6–7 [P]; their reference 18 is Martin & Moyce). The a = 2¼ in, n² = 2 mean column in Table 2 was not transcribed (row alignment unclear) | S10: front Z(T) within **max(5 %, one cell)** *after shifting the time origin so that Z = 1.44 matches*; H(τ) within 10 % |
 | Standing wave / sloshing | ω² = gk tanh(kh); viscous decay 2νk² (Lamb) for small amplitude in deep water; Prosperetti 1981 treats the linear initial-value problem for two superposed viscous fluids of **infinite depth**, with analytic inversion of the Laplace transform in only three special cases and numerical inversion otherwise (abstract, §I) | closed form [D]; Prosperetti [P]. For finite depth use ω² = gk tanh(kh) and measure the decay against a fine-grid run, not 2νk² | S10: frequency within 1 %, and the gravity read of the sloshing mass |
 | Archimedes floating | draught d = (ρ_b/ρ_w)·H for a box | closed form; needs the body's mass built from the same cut-cell volumes as the pressure weights (Batty et al. §3.1 [P]) | S10 |
 | Acoustic pulse | d'Alembert: a Gaussian travels at c = √(γp/ρ) = 343.2 m/s [M], unchanged in 1D | closed form. On the implicit solver only wavelengths above 40 c₀Δt propagate, and with more dissipation than a Riemann solver (Fuster & Popinet §4.1.1 [P]) | only if the Helmholtz term is switched on, and then with Δt ~ h/c |
-| Plume (Morton, Taylor & Turner 1956) | centreline w ∝ z^(−1/3) | as in VALIDATION §2.5 | S9 plume vs uniform |
+| Plume (Morton, Taylor & Turner 1956) | *Uniform ambient*, point source, top-hat profiles (eq. 4, p. 6), with Q = b²u g(ρ₁ − ρ)/ρ₁ (the buoyancy flux over π, constant with height): radius b = (6α/5) z, axial velocity u = (5/6α)(9αQ/10)^{1/3} z^{−1/3}, buoyancy g(ρ₁ − ρ)/ρ₁ = (5Q/6α)(9αQ/10)^{−1/3} z^{−5/3}. **α is profile-dependent**: with Gaussian profiles exp(−pr²/z²), α = 0.125 / 0.100 / 0.090 / 0.083 for p = 45 / 70 / 85 / 100 (Table 2, p. 13); the fit to their own experiments is p = 80, **α = 0.093** (p. 13). *Linear stratification* G = −(g/ρ₁) dρ₀/dz = N², source buoyancy flux F₀ (eqs. 7–9): z = 0.410 α^{−1/2} F₀^{1/4} G^{−3/8} x₁ (eq. 14, p. 9); the buoyancy first vanishes at x₁ = 2.125 and the velocity at x₁ = 2.8, the plume top (Table 1, p. 8; p. 10). So z_top ≈ 1.15 α^{−1/2} F₀^{1/4} N^{−3/4} = 3.76 F₀^{1/4} N^{−3/4} at α = 0.093 [D]; Table 2 gives 3.63–3.83 for p = 70–85, and their salt-tank tops fit a slope of 3.79 (Fig. 5, p. 11–12, correlation 0.98, heights from a virtual origin below the 2.8 cm nozzle) | [P] (scan; equations and tables read on rendered pp. 6–9, 12–13). Assumptions (pp. 3–4): entrainment ∝ axial velocity, similar profiles at all heights, Boussinesq, no source momentum; turbulent entrainment throughout (p. 10). For the atmosphere they use potential temperature for temperature (abstract), the same substitution §8a asks for | S9 plume vs uniform (no dependence on MTT). The VALIDATION `plume_scaling` exponents (−1/3, −5/3) apply to the **time-mean of a turbulent plume** in the far field, after fitting a virtual origin; a laminar or under-resolved plume follows other laws. Do not test α tighter than its profile spread (0.083–0.125). Optional stratified case: plume top within 10 % of 3.76 F₀^{1/4} N^{−3/4} |
+| Flow past a sphere (Johnson & Patel 1999) | Re 300: mean C_D 0.656, C_L −0.069, St 0.137 (§6.1, p. 41–42; Tomboulides 0.671, 0.136); steady non-axisymmetric onset Re 211; steady-regime Θ_s, x_s, C_D only in Figs. 4–5 (values in §7) | [P] | optional S8 check of the cut-cell solid (§7): Re 300 mean C_D within 3 % of 0.656 and St within 3 % of 0.137 (the two codes differ by 2.3 % and 0.7 %); Re 200 steady with C_L = 0, Re 250 steady with C_L ≠ 0. Control arm: the staircase solid at the same grid; if it also passes, the case does not discriminate and is dropped |
 
 ## 12. Staged plan, tests and control arms
 
@@ -665,7 +692,7 @@ broken variant that must fail.
 | `projection_removes_divergence` | max \|∇·u\| ≤ 10⁻⁶ of before, around a solid | projection skipped |
 | `heated_cavity_2d` | Nu on the finest of 64/128/256 within 1 % of Hortmann (Ra 10⁴–10⁶) and de Vahl Davis (Ra 10³); extrapolation with the order observed from the three grids within 0.3 % of Hortmann (0.03 % measured at 32/64/128) | N = 32 at Ra 10⁶ (+18.9 % measured) |
 | `cavity_second_order` | error ratio 4.0–4.8 per halving, observed order 2.0–2.3 (measured 2.06–2.24) | first-order upwind θ advection (ratio ≈ 2) |
-| `heated_cube_3d` | overall Nu within 2 % of Fusegi et al. (1.085 / 2.100 / 4.361 / 8.770) on the finest affordable grid | N = 16 grid, or a 2-D result (3-D is 2–8 % lower) |
+| `heated_cube_3d` | wall-averaged Nu within 1 % of Tric et al. (1.070 / 2.054 / 4.337 / 8.640 at Ra 10³–10⁶) on the finest grid, and the three-grid observed-order extrapolation within 0.3 %; if 256³ is not affordable, record the extrapolation from 32/64/128³ and its margin (changed 28 Nov 2026 from "2 % of Fusegi", which is 2.24 % off at Ra 10⁴) | N = 16 grid, or a 2-D result (3-D is 2.1–8.5 % lower) |
 | `lid_driven_cavity` | ψ and the centreline extrema (u_max, v_max, v_min) at Re 1000 within 1 % of Botella & Peyret on the finest grid, 256² or Richardson; a second-order code at 129² is only as accurate as Ghia's 0.85–2.2 % | viscosity doubled |
 | `rb_onset` | growth rate changes sign within 1 % of 1707.76 | wrong sign of β |
 | `closed_box_scalar_ledger` | total θ·h³ bit-identical over 10⁴ steps | semi-Lagrangian θ advection (drifts) |
@@ -733,7 +760,8 @@ After the second reading (25 Nov 2026, from the owner's 31 PDFs):
   the other papers in the "read in full" list below were read in the first pass and not re-read.
 - **Contradictory print in the sources.** Botella & Peyret's Table 6 attributes ω = 2.0677 to Ghia's
   129² run, while Ghia's Table V prints 2.04968. I could not tell which is the slip. Fusegi's
-  Ra for the 32³ grid is ambiguous in the OCR (it reads "Ra = 10′"); I took it to be Ra 10³.
+  Ra for the 32³ grid is ambiguous in the OCR (it reads "Ra = 10′"); I took it to be Ra 10³. Tric et
+  al.'s Table 10 lists Fusegi's numbers with 32³ at Ra 10³ (and also at 10⁴), which supports the reading.
 - **Every GPU cost in §9.** Estimates from memory traffic, unmeasured. The tree overheads quoted
   from Popinet 2015 and Setaluri et al. are CPU numbers.
 - **The LBM density-artefact size.** Derived from p = c_s²ρ, not measured.
@@ -743,8 +771,18 @@ After the second reading (25 Nov 2026, from the owner's 31 PDFs):
 - **Whether an f32 pressure solve can reach the divergence residual §6 needs.** Weymouth & Yue's
   volume loss of 10⁻¹² per step used a PCG solve in double precision.
 - **Gray & Giorgini's limits for an open hall.** Derived for a Rayleigh–Bénard layer (§8a).
-- **A tight 3-D reference.** Fusegi et al. are good to a percent or two. A more accurate 3-D cubic
-  cavity benchmark exists (Tric et al. 2000) and was not fetched.
+- **A tight 3-D reference: now read** (28 Nov 2026). Tric et al. 2000 replaces Fusegi (§11). Their
+  0.02–0.05 % is their own grid-sequence estimate; no second spectral 3-D source was read to check it.
+  Their Tables 10–12 label Fusegi's numbers "Ref. [13]"; not resolved.
+- **Johnson & Patel's steady-regime numbers** (separation angle, bubble length, C_D below Re 200) are
+  figures only; the values in §7 are read by eye. Only the Re 300 values are printed in the text.
+- **Morton, Taylor & Turner** is a scan; eqs. 4, 10, 14 and Tables 1–2 were read on the rendered pages,
+  the virtual-source section (eq. 15 onward) and the instantaneous-source (thermal) half only in the
+  extracted text. Their α comes from salt-tank plumes 1 m deep and earlier air data; the constant for
+  a room-scale air plume is not in the paper.
+- **Yue et al.'s shrinkage law** is for Cahn–Hilliard with constant mobility and no flow (§2); their
+  flow example is one case. Not relevant to the build (phase field is not proposed), only to its
+  rejection.
 
 ## Further questions (not chased)
 
@@ -760,9 +798,11 @@ After the second reading (25 Nov 2026, from the owner's 31 PDFs):
    faces.
 6. Measure, in the S8 uniform solver, the pressure tolerance a single-precision MGPCG reaches and
    the volume drift it implies for the Weymouth–Yue scheme (the account Σ c_c ε V Δt of §6).
-7. Fetch a tighter 3-D cubic-cavity benchmark: Tric, Labrosse & Betrouni 2000
-   (https://doi.org/10.1016/S0017-9310(00)00037-5, Crossref title match, not read).
+7. ~~Fetch a tighter 3-D cubic-cavity benchmark~~: done, Tric et al. 2000 read (28 Nov 2026; §11).
 8. Check that the S13 heat note's θ is a potential-temperature anomaly (§8a).
+9. Measure why `cavity.py`'s Ra 10³ extrapolation (1.1178) sits 0.16 % above Tric's spectral 2-D
+   1.116 (Table 1) when Ra 10⁴–10⁶ agree with Hortmann to 0.01–0.02 %: run Ra 10³ at N = 256, and
+   compare wall and mid-plane Nu.
 
 ## Papers
 
@@ -779,6 +819,15 @@ not only the abstract), Rohde et al. 2006, Körner et al. 2005, Bender & Koschie
 Prosperetti 1981, Gray & Giorgini 1976. (Their DOIs, all checked against Crossref in the first pass,
 are in `fluids/results/doi_check.txt`.)
 
+**Read in the primary text (third pass, 28 Nov 2026):** Tric, Labrosse & Betrouni 2000, IJHMT 43,
+4043–4056 (https://doi.org/10.1016/S0017-9310(00)00037-5; all, Tables 1–2 and 9–12 from rendered pages);
+Morton, Taylor & Turner 1956, Proc. R. Soc. A 234, 1–23 (maintained-source sections, eqs. 1–15, Tables
+1–2, Fig. 5 from rendered pages; the instantaneous-source half skimmed; no DOI on the file,
+10.1098/rspa.1956.0011, Crossref-checked 28 Nov 2026 [R]); Johnson & Patel 1999, JFM 378, 19–70
+(https://doi.org/10.1017/S0022112098003206; all text, Figs. 4, 5, 10, 19 and p. 41 from rendered pages);
+Yue, Zhou & Feng 2007, JCP 223, 1–9 (https://doi.org/10.1016/j.jcp.2006.11.020; all, eqs. 9–18 from
+rendered pages).
+
 **Read in full text in the first pass:** Aanjaneya et al. 2017
 ([doi](https://doi.org/10.1145/3072959.3073625)), McAdams et al. 2010 (no DOI found;
 [PDF](https://math.ucdavis.edu/~jteran/papers/MST10.pdf)), Jiang et al. 2015
@@ -787,7 +836,6 @@ Lehmann et al. 2022 ([doi](https://doi.org/10.1103/PhysRevE.106.015308)), Gjesda
 (arXiv:physics/0305049), and Erturk & Dursun 2007 (arXiv:physics/0505121). Gjesdal and Erturk are
 now superseded by the primary tables for the cavity values.
 
-**Cited and still unread:** Tric, Labrosse & Betrouni 2000 (above); Morton, Taylor & Turner 1956 (the
-plume law; no DOI located by a Crossref title search); Michalek et al. 2005 (the heat note's water
-inversion case); Johnson & Patel 1999 (flow past a sphere, https://doi.org/10.1017/S0022112098003206,
-cited by Ng et al.); Lamb's *Hydrodynamics* (the 2νk² decay).
+**Cited and still unread:** Michalek et al. 2005 (the heat note's water inversion case); Lamb's
+*Hydrodynamics* (the 2νk² decay); Tomboulides 1993 and Roos & Willmarth 1971 (quoted only through
+Johnson & Patel); Janssen, Henkes & Hoogendoorn 1993 (Tric's "Ref. [13]").
