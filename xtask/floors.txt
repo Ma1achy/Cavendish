@@ -64,7 +64,8 @@
 # read gives the views its octree and cuts; cav-engine: the octree overlay comes with the read).
 # TASK-S5-20 (LOD views): 3 new quick tests (cav-sim: L1, L2, the draw list's cap), 1 slow (cav-engine:
 # a tower's LOD view is the read's cut), 1 gpu (cav-render: a tower's LOD view draws its list).
-quick 785
-gpu 44
+# TASK-S5-21 (seams): 1 new quick test (cav-sim: the band is drawn by both levels), 1 gpu (SE1).
+quick 786
+gpu 45
 slow 61
 oracle 58

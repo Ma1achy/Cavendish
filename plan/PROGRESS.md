@@ -35,6 +35,13 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**TASK-S5-21, seams (28 Nov 2026; §7.16).** `seams dither | off`: over a band inside each finer
+ring's edge the coarser level keeps a pixel by a 4×4 ordered dither on the camera's continuous
+distance; the finer is drawn whole under it. SE1: at 50 snaps the bands change by 0.048 of the cut
+rings' (≤ ½); the control (band on the snapped edge) 1.07 (≥ 0.8). The first run failed (the extra
+hole bricks took the far field to its cap and its farthest bricks flickered): hole bricks short of the
+band are no longer marched. `cargo xtask demo S5` now takes the pictures of §4 items 1, 4 and 5.
+
 **TASK-S5-20, LOD views (28 Nov 2026; §7.15).** `lod-view camera | tower N | towers … | towers
 all`: the world drawn at the levels the camera wants, at tower N's cut (no new walk: the read's), or
 at the towers' common refinement (a partition, finer than each cut, minimal; the naive union

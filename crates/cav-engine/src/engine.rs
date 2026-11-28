@@ -1356,6 +1356,7 @@ impl Engine {
                     hidden,
                     body_draw,
                     lod_view,
+                    seams: before.seams,
                     ..home_view(&self.spec, pane, before.style)
                 };
                 // The one camera move that is an edit: undo puts the camera back where it was.
@@ -1375,6 +1376,7 @@ impl Engine {
             ViewCommand::Section { pane, section } => self.views[pane].section = section,
             ViewCommand::Draw { pane, draw } => self.views[pane].body_draw = draw,
             ViewCommand::LodView { pane, ref view } => self.views[pane].lod_view = view.clone(),
+            ViewCommand::Seams { pane, seams } => self.views[pane].seams = seams,
             ViewCommand::Hide { ref label, hidden } => {
                 for view in &mut self.views {
                     view.hidden.retain(|l| l != label);

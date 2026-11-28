@@ -131,6 +131,8 @@
         (id: "lod-view-camera", label: "camera", menu: "View/World LOD", line: "lod-view camera", needs: World, about: "draw the world at the levels the camera wants"),
         (id: "lod-view-tower-1", label: "tower 1's read", menu: "View/World LOD", line: "lod-view tower 1", needs: World, about: "draw the world at the levels tower 1 reads it at (its cut)"),
         (id: "lod-view-towers", label: "all towers' reads", menu: "View/World LOD", line: "lod-view towers all", needs: World, about: "draw the world at the finest level any tower reads it at"),
+        (id: "seams-dither", label: "seams dithered", menu: "View/World LOD", line: "seams dither", needs: World, about: "cross-fade the rings of detail where they meet"),
+        (id: "seams-off", label: "seams cut", menu: "View/World LOD", line: "seams off", needs: World, about: "cut each ring of detail at its edge"),
         (id: "section-off", label: "no section", menu: "View/Overlay", line: "section off", needs: Shapes, rule: true, about: "take the section plane away"),
         (id: "tool-palette-top-left", label: "top left", menu: "View/Tool palette", line: "tool-palette top-left", about: "stand the tool palette at the top left corner of the view (where it starts); kept for this layout (its grip drags it there too)"),
         (id: "tool-palette-top", label: "top", menu: "View/Tool palette", line: "tool-palette top", about: "stand the tool palette at along the middle of the view's top edge; kept for this layout (its grip drags it there too)"),

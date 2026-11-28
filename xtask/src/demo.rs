@@ -23,6 +23,7 @@ pub fn run(root: &Path, slice: &str, web: bool) -> Result<(), String> {
         "S18" | "s18" => s18(root),
         "S19" | "s19" => s19(root),
         "S20" | "s20" => s20(root),
+        "S5" | "s5" => s5(root),
         other => Err(format!(
             "no demo for slice `{other}`: the slices with demos are: S0, S1, S2, S3, S4, S17, S18, S19"
         )),
@@ -906,6 +907,61 @@ fn s4(root: &Path, web: bool) -> Result<(), String> {
     write(&out, "web.txt", &log, &mut made)?;
 
     eprintln!("xtask: demo S4 wrote {} files to {}:", made.len(), out.display());
+    for file in &made {
+        eprintln!("  {file}");
+    }
+    Ok(())
+}
+
+/// S5, the world as one octree (`docs/slices/S5.md` §4), the steps the drawing tasks built
+/// (TASK-S5-15 to 17, 20, 21): item 1 (the town as the camera, tower 1 and all five towers read
+/// it; the octree overlay), item 4 (a body drawn five ways) and item 5 (the seams cut and
+/// dithered). Release builds, each picture within a wall-clock limit. The slice's record
+/// (TASK-S5-23) adds the rest.
+fn s5(root: &Path) -> Result<(), String> {
+    let out = root.join("docs").join("slices").join("S5");
+    std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    step(
+        "build cav-app (release, for the pictures)",
+        cargo(root, &["build", "--quiet", "--release", "-p", "cav-app"]),
+    )?;
+    let app = root.join("target").join("release").join(format!("cav-app{}", std::env::consts::EXE_SUFFIX));
+    let path = |name: &str| out.join(name).to_string_lossy().into_owned();
+    let mut made: Vec<String> = Vec::new();
+    let town = "load town; view iso; pan 0 0 0; zoom 320";
+    let near = "load cut-cells; view iso; pan 2 0.05 2.5; zoom 4";
+    let far = "load town; pan 10 -10 2; orbit 225 7; zoom 14";
+    let shots: Vec<(String, String)> = vec![
+        // 1. The world as the camera wants it, as tower 1 reads it, as all five read it; the octree.
+        ("lod-camera.png".into(), format!("{town}; lod-view camera; overlay level")),
+        ("lod-tower-1.png".into(), format!("{town}; lod-view tower 1; overlay level")),
+        ("lod-towers.png".into(), format!("{town}; lod-view towers all; overlay tower")),
+        ("lod-ledger.png".into(), format!("{town}; lod-view tower 1; overlay ledger")),
+        ("octree.png".into(), "load town; view iso; pan 0 0 0; zoom 250; overlay octree".into()),
+        // 4. An icosahedron and a mesh body drawn five ways, and the pieces' centroids.
+        ("draw-voxels.png".into(), format!("{near}; draw voxels")),
+        ("draw-fill.png".into(), format!("{near}; draw fill")),
+        ("draw-mesh.png".into(), format!("{near}; draw mesh")),
+        ("draw-mesh-over-voxels.png".into(), format!("{near}; draw mesh-over-voxels")),
+        ("draw-pieces.png".into(), format!("{near}; draw pieces")),
+        (
+            "draw-centroids.png".into(),
+            "load cut-cells; view iso; pan 2 -0.7 2.5; zoom 1.6; draw pieces; overlay centroids".into(),
+        ),
+        // 5. The same far view with the rings cut and dithered.
+        ("seams-off.png".into(), format!("{far}; seams off")),
+        ("seams-on.png".into(), format!("{far}; seams dither")),
+    ];
+    for (file, script) in &shots {
+        capture_within(
+            &app,
+            &["--screenshot", &path(file), "--size", "1440x900", "--exec", script],
+            180,
+            None,
+        )?;
+        expect_png(&out, file, [1440, 900], &mut made)?;
+    }
+    eprintln!("xtask: demo S5 wrote {} files to {}:", made.len(), out.display());
     for file in &made {
         eprintln!("  {file}");
     }

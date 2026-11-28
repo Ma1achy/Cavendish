@@ -167,6 +167,10 @@ pub struct ViewSpec {
     /// ([`crate::world::lod_view::LodView`]). A view's: never undone.
     #[serde(default, skip_serializing_if = "crate::world::lod_view::LodView::is_camera")]
     pub lod_view: crate::world::lod_view::LodView,
+    /// How the seams between the world's rings of detail are drawn: cross-faded by a dither (the
+    /// default, not written), or cut at each ring's snapped edge.
+    #[serde(default, skip_serializing_if = "crate::world::clipmap::Seams::is_dither")]
+    pub seams: crate::world::clipmap::Seams,
 }
 
 /// What a pane shows.
@@ -259,6 +263,7 @@ impl ViewSpec {
             hidden: Vec::new(),
             body_draw: crate::body_draw::BodyDraw::Voxels,
             lod_view: crate::world::lod_view::LodView::Camera,
+            seams: crate::world::clipmap::Seams::Dither,
         };
         view.frame(scene);
         view

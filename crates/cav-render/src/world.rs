@@ -658,6 +658,15 @@ struct WorldUniform {
     eye: [f32; 4],
     forward: [f32; 4],
     params: [f32; 4],
+    /// The camera's continuous place for the clipmap relative to the target (xyz, metres); w: the
+    /// seams' mode (0 cut, 1 dithered, 2 the control's band on the snapped edge).
+    seams: [f32; 4],
+    /// The band (`seam_band`): x its start and y its width, in the finer level's bricks; z the
+    /// ring's half-width `n`.
+    band: [f32; 4],
+    /// For each level k from 1, the snapped middle of level k − 1's box relative to the target
+    /// (xyz, metres): where the control measures from.
+    rings: [[f32; 4]; 12],
 }
 
 /// What the cull shader reads.
@@ -891,6 +900,10 @@ pub struct WorldGpu {
     /// `meshes` and `bricks`), and for how many prepares each has not stood in for anything
     /// ([`stand_ins`]).
     retired: HashMap<(u8, ChunkKey), u32>,
+    /// True to measure the seams' band from each finer ring's snapped middle and end it at the
+    /// snapped edge: the control arm of `gpu_ring_seams_are_hidden` (the band then jumps when the
+    /// ring snaps). Never set it otherwise.
+    pub seams_on_the_snapped_edge: bool,
     /// True to draw no stand-ins: the handover as it was before TASK-S4-26, for the control arm
     /// of the test that holds it (`gpu_a_moving_camera_never_loses_what_it_drew`). Never set it
     /// otherwise.
@@ -1076,6 +1089,7 @@ impl WorldGpu {
                 store: self.store.take(),
                 caps: self.caps,
                 without_stand_ins: self.without_stand_ins,
+                seams_on_the_snapped_edge: self.seams_on_the_snapped_edge,
                 ..Self::default()
             };
         }
@@ -1102,6 +1116,11 @@ impl WorldGpu {
         // What this camera's clipmap draws of what is resident, or what the LOD view's list names
         // (with, for an entry not resident and not on its way, its nearest resident ancestor).
         let levels = levels(&grid, lod_centre(view), frame.ring, frame.levels.max(1));
+        // The seams' cross-fade: the camera's rings (not a LOD view's list), a ring wide enough.
+        let blend = list.is_none()
+            && view.seams == cav_sim::world::clipmap::Seams::Dither
+            && cav_sim::world::clipmap::seam_band(frame.ring).is_some();
+        let centre_at = lod_centre(view);
         let wanted: Option<std::collections::HashSet<(u8, ChunkKey)>> = list.map(|list| {
             let mut set: std::collections::HashSet<(u8, ChunkKey)> = list.iter().copied().collect();
             let mut by_ancestor = 0usize;
@@ -1131,7 +1150,12 @@ impl WorldGpu {
         });
         let selected = |level: u8, key: ChunkKey| match &wanted {
             Some(set) => set.contains(&(level, key)),
-            None => levels.get(usize::from(level)).is_some_and(|l| l.contains(key)),
+            None => levels.get(usize::from(level)).is_some_and(|l| {
+                l.contains(key)
+                    || (blend
+                        && l.blends(key, frame.ring)
+                        && l.reaches_band(&grid, key, centre_at, frame.ring))
+            }),
         };
         let near: Vec<(ChunkKey, &Arc<ChunkCells>)> =
             frame.chunks.iter().filter(|(k, _)| selected(0, **k)).map(|(k, c)| (*k, c)).collect();
@@ -1490,11 +1514,32 @@ impl WorldGpu {
         // The world tinted by level: `overlay bands`, or `overlay level` (S5).
         let by_level =
             view.overlay.bands || view.overlay.world == cav_sim::world::lod_view::WorldOverlay::Level;
+        // The seams' band (`seam_band`, in the finer level's bricks) and where it is measured from:
+        // the camera's continuous place, or (the control) each finer ring's snapped middle.
+        let band = cav_sim::world::clipmap::seam_band(frame.ring).unwrap_or((0.0, 1.0));
+        let mode = match (blend, self.seams_on_the_snapped_edge) {
+            (false, _) => 0.0,
+            (true, false) => 1.0,
+            (true, true) => 2.0,
+        };
+        let centre = (lod_centre(view) - origin).to_f32();
+        let mut rings = [[0f32; 4]; 12];
+        for (k, ring) in rings.iter_mut().enumerate().skip(1) {
+            if let Some(finer) = levels.get(k - 1) {
+                let side = grid.brick_side(finer.level);
+                let mid = |a: usize| 0.5 * (finer.lo[a] + finer.hi[a]) as f64 * side;
+                let at = grid.origin + cav_core::Vec3::new(mid(0), mid(1), mid(2)) - origin;
+                *ring = [at.x as f32, at.y as f32, at.z as f32, 0.0];
+            }
+        }
         let uniform = WorldUniform {
             view_proj: camera.view_proj.to_f32(),
             eye: [eye[0], eye[1], eye[2], ortho],
             forward: [forward[0], forward[1], forward[2], 0.0],
-            params: [grid.pitch as f32, f32::from(u8::from(by_level)), lit, 0.0],
+            params: [grid.pitch as f32, f32::from(u8::from(by_level)), lit, grid.chunk_side() as f32],
+            seams: [centre[0], centre[1], centre[2], mode],
+            band: [band.0 as f32, band.1 as f32, frame.ring as f32, 0.0],
+            rings,
         };
         let mut palette = [[0f32; 4]; 256];
         for (i, c) in frame.colours.iter().enumerate().take(256) {

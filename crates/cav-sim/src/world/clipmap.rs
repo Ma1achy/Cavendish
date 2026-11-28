@@ -63,6 +63,66 @@ impl Level {
         inside(self.lo, self.hi) && !self.hole.is_some_and(|(lo, hi)| inside(lo, hi))
     }
 
+    /// Whether this level draws brick `key` (of its own level) for the seams' cross-fade
+    /// ([`seam_band`]): a brick of its hole (the next finer level's box) in the hole's outer
+    /// layers, where the band over which the two levels are dithered may lie, whatever the camera's
+    /// place in its snapped brick. None of level 0 (it has no hole), none where the rings are too
+    /// narrow for a band.
+    #[must_use]
+    pub fn blends(&self, key: ChunkKey, n: i64) -> bool {
+        let (Some((lo, hi)), Some(band)) = (self.hole, seam_band(n)) else { return false };
+        let k = [i64::from(key.x), i64::from(key.y), i64::from(key.z)];
+        let inside = |lo: [i64; 3], hi: [i64; 3]| (0..3).all(|a| k[a] >= lo[a] && k[a] < hi[a]);
+        if !inside(lo, hi) {
+            return false;
+        }
+        // In this level's bricks from the hole's middle: the band lies at least `near` from it.
+        let near = (0.5 * band.0 - 0.5 * SEAM_SNAP).floor() as i64;
+        (0..3).any(|a| {
+            let mid = (lo[a] + hi[a]) / 2;
+            k[a] - mid >= near || k[a] + 1 - mid <= -near
+        })
+    }
+
+    /// Whether brick `key` of this level, one it draws for the seams ([`Self::blends`]), reaches the
+    /// band seen from `centre` (the camera's continuous place, metres, the world's frame) on `grid`:
+    /// whether any of it lies at least the band's start from `centre` on some axis, in the finer
+    /// level's bricks. A hole brick wholly nearer would be dithered away everywhere: a renderer
+    /// need not march it (and must not spend its far field's budget on it).
+    #[must_use]
+    pub fn reaches_band(&self, grid: &WorldGrid, key: ChunkKey, centre: Vec3, n: i64) -> bool {
+        let Some((d0, _)) = seam_band(n) else { return false };
+        if self.level == 0 {
+            return false;
+        }
+        let reach = d0 * grid.brick_side(self.level - 1);
+        let b = grid.brick_box(self.level, key);
+        let (lo, hi, c) = (b.lo.to_array(), b.hi.to_array(), centre.to_array());
+        (0..3).any(|a| lo[a] < c[a] - reach || hi[a] > c[a] + reach)
+    }
+
+    /// The keys of `range` (inclusive, as [`WorldGrid::bricks_of`] gives) that this level draws,
+    /// and with `blend` those it draws for the seams' cross-fade ([`Self::blends`]).
+    pub fn keys_with(
+        &self,
+        range: (ChunkKey, ChunkKey),
+        n: i64,
+        blend: bool,
+    ) -> impl Iterator<Item = ChunkKey> + '_ {
+        let (a, b) = range;
+        let (lo, hi) = (self.lo, self.hi);
+        let lo = [lo[0].max(a.x.into()), lo[1].max(a.y.into()), lo[2].max(a.z.into())];
+        let hi =
+            [hi[0].min(i64::from(b.x) + 1), hi[1].min(i64::from(b.y) + 1), hi[2].min(i64::from(b.z) + 1)];
+        (lo[2]..hi[2]).flat_map(move |z| {
+            (lo[1]..hi[1]).flat_map(move |y| {
+                (lo[0]..hi[0])
+                    .map(move |x| ChunkKey::new(x as i32, y as i32, z as i32))
+                    .filter(move |key| self.contains(*key) || (blend && self.blends(*key, n)))
+            })
+        })
+    }
+
     /// The keys of `range` (inclusive, as [`WorldGrid::bricks_of`] gives) that this level draws.
     pub fn keys(&self, range: (ChunkKey, ChunkKey)) -> impl Iterator<Item = ChunkKey> + '_ {
         let (a, b) = range;
@@ -80,6 +140,66 @@ impl Level {
             })
         })
     }
+}
+
+/// How the seams between a pane's rings of detail are drawn.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+pub enum Seams {
+    /// Cross-faded by a 4×4 ordered dither over a band inside each finer ring's edge, weighted by
+    /// the camera's continuous place ([`seam_band`]): the default.
+    #[default]
+    Dither,
+    /// Each ring cut at its snapped edge (S4's picture): a step, and a pop when the ring snaps.
+    Off,
+}
+
+impl Seams {
+    /// Every one, in the order menus list them.
+    pub const ALL: [Self; 2] = [Self::Dither, Self::Off];
+
+    /// The word commands use.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Dither => "dither",
+            Self::Off => "off",
+        }
+    }
+
+    /// The one a word names.
+    #[must_use]
+    pub fn parse(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.name() == word)
+    }
+
+    /// Whether it is the default.
+    #[must_use]
+    pub fn is_dither(&self) -> bool {
+        *self == Self::Dither
+    }
+}
+
+/// How far, in a level's own bricks, the camera may be from the middle of that level's snapped box:
+/// each box is centred on a point snapped to two bricks of the level below and then two of its
+/// own, so the camera is within three of its bricks of it, on one side ([`levels`]).
+pub const SEAM_SNAP: f64 = 3.0;
+
+/// The band over which a level and the next coarser one are cross-faded at the finer level's outer
+/// edge (`docs/slices/S5.md` §2 "Seams", `docs/research/s5-world-octree.md` §7b): `(d₀, w)` in the
+/// finer level's bricks, measured as the largest of the three axes' distances from the camera's
+/// continuous place. The width is a tenth of the ring's half-width `n` and at least two coarse cells
+/// (an eighth of a finer brick); the band ends [`SEAM_SNAP`] bricks inside the snapped edge, so that a
+/// snap, which moves the edge, happens where the coarser level is already all that is drawn. `None`
+/// when the ring is too narrow for a band clear of the next finer level's own (`n` below about 12).
+#[must_use]
+pub fn seam_band(n: i64) -> Option<(f64, f64)> {
+    let n = n as f64;
+    let w = (0.1 * n).max(0.125);
+    let d0 = n - SEAM_SNAP - w;
+    // The next finer level's box reaches at most n/2 + SEAM_SNAP/2 of these bricks from the camera.
+    (d0 > 0.5 * n + 0.5 * SEAM_SNAP).then_some((d0, w))
 }
 
 /// Where a view's camera is, for its clipmap: the eye in perspective, the target in an
@@ -310,6 +430,56 @@ mod tests {
         assert!(stand_ins([], held).is_empty());
         // A held item that is itself unready (made again) is its own stand-in.
         assert_eq!(stand_ins([(1, k(2, 2, 0))], [(1, k(2, 2, 0))]), vec![(1, k(2, 2, 0))]);
+    }
+
+    #[test]
+    fn the_seams_band_is_drawn_by_both_levels_wherever_the_camera_is() {
+        // SE1's geometry (`docs/slices/S5.md` §7.16): wherever the camera is in its snapped brick,
+        // every point of the band over which level k fades into level k − 1 (measured from the
+        // camera's continuous place) is drawn by level k − 1 and by a brick level k draws for the
+        // seams, and the band ends inside level k − 1's box (so a snap moves nothing drawn there).
+        // Control: level k's own bricks (without the seams' layers) leave part of the band bare.
+        assert_eq!(seam_band(16), Some((11.4, 1.6)));
+        assert_eq!(seam_band(8), None, "too narrow a ring has no band");
+        let grid = WorldGrid { origin: Vec3::new(1.0, -2.0, 0.0), pitch: 0.1, supersample: 2 };
+        let n = 16;
+        let (d0, w) = seam_band(n).unwrap();
+        let (mut bare, mut checked) = (0, 0);
+        for i in 0..60u64 {
+            let centre = Vec3::new(500.0 * (unit(i, 0) - 0.5), 500.0 * (unit(i, 1) - 0.5), 20.0 * unit(i, 2));
+            let ls = levels(&grid, centre, n, 4);
+            for k in 1..4usize {
+                let (finer, coarse) = (ls[k - 1], ls[k]);
+                let fside = grid.brick_side(finer.level);
+                for s in 0..80u64 {
+                    // A point of the band: on a random face of the cube of half-side d (in finer
+                    // bricks) about the camera, d within the band.
+                    let d = (d0 + w * unit(i * 1000 + s, 9)) * fside;
+                    let mut p = [0, 1, 2].map(|a| (2.0 * unit(i * 1000 + s, 10 + a as u64) - 1.0) * d);
+                    let axis = (unit(i * 1000 + s, 13) * 3.0) as usize % 3;
+                    p[axis] = if unit(i * 1000 + s, 14) < 0.5 { -d } else { d };
+                    let at = centre + Vec3::from_array(p);
+                    let key_of = |level: u8| {
+                        let side = grid.brick_side(level);
+                        let r = at - grid.origin;
+                        ChunkKey::new(
+                            (r.x / side).floor() as i32,
+                            (r.y / side).floor() as i32,
+                            (r.z / side).floor() as i32,
+                        )
+                    };
+                    assert!(finer.contains(key_of(finer.level)), "the band is inside the finer ring");
+                    let ck = key_of(coarse.level);
+                    assert!(coarse.contains(ck) || coarse.blends(ck, n), "the coarser level draws the band");
+                    if !coarse.contains(ck) {
+                        assert!(coarse.reaches_band(&grid, ck, centre, n));
+                    }
+                    bare += usize::from(!coarse.contains(ck));
+                    checked += 1;
+                }
+            }
+        }
+        assert!(bare > checked / 10, "control: the coarser level's own bricks miss {bare} of {checked}");
     }
 
     #[test]
