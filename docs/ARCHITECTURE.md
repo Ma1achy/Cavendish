@@ -25,7 +25,7 @@ the gradiometer reads lower minus upper unless a scene says otherwise. British E
 | `cav-validate` | Declaring validation cases (`case!`) and judging them | nothing | depend on anything: every crate's tests use it |
 | `cav-memtest` | A counting allocator and the tests that hold memory to a bound | dev-dependencies only | be linked by anything but its own tests (it is the one crate with `unsafe`) |
 | `xtask` | The local tiers: `quick`, `gpu`, `oracle`, `web`, `demo`, `validate`, `hooks` | nothing | gain a dependency: it must never add to the build |
-| `oracle/` | A workspace of its own: v1 at tag `v1-final` and George's scripts as fixtures, holding the engine to both | `cav-core`, `cav-sim`, `cav-validate` | be compiled by `quick` |
+| `oracle/` | A workspace of its own: v1 at tag `v1-final`, George's scripts and the polyhedral-gravity paper's 40-digit reference as fixtures, holding the engine to them; the paper's benchmark bodies (`tests/benchmark.rs`) | `cav-core`, `cav-sim`, `cav-validate` | be compiled by `quick` |
 
 Dev-dependencies are apart from this table: any crate's tests may use `cav-validate`.
 

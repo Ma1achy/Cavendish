@@ -2,7 +2,9 @@
 //!
 //! The tests are in `tests/`: `v1.rs` holds the engine to v1's forward model at tag `v1-final`,
 //! compiled from source; `scripts.rs` holds it to arrays made by running George's reference
-//! scripts (`fixtures/scripts/PROVENANCE.md`).
+//! scripts (`fixtures/scripts/PROVENANCE.md`); `polyhedral.rs` holds the polyhedral closed form to
+//! the paper's 40-digit reference and `benchmark.rs` reads the paper's benchmark bodies
+//! (`fixtures/paper/PROVENANCE.md`, `docs/papers/polyhedral-gravity`).
 
 use std::path::PathBuf;
 
