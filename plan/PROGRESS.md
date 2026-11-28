@@ -1031,6 +1031,8 @@ mutation). Left, all minor:
   and BGS Geology 50k vectors are paid (£0.23 per km² commercial; the WMS is free to view). Default:
   geology from the open 625k map (OGL), the gravity comparison only if the points are OGL
   (`docs/research/worlds.md` §6). Say if either should be bought or licensed.
+  **Answered 28 Nov 2026: no paid data.** Nothing is bought; S26 uses the open 625k geology map (OGL)
+  and the BGS gravity points only where they are OGL, otherwise no gravity comparison.
 
 Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
 - **Ubuntu Mono: yes.** `UbuntuMono-Regular.ttf` from the official Ubuntu font family release goes in,
