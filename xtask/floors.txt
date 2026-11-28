@@ -44,7 +44,9 @@
 # validation_slow_cut_cell_orders).
 # TASK-S5-10 (Pieces): 2 new quick tests (cav-core: every cut cell exact is the body, a cell's
 # solids weigh its piece); 1 new slow test (cav-core: C6, slow_the_sphere_anomaly_with_random_placements).
+# TASK-S5-26 (C3 as written, failing until the owner rules): 1 new slow test (cav-core:
+# validation_slow_pieces_are_the_body).
 quick 753
 gpu 42
-slow 56
+slow 57
 oracle 58

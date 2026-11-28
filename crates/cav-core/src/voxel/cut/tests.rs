@@ -606,6 +606,24 @@ cav_validate::case! {
     }),
 }
 
+cav_validate::case! {
+    test: validation_slow_pieces_are_the_body,
+    name: "cut.pieces_are_the_body",
+    subsystem: "voxel",
+    slice: "S5",
+    reference: ClosedForm,
+    against: "C3 as written: the polyhedral closed form of an icosahedron (edge 0.6 m), the tower's line half a cell from its surface, one AION-10 shot through Gauss order 6, against the same solid voxelised at 1/16 m and read as the engine's Pieces (exact pieces within PIECE_WITHIN = 3 cells of an arm point, Second and the octupole beyond), the worst of the lower, upper and gradiometer channels, relative. In the slow tier only so that a push's quick tier passes while it waits: it fails (1.3e-6 written, 3.4e-7 as built): the owner's ruling is asked (plan/PROGRESS.md, TASK-S5-26)",
+    unit: Relative,
+    tolerance: 1e-11,
+    measure: cav_validate::Measured::Error({
+        let pieces = c3_read(C3Read::Pieces(PIECE_WITHIN, true));
+        // Control: without the exact pieces near the arm it is farther off.
+        let second = c3_read(C3Read::Second);
+        assert!(second > pieces, "Second {second:e}, Pieces {pieces:e}");
+        pieces
+    }),
+}
+
 /// How far `Pieces` must reach, and what the octupole beyond buys (TASK-S5-10, §7.7; the
 /// question TASK-S5-26 puts to the owner). Run by hand: `-- --ignored --nocapture`.
 #[test]
