@@ -1,0 +1,1 @@
+[{"guard": false, "two_sum_err": 0e0, "expected": 9.313226e-10, "two_prod_err": 0e0, "expected_prod": 5.960464477539063e-8}, {"guard": true, "two_sum_err": 9.313226e-10, "expected": 9.313226e-10, "two_prod_err": 5.9604645e-8, "expected_prod": 5.960464477539063e-8}]

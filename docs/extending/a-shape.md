@@ -22,6 +22,17 @@ a sample point is inside (`contains`), and what it can say about a whole box at 
      the shape is a unit ball, and the box stays a box.
    - `volume`, `centroid`, `second_moments`: in closed form, from a textbook (say which in the
      doc comment). The tests hold the voxelised body to them.
+   - `clip`: its cut-cell clipper (`crate::voxel::cut::Clip`), returning `Some(self)`, for every
+     representation but `Sampled` (S5). Without one the default `None` leaves the shape readable
+     only by its samples, and `voxelise_cut` refuses it in words. The clipper gives the moments of
+     the shape's part of a cell, about the cell's centre (`cut::Raw`, to third order), exactly or to
+     rounding: a convex solid clips `cut::Convex::from_box` by its faces' half-spaces (`Polyhedron`
+     is the model); a curved one integrates its chord along one axis exactly and the other two by
+     quadrature split at every kink (`cut/analytic.rs`: write the solid as a `Radial`, or scale or
+     permute it into one, as `Ellipsoid` and `Cylinder` do). Give it a `work` in the voxeliser's
+     units, calibrated by time (about 13 ns a unit: time it with `clip_time_per_cell`). A shape
+     whose pieces are polyhedra also gives them as signed convex pieces (`CellClip::convex`), which
+     `Pieces` reads by the polyhedral kernel near an arm; a curved one leaves the default `None`.
 2. A shape that is a polyhedron needs no new type: give `Polyhedron::hull` its vertices (at most
    100). A shape from a file is a mesh (`crate::voxel::mesh`).
 
@@ -43,6 +54,9 @@ a sample point is inside (`contains`), and what it can say about a whole box at 
   that the mass is the spec's, `validation_volume_and_inertia_match_the_analytic` that the
   voxelised volume and inertia are your closed forms at 64 cells across, and
   `validation_slow_merged_equals_unmerged` that merging changes nothing.
+- `cav-core`, `voxel::cut::tests`: add it to `c1_shapes()` with its closed-form moments; then
+  `validation_cut_cells_sum_to_the_shape` holds the interior cubes and pieces to them (volume,
+  centroid, second and third moments) to 1e-12, with one piece dropped as the control.
 - `oracle/tests/bodies.rs`: add it to `solids()` for the convergence to 128 cells.
 - `cav-sim`: `shape::tests::every_kind_voxelises_and_is_named` (add a line), and
   `paths::tests::every_leaf_has_a_unit_or_is_dimensionless_and_a_stage` fails if a number has no

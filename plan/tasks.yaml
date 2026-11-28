@@ -850,6 +850,12 @@
 - id: TASK-S5-25
   milestone: S5
   title: A flaky editor test's cause - the forward stage's log lines tagged Subsystem::Forward, and the tests that look for what a command did skip them by that tag
+- id: TASK-S5-26
+  milestone: S5
+  title: "C3 as written: Pieces within 3 cells of an arm, Second beyond, against Exact at 1e-11 (fails at 1.3e-6, docs/slices/S5.md 7.7); left open for the owner's ruling"
+- id: TASK-S5-27
+  milestone: S5
+  title: "The walk goes below the chunk: each opened chunk's own voxel tree's blocks as nodes with summaries and bounds, so that the town's cut is not mostly leaves (docs/slices/S5.md 7.9)"
 - id: TASK-S5-24
   milestone: S5
   title: The cube kernel's switch between closed form and series error-bounded, not 3 sides (docs/research/paper-boxes-and-precision.md)

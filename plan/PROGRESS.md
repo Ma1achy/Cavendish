@@ -35,17 +35,64 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
-**For the owner: A2, the Platonic solids' fall-off (TASK-S5-06, its PR open, not merged).** The
-criterion written before measuring puts each 10 m solid's centroid at 5 m up and asks the
-gradiometer's departure from a point mass to fall as `R^−(l+3)` over 30 to 240 m, ±0.2. Four
-solids pass (cube −6.960, octahedron −6.962, dodecahedron −8.932, icosahedron −8.937), and so does
-the control (a squashed cube, −5). The tetrahedron gives −6.961, not −6: its octupole is odd in
-height about its centre, so at the solid's own height a vertical gradiometer does not see it, and
-its `l = 4` part is what is left. At a fixed elevation of 30° all five pass (tetrahedron −5.882,
-cube −6.972, octahedron −6.974, dodecahedron −8.983, icosahedron −8.810). Choose: (a) restate A2 at a fixed
-elevation of 30°, the tolerance unchanged; (b) keep 5 m and give the tetrahedron `l + 4`, with the reason
-written; (c) as written, the case failing and known. Until then `validation_platonic_solids_miss_their_low_multipoles`
-fails, so `quick` fails on the branch (`docs/slices/S5.md` §7.5).
+**A2, the Platonic solids' fall-off (TASK-S5-06): answered by the owner (28 Nov 2026), (b).** The
+5 m height stays; the tetrahedron's expected slope is `−(l + 4)` = −7, because its octupole is a
+pure `xyz` term, which a vertical gradiometer level with its centroid cannot see; the tolerance stays
+±0.2. Measured −6.961, so A2 passes, and a new test checks that the octupole is unseen there and
+seen at 30° (`docs/slices/S5.md` §7.5).
+
+**TASK-S5-04, the ledger in bundles (28 Nov 2026; §7.10).** Each tower's world ledger (the walk's
+ledger, nodes and blocks by level, leaves, the local expansion's degree and audit) is in the
+manifest as `world`; `BUNDLE_VERSION` 3; the badge's "within" adds the series' audit to the ledger.
+
+**TASK-S5-27, the walk below the chunk (28 Nov 2026; `docs/slices/S5.md` §7.9).** An opened chunk
+is opened into its own tree's blocks (2 to 16 cells, two leaves or more), each a node with its
+summary and bound. The town's tower 1 at 1e-2: 31,155 leaves read instead of 1.6 M, 2.4 s instead
+of 28 s; at 1e-4 and 1e-6 the read now settles (6.4 s, 17.7 s); the town's whole world contribution
+14.4 s, from 126 s. W1 below the chunk, W2 (0.062), W3 (237), W4, W5 pass. Tight centres (−11 %)
+and exact even absolute moments (−2 to −7 %) were measured against a 20 % criterion and not kept;
+carrying `A_4` exactly is moot (nothing above the chunks is accepted at 1e-4 and 1e-6).
+`MAX_CUT_NODES` 2^19 (172 MB of summaries at the cap).
+
+**TASK-S5-22, the local expansion (28 Nov 2026; `docs/slices/S5.md` §7.8).** Each tower's accepted
+nodes are split near (read directly) and far (a Chebyshev series in height on the tower's span,
+audited within 1/16 of the tolerance, the audit in the estimate; the walk takes the other 15/16).
+W6 passes (worst audit 1.1e-11 rad against a share of 6.25e-4; degree 4 misses its share). On the
+town it changes little: the cut is 99.9 % opened chunks' leaves (tower 1 at 1e-2: 28 s, from 31 s);
+the walk's looseness is TASK-S5-27. Worth a second look: near nodes (ellipse parameter below 1.3)
+are read directly, not gathered (a departure); the series is not kept across reads (the engine's,
+`plan/IDEAS.md`).
+
+**For the owner: C3, `Pieces` against `Exact` (TASK-S5-26, PR open, not merged; `docs/slices/S5.md`
+§7.7).** Written before measuring: an icosahedron at 1/16 m, the tower's line within a cell of it,
+read as `Pieces` (the exact piece within 3 cells of an arm, `Second` beyond), within 1e-11 relative
+of the `Exact` read. Measured **1.34e-6** (3.4e-7 with the octupole beyond, as built). The pieces
+themselves are exact: every cut cell exact gives 3.3e-15. What is left is the far cells' moments
+(the arms rise to 10 m, so most of the flight sees every cell from metres away): by reach, 6 cells
+2.7e-7, 12 5.4e-8, 24 and 48 2.1e-9 (with the octupole 3.6e-8, 2.9e-9, 1.6e-10, 1.6e-10). [X]'s own
+regimes table needs about 450 cells for fill + centroid + second moment at 1e-10 rad, so 3 cells was
+never going to reach 1e-11. Choose: (a) judge C3 with every cut cell exact (3.3e-15; that case,
+`cut.pieces_everywhere_are_the_body`, is merged) and record the 3-cell read; (b) set `PIECE_WITHIN`
+and the far read by measurement for a stated tolerance (none tried reaches 1e-11 short of every
+cell); (c) keep C3 as written, failing and known.
+
+**TASK-S5-10, `Pieces` and C6 (28 Nov 2026; §7.7).** `Pieces` built (exact near an arm, `Second` and
+the octupole beyond); every cell exact is the body to 3.3e-15. **C6: the sphere anomaly was the
+near-symmetric placement**: with eight random placements `Second` beats `Centroid` at 3 of 3
+pitches; on the engine's centred grid it loses at 3 of 3. Also measured, not changed: `Second`'s
+`Centroid`-cube fallback within 3 cells of an arm reads 1.5e-4 where the bare quadrupole reads
+6.3e-6; a convergence-radius rule tried with its criterion first did worse (2.4e-4) and was dropped.
+
+**TASK-S5-09, cut-cell moments (28 Nov 2026; `docs/slices/S5.md` §7.6).** Boundary cells clipped
+exactly (convex solids by half-spaces, meshes by the signed vertical-prism decomposition, the
+curved solids by their analytic surface) and read as `Fill`, `Centroid` or `Second`; `Sampled`
+unchanged (114 of the 116 earlier validation values the same to the last digit, the other two
+TASK-S5-24's). C1 2.1e-15 (1e-12); C2's orders as written (aligned cube 0.95, 1.99, 2.96, 4.92)
+after the test's lattice placement was changed to [X]'s random sub-cell offsets: the first run, on
+the engine's centred grid, failed two rows for measured reasons (§7.6). Clip time 5 to 6 µs a cell
+for convex solids, 46 µs for a ball, 59 µs for a 16,384-triangle mesh. Worth a second look: the
+clip-work units calibrated by time cap a ball at about 120,000 cut cells (r/80); a body with parts
+stays `Sampled`.
 
 **Seen while building TASK-S5-24 (28 Nov 2026):** the oracle's
 `validation_cylinder_vs_point_mass` passes nextest's two-minute watchdog neither with the new cube
@@ -934,7 +981,14 @@ mutation). Left, all minor:
   `surface()` in two test files; a mesh file is resolved against the working directory.
 
 ## Questions for the owner
-None open.
+- **L1 at 1e-6 (TASK-S5-27, 28 Nov 2026):** the criterion written first asked for 10× fewer
+  leaves at each of 1e-2, 1e-4, 1e-6 rad on the town; measured 52×, 17.6× and **4.8×** (the read
+  settles at all three; `docs/slices/S5.md` §7.9). It is a recorded measurement, no test fails.
+  Choose: (a) keep it in the record as failed at 1e-6 and move on; (b) ask for a tighter bound or a
+  cheaper near kernel to meet it (a task of its own); (c) restate it.
+- **C3 (TASK-S5-26, 28 Nov 2026):** `Pieces` within 3 cells of an arm and `Second` beyond reads
+  1.34e-6 relative against `Exact`, criterion 1e-11; every cell exact reads 3.3e-15. Options (a),
+  (b), (c) and the measurements by reach are in "S5 under way" above and `docs/slices/S5.md` §7.7.
 
 Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
 - **Ubuntu Mono: yes.** `UbuntuMono-Regular.ttf` from the official Ubuntu font family release goes in,
@@ -947,6 +1001,24 @@ Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
   tag>`; for S1 that is `s0-shell`.
 
 ## For George
+
+**Added 28 Nov 2026 (`docs/research/paper-real-read.md`): AION-10's real sequence numbers.** Every
+phase in the polyhedral-gravity paper is now the flight integral along Cavendish's model of the
+arms, so the numbers rest on that model. Could you give the real values?
+- Momentum transfer per pulse (LMT order): the model has n = 1000 ħk at 698 nm, so v_kick = 6.58 m/s.
+- T: the model has 0.73 s (2T = 1.46 s).
+- The launch velocity: the model has u₀ = 3.86 m/s for the lower arm, so the arms rise 0–5.0 m.
+- Pulse durations: the model's kicks are instantaneous.
+- The shot cadence: the model has one shot per 2 s.
+
+What depends on them: the arms separate by v_kick·T = 4.8 m, the same size as the 5 m baseline, so
+within ~10–50 m the instrument does not read a gradient. The real signals at 1.5–2 m have the
+opposite sign to k_eff T² Δg_z and are 1.5–3 times smaller (static, 1.5 m) or 1.6–1.9 times larger
+(walking past at 2 m). The voxel errors move by factors 0.05–2 (mostly 0.25–0.5) and the pitch needed for a bias below
+0.1 σ by about 2; their orders in the pitch and their ranking do not move.
+n·T² sets every phase's scale; v_kick·T and u₀ set where the arms sample the field. Finite pulses
+low-pass every signal (0.14–7 % for 1–50 ms trains, `gradiometer-environment.md`). The cadence sets
+the noise per shot (5×10⁻⁵ rad at 2 s) and so every bias/σ.
 
 **Added 25 Nov 2026 (from the research round):**
 - AION-10's LMT pulse sequence: which arm is excited when, pulse durations, cloud temperature, bias field, and

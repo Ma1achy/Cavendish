@@ -630,7 +630,12 @@ fn the_shape_s_read_is_a_choice_the_schema_lists() {
     rig.shell.keyboard.focus = vec!["inspector".into(), "inspector/shape".into(), id.into()];
     rig.shell.keyboard.nav_on = true;
     rig.key(Key::Enter, Modifiers::NONE);
-    rig.key(Key::ArrowDown, Modifiers::NONE);
+    // Down from Sampled (the first) to Exact, wherever the list puts it.
+    let steps =
+        cav_sim::Representation::ALL.iter().position(|r| *r == cav_sim::Representation::Exact).unwrap();
+    for _ in 0..steps {
+        rig.key(Key::ArrowDown, Modifiers::NONE);
+    }
     rig.key(Key::Enter, Modifiers::NONE);
     rig.frames(vec![vec![], vec![]]);
     let shape = rig.shell.engine.spec().bodies[0].shape.clone().unwrap();

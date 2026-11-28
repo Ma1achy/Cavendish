@@ -68,10 +68,11 @@ pub fn estimate_text(estimate: f64, settled: bool, truncated: Option<f64>) -> St
 /// it is over the tolerance (infinite when a node near the atoms could not be opened).
 #[must_use]
 pub fn world_text(world: &cav_sim::read::WorldLedger) -> String {
-    let (ledger, nodes) = (world.worst(), world.nodes());
+    let (within, nodes) = (world.worst(), world.nodes());
     if world.settled() {
-        format!("world within {ledger:.0e} rad (ledger, {nodes} nodes)")
+        format!("world within {within:.0e} rad (ledger and series, {nodes} nodes)")
     } else {
+        let ledger = world.towers.iter().map(|t| t.ledger).fold(0.0, f64::max);
         format!(
             "world not settled: ledger {ledger:.0e} rad, {:.0e} over τ ({nodes} nodes)",
             ledger - world.tolerance

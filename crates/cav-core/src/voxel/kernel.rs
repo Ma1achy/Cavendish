@@ -454,12 +454,100 @@ pub fn cube_shifts<const N: usize>(mass: f64, side: f64, d: Vec3, shifts: &[Vec3
     })
 }
 
+/// `(V(upper) − V(lower))/G` (kg/m) for a point of `mass` kg with the second central moments
+/// `second` (kg m², xx, yy, zz, xy, xz, yz) about it, the two points as [`cube_difference`] takes
+/// them (`across`, `below`, `above` from the point, metres; `gap` = `below − above`). To the
+/// quadrupole: `V/G = −M/R − (3 d·S·d − R² tr S)/(2R⁵)`; the monopole's difference is formed
+/// without cancellation, the quadrupole's (smaller by `(s/R)²`) directly.
+#[must_use]
+pub fn quadrupole_difference(
+    mass: f64,
+    second: &[f64; 6],
+    across: [f64; 2],
+    below: f64,
+    above: f64,
+    gap: f64,
+) -> f64 {
+    if gap == 0.0 {
+        return 0.0;
+    }
+    let horizontal = across[0] * across[0] + across[1] * across[1];
+    let (b2, a2) = (horizontal + below * below, horizontal + above * above);
+    let (b, a) = (b2.sqrt(), a2.sqrt());
+    let monopole = -mass * gap * (below + above) / (a * b * (a + b));
+    let trace = second[0] + second[1] + second[2];
+    let quadrupole = |d: [f64; 3], r2: f64| {
+        let s = &second;
+        let dsd = s[0] * d[0] * d[0]
+            + s[1] * d[1] * d[1]
+            + s[2] * d[2] * d[2]
+            + 2.0 * (s[3] * d[0] * d[1] + s[4] * d[0] * d[2] + s[5] * d[1] * d[2]);
+        (3.0 * dsd - r2 * trace) / (2.0 * r2 * r2 * r2.sqrt())
+    };
+    let upper = quadrupole([across[0], across[1], above], a2);
+    let lower = quadrupole([across[0], across[1], below], b2);
+    monopole - (upper - lower)
+}
+
+/// `(V_3(upper) − V_3(lower))/G` (kg/m): the octupole term of a mass distribution with the third
+/// central moments `third` (kg m³, in `Moments::third`'s order) about its centre of mass, at the
+/// two points as [`cube_difference`] takes them:
+/// `V_3/G = −(5 Σ T_abc d_a d_b d_c − 3R² Σ T_aac d_c)/(2R⁷)`. Formed directly: it is smaller than
+/// the monopole by `(s/R)³`.
+#[must_use]
+pub fn octupole_difference(third: &[f64; 10], across: [f64; 2], below: f64, above: f64) -> f64 {
+    use super::tree::third_index;
+    let term = |d: [f64; 3]| {
+        let r2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+        let (mut cubic, mut trace) = (0.0, 0.0);
+        for a in 0..3 {
+            for b in 0..3 {
+                for c in 0..3 {
+                    cubic += third[third_index(a, b, c)] * d[a] * d[b] * d[c];
+                }
+            }
+            for c in 0..3 {
+                trace += third[third_index(a, a, c)] * d[c];
+            }
+        }
+        -(5.0 * cubic - 3.0 * r2 * trace) / (2.0 * r2.powi(3) * r2.sqrt())
+    };
+    term([across[0], across[1], above]) - term([across[0], across[1], below])
+}
+
+/// A cut cell read as a point with its piece's quadrupole ([`super::cut::Representation::Second`]).
+#[derive(Clone, Copy, Debug)]
+struct Quad {
+    /// The piece's centroid, metres, the body's frame.
+    centre: Vec3,
+    /// Kilograms.
+    mass: f64,
+    /// Its second central moments, kg m².
+    second: [f64; 6],
+    /// Its third central moments, kg m³ (read only by `Pieces` with its octupole, a measurement).
+    third: [f64; 10],
+    /// The cell's side, metres: within [`PRISM_WITHIN`] of it the piece is read as a cube there.
+    side: f64,
+}
+
 /// A voxel body as the forward model sees it: every leaf of a tree a uniform cube, the tree's
 /// frame carried to where the body is.
 pub struct TreeBody<P: Fn(f64) -> Vec3 + Sync> {
     /// The leaves as `(centre in the body's frame, metres; mass, kg; side, metres)`, in Morton
     /// order: the order they are summed in.
     cubes: Vec<(Vec3, f64, f64)>,
+    /// The cut cells read as points with quadrupoles (`Second`), after the cubes; empty
+    /// otherwise.
+    quads: Vec<Quad>,
+    /// The cut cells read as their exact pieces near an arm and as `quads` are beyond (`Pieces`),
+    /// at the tree's density, after the quads; empty otherwise.
+    solids: Vec<(super::cut::PieceSolid, Quad)>,
+    /// Kilograms per cubic metre of the solids.
+    density: f64,
+    /// Within this many cells of an arm point a solid is read exactly.
+    within: f64,
+    /// Whether a solid beyond `within` adds its piece's octupole to `Second`'s read.
+    octupole: bool,
     /// Where the body's frame is at a time: seconds on the scene's clock in, metres in the world's
     /// frame out. The body does not turn.
     pub position: P,
@@ -480,19 +568,111 @@ impl<P: Fn(f64) -> Vec3 + Sync> TreeBody<P> {
                 (tree.block_centre(leaf.key, leaf.level), tree.leaf_mass(leaf), tree.side(leaf.level))
             })
             .collect();
-        Self { cubes, position, exists: (f64::NEG_INFINITY, f64::INFINITY), breaks: Vec::new() }
+        Self {
+            cubes,
+            quads: Vec::new(),
+            solids: Vec::new(),
+            density: 0.0,
+            within: 0.0,
+            octupole: false,
+            position,
+            exists: (f64::NEG_INFINITY, f64::INFINITY),
+            breaks: Vec::new(),
+        }
+    }
+
+    /// The body of `tree` read as `representation` says for its cut cells
+    /// ([`super::cut::Representation`]); its other leaves are cubes, as [`Self::new`]. For a tree
+    /// with no cuts, or `Sampled` or `Fill`, it is [`Self::new`] exactly (a cut leaf already
+    /// weighs its piece and sits at its cell's centre). `Centroid` moves each cut cell's cube to
+    /// its piece's centroid; `Second` reads it as a point with the piece's quadrupole there, or the
+    /// `Centroid` cube within [`PRISM_WITHIN`] cells of the point asked about.
+    /// `Pieces` needs its solids ([`Self::with_pieces`]); given only the tree it reads as `Second`.
+    pub fn read_as(tree: &VoxTree, representation: super::cut::Representation, position: P) -> Self {
+        use super::cut::Representation;
+        let mut body = Self::new(tree, position);
+        if tree.cuts.is_empty() || matches!(representation, Representation::Sampled | Representation::Fill) {
+            return body;
+        }
+        let mut cubes = Vec::with_capacity(body.cubes.len());
+        for (leaf, cube) in tree.leaves.iter().zip(&body.cubes) {
+            let Some(cut) = tree.cut_of(leaf) else {
+                cubes.push(*cube);
+                continue;
+            };
+            let mass = tree.leaf_mass(leaf);
+            let side = tree.side(0);
+            match representation {
+                Representation::Second | Representation::Pieces => body.quads.push(Quad {
+                    centre: cut.piece.centroid,
+                    mass,
+                    second: cut.piece.second.map(|s| tree.density * s),
+                    third: cut.piece.third.map(|t| tree.density * t),
+                    side,
+                }),
+                _ => cubes.push((cut.piece.centroid, mass, side)),
+            }
+        }
+        body.cubes = cubes;
+        body
+    }
+
+    /// The body of `tree` read as [`super::cut::Representation::Pieces`]: each cut cell within
+    /// [`super::cut::PIECE_WITHIN`] cells of the point asked about (from the cell's centre) as its
+    /// exact piece, `solids` (from [`super::cut::piece_solids`], in the order of the tree's
+    /// cuts), by the polyhedral closed form; beyond, as `Second` with the piece's octupole added
+    /// (its third moments are kept anyway: 4 to 13 times nearer, `docs/slices/S5.md` §7.7). A tree with no cuts reads as
+    /// [`Self::new`].
+    ///
+    /// # Panics
+    /// When `solids` are not one for each cut cell of `tree`.
+    pub fn with_pieces(tree: &VoxTree, solids: Vec<super::cut::PieceSolid>, position: P) -> Self {
+        Self::with_pieces_within(tree, solids, super::cut::PIECE_WITHIN, true, position)
+    }
+
+    /// [`Self::with_pieces`] with the exact pieces read within `cells` cells of an arm point in
+    /// place of [`super::cut::PIECE_WITHIN`], and beyond them, with `octupole`, `Second` and the
+    /// piece's octupole: for measuring how far they must reach (infinite: every cut cell exact)
+    /// and what the far read costs the near one.
+    ///
+    /// # Panics
+    /// As [`Self::with_pieces`].
+    pub fn with_pieces_within(
+        tree: &VoxTree,
+        solids: Vec<super::cut::PieceSolid>,
+        cells: f64,
+        octupole: bool,
+        position: P,
+    ) -> Self {
+        let mut body = Self::read_as(tree, super::cut::Representation::Pieces, position);
+        body.within = cells;
+        body.octupole = octupole;
+        assert_eq!(solids.len(), body.quads.len(), "one solid a cut cell");
+        body.density = tree.density;
+        body.solids = solids.into_iter().zip(std::mem::take(&mut body.quads)).collect();
+        body
     }
 
     /// One leaf of `tree` alone, at `position`, always there: what that leaf adds.
     pub fn single(tree: &VoxTree, leaf: &super::Leaf, position: P) -> Self {
         let cube = (tree.block_centre(leaf.key, leaf.level), tree.leaf_mass(leaf), tree.side(leaf.level));
-        Self { cubes: vec![cube], position, exists: (f64::NEG_INFINITY, f64::INFINITY), breaks: Vec::new() }
+        Self {
+            cubes: vec![cube],
+            quads: Vec::new(),
+            solids: Vec::new(),
+            density: 0.0,
+            within: 0.0,
+            octupole: false,
+            position,
+            exists: (f64::NEG_INFINITY, f64::INFINITY),
+            breaks: Vec::new(),
+        }
     }
 
-    /// How many cubes are summed at each point asked about.
+    /// How many cubes and points are summed at each point asked about.
     #[must_use]
     pub fn cubes(&self) -> usize {
-        self.cubes.len()
+        self.cubes.len() + self.quads.len() + self.solids.len()
     }
 }
 
@@ -509,6 +689,38 @@ impl<P: Fn(f64) -> Vec3 + Sync> Source for TreeBody<P> {
                 let at = offset + centre;
                 let (below, above) = (height + lower - at.z, height + upper - at.z);
                 sum += cube_difference(mass, side, [-at.x, -at.y], below, above, lower - upper);
+            }
+            for q in &self.quads {
+                let at = offset + q.centre;
+                let (below, above) = (height + lower - at.z, height + upper - at.z);
+                let across = [-at.x, -at.y];
+                let horizontal = across[0] * across[0] + across[1] * across[1];
+                let nearer = (horizontal + below * below).min(horizontal + above * above).sqrt();
+                sum += if nearer < PRISM_WITHIN * q.side {
+                    cube_difference(q.mass, q.side, across, below, above, lower - upper)
+                } else {
+                    quadrupole_difference(q.mass, &q.second, across, below, above, lower - upper)
+                };
+            }
+            for (solid, q) in &self.solids {
+                let at = offset + solid.centre;
+                let (below, above) = (height + lower - at.z, height + upper - at.z);
+                let across = [-at.x, -at.y];
+                let horizontal = across[0] * across[0] + across[1] * across[1];
+                let nearer = (horizontal + below * below).min(horizontal + above * above).sqrt();
+                if nearer < self.within * q.side {
+                    for (sign, part) in &solid.parts {
+                        sum += part.difference(sign * self.density, across, below, above, lower - upper);
+                    }
+                } else {
+                    let at = offset + q.centre;
+                    let (below, above) = (height + lower - at.z, height + upper - at.z);
+                    sum +=
+                        quadrupole_difference(q.mass, &q.second, [-at.x, -at.y], below, above, lower - upper);
+                    if self.octupole {
+                        sum += octupole_difference(&q.third, [-at.x, -at.y], below, above);
+                    }
+                }
             }
             sum
         })

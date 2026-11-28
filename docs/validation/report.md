@@ -4,7 +4,7 @@ Written by `cargo xtask validate --report`; do not edit by hand. Every case is d
 `cav_validate::case!` beside the code it checks, and all of them are listed here: one that did not run
 is shown as **missing**, never left out.
 
-**116 of 116 cases pass; worst margin: materials.shared_cells_are_within_their_dipole_bound at 99% of its tolerance.**
+**127 of 127 cases pass; worst margin: materials.shared_cells_are_within_their_dipole_bound at 99% of its tolerance.**
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="error-vs-tolerance-dark.svg"><img src="error-vs-tolerance-light.svg" alt="Each case's measured error against its tolerance, on a log scale." width="100%"></picture>
 
@@ -136,6 +136,15 @@ is shown as **missing**, never left out.
 | `oracle.fold_vs_script` (S1) | George's script: fold_frequency against fig2_folding_map.py's own, at 2001 frequencies from 0 to five times its Nyquist frequency of 0.1 Hz; largest difference | 0 | 1.000e-12 | relative | 0% |  | pass |
 | `oracle.script_launch_rule` (S2) | George's script: the kick and the launch speed the AICE scripts computed as they ran (v_kick and u0 in the meta.json of 100m_oscillators and fig2_uldm_folding; fig2_final.py computes them by the same two lines) against the engine's kick n·ħk/m and its rule g·T − v_kick/2 with the scripts' constants; largest relative difference | 0 | 1.000e-12 | relative | 0% |  | pass |
 
+## polyhedral
+
+| Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
+|---|---|---|---|---|---|---|---|
+| `polyhedral.far_field` (S5) | closed form: the cube series (order 16) and its five-point gradient, a 1/64 m cube at a non-dyadic centre, 16 general directions at R/s = 10, 30, 100, 300, 1000: the worst relative error of V and of g | 7.974e-10 | 1.000e-9 | relative | 80% |  | pass |
+| `polyhedral.the_prism` (S5) | closed form: Nagy's prism (V) and its exact attraction (g, Nagy's corner term differentiated) for a 0.62×0.94×0.46 m box at a non-dyadic centre, 64 general points from 0.15 to 3 sides, inside included: the worst relative error of V and of g | 5.549e-14 | 1.000e-13 | relative | 55% |  | pass |
+| `polyhedral.near_edge` (S5) | closed form: points 1e-4 to 1e-8 m across the middle of an edge of a 1/64 m cube: the edge's logarithm against 2·asinh(ℓ/2d), V and g against Nagy's prism and its exact attraction; the worst relative error | 4.218e-12 | 1.000e-10 | relative | 4% |  | pass |
+| `polyhedral.mesh_moments` (S5) | closed form: volume, centroid, second and third central moments by the divergence theorem over the triangles of the five Platonic solids (edge 0.9 m, non-dyadic centre) and a turned 0.62×0.94×0.46 m box, against the textbook closed forms and Polyhedron's integrals: the worst error (mass relative, centre over the size, moments over m·s² and m·s³) | 7.490e-16 | 1.000e-13 | relative | 1% |  | pass |
+
 ## presets
 
 | Case | Checked against | Measured | Tolerance | Unit | Of tolerance | Order | Result |
@@ -202,11 +211,14 @@ is shown as **missing**, never left out.
 | `voxel.cube_to_point_order` (S3) | closed form: /V_cube − V_point///V_point/ on the axis at s/R from 0.1 to 0.01: order 4 ± 0.02, and at 0.01 within 1% above the leading term 7/480·(s/R)⁴ | 1.458e-10 | 1.473e-10 | relative | 99% | 4.00 (expected 4 ± 0.02) | pass |
 | `voxel.cube_series_within_bound` (S3) | closed form: Gauss–Legendre 24³ quadrature of the cube; s/R from 0.02 to 0.3, 64 directions; orders 0, 4, 8, 12: the worst error as a fraction of the series' own bound | 0.4163 | 1 | relative | 42% |  | pass |
 | `voxel.cube_kernel_exact` (S3) | closed form: Gauss–Legendre quadrature of the cube (24³, 48³ close) from s/R = 1e-4 to 0.8 in 64 directions: series or prism, as the kernel chooses | 1.399e-14 | 1.000e-13 | relative | 14% |  | pass |
+| `kernel.difference_near_a_large_block` (S5) | closed form: blocks of side 1, 4, 16 m 0.1 and 1.5 m from the line, five heights, gaps 1 mm to 3 m: cube_difference against the block split into octants until every part's series converges (no closed form), relative to the difference's scale S = M·min(/gap//ρ², 1/ρ) | 7.526e-14 | 1.000e-12 | relative | 8% |  | pass |
 | `voxel.mass_is_the_spec` (S3) | exact self-consistency: the spec's mass, against the Morton-order sum of the leaves' masses, 17 shapes at 32 cells across | 3.259e-14 | 1.000e-12 | relative | 3% |  | pass |
 | `voxel.volume_and_inertia` (S3) | closed form: each primitive's and Platonic solid's closed-form volume and inertia tensor at 64 cells across, k = 4: the worst error as a fraction of its derived envelope (volume √3·A·δ/V, A its surface, δ = h/k; inertia 2·M·r²max times that over the largest principal moment) | 0.0188 | 1 | relative | 2% |  | pass |
 | `voxel.merged_equals_unmerged` (S3) | exact self-consistency: the same body voxelised unmerged (the raster's finest cells, made apart from the merged tree): potentials at 24 points from 0.6 to 12 m and one AION-10 shot 2 m away, each primitive and Platonic solid at 32 cells across | 1.666e-14 | 1.000e-12 | relative | 2% |  | pass |
 | `voxel.planar_mass_is_the_prism` (S3) | closed form: planar_mass (no script): a 2 × 2 × 0.25 m plate voxelised on a grid that fits its faces, against the closed-form prism; one AION-10 shot, three channels over the larger single interferometer's phase | 5.341e-15 | 1.000e-12 | relative | 1% |  | pass |
+| `cut.cells_sum_to_the_shape` (S5) | closed form: the closed-form volume, centroid, second and third central moments of an aligned and a turned cube, an icosahedron, a sphere, an ellipsoid, a cylinder along each axis, a shell and a closed torus mesh (the polyhedra's and the mesh's by the divergence theorem), each voxelised at 0.8/16.37 m with exact cut cells: interior cubes plus pieces | 2.080e-15 | 1.000e-12 | relative | 0% |  | pass |
 | `voxel.sphere_reads_as_the_sphere` (S3) | closed form: a uniform sphere (a point outside itself), r = 0.5 m, 100 kg, 1.6 m off a tower's axis: one AION-10 shot, three channels, voxelised at r/16 and k = 4 | 1.919e-7 | 0.002 | relative | 0% |  | pass |
+| `cut.cell_orders` (S5) | closed form: the polyhedral closed form's AION-10 read of a 0.8 m aligned cube, the same cube turned and an icosahedron, 1.5 m beyond the surface along (1, 0.2, -0.3), against each representation at 8.37 to 32.37 cells across, RMS over four sub-cell placements: the count of C2's criteria that fail (aligned: Sampled order 1 +- 0.3, Fill 2 +- 0.3, Centroid >= 2.7, Second >= 3.1; turned cube and icosahedron: Centroid and Second >= 2.7; at the finest pitch Second < Centroid < Sampled on each) | 0 | 0 | count | 0% |  | pass |
 | `voxel.tree_equals_raster` (S3) | exact self-consistency: the raster voxeliser over every cell: 17 shapes (primitives, Platonic solids, a random hull, three meshes) at 8, 13 and 21 cells across with k = 1, 2, 4, placed at random | 0 | 0 | count | 0% |  | pass |
 
 ## world
@@ -215,7 +227,11 @@ is shown as **missing**, never left out.
 |---|---|---|---|---|---|---|---|
 | `world.moments_bound_is_not_vacuous` (S4) | exact self-consistency: the same: the bound over the error, the loosest over every q tried (0.45 to 0.001) where the error is above rounding | 457.0544 | 1000 | relative | 46% |  | pass |
 | `world.slab_converges_to_the_null` (S4) | closed form: the same slab: its gradiometer halves as its width doubles (a finite floor's edge term falls as 1/L, to the infinite floor's null); the worst ratio's relative distance from 2 | 0.0197 | 0.05 | relative | 39% |  | pass |
-| `world.slab_equals_the_prism` (S4) | closed form: a square slab of the world, 320 m to 2560 m across and 32 m thick, read at the centre tower: its gradiometer against the prism's closed form, the worst relative difference | 2.835e-11 | 1.000e-9 | relative | 3% |  | pass |
+| `world.walk_ledger_within_tolerance` (S5) | exact self-consistency: the same reads: the reported ledger (both interferometers' bounds read through the flight) over the tolerance asked, the worst | 0.2373 | 1 | relative | 24% |  | pass |
+| `world.the_octree_s_moments_are_its_chunks` (S5) | exact self-consistency: every node's mass, first, second and third raw moments about its centre, carried up the octree, against the direct sum over its chunks' cubes about the same centre (world-box and a small terrain world), each order relative to the node's mass times its side to that power | 2.309e-14 | 1.000e-13 | relative | 23% |  | pass |
+| `world.walk_within_its_ledger` (S5) | exact self-consistency: the whole world read by the walk (accepted nodes by their octupole, opened chunks leaf by leaf) against every chunk read leaf by leaf, on world-box and town at eight tower bases each and tolerances 1e-2, 1e-4, 1e-6 rad: the worst error over the reported ledger, each interferometer and the gradiometer (control: the_walk_needs_its_bound) | 0.1566 | 1 | relative | 16% |  | pass |
+| `world.walk_ledger_is_not_vacuous` (S5) | exact self-consistency: the same reads: at each read its worst channel, the larger interferometer's ledger over the larger interferometer's error (the owner's ruling of 28 Nov 2026, restated after measuring: a channel's own ratio is unbounded at a zero of its signed error), the loosest where that error is above 1e-12 of the phase | 107.3521 | 1000 | relative | 11% |  | pass |
+| `world.slab_equals_the_prism` (S4) | closed form: a square slab of the world, 320 m to 2560 m across and 32 m thick, read at the centre tower: its gradiometer against the prism's closed form, the worst relative difference | 3.440e-11 | 1.000e-9 | relative | 3% |  | pass |
 | `world.moments_within_their_bound` (S4) | exact self-consistency: a chunk of terrain and a house (two materials) read through its moments to the octupole, against its leaves: the worst error over the stated bound, q = a/R from 0.45 to 0.001 (controls: the quadrupole left out breaks the bound from q = 0.1 in, the octupole flipped from 0.05, the octupole left out from 0.02) | 0.0228 | 1 | relative | 2% |  | pass |
 | `world.box_reads_as_a_voxel_body` (S4) | exact self-consistency: a box of concrete over four chunks of the world against the same box made a voxel body: the worst relative difference of any channel of any tower | 4.565e-16 | 1.000e-12 | relative | 0% |  | pass |
 | `world.box_reads_as_the_prism` (S4) | closed form: a box of concrete on the world's cells: each tower's gradiometer against the closed form of the prism, the worst relative difference | 1.739e-13 | 1.000e-9 | relative | 0% |  | pass |

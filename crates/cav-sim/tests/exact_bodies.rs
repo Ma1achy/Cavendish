@@ -101,6 +101,8 @@ fn departure_slope_at(kind: &ShapeKind, height: f64) -> f64 {
 }
 
 /// Each solid with the order `l` of its first multipole past the monopole.
+///
+/// (The fall-off A2 asks for is `R^−(l+3)`, except the tetrahedron's: see [`expected_slope`].)
 fn platonic_orders() -> [(PlatonicSolid, f64); 5] {
     [
         (PlatonicSolid::Tetrahedron, 3.0),
@@ -111,16 +113,57 @@ fn platonic_orders() -> [(PlatonicSolid, f64); 5] {
     ]
 }
 
-/// The worst `|slope + (l + 3)|` over the five solids (10 m an edge).
+/// The slope A2 expects for `solid`, whose first multipole past the monopole is of order `l`, with
+/// its centroid level with the arms' middle (5 m up): `−(l + 3)`, except the tetrahedron's `−(l + 4)`.
+///
+/// Why the tetrahedron differs (the owner's ruling, 28 Nov 2026, `docs/slices/S5.md` §7.5): its
+/// octupole is a pure `xyz` term about its centroid, odd in height, so a vertical gradiometer level
+/// with the centroid cannot see it, and what it sees first is its `l = 4` part. The criterion was
+/// first written as `−(l + 3)` for all five; that read (−6.961 against −6) is kept in the record.
+/// [`the_tetrahedron_s_octupole_is_unseen_level_with_it`] checks that the octupole is there and seen
+/// off that level, so this exception cannot hide a missing one.
+fn expected_slope(solid: PlatonicSolid, l: f64) -> f64 {
+    if solid == PlatonicSolid::Tetrahedron { -(l + 4.0) } else { -(l + 3.0) }
+}
+
+/// The worst `|slope − expected|` over the five solids (10 m an edge).
 fn platonic_slope_error() -> f64 {
     platonic_orders()
         .into_iter()
         .map(|(solid, l)| {
             let slope = departure_slope(&ShapeKind::Platonic { solid, edge: 10.0 });
-            eprintln!("{solid:?}: slope {slope:.4} against {}", -(l + 3.0));
-            (slope + l + 3.0).abs()
+            let expected = expected_slope(solid, l);
+            eprintln!("{solid:?}: slope {slope:.4} against {expected}");
+            (slope - expected).abs()
         })
         .fold(0.0, f64::max)
+}
+
+/// The slope of the departure with the centroid at a fixed elevation of 30° above the arms' middle
+/// (at `5 m + R tan 30°`), over the same `R`.
+fn departure_slope_at_30_degrees(kind: &ShapeKind) -> f64 {
+    let points: Vec<(f64, f64)> = [30.0, 60.0, 120.0, 240.0]
+        .iter()
+        .map(|&r: &f64| (r.ln(), departure_at(kind, r, 5.0 + r * 30f64.to_radians().tan()).ln()))
+        .collect();
+    let n = points.len() as f64;
+    let (mx, my) = (points.iter().map(|p| p.0).sum::<f64>() / n, points.iter().map(|p| p.1).sum::<f64>() / n);
+    let sxy: f64 = points.iter().map(|p| (p.0 - mx) * (p.1 - my)).sum();
+    let sxx: f64 = points.iter().map(|p| (p.0 - mx) * (p.0 - mx)).sum();
+    sxy / sxx
+}
+
+#[test]
+fn the_tetrahedron_s_octupole_is_unseen_level_with_it() {
+    // The owner's ruling on A2: level with the centroid the tetrahedron falls as R^−7, its
+    // octupole unseen. Control: at a fixed 30° elevation the same octupole is seen, R^−6, so the
+    // solid does have it and the level read is not a solid missing its octupole.
+    let tetrahedron = ShapeKind::Platonic { solid: PlatonicSolid::Tetrahedron, edge: 10.0 };
+    let level = departure_slope(&tetrahedron);
+    let raised = departure_slope_at_30_degrees(&tetrahedron);
+    eprintln!("tetrahedron: slope {level:.4} level with it, {raised:.4} at 30°");
+    assert!((level + 7.0).abs() <= 0.2, "level: {level}");
+    assert!((raised + 6.0).abs() <= 0.2, "at 30°: {raised}");
 }
 
 cav_validate::case! {
@@ -129,7 +172,7 @@ cav_validate::case! {
     subsystem: "voxel",
     slice: "S5",
     reference: ClosedForm,
-    against: "the AION-10 gradiometer's departure from a point mass of the same mass, Platonic solids of 10 m an edge read Exact, R = 30 to 240 m: its log-log slope against −(l+3), l = 3 (tetrahedron), 4 (cube, octahedron), 6 (dodecahedron, icosahedron); the worst |slope + l + 3|",
+    against: "the AION-10 gradiometer's departure from a point mass of the same mass, Platonic solids of 10 m an edge read Exact, R = 30 to 240 m: its log-log slope against −(l+3), l = 3 (tetrahedron), 4 (cube, octahedron), 6 (dodecahedron, icosahedron); the worst |slope + l + 3|, the tetrahedron at |slope + l + 4| (restated after measuring with the owner's approval, S5 §7.5: its xyz octupole is unseen level with its centroid)",
     unit: Slope,
     tolerance: 0.2,
     measure: cav_validate::Measured::Error(platonic_slope_error()),
@@ -251,17 +294,8 @@ fn tetrahedron_by_height() {
 #[ignore = "a diagnostic: A2 at a fixed elevation of 30° (the centroid at 5 m + R tan 30°) (S5 §7.5)"]
 fn platonic_slopes_at_a_fixed_elevation() {
     for (solid, l) in platonic_orders() {
-        let kind = ShapeKind::Platonic { solid, edge: 10.0 };
-        let points: Vec<(f64, f64)> = [30.0, 60.0, 120.0, 240.0]
-            .iter()
-            .map(|&r: &f64| (r.ln(), departure_at(&kind, r, 5.0 + r * 30f64.to_radians().tan()).ln()))
-            .collect();
-        let n = points.len() as f64;
-        let (mx, my) =
-            (points.iter().map(|p| p.0).sum::<f64>() / n, points.iter().map(|p| p.1).sum::<f64>() / n);
-        let sxy: f64 = points.iter().map(|p| (p.0 - mx) * (p.1 - my)).sum();
-        let sxx: f64 = points.iter().map(|p| (p.0 - mx) * (p.0 - mx)).sum();
-        println!("{solid:?}: slope {:.4} against {}", sxy / sxx, -(l + 3.0));
+        let slope = departure_slope_at_30_degrees(&ShapeKind::Platonic { solid, edge: 10.0 });
+        println!("{solid:?}: slope {slope:.4} against {}", -(l + 3.0));
     }
 }
 

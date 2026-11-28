@@ -15,6 +15,8 @@
 //! - [`layers`]: bodies of several materials: solids added, painted and erased in order, each
 //!   material at its density, a cell two share keeping both masses (S19).
 //! - [`tree`]: the tree, its moments, its cuts.
+//! - [`cut`]: cut cells: each boundary cell clipped exactly and its piece's moments kept beside
+//!   the tree (S5), for the representations that read them.
 //! - [`kernel`]: the potential of a uniform cube, exact to rounding (series or prism).
 //! - [`world`]: the world volume: static matter in chunks of 32³ cells with their palettes, and
 //!   the far field's bricks (S4).
@@ -26,6 +28,7 @@
 //! body is unrotated; masses are kilograms. Every count that comes from a spec or a file has a
 //! cap here, checked before anything is reserved.
 
+pub mod cut;
 pub mod kernel;
 pub mod layers;
 pub mod mesh;

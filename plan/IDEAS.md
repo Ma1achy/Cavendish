@@ -289,7 +289,10 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   size, `docs/slices/S5.md` §7.1). Each edge's `L(p₁) − L(p₂)` could be formed as one `log1p` of
   a ratio and each face's `ω` difference as one `atan2`, so that the closed form's difference
   holds as far as its potential does; measure against the moments' read before adopting.
-- **Absolute moments carried exactly at even orders** (TASK-S5-11): a node's `A_4` is exact for a
+- **Absolute moments carried exactly at even orders** (TASK-S5-11; measured moot in TASK-S5-27, §7.9:
+  once the walk goes below the chunk, no node above the chunks is accepted on the town at 1e-4 or
+  1e-6 rad, and a chunk's `A_4` is already exact; exact `A_6 … A_16` for the blocks read 2 to 7 %
+  fewer leaves, under the 20 % asked): a node's `A_4` is exact for a
   chunk but carried upward by the triangle inequality, so on `town` it is a median 2.6 to 6.2 times
   the leaves' true `Σ|m|s⁴` above the chunks (worst 21 at level 4), and `A_16` up to 1.9×10⁴
   (`docs/slices/S5.md` §7.2). Carrying the `|m|`-weighted raw moments to the fourth order (35
@@ -306,15 +309,41 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   keeps contributions apart; it could keep the world's `Octree` and the world contribution by the
   world's hash and compose a playhead reading from the kept one (any shot of a static world reads
   the same), so that scrubbing a town costs what it did in S4. Needs `read::reading` to take the
-  kept world part.
+  kept world part. Since TASK-S5-22 each tower's local expansion (`world::local::Series`, keyed by
+  the world's hash, the tower's line and span and the tolerance) is worth keeping too: a change of
+  the instrument's flight alone needs only the near part and the series read again.
 - **Levels below the chunk for opened chunks** (TASK-S5-12): on `town` the walk accepts a 3.2 m chunk
   only from about 90 m at 1e-2 rad (the bound is 100 to 900 times the error), so the cut is mostly
   opened chunks read leaf by leaf: 31 s a tower, and past 1e-3 the audited read exceeds the kernel's
   share and does not settle (`docs/slices/S5.md` §7.3). Opening a chunk into its own voxel tree's
   nodes, each with a summary, would let the walk go on below level 0 instead of reading every leaf;
-  so would a tighter bound (the exact `A_4` above) or reading the towers in parallel.
+  so would a tighter bound (the exact `A_4` above) or reading the towers in parallel. **Done in
+  TASK-S5-27** (§7.9): the blocks below the chunk. What is left of the idea: reading the towers in
+  parallel, and a cheaper near kernel for the leaves next to the arm, which are now the read's cost.
 - **`cube_shift`'s closed form near a cube, error-bounded as the arms' difference is** (TASK-S5-24):
   a body's small motions are read as `V(d − shift) − V(d)`, and near a cube that is two closed-form
   potentials subtracted, which loses `ε·(the terms' size)/|change|`. Split the cube as
   `cube_difference` now does when that is above `DIFFERENCE_EPSILON` of the change's scale; measure
   on the scaffold (micrometre shifts) before adopting.
+- **The analytic clipper's inner integral in closed form** (TASK-S5-09): a sphere's cut cell costs
+  about 46 µs (24 × 24 cosine-mapped Gauss–Legendre nodes a piece, about 2,300 chords a cell),
+  against 0.6 µs for its 64 samples. On each y piece the chord's limits are constants or
+  `±√(A − y²)`, so `∫ y^q (z-moments) dy` is a sum of `∫ y^q (A − y²)^{k/2} dy`, `k ≤ 4`, in closed
+  form (arcsines for odd `k`): one quadrature instead of two, about 24× fewer chords. Watch the
+  cancellation of the arcsine terms near a tangency; hold it to C1 and to the 48-point rule.
+- **`Second` near an arm** (TASK-S5-10, `docs/slices/S5.md` §7.7): its fallback, the `Centroid`
+  cube within three cells, reads 1.5e-4 relative on C3's geometry where the bare quadrupole reads
+  6.3e-6, and a fallback only within the convergence radius read 2.4e-4. The nearest cells' errors
+  have both signs. A near read that is the piece's shape (PLIC + residual of
+  `docs/research/surface-representation.md`, or `Pieces`) is the principled fix; measure it on C3's
+  geometry against both.
+- **Third moments read near the arm** (TASK-S5-09): the cut cells keep their pieces' third
+  moments (they make the node moments exact), but `Second` reads only to the quadrupole. A `Third`
+  rung (point + quadrupole + octupole, 12–21 ns) is 20–60× better again at 0.5 m on four of the
+  five shapes of `docs/research/surface-representation.md` §1.1; so is PLIC + residual, which the
+  same note measures best of all near the body.
+- **Free-size boxes with the l ≤ 6 box series** (`docs/research/surface-representation.md` §4,
+  noted by TASK-S5-09): the cube kernel already takes its series to order 16 where it converges, so
+  octree blocks gain nothing; a body's interior as free rectangular boxes read by an l ≤ 6 box
+  series (43 to 80 flops, checked to 40 digits there) is 4 to 33 times cheaper than octree blocks
+  at 20 m and loses near the body. Worth it only with a walk that keeps the far advantage.

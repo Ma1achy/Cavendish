@@ -1,0 +1,80 @@
+{
+ "shape": "sphere",
+ "triangles": 5120,
+ "volume": 4.17973894799464,
+ "origin": [
+  0.0003425,
+  0.0007275,
+  0.0001825
+ ],
+ "pitches": [
+  0.25,
+  0.125,
+  0.0625,
+  0.03125
+ ],
+ "tower_points": [
+  408,
+  408,
+  408
+ ],
+ "tower_bases": [
+  [
+   2.351362588994187,
+   0.47027251779883744,
+   -0.7054087766982561
+  ],
+  [
+   5.6440087085249075,
+   1.1288017417049816,
+   -1.6932026125574722
+  ],
+  [
+   19.754861292633112,
+   3.950972258526623,
+   -5.926458387789934
+  ]
+ ],
+ "levels": [
+  {
+   "level": 0,
+   "h": 0.25,
+   "boundary": 284,
+   "interior": 136,
+   "piece_triangles": 24148,
+   "seconds": 1.9545245170593262,
+   "volume_rel_error": 0.0,
+   "node_disagreements": 0
+  },
+  {
+   "level": 1,
+   "h": 0.125,
+   "boundary": 1172,
+   "interior": 1568,
+   "piece_triangles": 57172,
+   "seconds": 4.907831192016602,
+   "volume_rel_error": 0.0,
+   "node_disagreements": 0
+  },
+  {
+   "level": 2,
+   "h": 0.0625,
+   "boundary": 4772,
+   "interior": 14784,
+   "piece_triangles": 163396,
+   "seconds": 12.06729507446289,
+   "volume_rel_error": 2.220446049250313e-16,
+   "node_disagreements": 0
+  },
+  {
+   "level": 3,
+   "h": 0.03125,
+   "boundary": 19242,
+   "interior": 127469,
+   "piece_triangles": 535016,
+   "seconds": 46.9870982170105,
+   "volume_rel_error": 2.220446049250313e-16,
+   "node_disagreements": 0
+  }
+ ]
+}

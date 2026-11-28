@@ -12,6 +12,7 @@
 
 use cav_core::Vec3;
 use cav_core::polyhedral::Faceted;
+use cav_core::voxel::cut::{self, Weight, voxelise_cut};
 use cav_core::voxel::layers::{self, Layer, Mode, Moved, Region, Stroke, Whole};
 use cav_core::voxel::shape::{Cuboid, Cylinder, Ellipsoid, Platonic, Polyhedron, Shape, Shell, Sphere};
 use cav_core::voxel::{Aabb, Budget, Grid, VoxTree, mesh::Mesh, voxelise_within};
@@ -57,8 +58,10 @@ pub struct ShapeSpec {
     #[serde(default)]
     #[schemars(length(max = 255))]
     pub parts: Vec<PartSpec>,
-    /// How the forward model reads it: by its voxels (`Sampled`, the default, not written) or as
-    /// the solid itself (`Exact`: a polyhedron or a mesh, of one material, with no parts).
+    /// How the forward model reads it: by its voxels with their sampled count (`Sampled`, the
+    /// default, not written), by its voxels with the exact piece of the shape in each boundary cell
+    /// (`Fill`, `Centroid`, `Second`, `Pieces`), or as the solid itself (`Exact`: a polyhedron or a
+    /// mesh). Every one but `Sampled` is for a body of one material with no parts.
     #[serde(default, skip_serializing_if = "Representation::is_sampled")]
     pub representation: Representation,
 }
@@ -66,34 +69,69 @@ pub struct ShapeSpec {
 const fn default_supersample() -> u8 {
     4
 }
-/// How the forward model reads a body's shape (`docs/slices/S5.md` §1, §2). Written in a scene
-/// file only when it is not [`Representation::Sampled`], so files and bundles made before it keep
-/// their bytes.
+/// How the forward model reads a body's shape: what its boundary cells carry, or no voxels at all
+/// (`docs/slices/S5.md` §1, §2 "Reading a cut cell"). Written in a scene file only when it is not
+/// [`Representation::Sampled`], so files and bundles made before it keep their bytes.
 ///
-/// TASK-S5-09 adds what a voxel body's boundary cells carry: `Fill` (the exact fill fraction at
-/// the cell's centre), `Centroid` (and the piece's centroid), `Second` (and its second moment) and
-/// `Pieces` (the clipped piece itself near an arm). They will sit between `Sampled` and `Exact`.
+/// Every representation but `Sampled` clips each boundary cell exactly
+/// ([`cav_core::voxel::cut`]): a convex solid by its faces' half-spaces, a mesh by the signed
+/// vertical-prism decomposition, a curved solid by its analytic surface (no mesh). Interior cells
+/// are full cubes in every case. Measured in `docs/slices/S5.md` §7.6: on a 0.8 m cube 1.5 m
+/// from the surface, orders 1, 2, 3 and 5 in the pitch for `Sampled`, `Fill`, `Centroid`, `Second`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum Representation {
-    /// Voxels, each boundary cell weighed by how many of its `supersample³` sample points lie
-    /// inside (S3): the default, read leaf by leaf with the cube kernel.
+    /// Each boundary cell weighed by how many of its `supersample³` sample points lie inside
+    /// (S3): the default, read leaf by leaf with the cube kernel.
     #[default]
     Sampled,
+    /// The exact fill: each boundary cell a cube at its centre of its piece's mass.
+    Fill,
+    /// Each boundary cell a cube of its side at its piece's centroid, of the piece's mass.
+    Centroid,
+    /// Each boundary cell a point at its piece's centroid with the piece's quadrupole; within three
+    /// cells of an arm, the `Centroid` cube.
+    Second,
+    /// Within three cells of an arm each boundary cell its exact piece, read by the polyhedral
+    /// closed form; beyond, `Second` and the piece's octupole. For a polyhedron or a mesh only
+    /// (`Cuboid`, `Platonic`, `Polyhedron`, `Mesh`, `Triangles`): a curved solid's pieces are not
+    /// polyhedra.
+    Pieces,
     /// No voxels: the solid itself, by the polyhedral closed form near and its exact moments far
     /// ([`crate::exact`]). For a polyhedron (`Cuboid`, `Platonic`, `Polyhedron`) or a closed mesh
     /// (`Mesh`, `Triangles`) of at most 10,000 triangles, of one material and with no parts. It is
-    /// still drawn as voxels at `pitch`.
+    /// still drawn as voxels at `pitch` (by their sampled count: no cell is clipped).
     Exact,
 }
 
 impl Representation {
     /// Every representation, in the order a choice lists them.
-    pub const ALL: [Self; 2] = [Self::Sampled, Self::Exact];
+    pub const ALL: [Self; 6] =
+        [Self::Sampled, Self::Fill, Self::Centroid, Self::Second, Self::Pieces, Self::Exact];
 
     /// Whether it is the default ([`Self::Sampled`]): such a shape does not write the field.
     #[must_use]
     pub fn is_sampled(&self) -> bool {
         *self == Self::Sampled
+    }
+
+    /// Whether its voxels' boundary cells are clipped exactly (`Fill`, `Centroid`, `Second`,
+    /// `Pieces`): not `Sampled`, and not `Exact`, whose voxels are only drawn.
+    #[must_use]
+    pub const fn is_cut(&self) -> bool {
+        matches!(self, Self::Fill | Self::Centroid | Self::Second | Self::Pieces)
+    }
+
+    /// The core's read of a cut cell ([`cut::Representation`]). `Exact` is not read through its
+    /// voxels at all ([`crate::exact`]); its voxels, which are only drawn, are `Sampled`.
+    #[must_use]
+    pub const fn core(self) -> cut::Representation {
+        match self {
+            Self::Sampled | Self::Exact => cut::Representation::Sampled,
+            Self::Fill => cut::Representation::Fill,
+            Self::Centroid => cut::Representation::Centroid,
+            Self::Second => cut::Representation::Second,
+            Self::Pieces => cut::Representation::Pieces,
+        }
     }
 }
 
@@ -647,6 +685,28 @@ impl ShapeSpec {
         if !self.parts.is_empty() && self.material.is_none() {
             return Err(format!("{at}.parts: a body with parts has a material of its own"));
         }
+        if self.representation.is_cut() && !self.parts.is_empty() {
+            return Err(format!(
+                "{at}.representation: {:?} clips the shape's own boundary cells, so the body has one material and                  no parts; this one has {} parts (read it as Sampled)",
+                self.representation,
+                self.parts.len()
+            ));
+        }
+        if self.representation == Representation::Pieces
+            && matches!(
+                self.kind,
+                ShapeKind::Sphere { .. }
+                    | ShapeKind::Shell { .. }
+                    | ShapeKind::Cylinder { .. }
+                    | ShapeKind::Ellipsoid { .. }
+            )
+        {
+            return Err(format!(
+                "{at}.representation: Pieces reads a polyhedron or a mesh exactly; a {}'s pieces are not \
+                 polyhedra (read it as Second)",
+                self.kind.name()
+            ));
+        }
         if self.parts.len() > layers::MAX_LAYERS - 1 {
             return Err(format!(
                 "{at}.parts: {} parts; at most {}",
@@ -737,7 +797,9 @@ impl ShapeSpec {
     /// The body's voxel tree: the shape voxelised at its pitch, in the body's own frame (the
     /// shape's centre at its origin): `mass` kilograms in all for a uniform body; its materials'
     /// densities (found among `materials`, a scene's own, then the library) for a body with a
-    /// material, whose `mass` is not used.
+    /// material, whose `mass` is not used. For any [`Representation`] but `Sampled` the boundary
+    /// cells are clipped exactly ([`cav_core::voxel::cut::voxelise_cut`]) and the tree carries
+    /// their pieces; a body of a material then weighs its density times the exact volume.
     ///
     /// # Errors
     /// When the shape cannot be made, a material is not found, or the voxeliser refuses it (too
@@ -761,6 +823,17 @@ impl ShapeSpec {
     ) -> Result<VoxTree, String> {
         let solid = self.kind.solid()?;
         let budget = Budget::with_bytes(bytes);
+        if self.representation.is_cut() {
+            if !self.parts.is_empty() {
+                return Err("a body read by its exact cut cells has no parts".into());
+            }
+            let weight = match &self.material {
+                None => Weight::Mass(mass),
+                Some(_) => Weight::Density(self.materials(materials, "material")?[0].density),
+            };
+            let grid = Grid::around(solid.bounds(), self.pitch, self.supersample).map_err(|e| e.0)?;
+            return voxelise_cut(solid.as_ref(), &grid, weight, 0, budget).map_err(|e| e.0);
+        }
         if self.material.is_none() {
             let grid = Grid::around(solid.bounds(), self.pitch, self.supersample).map_err(|e| e.0)?;
             return voxelise_within(solid.as_ref(), &grid, mass, 0, budget).map_err(|e| e.0);
