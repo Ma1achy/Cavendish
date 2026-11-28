@@ -400,6 +400,10 @@ impl Mesh {
 }
 
 impl Shape for Mesh {
+    fn clip(&self) -> Option<&dyn super::cut::Clip> {
+        Some(self)
+    }
+
     fn bounds(&self) -> Aabb {
         let first = Aabb::new(self.vertices[0], self.vertices[0]);
         self.vertices.iter().fold(first, |b, v| b.union(&Aabb::new(*v, *v)))

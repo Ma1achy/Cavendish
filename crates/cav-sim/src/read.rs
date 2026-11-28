@@ -1121,7 +1121,7 @@ fn voxel_body<'a>(spec: &'a SceneSpec, n: usize, readers: &Readers) -> Result<Op
     let gravity = spec.array.instrument.gravity;
     let position: Box<dyn Fn(f64) -> Vec3 + Sync + 'a> =
         Box::new(move |t| Vec3::from_array(body.motion.position(t, gravity)));
-    let mut source = TreeBody::new(&tree, position);
+    let mut source = TreeBody::read_as(&tree, shape.representation.core(), position);
     source.exists = body.exists();
     source.breaks = body.motion.breaks();
     // Each flight node evaluates every cube at two points for each of two interferometers.

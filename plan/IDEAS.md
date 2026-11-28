@@ -318,3 +318,19 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   potentials subtracted, which loses `ε·(the terms' size)/|change|`. Split the cube as
   `cube_difference` now does when that is above `DIFFERENCE_EPSILON` of the change's scale; measure
   on the scaffold (micrometre shifts) before adopting.
+- **The analytic clipper's inner integral in closed form** (TASK-S5-09): a sphere's cut cell costs
+  about 46 µs (24 × 24 cosine-mapped Gauss–Legendre nodes a piece, about 2,300 chords a cell),
+  against 0.6 µs for its 64 samples. On each y piece the chord's limits are constants or
+  `±√(A − y²)`, so `∫ y^q (z-moments) dy` is a sum of `∫ y^q (A − y²)^{k/2} dy`, `k ≤ 4`, in closed
+  form (arcsines for odd `k`): one quadrature instead of two, about 24× fewer chords. Watch the
+  cancellation of the arcsine terms near a tangency; hold it to C1 and to the 48-point rule.
+- **Third moments read near the arm** (TASK-S5-09): the cut cells keep their pieces' third
+  moments (they make the node moments exact), but `Second` reads only to the quadrupole. A `Third`
+  rung (point + quadrupole + octupole, 12–21 ns) is 20–60× better again at 0.5 m on four of the
+  five shapes of `docs/research/surface-representation.md` §1.1; so is PLIC + residual, which the
+  same note measures best of all near the body.
+- **Free-size boxes with the l ≤ 6 box series** (`docs/research/surface-representation.md` §4,
+  noted by TASK-S5-09): the cube kernel already takes its series to order 16 where it converges, so
+  octree blocks gain nothing; a body's interior as free rectangular boxes read by an l ≤ 6 box
+  series (43 to 80 flops, checked to 40 digits there) is 4 to 33 times cheaper than octree blocks
+  at 20 m and loses near the body. Worth it only with a walk that keeps the far advantage.
