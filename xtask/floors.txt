@@ -34,7 +34,9 @@
 # TASK-S5-11 (the world octree): 11 new quick tests (cav-core: 6 of voxel::summary; cav-sim: O1 to
 # O3, the octree's shape, its caps); 1 new slow test (cav-sim: slow_the_town_s_octree).
 # TASK-S5-25 (a flaky test's cause): 1 new quick test (cav-engine: the forward stage's news is tagged).
-quick 738
+# TASK-S5-24 (the cube kernel's switch made error-bounded): 2 new quick tests (cav-core: K1 and its
+# control, S3's fixed switch).
+quick 740
 gpu 42
 slow 50
 oracle 58
