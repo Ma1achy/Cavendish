@@ -241,6 +241,7 @@ impl Renderer {
             frame.voxels,
             &frame.view.hidden,
         );
+        let things = crate::scene::with_lod(things, frame.lod, camera.origin, frame.view.style);
         check_sizes(&things, gpu.device.limits().max_buffer_size)?;
         self.draw_with_world(gpu, target, &camera, &things, &frame, false)
     }
@@ -262,6 +263,7 @@ impl Renderer {
             frame.voxels,
             &frame.view.hidden,
         );
+        let things = crate::scene::with_lod(things, frame.lod, camera.origin, frame.view.style);
         check_sizes(&things, gpu.device.limits().max_buffer_size)?;
         self.draw_with_world(gpu, target, &camera, &things, &frame, true)
     }

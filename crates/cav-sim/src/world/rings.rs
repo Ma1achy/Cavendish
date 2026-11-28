@@ -222,7 +222,9 @@ pub fn rings_with(octree: &Octree, aim: &Aim, trees: &[ChunkTree], radii: &Radii
     for (key, _) in &inner {
         inner_per_level[usize::from(key.level).clamp(1, 4) - 1] += 1;
     }
+    let bounds = accepted.iter().map(|(_, b)| *b).chain(inner.iter().map(|(_, b)| *b)).collect();
     Cut {
+        bounds,
         accepted: accepted.into_iter().map(|(k, _)| k).collect(),
         inner: inner.into_iter().map(|(k, _)| k).collect(),
         opened,

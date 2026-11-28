@@ -60,7 +60,9 @@
 # what it draws); 1 new gpu test (cav-render: each draw mode draws).
 # TASK-S5-17 (the clipped-piece view): 2 new quick tests (cav-core: a piece's surface is its
 # piece; cav-sim: pieces are drawn as the boundary cells).
-quick 781
+# TASK-S5-15 (the octree overlay): 1 new quick test (cav-sim: L3); 2 new slow tests (cav-sim: the
+# read gives the views its octree and cuts; cav-engine: the octree overlay comes with the read).
+quick 782
 gpu 43
-slow 58
+slow 60
 oracle 58

@@ -39,6 +39,7 @@ pub fn run() -> Result<(), String> {
         span: None,
         voxels: None,
         world: None,
+        lod: None,
     };
     let rgba = renderer.render_rgba(&gpu, frame, SIZE)?;
     match check_picture(&rgba, &scene, &view) {

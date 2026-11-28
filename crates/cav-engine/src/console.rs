@@ -216,8 +216,8 @@ pub const COMMANDS: &[CommandDoc] = &[
     },
     CommandDoc {
         name: "overlay",
-        usage: "overlay <none | [leaves] [cut <level>] [tree [depth <a>..<b>] [fade deep|shallow] [faces] [alone]] [bands] [centroids]> [@N]",
-        about: "draw over voxel bodies: each leaf's bounds by level, the cut a level of detail would take, and the whole octree (every node from the root down, coloured by depth; `fade` makes one end faint, `faces` adds see-through faces in x-ray, `alone` hides the bodies' cubes); `bands` colours the world's clipmap by level; `centroids` marks each cut cell's piece's centroid",
+        usage: "overlay <none | [leaves] [cut <level>] [tree [depth <a>..<b>] [fade deep|shallow] [faces] [alone]] [bands] [centroids] [octree|level|tower|ledger]> [@N]",
+        about: "draw over voxel bodies: each leaf's bounds by level, the cut a level of detail would take, and the whole octree (every node from the root down, coloured by depth; `fade` makes one end faint, `faces` adds see-through faces in x-ray, `alone` hides the bodies' cubes); `bands` colours the world's clipmap by level; `centroids` marks each cut cell's piece's centroid; over the world (once it is read), `octree` outlines the world's octree by level, `level` tints the world by level (and, in a tower's LOD view, outlines the blocks it reads below the chunk), `tower` and `ledger` outline a tower's LOD view's nodes by the tower that set them and by their share of its ledger",
         example: "overlay tree depth 0..4 fade deep",
     },
     CommandDoc {
@@ -504,6 +504,9 @@ pub fn describe(command: &Command, active_pane: usize) -> String {
                 }
                 if overlay.centroids {
                     words.push("centroids".to_owned());
+                }
+                if !overlay.world.is_none() {
+                    words.push(overlay.world.name().to_owned());
                 }
                 if words.is_empty() {
                     words.push("none".to_owned());
@@ -990,6 +993,10 @@ impl Engine {
                         ("leaves", _) => overlay.leaves = true,
                         ("bands", _) => overlay.bands = true,
                         ("centroids", _) => overlay.centroids = true,
+                        ("octree" | "level" | "tower" | "ledger", _) => {
+                            overlay.world =
+                                cav_sim::world::lod_view::WorldOverlay::parse(first).unwrap_or_default();
+                        }
                         ("tree", _) => overlay.tree = Some(overlay.tree.unwrap_or_default()),
                         ("depth" | "fade" | "faces" | "alone", _) if overlay.tree.is_none() => {
                             return Err(format!("`{first}` follows `tree`; {}", usage(name)));
@@ -1691,6 +1698,7 @@ mod tests {
                         tree: None,
                         bands: false,
                         centroids: false,
+                        world: Default::default(),
                     },
                 }),
             ),
@@ -1726,6 +1734,7 @@ mod tests {
                         }),
                         bands: false,
                         centroids: false,
+                        world: Default::default(),
                     },
                 }),
             ),

@@ -35,6 +35,13 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**TASK-S5-15, the octree overlay and the read-LOD overlay (28 Nov 2026; §7.14).** The world's
+contribution now carries what the views draw of the read (the octree's nodes, each tower's cut with
+every accepted node's bound), through the page's wire too; `overlay octree` outlines the octree by
+level (at most 20,000 nodes, whole levels dropped finest first, said; legend of the levels drawn),
+`overlay level` tints the world by level, `overlay tower | ledger` outline a tower's view's nodes
+(TASK-S5-20 gives the view). No walk or build of its own: the overlay appears when the read arrives.
+
 **TASK-S5-17, the clipped-piece view (28 Nov 2026; §7.13).** `draw pieces` draws each boundary
 cell as its exact clipped piece (a convex piece's faces; for a mesh, the mesh clipped to the cell
 and the caps on its walls), shaded by fill, shrunk a little so each stands apart; `overlay

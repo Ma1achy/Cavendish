@@ -1440,11 +1440,14 @@ impl WorldGpu {
         let forward = camera.forward.to_f32();
         let ortho = f32::from(u8::from(view.projection == cav_sim::Projection::Orthographic));
         let lit = f32::from(u8::from(view.style == cav_sim::DrawStyle::Shaded));
+        // The world tinted by level: `overlay bands`, or `overlay level` (S5).
+        let by_level =
+            view.overlay.bands || view.overlay.world == cav_sim::world::lod_view::WorldOverlay::Level;
         let uniform = WorldUniform {
             view_proj: camera.view_proj.to_f32(),
             eye: [eye[0], eye[1], eye[2], ortho],
             forward: [forward[0], forward[1], forward[2], 0.0],
-            params: [grid.pitch as f32, f32::from(u8::from(view.overlay.bands)), lit, 0.0],
+            params: [grid.pitch as f32, f32::from(u8::from(by_level)), lit, 0.0],
         };
         let mut palette = [[0f32; 4]; 256];
         for (i, c) in frame.colours.iter().enumerate().take(256) {
