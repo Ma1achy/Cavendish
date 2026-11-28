@@ -48,7 +48,7 @@ fn measured(forced: Option<usize>) -> Vec<Measured> {
                 if cut.accepted.is_empty() {
                     continue;
                 }
-                let nodes = far_field(&case.tree, &cut, Rule::Octupole).nodes;
+                let nodes = far_field(&case.tree, &[], &cut, Rule::Octupole).nodes;
                 let along = Along {
                     base,
                     height: probe.height,
@@ -57,7 +57,7 @@ fn measured(forced: Option<usize>) -> Vec<Measured> {
                     most: MAX_LOCAL_DEGREE,
                     forced,
                 };
-                let local = Local::gather(&nodes, Rule::Octupole, &along);
+                let local = Local::gather(nodes.clone(), Rule::Octupole, &along);
                 let direct = reader.read(base, &Far { nodes, rule: Rule::Octupole }, 0.0);
                 let through = reader.read(base, &local, 0.0);
                 out.push(Measured {
@@ -175,7 +175,7 @@ fn a_point_off_the_line_is_read_directly() {
     let base = case.bases[0];
     let probe = aim(&case.spec, 0, base, 1e-4, Rule::Octupole);
     let cut = walk(&case.tree, &probe);
-    let nodes = far_field(&case.tree, &cut, Rule::Octupole).nodes;
+    let nodes = far_field(&case.tree, &[], &cut, Rule::Octupole).nodes;
     assert!(!nodes.is_empty());
     let along = Along {
         base,
@@ -185,7 +185,7 @@ fn a_point_off_the_line_is_read_directly() {
         most: MAX_LOCAL_DEGREE,
         forced: None,
     };
-    let local = Local::gather(&nodes, Rule::Octupole, &along);
+    let local = Local::gather(nodes.clone(), Rule::Octupole, &along);
     assert!(local.series.is_some());
     let far = Far { nodes, rule: Rule::Octupole };
     let off = base + Vec3::new(0.25, 0.0, 0.0);

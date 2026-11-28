@@ -46,7 +46,9 @@
 # solids weigh its piece); 1 new slow test (cav-core: C6, slow_the_sphere_anomaly_with_random_placements).
 # TASK-S5-22 (the local expansion): 5 new quick tests (cav-sim: W6 and its two validation cases,
 # the series reads what it interpolates, a point off the line is read directly).
-quick 758
+# TASK-S5-27 (the walk below the chunk): 2 new quick tests (cav-sim: a chunk's tree is its leaves,
+# W1 into the chunks' trees).
+quick 760
 gpu 42
 slow 56
 oracle 58

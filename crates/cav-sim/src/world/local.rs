@@ -197,11 +197,11 @@ impl Local {
     /// by the module's rule, on [`crate::read::threads`] threads (each sample a sum over the nodes
     /// in their order: the same bits on any number of threads).
     #[must_use]
-    pub fn gather(nodes: &[Summary], rule: Rule, along: &Along) -> Self {
+    pub fn gather(nodes: Vec<Summary>, rule: Rule, along: &Along) -> Self {
         let line = [along.base.x, along.base.y];
         let span = [along.base.z, along.base.z + along.height];
         let (near, far): (Vec<Summary>, Vec<Summary>) =
-            nodes.iter().partition(|n| ellipse(n.centre, line, span) < NEAR_ELLIPSE);
+            nodes.into_iter().partition(|n| ellipse(n.centre, line, span) < NEAR_ELLIPSE);
         let (near, far) = (Far { nodes: near, rule }, Far { nodes: far, rule });
         let direct = |near: Far, far: Far, refused: bool| {
             let found =
