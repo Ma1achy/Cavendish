@@ -1,5 +1,5 @@
-"""Pictures: each shape analytic or repaired mesh | as coarse cube voxels | as fine cube voxels | as
-fine clipped polyhedra, whole and cut.
+"""Pictures: each shape analytic or repaired mesh, beside a 2 x 2 grid of voxel panels (rows: coarse
+and fine lattice; columns: cube voxels and clipped polyhedra), whole and cut.
 
     python figures.py                 # the first four shapes
     python figures.py sphere bunny    # any (also spot, dragon, armadillo, buddha, bracket)
@@ -58,6 +58,7 @@ DPI = 160
 OUTLINE_PX = 12   # cell edges are drawn only if a cell spans at least this many output pixels
 VOXEL_AO = 0.12   # light lost at a voxel face corner per solid neighbour beside it (at most 3)
 AZIMUTH, ELEVATION = 58.0, 24.0
+MODEL_W = 1.3     # the model panel's width, in voxel panels' widths
 
 
 def _canvas(mesh: L.Mesh) -> L.Canvas:
@@ -196,6 +197,8 @@ def _clipped(cv: L.Canvas, vox: L.Voxels, removed: np.ndarray) -> None:
         cv.signed_region(np.concatenate(fans), nrm, ORANGE)
     if _cell_px(cv, vox.h) >= OUTLINE_PX:
         cv.lines(segs, BLUE, 0.5)
+        edges = [np.stack([q, np.roll(q, -1, axis=0)], axis=1) for b in keep for q in map(np.asarray, vox.polys[b])]
+        cv.lines(np.concatenate(edges), VERMILION, 0.3)
         if lines:
             cv.lines(np.concatenate(lines), VERMILION, 0.3)
 
@@ -377,7 +380,8 @@ def figure(name: str, across: int = ACROSS) -> None:
         t1 = time.perf_counter()
         panels = []
         true_z: dict[int, np.ndarray] = {}
-        for kind, vox in (("exact", fine), ("cubes", coarse), ("cubes", fine), ("clipped", fine)):
+        for kind, vox in (("exact", fine), ("cubes", coarse), ("clipped", coarse), ("cubes", fine),
+                          ("clipped", fine)):
             k_cut, y_cut = _cut_of(mesh, vox)
             removed = np.zeros(tuple(int(x) for x in vox.n), dtype=bool)
             if cut:
@@ -408,23 +412,41 @@ def figure(name: str, across: int = ACROSS) -> None:
         busy = np.any([np.abs(p - p[0, 0]).sum(axis=2).max(axis=1) > 0.02 for p in panels], axis=0)
         rows = np.nonzero(busy)[0]
         top, bottom = max(rows[0] - 12, 0), min(rows[-1] + 12, SIZE)
-        panels = [p[top:bottom] for p in panels]
-        aspect = (bottom - top) / SIZE
-        width = 16.0
-        height = width / 4 * aspect + 1.7
-        fig, axes = plt.subplots(1, 4, figsize=(width, height), facecolor="#fcfcfb")
-        titles = ["analytic" if analytic else "decimated, repaired mesh" if name in L.DECIMATE
-                  else "repaired mesh (original triangles)",
-                  f"cube voxels, {COARSE} across (h = {coarse.h:.3g} m)\n"
-                  f"{len(coarse.interior)} interior + {n_on[id(coarse)]} boundary",
-                  f"cube voxels, {across} across (h = {fine.h:.3g} m)\n"
-                  f"{len(fine.interior)} interior + {n_on[id(fine)]} boundary",
-                  f"clipped polyhedra, {across} across\n"
-                  f"{len(fine.interior)} cubes + {len(fine.frac)} pieces"]
-        for ax, img, title in zip(axes, panels, titles):
+        busy_c = np.any([np.abs(p - p[0, 0]).sum(axis=2).max(axis=0) > 0.02 for p in panels], axis=0)
+        cols = np.nonzero(busy_c)[0]
+        left, right = max(cols[0] - 12, 0), min(cols[-1] + 12, SIZE)
+        panels = [p[top:bottom, left:right] for p in panels]
+        aspect = (bottom - top) / (right - left)
+        # The model on the left, spanning two rows; beside it a 2 x 2 grid of voxel panels, rows
+        # coarse / fine, columns cubes / clipped, so each pitch's two representations sit side by side.
+        width, gap, margin, title_h, caption_h = 16.0, 0.05, 0.06, 0.5, 1.45
+        pw = (width - 2 * margin - 2 * gap) / (2 + MODEL_W)
+        ph = pw * aspect
+        height = 2 * (title_h + ph) + caption_h + 0.1
+        fig = plt.figure(figsize=(width, height), facecolor="#fcfcfb")
+
+        def place(col: float, row: int, w: float, rows: int, img: np.ndarray, title: str) -> None:
+            x = margin + (0.0 if col == 0 else MODEL_W * pw + gap + (col - 2) * (pw + gap))
+            top_in = height - 0.05 - row * (title_h + ph)
+            ax = fig.add_axes((x / width, (top_in - title_h - rows * ph - (rows - 1) * title_h) / height,
+                               w / width, (rows * ph + (rows - 1) * title_h) / height))
             ax.imshow(img, interpolation="lanczos")
             ax.set_axis_off()
-            ax.set_title(title, fontsize=11, color="#0b0b0b")
+            fig.text((x + w / 2) / width, (top_in - 0.03) / height, title, fontsize=11,
+                     color="#0b0b0b", ha="center", va="top")
+
+        def counts(vox: L.Voxels, clipped: bool) -> str:
+            return (f"{len(vox.interior)} cubes + {len(vox.frac)} pieces" if clipped else
+                    f"{len(vox.interior)} interior + {n_on[id(vox)]} boundary")
+
+        place(0, 0, MODEL_W * pw, 2, panels[0],
+              "analytic" if analytic else "decimated, repaired mesh" if name in L.DECIMATE
+              else "repaired mesh (original triangles)")
+        for k, (vox, clipped) in enumerate([(coarse, False), (coarse, True), (fine, False), (fine, True)]):
+            kind = "clipped polyhedra" if clipped else "cube voxels"
+            n = COARSE if vox is coarse else across
+            place(2 + k % 2, k // 2, pw, 1, panels[1 + k],
+                  f"{kind}, {n} across (h = {vox.h:.3g} m)\n{counts(vox, clipped)}")
         what = {"sphere": "Sphere, radius 1 m", "torus": "Torus, R = 1 m, r = 0.4 m",
                 "teapot": "Utah teapot, 1 m long", "suzanne": "Suzanne, 1 m wide",
                 **{n: f"{f.title}, 1 m largest extent" for n, f in L.FAMOUS.items()}}[name]
@@ -442,17 +464,17 @@ def figure(name: str, across: int = ACROSS) -> None:
         cage_txt = (f"rings every {RING_DEG} degrees" if analytic else
                     "contours about a tenth of the size apart in height, and the silhouette")
         caption = (f"{what}{cut_txt}. Cells across = largest extent ({size:.3g} m) / pitch; the sweep's "
-                   f"lattices, finest {ACROSS} across. {left} Cube voxels: a cell is solid if its centre is "
-                   f"inside (blue), {COARSE} across to show a cell, {across} across as measured. Clipped "
-                   f"polyhedra: the same interior cubes (blue), and every crossed cell cut to its inside piece "
-                   f"(orange). Voxel faces flat-shaded with per-corner occlusion; cell edges drawn only where "
+                   f"lattices, finest {ACROSS} across. {left} Right, rows are the pitches ({COARSE} across, to show a "
+                   f"cell, and {across} across, as measured), columns the representations. Cube voxels: a cell "
+                   f"is solid if its centre is inside (blue). Clipped polyhedra: the same interior cubes "
+                   f"(blue), and every crossed cell cut to its inside piece (orange, thin vermilion piece "
+                   f"outlines). At the same coarse pitch the pieces have exactly the mesh's shape and mass, "
+                   f"while the cubes are off by first order in the pitch. Voxel faces flat-shaded with per-corner occlusion; cell edges drawn only where "
                    f"a cell is at least {OUTLINE_PX} px. Dotted: the true surface ({cage_txt}"
                    f"{'; and where the cut meets it' if cut else ''}), shown where it lies in front of the "
                    f"voxels or within a hair of them (half a cell at {across} across).")
         fig.text(0.01, 0.08 / height, "\n".join(textwrap.wrap(caption, 210)), fontsize=9, color="#52514e",
                  va="bottom", ha="left")
-        fig.subplots_adjust(left=0.005, right=0.995, top=1 - 0.55 / height, bottom=0.78 / height,
-                            wspace=0.02)
         tag = "" if across == ACROSS else f"-{across}"
         out = L.HERE / f"{name}{tag}{'-cutaway' if cut else ''}.png"
         fig.savefig(out, dpi=DPI, facecolor=fig.get_facecolor())
