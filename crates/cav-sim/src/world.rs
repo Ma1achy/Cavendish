@@ -754,4 +754,4 @@ pub mod octree;
 pub mod walk;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

@@ -35,6 +35,10 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**TASK-S5-04, the ledger in bundles (28 Nov 2026; §7.10).** Each tower's world ledger (the walk's
+ledger, nodes and blocks by level, leaves, the local expansion's degree and audit) is in the
+manifest as `world`; `BUNDLE_VERSION` 3; the badge's "within" adds the series' audit to the ledger.
+
 **TASK-S5-27, the walk below the chunk (28 Nov 2026; `docs/slices/S5.md` §7.9).** An opened chunk
 is opened into its own tree's blocks (2 to 16 cells, two leaves or more), each a node with its
 summary and bound. The town's tower 1 at 1e-2: 31,155 leaves read instead of 1.6 M, 2.4 s instead

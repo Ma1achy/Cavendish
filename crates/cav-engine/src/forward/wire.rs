@@ -288,7 +288,8 @@ impl Writer {
     }
 
     /// The world's ledger, when there is one: a byte (0 or 1), then the tolerance and each
-    /// tower's ledger, counts, nodes per level and whether its walk settled.
+    /// tower's ledger, counts, nodes per level, blocks, blocks per level, leaves, its local
+    /// expansion's degree, far and near nodes and audit, and whether its walk settled.
     fn world(&mut self, world: Option<&WorldLedger>) {
         self.byte(u8::from(world.is_some()));
         let Some(world) = world else { return };
@@ -302,6 +303,16 @@ impl Writer {
             for &n in &tower.per_level {
                 self.count(n);
             }
+            self.count(tower.blocks);
+            self.count(tower.blocks_per_level.len());
+            for &n in &tower.blocks_per_level {
+                self.count(n);
+            }
+            self.count(usize::try_from(tower.leaves).unwrap_or(usize::MAX));
+            self.count(tower.degree);
+            self.count(tower.far);
+            self.count(tower.near);
+            self.float(tower.audit);
             self.byte(u8::from(tower.settled));
         }
     }
@@ -368,9 +379,9 @@ impl Reader<'_> {
         }
         let tolerance = self.float()?;
         let count = self.count()?;
-        // Each tower takes at least 33 bytes: a count larger than what is left is refused before
+        // Each tower takes at least 89 bytes: a count larger than what is left is refused before
         // anything is reserved.
-        if count > (self.bytes.len() - self.at) / 33 {
+        if count > (self.bytes.len() - self.at) / 89 {
             return Err("an answer cut short".into());
         }
         let mut towers = Vec::with_capacity(count);
@@ -383,8 +394,30 @@ impl Reader<'_> {
                 return Err("an answer cut short".into());
             }
             let per_level = (0..levels).map(|_| self.count()).collect::<Result<Vec<_>, _>>()?;
+            let blocks = self.count()?;
+            let sizes = self.count()?;
+            if sizes > (self.bytes.len() - self.at) / 8 {
+                return Err("an answer cut short".into());
+            }
+            let blocks_per_level = (0..sizes).map(|_| self.count()).collect::<Result<Vec<_>, _>>()?;
+            let leaves = self.count()? as u64;
+            let (degree, far, near) = (self.count()?, self.count()?, self.count()?);
+            let audit = self.float()?;
             let settled = self.byte()? != 0;
-            towers.push(TowerLedger { ledger, accepted, opened, per_level, settled });
+            towers.push(TowerLedger {
+                ledger,
+                accepted,
+                opened,
+                per_level,
+                blocks,
+                blocks_per_level,
+                leaves,
+                degree,
+                far,
+                near,
+                audit,
+                settled,
+            });
         }
         Ok(Some(WorldLedger { tolerance, towers }))
     }

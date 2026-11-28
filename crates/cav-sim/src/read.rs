@@ -474,8 +474,9 @@ impl std::fmt::Display for Warning {
     }
 }
 
-/// How the world was read at one tower: its walk's ledger and the size of its cut
-/// (`docs/slices/S5.md` §2 "The walk").
+/// How the world was read at one tower: its walk's ledger, the size of its cut and its local
+/// expansion (`docs/slices/S5.md` §2 "The walk", "The local expansion"; in a bundle's manifest,
+/// TASK-S5-04).
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct TowerLedger {
     /// The ledger, radians: the bounds of the nodes read through their expansion, read through
@@ -485,12 +486,29 @@ pub struct TowerLedger {
     #[serde(with = "crate::json_f64")]
     #[schemars(schema_with = "crate::json_f64::schema")]
     pub ledger: f64,
-    /// Nodes read through their expansion.
+    /// The octree's nodes read through their expansion.
     pub accepted: usize,
-    /// Chunks read leaf by leaf.
+    /// Chunks the walk opened (into their own trees' blocks and leaves).
     pub opened: usize,
-    /// Nodes accepted at each level, from the chunks (level 0) up.
+    /// The octree's nodes accepted at each level, from the chunks (level 0) up.
     pub per_level: Vec<usize>,
+    /// Blocks of the opened chunks' trees read through their expansion.
+    pub blocks: usize,
+    /// Those blocks by level, `[1, 2, 3, 4]`: 2, 4, 8 and 16 finest cells a side.
+    pub blocks_per_level: Vec<usize>,
+    /// Leaves read one by one with the exact cube kernel.
+    pub leaves: u64,
+    /// The local expansion's degree; 0 when the far field was read node by node.
+    pub degree: usize,
+    /// Accepted nodes gathered into the local expansion.
+    pub far: usize,
+    /// Accepted nodes read directly beside it.
+    pub near: usize,
+    /// The local expansion's audit, radians (0 with none): added to the read's estimate beside
+    /// the ledger. An audit, not a bound (`world::local`).
+    #[serde(with = "crate::json_f64")]
+    #[schemars(schema_with = "crate::json_f64::schema")]
+    pub audit: f64,
     /// Whether the walk reached `world.read.tolerance` (false when a cap stopped it).
     pub settled: bool,
 }
@@ -505,16 +523,17 @@ pub struct WorldLedger {
 }
 
 impl WorldLedger {
-    /// The largest ledger of any tower, radians.
+    /// The largest of any tower's ledger and its local expansion's audit added, radians: what the
+    /// world's part of the read is said to be within, beside the quadrature's estimate.
     #[must_use]
     pub fn worst(&self) -> f64 {
-        self.towers.iter().map(|t| t.ledger).fold(0.0, f64::max)
+        self.towers.iter().map(|t| t.ledger + t.audit).fold(0.0, f64::max)
     }
 
-    /// The most entries of any tower's cut (nodes accepted and chunks opened).
+    /// The most entries of any tower's cut (octree nodes and blocks accepted, chunks opened).
     #[must_use]
     pub fn nodes(&self) -> usize {
-        self.towers.iter().map(|t| t.accepted + t.opened).max().unwrap_or(0)
+        self.towers.iter().map(|t| t.accepted + t.blocks + t.opened).max().unwrap_or(0)
     }
 
     /// Whether every tower's walk reached the tolerance.
@@ -1054,6 +1073,13 @@ fn world_contribution(
             accepted: cut.accepted.len(),
             opened: cut.opened.len(),
             per_level: cut.per_level.clone(),
+            blocks: cut.inner.len(),
+            blocks_per_level: cut.inner_per_level.to_vec(),
+            leaves: cut.leaves,
+            degree: read.local.degree,
+            far: read.local.far,
+            near: read.local.near,
+            audit: read.local.audit,
             settled: cut.settled,
         });
         let value = |v: f64| (0..count).map(move |k| if shots.taken(at, k) { v } else { 0.0 });
