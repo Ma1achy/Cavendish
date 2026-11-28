@@ -286,6 +286,7 @@ fn hills_frame(v: &ViewSpec) -> WorldFrame {
         stream: Default::default(),
         read: Default::default(),
         lod: cav_sim::world::LodSpec { error_px: 32.0 },
+        base: Default::default(),
     };
     let world = World::new(&spec);
     let grid = world.grid;
@@ -649,6 +650,7 @@ fn gpu_a_tower_s_lod_view_draws_its_list() {
             stream: Default::default(),
             read: Default::default(),
             lod: cav_sim::world::LodSpec { error_px: 32.0 },
+            base: Default::default(),
         };
         World::new(&spec)
     };
@@ -740,6 +742,7 @@ fn seam_world() -> (World, u64) {
         stream: Default::default(),
         read: Default::default(),
         lod: cav_sim::world::LodSpec { error_px: 4.0 },
+        base: Default::default(),
     };
     (World::new(&spec), spec.hash())
 }

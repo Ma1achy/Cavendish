@@ -51,6 +51,8 @@ pub const LIBRARY: &[LibraryScene] = &[
     scene!("stress-1e10", "scenes/dev/stress-1e10.ron"),
     scene!("town", "scenes/dev/town.ron"),
     scene!("exact-solids", "scenes/dev/exact-solids.ron"),
+    scene!("plane", "scenes/dev/plane.ron"),
+    scene!("planet", "scenes/dev/planet.ron"),
     scene!("cut-cells", "scenes/dev/cut-cells.ron"),
 ];
 

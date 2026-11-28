@@ -914,8 +914,8 @@ fn s4(root: &Path, web: bool) -> Result<(), String> {
 }
 
 /// S5, the world as one octree (`docs/slices/S5.md` §4), the steps the drawing tasks built
-/// (TASK-S5-15 to 17, 20, 21): item 1 (the town as the camera, tower 1 and all five towers read
-/// it; the octree overlay), item 4 (a body drawn five ways) and item 5 (the seams cut and
+/// (TASK-S5-13, 15 to 17, 20, 21): item 1 (the town as the camera, tower 1 and all five towers read
+/// it; the octree overlay), items 2 and 3 (the plane and the planet, and their readings), item 4 (a body drawn five ways) and item 5 (the seams cut and
 /// dithered). Release builds, each picture within a wall-clock limit. The slice's record
 /// (TASK-S5-23) adds the rest.
 fn s5(root: &Path) -> Result<(), String> {
@@ -951,6 +951,9 @@ fn s5(root: &Path) -> Result<(), String> {
         // 5. The same far view with the rings cut and dithered.
         ("seams-off.png".into(), format!("{far}; seams off")),
         ("seams-on.png".into(), format!("{far}; seams dither")),
+        // 2. and 3. The infinite plane with a building and a ditch; the layered planet with hills.
+        ("plane.png".into(), "load plane; view iso; pan 0 3 0; zoom 30".into()),
+        ("planet.png".into(), "load planet; view iso; pan 40 0 0; zoom 150".into()),
     ];
     for (file, script) in &shots {
         capture_within(
@@ -961,6 +964,15 @@ fn s5(root: &Path) -> Result<(), String> {
         )?;
         expect_png(&out, file, [1440, 900], &mut made)?;
     }
+    // 2. and 3. What the towers read of the plane and the planet.
+    step("build cav", cargo(root, &["build", "--quiet", "-p", "cav"]))?;
+    let cav = binary(root, "cav");
+    let mut session = String::new();
+    for script in ["load plane; reading 1; reading 2; reading 4", "load planet; reading 1; reading 2"] {
+        let answer = capture_within(&cav, &["exec", script], 300, None)?;
+        session.push_str(&format!("$ cav exec \"{script}\"\n{answer}\n"));
+    }
+    write(&out, "bases.txt", &session, &mut made)?;
     eprintln!("xtask: demo S5 wrote {} files to {}:", made.len(), out.display());
     for file in &made {
         eprintln!("  {file}");
