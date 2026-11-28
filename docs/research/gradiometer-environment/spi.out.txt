@@ -1,0 +1,10 @@
+C = k_eff T^2 dr = 2.399e+10 rad/s^-2
+source                                       amp nm/s^2  lambda km  Gamma s^-2  phase rad  pass
+Neumeyer 2004 Fig. 7, max difference 2 uGal        20.0        100    1.26e-12   3.01e-02  no
+Neumeyer 2004 Fig. 7, max difference 2 uGal        20.0        300    4.19e-13   1.00e-02  no
+Neumeyer 2004 Fig. 7, max difference 2 uGal        20.0       1000    1.26e-13   3.01e-03  yes
+Abe Fig. 6a, 4.5 uGal p-p, amplitude               22.5        100    1.41e-12   3.39e-02  no
+Abe Fig. 6a, 4.5 uGal p-p, amplitude               22.5        300    4.71e-13   1.13e-02  no
+Abe Fig. 6a, 4.5 uGal p-p, amplitude               22.5       1000    1.41e-13   3.39e-03  yes
+control: row 13 gradient 2.542e-13 vs k*g 2.676e-13 (ratio 0.9499, 1/(1+kH) = 0.9499)
+worst SPI case 3.39e-02 rad; criterion NOT met

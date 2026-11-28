@@ -24,6 +24,15 @@ rasterisation, not the build, LOD or streaming sections). Where a page number is
 reading its README. What is still second-hand is marked *(page summary)* and listed in §9. Nothing from the
 PDFs is copied into the repository.
 
+**Updated 28 Nov 2026** from one more owner-supplied PDF: **Hoetzlein 2016, GVDB** (HPG 2016, 9 pp.; read
+whole via `pdftotext`, tables by their extracted text). It is now §2.7's GVDB entry, with numbers. It changes
+no recommendation: GVDB is VDB's topology (bitmask plus compacted child list per node) laid out in
+fixed-width GPU memory pools with a 3-D texture brick atlas, i.e. the same pool-of-bricks shape S4 already
+uses, and its tree build is on the CPU, its topology edits are not on the GPU, and it is CUDA only (§2.7).
+Its one transferable measurement is the topology one: shallow N-ary trees (`<3,3,3,4>`, 8³ interior nodes,
+16³ bricks) beat octrees by 30–40 % on node insertion and tilemaps on memory (§6.3, Table 2), which agrees
+with S5's choice of wide nodes.
+
 ---
 
 ## 0. Changed after reading the primary sources
@@ -376,8 +385,33 @@ operations in the same order* (the Morton-order commit of S5 already fixes this)
   scale: at Cavendish's 10¹¹ cells (4,642³) and 8³ bricks it would be 580³ = 195 M pointers, 0.78 GB at
   4 B each (my arithmetic; compare VDB's 8 GB flat-table warning above), so S4's clipmap rings and S5's
   tree are the right outer structure and the brick pool the right inner one.
-* **GVDB** (Hoetzlein 2016): not read. SSVDAG describes it as "a hierarchy of grids of volumetric models
-  with dynamic topology, with the scope of fast decoding in GPU" (JCGT pdf p. 5).
+* **GVDB** ([Hoetzlein 2016](https://doi.org/10.2312/hpg.20161197), HPG 2016, read whole, 28 Nov). VDB's
+  topology on the GPU: "GVDB expresses an identical topological layout in virtual address space as OpenVDB"
+  (§4.1), configured by a log2 vector, e.g. `<5,4,3>` (32³, 16³ then 8³ leaf bricks), which also expresses an
+  octree (`<1,1,…>`) or a two-level tilemap (`<9,4>`) (§4.1). Differences from OpenVDB (§4.1): one node type
+  for all levels, **integer indices instead of pointers** so the CPU and GPU copies need no address
+  translation, and brick voxels in a **3-D texture atlas** for hardware trilinear filtering. Memory (§4.2,
+  Fig. 3): two pools per level, `P0ᵢ` for fixed-width node records (a 40-byte header: level, position, atlas
+  value, parent index, child-list index, then the `res(i)³/8`-byte bitmask) and `P1ᵢ` for child lists, sized
+  at a fraction `K` (½ or ⅓) of the maximum child count and reallocated or moved on overflow; a child is found
+  by 64-bit bit counting on the mask. The topology is "less than 1% (average 5MB) of memory compared to the
+  atlas"; 500k leaf bricks need ~20 MB of topology against ~500 MB for a 512³ indirection table (§4.2). The
+  whole tree is `2L` pools, uploaded or written to disk one call per pool (§4.2). **Apron voxels** are stored
+  in the atlas and refilled by a kernel from neighbours (§4.3). **Ray tracing** (§5, Algorithm 1): a
+  branchless hierarchical 3-D DDA after Amanatides and Woo, re-initialised per level so one set of DDA
+  registers serves all levels, with a short stack of exit `t` values (after Horn et al.'s kd-tree short
+  stack); it never returns to the root mid-ray. **Results** (§6.1, Table 1; Quadro M6000 against OpenVDB on
+  a 4-core i7-3770K, same images, Figs. 5–6): 11.6–43.6 ms per frame on five OpenVDB scenes, 100–200× one
+  CPU core and ~60× four cores for ray-sampled volumes, 25–30× and 5–6× for level sets. **Topology study**
+  (§6.3, Table 2, 1280×960, one SPH frame resampled at 512 to 2048 voxels): ray-cast 11.5–125.6 ms; octrees
+  were 30–40 % slower than 8³-interior N-ary trees on node insertion, a 128³ tilemap was slow because of bit
+  counting over its 2-million-bit mask, and `<3,3,3,4>` with 16³ or 32³ bricks is "a good balance" (Fig. 7);
+  beyond 2048³, 64³ bricks build in ≤ 3 ms for ~10 % more occupancy. **Limits it states**: tree rebuild is
+  CPU-based (§6.3), "GVDB does not yet implement simulation" (§1), level of detail and out-of-core are not
+  implemented (§7), CUDA/OptiX only. *For Cavendish:* no change. It confirms the pool-of-fixed-bricks plus
+  wide-node index shape (S4, S5) and the integer-index layout that crosses CPU and GPU unchanged (which S4's
+  slot indirection already is); the leaf payload is a float scalar for rendering, with no slot for a node's
+  mass moments, and nothing in it bears on the gravity read.
 * **What this says about S4.** A pool of fixed bricks behind a slot indirection, an empty-space mask above it,
   edits by invalidating a slot, and LOD stand-ins for unloaded bricks are all in the brickmap thesis and
   GigaVoxels, i.e. S4 is on well-trodden ground. Two differences are Cavendish's own: its leaf is a count and
@@ -831,7 +865,9 @@ lossy compression on mass.
   LOD, streaming, material or shadow sections, so no claim here rests on them.
 * **The Aaltonen and Haar 2015 slides** were read in the first pass and not re-opened this pass (they were
   not among the files supplied); their numbers are as the first draft had them.
-* **GVDB** (Hoetzlein 2016) was never read; only SSVDAG's one-line description of it is cited.
+* **GVDB** (Hoetzlein 2016): read on 28 Nov (§2.7). Not verified: its numbers against any WebGPU or wgpu
+  implementation (none was built), and Table 2's columns, which were matched to values from the extracted
+  text rather than from the page image.
 * **The WGSL NanoVDB port and PicoVDB** were found by a code search and their READMEs read; I did not build,
   run or benchmark either, and the licence of the first is ambiguous (README says Apache-2.0, GitHub's
   detector reports none). Whether a WGSL reader is fast enough for Cavendish's march is open.
@@ -896,6 +932,7 @@ owner supplied, extracted with `pdftotext`, unless stated.
 | Museth, "VDB: high-resolution sparse volumes with dynamic topology", ACM TOG 32(3), art. 27, 2013 | [10.1145/2487228.2487235](https://doi.org/10.1145/2487228.2487235) | 22 pp. | resolves |
 | Museth, "NanoVDB", SIGGRAPH 2021 Talks | [10.1145/3450623.3464653](https://doi.org/10.1145/3450623.3464653) | the 2-page talk | resolves |
 | Sifakis, Williams, Horvath, Sawhney, Harris, Swartz, Museth, "Dynamic GPU sparse grids and voxel-sequential processing in NanoVDB", ACM TOG 45(6), art. 225, Dec 2026 | [10.1145/3842564](https://doi.org/10.1145/3842564) (printed in the PDF) | 21 pp. | resolves; Crossref's title says "Dynamic GPU *Voxel* Grids", the PDF says "Sparse Grids"; first draft said "no DOI found" |
+| Hoetzlein, "GVDB: Raytracing sparse voxel database structures on the GPU", High Performance Graphics 2016 (Eurographics/ACM SIGGRAPH Symposium) | [10.2312/hpg.20161197](https://doi.org/10.2312/hpg.20161197) | 9 pp., read whole 28 Nov 2026 | not in Crossref; DataCite has it (title, author, 2016, the HPG series), checked 28 Nov 2026 |
 | Crassin, Neyret, Lefebvre, Eisemann, "GigaVoxels", I3D 2009, pp. 15–22 | [10.1145/1507149.1507152](https://doi.org/10.1145/1507149.1507152) | 8 pp. | resolves; the PDF prints no DOI |
 | Laine, Karras, "Efficient sparse voxel octrees", I3D 2010, pp. 55–63 | [10.1145/1730804.1730814](https://doi.org/10.1145/1730804.1730814) | the I3D paper (not the technical report read in the first pass) | resolves |
 | Lindstrom, "Fixed-rate compressed floating-point arrays", IEEE TVCG 20(12):2674–2683, 2014 | [10.1109/TVCG.2014.2346458](https://doi.org/10.1109/TVCG.2014.2346458) | 10 pp. | resolves |
