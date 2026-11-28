@@ -68,7 +68,13 @@
 # TASK-S5-18 (the paper with Cavendish): 4 new quick tests (cav-core: the cases P2 at 1e4, P4, P5,
 # P6); 4 new oracle tests (the 40-digit fixture's check, the rounding class and its ESA control,
 # the paper's benchmark bodies).
-quick 790
-gpu 45
-slow 61
-oracle 62
+# TASK-S5-13 (plane and sphere bases): 8 new quick tests (cav-sim: B1, B2, B3, the merge is the
+# cells added, the walk within its ledger on signed masses, a base refused where its closed form
+# does not hold, a patch not written; cav-render: a world's base is drawn); 1 new slow test (cav-sim:
+# B3's sunk box falls as 1/R); 1 new gpu test (cav-render: a world's base is drawn).
+quick 798
+gpu 46
+slow 62
+# TASK-S5-28 (P8 restated as the rounding law): 3 new oracle tests (oracle: P8, its ESA control,
+# the calibration set within the law).
+oracle 65

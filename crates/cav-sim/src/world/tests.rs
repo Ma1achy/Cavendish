@@ -139,6 +139,7 @@ pub(crate) fn world_of(pitch: f64, pieces: Vec<PieceSpec>) -> WorldSpec {
         stream: StreamSpec::default(),
         read: WorldReadSpec::default(),
         lod: LodSpec::default(),
+        base: crate::world::BaseSpec::Patch,
     }
 }
 

@@ -354,6 +354,20 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   hold τ, and a cheaper rings tier; about 80 whole-town leaf-exact reads, minutes in release. The
   errors are linear in the nodes, so one read per node per position, summed from the far end
   inwards, gives every ρ at once.
+- **The world's base in the window** (TASK-S5-13): `world.base` is a scene-file field; the
+  inspector shows and edits the pieces, not the base. A row for it (Patch, Plane, Sphere and their
+  numbers) in the world's inspector, with the refusals' words as its tooltips.
+- **A plane drawn with its ditches cut out** (TASK-S5-13): the plane is the infinite ground, 4 mm
+  under its surface; a ditch of air is drawn as its own top face over it. A ground shader that
+  skips the pixels over pieces of no density would show the ditch as a hole.
+- **A planet drawn filled and lit** (TASK-S5-13): it is a curved grid of lines only.
+- **A layered piece of a planet** (TASK-S5-13): a piece of a planet may not reach below its top
+  layer, since the overlap is taken at one density; one overlap voxelisation per layer it reaches
+  (each layer a ball less the next) would lift that, at a voxelisation per layer.
+- **Compensated flight sums for a gradiometer under a large uniform field** (TASK-S5-28): a planet's
+  interferometers read 5.5e7 rad and their difference 5.5e4 rad, so the gradiometer keeps only
+  about 1e-12 of itself; summing each interferometer's integrand in double-double, or integrating
+  the difference of the two directly, would give the gradiometer its own digits.
 - **A section that cuts a drawn surface** (TASK-S5-16): `draw mesh` with a section plane cuts the
   voxels' cells as before but draws the whole surface; clipping its triangles by the plane (and
   capping the cut) would make the mesh modes agree with the section.
@@ -377,3 +391,7 @@ would help, the slice it belongs to. The builder adds; the owner prunes.
   (1.6e-10 on the turned plate at 100 m); the face terms formed and summed in double-double would
   take it down by about 16 digits at some ten times the cost, for a `Faceted::field_exact` used by
   references only.
+- **A rounding law per aspect ratio** (TASK-S5-28): P8's constant `c = 2000` is set by the thin
+  bodies of the calibration set (a 20:1 rod 1928, a 100:1 plate 1049); compact bodies need 7 to 44.
+  A `c` that grows with a body's aspect ratio (fixed on a fresh calibration set, not the six)
+  would make the law some 40 times tighter for compact bodies.

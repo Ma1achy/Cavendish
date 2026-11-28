@@ -316,13 +316,13 @@ impl Octree {
 }
 
 /// Chunk `key`'s leaves as uniform cubes (empty when it holds nothing), made again from the
-/// world's pieces: what the walk reads leaf by leaf when it opens a chunk, since the octree keeps
-/// only summaries.
+/// world's pieces ([`World::read_leaves`]: on a base, its signed departures): what the walk reads
+/// leaf by leaf when it opens a chunk, since the octree keeps only summaries.
 ///
 /// # Errors
 /// When voxelising it passes its caps.
 pub fn chunk_cubes(world: &World, key: ChunkKey) -> Result<Vec<Cube>, String> {
-    Ok(world.chunk(key)?.map(|c| c.cubes(&world.grid, &world.densities)).unwrap_or_default())
+    Ok(world.read_leaves(key)?.map(|read| read.cubes).unwrap_or_default())
 }
 
 /// Chunk `key`'s summary about its centre (empty when it holds nothing), and how many leaf cubes

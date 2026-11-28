@@ -737,7 +737,7 @@
   title: The gravity read walks the world octree with LODs - a full-precision bubble per tower, coarser rings outward at the measured radii, the whole world read within the error budget, no truncation
 - id: TASK-S5-13
   milestone: S5
-  title: World shapes - an infinite flat plane (analytic base, voxel detail over a finite patch, the infinite remainder in closed form) and a sphere (a planet: analytic spherical base, voxel crust, curvature in the chunks and the read)
+  title: "World shapes - an infinite flat plane (analytic base, voxel detail over a finite patch, the infinite remainder in closed form) and a sphere (a planet: analytic spherical base, voxel crust, curvature in the chunks and the read)"
 - id: TASK-S5-14
   milestone: S5
   title: Measured LOD radii - for each tree level, the distance from each tower past which reading it by moments changes the phase by less than the tolerance, measured against the leaf-exact read (town, world-box, voxel bodies); a table in the brief and the bubble-and-rings default set from it
@@ -752,16 +752,16 @@
   title: Sun and sky light in linear light, a neutral tone curve and distance fog to the sky colour
 - id: TASK-S21-03
   milestone: S21
-  title: Sun shadows: one ray per pixel through a camera-centred coarse occupancy volume, capped per frame (measure first)
+  title: "Sun shadows: one ray per pixel through a camera-centred coarse occupancy volume, capped per frame (measure first)"
 - id: TASK-S21-04
   milestone: S21
-  title: Sky: an analytic gradient now; a scattering atmosphere (Hillaire 2020) with the planet world
+  title: "Sky: an analytic gradient now; a scattering atmosphere (Hillaire 2020) with the planet world"
 - id: TASK-S21-05
   milestone: S21
-  title: Voxel colour: cell-hash lightness jitter and height/slope blends per material, computed at draw time
+  title: "Voxel colour: cell-hash lightness jitter and height/slope blends per material, computed at draw time"
 - id: TASK-S21-06
   milestone: S21
-  title: Looks as data: a beauty look and a data look (identity on colour maps), switchable, with a badge when lighting shifts colours
+  title: "Looks as data: a beauty look and a data look (identity on colour maps), switchable, with a badge when lighting shifts colours"
 - id: TASK-S19-14
   milestone: S22
   title: "Phones and tablets in the web build (owner, 25 Nov 2026): touch (tap, one-finger orbit, two-finger pan and pinch, long-press menu, finger-sized handles), drawers and a bottom tool bar on narrow screens, 44 pt targets, nothing hover-only, Safari's WebGPU and memory; screenshots at 390x844, 1024x1366, 1366x1024 (moved to S20 by the S19 brief: S19 is full) (moved to S22 by the S20 brief: the workspace came first)"
@@ -786,10 +786,10 @@
   title: "S19 second review: J1 (a held mesh reaches a worker that starts empty, tested with a control; the lane records only the meshes sent), minors 1-9, 12, 14, 18-20, and quick back within 30 s (45 slow tests named slow_, run by the oracle tier)"
 - id: TASK-S5-16
   milestone: S5
-  title: Body draw modes as data: voxels (today); partial fill made visible (edge cells shaded by their exact fill fraction, with the clipped piece's outline and centroid on demand, and a legend); the original mesh as triangles; mesh over voxels for comparison
+  title: "Body draw modes as data: voxels (today); partial fill made visible (edge cells shaded by their exact fill fraction, with the clipped piece's outline and centroid on demand, and a legend); the original mesh as triangles; mesh over voxels for comparison"
 - id: TASK-S5-17
   milestone: S5
-  title: Clipped-piece view: each boundary cell drawn as its exact clipped polyhedron (the solid side of the mesh's planes), the view the exact-skin near kernel reads, capped per frame
+  title: "Clipped-piece view: each boundary cell drawn as its exact clipped polyhedron (the solid side of the mesh's planes), the view the exact-skin near kernel reads, capped per frame"
 - id: TASK-S20-03
   milestone: S20
   title: Viewports as a mosaic - layouts as subplot_mosaic-style label grids with weights, any number of viewports, resizable splitters, split/close/swap, pop out and dock (docs/design/workspace.md 1)
@@ -850,6 +850,8 @@
 - id: TASK-S5-23
   milestone: S5
   title: "S5's record: the demo and its pictures, the validation report against s20-the-workspace, ARCHITECTURE, the recipes, PROGRESS"
+  # #265 (W3's held-out read) merged from task/TASK-S5-23 by mistake; the record's PR removes this line.
+  status: open
 - id: TASK-S5-25
   milestone: S5
   title: A flaky editor test's cause - the forward stage's log lines tagged Subsystem::Forward, and the tests that look for what a command did skip them by that tag
@@ -859,6 +861,9 @@
 - id: TASK-S5-27
   milestone: S5
   title: "The walk goes below the chunk: each opened chunk's own voxel tree's blocks as nodes with summaries and bounds, so that the town's cut is not mostly leaves (docs/slices/S5.md 7.9)"
+- id: TASK-S5-28
+  milestone: S5
+  title: "B3's gradiometer as written: an empty planet's gradiometer against its layers as point masses at 1e-12 of itself (measured 1.35e-12, docs/slices/S5.md 7.18); left open for the owner's ruling"
 - id: TASK-S5-24
   milestone: S5
   title: The cube kernel's switch between closed form and series error-bounded, not 3 sides (docs/research/paper-boxes-and-precision.md)
@@ -1018,9 +1023,12 @@
 - id: TASK-S25-15
   milestone: S25
   title: "S25's record: the measurements against the S5 tag, the validation report, ARCHITECTURE, PROGRESS"
+- id: TASK-S25-16
+  milestone: S25
+  title: "L1 at 1e-6 rad, carried from S5 (the owner's ruling of 28 Nov 2026, docs/slices/S5.md 7.9): town's tower 1 reads 688,799 leaves one by one, 4.8x fewer than the opened chunks' 3,284,512, missing L1's 10x; the read-speed tasks (06, 07, 09) take it on: at least 10x fewer at 1e-6, settled, W2 and W3 unchanged"
 - id: TASK-S5-28
   milestone: S5
-  title: "P8 as written: Faceted within 1e-12 of 40 digits to 100 sizes (fails at 1.6e-10 on the turned plate at 100 m, the eps (R/s)^2 class; docs/slices/S5.md 7.17); left open for the owner's ruling"
+  title: "P8 restated as the rounding law (the owner's ruling of 28 Nov 2026): Faceted's error within c eps (R/s)^2 of 40 digits to 100 sizes, c fixed on an independent body set first (docs/slices/S5.md 7.19)"
 - id: TASK-S5-29
   milestone: S5
   title: "The paper's remaining provisional rows through cav: the flight-phase figure's passes (point masses, Spot, a moving voxel torus), and the ten shapes' scenes for the sweep, cost, crossover, whole-mesh and decimation tables and the cut-away figure"

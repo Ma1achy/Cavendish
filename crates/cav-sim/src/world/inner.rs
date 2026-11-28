@@ -22,9 +22,9 @@ use std::ops::Range;
 
 use cav_core::voxel::Aabb;
 use cav_core::voxel::summary::Summary;
-use cav_core::voxel::world::{CHUNK_DEPTH, Chunk, ChunkKey};
+use cav_core::voxel::world::{CHUNK_DEPTH, Chunk, ChunkKey, WorldGrid};
 
-use super::{Cube, World};
+use super::{Cube, ReadLeaves, World};
 
 /// A block of fewer leaves than this is not a node of a chunk's tree: its leaves are read one by
 /// one. A node read by its expansion costs about four leaves' kernel ([`super::walk`]'s work), so
@@ -81,6 +81,32 @@ impl Tightness {
     }
 }
 
+/// Where a chunk's finest cells are: the corner of its first and their side (a chunk's
+/// [`cav_core::voxel::VoxTree`] grid, whose `block_centre` this repeats to the bit).
+struct Cells {
+    origin: cav_core::Vec3,
+    pitch: f64,
+}
+
+impl Cells {
+    /// The side of a block of `level`, metres.
+    fn side(&self, level: u8) -> f64 {
+        self.pitch * f64::from(1u32 << level)
+    }
+
+    /// The centre of the block of `level` whose first finest cell is `key`.
+    fn block_centre(&self, key: u32, level: u8) -> cav_core::Vec3 {
+        let [x, y, z] = cav_core::voxel::morton::decode(key);
+        let half = 0.5 * f64::from(1u32 << level);
+        let (o, h) = (self.origin, self.pitch);
+        cav_core::Vec3::new(
+            o.x + h * (f64::from(x) + half),
+            o.y + h * (f64::from(y) + half),
+            o.z + h * (f64::from(z) + half),
+        )
+    }
+}
+
 /// One part of what lies under a chunk or a block: a node, or a run of leaves read one by one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Part {
@@ -132,9 +158,18 @@ impl ChunkTree {
     pub fn of_with(world: &World, chunk: &Chunk, tight: Tightness) -> Self {
         let cubes = chunk.cubes(&world.grid, &world.densities);
         let leaves: Vec<(u32, u8)> = chunk.tree.leaves.iter().map(|l| (l.key, l.level)).collect();
-        let mut out = Self { key: chunk.key, cubes, nodes: Vec::new(), parts: Vec::new(), top: 0..0 };
+        Self::of_leaves(&world.grid, ReadLeaves { key: chunk.key, leaves, cubes }, tight)
+    }
+
+    /// The tree of a chunk's leaves as the read takes them ([`World::read_leaves`]: on a base,
+    /// the signed departures), on `grid`, the blocks' summaries made as `tight` says.
+    #[must_use]
+    pub fn of_leaves(grid: &WorldGrid, read: ReadLeaves, tight: Tightness) -> Self {
+        let ReadLeaves { key, leaves, cubes } = read;
+        let mut out = Self { key, cubes, nodes: Vec::new(), parts: Vec::new(), top: 0..0 };
         let all = 0..out.cubes.len() as u32;
-        let top = out.split(chunk, &leaves, 0, CHUNK_DEPTH, all, tight);
+        let cells = Cells { origin: grid.chunk_box(key).lo, pitch: grid.pitch };
+        let top = out.split(&cells, &leaves, 0, CHUNK_DEPTH, all, tight);
         let start = out.parts.len() as u32;
         out.parts.extend(top);
         out.top = start..out.parts.len() as u32;
@@ -151,7 +186,7 @@ impl ChunkTree {
     /// `run`: each of its eight octants with leaves, as a node, or as its leaves.
     fn split(
         &mut self,
-        chunk: &Chunk,
+        chunk: &Cells,
         leaves: &[(u32, u8)],
         first: u32,
         level: u8,
@@ -179,8 +214,8 @@ impl ChunkTree {
                     let parts = self.split(chunk, leaves, lo, level, child.clone(), tight);
                     let start = self.parts.len() as u32;
                     self.parts.extend(parts);
-                    let centre = chunk.tree.block_centre(lo, level);
-                    let half = 0.5 * chunk.tree.side(level);
+                    let centre = chunk.block_centre(lo, level);
+                    let half = 0.5 * chunk.side(level);
                     let corner = cav_core::Vec3::new(half, half, half);
                     let boxed = Aabb::new(centre - corner, centre + corner);
                     let cubes = &self.cubes[child.start as usize..child.end as usize];
