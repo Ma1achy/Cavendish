@@ -78,10 +78,11 @@ theorem.
 \end{abstract}
 
 \noindent\fbox{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule}{\small
-\textbf{Status of the numbers.} Every measured table and figure comes from research scripts
-(Python with compiled f64 kernels) named in its caption and listed in the paper's
-\texttt{README.md}, and is marked \provisional: TASK-S5-18 regenerates each with Cavendish, whose
-own measurements are quoted where they exist (\S\ref{sec:engine}). Results are labelled
+\textbf{Status of the numbers.} The kernel's figures and tables, the comparison with 40 digits and
+the benchmark of \S\ref{sec:moments} are measured by Cavendish itself (TASK-S5-18; each caption names
+the test); every other measured table and figure comes from research scripts (Python with compiled
+f64 kernels) named in its caption and listed in the paper's \texttt{README.md}, and is marked
+\provisional. Results are labelled
 \tagM, \tagMo{} (measured parts times counts) or \tagD. Every phase is the flight-integral read of
 \S\ref{sec:read} unless the text says \emph{leading read}. Explanatory diagrams and Tables
 \ref{tab:orders}, \ref{tab:omitted} and \ref{tab:lean} are not measurements.}}
@@ -507,19 +508,22 @@ eq.~(\ref{eq:vos}), the face term stays in the edge class: the identity $N = h_f
 machine-checked as \texttt{numerator\_rule} (\S\ref{sec:lean}); the rounding class is measured
 (Figure~\ref{fig:far}). The analysis holds per face; a sum over $F$ faces adds their roundings,
 typically as $\sqrt F$. Measured, the face count is not the main factor at these sizes: at 100 body
-sizes the 5856-triangle Spot is at $2.1\times10^{-11}$ and the 12- to 60-face bodies at
-$0.8$--$1.4\times10^{-11}$, but the 1280-face icosphere at $6.8\times10^{-12}$ \citep[Table~A]{paperbench}. Figure~\ref{fig:far} shows the three variants on a
+sizes the 5856-triangle Spot is at $1.6\times10^{-11}$, the 12- to 60-face bodies at
+$0.7$--$1.2\times10^{-11}$ and the 1280-face icosphere at $8.6\times10^{-12}$ (Cavendish's kernel,
+Table~\ref{tab:codes}). Figure~\ref{fig:far} shows the three variants on a
 1/64~m cube at a non-dyadic position.
 
 \begin{figure}[tbp]\centering
 \includegraphics[width=0.48\linewidth]{figures/farfield.pdf}\hfill
 \includegraphics[width=0.48\linewidth]{figures/nearedge.pdf}
-\caption{Left: relative error of $\mathbf{g}$ for a 1/64~m cube against its monopole + $l=4$ series,
-by distance, for three ways of forming eq.~(\ref{eq:result}); look at the $h_f\,2A_f$ numerator with
+\caption{Left: relative error of $\mathbf{g}$ for a 1/64~m cube against its multipole series to order
+16 (its gradient by a five-point difference, which limits all three to about $4\times10^{-12}$ at
+10 sizes), by distance, for three ways of forming eq.~(\ref{eq:result}); look at the $h_f\,2A_f$ numerator with
 $\operatorname{log1p}$ following $\varepsilon(R/s)^2$ while the triple product climbs a power faster.
 Right: relative error of $L_e$ at distance $d$ from the middle of a 1/64~m edge; the dashed line is
 the error that rounding the point's own position ($\varepsilon|\mathbf{p}|$) can cause, which no
-formula removes. \tagM, \texttt{farfield.py}, \texttt{nearedge.py}. \provisional}
+formula removes. \tagM, Cavendish's kernel (\texttt{cav-core},
+\texttt{far\_field\_by\_distance}, \texttt{near\_edge\_by\_distance}).}
 \label{fig:far}
 \end{figure}
 
@@ -538,7 +542,7 @@ and $b-\ell_2 = r_0^2/(b+\ell_2)$; when the point projects beyond an end ($\ell_
 that end's left-hand side is itself a sum of positive numbers and is used directly, while its
 right-hand side would cancel. So each term is formed whichever way adds. Measured (Figure~\ref{fig:far}, right), the direct
 form is wrong by $3\times10^{-6}$ at $d=10^{-8}$~m and divides by zero at $10^{-10}$~m; the
-form~(\ref{eq:hk}) stays at $6\times10^{-11}$ to $10^{-8}$~m, and below that follows the floor set by
+form~(\ref{eq:hk}) stays within $4\times10^{-12}$ to $10^{-8}$~m, and below that follows the floor set by
 rounding the point's position \tagM. In $U$ and $\mathbf{g}$ the logarithm is multiplied by
 $\vnu_e\cdot\vr_e\to0$, so the product is finite and small there.
 
@@ -557,14 +561,16 @@ vanishing factor.
 tools (ESA's is GPL-3.0 and is not linked) on the benchmark bodies, a non-convex stellated icosahedron
 and the 5856-triangle Spot, against eq.~(\ref{eq:result}) evaluated at 40 significant digits on the
 same f64 vertices (Table~\ref{tab:codes}, Figure~\ref{fig:cross}). The pass criterion written
-beforehand was agreement to $10^{-12}$ at $R/s\le100$. Near the body ($R\le1.5$~m, worst of three
+beforehand was agreement to $10^{-12}$ at $R/s\le100$; Cavendish holds its kernel to it in its
+oracle tier (\texttt{oracle/tests/polyhedral.rs}, against these 40-digit values), where it fails
+beyond about 10 body sizes for the reason below. Near the body ($R\le1.5$~m, worst of three
 directions) our form, in Python and in Cavendish, is within $4\times10^{-14}$ of the 40-digit values on
-every body ($3.8\times10^{-14}$ on the turned plate, the value Table~\ref{tab:budget} uses; within
-$1.7\times10^{-14}$ on every other), Harmonica within $6\times10^{-14}$, and ESA within
+every body (Cavendish: $3.0\times10^{-14}$ on the turned plate, the value Table~\ref{tab:budget}
+uses, and within $4.2\times10^{-15}$ on every other), Harmonica within $6\times10^{-14}$, and ESA within
 $1.2\times10^{-13}$ on the benchmark bodies, $2\times10^{-13}$ on the axis-aligned plate and
 $7.6\times10^{-13}$ on Spot.
-Beyond $R/s\approx30$ both our form and the others exceed $10^{-12}$ (ours $1.6\times10^{-12}$ on the
-cube, $7.4\times10^{-12}$ on the plate at $R/s=30$), but at different rates: from 10 to 100 body sizes
+Beyond $R/s\approx30$ both our form and the others exceed $10^{-12}$ (Cavendish $1.6\times10^{-12}$ on
+the cube, $1.3\times10^{-11}$ on the plate at 30~m), but at different rates: from 10 to 100 body sizes
 ours grows $\times116$ per decade, the $\varepsilon(R/s)^2$ class, while ESA grows $\times880$ and
 Harmonica $\times2800$, the $\varepsilon(R/s)^3$ class (aligned cube). At 100 body sizes ours is
 $7\times10^{-12}$--$2\times10^{-11}$, and $0.9$--$1.6\times10^{-10}$ on the 5~cm plate, whose field
@@ -580,8 +586,10 @@ and the series beyond (leading read).
 \begin{table}[tbp]\centering\scriptsize
 \caption{Relative error of $\mathbf{g}$ against a 40-digit evaluation, worst of three directions, at
 distance $R$ from a body about 1~m across: our form (Python, and Cavendish's
-\texttt{Faceted}), ESA's line integrals, Harmonica's prism corners (boxes only). \tagM,
-\texttt{paper-benchmarks/bench\_accuracy.py}. \provisional}\label{tab:codes}
+\texttt{Faceted}), ESA's line integrals, Harmonica's prism corners (boxes only). \tagM, the
+Cavendish column by Cavendish's oracle tier (\texttt{oracle/tests/polyhedral.rs}; Spot's by the
+benchmark's harness of the same kernel, its mesh not being in the repository), the others
+\texttt{paper-benchmarks/bench\_accuracy.py}.}\label{tab:codes}
 \input{generated/rr-codes.tex}
 \end{table}
 
@@ -589,8 +597,10 @@ distance $R$ from a body about 1~m across: our form (Python, and Cavendish's
 \includegraphics[width=0.52\linewidth]{figures/crosscheck.pdf}
 \caption{Relative error of $\mathbf{g}$ against a 40-digit evaluation, worst of three directions, for
 six bodies of about 1~m: eq.~(\ref{eq:result}) with the rules of \S\ref{sec:stability}, and ESA's
-line-integral implementation; look at the two slopes. \tagM, \texttt{scripts/crosscheck.py},
-\texttt{mp\_reference.py}. \provisional}
+line-integral implementation; look at the two slopes. \tagM, Cavendish's \texttt{Faceted}
+(\texttt{oracle/tests/polyhedral.rs}) and ESA's values as recorded (\texttt{scripts/mp\_reference.py});
+the validation case \texttt{polyhedral.forty\_digit\_class} holds the first to the
+$\varepsilon(R/s)^2$ class and ESA's fails it.}
 \label{fig:cross}
 \end{figure}
 
@@ -615,17 +625,9 @@ away the read must difference moments, not closed forms. The engine also measure
 
 \begin{table}[tbp]\centering\small
 \caption{Cavendish's polyhedral kernel against its pre-written criteria (\texttt{docs/slices/S5.md}
-\S7.1); each criterion had a control arm that fails. \tagM}\label{tab:engine}
-\begin{tabular}{>{\raggedright}p{0.38\linewidth}>{\raggedright}p{0.26\linewidth}>{\raggedright\arraybackslash}p{0.26\linewidth}}\toprule
-check & measured & criterion\\\midrule
-P1: a box is Nagy's prism (64 points, 0.15--3 sides) & $V$ $2.8\times10^{-14}$, $\mathbf{g}$ $5.5\times10^{-14}$ & $\le10^{-13}$\\
-P2: far field against the cube series & $8.0\times10^{-10}$ worst at $R/s=10$--$10^3$; $7.7\times10^{-8}$ at $10^4$ & $\le10^{-9}$; $\le10^{-7}$; triple product $1.5\times10^{-5}$ at $10^4$\\
-P3: $L_e$ at $10^{-8}$~m from an edge & $4.2\times10^{-12}$ & $\le10^{-10}$; direct form loses $3.3\times10^{-6}$\\
-P4: on a face, edge, vertex, edge extension & finite; worst change $4.6\times10^{-8}$ at $10^{-9}s$ & $\le10^{-7}$\\
-P5: $\sum_f\omega_f = 0$, $4\pi$, $2\pi$ (out, in, on a face) & $3.4\times10^{-14}$ over 1534 points & $\le10^{-12}$\\
-P6: $\mathbf{g} = -\nabla V$ (central difference) & $4.3\times10^{-9}$ & $\le10^{-7}$\\
-P7: a mesh's moments to third order & $7.5\times10^{-16}$ & $\le10^{-13}$\\\bottomrule
-\end{tabular}
+\S7.1); each criterion had a control arm that fails. The measured column is the validation
+report's (\texttt{docs/validation/report.json}, the \texttt{polyhedral.*} cases). \tagM}\label{tab:engine}
+\input{generated/rr-engine.tex}
 \end{table}
 
 \paragraph{Single precision.} The scaling argument carries over to f32 element by element: for a cube
@@ -647,7 +649,8 @@ $10^{-3}$~rad, with tower-local offsets and compensated sums.
 \section{\Cutcell: the benchmark}\label{sec:moments}
 
 The benchmark lays five convex bodies of about 1~m ($\rho = 2700$~kg\,m$^{-3}$) on lattices of pitch
-1/8 to 1/64~m at four random sub-cell placements: a 0.8~m cube with its faces on lattice planes (the
+1/8 to 1/64~m at four sub-cell placements (fixed fractions of a cell, the same at every pitch, each
+face of the aligned cube at least 0.015 of a cell from the sampling planes): a 0.8~m cube with its faces on lattice planes (the
 \emph{aligned cube}), the same cube turned, an icosahedron, a 1280-face icosphere and a
 1~m$\times$1~m$\times$5~cm plate. Each boundary cell is clipped into its piece. Because interior cubes
 plus pieces equal the body (checked to $10^{-14}$), the error of any boundary representation is a sum
@@ -660,8 +663,13 @@ plate's circumradius, the largest); the nearest arm passes \ArmClearance~m from 
 every 0.25~m in height) \tagM. A tower 1.5~m from the centre along a direction well below the
 horizontal would let the rising arms pass within a quarter of a metre of the surface, which a read
 taken at the launch point does not see. The read is eq.~(\ref{eq:axisread}); Table~\ref{tab:conv} and
-Figure~\ref{fig:conv} give the result (\texttt{scripts/conv\_level.py}, which is the real-read
-note's \texttt{conv\_real.py} with only the tower moved).
+Figure~\ref{fig:conv} give the result, measured by Cavendish: its voxeliser and clipper on the
+bodies as meshes, its five representations, and its flight read of AION-10 against the same read of
+the polyhedral closed form (\texttt{oracle/tests/benchmark.rs}, the validation case
+\texttt{cut.benchmark\_bodies}). The research scripts' run of the same benchmark
+(\texttt{scripts/conv\_level.py}, the real-read note's \texttt{conv\_real.py} with only the tower
+moved) is the independent check: its exact signals agree with Cavendish's to $5\times10^{-11}$ at
+every tower, and its errors to within the spread over placements.
 
 \begin{table}[tbp]\centering\scriptsize
 \caption{Phase error (rad) at $h=1/64$~m, RMS over four lattice placements of the worst of three
@@ -669,9 +677,9 @@ tower directions, with the least-squares order over $h=1/8$ to $1/64$~m in brack
 the orders over placements is about $\pm0.3$ \citep[Q2]{paperrealread}. The tower stands beside the
 body, its lower launch point level with the centre; static flight-integral read. The signal row gives
 the worst direction's flight read with its sign, and the leading read of the same direction in
-brackets. A point mass at the
-centroid gives the fill + centroid row to every printed digit. \tagM, \texttt{scripts/conv\_level.py}.
-\provisional}\label{tab:conv}
+brackets (the research scripts' read: Cavendish has no leading read). A point mass at the
+centroid gives the fill + centroid row to every printed digit (\texttt{scripts/conv\_level.py}).
+\tagM, Cavendish (\texttt{oracle/tests/benchmark.rs}).}\label{tab:conv}
 \setlength{\tabcolsep}{3pt}
 \resizebox{\linewidth}{!}{\input{generated/rr-conv.tex}}
 \end{table}
@@ -679,21 +687,23 @@ centroid gives the fill + centroid row to every printed digit. \tagM, \texttt{sc
 \begin{figure}[tbp]\centering
 \includegraphics[width=\linewidth]{figures/convergence.pdf}
 \caption{Phase error with the tower 1.5~m from the centre against pitch, for three bodies; solid the
-flight-integral read, dotted the leading read of the same evaluation. Look at the aligned cube: the
+flight-integral read by Cavendish, dotted the leading read of the research scripts' run (its own
+placements). Look at the aligned cube: the
 sampled fill used before S5 falls at first order, fill + centroid at third and the second moment at
-fourth or faster. \tagM, \texttt{scripts/conv\_level.py}. \provisional}
+fourth or faster. \tagM, Cavendish (\texttt{oracle/tests/benchmark.rs}); dotted,
+\texttt{scripts/conv\_level.py}.}
 \label{fig:conv}
 \end{figure}
 
 Three findings \tagM. \emph{First}, the worst case is the aligned one: there 0/1 and the sampled
-fill fall at order 1.0 and 1.1, the fill fraction at the centre at 2.1, fill + centroid at 3.0 and
+fill fall at order 1.0 and 0.8, the fill fraction at the centre at 2.0, fill + centroid at 2.9 and
 \cutcell{} at 4.9, as Table~\ref{tab:orders} says (Cavendish's own test of the same ladder on an
 aligned cube, read through one shot, gives 0.95, 1.99, 2.96 and 4.92; S5.md \S7.6, C2). At
 1/64~m the sampled fill is still at \AlignedSampled~rad there; fill + centroid is \GainCentroid{}
 times better and \cutcell{} \GainSecond{} times.
 
 \emph{Second}, on turned faces the fill fraction at the cell's centre does better than its bound,
-order 3.5--4.2 on the turned cube, the icosahedron and the plate, and 3.1 on the icosphere, whose
+order 3.5--4.4 on the turned cube, the icosahedron and the plate, and 3.0 on the icosphere, whose
 curvature leaves a residue. The reason \tagD: let a plane of normal $\vn$ cut a cube of side $h$ at
 offset $s$ from its centre, the piece being $\{\mathbf{x}: \vn\cdot(\mathbf{x}-\mathbf{c})\le s\}$.
 The dipole that a fill at the centre leaves out is $\mathbf{D}(s)=\int_\mathrm{cube}(\mathbf{x}-\mathbf{c})
@@ -713,18 +723,18 @@ field ($\oint\vn\cdot\nabla(1/r)\,dS = 0$ outside). What remains comes from alig
 curvature.
 
 \emph{Third}, the centroid removes the dipole outright but leaves an anisotropic quadrupole layer
-that does not cancel, so fill + centroid sits near order 3 everywhere (2.8--3.8): worse than the fill
+that does not cancel, so fill + centroid sits near order 3 everywhere (2.8--4.1): worse than the fill
 at the centre on the turned cube and the plate, but robust; with the second moment the order is
-3.7--4.9 on every body. In this geometry the leading read's orders differ from the flight read's by
+3.8--4.9 on every body. In this geometry the leading read's orders differ from the flight read's by
 up to 1.1 (Figure~\ref{fig:conv}, dotted): its lower point sits on the bodies' mid-plane, where many
 error terms' $g_z$ vanish; the flight read samples the arms' whole height and has no such plane.
 
 At 10~m the signal is 50 times smaller and of the other sign ($-0.83$~rad against $+43$; the
-leading read keeps its sign, Table~\ref{tab:conv}), and the errors are 60--13\,000 times smaller, the
-higher rungs falling faster (59 for 0/1 on the turned cube, 13\,200 for the plate's second moment); the
-orders are much as at 1.5~m, except the aligned cube's \cutcell, which stops at
-$1.2\times10^{-12}$~rad between 1/32 and 1/64~m: the rounding floor of the pieces' closed form at that
-distance, so its fitted 3.0 is not the representation's. The 10~m rows need the numerator rule of
+leading read keeps its sign, Table~\ref{tab:conv}), and the errors are 50--10\,000 times smaller, the
+higher rungs falling faster (54 for 0/1 on the turned cube, 10\,200 for the plate's second moment); the
+orders are much as at 1.5~m, except the aligned cube's \cutcell, which falls only 4.7 times between
+1/32 and 1/64~m, to $1.7\times10^{-13}$~rad, near the rounding of the closed form's difference at
+that distance, so its fitted 3.8 is not the representation's. The 10~m rows need the numerator rule of
 \S\ref{sec:stability}: in an earlier leading-read run of this benchmark with the triple product, the
 second-moment row came out at $10^{-11}$--$10^{-10}$~rad with orders 2.2--3.7, set by the
 reference's rounding, and at 3.8--4.3 with $h_f\,2A_f$ (\texttt{data/summary.md},
@@ -1167,10 +1177,11 @@ arbitrary real inner-product space and so covers $\mathbb{R}^3$ with its Euclide
 \section{Limitations, and what the paper does not claim}\label{sec:limits}
 
 \begin{itemize}\itemsep0pt
-\item Every measured number is from research scripts, not yet from Cavendish's own tables; all are
-provisional until TASK-S5-18 regenerates them. Where Cavendish has measured the same thing
-(Table~\ref{tab:engine}; the orders and the sphere test of \S\S\ref{sec:moments}--\ref{sec:shapes})
-it agrees.
+\item The numbers of \S\S\ref{sec:stability}--\ref{sec:moments} are Cavendish's; those of the
+moving bodies, the shapes and the error budget are from research scripts and stay provisional until
+Cavendish reads those scenes (their meshes are downloaded, not in the repository). Where Cavendish has
+measured the same thing (Table~\ref{tab:engine}; the benchmark; the sphere test of
+\S\ref{sec:shapes}) it agrees.
 \item The read is Cavendish's model of AION-10's goal configuration: $^{87}$Sr, $n=1000$,
 $T=0.73$~s, launch at 3.86~m\,s$^{-1}$, instantaneous kicks, a 2~s cycle. The real sequence is not
 public in that detail, and the near-field results scale with the arm separation, $\propto n$. Second

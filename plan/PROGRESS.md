@@ -35,6 +35,16 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**TASK-S5-18, the paper regenerated with Cavendish (28 Nov 2026; §7.15).** The polyhedral-gravity
+paper's kernel figures (far field, near edge), its 40-digit comparison (table and figure), the
+engine's P1–P7 table (now all from the validation report) and the benchmark (Table "phase error at
+h = 1/64 m", Figure "against pitch", the static numbers) come from Cavendish's tests and lost their
+*provisional* mark; the benchmark is a new oracle case on the paper's five bodies (B1–B3 pass;
+Cavendish's exact signals agree with the research scripts' to 5e-11). The moving-body figure, the
+ten shapes' rows and the error budget stay provisional (TASK-S5-29: their meshes are downloaded,
+and the budget is Gradar-side). P8 as written fails (1.6e-10 at 100 sizes; question below,
+TASK-S5-28 open). Every changed number of the paper is listed in §7.15 for its author.
+
 **TASK-S5-15, the octree overlay and the read-LOD overlay (28 Nov 2026; §7.14).** The world's
 contribution now carries what the views draw of the read (the octree's nodes, each tower's cut with
 every accepted node's bound), through the page's wire too; `overlay octree` outlines the octree by
@@ -1019,6 +1029,14 @@ mutation). Left, all minor:
 - **C3 (TASK-S5-26, 28 Nov 2026):** `Pieces` within 3 cells of an arm and `Second` beyond reads
   1.34e-6 relative against `Exact`, criterion 1e-11; every cell exact reads 3.3e-15. Options (a),
   (b), (c) and the measurements by reach are in "S5 under way" above and `docs/slices/S5.md` §7.7.
+- **P8 (TASK-S5-28, 28 Nov 2026):** `Faceted` against 40 digits reads 1.6e-10 relative at 100
+  sizes (the turned plate; 1.2e-12 at 10 sizes, 1.1e-13 within 3), criterion 1e-12 to 100 sizes.
+  The error is the `ε(R/s)²` rounding the paper claims (`2.2e-12` at 100 sizes before constants), so
+  no f64 evaluation of the form meets it; the class itself is gated (`polyhedral.forty_digit_class`,
+  ESA's values fail it). Choose: (a) restate P8 as "≤ 1e-12 within 3 sizes, and the `ε(R/s)²`
+  class beyond" and merge TASK-S5-28 with it; (b) keep 1e-12 to 100 sizes and ask for a
+  double-double reference evaluation (`plan/IDEAS.md`); (c) keep it in the record as failed and
+  close TASK-S5-28.
 
 Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
 - **Ubuntu Mono: yes.** `UbuntuMono-Regular.ttf` from the official Ubuntu font family release goes in,
