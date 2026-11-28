@@ -6,6 +6,69 @@ output in [`results.txt`](s5-world-octree/results.txt)). Tags: **[R]** read in a
 session; **[S]** read only as a search-result summary; **[M]** measured here; **[D]** derived by me,
 to be checked; **[U]** not verified (listed again in section 8).* Extended the same day with the owner's Barnes–Hut frame (2.1 to 2.5), view modes (7a) and seams (7b).
 
+*Updated 28 Nov 2026:* Salmon's thesis (the parts on interaction counts, error bounds and opening criteria) and
+Hernquist 1987 read from the owner's copies; Rathinam & Dempster 2019 added from a companion agent's full reading;
+Salmon & Warren 1994 Eq. 9 = 62 and Fig. 7 re-checked by that agent (27 Nov). No recommendation changes; see the
+block below and §8.
+
+**Changed after the third batch of primary sources (28 Nov 2026).** Not copied into the repository:
+* **Salmon 1991, *Parallel hierarchical N-body methods*** (Caltech PhD thesis, 334 pp., defended 6 Dec 1990; read:
+  §4.6, Ch. 5, Ch. 6). **The `θ⁻³` argument** (S&W 1994 p. 137, Eq. 4) is this: the expected number of body–cell
+  interactions is `⟨N_bc⟩ ≤ F_oc N D_avg ≤ F_oc N log₈(…N)` (Eq. 4.63, p. 93), where `D_avg` is the mean depth of a body
+  in the tree (Ch. 2) and `F_oc = V_mid / V_γ` (Eq. 4.61) is the volume, in units of the cell's own, of the shell in
+  which a cell is accepted but its parent is not (Fig. 4.2, §4.6.2–4.6.3, pp. 85–89). `F_oc` is "the only
+  characteristic of the OpeningCriterion which influences the total number of interactions" (§6.5, p. 154). For
+  the BH test it is `(4π/3)((2/θ)³ − (1/θ)³) = 28π/(3θ³)` (Eq. 6.7, p. 156); for a centre-of-mass test in the `L∞`
+  metric `56/θ³` (Eq. 6.10). Body–body interactions are `≈ b_m F_oc N m` (Eq. 4.68–4.69, Table 4.1, p. 96). The
+  derivation assumes bodies drawn independently from a smooth density (§4.6.5–4.6.6); §4.6.1 (p. 84) gives a
+  contrived set where BH is `O(N²)`. For Cavendish this is the count per level of §6 B's rings: a shell `1/θ` to
+  `2/θ` node sides about the target, i.e. `≈ 28π/(3θ³) ≈ 680` level-L nodes at θ = 0.35 *if space were full* [D: my
+  arithmetic]; the town's sparse world reads 971 nodes in all levels (§6 A).
+  **Error bounds** (§5.1.4, pp. 112–115): Eq. 5.57 bounds the potential's remainder after `n` terms by the first
+  term times a function of `b/d`, "essentially the same result" as Greengard's; the acceleration bound Eq. 5.61 adds a
+  factor `(1 − b/d)⁻¹` and roughly `n`, so "the fractional error in the acceleration ... [is] substantially greater"
+  (p. 115; S&W's factor-`p` remark is this). Eq. 5.61 rests on a **conjecture** (the maximum of `|∇K_n|` at `μ = 1`),
+  "verified empirically for n < 4" (p. 113); `mac_bound.py` found S&W's Eq. 62 never below the true remainder in 48
+  cases, which is the evidence the note uses. Typical errors are far below the bound: averaged over direction the
+  error vanishes, and the worst case is all mass at one boundary point (pp. 115–116). **On a uniform cube the lowest
+  multipole whose expectation does not vanish is `n = 4`** (§5.2.2, Eq. 5.99, p. 136): an independent statement of
+  the hexadecapole result of `mac_bound.py`. Contours of constant worst-case error about a cube "are not at all round.
+  They follow, more-or-less, the shape of the cubical volume" (Figs. 5.8–5.10, p. 126): support for measuring
+  acceptance from the node's box (least distance), not from its centre.
+  **Opening criteria** (Ch. 6): the `θ > 1/√3 ≈ 0.58` failure is derived here first (§6.4, Fig. 6.3, pp. 153–155:
+  the error grows as `(d − b)⁻¹` in the potential and `(d − b)⁻²` in the acceleration as the target nears the
+  boundary); found "quite by accident" in a real two-galaxy run (§6.3, pp. 149–152). Edge-distance criteria "are not
+  susceptible" at any θ; centre-distance ones are safe only below a θ that costs `F_oc > 28π√3` (Cartesian) or `> 56`
+  (`L∞`, safe for θ < 1) (§6.6, Eq. 6.16–6.21, p. 162). The thesis compares criteria at equal `F_oc` on the
+  hypothesis that they are "equally good" (p. 156), not by measured error; the error-budget MACs are S&W 1994's.
+  **Nothing changes:** the least-distance acceptance, never accepting within `b_max`, and the Eq. 62 ledger stand.
+* **Hernquist 1987, *ApJS* 64, 715–734** (read in full). The extra test is **forced subdivision of any cell that
+  contains the particle**: without it the BH C code and TREECODE "can unintentionally include a self-acceleration"
+  for large θ, when a particle sits at one edge of its own cell and the centre of mass at the other (§II, p. 718).
+  Measured with and without it, "the typical error in the force computation from this effect was completely
+  negligible for θ < 1.2" (§IIIc, p. 725). Salmon (§6.3, p. 151) names it as the fix for bodies *inside* the cell
+  (his Y), not for targets just *outside* (his X): what S&W 1994 say, now first-hand. Cavendish's rule (never accept a
+  node within `b_max` of the target, §2.1) is stronger than both. Error statistics (§IIIc, pp. 722–725): the error is
+  the **mean absolute deviation** of each acceleration component from a direct sum, relative to the mean
+  acceleration (the standard deviation is 30–50 % larger); the mean error is ~100× smaller than the deviation, of
+  random sign; < 1 % for θ < 1 at N > 10⁴ (Fig. 6, Plummer models, monopole); falling as about `N^(−1/5)`; the
+  quadrupole costs ~1.5× the monopole (p. 721) and helps most for θ < 1 (Fig. 7). Terms per particle at θ = 1: 130
+  (N = 1,024) to 220 (N = 32,768); at θ = 0.5: 350 to 1,060 (p. 721). These are system-wide averages, not worst
+  cases, which is why §5 takes the worst over positions.
+* **Rathinam & Dempster 2019**, "Octree-based mascon model for small body gravity fields", *J. Guid. Control Dyn.*
+  42(11), 2557–2567, doi:10.2514/1.G004008 (read in full by a companion agent, 28 Nov 2026; not re-read here). An
+  octree built from the shape model's vertices as a point cloud, uniform-depth (Uni128, Uni256) or variable-depth
+  leaves (§II.A–B); interior leaves found by per-layer alpha-shape slicing (§II.C); each leaf one point mass at its
+  centroid, the boundary leaves' density scaled so the total volume matches the polyhedron (Eq. 1), the centre of mass
+  left a few cm off; the field is a **direct sum over every occupied leaf** (Eqs. 2–9): no node moments, no
+  multipoles, no opening criterion, the octree only sizes the leaves. Mean relative potential error on the surface
+  10⁻³–10⁻⁴ (§V.A); ~1 % acceleration error at ~10⁵ mascons (Var256, §V.C); Uni256 (1.3 M occupied nodes, Table 2)
+  runs 2–3× the polyhedron's time (Table 3); error ∝ `N^(−1/3)` after Werner & Scheeres (§V.C). **For S5:** no
+  precedent there for moment-summed nodes with error-bound acceptance; it is the first-order baseline (0/1 fill, one
+  point per leaf) that S3–S5's cube kernel and moments already go beyond.
+* **Salmon & Warren 1994 re-checked** (companion agent, 27 Nov 2026): Eq. 9 is Eq. 62; the Fig. 7 caption (p. 143)
+  gives mean actual/bound 0.22, rms 0.28. Consistent with the block below.
+
 **Changed after the first batch of primary sources (25 Nov 2026, earlier).** The owner supplied the PDFs of Lengyel 2010,
 Strugar 2010, Losasso & Hoppe 2004 and Laine & Karras 2010 (read with their figures; not copied into the
 repository). What changed:
@@ -826,6 +889,8 @@ below a threshold stated before measuring; controls: the blend switched off must
   earlier forum claim of "16³ at finest, 32³, 64³ coarser" (growing cell count) is **wrong** about Lengyel.
 * **The dithered cross-fade itself** has no primary source read here (Unity's page did not describe it); the
   position-driven weight it uses is sourced (L&H §6.2, CDLOD), the dither is my design [D].
+* **Salmon's thesis and Hernquist 1987: now read** (28 Nov 2026, third-batch block). The thesis's acceleration bound
+  (Eq. 5.61) is a conjecture checked for `n < 4`; the note relies on S&W's Eq. 62 and `mac_bound.py`'s checks instead.
 * **Salmon & Warren 1994 and Barnes & Hut 1986: now read** (owner's scans, 25 Nov 2026; see the top block). Not
   followed: S&W's Appendix B derivation of Eq. 52–57 (the kernel and Legendre-derivative bounds) beyond checking that
   Eq. 60/62 is what `mac_bound.py` evaluates and that it is never below the true remainder in any comparison made (36 acceleration and 12 gradient cases);
@@ -847,10 +912,12 @@ below a threshold stated before measuring; controls: the blend switched off must
     and real-time visualization of complex 3D terrains* (Bilkent MSc thesis, 174 pp.), **not read** beyond its
     contents and §2; its §5.2 (editing the terrain) and §4.4 (level of detail, pp. 105–123) are the parts that
     might bear on S5's edits and seams.
-  * **Still unread from this note's topic:** Salmon's 1990 Caltech PhD thesis (S&W's Ref. 11, "unpublished" in their
-    list; the source of the `θ⁻³` interaction-count argument, p. 137, Eq. 4); Hernquist 1987, *Ap. J. Suppl.* 64, 715
-    (Ref. 13; the extra test for bodies inside the cell they interact with, which S&W say does nothing for targets
-    just outside it); Dehnen's figures. No DOIs verified for these.
+  * **Read in the third batch (28 Nov 2026):** Salmon's Caltech PhD thesis (S&W's Ref. 11; title page dated 1991,
+    defended 6 Dec 1990; §4.6, Ch. 5 and Ch. 6 read, Chs. 1–3, 7–8 and the appendices not); Hernquist 1987, *Ap. J.
+    Suppl.* 64, 715–734 (S&W's Ref. 13, in full). See the third-batch block at the top. Rathinam & Dempster 2019 was
+    read by a companion agent, not here. **Still unread:** Dehnen's figures; Greengard & Rokhlin 1987 is not cited by
+    this note (Salmon, p. 113, says his Eq. 5.57 is "essentially the same result" as Greengard's, his Ref. 13, which I
+    did not identify) and was not opened.
   * Read in full with figures (owner's copies, 25 Nov 2026): Strugar's CDLOD paper
     (`https://raw.githubusercontent.com/fstrugar/CDLOD/master/cdlod_paper_latest.pdf`), Losasso & Hoppe
     (`https://hhoppe.com/geomclipmap.pdf`), Laine & Karras

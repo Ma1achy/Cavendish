@@ -9,6 +9,16 @@ owner's request before its run). Every number below is in
 in `data/`. The meshes, lattice placement (`GENERIC`), tower and phase are the shapes study's own
 (`shapes_lib`, imported unchanged); its meshes are downloaded into its git-ignored cache.
 
+*Updated 27 Nov 2026:* the AACB and Darnell paragraphs in §A, item 4 of "What the paper should say
+(A)" and "Not verified" now rest on the full AACB preprint (Fenney, Allen & Aman, June 2025, 12 pp.),
+not the HPG 2025 poster. No measured number in this note changed.
+
+*Updated 28 Nov 2026:* Darnell's 2011 article, Dielissen & Kaldewaij 1991, Thall 2006 and Joldes, Muller &
+Popescu 2017 read from the owner's copies (§A sources, §B3, "Not verified"). Two corrections: Darnell names no
+distance metric and no coverage figure (the Manhattan metric and the 90% are this note's choices), and the
+preprint's "p. 3" is the magazine's contents page (the article is pp. 35–37, 39). No measured number or
+recommendation changed.
+
 The tolerance throughout is Cavendish's `PHASE_TOLERANCE` = 1e-10 rad
 (`crates/cav-core/src/forward.rs`); "safe against noise" means ≤ 1e-6 rad, a hundredth of the
 1e-4 rad Hz^-1/2 floor for one second.
@@ -42,22 +52,84 @@ The tolerance throughout is Cavendish's `PHASE_TOLERANCE` = 1e-10 rad
   into their parent. A body's interior is then the largest aligned 2^k blocks wholly inside, and only
   cut cells stay at the finest pitch. Each block is a box, so its field is the closed form (12
   triangles, the paper's face-and-edge form, eq. `eq:result`), or its l ≤ 4 cube series far away.
-- **AACBs.** Fenney, Allen & Aman put small hierarchies of axis-aligned "contained" and "containing"
-  boxes into a ray-tracing BVH
-  ([HPG 2025 poster](https://highperformancegraphics.org/2025/publications/posters/AACBs_%20BVH%20Occlusion%20muHierarchies%20-%20HPG2025.pdf);
-  the preprint was not read). Their boxes come from voxels "repeatedly selected as starting voxels
-  and dilated", but "voxels can be in multiple AACBs". For occlusion, overlap is harmless. **For
-  gravity it is not**: the boxes must partition the interior exactly, or carry signed overlaps.
-- **Darnell 2011.** The poster summarises Darnell's method: "locate all voxels entirely within the
-  mesh, find the innermost, as yet unprocessed voxel, expand a box outwards from that voxel until it
-  meets the boundary or a previous box". Darnell's 2012 reprint adds that boxes "are just expanded in
-  all directions equally"
+- **AACBs.** Fenney, Allen & Aman put small groups of axis-aligned "contained" and "containing"
+  boxes into a ray-tracing BVH (preprint, "June 2025", Imagination Technologies, 12 pp., Eurographics
+  template; no DOI or arXiv id printed; also an
+  [HPG 2025 poster](https://highperformancegraphics.org/2025/publications/posters/AACBs_%20BVH%20Occlusion%20muHierarchies%20-%20HPG2025.pdf)).
+  What the preprint says about the inner (contained) boxes of a closed mesh:
+  - *Voxels* (§4, §4.2). A conservative voxelisation, 32³ in their timings and "diminishing" gains
+    beyond 64³ (§5). Boundary voxels are those a triangle touches; inner voxels are found by
+    scan/fill passes (solid voxelisation, Schwarz & Seidel 2010). Contained boxes use inner voxels
+    only, so they sit at least one voxel inside the surface.
+  - *Seed* (§4.2, eq. 1). Voxel density ρ_v = min over boundary voxels v_b of ‖v − v_b‖₁, the
+    Manhattan distance to the nearest boundary voxel, "similar to that suggested by Darnell"; the
+    densest voxel not yet in any candidate seeds the next box. All densities cost O(m log n)
+    (m inner, n boundary voxels) through a spatial index of the boundary.
+  - *Growth* (§4.2). The seed grows uniformly into the largest cube of inner voxels, then "along any
+    remaining free axes" to the largest volume. This is close to this note's largest-first growth;
+    the seed rule differs (densest voxel, not largest cube).
+  - *Overlap* (§4.2). "Unlike Darnell's method, the candidates are permitted to overlap." For
+    occlusion, overlap is harmless. **For gravity it is not**: the boxes must partition the interior
+    exactly, or carry signed overlaps.
+  - *Selection* (§4.3, Figs 6–7). Candidates are kept or dropped by the extra *occlusion* they add,
+    estimated from 13 orthographic bitmaps of the voxel grid (3 axis, 6 face-diagonal, 4 body-diagonal
+    directions); a candidate may also replace a similar earlier box. The criterion is projected
+    occlusion, not volume, and it is greedy as candidates are made, not a prune of a large set.
+  - *How many* (§3, §5, Fig. 1). About as many as a wide BVH node holds ("four, eight, or more"):
+    3 containing + 8 contained on the bunny, 8 boxes per bunny and 4 per bowl in the tests. Build
+    time 0.5–1.5 ms per model, 16 threads on an AMD 9800X3D (Table 2).
+  - *Not in the preprint*: any coverage fraction against box count, any volume captured, any
+    optimality or NP-hardness statement. The quality numbers are traversal savings only (5–30% fewer
+    node visits and box and triangle tests, abstract; Table 1).
+
+  So AACBs give a handful of large, overlapping, conservative inner boxes chosen for occlusion. They
+  answer "a few big boxes", not "partition the interior", and carry no gravity-usable coverage data.
+  The preprint (§6) also suggests spheres as contained volumes; for gravity a sphere's outside field
+  is exactly a point mass, but what remains is then no longer boxes.
+- **Darnell 2011.** Fenney et al. (§2) summarise Darnell's method: "1) locating all voxels that are
+  entirely within the mesh, 2) finding the 'densest' (i.e innermost), as yet unprocessed voxel,
+  3) expanding a box outwards from that voxel until it meets the surface of the model or a
+  previously expanded box", repeated "until a sufficient volume of the model has been accumulated";
+  the boxes are then unioned and meshed. The stopping rule is "a percentage of the total volume or
+  that the rate of volume increase falls below some threshold" (§4.3), the basis of this note's 90%
+  coverage figure. Darnell's 2012 reprint adds that boxes "are just expanded in all directions
+  equally"
   ([Game Developer](https://gamedeveloper.com/programming/in-depth-oxel---a-tool-for-occluder-generation)).
-  The 2011 magazine article itself was not read. "Innermost" is taken here as the largest Manhattan
-  distance to the outside, as the owner described it.
-- **Why greedy.** A minimum partition of a 3-D voxel set into boxes is NP-complete
-  ([Dielissen & Kaldewaij 1991](https://doi.org/10.1016/0020-0190(91)90207-X); metadata checked, text
-  not read), so greedy rules are compared.
+  The original, read 28 Nov 2026: N. Darnell, "Automated occluders for GPU culling", *Game Developer*,
+  Sep. 2011 ("The Inner Product" column), **pp. 35–37 and 39** (p. 38 is an advertisement; the
+  preprint's "p. 3" is the contents page, which lists it at p. 35)
+  ([archive.org](https://archive.org/download/GDM_September_2011/GDM_September_2011.pdf)). Most of it
+  is on hierarchical-z culling (pp. 35–37); the box method is pp. 37–39. What it says:
+  - *Voxels* (p. 37). Voxels "completely inside" are the solid voxelisation minus the surface
+    voxelisation (Schwarz's GPU method, §§3.1, 4.1), so boxes are conservative; the mesh must be
+    watertight (p. 39).
+  - *Seed* (p. 39, step 2). "The voxel that is the furthest away from any empty voxel, excluding any
+    voxel already enclosed in an occlusion volume", distances tested against a list of surface
+    voxels. **No metric is named**: Manhattan is this note's (and the AACB preprint's) choice.
+  - *Growth* (p. 39, step 3). Start from a 1³-voxel box and "iteratively expand each side of the box
+    ... until you can't expand any side of the box without entering an empty voxel, or another box
+    that has already been placed". "The only approach I've tried is using a uniform expansion
+    strategy"; he suggests prediction toward the roomier axis as an improvement. Boxes therefore do
+    **not overlap**, which agrees with the AACB preprint's "unlike Darnell's method". `boxes.py`'s
+    `darnell` (static taxicab seed order, six faces in turn) follows this.
+  - *Stop* (p. 39, step 4). Examples only: "an absolute percentage in volume is consumed", boxes
+    below "a point of diminishing returns or ... too small", or "a maximum number of boxes". **No
+    percentage is given** ("X%" in the summary, p. 37): the 90% below is this note's threshold.
+  - *Then* the boxes are merged by CSG (p. 39). Results are pictures only (Fig. 4); it "can still take
+    several seconds" even on the GPU, and suits "axis-aligned objects, like buildings", not organic
+    shapes (p. 39). No counts, coverage or error figures.
+- **Why greedy.** A minimum partition into boxes is NP-complete in 3-D
+  ([Dielissen & Kaldewaij 1991](https://doi.org/10.1016/0020-0190(91)90207-X), *Inf. Process. Lett.* 38,
+  1–6; read 28 Nov 2026). What is proved: MNRP3, "given an orthogonal polyhedron P and a natural number
+  K, is there a partition of P in at most K blocks?", is NP-complete (§2, p. 2; NP-hard by reduction from
+  3SAT with each literal at most three times, Theorems 1–3, §3, pp. 2–5; in NP by guessing a block label
+  per unit cube of a boolean matrix, §4, p. 5). An orthogonal polyhedron is a *simple* polyhedron with
+  axis-parallel faces, and the gadgets are built of unit cubes, so this covers voxel sets. "Disallowing
+  holes in the polyhedrons does not effect the NP-completeness" (§5, p. 6). It is a **partition**
+  (non-overlapping blocks) with a **minimum number** objective, not a cover; the 2-D version (orthogonal
+  polygon into rectangles) is polynomial (§1, p. 1), and convex orthogonal polyhedra are left open (§5).
+  It says nothing about covering a given fraction of the volume with fewest boxes (the 90% rule below), so
+  greedy rules are compared on that without a hardness claim.
 
 `boxes.py` takes each shape at 4–128 cells across on the shapes study's own lattice. It decomposes
 the interior six ways:
@@ -210,8 +282,11 @@ and CAD part, and loses on Suzanne and Spot.
 3. **§6/§7, the read.** State that a fixed geometric switch (closed form within 3 sides) is not
    enough for large octree blocks: up to 3.5×10⁻⁵ rad at 1.5 m and 7×10⁻⁴ rad at 0.1 m on these
    bodies. The phase-error-bounded opening of §6 is required, not optional.
-4. **One paragraph on free-size boxes**, citing Darnell (2011) via Fenney et al. (2025), and
-   Dielissen & Kaldewaij for NP-completeness. Greedy boxes give 5–36 times fewer interior elements
+4. **One paragraph on free-size boxes**, citing Darnell (2011, *Game Developer*, Sep., pp. 35–39:
+   furthest-from-empty seed, uniform growth to the surface or an earlier box, no overlap, stop at a
+   chosen volume fraction) and the AACB preprint (§4.2: densest-voxel seed, cube then free-axis growth, overlap
+   allowed), and Dielissen & Kaldewaij for NP-completeness (minimum-number partition of an orthogonal
+   polyhedron into blocks, with or without holes; not the fixed-coverage problem). Greedy boxes give 5–36 times fewer interior elements
    than the octree, and 61–1,340 boxes cover 90% of the volume. Unlike AACBs they must not overlap.
    They are exact to rounding, but elongated boxes round worse. They save storage and element count,
    not near-field cost, unless boxes get an l ≤ 4 series.
@@ -316,8 +391,38 @@ body.
   affordable: the closed form is used only for the clipped pieces within a few cells of an arm point,
   and for the few hundred to few thousand interior boxes (part A). Both are cheap enough for the f64
   CPU oracle. On the GPU the closed form needs float-float throughout, including float-float log1p
-  and atan2. Thall 2006 and Joldes et al. 2017 give the building blocks; their costs are not
-  verified here.
+  and atan2. The sources give the arithmetic, not the functions:
+  - **Joldes, Muller & Popescu 2017** (*ACM TOMS* 44(2), art. 15res,
+    [doi:10.1145/3121432](https://doi.org/10.1145/3121432); read 28 Nov 2026) prove relative error
+    bounds for double-word ("float-float" when the words are f32) arithmetic in precision p, with
+    u = 2⁻ᵖ (f32: u = 2⁻²⁴, u² ≈ 3.6×10⁻¹⁵). Table 1 (p. 25), with FP-operation counts that assume an
+    FMA-based exact product (Alg. 3):
+
+    | operation | algorithm | bound | ops |
+    |---|---|---|---|
+    | DW + FP | Alg. 4 (QD) | 2u² (Thm 2.2) | 10 |
+    | DW + DW | Alg. 5, "sloppy" (Dekker's add2) | none: relative error up to 1 when signs differ | 11 |
+    | DW + DW | Alg. 6, accurate | 3u² + 13u³ (Thm 3.1; the earlier 2u² claim is wrong, p. 7) | 20 |
+    | DW × FP | Alg. 7 / 8 / 9 (FMA) | 1.5u² + 4u³ / 3u² / 2u² (Thms 4.1–4.3) | 10 / 7 / 6 |
+    | DW × DW | Alg. 10 / 11 (FMA) / 12 (FMA) | 7u² / 6u² / 5u² (Thms 5.1, 5.3, 5.4) | 9 / 8 / 9 |
+    | DW ÷ FP | Alg. 15 | 3u² (Thm 6.2) | 10 |
+    | DW ÷ DW | Alg. 17 / 18 (FMA) | 15u² + 56u³ / 9.8u² (Thms 7.1, 7.2) | 18 / 31 |
+
+    So one f32 float-float operation is good to 2–15 u² ≈ 7×10⁻¹⁵–5×10⁻¹⁴ relative, at 6–31 f32
+    operations. Their advice (§8, pp. 25–26): never use Alg. 5 unless both operands have the same sign;
+    with an FMA prefer Alg. 9 and Alg. 12. Two WGSL cautions follow: the counts assume a fused FMA,
+    which WGSL does not guarantee (§17.5), and every bound assumes the compiler keeps the error-free
+    transforms unreassociated (§15.7.5). Nothing here covers log1p or atan2.
+  - **Thall 2006** is a one-page poster abstract ("Category: Poster"; no venue printed on the copy),
+    not a paper. It describes "doublefloats" in Cg: pairs of f32 with 48 significant bits, add, subtract,
+    multiply and divide "as in Hida [2000]" with no loops; square and nth roots and logarithms by one or
+    two Newton steps from an f32 start; exponentials and trigonometric functions by Taylor series after
+    argument reduction, "work ... underway". A 512² Mandelbrot ran at 5–8 frames/s against 20–25 in
+    f32 (GeForce 6800 GTX), 95 against 15 operations in the inner loop. It gives **no error bounds**:
+    "much work remains to determine error-bounds on doublefloat operations".
+
+  So the float-float closed form needs its own log1p and atan2 with a measured or proven error; the
+  basic operations cost about 6–20 f32 operations each and are bounded at ~10⁻¹⁴ relative.
 - **Moments and series can be f32** with tower-local offsets formed in f64 and float-float (or f64)
   accumulation, for nodes whose phase is below ~10⁻³ rad. Larger contributions need the plan's
   float-float. This is the plan's §3.4 rule, now with a measured threshold.
@@ -346,9 +451,11 @@ WGSL (no log1p, atan2 permitted 4096 ULP).
 
 ## Not verified
 
-- **Sources read only at second hand.** Darnell's 2011 article (only Fenney et al.'s summary and
-  Darnell's 2012 reprint were read). The AACB preprint (only the poster). Dielissen & Kaldewaij and
-  Joldes et al. (metadata only). Thall 2006 (not read). All are in `papers-to-fetch.md`.
+- **Sources.** Read first-hand by 28 Nov 2026: the AACB preprint, Darnell 2011 (the magazine issue),
+  Dielissen & Kaldewaij 1991, Joldes et al. 2017 and Thall 2006 (a one-page poster abstract, so there
+  is no fuller Thall text to fetch). Still second-hand: Hida, Li & Bailey's QD algorithms (cited by
+  Thall and Joldes et al.), and which double-word addition (Joldes et al.'s Alg. 5 or 6) Thall's
+  "as in Hida" means.
 - **The cost model.** Costs are a model (measured kernel times × counts), with no tree walk, cache
   or GPU. The box's 690 ns is a CPU f64 timing of an unoptimised kernel. One atan2 per face (6 per
   box) did not halve it, so transcendentals are not the whole cost; a tuned kernel may be 2–3 times

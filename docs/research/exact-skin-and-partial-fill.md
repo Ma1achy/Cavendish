@@ -33,6 +33,24 @@ Ketteridge 1996 and Werner & Scheeres 1997 (read as PDFs, not stored in the repo
   there are floor-dominated, as the note already suspected; the 1.5 m table and every recommendation
   stand.
 
+## Added after reading four more sources (27 Nov 2026)
+
+Read in full (PDFs supplied by the owner, not kept in the repo): Johansen & Colella 1998, Schwartz,
+Barad, Colella & Ligocki 2006, Mirtich 1996, Heck & Seitz 2007; then Saye 2015, Müller, Kummer &
+Oberlack 2013, Aftosmis, Berger & Melton 1998, Catmull 1978 and Duff 1989. None changes a
+recommendation; one rule is added (integrate a piece's moments about its cell's centre, §4).
+- **Cut cells in PDE solvers (§2.3).** Johansen & Colella give the same multipole count as §2.1 for
+  the error of partial cells, and measure it: first-order local error in the cut cells, third-order
+  field from them. Small cut cells, their main difficulty, do not arise in a forward sum.
+- **Exact moments (§4).** Mirtich's projection method is quoted for the moments of pieces and meshes,
+  with its conditioning rule and its measured accuracy. It stops at second moments.
+- **Near, mid and far (§3.1, §6).** Heck & Seitz's prism/Taylor/point-mass comparison supports the
+  near-exact, far-moments split, and shows an equal-mass body of the wrong shape doing worse than a
+  point mass. It also records far-field rounding in single precision.
+- **Batch 2.** Saye and Müller et al. on cell integrals of implicit shapes (§5, item 2); Aftosmis et
+  al. on robust predicates for the clipper (§4); Catmull and Duff on the graphics side of the name
+  (§2). None was cited before; they fill places the note left open.
+
 ## Summary (one page)
 
 **What Cavendish does today.** A leaf stores `count`, how many of the `k³` sample points of its cell
@@ -292,6 +310,17 @@ exact pieces as near leaf kernels):
 
 ## 2. Mass anti-aliasing: what the orders are, and why
 
+The name is the graphics one, and the graphics literature has the same ladder (read 27 Nov 2026).
+Catmull 1978 ("A hidden-surface algorithm with anti-aliasing", SIGGRAPH '78) contrasts point and area sampling: "The sum of all intensities for a point sampled
+picture will vary as the object is translated", while area sampling's "will be constant under
+translation" (Introduction); he gets exact pixel coverage by clipping polygons to each pixel (Clipping;
+The Pixel Integrater). That is (i) against (ii): 0/1 cells against exact fill, and §3.1's lattice lines
+under translation. Duff 1989 ("Polygon scan conversion by exact convolution", AT&T Bell Labs; the
+copy read has a note added in 2024; DOIs for both not checked) notes area sampling still leaves residual aliasing, "gentle undulations" (§2.2),
+and convolves polygons exactly with smoother polynomial kernels (§3). The gravity analogue of a
+better kernel is the higher moments of (iii) and (iii+): each removes the next term of §2.1. Neither
+paper gives orders of error.
+
 ### 2.1 Error of a boundary cell, to first orders
 
 Take a cell (centre c, pitch h) and a point p far from it (d = |p − c| ≫ h). The cell's piece P
@@ -347,6 +376,52 @@ This parallels interface reconstruction in multi-material flow. There a cell's v
 fixes the interface to first order, and the fraction plus the material centroid (moment of fluid)
 to second ([Dyadechko & Shashkov 2008](https://doi.org/10.1016/j.jcp.2007.12.029); claim not checked
 against the text, §7).
+
+**Cut-cell (embedded-boundary) solvers make the same count** (read 27 Nov 2026):
+- **Johansen, H. & Colella, P. (1998).** "A Cartesian grid embedded boundary method for Poisson's
+  equation on irregular domains." *J. Comput. Phys.* 147(1), 60–85.
+  [doi:10.1006/jcph.1998.5965](https://doi.org/10.1006/jcph.1998.5965). 2D, finite volume on the
+  cell ∩ domain, solution at cell centres.
+  - *Geometry.* The front is piecewise linear in each cell, set by where it crosses the cell edges;
+    the volume fraction Λ, edge apertures and front normal follow from it (eq. 13, p. 67). Bodies
+    thinner than Δx are excluded (p. 67).
+  - *Local error.* Truncation error O(Δx²) in full cells and O(Δx/Λ) in partial ones (eq. 20, p. 69).
+    Measured on Problem 1: rate 0.98 in partial cells, 2.0 inside (Table 1, p. 74).
+  - *The multipole argument* (§2 end, pp. 65–66; §3 end, p. 70). Treat each cell's truncation error as
+    a charge. An interior cell carries O(Δx⁴), and O(1/Δx²) of them give O(Δx²). A partial cell
+    carries O(Δx³) "uniformly in Λ", over O(1/Δx) cells. With a Dirichlet boundary its image charge
+    turns that into a dipole, one order smaller: O(Δx³) in total. With Neumann it stays a monopole,
+    giving O(Δx²) (Problem 3, p. 78). Measured (Table 2, p. 75): the partial cells' share converges at
+    2.8–3.0 in the one-norm and the interior share at 1.8–2.0; the max-norm rates, 2.6–3.0, are given
+    for the total error, which equals the partial cells' share to two digits.
+    This is §2.1's argument (count the cells, take the order of each cell's leading wrong moment), in
+    a different problem, verified there in 1D (rigorously) and 2D (measured).
+  - *Small cells.* The flux stencil at the front uses only other cells' values, so the
+    volume-weighted system's condition number does not depend on Λ. A piecewise-linear Galerkin
+    discretisation's grows as O(Λ⁻¹) (Fig. 2, p. 66). Volume fractions down to about 10⁻⁴ occur in
+    their runs (Fig. 8b, p. 75, viewed). No cell merging or redistribution is used.
+  - *Centroids.* The right-hand side is evaluated at each cell's centroid, which "represents the
+    average value … to O(Δx²)" (p. 74). That is the first-moment argument of (iii), for a smooth
+    integrand.
+- **Schwartz, P., Barad, M., Colella, P. & Ligocki, T. (2006).** "A Cartesian grid embedded boundary
+  method for the heat equation and Poisson's equation in three dimensions." *J. Comput. Phys.*
+  211(2), 531–550. [doi:10.1016/j.jcp.2005.06.010](https://doi.org/10.1016/j.jcp.2005.06.010). The 3D
+  extension.
+  - *Geometry.* Volume fractions, face and boundary apertures, face and boundary centroids and the
+    mean normal, with estimates assumed "accurate to O(h²)" (§2, p. 533). For the neutrophil test they
+    are built from an implicit function (§4.2, p. 547); how is not given.
+  - *Small cells.* Divisions by κ are avoided by solving κ(Δ_hφ) = κρ (eq. 5, p. 533). Truncation
+    error O(h²) regular, O(h/κ) irregular, O(1/κ) with the lower-order Dirichlet stencil used where
+    the geometry is under-resolved (eqs. 11–13, p. 536). The solution is still second order (p. 536;
+    Figs. 13–17, a sphere of radius 0.392 and the neutrophil).
+  - It adds nothing on computing cut-cell moments, and nothing beyond Johansen & Colella on the error
+    model.
+
+What this means here. The one difficulty that dominates both papers, arbitrarily small cut cells,
+does not arise in a forward sum: nothing divides by the fill, and a tiny piece contributes a tiny
+mass. Their geometry needs only O(h²) volume fractions and centroids, enough for a second-order
+solver; Cavendish needs them exact (to rounding) for order 3 and above (§3), so their geometry
+tolerances are not a guide. The recommendation of §5 is unchanged.
 
 ## 3. Measurements
 
@@ -566,6 +641,8 @@ Beyond about two cells, the primitives centred on the cell, (1) and (3)–(7), g
 the digit. Their shape matters only within a cell or two. Where the mass sits matters at every
 distance: (2), the centroid, is 7–100× better. The sphere and torus rows say the same (`primitives.md`).
 The numpy times compare primitives with each other; they are not engine costs (§3 has those).
+Heck & Seitz 2007 (§6) find the same in topographic reductions: an exact prism of the right mass but
+the wrong shape errs more, beyond about 1°, than a point mass at the right place (their Fig. 7a).
 
 **Orientation and motion.**
 - **Static angles** ([`orientation.png`](exact-skin-and-partial-fill/shapes/orientation.png),
@@ -907,6 +984,43 @@ side); the compact ones least (the Buddha, the dragon).
   one plane at a time, moments by simplex decomposition) should be about 1000× faster. That is not
   measured; I estimate 10⁻⁶–10⁻⁵ s per cell, so 6–60 s for 6×10⁶ boundary cells on one thread,
   divided by the cores. This needs a measurement in the slice.
+- **Computing the moments: Mirtich's method** (read 27 Nov 2026). Mirtich, B. (1996). "Fast and
+  accurate computation of polyhedral mass properties." *J. Graphics Tools* 1(2), 31–50.
+  [doi:10.1080/10867651.1996.10487458](https://doi.org/10.1080/10867651.1996.10487458).
+  - *Method.* Volume integrals of x^p y^q z^r (p+q+r ≤ 2: the ten of eqs. 18–27) go to face
+    integrals by the divergence theorem (eqs. 28–38, §4), to integrals over each face's projection on
+    a coordinate plane (Theorem 2, eqs. 39–68, §5), then by Green's theorem to edge sums of vertex
+    coordinates (eqs. 69–98, §§6–7). One walk over the boundary, any genus, not necessarily convex
+    (Problem 1, p. 33), linear in the face count. Third moments are not given; Theorem 4 (eq. 77) is
+    written for general p, q, so they follow the same pattern.
+  - *Conditioning.* The only numerical hazard named is a face nearly edge-on to the projection plane.
+    For each face the projection axis is the one of largest |n_γ|, so |n_γ| ≥ 1/√3 (§5, p. 37,
+    Fig. 2). Nothing else about rounding is analysed.
+  - *Accuracy measured* (f64, §9). A 20-unit cube and a tetrahedron are right to at least 15
+    significant figures (Table 1, p. 45). On icospheres of 20 to 20,480 faces, the integrals that
+    symmetry makes zero come out below 10⁻¹⁵ in magnitude (Table 2, p. 46).
+  - *Cost.* 350 ms for all ten integrals of the 20,480-face sphere on a 1990s R4400 (Table 2);
+    from 320 faces on, time scales 4:1 with faces.
+  - *Not discussed, and it matters here.* Mirtich takes the integrals about the given frame's origin
+    and moves the second moments to the centre of mass with the parallel-axis rule, I = I′ − m r²
+    (eqs. 12–17, §2.2), and recommends that over translating the vertices. For a piece far from the
+    origin that is a difference of near-equal numbers, losing about (|r|/s)² in relative precision
+    (derived, not measured; s the piece's size). So for cut pieces take the vertices relative to the
+    cell's centre before integrating. This is an added rule, not a change of recommendation.
+  - *Versus r3d's simplex decomposition* ([Powell & Abel 2015](https://doi.org/10.1016/j.jcp.2015.05.022)):
+    signed tetrahedra from a point need no projection choice and integrate the same polynomials
+    exactly. Either serves; r3d's also clips.
+- **Robust clipping: Aftosmis, Berger & Melton 1998** (read 27 Nov 2026; *AIAA J.* 36(6),
+  [doi:10.2514/2.464](https://doi.org/10.2514/2.464)). Every connectivity decision in their
+  Cartesian mesher is the sign of one determinant, six times a tetrahedron's signed volume (eq. 2,
+  §II): computed in floating point, checked against an a-posteriori round-off bound, recomputed with
+  Shewchuk's adaptive exact arithmetic when indeterminate, and exact zeros broken by simulation of
+  simplicity (§II, "Floating-Point Filtering and Exact Arithmetic", "Tie Breaking and Degeneracy").
+  Cell–triangle candidates are culled with Cohen–Sutherland outcodes, masking the bit an
+  on-boundary intersection point cannot be trusted with (§III.C, eq. 17, Fig. 12). They compute no
+  cut-cell volumes or moments. For Cavendish's clipper this is the pattern for the inside/outside
+  and crossing tests on degenerate input (a mesh vertex exactly on a lattice plane, common for CAD
+  parts on a dyadic lattice). How the Python clipper treats such ties was not checked.
 - **Storage.**
   - Today a leaf is `{key u32, level u8, count u8, material u8}`.
   - Exact fill + centroid as quantised integers (u16 fill, 3 × i16 centroid in units of h/2¹⁵) add
@@ -960,6 +1074,23 @@ side); the compact ones least (the Buddha, the dragon).
    - **Analytic shapes** (sphere, ellipsoid, cylinder) are not polyhedra. Their pieces need
      either exact cell integrals of the implicit shape or a fine polyhedral stand-in. The sphere here
      was a 1280-face icosphere. This is a design call for the builder.
+     Two read sources for the first route (read 27 Nov 2026; neither is exact, both are
+     high-order, and in f64 the limit is rounding, as for (c★) and (d★) in §3.1):
+     - [Saye 2015](https://doi.org/10.1137/140966290) (*SIAM J. Sci. Comput.* 37(2), A993–A1019):
+       the implicit surface becomes the graph of a height function, recursively one dimension at a
+       time, with 1D root finding and Gauss quadrature (§3). Weights are strictly positive and nodes
+       inside the domain (§1). Order ≈ 2q for a q-point rule, measured up to 20 (Table 1, §4.1; QD
+       arithmetic to see it, f64 hides rates above ~10, §4). Degenerate level sets can stop the
+       subdivision from terminating, and it then falls back to a low-order rule (§4.3, supplement).
+       This is the closer fit to "exact cell integrals" of a sphere, ellipsoid or cylinder: moments
+       are just polynomial integrands.
+     - [Müller, Kummer & Oberlack 2013](https://doi.org/10.1002/nme.4569) (*Int. J. Numer. Meth.
+       Eng.* 96, 512–528): moment fitting, a small least-squares system per cut cell for the
+       weights (§2). Measured order above h^(p+1) (§5.1, Figs. 4–5), but the system "may be severely
+       ill-conditioned" and is solved with eigenvalues below 10⁻¹² dropped (§2.3), and weights can be
+       negative (Fig. 3). Less attractive where the moments themselves are the product.
+     A third route, not in either paper, is (c★)'s own: exact chords along one axis, quadrature
+     across.
 3. **Exact pieces as near leaf kernels:** only if a body may come within ~3 cells of an arm point.
    Otherwise the moments suffice. Implement after (2), behind the same distance switch as
    `PRISM_WITHIN`.
@@ -1014,6 +1145,44 @@ cells clipped again. That is a per-edit cost proportional to the cells edited.
   the line-class form, ε(R/s)³ and worse with the triple-product solid angle.
 - **Exact voxelisation.** Pieces sum to the whole: mass, momentum and moments conserved to rounding
   ([Powell & Abel 2015](https://doi.org/10.1016/j.jcp.2015.05.022)). Used here; 10⁻¹⁵.
+- **Mass properties of polyhedra.** A cube and a tetrahedron against hand values, and icospheres
+  where symmetry makes integrals zero ([Mirtich 1996](https://doi.org/10.1080/10867651.1996.10487458),
+  Tables 1–2; §4 above).
+- **Near, mid and far kernels against a body with a closed form** (read 27 Nov 2026). Heck, B. &
+  Seitz, K. (2007). "A comparison of the tesseroid, prism and point-mass approaches for mass
+  reductions in gravity field modelling." *J. Geodesy* 81(2), 121–136.
+  [doi:10.1007/s00190-006-0094-0](https://doi.org/10.1007/s00190-006-0094-0).
+  - *The kernels.* The exact prism (Nagy/Mader form, eqs. 4 and 6, with the logarithms rearranged
+    "to provide a better numerical stability", p. 124). MacMillan's series about the prism's centre
+    (eq. 12): odd terms vanish by symmetry (eq. 11), the zeroth is the point mass (eq. 13), and the
+    second-order terms "vanish for a cube" (p. 125), which is why S3's cube series has no l = 2
+    term. The same series for a tesseroid, to second order (eqs. 24, 34). They quote Forsberg's TC
+    program as using the exact prism near, MacMillan in between and the point mass far (p. 125):
+    the same split as `PRISM_WITHIN` and §5's recommendation 3.
+  - *Cost* (Fig. 5, p. 129). For the potential the prism is 10× the tesseroid series, which is 2× the
+    point mass (24 log and 24 arctan per prism); for the attraction, 4× (12 log, 24 arctan).
+  - *Accuracy against a closed form* (Fig. 7, p. 131, viewed; numbers read off a log plot, ±2×).
+    Zonal bands 5′ wide of 5′ × 5′ × 1000 m tesseroids (about 9.3 km across, so R/s ≈ 18 at 1.5° and
+    120 at 10°, derived) against the exact spherical cap (eqs. 40–42). Each band gives about
+    10 m² s⁻² of potential and 100 × 10⁻⁸ m s⁻² of attraction. The tesseroid series reaches the
+    rounding floor (10⁻⁹–10⁻⁸ m² s⁻² in U, 10⁻⁷–10⁻⁶ × 10⁻⁸ m s⁻² in g) beyond about 1.5°, which
+    they attribute to "rounding errors of the computer (single precision IEEE arithmetic)". At 10°
+    the point mass is still off by about 10⁻⁶ m² s⁻² (10⁻⁷ relative), and the equal-mass prism by
+    about 2×10⁻⁴ (2×10⁻⁵ relative), because its shape is not the tesseroid's (Remark, p. 130). In g
+    both are near 10⁻⁵ × 10⁻⁸ m s⁻² at 10°. The point-mass error changes sign near 7° (p. 131).
+  - *Near zone* (Figs. 8–9, pp. 131–132, text only). For a point at the centre of a 2° × 2° block
+    100 m high, the second-order tesseroid series gives "unacceptable errors", worst for the
+    attraction, and the point mass larger still; the error comes from the four nearest elements and
+    falls quickly once they are removed (Fig. 9). Their conclusion: "the effect of the mass
+    elements in the vicinity of the computation point should be calculated using the prism
+    formulas" (p. 133).
+  - *Far-field rounding, stated not measured.* "The prism routine breaks down for large distances,
+    due to the loss of significant digits when the required functions are evaluated for nearly the
+    same arguments, and differences are taken as required" (p. 133). No breakdown distance or slope
+    is given; Holstein & Ketteridge (§1.1) remain the quantitative source.
+  - *For Cavendish.* It supports, and does not change, the near-exact, far-moments rule, and the
+    finding of §3.1 that where the mass sits matters more than the stand-in's shape. Its numbers are
+    in f32 and for one geometry, so none is used as a tolerance here.
 
 ## 7. What I could not verify
 
@@ -1028,6 +1197,11 @@ cells clipped again. That is a per-edit cost proportional to the cells edited.
   a separate pure-Python script on single cubes; the 10 m rows of §3 have not been regenerated.
 - **Not measured: the f32 error of the closed form.** The "near 10⁻⁵ at R/s = 10" is ε(R/s)² with
   f32's ε.
+- **Now read in full (27 Nov 2026):** Johansen & Colella 1998, Schwartz et al. 2006 (§2.3), Mirtich
+  1996 (§4), Heck & Seitz 2007 (§6), Saye 2015 and Müller, Kummer & Oberlack 2013 (§5), Aftosmis,
+  Berger & Melton 1998 (§4), Catmull 1978 and Duff 1989 (§2). Heck & Seitz's Fig. 7 numbers are read
+  off a log plot (±2×); their Figs. 8–9 were not viewed, only the text about them. Saye's
+  supplementary material (termination, interpolated level sets) was not available.
 - **D'Urso 2013 and 2014.** Bibliographic details only; what they claim was not read.
 - **Dyadechko & Shashkov 2008.** The moment-of-fluid order claim is from memory, not checked.
 - **Wittick & Russell 2017; Park, Werner & Bhaskaran 2010.** Not accessible; their convergence

@@ -1,53 +1,56 @@
 # Papers still to fetch
 
-The owner fetched nine batches on 25 Nov 2026 and every research note in `docs/research/` has been updated
-from them (the ninth: Kay 1993 for `gradar-inference.md`, Wilson et al. 1973 for `elastic-solids.md`, Safronova et al. 2013 and Porsev & Derevianko 2006 for `gradiometer-environment.md`; their lines are removed). What is still unread, by note (tick as fetched; PDFs stay outside the repo, which is public):
-
-## The gradiometer's environment (`gradiometer-environment.md`)
-- [ ] Fiorucci et al. 2018, atmospheric Newtonian noise (abstract only so far)
-- [ ] Saulson 1984, https://doi.org/10.1103/PhysRevD.30.732
-- [ ] ELGAR's companion paper (ref. [56] of Canuel 2020) and MIGA's systematics paper; Boy et al. on 3-D pressure corrections
-
-## Fluids (`fluids.md`)
-- [ ] Tric, Labrosse & Betrouni 2000: https://doi.org/10.1016/S0017-9310(00)00037-5
-- [ ] Johnson & Patel 1999: https://doi.org/10.1017/S0022112098003206
-- [ ] Morton, Taylor & Turner 1956, the plume law (no DOI found)
-
-## Elastic solids (`elastic-solids.md`)
-- [ ] Komatitsch & Vilotte 1998: https://doi.org/10.1785/bssa0880020368
-- [ ] Richards 1979: https://doi.org/10.1785/bssa0690040947
-- [ ] Bonet & Wood, *Nonlinear Continuum Mechanics for FEA* (the supplied file was front matter only)
+Rewritten 28 Nov 2026. The owner has supplied eleven batches in all (the last two on 27–28 Nov:
+`papers-batch1`, `papers 2.zip`, the Komatitsch & Vilotte and Richards BSSA files, and the earlier
+`graphics-refs`, `elastic solids vibration seismic` and `rigid bodies` zips). Every research note in
+`docs/research/` has been updated from them, and everything they covered is removed from this list.
+What follows is only what is still missing, by note. DOIs were checked on 28 Nov 2026 against
+`https://api.crossref.org/works/<doi>` unless marked otherwise. PDFs stay outside the repository,
+which is public.
 
 ## Rigid bodies (`rigid-bodies.md`)
-- [ ] van Zon & Schofield 2007, Phys. Rev. E 75, 056701: https://doi.org/10.1103/PhysRevE.75.056701
-- [ ] van Zon & Schofield 2007, J. Comput. Phys. 225, 145: https://doi.org/10.1016/j.jcp.2006.11.020 (DOI from memory)
-- [ ] Tonge 2012, the supplement with the convergence proofs
-- [ ] Erleben 2007, ACM TOG 26(2), 12 (dense stacks); Silcowitz, Niebe & Erleben, VRIPHYS 2009
+- [ ] van Zon & Schofield 2007, "Numerical implementation of the exact dynamics of free rigid bodies",
+  *J. Comput. Phys.* 225, 145–164: https://doi.org/10.1016/j.jcp.2006.11.019 (the note's earlier
+  "from memory" DOI, …11.020, is Yue et al.'s drop paper, which is why that one arrived instead)
+- [ ] Tonge, Benevolenski & Sueda 2012, the supplementary material (convergence proofs) of "Mass
+  splitting for jitter-free parallel rigid body simulation", *ACM TOG* 31(4), 105: main paper
+  https://doi.org/10.1145/2185520.2185601; the supplement has no DOI of its own (ACM DL
+  "supplemental material" tab). The file supplied as `tonge2012.pdf` is the main paper again.
+- [ ] Silcowitz, Niebe & Erleben 2009, "Nonsmooth Newton method for Fischer function reformulation of
+  contact force problems for interactive rigid body simulation", VRIPHYS 2009 (Eurographics
+  Digital Library; **DOI not found in Crossref**, Eurographics DOIs are registered with DataCite)
+- [ ] Celledoni & Säfström 2006, "Efficient time-symmetric simulation of torqued rigid bodies using
+  Jacobi elliptic functions", *J. Phys. A* 39, 5463–5478: https://doi.org/10.1088/0305-4470/39/19/S08
+  (the other source van Zon & Schofield's PRE cites for the free Euler solution)
+
+## The gradiometer's environment (`gradiometer-environment.md`)
+- [ ] MIGA's systematics paper. Not identified for certain; the likeliest is Canuel et al. 2018,
+  "Exploring gravity with the MIGA large scale atom interferometer", *Sci. Rep.* 8, 14064:
+  https://doi.org/10.1038/s41598-018-32165-z (Junca et al. 2019's ref. [19])
 
 ## Voxel engines (`voxel-engines.md`)
-- [ ] Hoetzlein 2016, GVDB
+- [ ] Hoetzlein 2016, "GVDB: Raytracing sparse voxel database structures on the GPU", High-Performance
+  Graphics 2016: https://doi.org/10.2312/hpg.20161197 (**not in Crossref**; it resolves through
+  doi.org to the Eurographics Digital Library, checked 28 Nov 2026)
 
-## The polyhedral-gravity paper (`paper-benchmarks.md`; DOIs Crossref-checked, notes in `paper-benchmarks/literature-notes.md`)
-Most important first: the first three decide whether the paper's h_f·2A_f rule and its cited equation numbers stand.
-- [ ] Werner 2017, the solid angle hidden in polyhedron gravitation formulations: https://doi.org/10.1007/s00190-016-0964-z (is h_f·2A_f there?)
-- [ ] Holstein & Ketteridge 1996: https://doi.org/10.1190/1.1443964 (Tables 2–5; r − |ℓ| = r₀²/(r + |ℓ|))
-- [ ] Werner & Scheeres 1997: https://doi.org/10.1007/BF00053511 (eqs 10, 15, 17; Castalia mascon errors)
-- [ ] Okabe 1979: https://doi.org/10.1190/1.1440973 (eq. 45)
-- [ ] Salmon & Warren 1994: https://doi.org/10.1006/jcph.1994.1050 (the bound the paper quotes)
-- [ ] Rathinam & Dempster 2019, octree mascons: https://doi.org/10.2514/1.G004008
-- [ ] Schwartz et al. 2006: https://doi.org/10.1016/j.jcp.2005.06.010; Johansen & Colella 1998: https://doi.org/10.1006/jcph.1998.5965
-- [ ] Nagy, Papp & Benedek 2000: https://doi.org/10.1007/s001900000116; Werner 1994: https://doi.org/10.1007/BF00692875
-- [ ] Petrović 1996: https://doi.org/10.1007/s001900050074; D'Urso 2014: https://doi.org/10.1007/s00190-013-0664-x; Conway 2015: https://doi.org/10.1007/s10569-014-9588-x
-- [ ] Uieda et al. 2016: https://doi.org/10.1190/geo2015-0204.1; Heck & Seitz 2007: https://doi.org/10.1007/s00190-006-0094-0
-- [ ] Mirtich 1996: https://doi.org/10.1080/10867651.1996.10487458; Werner 1997 (spherical harmonics): https://doi.org/10.1016/S0098-3004(97)00110-6
-- [ ] The rest (lower priority) are listed in `paper-benchmarks/literature-notes.md` §(c)
+## World octree (`s5-world-octree.md`) and the f32 paper (`paper-boxes-and-precision.md`)
+- [ ] Hida, Li & Bailey 2001, "Algorithms for quad-double precision floating point arithmetic",
+  Proc. 15th IEEE Symposium on Computer Arithmetic, 155–162:
+  https://doi.org/10.1109/ARITH.2001.930115 (to settle which double-word addition Thall 2006's "as in
+  Hida" means: Joldes et al.'s Algorithm 5, unbounded, or 6)
+- Not a paper: Dehnen 2014's figures were never seen (the PDF was read as text).
 
-## World octree (`s5-world-octree.md`)
-- [ ] Salmon 1990, Caltech PhD thesis; Hernquist 1987, Ap. J. Suppl. 64, 715
+## The polyhedral-gravity paper (`paper-benchmarks.md`, `paper-benchmarks/literature-notes.md`)
+- [ ] Holstein 2003, "Gravimagnetic anomaly formulas for polyhedra of spatially linear media",
+  *Geophysics* 68(1), 157–167: https://doi.org/10.1190/1.1543203 (optional; Ren et al. 2018 take
+  their κ estimates from it)
+- [ ] Strakhov et al. 1986 and Strakhov & Lapina 1990, cited by Werner 2017 §13.3 for a gore
+  half-angle form whose numerator is a height times an edge length; the likeliest earlier place for a
+  rounding remark on the solid angle's numerator. Russian-language; **no DOI found**.
+- [ ] Duff 1989, the printed version of "Polygon scan conversion by exact convolution" (*Raster
+  Imaging and Digital Typography*, CUP, pp. 154–168 by a patent's citation; **no DOI**). The copy
+  supplied is a 2024 retyping without venue or pages; only the citation needs checking.
 
-## Paper: interior boxes and single precision (`docs/research/paper-boxes-and-precision.md`)
-- [ ] Darnell, N. 2011, "Automated occluders for GPU culling", Game Developer Magazine, Sept. 2011 (no DOI; known here only through Fenney, Allen & Aman's summary and Darnell's 2012 AltDevBlogADay reprint)
-- [ ] Fenney, Allen & Aman 2025, "AACBs: BVH Occlusion Micro-Hierarchies for Cost Reduction of Ray Traversal", preprint (ResearchGate 392759770; only the HPG 2025 poster was read)
-- [ ] Joldes, Muller & Popescu 2017, double-word arithmetic error bounds and operation counts: https://doi.org/10.1145/3121432 (HAL copy refused automated access)
-- [ ] Thall 2006, float-float on GPUs: https://doi.org/10.1145/1179622.1179682
-- [ ] Dielissen & Kaldewaij 1991, minimum box partition NP-complete in 3-D: https://doi.org/10.1016/0020-0190(91)90207-X (metadata checked, text not read)
+## Fluids and elastic solids
+Nothing missing. Johnson 1974 and Garvin 1956 (cited by Richards 1979 and Komatitsch & Vilotte
+1998) would matter only if a dynamic elastic solver is built.
