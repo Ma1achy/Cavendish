@@ -132,10 +132,14 @@ struct Measured {
     errors: Vec<Vec<Vec<Vec<f64>>>>,
 }
 
-fn measure(name: &str) -> Measured {
+/// With `full` false (the case), only what the criteria use: the towers at 1.5 m, and not 0/1.
+fn measure(name: &str, full: bool) -> Measured {
     let (exact, mesh) = body(name);
     let mass = DENSITY * exact.volume();
-    let towers = towers();
+    let mut towers = towers();
+    if !full {
+        towers.truncate(3);
+    }
     // The comparison's rule is C2's (Gauss order 6 on panels of at most 0.4 s): the same nodes for
     // the representation and the reference, so its own error cancels in their difference. The
     // signal is read by the engine's rule.
@@ -161,7 +165,7 @@ fn measure(name: &str) -> Measured {
                         .iter()
                         .map(|&(i, j)| {
                             let n = CELLS_PER_METRE[i];
-                            (i, j, one_lattice(mesh, mass, n, PLACEMENTS[j], reader, towers, reference))
+                            (i, j, one_lattice(mesh, mass, n, PLACEMENTS[j], reader, towers, reference, full))
                         })
                         .collect::<Vec<_>>()
                 })
@@ -181,7 +185,9 @@ fn measure(name: &str) -> Measured {
     Measured { signal, errors }
 }
 
-/// Every representation's error at every tower on one lattice, `[representation][tower]`, rad.
+/// Every representation's error at every tower on one lattice, `[representation][tower]`, rad
+/// (0/1's zero when `zero_one` is false).
+#[allow(clippy::too_many_arguments, reason = "one lattice's inputs, each used once")]
 fn one_lattice(
     mesh: &Mesh,
     mass: f64,
@@ -190,12 +196,13 @@ fn one_lattice(
     reader: &Reader,
     towers: &[Vec3],
     reference: &[f64],
+    zero_one: bool,
 ) -> Vec<Vec<f64>> {
     let unbounded = Budget { work: u64::MAX, ..Budget::DEFAULT };
+    // 0/1 (k = 1) only when asked: it is recorded, not gated.
     let one = lattice(mesh, n, placement, 1);
-    let zero_one = voxelise(mesh, &one, mass, 0).unwrap();
-    let h = one.pitch;
-    let raw = DENSITY * h.powi(3) * zero_one.samples as f64 / mass;
+    let zero_one = zero_one.then(|| voxelise(mesh, &one, mass, 0).unwrap());
+    let raw = zero_one.as_ref().map_or(0.0, |t| DENSITY * one.pitch.powi(3) * t.samples as f64 / mass);
     let sampled = voxelise(mesh, &lattice(mesh, n, placement, 4), mass, 0).unwrap();
     let cut =
         voxelise_cut(mesh, &lattice(mesh, n, placement, 4), Weight::Density(DENSITY), 0, unbounded).unwrap();
@@ -209,7 +216,10 @@ fn one_lattice(
                 .zip(reference)
                 .map(|(t, want)| {
                     let got = match rep {
-                        Rep::ZeroOne => raw * read(&zero_one, Representation::Sampled, *t),
+                        Rep::ZeroOne => match &zero_one {
+                            Some(tree) => raw * read(tree, Representation::Sampled, *t),
+                            None => *want,
+                        },
                         Rep::Sampled => read(&sampled, Representation::Sampled, *t),
                         Rep::Cut(r) => read(&cut, *r, *t),
                     };
@@ -276,8 +286,8 @@ fn failures(name: &str, m: &Measured) -> Vec<String> {
     out
 }
 
-fn all_bodies() -> Vec<(&'static str, Measured)> {
-    BODIES.iter().map(|b| (*b, measure(b))).collect()
+fn all_bodies(full: bool) -> Vec<(&'static str, Measured)> {
+    BODIES.iter().map(|b| (*b, measure(b, full))).collect()
 }
 
 fn failure_count(all: &[(&str, Measured)]) -> f64 {
@@ -300,7 +310,7 @@ cav_validate::case! {
     against: "the paper's five bodies (docs/papers/polyhedral-gravity: aligned and turned 0.8 m cube, icosahedron, turned plate, icosphere; rho 2700) at h = 1/8 to 1/64 m on four lattices, read through AION-10's flight with the tower's lower launch point level with the centre 1.5 m away in three directions, against the polyhedral closed form's read: the count of criteria that fail (at 1/64 m Second < Centroid < sampled on each; aligned cube sampled order 1 +- 0.3, Fill 2 +- 0.3, Centroid >= 2.7, Second >= 3.1; the other four Centroid and Second >= 2.7)",
     unit: Count,
     tolerance: 0.0,
-    measure: cav_validate::Measured::Error(failure_count(&all_bodies())),
+    measure: cav_validate::Measured::Error(failure_count(&all_bodies(false))),
 }
 
 /// For the paper (`make.py conv`): every body's errors in `conv_real.py`'s schema, written to
@@ -309,7 +319,7 @@ cav_validate::case! {
 #[ignore = "writes the paper's data: cargo test --manifest-path oracle/Cargo.toml --test benchmark -- --ignored"]
 fn the_benchmark_for_the_paper() {
     let started = std::time::Instant::now();
-    let all = all_bodies();
+    let all = all_bodies(true);
     let list = |v: &[f64]| v.iter().map(|x| format!("{x:e}")).collect::<Vec<_>>().join(", ");
     let ns = CELLS_PER_METRE.iter().map(u32::to_string).collect::<Vec<_>>().join(", ");
     let mut json = String::from("{\n");
