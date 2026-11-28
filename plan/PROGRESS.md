@@ -988,6 +988,24 @@ Answered 22 Nov 2026 (as relayed to the S1 builder by the coordinating agent):
 
 ## For George
 
+**Added 28 Nov 2026 (`docs/research/paper-real-read.md`): AION-10's real sequence numbers.** Every
+phase in the polyhedral-gravity paper is now the flight integral along Cavendish's model of the
+arms, so the numbers rest on that model. Could you give the real values?
+- Momentum transfer per pulse (LMT order): the model has n = 1000 ħk at 698 nm, so v_kick = 6.58 m/s.
+- T: the model has 0.73 s (2T = 1.46 s).
+- The launch velocity: the model has u₀ = 3.86 m/s for the lower arm, so the arms rise 0–5.0 m.
+- Pulse durations: the model's kicks are instantaneous.
+- The shot cadence: the model has one shot per 2 s.
+
+What depends on them: the arms separate by v_kick·T = 4.8 m, the same size as the 5 m baseline, so
+within ~10–50 m the instrument does not read a gradient. The real signals at 1.5–2 m have the
+opposite sign to k_eff T² Δg_z and are 1.5–3 times smaller (static, 1.5 m) or 1.6–1.9 times larger
+(walking past at 2 m). The voxel errors move by factors 0.05–2 (mostly 0.25–0.5) and the pitch needed for a bias below
+0.1 σ by about 2; their orders in the pitch and their ranking do not move.
+n·T² sets every phase's scale; v_kick·T and u₀ set where the arms sample the field. Finite pulses
+low-pass every signal (0.14–7 % for 1–50 ms trains, `gradiometer-environment.md`). The cadence sets
+the noise per shot (5×10⁻⁵ rad at 2 s) and so every bias/σ.
+
 **Added 25 Nov 2026 (from the research round):**
 - AION-10's LMT pulse sequence: which arm is excited when, pulse durations, cloud temperature, bias field, and
   the co-magnetometry plan. Magnetic, wavefront and blackbody effects are upper bounds until known; the TDR's
