@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::ShapeKind;
 
 /// The most triangles a view draws of bodies' surfaces (and, with `pieces`, of their cut cells'
-/// pieces) together: about what [`crate::voxel_view::MAX_DRAWN_CUBES`] cubes make (twelve each),
+/// pieces, [`MAX_DRAWN_TRIANGLES`] for each kind) together: about what [`crate::voxel_view::MAX_DRAWN_CUBES`] cubes make (twelve each),
 /// so that no mode draws more than the voxels may. Counted before any is made.
 pub const MAX_DRAWN_TRIANGLES: usize = 250_000;
 
@@ -49,11 +49,16 @@ pub enum BodyDraw {
     /// The voxels as outlines in the view's field, and the shape's triangles solid inside them: how
     /// the cells straddle the surface.
     MeshOverVoxels,
+    /// Each boundary cell as its exact clipped piece (a polyhedron: the cell cut by the shape's
+    /// faces), shaded by its fill as [`Self::Fill`] and drawn a little shrunk about its middle so
+    /// each stands apart; the full cells as cubes. What `Pieces` reads near an arm. For a polyhedron
+    /// or a mesh: a curved solid's pieces are integrals of its surface, drawn by their fill (said).
+    Pieces,
 }
 
 impl BodyDraw {
     /// Every mode, in the order menus list them.
-    pub const ALL: [Self; 4] = [Self::Voxels, Self::Fill, Self::Mesh, Self::MeshOverVoxels];
+    pub const ALL: [Self; 5] = [Self::Voxels, Self::Fill, Self::Mesh, Self::MeshOverVoxels, Self::Pieces];
 
     /// The word commands use.
     #[must_use]
@@ -63,6 +68,7 @@ impl BodyDraw {
             Self::Fill => "fill",
             Self::Mesh => "mesh",
             Self::MeshOverVoxels => "mesh-over-voxels",
+            Self::Pieces => "pieces",
         }
     }
 
@@ -95,7 +101,19 @@ impl BodyDraw {
     /// own tree has none.
     #[must_use]
     pub const fn wants_cuts(self) -> bool {
-        matches!(self, Self::Fill)
+        matches!(self, Self::Fill | Self::Pieces)
+    }
+
+    /// Whether it draws the cut cells' pieces.
+    #[must_use]
+    pub const fn draws_pieces(self) -> bool {
+        matches!(self, Self::Pieces)
+    }
+
+    /// Whether its voxels are coloured by their exact fill, whatever the view's field.
+    #[must_use]
+    pub const fn shades_by_fill(self) -> bool {
+        matches!(self, Self::Fill | Self::Pieces)
     }
 }
 

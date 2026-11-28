@@ -35,6 +35,13 @@ failing and known.
 1000 unchanged; all 48 town reads pass at 310 or less (`docs/slices/S5.md` §7.3 records the change
 after measuring, why, and the yard's pointwise 2,493 that prompted it). #245 merged with it.
 
+**TASK-S5-17, the clipped-piece view (28 Nov 2026; §7.13).** `draw pieces` draws each boundary
+cell as its exact clipped piece (a convex piece's faces; for a mesh, the mesh clipped to the cell
+and the caps on its walls), shaded by fill, shrunk a little so each stands apart; `overlay
+centroids` marks each piece's centroid. Each drawn piece encloses its piece's volume and centroid to
+4.8e-15 of a cell, a box mesh with faces on the cells' walls included (the first cap rule failed that
+case at 1/6 of a cell and was replaced, §7.13).
+
 **TASK-S5-16, body draw modes (28 Nov 2026; `docs/slices/S5.md` §7.12).** `draw voxels | fill |
 mesh | mesh-over-voxels` (console and the overlays popover; a view setting, journalled, never
 undone). `fill` shades each voxel by its exact fill (worst 1.1e-16 off over 2,232 boundary cells; a

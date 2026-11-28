@@ -398,6 +398,14 @@ fn inset(lo: Vec3, hi: Vec3) -> (Vec3, Vec3) {
     (lo + step, hi - step)
 }
 
+/// How much of its size a cut cell's piece is drawn at in `draw pieces`, about the mean of its
+/// corners: shrunk a little so that neighbouring pieces stand apart.
+pub const PIECE_SHRINK: f64 = 0.88;
+
+/// The half-length of the cross marking a piece's centroid (`overlay centroids`), in its cell's
+/// sides: long enough to show through the piece drawn round it.
+pub const CENTROID_MARK: f64 = 0.45;
+
 /// The gap round a flat section cell, as a fraction of its side.
 const SECTION_GAP: f64 = 0.04;
 
@@ -588,6 +596,33 @@ pub fn drawables_hiding(
                     }
                 }
             }
+            // Each cut cell's piece, a little shrunk about its corners' mean so that each stands
+            // apart, in the field's colour of its value (its fill).
+            if let Some(pieces) = &cubes.pieces {
+                for &(i, value) in &pieces.drawn {
+                    let piece = &pieces.surfaces[i];
+                    let rgb = crate::colour::of_value(value, range, diverging, dark);
+                    let hex = (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]);
+                    let tint = linear(hex, 1.0);
+                    let count = (3 * piece.triangles.len()).max(1) as f64;
+                    let mean =
+                        piece.triangles.iter().flatten().fold(Vec3::ZERO, |m, p| m + *p) * (1.0 / count);
+                    let place = |p: Vec3| cubes.at + piece.centre + mean + (p - mean) * PIECE_SHRINK;
+                    for t in &piece.triangles {
+                        let corners = t.map(place);
+                        if filled {
+                            let normal = (corners[1] - corners[0]).cross(corners[2] - corners[0]);
+                            if normal.length() > 0.0 {
+                                b.triangle(corners, [normal.normalised(); 3], tint);
+                            }
+                        } else {
+                            for k in 0..3 {
+                                b.line(corners[k], corners[(k + 1) % 3], 1.0, tint);
+                            }
+                        }
+                    }
+                }
+            }
             // The shape's own triangles, moved to where the body is: solid and lit by their face
             // normals, or their edges in the styles that draw edges.
             if let Some(surface) = &cubes.surface {
@@ -668,6 +703,19 @@ pub fn drawables_hiding(
         for overlay in &frame.boxes {
             let colour = linear(LEVEL_COLOURS[usize::from(overlay.level) % LEVEL_COLOURS.len()], 1.0);
             b.box_edges(overlay.lo, overlay.hi, 1.0, colour);
+        }
+        b.end_part(Part::Overlay);
+    }
+
+    // Each cut cell's piece's centroid: a cross of [`CENTROID_MARK`] cells each way, in the
+    // selection's colour.
+    if let Some(frame) = voxels.filter(|v| !v.centroids.is_empty()) {
+        let colour = linear(palette.selection, 1.0);
+        for &(c, side) in &frame.centroids {
+            let reach = CENTROID_MARK * side;
+            for axis in [Vec3::X, Vec3::Y, Vec3::Z] {
+                b.line(c - axis * reach, c + axis * reach, 1.5, colour);
+            }
         }
         b.end_part(Part::Overlay);
     }

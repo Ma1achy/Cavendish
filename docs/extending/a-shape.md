@@ -33,6 +33,9 @@ a sample point is inside (`contains`), and what it can say about a whole box at 
      units, calibrated by time (about 13 ns a unit: time it with `clip_time_per_cell`). A shape
      whose pieces are polyhedra also gives them as signed convex pieces (`CellClip::convex`), which
      `Pieces` reads by the polyhedral kernel near an arm; a curved one leaves the default `None`.
+     `draw pieces` draws each cut cell by `CellClip::surface`: the default fans a convex shape's
+     one positive piece; a shape whose pieces are signed (a mesh's prisms) must give the closed
+     boundary itself (`cut/mesh.rs` is the model), held by `a_piece_s_surface_is_its_piece`.
 2. A shape that is a polyhedron needs no new type: give `Polyhedron::hull` its vertices (at most
    100). A shape from a file is a mesh (`crate::voxel::mesh`).
 
