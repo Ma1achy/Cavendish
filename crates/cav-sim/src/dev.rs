@@ -682,8 +682,9 @@ fn town_buildings() -> Vec<crate::world::PieceSpec> {
 
 /// `stress-1e10`: a kilometre square of rolling ground at 5 cm, a town of forty buildings and a
 /// road through it, around the array: about 10¹⁰ finest cells (REBUILD §9.1). For the big-scene
-/// budgets of §5, measured (`docs/slices/S4.md` §7); the instrument reads the 2 m around each
-/// tower, the far chunks by their moments within 1e-3 rad.
+/// budgets of §5, measured (`docs/slices/S4.md` §7). Its 4×10⁵ chunks are past the whole-world
+/// octree's cap (`docs/slices/S5.md` §7.2), so the instrument does not read it, and says so; its
+/// `read` is a 2 m bubble at 1e-3 rad.
 #[must_use]
 pub fn stress_1e10() -> SceneSpec {
     let mut pieces = vec![block("road", 2, [-500.0, 52.0, -0.9], [500.0, 59.0, -0.05])];
@@ -705,8 +706,8 @@ pub fn stress_1e10() -> SceneSpec {
         name: "stress-1e10".into(),
         description:
             "A square kilometre of rolling ground at a 5 cm pitch, forty buildings and a road, around \
-                      the array: about 10^10 finest cells. Fly over it; the instrument reads only the 2 m \
-                      around each tower: its numbers are of that matter alone."
+                      the array: about 10^10 finest cells. Fly over it. The instrument does not read it: its \
+                      chunks are past the whole-world read's cap, and its readings say so."
                 .into(),
         room: None,
         floor: None,
@@ -738,6 +739,10 @@ pub fn town() -> SceneSpec {
     let mut scene = stress_1e10();
     let world = scene.world.as_mut().expect("stress-1e10 has a world");
     world.pitch = 0.1;
+    // 1e-2 rad, not stress-1e10's 1e-3: the walk opens chunks of 3.2 m from about 90 m in at
+    // 1e-2 and nearly all of them at 1e-3, whose audited read is then past the kernel's share
+    // and does not settle (`docs/slices/S5.md` §7.3).
+    world.read.tolerance = 1e-2;
     world.pieces.retain(|p| match &p.kind {
         crate::world::PieceKind::Box { .. } => p.label == "road",
         crate::world::PieceKind::Terrain { .. } => true,
@@ -776,8 +781,8 @@ pub fn town() -> SceneSpec {
     scene.name = "town".into();
     scene.description = format!(
         "stress-1e10 scaled down: 200 m of rolling ground at 10 cm, {} buildings and the road, around the array: about 5x10^7 \
-         finest cells. For pictures on a modest GPU. The instrument reads only the 2 m around each tower: its numbers are of \
-         that matter alone.",
+         finest cells. For pictures on a modest GPU. The instrument reads the whole world: what is within 2 m of each tower \
+         leaf by leaf, the rest through the octree within 1e-2 rad.",
         n - 2
     );
     scene

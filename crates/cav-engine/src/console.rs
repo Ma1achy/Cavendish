@@ -1408,12 +1408,13 @@ pub fn render(reply: &Reply) -> String {
         }
         Reply::Signal(signal) => {
             let mut lines = vec![format!(
-                "# tower {} · {} · {} · {} shots · quadrature {} · t [s], phase [rad]",
+                "# tower {} · {} · {} · {} shots · quadrature {}{} · t [s], phase [rad]",
                 signal.tower,
                 signal.channel.name(),
                 signal.state,
                 signal.times.len(),
-                crate::estimate_text(signal.estimate, signal.settled, signal.truncated)
+                crate::estimate_text(signal.estimate, signal.settled, signal.truncated),
+                signal.world.as_ref().map_or_else(String::new, |w| format!(" · {}", crate::world_text(w)))
             )];
             lines.extend(signal.warnings.iter().map(|warning| format!("# warning: {warning}")));
             let shots = signal.times.iter().zip(&signal.values).enumerate();
@@ -1527,10 +1528,11 @@ pub fn render(reply: &Reply) -> String {
             let towers = &reading.towers;
             let width = towers.iter().map(|t| t.label.len()).max().unwrap_or(5).max(5);
             let mut lines = vec![format!(
-                "# a shot read out at {} s · {} · quadrature {}",
+                "# a shot read out at {} s · {} · quadrature {}{}",
                 reading.time,
                 reading.state,
-                crate::estimate_text(reading.estimate, reading.settled, reading.truncated)
+                crate::estimate_text(reading.estimate, reading.settled, reading.truncated),
+                reading.world.as_ref().map_or_else(String::new, |w| format!(" · {}", crate::world_text(w)))
             )];
             lines.extend(reading.warnings.iter().map(|warning| format!("# warning: {warning}")));
             lines.push(format!("# {:<width$}  ΔΦ [rad]  δφ₁ lower [rad]  δφ₂ upper [rad]", "tower"));

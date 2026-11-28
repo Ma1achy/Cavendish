@@ -552,7 +552,8 @@ fn manifest_of(
         "settled": signal.settled,
         "truncated": signal.truncated,
         "truncated_means": "null when every source's matter was read; a number r (metres) when the world was read only \
-                            within r of each tower's atoms' path: the arrays are of that matter alone, and `settled` is false",
+                            within r of each tower's atoms' path: the arrays are of that matter alone, and `settled` is false \
+                            (since S5 the world is read whole, so r is 0: a world past its octree's caps, not read at all)",
         "warnings": signal.warnings.iter().map(|warning| warning.text.clone()).collect::<Vec<_>>(),
         "comparison": comparison,
         "numerics": numerics(spec, build),
@@ -931,17 +932,17 @@ mod tests {
         let whole = manifest(&dir);
         assert!(whole["truncated"].is_null() && whole["settled"] == true, "{}", whole["truncated"]);
         assert_eq!(SceneSpec::from_json(&whole["spec"].to_string()).unwrap(), scene);
-        // Control: the same box read only within 1 m of the towers (it is 4 m away and more) is
-        // a reading of part of the matter, and the bundle says so as a fact, not only in words.
+        // Control: a world past the octree's caps (stress-1e10's kilometre) is not read: a
+        // reading of none of its matter, and the bundle says so as a fact, not only in words.
         let mut part = scene.clone();
-        part.world.as_mut().unwrap().read.radius = 1.0;
+        part.world = crate::dev::stress_1e10().world;
         let partial = read::signal(&part).unwrap();
-        assert_eq!(partial.truncated, Some(1.0));
+        assert_eq!(partial.truncated, Some(0.0));
         assert!(!partial.settled);
         let dir = scratch("world, part");
         write(&dir, &part, &partial, &build(), None).unwrap();
         let said = manifest(&dir);
-        assert_eq!((&said["truncated"], &said["settled"]), (&1.0.into(), &false.into()));
+        assert_eq!((&said["truncated"], &said["settled"]), (&0.0.into(), &false.into()));
         assert!(said["truncated_means"].as_str().unwrap().contains("of that matter alone"));
     }
 

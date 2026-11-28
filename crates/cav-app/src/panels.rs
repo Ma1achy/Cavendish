@@ -315,8 +315,8 @@ const STATUS_MOST: usize = 32;
 
 /// The status bar's parts, in its order (left to right), each with its name, its words and
 /// their colour: the selection, the instrument (and the one the scene is also read on), the
-/// signal's state in the engine's own words, the forward stage, and the counts of warnings and
-/// errors and the frame's time when there are any.
+/// signal's state in the engine's own words, the world's ledger when there is one, the forward
+/// stage, and the counts of warnings and errors and the frame's time when there are any.
 fn status_parts(shell: &mut Shell) -> Vec<(&'static str, String, Color32)> {
     let spec = shell.engine.spec();
     let selection = match shell.engine.selection() {
@@ -343,6 +343,14 @@ fn status_parts(shell: &mut Shell) -> Vec<(&'static str, String, Color32)> {
         (cav_engine::SignalState::Stale, _) => ("stale".to_owned(), theme::WARN),
         _ => ("none".to_owned(), theme::WEAK),
     };
+    // The world's ledger (S5's badge), when the current signal read one.
+    let world = match shell.engine.signal() {
+        (cav_engine::SignalState::Refined, Some(signal)) => signal
+            .world
+            .as_ref()
+            .map(|w| (cav_engine::world_text(w), if w.settled() { theme::TEXT } else { theme::WARN })),
+        _ => None,
+    };
     let forward = forward_status(&shell.engine);
     shell.layout.status.clone_from(&forward);
     let (warnings, errors) = shell.problem_counts();
@@ -351,8 +359,11 @@ fn status_parts(shell: &mut Shell) -> Vec<(&'static str, String, Color32)> {
         ("selection", selection.0, selection.1),
         ("instrument", instrument, theme::TEXT),
         ("signal", signal.0, signal.1),
-        ("forward", forward, theme::WEAK),
     ];
+    if let Some((words, colour)) = world {
+        parts.push(("world", words, colour));
+    }
+    parts.push(("forward", forward, theme::WEAK));
     if warnings > 0 {
         parts.push(("warnings", plural(warnings, "warning"), theme::WARN));
     }
@@ -861,7 +872,7 @@ pub fn silent(spec: &cav_sim::SceneSpec) -> bool {
 }
 
 /// What tower `n`'s outliner row says: its reading under the playhead, marked ⚠ when the audit
-/// warns of it and ◐ when it is of part of the matter only (the world read within a radius);
+/// warns of it and ◐ when it is of part of the matter only (a world that was not read);
 /// its place when the scene is `silent` (nothing to read) or there is no reading yet.
 #[must_use]
 pub fn tower_detail(reply: &cav_engine::ReadingReply, n: usize, position: [f64; 3], silent: bool) -> String {
@@ -879,7 +890,7 @@ pub fn tower_detail(reply: &cav_engine::ReadingReply, n: usize, position: [f64; 
 }
 
 /// The world's properties as rows: what it is (pitch, pieces, materials, finest cells), how it is
-/// read (radius, tolerance) and what is resident now (`resident` chunks and bricks, `pending`
+/// read (the bubble read leaf by leaf, the tolerance) and what is resident now (`resident` chunks and bricks, `pending`
 /// queued).
 #[must_use]
 pub(crate) fn world_rows(
@@ -893,7 +904,7 @@ pub(crate) fn world_rows(
         ("pieces", world.pieces.len().to_string()),
         ("materials", world.materials.iter().map(|m| m.label.as_str()).collect::<Vec<_>>().join(", ")),
         ("finest cells", format!("{cells:.1e}")),
-        ("read within", format!("{} m of each tower", short_number(world.read.radius))),
+        ("leaf by leaf within", format!("{} m of each tower", short_number(world.read.radius))),
         ("read tolerance", format!("{:.0e} rad", world.read.tolerance)),
         ("resident", format!("{} chunks, {} bricks", resident[0], resident[1])),
         ("queued", pending.to_string()),

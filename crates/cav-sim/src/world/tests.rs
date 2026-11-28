@@ -1,14 +1,108 @@
 //! The world's read held to a voxel body, to the closed form of a box, to the infinite floor's
-//! null and to its own bound; the world's spec held to its caps (`docs/slices/S4.md` §3).
+//! null and to its own bound; the world's spec held to its caps (`docs/slices/S4.md` §3). Since
+//! S5 every one of them goes through the octree and the walk (`docs/slices/S5.md` W7).
 
 use super::*;
 use crate::read::{self, SourceId};
 use crate::{BodySpec, SceneSpec, ShapeKind, ShapeSpec};
 use cav_core::forward::Reading;
 use cav_core::voxel::kernel::prism_potential;
+use cav_core::voxel::summary::Summary;
+use octree::Octree;
+use walk::{Aim, Far, LedgerSource, Rule};
+
+/// Tower `n` of `spec` reading `tree` (the octree of `world`) by the walk at `tolerance` radians
+/// with `bubble` metres and `rule`, with no cap on the work, at readout 0: the walk, the chunks it
+/// opened made, and the read.
+pub(crate) fn read_tree(
+    spec: &SceneSpec,
+    world: &World,
+    tree: &Octree,
+    n: usize,
+    base: Vec3,
+    tolerance: f64,
+    rule: Rule,
+) -> TowerRead {
+    let readers = read::Readers::new(spec);
+    let reader = readers.of(n);
+    let cut = walk::walk(tree, &aim(spec, n, base, tolerance, rule));
+    let opened = open(world, &cut.opened, &|| false).unwrap().unwrap();
+    read_tower(tree, &opened, reader, base, 0.0, tolerance, cut, rule, u64::MAX).unwrap()
+}
+
+/// The walk's aim for tower `n` of `spec` at `base`: its height, its flight's radians per kg/m
+/// at readout 0, `tolerance`, no bubble and no cap on the work.
+pub(crate) fn aim(spec: &SceneSpec, n: usize, base: Vec3, tolerance: f64, rule: Rule) -> Aim {
+    let readers = read::Readers::new(spec);
+    Aim {
+        base,
+        height: spec.array.instrument_of(n).tower_height,
+        per: radians_per_kg_m(readers.of(n), base, 0.0),
+        tolerance,
+        bubble: 0.0,
+        max_work: u64::MAX,
+        max_nodes: walk::MAX_CUT_NODES,
+        rule,
+    }
+}
+
+/// Every leaf of every chunk of `tree` (the octree of `world`), made on [`crate::read::threads`]
+/// threads, in chunk order.
+pub(crate) fn all_leaves(world: &World, tree: &Octree) -> Vec<Cube> {
+    let keys: Vec<ChunkKey> = tree.level(0).map(|id| tree.chunk(id).unwrap()).collect();
+    open(world, &keys, &|| false).unwrap().unwrap().into_iter().flat_map(|(_, c)| c).collect()
+}
+
+/// `leaves` read with the exact kernel by `reader` at `base`, with the first rule of its
+/// quadrature (no audit, so that a read of the same instant by another source differs from it
+/// only by what that source is): the reference of the walk's ledger. Read on
+/// [`crate::read::threads`] threads, a share of the leaves each, and the readings added in order
+/// (linear, so the same as one read of them all but for rounding).
+pub(crate) fn leaf_exact(reader: &Reader, base: Vec3, leaves: &[Cube]) -> Reading {
+    let threads = crate::read::threads().max(1);
+    let per = leaves.len().div_ceil(threads).max(1);
+    let parts: Vec<Reading> = std::thread::scope(|scope| {
+        let handles: Vec<_> = leaves
+            .chunks(per)
+            .map(|share| {
+                scope.spawn(move || {
+                    let far = Far { nodes: Vec::new(), rule: Rule::Octupole };
+                    reader.read(base, &WorldSource { cubes: share.to_vec(), far }, 0.0)
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    parts.into_iter().fold(Reading { lower: 0.0, upper: 0.0 }, |a, b| Reading {
+        lower: a.lower + b.lower,
+        upper: a.upper + b.upper,
+    })
+}
+/// Tower `n` of `spec` at `base` reading `tree` (of `world`) by its walk at `tolerance` with
+/// `rule`, with the first rule of its quadrature as [`leaf_exact`] does: the reading, the ledger
+/// of each interferometer (read through the same rule) and the cut.
+pub(crate) fn walked(
+    spec: &SceneSpec,
+    world: &World,
+    tree: &Octree,
+    n: usize,
+    base: Vec3,
+    tolerance: f64,
+    rule: Rule,
+) -> (Reading, [f64; 2], walk::Cut) {
+    let readers = read::Readers::new(spec);
+    let reader = readers.of(n);
+    let cut = walk::walk(tree, &aim(spec, n, base, tolerance, rule));
+    let opened = open(world, &cut.opened, &|| false).unwrap().unwrap();
+    let cubes = opened.into_iter().flat_map(|(_, c)| c).collect();
+    let source = WorldSource { cubes, far: walk::far_field(tree, &cut, rule) };
+    let reading = reader.read(base, &source, 0.0);
+    let ledger = reader.read(base, &LedgerSource { nodes: &source.far.nodes, rule }, 0.0);
+    (reading, [ledger.lower.abs(), ledger.upper.abs()], cut)
+}
 
 /// An open scene of the default five towers, a short timeline, and `world`.
-fn scene(world: WorldSpec) -> SceneSpec {
+pub(crate) fn scene(world: WorldSpec) -> SceneSpec {
     SceneSpec { room: None, floor: None, duration: 3.0, world: Some(world), ..SceneSpec::room() }
 }
 
@@ -99,13 +193,16 @@ cav_validate::case! {
         assert!(as_world.iter().all(|t| t[2] != 0.0));
         // Control: the world with one of its four chunks left out is far from it.
         let w = World::new(&world);
-        let keys = read_keys(&spec, &w).unwrap().keys;
-        let mut made = make(&w, &keys, &|| false).unwrap().unwrap();
-        assert_eq!(made.chunks.len(), 4);
-        made.chunks.remove(1);
-        let readers = read::Readers::new(&spec);
+        let tree = Octree::build(&w, &|| false).unwrap().unwrap();
+        assert_eq!(tree.level(0).len(), 4);
+        let chunks: Vec<(ChunkKey, Summary, u64)> = tree
+            .level(0)
+            .filter(|&id| id != 1)
+            .map(|id| (tree.chunk(id).unwrap(), *tree.summary(id), tree.node(id).leaves))
+            .collect();
+        let short_tree = Octree::from_chunks(w.grid, chunks).unwrap();
         let base = Vec3::from_array(spec.array.towers[0].position);
-        let short = read_tower(&made, readers.of(0), base, 10.1, 0.0, PHASE_TOLERANCE, u64::MAX).unwrap();
+        let short = read_tree(&spec, &w, &short_tree, 0, base, PHASE_TOLERANCE, Rule::Octupole);
         let r = short.audited.reading;
         assert!(worst(&[[r.lower, r.upper, r.lower - r.upper]], &as_world[..1]) > 1e-3);
         cav_validate::Measured::Error(worst(&as_world, &as_body))
@@ -174,24 +271,22 @@ fn slab_series() -> &'static (f64, Vec<f64>) {
     SERIES.get_or_init(|| slab_readings(&[160.0, 320.0, 640.0, 1280.0], None))
 }
 
-/// The slabs of half-widths `halves` read with `world.read.radius` twice each half-width, or
-/// `radius` when given (the control: a read that stops at a fixed radius stops converging).
-fn slab_readings(halves: &[f64], radius: Option<f64>) -> (f64, Vec<f64>) {
+/// The slabs of half-widths `halves`, read whole by the walk; or, when `clip` is given, each cut
+/// to the square within `clip` metres of the centre (the control: what a read that stopped at a
+/// fixed radius read, which S4's did and S5's no longer can, stops converging).
+fn slab_readings(halves: &[f64], clip: Option<f64>) -> (f64, Vec<f64>) {
     let towers = SceneSpec::room().array.towers;
     let centre = towers.iter().position(|t| t.position == [0.0, 0.0, 0.0]).expect("a tower at the origin");
     let mut against_prism = 0f64;
     let mut readings = Vec::new();
     for &half in halves {
-        let (lo, hi) = ([-half, -half, -33.0], [half, half, -1.0]);
+        let cut = clip.map_or(half, |c| c.min(half));
+        let (lo, hi) = ([-cut, -cut, -33.0], [cut, cut, -1.0]);
         let mut world = world_of(16.0, vec![boxed(lo, hi)]);
         world.origin = [0.0, 0.0, -1.0];
-        world.read.radius = radius.unwrap_or(2.0 * half);
         let mut spec = scene(world);
         spec.array.towers = vec![towers[centre].clone()];
-        let (phases, truncated) = first_shots_of_part(&spec, SourceId::World);
-        // The control's reads leave matter out and say so; the series' do not.
-        assert_eq!(truncated, radius);
-        let got = phases[0][2];
+        let got = first_shots(&spec, SourceId::World)[0][2];
         let want = prism_reading(&spec, 0, lo, hi);
         against_prism = against_prism.max((got - (want.lower - want.upper)).abs() / got.abs());
         readings.push(got);
@@ -229,7 +324,7 @@ cav_validate::case! {
         let readings = &slab_series().1;
         assert!(readings.windows(2).all(|w| w[1].abs() < w[0].abs()), "{readings:?}");
         // Control: the two widest slabs read only within 320 m stop converging (both read the
-        // same chunks), so their ratio is far from 2.
+        // same matter), so their ratio is far from 2.
         let (_, stopped) = slab_readings(&[640.0, 1280.0], Some(320.0));
         assert!(worst_ratio(&stopped) > 0.05, "{stopped:?}");
         cav_validate::Measured::Error(worst_ratio(readings))
@@ -270,10 +365,16 @@ fn moments_against_bound() -> &'static (f64, f64) {
         ];
         let spec = scene(world.clone());
         let w = World::new(&world);
-        let chunk = w.chunk(ChunkKey::new(0, 0, 0)).unwrap().unwrap();
+        let key = ChunkKey::new(0, 0, 0);
+        let chunk = w.chunk(key).unwrap().unwrap();
         assert_eq!(chunk.palette, [0, 1]);
-        let multipole = Multipole::of(&chunk, &w.grid, &w.densities);
-        let leaves = WorldSource { cubes: chunk.cubes(&w.grid, &w.densities), far: Vec::new() };
+        // S4's chunk through its moments about its centre of mass (`s4`), as S4 measured it; the
+        // walk's summaries about each chunk's centre are measured in `r7_looseness_by_q`.
+        let multipole = s4::Multipole::of(&chunk, &w.grid, &w.densities);
+        let leaves = WorldSource {
+            cubes: chunk.cubes(&w.grid, &w.densities),
+            far: Far { nodes: Vec::new(), rule: Rule::Octupole },
+        };
         let readers = read::Readers::new(&spec);
         let reader = readers.of(0);
         let (mut worst_over, mut loosest) = (0f64, 0f64);
@@ -285,11 +386,9 @@ fn moments_against_bound() -> &'static (f64, f64) {
             let c = multipole.moments.centre;
             let base = Vec3::new(c.x + distance, c.y, 0.0);
             let exact = reader.read_to(base, &leaves, 0.0, 1e-14).reading;
-            let read_as = |m: Multipole| {
-                reader.read_to(base, &WorldSource { cubes: Vec::new(), far: vec![m] }, 0.0, 1e-14).reading
-            };
+            let read_as = |m: s4::Multipole| reader.read_to(base, &s4::Moments4(vec![m]), 0.0, 1e-14).reading;
             let approx = read_as(multipole);
-            let bound = reader.read(base, &BoundSource { far: &[multipole] }, 0.0);
+            let bound = reader.read(base, &s4::Bound4(&[multipole]), 0.0);
             for (arm, e, a, b) in [
                 ("lower", exact.lower, approx.lower, bound.lower),
                 ("upper", exact.upper, approx.upper, bound.upper),
@@ -371,9 +470,11 @@ fn legendre(l: u32, x: f64) -> (f64, f64) {
     (p1, derivative)
 }
 
+mod s4;
+
 #[test]
 fn the_legendre_gradient_bound_holds() {
-    // `Multipole::bound` takes `|∇(P_l(cos γ)/R^{l+1})| ≤ (l+1)/R^{l+2}`: its square over
+    // `Summary::bound` (and S4's `s4::Multipole::bound`) takes `|∇(P_l(cos γ)/R^{l+1})| ≤ (l+1)/R^{l+2}`: its square over
     // `1/R^{2l+4}` is `(l+1)² P_l² + (1 − x²) P_l'²`. Held on a fine grid of x for l = 4 to 40;
     // it is reached on the axis.
     for l in 4..=40u32 {
@@ -397,7 +498,7 @@ fn the_legendre_gradient_bound_holds() {
 
 #[test]
 fn a_leafs_fourth_moment_is_exact() {
-    // `Multipole::powers[0]` takes a uniform cube's `∫ s⁴ dm = m (d⁴ + 5d²h²/6 + 19h⁴/240)`:
+    // `Summary::add_cube` takes a uniform cube's `∫ s⁴ dm = m (d⁴ + 5d²h²/6 + 19h⁴/240)`:
     // held to a midpoint sum over the cube, for an offset off every axis.
     let (d, h) = (Vec3::new(0.7, -0.4, 1.1), 0.9);
     let n = 120;
@@ -534,35 +635,112 @@ fn the_world_is_bounded_in_the_spec() {
 
 #[test]
 fn the_world_read_is_bounded() {
-    // A wide world at a fine pitch: the search for chunks within the radius is refused before it
-    // starts, with the numbers.
-    let mut world = world_of(0.01, vec![boxed([-400.0, -400.0, -2.0], [400.0, 400.0, -1.0])]);
-    world.read.radius = 500.0;
-    let spec = scene(world.clone());
-    let why = read_keys(&spec, &World::new(&world)).err().unwrap();
-    assert!(why.contains(&MAX_READ_SCAN.to_string()), "{why}");
+    // A plate at the finest pitch has more chunks than the octree takes: the read is refused, in
+    // words that name the cap, reads nothing, and says so (`truncated` 0: nothing of the world).
+    let world = world_of(0.001, vec![boxed([-10.0, -10.0, -1.002], [10.0, 10.0, -1.0])]);
+    let spec = scene(world);
     let shots = read::shots(&spec).unwrap();
     let c = read::contribution(&spec, SourceId::World, &shots, &|| false).unwrap();
-    assert!(!c.settled && c.warnings.iter().any(|w| w.text.starts_with("the world is not read")));
+    let said = c.warnings.iter().find(|w| w.text.starts_with("the world is not read")).expect("said");
+    assert!(said.text.contains(&octree::MAX_READ_CHUNKS_WHOLE.to_string()), "{said}");
+    assert!(!c.settled && c.world.is_none());
     assert_eq!(c.truncated, Some(0.0), "a refused read read nothing of the world");
-    // Within the scan but past the chunk cap: the nearest are kept, nearest first, and the rest said.
-    let mut world = world_of(0.05, vec![boxed([-60.0, -60.0, -2.0], [60.0, 60.0, -1.0])]);
-    world.read.radius = 80.0;
+    assert!(c.gradiometer.iter().all(|v| *v == 0.0));
+    // Control: a small world is read whole and settled, with its ledger, and nothing is said.
+    let world = world_of(0.5, vec![boxed([1.0, 1.0, 0.0], [3.0, 3.0, 1.0])]);
     let spec = scene(world.clone());
-    let ReadKeys { keys, said, within } = read_keys(&spec, &World::new(&world)).unwrap();
-    assert_eq!(keys.len(), MAX_READ_CHUNKS);
-    assert!(said.iter().any(|s| s.contains("are read and the rest are not")), "{said:?}");
-    assert!(within.is_some_and(|r| r > 0.0 && r < 80.0), "{within:?}");
-    // Control: a radius that holds the whole world says nothing is left.
-    let mut world = world_of(0.5, vec![boxed([1.0, 1.0, 0.0], [3.0, 3.0, 1.0])]);
-    world.read.radius = 100.0;
-    let spec = scene(world.clone());
-    let ReadKeys { keys, said, within } = read_keys(&spec, &World::new(&world)).unwrap();
-    assert!(!keys.is_empty() && said.is_empty() && within.is_none(), "{said:?}");
+    let c = read::contribution(&spec, SourceId::World, &shots, &|| false).unwrap();
+    assert!(c.settled && c.truncated.is_none() && c.warnings.is_empty(), "{:?}", c.warnings);
+    let ledger = c.world.expect("a world read has a ledger");
+    assert_eq!(ledger.towers.len(), spec.array.towers.len());
+    assert!(ledger.settled() && ledger.worst() <= ledger.tolerance);
     // The kernel's work: a read past its share is refused, with the numbers.
     let w = World::new(&world);
-    let made = make(&w, &keys, &|| false).unwrap().unwrap();
+    let tree = Octree::build(&w, &|| false).unwrap().unwrap();
     let readers = read::Readers::new(&spec);
-    let why = read_tower(&made, readers.of(0), Vec3::ZERO, 10.1, 0.0, 0.0, 1000).err().unwrap();
+    let cut = walk::walk(&tree, &aim(&spec, 0, Vec3::ZERO, 0.0, Rule::Octupole));
+    let opened = open(&w, &cut.opened, &|| false).unwrap().unwrap();
+    let why = read_tower(&tree, &opened, readers.of(0), Vec3::ZERO, 0.0, 0.0, cut, Rule::Octupole, 1000)
+        .err()
+        .unwrap();
     assert!(why.contains("more than the 1000"), "{why}");
+}
+#[test]
+#[ignore = "a diagnostic for docs/slices/S5.md §7.3: R7's looseness by q, about the chunk's centre and its centre of mass"]
+fn r7_looseness_by_q() {
+    let mut world = world_of(0.25, Vec::new());
+    world.materials.push(MaterialSpec::plain("brick", 1900.0, "#a0503c"));
+    world.pieces = vec![
+        PieceSpec {
+            label: "house".into(),
+            material: 1,
+            kind: PieceKind::Box { centre: [3.0, 4.0, 2.0], size: [2.5, 3.0, 3.5] },
+        },
+        PieceSpec {
+            label: "hill".into(),
+            material: 0,
+            kind: PieceKind::Terrain {
+                lo: [0.0, 0.0],
+                hi: [8.0, 8.0],
+                bottom: 0.0,
+                level: 1.5,
+                relief: 1.0,
+                wavelength: 6.0,
+                seed: 4,
+            },
+        },
+    ];
+    let spec = scene(world.clone());
+    let w = World::new(&world);
+    let key = ChunkKey::new(0, 0, 0);
+    let cubes = w.chunk(key).unwrap().unwrap().cubes(&w.grid, &w.densities);
+    let centre = w.grid.chunk_box(key).centre();
+    let mass: f64 = cubes.iter().map(|c| c.1).sum();
+    let com = cubes.iter().fold(Vec3::ZERO, |s, c| s + c.0 * c.1) * (1.0 / mass);
+    let about = |c: Vec3| Summary::of_cubes(c, cubes.iter().copied());
+    let mut exact = about(centre);
+    exact.absolute = cav_core::voxel::summary::cubes_absolute(centre, cubes.iter().copied());
+    let readers = read::Readers::new(&spec);
+    let reader = readers.of(0);
+    let leaves = WorldSource { cubes: cubes.clone(), far: Far { nodes: Vec::new(), rule: Rule::Octupole } };
+    println!("centre {centre:?}, centre of mass {com:?}");
+    // The signed error of each interferometer about the centre, finely in q around 0.05.
+    for k in 0..=24 {
+        let q = 0.03 + 0.002 * f64::from(k);
+        let s = about(centre);
+        let base = Vec3::new(centre.x + s.reach / q, centre.y, 0.0);
+        let truth = reader.read_to(base, &leaves, 0.0, 1e-14).reading;
+        let far = WorldSource { cubes: Vec::new(), far: Far { nodes: vec![s], rule: Rule::Octupole } };
+        let got = reader.read_to(base, &far, 0.0, 1e-14).reading;
+        let bound = reader.read(base, &LedgerSource { nodes: &[s], rule: Rule::Octupole }, 0.0);
+        println!(
+            "  fine q {q:.3}: signed error {:+.3e} {:+.3e}, bound/error {:.0} {:.0}",
+            got.lower - truth.lower,
+            got.upper - truth.upper,
+            bound.lower / (got.lower - truth.lower).abs(),
+            bound.upper / (got.upper - truth.upper).abs()
+        );
+    }
+    for (name, s) in [("centre", about(centre)), ("mass", about(com)), ("centre, exact A", exact)] {
+        println!("{name}: reach {:.3}", s.reach);
+        for q in MOMENT_QS {
+            // As R7: the base a/q from the expansion centre, to the side; a from the centre's own
+            // summary, so the three are at the same bases.
+            let distance = about(centre).reach / q;
+            let base = Vec3::new(centre.x + distance, centre.y, 0.0);
+            let truth = reader.read_to(base, &leaves, 0.0, 1e-14).reading;
+            let far = WorldSource { cubes: Vec::new(), far: Far { nodes: vec![s], rule: Rule::Octupole } };
+            let got = reader.read_to(base, &far, 0.0, 1e-14).reading;
+            let bound = reader.read(base, &LedgerSource { nodes: &[s], rule: Rule::Octupole }, 0.0);
+            let (el, eu) = ((truth.lower - got.lower).abs(), (truth.upper - got.upper).abs());
+            println!(
+                "  q {q:.3}: error {el:.2e} {eu:.2e}, bound {:.2e} {:.2e}, bound/error {:.0} {:.0}, error/phase {:.1e}",
+                bound.lower,
+                bound.upper,
+                bound.lower / el,
+                bound.upper / eu,
+                el / truth.lower.abs()
+            );
+        }
+    }
 }

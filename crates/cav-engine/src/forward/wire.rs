@@ -21,7 +21,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use cav_sim::SceneSpec;
-use cav_sim::read::{self, Contribution, Phases, ReadingAt, SourceId, Warning};
+use cav_sim::read::{self, Contribution, Phases, ReadingAt, SourceId, TowerLedger, Warning, WorldLedger};
 
 /// Somewhere jobs run off the caller's thread: in a page, the application's Web Workers.
 pub trait Remote {
@@ -173,6 +173,7 @@ pub fn serve(request: &[u8]) -> Vec<u8> {
                     out.floats(&contribution.estimates);
                     out.byte(u8::from(contribution.settled));
                     out.maybe(contribution.truncated);
+                    out.world(contribution.world.as_ref());
                     out.warnings(&contribution.warnings);
                 }
                 None => out.byte(NOTHING),
@@ -188,6 +189,7 @@ pub fn serve(request: &[u8]) -> Vec<u8> {
                 out.float(reading.estimate);
                 out.byte(u8::from(reading.settled));
                 out.maybe(reading.truncated);
+                out.world(reading.world.as_ref());
                 out.warnings(&reading.warnings);
             }
             None => out.byte(NOTHING),
@@ -223,6 +225,7 @@ pub fn answer(bytes: &[u8]) -> Result<Answer, String> {
             estimates: reader.floats()?,
             settled: reader.byte()? != 0,
             truncated: reader.maybe()?,
+            world: reader.world()?,
             warnings: reader.warnings()?,
         }),
         READING => {
@@ -240,6 +243,7 @@ pub fn answer(bytes: &[u8]) -> Result<Answer, String> {
                 estimate: reader.float()?,
                 settled: reader.byte()? != 0,
                 truncated: reader.maybe()?,
+                world: reader.world()?,
                 warnings: reader.warnings()?,
             })
         }
@@ -280,6 +284,25 @@ impl Writer {
         self.count(values.len());
         for &value in values {
             self.float(value);
+        }
+    }
+
+    /// The world's ledger, when there is one: a byte (0 or 1), then the tolerance and each
+    /// tower's ledger, counts, nodes per level and whether its walk settled.
+    fn world(&mut self, world: Option<&WorldLedger>) {
+        self.byte(u8::from(world.is_some()));
+        let Some(world) = world else { return };
+        self.float(world.tolerance);
+        self.count(world.towers.len());
+        for tower in &world.towers {
+            self.float(tower.ledger);
+            self.count(tower.accepted);
+            self.count(tower.opened);
+            self.count(tower.per_level.len());
+            for &n in &tower.per_level {
+                self.count(n);
+            }
+            self.byte(u8::from(tower.settled));
         }
     }
 
@@ -337,6 +360,35 @@ impl Reader<'_> {
         Ok(bytes.as_chunks::<8>().0.iter().map(|b| f64::from_bits(u64::from_le_bytes(*b))).collect())
     }
 
+    fn world(&mut self) -> Result<Option<WorldLedger>, String> {
+        match self.byte()? {
+            0 => return Ok(None),
+            1 => {}
+            other => return Err(format!("a flag of {other}")),
+        }
+        let tolerance = self.float()?;
+        let count = self.count()?;
+        // Each tower takes at least 33 bytes: a count larger than what is left is refused before
+        // anything is reserved.
+        if count > (self.bytes.len() - self.at) / 33 {
+            return Err("an answer cut short".into());
+        }
+        let mut towers = Vec::with_capacity(count);
+        for _ in 0..count {
+            let ledger = self.float()?;
+            let accepted = self.count()?;
+            let opened = self.count()?;
+            let levels = self.count()?;
+            if levels > (self.bytes.len() - self.at) / 8 {
+                return Err("an answer cut short".into());
+            }
+            let per_level = (0..levels).map(|_| self.count()).collect::<Result<Vec<_>, _>>()?;
+            let settled = self.byte()? != 0;
+            towers.push(TowerLedger { ledger, accepted, opened, per_level, settled });
+        }
+        Ok(Some(WorldLedger { tolerance, towers }))
+    }
+
     fn warnings(&mut self) -> Result<Vec<Warning>, String> {
         let count = self.count()?;
         let mut warnings = Vec::new();
@@ -370,14 +422,14 @@ mod tests {
     #[test]
     fn slow_a_world_job_through_the_wire_is_the_same_bits() {
         // The world goes through the wire by its own index (`WORLD`): `world-box` (four chunks),
-        // and the same box read only within 1 m of the towers, whose truncation must come back.
+        // read whole with its ledger, and stress-1e10, past the octree's caps and not read, whose
+        // truncation must come back.
         let whole = cav_sim::dev::world_box();
-        let mut part = whole.clone();
-        part.world.as_mut().unwrap().read.radius = 1.0;
+        let part = cav_sim::dev::stress_1e10();
         let flags = same_bits(&[whole, part]);
         // What came back says it, whatever the direct read said (S4's second review, J4): the
-        // part is truncated at 1 m and not settled, in the contribution and the reading.
-        assert_eq!(flags[1], (Some((false, Some(1.0))), (false, Some(1.0))));
+        // part is truncated at 0 m and not settled, in the contribution and the reading.
+        assert_eq!(flags[1], (Some((false, Some(0.0))), (false, Some(0.0))));
         // Control: the whole box comes back whole and settled.
         assert_eq!(flags[0], (Some((true, None)), (true, None)));
         // A world asked of a scene without one is nothing, not a world of zeros.
@@ -421,10 +473,11 @@ mod tests {
                 }
                 assert_eq!(direct.estimate.to_bits(), sent.estimate.to_bits());
                 assert_eq!(
-                    (direct.settled, direct.truncated, &direct.warnings),
-                    (sent.settled, sent.truncated, &sent.warnings)
+                    (direct.settled, direct.truncated, &direct.warnings, &direct.world),
+                    (sent.settled, sent.truncated, &sent.warnings, &sent.world)
                 );
                 if source == SourceId::World {
+                    assert_eq!(sent.world.is_some(), sent.truncated.is_none(), "{}", spec.name);
                     world = Some((sent.settled, sent.truncated));
                 }
             }
@@ -441,8 +494,8 @@ mod tests {
                 (sent.time.to_bits(), sent.estimate.to_bits())
             );
             assert_eq!(
-                (direct.settled, direct.truncated, &direct.warnings),
-                (sent.settled, sent.truncated, &sent.warnings)
+                (direct.settled, direct.truncated, &direct.warnings, &direct.world),
+                (sent.settled, sent.truncated, &sent.warnings, &sent.world)
             );
             flags.push((world, (sent.settled, sent.truncated)));
         }
